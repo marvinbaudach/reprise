@@ -16,8 +16,6 @@ import io.github.marvinbaudach.reprise.ArtistPhotoProgressBar
 
 @Composable
 internal fun OnlineSourcesSettingsPage(
-    enabled: Boolean,
-    setEnabled: (Boolean) -> Unit,
     progress: ArtistPhotoProgress? = null,
     dismissProgress: () -> Unit = {},
     back: () -> Unit,
@@ -40,33 +38,29 @@ internal fun OnlineSourcesSettingsPage(
         ) {
             item { SettingsSectionTitle("Artwork") }
             item {
-                Column {
-                    SettingsSwitchRow(
-                        title = "Download artwork",
-                        supporting = "Fetch portraits and album covers after automatic scans, " +
-                            "manual scans, or restores, and while an album without its own " +
-                            "cover is playing.",
-                        checked = enabled,
-                        onCheckedChange = setEnabled,
-                    )
-                    ArtistPhotoProgressBar(
-                        progress = progress,
-                        dismiss = dismissProgress,
-                        inSettings = true,
-                    )
-                }
+                Text(
+                    "Reprise downloads artist portraits from Deezer and album covers from " +
+                        "MusicBrainz and the Cover Art Archive. It fetches after an automatic " +
+                        "scan, a manual scan or a restore, and while an album without a cover " +
+                        "of its own is playing. A cover is only fetched for an album that has " +
+                        "none — one already showing art never triggers a request.",
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    style = MaterialTheme.typography.bodyMedium,
+                )
             }
             item {
                 Text(
-                    "Artist names in your library are sent to Deezer for portraits, and " +
-                        "album titles to MusicBrainz and the Cover Art Archive for covers, " +
-                        "after an automatic scan, manual scan, or restore. " +
-                        "A cover is only fetched for an album that has none of its own — one " +
-                        "already showing art never triggers a request. " +
-                        "The app sends nothing else to the internet. " +
-                        "With this off, only artwork already in your files or folders shows.",
+                    "For that, artist names from your library are sent to Deezer and album " +
+                        "titles to MusicBrainz. The app sends nothing else to the internet.",
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                     style = MaterialTheme.typography.bodyMedium,
+                )
+            }
+            item {
+                ArtistPhotoProgressBar(
+                    progress = progress,
+                    dismiss = dismissProgress,
+                    inSettings = true,
                 )
             }
         }

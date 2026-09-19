@@ -1,18 +1,17 @@
 package io.github.marvinbaudach.reprise
 
 import androidx.activity.ComponentActivity
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.ui.test.assertCountEquals
+import androidx.compose.ui.test.assertDoesNotExist
 import androidx.compose.ui.test.assertIsDisplayed
-import androidx.compose.ui.test.assertIsOff
-import androidx.compose.ui.test.assertIsOn
-import androidx.compose.ui.test.hasText
 import androidx.compose.ui.test.isToggleable
 import androidx.compose.ui.test.junit4.v2.createAndroidComposeRule
+import androidx.compose.ui.test.onAllNodes
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
-import androidx.compose.ui.test.performClick
 import io.github.marvinbaudach.reprise.settings.OnlineSourcesSettingsPage
 import io.github.marvinbaudach.reprise.ui.theme.RepriseTheme
-import org.junit.Assert.assertEquals
 import org.junit.Rule
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -27,66 +26,60 @@ class OnlineSourcesSettingsPageTest {
     val compose = createAndroidComposeRule<ComponentActivity>()
 
     @Test
-    fun theSwitchStartsFromTheSuppliedState() {
-        showPage(enabled = true)
+    fun thePageHasNoSwitch() {
+        showPage()
 
         compose.onNodeWithTag("settings-page-online-sources").assertIsDisplayed()
-        switchNode().assertIsOn()
+        compose.onAllNodes(isToggleable()).assertCountEquals(0)
     }
 
     @Test
-    fun togglingTheSwitchReportsTheNewValueOnce() {
-        val changes = mutableListOf<Boolean>()
-        showPage(enabled = false, setEnabled = changes::add)
+    fun thePageNamesTheThreeSources() {
+        showPage()
 
-        switchNode().assertIsOff().performClick()
-
-        assertEquals(listOf(true), changes)
-    }
-
-    @Test
-    fun thePageExplainsLibraryWidePortraitPrefetch() {
-        showPage(enabled = false)
-
-        compose.onNodeWithText(
-            "Fetch portraits and album covers after automatic scans, manual scans, or " +
-                "restores, and while an album without its own cover is playing.",
-        )
-            .assertIsDisplayed()
-        compose.onNodeWithText(
-            "Artist names in your library are sent to Deezer for portraits, and " +
-                "album titles to MusicBrainz and the Cover Art Archive for covers",
-            substring = true,
-        )
-            .assertIsDisplayed()
+        compose.onNodeWithText("Deezer", substring = true).assertIsDisplayed()
+        compose.onNodeWithText("MusicBrainz", substring = true).assertIsDisplayed()
+        compose.onNodeWithText("Cover Art Archive", substring = true).assertIsDisplayed()
     }
 
     @Test
     fun thePageNamesTheCoverFetchPolicy() {
-        showPage(enabled = false)
+        showPage()
 
         compose.onNodeWithText(
-            "A cover is only fetched for an album that has none of its own",
+            "A cover is only fetched for an album that has none",
             substring = true,
         )
             .assertIsDisplayed()
     }
 
-    private fun switchNode() = compose.onNode(
-        hasText("Download artwork") and isToggleable(),
-    )
-
-    private fun showPage(
-        enabled: Boolean,
-        setEnabled: (Boolean) -> Unit = {},
-    ) {
+    @Test
+    fun thePageShowsARunningBackfill() {
+        val progress = mutableStateOf<ArtistPhotoProgress?>(null)
         compose.setContent {
             RepriseTheme(theme, darkPalette = true) {
-                OnlineSourcesSettingsPage(
-                    enabled = enabled,
-                    setEnabled = setEnabled,
-                    back = {},
-                )
+                OnlineSourcesSettingsPage(progress = progress.value, back = {})
+            }
+        }
+        compose.onNodeWithTag("artist-photo-progress").assertDoesNotExist()
+
+        compose.runOnIdle {
+            progress.value = ArtistPhotoProgress(
+                runId = 1,
+                phase = ArtistPhotoProgressPhase.RUNNING,
+                done = 1,
+                failed = 0,
+                total = 412,
+            )
+        }
+
+        compose.onNodeWithTag("artist-photo-progress").assertIsDisplayed()
+    }
+
+    private fun showPage() {
+        compose.setContent {
+            RepriseTheme(theme, darkPalette = true) {
+                OnlineSourcesSettingsPage(back = {})
             }
         }
     }

@@ -347,8 +347,6 @@ class ArtistPhotoProgressBarTest {
         compose.setContent {
             RepriseTheme(theme, darkPalette = true) {
                 OnlineSourcesSettingsPage(
-                    enabled = true,
-                    setEnabled = {},
                     progress = running(runId = 8),
                     dismissProgress = {},
                     back = {},
