@@ -174,6 +174,7 @@ internal class TrackAnalysisLoader(
             if (cached.third) warmRetainedBars(count)
             return
         }
+        val submittedRevision = revision
         val submitted = submitRead("load analysis for track $trackId") {
             val bars = try {
                 readBars(trackId, count)
@@ -183,10 +184,10 @@ internal class TrackAnalysisLoader(
                 Log.w(TAG, "Could not load analysis for track $trackId", error)
                 null
             }
-            onMainThread { finishBarLoad(key, bars, cache = true) }
+            onMainThread { finishBarLoad(key, bars, cache = true, submittedRevision) }
         }
         if (!submitted) {
-            finishBarLoad(key, bars = null, cache = false)
+            finishBarLoad(key, bars = null, cache = false, submittedRevision)
         }
         if (cached.third) warmRetainedBars(count)
     }
@@ -212,6 +213,7 @@ internal class TrackAnalysisLoader(
             deliver(cached.second)
             return
         }
+        val submittedRevision = revision
         val submitted = submitRead("load spectrogram for track $trackId") {
             val frames = try {
                 readSpectrogram(trackId)?.toSpectrogramFrames()
@@ -221,10 +223,10 @@ internal class TrackAnalysisLoader(
                 Log.w(TAG, "Could not load spectrogram for track $trackId", error)
                 null
             }
-            onMainThread { finishSpectrogramLoad(trackId, frames, cache = true) }
+            onMainThread { finishSpectrogramLoad(trackId, frames, cache = true, submittedRevision) }
         }
         if (!submitted) {
-            finishSpectrogramLoad(trackId, frames = null, cache = false)
+            finishSpectrogramLoad(trackId, frames = null, cache = false, submittedRevision)
         }
     }
 
@@ -255,13 +257,27 @@ internal class TrackAnalysisLoader(
         )
     }
 
+    /**
+     * `submittedRevision` is [revision] as it stood when this read was
+     * submitted. A `null` result is only cached if `revision` has not moved
+     * since then: import and read run on independent lanes with no relative
+     * ordering guarantee, so a read that observes the database before a
+     * concurrent import's write can finish, and post here, *after* that
+     * import already ran [invalidate] — which found nothing to clear because
+     * the cache entry did not exist yet. Caching the null unconditionally at
+     * that point would pin a stale negative that no further invalidate is
+     * scheduled to clear. A non-null result is never stale in that sense and
+     * is always cached.
+     */
     private fun finishBarLoad(
         key: BarCacheKey,
         bars: List<SpectralBar>?,
         cache: Boolean,
+        submittedRevision: Long,
     ) {
         val waiters = synchronized(cacheLock) {
-            if (cache && retainedTrackIds?.contains(key.trackId) != false) {
+            val supersededNegative = bars == null && submittedRevision != revision
+            if (cache && !supersededNegative && retainedTrackIds?.contains(key.trackId) != false) {
                 barCache[key] = bars
             }
             barWaiters.remove(key).orEmpty()
@@ -269,13 +285,16 @@ internal class TrackAnalysisLoader(
         waiters.forEach { deliver -> deliver(bars) }
     }
 
+    /** See [finishBarLoad]: the same race applies to the spectrogram cache. */
     private fun finishSpectrogramLoad(
         trackId: Long,
         frames: SpectrogramFrames?,
         cache: Boolean,
+        submittedRevision: Long,
     ) {
         val waiters = synchronized(cacheLock) {
-            if (cache && retainedTrackIds?.contains(trackId) != false) {
+            val supersededNegative = frames == null && submittedRevision != revision
+            if (cache && !supersededNegative && retainedTrackIds?.contains(trackId) != false) {
                 spectrogramCache[trackId] = frames
             }
             spectrogramWaiters.remove(trackId).orEmpty()

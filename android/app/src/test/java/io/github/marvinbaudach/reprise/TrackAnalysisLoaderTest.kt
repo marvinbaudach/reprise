@@ -3,6 +3,7 @@ package io.github.marvinbaudach.reprise
 import java.util.ArrayDeque
 import java.util.concurrent.CountDownLatch
 import java.util.concurrent.TimeUnit
+import java.util.concurrent.atomic.AtomicInteger
 import java.util.concurrent.atomic.AtomicReference
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
@@ -344,6 +345,79 @@ class TrackAnalysisLoaderTest {
         while (mainHops.isNotEmpty()) mainHops.removeFirst().invoke()
 
         assertEquals(1, secondDelivered?.size)
+        assertEquals(2, reads)
+
+        loader.shutdownForTest()
+    }
+
+    /**
+     * Import and read run on independent lanes with no ordering guarantee
+     * between them. This pins the specific reverse ordering that used to
+     * pin a stale negative cache entry: the import's `onMainThread` closure
+     * (`invalidate`; it finds nothing to clear because the read's null has
+     * not been cached yet) runs before the read's own `onMainThread`
+     * closure (which would otherwise cache that now-stale null with no
+     * further invalidate ever scheduled for it).
+     */
+    @Test
+    fun aReadThatFinishesAfterAConcurrentImportsInvalidateDoesNotCacheAStaleNull() {
+        val mainHops = ArrayDeque<() -> Unit>()
+        val postCount = AtomicInteger(0)
+        val importPosted = CountDownLatch(1)
+        val firstReadPosted = CountDownLatch(1)
+        val secondReadPosted = CountDownLatch(1)
+        val readStarted = CountDownLatch(1)
+        val releaseRead = CountDownLatch(1)
+        var reads = 0
+        val expected = listOf(SpectralBar(false, 0.5f, 0.0, 0.0, 0.0))
+        val loader = TrackAnalysisLoader(
+            importAnalysis = { AndroidAnalysisOutcome.COMPUTED },
+            readBars = { _, _ ->
+                reads += 1
+                if (reads == 1) {
+                    readStarted.countDown()
+                    releaseRead.await()
+                    null
+                } else {
+                    expected
+                }
+            },
+            onMainThread = { work ->
+                mainHops.add(work)
+                when (postCount.incrementAndGet()) {
+                    1 -> importPosted.countDown()
+                    2 -> firstReadPosted.countDown()
+                    else -> secondReadPosted.countDown()
+                }
+            },
+        )
+
+        loader.loadBars(41, 64) {}
+        assertTrue("the bar read never started", readStarted.await(2, TimeUnit.SECONDS))
+
+        loader.prepare(41)
+        assertTrue("the import answer was never queued", importPosted.await(2, TimeUnit.SECONDS))
+        // Drain only the import's closure: `invalidate` finds nothing to
+        // clear yet (the read's null has not been cached), and `revision`
+        // bumps regardless.
+        mainHops.removeFirst().invoke()
+        assertEquals(1L, loader.revision)
+
+        releaseRead.countDown()
+        assertTrue("the read answer was never queued", firstReadPosted.await(2, TimeUnit.SECONDS))
+        mainHops.removeFirst().invoke()
+
+        var delivered: List<SpectralBar>? = listOf(
+            SpectralBar(silence = true, level = 0f, red = 0.0, green = 0.0, blue = 0.0),
+        )
+        loader.loadBars(41, 64) { delivered = it }
+        assertTrue(
+            "the retry read was never queued: the stale null must not have been cached",
+            secondReadPosted.await(2, TimeUnit.SECONDS),
+        )
+        mainHops.removeFirst().invoke()
+
+        assertEquals(expected, delivered)
         assertEquals(2, reads)
 
         loader.shutdownForTest()
