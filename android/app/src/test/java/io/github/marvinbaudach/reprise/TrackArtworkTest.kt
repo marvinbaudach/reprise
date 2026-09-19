@@ -414,6 +414,61 @@ class TrackArtworkTest {
     }
 
     /**
+     * A miss on the first on-demand fetch must not be cached as final: the
+     * real `ArtworkCache` remembered the generated placeholder as `resolved`
+     * for this `(trackUri, size, kind)`, and without the cache-bypass fix a
+     * second call for the same request would never re-invoke
+     * `resolveAlbumCoverFetched` at all — it would return the cached
+     * placeholder straight from `cache.artwork(request)`.
+     */
+    @Test
+    fun aFailedFetchDoesNotPermanentlyBlockARetryOnTheNextRequest() {
+        val fetchedCover = Bitmap.createBitmap(6, 6, Bitmap.Config.ARGB_8888).apply {
+            eraseColor(Color.rgb(5, 15, 25))
+        }
+        val fetchCalls = AtomicInteger()
+        var fetchSucceeds = false
+        val artwork = TrackArtwork(
+            resolve = { _, _ -> null },
+            resolveAlbumCoverFetched = { _, _ ->
+                fetchCalls.incrementAndGet()
+                if (fetchSucceeds) "content://covers/retried" else null
+            },
+            decode = { path -> if (path == "content://covers/retried") fetchedCover else null },
+            fallback = { _, _, _ -> Bitmap.createBitmap(4, 4, Bitmap.Config.ARGB_8888) },
+            cache = ArtworkCache(),
+            onMainThread = { work -> work() },
+        )
+        val gate = ArtworkRequestGate()
+        val request = gate.begin(
+            "content://tracks/retry-fetch",
+            AndroidArtworkSize.NOW_PLAYING,
+            allowFetch = true,
+        )
+
+        val firstAnswered = CountDownLatch(1)
+        artwork.loadVisual(request, gate) { firstAnswered.countDown() }
+        assertTrue(firstAnswered.await(WAIT_SECONDS, TimeUnit.SECONDS))
+        assertEquals(1, fetchCalls.get())
+
+        fetchSucceeds = true
+        val secondAnswered = CountDownLatch(1)
+        var secondDelivered: ArtworkVisual? = null
+        try {
+            artwork.loadVisual(request, gate) { visual ->
+                secondDelivered = visual
+                secondAnswered.countDown()
+            }
+            assertTrue(secondAnswered.await(WAIT_SECONDS, TimeUnit.SECONDS))
+        } finally {
+            artwork.shutdown()
+        }
+
+        assertEquals(2, fetchCalls.get())
+        assertSame(fetchedCover, secondDelivered?.image?.asAndroidBitmap())
+    }
+
+    /**
      * The risk named in the mother plan: `LibrarySession.artworkFor` memoises
      * resolved paths, so a fetch that does not drop that memo would leave the
      * placeholder on screen until the app restarts. Exercises the real

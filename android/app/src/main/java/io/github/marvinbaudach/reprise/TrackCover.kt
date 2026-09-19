@@ -88,7 +88,12 @@ internal class TrackArtwork(
         gate: ArtworkRequestGate,
         deliver: (ArtworkVisual?) -> Unit,
     ) {
-        if (!request.refreshesArtistPortrait()) {
+        // An `allowFetch` request (artist or track) never trusts the cached
+        // placeholder: a miss it remembered permanently would make the B3
+        // backfill's later download, or a transient failure the FFI never
+        // memoises, unreachable from here. Re-resolving every time is safe —
+        // the FFI side already memoises a definitive miss per process.
+        if (!request.allowFetch) {
             cache.artwork(request)?.let { cached ->
                 if (gate.accepts(request)) deliver(cached)
                 return
@@ -200,7 +205,7 @@ internal class TrackArtwork(
     }
 
     private fun resolveVisual(request: ArtworkRequest): ArtworkVisual {
-        if (!request.refreshesArtistPortrait()) {
+        if (!request.allowFetch) {
             cache.artwork(request)?.let { return it }
         }
         val portraitPath = if (request.kind == ArtworkKind.ARTIST) {
@@ -380,6 +385,11 @@ private fun artworkListLane(): CoroutineDispatcher = Dispatchers.IO.limitedParal
 @OptIn(ExperimentalCoroutinesApi::class)
 private fun artworkFullSizeLane(): CoroutineDispatcher = Dispatchers.IO.limitedParallelism(1)
 
+/**
+ * Only an artist request that just fetched invalidates the portrait shelves
+ * ([ArtworkCache.invalidateArtistArtwork]) — the cache-bypass decision above
+ * is the wider `allowFetch` check, which also covers a track request.
+ */
 private fun ArtworkRequest.refreshesArtistPortrait(): Boolean =
     kind == ArtworkKind.ARTIST && allowFetch
 
