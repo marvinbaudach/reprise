@@ -67,7 +67,10 @@ import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.collect
+import kotlinx.coroutines.flow.dropWhile
+import kotlinx.coroutines.flow.filter
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.flow.merge
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withTimeoutOrNull
 import uniffi.reprise_android_ffi.AndroidArtworkSize
@@ -225,10 +228,18 @@ internal fun NowPlayingSheet(
                     snap = positionPx::snapTo,
                 )
                 if (changesTrack) {
+                    // `draggingTrack` can still read true here: the finger that
+                    // committed THIS settle may not yet have had its release
+                    // observed by the time this point runs (the settle
+                    // animation above takes its own frames to complete). That
+                    // leftover true is not a NEW drag taking the position
+                    // over -- newDragAnswered only reports one that follows
+                    // an observed release.
                     holdSettledPositionUntilTheTransportAnswers(
-                        answered = snapshotFlow {
-                            latestCurrentIndex != currentIndex || latestDraggingTrack
-                        },
+                        answered = merge(
+                            snapshotFlow { latestCurrentIndex != currentIndex }.filter { it },
+                            newDragAnswered(snapshotFlow { latestDraggingTrack }),
+                        ),
                         graceMs = NOW_PLAYING_ANSWER_GRACE_MS.toLong(),
                         snapBack = { positionPx.snapTo(currentIndex * screenWidthPx) },
                     )
@@ -413,6 +424,16 @@ internal suspend fun holdSettledPositionUntilTheTransportAnswers(
     val answer = withTimeoutOrNull(graceMs) { answered.first { it } }
     if (answer == null) snapBack()
 }
+
+/**
+ * A `dragging` flag that reads true from its very first observation is the
+ * trailing state of the gesture that just committed this settle -- its
+ * release simply has not been observed yet, this is not a new drag taking
+ * the position over. Drops that leading run of `true` values and reports
+ * only a `true` that follows an observed `false`.
+ */
+internal fun newDragAnswered(dragging: Flow<Boolean>): Flow<Boolean> =
+    dragging.dropWhile { it }.filter { it }
 
 internal suspend fun settleNowPlayingPosition(
     target: Float,
