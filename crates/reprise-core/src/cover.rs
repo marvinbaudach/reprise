@@ -18,9 +18,12 @@ pub enum CoverSource {
     /// that is the document provider.
     FolderImage(PathBuf),
     /// An image Reprise itself put in its cache — a downloaded cover, a
-    /// reduced artist portrait. It never lives in the library, so it is read
-    /// with plain file I/O no matter which library source is in play: a
-    /// document provider has no content for a path outside its tree.
+    /// reduced artist portrait, a podcast or channel image fetched from its
+    /// feed (`reprise_core::remote_image`, stored under
+    /// `<cache root>/reprise/covers/remote-images-*`). It never lives in the
+    /// library, so it is read with plain file I/O no matter which library
+    /// source is in play: a document provider has no content for a path
+    /// outside its tree.
     CacheImage(PathBuf),
 }
 

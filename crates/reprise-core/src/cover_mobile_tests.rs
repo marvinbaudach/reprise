@@ -233,6 +233,9 @@ fn a_downloaded_cover_is_read_from_the_cache_not_through_the_document_provider()
 
     assert!(thumbnail.starts_with(cache_root.path().join("reprise/covers")));
     let refused = source.refused.lock().unwrap().clone();
+    // The `.expect` above already panics with the bug present, so it is the
+    // guard that turns red. This assertion only states the stronger property
+    // for a reader: the provider was never even asked.
     assert!(
         !refused.iter().any(|path| path == &downloaded),
         "the provider was asked for the cache file: {refused:?}"
