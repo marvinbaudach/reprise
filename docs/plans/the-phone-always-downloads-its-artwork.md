@@ -308,6 +308,33 @@ Holder of `device-lock`; release build.
 4. Kill and relaunch: the second `open` writes nothing (no settings error in
    logcat); the backfill resumes only for what is still missing.
 
+### What the run measured (2026-09-19, Pixel 10 Pro XL, release 0.1.152)
+
+All four steps passed. Two pieces of evidence this section asked for cannot be
+had on a release build, and the next run should not spend time looking for
+them:
+
+- **Logcat does not show the requests.** The artwork fetch logs nothing on the
+  success path — only the failure branches in `artist_portrait.rs` write, and
+  they write no hostname. Absence of Deezer or MusicBrainz lines is therefore
+  no evidence either way.
+- **`covers/downloaded/` cannot be read.** `SharedMusicLibrary.kt` roots the
+  cache at `cacheDir`, which is internal, and the release build is not
+  debuggable, so `run-as` is refused.
+
+What stands in for both, and is stronger: step 2 on a genuinely fresh library
+shows the bar counting up (`Downloading artwork 3/78` … `Artwork complete
+251/252 · 1 without a photo`) at the fetchers' own ~1 request per second, while
+`dumpsys netstats detail` records ~29.9 MB of foreground traffic for the app's
+uid — about 119 kB per item, the size a cover or portrait actually has. Run
+step 2 first on a repeat; step 1 can only confirm the gate indirectly.
+
+Two more facts for a repeat run. Step 1 needs a database that really stores the
+gate as off — this device had it on, from earlier sessions, and the switch had
+to be turned off through the old build's UI first. And a library that is
+already fully backfilled shows no bar at all in step 1, because the run finds
+nothing to fetch; that is `total == 0`, not a regression.
+
 ## Risks
 
 - Users who deliberately switched the download off lose that choice — the
