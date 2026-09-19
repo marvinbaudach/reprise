@@ -516,6 +516,34 @@ paths with plain file I/O instead of routing them through the document
 provider, then a re-check (not another full device run) to confirm both the
 now-playing and album-header rungs pick up the downloaded cover.
 
+**C2 re-check, same day (issue #995).** Fixed by `CoverSource::CacheImage`:
+a downloaded cover is read with plain file I/O regardless of the library
+source. Re-checked on the same AVD state (the 144-title library, the SAF
+grant and `covers/downloaded/eb5ff6672225f3df.jpg` all survived the
+emulator restart) by installing the fixed release APK (0.1.152, same signing
+key) over 0.1.148. Control arm first, old APK: Airbag playing, placeholder
+tile at the now-playing rung, `W/Reprise: … No content provider:
+…/eb5ff6672225f3df.jpg` at 17:02:15 and five more by 17:04:10. Fixed APK,
+after the install marker at 17:13:13: the real OK Computer cover at the
+now-playing rung (`shot-04`), in the album header and the track row
+(`shot-06`), and again after `am force-stop` and a relaunch (`shot-08`; the
+cover tile — crop `(270,720)–(1075,1520)` of the 1344×2992 screenshot,
+downsampled to 16×16 and compared as the mean absolute per-channel
+difference — measures 0.0 against `shot-04`, 441 against the placeholder in
+`shot-03`). `shot-07`, taken after leaving to the artist page and coming
+back, is byte-identical to `shot-06`; on a static screen that can be
+genuine, but the screenshot then proves nothing about the navigation by
+itself — that is evidenced only by the DEVRUN marker "C2-fix back to
+artists, then reopen album" (17:15:24) and by `shot-05` (the artist page).
+Zero `No content provider` / `cover cache unusable` lines after the install
+marker. Fresh-fetch arm: with the cached cover and every thumbnail deleted
+as root, playing Airbag re-downloaded the cover 11 s after the tap (17:17:44
+tap, 17:17:55 file and 1092 px thumbnail mtime) and the next visit showed it
+(`shot-12`; the same crop/downsample comparison measures 0.0 against
+`shot-04`); whether the already-open now-playing view repaints within the
+same visit could not be observed on a 15 s fixture. Evidence under
+`~/.local/share/reprise-device-run-20260919/issue-995/`.
+
 ## Observations
 
 No crash: `grep -c "AndroidRuntime.*E " run-logcat.log` = 0 across the whole

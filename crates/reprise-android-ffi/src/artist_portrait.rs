@@ -23,7 +23,7 @@ impl MusicLibrary {
     fn reduced_portrait_path(&self, path: &Path, size: AndroidArtworkSize) -> Option<String> {
         match cover::thumbnail_with_source(
             &UnixLibrarySource,
-            &CoverSource::FolderImage(path.to_owned()),
+            &CoverSource::CacheImage(path.to_owned()),
             size.thumbnail_size(),
             &self.cache_root,
         ) {

@@ -544,7 +544,7 @@ mod tests {
         assert_eq!(
             cover_status(
                 &covered_tag,
-                &CoverSource::FolderImage(PathBuf::from("/cache/covered.jpg")),
+                &CoverSource::CacheImage(PathBuf::from("/cache/covered.jpg")),
                 &mut observed_by_album,
                 &mut observed_by_fingerprint,
             ),
