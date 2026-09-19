@@ -46,8 +46,6 @@ internal data class MainActivitySurfaceDependencies(
     val replaceEqualizerCurve: (List<EqualizerCurvePoint>) -> PlaybackSettingsUiState,
     val setGaplessEnabled: (Boolean) -> PlaybackSettingsUiState,
     val selectTheme: (MobileThemeSelection, MobileTheme) -> MobileThemeSelection,
-    val onlineSourcesEnabled: () -> Boolean = { false },
-    val setOnlineSourcesEnabled: (Boolean) -> Result<Unit> = { Result.success(Unit) },
     val animationsEnabled: () -> Boolean,
     val observeAmbientScheduling: (Boolean) -> Unit,
     val libraryPerformanceObserver: LibraryPerformanceObserver = NoOpLibraryPerformanceObserver,

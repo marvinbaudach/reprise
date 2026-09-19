@@ -57,6 +57,8 @@ import uniffi.reprise_android_ffi.standardEqualizerPresets
 private const val TAG = "RepriseScan"
 internal const val PLAYBACK_BIND_WATCHDOG_MS = 2_000L
 internal const val PLAYBACK_BIND_FAILURE_LOG = "Playback service bind did not connect"
+internal const val PREFERENCES_NAME = "reprise_android"
+internal const val NOTIFICATION_PERMISSION_ASKED = "notification_permission_asked"
 class MainActivity : ComponentActivity() {
     // The core is told where to cache covers instead of assuming an XDG
     // directory that does not exist here.
@@ -212,13 +214,6 @@ class MainActivity : ComponentActivity() {
         collectPlaybackServiceState()
         setContent {
             var themeSelection by remember { mutableStateOf(surface.initialTheme) }
-            var onlineSourcesEnabled by remember {
-                mutableStateOf(surface.onlineSourcesEnabled())
-            }
-            val artistPhotoOffer = rememberArtistPhotoOffer(
-                getSharedPreferences(PREFERENCES_NAME, MODE_PRIVATE),
-            )
-            val onlineSourcesIntent = remember { PendingToggleIntent() }
             val darkPalette = themeSelection.usesDarkPalette(isSystemInDarkTheme())
             val libraryPlayback by remember { derivedStateOf { playbackState.value.libraryPlayback() } }
             val playbackProgress = remember { { playbackState.value.progressFraction } }
@@ -288,33 +283,6 @@ class MainActivity : ComponentActivity() {
                                 setEqualizerEnabled = surface.setEqualizerEnabled,
                                 replaceEqualizerCurve = surface.replaceEqualizerCurve,
                                 setGaplessEnabled = surface.setGaplessEnabled,
-                                onlineSourcesEnabled = onlineSourcesEnabled,
-                                artistPhotoOffer = artistPhotoOffer,
-                                setOnlineSourcesEnabled = {
-                                    val enabled = onlineSourcesIntent.next(onlineSourcesEnabled)
-                                    libraryWrites.submitAnswered(
-                                        work = {
-                                            surface.setOnlineSourcesEnabled(enabled).getOrThrow()
-                                        },
-                                        report = { outcome ->
-                                            outcome.onSuccess {
-                                                onlineSourcesEnabled = enabled
-                                                if (enabled) {
-                                                    surfaceState.startArtistPhotoBackfill()
-                                                } else {
-                                                    surfaceState.cancelArtistPhotoBackfill()
-                                                }
-                                            }.onFailure { error ->
-                                                Log.e(
-                                                    TAG,
-                                                    "Could not change online source settings",
-                                                    error,
-                                                )
-                                            }
-                                            onlineSourcesIntent.answered(enabled)
-                                        },
-                                    )
-                                },
                                 themeSelection = themeSelection,
                                 selectTheme = { palette ->
                                     val currentSelection = themeSelection
@@ -408,16 +376,6 @@ class MainActivity : ComponentActivity() {
             replaceEqualizerCurve = ::replaceEqualizerCurve,
             setGaplessEnabled = ::setGaplessEnabled,
             selectTheme = { current, palette -> themeController.select(current, palette) },
-            onlineSourcesEnabled = {
-                runCatching { library.onlineSourcesEnabled() }
-                    .onFailure { error ->
-                        Log.e(TAG, "Could not load online source settings", error)
-                    }
-                    .getOrDefault(false)
-            },
-            setOnlineSourcesEnabled = { enabled ->
-                runCatching { library.setOnlineSourcesEnabled(enabled) }
-            },
             animationsEnabled = ValueAnimator::areAnimatorsEnabled,
             observeAmbientScheduling = {},
         )
