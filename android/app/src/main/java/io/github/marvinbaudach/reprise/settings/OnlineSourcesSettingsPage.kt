@@ -40,18 +40,24 @@ internal fun OnlineSourcesSettingsPage(
             item {
                 Text(
                     "Reprise downloads artist portraits from Deezer and album covers from " +
-                        "MusicBrainz and the Cover Art Archive. It fetches after an automatic " +
-                        "scan, a manual scan or a restore, and while an album without a cover " +
-                        "of its own is playing. A cover is only fetched for an album that has " +
-                        "none — one already showing art never triggers a request.",
+                        "MusicBrainz and the Cover Art Archive. It fetches on launch, after " +
+                        "an automatic scan, a manual scan or a restore, and while an album " +
+                        "without a cover of its own is playing. A cover is only fetched for " +
+                        "an album that has none — one already showing art never triggers a " +
+                        "request.",
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                     style = MaterialTheme.typography.bodyMedium,
                 )
             }
             item {
                 Text(
-                    "For that, artist names from your library are sent to Deezer and album " +
-                        "titles to MusicBrainz. The app sends nothing else to the internet.",
+                    "For that, artist names from your library are sent to Deezer for " +
+                        "portraits, and artist and album names are sent to MusicBrainz to " +
+                        "find each release. The Cover Art Archive then receives that " +
+                        "release's identifier, which comes from your file's own tags when " +
+                        "it has one and from the MusicBrainz search otherwise. Every " +
+                        "request identifies the app by name and version, as these services " +
+                        "require — nothing else leaves the phone.",
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                     style = MaterialTheme.typography.bodyMedium,
                 )

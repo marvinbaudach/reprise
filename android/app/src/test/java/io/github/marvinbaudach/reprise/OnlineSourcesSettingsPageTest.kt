@@ -38,7 +38,18 @@ class OnlineSourcesSettingsPageTest {
 
         compose.onAllNodesWithText("Deezer", substring = true)[0].assertIsDisplayed()
         compose.onAllNodesWithText("MusicBrainz", substring = true)[0].assertIsDisplayed()
-        compose.onNodeWithText("Cover Art Archive", substring = true).assertIsDisplayed()
+        compose.onAllNodesWithText("Cover Art Archive", substring = true)[0].assertIsDisplayed()
+    }
+
+    @Test
+    fun thePageNamesTheCoverArtArchiveAsARecipient() {
+        showPage()
+
+        compose.onNodeWithText(
+            "The Cover Art Archive then receives that release's identifier",
+            substring = true,
+        )
+            .assertIsDisplayed()
     }
 
     @Test
