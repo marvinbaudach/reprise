@@ -3125,7 +3125,7 @@ property is set and yet nothing happens.
   is never asked, and reaches the sources only through Preferences → Plugins.
   Its initial gate value follows the grandfathering in `NET-2a`; without that
   prior-use evidence, the gate starts shut.
-- **NET-4b** [active] [android] — On Android the artist-photo question is asked
+- **NET-4b** [replaced by NET-4c] — On Android the artist-photo question is asked
   by exactly one dismissible banner in the Library, shown whenever the global
   gate is off, the question has not been settled, and the library holds at
   least one artist. It carries "Download artist photos" and "Not now"; either
@@ -3133,6 +3133,15 @@ property is set and yet nothing happens.
   Online sources. It is never a modal or a toast, and never appears while the
   gate is already on. It enables directly because Android has a single online
   switch and the banner already names what is sent.
+- **NET-4c** [active] [core] — On Android the artwork download is always on
+  and there is no question to settle: no banner, no switch, no off state.
+  `MusicLibrary::open` reads the global online-sources gate and the Artwork
+  module and, when either is off, turns both on through core's own setters —
+  on a fresh database and on one that still stores an earlier "off" alike. A
+  database that already has both on is not written again. Core's default
+  stays off and the desktop keeps the wizard of `NET-4a`; the platform
+  decision lives at the FFI boundary. Settings → Online sources remains the
+  page that names what leaves the phone and shows a running artwork pass.
 - **NET-5** [active] [gtk] — Enabling Artwork while the global online-sources
   gate is open and the device is online immediately starts exactly one fresh
   cover pass through the same Preferences transition used by Plugins and the

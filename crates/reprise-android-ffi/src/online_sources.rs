@@ -47,7 +47,7 @@ mod tests {
     use crate::MusicLibrary;
 
     #[test]
-    fn a_fresh_database_opens_with_the_artwork_gate_on() {
+    fn net_4c_a_fresh_database_opens_with_the_artwork_gate_on() {
         let directory = tempfile::tempdir().unwrap();
         let library = MusicLibrary::open(
             directory.path().to_str().unwrap(),
@@ -119,7 +119,7 @@ mod tests {
     }
 
     #[test]
-    fn a_stored_off_is_overridden_on_the_next_open() {
+    fn net_4c_a_stored_off_is_overridden_on_the_next_open() {
         let directory = tempfile::tempdir().unwrap();
         let private = directory.path().to_str().unwrap().to_owned();
         let cache = directory.path().join("cache").to_str().unwrap().to_owned();
