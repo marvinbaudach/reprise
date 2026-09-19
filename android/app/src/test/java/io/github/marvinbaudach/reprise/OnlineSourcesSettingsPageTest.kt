@@ -3,11 +3,10 @@ package io.github.marvinbaudach.reprise
 import androidx.activity.ComponentActivity
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.ui.test.assertCountEquals
-import androidx.compose.ui.test.assertDoesNotExist
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.isToggleable
 import androidx.compose.ui.test.junit4.v2.createAndroidComposeRule
-import androidx.compose.ui.test.onAllNodes
+import androidx.compose.ui.test.onAllNodesWithText
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
 import io.github.marvinbaudach.reprise.settings.OnlineSourcesSettingsPage
@@ -37,8 +36,8 @@ class OnlineSourcesSettingsPageTest {
     fun thePageNamesTheThreeSources() {
         showPage()
 
-        compose.onNodeWithText("Deezer", substring = true).assertIsDisplayed()
-        compose.onNodeWithText("MusicBrainz", substring = true).assertIsDisplayed()
+        compose.onAllNodesWithText("Deezer", substring = true)[0].assertIsDisplayed()
+        compose.onAllNodesWithText("MusicBrainz", substring = true)[0].assertIsDisplayed()
         compose.onNodeWithText("Cover Art Archive", substring = true).assertIsDisplayed()
     }
 
