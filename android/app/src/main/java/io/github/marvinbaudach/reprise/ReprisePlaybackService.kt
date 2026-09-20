@@ -391,10 +391,16 @@ open class ReprisePlaybackService : MediaSessionService() {
             @Suppress("DEPRECATION")
             getSystemService(Vibrator::class.java)
         } ?: return
+        // EFFECT_TICK is delivered but not felt: measured 2026-09-20 on a Pixel
+        // 10 Pro XL, `dumpsys vibrator_manager` showed the vibration finishing
+        // right after a skip, yet nobody could feel it. A side-by-side of
+        // TICK/CLICK/HEAVY_CLICK/DOUBLE_CLICK on that device picked DOUBLE_CLICK
+        // as the one that is actually perceptible. The pre-Q fallback mirrors
+        // its two-pulse shape instead of a single short buzz.
         val effect = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
-            VibrationEffect.createPredefined(VibrationEffect.EFFECT_TICK)
+            VibrationEffect.createPredefined(VibrationEffect.EFFECT_DOUBLE_CLICK)
         } else {
-            VibrationEffect.createOneShot(20, VibrationEffect.DEFAULT_AMPLITUDE)
+            VibrationEffect.createWaveform(longArrayOf(0, 20, 60, 20), -1)
         }
         vibrator.vibrate(effect)
     }
