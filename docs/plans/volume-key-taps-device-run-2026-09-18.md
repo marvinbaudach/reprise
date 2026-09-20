@@ -69,11 +69,9 @@ as the cross-check. Both agree to within ~12 ms throughout.
 the false-positive arm passes with a wide margin.** All twelve protocol steps
 ran. Two findings, neither about the gesture's decision logic:
 
-1. **The haptic tick (decision 8) never fired** — no tick was felt on any of
-   the 25 skips, although the code path runs and the phone's
-   `haptic_feedback_enabled` is 1. Decision 8 is therefore **unmet**, and
-   since decision 9 makes this run the landing gate, the run is not a clean
-   pass.
+1. ~~**The haptic tick (decision 8) never fired**~~ — **diagnosed and fixed
+   the same day, then re-measured; decision 8 is now met.** See "The tick"
+   below.
 2. **At the end of the queue the skip ends playback** instead of no-opping:
    `next()` on a one-item queue stopped the music, emptied the queue
    (`queueTitle size=0`) and tore the media session down. The plan's step 10
@@ -105,7 +103,7 @@ constant is not on an edge; it is not changed.
 | 5b, lock screen with the screen on | ✅ `mDreamingLockscreen=true`, `mWakefulness=Awake`; rock 11 ms → `Skip(direction=UP, restoreVolume=4)` — decision 2's claim holds. |
 | 6, slider drag | ✅ the level moved 25 → 9 with **no** volume-key event and no skip (54 `setVolumeTo`/`VolumeProvider` lines in that window); the session's slider is the one SystemUI draws while Reprise plays, as decision 7 accepts. |
 | 7, level after every skip | ✅ every skip carried `restoreVolume` equal to the level before the first tap, and `get-stream-volume 3` agreed after each one (4, 0, 25, 6, 7). |
-| 8, tick on the skip only | ❌ **no vibration was felt on any skip** (user, unprompted, after step 6). See the finding below. |
+| 8, tick on the skip only | ✅ after the fix: three skips, three vibrations of 178 / 182 / 184 ms felt by the user, one per skip and none on a step or a ramp. ❌ before the fix: no vibration was felt on any of the 25 skips (user, unprompted, after step 6). See "The tick". |
 | 11, REMOTE across a skip | ◐ `dumpsys media_session` showed `volumeType=REMOTE` on every probe while playing — including immediately after skips — and `LOCAL` only when paused. No `LOCAL` was ever observed while `playWhenReady`, but the run sampled the value rather than watching it continuously, so this is consistent with decision 3, not a proof of it. |
 | 9, switch off → stock | ✅ with the setting off and the track still playing, `volumeType=LOCAL` and a 211 ms rock produced **no** `VolumeKeys` line at all — the callbacks are not merely ignored, the route is not taken. |
 | 9, switch on again | ✅ `volumeType=REMOTE` again; rock 191 ms → `Skip(direction=UP, restoreVolume=2)`. |
@@ -128,7 +126,7 @@ do not overlap and are 770 ms apart at their closest (489 ms vs 1259 ms).
 himself timed above the window (522, 588, 689, 781 ms), and admitted no
 correction. **Verdict: keep 500.**
 
-## Finding — the haptic tick never fired (decision 8)
+## The tick — measured, diagnosed, fixed, re-measured (decision 8)
 
 Reported by the user after step 6, unprompted: "keine vibration dagewesen" —
 no tick on any of the 25 skips, in any state.
@@ -147,14 +145,37 @@ What is known:
   already off` lines from the HAL, none tied to Reprise's uid 10285), so the
   log neither confirms nor refutes the call reaching the service.
 
-Candidates, none verified: `EFFECT_TICK` is the weakest predefined effect and
-may be below the threshold of perception on this device while the phone lies
-on a table; a vibration requested by a background service without an
-attribution to a foreground use case may be dropped silently on Android 17; or
-`hapticTick()` throws and is swallowed. This is the one part of decision 8
-that the run could not confirm, and it is the reason the run is **not** a
-clean pass. It does not block the gesture itself — the skip, the restore and
-the guard all work — but decision 8 asked for the tick.
+**The diagnosis, 2026-09-20.** `dumpsys vibrator_manager` keeps a vibration
+history, and it settles the question: a rock injected with `adb shell input
+keyevent KEYCODE_VOLUME_UP KEYCODE_VOLUME_DOWN` at 14:42:44.678 produced
+
+```
+09-20 14:42:44.903 | effect | finished | duration: 57ms | start: 14:42:44.906
+  | end: 14:42:44.960 | scale: NONE (1.00) | usage: TOUCH
+  | io.github.marvinbaudach.reprise (uid=10285)
+```
+
+So the vibration **was** requested, accepted and played — at full scale, not
+suppressed for a background uid. `EFFECT_TICK` at 57 ms is simply below the
+threshold of perception on this device. Neither of the other two candidates
+(background suppression, a swallowed exception) survives that record.
+
+**The choice.** The four predefined effects were fired from the shell
+(`cmd vibrator_manager synced prebaked -b <id>`: TICK 2, CLICK 0,
+HEAVY_CLICK 5, DOUBLE_CLICK 1) with the phone in the owner's hand, and the
+owner picked **`EFFECT_DOUBLE_CLICK`** as the one that reads as "the track
+changed". Recorded in `ReprisePlaybackService.hapticTick()` with the reasoning
+and the measurement; the pre-Q fallback mirrors the two-pulse shape
+(`createWaveform(longArrayOf(0, 20, 60, 20), -1)`) instead of a single 20 ms
+buzz. No test asserted the concrete effect (`CoreControlledPlayerTest`'s fake
+only records *that* a tick happened), so nothing else changed.
+
+**The re-measurement, same device, same build path.** Three rocks injected
+4 s apart at 15:03:30 / 15:03:35 / 15:03:39, each decided as
+`Skip(direction=UP, restoreVolume=5)`; the vibration history shows three
+`finished` entries of **184, 178 and 182 ms** (`usage: TOUCH`, uid 10285)
+against the 57 ms before, and the owner confirmed feeling all three. Decision
+8 is met.
 
 ## Logcat excerpts
 
