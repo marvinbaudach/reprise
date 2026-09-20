@@ -112,8 +112,10 @@ impl AnalysisPcmSink {
             return false;
         }
         let samples: Vec<i16> = bytes
-            .chunks_exact(2)
-            .map(|pair| i16::from_le_bytes([pair[0], pair[1]]))
+            .as_chunks::<2>()
+            .0
+            .iter()
+            .map(|pair| i16::from_le_bytes(*pair))
             .collect();
         let mut guard = self.session.lock().unwrap_or_else(PoisonError::into_inner);
         let Some(session) = guard.as_mut() else {
