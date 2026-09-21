@@ -4,7 +4,7 @@ import com.android.build.api.dsl.LibraryExtension
 plugins {
     // AGP 9 ships Kotlin support built in; applying
     // `org.jetbrains.kotlin.android` alongside it is a hard error.
-    id("com.android.application") version "9.4.0" apply false
+    id("com.android.application") version "9.4.1" apply false
     id("com.android.library") version "9.4.1" apply false
     id("org.jetbrains.kotlin.plugin.compose") version "2.4.20" apply false
 }
