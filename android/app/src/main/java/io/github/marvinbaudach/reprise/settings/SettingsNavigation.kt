@@ -41,6 +41,7 @@ internal fun SettingsNavigation(
     artistCount: Long,
     folderName: String?,
     themeSelection: MobileThemeSelection,
+    active: Boolean = true,
     artistPhotoProgress: ArtistPhotoProgress? = null,
     dismissArtistPhotoProgress: () -> Unit = {},
     close: () -> Unit,
@@ -55,7 +56,7 @@ internal fun SettingsNavigation(
     val entry by navController.currentBackStackEntryAsState()
     val route = entry?.destination?.route
 
-    BackHandler(enabled = route == null || route == SettingsRoute.OVERVIEW.route) {
+    BackHandler(enabled = active && (route == null || route == SettingsRoute.OVERVIEW.route)) {
         close()
     }
 

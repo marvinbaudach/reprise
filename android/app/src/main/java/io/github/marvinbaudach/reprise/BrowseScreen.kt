@@ -1052,7 +1052,9 @@ internal fun BrowseScreen(
             // the settings were being read again.
             when (val current = settingsState) {
                 null -> {
-                    BackHandler { surfaceState.showSettings(false) }
+                    BackHandler(enabled = settingsVisible) {
+                        surfaceState.showSettings(false)
+                    }
                     PlaybackSettingsLoading(close = { surfaceState.showSettings(false) })
                 }
                 else -> SettingsNavigation(
@@ -1062,6 +1064,7 @@ internal fun BrowseScreen(
                     artistCount = state.artists.total,
                     folderName = folderLabel(state.folderUri),
                     themeSelection = themeSelection,
+                    active = settingsVisible,
                     artistPhotoProgress = surfaceState.visibleArtistPhotoProgress,
                     dismissArtistPhotoProgress = surfaceState::dismissArtistPhotoProgress,
                     close = { surfaceState.showSettings(false) },

@@ -2,6 +2,7 @@ package io.github.marvinbaudach.reprise
 
 import android.app.Application
 import android.os.Looper
+import androidx.activity.OnBackPressedCallback
 import androidx.compose.ui.test.assertCountEquals
 import androidx.compose.ui.test.assertHeightIsEqualTo
 import androidx.compose.ui.test.assertIsDisplayed
@@ -14,6 +15,7 @@ import androidx.compose.ui.test.performClick
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.ViewModelProvider
 import org.junit.After
+import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Rule
@@ -112,6 +114,33 @@ class MainActivitySettingsNavigationTest {
         assertFalse(surfaceState().settingsVisible)
         compose.onNodeWithContentDescription("Library actions").assertIsDisplayed()
         compose.onAllNodesWithTag("settings-overview-row").assertCountEquals(0)
+    }
+
+    @Test
+    fun aBackPressDuringTheClosingSlideReachesWhatIsUnderneath() {
+        var forwardedBackPresses = 0
+        compose.runOnUiThread {
+            compose.activity.onBackPressedDispatcher.addCallback(
+                object : OnBackPressedCallback(true) {
+                    override fun handleOnBackPressed() {
+                        forwardedBackPresses++
+                    }
+                },
+            )
+        }
+        openSettings()
+        compose.waitForIdle()
+
+        compose.mainClock.autoAdvance = false
+        compose.runOnUiThread { compose.activity.onBackPressedDispatcher.onBackPressed() }
+        compose.waitForIdle()
+        compose.mainClock.advanceTimeByFrame()
+        assertFalse(surfaceState().settingsVisible)
+        compose.onAllNodesWithTag("settings-overlay").assertCountEquals(1)
+
+        compose.runOnUiThread { compose.activity.onBackPressedDispatcher.onBackPressed() }
+
+        assertEquals(1, forwardedBackPresses)
     }
 
     @Test
