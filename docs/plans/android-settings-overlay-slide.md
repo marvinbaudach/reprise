@@ -2,7 +2,7 @@
 slug: android-settings-overlay-slide
 worktree: /home/marvin/Projects/reprise-android-settings-overlay-slide
 branch: feature/android-settings-overlay-slide
-phase: refactored
+phase: shipped
 codex_session:
 created: 2026-09-21
 ---
