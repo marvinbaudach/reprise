@@ -144,7 +144,7 @@ mod tests {
         assert_eq!(
             conn.query_row("PRAGMA user_version", [], |row| row.get::<_, i64>(0))
                 .unwrap(),
-            85
+            crate::db::SUPPORTED_SCHEMA_VERSION
         );
         assert_eq!(
             conn.query_row("SELECT kind FROM sync_events", [], |row| {
@@ -183,7 +183,7 @@ mod tests {
         assert_eq!(
             conn.query_row("PRAGMA user_version", [], |row| row.get::<_, i64>(0))
                 .unwrap(),
-            85
+            crate::db::SUPPORTED_SCHEMA_VERSION
         );
         assert!(conn
             .query_row(
