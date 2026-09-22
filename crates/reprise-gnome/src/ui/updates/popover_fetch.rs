@@ -69,7 +69,13 @@ impl NewReleasesPopover {
             self.show_content();
             return;
         }
-        self.show_loading();
+        // A popover that already holds cached rows — from either feed —
+        // keeps them on screen for the whole fetch; the footer's own
+        // progress carries the in-flight signal instead (FB-14). Only an
+        // empty popover has nothing better to show than the loading row.
+        if !self.has_cached_content() {
+            self.show_loading();
+        }
         self.fetching.set(true);
         self.run.replace(run);
         self.render(false, false);
