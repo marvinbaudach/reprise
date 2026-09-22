@@ -2,7 +2,7 @@
 slug: doctor-snapshot-freeze
 worktree: /home/marvin/Projects/reprise-doctor-snapshot-freeze
 branch: feature/doctor-snapshot-freeze
-phase: reviewed
+phase: shipped
 codex_session:
 created: 2026-09-22
 ---
