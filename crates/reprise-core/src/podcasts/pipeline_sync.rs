@@ -398,7 +398,8 @@ fn fill_missing_youtube_durations(
     if gaps == 0 {
         return Ok(());
     }
-    let feed = match youtube_fetcher.list_range(channel_url, DURATION_FILL_WINDOW) {
+    let listing_url = crate::podcasts::youtube::videos_tab_url(channel_url);
+    let feed = match youtube_fetcher.list_range(&listing_url, DURATION_FILL_WINDOW) {
         Ok(feed) => feed,
         Err(error) => {
             tracing::warn!(

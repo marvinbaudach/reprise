@@ -76,7 +76,7 @@ fn handle_subscription_resolves_channel_identity_before_refresh() {
     assert_eq!(youtube.resolve_calls.get(), 1);
     assert_eq!(
         youtube.duration_urls.into_inner(),
-        ["https://www.youtube.com/channel/UCresolved"]
+        ["https://www.youtube.com/channel/UCresolved/videos"]
     );
     assert_eq!(
         feed.requested_urls.into_inner(),
