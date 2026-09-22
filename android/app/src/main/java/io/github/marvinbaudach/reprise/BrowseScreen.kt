@@ -42,6 +42,7 @@ import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.viewmodel.compose.viewModel
 import io.github.marvinbaudach.reprise.settings.SettingsNavigation
+import io.github.marvinbaudach.reprise.settings.SettingsOverlay
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Job
@@ -1045,43 +1046,41 @@ internal fun BrowseScreen(
                 Text("Dock mode")
             }
         }
-        if (settingsVisible) {
-            Surface(
-                modifier = Modifier.fillMaxSize(),
-                color = MaterialTheme.colorScheme.background,
-            ) {
-                // Never an empty branch: a full-screen surface with no header
-                // and no way back is what a rotation used to leave behind while
-                // the settings were being read again.
-                when (val current = settingsState) {
-                    null -> {
-                        BackHandler { surfaceState.showSettings(false) }
-                        PlaybackSettingsLoading(close = { surfaceState.showSettings(false) })
+        SettingsOverlay(visible = settingsVisible) {
+            // Never an empty branch: a full-screen surface with no header
+            // and no way back is what a rotation used to leave behind while
+            // the settings were being read again.
+            when (val current = settingsState) {
+                null -> {
+                    BackHandler(enabled = settingsVisible) {
+                        surfaceState.showSettings(false)
                     }
-                    else -> SettingsNavigation(
-                        state = current,
-                        titleCount = state.titles.total,
-                        albumCount = state.albumCount,
-                        artistCount = state.artists.total,
-                        folderName = folderLabel(state.folderUri),
-                        themeSelection = themeSelection,
-                        artistPhotoProgress = surfaceState.visibleArtistPhotoProgress,
-                        dismissArtistPhotoProgress = surfaceState::dismissArtistPhotoProgress,
-                        close = { surfaceState.showSettings(false) },
-                        chooseFolder = chooseFolder,
-                        rescan = rescan,
-                        setEqualizerEnabled = { enabled ->
-                            updateSettings { setEqualizerEnabled(enabled) }
-                        },
-                        replaceEqualizerCurve = { points ->
-                            updateSettings { replaceEqualizerCurve(points) }
-                        },
-                        setGaplessEnabled = { enabled ->
-                            updateSettings { setGaplessEnabled(enabled) }
-                        },
-                        selectTheme = selectTheme,
-                    )
+                    PlaybackSettingsLoading(close = { surfaceState.showSettings(false) })
                 }
+                else -> SettingsNavigation(
+                    state = current,
+                    titleCount = state.titles.total,
+                    albumCount = state.albumCount,
+                    artistCount = state.artists.total,
+                    folderName = folderLabel(state.folderUri),
+                    themeSelection = themeSelection,
+                    active = settingsVisible,
+                    artistPhotoProgress = surfaceState.visibleArtistPhotoProgress,
+                    dismissArtistPhotoProgress = surfaceState::dismissArtistPhotoProgress,
+                    close = { surfaceState.showSettings(false) },
+                    chooseFolder = chooseFolder,
+                    rescan = rescan,
+                    setEqualizerEnabled = { enabled ->
+                        updateSettings { setEqualizerEnabled(enabled) }
+                    },
+                    replaceEqualizerCurve = { points ->
+                        updateSettings { replaceEqualizerCurve(points) }
+                    },
+                    setGaplessEnabled = { enabled ->
+                        updateSettings { setGaplessEnabled(enabled) }
+                    },
+                    selectTheme = selectTheme,
+                )
             }
         }
     }
