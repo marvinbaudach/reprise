@@ -4703,6 +4703,17 @@ means deterministic and high-confidence, never „without review".
   grouping key and from the search, so the set is looked up once and compared
   whole. The marker is dropped only at the end of the title, only with a
   number, and never down to an empty title.*
+  *DOC-1h is the exception to "skips unchanged files": a file the Doctor has
+  written must first refresh the stored reading that a later scan can reuse.*
+
+- **DOC-1h** [active] [core] — **A file the Doctor itself has written is not
+  an unchanged file.** After a successful `doctor_apply` the stored reading of
+  that track is brought up to date with the write, so a later scan that reuses
+  it never works from a pre-write value — including a spelling split the
+  Doctor's own partial apply created. *Tests:*
+  `doc_1h_a_written_field_is_remembered_as_the_file_now_reads_it`,
+  `doc_1h_an_untitled_file_keeps_an_empty_title_in_the_snapshot`,
+  `doc_1h_a_split_the_doctor_created_is_found_by_the_next_scan`.
 
 - **DOC-2a** [active] [core] — **Scope and scan result are snapshots.**
   Whole Library contains only locally present tracks currently `PRESENT`;
