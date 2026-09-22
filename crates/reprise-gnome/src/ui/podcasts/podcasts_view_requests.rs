@@ -201,6 +201,14 @@ impl PodcastsView {
         if !queued {
             return false;
         }
+        // Total round trip from this request entering the worker's channel to
+        // its terminal response reaching this view on the GTK main thread —
+        // covers both a slow pipeline (`podcasts::pipeline::refresh`'s own
+        // per-subscription log names that) and a main loop too busy to
+        // deliver an already-finished response promptly. A refresh that
+        // shows a spinner for minutes with nothing else logged is otherwise
+        // unreconstructable after the fact.
+        let requested_at = std::time::Instant::now();
         // A view without rows has nothing better to show than the loading
         // row. One that already holds a model keeps it on screen for the whole
         // fetch — the tab-open refresh follows `refresh()` immediately, and a
@@ -239,6 +247,10 @@ impl PodcastsView {
                         view.set_download_state(episode_id, &state);
                     }
                     Ok(PodcastsWorkerResult::Refreshed(summary)) => {
+                        tracing::info!(
+                            elapsed_ms = requested_at.elapsed().as_millis() as u64,
+                            "podcast refresh delivered to the view"
+                        );
                         view.footer_spinner.stop();
                         let still_failing: Vec<i64> = summary
                             .failures
@@ -274,7 +286,11 @@ impl PodcastsView {
                     Err(error) => {
                         view.footer_spinner.stop();
                         view.refresh();
-                        tracing::warn!(%error, "podcast refresh failed");
+                        tracing::warn!(
+                            %error,
+                            elapsed_ms = requested_at.elapsed().as_millis() as u64,
+                            "podcast refresh failed"
+                        );
                         view.show_unclassified_refresh_failure(error);
                         break;
                     }

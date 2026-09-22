@@ -3,6 +3,7 @@
 use std::cell::{Cell, RefCell};
 use std::path::PathBuf;
 use std::rc::Rc;
+use std::time::Instant;
 
 use reprise_core::db::Db;
 use reprise_core::podcasts;
@@ -49,6 +50,15 @@ pub(in crate::ui) struct PodcastsRequest {
     pub generation: u64,
     pub operation: PodcastsOperation,
     pub response: PodcastsResponseChannel,
+}
+
+/// A request together with the instant it entered the worker's channel.
+/// Logged at dequeue time (`process_request`) so a slow refresh can be told
+/// apart from a refresh that queued behind other work on this single-threaded
+/// worker.
+struct QueuedRequest {
+    request: PodcastsRequest,
+    queued_at: Instant,
 }
 
 #[derive(Debug)]
@@ -138,7 +148,7 @@ impl FillRequestState {
 /// `podcasts::pipeline`, which is the one authority for that gate.
 pub(in crate::ui) struct PodcastsRuntime {
     pub enabled: Rc<Cell<bool>>,
-    worker: async_channel::Sender<PodcastsRequest>,
+    worker: async_channel::Sender<QueuedRequest>,
     subscribers: RefCell<Vec<OnEnabled>>,
     fill_request: Cell<FillRequestState>,
 }
@@ -217,7 +227,11 @@ impl PodcastsRuntime {
         if !self.enabled.get() {
             return false;
         }
-        match self.worker.try_send(request) {
+        let queued = QueuedRequest {
+            request,
+            queued_at: Instant::now(),
+        };
+        match self.worker.try_send(queued) {
             Ok(()) => true,
             Err(error) => {
                 tracing::warn!(%error, "could not queue podcast work");
@@ -265,16 +279,16 @@ pub(in crate::ui) fn automatic_refresh_allowed(
     enabled && subscription_count > 0 && !metered && due
 }
 
-fn spawn(database_path: Option<PathBuf>) -> async_channel::Sender<PodcastsRequest> {
-    let (sender, receiver) = async_channel::unbounded::<PodcastsRequest>();
+fn spawn(database_path: Option<PathBuf>) -> async_channel::Sender<QueuedRequest> {
+    let (sender, receiver) = async_channel::unbounded::<QueuedRequest>();
     let result = std::thread::Builder::new()
         .name("reprise-podcasts".into())
         .spawn(move || {
             let connection = database_path
                 .as_deref()
                 .map(|path| reprise_core::db::Db::open_migrated(Some(path)));
-            while let Ok(request) = receiver.recv_blocking() {
-                process_request(connection.as_ref(), &request);
+            while let Ok(queued) = receiver.recv_blocking() {
+                process_request(connection.as_ref(), &queued);
             }
         });
     if let Err(error) = result {
@@ -285,8 +299,19 @@ fn spawn(database_path: Option<PathBuf>) -> async_channel::Sender<PodcastsReques
 
 fn process_request(
     connection: Option<&Result<Db, reprise_core::db::DbError>>,
-    request: &PodcastsRequest,
+    queued: &QueuedRequest,
 ) {
+    let request = &queued.request;
+    // How long this request waited behind other queued work before the
+    // single-threaded worker even started it. Logged unconditionally (not
+    // just when it is large) so a slow refresh's own log line names its
+    // cause instead of leaving it to be reconstructed after the fact.
+    tracing::info!(
+        generation = request.generation,
+        operation = ?request.operation,
+        queued_ms = queued.queued_at.elapsed().as_millis() as u64,
+        "podcast worker dequeued request"
+    );
     let Some(Ok(conn)) = connection else {
         let error = connection
             .and_then(|result| result.as_ref().err())
