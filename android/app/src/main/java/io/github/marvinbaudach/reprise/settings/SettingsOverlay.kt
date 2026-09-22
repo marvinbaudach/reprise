@@ -9,6 +9,8 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.input.pointer.PointerEventPass
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.testTag
 
 /**
@@ -32,7 +34,20 @@ internal fun SettingsOverlay(
         exit = slideOutHorizontally(tween(SETTINGS_PAGE_SLIDE_MS)) { width -> width },
     ) {
         Surface(
-            modifier = Modifier.fillMaxSize().testTag("settings-overlay"),
+            modifier = Modifier
+                .fillMaxSize()
+                .testTag("settings-overlay")
+                .pointerInput(visible) {
+                    if (!visible) {
+                        awaitPointerEventScope {
+                            while (true) {
+                                awaitPointerEvent(PointerEventPass.Initial).changes.forEach {
+                                    it.consume()
+                                }
+                            }
+                        }
+                    }
+                },
             color = MaterialTheme.colorScheme.background,
             content = content,
         )
