@@ -201,7 +201,15 @@ impl PodcastsView {
         if !queued {
             return false;
         }
-        self.begin_model_wait();
+        // A view without rows has nothing better to show than the loading
+        // row. One that already holds a model keeps it on screen for the whole
+        // fetch — the tab-open refresh follows `refresh()` immediately, and a
+        // YouTube round trip runs yt-dlp per channel, which takes minutes. The
+        // footer and the Refresh button carry the in-flight signal instead.
+        let has_rows = !self.rows.borrow().is_empty();
+        if !has_rows {
+            self.begin_model_wait();
+        }
         self.begin_refresh_feedback();
         self.footer_spinner.start();
         self.footer_status
