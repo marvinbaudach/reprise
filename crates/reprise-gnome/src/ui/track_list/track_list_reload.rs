@@ -59,6 +59,10 @@ use reprise_core::view_source::ViewSource;
 mod geometry;
 use geometry::capture_row_height;
 
+#[path = "track_list_reload_top_restore.rs"]
+mod top_restore;
+use top_restore::{schedule_top_scroll_restore, TOP_RESTORE_MAX_ATTEMPTS};
+
 fn observed_row_height(shared: &Shared, n_rows: u32) -> Option<f64> {
     let n_sections = shared.queue_sections.borrow().len();
     ListGeometry::for_view(&shared.column_view)
@@ -71,13 +75,6 @@ fn observed_row_height(shared: &Shared, n_rows: u32) -> Option<f64> {
         .map(crate::ui::list_geometry::RowHeight::pixels)
 }
 
-/// SEARCH-9: how many idle rounds `schedule_top_scroll_restore` re-applies its
-/// zero. It only has to outlast the one allocation that GTK's own scroll
-/// restore rides in on, and every extra round is a round in which the loop
-/// cannot tell a re-clamp from the user grabbing the scrollbar — and would
-/// snap a deliberate scroll back to the top. Two rounds cover the allocation
-/// with one to spare.
-const TOP_RESTORE_MAX_ATTEMPTS: u8 = 2;
 const SCROLL_ADJUSTMENT_HOLD: std::time::Duration = std::time::Duration::from_millis(250);
 
 pub(in crate::ui) use super::reload_anchor_scroll::{viewport_after_clearing, ReloadViewport};
@@ -221,7 +218,11 @@ fn restore_reload_anchor(
     // no id list at all, so the sorted full-table query disappears whenever
     // nothing is selected.
     if matches!(viewport, ReloadViewport::Top) {
-        schedule_top_scroll_restore(shared.column_view.clone(), TOP_RESTORE_MAX_ATTEMPTS);
+        schedule_top_scroll_restore(
+            Rc::clone(shared),
+            shared.model.generation(),
+            TOP_RESTORE_MAX_ATTEMPTS,
+        );
     }
     // Resolving positions costs a sorted full-table id query; skip it when
     // the capture side already established there is nothing to put back and
@@ -319,35 +320,6 @@ fn restore_reload_anchor(
         &current_ids,
         hold,
     );
-}
-
-/// SEARCH-9: puts the viewport at the top of a freshly filtered list, and keeps
-/// it there.
-///
-/// A single write does not survive. `restore_reload_anchor` runs right after
-/// the model swap, while the rebuilt `ColumnView` still carries the *old*
-/// allocation; the allocation pass that follows restores GTK's own scroll
-/// position — the pre-filter value, clamped to the new and usually much
-/// shorter list. A display test caught exactly that: 486 instead of 0, 486
-/// being the clamped remains of where the list stood before the query.
-///
-/// So the zero is re-applied across idle rounds, like the anchor restore next
-/// door. This legacy SEARCH-9 path needs to outlast one allocation, not track a
-/// moving target. It stops as soon as a round finds the value still at zero —
-/// at that point nothing is writing against us any more.
-fn schedule_top_scroll_restore(column_view: gtk4::ColumnView, attempts: u8) {
-    let Some(adjustment) = gtk4::prelude::ScrollableExt::vadjustment(&column_view) else {
-        return;
-    };
-    let already_settled = adjustment.value() == 0.0;
-    crate::ui::scroll_probe::probe("top_restore", &adjustment, 0.0);
-    adjustment.set_value(0.0);
-    if already_settled || attempts == 0 {
-        return;
-    }
-    gtk4::glib::idle_add_local_once(move || {
-        schedule_top_scroll_restore(column_view, attempts - 1);
-    });
 }
 
 /// Puts the captured selection back on the rebuilt model. Rows the swap
