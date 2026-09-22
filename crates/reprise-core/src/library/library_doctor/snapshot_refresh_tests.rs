@@ -39,6 +39,21 @@ fn untitled_fixture(dir: &Path) -> PathBuf {
     path
 }
 
+fn whitespace_title_fixture(dir: &Path) -> PathBuf {
+    let path = fixture(dir);
+    let mut tagged = lofty::read_from_path(&path).unwrap();
+    tagged
+        .primary_tag_mut()
+        .unwrap()
+        .set_title("   ".to_owned());
+    tagged
+        .primary_tag()
+        .unwrap()
+        .save_to_path(&path, lofty::config::WriteOptions::default())
+        .unwrap();
+    path
+}
+
 fn scan_track(db: &crate::db::Db, path: &Path) -> DoctorScan {
     crate::library::scanner::scan_folder(db, path).unwrap();
     let track_id = db
@@ -98,7 +113,42 @@ fn doc_1h_a_written_field_is_remembered_as_the_file_now_reads_it() {
 }
 
 #[test]
+fn doc_1h_an_empty_title_write_is_remembered_as_empty() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = whitespace_title_fixture(dir.path());
+    let db = crate::db::Db::open_in_memory().unwrap();
+    let scan = scan_track(&db, &path);
+    let mut review = DoctorReviewSession::from_scan(scan.clone(), DoctorReviewFilter::AutoApply);
+    let choices = review
+        .rows()
+        .iter()
+        .map(|row| (row.id, row.field == DoctorField::Title))
+        .collect::<Vec<_>>();
+    for (row_id, selected) in choices {
+        review.set_selected(row_id, selected).unwrap();
+    }
+
+    LibraryDoctor::new(&db)
+        .apply_review_plan(&review.freeze_plan(), |_| DoctorWriteControl::Continue)
+        .unwrap();
+
+    let snapshot_title = db
+        .conn()
+        .query_row(
+            "SELECT title FROM library_doctor_scan_tracks
+             WHERE scan_id=?1 AND track_id=?2",
+            rusqlite::params![scan.id, scan.track_ids[0]],
+            |row| row.get::<_, String>(0),
+        )
+        .unwrap();
+    let file_title = read_editable_tags(&path).unwrap().title;
+    assert_eq!(file_title, "");
+    assert_eq!(snapshot_title, file_title);
+}
+
+#[test]
 fn doc_1h_an_untitled_file_keeps_an_empty_title_in_the_snapshot() {
+    // This guards the rejected wide-copy design; it was expected to pass before the fix.
     let dir = tempfile::tempdir().unwrap();
     let path = untitled_fixture(dir.path());
     let db = crate::db::Db::open_in_memory().unwrap();

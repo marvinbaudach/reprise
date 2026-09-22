@@ -268,14 +268,18 @@ pub(super) fn last_complete_scan(conn: &Connection) -> Result<Option<DoctorScan>
     }))
 }
 
-/// Keep a scan's file identity and written tag fields aligned with the exact
-/// reconciliation produced by its own successful Apply file.
+/// Keep a scan's file identity and this Apply file's written tag fields aligned
+/// with the post-write file state produced by its own successful write.
 ///
 /// The write path calls this only after Lofty saved the file and the scanner
 /// reconciled `tracks` from the file it just read. The exact current job, file,
 /// and track must still be running and must belong to `doctor_apply`; a crashed
 /// job therefore cannot authorize a later watcher or Tag Editor write. Failed
-/// writes and failed reconciliations never reach this function.
+/// writes and failed reconciliations never reach this function. The identity is
+/// always refreshed, but fields last written by another actor, including the
+/// Tag Editor, are deliberately left as this scan originally read them. An
+/// applied empty title comes from the journal because the scanner's reconciled
+/// `tracks.title` contains the display-name fallback rather than that empty tag.
 pub(super) fn refresh_snapshot_after_successful_doctor_write(
     conn: &Connection,
     job_id: i64,
@@ -304,6 +308,10 @@ pub(super) fn refresh_snapshot_after_successful_doctor_write(
                   title, artist, album, album_artist, year, track_no, genre) = (
                SELECT t.path, t.file_mtime, t.file_size, t.device, t.inode,
                       CASE WHEN EXISTS (
+                        SELECT 1 FROM tag_write_journal v
+                        WHERE v.file_id=?3 AND v.field='title' AND v.outcome='applied'
+                          AND v.after_value=''
+                      ) THEN '' WHEN EXISTS (
                         SELECT 1 FROM tag_write_journal v
                         WHERE v.file_id=?3 AND v.field='title' AND v.outcome='applied'
                       ) THEN t.title ELSE library_doctor_scan_tracks.title END,
