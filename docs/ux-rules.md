@@ -4703,6 +4703,34 @@ means deterministic and high-confidence, never „without review".
   grouping key and from the search, so the set is looked up once and compared
   whole. The marker is dropped only at the end of the title, only with a
   number, and never down to an empty title.*
+  *DOC-1h qualifies "skips unchanged files": the file is still skipped, but
+  each field the Doctor wrote is refreshed before a later scan reuses the
+  stored reading.*
+
+- **DOC-1h** [active] [core] — **A field the Doctor has written is reused as
+  written.** After a successful `doctor_apply`, each field that write applied
+  is refreshed in the stored reading from the file's reconciled read-back,
+  with an applied empty title preserved from the write journal instead of the
+  scanner's filename fallback, together with the file's identity. A later scan
+  that reuses the reading therefore never works from that field's pre-write
+  value, including a spelling split the Doctor's own partial apply created. A
+  field last changed on disk by something other than a Doctor write is not
+  refreshed by it — see DOC-1i. *Tests:*
+  `doc_1h_a_written_field_is_remembered_as_the_file_now_reads_it`,
+  `doc_1h_an_empty_title_write_is_remembered_as_empty`,
+  `doc_1h_an_untitled_file_keeps_an_empty_title_in_the_snapshot`,
+  `doc_1h_a_split_the_doctor_created_is_found_by_the_next_scan`.
+
+<!-- REVIEW: rule proposal -->
+- **DOC-1i** [planned] [core] — **A field written by another actor must not
+  remain frozen when a later Doctor write refreshes the file identity.** The
+  open case is a Tag Editor write followed by a `doctor_apply` to another
+  field: the Doctor refreshes the identity and only its own applied fields, so
+  a later scan can skip the file and reuse the Tag Editor field's pre-write
+  snapshot value. On the measured library this affects five `year` values —
+  tracks 288, 289, 291, 292, and 293 have snapshot `year` NULL, `tracks.year`
+  2008, and journal evidence for `tag_editor:year:applied` followed by
+  `doctor_apply:artist:applied`.
 
 - **DOC-2a** [active] [core] — **Scope and scan result are snapshots.**
   Whole Library contains only locally present tracks currently `PRESENT`;

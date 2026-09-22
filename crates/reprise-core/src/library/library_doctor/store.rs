@@ -268,14 +268,18 @@ pub(super) fn last_complete_scan(conn: &Connection) -> Result<Option<DoctorScan>
     }))
 }
 
-/// Keep a scan's file identity aligned with the exact reconciliation produced
-/// by its own successful Apply file.
+/// Keep a scan's file identity and this Apply file's written tag fields aligned
+/// with the post-write file state produced by its own successful write.
 ///
 /// The write path calls this only after Lofty saved the file and the scanner
 /// reconciled `tracks` from the file it just read. The exact current job, file,
 /// and track must still be running and must belong to `doctor_apply`; a crashed
 /// job therefore cannot authorize a later watcher or Tag Editor write. Failed
-/// writes and failed reconciliations never reach this function.
+/// writes and failed reconciliations never reach this function. The identity is
+/// always refreshed, but fields last written by another actor, including the
+/// Tag Editor, are deliberately left as this scan originally read them. An
+/// applied empty title comes from the journal because the scanner's reconciled
+/// `tracks.title` contains the display-name fallback rather than that empty tag.
 pub(super) fn refresh_snapshot_after_successful_doctor_write(
     conn: &Connection,
     job_id: i64,
@@ -300,14 +304,47 @@ pub(super) fn refresh_snapshot_after_successful_doctor_write(
     conn.execute(
         &format!(
             "UPDATE library_doctor_scan_tracks
-             SET (path, file_mtime, file_size, device, inode) = (
-               SELECT path, file_mtime, file_size, device, inode
-               FROM tracks WHERE id=?1 AND {}
+             SET (path, file_mtime, file_size, device, inode,
+                  title, artist, album, album_artist, year, track_no, genre) = (
+               SELECT t.path, t.file_mtime, t.file_size, t.device, t.inode,
+                      CASE WHEN EXISTS (
+                        SELECT 1 FROM tag_write_journal v
+                        WHERE v.file_id=?3 AND v.field='title' AND v.outcome='applied'
+                          AND v.after_value=''
+                      ) THEN '' WHEN EXISTS (
+                        SELECT 1 FROM tag_write_journal v
+                        WHERE v.file_id=?3 AND v.field='title' AND v.outcome='applied'
+                      ) THEN t.title ELSE library_doctor_scan_tracks.title END,
+                      CASE WHEN EXISTS (
+                        SELECT 1 FROM tag_write_journal v
+                        WHERE v.file_id=?3 AND v.field='artist' AND v.outcome='applied'
+                      ) THEN t.artist ELSE library_doctor_scan_tracks.artist END,
+                      CASE WHEN EXISTS (
+                        SELECT 1 FROM tag_write_journal v
+                        WHERE v.file_id=?3 AND v.field='album' AND v.outcome='applied'
+                      ) THEN t.album ELSE library_doctor_scan_tracks.album END,
+                      CASE WHEN EXISTS (
+                        SELECT 1 FROM tag_write_journal v
+                        WHERE v.file_id=?3 AND v.field='album_artist' AND v.outcome='applied'
+                      ) THEN t.album_artist ELSE library_doctor_scan_tracks.album_artist END,
+                      CASE WHEN EXISTS (
+                        SELECT 1 FROM tag_write_journal v
+                        WHERE v.file_id=?3 AND v.field='year' AND v.outcome='applied'
+                      ) THEN t.year ELSE library_doctor_scan_tracks.year END,
+                      CASE WHEN EXISTS (
+                        SELECT 1 FROM tag_write_journal v
+                        WHERE v.file_id=?3 AND v.field='track_no' AND v.outcome='applied'
+                      ) THEN t.track_no ELSE library_doctor_scan_tracks.track_no END,
+                      CASE WHEN EXISTS (
+                        SELECT 1 FROM tag_write_journal v
+                        WHERE v.file_id=?3 AND v.field='genre' AND v.outcome='applied'
+                      ) THEN t.genre ELSE library_doctor_scan_tracks.genre END
+               FROM tracks t WHERE t.id=?1 AND {}
              )
              WHERE scan_id=?2 AND track_id=?1",
             crate::queries::PRESENT
         ),
-        params![track_id, scan_id],
+        params![track_id, scan_id, file_id],
     )?;
     Ok(())
 }

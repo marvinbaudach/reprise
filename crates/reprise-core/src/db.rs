@@ -1,5 +1,7 @@
 use {crate::db_grandfather::grandfather_network_features, rusqlite::Connection, std::path::Path};
 
+#[path = "db_connection.rs"]
+mod connection;
 #[path = "db_handle.rs"]
 mod handle;
 pub use crate::db_spectrogram::{
@@ -7,6 +9,9 @@ pub use crate::db_spectrogram::{
     pending_render_data_tracks, set_track_render_data, set_track_spectrogram, set_waveform_peaks,
     track_source_fingerprint, PendingRenderDataTrack, SpectrogramStoreOutcome,
 };
+#[cfg(test)]
+pub(crate) use connection::open_with_options;
+pub(crate) use connection::{main_path_connection, open};
 pub use handle::Db;
 
 #[derive(Debug, thiserror::Error)]
@@ -21,7 +26,7 @@ pub enum DbError {
     SchemaNotReady { found: i64, supported: i64 },
 }
 
-pub const SUPPORTED_SCHEMA_VERSION: i64 = 85;
+pub const SUPPORTED_SCHEMA_VERSION: i64 = 86;
 
 /// Default SQLite `busy_timeout` (milliseconds) for every connection opened
 /// through [`Db`]: wait up to this long for a write lock instead of failing
@@ -31,35 +36,6 @@ pub const SUPPORTED_SCHEMA_VERSION: i64 = 85;
 /// the timeout (the change-log prune's non-blocking probe during
 /// [`Db::open_migrated`]) can restore exactly this value afterwards.
 pub const DEFAULT_BUSY_TIMEOUT_MS: i64 = 5000;
-
-pub(crate) fn open(path: Option<&Path>) -> Result<Connection, DbError> {
-    open_with_options(path, DEFAULT_BUSY_TIMEOUT_MS)
-}
-
-/// Opens a connection like [`open`] but with an explicit `busy_timeout` in
-/// milliseconds. [`DEFAULT_BUSY_TIMEOUT_MS`] is the value every existing call
-/// site keeps (that is exactly what [`open`] passes); a value of `0` makes lock
-/// contention fail immediately with `SQLITE_BUSY` rather than block — the
-/// non-blocking posture [`open_migrated`]'s prune uses so a fresh open never
-/// stalls behind a long foreign write transaction.
-pub(crate) fn open_with_options(
-    path: Option<&Path>,
-    busy_timeout_ms: i64,
-) -> Result<Connection, DbError> {
-    let conn = match path {
-        Some(p) => {
-            if let Some(dir) = p.parent() {
-                std::fs::create_dir_all(dir)?;
-            }
-            Connection::open(p)?
-        }
-        None => Connection::open_in_memory()?,
-    };
-    conn.pragma_update(None, "journal_mode", "WAL")?;
-    conn.pragma_update(None, "foreign_keys", "ON")?;
-    conn.pragma_update(None, "busy_timeout", busy_timeout_ms)?;
-    Ok(conn)
-}
 
 /// Opens Core's internal connection and applies every pending schema migration.
 ///
@@ -87,26 +63,6 @@ pub fn default_path() -> std::path::PathBuf {
     dirs::data_dir()
         .unwrap_or_else(|| std::path::PathBuf::from("."))
         .join("reprise/reprise.db")
-}
-
-/// The file this connection is attached to, if it has one.
-///
-/// Background work opens its own connection rather than sharing the
-/// frontend's, so it needs the path — and asking the connection is more
-/// honest than assuming [`default_path`], which is wrong under a test
-/// fixture or an explicitly chosen library. An in-memory database has no
-/// file and yields `None`.
-pub(crate) fn main_path_connection(conn: &Connection) -> Option<std::path::PathBuf> {
-    let mut statement = conn.prepare("PRAGMA database_list").ok()?;
-    let mut rows = statement.query([]).ok()?;
-    while let Some(row) = rows.next().ok()? {
-        let name = row.get::<_, String>(1).ok()?;
-        let path = row.get::<_, String>(2).ok()?;
-        if name == "main" && !path.is_empty() {
-            return Some(std::path::PathBuf::from(path));
-        }
-    }
-    None
 }
 
 const SCHEMA_V1: &str = r#"
@@ -763,6 +719,7 @@ VALUES ('Recently added', '[]', 'added_at', 'desc', 50);
     crate::db_cover_download::migrate_v83(conn)?;
     crate::db_cover_download::migrate_v84(conn)?;
     crate::db_smart_playlist_names::migrate_v85(conn)?;
+    crate::db_library_doctor::migrate_v86(conn)?;
     Ok(())
 }
 
