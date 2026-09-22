@@ -84,7 +84,7 @@ class SettingsPageTransitionTest {
         compose.mainClock.advanceTimeBy(SETTINGS_PAGE_SLIDE_MS / 2L)
 
         // Both pages are composed: the transition is in flight, not over.
-        compose.onAllNodesWithTag("settings-overview-row").assertCountEquals(5)
+        compose.onAllNodesWithTag("settings-overview-row").assertCountEquals(4)
         val page = compose.onNodeWithTag("settings-page-audio").getUnclippedBoundsInRoot()
         val shift = with(compose.density) { page.left.toPx() }.roundToInt()
         return captureHost() to shift

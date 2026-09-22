@@ -1065,8 +1065,6 @@ internal fun BrowseScreen(
                     folderName = folderLabel(state.folderUri),
                     themeSelection = themeSelection,
                     active = settingsVisible,
-                    artistPhotoProgress = surfaceState.visibleArtistPhotoProgress,
-                    dismissArtistPhotoProgress = surfaceState::dismissArtistPhotoProgress,
                     close = { surfaceState.showSettings(false) },
                     chooseFolder = chooseFolder,
                     rescan = rescan,

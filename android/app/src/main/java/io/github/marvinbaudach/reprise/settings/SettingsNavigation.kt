@@ -16,7 +16,6 @@ import androidx.navigation.compose.composable
 import androidx.navigation.compose.currentBackStackEntryAsState
 import androidx.navigation.compose.rememberNavController
 import io.github.marvinbaudach.reprise.BuildConfig
-import io.github.marvinbaudach.reprise.ArtistPhotoProgress
 import io.github.marvinbaudach.reprise.EqualizerCurvePoint
 import io.github.marvinbaudach.reprise.MobileTheme
 import io.github.marvinbaudach.reprise.MobileThemeSelection
@@ -42,8 +41,6 @@ internal fun SettingsNavigation(
     folderName: String?,
     themeSelection: MobileThemeSelection,
     active: Boolean = true,
-    artistPhotoProgress: ArtistPhotoProgress? = null,
-    dismissArtistPhotoProgress: () -> Unit = {},
     close: () -> Unit,
     chooseFolder: () -> Unit,
     rescan: () -> Unit,
@@ -137,13 +134,6 @@ internal fun SettingsNavigation(
             AppearanceSettingsPage(
                 themeSelection = themeSelection,
                 selectTheme = selectTheme,
-                back = { navController.navigateUp() },
-            )
-        }
-        page(SettingsRoute.ONLINE_SOURCES) {
-            OnlineSourcesSettingsPage(
-                progress = artistPhotoProgress,
-                dismissProgress = dismissArtistPhotoProgress,
                 back = { navController.navigateUp() },
             )
         }
