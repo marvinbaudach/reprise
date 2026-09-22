@@ -1,6 +1,6 @@
 //! YouTube refresh coverage for filling episode runtimes from bounded listings.
 
-use std::cell::Cell;
+use std::cell::{Cell, RefCell};
 use std::path::Path;
 
 use super::youtube_test_support::*;
@@ -47,6 +47,7 @@ enum ListingResult {
 
 struct CountingYoutube {
     calls: Cell<usize>,
+    last_url: RefCell<Option<String>>,
     guid: &'static str,
     result: ListingResult,
 }
@@ -55,6 +56,7 @@ impl CountingYoutube {
     fn duration(guid: &'static str, duration_secs: i64) -> Self {
         Self {
             calls: Cell::new(0),
+            last_url: RefCell::new(None),
             guid,
             result: ListingResult::Duration(duration_secs),
         }
@@ -63,6 +65,7 @@ impl CountingYoutube {
     fn failure(guid: &'static str) -> Self {
         Self {
             calls: Cell::new(0),
+            last_url: RefCell::new(None),
             guid,
             result: ListingResult::Failure,
         }
@@ -74,9 +77,10 @@ impl YoutubeFetcher for CountingYoutube {
         panic!("duration filling must use the bounded listing primitive")
     }
 
-    fn list_range(&self, _: &str, end: usize) -> Result<ParsedFeed, PodcastError> {
+    fn list_range(&self, url: &str, end: usize) -> Result<ParsedFeed, PodcastError> {
         assert_eq!(end, 200);
         self.calls.set(self.calls.get() + 1);
+        *self.last_url.borrow_mut() = Some(url.to_owned());
         match self.result {
             ListingResult::Duration(duration_secs) => Ok(ParsedFeed {
                 title: Some("Channel".to_owned()),
@@ -196,6 +200,32 @@ fn youtube_refresh_fills_a_missing_duration_from_a_bounded_listing() {
     assert_eq!(summary.refreshed, 1);
     assert_eq!(episode.duration_secs, Some(225));
     assert_eq!(youtube.calls.get(), 1);
+}
+
+#[test]
+fn youtube_duration_fill_lists_the_channels_videos_tab_not_its_bare_root() {
+    // A bare channel URL can resolve to more than one content tab (Videos,
+    // Shorts, Live). Measured 2026-09-22 against a real multi-tab channel:
+    // `--flat-playlist` on the bare URL returns the tabs themselves as
+    // `_type: "playlist"` entries and zero actual videos, so the listing
+    // this test's fake stands in for would come back with no episodes at
+    // all — silently closing no gap, forever, on every refresh. Requesting
+    // the `/videos` tab explicitly is what makes yt-dlp descend into the
+    // real per-video entries instead.
+    let db = conn();
+    let subscription_id = add_subscription(&db, PodcastKind::Youtube, CHANNEL_URL);
+    let youtube = CountingYoutube::duration(VIDEO_ID, 225);
+
+    refresh_with(&db, &youtube_feed(VIDEO_ID), &youtube).unwrap();
+
+    let episode = super::super::query::episodes_for_subscription(&db, subscription_id)
+        .unwrap()
+        .remove(0);
+    assert_eq!(episode.duration_secs, Some(225));
+    assert_eq!(
+        youtube.last_url.borrow().as_deref(),
+        Some(format!("{CHANNEL_URL}/videos").as_str())
+    );
 }
 
 #[test]

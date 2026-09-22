@@ -91,6 +91,56 @@ fn upload_date_timestamp(value: Option<&str>) -> Option<i64> {
         .map(|date| date.and_utc().timestamp())
 }
 
+/// The channel's videos tab, requested explicitly so `--flat-playlist`
+/// descends straight into per-video entries.
+///
+/// A bare channel root can have more than one content tab (Videos, Shorts,
+/// Live). Measured 2026-09-22 against a real multi-tab channel: `--flat-playlist`
+/// on the bare root returns the tabs themselves as `_type: "playlist"` entries
+/// and zero actual videos, so a listing built from that URL comes back with no
+/// episodes at all — the duration-fill call runs, costs its full yt-dlp
+/// invocation, and closes no gap, forever, on every refresh. Requesting
+/// `/videos` explicitly is what makes yt-dlp descend into the real entries
+/// instead of stopping at the tab index.
+///
+/// Only a bare channel root (`/channel/<id>` or `/@handle`, no further path
+/// segment, no query) is rewritten. A subscription's resolved URL can also be
+/// a playlist (`/playlist?list=…`) or a single video (`youtu.be/…`) when
+/// channel resolution could not canonicalize it; appending `/videos` to one of
+/// those would reshape it into a path yt-dlp cannot resolve at all, trading
+/// today's zero-episode listing for an outright failed one.
+#[must_use]
+pub fn videos_tab_url(channel_url: &str) -> String {
+    if is_channel_root(channel_url) {
+        format!("{}/videos", channel_url.trim_end_matches('/'))
+    } else {
+        channel_url.to_owned()
+    }
+}
+
+fn is_channel_root(url: &str) -> bool {
+    let Ok(parsed) = url::Url::parse(url) else {
+        return false;
+    };
+    let host = parsed
+        .host_str()
+        .unwrap_or_default()
+        .trim_start_matches("www.");
+    if !matches!(host, "youtube.com" | "m.youtube.com") || parsed.query().is_some() {
+        return false;
+    }
+    let mut segments = parsed
+        .path_segments()
+        .into_iter()
+        .flatten()
+        .filter(|segment| !segment.is_empty());
+    match (segments.next(), segments.next(), segments.next()) {
+        (Some(handle), None, None) => handle.starts_with('@'),
+        (Some("channel"), Some(_), None) => true,
+        _ => false,
+    }
+}
+
 #[must_use]
 pub fn long_form_feed_url(channel_url: &str) -> Option<String> {
     let url = url::Url::parse(channel_url).ok()?;
@@ -256,6 +306,57 @@ mod tests {
         assert_eq!(
             super::long_form_feed_url("https://www.youtube.com/@channel"),
             None
+        );
+    }
+
+    #[test]
+    fn videos_tab_url_appends_the_tab_to_a_bare_channel_url() {
+        assert_eq!(
+            super::videos_tab_url("https://www.youtube.com/channel/UCabc123"),
+            "https://www.youtube.com/channel/UCabc123/videos"
+        );
+    }
+
+    #[test]
+    fn videos_tab_url_does_not_double_a_trailing_slash() {
+        assert_eq!(
+            super::videos_tab_url("https://www.youtube.com/channel/UCabc123/"),
+            "https://www.youtube.com/channel/UCabc123/videos"
+        );
+    }
+
+    #[test]
+    fn videos_tab_url_appends_the_tab_to_a_bare_handle_root() {
+        assert_eq!(
+            super::videos_tab_url("https://www.youtube.com/@example"),
+            "https://www.youtube.com/@example/videos"
+        );
+    }
+
+    #[test]
+    fn videos_tab_url_leaves_a_playlist_url_untouched() {
+        // An unresolved subscription can still be a playlist or a single
+        // video URL; appending `/videos` to one of those would reshape a
+        // path yt-dlp can otherwise still list into one it cannot resolve.
+        assert_eq!(
+            super::videos_tab_url("https://www.youtube.com/playlist?list=PLexample"),
+            "https://www.youtube.com/playlist?list=PLexample"
+        );
+    }
+
+    #[test]
+    fn videos_tab_url_leaves_a_single_video_url_untouched() {
+        assert_eq!(
+            super::videos_tab_url("https://youtu.be/abcdefghijk"),
+            "https://youtu.be/abcdefghijk"
+        );
+    }
+
+    #[test]
+    fn videos_tab_url_leaves_an_already_tab_qualified_url_untouched() {
+        assert_eq!(
+            super::videos_tab_url("https://www.youtube.com/channel/UCabc123/videos"),
+            "https://www.youtube.com/channel/UCabc123/videos"
         );
     }
 }
