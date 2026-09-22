@@ -236,7 +236,15 @@ impl NewReleasesPopover {
         let weak = Rc::downgrade(self);
         self.popover.connect_show(move |_| {
             if let Some(state) = weak.upgrade() {
-                state.show_loading();
+                // A popover that already holds cached rows keeps them on
+                // screen while the open-triggered refresh runs; only a
+                // popover with nothing to show falls back to the loading
+                // row (FB-14).
+                if state.has_cached_content() {
+                    state.show_content();
+                } else {
+                    state.show_loading();
+                }
                 state.render(true, false);
                 state.maybe_background_refresh();
                 if !state.fetching.get() {
@@ -285,6 +293,31 @@ impl NewReleasesPopover {
             spinner.stop();
         }
         self.content_stack.set_visible_child_name("content");
+    }
+
+    /// Whether the DB already holds a snapshot worth keeping on screen —
+    /// the same delta batches `render` turns into rows, filtered through the
+    /// same dismissed-concert set so a fully dismissed batch still counts as
+    /// empty. Read directly from the DB rather than the widget tree, because
+    /// `render` also appends the "Checking…"/"No new releases" placeholder
+    /// into `list`, which would otherwise look like a row.
+    fn has_cached_content(&self) -> bool {
+        let news_enabled = reprise_core::modules::is_enabled(
+            &self.conn,
+            &reprise_core::modules::NEW_RELEASES_MODULE,
+        )
+        .unwrap_or(false);
+        let concerts_enabled =
+            reprise_core::modules::is_enabled(&self.conn, &reprise_core::modules::CONCERTS_MODULE)
+                .unwrap_or(false);
+        let today = chrono::Local::now().date_naive();
+        let releases = feed_snapshot::releases(&self.conn, news_enabled, today);
+        if !releases.delta.shown.is_empty() {
+            return true;
+        }
+        let concerts = feed_snapshot::concerts(&self.conn, concerts_enabled, today);
+        let dismissed = self.dismissed_concert_ids.borrow();
+        !visible_concert_rows(concerts.delta.shown, &dismissed).is_empty()
     }
 
     fn render(self: &Rc<Self>, mark_seen: bool, failed: bool) {
@@ -667,3 +700,7 @@ fn fetch_from_database(
 #[cfg(test)]
 #[path = "popover_tests.rs"]
 mod tests;
+
+#[cfg(test)]
+#[path = "popover_loading_tests.rs"]
+mod loading_tests;
