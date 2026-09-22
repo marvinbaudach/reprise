@@ -2,7 +2,7 @@
 slug: doctor-snapshot-freeze
 worktree: /home/marvin/Projects/reprise-doctor-snapshot-freeze
 branch: feature/doctor-snapshot-freeze
-phase: planned
+phase: reviewed
 codex_session:
 created: 2026-09-22
 ---
@@ -54,7 +54,8 @@ unable to see it ever since.
 
 ## Decisions (settled in the grill, 2026-09-22)
 
-**D1 — the refreshed value comes from the `tracks` row, all seven tag columns.**
+**D1 — the initial design took the refreshed value from the `tracks` row for
+all seven tag columns.**
 `reconcile_after_write` (`tag_mutation_guarded.rs:250`) runs the real scanner
 over the file *before* `terminal_success`, so `tracks` holds a genuine
 read-back from disk. If reconciliation fails, `post_write_failure` is set,
@@ -62,10 +63,12 @@ read-back from disk. If reconciliation fails, `post_write_failure` is set,
 (`write.rs:517`) means the refresh never runs on an unreconciled row. No extra
 I/O, no network, and it is what the doc comment already promises.
 
-Rejected: `tag_write_journal.after_value` (what we *asked* to write, not what
-the file says afterwards); forcing a re-read via a marker column (drags the
-remote resolution of the whole album along — reading-reuse and remote-reuse are
-one decision, `scan.rs:112–121`).
+Rejected as the general source: `tag_write_journal.after_value` records what we
+*asked* to write, not what the file says afterwards. The narrow empty-title
+exception uses it only to distinguish a genuinely applied empty value from the
+scanner's filename fallback. Also rejected: forcing a re-read via a marker
+column (drags the remote resolution of the whole album along — reading-reuse
+and remote-reuse are one decision, `scan.rs:112–121`).
 
 **D1a — one guard test decides whether D1 must be narrowed.** The scanner and
 `read_editable_tags` are two different readers: `scanner_entry.rs:446` sets
@@ -76,6 +79,12 @@ real in code. T2 therefore carries a test with an untitled fixture. If it is
 green under D1, D1 stands. If it is red, narrow the copy to the fields that
 appear as `applied` in this file's journal — a `WHERE` on the column list, not a
 redesign.
+
+**D1a outcome — the guard fired and the narrow branch was taken.** The test was
+red under the wide copy because the scanner's filename fallback is not the
+file's empty title. Both the runtime refresh and migration therefore update
+only fields recorded as `applied` by a `doctor_apply`; for an applied empty
+title, the journal's empty applied value overrides the scanner fallback.
 
 **D2 — the 300 frozen rows are repaired once, in a migration, restricted to the
 last complete scan.** The reuse path only ever reads `last_complete_scan`
@@ -120,10 +129,11 @@ returns for it. Run it, watch it fail.
 `doc_1h_a_written_field_is_remembered_as_the_file_now_reads_it`
 
 **T2 — the fix, plus the guard test from D1a.** Extend
-`refresh_snapshot_after_successful_doctor_write` to copy the seven tag columns
-from `tracks` alongside the identity columns, in the same statement and the same
-transaction. Keep the identity refresh exactly as it is — `stale_flags` depends
-on it and
+`refresh_snapshot_after_successful_doctor_write` to copy from `tracks` only the
+tag fields recorded as `applied` for this `doctor_apply`, alongside the identity
+columns, in the same statement and the same transaction. An applied empty title
+comes from the journal so the scanner's filename fallback cannot replace it.
+Keep the identity refresh exactly as it is — `stale_flags` depends on it and
 `doctor_apply_on_worker_connection_refreshes_snapshot_before_remaining_rows_are_classified`
 (`snapshot_refresh_tests.rs:53`) pins it. Fix the doc comment to describe what
 the code now does.
@@ -153,7 +163,7 @@ about proposals surviving a *skipped* track, which is a different subject.
 **T4 — the one-off repair.** `migrate_v86` in
 `crates/reprise-core/src/db_library_doctor.rs`, bumping
 `SUPPORTED_SCHEMA_VERSION` (`db.rs:24`) from 85 to 86: apply the same
-seven-column copy to the rows of `library_doctor_state.last_complete_scan_id`
+field-narrowed copy to the rows of `library_doctor_state.last_complete_scan_id`
 whose track has an applied `doctor_apply` write and whose `read_ok=1`.
 
 **The `EXISTS` must not be scoped to a scan.** This is the one place the
@@ -235,11 +245,13 @@ whole-library scan:
        OR coalesce(s.album_artist,'') <> t.album_artist);
    ```
 
-   This is the four-text-field proxy: `year`, `track_no` and `genre` are copied
-   by the fix but are deliberately not in this check, because they are the
-   columns where an integer-vs-text or empty-vs-null difference would produce
-   noise rather than signal. If the count is 0 and a spot check of those three
-   agrees, the repair is complete.
+   This is the four-text-field proxy: `year`, `track_no` and `genre` are
+   deliberately not in this check, because they are the columns where an
+   integer-vs-text or empty-vs-null difference would produce noise rather than
+   signal. The measured outcome was four-field mismatches **300 → 0**, with
+   five residual `year` rows whose last year write came from the Tag Editor,
+   not the Doctor. That open case is filed as DOC-1i rather than silently
+   widened into this repair.
 
 The authoritative local pass is `scan.rs:246`
 (`local_rules::proposals_for(&read_tracks)` over the whole set); the per-track
