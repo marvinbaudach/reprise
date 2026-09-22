@@ -205,9 +205,9 @@ impl PodcastsView {
         // its terminal response reaching this view on the GTK main thread —
         // covers both a slow pipeline (`podcasts::pipeline::refresh`'s own
         // per-subscription log names that) and a main loop too busy to
-        // deliver an already-finished response promptly. See
-        // `docs/plans/HANDOFF-2026-09-22-loading-screen-findings.md`, "Open"
-        // item 1.
+        // deliver an already-finished response promptly. A refresh that
+        // shows a spinner for minutes with nothing else logged is otherwise
+        // unreconstructable after the fact.
         let requested_at = std::time::Instant::now();
         // A view without rows has nothing better to show than the loading
         // row. One that already holds a model keeps it on screen for the whole

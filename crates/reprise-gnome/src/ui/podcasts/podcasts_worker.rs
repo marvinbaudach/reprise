@@ -54,8 +54,8 @@ pub(in crate::ui) struct PodcastsRequest {
 
 /// A request together with the instant it entered the worker's channel.
 /// Logged at dequeue time (`process_request`) so a slow refresh can be told
-/// apart from a refresh that queued behind other work — see
-/// `docs/plans/HANDOFF-2026-09-22-loading-screen-findings.md`, "Open" item 1.
+/// apart from a refresh that queued behind other work on this single-threaded
+/// worker.
 struct QueuedRequest {
     request: PodcastsRequest,
     queued_at: Instant,
@@ -303,11 +303,9 @@ fn process_request(
 ) {
     let request = &queued.request;
     // How long this request waited behind other queued work before the
-    // single-threaded worker even started it — see
-    // `docs/plans/HANDOFF-2026-09-22-loading-screen-findings.md`, "Open" item
-    // 1. Logged unconditionally (not just when it is large) so a slow
-    // refresh's own log line names its cause instead of leaving it to be
-    // reconstructed after the fact.
+    // single-threaded worker even started it. Logged unconditionally (not
+    // just when it is large) so a slow refresh's own log line names its
+    // cause instead of leaving it to be reconstructed after the fact.
     tracing::info!(
         generation = request.generation,
         operation = ?request.operation,
