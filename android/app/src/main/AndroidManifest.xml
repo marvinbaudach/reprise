@@ -7,8 +7,8 @@
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MEDIA_PLAYBACK" />
     <!--
         Artist portraits use Rust's bundled rustls + webpki-roots certificate
-        chain, so they do not depend on Android's certificate store. No network
-        byte flows unless Download artwork is enabled in Online sources.
+        chain, so they do not depend on Android's certificate store. On Android,
+        artwork downloads are always on, with no switch or off state.
     -->
     <uses-permission android:name="android.permission.INTERNET" />
     <!--
