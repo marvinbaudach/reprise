@@ -4,13 +4,14 @@ use std::collections::HashSet;
 use std::path::Path;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
+use std::time::Instant;
 
 use rusqlite::{Connection, Transaction, TransactionBehavior};
 
 use super::{
-    adopt_resolved_channel_url, clear_retry, previous_attempt, reclaim_download,
+    adopt_resolved_channel_url, clear_retry, elapsed_ms, previous_attempt, reclaim_download,
     record_failed_outcome_in, set_retry, FeedFetcher, PipelineError, RefreshSummary, RetryKey,
-    YoutubeFetcher, OFFICIAL_YOUTUBE_LIMIT,
+    SubscriptionOutcome, SubscriptionRefresh, YoutubeFetcher, OFFICIAL_YOUTUBE_LIMIT,
 };
 use crate::db::Db;
 use crate::podcasts::config::PodcastConfig;
@@ -197,6 +198,7 @@ pub(super) fn refresh_one_in(params: RefreshOneParams<'_, '_>) -> Result<(), Pip
     } = params;
     abort_if_requested(abort)?;
     summary.attempted += 1;
+    let started = Instant::now();
     let retry_key = RetryKey {
         connection: std::ptr::from_ref(conn).addr(),
         subscription_id: subscription.id,
@@ -228,10 +230,17 @@ pub(super) fn refresh_one_in(params: RefreshOneParams<'_, '_>) -> Result<(), Pip
             transaction.commit()?;
             clear_retry(retry_key);
             summary.not_modified += 1;
+            record_subscription_timing(
+                summary,
+                subscription,
+                started,
+                SubscriptionOutcome::NotModified,
+            );
             return Ok(());
         }
         Err(error) => {
             record_failure(conn, subscription, now, policy, retry_key, &error, summary)?;
+            record_subscription_timing(summary, subscription, started, SubscriptionOutcome::Failed);
             on_progress(SyncProgress::Failed(SyncError::Source(
                 SourceErrorKind::from(&error),
             )));
@@ -341,7 +350,38 @@ pub(super) fn refresh_one_in(params: RefreshOneParams<'_, '_>) -> Result<(), Pip
     }
     clear_retry(retry_key);
     summary.refreshed += 1;
+    record_subscription_timing(
+        summary,
+        subscription,
+        started,
+        SubscriptionOutcome::Refreshed,
+    );
     Ok(())
+}
+
+/// Records this subscription's refresh cost on the summary and logs it, so a
+/// slow refresh is diagnosable from the app's own log instead of
+/// reconstructed after the fact from `last_fetch_at` timestamps.
+fn record_subscription_timing(
+    summary: &mut RefreshSummary,
+    subscription: &SubscriptionRow,
+    started: Instant,
+    outcome: SubscriptionOutcome,
+) {
+    let elapsed_ms = elapsed_ms(started);
+    tracing::info!(
+        subscription_id = subscription.id,
+        kind = ?subscription.kind,
+        elapsed_ms,
+        outcome = ?outcome,
+        "podcast subscription refresh finished"
+    );
+    summary.subscriptions.push(SubscriptionRefresh {
+        subscription_id: subscription.id,
+        kind: subscription.kind,
+        elapsed_ms,
+        outcome,
+    });
 }
 
 fn fill_missing_youtube_durations(
