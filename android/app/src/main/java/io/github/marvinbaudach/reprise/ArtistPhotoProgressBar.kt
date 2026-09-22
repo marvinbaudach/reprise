@@ -67,7 +67,6 @@ internal const val ARTIST_PHOTO_MUTED_ALPHA = 0.753f
 internal fun ArtistPhotoProgressBar(
     progress: ArtistPhotoProgress?,
     dismiss: () -> Unit,
-    inSettings: Boolean = false,
 ) {
     LaunchedEffect(progress?.runId, progress?.phase, progress?.failed) {
         if (progress?.phase == ArtistPhotoProgressPhase.COMPLETE) {
@@ -85,7 +84,7 @@ internal fun ArtistPhotoProgressBar(
             fadeOut(tween(VISIBILITY_ANIMATION_MS)),
     ) {
         progress?.let { update ->
-            ArtistPhotoProgressCard(update, dismiss, inSettings)
+            ArtistPhotoProgressCard(update, dismiss)
         }
     }
 }
@@ -94,26 +93,22 @@ internal fun ArtistPhotoProgressBar(
 private fun ArtistPhotoProgressCard(
     progress: ArtistPhotoProgress,
     dismiss: () -> Unit,
-    inSettings: Boolean,
 ) {
-    val outer = if (inSettings) {
-        Modifier.padding(top = 12.dp)
-    } else {
-        Modifier.padding(horizontal = 12.dp).padding(bottom = 8.dp)
-    }
     val cardShape = RoundedCornerShape(10.dp)
     Surface(
         color = MaterialTheme.colorScheme.surfaceContainerHigh,
         shape = cardShape,
         border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
-        modifier = outer
+        modifier = Modifier
+            .padding(horizontal = 12.dp)
+            .padding(bottom = 8.dp)
             .fillMaxWidth()
             .testTag("artist-photo-progress"),
     ) {
         Column(
             modifier = Modifier.padding(
                 horizontal = 12.dp,
-                vertical = if (inSettings) 12.dp else 11.dp,
+                vertical = 11.dp,
             ),
         ) {
             Row(
@@ -154,7 +149,7 @@ private fun ArtistPhotoProgressCard(
                     )
                 }
             }
-            Spacer(Modifier.height(if (inSettings) 9.dp else 8.dp))
+            Spacer(Modifier.height(8.dp))
             ArtistPhotoTrack(progress)
             if (progress.phase == ArtistPhotoProgressPhase.COMPLETE && progress.failed > 0L) {
                 Spacer(Modifier.height(8.dp))

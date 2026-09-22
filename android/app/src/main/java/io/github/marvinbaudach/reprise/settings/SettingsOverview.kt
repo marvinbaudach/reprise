@@ -27,7 +27,6 @@ internal enum class SettingsRoute(val route: String) {
     LIBRARY("library"),
     AUDIO("audio"),
     APPEARANCE("appearance"),
-    ONLINE_SOURCES("online-sources"),
     ABOUT("about"),
 }
 
@@ -66,12 +65,6 @@ internal fun SettingsOverview(
             symbol = "palette",
             title = "Appearance",
             subtitle = themeSelection.palette.displayName(),
-        ),
-        SettingsSection(
-            destination = SettingsRoute.ONLINE_SOURCES,
-            symbol = "cloud",
-            title = "Online sources",
-            subtitle = "Artwork from Deezer, MusicBrainz and the Cover Art Archive",
         ),
         SettingsSection(
             destination = SettingsRoute.ABOUT,

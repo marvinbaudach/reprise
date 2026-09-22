@@ -31,7 +31,6 @@ import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.ViewModelStore
-import io.github.marvinbaudach.reprise.settings.OnlineSourcesSettingsPage
 import io.github.marvinbaudach.reprise.ui.theme.RepriseTheme
 import java.util.concurrent.ConcurrentLinkedQueue
 import org.junit.Assert.assertEquals
@@ -339,22 +338,6 @@ class ArtistPhotoProgressBarTest {
         compose.waitForIdle()
 
         assertEquals(1, dismissals)
-    }
-
-    @Test
-    fun onlineSourcesUsesTheSameProgressLabels() {
-        compose.setContent {
-            RepriseTheme(theme, darkPalette = true) {
-                OnlineSourcesSettingsPage(
-                    progress = running(runId = 8),
-                    dismissProgress = {},
-                    back = {},
-                )
-            }
-        }
-
-        compose.onNodeWithText("Downloading artwork").assertIsDisplayed()
-        compose.onNodeWithText("1 / 412").assertIsDisplayed()
     }
 
     @Test
