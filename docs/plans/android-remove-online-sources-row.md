@@ -2,7 +2,7 @@
 slug: android-remove-online-sources-row
 worktree: /home/marvin/Projects/reprise-android-remove-online-sources-row
 branch: feature/android-remove-online-sources-row
-phase: refactored
+phase: shipped
 codex_session:
 created: 2026-09-22
 ---
