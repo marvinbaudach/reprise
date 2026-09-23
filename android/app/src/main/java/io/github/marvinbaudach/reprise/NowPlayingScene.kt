@@ -97,6 +97,7 @@ internal fun NowPlayingScene(
     currentIndex: Int = 0,
     panels: List<PlayPanel> = listOf(PlayPanel(currentIndex, track)),
     visualizerOpacity: Float = 0f,
+    visualizerLight: Float = visualizerOpacity,
     cueRevision: Int = 0,
     // Hoisted with a default rather than remembered locally so a test can hand
     // in its own handle and read what the live panel published to it.
@@ -139,6 +140,10 @@ internal fun NowPlayingScene(
         }
         SideEffect { onCoverBounds(reportedCoverBounds) }
         Box(Modifier.fillMaxSize().testTag("now-playing-scene")) {
+            // Drawn first so every panel rides on top of it: the fog no longer
+            // belongs to any one panel's canvas (see NowPlayingPanelLayer below),
+            // it is one stationary layer the live panel publishes into.
+            NowPlayingFogLayer(liveScene, motion, visualizerLight)
             panels.forEach { panel ->
                 key(panel.track.id, panel.index) {
                     NowPlayingPanelLayer(
@@ -518,47 +523,6 @@ internal fun visualSceneFrameSink(engine: VisualSceneEngine): SceneFrameSink =
         }
     }
 
-/** The played-view wiring kept shared with its rendered-pixel verification. */
-internal fun DrawScope.drawPlayedNowPlayingFog(
-    fog: CoverFogBitmap?,
-    center: Offset,
-    state: SceneState,
-    visualizerOpacity: Float,
-    opacity: Float,
-    rotationsEnabled: Boolean,
-) {
-    drawNowPlayingFog(
-        // Behind the spectrum there is no artwork to read a palette from, so
-        // the film borrows the ramp the bars themselves are drawn from and
-        // follows the cross-fade across to it.
-        palette = fog?.palette?.blendedTo(VisualizerRampPalette, visualizerOpacity),
-        center = center,
-        seconds = state.oilFilmSeconds,
-        level = state.oilFilmLevel,
-        opacity = opacity,
-        driftEnabled = rotationsEnabled,
-    )
-}
-
-/** The cover-disc wiring shared with its deterministic renderer tests. */
-internal fun DrawScope.drawPlayedNowPlayingShimmer(
-    fog: CoverFogBitmap?,
-    center: Offset,
-    state: SceneState,
-    opacity: Float,
-    rotationsEnabled: Boolean,
-) {
-    drawNowPlayingShimmer(
-        fog = fog,
-        center = center,
-        coverDiameterDp = COVER_SIZE_DP.toFloat(),
-        elapsedSeconds = state.shimmerElapsedSeconds,
-        swell = state.fogLevel,
-        opacity = opacity,
-        rotationsEnabled = rotationsEnabled,
-    )
-}
-
 @Composable
 private fun rememberSpectrogram(trackId: Long): SpectrogramFrames {
     val analysis = LocalTrackAnalysis.current
@@ -695,4 +659,4 @@ internal fun playedCoverRect(center: Offset, side: Float): Rect = Rect(
 )
 
 /** Keeps the frame counter captured by the scene's draw lambda; the value is not drawn. */
-private fun observeSceneFrame(@Suppress("UNUSED_PARAMETER") revision: Int) = Unit
+internal fun observeSceneFrame(@Suppress("UNUSED_PARAMETER") revision: Int) = Unit

@@ -15,6 +15,7 @@ import io.github.marvinbaudach.reprise.ui.theme.RepriseTheme
 import org.junit.Assert.assertArrayEquals
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Rule
 import org.junit.Test
@@ -258,6 +259,54 @@ class NowPlayingSceneEngineTest {
         )
     }
 
+    @Test
+    fun the_live_scene_handle_publishes_fog_and_state_while_live_and_clears_when_the_panel_leaves() {
+        // liveScene is hoisted with a default (`remember { LiveSceneHandle() }`) precisely so a
+        // test can hand in its own instance and read what the live panel published to it --
+        // there is no factory to intercept here the way RecordingSceneEngineFactory reaches
+        // liveScene.engine, since fog and state never went through an injectable factory.
+        val handle = LiveSceneHandle()
+        val surfaceState = MobileSurfaceViewModel()
+        var showPanel by mutableStateOf(true)
+
+        compose.setContent {
+            val theme = MobileThemeSelection(
+                palette = MobileTheme.NOCTURNE,
+                colorScheme = AndroidColorScheme.SYSTEM,
+                dynamicAvailable = false,
+            )
+            RepriseTheme(theme, darkPalette = true) {
+                CompositionLocalProvider(
+                    LocalAmbientMotionController provides AmbientMotionController(),
+                    LocalVisualSceneEngineFactory provides RecordingSceneEngineFactory(),
+                ) {
+                    val track = sceneEngineTrack()
+                    NowPlayingScene(
+                        track = track,
+                        playback = PlaybackUiState(state = AndroidPlaybackState.PLAYING),
+                        surfaceState = surfaceState,
+                        panels = if (showPanel) listOf(PlayPanel(0, track)) else emptyList(),
+                        visualizerOpacity = 0f,
+                        visualizerLight = 0f,
+                        liveScene = handle,
+                    )
+                }
+            }
+        }
+        // The fog resolves through a LaunchedEffect that resumes on Dispatchers.Default; the
+        // first such resume lands under this harness (see CoverFogBitmapHoldTest), unlike a
+        // second one triggered by the same composable, which is why this scene stays on one
+        // track and one panel throughout.
+        compose.waitUntil(timeoutMillis = 5_000) { handle.fog != null }
+        assertTrue("the live panel's scene state must be published too", handle.state != null)
+
+        showPanel = false
+        compose.waitForIdle()
+
+        assertNull("the handle clears once the live panel leaves", handle.fog)
+        assertNull("the handle clears once the live panel leaves", handle.state)
+    }
+
     @Composable
     private fun CoverScene(
         factory: RecordingSceneEngineFactory,
@@ -279,6 +328,7 @@ class NowPlayingSceneEngineTest {
                     playback = PlaybackUiState(state = AndroidPlaybackState.PLAYING),
                     surfaceState = surfaceState,
                     visualizerOpacity = 0f,
+                    visualizerLight = 0f,
                 )
             }
         }
@@ -318,6 +368,7 @@ class NowPlayingSceneEngineTest {
                     currentIndex = currentIndex,
                     panels = panels,
                     visualizerOpacity = 1f,
+                    visualizerLight = 1f,
                 )
             }
         }
