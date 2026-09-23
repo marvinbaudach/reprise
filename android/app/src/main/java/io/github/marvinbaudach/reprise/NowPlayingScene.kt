@@ -97,7 +97,10 @@ internal fun NowPlayingScene(
     currentIndex: Int = 0,
     panels: List<PlayPanel> = listOf(PlayPanel(currentIndex, track)),
     visualizerOpacity: Float = 0f,
-    visualizerLight: Float = visualizerOpacity,
+    // No default of visualizerOpacity here: that would let a forgetful caller
+    // land on the bars' fast 220 ms light with no compiler complaint. See
+    // NowPlayingSheet, which drives this from its own slow FOG_CROSSFADE_MS clock.
+    visualizerLight: Float,
     cueRevision: Int = 0,
     // Hoisted with a default rather than remembered locally so a test can hand
     // in its own handle and read what the live panel published to it.

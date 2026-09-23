@@ -20,6 +20,7 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.CubicBezierEasing
+import androidx.compose.animation.core.LinearEasing
 import androidx.compose.animation.core.spring
 import androidx.compose.animation.core.tween
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -30,6 +31,7 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
@@ -92,6 +94,10 @@ internal fun NowPlayingSheet(
     surfaceLayout: SurfaceLayout = SurfaceLayout.STACKED,
     surfaceState: MobileSurfaceViewModel = viewModel(),
     close: () -> Unit,
+    // Production never sets this. visualizerLight lives on an Animatable, so it
+    // cannot be pinned the way FOG_CROSSFADE_MS is -- a compose-rule test reads
+    // it here instead of reaching into NowPlayingScene's own parameters.
+    onSceneLightObserved: (visualizerOpacity: Float, visualizerLight: Float) -> Unit = { _, _ -> },
 ) {
     val metrics = nowPlayingMetrics(surfaceLayout)
     val controls = LocalPlaybackControls.current
@@ -140,14 +146,35 @@ internal fun NowPlayingSheet(
     val visualizerOpacity = remember(visualizerPreference) {
         Animatable(if (visualizerVisible.value) 1f else 0f)
     }
+    // The film palette rides its own, slower clock: the cover and the bars
+    // still cross-fade in VISUALIZER_CROSSFADE_MS, but a light that cuts in
+    // 220 ms while the fog underneath it takes a full second reads as the
+    // picture answering before the light does. FOG_CROSSFADE_MS is the same
+    // constant NowPlayingFogLayer's own crossfade runs on (see
+    // NowPlayingFogHandover.kt), so a cover-to-visualizer switch and a track
+    // change move at the same speed.
+    val visualizerLight = remember(visualizerPreference) {
+        Animatable(if (visualizerVisible.value) 1f else 0f)
+    }
     LaunchedEffect(visualizerVisible.value, motion.sceneAnimationsEnabled) {
         val target = if (visualizerVisible.value) 1f else 0f
         if (motion.sceneAnimationsEnabled) {
-            visualizerOpacity.animateTo(target, tween(VISUALIZER_CROSSFADE_MS))
+            launch { visualizerOpacity.animateTo(target, tween(VISUALIZER_CROSSFADE_MS)) }
+            launch { visualizerLight.animateTo(target, tween(FOG_CROSSFADE_MS, easing = LinearEasing)) }
         } else {
             visualizerOpacity.snapTo(target)
+            visualizerLight.snapTo(target)
         }
     }
+    // Read here, in NowPlayingSheet's own scope, not inside the SideEffect below:
+    // the sheet's own visualizerOpacity/visualizerLight reads that matter for
+    // recomposition are the ones passed into NowPlayingScene, deep inside
+    // Surface's content lambda -- a *different* recompose scope. A read inside
+    // the SideEffect's own lambda body is never tracked at all, so without this
+    // local val the SideEffect would fire once, at mount, and never again.
+    val currentVisualizerOpacity = visualizerOpacity.value
+    val currentVisualizerLight = visualizerLight.value
+    SideEffect { onSceneLightObserved(currentVisualizerOpacity, currentVisualizerLight) }
     LaunchedEffect(seekMarkerRevision) {
         if (seekMarkerRevision == 0) return@LaunchedEffect
         delay(600)
@@ -368,7 +395,8 @@ internal fun NowPlayingSheet(
                     positionPx = positionPx.value,
                     currentIndex = currentIndex,
                     panels = panelWindow.panels,
-                    visualizerOpacity = visualizerOpacity.value,
+                    visualizerOpacity = currentVisualizerOpacity,
+                    visualizerLight = currentVisualizerLight,
                     cueRevision = cueRevision,
                     onCoverBounds = { coverBounds.value = it },
                     onSeekBounds = { seekBoundsInRoot.value = it },
