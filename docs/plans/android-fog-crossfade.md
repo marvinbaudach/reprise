@@ -377,3 +377,40 @@ more than that. Tasks 2–5 cannot be cut at all: 3, 4 and 5 all edit
 - **Merge order:** n/a.
 - **Post-merge cross-checks:** none needed for the cut; the device recording
   (see Task 6) is the post-code check and runs in the review session.
+
+## Device verification (2026-09-24)
+
+The measurement Task 6 demands before landing is done, on the 1080×2404 phone,
+control arm on `dev` `4b75660d84` and feature arm on this branch's
+`e957068817`. Same transition in both arms with shuffle off — „(I Used to Make
+Out With) Medusa" (teal cover) → „(In)Human Scum" (warm red-brown cover),
+started from the Titles list so the list is the queue.
+
+Frames are extracted at 20 fps and **t0 is derived from the frames**: the first
+frame whose cover region jumps against its predecessor. A fixed offset from the
+tap would have been wrong by 50–100 ms, because `screenrecord` starts encoding
+after the host launches it. Crossfade progress is the mean colour of a
+background patch beside the cover, normalised: 0 = the outgoing track's fog,
+1 = the incoming one's.
+
+| ms after the track change | dev (control) | this branch |
+|---|---|---|
+| 100 | 0.85 | 0.13 |
+| 250 | 0.88 | 0.33 |
+| 500 | 1.03 | 0.54 |
+| 750 | 1.02 | 0.76 |
+| 1000 | 1.01 | **1.00** |
+
+The control is 85–100 % switched 100 ms after the change; this branch climbs in
+even ~0.05 steps per 50 ms and lands on 1.00 at exactly 1000 ms — the specified
+linear crossfade. The rows before 100 ms are contaminated by the panel slide
+(the patch lies in the outgoing cover's path) and say nothing about the fog.
+
+Review finding 1's freeze — the handover holding steady on a null live fog —
+was **not** exercised: the blur resolved before the panel went live, so the
+curve is monotone with no plateau. Judging how that freeze feels is left to the
+manual pass, which is why the feature build stays installed.
+
+Harness and frames: `~/.cache/reprise-scratch/fog-device-run/`
+(`fog-record2.sh`, `fog-analyse.py`, `control-arm.csv`, `feature-arm.csv`,
+`fog-arms.png`).
