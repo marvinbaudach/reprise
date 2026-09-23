@@ -59,6 +59,18 @@ class KotlinPlumbingTest {
 
         assertEquals("A Complete Album" to "The Artist", library.request)
         assertEquals(listOf(41L, 7L, 99L), ids)
+
+        val artistIds = session.artistTrackIds(
+            LibraryArtist(
+                name = "The Artist",
+                trackCount = 2,
+                albumCount = 1,
+                representativeUri = "content://artists/cover",
+            ),
+        )
+
+        assertEquals("The Artist", library.artistRequest)
+        assertEquals(listOf(5L, 3L), artistIds)
     }
 
     @Test
@@ -143,10 +155,16 @@ class KotlinPlumbingTest {
 
 private class RecordingAlbumLibrary : MusicLibrary(NoHandle) {
     var request: Pair<String, String>? = null
+    var artistRequest: String? = null
 
     override fun albumTrackIds(album: String, albumArtist: String): List<Long> {
         request = album to albumArtist
         return listOf(41L, 7L, 99L)
+    }
+
+    override fun artistTrackIds(artist: String): List<Long> {
+        artistRequest = artist
+        return listOf(5L, 3L)
     }
 }
 

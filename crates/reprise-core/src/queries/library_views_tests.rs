@@ -654,3 +654,64 @@ fn canonical_album_ids_never_collect_the_untagged_rows_under_a_blank_album() {
         [30]
     );
 }
+
+#[test]
+fn canonical_artist_ids_cover_every_album_then_the_untagged_rows() {
+    let db = crate::db::Db::open_in_memory().unwrap();
+    let conn = db.conn();
+    conn.execute_batch(
+        "INSERT INTO tracks
+           (id,path,title,artist,album,album_artist,year,disc_no,track_no,added_at,missing_since) VALUES
+         (10,'/music/old-2.flac','Old 2','Artist','Old','Artist',1999,1,2,0,NULL),
+         (20,'/music/old-1.flac','Old 1','artist','old','',1999,1,1,0,NULL),
+         (30,'/music/new-1.flac','New 1','Artist','New','Artist',2020,1,1,0,NULL),
+         (40,'/music/loose-b.flac','Loose B','Artist','','',0,NULL,NULL,0,NULL),
+         (50,'/music/loose-a.flac','Loose A','Artist','  ','',0,NULL,NULL,0,NULL),
+         (60,'/music/feature.flac','Feature','Artist','Mix','Various Artists',2021,1,1,0,NULL),
+         (70,'/music/missing.flac','Missing','Artist','New','Artist',2020,1,2,0,99),
+         (80,'/music/other.flac','Other','Other','New','Other',2020,1,1,0,NULL);",
+    )
+    .unwrap();
+
+    // Newest album first like the artist page, canonical order inside an
+    // album, then the tracks without an album by title.
+    assert_eq!(
+        query_artist_canonical_track_ids(&db, " artist ").unwrap(),
+        [30, 20, 10, 50, 40]
+    );
+    let summary = query_artists(&db, "", full_window())
+        .unwrap()
+        .rows
+        .into_iter()
+        .find(|row| row.artist == "Artist")
+        .unwrap();
+    // The delete dialog promises the row's count; the ids must keep it.
+    assert_eq!(summary.track_count, 5);
+}
+
+#[test]
+fn canonical_artist_ids_never_collect_the_rows_without_an_artist() {
+    let db = crate::db::Db::open_in_memory().unwrap();
+    let conn = db.conn();
+    conn.execute_batch(
+        "INSERT INTO tracks
+           (id,path,title,artist,album,album_artist,added_at,missing_since) VALUES
+         (10,'/music/nobody-a.flac','Nobody A','','Album','',0,NULL),
+         (20,'/music/nobody-b.flac','Nobody B','   ','','   ',0,NULL),
+         (30,'/music/somebody.flac','Somebody','Artist','Album','',0,NULL);",
+    )
+    .unwrap();
+
+    // This list feeds an irreversible delete, so a blank artist must select
+    // nothing at all rather than every track without an artist tag.
+    assert!(query_artist_canonical_track_ids(&db, "")
+        .unwrap()
+        .is_empty());
+    assert!(query_artist_canonical_track_ids(&db, "   ")
+        .unwrap()
+        .is_empty());
+    assert_eq!(
+        query_artist_canonical_track_ids(&db, "Artist").unwrap(),
+        [30]
+    );
+}

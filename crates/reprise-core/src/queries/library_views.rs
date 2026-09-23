@@ -498,6 +498,41 @@ pub fn query_album_canonical_track_ids(
     rows.collect()
 }
 
+/// Returns every present track of one effective album artist: the albums in
+/// the artist page's order (newest release year first, then alphabetical),
+/// each in canonical disc/track order, followed by the tracks without an album
+/// by title. It is the artist page's content without its windows.
+///
+/// Like [`query_album_canonical_track_ids`], this list is what the Android
+/// context menu offers to delete from the device, so a blank artist selects
+/// nothing instead of every track that carries no artist tag.
+pub fn query_artist_canonical_track_ids(
+    db: &Db,
+    artist: &str,
+) -> Result<Vec<i64>, rusqlite::Error> {
+    let conn = db.conn();
+    let sql = format!(
+        "WITH artist_tracks AS ( \
+           SELECT id, path, title, disc_no, track_no, TRIM(album) AS album, \
+                  MIN(CASE WHEN year > 0 THEN year END) \
+                    OVER (PARTITION BY LOWER(TRIM(album))) AS album_year \
+           FROM tracks WHERE {PRESENT} AND TRIM({EFFECTIVE_ALBUM_ARTIST}) <> '' \
+           AND {EFFECTIVE_ALBUM_ARTIST} = ?1 COLLATE NOCASE \
+         ) \
+         SELECT id FROM artist_tracks \
+         ORDER BY CASE WHEN album = '' THEN 1 ELSE 0 END ASC, \
+                  album_year DESC, album COLLATE NOCASE ASC, \
+                  COALESCE(disc_no, 1) ASC, \
+                  CASE WHEN track_no IS NULL THEN 1 ELSE 0 END ASC, \
+                  track_no ASC, title COLLATE NOCASE ASC, \
+                  path COLLATE NOCASE ASC, id ASC \
+         LIMIT {QUEUE_LIMIT}"
+    );
+    let mut statement = conn.prepare(&sql)?;
+    let rows = statement.query_map(rusqlite::params![artist.trim()], row_to_id)?;
+    rows.collect()
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ArtistAlbum {
     pub album: String,

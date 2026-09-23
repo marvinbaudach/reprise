@@ -252,6 +252,7 @@ private class PrefetchLibrarySessionPort(
     ): LibraryWindow<LibraryTrack> = LibraryWindow.empty()
 
     override fun albumTrackIds(album: String, albumArtist: String): List<Long> = emptyList()
+    override fun artistTrackIds(artist: String): List<Long> = emptyList()
 
     override fun trackById(trackId: Long): LibraryTrack? = null
 

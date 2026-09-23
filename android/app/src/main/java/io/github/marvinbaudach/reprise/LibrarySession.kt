@@ -60,6 +60,8 @@ internal interface LibrarySessionPort {
 
     fun albumTrackIds(album: String, albumArtist: String): List<Long>
 
+    fun artistTrackIds(artist: String): List<Long>
+
     fun trackById(trackId: Long): LibraryTrack?
 
     fun artworkFor(trackUri: String, size: AndroidArtworkSize): String?
@@ -218,6 +220,8 @@ internal class LibrarySession(
     fun albumTrackIds(album: LibraryAlbum): List<Long> =
         port.albumTrackIds(album.title, album.artist)
 
+    fun artistTrackIds(artist: LibraryArtist): List<Long> = port.artistTrackIds(artist.name)
+
     fun listArtistTracks(
         artist: LibraryArtist,
         window: LibraryWindowRange,
@@ -342,5 +346,11 @@ private fun <T> LibraryWindow<T>.withoutRows() = copy(rows = emptyList(), hasMor
 /** The unwindowed album identity query used only by whole-album actions. */
 internal val LocalAlbumTrackIds =
     staticCompositionLocalOf<(LibraryAlbum) -> List<Long>> {
+        { throw IllegalStateException("library is not connected") }
+    }
+
+/** The unwindowed artist identity query used only by whole-artist actions. */
+internal val LocalArtistTrackIds =
+    staticCompositionLocalOf<(LibraryArtist) -> List<Long>> {
         { throw IllegalStateException("library is not connected") }
     }
