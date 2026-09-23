@@ -168,19 +168,16 @@ class NowPlayingPanelsTest {
     }
 
     @Test
-    fun panel_and_glow_rest_state_stays_bit_exact_at_a_non_round_screen_width() {
+    fun panel_rest_state_stays_bit_exact_at_a_non_round_screen_width() {
         val widthPx = 342.33331f
         val positionPx = 3 * widthPx
 
         val panel = nowPlayingPanelTransform(panelIndex = 3, positionPx, widthPx)
-        val glow = nowPlayingGlowTransform(panelIndex = 3, positionPx, widthPx)
 
         assertEquals(0f.toRawBits(), panel.translationX.toRawBits())
         assertEquals(0f.toRawBits(), panel.rotationDegrees.toRawBits())
         assertEquals(1f.toRawBits(), panel.opacity.toRawBits())
         assertNull(panel.rotationForLayer)
-        assertEquals(0f.toRawBits(), glow.translationX.toRawBits())
-        assertEquals(1f.toRawBits(), glow.opacity.toRawBits())
     }
 
     @Test
@@ -201,17 +198,6 @@ class NowPlayingPanelsTest {
         assertEquals(-35f, progress.translationY, 0f)
         assertEquals(0.55f, progress.opacity, 0f)
         assertEquals(0.97f, progress.scaleX, 0f)
-    }
-
-    @Test
-    fun each_track_glow_uses_the_spatial_factor_and_distance_fade() {
-        val current = nowPlayingGlowTransform(panelIndex = 2, positionPx = 800f, widthPx = 400f)
-        val next = nowPlayingGlowTransform(panelIndex = 3, positionPx = 800f, widthPx = 400f)
-
-        assertEquals(0f, current.translationX, 0f)
-        assertEquals(1f, current.opacity, 0f)
-        assertEquals(92f, next.translationX, 0f)
-        assertEquals(0f, next.opacity, 0f)
     }
 
     @Test
@@ -434,10 +420,13 @@ class NowPlayingPanelsTest {
 
     @Test
     fun every_per_frame_panel_canvas_captures_the_scene_revision() {
+        // Two now, not three: the fog canvas that used to be a panel's own moved
+        // out to NowPlayingFogLayer.kt, which observes liveScene.drawRevision
+        // instead -- the panel itself is left with its cover canvas and its bars.
         val source = File("src/main/java/io/github/marvinbaudach/reprise/NowPlayingScene.kt").readText()
         val observation = "observeSceneFrame(drawRevision)"
 
-        assertEquals(3, source.split(observation).size - 1)
+        assertEquals(2, source.split(observation).size - 1)
     }
 
     private fun panelTrack(id: Long) = LibraryTrack(
