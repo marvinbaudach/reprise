@@ -6152,11 +6152,11 @@ listening statistics.
   `SET-10` folded the former "Online sources" main page into Plugins, and the
   deep link sends the three online-source rows, which arrive expanded and
   briefly highlighted, the first of them focused. Existing subscriptions are
-  named as kept. The button
-  is never a plus icon here, since there is nothing to add while the source is
-  off (`PodcastsEmptyState::ModuleOff`); it carries the network glyph
-  `network-server-symbolic`, which names what is being enabled rather than the
-  icon of the page it lands on. Existing subscriptions outrank the module gate:
+  named as kept. The button is never a plus icon here, since there is nothing
+  to add while the source is off (`PodcastsEmptyState::ModuleOff`); it carries
+  the network glyph `network-server-symbolic`, which names what is being
+  enabled rather than the icon of the page it lands on. Existing subscriptions
+  outrank the module gate:
   it only ever replaces the empty case, never an already-populated view. The
   filter-mismatch state ("Nothing matches these filters",
   `PodcastsEmptyState::NoResults` / `RadioEmptyState::NoResults`) and the

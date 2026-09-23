@@ -2,7 +2,7 @@
 slug: src-10a-plugins-page
 worktree: /home/marvin/Projects/reprise-src-10a-plugins-page
 branch: feature/src-10a-plugins-page
-phase: planned
+phase: refactored
 codex_session:
 created: 2026-09-23
 ---
