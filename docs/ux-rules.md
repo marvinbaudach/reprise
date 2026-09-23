@@ -6148,10 +6148,11 @@ listening statistics.
   geometry rather than replacing it. When a source's own module is switched off
   (`G1`/`NET-1a`) and nothing is subscribed yet, the same
   tile/title/body/one-button shape appears as "{Source} is turned off" with an
-  "Enable in Preferences" button that opens Preferences → **Plugins** directly:
+  "Enable in Preferences" button that opens Preferences → Plugins directly:
   `SET-10` folded the former "Online sources" main page into Plugins, and the
-  deep link sends the three online-source rows, which arrive focused, expanded
-  and briefly highlighted. Existing subscriptions are named as kept. The button
+  deep link sends the three online-source rows, which arrive expanded and
+  briefly highlighted, the first of them focused. Existing subscriptions are
+  named as kept. The button
   is never a plus icon here, since there is nothing to add while the source is
   off (`PodcastsEmptyState::ModuleOff`); it carries the network glyph
   `network-server-symbolic`, which names what is being enabled rather than the
