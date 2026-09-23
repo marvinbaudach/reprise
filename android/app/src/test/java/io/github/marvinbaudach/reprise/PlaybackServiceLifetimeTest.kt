@@ -3,10 +3,14 @@ package io.github.marvinbaudach.reprise
 import android.content.ComponentName
 import android.content.Intent
 import android.os.Looper
+import androidx.media3.common.DeviceInfo
+import androidx.media3.common.MediaItem
+import androidx.media3.common.Player
 import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
+import org.junit.Assert.assertThrows
 import org.junit.Assert.assertTrue
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -166,11 +170,49 @@ class PlaybackServiceLifetimeTest {
         )
     }
 
+    @Test
+    fun reloadingPlaybackSettingsPublishesTheRecomputedDeviceInfo() {
+        val service = buildPlaybackServiceController(volumeKeySkipGestureEnabled = false).get()
+        val controlledPlayer = service.sessions.first().player as CoreControlledPlayer
+        val wrappedPlayer = controlledPlayer.wrappedPlayer
+
+        // Bring the wrapped player to a remote-eligible state without going
+        // through Core: setting the switch alone changes nothing while
+        // `playWhenReady` or `playbackState` still say LOCAL.
+        wrappedPlayer.setMediaItem(MediaItem.fromUri("asset:///sine.flac"))
+        wrappedPlayer.prepare()
+        wrappedPlayer.playWhenReady = true
+        assertEquals(
+            "the wrapped player has to reach a remote-eligible state before the switch flips",
+            Player.STATE_BUFFERING,
+            wrappedPlayer.playbackState,
+        )
+
+        val published = mutableListOf<Int>()
+        controlledPlayer.addListener(object : Player.Listener {
+            override fun onDeviceInfoChanged(deviceInfo: DeviceInfo) {
+                published += deviceInfo.playbackType
+            }
+        })
+
+        service.volumeKeySkipGestureEnabledOverride = true
+        // `reloadPlaybackSettings()` re-reads the switch and refreshes the
+        // device info before it reaches for the core session, which this
+        // service does not have; the throw is the JVM's own limit, not the
+        // hop under test.
+        assertThrows(IllegalStateException::class.java) { service.reloadPlaybackSettings() }
+
+        assertEquals(listOf(DeviceInfo.PLAYBACK_TYPE_REMOTE), published)
+    }
+
     private fun buildPlaybackService(): ReprisePlaybackService =
         buildPlaybackServiceController().get()
 
-    private fun buildPlaybackServiceController(): ServiceController<CorelessPlaybackService> =
+    private fun buildPlaybackServiceController(
+        volumeKeySkipGestureEnabled: Boolean = true,
+    ): ServiceController<CorelessPlaybackService> =
         Robolectric.buildService(CorelessPlaybackService::class.java)
+            .also { it.get().volumeKeySkipGestureEnabledOverride = volumeKeySkipGestureEnabled }
             .create()
             .also(services::add)
 
@@ -218,6 +260,10 @@ class PlaybackServiceLifetimeTest {
  */
 private class CorelessPlaybackService : ReprisePlaybackService() {
     override fun openCoreSession(port: Media3PlaybackPort): AndroidPlaybackSession? = null
+
+    var volumeKeySkipGestureEnabledOverride = true
+
+    override fun readVolumeKeySkipGestureEnabled(): Boolean = volumeKeySkipGestureEnabledOverride
 }
 
 private fun aTrack() = LibraryTrack(

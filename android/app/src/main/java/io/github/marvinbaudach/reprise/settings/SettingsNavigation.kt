@@ -48,6 +48,7 @@ internal fun SettingsNavigation(
     replaceEqualizerCurve: (List<EqualizerCurvePoint>) -> Unit,
     setGaplessEnabled: (Boolean) -> Unit,
     selectTheme: (MobileTheme) -> Unit,
+    setVolumeKeySkipGestureEnabled: (Boolean) -> Unit = {},
 ) {
     val navController = rememberNavController()
     val entry by navController.currentBackStackEntryAsState()
@@ -126,6 +127,7 @@ internal fun SettingsNavigation(
                 replaceEqualizerCurve = replaceEqualizerCurve,
                 setGaplessEnabled = setGaplessEnabled,
                 selectTheme = selectTheme,
+                setVolumeKeySkipGestureEnabled = setVolumeKeySkipGestureEnabled,
                 pageTitle = "Audio",
                 backContentDescription = "Back to Settings",
             )
