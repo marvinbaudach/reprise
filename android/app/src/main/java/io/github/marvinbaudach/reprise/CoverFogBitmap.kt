@@ -10,6 +10,7 @@ import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.graphics.asAndroidBitmap
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.graphics.toArgb
+import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import kotlin.math.sqrt
@@ -79,11 +80,12 @@ internal fun rememberCoverFogBitmap(
     artwork: ImageBitmap?,
     fallback: Color,
     cache: ArtworkCache = SharedArtworkCache,
+    preparationDispatcher: CoroutineDispatcher = Dispatchers.Default,
 ): CoverFogBitmap? {
     val fallbackArgb = fallback.toArgb()
     val prepared = remember { mutableStateOf<CoverFogBitmap?>(null) }
     LaunchedEffect(artwork, fallbackArgb) {
-        prepared.value = artwork?.let(cache::fog) ?: withContext(Dispatchers.Default) {
+        prepared.value = artwork?.let(cache::fog) ?: withContext(preparationDispatcher) {
             prepareCoverFogBitmap(artwork?.asAndroidBitmap(), fallbackArgb).also { fog ->
                 if (artwork != null) cache.putFog(artwork, fog)
             }
