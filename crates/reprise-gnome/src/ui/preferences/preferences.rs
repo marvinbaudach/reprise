@@ -482,7 +482,7 @@ impl PreferencesContext {
         self.open(Some("plugins"));
     }
 
-    /// `SRC-10` addendum (Block B2): the module-off empty state's "Enable
+    /// `SRC-10a` addendum (Block B2): the module-off empty state's "Enable
     /// in Preferences" button lands here directly, rather than the plain
     /// Preferences root the user would otherwise have to navigate from.
     pub(in crate::ui) fn present_online_sources(self: &Rc<Self>) {

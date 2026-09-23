@@ -52,7 +52,7 @@ impl SortKey<EpisodeRow> for PodcastSortKey {
 /// saved view; persisting it would resurrect a search the user never typed
 /// again on the next launch.
 ///
-/// (`SRC-10` addendum, Block B2: `downloaded_only` is the "Downloaded" chip —
+/// (`SRC-10a` addendum, Block B2: `downloaded_only` is the "Downloaded" chip —
 /// it matches only episodes with a file on disk right now, not a queued or
 /// downloading one.)
 #[derive(Clone, Debug, Default, PartialEq, Eq)]

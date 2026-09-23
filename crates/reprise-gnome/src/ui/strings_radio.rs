@@ -24,7 +24,7 @@ pub const RADIO_ADD_FILTER: &str = N_!("Add filter");
 pub const RADIO_FILTER_GENRE: &str = N_!("Genre");
 pub const RADIO_FILTER_COUNTRY: &str = N_!("Country");
 pub const RADIO_CLEAR_ALL: &str = N_!("Clear all");
-/// `SRC-10`: the shared empty-state grammar's copy for Radio — title, one
+/// `SRC-10a`: the shared empty-state grammar's copy for Radio — title, one
 /// paragraph of what lands here and where it comes from, the primary
 /// button. Radio has no secondary line: the body already names the URL
 /// path (a stream URL), so a second line repeating it would be redundant.

@@ -178,11 +178,11 @@ fn filtering_composes_unplayed_downloaded_and_source() {
     assert_eq!(filtered.iter().map(|row| row.id).collect::<Vec<_>>(), [2]);
 }
 
-/// `SRC-10` addendum (Block B2): the "Downloaded" filter matches only
+/// `SRC-10a` addendum (Block B2): the "Downloaded" filter matches only
 /// episodes with a file on disk — would go red if `downloaded_only`
 /// were ignored, since one row here has no `downloaded_path` at all.
 #[test]
-fn src_10_downloaded_only_filter_matches_files_on_disk_not_download_state() {
+fn src_10a_downloaded_only_filter_matches_files_on_disk_not_download_state() {
     let mut on_disk = row(1, Some(10), PodcastKind::Rss);
     on_disk.downloaded_path = Some("/music/ep1.mp3".into());
     let not_downloaded = row(2, Some(20), PodcastKind::Rss);

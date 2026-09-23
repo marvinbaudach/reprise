@@ -341,7 +341,7 @@ pub const EMPTY_LIBRARY_DESCRIPTION: &str = N_!("Scan a folder to build your lib
 pub const NO_RESULTS_TITLE: &str = N_!("No results");
 pub const NO_RESULTS_DESCRIPTION: &str = N_!("Try a different search");
 
-/// `SRC-10`/Block B2: the online sources' (Podcasts, YouTube, Radio) filter
+/// `SRC-10a`/Block B2: the online sources' (Podcasts, YouTube, Radio) filter
 /// mismatch state — subscribed/added but the active filters hide every row.
 /// Distinct from `NO_RESULTS_TITLE` above (search, not a persisted filter)
 /// so the two can carry different copy without cross-contaminating tests.

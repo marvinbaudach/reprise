@@ -1,4 +1,4 @@
-//! `SRC-10`: shared "nothing added yet" empty-state geometry for the three
+//! `SRC-10a`: shared "nothing added yet" empty-state geometry for the three
 //! online sources (Podcasts, YouTube, Radio) — Turn 6f of the design.
 //!
 //! Identical grammar for all three, per source: the sidebar entry's own
@@ -39,7 +39,7 @@ pub(super) struct SourceEmptyStateCopy {
     /// One paragraph: what lands here, and where it comes from.
     pub(super) body: String,
     pub(super) button_label: String,
-    /// `SRC-10` addendum (Block B2): almost always `"list-add-symbolic"` —
+    /// `SRC-10a` addendum (Block B2): almost always `"list-add-symbolic"` —
     /// the genuine "nothing added yet" state's Add button. The one
     /// exception is the module-off sibling state, whose button opens
     /// Preferences rather than adding anything, so a plus icon there would
@@ -163,7 +163,7 @@ impl SourceEmptyState {
     }
 
     /// The primary button's visible text. It has no `label` property of its
-    /// own — its child is an icon+label `Box`, per `SRC-10`'s "plus icon" —
+    /// own — its child is an icon+label `Box`, per `SRC-10a`'s "plus icon" —
     /// so tests read the label out of that box instead of `Button::label`.
     #[cfg(test)]
     pub(super) fn button_label_text(&self) -> Option<String> {
@@ -178,7 +178,7 @@ impl SourceEmptyState {
         None
     }
 
-    /// `SRC-10` addendum: reads the button's actual icon back out — the
+    /// `SRC-10a` addendum: reads the button's actual icon back out — the
     /// module-off state's whole point is that this is *not* always
     /// `"list-add-symbolic"`.
     #[cfg(test)]
@@ -270,7 +270,7 @@ mod tests {
 
     #[test]
     #[ignore = "requires a display; run via xvfb-run"]
-    fn src_10_geometry_renders_glyph_title_body_one_button_and_secondary_in_order() {
+    fn src_10a_geometry_renders_glyph_title_body_one_button_and_secondary_in_order() {
         gtk4::init().unwrap();
         let state = SourceEmptyState::new(&copy(Some("or paste a channel URL in the dialog")));
         let root = state.widget().clone().downcast::<gtk4::Box>().unwrap();
@@ -301,7 +301,7 @@ mod tests {
 
     #[test]
     #[ignore = "requires a display; run via xvfb-run"]
-    fn src_10_glyph_is_centered_inside_its_tile() {
+    fn src_10a_glyph_is_centered_inside_its_tile() {
         gtk4::init().unwrap();
         let state = SourceEmptyState::new(&copy(None));
         let root = state.widget().clone().downcast::<gtk4::Box>().unwrap();
@@ -348,7 +348,7 @@ mod tests {
 
     #[test]
     #[ignore = "requires a display; run via xvfb-run"]
-    fn src_10_the_secondary_line_is_omitted_not_left_blank_when_a_source_has_none() {
+    fn src_10a_the_secondary_line_is_omitted_not_left_blank_when_a_source_has_none() {
         gtk4::init().unwrap();
         let state = SourceEmptyState::new(&copy(None));
         let root = state.widget().clone().downcast::<gtk4::Box>().unwrap();
@@ -360,7 +360,7 @@ mod tests {
 
     #[test]
     #[ignore = "requires a display; run via xvfb-run"]
-    fn src_10_the_single_add_button_carries_a_plus_icon_and_fires_its_callback() {
+    fn src_10a_the_single_add_button_carries_a_plus_icon_and_fires_its_callback() {
         gtk4::init().unwrap();
         let state = SourceEmptyState::new(&copy(None));
         let clicked = std::rc::Rc::new(std::cell::Cell::new(false));
@@ -373,7 +373,7 @@ mod tests {
 
     #[test]
     #[ignore = "requires a display; run via xvfb-run"]
-    fn src_10_the_button_icon_is_never_hardcoded_to_a_plus() {
+    fn src_10a_the_button_icon_is_never_hardcoded_to_a_plus() {
         gtk4::init().unwrap();
         let mut module_off = copy(None);
         module_off.button_icon_name = "network-server-symbolic";
@@ -388,7 +388,7 @@ mod tests {
     }
 
     #[test]
-    fn src_10_css_defines_a_subdued_rounded_tile_not_a_generic_placeholder_graphic() {
+    fn src_10a_css_defines_a_subdued_rounded_tile_not_a_generic_placeholder_graphic() {
         let css = css();
         assert!(css.contains(".reprise-source-empty-state-tile"));
         assert!(css.contains("border-radius"));

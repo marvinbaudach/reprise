@@ -2,13 +2,13 @@
 pub(super) enum PodcastsEmptyState {
     List,
     Empty,
-    /// `SRC-10` addendum (Block B2): nothing subscribed yet **and** this
+    /// `SRC-10a` addendum (Block B2): nothing subscribed yet **and** this
     /// source's own module is switched off (`G1`/`NET-1a`) — the true empty
     /// state's sibling, offering "Enable in Preferences" instead of Add.
     ModuleOff,
     NoEpisodes,
     NoResults,
-    /// `SRC-10` addendum (Block B2): the "Downloaded" filter is active and
+    /// `SRC-10a` addendum (Block B2): the "Downloaded" filter is active and
     /// nothing downloaded matches it — distinct from `NoResults` so the
     /// copy can say why, not just that nothing matched.
     NoDownloads,
@@ -73,11 +73,11 @@ mod tests {
         );
     }
 
-    /// `SRC-10` addendum: a switched-off module with zero subscriptions must
+    /// `SRC-10a` addendum: a switched-off module with zero subscriptions must
     /// decide `ModuleOff`, not the ordinary `Empty` — would go red if the
     /// module gate were ignored, since both share `subscription_count == 0`.
     #[test]
-    fn src_10_a_switched_off_module_with_nothing_subscribed_decides_module_off_not_empty() {
+    fn src_10a_a_switched_off_module_with_nothing_subscribed_decides_module_off_not_empty() {
         assert_eq!(
             podcasts_empty_state_for(0, 0, 0, false, false, false, false),
             PodcastsEmptyState::ModuleOff
@@ -91,23 +91,23 @@ mod tests {
         );
     }
 
-    /// `SRC-10` addendum: a filter that matches nothing must decide
+    /// `SRC-10a` addendum: a filter that matches nothing must decide
     /// `NoResults`, never silently fall back to `Empty`/`NoEpisodes` — would
     /// go red if `has_filter` were ignored after subscriptions and episodes
     /// both exist.
     #[test]
-    fn src_10_a_filter_matching_nothing_decides_no_results_not_empty_or_no_episodes() {
+    fn src_10a_a_filter_matching_nothing_decides_no_results_not_empty_or_no_episodes() {
         assert_eq!(
             podcasts_empty_state_for(2, 10, 0, true, false, true, false),
             PodcastsEmptyState::NoResults
         );
     }
 
-    /// `SRC-10` addendum: the "Downloaded" filter matching nothing decides
+    /// `SRC-10a` addendum: the "Downloaded" filter matching nothing decides
     /// its own `NoDownloads` case rather than the generic `NoResults` — the
     /// two must diverge even though both are "a filter matched zero rows".
     #[test]
-    fn src_10_the_downloaded_filter_matching_nothing_decides_no_downloads_not_no_results() {
+    fn src_10a_the_downloaded_filter_matching_nothing_decides_no_downloads_not_no_results() {
         assert_eq!(
             podcasts_empty_state_for(2, 10, 0, true, true, true, false),
             PodcastsEmptyState::NoDownloads
