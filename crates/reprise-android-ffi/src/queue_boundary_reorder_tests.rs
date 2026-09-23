@@ -1,4 +1,5 @@
 use super::*;
+use std::path::PathBuf;
 
 #[test]
 fn queue_order_previous_then_next_round_trips_with_and_without_shuffle() {
@@ -53,20 +54,16 @@ fn live_deleted_upcoming_track_is_pruned_and_the_last_window_terminates() {
         )
         .unwrap();
 
-    let database_path = directory.path().join(crate::DATABASE_FILE_NAME);
-    let database = reprise_core::db::Db::open_ready(&database_path).unwrap();
-    assert_eq!(
+    let writer = session.library_writer();
+    session.flush_queue_persistence();
+    let removed = {
+        let database = writer.lock().unwrap();
         reprise_core::queries::remove_tracks_matching_paths(
             &database,
-            &[(
-                track("Deleted").id,
-                std::path::PathBuf::from(&track("Deleted").path),
-            )],
+            &[(track("Deleted").id, PathBuf::from(&track("Deleted").path))],
         )
-        .unwrap(),
-        vec![track("Deleted").id],
-    );
-    drop(database);
+    };
+    assert_eq!(removed.unwrap(), vec![track("Deleted").id]);
 
     let window = session
         .upcoming_tracks(WindowRange {
@@ -108,17 +105,16 @@ fn pruning_a_live_deleted_duplicate_keeps_the_loaded_current_slot() {
         )
         .unwrap();
 
-    let database_path = directory.path().join(crate::DATABASE_FILE_NAME);
-    let database = reprise_core::db::Db::open_ready(&database_path).unwrap();
-    reprise_core::queries::remove_tracks_matching_paths(
-        &database,
-        &[(
-            track("Current").id,
-            std::path::PathBuf::from(&track("Current").path),
-        )],
-    )
-    .unwrap();
-    drop(database);
+    let writer = session.library_writer();
+    session.flush_queue_persistence();
+    let removed = {
+        let database = writer.lock().unwrap();
+        reprise_core::queries::remove_tracks_matching_paths(
+            &database,
+            &[(track("Current").id, PathBuf::from(&track("Current").path))],
+        )
+    };
+    removed.unwrap();
 
     let window = session
         .upcoming_tracks(WindowRange {

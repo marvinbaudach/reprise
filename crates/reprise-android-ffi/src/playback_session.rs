@@ -3,6 +3,8 @@
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex, MutexGuard, OnceLock};
 
+#[cfg(test)]
+use reprise_core::db::Db;
 use reprise_core::playback::{PlaybackBackend, StreamGeneration};
 use reprise_core::queue::{Queue, Repeat};
 
@@ -693,6 +695,19 @@ impl AndroidPlaybackSession {
 impl AndroidPlaybackSession {
     pub(crate) fn flush_queue_persistence(&self) {
         self.inner.queue.flush();
+    }
+
+    /// The one writing connection every session writer shares — the queue
+    /// persister and the play recorder both hold this exact handle.
+    ///
+    /// A test that mutates the library while this session is live must write
+    /// through it, never through a `Db::open_ready` of its own: a second writing
+    /// connection contends with those background writers for the SQLite write
+    /// lock, and losing that race past `DEFAULT_BUSY_TIMEOUT_MS` is a
+    /// `DatabaseBusy` panic rather than a wait. Android production has exactly
+    /// one writing connection per process, so this is also the faithful shape.
+    pub(crate) fn library_writer(&self) -> Arc<Mutex<Db>> {
+        self.inner.library.writer_handle()
     }
 }
 
