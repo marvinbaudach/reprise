@@ -427,15 +427,19 @@ a sibling module because `tests.rs` was already too close to the 800-line cap.
 | GUARD-3 | library-doctor-guard-rails | `crates/reprise-core/src/{db_library_doctor,db}.rs`, `crates/reprise-core/src/library/library_doctor/store.rs` |
 | GUARD-4 | library-doctor-guard-rails | `crates/reprise-core/src/library/library_doctor/{tests,guard_rail_scan_tests}.rs` |
 
-## Active file ownership — Library Doctor fix round 3
+## Completed file ownership — Library Doctor fix round 3
 
 Branch: `feature/library-doctor-fix-round-3`
 
-This ownership is ACTIVE until the stage is complete. Packages run in the wave
-order recorded here. `MATCH-3`, `PERF-1`, and `PERF-3` are the only writers of
-`scan.rs` and run strictly in that sequence. The string catalog and UX rules
-reach their final stage shape in Wave 0 and are read-only for every later
-package.
+This ownership is COMPLETE and released. Every package below is on `dev`, and
+no branch, pull request or worktree named `feature/library-doctor-fix-round-3`
+exists any more. The table stays as the historical package boundary and as the
+record of the write order the stage ran in: `MATCH-3`, `PERF-1` and `PERF-3`
+were the only writers of `scan.rs` and ran strictly in that sequence, and the
+string catalog and UX rules reached their final stage shape in Wave 0.
+
+Checked 2026-09-23, the same way the "Plans checked before P1a" entry above was
+checked: the field was stale, not the work.
 
 | Wave | Package | Owned files |
 | --- | --- | --- |
