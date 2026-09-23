@@ -56,14 +56,17 @@ fn live_deleted_upcoming_track_is_pruned_and_the_last_window_terminates() {
 
     let writer = session.library_writer();
     session.flush_queue_persistence();
+    let deleted = track("Deleted");
     let removed = {
-        let database = writer.lock().unwrap();
+        let database = writer
+            .lock()
+            .expect("library writer poisoned by an earlier panic");
         reprise_core::queries::remove_tracks_matching_paths(
             &database,
-            &[(track("Deleted").id, PathBuf::from(&track("Deleted").path))],
+            &[(deleted.id, PathBuf::from(&deleted.path))],
         )
     };
-    assert_eq!(removed.unwrap(), vec![track("Deleted").id]);
+    assert_eq!(removed.unwrap(), vec![deleted.id]);
 
     let window = session
         .upcoming_tracks(WindowRange {
@@ -107,11 +110,14 @@ fn pruning_a_live_deleted_duplicate_keeps_the_loaded_current_slot() {
 
     let writer = session.library_writer();
     session.flush_queue_persistence();
+    let current = track("Current");
     let removed = {
-        let database = writer.lock().unwrap();
+        let database = writer
+            .lock()
+            .expect("library writer poisoned by an earlier panic");
         reprise_core::queries::remove_tracks_matching_paths(
             &database,
-            &[(track("Current").id, PathBuf::from(&track("Current").path))],
+            &[(current.id, PathBuf::from(&current.path))],
         )
     };
     removed.unwrap();

@@ -704,8 +704,8 @@ impl AndroidPlaybackSession {
     /// through it, never through a `Db::open_ready` of its own: a second writing
     /// connection contends with those background writers for the SQLite write
     /// lock, and losing that race past `DEFAULT_BUSY_TIMEOUT_MS` is a
-    /// `DatabaseBusy` panic rather than a wait. Android production has exactly
-    /// one writing connection per process, so this is also the faithful shape.
+    /// `DatabaseBusy` panic rather than a wait. Every Android library write goes
+    /// through this handle; other write-capable connections only read by convention.
     pub(crate) fn library_writer(&self) -> Arc<Mutex<Db>> {
         self.inner.library.writer_handle()
     }
