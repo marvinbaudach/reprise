@@ -483,18 +483,15 @@ pub fn query_album_canonical_track_ids(
     let conn = db.conn();
     let sql = format!(
         "SELECT id FROM tracks WHERE {PRESENT} AND TRIM(album) <> '' \
-         AND TRIM(album) = ?1 COLLATE NOCASE \
-         AND {EFFECTIVE_ALBUM_ARTIST} = ?2 COLLATE NOCASE \
+         AND TRIM(album) = TRIM(?1) COLLATE NOCASE \
+         AND {EFFECTIVE_ALBUM_ARTIST} = TRIM(?2) COLLATE NOCASE \
          ORDER BY COALESCE(disc_no, 1) ASC, \
                   CASE WHEN track_no IS NULL THEN 1 ELSE 0 END ASC, \
                   track_no ASC, path COLLATE NOCASE ASC, id ASC \
          LIMIT {QUEUE_LIMIT}"
     );
     let mut statement = conn.prepare(&sql)?;
-    let rows = statement.query_map(
-        rusqlite::params![album.trim(), album_artist.trim()],
-        row_to_id,
-    )?;
+    let rows = statement.query_map(rusqlite::params![album, album_artist], row_to_id)?;
     rows.collect()
 }
 
@@ -506,6 +503,11 @@ pub fn query_album_canonical_track_ids(
 /// Like [`query_album_canonical_track_ids`], this list is what the Android
 /// context menu offers to delete from the device, so a blank artist selects
 /// nothing instead of every track that carries no artist tag.
+///
+/// Both id queries let SQLite trim their arguments rather than Rust: the
+/// column side uses `TRIM()`, which strips only spaces, while `str::trim` also
+/// strips a no-break space. Trimming in Rust would let "Artist" followed by a
+/// no-break space select — and delete — the tracks of the separate "Artist" row.
 pub fn query_artist_canonical_track_ids(
     db: &Db,
     artist: &str,
@@ -517,7 +519,7 @@ pub fn query_artist_canonical_track_ids(
                   MIN(CASE WHEN year > 0 THEN year END) \
                     OVER (PARTITION BY LOWER(TRIM(album))) AS album_year \
            FROM tracks WHERE {PRESENT} AND TRIM({EFFECTIVE_ALBUM_ARTIST}) <> '' \
-           AND {EFFECTIVE_ALBUM_ARTIST} = ?1 COLLATE NOCASE \
+           AND {EFFECTIVE_ALBUM_ARTIST} = TRIM(?1) COLLATE NOCASE \
          ) \
          SELECT id FROM artist_tracks \
          ORDER BY CASE WHEN album = '' THEN 1 ELSE 0 END ASC, \
@@ -529,7 +531,7 @@ pub fn query_artist_canonical_track_ids(
          LIMIT {QUEUE_LIMIT}"
     );
     let mut statement = conn.prepare(&sql)?;
-    let rows = statement.query_map(rusqlite::params![artist.trim()], row_to_id)?;
+    let rows = statement.query_map(rusqlite::params![artist], row_to_id)?;
     rows.collect()
 }
 

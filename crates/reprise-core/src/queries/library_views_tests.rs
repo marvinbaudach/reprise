@@ -715,3 +715,36 @@ fn canonical_artist_ids_never_collect_the_rows_without_an_artist() {
         [30]
     );
 }
+
+#[test]
+fn canonical_ids_trim_like_the_rows_they_were_listed_from() {
+    let db = crate::db::Db::open_in_memory().unwrap();
+    let conn = db.conn();
+    conn.execute_batch(
+        "INSERT INTO tracks
+           (id,path,title,artist,album,album_artist,added_at,missing_since) VALUES
+         (10,'/music/plain.flac','Plain','Artist','Album','',0,NULL),
+         (20,'/music/nbsp.flac','Nbsp','Artist\u{a0}','Album\u{a0}','',0,NULL);",
+    )
+    .unwrap();
+
+    // The artist list shows two rows here. Each delete must take its own row
+    // only, so a no-break space may not be trimmed away on one side alone.
+    assert_eq!(query_artists(&db, "", full_window()).unwrap().total, 2);
+    assert_eq!(
+        query_artist_canonical_track_ids(&db, "Artist").unwrap(),
+        [10]
+    );
+    assert_eq!(
+        query_artist_canonical_track_ids(&db, "Artist\u{a0}").unwrap(),
+        [20]
+    );
+    assert_eq!(
+        query_album_canonical_track_ids(&db, "Album\u{a0}", "Artist\u{a0}").unwrap(),
+        [20]
+    );
+    assert_eq!(
+        query_album_canonical_track_ids(&db, " Album ", " Artist ").unwrap(),
+        [10]
+    );
+}

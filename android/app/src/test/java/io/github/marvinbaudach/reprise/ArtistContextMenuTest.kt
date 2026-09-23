@@ -92,6 +92,7 @@ class ArtistContextMenuTest {
         controls: RecordingContextMenuControls,
         selectedArtist: ArtistTrackList?,
     ) {
+        val surfaceState = MobileSurfaceViewModel()
         compose.setContent {
             MaterialTheme {
                 CompositionLocalProvider(
@@ -103,7 +104,7 @@ class ArtistContextMenuTest {
                 ) {
                     ArtistsTab(
                         surfaceLayout = SurfaceLayout.STACKED,
-                        surfaceState = MobileSurfaceViewModel(),
+                        surfaceState = surfaceState,
                         artists = LibraryWindow(2, listOf(artist, otherArtist), false),
                         searchText = "",
                         selectedArtist = selectedArtist,
