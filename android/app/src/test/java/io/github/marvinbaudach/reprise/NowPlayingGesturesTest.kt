@@ -379,6 +379,11 @@ class NowPlayingGesturesTest {
     }
 
     @Test
+    fun fogCrossfadeUsesTheAcceptedDuration() {
+        assertEquals(1000, FOG_CROSSFADE_MS)
+    }
+
+    @Test
     fun singleTapOnTheCoverSwitchesToTheSpectrumAndBack() {
         val preference = RecordingVisualizerPreference()
         val engines = RecordingVisualEngineFactory()

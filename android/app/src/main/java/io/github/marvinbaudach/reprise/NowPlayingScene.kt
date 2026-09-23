@@ -24,11 +24,12 @@ import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.key
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
-import androidx.compose.ui.FrameRateCategory
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.blur
 import androidx.compose.ui.geometry.CornerRadius
@@ -66,12 +67,12 @@ import kotlin.math.abs
 import kotlin.math.max
 import kotlin.math.min
 
-private const val COVER_SIZE_DP = 272
+// Shared with NowPlayingFogLayer.kt, which centres the one stationary fog
+// canvas on the same cover geometry the panels use.
+internal const val COVER_SIZE_DP = 272
 private const val COVER_RADIUS_DP = 18f
-private const val PLAYED_CENTRE_FRACTION = 0.34f
+internal const val PLAYED_CENTRE_FRACTION = 0.34f
 private const val TITLE_TO_ARTIST_GAP_DP = 6
-private const val TITLE_PANEL_WIDTH_RATIO = 1.282f
-private const val GLOW_TRANSLATION_FACTOR = 0.23f
 private const val MAXIMUM_COLOR_CHANNEL = 255
 
 private val SATURATION_FILTERS by lazy {
@@ -87,244 +88,6 @@ private fun cachedSaturationFilter(saturation: Float): ColorFilter? {
     return SATURATION_FILTERS[channel]
 }
 
-internal data class NowPlayingPanelTransform(
-    val translationX: Float,
-    val scale: Float,
-    val rotationDegrees: Float,
-    val opacity: Float,
-    val blurPx: Float,
-    val saturation: Float,
-) {
-    val rotationForLayer: Float?
-        get() = rotationDegrees.takeUnless { it.toRawBits() == 0f.toRawBits() }
-}
-
-internal fun nowPlayingPanelTransform(
-    panelIndex: Int,
-    positionPx: Float,
-    widthPx: Float,
-): NowPlayingPanelTransform {
-    if (widthPx <= 0f) return NowPlayingPanelTransform(0f, 1f, 0f, 1f, 0f, 1f)
-    if (positionPx == panelIndex * widthPx) {
-        return NowPlayingPanelTransform(0f, 1f, 0f, 1f, 0f, 1f)
-    }
-    val fractionalIndex = positionPx / widthPx
-    val delta = panelIndex - fractionalIndex
-    val distance = min(1.6f, abs(delta))
-    val near = max(0f, 1f - min(1f, abs(delta)))
-    return NowPlayingPanelTransform(
-        translationX = panelIndex * widthPx - positionPx,
-        scale = 1f - distance * 0.13f,
-        rotationDegrees = delta.coerceIn(-1f, 1f) * -3.5f,
-        opacity = max(0f, 1f - distance * 0.75f),
-        blurPx = (1f - near) * 5f,
-        saturation = 0.4f + near * 0.6f,
-    )
-}
-
-// The title rides its own panel offset at the wider ratio and nothing else.
-// A half-panel-width term used to be subtracted here to re-centre a container
-// that is laid out `TITLE_PANEL_WIDTH_RATIO` wide, but that container already
-// centres its text on the screen, so the term only shifted every title
-// 0.141 * width to the left -- 152 px on a 1080 px screen, enough to clip the
-// first glyphs of a long title off the display. It also broke the symmetry the
-// panels need: the neighbour on the left has to sit as far out as the one on
-// the right, which only holds when this is odd in `positionPx`.
-internal fun nowPlayingTitleTranslation(positionPx: Float): Float =
-    -positionPx * TITLE_PANEL_WIDTH_RATIO
-
-internal data class NowPlayingGlowTransform(
-    val translationX: Float,
-    val opacity: Float,
-)
-
-internal fun nowPlayingGlowTransform(
-    panelIndex: Int,
-    positionPx: Float,
-    widthPx: Float,
-): NowPlayingGlowTransform {
-    if (widthPx <= 0f) return NowPlayingGlowTransform(0f, 1f)
-    if (positionPx == panelIndex * widthPx) return NowPlayingGlowTransform(0f, 1f)
-    val delta = panelIndex - positionPx / widthPx
-    return NowPlayingGlowTransform(
-        translationX = delta * widthPx * GLOW_TRANSLATION_FACTOR,
-        opacity = max(0f, 1f - abs(delta) * 1.1f),
-    )
-}
-
-internal data class NowPlayingProgressTransform(
-    val translationY: Float,
-    val opacity: Float,
-    val scaleX: Float,
-)
-
-internal fun nowPlayingProgressTransform(
-    currentIndex: Int,
-    positionPx: Float,
-    widthPx: Float,
-): NowPlayingProgressTransform {
-    val offset = if (widthPx > 0f) {
-        min(1f, abs(positionPx / widthPx - currentIndex))
-    } else {
-        0f
-    }
-    return NowPlayingProgressTransform(
-        translationY = -offset * 70f,
-        opacity = 1f - offset * 0.9f,
-        scaleX = 1f - offset * 0.06f,
-    )
-}
-
-internal data class NowPlayingVisualBlend(
-    val coverOpacity: Float,
-    val barsOpacity: Float,
-)
-
-/**
- * Decides between a panel's cover and its bars from data availability alone.
- *
- * This used to be `near`, the panel's distance from the pager's centre —
- * which meant a neighbour with its spectrogram already loaded still showed
- * its cover, and the panel that had just become current could lose its bars
- * again mid-swipe, before it settled back to `near == 1`. Distance is still
- * used elsewhere (scale, blur, saturation): it earns a panel's depth, not
- * whether it is allowed to show what it already has.
- *
- * [dataAvailability] carries the animation, not this function: it is 0 or 1
- * at rest, and only spends time strictly between them while a caller fades
- * one into the other. `visualizerOpacity == 0` still forces the cover — a
- * listener who chose cover mode is not offering an opinion on data
- * availability.
- */
-internal fun nowPlayingVisualBlend(
-    visualizerOpacity: Float,
-    dataAvailability: Float,
-): NowPlayingVisualBlend {
-    val availability = dataAvailability.coerceIn(0f, 1f)
-    val bars = visualizerOpacity.coerceIn(0f, 1f) * availability
-    return NowPlayingVisualBlend(coverOpacity = 1f - bars, barsOpacity = bars)
-}
-
-/**
- * Whether a panel has a real scene to draw as bars right now.
- *
- * A stored spectrogram always counts, and so does a scene the panel has
- * actually captured — never the mere fact of being live: a track the desktop
- * never analysed starts with nothing to scene, and this stays false until a
- * real, non-empty frame has been drawn. Getting this wrong opened the bars
- * slot the instant a panel became live, before its engine had anything to
- * show, which painted an empty (flat or black) scene over the cover during
- * the crossfade.
- *
- * The captured scene counts off the live slot too. The outgoing panel keeps
- * the bars it drew while live until the new engine speaks, then mirrors that
- * one on its way out; a neighbour that mirrored the live scene during the
- * swipe keeps that picture. In visualizer mode no panel falls back to its
- * cover for want of data, which is what used to flash the covers up mid-swipe.
- *
- * A panel that *could* mirror the live engine ([panelCanMirrorLiveScene])
- * counts too, even at rest and even before its own stored spectrogram has
- * finished loading and before [FrozenSceneBytes] has latched a frame of its
- * own: whether it is on screen yet is a render-cost question
- * ([panelMirrorsLiveScene]'s `near` gate), not a data-availability one. Gating
- * this on `near` instead used to leave `dataAvailability` resting at 0 for a
- * neighbour without its own spectrogram, so the first drag pixel that turned
- * `near` positive flipped the target to 1 and the crossfade tween flashed the
- * cover up for its own duration at the start of every swipe. This stays a
- * pure rule change — the live panel itself never mirrors
- * ([panelCanMirrorLiveScene] is false for it), so it keeps requiring a real
- * captured frame, exactly as before.
- */
-internal fun panelHasVisualData(
-    storedFrameCount: Int,
-    hasCapturedLiveScene: Boolean,
-    canMirrorLiveScene: Boolean,
-): Boolean = storedFrameCount > 0 || hasCapturedLiveScene || canMirrorLiveScene
-
-/**
- * Whether a neighbour *could* draw the live panel's scene instead of its own,
- * regardless of whether it is currently on screen.
- *
- * A neighbour without a stored spectrogram has no scene of its own — its
- * engine hears nothing — so once the swipe carries it onto the screen it
- * mirrors the live engine, tinted in its own accent. The panel that has just
- * lost the live slot is such a neighbour too: it slides out with the bars of
- * what is playing rather than a frozen picture of what was. A stored
- * spectrogram is the panel's own picture and wins; the live panel is the
- * source, not a mirror.
- */
-internal fun panelCanMirrorLiveScene(
-    isLivePanel: Boolean,
-    storedFrameCount: Int,
-    liveSceneAvailable: Boolean,
-): Boolean = !isLivePanel && storedFrameCount == 0 && liveSceneAvailable
-
-/**
- * Whether a neighbour is actually drawing the live panel's scene right now.
- *
- * Same eligibility as [panelCanMirrorLiveScene], plus `near > 0f`: off the
- * screen nothing is mirrored, so a resting neighbour costs no render. This
- * gate is a render-cost decision only — it must not gate [panelHasVisualData]
- * too, or a panel eligible to mirror once dragged onscreen would flash its
- * cover for the first frames of every swipe while `near` catches up.
- */
-internal fun panelMirrorsLiveScene(
-    isLivePanel: Boolean,
-    storedFrameCount: Int,
-    near: Float,
-    liveSceneAvailable: Boolean,
-): Boolean = panelCanMirrorLiveScene(isLivePanel, storedFrameCount, liveSceneAvailable) && near > 0f
-
-/**
- * Whether a newly created live engine should adopt the outgoing live engine's
- * bar shape instead of starting from zero.
- *
- * Production gives each panel a new lease over one shared live engine (see
- * [visualSceneFactoryForPanel]). The explicit `noteTrackChanged()` call resets
- * that engine's CAVA history, which otherwise leaves a bare peak cap with no
- * bars underneath for one frame; the seed carries the displayed shape across
- * that reset. Only the panel taking over the live slot adopts anything — a
- * non-live panel's engine never scenes live audio, and a panel that keeps the
- * live slot across a recomposition has no `previous` to speak of (`created`
- * did not change). In production `previous !== created` is always true
- * because every `create()` returns a new lease; it only guards test doubles
- * that return the same engine instance.
- */
-internal fun shouldAdoptLiveShape(
-    live: Boolean,
-    previous: VisualSceneEngine?,
-    created: VisualSceneEngine,
-): Boolean = live && previous != null && previous !== created
-
-/**
- * Whether a panel drawing the live scene still has to poll for its first one.
- *
- * `sceneBytes()` is the only place [FrozenSceneBytes] learns that real data
- * has landed, so a panel that owns or mirrors the live scene must keep
- * evaluating it even while [panelHasVisualData] is still false — otherwise it
- * could never leave that state. Only while bars were actually asked for, so a
- * panel viewed in pure cover mode never pays for a scene it will not draw.
- */
-internal fun panelAwaitsFirstLiveScene(
-    visualizerOpacity: Float,
-    drawsLiveScene: Boolean,
-    hasCapturedLiveScene: Boolean,
-): Boolean = visualizerOpacity > 0f && drawsLiveScene && !hasCapturedLiveScene
-
-internal fun shouldRequestHighVisualizerFrameRate(
-    visualizerOpacity: Float,
-    playing: Boolean,
-): Boolean = visualizerOpacity.isFinite() && visualizerOpacity > 0f && playing
-
-internal fun requestedVisualizerFrameRateCategory(
-    visualizerOpacity: Float,
-    playing: Boolean,
-): FrameRateCategory? = if (shouldRequestHighVisualizerFrameRate(visualizerOpacity, playing)) {
-    FrameRateCategory.High
-} else {
-    null
-}
-
 @Composable
 internal fun NowPlayingScene(
     track: LibraryTrack,
@@ -334,7 +97,14 @@ internal fun NowPlayingScene(
     currentIndex: Int = 0,
     panels: List<PlayPanel> = listOf(PlayPanel(currentIndex, track)),
     visualizerOpacity: Float = 0f,
+    // No default of visualizerOpacity here: that would let a forgetful caller
+    // land on the bars' fast 220 ms light with no compiler complaint. See
+    // NowPlayingSheet, which drives this from its own slow FOG_CROSSFADE_MS clock.
+    visualizerLight: Float,
     cueRevision: Int = 0,
+    // Hoisted with a default rather than remembered locally so a test can hand
+    // in its own handle and read what the live panel published to it.
+    liveScene: LiveSceneHandle = remember { LiveSceneHandle() },
     onCoverBounds: (Rect) -> Unit = {},
     onSeekBounds: (Rect) -> Unit = {},
     onPrevious: () -> Unit = {},
@@ -372,8 +142,11 @@ internal fun NowPlayingScene(
             )
         }
         SideEffect { onCoverBounds(reportedCoverBounds) }
-        val liveScene = remember { LiveSceneHandle() }
         Box(Modifier.fillMaxSize().testTag("now-playing-scene")) {
+            // Drawn first so every panel rides on top of it: the fog no longer
+            // belongs to any one panel's canvas (see NowPlayingPanelLayer below),
+            // it is one stationary layer the live panel publishes into.
+            NowPlayingFogLayer(liveScene, motion, visualizerLight)
             panels.forEach { panel ->
                 key(panel.track.id, panel.index) {
                     NowPlayingPanelLayer(
@@ -484,17 +257,39 @@ private fun NowPlayingPanelLayer(
         live = isLivePanel,
         liveScene = liveScene,
     )
+    // Read via rememberUpdatedState, not the plain val: this panel can keep the
+    // live slot across many recompositions in which fog/state are replaced
+    // (a fresh blur landing, a track change swapping the frames), while the
+    // DisposableEffect below only remounts when visualEngine's identity
+    // changes. Its onDispose must still see whatever this panel last
+    // published, or the === guard below would compare against a stale value
+    // and never clear the handle.
+    val latestFog by rememberUpdatedState(fog)
+    val latestState by rememberUpdatedState(state)
     if (isLivePanel) {
         DisposableEffect(liveScene, visualEngine) {
             liveScene.engine = visualEngine
-            onDispose { if (liveScene.engine === visualEngine) liveScene.engine = null }
+            onDispose {
+                if (liveScene.engine === visualEngine) liveScene.engine = null
+                if (liveScene.fog === latestFog) liveScene.fog = null
+                if (liveScene.state === latestState) liveScene.state = null
+            }
         }
     }
     val frameSink = remember(visualEngine) { visualEngine?.let(::visualSceneFrameSink) }
     val drawRevision = DriveScene(frames, state, playback, motion, frameSink)
-    val power = motion.sceneRenderPower()
+    if (isLivePanel) {
+        // The revision write is what invalidates NowPlayingFogLayer's canvas:
+        // it is the one field here that changes every scene frame, and the
+        // layer's draw lambda reads it purely so Compose reruns that draw,
+        // the same way each panel's own canvases already observe it.
+        SideEffect {
+            liveScene.fog = fog
+            liveScene.state = state
+            liveScene.drawRevision = drawRevision
+        }
+    }
     val transform = nowPlayingPanelTransform(panel.index, positionPx, widthPx)
-    val glow = nowPlayingGlowTransform(panel.index, positionPx, widthPx)
     val distance = if (widthPx > 0f) abs(panel.index - positionPx / widthPx) else 0f
     val near = max(0f, 1f - min(1f, distance))
     val frozenScene = rememberFrozenSceneBytes(panel.track.id)
@@ -526,30 +321,8 @@ private fun NowPlayingPanelLayer(
     val density = LocalDensity.current
     val saturationFilter = cachedSaturationFilter(transform.saturation)
 
-    Canvas(
-        modifier = Modifier
-            .fillMaxSize()
-            .graphicsLayer { translationX = glow.translationX },
-    ) {
-        observeSceneFrame(drawRevision)
-        val center = Offset(size.width / 2f, size.height * PLAYED_CENTRE_FRACTION)
-        drawPlayedNowPlayingFog(
-            fog = fog,
-            center = center,
-            state = state,
-            visualizerOpacity = barsOpacity,
-            opacity = glow.opacity,
-            rotationsEnabled = power.fogRotates,
-        )
-        drawPlayedNowPlayingShimmer(
-            fog = fog,
-            center = center,
-            state = state,
-            opacity = glow.opacity,
-            rotationsEnabled = power.fogRotates,
-        )
-    }
-
+    // The panel now draws only its own cover box and bars; the fog is
+    // NowPlayingFogLayer's, drawn once behind every panel (see NowPlayingScene).
     Box(
         modifier = Modifier
             .offset(y = coverTop)
@@ -687,15 +460,23 @@ internal fun updateVisualSceneEngine(
 }
 
 /**
- * The live panel's engine, published for the neighbours to mirror.
+ * What the live panel publishes for the rest of the scene to read.
  *
- * Owned by the scene, written by whichever panel is live, read by a neighbour
- * the swipe has carried onto the screen (see [panelMirrorsLiveScene]). It is
- * only ever the current engine or null; a neighbour never keeps it past the
- * frame it drew.
+ * [engine] is read by a neighbour the swipe has carried onto the screen (see
+ * [panelMirrorsLiveScene]) — only ever the current engine or null, and a
+ * neighbour never keeps it past the frame it drew. [fog] and [state] are read
+ * by [NowPlayingFogLayer], the one stationary fog canvas behind every panel:
+ * since the fog no longer belongs to any one panel's own canvas, it has to
+ * learn what the live panel is currently showing from here instead.
+ * [drawRevision] is the live panel's own per-frame counter ([DriveScene]'s
+ * return value), republished so the fog layer's canvas invalidates on exactly
+ * the same frames the live panel's own canvases do.
  */
 internal class LiveSceneHandle {
     var engine: VisualSceneEngine? by mutableStateOf(null)
+    var fog: CoverFogBitmap? by mutableStateOf(null)
+    var state: SceneState? by mutableStateOf(null)
+    var drawRevision: Int by mutableIntStateOf(0)
 }
 
 @Composable
@@ -744,47 +525,6 @@ internal fun visualSceneFrameSink(engine: VisualSceneEngine): SceneFrameSink =
             engine.tick()
         }
     }
-
-/** The played-view wiring kept shared with its rendered-pixel verification. */
-internal fun DrawScope.drawPlayedNowPlayingFog(
-    fog: CoverFogBitmap?,
-    center: Offset,
-    state: SceneState,
-    visualizerOpacity: Float,
-    opacity: Float,
-    rotationsEnabled: Boolean,
-) {
-    drawNowPlayingFog(
-        // Behind the spectrum there is no artwork to read a palette from, so
-        // the film borrows the ramp the bars themselves are drawn from and
-        // follows the cross-fade across to it.
-        palette = fog?.palette?.blendedTo(VisualizerRampPalette, visualizerOpacity),
-        center = center,
-        seconds = state.oilFilmSeconds,
-        level = state.oilFilmLevel,
-        opacity = opacity,
-        driftEnabled = rotationsEnabled,
-    )
-}
-
-/** The cover-disc wiring shared with its deterministic renderer tests. */
-internal fun DrawScope.drawPlayedNowPlayingShimmer(
-    fog: CoverFogBitmap?,
-    center: Offset,
-    state: SceneState,
-    opacity: Float,
-    rotationsEnabled: Boolean,
-) {
-    drawNowPlayingShimmer(
-        fog = fog,
-        center = center,
-        coverDiameterDp = COVER_SIZE_DP.toFloat(),
-        elapsedSeconds = state.shimmerElapsedSeconds,
-        swell = state.fogLevel,
-        opacity = opacity,
-        rotationsEnabled = rotationsEnabled,
-    )
-}
 
 @Composable
 private fun rememberSpectrogram(trackId: Long): SpectrogramFrames {
@@ -922,4 +662,4 @@ internal fun playedCoverRect(center: Offset, side: Float): Rect = Rect(
 )
 
 /** Keeps the frame counter captured by the scene's draw lambda; the value is not drawn. */
-private fun observeSceneFrame(@Suppress("UNUSED_PARAMETER") revision: Int) = Unit
+internal fun observeSceneFrame(@Suppress("UNUSED_PARAMETER") revision: Int) = Unit

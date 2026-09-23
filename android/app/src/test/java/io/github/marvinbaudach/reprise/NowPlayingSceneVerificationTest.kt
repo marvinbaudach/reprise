@@ -113,6 +113,69 @@ class NowPlayingSceneVerificationTest {
         assertFalse(before.contentEquals(renderScene(state, fog)))
     }
 
+    /**
+     * The crossfade's whole reason to exist: the light in the middle of a
+     * handover is a mixture, never a dip below either end.
+     */
+    @Test
+    fun a_half_arrived_fog_sits_between_its_ends_and_never_dips() {
+        val state = settledFilmState(level = 0.3f)
+        val blackFog = prepareCoverFogBitmap(solidArtwork(Color.BLACK), Color.DKGRAY)
+        val whiteFog = prepareCoverFogBitmap(solidArtwork(Color.WHITE), Color.DKGRAY)
+        val atRest = fogHandover(FogHandover.EMPTY, blackFog, arrival = 1f)
+        val handover = fogHandover(atRest, whiteFog, arrival = 1f)
+
+        val startLuma = meanFogRegionLuma(renderFogLayer(state, handover, arrival = 0f))
+        val halfLuma = meanFogRegionLuma(renderFogLayer(state, handover, arrival = 0.5f))
+        val endLuma = meanFogRegionLuma(renderFogLayer(state, handover, arrival = 1f))
+        val lowEnd = minOf(startLuma, endLuma)
+        val highEnd = maxOf(startLuma, endLuma)
+
+        assertTrue(
+            "half-arrived luma $halfLuma must sit between its ends $lowEnd..$highEnd",
+            halfLuma >= lowEnd - EIGHT_BIT_LUMA_TOLERANCE && halfLuma <= highEnd + EIGHT_BIT_LUMA_TOLERANCE,
+        )
+
+        val freshWhite = renderPlayedFog(state, whiteFog)
+        assertArrayEquals(
+            "a finished handover must leave no residue of the fog it faded from",
+            freshWhite,
+            renderFogLayer(state, handover, arrival = 1f),
+        )
+    }
+
+    /** A handover to a different panel's clock must not jump the film. */
+    @Test
+    fun the_film_continues_the_clock_across_a_handover_to_a_different_panels_state() {
+        val fog = prepareCoverFogBitmap(greyscaleArtwork(), Color.DKGRAY)
+        val handover = fogHandover(FogHandover.EMPTY, fog, arrival = 1f)
+        val zeroFrames = SpectrogramFrames(bandCount = 24, frameRateHz = 20, cells = ByteArray(0))
+
+        val stateA = SceneState(zeroFrames).also { it.advanceOilFilmBy(100f) }
+        val beforeHandover = renderFogLayer(stateA, handover, arrival = 1f)
+
+        val stateB = SceneState(zeroFrames).also { it.advanceOilFilmBy(3f) }
+        val offsets = continuedFogClocks(
+            shownFilmSeconds = stateA.oilFilmSeconds,
+            shownShimmerSeconds = stateA.shimmerElapsedSeconds,
+            newFilmSeconds = stateB.oilFilmSeconds,
+            newShimmerSeconds = stateB.shimmerElapsedSeconds,
+        )
+        val afterHandover = renderFogLayer(stateB, handover, arrival = 1f, clocks = offsets)
+
+        assertEquals(
+            "both states rest at the same level here, or this comparison would prove nothing",
+            stateA.oilFilmLevel,
+            stateB.oilFilmLevel,
+            0f,
+        )
+        assertArrayEquals(
+            "a handover to a different panel's clock must not jump the film",
+            beforeHandover,
+            afterHandover,
+        )
+    }
+
     private fun angleTrace(frames: SpectrogramFrames): IntArray {
         val state = SceneState(frames)
         return IntArray(frames.frameCount * 2).also { trace ->
@@ -147,7 +210,17 @@ class NowPlayingSceneVerificationTest {
         }
     }
 
-    private fun renderPlayedFog(state: SceneState, fog: CoverFogBitmap): IntArray {
+    /** A single, resting fog: no outgoing side, [fog] shown at full strength -- see [fogHandover]. */
+    private fun renderPlayedFog(state: SceneState, fog: CoverFogBitmap): IntArray =
+        renderFogLayer(state, fogHandover(FogHandover.EMPTY, fog, arrival = 1f), arrival = 1f)
+
+    private fun renderFogLayer(
+        state: SceneState,
+        handover: FogHandover,
+        arrival: Float,
+        clocks: FogClockOffsets = FogClockOffsets(0f, 0.0),
+        visualizerLight: Float = 0f,
+    ): IntArray {
         val bitmap = Bitmap.createBitmap(RENDER_WIDTH, RENDER_HEIGHT, Bitmap.Config.ARGB_8888)
         CanvasDrawScope().draw(
             density = Density(1f),
@@ -156,12 +229,13 @@ class NowPlayingSceneVerificationTest {
             size = Size(RENDER_WIDTH.toFloat(), RENDER_HEIGHT.toFloat()),
         ) {
             drawRect(androidx.compose.ui.graphics.Color.Black)
-            drawPlayedNowPlayingFog(
-                fog = fog,
-                center = Offset(size.width / 2f, size.height * PLAYED_CENTRE_FRACTION),
+            drawNowPlayingFogLayer(
+                handover = handover,
+                arrival = arrival,
                 state = state,
-                visualizerOpacity = 0f,
-                opacity = 1f,
+                clocks = clocks,
+                visualizerLight = visualizerLight,
+                center = Offset(size.width / 2f, size.height * PLAYED_CENTRE_FRACTION),
                 rotationsEnabled = false,
             )
         }
@@ -258,7 +332,10 @@ private const val PAUSED_FRAME_COUNT = 3 * 60
 private const val FRAME_INTERVAL_NANOS = 16_666_667L
 private const val RENDER_WIDTH = 240
 private const val RENDER_HEIGHT = 400
-private const val PLAYED_CENTRE_FRACTION = 0.34f
+
+// PLAYED_CENTRE_FRACTION comes from NowPlayingScene.kt: the layer under test
+// centres on the same point the cover does, so the test reuses the production
+// constant rather than risking the two drifting apart.
 private const val FOG_SAMPLE_TOP = 104
 private const val FOG_SAMPLE_BOTTOM = 240
 private const val FOG_SAMPLE_INSET = 24
@@ -269,3 +346,6 @@ private const val SETTLE_FRAME_COUNT = 4 * 20
 /** Twenty seconds of frame loop: ten release constants of the film's follower. */
 private const val FILM_SETTLE_TICKS = 20 * 60
 private const val FILM_SETTLE_STEP_SECONDS = 1f / 60f
+
+/** One 8-bit channel step in [meanFogRegionLuma]'s normalised 0..1 range. */
+private const val EIGHT_BIT_LUMA_TOLERANCE = 1f / 255f
