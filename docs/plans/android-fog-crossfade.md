@@ -2,7 +2,7 @@
 slug: android-fog-crossfade
 worktree: /home/marvin/Projects/reprise-android-fog-crossfade
 branch: feature/android-fog-crossfade
-phase: refactored
+phase: shipped
 codex_session:
 created: 2026-09-18
 ---
