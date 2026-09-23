@@ -62,6 +62,8 @@ internal data class FogHandover(
  * Three cases:
  * - the same fog object again → [previous] itself, so a caller can tell
  *   nothing happened without comparing fields;
+ * - no live fog yet → [previous] itself, so a newly live panel cannot erase
+ *   the handover while its own fog is still preparing;
  * - no fog has ever landed yet → the new fog becomes [FogHandover.incoming]
  *   outright, nothing outgoing, nothing to fade;
  * - a change while [previous] was already at rest (`arrival >= 1`) → a plain
@@ -79,6 +81,7 @@ internal fun fogHandover(
     arrival: Float,
 ): FogHandover {
     if (liveFog === previous.incoming) return previous
+    if (liveFog == null) return previous
     val previousIncoming = previous.incoming ?: return FogHandover(
         outgoing = null,
         outgoingPalette = null,

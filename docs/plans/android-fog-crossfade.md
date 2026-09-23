@@ -111,6 +111,9 @@ Rules (arrival clamped to 0..1):
 
 - `liveFog === previous.incoming` → return `previous` unchanged (identity, not
   equality — a re-prepared bitmap for the same track *is* a new fog).
+- `liveFog == null` → return `previous` unchanged. A newly live panel has no
+  fog until its own blur finishes; that absence must not erase or restart the
+  handover already on screen.
 - `previous.incoming == null` (first fog) → `FogHandover(null, null, 1f, liveFog)`.
 - `arrival >= 1f` (**handover**) → `outgoing = previous.incoming`,
   `outgoingPalette = previous.incoming.palette`, `outgoingAlpha = 1f`,

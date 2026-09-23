@@ -73,6 +73,18 @@ class NowPlayingFogHandoverTest {
     }
 
     @Test
+    fun a_missing_live_fog_holds_the_existing_handover_until_the_fog_arrives() {
+        val fogA = fogOf(Color.BLACK)
+        val fogB = fogOf(Color.WHITE)
+        val first = fogHandover(FogHandover.EMPTY, fogA, arrival = 1f)
+        val handover = fogHandover(first, fogB, arrival = 0.3f)
+
+        val unchanged = fogHandover(handover, liveFog = null, arrival = 0.7f)
+
+        assertSame(handover, unchanged)
+    }
+
+    @Test
     fun disc_alphas_sum_to_one_at_every_point_of_a_plain_handover() {
         val fogA = fogOf(Color.BLACK)
         val fogB = fogOf(Color.WHITE)
