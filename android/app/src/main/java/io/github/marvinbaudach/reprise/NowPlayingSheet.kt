@@ -31,7 +31,6 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
-import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
@@ -166,15 +165,15 @@ internal fun NowPlayingSheet(
             visualizerLight.snapTo(target)
         }
     }
-    // Read here, in NowPlayingSheet's own scope, not inside the SideEffect below:
-    // the sheet's own visualizerOpacity/visualizerLight reads that matter for
-    // recomposition are the ones passed into NowPlayingScene, deep inside
-    // Surface's content lambda -- a *different* recompose scope. A read inside
-    // the SideEffect's own lambda body is never tracked at all, so without this
-    // local val the SideEffect would fire once, at mount, and never again.
-    val currentVisualizerOpacity = visualizerOpacity.value
-    val currentVisualizerLight = visualizerLight.value
-    SideEffect { onSceneLightObserved(currentVisualizerOpacity, currentVisualizerLight) }
+    // Keep the test observation out of NowPlayingSheet's restart group. The
+    // reads that drive rendering stay deep inside Surface's content lambda;
+    // snapshotFlow observes the same clocks without recomposing the sheet on
+    // every animation frame.
+    val latestOnSceneLightObserved by rememberUpdatedState(onSceneLightObserved)
+    LaunchedEffect(visualizerOpacity, visualizerLight) {
+        snapshotFlow { visualizerOpacity.value to visualizerLight.value }
+            .collect { (opacity, light) -> latestOnSceneLightObserved(opacity, light) }
+    }
     LaunchedEffect(seekMarkerRevision) {
         if (seekMarkerRevision == 0) return@LaunchedEffect
         delay(600)
@@ -395,8 +394,8 @@ internal fun NowPlayingSheet(
                     positionPx = positionPx.value,
                     currentIndex = currentIndex,
                     panels = panelWindow.panels,
-                    visualizerOpacity = currentVisualizerOpacity,
-                    visualizerLight = currentVisualizerLight,
+                    visualizerOpacity = visualizerOpacity.value,
+                    visualizerLight = visualizerLight.value,
                     cueRevision = cueRevision,
                     onCoverBounds = { coverBounds.value = it },
                     onSeekBounds = { seekBoundsInRoot.value = it },
