@@ -4,6 +4,41 @@ Reprise release notes are curated from the changes that reached the stable
 branch. They describe user-visible changes rather than reproducing commit
 messages.
 
+## [0.1.217] - 2026-09-23
+
+### Library
+
+- A tag the Library Doctor writes stays written. After a successful apply the
+  Doctor refreshed only the file identity of its own scan snapshot, so the next
+  scan compared an identity it had just refreshed, found the file unchanged,
+  and reused the reading taken before the write — scan after scan. On the real
+  library that had frozen 300 rows, among them an album where the Doctor itself
+  had renamed five of seven tracks and was then unable to see the two-spelling
+  split it had created. The fields a write applied are now refreshed alongside
+  the identity, and a schema migration repairs the rows that were already
+  frozen.
+- The track list stops snapping back after a fast search. A top-of-list restore
+  that a later reveal had already superseded used to run anyway and stomp it,
+  which read as an occasional jump right after a filter change.
+
+### Podcasts and online sources
+
+- The podcast list keeps its rows while it refreshes, and the updates popover
+  keeps its content while a new fetch is in flight, instead of both blanking
+  and filling again.
+- Durations arrive for a YouTube channel that has more than one tab. Asking a
+  channel root for a flat listing returns the tab list — Videos, Shorts, Live —
+  and no videos at all, so the duration fill silently closed no gap on any
+  refresh. It asks for the channel's videos tab now.
+
+### Android
+
+- Settings loses its "Online sources" page. Once artwork downloads became
+  permanently on, nothing was left on it to decide, and it had been reduced to
+  prose describing a switch that no longer exists.
+- The settings overlay slides in and out the way its own pages already do,
+  rather than crossfading into place.
+
 ## [0.1.216] - 2026-09-20
 
 ### Library
