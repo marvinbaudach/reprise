@@ -295,7 +295,7 @@ fn src_1a_radio_empty_state_offers_add_station_without_playback() {
     gtk4::init().unwrap();
     let conn = Rc::new(crate::test_db::open().unwrap());
     let view = RadioView::new(conn, None);
-    // `SRC-10` moved this action onto the shared empty-state page's own
+    // `SRC-10a` moved this action onto the shared empty-state page's own
     // button (`empty_page`) rather than the still-existing
     // `status_button`, which now serves only `NoResults`.
     assert_eq!(
@@ -404,7 +404,7 @@ fn fil_3a_radio_end_line_counts_stations_and_recovers_with_clear_all() {
 
 #[test]
 #[ignore = "requires a display; run via xvfb-run"]
-fn src_10_radio_empty_state_hides_the_toolbar_and_the_first_station_restores_it() {
+fn src_10a_radio_empty_state_hides_the_toolbar_and_the_first_station_restores_it() {
     gtk4::init().unwrap();
     let conn = Rc::new(crate::test_db::open().unwrap());
     let view = RadioView::new(conn.clone(), None);
@@ -441,14 +441,14 @@ fn src_10_radio_empty_state_hides_the_toolbar_and_the_first_station_restores_it(
     );
 }
 
-/// `SRC-10` addendum (Block B2): the filter-mismatch state is the
+/// `SRC-10a` addendum (Block B2): the filter-mismatch state is the
 /// opposite of the genuine empty state — the filter row stays visible,
 /// with a "Clear filters" action, because clearing the filter (not
 /// adding a station) is the way out. Would go red if `NoResults` hid
 /// the toolbar the same way `Empty` does.
 #[test]
 #[ignore = "requires a display; run via xvfb-run"]
-fn src_10_the_filter_mismatch_state_keeps_the_filter_row_visible_unlike_the_true_empty_state() {
+fn src_10a_the_filter_mismatch_state_keeps_the_filter_row_visible_unlike_the_true_empty_state() {
     gtk4::init().unwrap();
     let conn = Rc::new(crate::test_db::open().unwrap());
     let view = RadioView::new(conn, None);

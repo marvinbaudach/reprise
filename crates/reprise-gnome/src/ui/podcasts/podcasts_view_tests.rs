@@ -323,12 +323,12 @@ fn src_14_opening_a_menu_inside_the_selection_keeps_it() {
     assert_eq!(view.selection.borrow().selected_ids(), expected);
 }
 
-/// `SRC-10`: the genuine "nothing subscribed yet" empty state hides the
+/// `SRC-10a`: the genuine "nothing subscribed yet" empty state hides the
 /// filter row and the footer — would go red if either stayed visible over
 /// zero subscriptions.
 #[test]
 #[ignore = "requires a display; run via xvfb-run"]
-fn src_10_the_true_empty_state_hides_the_filter_row_and_the_footer() {
+fn src_10a_the_true_empty_state_hides_the_filter_row_and_the_footer() {
     gtk4::init().unwrap();
     let conn = crate::test_db::open().unwrap();
     // Module on, nothing subscribed — the genuine `Empty` case. Modules
@@ -429,7 +429,7 @@ fn finishing_an_episode_updates_its_status_without_rebuilding_the_list() {
     assert_eq!(view.rows.borrow()[0], row, "an unknown ID changed the view");
 }
 
-/// `SRC-10` addendum (Block B2): the filter-mismatch state is the exact
+/// `SRC-10a` addendum (Block B2): the filter-mismatch state is the exact
 /// opposite of the true empty state — the filter row stays visible, with a
 /// "Clear filters" action, because clearing the filter (not adding a show)
 /// is the way out. This is the behaviour B2 was missing: before this
@@ -437,7 +437,7 @@ fn finishing_an_episode_updates_its_status_without_rebuilding_the_list() {
 /// filter row.
 #[test]
 #[ignore = "requires a display; run via xvfb-run"]
-fn src_10_the_filter_mismatch_state_keeps_the_filter_row_visible_unlike_the_true_empty_state() {
+fn src_10a_the_filter_mismatch_state_keeps_the_filter_row_visible_unlike_the_true_empty_state() {
     gtk4::init().unwrap();
     let conn = crate::test_db::open().unwrap();
     let episode_id = subscribe_with_one_episode(&conn);
@@ -462,12 +462,12 @@ fn src_10_the_filter_mismatch_state_keeps_the_filter_row_visible_unlike_the_true
     assert_eq!(view.status_button.label().as_deref(), Some("Clear filters"));
 }
 
-/// `SRC-10` addendum (Block B2): the "Downloaded" filter matching nothing
+/// `SRC-10a` addendum (Block B2): the "Downloaded" filter matching nothing
 /// gets its own copy, distinct from the generic filter-mismatch message —
 /// would go red if it fell back to the shared `NoResults` title.
 #[test]
 #[ignore = "requires a display; run via xvfb-run"]
-fn src_10_the_downloads_only_view_names_nothing_downloaded_not_a_generic_mismatch() {
+fn src_10a_the_downloads_only_view_names_nothing_downloaded_not_a_generic_mismatch() {
     gtk4::init().unwrap();
     let conn = crate::test_db::open().unwrap();
     subscribe_with_one_episode(&conn);
@@ -485,13 +485,13 @@ fn src_10_the_downloads_only_view_names_nothing_downloaded_not_a_generic_mismatc
     assert_eq!(view.status_button.label().as_deref(), Some("Clear filters"));
 }
 
-/// `SRC-10` addendum (Block B2): a switched-off module with nothing
+/// `SRC-10a` addendum (Block B2): a switched-off module with nothing
 /// subscribed offers "Enable in Preferences" instead of the ordinary Add
 /// button, and clicking it reaches the callback `window.rs` wires to
 /// `Preferences::present_online_sources` — not the add dialog.
 #[test]
 #[ignore = "requires a display; run via xvfb-run"]
-fn src_10_the_module_off_state_offers_enable_in_preferences_and_never_opens_add() {
+fn src_10a_the_module_off_state_offers_enable_in_preferences_and_never_opens_add() {
     gtk4::init().unwrap();
     let conn = crate::test_db::open().unwrap();
     // Modules default to disabled — no explicit `set_enabled` call needed.
@@ -518,12 +518,12 @@ fn src_10_the_module_off_state_offers_enable_in_preferences_and_never_opens_add(
     assert!(opened.get());
 }
 
-/// `SRC-10` addendum (Block B2): B2 only replaces the *empty* case's Add
+/// `SRC-10a` addendum (Block B2): B2 only replaces the *empty* case's Add
 /// button — an already-populated view must not be locked out just because
 /// the module happens to be off right now.
 #[test]
 #[ignore = "requires a display; run via xvfb-run"]
-fn src_10_module_off_does_not_hide_an_already_populated_view() {
+fn src_10a_module_off_does_not_hide_an_already_populated_view() {
     gtk4::init().unwrap();
     let conn = crate::test_db::open().unwrap();
     subscribe_with_one_episode(&conn);

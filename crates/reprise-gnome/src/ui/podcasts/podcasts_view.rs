@@ -86,10 +86,10 @@ mod shortcuts;
 #[path = "podcasts_view_tests.rs"]
 mod tests;
 
-/// `SRC-10`: the stack page holding the shared empty-state geometry, used
+/// `SRC-10a`: the stack page holding the shared empty-state geometry, used
 /// only for "nothing subscribed yet".
 const EMPTY_PAGE: &str = "empty";
-/// `SRC-10` addendum (Block B2): the module-off sibling of `EMPTY_PAGE` —
+/// `SRC-10a` addendum (Block B2): the module-off sibling of `EMPTY_PAGE` —
 /// same geometry, "Enable in Preferences" instead of Add.
 const MODULE_OFF_PAGE: &str = "module-off";
 const FAILURE_PAGE: &str = "fetch-failed";
@@ -112,7 +112,7 @@ pub(in crate::ui) struct PodcastsView {
     status: adw::StatusPage,
     status_button: gtk4::Button,
     empty_state: SourceEmptyState,
-    /// `SRC-10` addendum (Block B2): the module-off sibling state's own
+    /// `SRC-10a` addendum (Block B2): the module-off sibling state's own
     /// page — a second `SourceEmptyState` rather than reusing `empty_state`
     /// with a swapped copy, since the two need different button actions
     /// (open the add dialog vs. open Preferences) and `SourceEmptyState`
@@ -217,7 +217,7 @@ impl PodcastsView {
 
         let root = gtk4::Box::new(gtk4::Orientation::Vertical, 0);
         root.add_css_class("reprise-podcasts-source");
-        // `SRC-10` addendum (Block B2): the filter row lives at this level,
+        // `SRC-10a` addendum (Block B2): the filter row lives at this level,
         // not inside the "list" stack page, so its visibility can be
         // decided independently of which page is showing — visible for
         // `List`/`NoEpisodes`/`NoResults`/`NoDownloads`, hidden for the two
@@ -405,7 +405,7 @@ impl PodcastsView {
             let Some(view) = weak.upgrade() else {
                 return;
             };
-            // `SRC-10` moved the "nothing subscribed yet" empty state onto
+            // `SRC-10a` moved the "nothing subscribed yet" empty state onto
             // its own page with its own button (see `open_add_dialog` wiring
             // in `install`); this button is now reachable only for
             // `NoEpisodes`/`NoResults`, both subscribed states.
@@ -505,7 +505,7 @@ impl PodcastsView {
             module_enabled,
             self.fetch_failure.borrow().is_some(),
         );
-        // `SRC-10`: the two whole-page-replaced states (`Empty`/
+        // `SRC-10a`: the two whole-page-replaced states (`Empty`/
         // `ModuleOff`) hide the footer's refresh row too — refreshing zero
         // or switched-off subscriptions has nothing to do, and a live
         // control would make an intentionally unused view look broken

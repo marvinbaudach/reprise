@@ -6103,7 +6103,7 @@ listening statistics.
   in. A failed or timed-out request is deliberately indistinguishable from a
   hidden count: the optional segment stays absent and search success remains
   undisturbed.
-- **SRC-10** [active] [gtk] — The genuine "nothing added yet" empty state
+- **SRC-10** [replaced by SRC-10a] [gtk] — The genuine "nothing added yet" empty state
   carries the same geometry for Podcasts, YouTube and Radio: the glyph of its
   own sidebar entry in a muted rounded tile, a title, a paragraph with one
   sentence each on *what* lands here and *where it comes from*, exactly one
@@ -6133,6 +6133,41 @@ listening statistics.
   subscription but no cached or downloaded episode uses the same geometry as
   `PodcastsEmptyState::FetchFailed`, with Retry and the collapsed Details
   block; it never masquerades as "nothing subscribed yet".
+- **SRC-10a** [active] [gtk] — Replaces `SRC-10`. The geometry is unchanged;
+  what changes is the page the module-off button names. The genuine "nothing
+  added yet" empty state carries the same geometry for Podcasts, YouTube and
+  Radio: the glyph of its own sidebar entry in a muted rounded tile, a title, a
+  paragraph with one sentence each on *what* lands here and *where it comes
+  from*, exactly one primary button with a plus icon, and beneath it, as a quiet
+  second line, the URL path — where the source has one of its own; radio has
+  none, because the paragraph already names the stream URL. Neither toolbar nor
+  filter row nor counter appears in this state, and never "0 of 0": the surface
+  looks unused, not broken. Never a generic placeholder graphic, never a spinner
+  with nothing to do. As soon as the first subscription lands, this state
+  disappears entirely. **Addendum (Block B2):** two siblings extend this
+  geometry rather than replacing it. When a source's own module is switched off
+  (`G1`/`NET-1a`) and nothing is subscribed yet, the same
+  tile/title/body/one-button shape appears as "{Source} is turned off" with an
+  "Enable in Preferences" button that opens Preferences → **Plugins** directly:
+  `SET-10` folded the former "Online sources" main page into Plugins, and the
+  deep link sends the three online-source rows, which arrive focused, expanded
+  and briefly highlighted. Existing subscriptions are named as kept. The button
+  is never a plus icon here, since there is nothing to add while the source is
+  off (`PodcastsEmptyState::ModuleOff`); it carries the network glyph
+  `network-server-symbolic`, which names what is being enabled rather than the
+  icon of the page it lands on. Existing subscriptions outrank the module gate:
+  it only ever replaces the empty case, never an already-populated view. The
+  filter-mismatch state ("Nothing matches these filters",
+  `PodcastsEmptyState::NoResults` / `RadioEmptyState::NoResults`) and the
+  downloads-only state ("Nothing downloaded yet",
+  `PodcastsEmptyState::NoDownloads`) are the opposite of the genuine empty
+  state: the toolbar and filter row stay visible, with a "Clear filters" action,
+  because clearing the filter — not adding a source — is the way out.
+  `NoEpisodes` (subscribed, the feed genuinely has nothing yet) is unchanged and
+  keeps the filter row hidden. A fetch failure with an existing subscription but
+  no cached or downloaded episode uses the same geometry as
+  `PodcastsEmptyState::FetchFailed`, with Retry and the collapsed Details block;
+  it never masquerades as "nothing subscribed yet".
 - **SRC-11** [active] [core] [gtk] — Channel, show and station images (YouTube
   `thumbnails`, iTunes `artworkUrl600`, radio-browser `favicon` — `C1`) run
   through the shared Artwork module (`module.artwork.enabled`, which also

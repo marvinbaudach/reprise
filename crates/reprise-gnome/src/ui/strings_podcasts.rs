@@ -50,7 +50,7 @@ pub const PODCAST_CLEAR_ALL: &str = N_!("Clear filters");
 pub const PODCAST_CLEAR_SELECTION: &str = N_!("Clear selection");
 pub const PODCAST_NEW_COUNT: &str = N_!("{count} new");
 pub const PODCAST_LATEST: &str = N_!("latest {date}");
-/// `SRC-10`: the shared empty-state grammar's copy for Podcasts — title, one
+/// `SRC-10a`: the shared empty-state grammar's copy for Podcasts — title, one
 /// paragraph of what lands here and where it comes from, the primary
 /// button, and a quiet secondary line. The design's approved secondary text
 /// mentions OPML import ("or import an OPML file"); no OPML import path
@@ -79,7 +79,7 @@ pub const PODCAST_NO_EPISODES_DESCRIPTION: &str =
 pub const PODCAST_NO_DOWNLOADS: &str = N_!("Nothing downloaded yet");
 pub const PODCAST_NO_DOWNLOADS_DESCRIPTION: &str =
     N_!("Episodes you download for offline listening will appear here.");
-/// Block B2 / `SRC-10` addendum: a source whose own module is switched off,
+/// Block B2 / `SRC-10a` addendum: a source whose own module is switched off,
 /// with nothing subscribed yet. `{source}` is filled with the Podcasts or
 /// YouTube page title.
 pub const PODCAST_SOURCE_OFF_TITLE: &str = N_!("{source} is turned off");
@@ -463,7 +463,7 @@ fn filtered_episode_count(visible: &str, total: usize) -> String {
     )
 }
 
-/// Block B2 / `SRC-10` addendum: fills `{source}` with the page title
+/// Block B2 / `SRC-10a` addendum: fills `{source}` with the page title
 /// ("Podcasts" or "YouTube") for the module-off empty state.
 pub fn podcast_source_off_title(source: &str) -> String {
     formatted(PODCAST_SOURCE_OFF_TITLE, &[("source", source)])

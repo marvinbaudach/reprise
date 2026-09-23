@@ -1,4 +1,4 @@
-//! `SRC-10` copy for the Podcasts/YouTube empty-state pages — split out of
+//! `SRC-10a` copy for the Podcasts/YouTube empty-state pages — split out of
 //! `podcasts_view.rs` to keep it under the file-size gate. Carries only
 //! words, never a decision: `podcasts_empty_state.rs` decides which case
 //! applies, this module supplies what each case says.
@@ -13,7 +13,7 @@ use crate::ui::sidebar::sidebar_presentation::NavIcon;
 use crate::ui::source_empty_state::SourceEmptyStateCopy;
 use crate::ui::strings;
 
-/// The genuine "nothing subscribed yet" empty state's copy (`SRC-10`).
+/// The genuine "nothing subscribed yet" empty state's copy (`SRC-10a`).
 pub(super) fn empty_state_copy(kind: PodcastKind) -> SourceEmptyStateCopy {
     let (icon, title, body, button, secondary) = match kind {
         PodcastKind::Rss => (
@@ -41,7 +41,7 @@ pub(super) fn empty_state_copy(kind: PodcastKind) -> SourceEmptyStateCopy {
     }
 }
 
-/// `SRC-10` addendum (Block B2): the module-off sibling of the genuine
+/// `SRC-10a` addendum (Block B2): the module-off sibling of the genuine
 /// empty state — same geometry, but the one button opens Preferences
 /// instead of adding a source, so it never carries a plus icon.
 pub(super) fn module_off_copy(kind: PodcastKind) -> SourceEmptyStateCopy {
@@ -54,9 +54,10 @@ pub(super) fn module_off_copy(kind: PodcastKind) -> SourceEmptyStateCopy {
         title: strings::podcast_source_off_title(&strings::text(page_title)),
         body: strings::text(strings::PODCAST_SOURCE_OFF_DESCRIPTION),
         button_label: strings::text(strings::PODCAST_ENABLE_IN_PREFERENCES),
-        // Matches `PageId::OnlineSources`'s own icon in
-        // `preferences_window.rs`, so the button visually points at where
-        // it lands.
+        // Deliberately not the Plugins page icon this button deep-links into
+        // (`application-x-addon-symbolic`): the glyph names what gets enabled,
+        // an online source, not the settings page it is reached through
+        // (`SRC-10a`).
         button_icon_name: "network-server-symbolic",
         secondary_line: None,
     }
@@ -97,7 +98,11 @@ mod tests {
     use super::*;
 
     #[test]
-    fn src_10_the_module_off_button_never_carries_the_add_icon() {
+    fn src_10a_the_module_off_button_never_carries_the_add_icon() {
+        assert_eq!(
+            module_off_copy(PodcastKind::Youtube).button_icon_name,
+            "network-server-symbolic"
+        );
         assert_ne!(
             module_off_copy(PodcastKind::Youtube).button_icon_name,
             "list-add-symbolic"
@@ -113,7 +118,7 @@ mod tests {
     }
 
     #[test]
-    fn src_10_no_results_and_no_downloads_carry_different_titles() {
+    fn src_10a_no_results_and_no_downloads_carry_different_titles() {
         let (no_results_title, ..) = status_copy(PodcastsEmptyState::NoResults);
         let (no_downloads_title, ..) = status_copy(PodcastsEmptyState::NoDownloads);
         assert_eq!(no_results_title, "Nothing matches these filters");

@@ -38,7 +38,7 @@ use failure_ui::{
 
 const LIST_PAGE: &str = "list";
 const STATUS_PAGE: &str = "status";
-/// `SRC-10`: the stack page holding the shared "nothing added yet" empty
+/// `SRC-10a`: the stack page holding the shared "nothing added yet" empty
 /// state — distinct from `STATUS_PAGE`, which still carries `NoResults`
 /// (Block B2, unchanged).
 const EMPTY_PAGE: &str = "empty";
@@ -293,7 +293,7 @@ impl RadioView {
                 let Some(shared) = weak.upgrade() else {
                     return;
                 };
-                // `SRC-10` moved the "nothing added yet" empty state onto
+                // `SRC-10a` moved the "nothing added yet" empty state onto
                 // its own page with its own button (wired above via
                 // `empty_page.connect_add`); this button is reachable only
                 // for `NoResults` now.
@@ -459,7 +459,7 @@ fn render_rows(shared: &Rc<Shared>) {
 
 fn apply_empty_state(shared: &Shared, state: RadioEmptyState) {
     shared.empty_state.set(state);
-    // `SRC-10`: the true "nothing added yet" empty state hides the toolbar
+    // `SRC-10a`: the true "nothing added yet" empty state hides the toolbar
     // too — Add button, filter chips, and count all disappear, so the view
     // reads as unused rather than broken. `NoResults` keeps the toolbar,
     // since clearing filters is the way out of that state.

@@ -21,7 +21,7 @@ pub const FILTER_SOURCE_KEY: &str = "podcasts.filter.source";
 /// playlist-only since `MTP-54`, and the per-channel override that used to
 /// beat this default is gone with it, so this value now stands alone.
 pub const LATEST_PER_CHANNEL_DEFAULT_KEY: &str = "podcasts.latest_per_channel_default";
-/// `SRC-10` addendum (Block B2): the "Downloaded" filter chip.
+/// `SRC-10a` addendum (Block B2): the "Downloaded" filter chip.
 pub const FILTER_DOWNLOADED_KEY: &str = "podcasts.filter.downloaded";
 /// `POD-5` / `O-5`: the global "keep N downloaded" default backing
 /// `CleanupPolicy::KeepLast5`, overridable per channel
@@ -473,10 +473,10 @@ mod tests {
         assert_eq!(load_filter(&db).unwrap().source, None);
     }
 
-    /// `SRC-10` addendum (Block B2): the "Downloaded" filter persists like
+    /// `SRC-10a` addendum (Block B2): the "Downloaded" filter persists like
     /// every other sticky filter value.
     #[test]
-    fn src_10_downloaded_filter_persists_across_a_reload() {
+    fn src_10a_downloaded_filter_persists_across_a_reload() {
         let db = db();
         crate::library::settings::set_bool(&db, FILTER_DOWNLOADED_KEY, true).unwrap();
 
