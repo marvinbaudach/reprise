@@ -609,6 +609,7 @@ private class RecordingLibrarySessionPort(
     ): LibraryWindow<LibraryTrack> = completeTestWindow(emptyList())
 
     override fun albumTrackIds(album: String, albumArtist: String): List<Long> = emptyList()
+    override fun artistTrackIds(artist: String): List<Long> = emptyList()
 
     override fun trackById(trackId: Long): LibraryTrack? = tracks.firstOrNull { it.id == trackId }
 

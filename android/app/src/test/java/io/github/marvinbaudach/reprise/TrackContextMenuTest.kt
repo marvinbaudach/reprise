@@ -394,7 +394,7 @@ class TrackContextMenuTest {
         .getOrElse(SemanticsActions.CustomActions) { emptyList() }
 }
 
-private class RecordingContextMenuControls(
+internal class RecordingContextMenuControls(
     private val upcoming: List<LibraryTrack> = emptyList(),
     private val deletionOutcome: Result<AndroidTrashReport>? = null,
 ) : PlaybackControls {

@@ -640,6 +640,8 @@ private class RecordingBrowsePort(
     override fun albumTrackIds(album: String, albumArtist: String): List<Long> =
         albumTracks.rows.map(LibraryTrack::id)
 
+    override fun artistTrackIds(artist: String): List<Long> = emptyList()
+
     override fun trackById(trackId: Long): LibraryTrack? =
         titleResults.values.asSequence().flatMap { it.rows }.firstOrNull { it.id == trackId }
 

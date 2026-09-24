@@ -205,23 +205,63 @@ private fun AlbumDetailHeader(album: LibraryAlbum, closeAlbum: () -> Unit) {
 @Composable
 private fun ArtistLoadingPage(artist: LibraryArtist, closeArtist: () -> Unit) {
     Column(modifier = Modifier.fillMaxSize()) {
-        ArtistDetailHeader(artist, closeArtist)
+        ArtistDetailHeader(artist, closeArtist, withMenu = false)
         LoadingWindowRow()
     }
 }
 
+/**
+ * The artist page's title row. Its overflow opens the same menu a long press
+ * on the artist in the list does, so the whole artist can be played, queued or
+ * deleted from the page too. The loading page shows the row without it: the
+ * artist is not open yet.
+ */
 @Composable
-private fun ArtistDetailHeader(artist: LibraryArtist, closeArtist: () -> Unit) {
-    Row(
-        modifier = Modifier
-            .fillMaxWidth()
-            .clickable(onClick = closeArtist)
-            .padding(horizontal = 16.dp, vertical = 8.dp),
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
-        MaterialSymbol("arrow_back", "Back to artists")
-        Text(artist.name, style = MaterialTheme.typography.titleLarge)
+private fun ArtistDetailHeader(
+    artist: LibraryArtist,
+    closeArtist: () -> Unit,
+    withMenu: Boolean = true,
+) {
+    val contextMenu = rememberTrackContextMenuAnchorState()
+    Column {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Row(
+                modifier = Modifier
+                    .weight(1f)
+                    .clickable(onClick = closeArtist)
+                    .padding(horizontal = 16.dp, vertical = 8.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                MaterialSymbol("arrow_back", "Back to artists")
+                Text(artist.name, style = MaterialTheme.typography.titleLarge)
+            }
+            if (withMenu) {
+                Box {
+                    IconButton(
+                        onClick = { contextMenu.expanded = true },
+                        modifier = Modifier.testTag("artist-detail-overflow"),
+                    ) {
+                        MaterialSymbol("more_vert", "More actions")
+                    }
+                    TrackContextMenu(anchor = contextMenu, target = artistMenuTarget(artist))
+                }
+            }
+        }
+        TrackContextMenuMessage(contextMenu)
     }
+}
+
+/** Every track by [artist], resolved unwindowed when a menu item needs it. */
+@Composable
+private fun artistMenuTarget(artist: LibraryArtist): LibraryTrackMenuTarget {
+    val artistTrackIds = LocalArtistTrackIds.current
+    val controls = LocalPlaybackControls.current
+    return LibraryTrackMenuTarget(
+        label = artist.name,
+        trackCount = artist.trackCount,
+        resolveTrackIds = { artistTrackIds(artist) },
+        play = { ids -> controls.playTrackIds(ids, 0) },
+    )
 }
 
 @Composable
@@ -596,14 +636,23 @@ private fun ArtistRow(artist: LibraryArtist, openArtist: (LibraryArtist) -> Unit
         artworkSize = AndroidArtworkSize.LIST,
         allowFetch = false,
     )
-    ListItem(
-        headlineContent = { Text(artist.name) },
-        supportingContent = { Text(artist.details()) },
-        leadingContent = { ArtistAvatar(visual, sizeDp = 40) },
-        modifier = Modifier
-            .fillMaxWidth()
-            .clickable { openArtist(artist) },
-    )
+    val contextMenu = rememberTrackContextMenuAnchorState()
+    // The acknowledgement sits below the row, as in AlbumRow — see
+    // TrackContextMenuMessage.
+    Column {
+        Box {
+            ListItem(
+                headlineContent = { Text(artist.name) },
+                supportingContent = { Text(artist.details()) },
+                leadingContent = { ArtistAvatar(visual, sizeDp = 40) },
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .trackContextMenuAnchor(contextMenu) { openArtist(artist) },
+            )
+            TrackContextMenu(anchor = contextMenu, target = artistMenuTarget(artist))
+        }
+        TrackContextMenuMessage(contextMenu)
+    }
     HorizontalDivider()
 }
 

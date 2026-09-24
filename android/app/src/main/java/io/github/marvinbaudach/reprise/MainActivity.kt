@@ -255,6 +255,7 @@ class MainActivity : ComponentActivity() {
                             LocalTrackArtwork provides surface.artwork(),
                             LocalPlaybackControls provides surface.playbackControls,
                             LocalAlbumTrackIds provides { album -> session.albumTrackIds(album) },
+                            LocalArtistTrackIds provides { artist -> session.artistTrackIds(artist) },
                             LocalTrackAnalysis provides surface.trackAnalysis,
                             LocalAmbientMotionController provides ambientMotion,
                             LocalVisualizerPreference provides visualizerPreference,

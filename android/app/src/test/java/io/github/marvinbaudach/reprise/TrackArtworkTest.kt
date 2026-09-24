@@ -544,6 +544,7 @@ internal fun fakeLibrarySessionPort(
     override fun listAlbumTracks(album: String, albumArtist: String, window: LibraryWindowRange) =
         LibraryWindow.empty<LibraryTrack>()
     override fun albumTrackIds(album: String, albumArtist: String): List<Long> = emptyList()
+    override fun artistTrackIds(artist: String): List<Long> = emptyList()
     override fun trackById(trackId: Long): LibraryTrack? = null
     override fun artworkFor(trackUri: String, size: AndroidArtworkSize): String? =
         artworkFor(trackUri, size)
