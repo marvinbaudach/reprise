@@ -31,7 +31,7 @@ fn full_window() -> WindowRange {
 fn shared_artist_album_selection_keeps_the_desktop_where_clause_byte_identical() {
     assert_eq!(
         artist_albums_selection(1),
-        "missing_since IS NULL AND removed_at IS NULL AND TRIM(album) <> '' AND CASE WHEN TRIM(album_artist) <> '' THEN TRIM(album_artist) ELSE TRIM(artist) END = ?1 COLLATE NOCASE"
+        "missing_since IS NULL AND removed_at IS NULL AND TRIM(album) <> '' AND CASE WHEN TRIM(album_artist) <> '' THEN TRIM(album_artist) ELSE TRIM(artist) END = TRIM(?1) COLLATE NOCASE"
     );
 }
 
