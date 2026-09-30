@@ -72,10 +72,17 @@ fn artist_summary_filter_clause(has_filter: bool, param_index: u8) -> String {
 /// What counts as an album by one artist: a present track, a non-blank album
 /// title, and an exact case-insensitive match on the effective album artist.
 /// Shared so desktop and Android cannot drift apart on the definition.
+///
+/// The argument is compared through SQL's `TRIM(?N)`, not Rust's
+/// `str::trim`, on purpose: `str::trim` also strips a no-break space, which
+/// `TRIM()` on the column side does not. Trimming in Rust would let "Artist"
+/// followed by a no-break space match the plain "Artist" row's albums
+/// instead of its own (see `query_album_canonical_track_ids`'s doc comment
+/// for the delete-path variant of this bug).
 fn artist_albums_selection(param_index: u8) -> String {
     format!(
         "{PRESENT} AND TRIM(album) <> '' \
-         AND {EFFECTIVE_ALBUM_ARTIST} = ?{param_index} COLLATE NOCASE"
+         AND {EFFECTIVE_ALBUM_ARTIST} = TRIM(?{param_index}) COLLATE NOCASE"
     )
 }
 
@@ -176,21 +183,18 @@ pub fn query_artist_albums(
          LIMIT ?1 OFFSET ?2"
     );
     let mut statement = conn.prepare(&sql)?;
-    let rows = statement.query_map(
-        rusqlite::params![limit, window.offset, artist.trim()],
-        |row| {
-            Ok(AlbumSummary {
-                album: row.get(0)?,
-                album_artist: row.get(1)?,
-                representative_path: row.get(2)?,
-                track_count: row.get(3)?,
-                year: row.get(4)?,
-                total_duration_ms: row.get(5)?,
-                max_added_at: row.get(6)?,
-                total_play_count: row.get(7)?,
-            })
-        },
-    )?;
+    let rows = statement.query_map(rusqlite::params![limit, window.offset, artist], |row| {
+        Ok(AlbumSummary {
+            album: row.get(0)?,
+            album_artist: row.get(1)?,
+            representative_path: row.get(2)?,
+            track_count: row.get(3)?,
+            year: row.get(4)?,
+            total_duration_ms: row.get(5)?,
+            max_added_at: row.get(6)?,
+            total_play_count: row.get(7)?,
+        })
+    })?;
     let rows = rows.collect::<Result<Vec<_>, _>>()?;
     Ok(AlbumWindow {
         total,
@@ -210,7 +214,7 @@ pub fn query_artist_album_count(db: &Db, artist: &str) -> Result<i64, rusqlite::
                GROUP BY LOWER(TRIM(album)) \
              )"
         ),
-        rusqlite::params![artist.trim()],
+        rusqlite::params![artist],
         |row| row.get(0),
     )
 }
@@ -227,7 +231,7 @@ pub fn query_artist_untagged_tracks(
     let projection = track_projection("", true);
     let sql = format!(
         "SELECT {projection} FROM tracks WHERE {PRESENT} \
-         AND {EFFECTIVE_ALBUM_ARTIST} = ?3 COLLATE NOCASE \
+         AND {EFFECTIVE_ALBUM_ARTIST} = TRIM(?3) COLLATE NOCASE \
          AND TRIM(album) = '' \
          ORDER BY title COLLATE NOCASE ASC, path COLLATE NOCASE ASC, id ASC \
          LIMIT ?1 OFFSET ?2"
@@ -235,7 +239,7 @@ pub fn query_artist_untagged_tracks(
     let mut statement = db.conn().prepare(&sql)?;
     let rows = statement
         .query_map(
-            rusqlite::params![limit, window.offset, artist.trim()],
+            rusqlite::params![limit, window.offset, artist],
             row_to_track,
         )?
         .collect::<Result<Vec<_>, _>>()?;
@@ -252,10 +256,10 @@ pub fn query_artist_untagged_track_count(db: &Db, artist: &str) -> Result<i64, r
     db.conn().query_row(
         &format!(
             "SELECT count(*) FROM tracks WHERE {PRESENT} \
-             AND {EFFECTIVE_ALBUM_ARTIST} = ?1 COLLATE NOCASE \
+             AND {EFFECTIVE_ALBUM_ARTIST} = TRIM(?1) COLLATE NOCASE \
              AND TRIM(album) = ''"
         ),
-        rusqlite::params![artist.trim()],
+        rusqlite::params![artist],
         |row| row.get(0),
     )
 }
@@ -384,15 +388,15 @@ pub(super) fn query_album_track_window(
     let sql = format!(
         "SELECT {projection} \
          FROM tracks WHERE {PRESENT} \
-         AND TRIM(album) = ?3 COLLATE NOCASE \
-         AND {EFFECTIVE_ALBUM_ARTIST} = ?4 COLLATE NOCASE{filter_sql}{browse_sql} \
+         AND TRIM(album) = TRIM(?3) COLLATE NOCASE \
+         AND {EFFECTIVE_ALBUM_ARTIST} = TRIM(?4) COLLATE NOCASE{filter_sql}{browse_sql} \
          ORDER BY {order} LIMIT ?1 OFFSET ?2"
     );
     let mut params = vec![
         Value::Integer(limit),
         Value::Integer(offset),
-        Value::Text(album.trim().to_string()),
-        Value::Text(album_artist.trim().to_string()),
+        Value::Text(album.to_string()),
+        Value::Text(album_artist.to_string()),
     ];
     if has_filter {
         params.push(Value::Text(like_pattern(filter.trim())));
@@ -416,12 +420,12 @@ pub(super) fn query_album_track_count(
     let (browse_sql, browse_values) = browse_clause(browse, browse_first_param);
     let sql = format!(
         "SELECT count(*) FROM tracks WHERE {PRESENT} \
-         AND TRIM(album) = ?1 COLLATE NOCASE \
-         AND {EFFECTIVE_ALBUM_ARTIST} = ?2 COLLATE NOCASE{filter_sql}{browse_sql}"
+         AND TRIM(album) = TRIM(?1) COLLATE NOCASE \
+         AND {EFFECTIVE_ALBUM_ARTIST} = TRIM(?2) COLLATE NOCASE{filter_sql}{browse_sql}"
     );
     let mut params = vec![
-        Value::Text(album.trim().to_string()),
-        Value::Text(album_artist.trim().to_string()),
+        Value::Text(album.to_string()),
+        Value::Text(album_artist.to_string()),
     ];
     if has_filter {
         params.push(Value::Text(like_pattern(filter.trim())));
@@ -447,13 +451,13 @@ pub(super) fn query_album_track_ids_browsed(
     let (browse_sql, browse_values) = browse_clause(browse, browse_first_param);
     let sql = format!(
         "SELECT id FROM tracks WHERE {PRESENT} \
-         AND TRIM(album) = ?1 COLLATE NOCASE \
-         AND {EFFECTIVE_ALBUM_ARTIST} = ?2 COLLATE NOCASE{filter_sql}{browse_sql} \
+         AND TRIM(album) = TRIM(?1) COLLATE NOCASE \
+         AND {EFFECTIVE_ALBUM_ARTIST} = TRIM(?2) COLLATE NOCASE{filter_sql}{browse_sql} \
          ORDER BY {order} LIMIT {QUEUE_LIMIT}"
     );
     let mut params = vec![
-        Value::Text(album.trim().to_string()),
-        Value::Text(album_artist.trim().to_string()),
+        Value::Text(album.to_string()),
+        Value::Text(album_artist.to_string()),
     ];
     if has_filter {
         params.push(Value::Text(like_pattern(filter.trim())));
@@ -563,7 +567,7 @@ pub fn query_artist_detail_albums(
          ORDER BY grouped.year DESC, TRIM(tracks.album) COLLATE NOCASE ASC"
     );
     let mut statement = conn.prepare(&sql)?;
-    let rows = statement.query_map(rusqlite::params![artist.trim()], |row| {
+    let rows = statement.query_map(rusqlite::params![artist], |row| {
         Ok(ArtistAlbum {
             album: row.get(0)?,
             year: row.get(1)?,
@@ -596,13 +600,13 @@ pub(super) fn query_artist_track_window(
     let sql = format!(
         "SELECT {projection} \
          FROM tracks WHERE {PRESENT} \
-         AND {EFFECTIVE_ALBUM_ARTIST} = ?3 COLLATE NOCASE{filter_sql}{browse_sql} \
+         AND {EFFECTIVE_ALBUM_ARTIST} = TRIM(?3) COLLATE NOCASE{filter_sql}{browse_sql} \
          ORDER BY {order} LIMIT ?1 OFFSET ?2"
     );
     let mut params = vec![
         Value::Integer(limit),
         Value::Integer(offset),
-        Value::Text(artist.trim().to_string()),
+        Value::Text(artist.to_string()),
     ];
     if has_filter {
         params.push(Value::Text(like_pattern(filter.trim())));
@@ -625,9 +629,9 @@ pub(super) fn query_artist_track_count(
     let (browse_sql, browse_values) = browse_clause(browse, browse_first_param);
     let sql = format!(
         "SELECT count(*) FROM tracks WHERE {PRESENT} \
-         AND {EFFECTIVE_ALBUM_ARTIST} = ?1 COLLATE NOCASE{filter_sql}{browse_sql}"
+         AND {EFFECTIVE_ALBUM_ARTIST} = TRIM(?1) COLLATE NOCASE{filter_sql}{browse_sql}"
     );
-    let mut params = vec![Value::Text(artist.trim().to_string())];
+    let mut params = vec![Value::Text(artist.to_string())];
     if has_filter {
         params.push(Value::Text(like_pattern(filter.trim())));
     }
@@ -650,10 +654,10 @@ pub(super) fn query_artist_track_ids(
     let (browse_sql, browse_values) = browse_clause(browse, browse_first_param);
     let sql = format!(
         "SELECT id FROM tracks WHERE {PRESENT} \
-         AND {EFFECTIVE_ALBUM_ARTIST} = ?1 COLLATE NOCASE{filter_sql}{browse_sql} \
+         AND {EFFECTIVE_ALBUM_ARTIST} = TRIM(?1) COLLATE NOCASE{filter_sql}{browse_sql} \
          ORDER BY {order} LIMIT {QUEUE_LIMIT}"
     );
-    let mut params = vec![Value::Text(artist.trim().to_string())];
+    let mut params = vec![Value::Text(artist.to_string())];
     if has_filter {
         params.push(Value::Text(like_pattern(filter.trim())));
     }
@@ -666,3 +670,7 @@ pub(super) fn query_artist_track_ids(
 #[cfg(test)]
 #[path = "library_views_tests.rs"]
 mod tests;
+
+#[cfg(test)]
+#[path = "library_views_trim_tests.rs"]
+mod trim_tests;

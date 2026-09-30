@@ -88,6 +88,32 @@ class ArtistContextMenuTest {
         assertEquals(listOf(listOf(9L, 7L, 5L)), controls.deleted)
     }
 
+    @Test
+    fun theArtistPageListPlayButtonPlaysEveryUnwindowedIdNotJustTheLoadedWindows() {
+        val controls = RecordingContextMenuControls()
+        composeArtists(
+            controls,
+            selectedArtist = ArtistTrackList(
+                artist = artist,
+                albums = LibraryWindow(
+                    2,
+                    listOf(
+                        LibraryAlbum("First", artist.name, "content://albums/first", 2, 2026, 0),
+                    ),
+                    true,
+                ),
+            ),
+        )
+
+        compose.onNodeWithText("Play").performClick()
+
+        // The page has only its first album window loaded and no untagged
+        // tracks loaded either; the list Play button still takes every
+        // track the artist has, exactly like the overflow menu's Play.
+        assertEquals(listOf(9L, 7L, 5L), controls.playedIds)
+        assertEquals(0, controls.playedStartIndex)
+    }
+
     private fun composeArtists(
         controls: RecordingContextMenuControls,
         selectedArtist: ArtistTrackList?,
