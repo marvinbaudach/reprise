@@ -851,6 +851,9 @@ internal fun BrowseScreen(
                         }
                         ?.let { BrowseErrorLine(it) }
                     playback.error?.let { BrowseErrorLine(it) }
+                    // Screen-level on purpose: the row a deletion started from
+                    // is gone by the time it answers. See DeletionMessages.
+                    DeletionMessageLine(surfaceState)
                     if (
                         !surfaceState.dockMode &&
                         !nowPlayingSheetState.currentState &&

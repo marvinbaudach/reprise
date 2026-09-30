@@ -155,6 +155,26 @@ internal class LibrarySession(
         state
     }
 
+    /**
+     * Reads the library again after tracks were deleted, without a scan.
+     *
+     * Runs under the scan monitor so it never interleaves with a scan's writes.
+     * [previous] is what the screen had open; it comes back rebuilt in
+     * [RefreshedLibrary.windows], or null when there was nothing to rebuild or
+     * the rebuild failed (then [RefreshedLibrary.reloadFailure] says why).
+     */
+    fun refreshBrowse(previous: LoadedLibraryWindows?): RefreshedLibrary =
+        synchronized(scanMonitor) {
+            val state = browseState()
+            if (previous == null) {
+                return@synchronized RefreshedLibrary(state, windows = null)
+            }
+            runCatching { rebuildWindows(state, previous) }.fold(
+                onSuccess = { windows -> RefreshedLibrary(state, windows) },
+                onFailure = { error -> RefreshedLibrary(state, windows = null, reloadFailure = error) },
+            )
+        }
+
     fun stateAfterFailure(message: String): LibraryScreenState {
         val treeUri = port.rememberedTreeUri() ?: return LibraryScreenState.NoFolder(message)
         if (!port.isTreeReadable(treeUri)) {
@@ -341,7 +361,7 @@ internal class LibrarySession(
 private fun countOnlyLibraryWindow() =
     LibraryWindowRange(offset = 0, limit = COUNT_ONLY_WINDOW_SIZE)
 
-private fun <T> LibraryWindow<T>.withoutRows() = copy(rows = emptyList(), hasMore = false)
+internal fun <T> LibraryWindow<T>.withoutRows() = copy(rows = emptyList(), hasMore = false)
 
 /** The unwindowed album identity query used only by whole-album actions. */
 internal val LocalAlbumTrackIds =

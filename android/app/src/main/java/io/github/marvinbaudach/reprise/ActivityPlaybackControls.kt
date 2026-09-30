@@ -41,6 +41,12 @@ internal class ActivityPlaybackControls(
     private val setFavouriteAction: (Long, Boolean, (String?) -> Unit) -> Unit,
     private val trashAction: TrashAction,
     private val playTrackIdsAction: (List<Long>, Int) -> Unit,
+    /**
+     * Called on the main thread when a deletion removed at least one track,
+     * before its outcome is reported. A deletion that removed none changed
+     * nothing to re-read; one that removed only some changed exactly as much.
+     */
+    private val onLibraryChanged: () -> Unit = {},
     private val queries: PlaybackQueryRunner = PlaybackQueryRunner(),
 ) : PlaybackControls {
     override fun togglePause() = command("change playback state") { togglePause() }
@@ -102,7 +108,12 @@ internal class ActivityPlaybackControls(
     override fun deleteTracks(
         trackIds: List<Long>,
         report: (Result<AndroidTrashReport>) -> Unit,
-    ) = query(report) { trashTracks(trackIds, trashAction) }
+    ) = query({ outcome: Result<AndroidTrashReport> ->
+        if (outcome.getOrNull()?.removedIds?.isNotEmpty() == true) {
+            onLibraryChanged()
+        }
+        report(outcome)
+    }) { trashTracks(trackIds, trashAction) }
 
     override fun playTrackIds(trackIds: List<Long>, startIndex: Int) =
         playTrackIdsAction(trackIds, startIndex)

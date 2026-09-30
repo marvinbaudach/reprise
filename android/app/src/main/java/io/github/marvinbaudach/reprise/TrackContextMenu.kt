@@ -67,8 +67,12 @@ internal fun rememberTrackContextMenuAnchorState() = remember { TrackContextMenu
  *
  * So the row calls this below its own content, which is the shape
  * [FavouriteHeartButton] already uses for its failure: control first, message
- * in a slot underneath. That matters beyond tidiness — a partial deletion
- * ("2 of 12 could not be deleted") is reported through this same text.
+ * in a slot underneath.
+ *
+ * A deletion's outcome is not said here when the row sits on the library
+ * screen: the row is often gone by the time the deletion answers, so
+ * [LocalDeletionMessages] points at a line the screen owns. Only rows outside
+ * it fall back to this slot.
  */
 @Composable
 internal fun TrackContextMenuMessage(anchor: TrackContextMenuAnchorState) {
@@ -233,7 +237,9 @@ internal fun TrackContextMenu(
     TrackDeletionConfirmation(
         target = deleteConfirmation,
         dismiss = { deleteConfirmation = null },
-        report = anchor::say,
+        // The screen's line when there is one: this row may be gone by the time
+        // the deletion answers.
+        messages = LocalDeletionMessages.current ?: anchor.asDeletionMessages(),
     )
 }
 
@@ -277,7 +283,15 @@ internal fun NowPlayingTrackContextMenu(track: LibraryTrack) {
         TrackDeletionConfirmation(
             target = deleteConfirmation,
             dismiss = { deleteConfirmation = null },
-            report = { text -> message = TransientMessage(text).after(message) },
+            messages = remember {
+                object : DeletionMessages {
+                    override fun progress(text: String) = result(text)
+
+                    override fun result(text: String) {
+                        message = TransientMessage(text).after(message)
+                    }
+                }
+            },
         )
         TransientMessageText(message) { message = null }
     }
@@ -320,7 +334,7 @@ private fun logTrashFailures(report: AndroidTrashReport) {
 private fun TrackDeletionConfirmation(
     target: TrackDeletionTarget?,
     dismiss: () -> Unit,
-    report: (String) -> Unit,
+    messages: DeletionMessages,
 ) {
     val controls = LocalPlaybackControls.current
     target ?: return
@@ -343,11 +357,14 @@ private fun TrackDeletionConfirmation(
                 onClick = {
                     dismiss()
                     val ids = runCatching(target.resolveTrackIds).getOrElse { error ->
-                        report("Could not load the tracks: ${error.message ?: "unknown error"}")
+                        messages.result(
+                            "Could not load the tracks: ${error.message ?: "unknown error"}",
+                        )
                         return@TextButton
                     }
+                    messages.progress(deletingMessage(ids.size))
                     controls.deleteTracks(ids) { outcome ->
-                        report(
+                        messages.result(
                             outcome.fold(
                                 onSuccess = { deletion ->
                                     logTrashFailures(deletion)

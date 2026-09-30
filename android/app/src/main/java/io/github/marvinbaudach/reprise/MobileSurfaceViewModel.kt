@@ -119,7 +119,7 @@ private data class ArtistPhotoBackfillBinding(
  * playing track is deliberately absent: the playback session owns it and the
  * activity asks.
  */
-internal class MobileSurfaceViewModel : ViewModel() {
+internal class MobileSurfaceViewModel : ViewModel(), DeletionMessages {
     var selectedTab by mutableStateOf(BrowseTab.TITLES)
         private set
     var searchVisible by mutableStateOf(false)
@@ -135,6 +135,15 @@ internal class MobileSurfaceViewModel : ViewModel() {
     var dockOfferVisible by mutableStateOf(false)
         private set
     var dockOfferVersion by mutableStateOf(0L)
+        private set
+    /**
+     * What a running deletion is doing, and what the last one did. Here rather
+     * than on the row the deletion started from: that row, its page, even its
+     * list may be gone by the time the deletion answers.
+     */
+    var deletionProgress by mutableStateOf<String?>(null)
+        private set
+    var deletionMessage by mutableStateOf<TransientMessage?>(null)
         private set
     private var artistPhotoProgress by mutableStateOf<ArtistPhotoProgress?>(null)
     private var dismissedArtistPhotoRunId by mutableStateOf<Long?>(null)
@@ -176,6 +185,40 @@ internal class MobileSurfaceViewModel : ViewModel() {
 
     fun updateLibraryState(state: LibraryScreenState) {
         reportLibraryState?.invoke(state) ?: run { pendingLibraryState = state }
+    }
+
+    /** What the screen shows right now, taken on the main thread before a refresh reads. */
+    fun removalRefreshBasis() = RemovalRefreshBasis(loadedWindows, selectedTab)
+
+    /**
+     * Hands over the library as it is after a deletion.
+     *
+     * The rebuilt windows are stored under the new catalog's shape first, so the
+     * screen's own restore path takes them up — open pages, paged-in rows and
+     * refinement together — instead of falling back to the first 200 rows. Both
+     * calls happen in one main-thread turn: no composition can run between them.
+     * They are only stored while [basis] still describes the screen; a listener
+     * who moved on meanwhile gets the plain fresh state, as after a scan.
+     */
+    fun updateLibraryAfterRemoval(refreshed: RefreshedLibrary, basis: RemovalRefreshBasis) {
+        val windows = refreshed.windows
+        if (windows != null && basis.stillDescribes(loadedWindows, selectedTab, searchText)) {
+            keepLoadedWindows(refreshed.state.catalogShape(), windows)
+        }
+        updateLibraryState(refreshed.state)
+    }
+
+    override fun progress(text: String) {
+        deletionProgress = text
+    }
+
+    override fun result(text: String) {
+        deletionProgress = null
+        deletionMessage = TransientMessage(text).after(deletionMessage)
+    }
+
+    fun dismissDeletionMessage() {
+        deletionMessage = null
     }
 
     fun bindArtistPhotoBackfill(

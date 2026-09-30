@@ -87,6 +87,19 @@ class MainActivity : ComponentActivity() {
             scanMonitor = surfaceState.libraryScanMonitor,
         )
     }
+    /**
+     * Re-reads the library after a deletion. Off the main thread like every
+     * other read of the catalog: the same shape as [onResume]'s silent scan.
+     */
+    private val removalRefresher by lazy {
+        LibraryRemovalRefresher(
+            session = session,
+            surface = surfaceState,
+            onWorker = { work -> Thread(work).start() },
+            onMain = { work -> runOnUiThread(work) },
+            logFailure = { message, error -> Log.w(TAG, message, error) },
+        )
+    }
     private val artworkDelegate = lazy {
         TrackArtwork(
             resolve = session::artworkFor,
@@ -163,6 +176,7 @@ class MainActivity : ComponentActivity() {
         setFavouriteAction = ::setFavourite,
         trashAction = trashAction,
         playTrackIdsAction = ::playTrackIds,
+        onLibraryChanged = { removalRefresher.refresh() },
     )
     private val notificationPermission = registerForActivityResult(
         ActivityResultContracts.RequestPermission(),
@@ -256,6 +270,7 @@ class MainActivity : ComponentActivity() {
                             LocalPlaybackControls provides surface.playbackControls,
                             LocalAlbumTrackIds provides { album -> session.albumTrackIds(album) },
                             LocalArtistTrackIds provides { artist -> session.artistTrackIds(artist) },
+                            LocalDeletionMessages provides surfaceState,
                             LocalTrackAnalysis provides surface.trackAnalysis,
                             LocalAmbientMotionController provides ambientMotion,
                             LocalVisualizerPreference provides visualizerPreference,
