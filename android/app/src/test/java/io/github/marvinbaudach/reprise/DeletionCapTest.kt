@@ -28,37 +28,64 @@ class DeletionCapTest {
     val compose = createAndroidComposeRule<ComponentActivity>()
 
     @Test
-    fun aSelectionAtTheQueryLimitDeletesNothingAndSaysWhy() {
+    fun aSelectionAtTheQueryLimitIsRefusedBeforeAnyDialogAsksAboutIt() {
         val controls = RecordingContextMenuControls()
         showMenuFor(controls, ids = TRACK_ID_QUERY_LIMIT)
 
-        confirmDeletion()
+        compose.onNodeWithText("Delete from device…").performClick()
+        compose.waitForIdle()
 
-        assertEquals(emptyList<List<Long>>(), controls.deleted)
         compose.onNodeWithText("too large to delete at once", substring = true).assertIsDisplayed()
+        compose.onNodeWithText("Delete 10000 tracks from Big Artist?").assertDoesNotExist()
+        compose.onNodeWithText("Delete").assertDoesNotExist()
+        assertEquals(emptyList<List<Long>>(), controls.deleted)
     }
 
     @Test
-    fun aSelectionJustUnderTheLimitIsDeletedWhole() {
+    fun aSelectionJustUnderTheLimitIsAskedAboutOnceAndDeletedWhole() {
         val controls = RecordingContextMenuControls()
-        showMenuFor(controls, ids = TRACK_ID_QUERY_LIMIT - 1)
+        val resolves = showMenuFor(controls, ids = TRACK_ID_QUERY_LIMIT - 1)
 
-        confirmDeletion()
+        compose.onNodeWithText("Delete from device…").performClick()
+        compose.onNodeWithText("Delete 9999 tracks from Big Artist?").assertIsDisplayed()
+        compose.onNodeWithText("Delete").performClick()
+        compose.waitForIdle()
 
         assertEquals(TRACK_ID_QUERY_LIMIT - 1, controls.deleted.single().size)
+        assertEquals("the ids asked about are the ids deleted", 1, resolves.get())
     }
 
     @Test
-    fun theLimitMirrorsTheCoreQueueLimit() {
-        assertEquals(10_000, TRACK_ID_QUERY_LIMIT)
+    fun theLimitEqualsTheCoreQueueLimit() {
+        assertEquals(rustConstant("crates/reprise-core/src/queries/queue.rs", "QUEUE_LIMIT"), TRACK_ID_QUERY_LIMIT.toLong())
     }
 
-    private fun showMenuFor(controls: RecordingContextMenuControls, ids: Int) {
+    @Test
+    fun theReloadChunkEqualsTheCoreWindowCap() {
+        assertEquals(rustConstant("crates/reprise-core/src/queries/mod.rs", "MAX_WINDOW_LIMIT"), RELOAD_CHUNK_LIMIT)
+    }
+
+    /** The value of `pub const NAME: … = N;` in a Rust file of this repository. */
+    private fun rustConstant(repoRelativePath: String, name: String): Long {
+        val start = generateSequence(java.io.File(System.getProperty("user.dir")).absoluteFile) { it.parentFile }
+        val file = start.map { java.io.File(it, repoRelativePath) }.firstOrNull { it.isFile }
+            ?: error("$repoRelativePath not found above ${System.getProperty("user.dir")}")
+        val declaration = Regex("""const $name\s*:[^=]*=\s*([0-9_]+)\s*;""").find(file.readText())
+            ?: error("no `const $name` in $repoRelativePath")
+        return declaration.groupValues[1].replace("_", "").toLong()
+    }
+
+    /** Returns how many times the selection was resolved. */
+    private fun showMenuFor(controls: RecordingContextMenuControls, ids: Int): java.util.concurrent.atomic.AtomicInteger {
+        val resolves = java.util.concurrent.atomic.AtomicInteger()
         val anchor = TrackContextMenuAnchorState()
         val target = LibraryTrackMenuTarget(
             label = "Big Artist",
             trackCount = ids.toLong(),
-            resolveTrackIds = { (1..ids).map(Int::toLong) },
+            resolveTrackIds = {
+                resolves.incrementAndGet()
+                (1..ids).map(Int::toLong)
+            },
             play = {},
         )
         compose.setContent {
@@ -72,11 +99,6 @@ class DeletionCapTest {
             }
         }
         compose.runOnIdle { anchor.expanded = true }
-    }
-
-    private fun confirmDeletion() {
-        compose.onNodeWithText("Delete from device…").performClick()
-        compose.onNodeWithText("Delete").performClick()
-        compose.waitForIdle()
+        return resolves
     }
 }

@@ -3,6 +3,7 @@ package io.github.marvinbaudach.reprise
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertSame
+import org.junit.Assert.assertTrue
 import org.junit.Test
 import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
@@ -46,7 +47,7 @@ class RemovalRefreshStateTest {
         port.remove(listOf(1L))
 
         val refreshed = session.refreshBrowse(basis.windows)
-        screen.surface.updateLibraryAfterRemoval(refreshed, basis)
+        screen.surface.updateLibraryAfterRemoval(refreshed, basis, screen.surface.takeRefreshTicket())
 
         val state = screen.delivered.single() as LibraryScreenState.Browse
         assertEquals(39L, state.titles.total)
@@ -68,7 +69,7 @@ class RemovalRefreshStateTest {
         val refreshed = session.refreshBrowse(basis.windows)
 
         screen.surface.updateSearch("song 2")
-        screen.surface.updateLibraryAfterRemoval(refreshed, basis)
+        screen.surface.updateLibraryAfterRemoval(refreshed, basis, screen.surface.takeRefreshTicket())
 
         val state = screen.delivered.single() as LibraryScreenState.Browse
         assertNull(screen.surface.loadedWindows(state.catalogShape()))
@@ -93,7 +94,7 @@ class RemovalRefreshStateTest {
             first.catalogShape(),
             LoadedLibraryWindows(first.titles, first.artists, openAlbum = null, openArtist = null),
         )
-        screen.surface.updateLibraryAfterRemoval(refreshed, basis)
+        screen.surface.updateLibraryAfterRemoval(refreshed, basis, screen.surface.takeRefreshTicket())
 
         val state = screen.delivered.single() as LibraryScreenState.Browse
         assertNull(screen.surface.loadedWindows(state.catalogShape()))
@@ -112,7 +113,7 @@ class RemovalRefreshStateTest {
         val refreshed = session.refreshBrowse(basis.windows)
 
         screen.surface.selectTab(BrowseTab.ARTISTS)
-        screen.surface.updateLibraryAfterRemoval(refreshed, basis)
+        screen.surface.updateLibraryAfterRemoval(refreshed, basis, screen.surface.takeRefreshTicket())
 
         val state = screen.delivered.single() as LibraryScreenState.Browse
         assertNull(screen.surface.loadedWindows(state.catalogShape()))
@@ -124,7 +125,11 @@ class RemovalRefreshStateTest {
         val basis = screen.surface.removalRefreshBasis()
         port.remove(listOf(1L))
 
-        screen.surface.updateLibraryAfterRemoval(session.refreshBrowse(basis.windows), basis)
+        screen.surface.updateLibraryAfterRemoval(
+            session.refreshBrowse(basis.windows),
+            basis,
+            screen.surface.takeRefreshTicket(),
+        )
 
         assertEquals(1, screen.delivered.size)
         assertNull(basis.windows)
@@ -174,14 +179,72 @@ class RemovalRefreshStateTest {
     }
 
     @Test
+    fun aRefreshStartedByARecreatedActivityOutranksOneFromTheOldActivity() {
+        val (screen, port, session) = setUp()
+        val oldMain = mutableListOf<() -> Unit>()
+        fun refresher(main: MutableList<() -> Unit>) = LibraryRemovalRefresher(
+            session = session,
+            surface = screen.surface,
+            onWorker = { work -> work() },
+            onMain = { work -> main += work },
+            logFailure = { message, error -> throw AssertionError(message, error) },
+        )
+
+        refresher(oldMain).refresh()
+        port.remove(listOf(1L))
+        // A rotation replaced the activity, and with it the refresher; the
+        // view model, which outlives both, is the only thing they share.
+        val newMain = mutableListOf<() -> Unit>()
+        refresher(newMain).refresh()
+        newMain.forEach { it() }
+        oldMain.forEach { it() }
+
+        val state = screen.delivered.single() as LibraryScreenState.Browse
+        assertEquals(39L, state.titles.total)
+    }
+
+    @Test
+    fun aListPagedFurtherWhileTheReadRanIsReadAgainToItsNewDepth() {
+        val songs = (1L..1_200L).map { CatalogSong(it, "Song %04d".format(it), "Artist", "Album") }
+        val port = InMemoryCatalogPort(songs)
+        val session = LibrarySession(port)
+        val screen = Screen()
+        val first = session.refreshBrowse(previous = null).state
+        fun keep(rows: Int) = screen.surface.keepLoadedWindows(
+            first.catalogShape(),
+            LoadedLibraryWindows(port.pagedIn("", rows), first.artists, openAlbum = null),
+        )
+        keep(200)
+        val main = mutableListOf<() -> Unit>()
+        val refresher = LibraryRemovalRefresher(
+            session = session,
+            surface = screen.surface,
+            onWorker = { work -> work() },
+            onMain = { work -> main += work },
+            logFailure = { message, error -> throw AssertionError(message, error) },
+        )
+
+        refresher.refresh()
+        // The listener keeps scrolling while the worker reads.
+        keep(600)
+        port.remove(listOf(1L))
+        while (main.isNotEmpty()) main.removeAt(0)()
+
+        val state = screen.delivered.single() as LibraryScreenState.Browse
+        val restored = checkNotNull(screen.surface.loadedWindows(state.catalogShape()))
+        assertEquals("the anchor's rows are all still there", 600, restored.titles.rows.size)
+        assertTrue("and the deleted row is not among them", restored.titles.rows.none { it.id == 1L })
+    }
+
+    @Test
     fun theDeletionResultOutlivesAnythingTheListDoes() {
         val surface = MobileSurfaceViewModel()
 
-        surface.progress("Deleting 3 tracks…")
-        assertEquals("Deleting 3 tracks…", surface.deletionProgress)
+        val run = surface.begin("Deleting 3 tracks…")
+        assertEquals("Deleting 3 tracks…", surface.deletionProgress?.text)
         assertNull(surface.deletionMessage)
 
-        surface.result("1 of 3 could not be deleted")
+        run.finish("1 of 3 could not be deleted")
         assertNull("the result replaces the progress", surface.deletionProgress)
         assertEquals("1 of 3 could not be deleted", surface.deletionMessage?.text)
 
@@ -193,10 +256,39 @@ class RemovalRefreshStateTest {
     fun aSecondResultWithTheSameTextIsANewEvent() {
         val surface = MobileSurfaceViewModel()
 
-        surface.result("1 track deleted")
+        surface.begin("Deleting 1 track…").finish("1 track deleted")
         val first = checkNotNull(surface.deletionMessage)
-        surface.result("1 track deleted")
+        surface.begin("Deleting 1 track…").finish("1 track deleted")
 
         assertEquals(first.occurrence + 1, surface.deletionMessage?.occurrence)
+    }
+
+    @Test
+    fun theFirstOverlappingDeletionToAnswerLeavesTheOthersProgressUp() {
+        val surface = MobileSurfaceViewModel()
+
+        val slow = surface.begin("Deleting 500 tracks…")
+        val quick = surface.begin("Deleting 1 track…")
+        assertEquals("the latest start is the one shown", "Deleting 1 track…", surface.deletionProgress?.text)
+
+        slow.finish("500 tracks deleted")
+        assertEquals("the quick one is still running", "Deleting 1 track…", surface.deletionProgress?.text)
+        assertEquals("500 tracks deleted", surface.deletionMessage?.text)
+
+        quick.finish("1 track deleted")
+        assertNull(surface.deletionProgress)
+        assertEquals("1 track deleted", surface.deletionMessage?.text)
+    }
+
+    @Test
+    fun aRunThatAnswersTwiceEndsOnlyItself() {
+        val surface = MobileSurfaceViewModel()
+
+        val first = surface.begin("Deleting 2 tracks…")
+        surface.begin("Deleting 1 track…")
+        first.finish("2 tracks deleted")
+        first.finish("2 tracks deleted")
+
+        assertEquals("Deleting 1 track…", surface.deletionProgress?.text)
     }
 }

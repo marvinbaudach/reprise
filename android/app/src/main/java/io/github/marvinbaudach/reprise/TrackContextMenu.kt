@@ -132,6 +132,27 @@ private fun LibraryTrackMenuTarget.deletionTarget() = TrackDeletionTarget(
     resolveTrackIds = resolveTrackIds,
 )
 
+/** A selection that has been resolved and may now be asked about. */
+private data class DeletionRequest(val label: String, val ids: List<Long>)
+
+/**
+ * Resolves the selection before anyone is asked about it, so a selection that
+ * cannot be deleted is refused up front rather than after a dialog that named
+ * it. Null after saying why. The ids asked about are the ids later deleted.
+ */
+private fun TrackDeletionTarget.request(messages: DeletionMessages): DeletionRequest? {
+    val ids = runCatching(resolveTrackIds).getOrElse { error ->
+        messages.say("Could not load the tracks: ${error.message ?: "unknown error"}")
+        return null
+    }
+    // A full answer may be a cut one: see TRACK_ID_QUERY_LIMIT.
+    if (ids.size >= TRACK_ID_QUERY_LIMIT) {
+        messages.say(SELECTION_TOO_LARGE_TO_DELETE)
+        return null
+    }
+    return DeletionRequest(label, ids)
+}
+
 /**
  * The queue row's menu.
  *
@@ -174,7 +195,10 @@ internal fun TrackContextMenu(
     target: LibraryTrackMenuTarget,
 ) {
     val controls = LocalPlaybackControls.current
-    var deleteConfirmation by remember { mutableStateOf<TrackDeletionTarget?>(null) }
+    var deleteConfirmation by remember { mutableStateOf<DeletionRequest?>(null) }
+    // The screen's line when there is one: this row may be gone by the time
+    // the deletion answers.
+    val deletionMessages = LocalDeletionMessages.current ?: anchor.asDeletionMessages()
 
     fun resolvedIds(): List<Long>? = runCatching(target.resolveTrackIds)
         .onFailure { error ->
@@ -230,16 +254,14 @@ internal fun TrackContextMenu(
             text = { Text("Delete from device…") },
             onClick = {
                 anchor.expanded = false
-                deleteConfirmation = target.deletionTarget()
+                deleteConfirmation = target.deletionTarget().request(deletionMessages)
             },
         )
     }
     TrackDeletionConfirmation(
-        target = deleteConfirmation,
+        request = deleteConfirmation,
         dismiss = { deleteConfirmation = null },
-        // The screen's line when there is one: this row may be gone by the time
-        // the deletion answers.
-        messages = LocalDeletionMessages.current ?: anchor.asDeletionMessages(),
+        messages = deletionMessages,
     )
 }
 
@@ -247,10 +269,22 @@ internal fun TrackContextMenu(
 internal fun NowPlayingTrackContextMenu(track: LibraryTrack) {
     val enabled = LocalNowPlayingActionsEnabled.current
     var expanded by remember { mutableStateOf(false) }
-    var deleteConfirmation by remember { mutableStateOf<TrackDeletionTarget?>(null) }
+    var deleteConfirmation by remember { mutableStateOf<DeletionRequest?>(null) }
     var message by remember { mutableStateOf<TransientMessage?>(null) }
     val target = remember(track.id, track.title) {
         TrackDeletionTarget(track.title, 1) { listOf(track.id) }
+    }
+    val deletionMessages = remember {
+        object : DeletionMessages {
+            override fun say(text: String) {
+                message = TransientMessage(text).after(message)
+            }
+
+            override fun begin(text: String): DeletionRun {
+                say(text)
+                return DeletionRun { outcome -> say(outcome) }
+            }
+        }
     }
     LaunchedEffect(enabled) {
         if (!enabled) {
@@ -275,23 +309,15 @@ internal fun NowPlayingTrackContextMenu(track: LibraryTrack) {
                     text = { Text("Delete from device…") },
                     onClick = {
                         expanded = false
-                        deleteConfirmation = target
+                        deleteConfirmation = target.request(deletionMessages)
                     },
                 )
             }
         }
         TrackDeletionConfirmation(
-            target = deleteConfirmation,
+            request = deleteConfirmation,
             dismiss = { deleteConfirmation = null },
-            messages = remember {
-                object : DeletionMessages {
-                    override fun progress(text: String) = result(text)
-
-                    override fun result(text: String) {
-                        message = TransientMessage(text).after(message)
-                    }
-                }
-            },
+            messages = deletionMessages,
         )
         TransientMessageText(message) { message = null }
     }
@@ -332,16 +358,17 @@ private fun logTrashFailures(report: AndroidTrashReport) {
 
 @Composable
 private fun TrackDeletionConfirmation(
-    target: TrackDeletionTarget?,
+    request: DeletionRequest?,
     dismiss: () -> Unit,
     messages: DeletionMessages,
 ) {
     val controls = LocalPlaybackControls.current
-    target ?: return
-    val title = if (target.trackCount == 1L) {
-        "Delete ${target.label}?"
+    request ?: return
+    val ids = request.ids
+    val title = if (ids.size == 1) {
+        "Delete ${request.label}?"
     } else {
-        "Delete ${target.trackCount} tracks from ${target.label}?"
+        "Delete ${ids.size} tracks from ${request.label}?"
     }
     AlertDialog(
         onDismissRequest = dismiss,
@@ -356,20 +383,9 @@ private fun TrackDeletionConfirmation(
             TextButton(
                 onClick = {
                     dismiss()
-                    val ids = runCatching(target.resolveTrackIds).getOrElse { error ->
-                        messages.result(
-                            "Could not load the tracks: ${error.message ?: "unknown error"}",
-                        )
-                        return@TextButton
-                    }
-                    // A full answer may be a cut one: see TRACK_ID_QUERY_LIMIT.
-                    if (ids.size >= TRACK_ID_QUERY_LIMIT) {
-                        messages.result(SELECTION_TOO_LARGE_TO_DELETE)
-                        return@TextButton
-                    }
-                    messages.progress(deletingMessage(ids.size))
+                    val run = messages.begin(deletingMessage(ids.size))
                     controls.deleteTracks(ids) { outcome ->
-                        messages.result(
+                        run.finish(
                             outcome.fold(
                                 onSuccess = { deletion ->
                                     logTrashFailures(deletion)

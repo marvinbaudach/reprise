@@ -141,10 +141,16 @@ internal class MobileSurfaceViewModel : ViewModel(), DeletionMessages {
      * than on the row the deletion started from: that row, its page, even its
      * list may be gone by the time the deletion answers.
      */
-    var deletionProgress by mutableStateOf<String?>(null)
-        private set
+    private var runningDeletions by mutableStateOf(emptyList<DeletionProgress>())
+    private var lastDeletionRun = 0L
+
+    /** The latest deletion still waiting for its answer, if any. */
+    val deletionProgress: DeletionProgress?
+        get() = runningDeletions.lastOrNull()
     var deletionMessage by mutableStateOf<TransientMessage?>(null)
         private set
+    private var refreshTickets = 0
+    private var appliedRefreshTicket = 0
     private var artistPhotoProgress by mutableStateOf<ArtistPhotoProgress?>(null)
     private var dismissedArtistPhotoRunId by mutableStateOf<Long?>(null)
     private var refreshArtistPortraits: () -> Unit = {}
@@ -187,6 +193,15 @@ internal class MobileSurfaceViewModel : ViewModel(), DeletionMessages {
         reportLibraryState?.invoke(state) ?: run { pendingLibraryState = state }
     }
 
+    /**
+     * Orders refreshes across activity recreation: this outlives the activity
+     * that started one, so a refresh from before a rotation cannot land after
+     * one from after it. Main thread only.
+     */
+    fun takeRefreshTicket(): Int = ++refreshTickets
+
+    fun isNewestRefresh(ticket: Int): Boolean = ticket > appliedRefreshTicket
+
     /** What the screen shows right now, taken on the main thread before a refresh reads. */
     fun removalRefreshBasis() = RemovalRefreshBasis(loadedWindows, selectedTab)
 
@@ -200,7 +215,12 @@ internal class MobileSurfaceViewModel : ViewModel(), DeletionMessages {
      * They are only stored while [basis] still describes the screen; a listener
      * who moved on meanwhile gets the plain fresh state, as after a scan.
      */
-    fun updateLibraryAfterRemoval(refreshed: RefreshedLibrary, basis: RemovalRefreshBasis) {
+    fun updateLibraryAfterRemoval(
+        refreshed: RefreshedLibrary,
+        basis: RemovalRefreshBasis,
+        ticket: Int,
+    ) {
+        appliedRefreshTicket = maxOf(appliedRefreshTicket, ticket)
         val windows = refreshed.windows
         if (windows != null && basis.stillDescribes(loadedWindows, selectedTab, searchText)) {
             keepLoadedWindows(refreshed.state.catalogShape(), windows)
@@ -208,13 +228,17 @@ internal class MobileSurfaceViewModel : ViewModel(), DeletionMessages {
         updateLibraryState(refreshed.state)
     }
 
-    override fun progress(text: String) {
-        deletionProgress = text
+    override fun say(text: String) {
+        deletionMessage = TransientMessage(text).after(deletionMessage)
     }
 
-    override fun result(text: String) {
-        deletionProgress = null
-        deletionMessage = TransientMessage(text).after(deletionMessage)
+    override fun begin(text: String): DeletionRun {
+        val started = DeletionProgress(run = ++lastDeletionRun, text = text)
+        runningDeletions = runningDeletions + started
+        return DeletionRun { outcome ->
+            runningDeletions = runningDeletions.filterNot { it.run == started.run }
+            say(outcome)
+        }
     }
 
     fun dismissDeletionMessage() {

@@ -62,10 +62,11 @@ class LibraryRemovalRefreshTest {
     }
 
     @Test
-    fun aWindowShorterThanBeforeIsAskedOnlyForWhatIsLeft() {
+    fun aWindowThatShrankBelowItsOldDepthStopsReadingWhenTheCatalogRunsOut() {
         val port = InMemoryCatalogPort(hundreds.take(300))
         val previous = windowsOf(port, titlesLoaded = 300)
         port.remove((1L..100L).toList())
+        port.reads.clear()
 
         val refreshed = LibrarySession(port).refreshBrowse(previous)
 
@@ -73,6 +74,11 @@ class LibraryRemovalRefreshTest {
         assertEquals(200, titles.rows.size)
         assertEquals(200L, titles.total)
         assertEquals(false, titles.hasMore)
+        assertEquals(
+            "the state's own first window, one read at the old depth, and none after the catalog ended",
+            listOf("titles[]:0:200", "titles[]:0:300"),
+            port.reads.filter { it.startsWith("titles[]:") },
+        )
     }
 
     @Test
@@ -171,6 +177,22 @@ class LibraryRemovalRefreshTest {
         val album = assertNotNull_(refreshed.windows?.openAlbum)
         assertEquals(listOf(1L, 3L, 4L, 5L), album.tracks.rows.map { it.id })
         assertEquals(4L, album.album.trackCount)
+    }
+
+    @Test
+    fun anAlbumOpenedWithoutAnArtistPageIsReadAsTheAlbumRowNowStands() {
+        val songs = (1L..5L).map { CatalogSong(it, "Track $it", "Solo", "Only") }
+        val port = InMemoryCatalogPort(songs)
+        val session = LibrarySession(port)
+        val album = port.searchAlbums("", firstLibraryWindow()).rows.single()
+        val previous = windowsOf(port, openAlbum = session.openAlbum(album))
+        port.remove(listOf(2L))
+
+        val refreshed = session.refreshBrowse(previous)
+
+        val open = assertNotNull_(refreshed.windows?.openAlbum)
+        assertEquals(4L, open.album.trackCount)
+        assertEquals("the duration is the fresh row's, not the old one's", 4_000L, open.album.totalDurationMs)
     }
 
     @Test

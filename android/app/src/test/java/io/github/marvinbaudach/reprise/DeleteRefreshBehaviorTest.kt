@@ -298,7 +298,25 @@ class DeleteRefreshBehaviorTest {
     }
 
     @Test
-    fun aPartialDeletionStillSaysSoAfterTheRowItWasRaisedOnIsGone() {
+    fun aDeletionThatMakesItsOwnRowAndPageVanishStillReportsItsOutcome() {
+        val screen = Screen(aria + bolero)
+        screen.show()
+        openArtistPage("Bolero")
+
+        compose.onNodeWithText("Only").performTouchInput { longClick() }
+        compose.onNodeWithText("Delete from device…").performClick()
+        compose.onNodeWithText("Delete").performClick()
+        compose.waitForIdle()
+
+        // The album row, and the whole page around it, are gone; only a
+        // message the screen owns can still say what happened.
+        compose.onNodeWithText("Only").assertDoesNotExist()
+        compose.onNodeWithText("Bolero").assertDoesNotExist()
+        compose.onNodeWithText("2 tracks deleted").assertIsDisplayed()
+    }
+
+    @Test
+    fun aPartialDeletionStillSaysSoAfterTheListReloads() {
         val screen = Screen(aria + bolero)
         screen.controls.refused = setOf(7L)
         screen.show()
