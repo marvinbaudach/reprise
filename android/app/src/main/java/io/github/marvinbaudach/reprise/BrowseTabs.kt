@@ -25,7 +25,11 @@ import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.focus.FocusRequester
@@ -33,6 +37,7 @@ import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.unit.dp
+import kotlinx.coroutines.launch
 import uniffi.reprise_android_ffi.AndroidArtworkSize
 import uniffi.reprise_android_ffi.AndroidPlaybackState
 
@@ -319,14 +324,7 @@ internal fun ArtistsTab(
             if (!hasAlbums && !hasOtherTitles) {
                 Text("No tracks by this artist.", modifier = Modifier.padding(16.dp))
             } else {
-                val artistTrackIds = LocalArtistTrackIds.current
-                val controls = LocalPlaybackControls.current
-                ListPlayButton(
-                    description = "Play ${selectedArtist.artist.name}",
-                    onClick = {
-                        controls.playTrackIds(artistTrackIds(selectedArtist.artist), 0)
-                    },
-                )
+                ArtistPlayButton(selectedArtist.artist)
             }
             if (hasAlbums) {
                 ArtistDetailSections(
@@ -482,10 +480,49 @@ private fun SectionHeading(text: String) {
     )
 }
 
+/**
+ * Plays every track the artist has, however few of them the page has loaded.
+ * The ids come off the main thread; until they arrive the button is off, so a
+ * second tap cannot queue the same question twice.
+ */
 @Composable
-private fun ListPlayButton(description: String, onClick: () -> Unit) {
+private fun ArtistPlayButton(artist: LibraryArtist) {
+    val artistTrackIds = LocalArtistTrackIds.current
+    val controls = LocalPlaybackControls.current
+    val scope = rememberCoroutineScope()
+    var resolving by remember(artist) { mutableStateOf(false) }
+    var message by remember(artist) { mutableStateOf<TransientMessage?>(null) }
+    ListPlayButton(
+        description = "Play ${artist.name}",
+        enabled = !resolving,
+        onClick = {
+            resolving = true
+            scope.launch {
+                try {
+                    resolveOffMain { artistTrackIds(artist) }.fold(
+                        onSuccess = { ids -> controls.playTrackIds(ids, 0) },
+                        onFailure = { error ->
+                            message = TransientMessage(couldNotLoadTracks(error)).after(message)
+                        },
+                    )
+                } finally {
+                    resolving = false
+                }
+            }
+        },
+    )
+    TransientMessageText(message) { message = null }
+}
+
+@Composable
+private fun ListPlayButton(
+    description: String,
+    enabled: Boolean = true,
+    onClick: () -> Unit,
+) {
     Button(
         onClick = onClick,
+        enabled = enabled,
         modifier = Modifier.padding(horizontal = 16.dp, vertical = 4.dp),
     ) {
         MaterialSymbol("play_arrow", description)

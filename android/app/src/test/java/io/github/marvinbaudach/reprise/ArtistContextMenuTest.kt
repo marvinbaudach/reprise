@@ -36,12 +36,13 @@ class ArtistContextMenuTest {
 
         compose.onNodeWithText("Whole Artist").performTouchInput { longClick() }
         compose.onNodeWithText("Delete from device…").performClick()
-        compose.onNodeWithText("Delete 3 tracks from Whole Artist?").assertIsDisplayed()
+        compose.awaitText("Delete 3 tracks from Whole Artist?")
         compose.onNodeWithText("Cancel").performClick()
         assertEquals(emptyList<List<Long>>(), controls.deleted)
 
         compose.onNodeWithText("Whole Artist").performTouchInput { longClick() }
         compose.onNodeWithText("Delete from device…").performClick()
+        compose.awaitText("Delete 3 tracks from Whole Artist?")
         compose.onNodeWithText("Delete", useUnmergedTree = true).performClick()
 
         assertEquals(listOf(listOf(9L, 7L, 5L)), controls.deleted)
@@ -56,6 +57,7 @@ class ArtistContextMenuTest {
         compose.onNode(
             hasText("Play") and hasAnyAncestor(hasTestTag("library-track-context-menu")),
         ).performClick()
+        compose.waitUntil(AWAIT_TIMEOUT_MS) { controls.playedIds != null }
 
         assertEquals(listOf(9L, 7L, 5L), controls.playedIds)
         assertEquals(0, controls.playedStartIndex)
@@ -80,7 +82,7 @@ class ArtistContextMenuTest {
 
         compose.onNodeWithTag("artist-detail-overflow").performClick()
         compose.onNodeWithText("Delete from device…").performClick()
-        compose.onNodeWithText("Delete 3 tracks from Whole Artist?").assertIsDisplayed()
+        compose.awaitText("Delete 3 tracks from Whole Artist?")
         compose.onNodeWithText("Delete", useUnmergedTree = true).performClick()
 
         // The page has only its first album window loaded; the menu still
@@ -106,6 +108,7 @@ class ArtistContextMenuTest {
         )
 
         compose.onNodeWithText("Play").performClick()
+        compose.waitUntil(AWAIT_TIMEOUT_MS) { controls.playedIds != null }
 
         // The page has only its first album window loaded and no untagged
         // tracks loaded either; the list Play button still takes every

@@ -4,7 +4,6 @@ import androidx.activity.ComponentActivity
 import androidx.compose.foundation.layout.Column
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.runtime.CompositionLocalProvider
-import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.junit4.v2.createAndroidComposeRule
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
@@ -33,9 +32,7 @@ class DeletionCapTest {
         showMenuFor(controls, ids = TRACK_ID_QUERY_LIMIT)
 
         compose.onNodeWithText("Delete from device…").performClick()
-        compose.waitForIdle()
-
-        compose.onNodeWithText("too large to delete at once", substring = true).assertIsDisplayed()
+        compose.awaitText("too large to delete at once", substring = true)
         compose.onNodeWithText("Delete 10000 tracks from Big Artist?").assertDoesNotExist()
         compose.onNodeWithText("Delete").assertDoesNotExist()
         assertEquals(emptyList<List<Long>>(), controls.deleted)
@@ -47,7 +44,7 @@ class DeletionCapTest {
         val resolves = showMenuFor(controls, ids = TRACK_ID_QUERY_LIMIT - 1)
 
         compose.onNodeWithText("Delete from device…").performClick()
-        compose.onNodeWithText("Delete 9999 tracks from Big Artist?").assertIsDisplayed()
+        compose.awaitText("Delete 9999 tracks from Big Artist?")
         compose.onNodeWithText("Delete").performClick()
         compose.waitForIdle()
 

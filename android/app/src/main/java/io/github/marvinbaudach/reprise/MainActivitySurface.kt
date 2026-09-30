@@ -63,6 +63,10 @@ internal fun <A, R> offMainLibraryRead(
     }
 }
 
+/** A read with no argument, for callers that already hold everything it needs. */
+internal suspend fun <R> readOffMainThread(read: () -> R): R =
+    offMainLibraryRead<Unit, R> { read() }(Unit)
+
 internal fun <A, B, R> offMainLibraryRead(
     query: suspend (A, B) -> R,
 ): suspend (A, B) -> R = { first, second ->

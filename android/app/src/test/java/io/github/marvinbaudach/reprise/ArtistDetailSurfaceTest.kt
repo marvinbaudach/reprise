@@ -220,7 +220,7 @@ class ArtistDetailSurfaceTest {
     }
 
     @Test
-    fun artistPlayUsesAlbumsInPageOrderThenOtherTitles() {
+    fun artistPlayTakesEveryIdTheCatalogHasInTheOrderItAnswers() {
         val firstAlbum = album("Newest", 2024)
         val secondAlbum = album("Earlier", 2020)
         val loose = track("Loose Song")
@@ -236,18 +236,15 @@ class ArtistDetailSurfaceTest {
                 untagged = listOf(loose),
             ),
             controls = controls,
-            albumTrackIds = { album ->
-                when (album) {
-                    firstAlbum -> listOf(11L, 12L)
-                    secondAlbum -> listOf(21L)
-                    else -> emptyList()
-                }
-            },
+            // Not the page's order and not only what the page has loaded: the
+            // artist's ids come from the catalog, as the overflow menu's do.
+            artistTrackIds = { listOf(21L, 11L, 12L, loose.id, 99L) },
         )
 
         compose.onNodeWithContentDescription("Play Low").performClick()
+        compose.waitUntil(AWAIT_TIMEOUT_MS) { selections.isNotEmpty() }
 
-        assertEquals(listOf(listOf(11L, 12L, 21L, loose.id) to 0), selections)
+        assertEquals(listOf(listOf(21L, 11L, 12L, loose.id, 99L) to 0), selections)
     }
 
     @Test
@@ -364,13 +361,13 @@ class ArtistDetailSurfaceTest {
         openAlbum: (LibraryAlbum) -> Unit = {},
         openedAlbumTracks: List<LibraryTrack> = emptyList(),
         controls: PlaybackControls = DisconnectedPlaybackControls,
-        albumTrackIds: (LibraryAlbum) -> List<Long> = { emptyList() },
+        artistTrackIds: (LibraryArtist) -> List<Long> = { emptyList() },
     ) {
         compose.setContent {
             RepriseTheme(theme, darkPalette = true) {
                 CompositionLocalProvider(
                     LocalPlaybackControls provides controls,
-                    LocalAlbumTrackIds provides albumTrackIds,
+                    LocalArtistTrackIds provides artistTrackIds,
                 ) {
                     var selectedAlbum by remember { mutableStateOf<AlbumTrackList?>(null) }
                     ArtistsTab(
