@@ -12,6 +12,16 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 
 /**
+ * The most ids one canonical track-id query returns.
+ *
+ * Mirrors `QUEUE_LIMIT` in `crates/reprise-core/src/queries/queue.rs`: both the
+ * album and the artist id queries end in `LIMIT QUEUE_LIMIT` and say nothing
+ * when they hit it. The FFI does not expose the constant, and a thin adapter
+ * should not grow a getter for one number, so it is repeated here.
+ */
+internal const val TRACK_ID_QUERY_LIMIT = 10_000
+
+/**
  * Where a deletion says what it is doing and what it did.
  *
  * A deletion removes the row, page or list it was started from, and a message
@@ -70,3 +80,6 @@ internal fun DeletionMessageLine(surface: MobileSurfaceViewModel) {
 
 internal fun deletingMessage(count: Int): String =
     "Deleting $count ${if (count == 1) "track" else "tracks"}…"
+
+internal const val SELECTION_TOO_LARGE_TO_DELETE =
+    "This selection is too large to delete at once. Delete it in smaller parts."

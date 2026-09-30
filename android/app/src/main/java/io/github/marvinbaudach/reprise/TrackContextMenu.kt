@@ -362,6 +362,11 @@ private fun TrackDeletionConfirmation(
                         )
                         return@TextButton
                     }
+                    // A full answer may be a cut one: see TRACK_ID_QUERY_LIMIT.
+                    if (ids.size >= TRACK_ID_QUERY_LIMIT) {
+                        messages.result(SELECTION_TOO_LARGE_TO_DELETE)
+                        return@TextButton
+                    }
                     messages.progress(deletingMessage(ids.size))
                     controls.deleteTracks(ids) { outcome ->
                         messages.result(
