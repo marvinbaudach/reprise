@@ -172,7 +172,7 @@ class DeleteRefreshBehaviorTest {
     private fun deleteRow(trackId: Long, title: String) {
         compose.onNodeWithTag("library-track-row-$trackId").performTouchInput { longClick() }
         compose.onNodeWithText("Delete from device…").performClick()
-        compose.onNodeWithText("Delete $title?").assertIsDisplayed()
+        compose.awaitText("Delete $title?")
         compose.onNodeWithText("Delete").performClick()
         compose.waitForIdle()
     }
@@ -254,6 +254,7 @@ class DeleteRefreshBehaviorTest {
 
         compose.onNodeWithText("Only").performTouchInput { longClick() }
         compose.onNodeWithText("Delete from device…").performClick()
+        compose.awaitText("Delete")
         compose.onNodeWithText("Delete").performClick()
         compose.waitForIdle()
 
@@ -305,6 +306,7 @@ class DeleteRefreshBehaviorTest {
 
         compose.onNodeWithText("Only").performTouchInput { longClick() }
         compose.onNodeWithText("Delete from device…").performClick()
+        compose.awaitText("Delete")
         compose.onNodeWithText("Delete").performClick()
         compose.waitForIdle()
 
@@ -324,6 +326,7 @@ class DeleteRefreshBehaviorTest {
 
         compose.onNodeWithText("Only").performTouchInput { longClick() }
         compose.onNodeWithText("Delete from device…").performClick()
+        compose.awaitText("Delete")
         compose.onNodeWithText("Delete").performClick()
         compose.waitForIdle()
 

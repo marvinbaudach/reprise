@@ -21,6 +21,7 @@ import androidx.compose.runtime.Stable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.composed
@@ -33,6 +34,7 @@ import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.unit.DpOffset
 import androidx.compose.ui.unit.dp
+import kotlinx.coroutines.launch
 import uniffi.reprise_android_ffi.AndroidTrashReport
 
 @Stable
@@ -120,18 +122,6 @@ internal data class QueueTrackMenuTarget(
     val actions: QueueRowActions,
 )
 
-private data class TrackDeletionTarget(
-    val label: String,
-    val trackCount: Long,
-    val resolveTrackIds: () -> List<Long>,
-)
-
-private fun LibraryTrackMenuTarget.deletionTarget() = TrackDeletionTarget(
-    label = label,
-    trackCount = trackCount,
-    resolveTrackIds = resolveTrackIds,
-)
-
 /** A selection that has been resolved and may now be asked about. */
 private data class DeletionRequest(val label: String, val ids: List<Long>)
 
@@ -139,10 +129,14 @@ private data class DeletionRequest(val label: String, val ids: List<Long>)
  * Resolves the selection before anyone is asked about it, so a selection that
  * cannot be deleted is refused up front rather than after a dialog that named
  * it. Null after saying why. The ids asked about are the ids later deleted.
+ *
+ * The query runs off the main thread: see [resolveOffMain].
  */
-private fun TrackDeletionTarget.request(messages: DeletionMessages): DeletionRequest? {
-    val ids = runCatching(resolveTrackIds).getOrElse { error ->
-        messages.say("Could not load the tracks: ${error.message ?: "unknown error"}")
+private suspend fun LibraryTrackMenuTarget.deletionRequest(
+    messages: DeletionMessages,
+): DeletionRequest? {
+    val ids = resolveOffMain(resolveTrackIds).getOrElse { error ->
+        messages.say(couldNotLoadTracks(error))
         return null
     }
     // A full answer may be a cut one: see TRACK_ID_QUERY_LIMIT.
@@ -199,11 +193,28 @@ internal fun TrackContextMenu(
     // The screen's line when there is one: this row may be gone by the time
     // the deletion answers.
     val deletionMessages = LocalDeletionMessages.current ?: anchor.asDeletionMessages()
+    val scope = rememberCoroutineScope()
+    // The id query is not instant for a big artist. While one is out, the
+    // menu's items are off: a second tap would ask the catalog the same
+    // question again and, for a deletion, open a second dialog.
+    var resolving by remember { mutableStateOf(false) }
 
-    fun resolvedIds(): List<Long>? = runCatching(target.resolveTrackIds)
-        .onFailure { error ->
-            anchor.say("Could not load the tracks: ${error.message ?: "unknown error"}")
+    fun whileResolving(work: suspend () -> Unit) {
+        if (resolving) {
+            return
         }
+        resolving = true
+        scope.launch {
+            try {
+                work()
+            } finally {
+                resolving = false
+            }
+        }
+    }
+
+    suspend fun resolvedIds(): List<Long>? = resolveOffMain(target.resolveTrackIds)
+        .onFailure { error -> anchor.say(couldNotLoadTracks(error)) }
         .getOrNull()
 
     fun queued(outcome: Result<UInt>) {
@@ -230,31 +241,39 @@ internal fun TrackContextMenu(
     ) {
         DropdownMenuItem(
             text = { Text("Play") },
+            enabled = !resolving,
             onClick = {
                 anchor.expanded = false
-                resolvedIds()?.let(target.play)
+                whileResolving { resolvedIds()?.let(target.play) }
             },
         )
         DropdownMenuItem(
             text = { Text("Play next") },
+            enabled = !resolving,
             onClick = {
                 anchor.expanded = false
-                resolvedIds()?.let { ids -> controls.queueTracksNext(ids, ::queued) }
+                whileResolving {
+                    resolvedIds()?.let { ids -> controls.queueTracksNext(ids, ::queued) }
+                }
             },
         )
         DropdownMenuItem(
             text = { Text("Add to queue") },
+            enabled = !resolving,
             onClick = {
                 anchor.expanded = false
-                resolvedIds()?.let { ids -> controls.queueTracksLast(ids, ::queued) }
+                whileResolving {
+                    resolvedIds()?.let { ids -> controls.queueTracksLast(ids, ::queued) }
+                }
             },
         )
         HorizontalDivider()
         DropdownMenuItem(
             text = { Text("Delete from device…") },
+            enabled = !resolving,
             onClick = {
                 anchor.expanded = false
-                deleteConfirmation = target.deletionTarget().request(deletionMessages)
+                whileResolving { deleteConfirmation = target.deletionRequest(deletionMessages) }
             },
         )
     }
@@ -271,9 +290,6 @@ internal fun NowPlayingTrackContextMenu(track: LibraryTrack) {
     var expanded by remember { mutableStateOf(false) }
     var deleteConfirmation by remember { mutableStateOf<DeletionRequest?>(null) }
     var message by remember { mutableStateOf<TransientMessage?>(null) }
-    val target = remember(track.id, track.title) {
-        TrackDeletionTarget(track.title, 1) { listOf(track.id) }
-    }
     val deletionMessages = remember {
         object : DeletionMessages {
             override fun say(text: String) {
@@ -309,7 +325,8 @@ internal fun NowPlayingTrackContextMenu(track: LibraryTrack) {
                     text = { Text("Delete from device…") },
                     onClick = {
                         expanded = false
-                        deleteConfirmation = target.request(deletionMessages)
+                        // The one id is already in hand: nothing to resolve.
+                        deleteConfirmation = DeletionRequest(track.title, listOf(track.id))
                     },
                 )
             }

@@ -61,6 +61,7 @@ class TrackContextMenuTest {
 
         compose.onNodeWithTag("library-track-row-41").performTouchInput { longClick() }
         compose.onNodeWithText("Play next").performClick()
+        compose.waitUntil(AWAIT_TIMEOUT_MS) { controls.queuedNext.isNotEmpty() }
 
         assertEquals(listOf(listOf(41L)), controls.queuedNext)
         assertEquals(0, playCount)
@@ -74,7 +75,7 @@ class TrackContextMenuTest {
 
         openTitleMenu(track.id)
         compose.onNodeWithText("Delete from device…").performClick()
-        compose.onNodeWithText("Delete Menu Song?").assertIsDisplayed()
+        compose.awaitText("Delete Menu Song?")
         compose.onNodeWithText("This cannot be undone.", substring = true).assertIsDisplayed()
         compose.onNodeWithText("Cancel").performClick()
         compose.onNodeWithText("Delete Menu Song?").assertDoesNotExist()
@@ -82,6 +83,7 @@ class TrackContextMenuTest {
 
         openTitleMenu(track.id)
         compose.onNodeWithText("Delete from device…").performClick()
+        compose.awaitText("Delete Menu Song?")
         compose.onNodeWithText("Delete", useUnmergedTree = true).performClick()
         assertEquals(listOf(listOf(41L)), controls.deleted)
     }
@@ -136,6 +138,7 @@ class TrackContextMenuTest {
         compose.onNode(
             hasText("Play") and hasAnyAncestor(hasTestTag("library-track-context-menu")),
         ).performClick()
+        compose.waitUntil(AWAIT_TIMEOUT_MS) { controls.playedIds != null }
 
         assertEquals(listOf(9L, 7L, 5L), controls.playedIds)
         assertEquals(0, controls.playedStartIndex)
@@ -242,6 +245,7 @@ class TrackContextMenuTest {
 
         openTitleMenu(track.id)
         compose.onNodeWithText("Play next").performClick()
+        compose.awaitText("1 track queued")
 
         // The row is a clipped 72 dp Surface: a message dropped beside its
         // content lands on the cover and the title instead of below the row.
@@ -309,6 +313,7 @@ class TrackContextMenuTest {
 
         openTitleMenu(track.id)
         compose.onNodeWithText("Delete from device…").performClick()
+        compose.awaitText("Delete Menu Song?")
         compose.onNodeWithText("Delete", useUnmergedTree = true).performClick()
 
         compose.onNodeWithText("1 of 1 could not be deleted").assertIsDisplayed()
@@ -401,6 +406,7 @@ internal class RecordingContextMenuControls(
     var playedIds: List<Long>? = null
     var playedStartIndex: Int? = null
     val queuedNext = mutableListOf<List<Long>>()
+    val queuedLast = mutableListOf<List<Long>>()
     val deleted = mutableListOf<List<Long>>()
     val moved = mutableListOf<Triple<Int, Long, Int>>()
 
@@ -448,6 +454,11 @@ internal class RecordingContextMenuControls(
 
     override fun queueTracksNext(trackIds: List<Long>, report: (Result<UInt>) -> Unit) {
         queuedNext += trackIds
+        report(Result.success(trackIds.size.toUInt()))
+    }
+
+    override fun queueTracksLast(trackIds: List<Long>, report: (Result<UInt>) -> Unit) {
+        queuedLast += trackIds
         report(Result.success(trackIds.size.toUInt()))
     }
 
