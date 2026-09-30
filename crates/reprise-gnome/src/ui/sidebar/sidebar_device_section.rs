@@ -362,12 +362,9 @@ mod tests {
             .child(&viewport)
             .build();
         window.present();
-        let main_loop = gtk4::glib::MainLoop::new(None, false);
-        let quit = main_loop.clone();
-        gtk4::glib::timeout_add_local_once(std::time::Duration::from_millis(80), move || {
-            quit.quit();
+        crate::ui::test_settle::settle_until(crate::ui::test_settle::DISPLAY_TEST_TIMEOUT, || {
+            find_detail(section.upcast_ref()).is_some_and(|detail| detail.text() == "Up to date")
         });
-        main_loop.run();
         let detail = find_detail(section.upcast_ref()).expect("device status label");
         assert_eq!(detail.text(), "Up to date");
         window.close();
