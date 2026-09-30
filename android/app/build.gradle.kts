@@ -55,8 +55,8 @@ android {
         applicationId = "io.github.marvinbaudach.reprise"
         minSdk = 26
         targetSdk = 37
-        versionCode = 160
-        versionName = "0.1.160"
+        versionCode = 161
+        versionName = "0.1.161"
         buildConfigField("String", "REPRISE_CORE_VERSION", "\"${workspacePackageValue("version")}\"")
         buildConfigField("String", "REPRISE_CORE_LICENSE", "\"${workspacePackageValue("license")}\"")
         buildConfigField("String", "REPRISE_MOBILE_LICENSE", "\"GPL-3.0-or-later\"")
@@ -123,12 +123,12 @@ dependencies {
     implementation(platform("androidx.compose:compose-bom:2026.09.00"))
     // Navigation is not part of the Compose BOM. 2.9.8 is the newest stable
     // Navigation release compatible with the BOM's stable Compose 1.11 line.
-    implementation("androidx.navigation:navigation-compose:2.10.1")
+    implementation("androidx.navigation:navigation-compose:2.10.2")
     implementation("androidx.compose.material3:material3")
     implementation("androidx.compose.material3:material3-window-size-class")
     implementation("androidx.compose.ui:ui")
     implementation("androidx.activity:activity-compose:1.13.0")
-    implementation("androidx.core:core-ktx:1.19.0")
+    implementation("androidx.core:core-ktx:1.19.1")
     implementation("androidx.lifecycle:lifecycle-runtime-ktx:2.11.0")
     implementation("androidx.lifecycle:lifecycle-viewmodel-compose:2.11.0")
     implementation("androidx.media3:media3-exoplayer:1.11.1")
