@@ -50,9 +50,9 @@ pub fn artist_header(
              WHERE {PRESENT} AND {effective_album_artist_t2} = ?1 COLLATE NOCASE \
              AND le.played_at >= ?2 AND le.played_at <= ?3 ) \
          FROM tracks \
-         WHERE {PRESENT} AND {EFFECTIVE_ALBUM_ARTIST} = ?1 COLLATE NOCASE"
+         WHERE {PRESENT} AND {EFFECTIVE_ALBUM_ARTIST} = TRIM(?1) COLLATE NOCASE"
     );
-    conn.query_row(&sql, params![artist.trim(), year_start, now_unix], |row| {
+    conn.query_row(&sql, params![artist, year_start, now_unix], |row| {
         Ok(ArtistHeader {
             album_count: row.get(0)?,
             track_count: row.get(1)?,
@@ -70,11 +70,11 @@ pub fn artist_top_tracks(
     let conn = db.conn();
     let sql = format!(
         "SELECT id, title, album, path, play_count, duration_ms FROM tracks \
-         WHERE {PRESENT} AND {EFFECTIVE_ALBUM_ARTIST} = ?1 COLLATE NOCASE \
+         WHERE {PRESENT} AND {EFFECTIVE_ALBUM_ARTIST} = TRIM(?1) COLLATE NOCASE \
          ORDER BY play_count DESC, last_played_at DESC, id ASC LIMIT ?2"
     );
     let mut statement = conn.prepare(&sql)?;
-    let rows = statement.query_map(params![artist.trim(), limit], |row| {
+    let rows = statement.query_map(params![artist, limit], |row| {
         Ok(ArtistTopTrack {
             track_id: row.get(0)?,
             title: row.get(1)?,
