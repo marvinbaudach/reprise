@@ -256,6 +256,28 @@ class TrackIdResolutionOffMainThreadTest {
     }
 
     @Test
+    fun aRefreshThatOnlyRecountsTheArtistLetsItsPlayFinish() {
+        val started = CountDownLatch(1)
+        val gate = CountDownLatch(1)
+        val controls = RecordingContextMenuControls()
+        showArtistPage(controls) {
+            started.countDown()
+            gate.await(GATE_MS, TimeUnit.MILLISECONDS)
+            listOf(9L, 7L, 5L)
+        }
+
+        compose.onNodeWithContentDescription("Play Whole Artist").performClick()
+        assertTrue(started.await(GATE_MS, TimeUnit.MILLISECONDS))
+        compose.runOnIdle { shownArtist = artist.copy(trackCount = 2) }
+        compose.waitForIdle()
+
+        gate.countDown()
+        compose.waitUntil(WAIT_MS) { controls.playedIds != null }
+
+        assertEquals(listOf(9L, 7L, 5L), controls.playedIds)
+    }
+
+    @Test
     fun aFailedArtistPagePlaySaysWhyInsteadOfCrashing() {
         val controls = RecordingContextMenuControls()
         showArtistPage(controls) { error("catalog unavailable") }
