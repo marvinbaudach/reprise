@@ -171,7 +171,7 @@ class TrackIdResolutionOffMainThreadTest {
     }
 
     @Test
-    fun aRowThatLeavesWhileResolvingSaysNothingAtAll() {
+    fun aRowThatLeavesWhileResolvingSaysOnTheScreenLineThatNothingWasDone() {
         val started = CountDownLatch(1)
         val gate = CountDownLatch(1)
         var present by mutableStateOf(true)
@@ -203,11 +203,16 @@ class TrackIdResolutionOffMainThreadTest {
         assertTrue(started.await(GATE_MS, TimeUnit.MILLISECONDS))
 
         compose.runOnIdle { present = false }
-        gate.countDown()
-        Thread.sleep(SETTLE_MS)
         compose.waitForIdle()
+        gate.countDown()
+        compose.waitUntil(WAIT_MS) { deletionSays.isNotEmpty() }
 
-        assertEquals(emptyList<String>(), deletionSays)
+        assertEquals(
+            listOf(
+                "The list changed before the tracks of Whole Artist were found. Nothing was done.",
+            ),
+            deletionSays,
+        )
     }
 
     @Test
@@ -338,7 +343,7 @@ class TrackIdResolutionOffMainThreadTest {
                     ArtistsTab(
                         surfaceLayout = SurfaceLayout.STACKED,
                         surfaceState = surfaceState,
-                        artists = LibraryWindow(2, listOf(artist, otherArtist), false),
+                        artists = LibraryWindow(1, listOf(artist), false),
                         searchText = "",
                         selectedArtist = ArtistTrackList(
                             artist = shownArtist,
