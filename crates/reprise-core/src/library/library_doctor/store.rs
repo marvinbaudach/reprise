@@ -269,23 +269,28 @@ pub(super) fn last_complete_scan(conn: &Connection) -> Result<Option<DoctorScan>
 }
 
 /// Keep a scan's file identity and this Apply file's written tag fields aligned
-/// with the post-write file state produced by its own successful write.
+/// with the post-write file state produced by its own successful write, but
+/// only when that file still matched the stored reading as the write began.
 ///
 /// The write path calls this only after Lofty saved the file and the scanner
 /// reconciled `tracks` from the file it just read. The exact current job, file,
 /// and track must still be running and must belong to `doctor_apply`; a crashed
 /// job therefore cannot authorize a later watcher or Tag Editor write. Failed
-/// writes and failed reconciliations never reach this function. The identity is
-/// always refreshed, but fields last written by another actor, including the
-/// Tag Editor, are deliberately left as this scan originally read them. An
-/// applied empty title comes from the journal because the scanner's reconciled
-/// `tracks.title` contains the display-name fallback rather than that empty tag.
+/// writes and failed reconciliations never reach this function. A file changed
+/// by another actor leaves the complete stored reading untouched so the next
+/// scan re-reads it. An applied empty title comes from the journal because the
+/// scanner's reconciled `tracks.title` contains the display-name fallback
+/// rather than that empty tag.
 pub(super) fn refresh_snapshot_after_successful_doctor_write(
     conn: &Connection,
     job_id: i64,
     file_id: i64,
     track_id: i64,
+    snapshot_was_current: bool,
 ) -> Result<(), DoctorError> {
+    if !snapshot_was_current {
+        return Ok(());
+    }
     let scan_id = conn
         .query_row(
             "SELECT j.scan_id FROM tag_write_jobs j
@@ -347,6 +352,59 @@ pub(super) fn refresh_snapshot_after_successful_doctor_write(
         params![track_id, scan_id, file_id],
     )?;
     Ok(())
+}
+
+/// Compare this job's snapshot row with the current `tracks` row immediately
+/// before its per-file write.
+///
+/// This deliberately reuses the same `DoctorTrackRef` equality as
+/// [`stale_flags`].
+pub(super) fn doctor_snapshot_matches_current_track(
+    conn: &Connection,
+    job_id: i64,
+    file_id: i64,
+    track_id: i64,
+) -> Result<bool, DoctorError> {
+    let references = conn
+        .query_row(
+            &format!(
+                "SELECT s.track_id, s.path, s.file_mtime, s.file_size, s.device, s.inode, \
+                        t.id, t.path, t.file_mtime, t.file_size, t.device, t.inode \
+                 FROM tag_write_jobs j \
+                 JOIN tag_write_job_files f ON f.job_id=j.id \
+                 JOIN library_doctor_scan_tracks s \
+                   ON s.scan_id=j.scan_id AND s.track_id=f.track_id \
+                 LEFT JOIN tracks t ON t.id=s.track_id AND {} \
+                 WHERE j.id=?1 AND f.id=?2 AND f.track_id=?3",
+                qualified_present("t")
+            ),
+            params![job_id, file_id, track_id],
+            |row| {
+                let snapshot = DoctorTrackRef {
+                    track_id: row.get(0)?,
+                    path: std::path::PathBuf::from(row.get::<_, String>(1)?),
+                    file_mtime: row.get(2)?,
+                    file_size: row.get(3)?,
+                    device: row.get(4)?,
+                    inode: row.get(5)?,
+                };
+                let current = match row.get::<_, Option<i64>>(6)? {
+                    Some(track_id) => Some(DoctorTrackRef {
+                        track_id,
+                        path: std::path::PathBuf::from(row.get::<_, String>(7)?),
+                        file_mtime: row.get(8)?,
+                        file_size: row.get(9)?,
+                        device: row.get(10)?,
+                        inode: row.get(11)?,
+                    }),
+                    None => None,
+                };
+                Ok((snapshot, current))
+            },
+        )
+        .optional()?;
+    Ok(references
+        .is_some_and(|(snapshot, current)| !track_ref_is_stale(&snapshot, current.as_ref())))
 }
 
 pub fn set_reviewed_scan(conn: &Connection, scan_id: i64) -> Result<(), DoctorError> {
@@ -465,7 +523,7 @@ pub fn stale_flags(conn: &Connection, scan_id: i64) -> Result<HashMap<i64, bool>
          FROM library_doctor_scan_tracks s \
          LEFT JOIN tracks t ON t.id = s.track_id AND {} \
          WHERE s.scan_id = ?1",
-        crate::queries::PRESENT
+        qualified_present("t")
     ))?;
     let rows = statement.query_map([scan_id], |row| {
         let snapshot = DoctorTrackRef {
@@ -492,10 +550,20 @@ pub fn stale_flags(conn: &Connection, scan_id: i64) -> Result<HashMap<i64, bool>
     let mut stale = HashMap::new();
     for row in rows {
         let (snapshot, current) = row?;
-        let changed = current.is_none_or(|current| current != snapshot);
+        let changed = track_ref_is_stale(&snapshot, current.as_ref());
         stale.insert(snapshot.track_id, changed);
     }
     Ok(stale)
+}
+
+fn track_ref_is_stale(snapshot: &DoctorTrackRef, current: Option<&DoctorTrackRef>) -> bool {
+    current.is_none_or(|current| current != snapshot)
+}
+
+fn qualified_present(alias: &str) -> String {
+    crate::queries::PRESENT
+        .replace("missing_since", &format!("{alias}.missing_since"))
+        .replace("removed_at", &format!("{alias}.removed_at"))
 }
 
 fn load_proposals(conn: &Connection, scan_id: i64) -> Result<Vec<DoctorProposal>, DoctorError> {
