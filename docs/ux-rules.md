@@ -4715,26 +4715,28 @@ means deterministic and high-confidence, never „without review".
   that reuses the reading therefore never works from that field's pre-write
   value, including a spelling split the Doctor's own partial apply created. A
   field last changed on disk by something other than a Doctor write is not
-  refreshed by it — see DOC-1i. *Tests:*
+  refreshed by it — see DOC-1i and the amendment below. *Tests:*
   `doc_1h_a_written_field_is_remembered_as_the_file_now_reads_it`,
   `doc_1h_an_empty_title_write_is_remembered_as_empty`,
   `doc_1h_an_untitled_file_keeps_an_empty_title_in_the_snapshot`,
   `doc_1h_a_split_the_doctor_created_is_found_by_the_next_scan`.
-  *Amended 2026-10-01: the refresh happens only when the file still matched
-  the identity its stored reading carried when the write began; see DOC-1i.
-  The guarantee is unchanged — a later scan never works from the pre-write
-  value, because a file that changed under the scan is re-read instead of
-  skipped.*
+  *Amended 2026-10-01: the refresh happens only when the library's current
+  `tracks` identity still matches the identity its stored reading carried when
+  the write began; see DOC-1i. When an intervening change is already registered
+  there, a later scan does not work from the pre-write value: the stale reading
+  is re-read. A file change not yet reflected in `tracks` remains the gap
+  recorded by DOC-1j.*
 
 - **DOC-1i** [active] [core] — **A field written by another actor must not
   remain frozen when a later Doctor write refreshes the file identity.** A
   Doctor write refreshes the stored reading only when, at the moment that
-  write begins, the file still matches the identity that stored reading
-  carries. If anything changed the file in between — the Tag Editor, an
-  external tagger, the scanner's own move path — the write leaves the stored
-  reading and its identity untouched, so the next scan re-reads the file
-  instead of skipping it. A file nothing else touched is refreshed exactly as
-  DOC-1h describes. *Tests:*
+  write begins, the library's current `tracks` row still matches the identity
+  that stored reading carries. If the library has already registered an
+  intervening change — as the Tag Editor and the scanner's move path do
+  synchronously, and an external tagger does after a rescan or reconciliation —
+  the write leaves the stored reading and its identity untouched, so the next
+  scan re-reads the file instead of skipping it. A file with no registered
+  intervening change is refreshed exactly as DOC-1h describes. *Tests:*
   `doc_1i_a_field_another_actor_wrote_is_not_frozen_by_a_later_doctor_write`,
   `doc_1i_a_second_doctor_write_still_blesses_its_own_file`.
 
@@ -4743,8 +4745,9 @@ means deterministic and high-confidence, never „without review".
   file has outgrown.** The per-field conflict check guards the field being
   written, so a plan frozen before another actor changed a *different* field
   still applies, with a justification derived from a reading that no longer
-  holds. DOC-1i makes the snapshot honest about this; whether the write should
-  happen at all is open.
+  holds. A change not yet reflected in `tracks` is also invisible to DOC-1i's
+  verdict. Whether the Doctor should `stat()` the file to catch that gap, and
+  whether the write should happen at all, are open.
 
 - **DOC-2a** [active] [core] — **Scope and scan result are snapshots.**
   Whole Library contains only locally present tracks currently `PRESENT`;

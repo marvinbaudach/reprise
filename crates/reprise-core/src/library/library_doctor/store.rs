@@ -354,6 +354,11 @@ pub(super) fn refresh_snapshot_after_successful_doctor_write(
     Ok(())
 }
 
+/// Compare this job's snapshot row with the current `tracks` row immediately
+/// before its per-file write.
+///
+/// This deliberately reuses the same `DoctorTrackRef` equality as
+/// [`stale_flags`].
 pub(super) fn doctor_snapshot_matches_current_track(
     conn: &Connection,
     job_id: i64,
@@ -371,7 +376,7 @@ pub(super) fn doctor_snapshot_matches_current_track(
                    ON s.scan_id=j.scan_id AND s.track_id=f.track_id \
                  LEFT JOIN tracks t ON t.id=s.track_id AND {} \
                  WHERE j.id=?1 AND f.id=?2 AND f.track_id=?3",
-                crate::queries::PRESENT
+                qualified_present("t")
             ),
             params![job_id, file_id, track_id],
             |row| {
@@ -518,7 +523,7 @@ pub fn stale_flags(conn: &Connection, scan_id: i64) -> Result<HashMap<i64, bool>
          FROM library_doctor_scan_tracks s \
          LEFT JOIN tracks t ON t.id = s.track_id AND {} \
          WHERE s.scan_id = ?1",
-        crate::queries::PRESENT
+        qualified_present("t")
     ))?;
     let rows = statement.query_map([scan_id], |row| {
         let snapshot = DoctorTrackRef {
@@ -553,6 +558,12 @@ pub fn stale_flags(conn: &Connection, scan_id: i64) -> Result<HashMap<i64, bool>
 
 fn track_ref_is_stale(snapshot: &DoctorTrackRef, current: Option<&DoctorTrackRef>) -> bool {
     current.is_none_or(|current| current != snapshot)
+}
+
+fn qualified_present(alias: &str) -> String {
+    crate::queries::PRESENT
+        .replace("missing_since", &format!("{alias}.missing_since"))
+        .replace("removed_at", &format!("{alias}.removed_at"))
 }
 
 fn load_proposals(conn: &Connection, scan_id: i64) -> Result<Vec<DoctorProposal>, DoctorError> {

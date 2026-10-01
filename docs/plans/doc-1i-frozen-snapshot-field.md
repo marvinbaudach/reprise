@@ -2,7 +2,7 @@
 slug: doc-1i-frozen-snapshot-field
 worktree: /home/marvin/Projects/reprise-doc-1i-frozen-snapshot-field
 branch: feature/doc-1i-frozen-snapshot-field
-phase: reviewed
+phase: refactored
 codex_session:
 created: 2026-10-01
 ---
@@ -187,7 +187,7 @@ replace the body:
 > the next scan re-reads the file instead of skipping it. A file nothing else
 > touched is refreshed exactly as DOC-1h describes. *Tests:*
 > `doc_1i_a_field_another_actor_wrote_is_not_frozen_by_a_later_doctor_write`,
-> `doc_1i_an_unchanged_file_still_keeps_its_doctor_write`.
+> `doc_1i_a_second_doctor_write_still_blesses_its_own_file`.
 
 *DOC-1h* — keep the ID and the body; append an amendment line in the italic form
 the file already uses. **Date it the day the commit lands, not the day this plan

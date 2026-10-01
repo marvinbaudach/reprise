@@ -88,6 +88,7 @@ fn doc_1i_a_field_another_actor_wrote_is_not_frozen_by_a_later_doctor_write() {
     let path = fixture(dir.path());
     let db = crate::db::Db::open_in_memory().unwrap();
     let scan = scan_track(&db, &path);
+    let scan_id = scan.id;
     let track_id = scan.track_ids[0];
     let mut review = DoctorReviewSession::from_scan(scan, DoctorReviewFilter::AutoApply);
     let choices = review
@@ -117,10 +118,13 @@ fn doc_1i_a_field_another_actor_wrote_is_not_frozen_by_a_later_doctor_write() {
     );
     assert_eq!(tag_edit.updated_ids, vec![track_id]);
     assert!(tag_edit.failures.is_empty());
+    assert_eq!(read_editable_tags(&path).unwrap().year, Some(2008));
+    assert!(stale_flags(db.conn(), scan_id).unwrap()[&track_id]);
 
     LibraryDoctor::new(&db)
         .apply_review_plan(&frozen_plan, |_| DoctorWriteControl::Continue)
         .unwrap();
+    assert_eq!(read_editable_tags(&path).unwrap().artist, "Artist");
     let second_scan = scan_track(&db, &path);
 
     let snapshot_year = db
@@ -174,6 +178,9 @@ fn doc_1i_a_second_doctor_write_still_blesses_its_own_file() {
         .apply_review_plan(&frozen_second_plan, |_| DoctorWriteControl::Continue)
         .unwrap();
 
+    let file_tags = read_editable_tags(&path).unwrap();
+    assert_eq!(file_tags.title, "Title");
+    assert_eq!(file_tags.artist, "Artist");
     assert!(!stale_flags(db.conn(), scan.id).unwrap()[&track_id]);
     let snapshot_artist = db
         .conn()
@@ -184,7 +191,7 @@ fn doc_1i_a_second_doctor_write_still_blesses_its_own_file() {
             |row| row.get::<_, String>(0),
         )
         .unwrap();
-    assert_eq!(snapshot_artist, read_editable_tags(&path).unwrap().artist);
+    assert_eq!(snapshot_artist, file_tags.artist);
 }
 
 #[test]
