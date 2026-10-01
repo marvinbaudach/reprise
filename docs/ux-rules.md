@@ -4720,17 +4720,31 @@ means deterministic and high-confidence, never „without review".
   `doc_1h_an_empty_title_write_is_remembered_as_empty`,
   `doc_1h_an_untitled_file_keeps_an_empty_title_in_the_snapshot`,
   `doc_1h_a_split_the_doctor_created_is_found_by_the_next_scan`.
+  *Amended 2026-10-01: the refresh happens only when the file still matched
+  the identity its stored reading carried when the write began; see DOC-1i.
+  The guarantee is unchanged — a later scan never works from the pre-write
+  value, because a file that changed under the scan is re-read instead of
+  skipped.*
+
+- **DOC-1i** [active] [core] — **A field written by another actor must not
+  remain frozen when a later Doctor write refreshes the file identity.** A
+  Doctor write refreshes the stored reading only when, at the moment that
+  write begins, the file still matches the identity that stored reading
+  carries. If anything changed the file in between — the Tag Editor, an
+  external tagger, the scanner's own move path — the write leaves the stored
+  reading and its identity untouched, so the next scan re-reads the file
+  instead of skipping it. A file nothing else touched is refreshed exactly as
+  DOC-1h describes. *Tests:*
+  `doc_1i_a_field_another_actor_wrote_is_not_frozen_by_a_later_doctor_write`,
+  `doc_1i_a_second_doctor_write_still_blesses_its_own_file`.
 
 <!-- REVIEW: rule proposal -->
-- **DOC-1i** [planned] [core] — **A field written by another actor must not
-  remain frozen when a later Doctor write refreshes the file identity.** The
-  open case is a Tag Editor write followed by a `doctor_apply` to another
-  field: the Doctor refreshes the identity and only its own applied fields, so
-  a later scan can skip the file and reuse the Tag Editor field's pre-write
-  snapshot value. On the measured library this affects five `year` values —
-  tracks 288, 289, 291, 292, and 293 have snapshot `year` NULL, `tracks.year`
-  2008, and journal evidence for `tag_editor:year:applied` followed by
-  `doctor_apply:artist:applied`.
+- **DOC-1j** [planned] [core] — **A Doctor write does not act on a reading the
+  file has outgrown.** The per-field conflict check guards the field being
+  written, so a plan frozen before another actor changed a *different* field
+  still applies, with a justification derived from a reading that no longer
+  holds. DOC-1i makes the snapshot honest about this; whether the write should
+  happen at all is open.
 
 - **DOC-2a** [active] [core] — **Scope and scan result are snapshots.**
   Whole Library contains only locally present tracks currently `PRESENT`;
