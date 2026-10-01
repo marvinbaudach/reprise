@@ -34,6 +34,7 @@ import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.unit.DpOffset
 import androidx.compose.ui.unit.dp
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.launch
 import uniffi.reprise_android_ffi.AndroidTrashReport
 
@@ -126,19 +127,14 @@ internal data class QueueTrackMenuTarget(
 private data class DeletionRequest(val label: String, val ids: List<Long>)
 
 /**
- * Resolves the selection before anyone is asked about it, so a selection that
- * cannot be deleted is refused up front rather than after a dialog that named
- * it. Null after saying why. The ids asked about are the ids later deleted.
- *
- * The query runs off the main thread: see [resolveOffMain].
+ * Builds the request only after the selection was resolved, so a selection
+ * that cannot be deleted is refused before a dialog names it. Null after
+ * saying why. The ids asked about are the ids later deleted.
  */
-private suspend fun LibraryTrackMenuTarget.deletionRequest(
+private fun LibraryTrackMenuTarget.deletionRequest(
+    ids: List<Long>,
     messages: DeletionMessages,
 ): DeletionRequest? {
-    val ids = resolveOffMain(resolveTrackIds).getOrElse { error ->
-        messages.say(couldNotLoadTracks(error))
-        return null
-    }
     // A full answer may be a cut one: see TRACK_ID_QUERY_LIMIT.
     if (ids.size >= TRACK_ID_QUERY_LIMIT) {
         messages.say(SELECTION_TOO_LARGE_TO_DELETE)
@@ -190,9 +186,10 @@ internal fun TrackContextMenu(
 ) {
     val controls = LocalPlaybackControls.current
     var deleteConfirmation by remember { mutableStateOf<DeletionRequest?>(null) }
-    // The screen's line when there is one: this row may be gone by the time
-    // the deletion answers.
-    val deletionMessages = LocalDeletionMessages.current ?: anchor.asDeletionMessages()
+    // The screen's line when there is one: this row may be gone when a
+    // deletion answers or a lookup is cancelled.
+    val screenMessages = LocalDeletionMessages.current
+    val deletionMessages = screenMessages ?: anchor.asDeletionMessages()
     val scope = rememberCoroutineScope()
     // The id query is not instant for a big artist. While one is out, the
     // menu's items are off: a second tap would ask the catalog the same
@@ -213,9 +210,21 @@ internal fun TrackContextMenu(
         }
     }
 
-    suspend fun resolvedIds(): List<Long>? = resolveOffMain(target.resolveTrackIds)
-        .onFailure { error -> anchor.say(couldNotLoadTracks(error)) }
-        .getOrNull()
+    suspend fun resolvedIds(reportFailure: (String) -> Unit = anchor::say): List<Long>? {
+        val outcome = try {
+            resolveOffMain(target.resolveTrackIds)
+        } catch (cancelled: CancellationException) {
+            // The row's line leaves with it, so only the screen can explain
+            // why its unfinished action disappeared.
+            screenMessages?.say(
+                "The list changed before the tracks of ${target.label} were found. Nothing was done.",
+            )
+            throw cancelled
+        }
+        return outcome
+            .onFailure { error -> reportFailure(couldNotLoadTracks(error)) }
+            .getOrNull()
+    }
 
     fun queued(outcome: Result<UInt>) {
         val text = outcome.fold(
@@ -273,7 +282,11 @@ internal fun TrackContextMenu(
             enabled = !resolving,
             onClick = {
                 anchor.expanded = false
-                whileResolving { deleteConfirmation = target.deletionRequest(deletionMessages) }
+                whileResolving {
+                    resolvedIds(deletionMessages::say)?.let { ids ->
+                        deleteConfirmation = target.deletionRequest(ids, deletionMessages)
+                    }
+                }
             },
         )
     }

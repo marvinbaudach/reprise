@@ -27,6 +27,7 @@ import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertNotSame
 import org.junit.Assert.assertNull
+import org.junit.Assert.assertTrue
 import org.junit.Rule
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -51,6 +52,8 @@ class TrackIdResolutionOffMainThreadTest {
 
     private val deletionSays = mutableListOf<String>()
     private val artist = LibraryArtist("Whole Artist", 3, 2, "content://artists/whole")
+    private val otherArtist = LibraryArtist("Other Artist", 1, 1, "content://artists/other")
+    private var shownArtist by mutableStateOf(artist)
     private lateinit var anchor: TrackContextMenuAnchorState
 
     private val deletionMessages = object : DeletionMessages {
@@ -168,7 +171,7 @@ class TrackIdResolutionOffMainThreadTest {
     }
 
     @Test
-    fun aRowThatLeavesWhileResolvingSaysNothingAtAll() {
+    fun aRowThatLeavesWhileResolvingSaysOnTheScreenLineThatNothingWasDone() {
         val started = CountDownLatch(1)
         val gate = CountDownLatch(1)
         var present by mutableStateOf(true)
@@ -197,14 +200,19 @@ class TrackIdResolutionOffMainThreadTest {
         }
         compose.runOnIdle { leavingAnchor.expanded = true }
         compose.onNodeWithText("Delete from device…").performClick()
-        started.await(GATE_MS, TimeUnit.MILLISECONDS)
+        assertTrue(started.await(GATE_MS, TimeUnit.MILLISECONDS))
 
         compose.runOnIdle { present = false }
-        gate.countDown()
-        Thread.sleep(SETTLE_MS)
         compose.waitForIdle()
+        gate.countDown()
+        compose.waitUntil(WAIT_MS) { deletionSays.isNotEmpty() }
 
-        assertEquals(emptyList<String>(), deletionSays)
+        assertEquals(
+            listOf(
+                "The list changed before the tracks of Whole Artist were found. Nothing was done.",
+            ),
+            deletionSays,
+        )
     }
 
     @Test
@@ -227,6 +235,51 @@ class TrackIdResolutionOffMainThreadTest {
 
         assertEquals(listOf(9L, 7L, 5L), controls.playedIds)
         assertNotSame(Looper.getMainLooper().thread, resolvedOn.get())
+    }
+
+    @Test
+    fun anArtistPagePlayStillResolvingWhenThePageShowsAnotherArtistIsDropped() {
+        val started = CountDownLatch(1)
+        val gate = CountDownLatch(1)
+        val controls = RecordingContextMenuControls()
+        showArtistPage(controls) {
+            started.countDown()
+            gate.await(GATE_MS, TimeUnit.MILLISECONDS)
+            listOf(9L, 7L, 5L)
+        }
+
+        compose.onNodeWithContentDescription("Play Whole Artist").performClick()
+        assertTrue(started.await(GATE_MS, TimeUnit.MILLISECONDS))
+        compose.runOnIdle { shownArtist = otherArtist }
+        compose.onNodeWithContentDescription("Play Other Artist").assertIsEnabled()
+
+        gate.countDown()
+        Thread.sleep(SETTLE_MS)
+        compose.waitForIdle()
+
+        assertNull("the page no longer shows the artist that was asked for", controls.playedIds)
+    }
+
+    @Test
+    fun aRefreshThatOnlyRecountsTheArtistLetsItsPlayFinish() {
+        val started = CountDownLatch(1)
+        val gate = CountDownLatch(1)
+        val controls = RecordingContextMenuControls()
+        showArtistPage(controls) {
+            started.countDown()
+            gate.await(GATE_MS, TimeUnit.MILLISECONDS)
+            listOf(9L, 7L, 5L)
+        }
+
+        compose.onNodeWithContentDescription("Play Whole Artist").performClick()
+        assertTrue(started.await(GATE_MS, TimeUnit.MILLISECONDS))
+        compose.runOnIdle { shownArtist = artist.copy(trackCount = 2) }
+        compose.waitForIdle()
+
+        gate.countDown()
+        compose.waitUntil(WAIT_MS) { controls.playedIds != null }
+
+        assertEquals(listOf(9L, 7L, 5L), controls.playedIds)
     }
 
     @Test
@@ -293,7 +346,7 @@ class TrackIdResolutionOffMainThreadTest {
                         artists = LibraryWindow(1, listOf(artist), false),
                         searchText = "",
                         selectedArtist = ArtistTrackList(
-                            artist = artist,
+                            artist = shownArtist,
                             albums = LibraryWindow(1, listOf(album), false),
                         ),
                         playback = PlaybackUiState().libraryPlayback(),
