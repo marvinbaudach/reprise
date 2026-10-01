@@ -2,7 +2,7 @@
 slug: doc-1i-frozen-snapshot-field
 worktree: /home/marvin/Projects/reprise-doc-1i-frozen-snapshot-field
 branch: feature/doc-1i-frozen-snapshot-field
-phase: planned
+phase: reviewed
 codex_session:
 created: 2026-10-01
 ---
