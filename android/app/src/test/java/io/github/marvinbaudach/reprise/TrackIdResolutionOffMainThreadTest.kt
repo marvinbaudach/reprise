@@ -27,6 +27,7 @@ import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertNotSame
 import org.junit.Assert.assertNull
+import org.junit.Assert.assertTrue
 import org.junit.Rule
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -51,6 +52,8 @@ class TrackIdResolutionOffMainThreadTest {
 
     private val deletionSays = mutableListOf<String>()
     private val artist = LibraryArtist("Whole Artist", 3, 2, "content://artists/whole")
+    private val otherArtist = LibraryArtist("Other Artist", 1, 1, "content://artists/other")
+    private var shownArtist by mutableStateOf(artist)
     private lateinit var anchor: TrackContextMenuAnchorState
 
     private val deletionMessages = object : DeletionMessages {
@@ -197,7 +200,7 @@ class TrackIdResolutionOffMainThreadTest {
         }
         compose.runOnIdle { leavingAnchor.expanded = true }
         compose.onNodeWithText("Delete from device…").performClick()
-        started.await(GATE_MS, TimeUnit.MILLISECONDS)
+        assertTrue(started.await(GATE_MS, TimeUnit.MILLISECONDS))
 
         compose.runOnIdle { present = false }
         gate.countDown()
@@ -227,6 +230,29 @@ class TrackIdResolutionOffMainThreadTest {
 
         assertEquals(listOf(9L, 7L, 5L), controls.playedIds)
         assertNotSame(Looper.getMainLooper().thread, resolvedOn.get())
+    }
+
+    @Test
+    fun anArtistPagePlayStillResolvingWhenThePageShowsAnotherArtistIsDropped() {
+        val started = CountDownLatch(1)
+        val gate = CountDownLatch(1)
+        val controls = RecordingContextMenuControls()
+        showArtistPage(controls) {
+            started.countDown()
+            gate.await(GATE_MS, TimeUnit.MILLISECONDS)
+            listOf(9L, 7L, 5L)
+        }
+
+        compose.onNodeWithContentDescription("Play Whole Artist").performClick()
+        assertTrue(started.await(GATE_MS, TimeUnit.MILLISECONDS))
+        compose.runOnIdle { shownArtist = otherArtist }
+        compose.onNodeWithContentDescription("Play Other Artist").assertIsEnabled()
+
+        gate.countDown()
+        Thread.sleep(SETTLE_MS)
+        compose.waitForIdle()
+
+        assertNull("the page no longer shows the artist that was asked for", controls.playedIds)
     }
 
     @Test
@@ -290,10 +316,10 @@ class TrackIdResolutionOffMainThreadTest {
                     ArtistsTab(
                         surfaceLayout = SurfaceLayout.STACKED,
                         surfaceState = surfaceState,
-                        artists = LibraryWindow(1, listOf(artist), false),
+                        artists = LibraryWindow(2, listOf(artist, otherArtist), false),
                         searchText = "",
                         selectedArtist = ArtistTrackList(
-                            artist = artist,
+                            artist = shownArtist,
                             albums = LibraryWindow(1, listOf(album), false),
                         ),
                         playback = PlaybackUiState().libraryPlayback(),

@@ -26,6 +26,7 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
@@ -486,12 +487,14 @@ private fun SectionHeading(text: String) {
  * second tap cannot queue the same question twice.
  */
 @Composable
-private fun ArtistPlayButton(artist: LibraryArtist) {
+private fun ArtistPlayButton(artist: LibraryArtist) = key(artist) {
     val artistTrackIds = LocalArtistTrackIds.current
     val controls = LocalPlaybackControls.current
+    // The key ties the scope to the artist: a play still resolving when the
+    // page moves to another artist is cancelled, as it is when the page closes.
     val scope = rememberCoroutineScope()
-    var resolving by remember(artist) { mutableStateOf(false) }
-    var message by remember(artist) { mutableStateOf<TransientMessage?>(null) }
+    var resolving by remember { mutableStateOf(false) }
+    var message by remember { mutableStateOf<TransientMessage?>(null) }
     ListPlayButton(
         description = "Play ${artist.name}",
         enabled = !resolving,
