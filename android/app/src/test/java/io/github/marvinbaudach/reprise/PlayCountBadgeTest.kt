@@ -13,6 +13,7 @@ import androidx.compose.ui.semantics.getOrNull
 import androidx.compose.ui.test.assertContentDescriptionEquals
 import androidx.compose.ui.test.captureToImage
 import androidx.compose.ui.test.junit4.v2.createAndroidComposeRule
+import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.unit.Density
@@ -27,6 +28,7 @@ import org.robolectric.RobolectricTestRunner
 import org.robolectric.annotation.Config
 import org.robolectric.annotation.GraphicsMode
 import uniffi.reprise_android_ffi.AndroidColorScheme
+import kotlin.math.abs
 import kotlin.math.ceil
 import kotlin.math.floor
 import kotlin.math.roundToInt
@@ -89,8 +91,7 @@ class PlayCountBadgeTest {
         )
         val neverPlayedDurationTop = durationTopWithinRow("1:40", trackId = 830)
 
-        // Use one digit deliberately: multi-digit wrapping at large font scales is a known,
-        // separately tracked pre-existing issue and is outside this badge-slot change.
+        // A single digit is the stable control for the reserved badge slot at this scale.
         scaledTrack.value = scaledTrack.value.copy(playCount = 7)
         compose.waitForIdle()
 
@@ -101,8 +102,65 @@ class PlayCountBadgeTest {
         )
     }
 
+    @Test
+    fun playCountsKeepTheDurationAlignedAtEverySupportedFontScale() {
+        val mismatches = mutableListOf<String>()
+        val fontScale = mutableStateOf(0.85f)
+        val scaledTrack = mutableStateOf(
+            track(id = 833, title = "Scaled Track", playCount = 7, durationMs = 103_000),
+        )
+        showTrackRows(
+            fontScaleSource = { fontScale.value },
+            tracks = listOf(scaledTrack.value),
+            trackSource = { listOf(scaledTrack.value) },
+        )
+
+        listOf(0.85f, 1f, 1.3f, 2f).forEach { scale ->
+            fontScale.value = scale
+            scaledTrack.value = scaledTrack.value.copy(playCount = 7)
+            compose.waitForIdle()
+            val expectedTop = durationTopWithinRow("1:43", trackId = 833)
+            val expectedRight = durationRightWithinRow("1:43", trackId = 833)
+
+            listOf(27L, 127L, 999L, 1_234L, 1_950L, 99_500L, 999_499L, 999_499_999L)
+                .forEach { playCount ->
+                    scaledTrack.value = scaledTrack.value.copy(playCount = playCount)
+                    compose.waitForIdle()
+
+                    val actualTop = durationTopWithinRow("1:43", trackId = 833)
+                    val actualRight = durationRightWithinRow("1:43", trackId = 833)
+                    if (abs(expectedTop - actualTop) > 0.5f) {
+                        mismatches += "$playCount at $scale: top $actualTop, expected $expectedTop"
+                    }
+                    if (abs(expectedRight - actualRight) > 0.5f) {
+                        mismatches += "$playCount at $scale: right $actualRight, expected $expectedRight"
+                    }
+                }
+        }
+        assertTrue("duration alignment mismatches: ${mismatches.joinToString()}", mismatches.isEmpty())
+    }
+
+    @Test
+    fun badgeAnnouncesTheExactCountWithoutExposingVisibleCountText() {
+        showTrackRows(
+            tracks = listOf(
+                track(id = 834, title = "Compact Count", playCount = 1_234, durationMs = 104_000),
+                track(id = 835, title = "Plain Count", playCount = 27, durationMs = 105_000),
+            ),
+        )
+
+        compose.onNodeWithContentDescription("1234 plays", useUnmergedTree = true).assertExists()
+        listOf("1.2k", "1234").forEach { countText ->
+            compose.onNodeWithText(countText).assertDoesNotExist()
+            compose.onNodeWithText(countText, useUnmergedTree = true).assertDoesNotExist()
+        }
+        compose.onNodeWithText("27").assertDoesNotExist()
+        compose.onNodeWithText("27", useUnmergedTree = true).assertDoesNotExist()
+    }
+
     private fun showTrackRows(
         fontScale: Float? = null,
+        fontScaleSource: (() -> Float?)? = null,
         tracks: List<LibraryTrack> = listOf(
             track(id = 830, title = "Silent Track", playCount = 0, durationMs = 100_000),
             track(id = 831, title = "Once Heard", playCount = 1, durationMs = 101_000),
@@ -133,11 +191,12 @@ class PlayCountBadgeTest {
                             loadMore = {},
                         )
                     }
-                if (fontScale == null) {
+                val selectedFontScale = fontScaleSource?.invoke() ?: fontScale
+                if (selectedFontScale == null) {
                     content(trackSource?.invoke() ?: tracks, surfaceState)
                 } else {
                     CompositionLocalProvider(
-                        LocalDensity provides Density(currentDensity.density, fontScale),
+                        LocalDensity provides Density(currentDensity.density, selectedFontScale),
                     ) {
                         content(trackSource?.invoke() ?: tracks, surfaceState)
                     }
@@ -173,6 +232,16 @@ class PlayCountBadgeTest {
             .fetchSemanticsNode()
             .boundsInRoot.top
         return durationTop - rowTop
+    }
+
+    private fun durationRightWithinRow(duration: String, trackId: Long): Float {
+        val durationRight = compose.onNodeWithText(duration, useUnmergedTree = true)
+            .fetchSemanticsNode()
+            .boundsInRoot.right
+        val rowLeft = compose.onNodeWithTag("library-track-row-$trackId")
+            .fetchSemanticsNode()
+            .boundsInRoot.left
+        return durationRight - rowLeft
     }
 
     private companion object {
