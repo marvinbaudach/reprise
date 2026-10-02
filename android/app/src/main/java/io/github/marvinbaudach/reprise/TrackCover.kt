@@ -95,6 +95,7 @@ internal class TrackArtwork(
         gate: ArtworkRequestGate,
         deliver: (ArtworkVisual?) -> Unit,
     ) {
+        val albumGeneration = cache.albumInvalidationGeneration()
         // An `allowFetch` request (artist or track) never trusts the cached
         // placeholder: a miss it remembered permanently would make the B3
         // backfill's later download, or a transient failure the FFI never
@@ -126,7 +127,7 @@ internal class TrackArtwork(
             // library handle after `MainActivity.onDestroy` closed it is refused
             // with `IllegalStateException`. See [shutdown].
             val visual = try {
-                resolveVisual(request)
+                resolveVisual(request, albumGeneration)
             } catch (cancelled: CancellationException) {
                 throw cancelled
             } catch (error: Throwable) {
@@ -159,6 +160,7 @@ internal class TrackArtwork(
     /** Fills both cover and fog LRUs without claiming a visible slot. */
     fun prefetch(request: ArtworkRequest) {
         if (cache.artwork(request) != null) return
+        val albumGeneration = cache.albumInvalidationGeneration()
         val lane = when (request.size) {
             AndroidArtworkSize.NOW_PLAYING -> fullSizeScope
             AndroidArtworkSize.LIST -> scope
@@ -171,7 +173,7 @@ internal class TrackArtwork(
         }
         lane.launch {
             val visual = try {
-                resolveVisual(request)
+                resolveVisual(request, albumGeneration)
             } catch (cancelled: CancellationException) {
                 throw cancelled
             } catch (error: Throwable) {
@@ -221,7 +223,7 @@ internal class TrackArtwork(
         networkReturnRevision += 1
     }
 
-    private fun resolveVisual(request: ArtworkRequest): ArtworkVisual {
+    private fun resolveVisual(request: ArtworkRequest, albumGeneration: Long): ArtworkVisual {
         if (!request.allowFetch) {
             cache.artwork(request)?.let { return it }
         }
@@ -239,7 +241,11 @@ internal class TrackArtwork(
             cache.invalidateArtistArtwork(request)
         }
         val bitmap = portrait ?: if (request.kind == ArtworkKind.ARTIST) {
-            return generatedVisual(request, resolved = true)
+            return generatedVisual(
+                request,
+                resolved = true,
+                resolvedAtAlbumGeneration = albumGeneration,
+            )
         } else {
             val decoded = resolve(request.trackUri, request.size)?.let(decode)
             if (decoded != null) {
@@ -247,7 +253,11 @@ internal class TrackArtwork(
             } else {
                 cache.resolvedArtworkAcrossSizes(request)?.let { return it }
                 fetchedAlbumCoverBitmap(request)
-                    ?: return generatedVisual(request, resolved = true)
+                    ?: return generatedVisual(
+                        request,
+                        resolved = true,
+                        resolvedAtAlbumGeneration = albumGeneration,
+                    )
             }
         }
         return ArtworkVisual(
@@ -273,9 +283,20 @@ internal class TrackArtwork(
         return bitmap
     }
 
-    private fun generatedVisual(request: ArtworkRequest, resolved: Boolean): ArtworkVisual {
+    private fun generatedVisual(
+        request: ArtworkRequest,
+        resolved: Boolean,
+        resolvedAtAlbumGeneration: Long = cache.albumInvalidationGeneration(),
+    ): ArtworkVisual {
         cache.generated(request)?.let { visual ->
-            if (resolved) cache.putGenerated(request, visual, resolved = true)
+            if (resolved) {
+                cache.putGenerated(
+                    request,
+                    visual,
+                    resolved = true,
+                    resolvedAtAlbumGeneration = resolvedAtAlbumGeneration,
+                )
+            }
             return visual
         }
         val bitmap = fallback(request.title, request.artist, request.size.fallbackSizePx())
@@ -287,7 +308,14 @@ internal class TrackArtwork(
                 null
             },
             generated = true,
-        ).also { visual -> cache.putGenerated(request, visual, resolved) }
+        ).also { visual ->
+            cache.putGenerated(
+                request,
+                visual,
+                resolved,
+                resolvedAtAlbumGeneration,
+            )
+        }
     }
 
     /**
@@ -377,7 +405,9 @@ internal fun rememberTrackArtworkVisual(
     val enteredAtNetworkRevision = remember(request, artwork) { networkReturnRevision }
     DisposableEffect(request, artwork) {
         val admitted = gate.begin(trackUri, artworkSize, title, artist, allowFetch = allowFetch)
-        artwork?.loadVisual(admitted, gate) { loaded -> visual = loaded }
+        artwork?.loadVisual(admitted, gate) { loaded ->
+            visual = visual.withoutGeneratedDowngrade(loaded)
+        }
         onDispose { gate.invalidate(admitted) }
     }
     DisposableEffect(request, artwork, albumCoverRevision) {
@@ -393,7 +423,9 @@ internal fun rememberTrackArtworkVisual(
                 artist,
                 allowFetch = false,
             ).also { localRequest ->
-                artwork.loadVisual(localRequest, albumRevisionGate) { loaded -> visual = loaded }
+                artwork.loadVisual(localRequest, albumRevisionGate) { loaded ->
+                    visual = visual.withoutGeneratedDowngrade(loaded)
+                }
             }
         } else {
             null
@@ -422,7 +454,7 @@ internal fun rememberTrackArtworkVisual(
                         COVER_RETRY_TAG,
                         "Network-return cover fetch ${trackUri.shortenedForLog()}: $outcome",
                     )
-                    visual = loaded
+                    visual = visual.withoutGeneratedDowngrade(loaded)
                 }
             }
         } else {
@@ -473,6 +505,9 @@ private fun ArtworkRequest.refreshesArtistPortrait(): Boolean =
     kind == ArtworkKind.ARTIST && allowFetch
 
 private fun String.shortenedForLog(): String = takeLast(48)
+
+private fun ArtworkVisual?.withoutGeneratedDowngrade(loaded: ArtworkVisual?): ArtworkVisual? =
+    if (loaded?.generated == true && this?.generated == false) this else loaded
 
 private fun AndroidArtworkSize.fallbackSizePx(): Int = when (this) {
     AndroidArtworkSize.LIST -> 168

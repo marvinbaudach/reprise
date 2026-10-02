@@ -73,6 +73,7 @@ internal class ArtworkCache(
     private val fogs = lruMap<ArtworkIdentity, CoverFogBitmap>(fogCapacity)
     private var artworkHits = 0L
     private var artworkMisses = 0L
+    private var albumInvalidationGeneration = 0L
 
     @Synchronized
     fun artwork(request: ArtworkRequest): ArtworkVisual? {
@@ -192,20 +193,35 @@ internal class ArtworkCache(
     /** Makes every resolved track placeholder eligible for a local re-read. */
     @Synchronized
     fun invalidateAlbumArtwork() {
+        albumInvalidationGeneration += 1
         resolvedFallbackShelves.values.forEach { fallbacks ->
             fallbacks.keys.removeAll { key -> key.kind == ArtworkKind.TRACK }
         }
     }
 
     @Synchronized
+    fun albumInvalidationGeneration(): Long = albumInvalidationGeneration
+
+    @Synchronized
     fun generated(request: ArtworkRequest): ArtworkVisual? =
         visuals(request.size)[request.generatedKey()]
 
     @Synchronized
-    fun putGenerated(request: ArtworkRequest, visual: ArtworkVisual, resolved: Boolean = false) {
+    fun putGenerated(
+        request: ArtworkRequest,
+        visual: ArtworkVisual,
+        resolved: Boolean = false,
+        resolvedAtAlbumGeneration: Long = albumInvalidationGeneration,
+    ) {
         val generatedKey = request.generatedKey()
         visuals(request.size)[generatedKey] = visual
-        if (resolved) resolvedFallbacks(request.size)[request.trackKey()] = generatedKey
+        if (
+            resolved &&
+            (request.kind != ArtworkKind.TRACK ||
+                resolvedAtAlbumGeneration == albumInvalidationGeneration)
+        ) {
+            resolvedFallbacks(request.size)[request.trackKey()] = generatedKey
+        }
     }
 
     @Synchronized

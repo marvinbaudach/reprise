@@ -8,6 +8,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.graphics.asAndroidBitmap
+import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.test.junit4.v2.createAndroidComposeRule
 import java.util.concurrent.atomic.AtomicInteger
 import kotlin.coroutines.CoroutineContext
@@ -193,6 +194,8 @@ class AlbumCoverLiveRefreshTest {
         val lanes = ArtworkLanes()
         val cover = bitmap(Color.YELLOW)
         val realReads = AtomicInteger()
+        val cache = ArtworkCache(listArtworkCapacity = 1)
+        var showDownloader by mutableStateOf(false)
         val artwork = TrackArtwork(
             resolve = { trackUri, _ ->
                 if (trackUri == REAL_TRACK_URI) {
@@ -205,7 +208,7 @@ class AlbumCoverLiveRefreshTest {
             resolveAlbumCoverFetched = { _, _ -> COVER_PATH },
             decode = { path -> if (path == REAL_PATH || path == COVER_PATH) cover else null },
             fallback = { _, _, _ -> bitmap(Color.MAGENTA) },
-            cache = ArtworkCache(),
+            cache = cache,
             dispatcher = lanes.list,
             fullSizeDispatcher = lanes.fullSize,
             onMainThread = { work -> work() },
@@ -216,17 +219,25 @@ class AlbumCoverLiveRefreshTest {
             compose.setContent {
                 CompositionLocalProvider(LocalTrackArtwork provides artwork) {
                     real = rememberTrackArtworkVisual(REAL_TRACK_URI, AndroidArtworkSize.LIST)
-                    rememberTrackArtworkVisual(
-                        TRACK_URI,
-                        AndroidArtworkSize.NOW_PLAYING,
-                        allowFetch = true,
-                    )
+                    if (showDownloader) {
+                        rememberTrackArtworkVisual(
+                            TRACK_URI,
+                            AndroidArtworkSize.NOW_PLAYING,
+                            allowFetch = true,
+                        )
+                    }
                 }
             }
             lanes.list.runAll()
             compose.waitForIdle()
             assertSame(cover, real?.image?.asAndroidBitmap())
 
+            cache.putArtwork(
+                ArtworkRequest("content://tracks/cache-evictor", AndroidArtworkSize.LIST),
+                ArtworkVisual(bitmap(Color.RED).asImageBitmap(), ambientColors = null),
+            )
+            showDownloader = true
+            compose.waitForIdle()
             lanes.fullSize.runAll()
             compose.waitForIdle()
             lanes.runAll()
@@ -273,6 +284,7 @@ class AlbumCoverLiveRefreshTest {
             }
             lanes.fullSize.runAll()
             compose.waitForIdle()
+            assertEquals(1L, artwork.albumCoverRevision)
 
             showLate = true
             compose.waitForIdle()
@@ -280,6 +292,101 @@ class AlbumCoverLiveRefreshTest {
             compose.waitForIdle()
 
             assertEquals(1, lateReads.get())
+        } finally {
+            artwork.shutdown()
+        }
+    }
+
+    @Test
+    fun net_7a_a_local_refresh_never_starts_a_download_when_the_cover_stays_missing() {
+        val lanes = ArtworkLanes()
+        val cover = bitmap(Color.BLUE)
+        val fetches = AtomicInteger()
+        val artwork = TrackArtwork(
+            resolve = { _, _ -> null },
+            resolveAlbumCoverFetched = { trackUri, _ ->
+                fetches.incrementAndGet()
+                if (trackUri == TRACK_URI) COVER_PATH else null
+            },
+            decode = { path -> if (path == COVER_PATH) cover else null },
+            fallback = { _, _, _ -> bitmap(Color.MAGENTA) },
+            cache = ArtworkCache(),
+            dispatcher = lanes.list,
+            fullSizeDispatcher = lanes.fullSize,
+            onMainThread = { work -> work() },
+        )
+        var row: ArtworkVisual? = null
+
+        try {
+            compose.setContent {
+                CompositionLocalProvider(LocalTrackArtwork provides artwork) {
+                    row = rememberTrackArtworkVisual(OTHER_TRACK_URI, AndroidArtworkSize.LIST)
+                    rememberTrackArtworkVisual(
+                        TRACK_URI,
+                        AndroidArtworkSize.NOW_PLAYING,
+                        allowFetch = true,
+                    )
+                }
+            }
+            lanes.runAll()
+            compose.waitForIdle()
+            lanes.runAll()
+            compose.waitForIdle()
+
+            assertEquals(true, row?.generated)
+            assertEquals(1, fetches.get())
+        } finally {
+            artwork.shutdown()
+        }
+    }
+
+    @Test
+    fun a_late_generated_delivery_does_not_replace_a_newer_real_cover() {
+        val lanes = ArtworkLanes()
+        val main = ArtworkMainQueue()
+        val cover = bitmap(Color.BLUE)
+        var coverAvailable = false
+        val artwork = TrackArtwork(
+            resolve = { _, _ -> if (coverAvailable) COVER_PATH else null },
+            resolveAlbumCoverFetched = { _, _ ->
+                coverAvailable = true
+                COVER_PATH
+            },
+            decode = { path -> if (path == COVER_PATH) cover else null },
+            fallback = { _, _, _ -> bitmap(Color.MAGENTA) },
+            cache = ArtworkCache(),
+            dispatcher = lanes.list,
+            fullSizeDispatcher = lanes.fullSize,
+            onMainThread = main::post,
+        )
+        var row: ArtworkVisual? = null
+
+        try {
+            compose.setContent {
+                CompositionLocalProvider(LocalTrackArtwork provides artwork) {
+                    row = rememberTrackArtworkVisual(TRACK_URI, AndroidArtworkSize.LIST)
+                    rememberTrackArtworkVisual(
+                        TRACK_URI,
+                        AndroidArtworkSize.NOW_PLAYING,
+                        allowFetch = true,
+                    )
+                }
+            }
+            lanes.list.runAll()
+            lanes.fullSize.runAll()
+
+            compose.runOnIdle { main.runAt(1) }
+            compose.waitForIdle()
+            lanes.list.runAll()
+            compose.runOnIdle { main.runLast() }
+            compose.waitForIdle()
+            assertSame(cover, row?.image?.asAndroidBitmap())
+
+            compose.runOnIdle { main.runFirst() }
+            compose.waitForIdle()
+
+            assertSame(cover, row?.image?.asAndroidBitmap())
+            assertEquals(false, row?.generated)
         } finally {
             artwork.shutdown()
         }
@@ -317,4 +424,20 @@ private class ArtworkManualDispatcher : CoroutineDispatcher() {
     fun runAll() {
         while (work.isNotEmpty()) work.removeFirst().run()
     }
+}
+
+private class ArtworkMainQueue {
+    private val work = ArrayList<() -> Unit>()
+
+    fun post(block: () -> Unit) {
+        work.add(block)
+    }
+
+    fun runAt(index: Int) {
+        work.removeAt(index).invoke()
+    }
+
+    fun runFirst() = runAt(0)
+
+    fun runLast() = runAt(work.lastIndex)
 }

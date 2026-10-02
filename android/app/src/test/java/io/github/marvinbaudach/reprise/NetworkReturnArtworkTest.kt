@@ -116,10 +116,12 @@ class NetworkReturnArtworkTest {
         val detector = NetworkReturnDetector()
         val cover = bitmap(Color.GREEN)
         val fetches = AtomicInteger()
+        val resolves = AtomicInteger()
         val artwork = TrackArtwork(
-            resolve = { _, _ -> COVER_PATH },
+            resolve = { _, _ -> resolves.incrementAndGet(); COVER_PATH },
             resolveAlbumCoverFetched = { _, _ -> fetches.incrementAndGet(); COVER_PATH },
             decode = { path -> if (path == COVER_PATH) cover else null },
+            fallback = { _, _, _ -> bitmap(Color.MAGENTA) },
             cache = ArtworkCache(),
             fullSizeDispatcher = lanes.fullSize,
             onMainThread = { work -> work() },
@@ -149,6 +151,7 @@ class NetworkReturnArtworkTest {
             compose.waitForIdle()
 
             assertEquals(0, fetches.get())
+            assertEquals(1, resolves.get())
             assertSame(cover, nowPlaying?.image?.asAndroidBitmap())
         } finally {
             artwork.shutdown()
