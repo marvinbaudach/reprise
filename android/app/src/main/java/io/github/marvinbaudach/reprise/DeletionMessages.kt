@@ -147,7 +147,9 @@ internal fun DeletionMessageLine(
                         color = MaterialTheme.colorScheme.surfaceContainerHigh.copy(alpha = 0.94f),
                         shape = RoundedCornerShape(percent = 50),
                     )
-                    .semantics { liveRegion = LiveRegionMode.Polite }
+                    .semantics(mergeDescendants = true) {
+                        liveRegion = LiveRegionMode.Polite
+                    }
                     .testTag("deletion-message-line")
                     .padding(horizontal = 16.dp, vertical = 6.dp),
             ) {

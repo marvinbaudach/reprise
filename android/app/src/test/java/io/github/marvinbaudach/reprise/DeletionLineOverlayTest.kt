@@ -6,9 +6,11 @@ import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.semantics.LiveRegionMode
+import androidx.compose.ui.semantics.SemanticsProperties
+import androidx.compose.ui.test.assert
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.getUnclippedBoundsInRoot
-import androidx.compose.ui.test.hasAnyAncestor
 import androidx.compose.ui.test.hasTestTag
 import androidx.compose.ui.test.hasText
 import androidx.compose.ui.test.junit4.v2.createAndroidComposeRule
@@ -54,6 +56,11 @@ class DeletionLineOverlayTest {
 
         compose.runOnIdle { deletion.finish("13 tracks deleted") }
         compose.waitForIdle()
+
+        compose.onNodeWithText("13 tracks deleted").assertIsDisplayed()
+        assertEquals(pagerTop, topInPixels("library-destination-pager"))
+        assertEquals(firstRowTop, textTopInPixels(FIRST_ARTIST))
+
         compose.mainClock.advanceTimeBy(TRANSIENT_MESSAGE_MS + 1)
         compose.waitForIdle()
         compose.mainClock.advanceTimeBy(DELETION_LINE_FADE_MS.toLong() + 1)
@@ -74,9 +81,16 @@ class DeletionLineOverlayTest {
         compose.waitForIdle()
         compose.onNodeWithTag("deletion-message-line")
             .assertIsDisplayed()
+            .assert(hasText("Deleting 13 tracks…"))
+            .also { line ->
+                assertEquals(
+                    LiveRegionMode.Polite,
+                    line.fetchSemanticsNode().config[SemanticsProperties.LiveRegion],
+                )
+            }
             .performTouchInput { click(center) }
 
-        compose.waitUntil { openedArtists.get() == 1 }
+        compose.waitUntil(WAIT_MS) { openedArtists.get() == 1 }
         assertEquals(1, openedArtists.get())
     }
 
@@ -114,18 +128,19 @@ class DeletionLineOverlayTest {
         }
         compose.runOnIdle { anchor.expanded = true }
         compose.onNodeWithText("Delete from device…").performClick()
-        assertTrue(started.await(GATE_MS, TimeUnit.MILLISECONDS))
-
-        compose.runOnIdle { present = false }
-        compose.waitForIdle()
-        gate.countDown()
+        try {
+            assertTrue(started.await(GATE_MS, TimeUnit.MILLISECONDS))
+            compose.runOnIdle { present = false }
+            compose.waitForIdle()
+        } finally {
+            gate.countDown()
+        }
         compose.waitUntil(WAIT_MS) {
             viewModel.deletionMessage?.text == LIST_CHANGED_MESSAGE
         }
 
         compose.onNode(
-            hasText(LIST_CHANGED_MESSAGE) and
-                hasAnyAncestor(hasTestTag("deletion-message-line")),
+            hasTestTag("deletion-message-line") and hasText(LIST_CHANGED_MESSAGE),
         ).assertIsDisplayed()
     }
 
