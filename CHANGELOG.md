@@ -4,6 +4,48 @@ Reprise release notes are curated from the changes that reached the stable
 branch. They describe user-visible changes rather than reproducing commit
 messages.
 
+## [0.1.222] - 2026-10-02
+
+### Library
+
+- A field that something other than the Library Doctor changed no longer stays
+  frozen behind a Doctor write. A write refreshed its stored scan reading even
+  when the library had already registered a newer change to that file, so the
+  next scan skipped a file it should have re-read. The reading is refreshed now
+  only while the library's own record of the file still matches it.
+- An artist or album whose tag ends in a no-break space opens its own tracks.
+  The desktop trimmed that character from the name before any query ran, while
+  the database keeps it, so such a row opened the content of the plainly spelled
+  artist or album instead.
+
+### Android
+
+- An artist can be deleted from the device together with all of its albums. A
+  long press in the artist list, or the new overflow menu on the artist page,
+  offers Play, Play next, Add to queue and Delete from device for the whole
+  artist, not only the rows the page has loaded. An artist whose tag ended in a
+  no-break space used to resolve to the plainly spelled artist's tracks, so
+  deleting it would have removed the other artist's files; the lookup now keeps
+  the spelling the row was listed with.
+- Deleting no longer freezes the screen while the tracks are counted, and the
+  library re-reads itself afterwards: an open artist or album page refreshes and
+  stays open while anything is left, an emptied page closes, and tab, search
+  and scroll position survive. The deletion status floats over the top of the
+  list as a small pill instead of pushing every row down while it runs.
+- The artist page's Play button plays the whole artist, not just the albums
+  loaded so far, and a play still resolving when the page switches to another
+  artist is dropped.
+- The now-playing background crossfades over one second on a track change
+  instead of cutting in a single frame.
+- Rocking the volume keys skips the track: up then down for the next one, down
+  then up for the previous one, while the screen is off or another app is in
+  front and Reprise is playing. A single press stays a volume step, a haptic
+  tick confirms the skip, and the gesture has its own setting.
+- Count lines name the real total ("727 titles") instead of the rows loaded so
+  far ("200 of 727"), and use the singular for one ("1 album • 1 track"). The
+  mini player centres its content on the card, and Now Playing shows the
+  remaining time before the player is ready instead of `--:--`.
+
 ## [0.1.217] - 2026-09-23
 
 ### Library
