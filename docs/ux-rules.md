@@ -1505,7 +1505,8 @@ result.
   banner. No new surface may cite it.
   On Android, the library's transient status lives in chrome. Errors and the
   deletion line share one pill slot over the top edge of the list. On a detail
-  page it sits below the header and the page's Play button; it shows
+  page it sits below the header and the page's Play row or the notice that
+  replaces it; it shows
   one pill at a time in priority order, has no layout height, and only an error's
   close button takes input. Artwork
   progress is a 3 dp bar on the pager's top edge, with its phase and count in
