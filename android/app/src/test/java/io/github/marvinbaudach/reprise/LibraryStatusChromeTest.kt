@@ -1,6 +1,7 @@
 package io.github.marvinbaudach.reprise
 
 import androidx.activity.ComponentActivity
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.MutableState
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.ui.geometry.Offset
@@ -182,6 +183,60 @@ class LibraryStatusChromeTest {
     }
 
     @Test
+    fun onAnEmptyAlbumDetailPageTheStatusSitsBelowTheNotice() {
+        val viewModel = MobileSurfaceViewModel()
+        val harness = showArtists(viewModel, emptyAlbum = true)
+        compose.onNodeWithText(FIRST_ARTIST).performClick()
+        compose.onNodeWithText(FIRST_ALBUM).performClick()
+        compose.onNodeWithText("No tracks in this album.").assertIsDisplayed()
+        compose.runOnIdle {
+            harness.browse.value = harness.browse.value.copy(message = "Browse failed")
+        }
+
+        assertStatusBelowElement(
+            statusTag = "library-status-error",
+            page = "album",
+            elementBottom = textBottomInPixels("No tracks in this album."),
+        )
+    }
+
+    @Test
+    fun onAnEmptyArtistDetailPageTheStatusSitsBelowTheNotice() {
+        val viewModel = MobileSurfaceViewModel()
+        val harness = showArtists(viewModel, emptyArtist = true)
+        compose.onNodeWithText(FIRST_ARTIST).performClick()
+        compose.onNodeWithText("No tracks by this artist.").assertIsDisplayed()
+        compose.runOnIdle {
+            harness.browse.value = harness.browse.value.copy(message = "Browse failed")
+        }
+
+        assertStatusBelowElement(
+            statusTag = "library-status-error",
+            page = "artist",
+            elementBottom = textBottomInPixels("No tracks by this artist."),
+        )
+    }
+
+    @Test
+    fun onAnArtistPlayFailureTheStatusSitsBelowTheMessage() {
+        val viewModel = MobileSurfaceViewModel()
+        val harness = showArtists(viewModel, artistTrackIds = { error("catalog unavailable") })
+        compose.onNodeWithText(FIRST_ARTIST).performClick()
+        compose.onNodeWithTag("artist-detail-play").performClick()
+        val failure = "Could not load the tracks: catalog unavailable"
+        compose.awaitText(failure)
+        compose.runOnIdle {
+            harness.browse.value = harness.browse.value.copy(message = "Browse failed")
+        }
+
+        assertStatusBelowElement(
+            statusTag = "library-status-error",
+            page = "artist",
+            elementBottom = textBottomInPixels(failure),
+        )
+    }
+
+    @Test
     fun deletionMessageKeepsItsDismissTimerWhileAnErrorHidesIt() {
         val viewModel = MobileSurfaceViewModel()
         val harness = showArtists(viewModel)
@@ -250,6 +305,9 @@ class LibraryStatusChromeTest {
     private fun showArtists(
         viewModel: MobileSurfaceViewModel,
         openedArtists: AtomicInteger = AtomicInteger(),
+        emptyArtist: Boolean = false,
+        emptyAlbum: Boolean = false,
+        artistTrackIds: (LibraryArtist) -> List<Long> = { emptyList() },
     ): Harness {
         viewModel.selectTab(BrowseTab.ARTISTS)
         val artists = (1..6).map { index ->
@@ -274,42 +332,52 @@ class LibraryStatusChromeTest {
         val playbackState = mutableStateOf(LibraryPlayback())
         compose.setContent {
             RepriseTheme(theme, darkPalette = true) {
-                BrowseScreen(
-                    state = browseState.value,
-                    playback = playbackState.value,
-                    playbackSettingsRevision = 0,
-                    surfaceState = viewModel,
-                    chooseFolder = {},
-                    rescan = {},
-                    searchTitles = { _, _ -> LibraryWindow.empty() },
-                    listArtists = { artistWindow },
-                    openArtist = {
-                        openedArtists.incrementAndGet()
-                        ArtistTrackList(
-                            artist = it,
-                            albums = LibraryWindow(1, listOf(album), false),
-                        )
-                    },
-                    openAlbum = {
-                        AlbumTrackList(
-                            it,
-                            LibraryWindow(1, listOf(albumTrack), false),
-                        )
-                    },
-                    listAlbumTracks = { _, _ -> LibraryWindow.empty() },
-                    loadTrack = { _, deliver -> deliver(null) },
-                    playTracks = { _, _ -> },
-                    loadPlaybackSettings = {
-                        PlaybackSettingsUiState(false, true, emptyList())
-                    },
-                    setEqualizerEnabled = { PlaybackSettingsUiState(it, true, emptyList()) },
-                    replaceEqualizerCurve = {
-                        PlaybackSettingsUiState(false, true, emptyList())
-                    },
-                    setGaplessEnabled = { PlaybackSettingsUiState(false, it, emptyList()) },
-                    themeSelection = theme,
-                    selectTheme = {},
-                )
+                CompositionLocalProvider(LocalArtistTrackIds provides artistTrackIds) {
+                    BrowseScreen(
+                        state = browseState.value,
+                        playback = playbackState.value,
+                        playbackSettingsRevision = 0,
+                        surfaceState = viewModel,
+                        chooseFolder = {},
+                        rescan = {},
+                        searchTitles = { _, _ -> LibraryWindow.empty() },
+                        listArtists = { artistWindow },
+                        openArtist = {
+                            openedArtists.incrementAndGet()
+                            ArtistTrackList(
+                                artist = it,
+                                albums = if (emptyArtist) {
+                                    LibraryWindow.empty()
+                                } else {
+                                    LibraryWindow(1, listOf(album), false)
+                                },
+                            )
+                        },
+                        openAlbum = {
+                            AlbumTrackList(
+                                it,
+                                if (emptyAlbum) {
+                                    LibraryWindow.empty()
+                                } else {
+                                    LibraryWindow(1, listOf(albumTrack), false)
+                                },
+                            )
+                        },
+                        listAlbumTracks = { _, _ -> LibraryWindow.empty() },
+                        loadTrack = { _, deliver -> deliver(null) },
+                        playTracks = { _, _ -> },
+                        loadPlaybackSettings = {
+                            PlaybackSettingsUiState(false, true, emptyList())
+                        },
+                        setEqualizerEnabled = { PlaybackSettingsUiState(it, true, emptyList()) },
+                        replaceEqualizerCurve = {
+                            PlaybackSettingsUiState(false, true, emptyList())
+                        },
+                        setGaplessEnabled = { PlaybackSettingsUiState(false, it, emptyList()) },
+                        themeSelection = theme,
+                        selectTheme = {},
+                    )
+                }
             }
         }
         compose.onNodeWithText(FIRST_ARTIST).assertIsDisplayed()
@@ -322,8 +390,12 @@ class LibraryStatusChromeTest {
     }
 
     private fun assertStatusBelowPlay(statusTag: String, page: String) {
+        assertStatusBelowElement(statusTag, page, bottomInPixels("$page-detail-play"))
+    }
+
+    private fun assertStatusBelowElement(statusTag: String, page: String, elementBottom: Int) {
         val statusTop = topInPixels(statusTag)
-        assertTrue(statusTop >= bottomInPixels("$page-detail-play"))
+        assertTrue(statusTop >= elementBottom)
         assertEquals(bottomInPixels("$page-detail-header") + 8f.toPixels(), statusTop)
     }
 
@@ -339,6 +411,9 @@ class LibraryStatusChromeTest {
 
     private fun textTopInPixels(text: String): Int = compose.onNodeWithText(text)
         .getUnclippedBoundsInRoot().top.value.toPixels()
+
+    private fun textBottomInPixels(text: String): Int = compose.onNodeWithText(text)
+        .getUnclippedBoundsInRoot().bottom.value.toPixels()
 
     private fun bottomInPixels(tag: String): Int = compose.onNodeWithTag(tag)
         .getUnclippedBoundsInRoot().bottom.value.toPixels()
