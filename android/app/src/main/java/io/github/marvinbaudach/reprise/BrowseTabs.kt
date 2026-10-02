@@ -2,10 +2,10 @@ package io.github.marvinbaudach.reprise
 
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.ColumnScope
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.ColumnScope
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -538,9 +538,9 @@ private fun ArtistPlayButton(artist: LibraryArtist) = key(artist.name) {
 @Composable
 private fun ListPlayButton(
     description: String,
-    enabled: Boolean = true,
-    modifier: Modifier = Modifier,
     onClick: () -> Unit,
+    modifier: Modifier = Modifier,
+    enabled: Boolean = true,
 ) {
     Button(
         onClick = onClick,
