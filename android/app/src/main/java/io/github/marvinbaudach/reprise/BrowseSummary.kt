@@ -15,19 +15,17 @@ internal fun browseSummary(
     visibleArtists: LibraryWindow<LibraryArtist>,
 ): () -> String = {
     // The bar may already mark a tab whose window has not been fetched yet:
-    // the fetch waits for the page to settle, and counting an unfetched
-    // window prints a nought that reads as an answer — "0 of 65 artists"
-    // where the truth is "not asked yet". Until the marked tab is loaded
+    // the fetch waits for the page to settle. Until the marked tab is loaded
     // the line keeps answering for the one that is.
     val counted = shownTab()
         .takeIf { it == BrowseTab.QUEUE || it in loadedTabs }
         ?: selectedTab
     when (counted) {
-        BrowseTab.TITLES -> visibleTitles.visibleCountLabel("title", "titles")
+        BrowseTab.TITLES -> visibleTitles.totalCountLabel("title", "titles")
         BrowseTab.ARTISTS -> selectedAlbum?.tracks
-            ?.visibleCountLabel("track", "tracks")
+            ?.totalCountLabel("track", "tracks")
             ?: selectedArtist?.artist?.details()
-            ?: visibleArtists.visibleCountLabel("artist", "artists")
+            ?: visibleArtists.totalCountLabel("artist", "artists")
         BrowseTab.QUEUE -> "Queue"
     }
 }

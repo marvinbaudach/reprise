@@ -415,8 +415,8 @@ internal fun BrowseScreen(
     // `LibrarySession.browseState` hands the rest back through `withoutRows()`,
     // carrying a total but no rows. A swipe draws the next page as soon as it
     // begins and only settles afterwards, so a tab whose rows are still absent
-    // is drawn *empty* for the length of the gesture and fills once it lands —
-    // "0 of 65 artists loaded", then 65. Fetching the tab next door while the
+    // is drawn *empty* for the length of the gesture and fills once it lands.
+    // Fetching the tab next door while the
     // pager stands still closes that gap before anyone swipes into it.
     //
     // Keyed on `loadedTabs`, so this re-enters after each fetch and works

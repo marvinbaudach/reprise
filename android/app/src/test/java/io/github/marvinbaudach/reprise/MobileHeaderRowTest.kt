@@ -94,7 +94,7 @@ class MobileHeaderRowTest {
 
     @Test
     fun summaryAndActionsShareOneRowWhileActionsStayPutWhenTheSummaryChanges() {
-        compose.onNodeWithText("200 of 450 titles loaded").assertIsDisplayed()
+        compose.onNodeWithText("450 titles").assertIsDisplayed()
         val row = compose.onNodeWithTag("library-summary-row").getUnclippedBoundsInRoot()
         val longSummary = compose.onNodeWithTag("library-summary-text").getUnclippedBoundsInRoot()
         val titlesSearch = compose.onNodeWithTag("library-summary-search")
@@ -112,7 +112,7 @@ class MobileHeaderRowTest {
 
         compose.onNodeWithTag("library-destination-ARTISTS").performClick()
         compose.onNodeWithTag("library-page-ARTISTS").assertIsDisplayed()
-        compose.onNodeWithText("200 of 450 artists loaded").assertIsDisplayed()
+        compose.onNodeWithText("450 artists").assertIsDisplayed()
 
         val artistsSearch = compose.onNodeWithTag("library-summary-search")
             .getUnclippedBoundsInRoot()
