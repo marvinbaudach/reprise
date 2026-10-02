@@ -334,6 +334,20 @@ pub(crate) fn migrate_v68(conn: &Connection) -> Result<(), rusqlite::Error> {
     transaction.commit()
 }
 
+pub(crate) fn migrate_v87(conn: &Connection) -> Result<(), rusqlite::Error> {
+    let version: i64 = conn.query_row("PRAGMA user_version", [], |row| row.get(0))?;
+    if version >= 87 {
+        return Ok(());
+    }
+    let has_sync_automatically = has_column(conn, "device_settings", "sync_automatically")?;
+    let transaction = conn.unchecked_transaction()?;
+    if has_sync_automatically {
+        transaction.execute("UPDATE device_settings SET sync_automatically = 0", [])?;
+    }
+    transaction.pragma_update(None, "user_version", 87)?;
+    transaction.commit()
+}
+
 fn has_column(conn: &Connection, table: &str, column: &str) -> Result<bool, rusqlite::Error> {
     conn.query_row(
         "SELECT EXISTS(
@@ -347,6 +361,99 @@ fn has_column(conn: &Connection, table: &str, column: &str) -> Result<bool, rusq
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn mtp_30_migration_v87_disables_auto_sync_for_every_remembered_device_once() {
+        let conn = Connection::open_in_memory().unwrap();
+        conn.execute_batch(
+            "CREATE TABLE device_settings (
+               device_serial TEXT PRIMARY KEY,
+               sync_automatically INTEGER NOT NULL DEFAULT 1
+             );
+             INSERT INTO device_settings VALUES ('enabled', 1), ('disabled', 0);
+             PRAGMA user_version = 86;",
+        )
+        .unwrap();
+
+        migrate_v87(&conn).unwrap();
+
+        let values = conn
+            .prepare("SELECT sync_automatically FROM device_settings ORDER BY device_serial")
+            .unwrap()
+            .query_map([], |row| row.get::<_, bool>(0))
+            .unwrap()
+            .collect::<Result<Vec<_>, _>>()
+            .unwrap();
+        assert_eq!(values, [false, false]);
+        let version: i64 = conn
+            .query_row("PRAGMA user_version", [], |row| row.get(0))
+            .unwrap();
+        assert_eq!(version, 87);
+
+        conn.execute(
+            "UPDATE device_settings SET sync_automatically = 1 WHERE device_serial = 'enabled'",
+            [],
+        )
+        .unwrap();
+        migrate_v87(&conn).unwrap();
+        let unchanged: bool = conn
+            .query_row(
+                "SELECT sync_automatically FROM device_settings WHERE device_serial = 'enabled'",
+                [],
+                |row| row.get(0),
+            )
+            .unwrap();
+        assert!(
+            unchanged,
+            "running v87 twice must be a no-op once the schema version is current"
+        );
+    }
+
+    #[test]
+    fn migration_v87_tolerates_partial_device_settings_schemas() {
+        for setup in [
+            "PRAGMA user_version = 86;",
+            "CREATE TABLE device_settings (device_serial TEXT PRIMARY KEY); \
+             PRAGMA user_version = 86;",
+        ] {
+            let conn = Connection::open_in_memory().unwrap();
+            conn.execute_batch(setup).unwrap();
+
+            migrate_v87(&conn).unwrap();
+
+            let version: i64 = conn
+                .query_row("PRAGMA user_version", [], |row| row.get(0))
+                .unwrap();
+            assert_eq!(version, 87);
+        }
+    }
+
+    #[test]
+    fn migration_chain_runs_v87_for_an_existing_database() {
+        let conn = crate::db::open(None).unwrap();
+        crate::db::migrate_connection(&conn).unwrap();
+        conn.execute_batch(
+            "INSERT INTO device_settings (device_serial, device_name, sync_automatically)
+             VALUES ('enabled', 'Enabled phone', 1), ('disabled', 'Disabled phone', 0);
+             PRAGMA user_version = 86;",
+        )
+        .unwrap();
+
+        crate::db::migrate_connection(&conn).unwrap();
+
+        let enabled: i64 = conn
+            .query_row(
+                "SELECT COUNT(*) FROM device_settings WHERE sync_automatically != 0",
+                [],
+                |row| row.get(0),
+            )
+            .unwrap();
+        assert_eq!(enabled, 0);
+        let version: i64 = conn
+            .query_row("PRAGMA user_version", [], |row| row.get(0))
+            .unwrap();
+        assert_eq!(version, 87);
+    }
 
     fn open_v67_device_sync_shape() -> Connection {
         let conn = Connection::open_in_memory().unwrap();
