@@ -696,6 +696,8 @@ private fun QueueDragHandle(
 @Composable
 private fun PlayCountBadge(playCount: Long) {
     val normalizedPlayCount = playCount.coerceAtLeast(0)
+    // A never-played track keeps the real badge invisible and silent so the duration
+    // stays aligned; unlike a fixed-height box, this slot follows font scaling.
     val modifier = if (normalizedPlayCount == 0L) {
         Modifier
             .alpha(0f)
@@ -719,7 +721,11 @@ private fun PlayCountBadge(playCount: Long) {
             verticalAlignment = Alignment.CenterVertically,
         ) {
             MaterialSymbol("play_arrow", description, sizeSp = 12)
-            Text(normalizedPlayCount.toString(), style = MaterialTheme.typography.labelSmall)
+            Text(
+                text = normalizedPlayCount.toString(),
+                style = MaterialTheme.typography.labelSmall,
+                maxLines = 1,
+            )
         }
     }
 }
