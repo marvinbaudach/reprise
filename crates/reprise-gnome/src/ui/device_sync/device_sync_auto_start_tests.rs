@@ -8,8 +8,8 @@ use super::*;
 use reprise_core::db::Db;
 
 /// Seeds playlist `10` with `ids` selected for device `"a"` and sets
-/// `sync_automatically` explicitly, unlike `select_road_playlist` (which
-/// always turns it on) — needed here to exercise the switch being off.
+/// `sync_automatically` explicitly so each pre-existing-device scenario owns
+/// the switch state it exercises.
 fn seed_playlist_with_auto_start(conn: &Rc<Db>, ids: &[i64], sync_automatically: bool) {
     crate::test_db::connection(conn.as_ref())
         .execute(
@@ -38,6 +38,46 @@ fn seed_playlist_with_auto_start(conn: &Rc<Db>, ids: &[i64], sync_automatically:
         },
     )
     .unwrap();
+}
+
+#[test]
+fn mtp_30_a_new_phone_with_pending_work_does_not_auto_start() {
+    run(async {
+        let (_temp, conn) = fixture();
+        crate::test_db::connection(conn.as_ref())
+            .execute(
+                "INSERT INTO playlists (id, name, position) VALUES (10, 'Road', 0)",
+                [],
+            )
+            .unwrap();
+        crate::test_db::connection(conn.as_ref())
+            .execute(
+                "INSERT INTO playlist_tracks (playlist_id, track_id, position) \
+                 VALUES (10, 1, 0)",
+                [],
+            )
+            .unwrap();
+        let mut settings =
+            reprise_core::device_sync::settings::load_or_create_settings(&conn, "a", "Phone a")
+                .unwrap();
+        settings.selection = DeviceSelection::Sources(vec![SelectionSource::Playlist(10)]);
+        save_settings(&conn, &settings).unwrap();
+
+        let backend = Rc::new(FakeBackend::new(vec![descriptor("a", true)], 1));
+        let runtime = DeviceSyncRuntime::with_backend(&conn, backend.clone());
+        settle().await;
+
+        assert!(
+            backend.state.copy_order.borrow().is_empty(),
+            "a newly remembered phone must wait for an explicit Sync action"
+        );
+        let device = runtime.devices().remove(0);
+        assert!(device.last_sync.is_none());
+        assert_eq!(
+            device.page.changes.additions, 1,
+            "the selected playlist must leave real work pending so the switch is the only blocker"
+        );
+    });
 }
 
 #[test]
