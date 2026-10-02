@@ -4,9 +4,11 @@ import android.graphics.Bitmap
 import android.graphics.Color
 import androidx.compose.ui.graphics.asImageBitmap
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotEquals
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertSame
+import org.junit.Assert.assertTrue
 import org.junit.Test
 import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
@@ -100,6 +102,37 @@ class ArtworkCacheTest {
     }
 
     @Test
+    fun invalidating_album_artwork_drops_track_fallbacks_on_every_shelf_only() {
+        val cache = ArtworkCache()
+        val listFallback = request("list-fallback", AndroidArtworkSize.LIST)
+        val nowPlayingFallback = request("now-playing-fallback")
+        val realTrack = request("real", AndroidArtworkSize.LIST)
+        val artist = ArtworkRequest(
+            trackUri = "artist://Artist",
+            size = AndroidArtworkSize.LIST,
+            title = "Artist",
+            artist = "Artist",
+            kind = ArtworkKind.ARTIST,
+            artistName = "Artist",
+        )
+        val listVisual = visual(Color.RED)
+        val nowPlayingVisual = visual(Color.GREEN)
+        val realVisual = visual(Color.BLUE)
+        val artistVisual = visual(Color.YELLOW)
+        cache.putGenerated(listFallback, listVisual, resolved = true)
+        cache.putGenerated(nowPlayingFallback, nowPlayingVisual, resolved = true)
+        cache.putArtwork(realTrack, realVisual)
+        cache.putGenerated(artist, artistVisual, resolved = true)
+
+        cache.invalidateAlbumArtwork()
+
+        assertNull(cache.artwork(listFallback))
+        assertNull(cache.artwork(nowPlayingFallback))
+        assertSame(realVisual, cache.artwork(realTrack))
+        assertSame(artistVisual, cache.artwork(artist))
+    }
+
+    @Test
     fun artwork_size_lru_evicts_the_oldest_entry_after_its_budget() {
         val cache = ArtworkCache(nowPlayingArtworkCapacity = 2, fogCapacity = 1)
         val first = request("first")
@@ -135,6 +168,24 @@ class ArtworkCacheTest {
         assertNotEquals(oldTeal, top and 0x00ffffff)
         assertNotEquals(oldTeal, bottom and 0x00ffffff)
         assertEquals(255, Color.alpha(top))
+    }
+
+    @Test
+    fun generated_visuals_are_distinguished_from_resolved_visuals() {
+        val artwork = TrackArtwork(
+            resolve = { _, _ -> null },
+            fallback = { _, _, _ -> Bitmap.createBitmap(4, 4, Bitmap.Config.ARGB_8888) },
+            cache = ArtworkCache(),
+        )
+        val request = request("generated", AndroidArtworkSize.LIST)
+        val resolved = visual(Color.RED)
+
+        try {
+            assertTrue(artwork.seedVisual(request).generated)
+            assertFalse(resolved.generated)
+        } finally {
+            artwork.shutdown()
+        }
     }
 
     private fun request(

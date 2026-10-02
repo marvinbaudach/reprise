@@ -189,6 +189,14 @@ internal class ArtworkCache(
         }
     }
 
+    /** Makes every resolved track placeholder eligible for a local re-read. */
+    @Synchronized
+    fun invalidateAlbumArtwork() {
+        resolvedFallbackShelves.values.forEach { fallbacks ->
+            fallbacks.keys.removeAll { key -> key.kind == ArtworkKind.TRACK }
+        }
+    }
+
     @Synchronized
     fun generated(request: ArtworkRequest): ArtworkVisual? =
         visuals(request.size)[request.generatedKey()]

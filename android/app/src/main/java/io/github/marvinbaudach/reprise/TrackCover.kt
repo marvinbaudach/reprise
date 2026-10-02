@@ -267,6 +267,7 @@ internal class TrackArtwork(
             } else {
                 null
             },
+            generated = true,
         ).also { visual -> cache.putGenerated(request, visual, resolved) }
     }
 
@@ -305,6 +306,7 @@ internal val LocalTrackArtwork = staticCompositionLocalOf<TrackArtwork?> { null 
 internal data class ArtworkVisual(
     val image: ImageBitmap,
     val ambientColors: AmbientArtworkColors?,
+    val generated: Boolean = false,
 )
 
 /**
