@@ -3,43 +3,28 @@ package io.github.marvinbaudach.reprise
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.tween
-import androidx.compose.animation.expandVertically
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
-import androidx.compose.animation.shrinkVertically
-import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.Canvas
-import androidx.compose.foundation.progressSemantics
-import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
-import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.material3.IconButton
+import androidx.compose.foundation.progressSemantics
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.Surface
-import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.remember
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.clip
 import androidx.compose.ui.geometry.CornerRadius
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.drawscope.clipPath
 import androidx.compose.ui.platform.testTag
-import androidx.compose.ui.semantics.contentDescription
-import androidx.compose.ui.semantics.stateDescription
 import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.stateDescription
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.sp
 import kotlinx.coroutines.delay
 
 internal enum class ArtistPhotoProgressPhase {
@@ -58,16 +43,19 @@ internal data class ArtistPhotoProgress(
 )
 
 private const val SUCCESS_DISMISS_DELAY_MS = 4_000L
-/** A run that ended with misses keeps the count on screen longer, then leaves too. */
 private const val FAILURE_DISMISS_DELAY_MS = 10_000L
-private const val VISIBILITY_ANIMATION_MS = 200
-internal const val ARTIST_PHOTO_MUTED_ALPHA = 0.753f
+
+private class ArtistPhotoProgressHolder(var value: ArtistPhotoProgress? = null)
 
 @Composable
-internal fun ArtistPhotoProgressBar(
+internal fun ArtistPhotoEdgeProgress(
     progress: ArtistPhotoProgress?,
     dismiss: () -> Unit,
+    modifier: Modifier = Modifier,
 ) {
+    val lastProgress = remember { ArtistPhotoProgressHolder() }
+    if (progress != null) lastProgress.value = progress
+    val shownProgress = progress ?: lastProgress.value
     LaunchedEffect(progress?.runId, progress?.phase, progress?.failed) {
         if (progress?.phase == ArtistPhotoProgressPhase.COMPLETE) {
             delay(
@@ -78,105 +66,26 @@ internal fun ArtistPhotoProgressBar(
     }
     AnimatedVisibility(
         visible = progress != null,
-        enter = expandVertically(tween(VISIBILITY_ANIMATION_MS)) +
-            fadeIn(tween(VISIBILITY_ANIMATION_MS)),
-        exit = shrinkVertically(tween(VISIBILITY_ANIMATION_MS)) +
-            fadeOut(tween(VISIBILITY_ANIMATION_MS)),
+        modifier = modifier,
+        enter = fadeIn(tween(DELETION_LINE_FADE_MS)),
+        exit = fadeOut(tween(DELETION_LINE_FADE_MS)),
     ) {
-        progress?.let { update ->
-            ArtistPhotoProgressCard(update, dismiss)
-        }
-    }
-}
-
-@Composable
-private fun ArtistPhotoProgressCard(
-    progress: ArtistPhotoProgress,
-    dismiss: () -> Unit,
-) {
-    val cardShape = RoundedCornerShape(10.dp)
-    Surface(
-        color = MaterialTheme.colorScheme.surfaceContainerHigh,
-        shape = cardShape,
-        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
-        modifier = Modifier
-            .padding(horizontal = 12.dp)
-            .padding(bottom = 8.dp)
-            .fillMaxWidth()
-            .testTag("artist-photo-progress"),
-    ) {
-        Column(
-            modifier = Modifier.padding(
-                horizontal = 12.dp,
-                vertical = 11.dp,
-            ),
-        ) {
-            Row(
-                horizontalArrangement = Arrangement.spacedBy(8.dp),
-            ) {
-                Text(
-                    text = progress.label,
-                    color = MaterialTheme.colorScheme.onSurface,
-                    style = MaterialTheme.typography.labelMedium.copy(fontSize = 12.sp),
-                    modifier = Modifier
-                        .weight(1f)
-                        .alignByBaseline()
-                        .testTag("artist-photo-progress-label"),
-                )
-                if (progress.phase != ArtistPhotoProgressPhase.PREPARING) {
-                    Text(
-                        text = "${progress.done} / ${progress.total}",
-                        color = MaterialTheme.colorScheme.primary,
-                        style = MaterialTheme.typography.labelMedium.copy(fontSize = 12.sp),
-                        modifier = Modifier
-                            .alignByBaseline()
-                            .testTag("artist-photo-progress-counter"),
-                    )
-                }
-                IconButton(
-                    onClick = dismiss,
-                    modifier = Modifier
-                        .size(48.dp)
-                        .alignByBaseline()
-                        .semantics { contentDescription = "Hide progress" },
-                ) {
-                    Text(
-                        text = "×",
-                        color = MaterialTheme.colorScheme.onSurfaceVariant.copy(
-                            alpha = ARTIST_PHOTO_MUTED_ALPHA,
-                        ),
-                        style = MaterialTheme.typography.titleMedium.copy(fontSize = 13.sp),
-                    )
-                }
-            }
-            Spacer(Modifier.height(8.dp))
-            ArtistPhotoTrack(progress)
-            if (progress.phase == ArtistPhotoProgressPhase.COMPLETE && progress.failed > 0L) {
-                Spacer(Modifier.height(8.dp))
-                Text(
-                    text = "${progress.failed} without a photo",
-                    color = MaterialTheme.colorScheme.onSurfaceVariant.copy(
-                        alpha = ARTIST_PHOTO_MUTED_ALPHA,
-                    ),
-                    style = MaterialTheme.typography.labelSmall.copy(fontSize = 11.sp),
-                    modifier = Modifier.testTag("artist-photo-progress-failure"),
-                )
-            }
-        }
+        shownProgress?.let { ArtistPhotoTrack(it) }
     }
 }
 
 @Composable
 private fun ArtistPhotoTrack(progress: ArtistPhotoProgress) {
-    val shape = RoundedCornerShape(50)
-    if (progress.phase == ArtistPhotoProgressPhase.PREPARING) {
+    if (
+        progress.phase == ArtistPhotoProgressPhase.PREPARING ||
+        progress.phase == ArtistPhotoProgressPhase.PAUSED
+    ) {
         LinearProgressIndicator(
             color = MaterialTheme.colorScheme.primary,
             trackColor = MaterialTheme.colorScheme.outlineVariant,
             modifier = Modifier
                 .fillMaxWidth()
-                .height(4.dp)
-                .clip(shape)
+                .height(3.dp)
                 .progressSemantics()
                 .testTag("artist-photo-progress-track"),
         )
@@ -195,7 +104,7 @@ private fun ArtistPhotoTrack(progress: ArtistPhotoProgress) {
     Canvas(
         modifier = Modifier
             .fillMaxWidth()
-            .height(4.dp)
+            .height(3.dp)
             .progressSemantics(completedTarget)
             .semantics { stateDescription = description }
             .testTag("artist-photo-progress-track"),
@@ -227,11 +136,3 @@ internal fun clampedArtistPhotoDoneFraction(
     animatedDone: Float,
     animatedCompleted: Float,
 ): Float = animatedDone.coerceIn(0f, animatedCompleted.coerceIn(0f, 1f))
-
-private val ArtistPhotoProgress.label: String
-    get() = when (phase) {
-        ArtistPhotoProgressPhase.PREPARING -> "Preparing artwork"
-        ArtistPhotoProgressPhase.RUNNING -> "Downloading artwork"
-        ArtistPhotoProgressPhase.PAUSED -> "Waiting for a connection"
-        ArtistPhotoProgressPhase.COMPLETE -> "Artwork complete"
-    }

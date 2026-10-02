@@ -11,6 +11,7 @@ import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performScrollToIndex
 import androidx.compose.ui.unit.dp
+import androidx.lifecycle.ViewModelProvider
 import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
@@ -143,5 +144,31 @@ class MobileHeaderRowTest {
         assertEquals(titlesSearch.right, artistDetailSearch.right)
         assertEquals(titlesOverflow.left, artistDetailOverflow.left)
         assertEquals(titlesOverflow.right, artistDetailOverflow.right)
+    }
+
+    @Test
+    fun artworkProgressChangesTheSummaryWithoutChangingTheHeaderRow() {
+        val rowBefore = compose.onNodeWithTag("library-summary-row").getUnclippedBoundsInRoot()
+        val searchBefore = compose.onNodeWithTag("library-summary-search").getUnclippedBoundsInRoot()
+        val overflowBefore = compose.onNodeWithTag("library-summary-overflow")
+            .getUnclippedBoundsInRoot()
+        val surface = ViewModelProvider(compose.activity)[MobileSurfaceViewModel::class.java]
+
+        compose.runOnIdle {
+            surface.acceptArtistPhotoProgress(
+                ArtistPhotoProgress(4, ArtistPhotoProgressPhase.RUNNING, 2, 0, 6),
+            )
+        }
+
+        compose.onNodeWithText("450 titles · Artwork 2/6").assertIsDisplayed()
+        assertEquals(rowBefore, compose.onNodeWithTag("library-summary-row").getUnclippedBoundsInRoot())
+        assertEquals(
+            searchBefore,
+            compose.onNodeWithTag("library-summary-search").getUnclippedBoundsInRoot(),
+        )
+        assertEquals(
+            overflowBefore,
+            compose.onNodeWithTag("library-summary-overflow").getUnclippedBoundsInRoot(),
+        )
     }
 }

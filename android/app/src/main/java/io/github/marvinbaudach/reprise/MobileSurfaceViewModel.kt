@@ -290,6 +290,11 @@ internal class MobileSurfaceViewModel : ViewModel(), DeletionMessages {
         dismissedArtistPhotoRunId = artistPhotoProgress?.runId
     }
 
+    fun cancelArtistPhotoBackfill() {
+        artistPhotoBackfillBinding?.cancel?.invoke()
+        dismissArtistPhotoProgress()
+    }
+
     fun initializeSelectedTab(initial: BrowseTab, remember: (BrowseTab) -> Unit) {
         rememberSelectedTab = remember
         if (selectedTabInitialized) return

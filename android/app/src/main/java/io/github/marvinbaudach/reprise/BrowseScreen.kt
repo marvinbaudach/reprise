@@ -12,6 +12,7 @@ import androidx.compose.foundation.pager.rememberPagerState
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.SideEffect
@@ -23,7 +24,6 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.snapshotFlow
-import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.unit.dp
@@ -38,26 +38,6 @@ import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.drop
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
-
-/**
- * One answered request for the playing track's row, carrying the id it was
- * asked for. The id says whether the retained row still describes the track
- * the session reports as playing, so actions can be disabled during a change.
- */
-private data class AnsweredTrack(val id: Long, val track: LibraryTrack?)
-
-/**
- * One tab's freshly fetched windows, carried out of the IO dispatcher.
- *
- * A tab fills a different set of windows than its neighbours, and a window it
- * does not fill is `null` rather than empty: an empty window is a real answer
- * — "no artists match this" — and assigning one where nothing was asked for
- * would blank a list that had rows.
- */
-private data class LoadedTab(
-    val titles: LibraryWindow<LibraryTrack>? = null,
-    val artists: LibraryWindow<LibraryArtist>? = null,
-)
 
 /**
  * The library screen: which tab is showing, what each one has loaded so far,
@@ -202,6 +182,7 @@ internal fun BrowseScreen(
         initialPage = selectedTab.ordinal,
         pageCount = { BrowseTab.entries.size },
     )
+    val statusTopInset = remember { mutableStateOf(0.dp) }
     // What the bar marks and what the header counts is the page the gesture has
     // already committed to — not the one it settled on. `settledPage`, which the
     // state below is driven from, holds its old value for the whole drag *and*
@@ -606,22 +587,16 @@ internal fun BrowseScreen(
                             close = ::toggleSearch,
                         )
                     }
-                    LibrarySummaryActions(
+                    LibraryArtworkSummaryActions(
                         tab = selectedTab,
                         summary = summary,
                         searching = searchVisible,
                         toggleSearch = ::toggleSearch,
                         rescan = rescan,
                         openSettings = ::openSettings,
-                    )
-                    BrowseStatusLines(
-                        browseError = browseError,
-                        browseErrorOrigin = browseErrorOrigin,
-                        surface = surface,
                         surfaceState = surfaceState,
-                        playback = playback,
-                        nowPlayingSheetState = nowPlayingSheetState,
                     )
+                    CompositionLocalProvider(LocalLibraryStatusTopInset provides statusTopInset) {
                     Box(modifier = Modifier.weight(1f)) {
                         HorizontalPager(
                             state = pagerState,
@@ -736,12 +711,27 @@ internal fun BrowseScreen(
                                 }
                             }
                         }
-                        // Screen-level on purpose: the row a deletion started from
-                        // is gone by the time it answers. See DeletionMessages.
-                        DeletionMessageLine(
-                            surface = surfaceState,
-                            modifier = Modifier.align(Alignment.TopCenter).padding(top = 8.dp),
+                        LibraryStatusChrome(
+                            browseError = browseError,
+                            browseErrorOrigin = browseErrorOrigin,
+                            surface = surface,
+                            dismissBrowseError = {
+                                browseError = null
+                                browseErrorOrigin = null
+                            },
+                            surfaceState = surfaceState,
+                            playback = playback,
+                            nowPlayingSheetState = nowPlayingSheetState,
+                            statusTopInset = statusTopInset,
+                            detailPageIsTarget = {
+                                libraryStatusDetailInsetApplies(
+                                    targetPage = BrowseTab.entries[pagerState.targetPage],
+                                    detailIsOpen = selectedArtist != null || selectedAlbum != null ||
+                                        pendingArtist != null || pendingAlbum != null,
+                                )
+                            },
                         )
+                    }
                     }
                 }
             }
