@@ -128,6 +128,8 @@ internal class MobileSurfaceViewModel(
         Handler(Looper.getMainLooper()).postDelayed(work, delayMs)
     },
 ) : ViewModel(), DeletionMessages {
+    val networkReturnDetector = NetworkReturnDetector()
+
     var selectedTab by mutableStateOf(BrowseTab.TITLES)
         private set
     var searchVisible by mutableStateOf(false)
