@@ -2,7 +2,7 @@
 slug: deletion-line-overlay
 worktree: /home/marvin/Projects/reprise-deletion-line-overlay
 branch: feature/deletion-line-overlay
-phase: planned
+phase: shipped
 codex_session:
 created: 2026-10-02
 ---
