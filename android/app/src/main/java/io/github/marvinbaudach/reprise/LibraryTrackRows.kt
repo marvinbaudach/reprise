@@ -34,6 +34,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.RectangleShape
@@ -51,6 +52,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.semantics.CustomAccessibilityAction
+import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.semantics.customActions
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.zIndex
@@ -694,12 +696,22 @@ private fun QueueDragHandle(
 @Composable
 private fun PlayCountBadge(playCount: Long) {
     val normalizedPlayCount = playCount.coerceAtLeast(0)
+    // A never-played track keeps the real badge invisible and silent so the duration
+    // stays aligned; unlike a fixed-height box, this slot follows font scaling.
+    val modifier = if (normalizedPlayCount == 0L) {
+        Modifier
+            .alpha(0f)
+            .clearAndSetSemantics {}
+    } else {
+        Modifier
+    }
     val description = pluralStringResource(
         R.plurals.play_count_description,
         normalizedPlayCount.coerceAtMost(Int.MAX_VALUE.toLong()).toInt(),
         normalizedPlayCount,
     )
     Surface(
+        modifier = modifier,
         color = MaterialTheme.colorScheme.secondaryContainer,
         contentColor = MaterialTheme.colorScheme.onSecondaryContainer,
         shape = MaterialTheme.shapes.small,
