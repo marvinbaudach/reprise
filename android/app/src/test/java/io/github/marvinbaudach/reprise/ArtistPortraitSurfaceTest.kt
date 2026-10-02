@@ -12,6 +12,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.test.assertCountEquals
 import androidx.compose.ui.test.assertTextEquals
+import androidx.compose.ui.test.getUnclippedBoundsInRoot
 import androidx.compose.ui.test.junit4.v2.createAndroidComposeRule
 import androidx.compose.ui.test.onAllNodesWithTag
 import androidx.compose.ui.test.onAllNodesWithText
@@ -394,6 +395,23 @@ class ArtistPortraitSurfaceTest {
         compose.onAllNodesWithText("Counted Artist").assertCountEquals(1)
         compose.onNodeWithText(detail.artist.details()).assertDoesNotExist()
         compose.onNodeWithTag("artist-portrait-head-image", useUnmergedTree = true).assertExists()
+    }
+
+    @Test
+    fun thePortraitKeepsSpaceBeforeTheFirstSectionHeading() {
+        val artwork = artwork(
+            cachedPortrait = { _, _ -> null },
+            fetchedPortrait = { _, _ -> null },
+            albumCover = { _, _ -> null },
+            decode = { null },
+        )
+
+        showArtistDetail(artistDetail("Spaced Artist"), artwork)
+
+        val portrait = compose.onNodeWithTag("artist-portrait-head-image", useUnmergedTree = true)
+            .getUnclippedBoundsInRoot()
+        val heading = compose.onNodeWithText("Albums").getUnclippedBoundsInRoot()
+        assertEquals(24f, heading.top.value - portrait.bottom.value, 0.5f)
     }
 
     @Test

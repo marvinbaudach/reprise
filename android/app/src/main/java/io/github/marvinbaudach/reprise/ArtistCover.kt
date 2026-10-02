@@ -2,6 +2,7 @@ package io.github.marvinbaudach.reprise
 
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.runtime.Composable
@@ -17,6 +18,7 @@ import androidx.compose.ui.unit.dp
 import uniffi.reprise_android_ffi.AndroidArtworkSize
 
 internal const val ARTIST_PORTRAIT_DIAMETER_DP = 210
+private const val ARTIST_PORTRAIT_BOTTOM_GAP_DP = 16
 
 @Composable
 internal fun rememberArtistArtworkVisual(
@@ -70,6 +72,7 @@ internal fun ArtistPortraitHeader(
     Column(
         modifier = Modifier
             .fillMaxWidth()
+            .padding(bottom = ARTIST_PORTRAIT_BOTTOM_GAP_DP.dp)
             .testTag("artist-portrait-head"),
         horizontalAlignment = Alignment.CenterHorizontally,
     ) {
