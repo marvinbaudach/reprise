@@ -74,8 +74,8 @@ impl DeviceSettings {
             profile: TransferProfile::default(),
             opus_bitrate: 0,
             remove_deleted: true,
-            // An unrememberable device must not silently auto-start on every
-            // replug as though the app remembered a user choice.
+            // Automatic sync always starts disabled, including when a device
+            // cannot persist that choice across connections.
             sync_automatically: false,
         }
     }
@@ -351,12 +351,12 @@ pub fn load_or_create_settings(
         });
     }
 
+    let settings = DeviceSettings::transient(serial, name);
     conn.execute(
-        "INSERT INTO device_settings (device_serial, device_name) VALUES (?1, ?2)",
-        params![serial, name],
+        "INSERT INTO device_settings (device_serial, device_name, sync_automatically) \
+         VALUES (?1, ?2, ?3)",
+        params![serial, name, settings.sync_automatically],
     )?;
-    let mut settings = DeviceSettings::transient(serial, name);
-    settings.sync_automatically = true;
     Ok(settings)
 }
 
@@ -729,6 +729,20 @@ fn decode_source_columns(kind: &str, id: i64) -> Result<SelectionSource, rusqlit
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn newly_remembered_device_starts_with_auto_sync_off_and_stays_off() {
+        let db = crate::db::Db::open_in_memory().unwrap();
+
+        let created = load_or_create_settings(&db, "phone", "Phone").unwrap();
+        assert!(!created.sync_automatically);
+
+        let stored = load_or_create_settings(&db, "phone", "Phone").unwrap();
+        assert!(
+            !stored.sync_automatically,
+            "the stored row must not inherit the v44 column default of on"
+        );
+    }
 
     #[test]
     fn unrememberable_device_cannot_persist_legacy_notice_dismissal() {

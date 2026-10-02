@@ -26,7 +26,7 @@ pub enum DbError {
     SchemaNotReady { found: i64, supported: i64 },
 }
 
-pub const SUPPORTED_SCHEMA_VERSION: i64 = 86;
+pub const SUPPORTED_SCHEMA_VERSION: i64 = 87;
 
 /// Default SQLite `busy_timeout` (milliseconds) for every connection opened
 /// through [`Db`]: wait up to this long for a write lock instead of failing
@@ -720,6 +720,7 @@ VALUES ('Recently added', '[]', 'added_at', 'desc', 50);
     crate::db_cover_download::migrate_v84(conn)?;
     crate::db_smart_playlist_names::migrate_v85(conn)?;
     crate::db_library_doctor::migrate_v86(conn)?;
+    crate::db_device_sync::migrate_v87(conn)?;
     Ok(())
 }
 

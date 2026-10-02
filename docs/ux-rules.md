@@ -771,12 +771,14 @@ result.
   thin progress line at the bottom of the card (`MTP-6`, unchanged) remains the
   only status indicator.
 - **MTP-30** [active] [core] [gtk] — The switch "Sync automatically when this
-  phone connects" (7a, `DeviceSettings::sync_automatically`, default **on**)
+  phone connects" (7a, `DeviceSettings::sync_automatically`, default **off**)
   means: as soon as the sync plan is settled after connecting, the sync starts
   by itself, with no button press. This applies exclusively to the first
   refresh after connecting (new connection or reconnect) — a manual "Refresh"
-  or the verification refresh after a sync never triggers it. An automatic
-  start requires a verified scan **and** an error-free planned sync (no
+  or the verification refresh after a sync never triggers it. A newly
+  remembered device starts with the switch off; schema v87 also switched
+  every already remembered device off once. Automatic start requires a verified
+  scan **and** an error-free planned sync (no
   `scan_error`, no planning error); a device that has not been verified yet
   (`MTP-26`) never starts automatically. It is also skipped when the device is
   already busy, or when there is simply nothing to do according to the existing
