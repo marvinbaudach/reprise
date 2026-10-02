@@ -32,6 +32,11 @@ export function ChapterOne() {
           The boundary is enforced in the build: the core cannot depend on a UI framework.{' '}
           <a href="#ch-04">Explore CLI and MCP</a>.
         </p>
+        <p className="case-result">
+          An Android album with no cover of its own gets one from MusicBrainz and the Cover Art
+          Archive, through the same download code the desktop uses. It happens only once online
+          sources are switched on, and the cover stays in the app&apos;s cache.
+        </p>
         <details className="evidence-details">
           <summary>Code breakdown</summary>
           <FigureGrid figures={HEADLINE_FIGURES} variant="headline" />
