@@ -160,7 +160,7 @@ class MobileHeaderRowTest {
             )
         }
 
-        compose.onNodeWithText("200 of 450 titles loaded · Artwork 2/6").assertIsDisplayed()
+        compose.onNodeWithText("450 titles · Artwork 2/6").assertIsDisplayed()
         assertEquals(rowBefore, compose.onNodeWithTag("library-summary-row").getUnclippedBoundsInRoot())
         assertEquals(
             searchBefore,
