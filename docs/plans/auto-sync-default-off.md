@@ -2,7 +2,7 @@
 slug: auto-sync-default-off
 worktree: /home/marvin/Projects/reprise-auto-sync-default-off
 branch: feature/auto-sync-default-off
-phase: refactored
+phase: shipped
 codex_session:
 created: 2026-10-02
 ---
