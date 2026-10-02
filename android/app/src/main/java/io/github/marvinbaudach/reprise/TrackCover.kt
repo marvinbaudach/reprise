@@ -52,6 +52,7 @@ internal class TrackArtwork(
     private val resolveArtistPortraitCached: (String, AndroidArtworkSize) -> String? = { _, _ -> null },
     private val resolveArtistPortraitFetched: (String, AndroidArtworkSize) -> String? = { _, _ -> null },
     private val resolveAlbumCoverFetched: (String, AndroidArtworkSize) -> String? = { _, _ -> null },
+    private val forgetAlbumArtworkMisses: () -> Unit = {},
     private val decode: (String) -> android.graphics.Bitmap? = BitmapFactory::decodeFile,
     private val fallback: (String, String, Int) -> android.graphics.Bitmap = ::fallbackCoverBitmap,
     private val cache: ArtworkCache = SharedArtworkCache,
@@ -68,6 +69,9 @@ internal class TrackArtwork(
         CoroutineScope(fullSizeJob + fullSizeDispatcher + CoroutineName("reprise-artwork-full"))
 
     var artistPortraitRevision by mutableStateOf(0L)
+        private set
+
+    var albumCoverRevision by mutableStateOf(0L)
         private set
 
     /**
@@ -204,6 +208,12 @@ internal class TrackArtwork(
         artistPortraitRevision += 1
     }
 
+    private fun albumCoversChanged() {
+        forgetAlbumArtworkMisses()
+        cache.invalidateAlbumArtwork()
+        albumCoverRevision += 1
+    }
+
     private fun resolveVisual(request: ArtworkRequest): ArtworkVisual {
         if (!request.allowFetch) {
             cache.artwork(request)?.let { return it }
@@ -251,7 +261,9 @@ internal class TrackArtwork(
      */
     private fun fetchedAlbumCoverBitmap(request: ArtworkRequest): android.graphics.Bitmap? {
         if (!request.allowFetch) return null
-        return resolveAlbumCoverFetched(request.trackUri, request.size)?.let(decode)
+        val bitmap = resolveAlbumCoverFetched(request.trackUri, request.size)?.let(decode)
+        if (bitmap != null) onMainThread(::albumCoversChanged)
+        return bitmap
     }
 
     private fun generatedVisual(request: ArtworkRequest, resolved: Boolean): ArtworkVisual {
@@ -344,16 +356,41 @@ internal fun rememberTrackArtworkVisual(
 ): ArtworkVisual? {
     val artwork = LocalTrackArtwork.current
     val gate = remember { ArtworkRequestGate() }
+    val albumRevisionGate = remember { ArtworkRequestGate() }
     val request = remember(trackUri, artworkSize, title, artist, allowFetch) {
         ArtworkRequest(trackUri, artworkSize, title, artist, allowFetch = allowFetch)
     }
     var visual by remember(request, artwork) {
         mutableStateOf(artwork?.seedVisual(request))
     }
+    val albumCoverRevision = artwork?.albumCoverRevision ?: 0L
+    val enteredAtAlbumRevision = remember(request, artwork) { albumCoverRevision }
     DisposableEffect(request, artwork) {
         val admitted = gate.begin(trackUri, artworkSize, title, artist, allowFetch = allowFetch)
         artwork?.loadVisual(admitted, gate) { loaded -> visual = loaded }
         onDispose { gate.invalidate(admitted) }
+    }
+    DisposableEffect(request, artwork, albumCoverRevision) {
+        val admitted = if (
+            artwork != null &&
+            albumCoverRevision != enteredAtAlbumRevision &&
+            visual?.generated == true
+        ) {
+            albumRevisionGate.begin(
+                trackUri,
+                artworkSize,
+                title,
+                artist,
+                allowFetch = false,
+            ).also { localRequest ->
+                artwork.loadVisual(localRequest, albumRevisionGate) { loaded -> visual = loaded }
+            }
+        } else {
+            null
+        }
+        onDispose {
+            if (admitted != null) albumRevisionGate.invalidate(admitted)
+        }
     }
     return visual
 }

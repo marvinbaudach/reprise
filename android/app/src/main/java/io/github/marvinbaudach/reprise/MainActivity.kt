@@ -106,6 +106,7 @@ class MainActivity : ComponentActivity() {
             resolveArtistPortraitCached = session::artistPortraitCached,
             resolveArtistPortraitFetched = session::artistPortraitFetched,
             resolveAlbumCoverFetched = session::artworkFetched,
+            forgetAlbumArtworkMisses = session::forgetArtworkMisses,
         )
     }
     private val artwork by artworkDelegate

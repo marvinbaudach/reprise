@@ -3179,6 +3179,15 @@ property is set and yet nothing happens.
   surfaces stay cold. The refresh is part of the same Preferences transition
   that starts the cover pass; it does not rerun a statistics or source query
   and does not rebuild an entire source page.
+- **NET-7a** [active] [android] — A cover the phone downloads reaches every
+  artwork surface that shows its album while that surface stays on screen. The
+  now-playing scene and sheet, the mini-player, dock mode, track and album list
+  rows and the album header replace their generated cover without a relaunch,
+  a navigation or a scroll. This holds for a cover that now-playing or the
+  album page downloaded itself and for one the background cover pass
+  downloaded. Reaching a surface is a local read and never starts a download
+  of its own. A surface that already shows a real cover keeps it unchanged and
+  is not read again.
 - **NET-3** [active] [core] [gtk] — Offline is a state, not an error: no network-backed
   place in the app may treat a missing network connection like an error
   message. The contract covers seven states every network-backed view (feed,
