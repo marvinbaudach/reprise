@@ -2,7 +2,7 @@
 slug: play-count-badge-fits
 worktree: /home/marvin/Projects/reprise-play-count-badge-fits
 branch: feature/play-count-badge-fits
-phase: refactored
+phase: shipped
 codex_session:
 created: 2026-10-02
 ---
