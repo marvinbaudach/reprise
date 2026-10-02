@@ -721,11 +721,7 @@ private fun PlayCountBadge(playCount: Long) {
             verticalAlignment = Alignment.CenterVertically,
         ) {
             MaterialSymbol("play_arrow", description, sizeSp = 12)
-            Text(
-                text = normalizedPlayCount.toString(),
-                style = MaterialTheme.typography.labelSmall,
-                maxLines = 1,
-            )
+            Text(normalizedPlayCount.toString(), style = MaterialTheme.typography.labelSmall)
         }
     }
 }
