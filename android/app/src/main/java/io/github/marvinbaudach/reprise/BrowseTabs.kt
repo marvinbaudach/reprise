@@ -2,9 +2,10 @@ package io.github.marvinbaudach.reprise
 
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.ColumnScope
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -140,14 +141,18 @@ internal fun AlbumDetailPage(
     loadMoreAlbumTracks: suspend (LibraryWindowRange) -> Unit,
 ) {
     Column(modifier = Modifier.fillMaxSize()) {
-        AlbumDetailHeader(selectedAlbum.album, closeAlbum)
-        if (selectedAlbum.tracks.rows.isEmpty()) {
-            Text("No tracks in this album.", modifier = Modifier.padding(16.dp))
-        } else {
-            ListPlayButton(
-                description = "Play ${selectedAlbum.album.title}",
-                onClick = { play(0) },
-            )
+        AlbumDetailHeader(selectedAlbum.album, closeAlbum) {
+            if (selectedAlbum.tracks.rows.isEmpty()) {
+                Text("No tracks in this album.", modifier = Modifier.padding(16.dp))
+            } else {
+                ListPlayButton(
+                    description = "Play ${selectedAlbum.album.title}",
+                    modifier = Modifier.testTag("album-detail-play"),
+                    onClick = { play(0) },
+                )
+            }
+        }
+        if (selectedAlbum.tracks.rows.isNotEmpty()) {
             TrackRows(
                 surfaceLayout = surfaceLayout,
                 surfaceState = surfaceState,
@@ -172,7 +177,11 @@ private fun AlbumLoadingPage(album: LibraryAlbum, closeAlbum: () -> Unit) {
 }
 
 @Composable
-private fun AlbumDetailHeader(album: LibraryAlbum, closeAlbum: () -> Unit) {
+private fun AlbumDetailHeader(
+    album: LibraryAlbum,
+    closeAlbum: () -> Unit,
+    below: @Composable ColumnScope.() -> Unit = {},
+) {
     // ARTIST_DETAIL, not LIST, despite the 40 dp slot below: `TrackArtwork`
     // picks the coroutine lane from `size` before `allowFetch` is even
     // read (`TrackCover.kt`'s `loadVisual`/`prefetch`), and only
@@ -207,6 +216,7 @@ private fun AlbumDetailHeader(album: LibraryAlbum, closeAlbum: () -> Unit) {
             color = MaterialTheme.colorScheme.onSurfaceVariant,
             modifier = Modifier.padding(horizontal = 16.dp),
         )
+        below()
     }
 }
 
@@ -229,6 +239,7 @@ private fun ArtistDetailHeader(
     artist: LibraryArtist,
     closeArtist: () -> Unit,
     withMenu: Boolean = true,
+    below: @Composable ColumnScope.() -> Unit = {},
 ) {
     val contextMenu = rememberTrackContextMenuAnchorState()
     Column(modifier = Modifier.reportLibraryStatusTopInset("artist-detail-header")) {
@@ -256,6 +267,7 @@ private fun ArtistDetailHeader(
             }
         }
         TrackContextMenuMessage(contextMenu)
+        below()
     }
 }
 
@@ -321,13 +333,14 @@ internal fun ArtistsTab(
     }
     if (selectedArtist != null) {
         Column(modifier = Modifier.fillMaxSize()) {
-            ArtistDetailHeader(selectedArtist.artist, closeArtist)
             val hasAlbums = selectedArtist.albums.rows.isNotEmpty()
             val hasOtherTitles = selectedArtist.untaggedTracks.rows.isNotEmpty()
-            if (!hasAlbums && !hasOtherTitles) {
-                Text("No tracks by this artist.", modifier = Modifier.padding(16.dp))
-            } else {
-                ArtistPlayButton(selectedArtist.artist)
+            ArtistDetailHeader(selectedArtist.artist, closeArtist) {
+                if (!hasAlbums && !hasOtherTitles) {
+                    Text("No tracks by this artist.", modifier = Modifier.padding(16.dp))
+                } else {
+                    ArtistPlayButton(selectedArtist.artist)
+                }
             }
             if (hasAlbums) {
                 ArtistDetailSections(
@@ -502,6 +515,7 @@ private fun ArtistPlayButton(artist: LibraryArtist) = key(artist.name) {
     ListPlayButton(
         description = "Play ${artist.name}",
         enabled = !resolving,
+        modifier = Modifier.testTag("artist-detail-play"),
         onClick = {
             resolving = true
             scope.launch {
@@ -524,13 +538,16 @@ private fun ArtistPlayButton(artist: LibraryArtist) = key(artist.name) {
 @Composable
 private fun ListPlayButton(
     description: String,
-    enabled: Boolean = true,
     onClick: () -> Unit,
+    modifier: Modifier = Modifier,
+    enabled: Boolean = true,
 ) {
     Button(
         onClick = onClick,
         enabled = enabled,
-        modifier = Modifier.padding(horizontal = 16.dp, vertical = 4.dp),
+        modifier = Modifier
+            .padding(horizontal = 16.dp, vertical = 4.dp)
+            .then(modifier),
     ) {
         MaterialSymbol("play_arrow", description)
         Text("Play")
