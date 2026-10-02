@@ -18,6 +18,7 @@ private const val MAX_FORMATTED_PLAY_COUNT = 999_499_999_999L
 private const val THOUSAND = 1_000L
 private const val MILLION = 1_000_000L
 private const val BILLION = 1_000_000_000L
+private const val TENTHS_ROLLOVER = 100L
 
 internal fun formatPlayCount(count: Long): String {
     val normalized = count.coerceIn(0L, MAX_FORMATTED_PLAY_COUNT)
@@ -30,7 +31,7 @@ internal fun formatPlayCount(count: Long): String {
     }
     if (normalized < 10 * unit) {
         val tenths = (normalized + unit / 20) / (unit / 10)
-        if (tenths >= 100) return "10$suffix"
+        if (tenths >= TENTHS_ROLLOVER) return "10$suffix"
         val decimal = tenths % 10
         return if (decimal == 0L) {
             "${tenths / 10}$suffix"
@@ -40,7 +41,7 @@ internal fun formatPlayCount(count: Long): String {
     }
 
     val whole = (normalized + unit / 2) / unit
-    return if (whole >= 1_000) "1$nextSuffix" else "$whole$suffix"
+    return if (whole >= THOUSAND) "1$nextSuffix" else "$whole$suffix"
 }
 
 private data class CountUnit(

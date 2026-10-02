@@ -42,6 +42,7 @@ class PlayCountBadgeTest {
 
     private var rowBackground = Color.Unspecified
     private var secondaryContainer = Color.Unspecified
+    private var onSecondaryContainer = Color.Unspecified
 
     @Test
     fun neverPlayedTrackOmitsItsBadgeWithoutMovingTheDuration() {
@@ -66,16 +67,16 @@ class PlayCountBadgeTest {
         assertEquals(
             "a never-played row must contain no secondary-container badge pixels",
             0,
-            neverPlayedBadge.count { it == secondaryContainer },
+            neverPlayedBadge.pixels.count { it == secondaryContainer },
         )
         assertTrue(
             "the reserved badge region must draw exactly like the row background",
-            neverPlayedBadge.all { it == rowBackground },
+            neverPlayedBadge.pixels.all { it == rowBackground },
         )
         val playedBadge = badgeRegion(trackId = 832, duration = "1:42")
         assertTrue(
             "the played-row control must contain secondary-container badge pixels",
-            playedBadge.any { it == secondaryContainer },
+            playedBadge.pixels.any { it == secondaryContainer },
         )
     }
 
@@ -141,6 +142,32 @@ class PlayCountBadgeTest {
     }
 
     @Test
+    fun compactCountTextIsDrawnToTheRightOfThePlaySymbol() {
+        showTrackRows(
+            tracks = listOf(
+                track(id = 834, title = "Compact Count", playCount = 1_234, durationMs = 104_000),
+            ),
+        )
+
+        val badge = badgeRegion(trackId = 834, duration = "1:44")
+        val badgeLeft = (0 until badge.width).first { x ->
+            badge.pixels.indices.any { index ->
+                index % badge.width == x && badge.pixels[index] == secondaryContainer
+            }
+        }
+        val textStart = badgeLeft + ceil(
+            (BADGE_HORIZONTAL_PADDING_DP + PLAY_SYMBOL_SIZE_SP) * badge.pixelsPerDp,
+        ).toInt()
+
+        assertTrue(
+            "the compact count must draw foreground pixels to the right of the play symbol",
+            badge.pixels.indices.any { index ->
+                index % badge.width >= textStart && badge.pixels[index] == onSecondaryContainer
+            },
+        )
+    }
+
+    @Test
     fun badgeAnnouncesTheExactCountWithoutExposingVisibleCountText() {
         showTrackRows(
             tracks = listOf(
@@ -149,6 +176,7 @@ class PlayCountBadgeTest {
             ),
         )
 
+        compose.onNodeWithText("Compact Count").assertContentDescriptionEquals("1234 plays")
         compose.onNodeWithContentDescription("1234 plays", useUnmergedTree = true).assertExists()
         listOf("1.2k", "1234").forEach { countText ->
             compose.onNodeWithText(countText).assertDoesNotExist()
@@ -173,6 +201,7 @@ class PlayCountBadgeTest {
             RepriseTheme(theme, darkPalette = true) {
                 rowBackground = MaterialTheme.colorScheme.background
                 secondaryContainer = MaterialTheme.colorScheme.secondaryContainer
+                onSecondaryContainer = MaterialTheme.colorScheme.onSecondaryContainer
                 val currentDensity = LocalDensity.current
                 val content: @Composable (List<LibraryTrack>, MobileSurfaceViewModel) -> Unit =
                     { visibleTracks, surfaceState ->
@@ -206,7 +235,7 @@ class PlayCountBadgeTest {
         compose.waitForIdle()
     }
 
-    private fun badgeRegion(trackId: Long, duration: String): List<Color> {
+    private fun badgeRegion(trackId: Long, duration: String): PixelRegion {
         val row = compose.onNodeWithTag("library-track-row-$trackId")
         val rowBounds = row.fetchSemanticsNode().boundsInRoot
         val durationBounds = compose.onNodeWithText(duration, useUnmergedTree = true)
@@ -219,9 +248,14 @@ class PlayCountBadgeTest {
         val bottom = floor(
             durationBounds.top - rowBounds.top - BADGE_DURATION_GAP_DP * pixelsPerDp,
         ).toInt().coerceAtLeast(0)
-        return (0 until bottom).flatMap { y ->
+        val regionPixels = (0 until bottom).flatMap { y ->
             (left until right).map { x -> pixels[x, y] }
         }
+        return PixelRegion(
+            pixels = regionPixels,
+            width = right - left,
+            pixelsPerDp = pixelsPerDp,
+        )
     }
 
     private fun durationTopWithinRow(duration: String, trackId: Long): Float {
@@ -248,6 +282,8 @@ class PlayCountBadgeTest {
         const val SCREEN_WIDTH_DP = 500f
         const val TRAILING_COLUMN_DP = 48f
         const val BADGE_DURATION_GAP_DP = 2f
+        const val BADGE_HORIZONTAL_PADDING_DP = 5f
+        const val PLAY_SYMBOL_SIZE_SP = 12f
 
         val theme = MobileThemeSelection(
             palette = MobileTheme.NOCTURNE,
@@ -266,4 +302,10 @@ class PlayCountBadgeTest {
             rating = 0,
         )
     }
+
+    private data class PixelRegion(
+        val pixels: List<Color>,
+        val width: Int,
+        val pixelsPerDp: Float,
+    )
 }
