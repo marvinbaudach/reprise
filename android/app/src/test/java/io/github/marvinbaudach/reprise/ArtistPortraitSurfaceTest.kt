@@ -13,6 +13,8 @@ import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.test.assertCountEquals
 import androidx.compose.ui.test.assertTextEquals
 import androidx.compose.ui.test.getUnclippedBoundsInRoot
+import androidx.compose.ui.test.hasTestTag
+import androidx.compose.ui.test.hasText
 import androidx.compose.ui.test.junit4.v2.createAndroidComposeRule
 import androidx.compose.ui.test.onAllNodesWithTag
 import androidx.compose.ui.test.onAllNodesWithText
@@ -422,6 +424,7 @@ class ArtistPortraitSurfaceTest {
                 album("First Album", "Counted Artist"),
                 album("Second Album", "Counted Artist"),
             ),
+            untagged = listOf(track("Loose Title", "Counted Artist")),
         )
         val artwork = artwork(
             cachedPortrait = { _, _ -> null },
@@ -434,6 +437,10 @@ class ArtistPortraitSurfaceTest {
 
         compose.onNodeWithTag("library-summary-text")
             .assertTextEquals(detail.artist.details())
+        compose.onNode(
+            hasTestTag("library-summary-text") and
+                hasText("other title", substring = true, ignoreCase = true),
+        ).assertDoesNotExist()
         compose.onAllNodesWithText(detail.artist.details()).assertCountEquals(1)
         compose.onAllNodesWithTag("library-album-row-cover", useUnmergedTree = true)
             .assertCountEquals(2)
@@ -553,14 +560,20 @@ class ArtistPortraitSurfaceTest {
     private fun artistDetail(
         name: String,
         albums: List<LibraryAlbum> = listOf(album("Only Album", name)),
+        untagged: List<LibraryTrack> = emptyList(),
     ) = ArtistTrackList(
         artist = artist(name).copy(
-            trackCount = albums.sumOf(LibraryAlbum::trackCount),
+            trackCount = albums.sumOf(LibraryAlbum::trackCount) + untagged.size,
             albumCount = albums.size.toLong(),
         ),
         albums = LibraryWindow(
             total = albums.size.toLong(),
             rows = albums,
+            hasMore = false,
+        ),
+        untaggedTracks = LibraryWindow(
+            total = untagged.size.toLong(),
+            rows = untagged,
             hasMore = false,
         ),
     )
@@ -572,6 +585,17 @@ class ArtistPortraitSurfaceTest {
         trackCount = 2,
         year = 2026,
         totalDurationMs = 120_000,
+    )
+
+    private fun track(title: String, artist: String) = LibraryTrack(
+        id = title.hashCode().toLong(),
+        uri = "content://tracks/$artist/$title",
+        title = title,
+        artist = artist,
+        album = "",
+        durationMs = 60_000,
+        playCount = 0,
+        rating = 0,
     )
 
     private fun bitmap(colour: Int): Bitmap =
