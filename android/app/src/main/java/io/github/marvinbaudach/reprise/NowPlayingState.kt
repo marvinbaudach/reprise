@@ -1,9 +1,6 @@
 package io.github.marvinbaudach.reprise
 
-import androidx.compose.runtime.staticCompositionLocalOf
 import uniffi.reprise_android_ffi.AndroidRepeatMode
-
-internal val LocalNowPlayingTrackDuration = staticCompositionLocalOf { 0L }
 
 internal data class NowPlayingMetrics(
     val coverSizeDp: Int,

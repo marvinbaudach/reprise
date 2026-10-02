@@ -31,12 +31,21 @@ class NowPlayingDurationTest {
 
     @Test
     fun aPausedUnpreparedTrackShowsItsLengthWithoutEnablingSeek() {
+        assertPausedUnpreparedTrackLength(SurfaceLayout.WIDE_SHORT)
+    }
+
+    @Test
+    fun aPausedUnpreparedTrackShowsItsLengthInTheStackedScene() {
+        assertPausedUnpreparedTrackLength(SurfaceLayout.STACKED)
+    }
+
+    private fun assertPausedUnpreparedTrackLength(surfaceLayout: SurfaceLayout) {
         compose.setContent {
             RepriseTheme(theme, darkPalette = true) {
                 NowPlayingSheet(
                     track = track,
                     playback = playback,
-                    surfaceLayout = SurfaceLayout.WIDE_SHORT,
+                    surfaceLayout = surfaceLayout,
                     close = {},
                 )
             }
