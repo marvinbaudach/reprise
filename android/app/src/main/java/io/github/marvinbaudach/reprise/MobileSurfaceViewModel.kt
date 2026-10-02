@@ -4,6 +4,7 @@ import android.content.Context
 import android.net.ConnectivityManager
 import android.os.Handler
 import android.os.Looper
+import android.os.SystemClock
 import androidx.compose.material3.windowsizeclass.WindowHeightSizeClass
 import androidx.compose.material3.windowsizeclass.WindowSizeClass
 import androidx.compose.material3.windowsizeclass.WindowWidthSizeClass
@@ -125,7 +126,7 @@ private data class ArtistPhotoBackfillBinding(
  * activity asks.
  */
 internal class MobileSurfaceViewModel(
-    private val nowMillis: () -> Long = System::currentTimeMillis,
+    private val nowMillis: () -> Long = SystemClock::elapsedRealtime,
     private val scheduleAfter: (Long, () -> Unit) -> Unit = { delayMs, work ->
         Handler(Looper.getMainLooper()).postDelayed(work, delayMs)
     },
@@ -329,6 +330,7 @@ internal class MobileSurfaceViewModel(
 
     private fun acceptAlbumCoverProgress(update: ArtistPhotoProgress) {
         if (update.runId != refreshedAlbumCoverRunId) {
+            flushAlbumCoverRefresh()
             refreshedAlbumCoverRunId = update.runId
             observedAlbumCoverDone = 0
             refreshedAlbumCoverDone = 0
@@ -337,8 +339,15 @@ internal class MobileSurfaceViewModel(
         }
         if (update.coversDone > observedAlbumCoverDone) {
             observedAlbumCoverDone = update.coversDone
-            if (albumCoverWindowStartedAtMs == null) {
-                albumCoverWindowStartedAtMs = nowMillis()
+            val now = nowMillis()
+            val windowStartedAt = albumCoverWindowStartedAtMs
+            if (
+                windowStartedAt != null &&
+                now - windowStartedAt >= ALBUM_COVER_REFRESH_WINDOW_MS
+            ) {
+                flushAlbumCoverRefresh()
+            } else if (windowStartedAt == null) {
+                albumCoverWindowStartedAtMs = now
                 val scheduledGeneration = ++albumCoverScheduleGeneration
                 scheduleAfter(ALBUM_COVER_REFRESH_WINDOW_MS) {
                     if (scheduledGeneration == albumCoverScheduleGeneration) {

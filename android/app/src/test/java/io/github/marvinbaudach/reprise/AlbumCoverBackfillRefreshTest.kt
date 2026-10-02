@@ -127,7 +127,24 @@ class AlbumCoverBackfillRefreshTest {
     }
 
     @Test
-    fun a_new_cover_run_resets_the_coalescing_window() {
+    fun running_progress_that_reaches_the_cover_total_flushes_the_open_window() {
+        val scheduler = FakeCoverScheduler()
+        var bumps = 0
+        val surface = MobileSurfaceViewModel(
+            nowMillis = scheduler::now,
+            scheduleAfter = scheduler::scheduleAfter,
+        )
+        surface.bindAlbumCoverRefresh { bumps += 1 }
+        surface.acceptArtistPhotoProgress(progress(coversDone = 1, coversTotal = 2))
+
+        scheduler.time = 500L
+        surface.acceptArtistPhotoProgress(progress(coversDone = 2, coversTotal = 2))
+
+        assertEquals(1, bumps)
+    }
+
+    @Test
+    fun a_new_cover_run_flushes_pending_work_before_resetting_the_window() {
         val scheduler = FakeCoverScheduler()
         var bumps = 0
         val surface = MobileSurfaceViewModel(
@@ -142,11 +159,28 @@ class AlbumCoverBackfillRefreshTest {
         scheduler.time = 2_100L
         surface.acceptArtistPhotoProgress(progress(runId = 2, coversDone = 2, coversTotal = 5))
         scheduler.runDue()
-        assertEquals(0, bumps)
+        assertEquals(1, bumps)
 
         scheduler.time = 3_900L
         surface.acceptArtistPhotoProgress(progress(runId = 2, coversDone = 3, coversTotal = 5))
         scheduler.runDue()
+
+        assertEquals(2, bumps)
+    }
+
+    @Test
+    fun an_overdue_window_flushes_from_the_injected_clock() {
+        val scheduler = FakeCoverScheduler()
+        var bumps = 0
+        val surface = MobileSurfaceViewModel(
+            nowMillis = scheduler::now,
+            scheduleAfter = scheduler::scheduleAfter,
+        )
+        surface.bindAlbumCoverRefresh { bumps += 1 }
+        surface.acceptArtistPhotoProgress(progress(coversDone = 1, coversTotal = 5))
+
+        scheduler.time = 2_001L
+        surface.acceptArtistPhotoProgress(progress(coversDone = 2, coversTotal = 5))
 
         assertEquals(1, bumps)
     }
