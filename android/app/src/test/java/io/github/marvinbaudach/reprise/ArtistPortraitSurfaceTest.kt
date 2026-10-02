@@ -12,6 +12,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.test.assertCountEquals
 import androidx.compose.ui.test.assertTextEquals
+import androidx.compose.ui.test.assertWidthIsEqualTo
 import androidx.compose.ui.test.getUnclippedBoundsInRoot
 import androidx.compose.ui.test.hasTestTag
 import androidx.compose.ui.test.hasText
@@ -23,6 +24,7 @@ import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performScrollToIndex
+import androidx.compose.ui.unit.dp
 import io.github.marvinbaudach.reprise.ui.theme.RepriseTheme
 import java.util.concurrent.atomic.AtomicBoolean
 import java.util.concurrent.atomic.AtomicInteger
@@ -446,6 +448,32 @@ class ArtistPortraitSurfaceTest {
             .assertCountEquals(2)
     }
 
+    @Test
+    fun anAlbumRowCoverUsesTheStackedTrackCoverSize() {
+        showArtistDetailWithEmptyArtwork(SurfaceLayout.STACKED)
+
+        compose.onNodeWithTag("library-album-row-cover", useUnmergedTree = true)
+            .assertWidthIsEqualTo(56.dp)
+    }
+
+    @Test
+    fun anAlbumRowCoverUsesTheWideShortTrackCoverSize() {
+        showArtistDetailWithEmptyArtwork(SurfaceLayout.WIDE_SHORT)
+
+        compose.onNodeWithTag("library-album-row-cover", useUnmergedTree = true)
+            .assertWidthIsEqualTo(48.dp)
+    }
+
+    private fun showArtistDetailWithEmptyArtwork(surfaceLayout: SurfaceLayout) {
+        val artwork = artwork(
+            cachedPortrait = { _, _ -> null },
+            fetchedPortrait = { _, _ -> null },
+            albumCover = { _, _ -> null },
+            decode = { null },
+        )
+        showArtistDetail(artistDetail("Sized Artist"), artwork, surfaceLayout = surfaceLayout)
+    }
+
     private fun showArtists(artists: List<LibraryArtist>, artwork: TrackArtwork) {
         compose.setContent {
             RepriseTheme(theme, darkPalette = true) {
@@ -479,6 +507,7 @@ class ArtistPortraitSurfaceTest {
         artwork: TrackArtwork,
         initiallyOpen: Boolean = true,
         showSummary: Boolean = false,
+        surfaceLayout: SurfaceLayout = SurfaceLayout.STACKED,
     ) {
         compose.setContent {
             RepriseTheme(theme, darkPalette = true) {
@@ -509,7 +538,7 @@ class ArtistPortraitSurfaceTest {
                             mutableStateOf<ArtistTrackList?>(if (initiallyOpen) detail else null)
                         }
                         ArtistsTab(
-                            surfaceLayout = SurfaceLayout.STACKED,
+                            surfaceLayout = surfaceLayout,
                             surfaceState = MobileSurfaceViewModel(),
                             artists = LibraryWindow(
                                 total = 1,

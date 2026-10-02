@@ -434,7 +434,7 @@ private fun ArtistDetailSections(
                 items(
                     albums.rows,
                     key = { album -> "artist-album-${album.identity()}" },
-                ) { album -> AlbumRow(album, openAlbum) }
+                ) { album -> AlbumRow(album, surfaceLayout, openAlbum) }
                 albumContinuation?.let { request ->
                     item(key = "artist-albums-load-${request.offset}") {
                         LaunchedEffect(request.offset) { loadMoreAlbums(request) }
@@ -561,7 +561,7 @@ private fun AlbumRows(
             gridItems(
                 items = albums.rows,
                 key = { album -> "${album.artist}\u0000${album.title}" },
-            ) { album -> AlbumRow(album, openAlbum) }
+            ) { album -> AlbumRow(album, surfaceLayout, openAlbum) }
             albums.nextRequest(requestedOffset)?.let { request ->
                 item(key = "load-window-${request.offset}", span = { GridItemSpan(maxLineSpan) }) {
                     LaunchedEffect(request.offset) { loadMore(request) }
@@ -578,17 +578,22 @@ private fun AlbumRows(
         modifier = Modifier.fillMaxSize().testTag(key.testTag()),
     ) {
         items(albums.rows, key = { album -> "${album.artist}\u0000${album.title}" }) { album ->
-            AlbumRow(album, openAlbum)
+            AlbumRow(album, surfaceLayout, openAlbum)
         }
         windowContinuation(albums, requestedOffset, loadMore)
     }
 }
 
 @Composable
-private fun AlbumRow(album: LibraryAlbum, openAlbum: (LibraryAlbum) -> Unit) {
+private fun AlbumRow(
+    album: LibraryAlbum,
+    surfaceLayout: SurfaceLayout,
+    openAlbum: (LibraryAlbum) -> Unit,
+) {
     val contextMenu = rememberTrackContextMenuAnchorState()
     val albumTrackIds = LocalAlbumTrackIds.current
     val controls = LocalPlaybackControls.current
+    val coverSizeDp = libraryFrameMetrics(surfaceLayout).trackCoverSizeDp
     // The acknowledgement sits below the row, not inside the Box it would
     // otherwise cover — see TrackContextMenuMessage.
     Column {
@@ -601,7 +606,7 @@ private fun AlbumRow(album: LibraryAlbum, openAlbum: (LibraryAlbum) -> Unit) {
                         trackUri = album.representativeUri,
                         title = album.title,
                         artist = album.artist,
-                        size = ALBUM_ROW_COVER_SIZE_DP,
+                        size = coverSizeDp,
                         modifier = Modifier.testTag("library-album-row-cover"),
                         artworkSize = AndroidArtworkSize.LIST,
                         decorative = true,
@@ -626,8 +631,6 @@ private fun AlbumRow(album: LibraryAlbum, openAlbum: (LibraryAlbum) -> Unit) {
     }
     HorizontalDivider()
 }
-
-private const val ALBUM_ROW_COVER_SIZE_DP = 56
 
 @Composable
 private fun ArtistRows(
