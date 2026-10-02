@@ -442,3 +442,59 @@ fn pod_6_episode_removal_undo_and_commit_block_rss_and_youtube_reimport() {
         );
     }
 }
+
+#[test]
+fn pod_6_removing_an_episode_waits_for_a_concurrent_writer() {
+    use std::time::Duration;
+
+    let directory = tempfile::tempdir().unwrap();
+    let database_path = directory.path().join("library.db");
+    let db = Db::open_migrated(Some(&database_path)).unwrap();
+    let subscription_id = add_or_restore(&db, &subscription_draft(), 10).unwrap();
+    let episode_id = upsert_episode(&db, subscription_id, &parsed_episode("Episode"), 20)
+        .unwrap()
+        .expect("episode should be imported")
+        .episode_id;
+    assert!(tombstone_episode(&db, episode_id, 30).unwrap());
+
+    let (locked, lock_observed) = std::sync::mpsc::sync_channel(1);
+    let writer = std::thread::spawn(move || {
+        let writer_db = Db::open_ready(&database_path).unwrap();
+        let transaction = rusqlite::Transaction::new_unchecked(
+            writer_db.conn(),
+            rusqlite::TransactionBehavior::Immediate,
+        )
+        .unwrap();
+        transaction
+            .execute(
+                "UPDATE podcast_subscriptions SET title = ?2 WHERE id = ?1",
+                params![subscription_id, "Writer held the lock"],
+            )
+            .unwrap();
+        locked.send(()).unwrap();
+        std::thread::sleep(Duration::from_millis(500));
+        transaction.commit().unwrap();
+    });
+    lock_observed
+        .recv_timeout(Duration::from_secs(10))
+        .expect("concurrent writer should take the lock before the deadline");
+
+    let removed = commit_remove_episode(&db, episode_id);
+    writer.join().unwrap();
+
+    assert!(
+        removed.is_ok(),
+        "episode removal should wait for the concurrent writer: {removed:?}"
+    );
+    assert!(episode(&db, episode_id).unwrap().is_none());
+    assert_eq!(
+        db.conn()
+            .query_row(
+                "SELECT COUNT(*) FROM podcast_episode_dismissals WHERE guid = ?1",
+                ["stable-guid"],
+                |row| row.get::<_, i64>(0),
+            )
+            .unwrap(),
+        1
+    );
+}
