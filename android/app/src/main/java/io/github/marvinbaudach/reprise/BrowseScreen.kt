@@ -416,8 +416,8 @@ internal fun BrowseScreen(
     // carrying a total but no rows. A swipe draws the next page as soon as it
     // begins and only settles afterwards, so a tab whose rows are still absent
     // is drawn *empty* for the length of the gesture and fills once it lands.
-    // Fetching the tab next door while the
-    // pager stands still closes that gap before anyone swipes into it.
+    // Fetching the tab next door while the pager stands still closes that gap
+    // before anyone swipes into it.
     //
     // Keyed on `loadedTabs`, so this re-enters after each fetch and works
     // through what is left one tab at a time rather than firing them at once.

@@ -99,6 +99,7 @@ class BrowseScreenLoadGuardsTest {
         // view and lets it read a third window.
         val titles = compose.onNodeWithTag("library-titles-list").assertExists()
         assertTrue(runCatching { titles.performScrollToIndex(401) }.isFailure)
+        // This accepted probe starts one more read that outlives the test body.
         assertTrue(runCatching { titles.performScrollToIndex(399) }.isSuccess)
     }
 
@@ -138,6 +139,7 @@ class BrowseScreenLoadGuardsTest {
         assertTrue(runCatching { titles.performScrollToIndex(201) }.isFailure)
         compose.onNodeWithText("Could not load more titles:", substring = true)
             .assertDoesNotExist()
+        // This accepted probe starts one more read that outlives the test body.
         assertTrue(runCatching { titles.performScrollToIndex(200) }.isSuccess)
     }
 }

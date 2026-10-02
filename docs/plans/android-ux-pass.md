@@ -87,8 +87,9 @@ sibling if a file would pass 800 lines): the summary row text on an artist page 
 on the page; each album row shows a `library-album-row-cover` node. Update existing assertions
 that expected the count under the portrait.
 
-Out of scope: the "N of M titles loaded" label (deliberate, `BrowseScreen.kt:417`), the "▷ 0"
-play-count badges, any `[android]` UX rule.
+The "N of M titles loaded" label was later removed in favour of the total alone on branch
+`fix/android-count-names-the-library`. Out of scope: the "▷ 0" play-count badges and any
+`[android]` UX rule.
 
 ## Verification for Codex
 This plan touches ONLY `android/` and `docs/plans/`. The Rust gates in AGENTS.md do NOT apply —

@@ -14,9 +14,9 @@ internal fun browseSummary(
     selectedArtist: ArtistTrackList?,
     visibleArtists: LibraryWindow<LibraryArtist>,
 ): () -> String = {
-    // The bar may already mark a tab whose window has not been fetched yet:
-    // the fetch waits for the page to settle. Until the marked tab is loaded
-    // the line keeps answering for the one that is.
+    // A tab that is not loaded yet carries the unfiltered library total from
+    // `withoutRows()`, which would not match an active search. Until the marked
+    // tab is loaded the line keeps answering for the one that is.
     val counted = shownTab()
         .takeIf { it == BrowseTab.QUEUE || it in loadedTabs }
         ?: selectedTab
