@@ -13,6 +13,7 @@ internal const val COVER_RETRY_TAG = "RepriseCoverRetry"
 internal class NetworkReturnDetector {
     private var online: Boolean? = null
 
+    @Synchronized
     fun observe(online: Boolean, onReturn: () -> Unit = {}): Boolean {
         val returned = this.online == false && online
         this.online = online
@@ -52,8 +53,14 @@ internal class NetworkReturnMonitor(
     fun start() {
         if (registered) return
         observeCurrentNetwork()
-        connectivity.registerDefaultNetworkCallback(callback)
-        registered = true
+        try {
+            connectivity.registerDefaultNetworkCallback(callback)
+            registered = true
+        } catch (error: SecurityException) {
+            Log.w(COVER_RETRY_TAG, "Could not monitor default network returns", error)
+        } catch (error: RuntimeException) {
+            Log.w(COVER_RETRY_TAG, "Could not monitor default network returns", error)
+        }
     }
 
     fun stop() {
