@@ -28,7 +28,7 @@ fn settings_default_then_round_trip_selection_and_supported_bitrate() {
             profile: TransferProfile::default(),
             opus_bitrate: 0,
             remove_deleted: true,
-            sync_automatically: true,
+            sync_automatically: false,
         }
     );
 
