@@ -63,7 +63,7 @@ export function CoreArchitecture() {
         >
           <span className="eyebrow">application and domain layer</span>
           <strong>reprise-core</strong>
-          <span className="data">19 dependencies · 0 UI frameworks</span>
+          <span className="data">21 dependencies · 0 UI frameworks</span>
         </a>
       </div>
 

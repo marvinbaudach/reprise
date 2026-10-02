@@ -204,6 +204,7 @@ Defaults follow "read is safe, writes are opt-in":
 | `agent.capability.playlist:create` | off | `music_create_playlist` |
 | `agent.capability.playlist:manage` | off | playlist rename + append tracks |
 | `agent.capability.sources:manage` | off | podcast/YouTube and radio add/edit/remove/refresh |
+| `agent.capability.tags:write` | off | applying Library Doctor tag fixes to files |
 | `agent.capability.device:sync` | off | configure, start, or cancel Android synchronization |
 
 To grant a write capability, set its key to `1` in the library DB, e.g.:

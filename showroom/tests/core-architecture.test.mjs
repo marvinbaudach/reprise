@@ -14,7 +14,7 @@ test('chapter one renders the four real frontends over the shared Rust layers', 
   }
   assert.match(html, />reprise-view</);
   assert.match(html, />reprise-core</);
-  assert.match(html, /19 dependencies · 0 UI frameworks/);
+  assert.match(html, /21 dependencies · 0 UI frameworks/);
 });
 
 test('the architecture claim links to the code and the check that enforce it', async () => {

@@ -29,5 +29,6 @@ export const MCP_CAPABILITIES: readonly McpCapability[] = [
   { id: 'playlist:create', description: 'create a manual playlist', enabled: false },
   { id: 'playlist:manage', description: 'rename, append tracks', enabled: false },
   { id: 'sources:manage', description: 'podcasts, YouTube, radio', enabled: false },
+  { id: 'tags:write', description: 'apply Library Doctor tag fixes', enabled: false },
   { id: 'device:sync', description: 'configure and run phone sync', enabled: false },
 ];
