@@ -14,6 +14,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.remember
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.CornerRadius
 import androidx.compose.ui.geometry.Offset
@@ -44,12 +45,17 @@ internal data class ArtistPhotoProgress(
 private const val SUCCESS_DISMISS_DELAY_MS = 4_000L
 private const val FAILURE_DISMISS_DELAY_MS = 10_000L
 
+private class ArtistPhotoProgressHolder(var value: ArtistPhotoProgress? = null)
+
 @Composable
 internal fun ArtistPhotoEdgeProgress(
     progress: ArtistPhotoProgress?,
     dismiss: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
+    val lastProgress = remember { ArtistPhotoProgressHolder() }
+    if (progress != null) lastProgress.value = progress
+    val shownProgress = progress ?: lastProgress.value
     LaunchedEffect(progress?.runId, progress?.phase, progress?.failed) {
         if (progress?.phase == ArtistPhotoProgressPhase.COMPLETE) {
             delay(
@@ -64,7 +70,7 @@ internal fun ArtistPhotoEdgeProgress(
         enter = fadeIn(tween(DELETION_LINE_FADE_MS)),
         exit = fadeOut(tween(DELETION_LINE_FADE_MS)),
     ) {
-        progress?.let { ArtistPhotoTrack(it) }
+        shownProgress?.let { ArtistPhotoTrack(it) }
     }
 }
 

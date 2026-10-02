@@ -92,7 +92,7 @@ One strand: every part touches `BrowseScreen.kt`. There is no disjoint file grou
 
 - `BrowseScreen` provides a `LibraryStatusTopInset` holder through a `CompositionLocal`, as a `MutableState<Dp>`.
 - `ArtistDetailHeader`, and the album detail header if one exists, report their measured height through `onSizeChanged` while composed, and reset it to 0 in `DisposableEffect.onDispose`.
-- The slot's top padding is `8.dp + inset`. Apply the inset only while the pager's settled current page is the page that hosts the detail, so a detail kept alive off-screen does not push the pill on another tab.
+- The slot's top padding is `8.dp + inset`. Apply the inset only while the pager's target page is the page that hosts the detail, so a detail kept alive off-screen does not push the pill on another tab.
 - The edge progress bar is NOT offset. It stays on the pager's top edge.
 
 ### File size
@@ -141,3 +141,8 @@ Rewrite the FB-9 Android paragraph in `docs/ux-rules.md`, which #1036 added. The
 ## Parallelität
 
 This plan cannot be cut. Parts A, B and C all edit `BrowseScreen.kt` and the pager `Box`, and S2, S3 and S5 need the whole thing. It runs as one strand, and there are no post-merge cross-checks.
+
+## Deviations
+
+- New user-visible labels remain Kotlin literals to match the established Android codebase practice; this change does not introduce string resources for these labels alone.
+- The detail inset follows the pager's target page, rather than its settled page, so the status pill clears the outgoing detail header during a committed swipe instead of jumping after settlement.

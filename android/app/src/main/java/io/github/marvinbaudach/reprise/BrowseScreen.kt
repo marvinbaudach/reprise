@@ -25,7 +25,6 @@ import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.viewmodel.compose.viewModel
@@ -88,12 +87,10 @@ internal fun BrowseScreen(
     themeSelection: MobileThemeSelection,
     selectTheme: (MobileTheme) -> Unit,
     setVolumeKeySkipGestureEnabled: (Boolean) -> PlaybackSettingsUiState = { loadPlaybackSettings() },
-    stopArtistPhotoDownload: (() -> Unit)? = null,
 ) {
     val trackAnalysis = LocalTrackAnalysis.current
     val playbackControls = LocalPlaybackControls.current
     val trackArtwork = LocalTrackArtwork.current
-    val context = LocalContext.current
     val compositionScope = rememberCoroutineScope()
     val libraryQueryScope = remember(state) {
         CoroutineScope(
@@ -598,11 +595,6 @@ internal fun BrowseScreen(
                         rescan = rescan,
                         openSettings = ::openSettings,
                         surfaceState = surfaceState,
-                        stopArtworkDownload = {
-                            stopArtistPhotoDownload?.invoke()
-                                ?: context.sharedMusicLibrary().cancelArtistPortraitBackfill()
-                            surfaceState.dismissArtistPhotoProgress()
-                        },
                     )
                     CompositionLocalProvider(LocalLibraryStatusTopInset provides statusTopInset) {
                     Box(modifier = Modifier.weight(1f)) {
@@ -719,11 +711,6 @@ internal fun BrowseScreen(
                                 }
                             }
                         }
-                        val detailInset = statusTopInset.value.takeIf {
-                            pagerState.settledPage == BrowseTab.ARTISTS.ordinal &&
-                                (selectedArtist != null || selectedAlbum != null ||
-                                    pendingArtist != null || pendingAlbum != null)
-                        } ?: 0.dp
                         LibraryStatusChrome(
                             browseError = browseError,
                             browseErrorOrigin = browseErrorOrigin,
@@ -735,7 +722,14 @@ internal fun BrowseScreen(
                             surfaceState = surfaceState,
                             playback = playback,
                             nowPlayingSheetState = nowPlayingSheetState,
-                            statusTopPadding = 8.dp + detailInset,
+                            statusTopInset = statusTopInset,
+                            detailPageIsTarget = {
+                                libraryStatusDetailInsetApplies(
+                                    targetPage = BrowseTab.entries[pagerState.targetPage],
+                                    detailIsOpen = selectedArtist != null || selectedAlbum != null ||
+                                        pendingArtist != null || pendingAlbum != null,
+                                )
+                            },
                         )
                     }
                     }

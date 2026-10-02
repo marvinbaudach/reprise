@@ -57,6 +57,7 @@ class LibraryStatusChromeTest {
             viewModel.acceptArtistPhotoProgress(progress(ArtistPhotoProgressPhase.COMPLETE, done = 6))
         }
         compose.onNodeWithText("6 artists").assertIsDisplayed()
+        compose.onNodeWithTag("artist-photo-progress-track").assertExists()
         assertListTops(pagerTop, firstRowTop)
 
         compose.mainClock.advanceTimeBy(4_001)
@@ -64,7 +65,33 @@ class LibraryStatusChromeTest {
         compose.mainClock.advanceTimeBy(DELETION_LINE_FADE_MS.toLong() + 1)
         compose.waitForIdle()
         compose.onNodeWithTag("artist-photo-progress-track").assertDoesNotExist()
+        compose.onNodeWithText("6 artists", substring = false).assertIsDisplayed()
+        compose.onNodeWithText("6 artists · Artwork 6/6").assertDoesNotExist()
         assertListTops(pagerTop, firstRowTop)
+    }
+
+    @Test
+    fun failedArtworkSummaryStaysForTenSeconds() {
+        val viewModel = MobileSurfaceViewModel()
+        showArtists(viewModel)
+        compose.runOnIdle { viewModel.openSearch() }
+        compose.mainClock.autoAdvance = false
+        compose.runOnIdle {
+            viewModel.acceptArtistPhotoProgress(
+                progress(ArtistPhotoProgressPhase.COMPLETE, done = 4, failed = 2),
+            )
+        }
+        compose.mainClock.advanceTimeByFrame()
+
+        compose.onNodeWithText("6 artists · 2 without a photo").assertIsDisplayed()
+        compose.mainClock.advanceTimeBy(4_001)
+        compose.waitForIdle()
+        compose.onNodeWithText("6 artists · 2 without a photo").assertIsDisplayed()
+
+        compose.mainClock.advanceTimeBy(6_000)
+        compose.waitForIdle()
+        compose.onNodeWithText("6 artists · 2 without a photo").assertDoesNotExist()
+        compose.onNodeWithText("6 artists", substring = false).assertIsDisplayed()
     }
 
     @Test
@@ -115,43 +142,108 @@ class LibraryStatusChromeTest {
         val viewModel = MobileSurfaceViewModel()
         showArtists(viewModel)
         compose.onNodeWithText(FIRST_ARTIST).performClick()
-        compose.onNodeWithTag("artist-detail-header").assertIsDisplayed()
+        compose.onNodeWithTag("artist-detail-overflow").assertIsDisplayed()
         compose.runOnIdle { viewModel.begin("Deleting 13 tracks…") }
         val headerBottom = bottomInPixels("artist-detail-header")
 
         val detailPillTop = topInPixels("deletion-message-line")
-        org.junit.Assert.assertTrue(detailPillTop >= headerBottom)
+        assertEquals(headerBottom + 8f.toPixels(), detailPillTop)
 
-        compose.runOnIdle { viewModel.selectTab(BrowseTab.TITLES) }
-        compose.waitForIdle()
-        val pagerTop = topInPixels("library-destination-pager")
-        assertEquals(pagerTop + 8f.toPixels(), topInPixels("deletion-message-line"))
+        assertEquals(
+            true,
+            libraryStatusDetailInsetApplies(BrowseTab.ARTISTS, detailIsOpen = true),
+        )
+        assertEquals(
+            false,
+            libraryStatusDetailInsetApplies(BrowseTab.TITLES, detailIsOpen = true),
+        )
     }
 
     @Test
-    fun artworkStopActionExistsOnlyWhileRunningAndHidesItsChrome() {
+    fun onAnAlbumDetailPageTheStatusSitsBelowTheHeader() {
+        val viewModel = MobileSurfaceViewModel()
+        showArtists(viewModel)
+        compose.onNodeWithText(FIRST_ARTIST).performClick()
+        compose.onNodeWithTag("artist-detail-overflow").assertIsDisplayed()
+        compose.onNodeWithText(FIRST_ALBUM).performClick()
+        compose.onNodeWithText("No tracks in this album.").assertIsDisplayed()
+        compose.runOnIdle { viewModel.begin("Deleting 2 tracks…") }
+
+        assertEquals(
+            bottomInPixels("album-detail-header") + 8f.toPixels(),
+            topInPixels("deletion-message-line"),
+        )
+    }
+
+    @Test
+    fun deletionMessageKeepsItsDismissTimerWhileAnErrorHidesIt() {
+        val viewModel = MobileSurfaceViewModel()
+        val harness = showArtists(viewModel)
+        compose.runOnIdle { viewModel.say("2 tracks deleted") }
+        compose.waitForIdle()
+        compose.onNodeWithText("2 tracks deleted").assertIsDisplayed()
+        compose.runOnIdle {
+            harness.browse.value = harness.browse.value.copy(message = "Browse failed")
+        }
+        compose.waitForIdle()
+        compose.onNodeWithText("2 tracks deleted").assertDoesNotExist()
+
+        compose.mainClock.autoAdvance = false
+        compose.mainClock.advanceTimeBy(3_000)
+        compose.onNodeWithContentDescription("Dismiss").performClick()
+        compose.runOnIdle {}
+        compose.onNodeWithText("2 tracks deleted", useUnmergedTree = true).assertExists()
+        compose.mainClock.advanceTimeBy(1_001L + DELETION_LINE_FADE_MS)
+        compose.waitForIdle()
+
+        compose.onNodeWithText("2 tracks deleted").assertDoesNotExist()
+    }
+
+    @Test
+    fun artworkStopActionMatchesTheCancelablePhasesAndHidesItsChrome() {
         val viewModel = MobileSurfaceViewModel()
         val stops = AtomicInteger()
-        showArtists(viewModel, stopArtworkDownload = { stops.incrementAndGet() })
+        showArtists(viewModel)
+
         compose.onNodeWithContentDescription("Library actions").performClick()
+        compose.onNodeWithText("Rescan").assertIsDisplayed()
         compose.onNodeWithText("Stop artwork download").assertDoesNotExist()
-        compose.runOnIdle { compose.activity.onBackPressedDispatcher.onBackPressed() }
+        compose.onNodeWithText("Rescan").performClick()
+
+        compose.runOnIdle {
+            viewModel.bindArtistPhotoBackfill(
+                snapshot = { progress(ArtistPhotoProgressPhase.PREPARING) },
+                start = {},
+                cancel = { stops.incrementAndGet() },
+            )
+        }
+        assertStopEntryAndCloseMenu()
+
+        compose.runOnIdle {
+            viewModel.acceptArtistPhotoProgress(progress(ArtistPhotoProgressPhase.PAUSED, done = 2))
+        }
+        assertStopEntryAndCloseMenu()
+
         compose.runOnIdle {
             viewModel.acceptArtistPhotoProgress(progress(ArtistPhotoProgressPhase.RUNNING, done = 2))
         }
-
         compose.onNodeWithContentDescription("Library actions").performClick()
         compose.onNodeWithText("Stop artwork download").assertIsDisplayed().performClick()
-
         assertEquals(1, stops.get())
         compose.onNodeWithTag("artist-photo-progress-track").assertDoesNotExist()
         compose.onNodeWithText("6 artists").assertIsDisplayed()
+
+        compose.runOnIdle {
+            viewModel.acceptArtistPhotoProgress(progress(ArtistPhotoProgressPhase.COMPLETE, done = 6))
+        }
+        compose.onNodeWithContentDescription("Library actions").performClick()
+        compose.onNodeWithText("Rescan").assertIsDisplayed()
+        compose.onNodeWithText("Stop artwork download").assertDoesNotExist()
     }
 
     private fun showArtists(
         viewModel: MobileSurfaceViewModel,
         openedArtists: AtomicInteger = AtomicInteger(),
-        stopArtworkDownload: (() -> Unit)? = null,
     ): Harness {
         viewModel.selectTab(BrowseTab.ARTISTS)
         val artists = (1..6).map { index ->
@@ -187,9 +279,12 @@ class LibraryStatusChromeTest {
                     listArtists = { artistWindow },
                     openArtist = {
                         openedArtists.incrementAndGet()
-                        ArtistTrackList(artist = it)
+                        ArtistTrackList(
+                            artist = it,
+                            albums = LibraryWindow(1, listOf(album), false),
+                        )
                     },
-                    openAlbum = { error("Album navigation is outside this test") },
+                    openAlbum = { AlbumTrackList(it, LibraryWindow.empty()) },
                     listAlbumTracks = { _, _ -> LibraryWindow.empty() },
                     loadTrack = { _, deliver -> deliver(null) },
                     playTracks = { _, _ -> },
@@ -203,7 +298,6 @@ class LibraryStatusChromeTest {
                     setGaplessEnabled = { PlaybackSettingsUiState(false, it, emptyList()) },
                     themeSelection = theme,
                     selectTheme = {},
-                    stopArtistPhotoDownload = stopArtworkDownload,
                 )
             }
         }
@@ -214,6 +308,13 @@ class LibraryStatusChromeTest {
     private fun assertListTops(pagerTop: Int, firstRowTop: Int) {
         assertEquals(pagerTop, topInPixels("library-destination-pager"))
         assertEquals(firstRowTop, textTopInPixels(FIRST_ARTIST))
+    }
+
+    private fun assertStopEntryAndCloseMenu() {
+        compose.onNodeWithContentDescription("Library actions").performClick()
+        compose.onNodeWithText("Rescan").assertIsDisplayed()
+        compose.onNodeWithText("Stop artwork download").assertIsDisplayed()
+        compose.onNodeWithText("Rescan").performClick()
     }
 
     private fun topInPixels(tag: String): Int = compose.onNodeWithTag(tag)
@@ -231,7 +332,17 @@ class LibraryStatusChromeTest {
     private fun progress(
         phase: ArtistPhotoProgressPhase,
         done: Long = 0,
-    ) = ArtistPhotoProgress(17, phase, done, 0, 6)
+        failed: Long = 0,
+    ) = ArtistPhotoProgress(17, phase, done, failed, 6)
+
+    private val album = LibraryAlbum(
+        title = FIRST_ALBUM,
+        artist = FIRST_ARTIST,
+        representativeUri = "content://albums/first",
+        trackCount = 2,
+        year = 2026,
+        totalDurationMs = 0,
+    )
 
     private val theme = MobileThemeSelection(
         palette = MobileTheme.NOCTURNE,
@@ -241,6 +352,7 @@ class LibraryStatusChromeTest {
 
     private companion object {
         const val FIRST_ARTIST = "Artist 1"
+        const val FIRST_ALBUM = "First album"
     }
 
     private data class Harness(
