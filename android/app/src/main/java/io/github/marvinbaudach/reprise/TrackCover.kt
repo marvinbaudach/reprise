@@ -74,6 +74,9 @@ internal class TrackArtwork(
     var albumCoverRevision by mutableStateOf(0L)
         private set
 
+    var networkReturnRevision by mutableStateOf(0L)
+        private set
+
     /**
      * Resolves `request` and delivers the image on the main thread — but only
      * while `gate` still admits it. The gate is checked before the work as
@@ -212,6 +215,10 @@ internal class TrackArtwork(
         forgetAlbumArtworkMisses()
         cache.invalidateAlbumArtwork()
         albumCoverRevision += 1
+    }
+
+    internal fun networkReturned() {
+        networkReturnRevision += 1
     }
 
     private fun resolveVisual(request: ArtworkRequest): ArtworkVisual {
@@ -357,6 +364,7 @@ internal fun rememberTrackArtworkVisual(
     val artwork = LocalTrackArtwork.current
     val gate = remember { ArtworkRequestGate() }
     val albumRevisionGate = remember { ArtworkRequestGate() }
+    val networkRevisionGate = remember { ArtworkRequestGate() }
     val request = remember(trackUri, artworkSize, title, artist, allowFetch) {
         ArtworkRequest(trackUri, artworkSize, title, artist, allowFetch = allowFetch)
     }
@@ -365,6 +373,8 @@ internal fun rememberTrackArtworkVisual(
     }
     val albumCoverRevision = artwork?.albumCoverRevision ?: 0L
     val enteredAtAlbumRevision = remember(request, artwork) { albumCoverRevision }
+    val networkReturnRevision = artwork?.networkReturnRevision ?: 0L
+    val enteredAtNetworkRevision = remember(request, artwork) { networkReturnRevision }
     DisposableEffect(request, artwork) {
         val admitted = gate.begin(trackUri, artworkSize, title, artist, allowFetch = allowFetch)
         artwork?.loadVisual(admitted, gate) { loaded -> visual = loaded }
@@ -390,6 +400,36 @@ internal fun rememberTrackArtworkVisual(
         }
         onDispose {
             if (admitted != null) albumRevisionGate.invalidate(admitted)
+        }
+    }
+    DisposableEffect(request, artwork, networkReturnRevision) {
+        val admitted = if (
+            artwork != null &&
+            allowFetch &&
+            networkReturnRevision != enteredAtNetworkRevision &&
+            visual?.generated == true
+        ) {
+            networkRevisionGate.begin(
+                trackUri,
+                artworkSize,
+                title,
+                artist,
+                allowFetch = true,
+            ).also { retryRequest ->
+                artwork.loadVisual(retryRequest, networkRevisionGate) { loaded ->
+                    val outcome = if (loaded?.generated == false) "hit" else "empty"
+                    Log.i(
+                        COVER_RETRY_TAG,
+                        "Network-return cover fetch ${trackUri.shortenedForLog()}: $outcome",
+                    )
+                    visual = loaded
+                }
+            }
+        } else {
+            null
+        }
+        onDispose {
+            if (admitted != null) networkRevisionGate.invalidate(admitted)
         }
     }
     return visual
@@ -431,6 +471,8 @@ private fun artworkFullSizeLane(): CoroutineDispatcher = Dispatchers.IO.limitedP
  */
 private fun ArtworkRequest.refreshesArtistPortrait(): Boolean =
     kind == ArtworkKind.ARTIST && allowFetch
+
+private fun String.shortenedForLog(): String = takeLast(48)
 
 private fun AndroidArtworkSize.fallbackSizePx(): Int = when (this) {
     AndroidArtworkSize.LIST -> 168

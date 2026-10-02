@@ -1,5 +1,7 @@
 package io.github.marvinbaudach.reprise
 
+import android.content.Context
+import android.net.ConnectivityManager
 import android.os.Handler
 import android.os.Looper
 import androidx.compose.material3.windowsizeclass.WindowHeightSizeClass
@@ -129,6 +131,7 @@ internal class MobileSurfaceViewModel(
     },
 ) : ViewModel(), DeletionMessages {
     val networkReturnDetector = NetworkReturnDetector()
+    private var networkReturnMonitor: NetworkReturnMonitor? = null
 
     var selectedTab by mutableStateOf(BrowseTab.TITLES)
         private set
@@ -283,6 +286,22 @@ internal class MobileSurfaceViewModel(
 
     fun bindAlbumCoverRefresh(refresh: () -> Unit) {
         refreshAlbumCovers = refresh
+    }
+
+    fun startNetworkReturnMonitor(context: Context, onNetworkReturned: () -> Unit) {
+        stopNetworkReturnMonitor()
+        val connectivity = context.applicationContext
+            .getSystemService(ConnectivityManager::class.java)
+        networkReturnMonitor = NetworkReturnMonitor(
+            connectivity = connectivity,
+            detector = networkReturnDetector,
+            onNetworkReturned = onNetworkReturned,
+        ).also(NetworkReturnMonitor::start)
+    }
+
+    fun stopNetworkReturnMonitor() {
+        networkReturnMonitor?.stop()
+        networkReturnMonitor = null
     }
 
     fun startArtistPhotoBackfill() {
@@ -563,6 +582,7 @@ internal class MobileSurfaceViewModel(
     }
 
     override fun onCleared() {
+        stopNetworkReturnMonitor()
         albumCoverScheduleGeneration++
         refreshAlbumCovers = {}
         refreshArtistPortraits = {}

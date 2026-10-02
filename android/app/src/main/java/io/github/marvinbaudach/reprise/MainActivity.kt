@@ -435,6 +435,7 @@ class MainActivity : ComponentActivity() {
 
     override fun onStart() {
         super.onStart()
+        if (usesProductionSurface) surfaceState.startNetworkReturnMonitor(this, artwork::networkReturned)
         playbackBindWatchdog?.cancel()
         val intent = Intent(this, ReprisePlaybackService::class.java).apply {
             action = ReprisePlaybackService.LOCAL_BIND_ACTION
@@ -478,6 +479,7 @@ class MainActivity : ComponentActivity() {
     }
 
     override fun onStop() {
+        surfaceState.stopNetworkReturnMonitor()
         playbackState.value = playbackState.value.copy(faultNotice = null)
         playbackBindWatchdog?.cancel()
         playbackBindWatchdog = null

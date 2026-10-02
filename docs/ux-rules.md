@@ -3188,6 +3188,14 @@ property is set and yet nothing happens.
   downloaded. Reaching a surface is a local read and never starts a download
   of its own. A surface that already shows a real cover keeps it unchanged and
   is not read again.
+- **NET-7b** [active] [android] — When the phone's default network returns,
+  validated, after being offline, every visible surface that may download a
+  cover and still shows a generated one asks again. A cover found that way
+  reaches the other surfaces by NET-7a. A return that happened while the app
+  was in the background counts when the app comes back to the foreground. A
+  switch between two online networks is not a return. A surface that already
+  shows a real cover is not asked again. There is no timer, no polling, and no
+  restart of the background pass.
 - **NET-3** [active] [core] [gtk] — Offline is a state, not an error: no network-backed
   place in the app may treat a missing network connection like an error
   message. The contract covers seven states every network-backed view (feed,
