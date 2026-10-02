@@ -6981,6 +6981,12 @@ listening statistics.
 - **POD-27** [active] [core] — Feed text never keeps an HTML entity: titles,
   authors and descriptions are decoded once at parse time, CDATA included, and
   a refresh repairs a stored title.
+- **POD-28** [active] [gtk] — A podcast or YouTube refresh never waits behind an episode
+  download. The Download button's jobs and the background fill-up (`POD-5`) run on their own
+  worker lane; refreshes, load-more and new-subscription syncs run on the other, so they
+  start while a download job is still running. Covered by
+  `pod_28_a_refresh_completes_while_a_fill_up_is_still_downloading` and
+  `pod_28_downloads_and_feed_work_take_separate_lanes`.
 
 ## AG. Runtime service (headless control)
 
