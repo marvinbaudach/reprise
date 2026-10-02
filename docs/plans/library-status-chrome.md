@@ -2,7 +2,7 @@
 slug: library-status-chrome
 worktree: /home/marvin/Projects/reprise-library-status-chrome
 branch: feature/library-status-chrome
-phase: reviewed
+phase: refactored
 codex_session:
 created: 2026-10-02
 ---
