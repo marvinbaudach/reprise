@@ -23,8 +23,10 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.snapshotFlow
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.unit.dp
 import androidx.lifecycle.viewmodel.compose.viewModel
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
@@ -612,139 +614,134 @@ internal fun BrowseScreen(
                         rescan = rescan,
                         openSettings = ::openSettings,
                     )
-                    // Re-readable state, not timed acknowledgements; see TransientMessage.
-                    browseError
-                        ?.takeIf {
-                            browseErrorOrigin?.let(surface::errorOriginIsCurrent) != false
-                        }
-                        ?.let { BrowseErrorLine(it) }
-                    playback.error?.let { BrowseErrorLine(it) }
-                    // Screen-level on purpose: the row a deletion started from
-                    // is gone by the time it answers. See DeletionMessages.
-                    DeletionMessageLine(surfaceState)
-                    if (
-                        !surfaceState.dockMode &&
-                        !nowPlayingSheetState.currentState &&
-                        !nowPlayingSheetState.targetState
-                    ) {
-                        playback.faultNotice?.let { BrowseErrorLine(it.text) }
-                    }
-                    ArtistPhotoProgressBar(
-                        progress = surfaceState.visibleArtistPhotoProgress,
-                        dismiss = surfaceState::dismissArtistPhotoProgress,
+                    BrowseStatusLines(
+                        browseError = browseError,
+                        browseErrorOrigin = browseErrorOrigin,
+                        surface = surface,
+                        surfaceState = surfaceState,
+                        playback = playback,
+                        nowPlayingSheetState = nowPlayingSheetState,
                     )
-                    HorizontalPager(
-                        state = pagerState,
-                        modifier = Modifier
-                            .weight(1f)
-                            .testTag("library-destination-pager"),
-                        key = { page -> BrowseTab.entries[page] },
-                    ) { page ->
-                        val tab = BrowseTab.entries[page]
-                        Box(
+                    Box(modifier = Modifier.weight(1f)) {
+                        HorizontalPager(
+                            state = pagerState,
                             modifier = Modifier
                                 .fillMaxSize()
-                                .testTag("library-page-${tab.name}"),
-                        ) {
-                            when (tab) {
-                                BrowseTab.TITLES -> TitlesTab(
-                                    surfaceLayout = surfaceLayout,
-                                    surfaceState = surfaceState,
-                                    tracks = visibleTitles,
-                                    searchText = searchText,
-                                    playback = playback,
-                                    lastRequestedOffset = titlesRequestedOffset,
-                                    play = { index ->
-                                        play(PlaybackSelection(visibleTitles.rows, index))
-                                    },
-                                    loadMore = paging::loadMoreTitles,
-                                )
-                                BrowseTab.ARTISTS -> ArtistsTab(
-                                    surfaceLayout = surfaceLayout,
-                                    surfaceState = surfaceState,
-                                    artists = visibleArtists,
-                                    searchText = searchText,
-                                    selectedArtist = selectedArtist,
-                                    selectedAlbum = selectedAlbum,
-                                    pendingAlbum = pendingAlbum,
-                                    pendingArtist = pendingArtist,
-                                    playback = playback,
-                                    openArtist = { artist ->
-                                        val request = ++readJobs.latestArtistOpen
-                                        pendingArtist = artist
-                                        libraryQueryScope.launch {
-                                            runCatching { openArtist(artist) }
-                                                .onSuccess { detail ->
-                                                    if (
-                                                        request != readJobs.latestArtistOpen ||
-                                                        !surface.artistOpenIsCurrent(artist)
-                                                    ) return@onSuccess
-                                                    pendingArtist = null
-                                                    selectedArtist = detail
-                                                    artistRequestedOffset = null
-                                                    artistAlbumsRequestedOffset = null
-                                                    surface.clearBrowseError(
-                                                        BrowseErrorOrigin.Tab(BrowseTab.ARTISTS),
-                                                    )
-                                                    surfaceState.closeSearch()
-                                                    if (searchText.isNotEmpty()) {
-                                                        surfaceState.updateSearch("")
-                                                        loadedTabs = emptySet()
-                                                    }
-                                                }
-                                                .onFailure { error ->
-                                                    if (error is CancellationException) throw error
-                                                    if (
-                                                        request == readJobs.latestArtistOpen &&
-                                                        surface.artistOpenIsCurrent(artist)
-                                                    ) {
+                                .testTag("library-destination-pager"),
+                            key = { page -> BrowseTab.entries[page] },
+                        ) { page ->
+                            val tab = BrowseTab.entries[page]
+                            Box(
+                                modifier = Modifier
+                                    .fillMaxSize()
+                                    .testTag("library-page-${tab.name}"),
+                            ) {
+                                when (tab) {
+                                    BrowseTab.TITLES -> TitlesTab(
+                                        surfaceLayout = surfaceLayout,
+                                        surfaceState = surfaceState,
+                                        tracks = visibleTitles,
+                                        searchText = searchText,
+                                        playback = playback,
+                                        lastRequestedOffset = titlesRequestedOffset,
+                                        play = { index ->
+                                            play(PlaybackSelection(visibleTitles.rows, index))
+                                        },
+                                        loadMore = paging::loadMoreTitles,
+                                    )
+                                    BrowseTab.ARTISTS -> ArtistsTab(
+                                        surfaceLayout = surfaceLayout,
+                                        surfaceState = surfaceState,
+                                        artists = visibleArtists,
+                                        searchText = searchText,
+                                        selectedArtist = selectedArtist,
+                                        selectedAlbum = selectedAlbum,
+                                        pendingAlbum = pendingAlbum,
+                                        pendingArtist = pendingArtist,
+                                        playback = playback,
+                                        openArtist = { artist ->
+                                            val request = ++readJobs.latestArtistOpen
+                                            pendingArtist = artist
+                                            libraryQueryScope.launch {
+                                                runCatching { openArtist(artist) }
+                                                    .onSuccess { detail ->
+                                                        if (
+                                                            request != readJobs.latestArtistOpen ||
+                                                            !surface.artistOpenIsCurrent(artist)
+                                                        ) return@onSuccess
                                                         pendingArtist = null
-                                                        surface.setBrowseError(
-                                                            error.browseDetail("open the artist"),
+                                                        selectedArtist = detail
+                                                        artistRequestedOffset = null
+                                                        artistAlbumsRequestedOffset = null
+                                                        surface.clearBrowseError(
                                                             BrowseErrorOrigin.Tab(BrowseTab.ARTISTS),
                                                         )
+                                                        surfaceState.closeSearch()
+                                                        if (searchText.isNotEmpty()) {
+                                                            surfaceState.updateSearch("")
+                                                            loadedTabs = emptySet()
+                                                        }
                                                     }
-                                                }
-                                        }
-                                    },
-                                    openAlbum = ::openAlbumDetail,
-                                    closeArtist = {
-                                        readJobs.latestAlbumOpen++
-                                        readJobs.latestArtistOpen++
-                                        pendingAlbum = null
-                                        pendingArtist = null
-                                        selectedAlbum = null
-                                        selectedArtist = null
-                                    },
-                                    closeAlbum = {
-                                        readJobs.latestAlbumOpen++
-                                        pendingAlbum = null
-                                        selectedAlbum = null
-                                    },
-                                    play = { index ->
-                                        selectedArtist?.let {
-                                            play(PlaybackSelection(it.untaggedTracks.rows, index))
-                                        }
-                                    },
-                                    playAlbum = { index ->
-                                        selectedAlbum?.let { play(it.playbackSelection(index)) }
-                                    },
-                                    lastRequestedOffset = artistsRequestedOffset,
-                                    artistRequestedOffset = artistRequestedOffset,
-                                    artistAlbumsRequestedOffset = artistAlbumsRequestedOffset,
-                                    albumRequestedOffset = albumRequestedOffset,
-                                    loadMoreArtists = paging::loadMoreArtists,
-                                    loadMoreArtistTracks = paging::loadMoreArtistTracks,
-                                    loadMoreArtistAlbums = paging::loadMoreArtistAlbums,
-                                    loadMoreAlbumTracks = paging::loadMoreAlbumTracks,
-                                )
-                                BrowseTab.QUEUE -> NowPlayingQueuePage(
-                                    playback = playback,
-                                    surfaceState = surfaceState,
-                                    surfaceLayout = surfaceLayout,
-                                )
+                                                    .onFailure { error ->
+                                                        if (error is CancellationException) throw error
+                                                        if (
+                                                            request == readJobs.latestArtistOpen &&
+                                                            surface.artistOpenIsCurrent(artist)
+                                                        ) {
+                                                            pendingArtist = null
+                                                            surface.setBrowseError(
+                                                                error.browseDetail("open the artist"),
+                                                                BrowseErrorOrigin.Tab(BrowseTab.ARTISTS),
+                                                            )
+                                                        }
+                                                    }
+                                            }
+                                        },
+                                        openAlbum = ::openAlbumDetail,
+                                        closeArtist = {
+                                            readJobs.latestAlbumOpen++
+                                            readJobs.latestArtistOpen++
+                                            pendingAlbum = null
+                                            pendingArtist = null
+                                            selectedAlbum = null
+                                            selectedArtist = null
+                                        },
+                                        closeAlbum = {
+                                            readJobs.latestAlbumOpen++
+                                            pendingAlbum = null
+                                            selectedAlbum = null
+                                        },
+                                        play = { index ->
+                                            selectedArtist?.let {
+                                                play(PlaybackSelection(it.untaggedTracks.rows, index))
+                                            }
+                                        },
+                                        playAlbum = { index ->
+                                            selectedAlbum?.let { play(it.playbackSelection(index)) }
+                                        },
+                                        lastRequestedOffset = artistsRequestedOffset,
+                                        artistRequestedOffset = artistRequestedOffset,
+                                        artistAlbumsRequestedOffset = artistAlbumsRequestedOffset,
+                                        albumRequestedOffset = albumRequestedOffset,
+                                        loadMoreArtists = paging::loadMoreArtists,
+                                        loadMoreArtistTracks = paging::loadMoreArtistTracks,
+                                        loadMoreArtistAlbums = paging::loadMoreArtistAlbums,
+                                        loadMoreAlbumTracks = paging::loadMoreAlbumTracks,
+                                    )
+                                    BrowseTab.QUEUE -> NowPlayingQueuePage(
+                                        playback = playback,
+                                        surfaceState = surfaceState,
+                                        surfaceLayout = surfaceLayout,
+                                    )
+                                }
                             }
                         }
+                        // Screen-level on purpose: the row a deletion started from
+                        // is gone by the time it answers. See DeletionMessages.
+                        DeletionMessageLine(
+                            surface = surfaceState,
+                            modifier = Modifier.align(Alignment.TopCenter).padding(top = 8.dp),
+                        )
                     }
                 }
             }

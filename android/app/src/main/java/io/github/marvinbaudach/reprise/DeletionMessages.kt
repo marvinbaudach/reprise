@@ -1,8 +1,16 @@
 package io.github.marvinbaudach.reprise
 
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.core.tween
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.foundation.background
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.widthIn
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -12,7 +20,12 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.staticCompositionLocalOf
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.semantics.LiveRegionMode
+import androidx.compose.ui.semantics.liveRegion
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import kotlinx.coroutines.delay
@@ -38,6 +51,10 @@ internal const val TRACK_ID_QUERY_LIMIT = 10_000
 internal const val DELETION_STILL_RUNNING_MS = 30_000L
 
 internal const val DELETION_STILL_RUNNING_TEXT = "Still deleting…"
+
+internal const val DELETION_LINE_FADE_MS = 150
+
+private val DELETION_LINE_MAX_WIDTH = 480.dp
 
 /** One deletion that has started and not yet answered. */
 internal fun interface DeletionRun {
@@ -83,6 +100,13 @@ internal fun TrackContextMenuAnchorState.asDeletionMessages(): DeletionMessages 
 /** The running deletion whose line is showing: the latest one started. */
 internal data class DeletionProgress(val run: Long, val text: String)
 
+private data class DeletionLineContent(
+    val progress: DeletionProgress?,
+    val message: TransientMessage?,
+)
+
+private class DeletionLineContentHolder(var value: DeletionLineContent? = null)
+
 /**
  * The screen's line for [MobileSurfaceViewModel.deletionProgress] and
  * [MobileSurfaceViewModel.deletionMessage].
@@ -93,28 +117,59 @@ internal data class DeletionProgress(val run: Long, val text: String)
  * It is bounded all the same, by [DELETION_STILL_RUNNING_MS].
  */
 @Composable
-internal fun DeletionMessageLine(surface: MobileSurfaceViewModel) {
+internal fun DeletionMessageLine(
+    surface: MobileSurfaceViewModel,
+    modifier: Modifier = Modifier,
+) {
     val progress = surface.deletionProgress
     val message = surface.deletionMessage
-    if (progress == null && message == null) {
-        return
+    val current = if (progress == null && message == null) {
+        null
+    } else {
+        DeletionLineContent(progress, message)
     }
-    Column(modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 4.dp)) {
-        if (progress != null) {
-            var stale by remember(progress.run) { mutableStateOf(false) }
-            LaunchedEffect(progress.run) {
-                delay(DELETION_STILL_RUNNING_MS)
-                stale = true
+    val lastContent = remember { DeletionLineContentHolder() }
+    if (current != null) lastContent.value = current
+    val content = current ?: lastContent.value
+
+    AnimatedVisibility(
+        visible = current != null,
+        modifier = modifier.fillMaxWidth().padding(horizontal = 16.dp),
+        enter = fadeIn(tween(DELETION_LINE_FADE_MS)),
+        exit = fadeOut(tween(DELETION_LINE_FADE_MS)),
+    ) {
+        Box(modifier = Modifier.fillMaxWidth(), contentAlignment = Alignment.TopCenter) {
+            Column(
+                horizontalAlignment = Alignment.CenterHorizontally,
+                modifier = Modifier
+                    .widthIn(max = DELETION_LINE_MAX_WIDTH)
+                    .background(
+                        color = MaterialTheme.colorScheme.surfaceContainerHigh.copy(alpha = 0.94f),
+                        shape = RoundedCornerShape(percent = 50),
+                    )
+                    .semantics(mergeDescendants = true) {
+                        liveRegion = LiveRegionMode.Polite
+                    }
+                    .testTag("deletion-message-line")
+                    .padding(horizontal = 16.dp, vertical = 6.dp),
+            ) {
+                val shownProgress = content?.progress
+                if (shownProgress != null) {
+                    var stale by remember(shownProgress.run) { mutableStateOf(false) }
+                    LaunchedEffect(shownProgress.run) {
+                        delay(DELETION_STILL_RUNNING_MS)
+                        stale = true
+                    }
+                    Text(
+                        text = if (stale) DELETION_STILL_RUNNING_TEXT else shownProgress.text,
+                        color = MaterialTheme.colorScheme.onSurface,
+                        style = MaterialTheme.typography.bodyMedium,
+                        textAlign = TextAlign.Center,
+                    )
+                }
+                TransientMessageText(content?.message, surface::dismissDeletionMessage)
             }
-            Text(
-                text = if (stale) DELETION_STILL_RUNNING_TEXT else progress.text,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                style = MaterialTheme.typography.bodyMedium,
-                textAlign = TextAlign.Center,
-                modifier = Modifier.fillMaxWidth(),
-            )
         }
-        TransientMessageText(message, surface::dismissDeletionMessage)
     }
 }
 
