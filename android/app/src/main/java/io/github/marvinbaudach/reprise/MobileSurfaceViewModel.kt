@@ -1,5 +1,7 @@
 package io.github.marvinbaudach.reprise
 
+import android.os.Handler
+import android.os.Looper
 import androidx.compose.material3.windowsizeclass.WindowHeightSizeClass
 import androidx.compose.material3.windowsizeclass.WindowSizeClass
 import androidx.compose.material3.windowsizeclass.WindowWidthSizeClass
@@ -12,6 +14,7 @@ import uniffi.reprise_android_ffi.MusicLibrary
 
 private const val ANALYSIS_PREFETCH_OFFSET = -3L
 private const val ANALYSIS_PREFETCH_LIMIT = 5L
+private const val ALBUM_COVER_REFRESH_WINDOW_MS = 2_000L
 
 /** The two surface arrangements M9a supports; neither is an orientation. */
 internal enum class SurfaceLayout {
@@ -119,7 +122,12 @@ private data class ArtistPhotoBackfillBinding(
  * playing track is deliberately absent: the playback session owns it and the
  * activity asks.
  */
-internal class MobileSurfaceViewModel : ViewModel(), DeletionMessages {
+internal class MobileSurfaceViewModel(
+    private val nowMillis: () -> Long = System::currentTimeMillis,
+    private val scheduleAfter: (Long, () -> Unit) -> Unit = { delayMs, work ->
+        Handler(Looper.getMainLooper()).postDelayed(work, delayMs)
+    },
+) : ViewModel(), DeletionMessages {
     var selectedTab by mutableStateOf(BrowseTab.TITLES)
         private set
     var searchVisible by mutableStateOf(false)
@@ -156,6 +164,12 @@ internal class MobileSurfaceViewModel : ViewModel(), DeletionMessages {
     private var refreshArtistPortraits: () -> Unit = {}
     private var refreshedArtistPortraitRunId = 0L
     private var refreshedArtistPortraitDone = 0L
+    private var refreshAlbumCovers: () -> Unit = {}
+    private var refreshedAlbumCoverRunId = 0L
+    private var observedAlbumCoverDone = 0L
+    private var refreshedAlbumCoverDone = 0L
+    private var albumCoverWindowStartedAtMs: Long? = null
+    private var albumCoverScheduleGeneration = 0L
     @Volatile
     private var artistPhotoBackfillBinding: ArtistPhotoBackfillBinding? = null
     val libraryScanMonitor = Any()
@@ -265,6 +279,10 @@ internal class MobileSurfaceViewModel : ViewModel(), DeletionMessages {
         refreshArtistPortraits = refresh
     }
 
+    fun bindAlbumCoverRefresh(refresh: () -> Unit) {
+        refreshAlbumCovers = refresh
+    }
+
     fun startArtistPhotoBackfill() {
         val binding = artistPhotoBackfillBinding ?: return
         binding.start { update ->
@@ -279,11 +297,52 @@ internal class MobileSurfaceViewModel : ViewModel(), DeletionMessages {
             refreshedArtistPortraitRunId = update.runId
             refreshedArtistPortraitDone = 0
         }
-        if (update.done > refreshedArtistPortraitDone) {
+        val portraitDone = update.done - update.coversDone
+        if (portraitDone > refreshedArtistPortraitDone) {
             refreshArtistPortraits()
-            refreshedArtistPortraitDone = update.done
+            refreshedArtistPortraitDone = portraitDone
         }
+        acceptAlbumCoverProgress(update)
         artistPhotoProgress = update
+    }
+
+    private fun acceptAlbumCoverProgress(update: ArtistPhotoProgress) {
+        if (update.runId != refreshedAlbumCoverRunId) {
+            refreshedAlbumCoverRunId = update.runId
+            observedAlbumCoverDone = 0
+            refreshedAlbumCoverDone = 0
+            albumCoverWindowStartedAtMs = null
+            albumCoverScheduleGeneration++
+        }
+        if (update.coversDone > observedAlbumCoverDone) {
+            observedAlbumCoverDone = update.coversDone
+            if (albumCoverWindowStartedAtMs == null) {
+                albumCoverWindowStartedAtMs = nowMillis()
+                val scheduledGeneration = ++albumCoverScheduleGeneration
+                scheduleAfter(ALBUM_COVER_REFRESH_WINDOW_MS) {
+                    if (scheduledGeneration == albumCoverScheduleGeneration) {
+                        flushAlbumCoverRefresh()
+                    }
+                }
+            }
+        }
+        if (observedAlbumCoverDone <= refreshedAlbumCoverDone) return
+
+        val complete = observedAlbumCoverDone > 0 && (
+            update.phase == ArtistPhotoProgressPhase.COMPLETE ||
+                (update.coversTotal > 0 && observedAlbumCoverDone >= update.coversTotal)
+        )
+        if (!complete) return
+
+        flushAlbumCoverRefresh()
+    }
+
+    private fun flushAlbumCoverRefresh() {
+        if (observedAlbumCoverDone <= refreshedAlbumCoverDone) return
+        refreshAlbumCovers()
+        refreshedAlbumCoverDone = observedAlbumCoverDone
+        albumCoverWindowStartedAtMs = null
+        albumCoverScheduleGeneration++
     }
 
     fun dismissArtistPhotoProgress() {
@@ -502,6 +561,9 @@ internal class MobileSurfaceViewModel : ViewModel(), DeletionMessages {
     }
 
     override fun onCleared() {
+        albumCoverScheduleGeneration++
+        refreshAlbumCovers = {}
+        refreshArtistPortraits = {}
         val backfill = artistPhotoBackfillBinding
         artistPhotoBackfillBinding = null
         backfill?.cancel?.invoke()

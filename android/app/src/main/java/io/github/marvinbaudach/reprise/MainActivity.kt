@@ -226,6 +226,7 @@ class MainActivity : ComponentActivity() {
         val surface = surfaceProvider?.mainActivitySurface() ?: run {
             usesProductionSurface = true
             surfaceState.bindArtistPortraitRefresh(artwork::artistPortraitsChanged)
+            surfaceState.bindAlbumCoverRefresh(artwork::albumCoversChanged)
             surfaceState.connectArtistPhotoBackfill(library) { work -> runOnUiThread(work) }
             productionSurface().also { surfaceState.startArtistPhotoBackfill() }
         }

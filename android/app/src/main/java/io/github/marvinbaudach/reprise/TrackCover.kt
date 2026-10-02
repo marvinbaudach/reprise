@@ -208,7 +208,7 @@ internal class TrackArtwork(
         artistPortraitRevision += 1
     }
 
-    private fun albumCoversChanged() {
+    internal fun albumCoversChanged() {
         forgetAlbumArtworkMisses()
         cache.invalidateAlbumArtwork()
         albumCoverRevision += 1

@@ -40,6 +40,8 @@ internal data class ArtistPhotoProgress(
     val done: Long,
     val failed: Long,
     val total: Long,
+    val coversDone: Long = 0,
+    val coversTotal: Long = 0,
 )
 
 private const val SUCCESS_DISMISS_DELAY_MS = 4_000L
