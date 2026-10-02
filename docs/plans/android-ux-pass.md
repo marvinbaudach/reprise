@@ -2,7 +2,7 @@
 slug: android-ux-pass
 worktree: /home/marvin/Projects/reprise-android-ux-pass
 branch: feature/android-ux-pass
-phase: refactored
+phase: shipped
 codex_session:
 created: 2026-10-01
 ---
