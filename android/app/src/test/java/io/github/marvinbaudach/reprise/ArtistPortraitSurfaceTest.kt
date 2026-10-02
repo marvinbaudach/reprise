@@ -3,6 +3,7 @@ package io.github.marvinbaudach.reprise
 import android.graphics.Bitmap
 import android.graphics.Color
 import androidx.activity.ComponentActivity
+import androidx.compose.foundation.layout.Column
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -10,7 +11,9 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.test.assertCountEquals
+import androidx.compose.ui.test.assertTextEquals
 import androidx.compose.ui.test.junit4.v2.createAndroidComposeRule
+import androidx.compose.ui.test.onAllNodesWithTag
 import androidx.compose.ui.test.onAllNodesWithText
 import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onNodeWithTag
@@ -205,7 +208,7 @@ class ArtistPortraitSurfaceTest {
 
         compose.waitUntil { rowBitmapPath.get() == "portrait-list" }
         assertEquals("portrait-list", rowBitmapPath.get())
-        assertEquals(0, albumCalls.get())
+        assertEquals(1, albumCalls.get())
     }
 
     @Test
@@ -288,7 +291,7 @@ class ArtistPortraitSurfaceTest {
         compose.onNodeWithTag("artist-portrait-head-image", useUnmergedTree = true).assertExists()
         assertEquals(1, bridgeCalls.get())
         assertEquals(0, networkCalls.get())
-        assertEquals(0, albumCalls.get())
+        assertEquals(1, albumCalls.get())
     }
 
     @Test
@@ -377,7 +380,7 @@ class ArtistPortraitSurfaceTest {
     }
 
     @Test
-    fun theDetailHeadShowsTheCountsAndNotTheName() {
+    fun theDetailHeadShowsOnlyThePortraitAndNotTheCountsOrName() {
         val detail = artistDetail("Counted Artist")
         val artwork = artwork(
             cachedPortrait = { _, _ -> null },
@@ -389,7 +392,33 @@ class ArtistPortraitSurfaceTest {
         showArtistDetail(detail, artwork)
 
         compose.onAllNodesWithText("Counted Artist").assertCountEquals(1)
-        compose.onNodeWithText(detail.artist.details()).assertExists()
+        compose.onNodeWithText(detail.artist.details()).assertDoesNotExist()
+        compose.onNodeWithTag("artist-portrait-head-image", useUnmergedTree = true).assertExists()
+    }
+
+    @Test
+    fun theArtistPageShowsOneDetailsLineAndACoverForEveryAlbum() {
+        val detail = artistDetail(
+            name = "Counted Artist",
+            albums = listOf(
+                album("First Album", "Counted Artist"),
+                album("Second Album", "Counted Artist"),
+            ),
+        )
+        val artwork = artwork(
+            cachedPortrait = { _, _ -> null },
+            fetchedPortrait = { _, _ -> null },
+            albumCover = { _, _ -> null },
+            decode = { null },
+        )
+
+        showArtistDetail(detail, artwork, showSummary = true)
+
+        compose.onNodeWithTag("library-summary-text")
+            .assertTextEquals(detail.artist.details())
+        compose.onAllNodesWithText(detail.artist.details()).assertCountEquals(1)
+        compose.onAllNodesWithTag("library-album-row-cover", useUnmergedTree = true)
+            .assertCountEquals(2)
     }
 
     private fun showArtists(artists: List<LibraryArtist>, artwork: TrackArtwork) {
@@ -424,6 +453,7 @@ class ArtistPortraitSurfaceTest {
         detail: ArtistTrackList,
         artwork: TrackArtwork,
         initiallyOpen: Boolean = true,
+        showSummary: Boolean = false,
     ) {
         compose.setContent {
             RepriseTheme(theme, darkPalette = true) {
@@ -431,28 +461,48 @@ class ArtistPortraitSurfaceTest {
                     LocalTrackArtwork provides artwork,
                     LocalAlbumTrackIds provides { emptyList() },
                 ) {
-                    var selected by remember {
-                        mutableStateOf<ArtistTrackList?>(if (initiallyOpen) detail else null)
+                    Column {
+                        if (showSummary) {
+                            LibrarySummaryActions(
+                                tab = BrowseTab.ARTISTS,
+                                summary = browseSummary(
+                                    shownTab = { BrowseTab.ARTISTS },
+                                    loadedTabs = setOf(BrowseTab.ARTISTS),
+                                    selectedTab = BrowseTab.ARTISTS,
+                                    visibleTitles = LibraryWindow.empty(),
+                                    selectedAlbum = null,
+                                    selectedArtist = detail,
+                                    visibleArtists = LibraryWindow.empty(),
+                                ),
+                                searching = false,
+                                toggleSearch = {},
+                                rescan = {},
+                                openSettings = {},
+                            )
+                        }
+                        var selected by remember {
+                            mutableStateOf<ArtistTrackList?>(if (initiallyOpen) detail else null)
+                        }
+                        ArtistsTab(
+                            surfaceLayout = SurfaceLayout.STACKED,
+                            surfaceState = MobileSurfaceViewModel(),
+                            artists = LibraryWindow(
+                                total = 1,
+                                rows = listOf(detail.artist),
+                                hasMore = false,
+                            ),
+                            searchText = "",
+                            selectedArtist = selected,
+                            playback = PlaybackUiState().libraryPlayback(),
+                            openArtist = { selected = detail },
+                            closeArtist = { selected = null },
+                            play = {},
+                            lastRequestedOffset = null,
+                            artistRequestedOffset = null,
+                            loadMoreArtists = {},
+                            loadMoreArtistTracks = {},
+                        )
                     }
-                    ArtistsTab(
-                        surfaceLayout = SurfaceLayout.STACKED,
-                        surfaceState = MobileSurfaceViewModel(),
-                        artists = LibraryWindow(
-                            total = 1,
-                            rows = listOf(detail.artist),
-                            hasMore = false,
-                        ),
-                        searchText = "",
-                        selectedArtist = selected,
-                        playback = PlaybackUiState().libraryPlayback(),
-                        openArtist = { selected = detail },
-                        closeArtist = { selected = null },
-                        play = {},
-                        lastRequestedOffset = null,
-                        artistRequestedOffset = null,
-                        loadMoreArtists = {},
-                        loadMoreArtistTracks = {},
-                    )
                 }
             }
         }

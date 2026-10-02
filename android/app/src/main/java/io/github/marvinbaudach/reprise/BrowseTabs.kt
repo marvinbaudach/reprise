@@ -428,7 +428,7 @@ private fun ArtistDetailSections(
             state = listState,
             modifier = Modifier.fillMaxSize().testTag(key.testTag()),
         ) {
-            item(key = "artist-portrait-head") { ArtistPortraitHeader(head, artist) }
+            item(key = "artist-portrait-head") { ArtistPortraitHeader(head) }
             if (albums.rows.isNotEmpty()) {
                 item(key = "artist-albums-heading") { SectionHeading("Albums") }
                 items(
@@ -596,6 +596,17 @@ private fun AlbumRow(album: LibraryAlbum, openAlbum: (LibraryAlbum) -> Unit) {
             ListItem(
                 headlineContent = { Text(album.title) },
                 supportingContent = { Text(album.details()) },
+                leadingContent = {
+                    TrackCover(
+                        trackUri = album.representativeUri,
+                        title = album.title,
+                        artist = album.artist,
+                        size = ALBUM_ROW_COVER_SIZE_DP,
+                        modifier = Modifier.testTag("library-album-row-cover"),
+                        artworkSize = AndroidArtworkSize.LIST,
+                        decorative = true,
+                    )
+                },
                 trailingContent = { Text(formatDuration(album.totalDurationMs)) },
                 modifier = Modifier
                     .fillMaxWidth()
@@ -615,6 +626,8 @@ private fun AlbumRow(album: LibraryAlbum, openAlbum: (LibraryAlbum) -> Unit) {
     }
     HorizontalDivider()
 }
+
+private const val ALBUM_ROW_COVER_SIZE_DP = 56
 
 @Composable
 private fun ArtistRows(

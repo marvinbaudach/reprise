@@ -26,12 +26,7 @@ internal fun browseSummary(
         BrowseTab.TITLES -> visibleTitles.visibleCountLabel("title", "titles")
         BrowseTab.ARTISTS -> selectedAlbum?.tracks
             ?.visibleCountLabel("track", "tracks")
-            ?: selectedArtist?.let { detail ->
-                val albums = detail.albums.total
-                val otherTitles = detail.untaggedTracks.total
-                "$albums ${if (albums == 1L) "album" else "albums"} · " +
-                    "$otherTitles ${if (otherTitles == 1L) "other title" else "other titles"}"
-            }
+            ?: selectedArtist?.artist?.details()
             ?: visibleArtists.visibleCountLabel("artist", "artists")
         BrowseTab.QUEUE -> "Queue"
     }
