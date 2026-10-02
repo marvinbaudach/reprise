@@ -181,8 +181,8 @@ class ArtistPortraitSurfaceTest {
                 portraitAvailable.set(true)
                 "portrait-detail"
             },
-            albumCover = { _, size ->
-                albumCalls.incrementAndGet()
+            albumCover = { uri, size ->
+                if (uri == "content://albums/Arriving Portrait") albumCalls.incrementAndGet()
                 if (size == AndroidArtworkSize.LIST) {
                     "album-list"
                 } else {
@@ -208,7 +208,7 @@ class ArtistPortraitSurfaceTest {
 
         compose.waitUntil { rowBitmapPath.get() == "portrait-list" }
         assertEquals("portrait-list", rowBitmapPath.get())
-        assertEquals(1, albumCalls.get())
+        assertEquals(0, albumCalls.get())
     }
 
     @Test
@@ -274,8 +274,8 @@ class ArtistPortraitSurfaceTest {
                 if (gateOpen) networkCalls.incrementAndGet()
                 null
             },
-            albumCover = { _, _ ->
-                albumCalls.incrementAndGet()
+            albumCover = { uri, _ ->
+                if (uri == "content://albums/Offline Artist") albumCalls.incrementAndGet()
                 "album-cover"
             },
             decode = { bitmap(Color.GREEN) },
@@ -291,7 +291,7 @@ class ArtistPortraitSurfaceTest {
         compose.onNodeWithTag("artist-portrait-head-image", useUnmergedTree = true).assertExists()
         assertEquals(1, bridgeCalls.get())
         assertEquals(0, networkCalls.get())
-        assertEquals(1, albumCalls.get())
+        assertEquals(0, albumCalls.get())
     }
 
     @Test
