@@ -198,7 +198,7 @@ class NetworkReturnArtworkTest {
             ShadowLog.getLogsForTag(COVER_RETRY_TAG).any { item ->
                 item.type == Log.INFO &&
                     item.msg.contains("wifi") &&
-                    item.msg.contains("validated=true")
+                    item.msg.contains("validatedNonVpn=1")
             },
         )
         monitor.stop()
@@ -210,6 +210,7 @@ class NetworkReturnArtworkTest {
         shadowOf(capabilities).apply {
             addTransportType(NetworkCapabilities.TRANSPORT_WIFI)
             addCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET)
+            addCapability(NetworkCapabilities.NET_CAPABILITY_NOT_VPN)
             if (validated) addCapability(NetworkCapabilities.NET_CAPABILITY_VALIDATED)
         }
         return capabilities
