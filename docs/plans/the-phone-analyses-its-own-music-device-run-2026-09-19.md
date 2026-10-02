@@ -45,6 +45,10 @@ own timestamps are UTC.
 | C4 — airplane mode retry | NOT RUN | PASS / INCONCLUSIVE | steps 1–2 PASS (placeholder stays, no crash, no bytes, genuine `TransientFailure`); step 3 INCONCLUSIVE (portrait retried on relaunch, album cover produced no new file in the observation window) |
 | Combined — backfill running + fresh play | NOT RUN | PASS | 3.657 s from tap to `Computed`, with both the artwork and the track-analysis backfills active concurrently |
 
+The hardware re-run on 2026-10-02 settles A1, A5 and C2 on the physical phone. It
+shows C4's album-cover retry happening only after a relaunch. See "Hardware re-run,
+2026-10-02" below.
+
 ## A1 — MP3, Opus, FLAC compute and seek-bar spectrum
 
 The plan asks for three formats each producing a `Computed` outcome within
@@ -543,6 +547,100 @@ tap, 17:17:55 file and 1092 px thumbnail mtime) and the next visit showed it
 `shot-04`); whether the already-open now-playing view repaints within the
 same visit could not be observed on a 15 s fixture. Evidence under
 `~/.local/share/reprise-device-run-20260919/issue-995/`.
+
+## Hardware re-run, 2026-10-02
+
+This run closes A1, A5 and C2 on the physical phone (Pixel 10 Pro XL, arm64), and
+it narrows the C4 retry to one concrete gap. The build under test was the installed
+0.1.170, which contains both #986 and #997, so nothing was built or installed. The
+library was the user's real desktop-synced mirror: 727 audio files and 727
+`.reprise-analysis` sidecars under `/sdcard/Music/Reprise/`.
+
+Probe files went into a dedicated subfolder of the granted tree,
+`/sdcard/Music/Reprise/Reprise-Probe/`. Afterwards that subfolder was deleted and the
+library rescanned (`added=0`, 727 titles, no probe title or artist left). All evidence
+is in `~/.local/share/reprise-device-run-20261002/`. `NOTES.md` holds the timestamps
+and `logcat-full.log` the capture.
+
+| Check | Verdict | Evidence |
+|---|---|---|
+| A1 — MP3 | PASS: 3.58 s, 3.76 s | tracks 763 and 767, `shot-07-mp3-1-nowplaying.png` |
+| A1 — Opus | PASS: 4.63 s, 4.59 s | tracks 764 and 768, `shot-11-opus-1-nowplaying.png` |
+| A1 — FLAC | PASS: 1.56 s, 1.80 s | tracks 765 and 766, `shot-15.png` |
+| A5 — desktop-synced control arm | PASS | `shot-A5-nowplaying.png` |
+| C2 — downloaded cover is shown | PASS (mini-player lags) | `shot-C2-np-{5,15,30,60}s.png`, `shot-C2-album-header.png` |
+| C4 step 3 — album cover after connectivity returns | FAIL without relaunch, PASS after relaunch | `shot-C4-s3-*.png`, `shot-C4-relaunch-*.png` |
+
+### A1 on hardware
+
+The fixtures were the 40 s sweep from `gen-fixtures.sh`, with cover art embedded so
+that the artwork pass stays idle. Each timing runs from a `DEVRUN` marker, written
+about 0.2 s before the adb tap, to `Computed analysis for track N`. After every tap the
+playing title was confirmed from `media_session` metadata.
+
+The run did not meet the isolation protocol (`0/1`). The real library had 197 tracks
+without analysis (`Track analysis backfill: 0/197`), and draining them at 25–30 s per
+item while playing would have taken over an hour. No backfill item completed inside any
+measured window, though one was probably in flight, so the numbers are upper bounds
+under load. All three formats rendered the seek-bar spectrum.
+
+The 21–25 s that the emulator measured for MP3 and Opus came from x86_64 software
+codecs. Every format meets the ~5 s target on the phone.
+
+### A5
+
+The control arm was a real synced track, Emmure "(F)inally (U)nderstanding
+(N)othing". The marker is at 16:51:19.167. No `Computed` line follows for that track,
+so its sidecar was imported rather than computed, and the spectrum rendered. A
+`Track analysis backfill: 1/193` line followed at 16:51:40. That line comes from the
+backfill working through the other unanalysed tracks, not from this track.
+
+### C2 on hardware
+
+The real OK Computer cover was already showing in now-playing at the 5 s screenshot. It
+also showed in the album header and in the track row, and the log has no cover or
+provider errors.
+
+The mini-player still showed the placeholder for the same track at 16:54. It picked up
+the cover only after the app was relaunched during C4. Like the open question in the
+issue-995 re-check, this is a surface that does not repaint after the download within
+the same visit.
+
+### C4 step 3
+
+On this phone the airplane flag alone does not cut Wi-Fi. Real offline needed
+`svc wifi disable` on top of it.
+
+- **Offline:** "Time" (Pink Floyd, no art) played with the placeholder and a spectrum.
+  There was no crash and the PID was unchanged.
+- **Online again:** connectivity returned at 16:56:43 (ping OK at 16:56:46). For about
+  2.3 minutes neither now-playing nor the list row fetched the cover, and Reprise wrote
+  no log line at all.
+- **After relaunch:** `am force-stop` plus `am start` at 16:59:07. The cover showed in
+  the list row, the mini-player and now-playing within about 11 s.
+
+The plan's C4 expectation is "the attempt is retried after connectivity returns". Only
+a relaunch, or presumably a fresh request, does that. Nothing re-requests the cover
+when the network comes back.
+
+### Still open after this run
+
+- **C4:** the album-cover retry needs a trigger when connectivity returns, either a
+  network callback or a re-request from the visible artwork surfaces.
+- **C2 / mini-player:** a cover downloaded while the mini-player is showing does not
+  repaint the mini-player until the next visit.
+- **A4, activity removal:** not attempted. This run did not use the recents swipe on
+  real hardware.
+
+### Side effects on the phone
+
+- **Queue:** playing the probe files replaced the user's queue. Before the run it held
+  38 upcoming tracks, with "I Came, I Saw, I Conquered" (Woe, Is Me) paused
+  (`shot-00-before.png`).
+- **Covers:** the rescan started the artwork pass over the real library. The Radiohead
+  and Pink Floyd covers and portraits stay in the app's private cache.
+- **Airplane mode:** it was on when the run started, with Wi-Fi on as well. The run
+  turned it off, and it was restored to on, with Wi-Fi enabled, after the run.
 
 ## Observations
 
