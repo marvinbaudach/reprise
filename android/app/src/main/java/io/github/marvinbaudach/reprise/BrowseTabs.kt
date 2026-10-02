@@ -185,27 +185,29 @@ private fun AlbumDetailHeader(album: LibraryAlbum, closeAlbum: () -> Unit) {
         album.artist,
         allowFetch = true,
     )
-    Row(
-        modifier = Modifier
-            .fillMaxWidth()
-            .clickable(onClick = closeAlbum)
-            .padding(horizontal = 16.dp, vertical = 8.dp),
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
-        MaterialSymbol("arrow_back", "Back")
-        ArtworkCover(
-            artwork,
-            size = 40,
-            modifier = Modifier.padding(horizontal = 8.dp),
-            decorative = true,
+    Column(modifier = Modifier.reportLibraryStatusTopInset("album-detail-header")) {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .clickable(onClick = closeAlbum)
+                .padding(horizontal = 16.dp, vertical = 8.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            MaterialSymbol("arrow_back", "Back")
+            ArtworkCover(
+                artwork,
+                size = 40,
+                modifier = Modifier.padding(horizontal = 8.dp),
+                decorative = true,
+            )
+            Text(album.title, style = MaterialTheme.typography.titleLarge)
+        }
+        Text(
+            album.artist,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            modifier = Modifier.padding(horizontal = 16.dp),
         )
-        Text(album.title, style = MaterialTheme.typography.titleLarge)
     }
-    Text(
-        album.artist,
-        color = MaterialTheme.colorScheme.onSurfaceVariant,
-        modifier = Modifier.padding(horizontal = 16.dp),
-    )
 }
 
 @Composable
@@ -229,7 +231,7 @@ private fun ArtistDetailHeader(
     withMenu: Boolean = true,
 ) {
     val contextMenu = rememberTrackContextMenuAnchorState()
-    Column {
+    Column(modifier = Modifier.reportLibraryStatusTopInset("artist-detail-header")) {
         Row(verticalAlignment = Alignment.CenterVertically) {
             Row(
                 modifier = Modifier
