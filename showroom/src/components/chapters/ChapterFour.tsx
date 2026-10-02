@@ -70,7 +70,7 @@ export function ChapterFour() {
                 })}
               </ul>
               <p className="headless-card__note mcp-card__note">
-                Tools over stdio, each behind one of six capability flags read live from the
+                Tools over stdio, each behind one of seven capability flags read live from the
                 library. A revocation takes effect on the next call. Responses never carry
                 filesystem paths, cache locations or credentials — and the source resources omit
                 stored URLs, because those can hold access tokens.
