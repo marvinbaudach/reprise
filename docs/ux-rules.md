@@ -1504,9 +1504,10 @@ result.
   or a reserved line, and this paragraph goes with the last in-flow
   banner. No new surface may cite it.
   On Android, the library's transient status lives in chrome. Errors and the
-  deletion line share one pill slot over the top edge of the list. It sits
-  below the header on a detail page, shows one pill at a time in priority order,
-  has no layout height, and only an error's close button takes input. Artwork
+  deletion line share one pill slot over the top edge of the list. On a detail
+  page it sits below the header and the page's Play button; it shows
+  one pill at a time in priority order, has no layout height, and only an error's
+  close button takes input. Artwork
   progress is a 3 dp bar on the pager's top edge, with its phase and count in
   the summary row and its cancel in the overflow menu. The list never moves
   when any of these appear or leave. The level stays `[gtk]`; the Android half
