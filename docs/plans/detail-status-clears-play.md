@@ -2,7 +2,7 @@
 slug: detail-status-clears-play
 worktree: /home/marvin/Projects/reprise-detail-status-clears-play
 branch: feature/detail-status-clears-play
-phase: refactored
+phase: shipped
 codex_session:
 created: 2026-10-02
 ---
