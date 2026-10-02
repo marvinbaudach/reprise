@@ -144,7 +144,7 @@ class MainActivityConfigurationTest {
         compose.onNodeWithTag("library-summary-search").assertDoesNotExist()
         compose.onNodeWithContentDescription("Clear search").performClick()
         compose.waitUntil(timeoutMillis = 5_000) {
-            compose.onAllNodesWithText("200 of 450 artists loaded")
+            compose.onAllNodesWithText("450 artists")
                 .fetchSemanticsNodes().isNotEmpty()
         }
         compose.onNodeWithContentDescription("Close search").performClick()
@@ -222,7 +222,7 @@ class MainActivityConfigurationTest {
         }
         compose.onNodeWithText("Artists").performClick()
         compose.waitUntil(timeoutMillis = 5_000) {
-            compose.onAllNodesWithText("200 of 450 artists loaded")
+            compose.onAllNodesWithText("450 artists")
                 .fetchSemanticsNodes().isNotEmpty()
         }
         application.releaseFailingTitleContinuation()

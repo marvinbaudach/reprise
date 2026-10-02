@@ -1,9 +1,12 @@
 package io.github.marvinbaudach.reprise
 
 import androidx.compose.ui.test.junit4.v2.createAndroidComposeRule
+import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
+import androidx.compose.ui.test.performScrollToIndex
 import org.junit.After
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertTrue
 import org.junit.Rule
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -91,7 +94,13 @@ class BrowseScreenLoadGuardsTest {
         compose.waitForIdle()
 
         assertEquals(2, application.continuationCallCount())
-        compose.onNodeWithText("400 of 450 titles loaded").assertExists()
+        // Two windows and the sentinel: indices 0 through 400. The refused
+        // scroll goes first, because reaching 399 brings the sentinel into
+        // view and lets it read a third window.
+        val titles = compose.onNodeWithTag("library-titles-list").assertExists()
+        assertTrue(runCatching { titles.performScrollToIndex(401) }.isFailure)
+        // This accepted probe starts one more read that outlives the test body.
+        assertTrue(runCatching { titles.performScrollToIndex(399) }.isSuccess)
     }
 
     /**
@@ -122,10 +131,16 @@ class BrowseScreenLoadGuardsTest {
         compose.waitForIdle()
 
         // Genuinely abandoned, not quietly completed: the window is still
-        // the first 200 rows.
-        compose.onNodeWithText("200 of 450 titles loaded").assertExists()
+        // the first 200 rows. The list holds those rows and the sentinel, so
+        // index 200 is the last item there is. A scroll past it is refused
+        // before anything moves; a scroll *to* it would bring the sentinel
+        // into view and let it read the next window, so that one comes last.
+        val titles = compose.onNodeWithTag("library-titles-list").assertExists()
+        assertTrue(runCatching { titles.performScrollToIndex(201) }.isFailure)
         compose.onNodeWithText("Could not load more titles:", substring = true)
             .assertDoesNotExist()
+        // This accepted probe starts one more read that outlives the test body.
+        assertTrue(runCatching { titles.performScrollToIndex(200) }.isSuccess)
     }
 }
 

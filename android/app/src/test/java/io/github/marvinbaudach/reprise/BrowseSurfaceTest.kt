@@ -411,14 +411,16 @@ fun appendingAContinuationKeepsTheExactTotalAndOrder() {
 }
 
 @Test
-fun theVisibleCountDistinguishesALoadedWindowFromTheWholeLibrary() {
+fun theCountNamesTheWholeLibraryNotTheLoadedWindow() {
+    // How many rows the phone happens to hold is paging, not an answer: "500 of
+    // 1824" reads as a filter that left 500 behind.
     val window = LibraryWindow(
         total = 1_824,
         rows = (1..500).map { rank -> testBrowseTrack("title-$rank") },
         hasMore = true,
     )
 
-    assertEquals("500 of 1824 titles loaded", window.visibleCountLabel("title", "titles"))
+    assertEquals("1824 titles", window.totalCountLabel("title", "titles"))
 }
 
 @Test
