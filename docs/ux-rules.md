@@ -1503,6 +1503,14 @@ result.
   those views are next reworked: the failure notice then moves into chrome
   or a reserved line, and this paragraph goes with the last in-flow
   banner. No new surface may cite it.
+  On Android the library screen's transient status is drawn over the top edge
+  of the list as a pill with no layout height and no pointer input, fading with
+  150 ms; the list never moves when it appears or leaves. The level stays
+  `[gtk]`; the Android half is covered by `DeletionLineOverlayTest`, which the
+  traceability gate does not read. The other Android status lines still in flow
+  above the pager — the browse error, the playback error, the fault notice and
+  the artist-photo progress bar — are open deviations from the first
+  prohibition, not a second sanctioned pattern.
 - **FB-10** [planned] [gtk] — The track
   browser says when its own reload will take longer than a moment, and it
   never pretends to be working while it is frozen. This covers every reload
