@@ -2,7 +2,7 @@
 slug: android-cover-retry-and-repaint
 worktree: /home/marvin/Projects/reprise-android-cover-retry-and-repaint
 branch: feature/android-cover-retry-and-repaint
-phase: planned
+phase: refactored
 codex_session:
 created: 2026-10-02
 ---
@@ -157,15 +157,25 @@ generated cover. It does not cost one per track in the library.
   - Covers get their own callback beside the existing portrait refresh in
     `ArtistPhotoBackfillConnection.kt` / `MobileSurfaceViewModel`.
 
-**D4 — Detecting that the network returned.** The detector uses
-`ConnectivityManager.registerDefaultNetworkCallback`.
+**D4 — Detecting that the network returned.** *Amended 2026-10-02 after the device
+re-check.* The first version used `registerDefaultNetworkCallback` and failed on the phone:
+with NordVPN, the default network is the VPN (`tun0`), and Android keeps the app's
+default-network request on it while Wi-Fi is off. The VPN still reports `VALIDATED` from an
+old probe, so the app never saw "offline" and never a return. The detector therefore watches
+the physical uplink instead:
 
-- **What counts as online.** The default network has `NET_CAPABILITY_INTERNET` and
-  `NET_CAPABILITY_VALIDATED`. A return is an offline-to-online transition. Switching from one
-  online default network to another (Wi-Fi → VPN) is **not** a return. There is no special
-  rule for VPNs.
-- **Baseline.** The baseline is the state read synchronously at start (`activeNetwork` plus
-  its capabilities). Otherwise a process that starts offline would take the first online
+- **What counts as online.** At least one network with `NET_CAPABILITY_INTERNET`,
+  `NET_CAPABILITY_VALIDATED` **and `NET_CAPABILITY_NOT_VPN`** exists. It is tracked with
+  `registerNetworkCallback` on a request for `INTERNET` + `NOT_VPN`, keeping the set of those
+  networks that are currently validated. Without a VPN this matches the default network in
+  practice; with one, it follows the real uplink. A return is a transition from an empty set to
+  a non-empty one. A second validated network arriving while one already exists (Wi-Fi beside
+  cellular) is **not** a return.
+- **Known risk.** Wi-Fi can validate before the VPN tunnel is back up, so the single retry can
+  fail. There is still no timer. The log line "return + empty fetch" shows this case on the
+  device, and only then is a follow-up designed.
+- **Baseline.** The baseline is the state read synchronously at start (every network from
+  `allNetworks` with its capabilities, filtered as above). Otherwise a process that starts offline would take the first online
   callback as its baseline and never retry, which is the C4 case seen from a cold start.
 - **Where the state lives.** The detector's state lives in `MobileSurfaceViewModel`, so it
   survives a configuration change.
@@ -214,8 +224,8 @@ Kotlin tests (`fun net_7a_…`, `fun net_7b_…`). `scripts/check-ux-traceabilit
   the album page downloaded itself and for one the background cover pass downloaded.
   Reaching a surface is a local read and never starts a download of its own. A surface that
   already shows a real cover keeps it unchanged and is not read again.
-- **NET-7b** [active] [android] — When the phone's default network returns, validated, after
-  being offline, every visible surface that may download a cover and still shows a generated
+- **NET-7b** [active] [android] — When the phone's network connection returns (a validated network
+  that is not a VPN) after being offline, every visible surface that may download a cover and still shows a generated
   one asks again. A cover found that way reaches the other surfaces by `NET-7a`. A return
   that happened while the app was in the background counts when the app comes back to the
   foreground. A switch between two online networks is not a return. A surface that already
@@ -293,8 +303,8 @@ Robolectric and `ui-test-junit4` are already on the test classpath; see
      online-to-online case.
 7. **NET-7b, monitor and wiring.**
    - Add `ACCESS_NETWORK_STATE` to `AndroidManifest.xml`.
-   - Add a `NetworkReturnMonitor` adapter in the same new file. It uses the default-network
-     callback with `INTERNET` + `VALIDATED`, takes the synchronous baseline, delivers on the
+   - Add a `NetworkReturnMonitor` adapter in the same new file. It uses a network callback
+     on `INTERNET` + `NOT_VPN` and counts validated networks (D4, amended), takes the synchronous baseline, delivers on the
      main thread, and writes the two log lines from D4.
    - Add `TrackArtwork.networkReturnRevision`. When it changes, an `allowFetch` surface that
      shows a generated cover runs its normal fetching load once.
