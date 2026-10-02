@@ -30,7 +30,6 @@ import androidx.compose.material3.Slider
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
@@ -571,7 +570,8 @@ private fun WideShortNowPlayingContent(
                 NowPlayingTrackContextMenu(track)
             }
             SpectralSeekSlider(
-                track.id, track.durationMs,
+                trackId = track.id,
+                trackDurationMs = track.durationMs,
                 playback = playback,
                 surfaceState = surfaceState,
                 onSeekBounds = onSeekBounds,

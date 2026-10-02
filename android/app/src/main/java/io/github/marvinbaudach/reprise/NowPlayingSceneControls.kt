@@ -68,7 +68,8 @@ internal fun SceneProgress(
                 .padding(horizontal = 24.dp),
         ) {
             SpectralSeekSlider(
-                track.id, track.durationMs,
+                track.id,
+                track.durationMs,
                 playback,
                 surfaceState,
                 cueRevision = cueRevision,
