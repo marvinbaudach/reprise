@@ -5,9 +5,9 @@ use reprise_core::device_sync::settings::save_settings;
 use reprise_core::device_sync::{DeviceSelection, DeviceSettings};
 
 /// `MTP-30`: seeds a device-settings row with the switch off and no
-/// playlist selection, for tests that drive `sync_now` manually — without this, the
-/// fixture contract would be implicit and a later switch change could start a
-/// sync before the test's own `sync_now` call runs, doubling every copy.
+/// playlist selection, for tests that drive `sync_now` manually. Pinning the
+/// switch off ensures an automatic start can never double the test's explicit
+/// `sync_now` call.
 pub(super) fn disable_auto_start(conn: &Rc<Db>, device_id: &str) {
     save_settings(
         conn,

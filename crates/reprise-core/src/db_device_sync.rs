@@ -171,6 +171,10 @@ pub(crate) fn migrate_v42(conn: &Connection) -> Result<(), rusqlite::Error> {
 // `E-6`): the device view's "Sync automatically when this phone connects"
 // switch. Like `remove_deleted`, this is a per-device choice, so it lives
 // beside it on `device_settings` rather than on `device_sync_targets`.
+// Its `DEFAULT 1` has been stale since v87 made automatic sync default off,
+// but changing it requires rebuilding the table. Every `device_settings`
+// INSERT must therefore write `sync_automatically` explicitly; see
+// `load_or_create_settings`.
 const ADD_SYNC_AUTOMATICALLY: &str = r#"
 ALTER TABLE device_settings
   ADD COLUMN sync_automatically INTEGER NOT NULL DEFAULT 1;
@@ -334,6 +338,7 @@ pub(crate) fn migrate_v68(conn: &Connection) -> Result<(), rusqlite::Error> {
     transaction.commit()
 }
 
+/// Deliberately resets every per-device choice once (2026-10-02, MTP-30 default off).
 pub(crate) fn migrate_v87(conn: &Connection) -> Result<(), rusqlite::Error> {
     let version: i64 = conn.query_row("PRAGMA user_version", [], |row| row.get(0))?;
     if version >= 87 {
