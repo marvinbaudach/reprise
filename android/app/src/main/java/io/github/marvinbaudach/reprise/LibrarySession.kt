@@ -305,6 +305,18 @@ internal class LibrarySession(
         return path
     }
 
+    /**
+     * Forgets only resolved misses after an album cover arrives elsewhere.
+     * Real paths remain memoised, while the generation bump prevents a miss
+     * already being resolved from restoring its stale answer afterwards.
+     */
+    fun forgetArtworkMisses() {
+        synchronized(artworkPaths) {
+            artworkPaths.entries.removeAll { (_, path) -> path == null }
+            artworkGeneration++
+        }
+    }
+
     fun artistPortraitCached(name: String, size: AndroidArtworkSize): String? =
         port.artistPortraitCached(name, size)
 
