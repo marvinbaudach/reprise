@@ -69,6 +69,7 @@ internal fun SceneProgress(
         ) {
             SpectralSeekSlider(
                 track.id,
+                track.durationMs,
                 playback,
                 surfaceState,
                 cueRevision = cueRevision,

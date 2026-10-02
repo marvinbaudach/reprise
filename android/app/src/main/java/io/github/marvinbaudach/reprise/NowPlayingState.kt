@@ -54,6 +54,12 @@ internal fun formatRemaining(positionMs: Long, durationMs: Long): String =
         "--:--"
     }
 
+internal fun remainingLabel(
+    positionMs: Long,
+    playerDurationMs: Long,
+    trackDurationMs: Long,
+): String = formatRemaining(positionMs, playerDurationMs.takeIf { it > 0 } ?: trackDurationMs)
+
 internal fun cycleRepeatMode(mode: AndroidRepeatMode): AndroidRepeatMode = when (mode) {
     AndroidRepeatMode.OFF -> AndroidRepeatMode.ALL
     AndroidRepeatMode.ALL -> AndroidRepeatMode.ONE

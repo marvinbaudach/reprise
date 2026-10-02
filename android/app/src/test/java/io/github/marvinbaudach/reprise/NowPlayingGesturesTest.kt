@@ -546,6 +546,7 @@ class NowPlayingGesturesTest {
             CompositionLocalProvider(LocalPlaybackControls provides DisconnectedPlaybackControls) {
                 SpectralSeekSlider(
                     trackId = gestureTrack().id,
+                    trackDurationMs = gestureTrack().durationMs,
                     playback = playback,
                     surfaceState = surfaceState,
                     interactionSource = interactionSource,

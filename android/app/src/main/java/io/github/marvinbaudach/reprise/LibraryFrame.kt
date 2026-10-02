@@ -15,6 +15,7 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.asPaddingValues
 import androidx.compose.foundation.layout.calculateStartPadding
+import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.height
@@ -280,13 +281,14 @@ private fun MiniPlayer(
         Box {
             Row(
                 modifier = Modifier
-                    .fillMaxWidth()
+                    .fillMaxSize()
                     .padding(horizontal = 8.dp),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
                 TrackCover(
                     trackUri = track.uri,
                     size = metrics.trackCoverSizeDp,
+                    modifier = Modifier.testTag("library-mini-player-cover"),
                     decorative = true,
                 )
                 Spacer(Modifier.width(12.dp))

@@ -1,11 +1,10 @@
 package io.github.marvinbaudach.reprise
 
-import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.getValue
@@ -19,6 +18,7 @@ import androidx.compose.ui.unit.dp
 import uniffi.reprise_android_ffi.AndroidArtworkSize
 
 internal const val ARTIST_PORTRAIT_DIAMETER_DP = 210
+private const val ARTIST_PORTRAIT_BOTTOM_GAP_DP = 16
 
 @Composable
 internal fun rememberArtistArtworkVisual(
@@ -68,14 +68,13 @@ internal fun ArtistAvatar(
 @Composable
 internal fun ArtistPortraitHeader(
     visual: ArtworkVisual?,
-    artist: LibraryArtist,
 ) {
     Column(
         modifier = Modifier
             .fillMaxWidth()
+            .padding(bottom = ARTIST_PORTRAIT_BOTTOM_GAP_DP.dp)
             .testTag("artist-portrait-head"),
         horizontalAlignment = Alignment.CenterHorizontally,
-        verticalArrangement = Arrangement.spacedBy(12.dp),
     ) {
         ArtworkCover(
             visual = visual,
@@ -83,10 +82,6 @@ internal fun ArtistPortraitHeader(
             modifier = Modifier.testTag("artist-portrait-head-image"),
             shape = MaterialTheme.shapes.extraLarge,
             decorative = true,
-        )
-        Text(
-            text = artist.details(),
-            style = MaterialTheme.typography.bodyMedium,
         )
     }
 }

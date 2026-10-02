@@ -571,6 +571,7 @@ private fun WideShortNowPlayingContent(
             }
             SpectralSeekSlider(
                 trackId = track.id,
+                trackDurationMs = track.durationMs,
                 playback = playback,
                 surfaceState = surfaceState,
                 onSeekBounds = onSeekBounds,
@@ -609,6 +610,7 @@ private fun WideShortNowPlayingContent(
 @OptIn(ExperimentalMaterial3Api::class)
 internal fun SpectralSeekSlider(
     trackId: Long,
+    trackDurationMs: Long,
     playback: PlaybackUiState,
     surfaceState: MobileSurfaceViewModel,
     interactionSource: MutableInteractionSource? = null,
@@ -675,7 +677,7 @@ internal fun SpectralSeekSlider(
                 color = MaterialTheme.colorScheme.primary,
             )
             Text(
-                text = formatRemaining(displayed, durationMs),
+                text = remainingLabel(displayed, durationMs, trackDurationMs),
                 style = MaterialTheme.typography.labelMedium,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )

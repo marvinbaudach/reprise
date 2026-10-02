@@ -3,6 +3,7 @@ package io.github.marvinbaudach.reprise
 import android.graphics.Bitmap
 import android.graphics.Color
 import androidx.activity.ComponentActivity
+import androidx.compose.foundation.layout.Column
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -10,13 +11,20 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.test.assertCountEquals
+import androidx.compose.ui.test.assertTextEquals
+import androidx.compose.ui.test.assertWidthIsEqualTo
+import androidx.compose.ui.test.getUnclippedBoundsInRoot
+import androidx.compose.ui.test.hasTestTag
+import androidx.compose.ui.test.hasText
 import androidx.compose.ui.test.junit4.v2.createAndroidComposeRule
+import androidx.compose.ui.test.onAllNodesWithTag
 import androidx.compose.ui.test.onAllNodesWithText
 import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performScrollToIndex
+import androidx.compose.ui.unit.dp
 import io.github.marvinbaudach.reprise.ui.theme.RepriseTheme
 import java.util.concurrent.atomic.AtomicBoolean
 import java.util.concurrent.atomic.AtomicInteger
@@ -178,8 +186,8 @@ class ArtistPortraitSurfaceTest {
                 portraitAvailable.set(true)
                 "portrait-detail"
             },
-            albumCover = { _, size ->
-                albumCalls.incrementAndGet()
+            albumCover = { uri, size ->
+                if (uri == "content://albums/Arriving Portrait") albumCalls.incrementAndGet()
                 if (size == AndroidArtworkSize.LIST) {
                     "album-list"
                 } else {
@@ -271,8 +279,8 @@ class ArtistPortraitSurfaceTest {
                 if (gateOpen) networkCalls.incrementAndGet()
                 null
             },
-            albumCover = { _, _ ->
-                albumCalls.incrementAndGet()
+            albumCover = { uri, _ ->
+                if (uri == "content://albums/Offline Artist") albumCalls.incrementAndGet()
                 "album-cover"
             },
             decode = { bitmap(Color.GREEN) },
@@ -377,7 +385,7 @@ class ArtistPortraitSurfaceTest {
     }
 
     @Test
-    fun theDetailHeadShowsTheCountsAndNotTheName() {
+    fun theDetailHeadShowsOnlyThePortraitAndNotTheCountsOrName() {
         val detail = artistDetail("Counted Artist")
         val artwork = artwork(
             cachedPortrait = { _, _ -> null },
@@ -389,7 +397,81 @@ class ArtistPortraitSurfaceTest {
         showArtistDetail(detail, artwork)
 
         compose.onAllNodesWithText("Counted Artist").assertCountEquals(1)
-        compose.onNodeWithText(detail.artist.details()).assertExists()
+        compose.onNodeWithText(detail.artist.details()).assertDoesNotExist()
+        compose.onNodeWithTag("artist-portrait-head-image", useUnmergedTree = true).assertExists()
+    }
+
+    @Test
+    fun thePortraitKeepsSpaceBeforeTheFirstSectionHeading() {
+        val artwork = artwork(
+            cachedPortrait = { _, _ -> null },
+            fetchedPortrait = { _, _ -> null },
+            albumCover = { _, _ -> null },
+            decode = { null },
+        )
+
+        showArtistDetail(artistDetail("Spaced Artist"), artwork)
+
+        val portrait = compose.onNodeWithTag("artist-portrait-head-image", useUnmergedTree = true)
+            .getUnclippedBoundsInRoot()
+        val heading = compose.onNodeWithText("Albums").getUnclippedBoundsInRoot()
+        assertEquals(24f, heading.top.value - portrait.bottom.value, 0.5f)
+    }
+
+    @Test
+    fun theArtistPageShowsOneDetailsLineAndACoverForEveryAlbum() {
+        val detail = artistDetail(
+            name = "Counted Artist",
+            albums = listOf(
+                album("First Album", "Counted Artist"),
+                album("Second Album", "Counted Artist"),
+            ),
+            untagged = listOf(track("Loose Title", "Counted Artist")),
+        )
+        val artwork = artwork(
+            cachedPortrait = { _, _ -> null },
+            fetchedPortrait = { _, _ -> null },
+            albumCover = { _, _ -> null },
+            decode = { null },
+        )
+
+        showArtistDetail(detail, artwork, showSummary = true)
+
+        compose.onNodeWithTag("library-summary-text")
+            .assertTextEquals(detail.artist.details())
+        compose.onNode(
+            hasTestTag("library-summary-text") and
+                hasText("other title", substring = true, ignoreCase = true),
+        ).assertDoesNotExist()
+        compose.onAllNodesWithText(detail.artist.details()).assertCountEquals(1)
+        compose.onAllNodesWithTag("library-album-row-cover", useUnmergedTree = true)
+            .assertCountEquals(2)
+    }
+
+    @Test
+    fun anAlbumRowCoverUsesTheStackedTrackCoverSize() {
+        showArtistDetailWithEmptyArtwork(SurfaceLayout.STACKED)
+
+        compose.onNodeWithTag("library-album-row-cover", useUnmergedTree = true)
+            .assertWidthIsEqualTo(56.dp)
+    }
+
+    @Test
+    fun anAlbumRowCoverUsesTheWideShortTrackCoverSize() {
+        showArtistDetailWithEmptyArtwork(SurfaceLayout.WIDE_SHORT)
+
+        compose.onNodeWithTag("library-album-row-cover", useUnmergedTree = true)
+            .assertWidthIsEqualTo(48.dp)
+    }
+
+    private fun showArtistDetailWithEmptyArtwork(surfaceLayout: SurfaceLayout) {
+        val artwork = artwork(
+            cachedPortrait = { _, _ -> null },
+            fetchedPortrait = { _, _ -> null },
+            albumCover = { _, _ -> null },
+            decode = { null },
+        )
+        showArtistDetail(artistDetail("Sized Artist"), artwork, surfaceLayout = surfaceLayout)
     }
 
     private fun showArtists(artists: List<LibraryArtist>, artwork: TrackArtwork) {
@@ -424,6 +506,8 @@ class ArtistPortraitSurfaceTest {
         detail: ArtistTrackList,
         artwork: TrackArtwork,
         initiallyOpen: Boolean = true,
+        showSummary: Boolean = false,
+        surfaceLayout: SurfaceLayout = SurfaceLayout.STACKED,
     ) {
         compose.setContent {
             RepriseTheme(theme, darkPalette = true) {
@@ -431,28 +515,48 @@ class ArtistPortraitSurfaceTest {
                     LocalTrackArtwork provides artwork,
                     LocalAlbumTrackIds provides { emptyList() },
                 ) {
-                    var selected by remember {
-                        mutableStateOf<ArtistTrackList?>(if (initiallyOpen) detail else null)
+                    Column {
+                        if (showSummary) {
+                            LibrarySummaryActions(
+                                tab = BrowseTab.ARTISTS,
+                                summary = browseSummary(
+                                    shownTab = { BrowseTab.ARTISTS },
+                                    loadedTabs = setOf(BrowseTab.ARTISTS),
+                                    selectedTab = BrowseTab.ARTISTS,
+                                    visibleTitles = LibraryWindow.empty(),
+                                    selectedAlbum = null,
+                                    selectedArtist = detail,
+                                    visibleArtists = LibraryWindow.empty(),
+                                ),
+                                searching = false,
+                                toggleSearch = {},
+                                rescan = {},
+                                openSettings = {},
+                            )
+                        }
+                        var selected by remember {
+                            mutableStateOf<ArtistTrackList?>(if (initiallyOpen) detail else null)
+                        }
+                        ArtistsTab(
+                            surfaceLayout = surfaceLayout,
+                            surfaceState = MobileSurfaceViewModel(),
+                            artists = LibraryWindow(
+                                total = 1,
+                                rows = listOf(detail.artist),
+                                hasMore = false,
+                            ),
+                            searchText = "",
+                            selectedArtist = selected,
+                            playback = PlaybackUiState().libraryPlayback(),
+                            openArtist = { selected = detail },
+                            closeArtist = { selected = null },
+                            play = {},
+                            lastRequestedOffset = null,
+                            artistRequestedOffset = null,
+                            loadMoreArtists = {},
+                            loadMoreArtistTracks = {},
+                        )
                     }
-                    ArtistsTab(
-                        surfaceLayout = SurfaceLayout.STACKED,
-                        surfaceState = MobileSurfaceViewModel(),
-                        artists = LibraryWindow(
-                            total = 1,
-                            rows = listOf(detail.artist),
-                            hasMore = false,
-                        ),
-                        searchText = "",
-                        selectedArtist = selected,
-                        playback = PlaybackUiState().libraryPlayback(),
-                        openArtist = { selected = detail },
-                        closeArtist = { selected = null },
-                        play = {},
-                        lastRequestedOffset = null,
-                        artistRequestedOffset = null,
-                        loadMoreArtists = {},
-                        loadMoreArtistTracks = {},
-                    )
                 }
             }
         }
@@ -485,14 +589,20 @@ class ArtistPortraitSurfaceTest {
     private fun artistDetail(
         name: String,
         albums: List<LibraryAlbum> = listOf(album("Only Album", name)),
+        untagged: List<LibraryTrack> = emptyList(),
     ) = ArtistTrackList(
         artist = artist(name).copy(
-            trackCount = albums.sumOf(LibraryAlbum::trackCount),
+            trackCount = albums.sumOf(LibraryAlbum::trackCount) + untagged.size,
             albumCount = albums.size.toLong(),
         ),
         albums = LibraryWindow(
             total = albums.size.toLong(),
             rows = albums,
+            hasMore = false,
+        ),
+        untaggedTracks = LibraryWindow(
+            total = untagged.size.toLong(),
+            rows = untagged,
             hasMore = false,
         ),
     )
@@ -504,6 +614,17 @@ class ArtistPortraitSurfaceTest {
         trackCount = 2,
         year = 2026,
         totalDurationMs = 120_000,
+    )
+
+    private fun track(title: String, artist: String) = LibraryTrack(
+        id = title.hashCode().toLong(),
+        uri = "content://tracks/$artist/$title",
+        title = title,
+        artist = artist,
+        album = "",
+        durationMs = 60_000,
+        playCount = 0,
+        rating = 0,
     )
 
     private fun bitmap(colour: Int): Bitmap =
