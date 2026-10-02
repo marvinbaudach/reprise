@@ -2,7 +2,7 @@
 slug: android-count-and-badge
 worktree: /home/marvin/Projects/reprise-android-count-and-badge
 branch: feature/android-count-and-badge
-phase: planned
+phase: coded
 codex_session:
 created: 2026-10-02
 ---
