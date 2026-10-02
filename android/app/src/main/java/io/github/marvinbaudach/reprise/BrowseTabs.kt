@@ -146,6 +146,7 @@ internal fun AlbumDetailPage(
         } else {
             ListPlayButton(
                 description = "Play ${selectedAlbum.album.title}",
+                modifier = Modifier.testTag("album-detail-play"),
                 onClick = { play(0) },
             )
             TrackRows(
@@ -502,6 +503,7 @@ private fun ArtistPlayButton(artist: LibraryArtist) = key(artist.name) {
     ListPlayButton(
         description = "Play ${artist.name}",
         enabled = !resolving,
+        modifier = Modifier.testTag("artist-detail-play"),
         onClick = {
             resolving = true
             scope.launch {
@@ -525,12 +527,15 @@ private fun ArtistPlayButton(artist: LibraryArtist) = key(artist.name) {
 private fun ListPlayButton(
     description: String,
     enabled: Boolean = true,
+    modifier: Modifier = Modifier,
     onClick: () -> Unit,
 ) {
     Button(
         onClick = onClick,
         enabled = enabled,
-        modifier = Modifier.padding(horizontal = 16.dp, vertical = 4.dp),
+        modifier = Modifier
+            .padding(horizontal = 16.dp, vertical = 4.dp)
+            .then(modifier),
     ) {
         MaterialSymbol("play_arrow", description)
         Text("Play")

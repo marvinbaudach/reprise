@@ -19,6 +19,7 @@ import androidx.compose.ui.test.click
 import io.github.marvinbaudach.reprise.ui.theme.RepriseTheme
 import kotlin.math.roundToInt
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertTrue
 import org.junit.Rule
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -140,14 +141,17 @@ class LibraryStatusChromeTest {
     @Test
     fun onADetailPageTheStatusSitsBelowTheHeader() {
         val viewModel = MobileSurfaceViewModel()
-        showArtists(viewModel)
+        val harness = showArtists(viewModel)
         compose.onNodeWithText(FIRST_ARTIST).performClick()
         compose.onNodeWithTag("artist-detail-overflow").assertIsDisplayed()
-        compose.runOnIdle { viewModel.begin("Deleting 13 tracks…") }
-        val headerBottom = bottomInPixels("artist-detail-header")
+        compose.runOnIdle {
+            harness.browse.value = harness.browse.value.copy(message = "Browse failed")
+        }
+        assertStatusBelowPlay("library-status-error", "artist")
 
-        val detailPillTop = topInPixels("deletion-message-line")
-        assertEquals(headerBottom + 8f.toPixels(), detailPillTop)
+        compose.onNodeWithContentDescription("Dismiss").performClick()
+        compose.runOnIdle { viewModel.begin("Deleting 13 tracks…") }
+        assertStatusBelowPlay("deletion-message-line", "artist")
 
         assertEquals(
             true,
@@ -162,17 +166,19 @@ class LibraryStatusChromeTest {
     @Test
     fun onAnAlbumDetailPageTheStatusSitsBelowTheHeader() {
         val viewModel = MobileSurfaceViewModel()
-        showArtists(viewModel)
+        val harness = showArtists(viewModel)
         compose.onNodeWithText(FIRST_ARTIST).performClick()
         compose.onNodeWithTag("artist-detail-overflow").assertIsDisplayed()
         compose.onNodeWithText(FIRST_ALBUM).performClick()
-        compose.onNodeWithText("No tracks in this album.").assertIsDisplayed()
-        compose.runOnIdle { viewModel.begin("Deleting 2 tracks…") }
+        compose.onNodeWithTag("album-detail-play").assertIsDisplayed()
+        compose.runOnIdle {
+            harness.browse.value = harness.browse.value.copy(message = "Browse failed")
+        }
+        assertStatusBelowPlay("library-status-error", "album")
 
-        assertEquals(
-            bottomInPixels("album-detail-header") + 8f.toPixels(),
-            topInPixels("deletion-message-line"),
-        )
+        compose.onNodeWithContentDescription("Dismiss").performClick()
+        compose.runOnIdle { viewModel.begin("Deleting 2 tracks…") }
+        assertStatusBelowPlay("deletion-message-line", "album")
     }
 
     @Test
@@ -284,7 +290,12 @@ class LibraryStatusChromeTest {
                             albums = LibraryWindow(1, listOf(album), false),
                         )
                     },
-                    openAlbum = { AlbumTrackList(it, LibraryWindow.empty()) },
+                    openAlbum = {
+                        AlbumTrackList(
+                            it,
+                            LibraryWindow(1, listOf(albumTrack), false),
+                        )
+                    },
                     listAlbumTracks = { _, _ -> LibraryWindow.empty() },
                     loadTrack = { _, deliver -> deliver(null) },
                     playTracks = { _, _ -> },
@@ -308,6 +319,12 @@ class LibraryStatusChromeTest {
     private fun assertListTops(pagerTop: Int, firstRowTop: Int) {
         assertEquals(pagerTop, topInPixels("library-destination-pager"))
         assertEquals(firstRowTop, textTopInPixels(FIRST_ARTIST))
+    }
+
+    private fun assertStatusBelowPlay(statusTag: String, page: String) {
+        val statusTop = topInPixels(statusTag)
+        assertTrue(statusTop >= bottomInPixels("$page-detail-play"))
+        assertEquals(bottomInPixels("$page-detail-header") + 8f.toPixels(), statusTop)
     }
 
     private fun assertStopEntryAndCloseMenu() {
@@ -342,6 +359,17 @@ class LibraryStatusChromeTest {
         trackCount = 2,
         year = 2026,
         totalDurationMs = 0,
+    )
+
+    private val albumTrack = LibraryTrack(
+        id = 1,
+        uri = "content://albums/first/track",
+        title = "Album track",
+        artist = FIRST_ARTIST,
+        album = FIRST_ALBUM,
+        durationMs = 60_000,
+        playCount = 0,
+        rating = 0,
     )
 
     private val theme = MobileThemeSelection(
