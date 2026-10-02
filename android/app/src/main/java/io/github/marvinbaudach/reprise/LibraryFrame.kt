@@ -67,6 +67,8 @@ internal fun LibrarySummaryActions(
     toggleSearch: () -> Unit,
     rescan: () -> Unit,
     openSettings: () -> Unit,
+    artworkProgress: ArtistPhotoProgress? = null,
+    stopArtworkDownload: () -> Unit = {},
 ) {
     var menuExpanded by remember { mutableStateOf(false) }
     Row(
@@ -132,6 +134,20 @@ internal fun LibrarySummaryActions(
                         openSettings()
                     },
                 )
+                if (
+                    artworkProgress?.phase == ArtistPhotoProgressPhase.PREPARING ||
+                    artworkProgress?.phase == ArtistPhotoProgressPhase.RUNNING ||
+                    artworkProgress?.phase == ArtistPhotoProgressPhase.PAUSED
+                ) {
+                    DropdownMenuItem(
+                        text = { Text("Stop artwork download") },
+                        leadingIcon = { MaterialSymbol("stop", "") },
+                        onClick = {
+                            menuExpanded = false
+                            stopArtworkDownload()
+                        },
+                    )
+                }
             }
         }
     }

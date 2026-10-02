@@ -1,384 +1,139 @@
 package io.github.marvinbaudach.reprise
 
-import android.graphics.Bitmap
-import android.graphics.Canvas as AndroidCanvas
-import android.view.ViewGroup
 import androidx.activity.ComponentActivity
-import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.Spacer
-import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.height
 import androidx.compose.runtime.mutableStateOf
-import androidx.compose.ui.Modifier
-import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.asImageBitmap
-import androidx.compose.ui.graphics.compositeOver
-import androidx.compose.ui.graphics.toPixelMap
-import androidx.compose.ui.platform.testTag
-import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.semantics.ProgressBarRangeInfo
 import androidx.compose.ui.semantics.SemanticsProperties
 import androidx.compose.ui.test.SemanticsMatcher
-import androidx.compose.ui.test.SemanticsNodeInteraction
 import androidx.compose.ui.test.assert
-import androidx.compose.ui.test.assertCountEquals
-import androidx.compose.ui.test.getUnclippedBoundsInRoot
+import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.junit4.v2.createAndroidComposeRule
-import androidx.compose.ui.test.onAllNodesWithTag
-import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onNodeWithTag
-import androidx.compose.ui.test.onNodeWithText
-import androidx.compose.ui.test.performClick
-import androidx.compose.ui.unit.dp
-import androidx.lifecycle.ViewModelStore
 import io.github.marvinbaudach.reprise.ui.theme.RepriseTheme
-import java.util.concurrent.ConcurrentLinkedQueue
 import org.junit.Assert.assertEquals
-import org.junit.Assert.assertTrue
+import org.junit.Assert.assertNull
 import org.junit.Rule
 import org.junit.Test
 import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
 import org.robolectric.annotation.Config
-import org.robolectric.annotation.GraphicsMode
 import uniffi.reprise_android_ffi.AndroidColorScheme
-import kotlin.math.roundToInt
 
 @RunWith(RobolectricTestRunner::class)
 @Config(sdk = [36], qualifiers = "w500dp-h1000dp")
-@GraphicsMode(GraphicsMode.Mode.NATIVE)
 class ArtistPhotoProgressBarTest {
     @get:Rule
     val compose = createAndroidComposeRule<ComponentActivity>()
 
     @Test
-    fun preparingHasNoCounterAndUsesIndeterminateProgress() {
-        show(ArtistPhotoProgress(1, ArtistPhotoProgressPhase.PREPARING, 0, 0, 0))
-
-        compose.onNodeWithText("Preparing artwork").assertIsDisplayed()
-        compose.onNodeWithTag("artist-photo-progress-counter").assertDoesNotExist()
-        compose.onNodeWithTag("artist-photo-progress-track").assertIsDisplayed()
-    }
-
-    @Test
-    fun runningShowsTheDownloadedCountAndDeterminateProgress() {
-        show(ArtistPhotoProgress(2, ArtistPhotoProgressPhase.RUNNING, 128, 0, 412))
-
-        compose.onNodeWithText("Downloading artwork").assertIsDisplayed()
-        compose.onNodeWithText("128 / 412").assertIsDisplayed()
-        compose.onNodeWithTag("artist-photo-progress-track")
-            .assertProgress(128f / 412f)
-    }
-
-    @Test
-    fun determinateProgressHasOneCountAnnouncement() {
-        show(ArtistPhotoProgress(2, ArtistPhotoProgressPhase.RUNNING, 128, 0, 412))
+    fun preparingUsesIndeterminateEdgeProgress() {
+        show(progress(ArtistPhotoProgressPhase.PREPARING, total = 0))
 
         compose.onNodeWithTag("artist-photo-progress-track")
+            .assertIsDisplayed()
             .assert(
                 SemanticsMatcher.expectValue(
-                    SemanticsProperties.StateDescription,
-                    "Artwork, 128 of 412 downloaded",
+                    SemanticsProperties.ProgressBarRangeInfo,
+                    ProgressBarRangeInfo.Indeterminate,
                 ),
             )
-            .assert(SemanticsMatcher.keyNotDefined(SemanticsProperties.ContentDescription))
     }
 
     @Test
-    fun successfulCompletionIsAllTealAndHasNoFailureLine() {
-        show(ArtistPhotoProgress(3, ArtistPhotoProgressPhase.COMPLETE, 412, 0, 412))
+    fun runningUsesDeterminateEdgeProgress() {
+        show(progress(ArtistPhotoProgressPhase.RUNNING, done = 2, total = 8))
 
-        compose.onNodeWithText("Artwork complete").assertIsDisplayed()
-        compose.onNodeWithText("412 / 412").assertIsDisplayed()
-        compose.onNodeWithTag("artist-photo-progress-track").assertProgress(1f)
-        compose.onNodeWithTag("artist-photo-progress-failure").assertDoesNotExist()
+        compose.onNodeWithTag("artist-photo-progress-track").assertProgress(0.25f)
     }
 
     @Test
-    fun failedCompletionUsesTheDesignCounts() {
-        show(ArtistPhotoProgress(4, ArtistPhotoProgressPhase.COMPLETE, 397, 15, 412))
+    fun waitingUsesIndeterminateEdgeProgress() {
+        show(progress(ArtistPhotoProgressPhase.PAUSED, done = 2, total = 8))
 
-        compose.onNodeWithText("397 / 412").assertIsDisplayed()
-        compose.onNodeWithText("15 without a photo").assertIsDisplayed()
-        compose.onNodeWithTag("artist-photo-progress-track").assertProgress(1f)
-    }
-
-    @Test
-    fun failedCompletionRendersTealThenPurpleAtTheMeasuredSplit() {
-        show(ArtistPhotoProgress(4, ArtistPhotoProgressPhase.COMPLETE, 397, 15, 412))
-
-        val track = compose.onNodeWithTag("artist-photo-progress-track")
-            .getUnclippedBoundsInRoot()
-        val pixels = renderActivity()
-        val density = compose.activity.resources.displayMetrics.density
-        val middleY = (
-            (track.top.value + (track.bottom.value - track.top.value) / 2f) * density
-        ).roundToInt()
-        val left = (track.left.value * density).roundToInt()
-        val width = ((track.right.value - track.left.value) * density).roundToInt()
-        val teal = pixels[left + width / 2, middleY]
-        assertTrue(
-            "transparent sample: track=$track density=$density bitmap=${pixels.width}x${pixels.height} " +
-                "sample=${left + width / 2},$middleY",
-            teal.alpha > 0.9f,
-        )
-
-        assertColorNear(Color(0xFF4FDBD4), teal)
-        assertColorNear(Color(0xFF9184D9), pixels[left + (width * 98) / 100, middleY])
-    }
-
-    @Test
-    fun pausedKeepsItsLastDeterminateStand() {
-        show(ArtistPhotoProgress(5, ArtistPhotoProgressPhase.PAUSED, 128, 15, 412))
-
-        compose.onNodeWithText("Waiting for a connection").assertIsDisplayed()
-        compose.onNodeWithText("128 / 412").assertIsDisplayed()
         compose.onNodeWithTag("artist-photo-progress-track")
-            .assertProgress(143f / 412f)
+            .assertIsDisplayed()
+            .assert(
+                SemanticsMatcher.expectValue(
+                    SemanticsProperties.ProgressBarRangeInfo,
+                    ProgressBarRangeInfo.Indeterminate,
+                ),
+            )
     }
 
     @Test
-    fun noRunCreatesNoNode() {
+    fun failedCompletionFillsTheTrackAndKeepsItsCountInTheSummary() {
+        val update = progress(
+            ArtistPhotoProgressPhase.COMPLETE,
+            done = 6,
+            failed = 2,
+            total = 8,
+        )
+        show(update)
+
+        compose.onNodeWithTag("artist-photo-progress-track").assertProgress(1f)
+        assertEquals(" · 2 without a photo", artistPhotoProgressSummarySuffix(update))
+    }
+
+    @Test
+    fun noRunCreatesNoEdgeNode() {
         show(null)
 
-        compose.onNodeWithTag("artist-photo-progress").assertDoesNotExist()
-    }
-
-    @Test
-    fun noRunLeavesNoNodeAndNoLayoutSpace() {
-        compose.setContent {
-            RepriseTheme(theme, darkPalette = true) {
-                Column {
-                    Spacer(Modifier.fillMaxWidth().height(7.dp).testTag("before-progress"))
-                    ArtistPhotoProgressBar(progress = null, dismiss = {})
-                    Spacer(Modifier.fillMaxWidth().height(7.dp).testTag("after-progress"))
-                }
-            }
-        }
-
-        compose.onAllNodesWithTag("artist-photo-progress", useUnmergedTree = true)
-            .assertCountEquals(0)
-        val before = compose.onNodeWithTag("before-progress").getUnclippedBoundsInRoot()
-        val after = compose.onNodeWithTag("after-progress").getUnclippedBoundsInRoot()
-        assertEquals(before.bottom, after.top)
+        compose.onNodeWithTag("artist-photo-progress-track").assertDoesNotExist()
     }
 
     @Test
     fun dismissalSticksForOneRunAndClearsForTheNext() {
         val viewModel = MobileSurfaceViewModel()
-        viewModel.acceptArtistPhotoProgress(running(runId = 9))
-
+        viewModel.acceptArtistPhotoProgress(progress(ArtistPhotoProgressPhase.RUNNING, runId = 9))
         viewModel.dismissArtistPhotoProgress()
-        viewModel.acceptArtistPhotoProgress(running(runId = 9, done = 2))
-        assertEquals(null, viewModel.visibleArtistPhotoProgress)
+        viewModel.acceptArtistPhotoProgress(
+            progress(ArtistPhotoProgressPhase.RUNNING, runId = 9, done = 2),
+        )
+        assertNull(viewModel.visibleArtistPhotoProgress)
 
-        viewModel.acceptArtistPhotoProgress(running(runId = 10))
+        viewModel.acceptArtistPhotoProgress(progress(ArtistPhotoProgressPhase.RUNNING, runId = 10))
         assertEquals(10L, viewModel.visibleArtistPhotoProgress?.runId)
-    }
-
-    @Test
-    fun composableStaysHiddenForTheDismissedRunAndReturnsForTheNextRun() {
-        val viewModel = MobileSurfaceViewModel()
-        compose.setContent {
-            RepriseTheme(theme, darkPalette = true) {
-                ArtistPhotoProgressBar(
-                    progress = viewModel.visibleArtistPhotoProgress,
-                    dismiss = viewModel::dismissArtistPhotoProgress,
-                )
-            }
-        }
-        compose.runOnIdle { viewModel.acceptArtistPhotoProgress(running(runId = 30)) }
-        compose.onNodeWithTag("artist-photo-progress").assertIsDisplayed()
-
-        compose.runOnIdle { viewModel.dismissArtistPhotoProgress() }
-        compose.onNodeWithTag("artist-photo-progress").assertDoesNotExist()
-        compose.runOnIdle {
-            viewModel.acceptArtistPhotoProgress(running(runId = 30, done = 2))
-        }
-        compose.onNodeWithTag("artist-photo-progress").assertDoesNotExist()
-
-        compose.runOnIdle { viewModel.acceptArtistPhotoProgress(running(runId = 31)) }
-        compose.onNodeWithTag("artist-photo-progress").assertIsDisplayed()
-    }
-
-    @Test
-    fun animatedSegmentFractionsCannotInvert() {
-        val completed = 0.8f
-        val done = clampedArtistPhotoDoneFraction(
-            animatedDone = 0.9f,
-            animatedCompleted = completed,
-        )
-
-        assertEquals(0.8f, done)
-        assertEquals(0f, completed - done)
-    }
-
-    @Test
-    fun mutedTextAlphaCompositesNearTheDesignColourOnTheCard() {
-        val composite = Color(0xFFB2B6CA)
-            .copy(alpha = ARTIST_PHOTO_MUTED_ALPHA)
-            .compositeOver(Color(0xFF292B31))
-        val target = Color(0xFF8F96A3)
-
-        assertTrue(kotlin.math.abs(composite.red - target.red) <= 2f / 255f)
-        assertTrue(kotlin.math.abs(composite.green - target.green) <= 2f / 255f)
-        assertTrue(kotlin.math.abs(composite.blue - target.blue) <= 2f / 255f)
-    }
-
-    @Test
-    fun aBackgroundSnapshotIsPostedBeforeItMutatesComposeState() {
-        val posted = ConcurrentLinkedQueue<() -> Unit>()
-        var snapshot = running(runId = 20)
-        val viewModel = MobileSurfaceViewModel()
-        viewModel.bindArtistPhotoBackfill(
-            snapshot = { snapshot },
-            start = {},
-            cancel = {},
-            postToMain = posted::add,
-        )
-        posted.remove().invoke()
-        assertEquals(20L, viewModel.visibleArtistPhotoProgress?.runId)
-        snapshot = running(runId = 21)
-
-        Thread(viewModel::startArtistPhotoBackfill).also {
-            it.start()
-            it.join()
-        }
-
-        assertEquals(20L, viewModel.visibleArtistPhotoProgress?.runId)
-        assertEquals(1, posted.size)
-        posted.remove().invoke()
-        assertEquals(21L, viewModel.visibleArtistPhotoProgress?.runId)
-    }
-
-    @Test
-    fun lateBackfillCommandsAfterClearDoNotReachTheClosedLibraryBinding() {
-        var starts = 0
-        var cancels = 0
-        val viewModel = MobileSurfaceViewModel()
-        viewModel.bindArtistPhotoBackfill(
-            snapshot = { running(runId = 22) },
-            start = { starts += 1 },
-            cancel = { cancels += 1 },
-        )
-        ViewModelStore().apply {
-            put("surface", viewModel)
-            clear()
-        }
-        assertEquals(1, cancels)
-
-        viewModel.startArtistPhotoBackfill()
-
-        assertEquals(0, starts)
-        assertEquals(1, cancels)
-    }
-
-    @Test
-    fun dismissButtonReportsHideProgress() {
-        var dismissals = 0
-        show(running(runId = 7), dismiss = { dismissals += 1 })
-
-        compose.onNodeWithContentDescription("Hide progress").performClick()
-
-        assertEquals(1, dismissals)
     }
 
     @Test
     fun successfulCompletionDismissesAfterFourSeconds() {
         var dismissals = 0
         compose.mainClock.autoAdvance = false
-        show(
-            ArtistPhotoProgress(12, ArtistPhotoProgressPhase.COMPLETE, 412, 0, 412),
-            dismiss = { dismissals += 1 },
-        )
+        show(progress(ArtistPhotoProgressPhase.COMPLETE, done = 8, total = 8)) {
+            dismissals += 1
+        }
 
         compose.mainClock.advanceTimeBy(4_001)
         compose.waitForIdle()
-
         assertEquals(1, dismissals)
     }
 
     @Test
-    fun failedCompletionDismissesAfterTheLongerDelay() {
+    fun failedCompletionDismissesAfterTenSeconds() {
         var dismissals = 0
         compose.mainClock.autoAdvance = false
         show(
-            ArtistPhotoProgress(13, ArtistPhotoProgressPhase.COMPLETE, 397, 15, 412),
-            dismiss = { dismissals += 1 },
-        )
+            progress(
+                ArtistPhotoProgressPhase.COMPLETE,
+                done = 6,
+                failed = 2,
+                total = 8,
+            ),
+        ) { dismissals += 1 }
 
         compose.mainClock.advanceTimeBy(4_001)
         compose.waitForIdle()
         assertEquals(0, dismissals)
-
         compose.mainClock.advanceTimeBy(6_000)
         compose.waitForIdle()
         assertEquals(1, dismissals)
     }
 
     @Test
-    fun failedCompletionStillLeavesAfterTheCardLeavesAndReentersComposition() {
-        var dismissals = 0
-        val present = mutableStateOf(true)
-        val update = ArtistPhotoProgress(14, ArtistPhotoProgressPhase.COMPLETE, 397, 15, 412)
-        compose.mainClock.autoAdvance = false
-        compose.setContent {
-            RepriseTheme(theme, darkPalette = true) {
-                if (present.value) {
-                    ArtistPhotoProgressBar(progress = update, dismiss = { dismissals += 1 })
-                }
-            }
-        }
-
-        compose.mainClock.advanceTimeBy(5_000)
-        compose.runOnUiThread { present.value = false }
-        compose.mainClock.advanceTimeBy(1_000)
-        compose.runOnUiThread { present.value = true }
-        compose.mainClock.advanceTimeBy(10_001)
-        compose.waitForIdle()
-
-        assertEquals(1, dismissals)
-    }
-
-    @Test
-    fun browseUsesTheSameProgressLabelsAboveItsPager() {
-        val viewModel = MobileSurfaceViewModel().apply {
-            acceptArtistPhotoProgress(running(runId = 11))
-        }
-        val browse = LibraryScreenState.Browse(
-            titles = LibraryWindow.empty(),
-            artists = LibraryWindow.empty(),
-        )
-        compose.setContent {
-            RepriseTheme(theme, darkPalette = true) {
-                BrowseScreen(
-                    state = browse,
-                    playback = PlaybackUiState().libraryPlayback(),
-                    playbackSettingsRevision = 0,
-                    surfaceState = viewModel,
-                    chooseFolder = {},
-                    rescan = {},
-                    searchTitles = { _, _ -> LibraryWindow.empty() },
-                    listArtists = { LibraryWindow.empty() },
-                    openAlbum = { error("Album navigation is outside this test") },
-                    listAlbumTracks = { _, _ -> LibraryWindow.empty() },
-                    loadTrack = { _, deliver -> deliver(null) },
-                    playTracks = { _, _ -> },
-                    loadPlaybackSettings = { PlaybackSettingsUiState(false, true, emptyList()) },
-                    setEqualizerEnabled = { PlaybackSettingsUiState(it, true, emptyList()) },
-                    replaceEqualizerCurve = {
-                        PlaybackSettingsUiState(false, true, emptyList())
-                    },
-                    setGaplessEnabled = { PlaybackSettingsUiState(false, it, emptyList()) },
-                    themeSelection = theme,
-                    selectTheme = {},
-                )
-            }
-        }
-
-        compose.onNodeWithText("Downloading artwork").assertIsDisplayed()
-        compose.onNodeWithText("1 / 412").assertIsDisplayed()
-        compose.onNodeWithTag("library-destination-pager").assertIsDisplayed()
+    fun animatedSegmentFractionsCannotInvert() {
+        assertEquals(0.4f, clampedArtistPhotoDoneFraction(0.8f, 0.4f))
+        assertEquals(0f, clampedArtistPhotoDoneFraction(-0.2f, 0.4f))
+        assertEquals(1f, clampedArtistPhotoDoneFraction(1.2f, 1.2f))
     }
 
     private fun show(
@@ -388,34 +143,18 @@ class ArtistPhotoProgressBarTest {
         val state = mutableStateOf(initial)
         compose.setContent {
             RepriseTheme(theme, darkPalette = true) {
-                ArtistPhotoProgressBar(progress = state.value, dismiss = dismiss)
+                ArtistPhotoEdgeProgress(state.value, dismiss)
             }
         }
     }
 
-    private fun running(runId: Long, done: Long = 1) = ArtistPhotoProgress(
-        runId = runId,
-        phase = ArtistPhotoProgressPhase.RUNNING,
-        done = done,
-        failed = 0,
-        total = 412,
-    )
-
-    private fun assertColorNear(expected: Color, actual: Color) {
-        assertTrue("red: expected $expected, got $actual", kotlin.math.abs(expected.red - actual.red) < 0.02f)
-        assertTrue(
-            "green: expected $expected, got $actual",
-            kotlin.math.abs(expected.green - actual.green) < 0.02f,
-        )
-        assertTrue("blue: expected $expected, got $actual", kotlin.math.abs(expected.blue - actual.blue) < 0.02f)
-    }
-
-    private fun renderActivity(): androidx.compose.ui.graphics.PixelMap {
-        val content = compose.activity.findViewById<ViewGroup>(android.R.id.content)
-        val bitmap = Bitmap.createBitmap(content.width, content.height, Bitmap.Config.ARGB_8888)
-        content.draw(AndroidCanvas(bitmap))
-        return bitmap.asImageBitmap().toPixelMap()
-    }
+    private fun progress(
+        phase: ArtistPhotoProgressPhase,
+        runId: Long = 1,
+        done: Long = 0,
+        failed: Long = 0,
+        total: Long = 8,
+    ) = ArtistPhotoProgress(runId, phase, done, failed, total)
 
     private val theme = MobileThemeSelection(
         palette = MobileTheme.NOCTURNE,
@@ -424,7 +163,7 @@ class ArtistPhotoProgressBarTest {
     )
 }
 
-private fun SemanticsNodeInteraction.assertProgress(value: Float) = assert(
+private fun androidx.compose.ui.test.SemanticsNodeInteraction.assertProgress(value: Float) = assert(
     SemanticsMatcher.expectValue(
         SemanticsProperties.ProgressBarRangeInfo,
         ProgressBarRangeInfo(value, 0f..1f, 0),

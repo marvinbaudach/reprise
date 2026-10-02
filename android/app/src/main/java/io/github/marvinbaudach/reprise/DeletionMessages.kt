@@ -54,7 +54,7 @@ internal const val DELETION_STILL_RUNNING_TEXT = "Still deleting…"
 
 internal const val DELETION_LINE_FADE_MS = 150
 
-private val DELETION_LINE_MAX_WIDTH = 480.dp
+private val STATUS_PILL_MAX_WIDTH = 480.dp
 
 /** One deletion that has started and not yet answered. */
 internal fun interface DeletionRun {
@@ -139,20 +139,8 @@ internal fun DeletionMessageLine(
         exit = fadeOut(tween(DELETION_LINE_FADE_MS)),
     ) {
         Box(modifier = Modifier.fillMaxWidth(), contentAlignment = Alignment.TopCenter) {
-            Column(
-                horizontalAlignment = Alignment.CenterHorizontally,
-                modifier = Modifier
-                    .widthIn(max = DELETION_LINE_MAX_WIDTH)
-                    .background(
-                        color = MaterialTheme.colorScheme.surfaceContainerHigh.copy(alpha = 0.94f),
-                        shape = RoundedCornerShape(percent = 50),
-                    )
-                    .semantics(mergeDescendants = true) {
-                        liveRegion = LiveRegionMode.Polite
-                    }
-                    .testTag("deletion-message-line")
-                    .padding(horizontal = 16.dp, vertical = 6.dp),
-            ) {
+            LibraryStatusPill(testTag = "deletion-message-line") {
+                Column(horizontalAlignment = Alignment.CenterHorizontally) {
                 val shownProgress = content?.progress
                 if (shownProgress != null) {
                     var stale by remember(shownProgress.run) { mutableStateOf(false) }
@@ -168,8 +156,30 @@ internal fun DeletionMessageLine(
                     )
                 }
                 TransientMessageText(content?.message, surface::dismissDeletionMessage)
+                }
             }
         }
+    }
+}
+
+@Composable
+internal fun LibraryStatusPill(
+    testTag: String,
+    modifier: Modifier = Modifier,
+    content: @Composable () -> Unit,
+) {
+    Box(
+        modifier = modifier
+            .widthIn(max = STATUS_PILL_MAX_WIDTH)
+            .background(
+                color = MaterialTheme.colorScheme.surfaceContainerHigh.copy(alpha = 0.94f),
+                shape = RoundedCornerShape(percent = 50),
+            )
+            .semantics(mergeDescendants = true) { liveRegion = LiveRegionMode.Polite }
+            .testTag(testTag)
+            .padding(horizontal = 16.dp, vertical = 6.dp),
+    ) {
+        content()
     }
 }
 
