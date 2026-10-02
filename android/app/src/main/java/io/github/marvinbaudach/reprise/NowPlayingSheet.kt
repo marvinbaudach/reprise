@@ -30,6 +30,7 @@ import androidx.compose.material3.Slider
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
@@ -376,32 +377,36 @@ internal fun NowPlayingSheet(
         shadowElevation = 12.dp,
     ) {
         if (surfaceLayout == SurfaceLayout.WIDE_SHORT) {
-            WideShortNowPlayingContent(
-                track = track,
-                playback = playback,
-                surfaceState = surfaceState,
-                metrics = metrics,
-                onSeekBounds = { seekBoundsInRoot.value = it },
-                onPrevious = { settleTrack(PlayGestureDecision.PREVIOUS) },
-                onNext = { settleTrack(PlayGestureDecision.NEXT) },
-            )
-        } else {
-            Box(Modifier.fillMaxSize().testTag("now-playing-content")) {
-                NowPlayingScene(
+            CompositionLocalProvider(LocalNowPlayingTrackDuration provides track.durationMs) {
+                WideShortNowPlayingContent(
                     track = track,
                     playback = playback,
                     surfaceState = surfaceState,
-                    positionPx = positionPx.value,
-                    currentIndex = currentIndex,
-                    panels = panelWindow.panels,
-                    visualizerOpacity = visualizerOpacity.value,
-                    visualizerLight = visualizerLight.value,
-                    cueRevision = cueRevision,
-                    onCoverBounds = { coverBounds.value = it },
+                    metrics = metrics,
                     onSeekBounds = { seekBoundsInRoot.value = it },
                     onPrevious = { settleTrack(PlayGestureDecision.PREVIOUS) },
                     onNext = { settleTrack(PlayGestureDecision.NEXT) },
                 )
+            }
+        } else {
+            Box(Modifier.fillMaxSize().testTag("now-playing-content")) {
+                CompositionLocalProvider(LocalNowPlayingTrackDuration provides track.durationMs) {
+                    NowPlayingScene(
+                        track = track,
+                        playback = playback,
+                        surfaceState = surfaceState,
+                        positionPx = positionPx.value,
+                        currentIndex = currentIndex,
+                        panels = panelWindow.panels,
+                        visualizerOpacity = visualizerOpacity.value,
+                        visualizerLight = visualizerLight.value,
+                        cueRevision = cueRevision,
+                        onCoverBounds = { coverBounds.value = it },
+                        onSeekBounds = { seekBoundsInRoot.value = it },
+                        onPrevious = { settleTrack(PlayGestureDecision.PREVIOUS) },
+                        onNext = { settleTrack(PlayGestureDecision.NEXT) },
+                    )
+                }
                 TopEdgeAccentLine(
                     deviationPx = positionPx.value - currentIndex * screenWidthPx,
                     widthPx = screenWidthPx,
@@ -675,7 +680,7 @@ internal fun SpectralSeekSlider(
                 color = MaterialTheme.colorScheme.primary,
             )
             Text(
-                text = formatRemaining(displayed, durationMs),
+                text = remainingLabel(displayed, durationMs, LocalNowPlayingTrackDuration.current),
                 style = MaterialTheme.typography.labelMedium,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )

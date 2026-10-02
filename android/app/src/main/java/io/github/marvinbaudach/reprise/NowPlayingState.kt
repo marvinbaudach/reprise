@@ -1,6 +1,9 @@
 package io.github.marvinbaudach.reprise
 
+import androidx.compose.runtime.staticCompositionLocalOf
 import uniffi.reprise_android_ffi.AndroidRepeatMode
+
+internal val LocalNowPlayingTrackDuration = staticCompositionLocalOf { 0L }
 
 internal data class NowPlayingMetrics(
     val coverSizeDp: Int,
@@ -53,6 +56,12 @@ internal fun formatRemaining(positionMs: Long, durationMs: Long): String =
     } else {
         "--:--"
     }
+
+internal fun remainingLabel(
+    positionMs: Long,
+    playerDurationMs: Long,
+    trackDurationMs: Long,
+): String = formatRemaining(positionMs, playerDurationMs.takeIf { it > 0 } ?: trackDurationMs)
 
 internal fun cycleRepeatMode(mode: AndroidRepeatMode): AndroidRepeatMode = when (mode) {
     AndroidRepeatMode.OFF -> AndroidRepeatMode.ALL
