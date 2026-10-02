@@ -18,10 +18,15 @@ internal fun LibraryTrack.details(): String =
 internal fun LibraryAlbum.details(): String = buildList {
     add(artist.ifBlank { "Unknown artist" })
     year?.let { add(it.toString()) }
-    add("$trackCount tracks")
+    add(countLabel(trackCount, "track", "tracks"))
 }.joinToString(" • ")
 
-internal fun LibraryArtist.details(): String = "$albumCount albums • $trackCount tracks"
+internal fun LibraryArtist.details(): String =
+    "${countLabel(albumCount, "album", "albums")} • " +
+        countLabel(trackCount, "track", "tracks")
+
+internal fun countLabel(count: Long, singular: String, plural: String): String =
+    "$count ${if (count == 1L) singular else plural}"
 
 /**
  * Formats a duration as `m:ss`, or `h:mm:ss` once the hour mark is reached.
