@@ -1,6 +1,6 @@
 //! Podcast subscription and episode persistence.
 
-use rusqlite::{params, Connection, OptionalExtension};
+use rusqlite::{params, Connection, OptionalExtension, Transaction, TransactionBehavior};
 
 use crate::db::Db;
 
@@ -530,7 +530,7 @@ pub fn undo_remove_episode(db: &Db, id: i64) -> Result<bool, rusqlite::Error> {
 
 pub fn commit_remove_episode(db: &Db, id: i64) -> Result<Option<String>, rusqlite::Error> {
     let conn = db.conn();
-    let transaction = conn.unchecked_transaction()?;
+    let transaction = Transaction::new_unchecked(conn, TransactionBehavior::Immediate)?;
     let removed = transaction
         .query_row(
             "SELECT subscription_id, guid, removed_at, downloaded_path
