@@ -18,7 +18,7 @@ serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
 walkdir = "2"
 lofty = "0.25"
-dirs = "6"
+dirs = "7"
 tracing = "0.1"
 # `MediaIntegrationHandles` and the controller channels are typed with
 # async-channel, so it is a core dependency (the platform crates and the
