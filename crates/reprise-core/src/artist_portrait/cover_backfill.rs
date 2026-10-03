@@ -32,20 +32,27 @@ pub type CoverBackfillFetch =
     dyn Fn(&str, &str, &str) -> crate::cover_download::CoverFetchOutcome + Send + Sync;
 pub type CoverBackfillListener = dyn Fn(CoverBackfillProgress) + Send + Sync;
 
+#[must_use]
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum ChainedCoverStart {
+    Started,
+    Cancelled,
+    Busy,
+}
+
 type PrepareWork = dyn FnOnce() -> Result<Vec<(String, String, String)>, String> + Send;
 type ConsentAllowed = dyn Fn() -> bool + Send + Sync;
 
 struct Shared {
     active: bool,
     cancelled: bool,
-    /// Sticky, unlike `cancelled`: set by [`CoverBackfill::cancel`] even
-    /// while no run is active yet, and consumed by the next
-    /// [`CoverBackfill::launch`] rather than by the (possibly nonexistent)
-    /// worker `cancelled` gates. Exists for the window between the portrait
-    /// run reporting `Complete` and the FFI's forwarding closure actually
-    /// reaching `start()` — during that window `active` is `false` on both
-    /// sides, so a plain `active`-gated cancel is silently lost (B3 review
-    /// findings 6/7).
+    /// Identifies the portrait run whose cover transition is armed but has
+    /// not reached [`CoverBackfill::start_chained`] yet.
+    chained_start_pending: Option<u64>,
+    next_chained_start: u64,
+    stop_generation: u64,
+    /// One-shot cancellation scoped to `chained_start_pending`. Ordinary
+    /// idle stops never set it, so they cannot swallow a later start.
     cancel_requested: bool,
     progress: CoverBackfillProgress,
     listener: Option<Arc<CoverBackfillListener>>,
@@ -60,6 +67,14 @@ pub struct CoverBackfill {
     worker: Mutex<Option<JoinHandle<()>>>,
 }
 
+/// Clears an announced portrait-to-cover transition if unwinding or an
+/// early return prevents it from reaching [`CoverBackfill::start_chained`].
+#[must_use = "the transition must be held until the chained start"]
+pub struct ChainedCoverStartGuard {
+    shared: Arc<Mutex<Shared>>,
+    generation: u64,
+}
+
 impl CoverBackfill {
     #[must_use]
     pub fn new() -> Self {
@@ -67,6 +82,9 @@ impl CoverBackfill {
             shared: Arc::new(Mutex::new(Shared {
                 active: false,
                 cancelled: false,
+                chained_start_pending: None,
+                next_chained_start: 0,
+                stop_generation: 0,
                 cancel_requested: false,
                 progress: CoverBackfillProgress::default(),
                 listener: None,
@@ -85,6 +103,7 @@ impl CoverBackfill {
         consent_allowed: Arc<ConsentAllowed>,
     ) -> bool {
         self.launch(
+            None,
             Box::new(move || {
                 let db = Db::open_ready(&database_path).map_err(|error| error.to_string())?;
                 pending_albums(&db).map_err(|error| error.to_string())
@@ -93,6 +112,29 @@ impl CoverBackfill {
             listener,
             consent_allowed,
         )
+        .is_started()
+    }
+
+    pub fn start_chained(
+        &self,
+        transition: ChainedCoverStartGuard,
+        database_path: PathBuf,
+        fetch: Arc<CoverBackfillFetch>,
+        listener: Arc<CoverBackfillListener>,
+        consent_allowed: Arc<ConsentAllowed>,
+    ) -> ChainedCoverStart {
+        let start = self.launch(
+            Some(transition.generation),
+            Box::new(move || {
+                let db = Db::open_ready(&database_path).map_err(|error| error.to_string())?;
+                pending_albums(&db).map_err(|error| error.to_string())
+            }),
+            fetch,
+            listener,
+            consent_allowed,
+        );
+        drop(transition);
+        start
     }
 
     pub fn cancel(&self) {
@@ -101,13 +143,14 @@ impl CoverBackfill {
                 .shared
                 .lock()
                 .unwrap_or_else(std::sync::PoisonError::into_inner);
+            shared.stop_generation = shared.stop_generation.wrapping_add(1);
             if !shared.active {
-                // No run to stop yet — but one may still be about to start
-                // (the FFI's forwarding closure calls `start()` after this
-                // handle reports the portrait run `Complete`, not before),
-                // so the cancel must not simply vanish: the next `launch`
-                // consumes this instead of starting.
-                shared.cancel_requested = true;
+                // Retain this stop only for the explicitly announced FFI
+                // transition from portrait completion to its chained start.
+                // An ordinary idle stop must leave later runs untouched.
+                if shared.chained_start_pending.is_some() {
+                    shared.cancel_requested = true;
+                }
                 return;
             }
             shared.cancelled = true;
@@ -116,6 +159,35 @@ impl CoverBackfill {
         };
         if let Some(listener) = listener {
             listener(CoverBackfillProgress::default());
+        }
+    }
+
+    /// Captures the cancellation generation before a portrait run starts.
+    #[must_use]
+    pub fn chained_start_checkpoint(&self) -> u64 {
+        self.shared
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .stop_generation
+    }
+
+    /// Arms the short portrait-to-cover transition, retaining any stop that
+    /// arrived after `checkpoint`, including before this call acquired the
+    /// shared lock.
+    pub fn prepare_chained_start(&self, checkpoint: u64) -> ChainedCoverStartGuard {
+        let generation = {
+            let mut shared = self
+                .shared
+                .lock()
+                .unwrap_or_else(std::sync::PoisonError::into_inner);
+            shared.next_chained_start = shared.next_chained_start.wrapping_add(1);
+            shared.chained_start_pending = Some(shared.next_chained_start);
+            shared.cancel_requested = shared.stop_generation != checkpoint;
+            shared.next_chained_start
+        };
+        ChainedCoverStartGuard {
+            shared: Arc::clone(&self.shared),
+            generation,
         }
     }
 
@@ -137,6 +209,7 @@ impl CoverBackfill {
             .shared
             .lock()
             .unwrap_or_else(std::sync::PoisonError::into_inner);
+        shared.chained_start_pending = None;
         shared.cancel_requested = false;
         shared.progress = CoverBackfillProgress::default();
     }
@@ -151,11 +224,12 @@ impl CoverBackfill {
 
     fn launch(
         &self,
+        chained_start: Option<u64>,
         prepare: Box<PrepareWork>,
         fetch: Arc<CoverBackfillFetch>,
         listener: Arc<CoverBackfillListener>,
         consent_allowed: Arc<ConsentAllowed>,
-    ) -> bool {
+    ) -> ChainedCoverStart {
         let mut worker = self
             .worker
             .lock()
@@ -167,12 +241,18 @@ impl CoverBackfill {
                     reset_after_worker_exit(&self.shared);
                 }
             } else {
-                self.shared
+                let mut shared = self
+                    .shared
                     .lock()
-                    .unwrap_or_else(std::sync::PoisonError::into_inner)
-                    .listener = Some(listener);
+                    .unwrap_or_else(std::sync::PoisonError::into_inner);
+                let chained = consume_chained_start(&mut shared, chained_start);
+                shared.listener = Some(listener);
                 *worker = Some(previous);
-                return false;
+                return if chained == Some(ChainedCoverStart::Cancelled) {
+                    ChainedCoverStart::Cancelled
+                } else {
+                    ChainedCoverStart::Busy
+                };
             }
         }
 
@@ -181,18 +261,14 @@ impl CoverBackfill {
                 .shared
                 .lock()
                 .unwrap_or_else(std::sync::PoisonError::into_inner);
+            if consume_chained_start(&mut shared, chained_start)
+                == Some(ChainedCoverStart::Cancelled)
+            {
+                return ChainedCoverStart::Cancelled;
+            }
             if shared.active {
                 shared.listener = Some(listener);
-                return false;
-            }
-            if shared.cancel_requested {
-                // A cancel arrived while this run existed only as an
-                // in-flight FFI closure, before `start()` reached here —
-                // honour it instead of starting a pass the caller already
-                // tried to stop (B3 review findings 6/7). One-shot: an
-                // unrelated later `start()` is not blocked by it.
-                shared.cancel_requested = false;
-                return false;
+                return ChainedCoverStart::Busy;
             }
             shared.active = true;
             shared.cancelled = false;
@@ -212,7 +288,7 @@ impl CoverBackfill {
             };
             run_worker(&shared, albums, fetch.as_ref(), consent_allowed.as_ref());
         }));
-        true
+        ChainedCoverStart::Started
     }
 
     #[cfg(test)]
@@ -224,11 +300,68 @@ impl CoverBackfill {
         consent_allowed: Arc<ConsentAllowed>,
     ) -> bool {
         self.launch(
+            None,
             Box::new(move || Ok(albums)),
             fetch,
             listener,
             consent_allowed,
         )
+        .is_started()
+    }
+
+    #[cfg(test)]
+    fn start_chained_prepared(
+        &self,
+        transition: ChainedCoverStartGuard,
+        albums: Vec<(String, String, String)>,
+        fetch: Arc<CoverBackfillFetch>,
+        listener: Arc<CoverBackfillListener>,
+        consent_allowed: Arc<ConsentAllowed>,
+    ) -> ChainedCoverStart {
+        let start = self.launch(
+            Some(transition.generation),
+            Box::new(move || Ok(albums)),
+            fetch,
+            listener,
+            consent_allowed,
+        );
+        drop(transition);
+        start
+    }
+}
+
+fn consume_chained_start(
+    shared: &mut Shared,
+    generation: Option<u64>,
+) -> Option<ChainedCoverStart> {
+    let generation = generation?;
+    if shared.chained_start_pending != Some(generation) {
+        return Some(ChainedCoverStart::Cancelled);
+    }
+    shared.chained_start_pending = None;
+    Some(if std::mem::take(&mut shared.cancel_requested) {
+        ChainedCoverStart::Cancelled
+    } else {
+        ChainedCoverStart::Started
+    })
+}
+
+impl Drop for ChainedCoverStartGuard {
+    fn drop(&mut self) {
+        let mut shared = self
+            .shared
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        if shared.chained_start_pending == Some(self.generation) {
+            shared.chained_start_pending = None;
+            shared.cancel_requested = false;
+        }
+    }
+}
+
+impl ChainedCoverStart {
+    const fn is_started(self) -> bool {
+        matches!(self, Self::Started)
     }
 }
 

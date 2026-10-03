@@ -176,15 +176,22 @@ fn a_cancel_before_start_is_honoured_once_start_finally_runs() {
         CoverFetchOutcome::NotFound
     });
 
+    let checkpoint = backfill.chained_start_checkpoint();
     backfill.cancel();
-    let started = backfill.start_prepared(
+    let transition = backfill.prepare_chained_start(checkpoint);
+    let start = backfill.start_chained_prepared(
+        transition,
         vec![("Band A".into(), "Album A".into(), "/a.flac".into())],
         fetch,
         listener,
         always(),
     );
 
-    assert!(!started, "a pending cancel must refuse the next launch");
+    assert_eq!(
+        start,
+        ChainedCoverStart::Cancelled,
+        "a pending cancel must refuse the next launch",
+    );
     assert_eq!(calls.load(Ordering::Relaxed), 0);
     assert_eq!(backfill.progress(), CoverBackfillProgress::default());
 
@@ -210,6 +217,41 @@ fn a_cancel_before_start_is_honoured_once_start_finally_runs() {
         "a later, unrelated start must not stay blocked"
     );
     assert_eq!(later_calls.load(Ordering::Relaxed), 1);
+}
+
+#[test]
+fn unwinding_before_a_chained_start_does_not_leave_the_transition_pending() {
+    let backfill = CoverBackfill::new();
+    let checkpoint = backfill.chained_start_checkpoint();
+    let transition = backfill.prepare_chained_start(checkpoint);
+
+    let unwind = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+        let _transition = transition;
+        panic!("simulated panic before the chained start");
+    }));
+    assert!(unwind.is_err());
+
+    // A later idle stop must remain idle. If the abandoned transition is
+    // still pending, this stop becomes sticky and swallows the next pass.
+    backfill.cancel();
+    let calls = Arc::new(AtomicUsize::new(0));
+    let counted = Arc::clone(&calls);
+    let fetch: Arc<CoverBackfillFetch> = Arc::new(move |_, _, _| {
+        counted.fetch_add(1, Ordering::Relaxed);
+        CoverFetchOutcome::NotFound
+    });
+    let (_, listener) = updates();
+
+    let started = backfill.start_prepared(
+        vec![("Band A".into(), "Album A".into(), "/a.flac".into())],
+        fetch,
+        listener,
+        always(),
+    );
+    wait_for_worker_to_finish(&backfill);
+
+    assert!(started, "an abandoned transition must clear on unwind");
+    assert_eq!(calls.load(Ordering::Relaxed), 1);
 }
 
 #[test]

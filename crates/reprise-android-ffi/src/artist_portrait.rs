@@ -1,6 +1,10 @@
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
+#[cfg(test)]
+use std::sync::{Mutex, OnceLock, PoisonError};
+
+use reprise_core::artist_portrait::cover_backfill::ChainedCoverStart;
 use reprise_core::artist_portrait::{
     load_cached_from, verdict, CoverBackfillFetch, CoverBackfillListener, CoverBackfillProgress,
     PortraitBackfillListener as CorePortraitBackfillListener, PortraitBackfillProgress,
@@ -234,8 +238,8 @@ impl MusicLibrary {
     }
 
     pub fn cancel_artist_portrait_backfill(&self) {
-        self.portrait_backfill.cancel();
         album_cover::cover_backfill().cancel();
+        self.portrait_backfill.cancel();
     }
 }
 
@@ -244,6 +248,33 @@ impl MusicLibrary {
 /// `album_cover_fetch_with` takes (there as `&dyn Fn`; `Arc` here since
 /// this one outlives the call, held inside the `forward` closure).
 type NetworkCoverFetch = dyn Fn(&str, &str, Option<&str>) -> CoverFetchOutcome + Send + Sync;
+
+#[cfg(test)]
+type BeforeChainedStartHook = dyn FnOnce() + Send;
+
+#[cfg(test)]
+fn before_chained_start_hook() -> &'static Mutex<Option<Box<BeforeChainedStartHook>>> {
+    static HOOK: OnceLock<Mutex<Option<Box<BeforeChainedStartHook>>>> = OnceLock::new();
+    HOOK.get_or_init(|| Mutex::new(None))
+}
+
+#[cfg(test)]
+fn install_before_chained_start_hook(hook: impl FnOnce() + Send + 'static) {
+    *before_chained_start_hook()
+        .lock()
+        .unwrap_or_else(PoisonError::into_inner) = Some(Box::new(hook));
+}
+
+#[cfg(test)]
+fn run_before_chained_start_hook() {
+    let hook = before_chained_start_hook()
+        .lock()
+        .unwrap_or_else(PoisonError::into_inner)
+        .take();
+    if let Some(hook) = hook {
+        hook();
+    }
+}
 
 impl MusicLibrary {
     /// `start_artist_portrait_backfill` with its network-shaped step
@@ -278,12 +309,24 @@ impl MusicLibrary {
         // MusicLibrary with no configured tree yet simply never chains a
         // cover pass — the portrait run still proceeds on its own.
         let tree_source = self.configured_tree().ok().map(|(_, source)| source);
+        let chained_start_checkpoint = tree_source
+            .as_ref()
+            .map(|_| album_cover::cover_backfill().chained_start_checkpoint());
 
         let forward_listener = Arc::clone(&listener);
         let forward: Arc<CorePortraitBackfillListener> = Arc::new(move |progress| {
             let just_completed =
                 progress.state == PortraitBackfillState::Complete && progress.run_id != 0;
             let will_chain = just_completed && tree_source.is_some();
+            let transition = if will_chain {
+                #[cfg(test)]
+                run_before_chained_start_hook();
+                chained_start_checkpoint.map(|checkpoint| {
+                    album_cover::cover_backfill().prepare_chained_start(checkpoint)
+                })
+            } else {
+                None
+            };
             if will_chain {
                 // A cover pass is about to start riding this same
                 // completion: pushing the raw `Complete` here would be
@@ -306,6 +349,9 @@ impl MusicLibrary {
                 return;
             }
             let Some(source) = tree_source.clone() else {
+                return;
+            };
+            let Some(transition) = transition else {
                 return;
             };
 
@@ -351,12 +397,16 @@ impl MusicLibrary {
                 })
             });
 
-            album_cover::cover_backfill().start(
+            let start = album_cover::cover_backfill().start_chained(
+                transition,
                 database_path.clone(),
                 fetch,
                 cover_listener,
                 consent_allowed,
             );
+            if start == ChainedCoverStart::Cancelled {
+                forward_listener.on_progress(PortraitBackfillProgress::idle().into());
+            }
         });
         self.portrait_backfill.start(
             self.database_path.clone(),
