@@ -74,6 +74,11 @@ class MainActivityMusicPathsTest {
         application.service.republish()
         shadowOf(Looper.getMainLooper()).idle()
         compose.waitForIdle()
+        compose.waitUntil(timeoutMillis = 5_000) {
+            compose.onAllNodesWithContentDescription("Back").fetchSemanticsNodes().isNotEmpty() &&
+                compose.onAllNodesWithText("Artist One · First Album")
+                    .fetchSemanticsNodes().isNotEmpty()
+        }
 
         compose.onNodeWithContentDescription("Back").assertIsDisplayed()
         compose.onNodeWithText("Artist One · First Album").assertIsDisplayed()
@@ -112,6 +117,9 @@ class MainActivityMusicPathsTest {
         application.service.republish()
         shadowOf(Looper.getMainLooper()).idle()
         compose.waitForIdle()
+        compose.waitUntil(timeoutMillis = 5_000) {
+            compose.onAllNodesWithContentDescription("Back").fetchSemanticsNodes().isNotEmpty()
+        }
         compose.onNodeWithContentDescription("Back").assertIsDisplayed()
 
         application.service.publish(m9bSnapshot(1))
@@ -144,6 +152,10 @@ class MainActivityMusicPathsTest {
         application.service.republish()
         shadowOf(Looper.getMainLooper()).idle()
         compose.waitForIdle()
+        compose.waitUntil(timeoutMillis = 5_000) {
+            compose.onAllNodesWithContentDescription("Back to artists")
+                .fetchSemanticsNodes().isNotEmpty()
+        }
         compose.onNodeWithContentDescription("Back to artists").assertIsDisplayed()
 
         compose.activity.onBackPressedDispatcher.onBackPressed()
