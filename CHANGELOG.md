@@ -4,6 +4,43 @@ Reprise release notes are curated from the changes that reached the stable
 branch. They describe user-visible changes rather than reproducing commit
 messages.
 
+## [0.1.225] - 2026-10-03
+
+### Device sync
+
+- A phone no longer syncs by itself unless asked to. The switch "Sync
+  automatically when this phone connects" defaulted to on, and a phone with any
+  selected playlist always counted as having work, so launching the desktop with
+  the phone attached started a sync nobody asked for, and its mirror pass
+  removed files from the phone's Reprise folder. A newly remembered phone now
+  starts with the switch off, and every phone already remembered is switched off
+  once; turning the switch on for a device works as before.
+
+### Podcasts and online sources
+
+- A podcast refresh no longer waits behind a download. Refreshing and
+  downloading shared one worker, so a refresh queued behind a long download
+  fill-up could take close to a minute instead of several seconds. Downloads now
+  run in their own lane and a refresh never queues behind one, and each finished
+  download job is logged with its duration and episode count.
+
+### Android
+
+- The library's status no longer pushes the list around. Errors and the
+  deletion status share one pill over the top edge of the list, one at a time;
+  an error carries a close button, and everything else lets taps through. On an
+  artist or album page the pill sits below the title and the Play button
+  instead of covering it. Artwork download progress is a thin bar on the top
+  edge of the list, with its phase and count in the summary line ("68 artists
+  · Artwork 0/2"), and the overflow menu offers to cancel the run.
+- A track that was never played shows no play-count badge. The row keeps the
+  badge's space, so durations stay on one line across played and unplayed rows,
+  and TalkBack no longer announces "0 plays".
+- Play counts fit their badge at every font scale. A count that did not fit
+  wrapped onto two lines and pushed the duration down; counts from 1,000 up are
+  shortened ("1.2k", "3M"), the column widens with the font scale, and TalkBack
+  announces the exact count once instead of reading it twice.
+
 ## [0.1.222] - 2026-10-02
 
 ### Library
