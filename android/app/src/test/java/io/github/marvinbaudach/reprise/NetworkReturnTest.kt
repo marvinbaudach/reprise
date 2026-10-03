@@ -28,6 +28,92 @@ import org.robolectric.shadows.ShadowNetworkInfo
 @Config(sdk = [36])
 class NetworkReturnTest {
     @Test
+    fun net_7b_a_return_schedules_three_follow_ups() {
+        val scheduler = FakeNetworkReturnScheduler()
+        val followUpLogs = mutableListOf<Int>()
+        val fixture = monitorFixture(
+            activeValidated = null,
+            scheduler = scheduler,
+            logFollowUp = followUpLogs::add,
+        )
+
+        fixture.monitor.start()
+        fixture.returnNetwork(id = 50)
+
+        assertEquals(1, fixture.returns())
+        assertEquals(listOf(3_000L, 10_000L, 30_000L), scheduler.pendingDelays())
+
+        scheduler.advanceBy(3_000L)
+        assertEquals(2, fixture.returns())
+        scheduler.advanceBy(7_000L)
+        assertEquals(3, fixture.returns())
+        scheduler.advanceBy(20_000L)
+        assertEquals(4, fixture.returns())
+        assertEquals(listOf(1, 2, 3), followUpLogs)
+        assertEquals(emptyList<Long>(), scheduler.pendingDelays())
+        fixture.monitor.stop()
+    }
+
+    @Test
+    fun losing_the_network_cancels_the_remaining_follow_ups() {
+        val scheduler = FakeNetworkReturnScheduler()
+        val fixture = monitorFixture(activeValidated = null, scheduler = scheduler)
+
+        fixture.monitor.start()
+        val network = fixture.returnNetwork(id = 51)
+        scheduler.advanceBy(3_000L)
+        fixture.shadow.networkCallbacks.single().onLost(network)
+        scheduler.advanceBy(27_000L)
+
+        assertEquals(2, fixture.returns())
+        assertEquals(emptyList<Long>(), scheduler.pendingDelays())
+        fixture.monitor.stop()
+    }
+
+    @Test
+    fun a_second_return_replaces_the_first_follow_up_schedule() {
+        val scheduler = FakeNetworkReturnScheduler()
+        val fixture = monitorFixture(activeValidated = null, scheduler = scheduler)
+
+        fixture.monitor.start()
+        val first = fixture.returnNetwork(id = 52)
+        scheduler.advanceBy(5_000L)
+        fixture.shadow.networkCallbacks.single().onLost(first)
+        fixture.returnNetwork(id = 53)
+
+        assertEquals(3, fixture.returns())
+        assertEquals(listOf(3_000L, 10_000L, 30_000L), scheduler.pendingDelays())
+        scheduler.advanceBy(30_000L)
+        assertEquals(6, fixture.returns())
+        fixture.monitor.stop()
+    }
+
+    @Test
+    fun stop_cancels_follow_ups_and_the_next_start_can_schedule_a_fresh_set() {
+        val scheduler = FakeNetworkReturnScheduler()
+        val fixture = monitorFixture(activeValidated = null, scheduler = scheduler)
+
+        fixture.monitor.start()
+        val first = fixture.returnNetwork(id = 54)
+        fixture.monitor.stop()
+        assertEquals(emptyList<Long>(), scheduler.pendingDelays())
+
+        fixture.shadow.removeNetwork(first)
+        fixture.monitor.start()
+        fixture.monitor.stop()
+        fixture.addNetwork(
+            id = 55,
+            type = ConnectivityManager.TYPE_WIFI,
+            capabilities = capabilities(validated = true),
+        )
+        fixture.monitor.start()
+
+        assertEquals(2, fixture.returns())
+        assertEquals(listOf(3_000L, 10_000L, 30_000L), scheduler.pendingDelays())
+        fixture.monitor.stop()
+    }
+
+    @Test
     fun net_7b_an_offline_to_online_transition_reports_one_network_return() {
         val detector = NetworkReturnDetector()
 
@@ -196,7 +282,11 @@ class NetworkReturnTest {
         viewModel.stopNetworkReturnMonitor()
     }
 
-    private fun monitorFixture(activeValidated: Boolean?): MonitorFixture {
+    private fun monitorFixture(
+        activeValidated: Boolean?,
+        scheduler: NetworkReturnScheduler = FakeNetworkReturnScheduler(),
+        logFollowUp: (Int) -> Unit = {},
+    ): MonitorFixture {
         val context = ApplicationProvider.getApplicationContext<Context>()
         val connectivity = context.getSystemService(ConnectivityManager::class.java)
         val shadow = shadowOf(connectivity)
@@ -209,6 +299,8 @@ class NetworkReturnTest {
             detector = NetworkReturnDetector(),
             onNetworkReturned = { returns += 1 },
             postToMain = { work -> work() },
+            scheduler = scheduler,
+            logFollowUp = logFollowUp,
         )
         return MonitorFixture(connectivity, shadow, monitor) { returns }
     }
@@ -264,6 +356,13 @@ class NetworkReturnTest {
         val monitor: NetworkReturnMonitor,
         val returns: () -> Int,
     ) {
+        fun returnNetwork(id: Int): android.net.Network = ShadowNetwork.newInstance(id).also { network ->
+            shadow.networkCallbacks.single().onCapabilitiesChanged(
+                network,
+                capabilities(validated = true),
+            )
+        }
+
         fun addNetwork(
             id: Int,
             type: Int,
@@ -280,6 +379,55 @@ class NetworkReturnTest {
             true,
             true,
         )
+
+        private fun capabilities(validated: Boolean): NetworkCapabilities {
+            val capabilities = ShadowNetworkCapabilities.newInstance()
+            shadowOf(capabilities).apply {
+                addTransportType(NetworkCapabilities.TRANSPORT_WIFI)
+                addCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET)
+                addCapability(NetworkCapabilities.NET_CAPABILITY_NOT_VPN)
+                if (validated) addCapability(NetworkCapabilities.NET_CAPABILITY_VALIDATED)
+            }
+            return capabilities
+        }
+    }
+}
+
+private class FakeNetworkReturnScheduler : NetworkReturnScheduler {
+    private data class Scheduled(
+        val dueAtMs: Long,
+        val order: Long,
+        val work: Runnable,
+    )
+
+    private var nowMs = 0L
+    private var nextOrder = 0L
+    private val scheduled = mutableListOf<Scheduled>()
+
+    override fun postDelayed(work: Runnable, delayMs: Long) {
+        scheduled += Scheduled(nowMs + delayMs, nextOrder++, work)
+    }
+
+    override fun cancel(work: Runnable) {
+        scheduled.removeAll { it.work === work }
+    }
+
+    fun pendingDelays(): List<Long> = scheduled
+        .sortedWith(compareBy(Scheduled::dueAtMs, Scheduled::order))
+        .map { it.dueAtMs - nowMs }
+
+    fun advanceBy(delayMs: Long) {
+        val targetMs = nowMs + delayMs
+        while (true) {
+            val next = scheduled
+                .filter { it.dueAtMs <= targetMs }
+                .minWithOrNull(compareBy(Scheduled::dueAtMs, Scheduled::order))
+                ?: break
+            scheduled.remove(next)
+            nowMs = next.dueAtMs
+            next.work.run()
+        }
+        nowMs = targetMs
     }
 }
 

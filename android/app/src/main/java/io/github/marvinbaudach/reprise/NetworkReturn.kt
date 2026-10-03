@@ -9,6 +9,33 @@ import android.os.Looper
 import android.util.Log
 
 internal const val COVER_RETRY_TAG = "RepriseCoverRetry"
+internal const val FIRST_NETWORK_RETURN_FOLLOW_UP_DELAY_MS = 3_000L
+internal const val SECOND_NETWORK_RETURN_FOLLOW_UP_DELAY_MS = 10_000L
+internal const val THIRD_NETWORK_RETURN_FOLLOW_UP_DELAY_MS = 30_000L
+
+private val NETWORK_RETURN_FOLLOW_UP_DELAYS_MS = listOf(
+    FIRST_NETWORK_RETURN_FOLLOW_UP_DELAY_MS,
+    SECOND_NETWORK_RETURN_FOLLOW_UP_DELAY_MS,
+    THIRD_NETWORK_RETURN_FOLLOW_UP_DELAY_MS,
+)
+
+internal interface NetworkReturnScheduler {
+    fun postDelayed(work: Runnable, delayMs: Long)
+
+    fun cancel(work: Runnable)
+}
+
+private class HandlerNetworkReturnScheduler(
+    private val handler: Handler = Handler(Looper.getMainLooper()),
+) : NetworkReturnScheduler {
+    override fun postDelayed(work: Runnable, delayMs: Long) {
+        handler.postDelayed(work, delayMs)
+    }
+
+    override fun cancel(work: Runnable) {
+        handler.removeCallbacks(work)
+    }
+}
 
 /** Reports only validated offline-to-online transitions after a baseline. */
 internal class NetworkReturnDetector {
@@ -37,8 +64,16 @@ internal class NetworkReturnMonitor(
             "Network returned: validatedNonVpn=$count, transports=$transports",
         )
     },
+    private val scheduler: NetworkReturnScheduler = HandlerNetworkReturnScheduler(),
+    private val logFollowUp: (Int) -> Unit = { followUp ->
+        Log.i(COVER_RETRY_TAG, "Network return follow-up $followUp/3")
+    },
 ) {
+    @Volatile
+    private var started = false
     private var registered = false
+    private var followUpGeneration = 0L
+    private val pendingFollowUps = mutableListOf<Runnable>()
     private val validatedNetworks = mutableMapOf<Network, NetworkCapabilities>()
     private val request = NetworkRequest.Builder()
         .addCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET)
@@ -56,20 +91,26 @@ internal class NetworkReturnMonitor(
     }
 
     fun start() {
-        if (registered) return
+        if (started) return
+        started = true
         observeCurrentNetworks()
         try {
             connectivity.registerNetworkCallback(request, callback)
             registered = true
         } catch (error: RuntimeException) {
+            started = false
+            cancelFollowUps()
             Log.w(COVER_RETRY_TAG, "Could not monitor network returns", error)
         }
     }
 
     fun stop() {
-        if (!registered) return
-        connectivity.unregisterNetworkCallback(callback)
-        registered = false
+        started = false
+        cancelFollowUps()
+        if (registered) {
+            connectivity.unregisterNetworkCallback(callback)
+            registered = false
+        }
     }
 
     private fun observeCurrentNetworks() {
@@ -87,23 +128,36 @@ internal class NetworkReturnMonitor(
                 null
             }
         }
-        returnedNetworks?.let(::reportReturn)
+        deliverObservation(returnedNetworks, current.isEmpty())
     }
 
     private fun update(network: Network, capabilities: NetworkCapabilities?) {
-        val returnedNetworks = synchronized(validatedNetworks) {
+        val (returnedNetworks, offline) = synchronized(validatedNetworks) {
             if (capabilities.isValidatedPhysicalNetwork()) {
                 validatedNetworks[network] = requireNotNull(capabilities)
             } else {
                 validatedNetworks.remove(network)
             }
-            if (detector.observe(validatedNetworks.isNotEmpty())) {
+            val networks = if (detector.observe(validatedNetworks.isNotEmpty())) {
                 validatedNetworks.values.toList()
             } else {
                 null
             }
+            networks to validatedNetworks.isEmpty()
         }
-        returnedNetworks?.let(::reportReturn)
+        deliverObservation(returnedNetworks, offline)
+    }
+
+    private fun deliverObservation(
+        returnedNetworks: List<NetworkCapabilities>?,
+        offline: Boolean,
+    ) {
+        when {
+            returnedNetworks != null -> reportReturn(returnedNetworks)
+            offline -> postToMain {
+                if (started) cancelFollowUps()
+            }
+        }
     }
 
     private fun reportReturn(networks: List<NetworkCapabilities>) {
@@ -113,7 +167,34 @@ internal class NetworkReturnMonitor(
             .sorted()
             .joinToString().ifEmpty { "other" }
         logReturn(transports, networks.size)
-        postToMain(onNetworkReturned)
+        postToMain {
+            if (!started) return@postToMain
+            cancelFollowUps()
+            onNetworkReturned()
+            scheduleFollowUps()
+        }
+    }
+
+    private fun scheduleFollowUps() {
+        val generation = followUpGeneration
+        NETWORK_RETURN_FOLLOW_UP_DELAYS_MS.forEachIndexed { index, delayMs ->
+            lateinit var work: Runnable
+            work = Runnable {
+                pendingFollowUps.remove(work)
+                if (!started || generation != followUpGeneration) return@Runnable
+                logFollowUp(index + 1)
+                onNetworkReturned()
+            }
+            pendingFollowUps += work
+            scheduler.postDelayed(work, delayMs)
+        }
+    }
+
+    private fun cancelFollowUps() {
+        followUpGeneration += 1
+        val cancelled = pendingFollowUps.toList()
+        pendingFollowUps.clear()
+        cancelled.forEach(scheduler::cancel)
     }
 }
 

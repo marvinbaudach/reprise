@@ -3195,8 +3195,10 @@ property is set and yet nothing happens.
   reaches the other surfaces by NET-7a. A return that happened while the app
   was in the background counts when the app comes back to the foreground. A
   switch between two online networks is not a return. A surface that already
-  shows a real cover is not asked again. There is no timer, no polling, and no
-  restart of the background pass.
+  shows a real cover is not asked again. There is no polling or restart of the
+  background pass. The return is followed by at most three bounded retries
+  after 3, 10 and 30 seconds while the physical network stays online and the
+  app stays in the foreground.
 - **NET-3** [active] [core] [gtk] — Offline is a state, not an error: no network-backed
   place in the app may treat a missing network connection like an error
   message. The contract covers seven states every network-backed view (feed,

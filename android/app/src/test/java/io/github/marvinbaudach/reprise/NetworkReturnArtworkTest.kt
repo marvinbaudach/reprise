@@ -38,6 +38,111 @@ class NetworkReturnArtworkTest {
     val compose = createAndroidComposeRule<ComponentActivity>()
 
     @Test
+    fun net_7b_a_fetch_that_fails_right_after_the_return_is_retried_by_a_follow_up() {
+        val context = ApplicationProvider.getApplicationContext<Context>()
+        val manager = context.getSystemService(ConnectivityManager::class.java)
+        val shadow = shadowOf(manager)
+        shadow.clearAllNetworks()
+        shadow.setActiveNetworkInfo(null)
+        val scheduler = ArtworkRetryScheduler()
+        val lanes = RetryArtworkLanes()
+        val downloaded = bitmap(Color.BLUE)
+        val existing = bitmap(Color.GREEN)
+        var online = false
+        var coverAvailable = false
+        val returnFetches = AtomicInteger()
+        val realCoverFetches = AtomicInteger()
+        val artwork = TrackArtwork(
+            resolve = { uri, _ ->
+                when {
+                    uri == REAL_TRACK_URI -> REAL_COVER_PATH
+                    coverAvailable -> COVER_PATH
+                    else -> null
+                }
+            },
+            resolveAlbumCoverFetched = { uri, _ ->
+                if (uri == REAL_TRACK_URI) {
+                    realCoverFetches.incrementAndGet()
+                    REAL_COVER_PATH
+                } else if (!online) {
+                    null
+                } else if (returnFetches.incrementAndGet() == 1) {
+                    null
+                } else {
+                    coverAvailable = true
+                    COVER_PATH
+                }
+            },
+            decode = { path ->
+                when (path) {
+                    COVER_PATH -> downloaded
+                    REAL_COVER_PATH -> existing
+                    else -> null
+                }
+            },
+            fallback = { _, _, _ -> bitmap(Color.MAGENTA) },
+            cache = ArtworkCache(),
+            dispatcher = lanes.list,
+            fullSizeDispatcher = lanes.fullSize,
+            onMainThread = { work -> work() },
+        )
+        val monitor = NetworkReturnMonitor(
+            connectivity = manager,
+            detector = NetworkReturnDetector(),
+            onNetworkReturned = artwork::networkReturned,
+            postToMain = { work -> work() },
+            scheduler = scheduler,
+        )
+        var retrying: ArtworkVisual? = null
+        var alreadyReal: ArtworkVisual? = null
+
+        try {
+            compose.setContent {
+                CompositionLocalProvider(LocalTrackArtwork provides artwork) {
+                    retrying = rememberTrackArtworkVisual(
+                        TRACK_URI,
+                        AndroidArtworkSize.NOW_PLAYING,
+                        allowFetch = true,
+                    )
+                    alreadyReal = rememberTrackArtworkVisual(
+                        REAL_TRACK_URI,
+                        AndroidArtworkSize.NOW_PLAYING,
+                        allowFetch = true,
+                    )
+                }
+            }
+            lanes.runAll()
+            compose.waitForIdle()
+            assertEquals(true, retrying?.generated)
+            assertSame(existing, alreadyReal?.image?.asAndroidBitmap())
+
+            monitor.start()
+            online = true
+            shadow.networkCallbacks.single().onCapabilitiesChanged(
+                org.robolectric.shadows.ShadowNetwork.newInstance(60),
+                capabilities(validated = true),
+            )
+            compose.waitForIdle()
+            lanes.fullSize.runAll()
+            compose.waitForIdle()
+            assertEquals(true, retrying?.generated)
+
+            scheduler.advanceBy(3_000L)
+            compose.waitForIdle()
+            lanes.fullSize.runAll()
+            compose.waitForIdle()
+
+            assertEquals(2, returnFetches.get())
+            assertEquals(0, realCoverFetches.get())
+            assertSame(downloaded, retrying?.image?.asAndroidBitmap())
+            assertSame(existing, alreadyReal?.image?.asAndroidBitmap())
+        } finally {
+            monitor.stop()
+            artwork.shutdown()
+        }
+    }
+
+    @Test
     fun net_7b_a_cover_that_failed_offline_is_fetched_when_the_network_returns() {
         val lanes = RetryArtworkLanes()
         val detector = NetworkReturnDetector()
@@ -222,6 +327,30 @@ class NetworkReturnArtworkTest {
     private companion object {
         const val TRACK_URI = "content://tracks/network-retry"
         const val COVER_PATH = "/covers/network-retry.jpg"
+        const val REAL_TRACK_URI = "content://tracks/already-real"
+        const val REAL_COVER_PATH = "/covers/already-real.jpg"
+    }
+}
+
+private class ArtworkRetryScheduler : NetworkReturnScheduler {
+    private data class Scheduled(val dueAtMs: Long, val work: Runnable)
+
+    private var nowMs = 0L
+    private val scheduled = mutableListOf<Scheduled>()
+
+    override fun postDelayed(work: Runnable, delayMs: Long) {
+        scheduled += Scheduled(nowMs + delayMs, work)
+    }
+
+    override fun cancel(work: Runnable) {
+        scheduled.removeAll { it.work === work }
+    }
+
+    fun advanceBy(delayMs: Long) {
+        nowMs += delayMs
+        val ready = scheduled.filter { it.dueAtMs <= nowMs }
+        scheduled.removeAll(ready.toSet())
+        ready.sortedBy(Scheduled::dueAtMs).forEach { it.work.run() }
     }
 }
 
