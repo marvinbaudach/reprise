@@ -1,5 +1,6 @@
 //! Display-level coverage for online-module transitions at the composition seam.
 
+use std::cell::Cell;
 use std::rc::Rc;
 
 use gtk4::gio;
@@ -57,6 +58,42 @@ fn lyr_6_the_production_module_transition_starts_lyrics_once_even_offline() {
         )
         .expect("keep Online Lyrics enabled");
     assert_eq!(handles.lyrics_batch.generation_for_test(), before + 1);
+}
+
+#[test]
+#[ignore = "requires a display; run via xvfb-run"]
+fn an_unrelated_module_toggle_does_not_refresh_online_source_views() {
+    let _main_context = crate::ui::test_main_context::lock_main_context();
+    let handles = build_online_module_handles();
+    handles
+        .preferences
+        .set_online_sources_enabled(true)
+        .expect("enable online sources");
+    let refreshes = Rc::new(Cell::new(0));
+    handles.preferences.set_on_online_module_state_changed({
+        let refreshes = refreshes.clone();
+        move || refreshes.set(refreshes.get() + 1)
+    });
+
+    handles
+        .preferences
+        .set_module_enabled_for_test(
+            &reprise_core::modules::LIBRARY_DOCTOR_MODULE,
+            false,
+            "unrelated module refresh regression test",
+        )
+        .expect("disable Library Doctor");
+    assert_eq!(refreshes.get(), 0);
+
+    handles
+        .preferences
+        .set_module_enabled_for_test(
+            &reprise_core::modules::RADIO_MODULE,
+            false,
+            "online source refresh control test",
+        )
+        .expect("disable Radio");
+    assert_eq!(refreshes.get(), 1);
 }
 
 #[test]

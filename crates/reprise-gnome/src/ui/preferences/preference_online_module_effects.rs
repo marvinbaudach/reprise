@@ -8,6 +8,32 @@ pub(super) type ArtworkPermissionCallback = Rc<dyn Fn(bool)>;
 pub(super) type OnlineModuleStateCallback = Rc<dyn Fn()>;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(super) struct OnlineSourceState {
+    podcasts: bool,
+    youtube: bool,
+    radio: bool,
+}
+
+impl OnlineSourceState {
+    pub(super) fn read(conn: &reprise_core::db::Db) -> Self {
+        Self {
+            podcasts: reprise_core::online_sources::network_allowed_or_off(
+                conn,
+                &reprise_core::modules::PODCASTS_MODULE,
+            ),
+            youtube: reprise_core::online_sources::network_allowed_or_off(
+                conn,
+                &reprise_core::modules::YOUTUBE_MODULE,
+            ),
+            radio: reprise_core::online_sources::network_allowed_or_off(
+                conn,
+                &reprise_core::modules::RADIO_MODULE,
+            ),
+        }
+    }
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
 enum PermissionEffect {
     None,
     Start,
@@ -82,9 +108,13 @@ impl PreferencesContext {
                 tracing::warn!("ignored an unsupported wait-for-network lyrics transition");
             }
         }
-        let refresh_sources = self.on_online_module_state_changed.borrow().clone();
-        if let Some(refresh_sources) = refresh_sources {
-            refresh_sources();
+        let source_state = OnlineSourceState::read(&self.conn);
+        let source_state_changed = self.online_source_state.replace(source_state) != source_state;
+        if source_state_changed {
+            let refresh_sources = self.on_online_module_state_changed.borrow().clone();
+            if let Some(refresh_sources) = refresh_sources {
+                refresh_sources();
+            }
         }
         self.refresh_background_bar_gate();
         self.sidebar.refresh(reason);
