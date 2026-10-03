@@ -2,7 +2,7 @@
 slug: android-cover-retry-and-repaint
 worktree: /home/marvin/Projects/reprise-android-cover-retry-and-repaint
 branch: feature/android-cover-retry-and-repaint
-phase: refactored
+phase: planned
 codex_session:
 created: 2026-10-02
 ---
@@ -171,9 +171,10 @@ the physical uplink instead:
   practice; with one, it follows the real uplink. A return is a transition from an empty set to
   a non-empty one. A second validated network arriving while one already exists (Wi-Fi beside
   cellular) is **not** a return.
-- **Known risk.** Wi-Fi can validate before the VPN tunnel is back up, so the single retry can
-  fail. There is still no timer. The log line "return + empty fetch" shows this case on the
-  device, and only then is a follow-up designed.
+- **Known risk, now measured.** Wi-Fi can validate before the VPN tunnel is back up, so a
+  single retry can fail. Device round 2 (2026-10-02) showed exactly this: the return was
+  logged 11 ms after validation, the fetch 0.46 s later came back empty, and the cover never
+  appeared. D4b is the follow-up.
 - **Baseline.** The baseline is the state read synchronously at start (every network from
   `allNetworks` with its capabilities, filtered as above). Otherwise a process that starts offline would take the first online
   callback as its baseline and never retry, which is the C4 case seen from a cold start.
@@ -195,13 +196,48 @@ the physical uplink instead:
 - **Permission.** `android.permission.ACCESS_NETWORK_STATE` is needed. It is a normal
   permission and shows no prompt.
 
+**D4b — Follow-up bumps after a return.** *Added 2026-10-02 after device round 2; the user
+chose this over an FFI outcome type and over a fixed delay.*
+
+- **What.** Every return reported by the monitor bumps `networkReturnRevision` at once, as
+  before, and schedules three follow-up bumps at **+3 s, +10 s and +30 s** after that return.
+  Each follow-up goes through the same path as the first bump: only an `allowFetch` surface
+  that still shows a generated cover fetches again. A surface that got its cover ignores it.
+- **Why this is cheap.** The core never memoises a transient failure: a DNS error, refused
+  connection, timeout or 5xx returns `TransientFailure`, which writes no `.notfound2` marker
+  and no entry in the FFI's `ATTEMPTED` memo. A definitive miss (MusicBrainz no-match, CAA
+  404) is memoised as `NotFound` in `ATTEMPTED`, so the follow-ups for an album that really
+  has no cover never touch the network. The follow-ups therefore only cost network when the
+  previous attempt failed transiently, which is the case they exist for.
+- **Cancellation.** A loss of every validated non-VPN network cancels the pending follow-ups.
+  A new return cancels them and schedules a fresh set from its own time. `stop()` (from
+  `onStop`) cancels them too. A return that happened while the app was stopped is reported by
+  `start()` as before and schedules its follow-ups from then, so the background variant gets
+  them.
+- **Accepted gap.** If the app is stopped within 30 s of a foreground return and started again
+  while still online, there is no new return, so the remaining follow-ups do not run. #1051
+  covers what stays generated.
+- **The schedule is injected.** The delays are named constants. The monitor takes a
+  scheduler (post-delayed and cancel) with the main-thread `Handler` as the production
+  default, so the JVM tests run without sleeping.
+- **Logging.** One `Log.i` line under `COVER_RETRY_TAG` per follow-up bump,
+  `Network return follow-up n/3`. The existing fetch line stays as it is.
+- **The FFI names the outcome in logcat.** `album_cover_fetch` in
+  `crates/reprise-android-ffi/src/artist_portrait/album_cover.rs` emits one `tracing` event
+  per call (it reaches logcat under the existing `Reprise` tag), naming the outcome:
+  `downloaded`, `not_found`, `transient`, `memoised_not_found`, `local` (local art existed)
+  or `skipped` (module or network gate off, track missing, blank album or artist). No URL,
+  no path beyond the album key. This is diagnosis only: the FFI return type does not change,
+  and Kotlin still sees `Ok(None)` for every miss.
+
 **D5 — Out of scope.**
 
 - No backfill restart on network return. A new run gets a new `runId` and would flash a
   PREPARING card on every Wi-Fi/cellular handoff. The gap this leaves is #1051.
 - No distinction between `TransientFailure` and `NotFound` across the FFI.
-- No retry timer.
-- No Rust change at all. The memo drop, the coalescer and the logging are Kotlin.
+- No open-ended retry timer. D4b's three follow-ups are bounded and only follow a return.
+- No Rust change beyond D4b's one log event. The memo drop, the coalescer and the retry
+  logic are Kotlin.
 
 **D6 — Android only.** This plan changes only the Android UI. That is the scope, not a
 claim about the desktop. NET-5 and NET-6 cover enabling Artwork, not a network return. The
@@ -318,6 +354,32 @@ Robolectric and `ui-test-junit4` are already on the test classpath; see
      - `net_7b_a_real_cover_is_not_fetched_again_when_the_network_returns`.
      - A Robolectric `ShadowConnectivityManager` test for the adapter's baseline.
    - Add NET-7b to `docs/ux-rules.md` in this commit.
+7b. **NET-7b, follow-up bumps (D4b).** Added after device round 2; tasks 1–7 are done.
+   - In `NetworkReturn.kt`: the three delays as named constants, an injected scheduler
+     (production default: the main-thread `Handler`'s `postDelayed` / `removeCallbacks`),
+     scheduling on each reported return, cancellation on losing every validated network, on a
+     new return and on `stop()`, and the `Network return follow-up n/3` log line. If the file
+     would pass 800 lines, put the scheduler in a cohesive sibling.
+   - In `album_cover.rs`: the single `tracing` outcome event from D4b, covering every return
+     path of `album_cover_fetch_with`.
+   - Plain JVM tests with a fake scheduler:
+     - `net_7b_a_return_schedules_three_follow_ups`: one return gives the immediate bump and
+       then exactly three more at +3/+10/+30 s, in order.
+     - Losing the network before +10 s cancels the remaining follow-ups.
+     - A second return at +5 s cancels the first set and schedules a fresh one from +5 s.
+     - `stop()` cancels pending follow-ups; a return reported by the next `start()` schedules
+       a fresh set.
+   - Robolectric Compose test,
+     `net_7b_a_fetch_that_fails_right_after_the_return_is_retried_by_a_follow_up`: the fake
+     fetcher returns nothing on the first network-return attempt and a path on the next. After
+     the return and the first follow-up the surface shows the real cover, and the fetch count
+     is 2. A surface that already shows a real cover is not fetched by the follow-ups.
+   - A Rust unit test beside the existing `album_cover` tests that the outcome classification
+     used by the log event maps `NotFound`, `TransientFailure`, the memo hit and the gates as
+     D4b names them. Keep it a pure function so the test needs no logger capture.
+   - Update NET-7b in `docs/ux-rules.md` if its text says the fetch runs once: the fetch now
+     runs on the return and up to three follow-ups.
+   - The PR body says `Closes #998`: NET-7a is that issue.
 8. **Gates.** Run every gate with the worktree-local environment prefix:
    `ANDROID_HOME` / `ANDROID_SDK_ROOT=/home/marvin/.local/share/android-sdk`,
    `ANDROID_USER_HOME="$PWD/.cache/android-user-home"`, `XDG_DATA_HOME="$PWD/.cache/xdg-data"`,
@@ -327,6 +389,9 @@ Robolectric and `ui-test-junit4` are already on the test classpath; see
    - `scripts/check-android-theme.sh`. A raw `Color.` in KDoc fails it, and the Android suite
      passing does not mean this gate passes.
    - `scripts/check-ux-traceability.sh`
+   - Because D4b touches `reprise-android-ffi`: `cargo fmt --check`,
+     `cargo clippy -p reprise-android-ffi --all-targets -- -D warnings` and
+     `cargo test -p reprise-android-ffi`.
    - Every touched code file stays under 800 lines.
 
 ## Verification after Codex, before landing (orchestrator, not Codex)
@@ -347,6 +412,10 @@ This is a device re-check on the physical phone, run under `device-lock` and `wa
 | C4, background variant | As above, but the app goes to the background before Wi-Fi comes on and returns afterwards. | The cover appears on return. |
 | C2, mini-player | Online. Play a probe track without art. | The mini-player shows the cover within a few seconds of now-playing. |
 | Cost | Rescan with probe albums so the cover pass runs, and scroll the Titles list while it does. | No visible jank. |
+
+Since D4b, the C4 rows also expect the `Network return follow-up n/3` lines, and the
+`Reprise` tag names each fetch's outcome. A `transient` outcome followed by `downloaded` on a
+later follow-up is the pass case under NordVPN.
 
 If C4 stays red under the VPN, the log decides what failed. No return logged means the
 detection failed. A return logged with an empty fetch means the fetch failed. The fix then
