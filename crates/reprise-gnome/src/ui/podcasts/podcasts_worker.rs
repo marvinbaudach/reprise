@@ -339,6 +339,7 @@ fn count_download_state(state: &podcasts::download_state::DownloadState) -> Down
     }
 }
 
+#[cfg(test)]
 fn count_download_states(states: &[podcasts::download_state::DownloadState]) -> DownloadJobCounts {
     let mut counts = DownloadJobCounts::default();
     for state in states {

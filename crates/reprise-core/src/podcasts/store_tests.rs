@@ -447,6 +447,8 @@ fn pod_6_episode_removal_undo_and_commit_block_rss_and_youtube_reimport() {
 fn pod_6_removing_an_episode_waits_for_a_concurrent_writer() {
     use std::time::{Duration, Instant};
 
+    const WRITER_HOLD: Duration = Duration::from_secs(1);
+
     let directory = tempfile::tempdir().unwrap();
     let database_path = directory.path().join("library.db");
     let db = Db::open_migrated(Some(&database_path)).unwrap();
@@ -454,7 +456,7 @@ fn pod_6_removing_an_episode_waits_for_a_concurrent_writer() {
         db.conn()
             .query_row("PRAGMA busy_timeout", [], |row| row.get::<_, i64>(0))
             .unwrap(),
-        5_000
+        crate::db::DEFAULT_BUSY_TIMEOUT_MS
     );
     let subscription_id = add_or_restore(&db, &subscription_draft(), 10).unwrap();
     let episode_id = upsert_episode(&db, subscription_id, &parsed_episode("Episode"), 20)
@@ -463,7 +465,7 @@ fn pod_6_removing_an_episode_waits_for_a_concurrent_writer() {
         .episode_id;
     assert!(tombstone_episode(&db, episode_id, 30).unwrap());
 
-    let (locked, lock_observed) = std::sync::mpsc::sync_channel::<Result<(), String>>(1);
+    let (locked, lock_observed) = std::sync::mpsc::sync_channel::<Result<Instant, String>>(1);
     let writer = std::thread::spawn(move || -> Result<(), String> {
         let writer_db = match Db::open_ready(&database_path) {
             Ok(db) => db,
@@ -493,47 +495,52 @@ fn pod_6_removing_an_episode_waits_for_a_concurrent_writer() {
             let _ = locked.send(Err(message.clone()));
             return Err(message);
         }
+        let release_at = Instant::now() + WRITER_HOLD;
         locked
-            .send(Ok(()))
+            .send(Ok(release_at))
             .map_err(|error| format!("could not report concurrent writer lock: {error}"))?;
-        std::thread::sleep(Duration::from_secs(1));
+        std::thread::sleep(WRITER_HOLD);
         transaction
             .commit()
             .map_err(|error| format!("could not commit concurrent write: {error}"))
     });
-    match lock_observed.recv_timeout(Duration::from_secs(10)) {
-        Ok(Ok(())) => {}
+    let release_at = match lock_observed.recv_timeout(Duration::from_secs(10)) {
+        Ok(Ok(release_at)) => release_at,
         Ok(Err(error)) => {
             let writer_result = writer
                 .join()
-                .expect("concurrent writer thread should not panic");
+                .unwrap_or_else(|panic| std::panic::resume_unwind(panic));
             panic!("concurrent writer setup failed: {error}; writer result: {writer_result:?}");
         }
         Err(error) => {
             let writer_result = writer
                 .join()
-                .expect("concurrent writer thread should not panic");
+                .unwrap_or_else(|panic| std::panic::resume_unwind(panic));
             panic!(
                 "concurrent writer did not report setup before the deadline: {error}; writer result: {writer_result:?}"
             );
         }
-    }
+    };
 
     let removal_started = Instant::now();
+    assert!(
+        removal_started < release_at,
+        "episode removal did not start before the concurrent writer's planned release"
+    );
     let removed = commit_remove_episode(&db, episode_id);
-    let removal_elapsed = removal_started.elapsed();
+    let removal_finished = Instant::now();
     writer
         .join()
-        .expect("concurrent writer thread should not panic")
+        .unwrap_or_else(|panic| std::panic::resume_unwind(panic))
         .expect("concurrent writer should finish successfully");
 
     assert!(
-        removed.is_ok(),
-        "episode removal should wait for the concurrent writer: {removed:?}"
+        removal_finished >= release_at,
+        "episode removal returned before the concurrent writer released: removal_finished={removal_finished:?}, release_at={release_at:?}"
     );
     assert!(
-        removal_elapsed >= Duration::from_millis(500),
-        "episode removal returned before waiting for the writer: {removal_elapsed:?}"
+        removed.is_ok(),
+        "episode removal should wait for the concurrent writer: {removed:?}"
     );
     assert!(episode(&db, episode_id).unwrap().is_none());
     assert_eq!(
