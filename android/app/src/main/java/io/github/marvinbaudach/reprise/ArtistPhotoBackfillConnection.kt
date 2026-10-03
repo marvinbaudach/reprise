@@ -45,4 +45,6 @@ private fun ArtistPortraitProgressUpdate.toUiProgress() = ArtistPhotoProgress(
     done = (done + coversDone).toLong(),
     failed = failed.toLong(),
     total = (total + coversTotal).toLong(),
+    coversDone = coversDone.toLong(),
+    coversTotal = coversTotal.toLong(),
 )

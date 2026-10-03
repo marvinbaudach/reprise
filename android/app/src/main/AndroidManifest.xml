@@ -11,6 +11,7 @@
         artwork downloads are always on, with no switch or off state.
     -->
     <uses-permission android:name="android.permission.INTERNET" />
+    <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
     <!--
         From API 33 the playing notification is only shown once the user has
         allowed notifications. Without it the service still runs and the music

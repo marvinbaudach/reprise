@@ -3179,6 +3179,27 @@ property is set and yet nothing happens.
   surfaces stay cold. The refresh is part of the same Preferences transition
   that starts the cover pass; it does not rerun a statistics or source query
   and does not rebuild an entire source page.
+- **NET-7a** [active] [android] — A cover the phone downloads reaches every
+  artwork surface that shows its album while that surface stays on screen. The
+  now-playing scene and sheet, the mini-player, dock mode, track and album list
+  rows and the album header replace their generated cover without a relaunch,
+  a navigation or a scroll. This holds for a cover that now-playing or the
+  album page downloaded itself and for one the background cover pass
+  downloaded. Reaching a surface is a local read and never starts a download
+  of its own. A surface that already shows a real cover keeps it unchanged and
+  is not read again.
+- **NET-7b** [active] [android] — When the phone's network connection returns
+  (a validated network that is not a VPN) after being offline, every visible
+  surface that may download a cover and still shows a generated one asks
+  again. A cover found that way
+  reaches the other surfaces by NET-7a. A return that happened while the app
+  was in the background counts when the app comes back to the foreground. A
+  switch between two online networks is not a return. A surface that already
+  shows a real cover is not asked again. There is no polling or restart of the
+  background pass. The return is followed by at most three bounded retries
+  after 3, 10 and 30 seconds while the physical network stays online and the
+  app stays in the foreground. A configuration change preserves that schedule;
+  moving the app to the background cancels it.
 - **NET-3** [active] [core] [gtk] — Offline is a state, not an error: no network-backed
   place in the app may treat a missing network connection like an error
   message. The contract covers seven states every network-backed view (feed,

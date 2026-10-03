@@ -16,6 +16,38 @@ use std::sync::atomic::{AtomicU64, Ordering};
 use super::*;
 use crate::source::{SafSource, SafSourceError, SourceChild, SourceFacts};
 
+#[test]
+fn fetch_log_outcomes_use_the_d4b_vocabulary() {
+    assert_eq!(
+        album_cover_outcome_name(AlbumCoverFetchState::Downloaded),
+        "downloaded",
+    );
+    assert_eq!(
+        album_cover_outcome_name(AlbumCoverFetchState::NotFound),
+        "not_found",
+    );
+    assert_eq!(
+        album_cover_outcome_name(AlbumCoverFetchState::Transient),
+        "transient",
+    );
+    assert_eq!(
+        album_cover_outcome_name(AlbumCoverFetchState::MemoisedNotFound),
+        "memoised_not_found",
+    );
+    assert_eq!(
+        album_cover_outcome_name(AlbumCoverFetchState::Local),
+        "local",
+    );
+    assert_eq!(
+        album_cover_outcome_name(AlbumCoverFetchState::Skipped),
+        "skipped",
+    );
+    assert_eq!(
+        album_cover_outcome_name(AlbumCoverFetchState::Error),
+        "error",
+    );
+}
+
 const TINY_IMAGE: &[u8] = &[
     0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 0x00, 0x00, 0x00, 0x0d, 0x49, 0x48, 0x44, 0x52,
     0x00, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00, 0x01, 0x08, 0x04, 0x00, 0x00, 0x00, 0xb5, 0x1c, 0x0c,

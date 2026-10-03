@@ -16,6 +16,57 @@ use crate::{AndroidArtworkSize, LibraryError, MusicLibrary};
 
 type Attempted = HashMap<String, CoverFetchOutcome>;
 
+#[derive(Clone, Copy)]
+enum AlbumCoverFetchState {
+    Downloaded,
+    NotFound,
+    Transient,
+    MemoisedNotFound,
+    Local,
+    Skipped,
+    Error,
+}
+
+fn album_cover_outcome_name(state: AlbumCoverFetchState) -> &'static str {
+    match state {
+        AlbumCoverFetchState::Downloaded => "downloaded",
+        AlbumCoverFetchState::NotFound => "not_found",
+        AlbumCoverFetchState::Transient => "transient",
+        AlbumCoverFetchState::MemoisedNotFound => "memoised_not_found",
+        AlbumCoverFetchState::Local => "local",
+        AlbumCoverFetchState::Skipped => "skipped",
+        AlbumCoverFetchState::Error => "error",
+    }
+}
+
+struct AlbumCoverFetchLog {
+    outcome: &'static str,
+    album_key: Option<String>,
+}
+
+impl AlbumCoverFetchLog {
+    fn new() -> Self {
+        Self {
+            outcome: album_cover_outcome_name(AlbumCoverFetchState::Error),
+            album_key: None,
+        }
+    }
+
+    fn set(&mut self, state: AlbumCoverFetchState) {
+        self.outcome = album_cover_outcome_name(state);
+    }
+}
+
+impl Drop for AlbumCoverFetchLog {
+    fn drop(&mut self) {
+        tracing::info!(
+            outcome = self.outcome,
+            album_key = self.album_key.as_deref().unwrap_or(""),
+            "Android album cover fetch finished",
+        );
+    }
+}
+
 fn attempted() -> &'static Mutex<Attempted> {
     static ATTEMPTED: OnceLock<Mutex<Attempted>> = OnceLock::new();
     ATTEMPTED.get_or_init(|| Mutex::new(HashMap::new()))
@@ -85,6 +136,7 @@ impl MusicLibrary {
         size: AndroidArtworkSize,
         fetch: &dyn Fn(&str, &str, Option<&str>) -> CoverFetchOutcome,
     ) -> Result<Option<String>, LibraryError> {
+        let mut fetch_log = AlbumCoverFetchLog::new();
         let allowed = {
             let reader = self.reader()?;
             reprise_core::online_sources::network_allowed_or_off(
@@ -93,6 +145,7 @@ impl MusicLibrary {
             )
         };
         if !allowed {
+            fetch_log.set(AlbumCoverFetchState::Skipped);
             return Ok(None);
         }
 
@@ -101,7 +154,10 @@ impl MusicLibrary {
             let reader = self.reader()?;
             match queries::query_stats_album_target_for_path(&reader, track_uri) {
                 Ok(Some((_, album, album_artist))) => (album_artist, album),
-                Ok(None) => return Ok(None),
+                Ok(None) => {
+                    fetch_log.set(AlbumCoverFetchState::Skipped);
+                    return Ok(None);
+                }
                 Err(error) => {
                     return Err(LibraryError::Query {
                         detail: error.to_string(),
@@ -110,23 +166,27 @@ impl MusicLibrary {
             }
         };
         if album.trim().is_empty() || album_artist.trim().is_empty() {
+            fetch_log.set(AlbumCoverFetchState::Skipped);
             return Ok(None);
         }
 
         // Offline resolution first: real local art always wins, no request.
         if let Some(existing) = self.track_artwork(track_uri, size)? {
+            fetch_log.set(AlbumCoverFetchState::Local);
             return Ok(Some(existing));
         }
 
         let path = Path::new(track_uri);
         let mbid = cover::read_cover_tag_with_source(source.as_ref(), path).release_mbid;
         let key = cover_download::album_key(&album_artist, &album);
+        fetch_log.album_key = Some(key.clone());
         let memorised = attempted()
             .lock()
             .unwrap_or_else(PoisonError::into_inner)
             .get(&key)
             .cloned();
         if let Some(CoverFetchOutcome::NotFound) = memorised {
+            fetch_log.set(AlbumCoverFetchState::MemoisedNotFound);
             return Ok(None);
         }
 
@@ -138,8 +198,25 @@ impl MusicLibrary {
                 .insert(key, outcome.clone());
         }
         match outcome {
-            CoverFetchOutcome::Downloaded(_) => self.track_artwork(track_uri, size),
-            CoverFetchOutcome::NotFound | CoverFetchOutcome::TransientFailure => Ok(None),
+            CoverFetchOutcome::Downloaded(_) => match self.track_artwork(track_uri, size) {
+                Ok(Some(path)) => {
+                    fetch_log.set(AlbumCoverFetchState::Downloaded);
+                    Ok(Some(path))
+                }
+                Ok(None) => {
+                    fetch_log.set(AlbumCoverFetchState::NotFound);
+                    Ok(None)
+                }
+                Err(error) => Err(error),
+            },
+            CoverFetchOutcome::NotFound => {
+                fetch_log.set(AlbumCoverFetchState::NotFound);
+                Ok(None)
+            }
+            CoverFetchOutcome::TransientFailure => {
+                fetch_log.set(AlbumCoverFetchState::Transient);
+                Ok(None)
+            }
         }
     }
 }
