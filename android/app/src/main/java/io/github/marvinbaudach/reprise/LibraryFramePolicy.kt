@@ -1,5 +1,8 @@
 package io.github.marvinbaudach.reprise
 
+import androidx.compose.ui.unit.Density
+import androidx.compose.ui.unit.TextUnit
+
 private const val TRACK_ROW_VERTICAL_PADDING_DP = 16f
 
 internal data class LibraryFrameMetrics(
@@ -38,12 +41,14 @@ internal fun libraryFrameMetrics(layout: SurfaceLayout): LibraryFrameMetrics = w
 
 internal fun effectiveTrackRowHeightDp(
     baseHeightDp: Int,
-    fontScale: Float,
-    titleLineHeightSp: Float,
-    subtitleLineHeightSp: Float,
+    density: Density,
+    titleLineHeight: TextUnit,
+    subtitleLineHeight: TextUnit,
 ): Float {
-    if (fontScale <= 1f) return baseHeightDp.toFloat()
-    val scaledTextBlockDp = (titleLineHeightSp + subtitleLineHeightSp) * fontScale
+    if (density.fontScale <= 1f) return baseHeightDp.toFloat()
+    val scaledTextBlockDp = with(density) {
+        titleLineHeight.toDp().value + subtitleLineHeight.toDp().value
+    }
     return maxOf(baseHeightDp.toFloat(), scaledTextBlockDp + TRACK_ROW_VERTICAL_PADDING_DP)
 }
 

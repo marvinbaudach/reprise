@@ -1,5 +1,6 @@
 package io.github.marvinbaudach.reprise
 
+import android.content.res.Configuration
 import androidx.activity.ComponentActivity
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.ui.geometry.Offset
@@ -12,7 +13,11 @@ import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performTouchInput
 import androidx.compose.ui.text.TextLayoutResult
 import androidx.compose.ui.unit.Density
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.DpRect
+import androidx.compose.ui.unit.TextUnit
+import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import io.github.marvinbaudach.reprise.ui.theme.NocturneTypography
 import io.github.marvinbaudach.reprise.ui.theme.RepriseTheme
 import org.junit.Assert.assertEquals
@@ -22,6 +27,7 @@ import org.junit.Rule
 import org.junit.Test
 import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
+import org.robolectric.RuntimeEnvironment
 import org.robolectric.annotation.Config
 import uniffi.reprise_android_ffi.AndroidColorScheme
 
@@ -43,15 +49,38 @@ class LibraryTrackRowFontScaleTest {
     }
 
     @Test
+    fun rowHeightUsesNonlinearDensityConversionAtDoubleFontScale() {
+        val density = nonlinearDensity(fontScale = 2f)
+        showTrackRows(fontScale = 2f, density = density)
+
+        val expectedHeightDp = with(density) {
+            NocturneTypography.titleMedium.lineHeight.toDp().value +
+                NocturneTypography.bodyMedium.lineHeight.toDp().value +
+                16f
+        }
+        val linearHeightDp = (
+            NocturneTypography.titleMedium.lineHeight.value +
+                NocturneTypography.bodyMedium.lineHeight.value
+            ) * density.fontScale + 16f
+        assertTrue(
+            "Robolectric must expose nonlinear font scaling for this regression",
+            expectedHeightDp != linearHeightDp,
+        )
+        val row = compose.onNodeWithTag("library-track-row-901")
+            .getUnclippedBoundsInRoot()
+        assertEquals(expectedHeightDp, (row.bottom - row.top).value, 0.1f)
+    }
+
+    @Test
     fun effectiveHeightKeepsBaseRowsAtNormalFontScale() {
         listOf(72, 64).forEach { baseHeightDp ->
             assertEquals(
                 baseHeightDp.toFloat(),
                 effectiveTrackRowHeightDp(
                     baseHeightDp = baseHeightDp,
-                    fontScale = 1f,
-                    titleLineHeightSp = NocturneTypography.titleMedium.lineHeight.value,
-                    subtitleLineHeightSp = NocturneTypography.bodyMedium.lineHeight.value,
+                    density = Density(density = 1f, fontScale = 1f),
+                    titleLineHeight = NocturneTypography.titleMedium.lineHeight,
+                    subtitleLineHeight = NocturneTypography.bodyMedium.lineHeight,
                 ),
                 0f,
             )
@@ -112,13 +141,16 @@ class LibraryTrackRowFontScaleTest {
         fontScale: Float,
         tracks: List<LibraryTrack> = listOf(track(901, "Title")),
         queueActions: QueueRowActions? = null,
+        density: Density? = null,
     ) {
         val surfaceState = MobileSurfaceViewModel()
         compose.setContent {
             RepriseTheme(theme, darkPalette = true) {
-                val density = LocalDensity.current
+                val currentDensity = LocalDensity.current
                 CompositionLocalProvider(
-                    LocalDensity provides Density(density.density, fontScale),
+                    LocalDensity provides (
+                        density ?: LinearTestDensity(currentDensity.density, fontScale)
+                    ),
                 ) {
                     TrackRows(
                         surfaceLayout = SurfaceLayout.STACKED,
@@ -141,6 +173,14 @@ class LibraryTrackRowFontScaleTest {
         compose.waitForIdle()
     }
 
+    private fun nonlinearDensity(fontScale: Float): Density {
+        val application = RuntimeEnvironment.getApplication()
+        val configuration = Configuration(application.resources.configuration).apply {
+            this.fontScale = fontScale
+        }
+        return Density(application.createConfigurationContext(configuration))
+    }
+
     private fun assertInside(row: DpRect, text: String) {
         val node = compose.onNodeWithText(text, useUnmergedTree = true)
         val textBounds = node.getUnclippedBoundsInRoot()
@@ -157,6 +197,15 @@ class LibraryTrackRowFontScaleTest {
     }
 
     private companion object {
+        private class LinearTestDensity(
+            override val density: Float,
+            override val fontScale: Float,
+        ) : Density {
+            override fun TextUnit.toDp(): Dp = (value * fontScale).dp
+
+            override fun Dp.toSp(): TextUnit = (value / fontScale).sp
+        }
+
         fun track(id: Long, title: String) = LibraryTrack(
             id = id,
             uri = "content://provider/document/$id.flac",

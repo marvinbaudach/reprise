@@ -64,9 +64,10 @@ internal data class QueueRowActions(
 private val TrailingColumnMinWidth = 48.dp
 
 /**
- * The library's track list: the 72 dp rows, their continuation sentinel, and
- * the badges the row carries. Shared by the Titles tab and by an opened album,
- * which is why it is not part of either.
+ * The library's track list: rows with a 72 dp floor that grow with the font
+ * scale, their continuation sentinel, and the badges the row carries. Shared
+ * by the Titles tab and by an opened album, which is why it is not part of
+ * either.
  */
 @Composable
 internal fun TrackRows(
@@ -316,12 +317,13 @@ private fun LibraryTrackRow(
     play: () -> Unit,
 ) {
     val contextMenu = rememberTrackContextMenuAnchorState()
-    val fontScale = LocalDensity.current.fontScale
+    val density = LocalDensity.current
+    val fontScale = density.fontScale
     val rowHeightDp = effectiveTrackRowHeightDp(
         baseHeightDp = metrics.trackRowHeightDp,
-        fontScale = fontScale,
-        titleLineHeightSp = MaterialTheme.typography.titleMedium.lineHeight.value,
-        subtitleLineHeightSp = MaterialTheme.typography.bodyMedium.lineHeight.value,
+        density = density,
+        titleLineHeight = MaterialTheme.typography.titleMedium.lineHeight,
+        subtitleLineHeight = MaterialTheme.typography.bodyMedium.lineHeight,
     )
     val queueDrag = if (queueActions == null) null else reorder
     val dragged = queueDrag?.isDragging(queuePosition) == true
@@ -335,9 +337,10 @@ private fun LibraryTrackRow(
     } else {
         MaterialTheme.colorScheme.background
     }
-    // The row itself is a fixed-height, clipped Surface, so the context menu's
-    // acknowledgement gets a slot under it rather than a place on top of the
-    // cover and the title. See TrackContextMenuMessage.
+    // The row itself is a clipped Surface with one effective font-scaled
+    // height, so the context menu's acknowledgement gets a slot under it
+    // rather than a place on top of the cover and the title. See
+    // TrackContextMenuMessage.
     Column(
         modifier = if (queueDrag == null) {
             Modifier
