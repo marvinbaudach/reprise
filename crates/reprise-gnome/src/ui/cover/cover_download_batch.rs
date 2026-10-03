@@ -318,6 +318,9 @@ impl CoverDownloadBatch {
         previous: Connectivity,
         current: Connectivity,
     ) {
+        if previous != Connectivity::Offline && current == Connectivity::Offline {
+            self.network_return_pending.set(false);
+        }
         if previous != Connectivity::Offline || current != Connectivity::Online {
             return;
         }

@@ -162,6 +162,23 @@ fn net_7c_a_return_seen_during_a_failing_pass_retries_once_when_the_pass_ends() 
 
 #[test]
 #[ignore = "requires a display; run via xvfb-run"]
+fn net_7c_going_offline_again_clears_a_pending_return() {
+    let _main_context = crate::ui::test_main_context::lock_main_context();
+    let fixture = batch_fixture();
+    fixture.batch.start_user_triggered();
+    let request = take_request(&fixture.requests);
+    let generation = fixture.batch.generation_for_test();
+
+    project_return(&fixture.targets);
+    fixture.targets.project(Connectivity::Offline);
+    finish(&fixture, &request, DownloadOutcome::TransientFailure);
+
+    assert_eq!(fixture.batch.generation_for_test(), generation);
+    assert!(fixture.requests.is_empty());
+}
+
+#[test]
+#[ignore = "requires a display; run via xvfb-run"]
 fn net_7c_cancel_and_a_new_pass_both_clear_a_pending_return() {
     let _main_context = crate::ui::test_main_context::lock_main_context();
     let fixture = batch_fixture();
