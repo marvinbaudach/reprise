@@ -311,6 +311,33 @@ class NetworkReturnTest {
         viewModel.stopNetworkReturnMonitor()
     }
 
+    @Test
+    fun a_view_model_delivers_an_in_flight_return_after_a_real_stop_and_restart() {
+        val context = ApplicationProvider.getApplicationContext<Context>()
+        val connectivity = context.getSystemService(ConnectivityManager::class.java)
+        val shadow = shadowOf(connectivity)
+        shadow.clearAllNetworks()
+        shadow.setActiveNetworkInfo(null)
+        val viewModel = MobileSurfaceViewModel()
+        var returns = 0
+
+        viewModel.startNetworkReturnMonitor(context) { returns += 1 }
+        val wifi = ShadowNetwork.newInstance(49)
+        val wifiCapabilities = capabilities(validated = true)
+        shadow.addNetwork(wifi, networkInfo(ConnectivityManager.TYPE_WIFI))
+        shadow.setNetworkCapabilities(wifi, wifiCapabilities)
+        shadow.networkCallbacks.single().onCapabilitiesChanged(wifi, wifiCapabilities)
+        viewModel.stopNetworkReturnMonitor()
+        shadowOf(Looper.getMainLooper()).idle()
+        assertEquals(0, returns)
+
+        viewModel.startNetworkReturnMonitor(context) { returns += 1 }
+        shadowOf(Looper.getMainLooper()).idle()
+
+        assertEquals(1, returns)
+        viewModel.stopNetworkReturnMonitor()
+    }
+
     private fun monitorFixture(
         activeValidated: Boolean?,
         scheduler: NetworkReturnScheduler = FakeNetworkReturnScheduler(),
