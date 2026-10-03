@@ -37,12 +37,33 @@ pub(super) fn install(
         radio,
     );
 
+    {
+        let podcasts = podcasts.clone();
+        let youtube = youtube.clone();
+        let radio = radio.clone();
+        preferences.set_on_online_module_state_changed(move || {
+            podcasts.if_materialized(|view| view.refresh());
+            youtube.if_materialized(|view| view.refresh());
+            radio.if_materialized(|view| view.refresh());
+        });
+    }
+
     // These callbacks used to be installed immediately after eager
     // construction. Register them with the page so they are present before a
     // synchronous navigation call returns with the page visible.
     for page in [podcasts, youtube] {
         let preferences = Rc::downgrade(preferences);
         page.on_materialized(move |view| {
+            view.set_on_open_preferences(move || {
+                if let Some(preferences) = preferences.upgrade() {
+                    preferences.present_online_sources();
+                }
+            });
+        });
+    }
+    {
+        let preferences = Rc::downgrade(preferences);
+        radio.on_materialized(move |view| {
             view.set_on_open_preferences(move || {
                 if let Some(preferences) = preferences.upgrade() {
                     preferences.present_online_sources();

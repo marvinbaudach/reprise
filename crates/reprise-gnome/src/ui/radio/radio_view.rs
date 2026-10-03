@@ -62,12 +62,12 @@ pub(super) struct Shared {
     /// [`RadioView::set_connectivity`].
     connectivity: Rc<Cell<Connectivity>>,
     failure_kind: RefCell<Option<SourceErrorKind>>,
-    stack: gtk4::Stack,
+    pub(super) stack: gtk4::Stack,
     status: adw::StatusPage,
     status_button: gtk4::Button,
     empty_state: Cell<RadioEmptyState>,
     empty_page: SourceEmptyState,
-    module_off_state: SourceEmptyState,
+    pub(super) module_off_state: SourceEmptyState,
     error_banner: SourceErrorBanner,
     pub(super) root: gtk4::Widget,
     footer: gtk4::Box,
@@ -293,16 +293,7 @@ impl RadioView {
                 }
             });
         }
-        {
-            let weak = Rc::downgrade(&shared);
-            shared.module_off_state.connect_add(move || {
-                if let Some(shared) = weak.upgrade() {
-                    if let Some(callback) = shared.on_open_preferences.borrow().clone() {
-                        callback();
-                    }
-                }
-            });
-        }
+        super::radio_preferences::wire_module_off_action(&shared);
         {
             let weak = Rc::downgrade(&shared);
             status_button.connect_clicked(move |_| {
@@ -456,11 +447,10 @@ fn render_rows(shared: &Rc<Shared>) {
     // which case the model deliberately emits no rebind signal. Reapply the
     // bound cells so their in-place search markup still follows the query.
     shared.cells.reapply();
-    let module_enabled = reprise_core::online_sources::network_allowed(
+    let module_enabled = reprise_core::online_sources::network_allowed_or_off(
         &shared.conn,
         &reprise_core::modules::RADIO_MODULE,
-    )
-    .unwrap_or(false);
+    );
     apply_empty_state(
         shared,
         radio_empty_state_for(rows.len(), filter.is_active(), module_enabled),

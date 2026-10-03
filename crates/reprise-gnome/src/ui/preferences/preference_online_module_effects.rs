@@ -5,6 +5,7 @@ use reprise_core::connectivity::Connectivity;
 use super::PreferencesContext;
 
 pub(super) type ArtworkPermissionCallback = Rc<dyn Fn(bool)>;
+pub(super) type OnlineModuleStateCallback = Rc<dyn Fn()>;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 enum PermissionEffect {
@@ -45,6 +46,11 @@ impl PreferencesContext {
             .replace(Some(Rc::new(callback)));
     }
 
+    pub(in crate::ui) fn set_on_online_module_state_changed(&self, callback: impl Fn() + 'static) {
+        self.on_online_module_state_changed
+            .replace(Some(Rc::new(callback)));
+    }
+
     pub(in crate::ui) fn refresh_online_module_state(&self, reason: &'static str) {
         let artwork_was_allowed = self.cover_download.enabled.get();
         let lyrics_was_allowed = self.lyrics_batch.permission_enabled();
@@ -71,6 +77,10 @@ impl PreferencesContext {
             PermissionEffect::Start => self.lyrics_batch.start(),
             PermissionEffect::Stop => self.lyrics_batch.cancel(),
             PermissionEffect::None => {}
+        }
+        let refresh_sources = self.on_online_module_state_changed.borrow().clone();
+        if let Some(refresh_sources) = refresh_sources {
+            refresh_sources();
         }
         self.refresh_background_bar_gate();
         self.sidebar.refresh(reason);

@@ -50,16 +50,7 @@ impl ConnectivityTargets {
         }
         {
             let state = state.clone();
-            let preferences = Rc::downgrade(preferences);
             radio.on_materialized(move |view| view.set_connectivity(state.get()));
-            radio.on_materialized(move |view| {
-                let preferences = preferences.clone();
-                view.set_on_open_preferences(move || {
-                    if let Some(preferences) = preferences.upgrade() {
-                        preferences.present_online_sources();
-                    }
-                });
-            });
         }
         Self {
             state,

@@ -100,6 +100,39 @@ fn net_5_enabling_artwork_through_preferences_starts_the_wired_cover_pass() {
 
 #[test]
 #[ignore = "requires a display; run via xvfb-run"]
+fn src_10a_enabling_radio_through_preferences_recovers_the_open_view() {
+    let _main_context = crate::ui::test_main_context::lock_main_context();
+    let handles = build_online_module_handles();
+    reprise_core::online_sources::set_enabled(&handles.preferences.conn, true).unwrap();
+    reprise_core::modules::set_enabled(
+        &handles.preferences.conn,
+        &reprise_core::modules::RADIO_MODULE,
+        false,
+    )
+    .unwrap();
+    let radio = handles.radio();
+
+    assert!(radio.module_off_is_visible_for_test());
+    radio.open_module_preferences_for_test();
+    assert!(handles.preferences.preferences_dialog().is_some());
+
+    handles
+        .preferences
+        .set_module_enabled_for_test(
+            &reprise_core::modules::RADIO_MODULE,
+            true,
+            "SRC-10a production transition test",
+        )
+        .expect("enable Radio");
+
+    assert!(
+        radio.empty_state_is_visible_for_test(),
+        "the already-open Radio view must recover through the Preferences transition"
+    );
+}
+
+#[test]
+#[ignore = "requires a display; run via xvfb-run"]
 fn rad_5_real_preferences_return_resumes_the_open_near_you_intent() {
     let _main_context = crate::ui::test_main_context::lock_main_context();
     let handles = build_online_module_handles();

@@ -445,7 +445,7 @@ fn src_10a_radio_empty_state_hides_the_toolbar_and_the_first_station_restores_it
 
 #[test]
 #[ignore = "requires a display; run via xvfb-run"]
-fn src_10a_radio_module_off_opens_preferences_and_returns_to_the_empty_state_when_enabled() {
+fn src_10a_radio_module_off_opens_preferences() {
     gtk4::init().unwrap();
     let conn = Rc::new(crate::test_db::open().unwrap());
     reprise_core::modules::set_enabled(&conn, &reprise_core::modules::RADIO_MODULE, false).unwrap();
@@ -472,15 +472,6 @@ fn src_10a_radio_module_off_opens_preferences_and_returns_to_the_empty_state_whe
     view.set_on_open_preferences(move || opened_from_button.set(true));
     view.shared.module_off_state.button().emit_clicked();
     assert!(opened.get());
-
-    reprise_core::modules::set_enabled(&conn, &reprise_core::modules::RADIO_MODULE, true).unwrap();
-    view.refresh();
-
-    assert_eq!(view.shared.empty_state.get(), RadioEmptyState::Empty);
-    assert_eq!(
-        view.shared.stack.visible_child_name().as_deref(),
-        Some(EMPTY_PAGE)
-    );
 }
 
 fn descendant_labels(widget: &gtk4::Widget) -> Vec<String> {
