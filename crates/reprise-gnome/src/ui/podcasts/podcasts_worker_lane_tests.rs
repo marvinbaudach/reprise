@@ -1,7 +1,7 @@
 use super::*;
 
 use std::sync::{Arc, Condvar, Mutex};
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 use reprise_core::podcasts::download_state::DownloadState;
 
@@ -23,18 +23,25 @@ impl Drop for ReleaseGate {
 }
 
 fn response_within(
-    receiver: async_channel::Receiver<PodcastsResponse>,
+    receiver: &async_channel::Receiver<PodcastsResponse>,
     deadline: Duration,
     failure: &'static str,
 ) -> PodcastsResponse {
-    let (sender, response) = std::sync::mpsc::sync_channel(1);
-    std::thread::spawn(move || {
-        let _ = sender.send(receiver.recv_blocking());
-    });
-    response
-        .recv_timeout(deadline)
-        .expect(failure)
-        .expect("podcast response channel should remain open")
+    let deadline = Instant::now() + deadline;
+    loop {
+        match receiver.try_recv() {
+            Ok(response) => return response,
+            Err(async_channel::TryRecvError::Closed) => {
+                panic!("podcast response channel should remain open")
+            }
+            Err(async_channel::TryRecvError::Empty) => {
+                let Some(remaining) = deadline.checked_duration_since(Instant::now()) else {
+                    panic!("{failure}");
+                };
+                std::thread::sleep(remaining.min(Duration::from_millis(5)));
+            }
+        }
+    }
 }
 
 fn request(
@@ -65,8 +72,10 @@ fn pod_28_a_refresh_completes_while_a_fill_up_is_still_downloading() {
             let mut released = released.lock().unwrap();
             while !*released {
                 let (next, timeout) = changed.wait_timeout(released, FILL_GATE_DEADLINE).unwrap();
-                assert!(!timeout.timed_out(), "fill-up release gate timed out");
                 released = next;
+                if !*released {
+                    assert!(!timeout.timed_out(), "fill-up release gate timed out");
+                }
             }
             send_response(
                 &queued.request,
@@ -93,7 +102,7 @@ fn pod_28_a_refresh_completes_while_a_fill_up_is_still_downloading() {
     });
     assert!(runtime.request(refresh));
     let refreshed = response_within(
-        refresh_response,
+        &refresh_response,
         RESPONSE_DEADLINE,
         "head-of-line blocking: refresh waited behind a running fill-up",
     );
@@ -104,7 +113,7 @@ fn pod_28_a_refresh_completes_while_a_fill_up_is_still_downloading() {
 
     drop(release);
     let filled = response_within(
-        fill_response,
+        &fill_response,
         RESPONSE_DEADLINE,
         "released fill-up should finish before the deadline",
     );

@@ -316,23 +316,33 @@ impl DownloadJobCounts {
     }
 
     fn record(&mut self, state: &podcasts::download_state::DownloadState) {
-        let next = count_download_states(std::slice::from_ref(state));
+        let next = count_download_state(state);
         self.downloaded += next.downloaded;
         self.failed += next.failed;
+    }
+}
+
+fn count_download_state(state: &podcasts::download_state::DownloadState) -> DownloadJobCounts {
+    match state {
+        podcasts::download_state::DownloadState::Downloaded { .. } => DownloadJobCounts {
+            downloaded: 1,
+            failed: 0,
+        },
+        podcasts::download_state::DownloadState::Failed { .. } => DownloadJobCounts {
+            downloaded: 0,
+            failed: 1,
+        },
+        podcasts::download_state::DownloadState::NotDownloaded
+        | podcasts::download_state::DownloadState::Queued
+        | podcasts::download_state::DownloadState::Downloading { .. }
+        | podcasts::download_state::DownloadState::Missing => DownloadJobCounts::default(),
     }
 }
 
 fn count_download_states(states: &[podcasts::download_state::DownloadState]) -> DownloadJobCounts {
     let mut counts = DownloadJobCounts::default();
     for state in states {
-        match state {
-            podcasts::download_state::DownloadState::Downloaded { .. } => counts.downloaded += 1,
-            podcasts::download_state::DownloadState::Failed { .. } => counts.failed += 1,
-            podcasts::download_state::DownloadState::NotDownloaded
-            | podcasts::download_state::DownloadState::Queued
-            | podcasts::download_state::DownloadState::Downloading { .. }
-            | podcasts::download_state::DownloadState::Missing => {}
-        }
+        counts.record(state);
     }
     counts
 }
@@ -378,8 +388,7 @@ fn process_request(
 ) {
     let request = &queued.request;
     let started_at = Instant::now();
-    // Each lane owns and reuses one connection, preserving refresh's
-    // connection-address-keyed retry state while downloads run independently.
+    // Each request runs on its lane's thread and uses that thread's connection.
     let Some(Ok(conn)) = connection else {
         let error = connection
             .and_then(|result| result.as_ref().err())
@@ -485,7 +494,7 @@ fn process_request(
         }
         PodcastsOperation::FillDownloads => {
             let mut counts = DownloadJobCounts::default();
-            let result = podcasts::config::load(conn)
+            let fill_summary = podcasts::config::load(conn)
                 .map_err(|error| error.to_string())
                 .and_then(|config| {
                     let ytdlp = podcasts::ytdlp::YtDlp::discover_with_browser(
@@ -505,19 +514,20 @@ fn process_request(
                             );
                         },
                     )
-                    .map(PodcastsWorkerResult::Filled)
                     .map_err(|error| error.to_string())
                 });
-            let (counts, outcome) = match &result {
-                Ok(PodcastsWorkerResult::Filled(summary)) => (
-                    DownloadJobCounts {
+            let (result, outcome) = match fill_summary {
+                Ok(summary) => {
+                    counts = DownloadJobCounts {
                         downloaded: summary.downloaded,
                         failed: summary.failed,
-                    },
-                    DownloadJobOutcome::Ok,
-                ),
-                Ok(_) => unreachable!("fill result has one terminal variant"),
-                Err(_) => (counts, DownloadJobOutcome::Error),
+                    };
+                    (
+                        Ok(PodcastsWorkerResult::Filled(summary)),
+                        DownloadJobOutcome::Ok,
+                    )
+                }
+                Err(error) => (Err(error), DownloadJobOutcome::Error),
             };
             send_response(request, result);
             log_download_job(request, started_at, counts, outcome);

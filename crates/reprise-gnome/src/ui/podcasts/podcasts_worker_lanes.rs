@@ -1,3 +1,5 @@
+//! Routing and lifetime management for the independent podcast worker lanes.
+
 use std::path::PathBuf;
 use std::sync::Arc;
 
@@ -41,6 +43,10 @@ pub(super) const fn lane_for(operation: &PodcastsOperation) -> PodcastsLane {
 pub(super) type LaneExecutor =
     Arc<dyn Fn(Option<&Result<Db, DbError>>, &QueuedRequest) + Send + Sync>;
 
+/// Spawns one lane thread with one connection that it reuses for its lifetime.
+///
+/// Keeping feed work on the same long-lived connection preserves the
+/// connection-address-keyed retry state while the downloads lane runs independently.
 pub(super) fn spawn_lane(
     lane: PodcastsLane,
     database_path: Option<PathBuf>,
