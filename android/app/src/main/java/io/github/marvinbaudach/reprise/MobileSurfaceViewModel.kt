@@ -133,6 +133,7 @@ internal class MobileSurfaceViewModel(
 ) : ViewModel(), DeletionMessages {
     val networkReturnDetector = NetworkReturnDetector()
     private var networkReturnMonitor: NetworkReturnMonitor? = null
+    private var reportNetworkReturn: () -> Unit = {}
 
     var selectedTab by mutableStateOf(BrowseTab.TITLES)
         private set
@@ -290,19 +291,25 @@ internal class MobileSurfaceViewModel(
     }
 
     fun startNetworkReturnMonitor(context: Context, onNetworkReturned: () -> Unit) {
-        stopNetworkReturnMonitor()
+        reportNetworkReturn = onNetworkReturned
+        networkReturnMonitor?.let { monitor ->
+            monitor.start()
+            return
+        }
         val connectivity = context.applicationContext
             .getSystemService(ConnectivityManager::class.java)
         networkReturnMonitor = NetworkReturnMonitor(
             connectivity = connectivity,
             detector = networkReturnDetector,
-            onNetworkReturned = onNetworkReturned,
+            onNetworkReturned = { reportNetworkReturn() },
         ).also(NetworkReturnMonitor::start)
     }
 
-    fun stopNetworkReturnMonitor() {
+    fun stopNetworkReturnMonitor(configurationChange: Boolean = false) {
+        if (configurationChange) return
         networkReturnMonitor?.stop()
         networkReturnMonitor = null
+        reportNetworkReturn = {}
     }
 
     fun startArtistPhotoBackfill() {

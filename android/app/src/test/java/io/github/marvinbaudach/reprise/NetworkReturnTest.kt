@@ -7,12 +7,18 @@ import android.net.NetworkInfo
 import android.net.NetworkRequest
 import android.os.Looper
 import android.util.Log
+import androidx.compose.ui.test.junit4.v2.createAndroidComposeRule
+import androidx.lifecycle.ViewModelProvider
 import androidx.test.core.app.ApplicationProvider
+import java.time.Duration
+import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
+import org.junit.Rule
 import org.junit.Test
 import org.junit.runner.RunWith
+import org.robolectric.RuntimeEnvironment
 import org.robolectric.RobolectricTestRunner
 import org.robolectric.Shadows.shadowOf
 import org.robolectric.annotation.Config
@@ -27,6 +33,29 @@ import org.robolectric.shadows.ShadowNetworkInfo
 @RunWith(RobolectricTestRunner::class)
 @Config(sdk = [36])
 class NetworkReturnTest {
+    @Test
+    fun a_return_callback_in_flight_during_stop_still_delivers_the_immediate_bump() {
+        val posted = mutableListOf<() -> Unit>()
+        val scheduler = FakeNetworkReturnScheduler()
+        val fixture = monitorFixture(
+            activeValidated = null,
+            scheduler = scheduler,
+            postToMain = posted::add,
+        )
+
+        fixture.monitor.start()
+        posted.forEach { work -> work() }
+        posted.clear()
+        fixture.returnNetwork(id = 49)
+        assertEquals(0, fixture.returns())
+
+        fixture.monitor.stop()
+        posted.single().invoke()
+
+        assertEquals(1, fixture.returns())
+        assertEquals(emptyList<Long>(), scheduler.pendingDelays())
+    }
+
     @Test
     fun net_7b_a_return_schedules_three_follow_ups() {
         val scheduler = FakeNetworkReturnScheduler()
@@ -286,6 +315,7 @@ class NetworkReturnTest {
         activeValidated: Boolean?,
         scheduler: NetworkReturnScheduler = FakeNetworkReturnScheduler(),
         logFollowUp: (Int) -> Unit = {},
+        postToMain: ((() -> Unit) -> Unit) = { work -> work() },
     ): MonitorFixture {
         val context = ApplicationProvider.getApplicationContext<Context>()
         val connectivity = context.getSystemService(ConnectivityManager::class.java)
@@ -298,7 +328,7 @@ class NetworkReturnTest {
             connectivity = connectivity,
             detector = NetworkReturnDetector(),
             onNetworkReturned = { returns += 1 },
-            postToMain = { work -> work() },
+            postToMain = postToMain,
             scheduler = scheduler,
             logFollowUp = logFollowUp,
         )
@@ -435,6 +465,49 @@ private class FakeNetworkReturnScheduler : NetworkReturnScheduler {
 @Config(sdk = [36], shadows = [FailingRegistrationConnectivityManagerShadow::class])
 class NetworkReturnRegistrationTest {
     @Test
+    fun a_return_observed_before_registration_failure_still_delivers_the_immediate_bump() {
+        val context = ApplicationProvider.getApplicationContext<Context>()
+        val connectivity = context.getSystemService(ConnectivityManager::class.java)
+        val shadow = shadowOf(connectivity) as FailingRegistrationConnectivityManagerShadow
+        shadow.clearAllNetworks()
+        shadow.setActiveNetworkInfo(null)
+        val network = ShadowNetwork.newInstance(70)
+        val capabilities = ShadowNetworkCapabilities.newInstance().also { networkCapabilities ->
+            shadowOf(networkCapabilities).apply {
+                addTransportType(NetworkCapabilities.TRANSPORT_WIFI)
+                addCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET)
+                addCapability(NetworkCapabilities.NET_CAPABILITY_NOT_VPN)
+                addCapability(NetworkCapabilities.NET_CAPABILITY_VALIDATED)
+            }
+        }
+        shadow.addNetwork(network, ShadowNetworkInfo.newInstance(
+            NetworkInfo.DetailedState.CONNECTED,
+            ConnectivityManager.TYPE_WIFI,
+            0,
+            true,
+            true,
+        ))
+        shadow.setNetworkCapabilities(network, capabilities)
+        val detector = NetworkReturnDetector().also { it.observe(online = false) }
+        val scheduler = FakeNetworkReturnScheduler()
+        val posted = mutableListOf<() -> Unit>()
+        var returns = 0
+        val monitor = NetworkReturnMonitor(
+            connectivity = connectivity,
+            detector = detector,
+            onNetworkReturned = { returns += 1 },
+            postToMain = posted::add,
+            scheduler = scheduler,
+        )
+
+        monitor.start()
+        posted.single().invoke()
+
+        assertEquals(1, returns)
+        assertEquals(emptyList<Long>(), scheduler.pendingDelays())
+    }
+
+    @Test
     fun registration_failure_is_logged_and_the_next_start_retries() {
         val context = ApplicationProvider.getApplicationContext<Context>()
         val connectivity = context.getSystemService(ConnectivityManager::class.java)
@@ -464,6 +537,57 @@ class NetworkReturnRegistrationTest {
         assertEquals(2, shadow.registrationAttempts)
         assertEquals(1, shadow.networkCallbacks.size)
         monitor.stop()
+    }
+}
+
+@RunWith(RobolectricTestRunner::class)
+@Config(
+    sdk = [36],
+    application = ConfigurationTestApplication::class,
+)
+class NetworkReturnRotationTest {
+    @get:Rule
+    val compose = createAndroidComposeRule<MainActivity>()
+
+    @After
+    fun releaseTheService() {
+        (RuntimeEnvironment.getApplication() as ConfigurationTestApplication).releaseService()
+    }
+
+    @Test
+    fun net_7b_rotation_keeps_the_pending_follow_up_schedule() {
+        val connectivity = RuntimeEnvironment.getApplication()
+            .getSystemService(ConnectivityManager::class.java)
+        val shadow = shadowOf(connectivity)
+        shadow.clearAllNetworks()
+        shadow.setActiveNetworkInfo(null)
+        val beforeRotation = ViewModelProvider(compose.activity)[MobileSurfaceViewModel::class.java]
+        var returns = 0
+        beforeRotation.startNetworkReturnMonitor(compose.activity) { returns += 1 }
+
+        shadow.networkCallbacks.single().onCapabilitiesChanged(
+            ShadowNetwork.newInstance(71),
+            ShadowNetworkCapabilities.newInstance().also { capabilities ->
+                shadowOf(capabilities).apply {
+                    addTransportType(NetworkCapabilities.TRANSPORT_WIFI)
+                    addCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET)
+                    addCapability(NetworkCapabilities.NET_CAPABILITY_NOT_VPN)
+                    addCapability(NetworkCapabilities.NET_CAPABILITY_VALIDATED)
+                }
+            },
+        )
+        shadowOf(Looper.getMainLooper()).idle()
+        assertEquals(1, returns)
+
+        compose.activityRule.scenario.recreate()
+        val afterRotation = ViewModelProvider(compose.activity)[MobileSurfaceViewModel::class.java]
+        assertTrue(beforeRotation === afterRotation)
+        shadowOf(Looper.getMainLooper()).idleFor(
+            Duration.ofMillis(FIRST_NETWORK_RETURN_FOLLOW_UP_DELAY_MS),
+        )
+
+        assertEquals(2, returns)
+        afterRotation.stopNetworkReturnMonitor()
     }
 }
 

@@ -479,7 +479,7 @@ class MainActivity : ComponentActivity() {
     }
 
     override fun onStop() {
-        surfaceState.stopNetworkReturnMonitor()
+        surfaceState.stopNetworkReturnMonitor(isChangingConfigurations)
         playbackState.value = playbackState.value.copy(faultNotice = null)
         playbackBindWatchdog?.cancel()
         playbackBindWatchdog = null

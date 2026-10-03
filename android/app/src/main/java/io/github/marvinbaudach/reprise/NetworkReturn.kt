@@ -168,9 +168,9 @@ internal class NetworkReturnMonitor(
             .joinToString().ifEmpty { "other" }
         logReturn(transports, networks.size)
         postToMain {
+            onNetworkReturned()
             if (!started) return@postToMain
             cancelFollowUps()
-            onNetworkReturned()
             scheduleFollowUps()
         }
     }

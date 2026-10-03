@@ -3198,7 +3198,8 @@ property is set and yet nothing happens.
   shows a real cover is not asked again. There is no polling or restart of the
   background pass. The return is followed by at most three bounded retries
   after 3, 10 and 30 seconds while the physical network stays online and the
-  app stays in the foreground.
+  app stays in the foreground. A configuration change preserves that schedule;
+  moving the app to the background cancels it.
 - **NET-3** [active] [core] [gtk] — Offline is a state, not an error: no network-backed
   place in the app may treat a missing network connection like an error
   message. The contract covers seven states every network-backed view (feed,
