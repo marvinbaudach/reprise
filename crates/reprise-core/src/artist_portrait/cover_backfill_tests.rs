@@ -176,6 +176,7 @@ fn a_cancel_before_start_is_honoured_once_start_finally_runs() {
         CoverFetchOutcome::NotFound
     });
 
+    backfill.prepare_chained_start();
     backfill.cancel();
     let started = backfill.start_prepared(
         vec![("Band A".into(), "Album A".into(), "/a.flac".into())],

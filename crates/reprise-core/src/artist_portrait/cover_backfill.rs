@@ -32,20 +32,25 @@ pub type CoverBackfillFetch =
     dyn Fn(&str, &str, &str) -> crate::cover_download::CoverFetchOutcome + Send + Sync;
 pub type CoverBackfillListener = dyn Fn(CoverBackfillProgress) + Send + Sync;
 
+#[must_use]
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum ChainedCoverStart {
+    Started,
+    Cancelled,
+    Busy,
+}
+
 type PrepareWork = dyn FnOnce() -> Result<Vec<(String, String, String)>, String> + Send;
 type ConsentAllowed = dyn Fn() -> bool + Send + Sync;
 
 struct Shared {
     active: bool,
     cancelled: bool,
-    /// Sticky, unlike `cancelled`: set by [`CoverBackfill::cancel`] even
-    /// while no run is active yet, and consumed by the next
-    /// [`CoverBackfill::launch`] rather than by the (possibly nonexistent)
-    /// worker `cancelled` gates. Exists for the window between the portrait
-    /// run reporting `Complete` and the FFI's forwarding closure actually
-    /// reaching `start()` — during that window `active` is `false` on both
-    /// sides, so a plain `active`-gated cancel is silently lost (B3 review
-    /// findings 6/7).
+    /// True only while the FFI has observed portrait completion but has
+    /// not reached the chained cover [`CoverBackfill::start`] yet.
+    chained_start_pending: bool,
+    /// One-shot cancellation scoped to `chained_start_pending`. Ordinary
+    /// idle stops never set it, so they cannot swallow a later start.
     cancel_requested: bool,
     progress: CoverBackfillProgress,
     listener: Option<Arc<CoverBackfillListener>>,
@@ -67,6 +72,7 @@ impl CoverBackfill {
             shared: Arc::new(Mutex::new(Shared {
                 active: false,
                 cancelled: false,
+                chained_start_pending: false,
                 cancel_requested: false,
                 progress: CoverBackfillProgress::default(),
                 listener: None,
@@ -93,6 +99,25 @@ impl CoverBackfill {
             listener,
             consent_allowed,
         )
+        .is_started()
+    }
+
+    pub fn start_chained(
+        &self,
+        database_path: PathBuf,
+        fetch: Arc<CoverBackfillFetch>,
+        listener: Arc<CoverBackfillListener>,
+        consent_allowed: Arc<ConsentAllowed>,
+    ) -> ChainedCoverStart {
+        self.launch(
+            Box::new(move || {
+                let db = Db::open_ready(&database_path).map_err(|error| error.to_string())?;
+                pending_albums(&db).map_err(|error| error.to_string())
+            }),
+            fetch,
+            listener,
+            consent_allowed,
+        )
     }
 
     pub fn cancel(&self) {
@@ -102,12 +127,12 @@ impl CoverBackfill {
                 .lock()
                 .unwrap_or_else(std::sync::PoisonError::into_inner);
             if !shared.active {
-                // No run to stop yet — but one may still be about to start
-                // (the FFI's forwarding closure calls `start()` after this
-                // handle reports the portrait run `Complete`, not before),
-                // so the cancel must not simply vanish: the next `launch`
-                // consumes this instead of starting.
-                shared.cancel_requested = true;
+                // Retain this stop only for the explicitly announced FFI
+                // transition from portrait completion to its chained start.
+                // An ordinary idle stop must leave later runs untouched.
+                if shared.chained_start_pending {
+                    shared.cancel_requested = true;
+                }
                 return;
             }
             shared.cancelled = true;
@@ -119,16 +144,14 @@ impl CoverBackfill {
         }
     }
 
-    /// Drops a pending one-shot cancellation after the portrait run that
-    /// could have chained into this handle instead ended cancelled.
-    ///
-    /// This is deliberately narrower than [`Self::reset_for_tests`]: active
-    /// cover work and its progress are left untouched.
-    pub fn clear_pending_cancel(&self) {
+    /// Announces the short FFI transition from portrait completion to the
+    /// chained cover start, during which an otherwise-idle cancel must be
+    /// retained for that start.
+    pub fn prepare_chained_start(&self) {
         self.shared
             .lock()
             .unwrap_or_else(std::sync::PoisonError::into_inner)
-            .cancel_requested = false;
+            .chained_start_pending = true;
     }
 
     /// Resets the handle to idle for a test harness that shares this one
@@ -149,6 +172,7 @@ impl CoverBackfill {
             .shared
             .lock()
             .unwrap_or_else(std::sync::PoisonError::into_inner);
+        shared.chained_start_pending = false;
         shared.cancel_requested = false;
         shared.progress = CoverBackfillProgress::default();
     }
@@ -167,7 +191,7 @@ impl CoverBackfill {
         fetch: Arc<CoverBackfillFetch>,
         listener: Arc<CoverBackfillListener>,
         consent_allowed: Arc<ConsentAllowed>,
-    ) -> bool {
+    ) -> ChainedCoverStart {
         let mut worker = self
             .worker
             .lock()
@@ -179,12 +203,19 @@ impl CoverBackfill {
                     reset_after_worker_exit(&self.shared);
                 }
             } else {
-                self.shared
+                let mut shared = self
+                    .shared
                     .lock()
-                    .unwrap_or_else(std::sync::PoisonError::into_inner)
-                    .listener = Some(listener);
+                    .unwrap_or_else(std::sync::PoisonError::into_inner);
+                shared.chained_start_pending = false;
+                let cancelled = std::mem::take(&mut shared.cancel_requested);
+                shared.listener = Some(listener);
                 *worker = Some(previous);
-                return false;
+                return if cancelled {
+                    ChainedCoverStart::Cancelled
+                } else {
+                    ChainedCoverStart::Busy
+                };
             }
         }
 
@@ -193,18 +224,15 @@ impl CoverBackfill {
                 .shared
                 .lock()
                 .unwrap_or_else(std::sync::PoisonError::into_inner);
+            shared.chained_start_pending = false;
+            // One-shot: consume the stop aimed at this announced start so
+            // it cannot affect an unrelated later pass.
+            if std::mem::take(&mut shared.cancel_requested) {
+                return ChainedCoverStart::Cancelled;
+            }
             if shared.active {
                 shared.listener = Some(listener);
-                return false;
-            }
-            if shared.cancel_requested {
-                // A cancel arrived while this run existed only as an
-                // in-flight FFI closure, before `start()` reached here —
-                // honour it instead of starting a pass the caller already
-                // tried to stop (B3 review findings 6/7). One-shot: an
-                // unrelated later `start()` is not blocked by it.
-                shared.cancel_requested = false;
-                return false;
+                return ChainedCoverStart::Busy;
             }
             shared.active = true;
             shared.cancelled = false;
@@ -224,7 +252,7 @@ impl CoverBackfill {
             };
             run_worker(&shared, albums, fetch.as_ref(), consent_allowed.as_ref());
         }));
-        true
+        ChainedCoverStart::Started
     }
 
     #[cfg(test)]
@@ -241,6 +269,13 @@ impl CoverBackfill {
             listener,
             consent_allowed,
         )
+        .is_started()
+    }
+}
+
+impl ChainedCoverStart {
+    const fn is_started(self) -> bool {
+        matches!(self, Self::Started)
     }
 }
 

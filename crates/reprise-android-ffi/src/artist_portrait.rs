@@ -1,6 +1,7 @@
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
+use reprise_core::artist_portrait::cover_backfill::ChainedCoverStart;
 use reprise_core::artist_portrait::{
     load_cached_from, verdict, CoverBackfillFetch, CoverBackfillListener, CoverBackfillProgress,
     PortraitBackfillListener as CorePortraitBackfillListener, PortraitBackfillProgress,
@@ -281,19 +282,11 @@ impl MusicLibrary {
 
         let forward_listener = Arc::clone(&listener);
         let forward: Arc<CorePortraitBackfillListener> = Arc::new(move |progress| {
-            if progress.run_id == 0 {
-                // Cancellation publishes the idle sentinel synchronously.
-                // Because the cover latch is set before cancelling the
-                // portrait run, this clears a stop whose chain no longer
-                // exists. If portrait completion won the race instead, no
-                // idle update arrives and the imminent cover start still
-                // consumes the latch.
-                album_cover::cover_backfill().clear_pending_cancel();
-            }
             let just_completed =
                 progress.state == PortraitBackfillState::Complete && progress.run_id != 0;
             let will_chain = just_completed && tree_source.is_some();
             if will_chain {
+                album_cover::cover_backfill().prepare_chained_start();
                 // A cover pass is about to start riding this same
                 // completion: pushing the raw `Complete` here would be
                 // revoked the instant that pass's own `Running` update
@@ -360,12 +353,15 @@ impl MusicLibrary {
                 })
             });
 
-            album_cover::cover_backfill().start(
+            let start = album_cover::cover_backfill().start_chained(
                 database_path.clone(),
                 fetch,
                 cover_listener,
                 consent_allowed,
             );
+            if start == ChainedCoverStart::Cancelled {
+                forward_listener.on_progress(PortraitBackfillProgress::idle().into());
+            }
         });
         self.portrait_backfill.start(
             self.database_path.clone(),

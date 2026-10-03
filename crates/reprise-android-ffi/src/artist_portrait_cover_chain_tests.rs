@@ -72,6 +72,33 @@ impl ArtistPortraitProgressListener for NoopProgressListener {
     fn on_progress(&self, _update: ArtistPortraitProgressUpdate) {}
 }
 
+struct PausingCompletionListener {
+    updates: Arc<Mutex<Vec<ArtistPortraitProgressUpdate>>>,
+    entered: Arc<(Mutex<bool>, Condvar)>,
+    release: Arc<(Mutex<bool>, Condvar)>,
+}
+
+impl ArtistPortraitProgressListener for PausingCompletionListener {
+    fn on_progress(&self, update: ArtistPortraitProgressUpdate) {
+        self.updates.lock().unwrap().push(update);
+        if update.state != ArtistPortraitProgressState::Running
+            || update.total == 0
+            || update.done.saturating_add(update.failed) != update.total
+        {
+            return;
+        }
+
+        let (entered_lock, entered_wake) = &*self.entered;
+        *entered_lock.lock().unwrap() = true;
+        entered_wake.notify_all();
+        let (release_lock, release_wake) = &*self.release;
+        let mut released = release_lock.lock().unwrap();
+        while !*released {
+            released = release_wake.wait(released).unwrap();
+        }
+    }
+}
+
 /// The chain B3 adds: once the portrait run this rides beside reports
 /// `Complete`, the cover pass starts on its own worklist and its progress
 /// merges into the same `ArtistPortraitProgressUpdate` Kotlin already reads.
@@ -229,11 +256,13 @@ fn stopping_portraits_does_not_block_a_later_cover_pass() {
     let (release_lock, release_wake) = &*release;
     *release_lock.lock().unwrap() = true;
     release_wake.notify_all();
+    let database_path = library.database_path.clone();
+    drop(library);
 
     let cover_calls = Arc::new(AtomicUsize::new(0));
     let counted_cover_calls = Arc::clone(&cover_calls);
     let started = album_cover::cover_backfill().start(
-        library.database_path.clone(),
+        database_path,
         Arc::new(move |_, _, _| {
             counted_cover_calls.fetch_add(1, Ordering::Relaxed);
             CoverFetchOutcome::NotFound
@@ -262,6 +291,187 @@ fn stopping_portraits_does_not_block_a_later_cover_pass() {
     assert_eq!(
         album_cover::cover_backfill().progress(),
         CoverBackfillProgress { done: 1, total: 1 }
+    );
+}
+
+#[test]
+fn stopping_while_idle_does_not_block_the_next_cover_pass() {
+    let _guard = album_cover::reset_album_cover_state_for_tests();
+    let directory = tempfile::tempdir().unwrap();
+    let library = MusicLibrary::open_with_portrait_fetch(
+        directory.path().to_str().unwrap(),
+        directory.path().join("cache").to_str().unwrap(),
+        |_, _| Ok(reprise_core::artist_portrait::PortraitOutcome::NotFound),
+    )
+    .unwrap();
+    scan_artists(directory.path(), &library, &["Idle Band"]);
+
+    library.cancel_artist_portrait_backfill();
+
+    let cover_calls = Arc::new(AtomicUsize::new(0));
+    let counted_cover_calls = Arc::clone(&cover_calls);
+    let started = album_cover::cover_backfill().start(
+        library.database_path.clone(),
+        Arc::new(move |_, _, _| {
+            counted_cover_calls.fetch_add(1, Ordering::Relaxed);
+            CoverFetchOutcome::NotFound
+        }),
+        Arc::new(|_| {}),
+        Arc::new(|| true),
+    );
+
+    assert!(started, "an idle stop must leave no cancellation behind");
+    for _ in 0..5_000 {
+        let progress = album_cover::cover_backfill().progress();
+        if progress.total > 0 && progress.done == progress.total {
+            break;
+        }
+        std::thread::sleep(std::time::Duration::from_millis(1));
+    }
+    assert_eq!(cover_calls.load(Ordering::Relaxed), 1);
+}
+
+#[test]
+fn stopping_twice_during_one_portrait_run_does_not_block_the_next_cover_pass() {
+    let _guard = album_cover::reset_album_cover_state_for_tests();
+    let directory = tempfile::tempdir().unwrap();
+    let entered = Arc::new((Mutex::new(false), Condvar::new()));
+    let release = Arc::new((Mutex::new(false), Condvar::new()));
+    let fetch_entered = Arc::clone(&entered);
+    let fetch_release = Arc::clone(&release);
+    let library = MusicLibrary::open_with_portrait_fetch(
+        directory.path().to_str().unwrap(),
+        directory.path().join("cache").to_str().unwrap(),
+        move |_, _| {
+            let (entered_lock, entered_wake) = &*fetch_entered;
+            *entered_lock.lock().unwrap() = true;
+            entered_wake.notify_all();
+            let (release_lock, release_wake) = &*fetch_release;
+            let mut released = release_lock.lock().unwrap();
+            while !*released {
+                released = release_wake.wait(released).unwrap();
+            }
+            Ok(reprise_core::artist_portrait::PortraitOutcome::NotFound)
+        },
+    )
+    .unwrap();
+    scan_artists(directory.path(), &library, &["Double Stop Band"]);
+    open_gate(&library);
+    library.start_artist_portrait_backfill(Box::new(NoopProgressListener));
+
+    let (entered_lock, entered_wake) = &*entered;
+    let mut did_enter = entered_lock.lock().unwrap();
+    while !*did_enter {
+        did_enter = entered_wake.wait(did_enter).unwrap();
+    }
+    drop(did_enter);
+
+    library.cancel_artist_portrait_backfill();
+    library.cancel_artist_portrait_backfill();
+    let (release_lock, release_wake) = &*release;
+    *release_lock.lock().unwrap() = true;
+    release_wake.notify_all();
+    let database_path = library.database_path.clone();
+    drop(library);
+
+    let cover_calls = Arc::new(AtomicUsize::new(0));
+    let counted_cover_calls = Arc::clone(&cover_calls);
+    let started = album_cover::cover_backfill().start(
+        database_path,
+        Arc::new(move |_, _, _| {
+            counted_cover_calls.fetch_add(1, Ordering::Relaxed);
+            CoverFetchOutcome::NotFound
+        }),
+        Arc::new(|_| {}),
+        Arc::new(|| true),
+    );
+
+    assert!(
+        started,
+        "a second stop must not leave a cancellation behind"
+    );
+    for _ in 0..5_000 {
+        let progress = album_cover::cover_backfill().progress();
+        if progress.total > 0 && progress.done == progress.total {
+            break;
+        }
+        std::thread::sleep(std::time::Duration::from_millis(1));
+    }
+    assert_eq!(cover_calls.load(Ordering::Relaxed), 1);
+}
+
+#[test]
+fn stopping_between_portrait_completion_and_cover_start_reports_idle() {
+    let _guard = album_cover::reset_album_cover_state_for_tests();
+    let directory = tempfile::tempdir().unwrap();
+    let music = directory.path().join("music");
+    let library = MusicLibrary::open_with_portrait_fetch(
+        directory.path().to_str().unwrap(),
+        directory.path().join("cache").to_str().unwrap(),
+        |_, _| Ok(reprise_core::artist_portrait::PortraitOutcome::NotFound),
+    )
+    .unwrap();
+    scan_artists(directory.path(), &library, &["Transition Band"]);
+    open_gate(&library);
+    library
+        .set_tree_uri(
+            music.to_string_lossy().into_owned(),
+            Box::new(ChainFsSource),
+        )
+        .unwrap();
+
+    let updates = Arc::new(Mutex::new(Vec::new()));
+    let entered = Arc::new((Mutex::new(false), Condvar::new()));
+    let release = Arc::new((Mutex::new(false), Condvar::new()));
+    let cover_calls = Arc::new(AtomicUsize::new(0));
+    let counted_cover_calls = Arc::clone(&cover_calls);
+    library.start_artist_portrait_backfill_with(
+        Box::new(PausingCompletionListener {
+            updates: Arc::clone(&updates),
+            entered: Arc::clone(&entered),
+            release: Arc::clone(&release),
+        }),
+        Arc::new(move |_, _, _| {
+            counted_cover_calls.fetch_add(1, Ordering::Relaxed);
+            CoverFetchOutcome::NotFound
+        }),
+    );
+
+    let (entered_lock, entered_wake) = &*entered;
+    let mut did_enter = entered_lock.lock().unwrap();
+    while !*did_enter {
+        did_enter = entered_wake.wait(did_enter).unwrap();
+    }
+    drop(did_enter);
+    library.cancel_artist_portrait_backfill();
+    let (release_lock, release_wake) = &*release;
+    *release_lock.lock().unwrap() = true;
+    release_wake.notify_all();
+
+    for _ in 0..5_000 {
+        if updates
+            .lock()
+            .unwrap()
+            .last()
+            .is_some_and(|update| update.run_id == 0)
+        {
+            break;
+        }
+        std::thread::sleep(std::time::Duration::from_millis(1));
+    }
+    assert_eq!(cover_calls.load(Ordering::Relaxed), 0);
+    assert_eq!(
+        updates.lock().unwrap().last().copied(),
+        Some(ArtistPortraitProgressUpdate {
+            run_id: 0,
+            state: ArtistPortraitProgressState::Complete,
+            done: 0,
+            failed: 0,
+            total: 0,
+            covers_done: 0,
+            covers_total: 0,
+        }),
+        "a cancelled chained start must replace the transitional Running update",
     );
 }
 
