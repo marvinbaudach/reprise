@@ -1,8 +1,9 @@
-use std::cell::Cell;
+use std::cell::{Cell, RefCell};
 use std::path::PathBuf;
 use std::rc::{Rc, Weak};
 
 use gtk4::glib;
+use reprise_core::connectivity::Connectivity;
 use reprise_core::db::Db;
 use reprise_core::library::startup_tasks::{self, SignatureTask};
 
@@ -104,6 +105,7 @@ pub(in crate::ui) struct CoverDownloadBatch {
     player: Option<Rc<PlayerController>>,
     generation: Cell<u64>,
     running: Cell<bool>,
+    transient_failure_open: Cell<bool>,
     progress: Cell<BatchProgress>,
     progress_subscribers: ProgressSubscribers<BatchProgress>,
 }
@@ -122,6 +124,7 @@ impl CoverDownloadBatch {
             player: player.cloned(),
             generation: Cell::new(0),
             running: Cell::new(false),
+            transient_failure_open: Cell::new(false),
             progress: Cell::new(BatchProgress::idle()),
             progress_subscribers: ProgressSubscribers::default(),
         })
@@ -168,6 +171,7 @@ impl CoverDownloadBatch {
     }
 
     fn start_pass(self: &Rc<Self>, pass: startup_tasks::ExactTaskPass) {
+        self.transient_failure_open.set(false);
         let paths = {
             let conn = &self.conn;
             reprise_core::queries::query_live_track_paths(conn)
@@ -270,6 +274,9 @@ impl CoverDownloadBatch {
                     .await
                     .ok();
                 }
+                if outcome_requests_retry(&outcome) {
+                    this.transient_failure_open.set(true);
+                }
                 this.set_progress(this.progress.get().advance(&outcome));
             }
 
@@ -294,7 +301,23 @@ impl CoverDownloadBatch {
     pub(in crate::ui) fn cancel(&self) {
         self.generation.set(self.generation.get().wrapping_add(1));
         self.running.set(false);
+        self.transient_failure_open.set(false);
         self.set_progress(BatchProgress::idle());
+    }
+
+    fn retry_on_network_return(self: &Rc<Self>, previous: Connectivity, current: Connectivity) {
+        if !network_return_retry_allowed(
+            previous,
+            current,
+            self.transient_failure_open.get(),
+            self.progress.get().state,
+            self.runtime.enabled.get(),
+            self.running.get(),
+        ) {
+            return;
+        }
+        self.transient_failure_open.set(false);
+        self.start_user_triggered();
     }
 
     fn set_progress(&self, progress: BatchProgress) {
@@ -316,6 +339,23 @@ impl CoverDownloadBatch {
     pub(in crate::ui) fn generation_for_test(&self) -> u64 {
         self.generation.get()
     }
+}
+
+thread_local! {
+    static NETWORK_RETRY_BATCH: RefCell<Weak<CoverDownloadBatch>> =
+        const { RefCell::new(Weak::new()) };
+}
+
+pub(in crate::ui) fn on_connectivity_changed(previous: Connectivity, current: Connectivity) {
+    NETWORK_RETRY_BATCH.with(|registered| {
+        if let Some(batch) = registered.borrow().upgrade() {
+            batch.retry_on_network_return(previous, current);
+        }
+    });
+}
+
+pub(super) fn register_for_network_retry(batch: &Rc<CoverDownloadBatch>) {
+    NETWORK_RETRY_BATCH.with(|registered| registered.replace(Rc::downgrade(batch)));
 }
 
 struct ActiveRun {
@@ -359,8 +399,27 @@ fn outcome_settles_track(outcome: &DownloadOutcome) -> bool {
     )
 }
 
+fn outcome_requests_retry(outcome: &DownloadOutcome) -> bool {
+    matches!(outcome, DownloadOutcome::TransientFailure)
+}
+
 fn start_request_allowed(running: bool) -> bool {
     !running
+}
+
+fn network_return_retry_allowed(
+    previous: Connectivity,
+    current: Connectivity,
+    transient_failure_open: bool,
+    last_state: BatchState,
+    artwork_enabled: bool,
+    running: bool,
+) -> bool {
+    previous == Connectivity::Offline
+        && current == Connectivity::Online
+        && (transient_failure_open || last_state == BatchState::Failed)
+        && artwork_enabled
+        && !running
 }
 
 #[cfg(test)]
@@ -368,9 +427,11 @@ mod tests {
     use std::path::PathBuf;
 
     use super::{
-        open_paths, outcome_settles_track, start_request_allowed, BatchProgress, BatchState,
+        network_return_retry_allowed, open_paths, outcome_requests_retry, outcome_settles_track,
+        start_request_allowed, BatchProgress, BatchState,
     };
     use crate::ui::cover_download_worker::DownloadOutcome;
+    use reprise_core::connectivity::Connectivity;
 
     #[test]
     fn progress_counts_checked_downloaded_and_unavailable_outcomes() {
@@ -394,6 +455,16 @@ mod tests {
         assert!(outcome_settles_track(&DownloadOutcome::Unavailable));
         assert!(!outcome_settles_track(&DownloadOutcome::TransientFailure));
         assert!(!outcome_settles_track(&DownloadOutcome::Downloaded(
+            PathBuf::from("/cache/cover.jpg")
+        )));
+    }
+
+    #[test]
+    fn net_7c_only_a_transient_outcome_leaves_network_return_work_open() {
+        assert!(outcome_requests_retry(&DownloadOutcome::TransientFailure));
+        assert!(!outcome_requests_retry(&DownloadOutcome::AlreadyCovered));
+        assert!(!outcome_requests_retry(&DownloadOutcome::Unavailable));
+        assert!(!outcome_requests_retry(&DownloadOutcome::Downloaded(
             PathBuf::from("/cache/cover.jpg")
         )));
     }
@@ -437,6 +508,82 @@ mod tests {
             BatchState::Complete,
             "a run with nothing left to check is done, not stuck at 0 of the library"
         );
+    }
+
+    #[test]
+    fn net_7c_a_network_return_after_a_transient_or_failed_pass_requests_one_retry() {
+        assert!(network_return_retry_allowed(
+            Connectivity::Offline,
+            Connectivity::Online,
+            true,
+            BatchState::Complete,
+            true,
+            false,
+        ));
+        assert!(network_return_retry_allowed(
+            Connectivity::Offline,
+            Connectivity::Online,
+            false,
+            BatchState::Failed,
+            true,
+            false,
+        ));
+        assert!(!network_return_retry_allowed(
+            Connectivity::Online,
+            Connectivity::Online,
+            true,
+            BatchState::Complete,
+            true,
+            false,
+        ));
+    }
+
+    #[test]
+    fn net_7c_a_network_return_after_a_clean_pass_starts_nothing() {
+        assert!(!network_return_retry_allowed(
+            Connectivity::Offline,
+            Connectivity::Online,
+            false,
+            BatchState::Complete,
+            true,
+            false,
+        ));
+    }
+
+    #[test]
+    fn net_7c_a_network_return_with_artwork_disabled_starts_nothing() {
+        assert!(!network_return_retry_allowed(
+            Connectivity::Offline,
+            Connectivity::Online,
+            true,
+            BatchState::Failed,
+            false,
+            false,
+        ));
+    }
+
+    #[test]
+    fn net_7c_an_online_to_online_change_starts_nothing() {
+        assert!(!network_return_retry_allowed(
+            Connectivity::Online,
+            Connectivity::Online,
+            true,
+            BatchState::Failed,
+            true,
+            false,
+        ));
+    }
+
+    #[test]
+    fn net_7c_a_network_return_while_a_pass_is_running_starts_nothing() {
+        assert!(!network_return_retry_allowed(
+            Connectivity::Offline,
+            Connectivity::Online,
+            true,
+            BatchState::Running,
+            true,
+            true,
+        ));
     }
 
     #[test]

@@ -73,7 +73,7 @@ impl ConnectivityTargets {
     }
 
     fn project(&self, connectivity: Connectivity) {
-        self.state.set(connectivity);
+        let previous = self.state.replace(connectivity);
         self.concerts
             .if_materialized(|view| view.set_connectivity(connectivity));
         if let Some(view) = self.releases.upgrade() {
@@ -88,6 +88,7 @@ impl ConnectivityTargets {
         if let Some(preferences) = self.preferences.upgrade() {
             preferences.set_connectivity(connectivity);
         }
+        crate::ui::cover_download_batch::on_connectivity_changed(previous, connectivity);
     }
 }
 

@@ -3200,6 +3200,10 @@ property is set and yet nothing happens.
   after 3, 10 and 30 seconds while the physical network stays online and the
   app stays in the foreground. A configuration change preserves that schedule;
   moving the app to the background cancels it.
+- **NET-7c** [active] [gtk] — When the desktop's network returns after being
+  offline, covers whose download failed only because the network was missing
+  are tried again in one pass. A return after a pass that left nothing open
+  does nothing visible. (#1052)
 - **NET-3** [active] [core] [gtk] — Offline is a state, not an error: no network-backed
   place in the app may treat a missing network connection like an error
   message. The contract covers seven states every network-backed view (feed,
