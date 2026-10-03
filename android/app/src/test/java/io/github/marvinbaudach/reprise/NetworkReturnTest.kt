@@ -570,7 +570,7 @@ class NetworkReturnRegistrationTest {
 @RunWith(RobolectricTestRunner::class)
 @Config(
     sdk = [36],
-    application = ConfigurationTestApplication::class,
+    application = NetworkReturnRotationTestApplication::class,
 )
 class NetworkReturnRotationTest {
     @get:Rule
@@ -578,7 +578,7 @@ class NetworkReturnRotationTest {
 
     @After
     fun releaseTheService() {
-        (RuntimeEnvironment.getApplication() as ConfigurationTestApplication).releaseService()
+        application.release()
     }
 
     @Test
@@ -588,9 +588,13 @@ class NetworkReturnRotationTest {
         val shadow = shadowOf(connectivity)
         shadow.clearAllNetworks()
         shadow.setActiveNetworkInfo(null)
+        compose.waitForIdle()
+        val beforeRotationArtwork = application.composedArtwork.single()
         val beforeRotation = ViewModelProvider(compose.activity)[MobileSurfaceViewModel::class.java]
-        var returns = 0
-        beforeRotation.startNetworkReturnMonitor(compose.activity) { returns += 1 }
+        beforeRotation.startNetworkReturnMonitor(
+            compose.activity,
+            beforeRotationArtwork::networkReturned,
+        )
 
         shadow.networkCallbacks.single().onCapabilitiesChanged(
             ShadowNetwork.newInstance(71),
@@ -604,17 +608,49 @@ class NetworkReturnRotationTest {
             },
         )
         shadowOf(Looper.getMainLooper()).idle()
-        assertEquals(1, returns)
+        assertEquals(1L, beforeRotationArtwork.networkReturnRevision)
 
         compose.activityRule.scenario.recreate()
+        compose.waitForIdle()
         val afterRotation = ViewModelProvider(compose.activity)[MobileSurfaceViewModel::class.java]
+        val afterRotationArtwork = application.composedArtwork.last()
         assertTrue(beforeRotation === afterRotation)
+        assertFalse(beforeRotationArtwork === afterRotationArtwork)
+        afterRotation.startNetworkReturnMonitor(
+            compose.activity,
+            afterRotationArtwork::networkReturned,
+        )
         shadowOf(Looper.getMainLooper()).idleFor(
             Duration.ofMillis(FIRST_NETWORK_RETURN_FOLLOW_UP_DELAY_MS),
         )
 
-        assertEquals(2, returns)
+        assertEquals(1L, beforeRotationArtwork.networkReturnRevision)
+        assertEquals(1L, afterRotationArtwork.networkReturnRevision)
         afterRotation.stopNetworkReturnMonitor()
+    }
+
+    private val application: NetworkReturnRotationTestApplication
+        get() = RuntimeEnvironment.getApplication() as NetworkReturnRotationTestApplication
+}
+
+internal class NetworkReturnRotationTestApplication : ConfigurationTestApplication() {
+    val composedArtwork = mutableListOf<TrackArtwork>()
+    private val createdArtwork = mutableListOf<TrackArtwork>()
+
+    override fun mainActivitySurface(): MainActivitySurfaceDependencies {
+        val artwork = TrackArtwork(resolve = { _, _ -> null })
+        createdArtwork += artwork
+        return super.mainActivitySurface().copy(
+            artwork = {
+                if (composedArtwork.lastOrNull() !== artwork) composedArtwork += artwork
+                artwork
+            },
+        )
+    }
+
+    fun release() {
+        createdArtwork.forEach(TrackArtwork::shutdown)
+        releaseService()
     }
 }
 
