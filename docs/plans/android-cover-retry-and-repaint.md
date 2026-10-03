@@ -2,7 +2,7 @@
 slug: android-cover-retry-and-repaint
 worktree: /home/marvin/Projects/reprise-android-cover-retry-and-repaint
 branch: feature/android-cover-retry-and-repaint
-phase: refactored
+phase: shipped
 codex_session:
 created: 2026-10-02
 ---
