@@ -214,6 +214,10 @@ expose; this deliberately stops at the window. The Task 5 fix benefits every cal
 
 ## Known residual edges (accepted, documented)
 
+- `commit_remove_episode` takes an IMMEDIATE transaction on the GTK main thread. If another
+  writer holds SQLite's database-wide lock, a dismissal may therefore pause the UI for up to
+  the 5 s busy timeout per episode; the current writers normally hold that lock for only
+  milliseconds (fact 2), so moving dismissal commits off the main thread remains deferred.
 - **The Download button waits behind a running fill-up** (grill decision 1). The new INFO line
   shows how often that matters in practice.
 - A fill-up snapshots its episode list once. A refresh that lands mid-fill can push an episode
