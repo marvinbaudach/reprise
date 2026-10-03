@@ -2,7 +2,7 @@
 slug: podcast-download-lane
 worktree: /home/marvin/Projects/reprise-podcast-download-lane
 branch: feature/podcast-download-lane
-phase: refactored
+phase: shipped
 codex_session:
 created: 2026-10-02
 ---
