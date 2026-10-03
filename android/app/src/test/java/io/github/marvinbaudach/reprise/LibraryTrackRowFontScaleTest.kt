@@ -50,6 +50,29 @@ class LibraryTrackRowFontScaleTest {
     }
 
     @Test
+    fun subtitleDescendersHaveRoomBelowTheScaledLineAtDoubleFontScale() {
+        val density = LinearTestDensity(density = 1f, fontScale = 2f)
+        val track = track(901, "Title").copy(
+            artist = "Bring Me the Horizon",
+            album = "Fight King",
+        )
+        showTrackRows(fontScale = 2f, tracks = listOf(track), density = density)
+
+        val subtitle = compose.onNodeWithText(
+            "Bring Me the Horizon • Fight King",
+            useUnmergedTree = true,
+        ).getUnclippedBoundsInRoot()
+        val scaledLineHeightDp = with(density) {
+            NocturneTypography.bodyMedium.lineHeight.toDp().value
+        }
+        assertTrue(
+            "The subtitle needs room below its $scaledLineHeightDp dp line for descenders: " +
+                "$subtitle",
+            (subtitle.bottom - subtitle.top).value > scaledLineHeightDp,
+        )
+    }
+
+    @Test
     fun rowHeightUsesNonlinearDensityConversionAtDoubleFontScale() {
         val density = nonlinearDensity(fontScale = 2f)
         showTrackRows(fontScale = 2f, density = density)
