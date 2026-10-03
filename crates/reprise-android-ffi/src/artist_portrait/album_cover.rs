@@ -17,21 +17,25 @@ use crate::{AndroidArtworkSize, LibraryError, MusicLibrary};
 type Attempted = HashMap<String, CoverFetchOutcome>;
 
 #[derive(Clone, Copy)]
-enum AlbumCoverFetchState<'a> {
-    Fetch(&'a CoverFetchOutcome),
+enum AlbumCoverFetchState {
+    Downloaded,
+    NotFound,
+    Transient,
     MemoisedNotFound,
     Local,
     Skipped,
+    Error,
 }
 
-fn album_cover_outcome_name(state: AlbumCoverFetchState<'_>) -> &'static str {
+fn album_cover_outcome_name(state: AlbumCoverFetchState) -> &'static str {
     match state {
-        AlbumCoverFetchState::Fetch(CoverFetchOutcome::Downloaded(_)) => "downloaded",
-        AlbumCoverFetchState::Fetch(CoverFetchOutcome::NotFound) => "not_found",
-        AlbumCoverFetchState::Fetch(CoverFetchOutcome::TransientFailure) => "transient",
+        AlbumCoverFetchState::Downloaded => "downloaded",
+        AlbumCoverFetchState::NotFound => "not_found",
+        AlbumCoverFetchState::Transient => "transient",
         AlbumCoverFetchState::MemoisedNotFound => "memoised_not_found",
         AlbumCoverFetchState::Local => "local",
         AlbumCoverFetchState::Skipped => "skipped",
+        AlbumCoverFetchState::Error => "error",
     }
 }
 
@@ -43,12 +47,12 @@ struct AlbumCoverFetchLog {
 impl AlbumCoverFetchLog {
     fn new() -> Self {
         Self {
-            outcome: album_cover_outcome_name(AlbumCoverFetchState::Skipped),
+            outcome: album_cover_outcome_name(AlbumCoverFetchState::Error),
             album_key: None,
         }
     }
 
-    fn set(&mut self, state: AlbumCoverFetchState<'_>) {
+    fn set(&mut self, state: AlbumCoverFetchState) {
         self.outcome = album_cover_outcome_name(state);
     }
 }
@@ -141,6 +145,7 @@ impl MusicLibrary {
             )
         };
         if !allowed {
+            fetch_log.set(AlbumCoverFetchState::Skipped);
             return Ok(None);
         }
 
@@ -149,7 +154,10 @@ impl MusicLibrary {
             let reader = self.reader()?;
             match queries::query_stats_album_target_for_path(&reader, track_uri) {
                 Ok(Some((_, album, album_artist))) => (album_artist, album),
-                Ok(None) => return Ok(None),
+                Ok(None) => {
+                    fetch_log.set(AlbumCoverFetchState::Skipped);
+                    return Ok(None);
+                }
                 Err(error) => {
                     return Err(LibraryError::Query {
                         detail: error.to_string(),
@@ -158,6 +166,7 @@ impl MusicLibrary {
             }
         };
         if album.trim().is_empty() || album_artist.trim().is_empty() {
+            fetch_log.set(AlbumCoverFetchState::Skipped);
             return Ok(None);
         }
 
@@ -182,7 +191,6 @@ impl MusicLibrary {
         }
 
         let outcome = fetch(&album_artist, &album, mbid.as_deref());
-        fetch_log.set(AlbumCoverFetchState::Fetch(&outcome));
         if !matches!(outcome, CoverFetchOutcome::TransientFailure) {
             attempted()
                 .lock()
@@ -190,8 +198,25 @@ impl MusicLibrary {
                 .insert(key, outcome.clone());
         }
         match outcome {
-            CoverFetchOutcome::Downloaded(_) => self.track_artwork(track_uri, size),
-            CoverFetchOutcome::NotFound | CoverFetchOutcome::TransientFailure => Ok(None),
+            CoverFetchOutcome::Downloaded(_) => match self.track_artwork(track_uri, size) {
+                Ok(Some(path)) => {
+                    fetch_log.set(AlbumCoverFetchState::Downloaded);
+                    Ok(Some(path))
+                }
+                Ok(None) => {
+                    fetch_log.set(AlbumCoverFetchState::NotFound);
+                    Ok(None)
+                }
+                Err(error) => Err(error),
+            },
+            CoverFetchOutcome::NotFound => {
+                fetch_log.set(AlbumCoverFetchState::NotFound);
+                Ok(None)
+            }
+            CoverFetchOutcome::TransientFailure => {
+                fetch_log.set(AlbumCoverFetchState::Transient);
+                Ok(None)
+            }
         }
     }
 }

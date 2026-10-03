@@ -18,22 +18,16 @@ use crate::source::{SafSource, SafSourceError, SourceChild, SourceFacts};
 
 #[test]
 fn fetch_log_outcomes_use_the_d4b_vocabulary() {
-    let downloaded = tempfile::NamedTempFile::new().unwrap();
-
     assert_eq!(
-        album_cover_outcome_name(AlbumCoverFetchState::Fetch(&CoverFetchOutcome::Downloaded(
-            downloaded.path().to_owned(),
-        ))),
+        album_cover_outcome_name(AlbumCoverFetchState::Downloaded),
         "downloaded",
     );
     assert_eq!(
-        album_cover_outcome_name(AlbumCoverFetchState::Fetch(&CoverFetchOutcome::NotFound)),
+        album_cover_outcome_name(AlbumCoverFetchState::NotFound),
         "not_found",
     );
     assert_eq!(
-        album_cover_outcome_name(AlbumCoverFetchState::Fetch(
-            &CoverFetchOutcome::TransientFailure,
-        )),
+        album_cover_outcome_name(AlbumCoverFetchState::Transient),
         "transient",
     );
     assert_eq!(
@@ -47,6 +41,10 @@ fn fetch_log_outcomes_use_the_d4b_vocabulary() {
     assert_eq!(
         album_cover_outcome_name(AlbumCoverFetchState::Skipped),
         "skipped",
+    );
+    assert_eq!(
+        album_cover_outcome_name(AlbumCoverFetchState::Error),
+        "error",
     );
 }
 
