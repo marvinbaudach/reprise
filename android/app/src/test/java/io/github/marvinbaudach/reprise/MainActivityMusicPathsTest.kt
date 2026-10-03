@@ -5,6 +5,7 @@ import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.getUnclippedBoundsInRoot
 import androidx.compose.ui.test.junit4.v2.createAndroidComposeRule
 import androidx.compose.ui.test.onAllNodesWithContentDescription
+import androidx.compose.ui.test.onAllNodesWithTag
 import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onAllNodesWithText
 import androidx.compose.ui.test.onNodeWithTag
@@ -125,7 +126,13 @@ class MainActivityMusicPathsTest {
         application.service.publish(m9bSnapshot(1))
         shadowOf(Looper.getMainLooper()).idle()
         compose.waitForIdle()
+        compose.waitUntil(timeoutMillis = 5_000) {
+            compose.onAllNodesWithTag("library-mini-player").fetchSemanticsNodes().isNotEmpty()
+        }
         compose.onNodeWithTag("library-mini-player").performClick()
+        compose.waitUntil(timeoutMillis = 5_000) {
+            compose.onAllNodesWithTag("now-playing-transport").fetchSemanticsNodes().isNotEmpty()
+        }
         compose.onNodeWithTag("now-playing-transport").assertIsDisplayed()
 
         compose.activity.onBackPressedDispatcher.onBackPressed()
