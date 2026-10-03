@@ -115,7 +115,7 @@ only if a contract itself is wrong.
   gains a `lane` field (`feeds` / `downloads`). Rewrite the two comments that say
   "single-threaded worker" (`QueuedRequest` doc, `process_request`) to name the lane.
 - If the file passes ~650 lines, move the lane/spawn/runtime-channel code into a cohesive
-  sibling `podcasts_worker_lanes.rs` (file cap 800; never trim docs to fit).
+  sibling `podcasts_lanes.rs` (file cap 800; never trim docs to fit).
 
 ### Task 2 — the finished-download-job INFO line
 
@@ -241,7 +241,7 @@ disjoint file group in `reprise-core`, but it is one line plus one test: a secon
 would cost a second cold cargo build and a second landing for no wall-clock gain.
 
 - Strand: one. Owns `crates/reprise-gnome/src/ui/podcasts/podcasts_worker*.rs` (including the
-  new `podcasts_worker_lane_tests.rs` and, if needed, `podcasts_worker_lanes.rs`),
+  new `podcasts_worker_lane_tests.rs` and, if needed, `podcasts_lanes.rs`),
   `docs/ux-rules.md` § AF (POD-28 only), `crates/reprise-core/src/podcasts/store.rs`
   (`commit_remove_episode` only) and `crates/reprise-core/src/podcasts/store_tests.rs`.
 - Merge order: n/a. Post-merge cross-checks: none — no task reads a file another strand owns.

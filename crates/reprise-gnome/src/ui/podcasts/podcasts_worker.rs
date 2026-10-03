@@ -8,7 +8,7 @@ use std::time::Instant;
 use reprise_core::db::Db;
 use reprise_core::podcasts;
 
-#[path = "podcasts_worker_lanes.rs"]
+#[path = "podcasts_lanes.rs"]
 mod lanes;
 use lanes::{lane_for, spawn_lane, LaneExecutor, PodcastsLane};
 
