@@ -234,8 +234,8 @@ impl MusicLibrary {
     }
 
     pub fn cancel_artist_portrait_backfill(&self) {
-        self.portrait_backfill.cancel();
         album_cover::cover_backfill().cancel();
+        self.portrait_backfill.cancel();
     }
 }
 
@@ -281,6 +281,15 @@ impl MusicLibrary {
 
         let forward_listener = Arc::clone(&listener);
         let forward: Arc<CorePortraitBackfillListener> = Arc::new(move |progress| {
+            if progress.run_id == 0 {
+                // Cancellation publishes the idle sentinel synchronously.
+                // Because the cover latch is set before cancelling the
+                // portrait run, this clears a stop whose chain no longer
+                // exists. If portrait completion won the race instead, no
+                // idle update arrives and the imminent cover start still
+                // consumes the latch.
+                album_cover::cover_backfill().clear_pending_cancel();
+            }
             let just_completed =
                 progress.state == PortraitBackfillState::Complete && progress.run_id != 0;
             let will_chain = just_completed && tree_source.is_some();

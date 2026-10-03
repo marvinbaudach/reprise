@@ -119,6 +119,18 @@ impl CoverBackfill {
         }
     }
 
+    /// Drops a pending one-shot cancellation after the portrait run that
+    /// could have chained into this handle instead ended cancelled.
+    ///
+    /// This is deliberately narrower than [`Self::reset_for_tests`]: active
+    /// cover work and its progress are left untouched.
+    pub fn clear_pending_cancel(&self) {
+        self.shared
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .cancel_requested = false;
+    }
+
     /// Resets the handle to idle for a test harness that shares this one
     /// process-global instance across many cases
     /// (`crates/reprise-android-ffi/src/artist_portrait/album_cover.rs`'s

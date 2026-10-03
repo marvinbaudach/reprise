@@ -154,6 +154,117 @@ fn the_cover_pass_starts_once_the_portrait_run_completes() {
     );
 }
 
+#[test]
+fn stopping_portraits_does_not_block_a_later_cover_pass() {
+    let _guard = album_cover::reset_album_cover_state_for_tests();
+    let directory = tempfile::tempdir().unwrap();
+    let music = directory.path().join("music");
+    std::fs::create_dir(&music).unwrap();
+    let track_path = music.join("track.flac");
+    let fixture = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+        .join("../../android/app/src/main/assets/sine.flac");
+    std::fs::copy(fixture, &track_path).unwrap();
+    reprise_core::library::tag_edit::apply_patch_to_file(
+        &track_path,
+        &reprise_core::library::tag_edit::TagPatch {
+            title: Some("Track One".to_owned()),
+            artist: Some("Cancelled Band".to_owned()),
+            album: Some("Later Album".to_owned()),
+            album_artist: Some("Cancelled Band".to_owned()),
+            year: None,
+            track_no: Some(Some(1)),
+            genre: None,
+        },
+    )
+    .unwrap();
+
+    let entered = Arc::new((Mutex::new(false), Condvar::new()));
+    let release = Arc::new((Mutex::new(false), Condvar::new()));
+    let fetch_entered = Arc::clone(&entered);
+    let fetch_release = Arc::clone(&release);
+    let library = MusicLibrary::open_with_portrait_fetch(
+        directory.path().to_str().unwrap(),
+        directory.path().join("cache").to_str().unwrap(),
+        move |_, _| {
+            let (entered_lock, entered_wake) = &*fetch_entered;
+            *entered_lock.lock().unwrap() = true;
+            entered_wake.notify_all();
+            let (release_lock, release_wake) = &*fetch_release;
+            let mut open = release_lock.lock().unwrap();
+            while !*open {
+                open = release_wake.wait(open).unwrap();
+            }
+            Ok(reprise_core::artist_portrait::PortraitOutcome::NotFound)
+        },
+    )
+    .unwrap();
+    open_gate(&library);
+    library
+        .set_tree_uri(
+            music.to_string_lossy().into_owned(),
+            Box::new(ChainFsSource),
+        )
+        .unwrap();
+    let writer = library.writer().unwrap();
+    reprise_core::library::scanner::scan_folder(&writer, &music).unwrap();
+    drop(writer);
+
+    let chained_cover_calls = Arc::new(AtomicUsize::new(0));
+    let counted_chained_cover_calls = Arc::clone(&chained_cover_calls);
+    library.start_artist_portrait_backfill_with(
+        Box::new(NoopProgressListener),
+        Arc::new(move |_, _, _| {
+            counted_chained_cover_calls.fetch_add(1, Ordering::Relaxed);
+            CoverFetchOutcome::NotFound
+        }),
+    );
+    let (entered_lock, entered_wake) = &*entered;
+    let mut did_enter = entered_lock.lock().unwrap();
+    while !*did_enter {
+        did_enter = entered_wake.wait(did_enter).unwrap();
+    }
+    drop(did_enter);
+
+    library.cancel_artist_portrait_backfill();
+    let (release_lock, release_wake) = &*release;
+    *release_lock.lock().unwrap() = true;
+    release_wake.notify_all();
+
+    let cover_calls = Arc::new(AtomicUsize::new(0));
+    let counted_cover_calls = Arc::clone(&cover_calls);
+    let started = album_cover::cover_backfill().start(
+        library.database_path.clone(),
+        Arc::new(move |_, _, _| {
+            counted_cover_calls.fetch_add(1, Ordering::Relaxed);
+            CoverFetchOutcome::NotFound
+        }),
+        Arc::new(|_| {}),
+        Arc::new(|| true),
+    );
+
+    assert!(
+        started,
+        "cancelling a portrait run must not leave a latch for an unrelated cover pass"
+    );
+    for _ in 0..5_000 {
+        let progress = album_cover::cover_backfill().progress();
+        if progress.total > 0 && progress.done == progress.total {
+            break;
+        }
+        std::thread::sleep(std::time::Duration::from_millis(1));
+    }
+    assert_eq!(cover_calls.load(Ordering::Relaxed), 1);
+    assert_eq!(
+        chained_cover_calls.load(Ordering::Relaxed),
+        0,
+        "the stopped portrait run must not start its chained cover pass"
+    );
+    assert_eq!(
+        album_cover::cover_backfill().progress(),
+        CoverBackfillProgress { done: 1, total: 1 }
+    );
+}
+
 /// The live push in `forward` (as opposed to the pure `merged_progress_update`
 /// it is built on, exercised separately below) must honour the same
 /// invariant: never `Complete` while a chained cover pass has not yet
