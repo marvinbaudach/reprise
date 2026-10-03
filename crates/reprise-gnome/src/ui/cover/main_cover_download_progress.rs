@@ -44,7 +44,6 @@ fn presentation(progress: BatchProgress) -> ProgressPresentation {
 /// states (complete/failed) remain visible briefly and then hide
 /// automatically, matching the old headerbar banner's behaviour.
 pub(in crate::ui) fn install(scan_controls: &ScanControls, batch: &Rc<CoverDownloadBatch>) {
-    super::cover_download_batch::register_for_network_retry(batch);
     let controls = scan_controls.clone();
     let hide_generation = Rc::new(Cell::new(0u64));
     // Whether the card currently shows *this* batch. Only then may a state

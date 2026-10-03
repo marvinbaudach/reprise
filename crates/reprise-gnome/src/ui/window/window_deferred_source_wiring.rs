@@ -25,6 +25,7 @@ pub(super) fn install(
         youtube,
         radio,
         preferences,
+        cover_batch,
     );
     releases.set_toast_overlay(toast_overlay);
     super::super::startup_report::mark("source_connectivity::wire");

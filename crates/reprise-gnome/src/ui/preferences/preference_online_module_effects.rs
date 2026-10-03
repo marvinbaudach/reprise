@@ -11,6 +11,7 @@ pub(super) type OnlineModuleStateCallback = Rc<dyn Fn()>;
 enum PermissionEffect {
     None,
     Start,
+    WaitForNetwork,
     Stop,
 }
 
@@ -28,7 +29,7 @@ fn artwork_effect_for_transition(
     connectivity: Connectivity,
 ) -> PermissionEffect {
     match (effect_for_transition(was_allowed, is_allowed), connectivity) {
-        (PermissionEffect::Start, Connectivity::Offline) => PermissionEffect::None,
+        (PermissionEffect::Start, Connectivity::Offline) => PermissionEffect::WaitForNetwork,
         (effect, _) => effect,
     }
 }
@@ -77,6 +78,9 @@ impl PreferencesContext {
             PermissionEffect::Start => self.lyrics_batch.start(),
             PermissionEffect::Stop => self.lyrics_batch.cancel(),
             PermissionEffect::None => {}
+            PermissionEffect::WaitForNetwork => {
+                unreachable!("lyrics transitions do not wait for connectivity")
+            }
         }
         let refresh_sources = self.on_online_module_state_changed.borrow().clone();
         if let Some(refresh_sources) = refresh_sources {
@@ -90,6 +94,10 @@ impl PreferencesContext {
         let enabled = match effect {
             PermissionEffect::Start => true,
             PermissionEffect::Stop => false,
+            PermissionEffect::WaitForNetwork => {
+                self.cover_batch.wait_for_network_return();
+                return;
+            }
             PermissionEffect::None => return,
         };
         let callback = self.on_artwork_permission_changed.borrow().clone();
@@ -121,7 +129,7 @@ mod tests {
     fn an_offline_off_to_on_transition_waits_without_failure() {
         assert_eq!(
             artwork_effect_for_transition(false, true, Connectivity::Offline),
-            PermissionEffect::None
+            PermissionEffect::WaitForNetwork
         );
     }
 

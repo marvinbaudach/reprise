@@ -100,6 +100,31 @@ fn net_5_enabling_artwork_through_preferences_starts_the_wired_cover_pass() {
 
 #[test]
 #[ignore = "requires a display; run via xvfb-run"]
+fn net_7c_an_offline_artwork_enable_starts_when_the_network_returns() {
+    let _main_context = crate::ui::test_main_context::lock_main_context();
+    let handles = build_online_module_handles();
+    handles.preferences.set_connectivity(Connectivity::Offline);
+    let before = handles.cover_batch.generation_for_test();
+
+    handles
+        .preferences
+        .set_module_enabled_for_test(
+            &reprise_core::modules::ARTWORK_MODULE,
+            true,
+            "NET-7c offline Artwork enable test",
+        )
+        .expect("enable Artwork while offline");
+    assert_eq!(handles.cover_batch.generation_for_test(), before);
+
+    handles
+        .cover_batch
+        .on_connectivity_changed(Connectivity::Offline, Connectivity::Online);
+
+    assert_eq!(handles.cover_batch.generation_for_test(), before + 1);
+}
+
+#[test]
+#[ignore = "requires a display; run via xvfb-run"]
 fn src_10a_enabling_radio_through_preferences_recovers_the_open_view() {
     let _main_context = crate::ui::test_main_context::lock_main_context();
     let handles = build_online_module_handles();
