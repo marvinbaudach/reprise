@@ -316,6 +316,13 @@ private fun LibraryTrackRow(
     play: () -> Unit,
 ) {
     val contextMenu = rememberTrackContextMenuAnchorState()
+    val fontScale = LocalDensity.current.fontScale
+    val rowHeightDp = effectiveTrackRowHeightDp(
+        baseHeightDp = metrics.trackRowHeightDp,
+        fontScale = fontScale,
+        titleLineHeightSp = MaterialTheme.typography.titleMedium.lineHeight.value,
+        subtitleLineHeightSp = MaterialTheme.typography.bodyMedium.lineHeight.value,
+    )
     val queueDrag = if (queueActions == null) null else reorder
     val dragged = queueDrag?.isDragging(queuePosition) == true
     val shiftRows = if (offsetsHold) queueDrag?.neighbourShiftRows(queuePosition) ?: 0 else 0
@@ -342,14 +349,14 @@ private fun LibraryTrackRow(
                     dragged = dragged && offsetsHold,
                     lift = lift,
                     shiftRows = shiftRows,
-                    rowHeightDp = metrics.trackRowHeightDp,
+                    rowHeightDp = rowHeightDp,
                 )
         },
     ) {
         Surface(
             modifier = Modifier
                 .fillMaxWidth()
-                .height(metrics.trackRowHeightDp.dp)
+                .height(rowHeightDp.dp)
                 .clipToBounds()
                 .testTag(
                     if (queueActions == null) {
@@ -430,13 +437,13 @@ private fun LibraryTrackRow(
                             track = track,
                             position = queuePosition,
                             rowCount = queueRowCount,
-                            rowHeightDp = metrics.trackRowHeightDp,
+                            rowHeightDp = rowHeightDp,
                             reorder = queueDrag,
                         )
                     }
                     Column(
                         modifier = Modifier.widthIn(
-                            min = TrailingColumnMinWidth * LocalDensity.current.fontScale,
+                            min = TrailingColumnMinWidth * fontScale,
                         ),
                         horizontalAlignment = Alignment.End,
                         verticalArrangement = Arrangement.spacedBy(2.dp),
@@ -534,7 +541,7 @@ private fun Modifier.queueDragMotion(
     dragged: Boolean,
     lift: Float,
     shiftRows: Int,
-    rowHeightDp: Int,
+    rowHeightDp: Float,
 ): Modifier {
     val neighbourOffset by animateDpAsState(
         targetValue = (shiftRows * rowHeightDp).dp,
@@ -639,7 +646,7 @@ private fun QueueDragHandle(
     track: LibraryTrack,
     position: Int,
     rowCount: Int,
-    rowHeightDp: Int,
+    rowHeightDp: Float,
     reorder: QueueReorderState,
 ) {
     val rowHeightPx = with(LocalDensity.current) { rowHeightDp.dp.toPx() }

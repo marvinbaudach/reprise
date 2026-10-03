@@ -1,5 +1,7 @@
 package io.github.marvinbaudach.reprise
 
+private const val TRACK_ROW_VERTICAL_PADDING_DP = 16f
+
 internal data class LibraryFrameMetrics(
     val filterChipHeightDp: Int,
     val trackRowHeightDp: Int,
@@ -32,6 +34,17 @@ private val wideShortLibraryFrameMetrics = LibraryFrameMetrics(
 internal fun libraryFrameMetrics(layout: SurfaceLayout): LibraryFrameMetrics = when (layout) {
     SurfaceLayout.STACKED -> libraryFrameMetrics
     SurfaceLayout.WIDE_SHORT -> wideShortLibraryFrameMetrics
+}
+
+internal fun effectiveTrackRowHeightDp(
+    baseHeightDp: Int,
+    fontScale: Float,
+    titleLineHeightSp: Float,
+    subtitleLineHeightSp: Float,
+): Float {
+    if (fontScale <= 1f) return baseHeightDp.toFloat()
+    val scaledTextBlockDp = (titleLineHeightSp + subtitleLineHeightSp) * fontScale
+    return maxOf(baseHeightDp.toFloat(), scaledTextBlockDp + TRACK_ROW_VERTICAL_PADDING_DP)
 }
 
 internal val libraryDestinations = BrowseTab.entries
