@@ -30,6 +30,7 @@ import org.robolectric.RobolectricTestRunner
 import org.robolectric.RuntimeEnvironment
 import org.robolectric.annotation.Config
 import uniffi.reprise_android_ffi.AndroidColorScheme
+import kotlin.math.abs
 
 @RunWith(RobolectricTestRunner::class)
 @Config(sdk = [36], qualifiers = "w500dp-h1000dp")
@@ -62,9 +63,11 @@ class LibraryTrackRowFontScaleTest {
             NocturneTypography.titleMedium.lineHeight.value +
                 NocturneTypography.bodyMedium.lineHeight.value
             ) * density.fontScale + 16f
+        val nonlinearGapDp = abs(expectedHeightDp - linearHeightDp)
         assertTrue(
-            "Robolectric must expose nonlinear font scaling for this regression",
-            expectedHeightDp != linearHeightDp,
+            "The fixture no longer distinguishes nonlinear from linear scaling: " +
+                "$nonlinearGapDp dp is below the $NONLINEAR_MINIMUM_GAP_DP dp minimum",
+            nonlinearGapDp >= NONLINEAR_MINIMUM_GAP_DP,
         )
         val row = compose.onNodeWithTag("library-track-row-901")
             .getUnclippedBoundsInRoot()
@@ -197,6 +200,8 @@ class LibraryTrackRowFontScaleTest {
     }
 
     private companion object {
+        private const val NONLINEAR_MINIMUM_GAP_DP = 8f
+
         private class LinearTestDensity(
             override val density: Float,
             override val fontScale: Float,
