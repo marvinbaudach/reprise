@@ -144,6 +144,6 @@ dependencies {
     testImplementation("net.java.dev.jna:jna:5.19.1")
     testImplementation(platform("androidx.compose:compose-bom:2026.09.00"))
     testImplementation("androidx.compose.ui:ui-test-junit4")
-    testImplementation("org.robolectric:robolectric:4.16.1")
+    testImplementation("org.robolectric:robolectric:4.17")
     debugImplementation("androidx.compose.ui:ui-test-manifest")
 }
