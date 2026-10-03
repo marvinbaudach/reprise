@@ -79,7 +79,7 @@ impl PreferencesContext {
             PermissionEffect::Stop => self.lyrics_batch.cancel(),
             PermissionEffect::None => {}
             PermissionEffect::WaitForNetwork => {
-                unreachable!("lyrics transitions do not wait for connectivity")
+                tracing::warn!("ignored an unsupported wait-for-network lyrics transition");
             }
         }
         let refresh_sources = self.on_online_module_state_changed.borrow().clone();
