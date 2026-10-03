@@ -72,33 +72,6 @@ impl ArtistPortraitProgressListener for NoopProgressListener {
     fn on_progress(&self, _update: ArtistPortraitProgressUpdate) {}
 }
 
-struct PausingCompletionListener {
-    updates: Arc<Mutex<Vec<ArtistPortraitProgressUpdate>>>,
-    entered: Arc<(Mutex<bool>, Condvar)>,
-    release: Arc<(Mutex<bool>, Condvar)>,
-}
-
-impl ArtistPortraitProgressListener for PausingCompletionListener {
-    fn on_progress(&self, update: ArtistPortraitProgressUpdate) {
-        self.updates.lock().unwrap().push(update);
-        if update.state != ArtistPortraitProgressState::Running
-            || update.total == 0
-            || update.done.saturating_add(update.failed) != update.total
-        {
-            return;
-        }
-
-        let (entered_lock, entered_wake) = &*self.entered;
-        *entered_lock.lock().unwrap() = true;
-        entered_wake.notify_all();
-        let (release_lock, release_wake) = &*self.release;
-        let mut released = release_lock.lock().unwrap();
-        while !*released {
-            released = release_wake.wait(released).unwrap();
-        }
-    }
-}
-
 /// The chain B3 adds: once the portrait run this rides beside reports
 /// `Complete`, the cover pass starts on its own worklist and its progress
 /// merges into the same `ArtistPortraitProgressUpdate` Kotlin already reads.
@@ -423,14 +396,22 @@ fn stopping_between_portrait_completion_and_cover_start_reports_idle() {
     let updates = Arc::new(Mutex::new(Vec::new()));
     let entered = Arc::new((Mutex::new(false), Condvar::new()));
     let release = Arc::new((Mutex::new(false), Condvar::new()));
+    let hook_entered = Arc::clone(&entered);
+    let hook_release = Arc::clone(&release);
+    install_before_chained_start_hook(move || {
+        let (entered_lock, entered_wake) = &*hook_entered;
+        *entered_lock.lock().unwrap() = true;
+        entered_wake.notify_all();
+        let (release_lock, release_wake) = &*hook_release;
+        let mut released = release_lock.lock().unwrap();
+        while !*released {
+            released = release_wake.wait(released).unwrap();
+        }
+    });
     let cover_calls = Arc::new(AtomicUsize::new(0));
     let counted_cover_calls = Arc::clone(&cover_calls);
     library.start_artist_portrait_backfill_with(
-        Box::new(PausingCompletionListener {
-            updates: Arc::clone(&updates),
-            entered: Arc::clone(&entered),
-            release: Arc::clone(&release),
-        }),
+        Box::new(CapturingProgress(Arc::clone(&updates))),
         Arc::new(move |_, _, _| {
             counted_cover_calls.fetch_add(1, Ordering::Relaxed);
             CoverFetchOutcome::NotFound
@@ -443,6 +424,11 @@ fn stopping_between_portrait_completion_and_cover_start_reports_idle() {
         did_enter = entered_wake.wait(did_enter).unwrap();
     }
     drop(did_enter);
+    assert_eq!(
+        library.portrait_backfill.progress().state,
+        PortraitBackfillState::Complete,
+        "the stop is injected after portrait finish cleared its active flag",
+    );
     library.cancel_artist_portrait_backfill();
     let (release_lock, release_wake) = &*release;
     *release_lock.lock().unwrap() = true;
