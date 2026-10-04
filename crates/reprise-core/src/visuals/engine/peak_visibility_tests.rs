@@ -29,7 +29,7 @@ fn largest_peak_gap(engine: &VisualEngine) -> f32 {
 }
 
 #[test]
-fn ac_23_first_visible_tick_has_no_peak_cap_backlog() {
+fn ac_28_first_visible_tick_has_no_peak_cap_backlog() {
     let mut hidden = VisualEngine::new();
     hidden.set_playing(true);
     let mut continuously_visible = VisualEngine::new();
@@ -74,7 +74,7 @@ fn ac_23_first_visible_tick_has_no_peak_cap_backlog() {
 }
 
 #[test]
-fn ac_23_paused_peak_caps_decay_without_fresh_ingest() {
+fn ac_28_paused_peak_caps_decay_without_fresh_ingest() {
     let mut engine = VisualEngine::new();
     engine.set_has_track(true);
     engine.set_playing(true);

@@ -4377,15 +4377,20 @@ STYLE-1).
 - **AC-20** [replaced by AC-21]
 - **AC-21** [replaced by AC-22]
 - **AC-22** [replaced by AC-23]
-- **AC-23** [active] [core] [gtk] — „Song Visuals" is a plugin, switched
+- **AC-23** [replaced by AC-28]
+- **AC-28** [active] [core] [gtk] — „Song Visuals" is a plugin, switched
   on by default and applicable live. When switched on, the Linux
   pipeline branches off locally normalized mono PCM before ReplayGain;
   CAVA math generates 64 logarithmic display bands from it, clamped to
   0–1. The portable core uses CAVA's double FFT resolution below 100 Hz,
   quantized cutoff frequencies, and a fixed frequency EQ, as well as
-  noise-floor gate, auto-sensitivity, integral, and gravity. Digital
-  silence does not increase sensitivity; non-finite inputs and outputs
-  are neutralized, and all internal feedback loops stay bounded.
+  auto-sensitivity, integral, and gravity, exactly as `cavacore` computes
+  them; there is no noise-floor gate. An auto-sensitivity overshoot clips
+  only the overshooting band to 1.0. Only the cold-start calibration, until
+  the first frame without overshoot after the first overshoot, scales a
+  whole frame down to headroom. Digital silence does not increase
+  sensitivity; non-finite inputs and outputs are neutralized, and all
+  internal feedback loops stay bounded.
   The scene engine takes over every CAVA band in the same frame without
   a second loudness mapping, normalization, or live envelope. It draws
   64 frequency-dependent, finely segmented neon columns one to one, with
@@ -4583,7 +4588,7 @@ STYLE-1).
   An RSS podcast is speech, not music: speech has no spectrum worth drawing,
   so the bars would flicker around a voice instead of answering it. While such
   an episode plays, the whole audio-reactive chain behaves as though the "Song
-  Visuals" plugin (AC-23) were off: **the spectrum stops at the source**, the
+  Visuals" plugin (AC-28) were off: **the spectrum stops at the source**, the
   Visual tab disappears from the panel, the reactive light of AC-24 rests
   without a cover, and **the bar's bass layers settle instead of freezing at
   their last reading**. The episode's own surfaces are untouched — the seek

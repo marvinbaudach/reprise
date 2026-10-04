@@ -24,7 +24,7 @@ fn wait_for_spectrum_frame(rx: &std::sync::mpsc::Receiver<PlayerEvent>) -> Spect
 }
 
 #[test]
-fn ac_23_audio_filter_exposes_normalized_mono_pcm_to_cava() {
+fn ac_28_audio_filter_exposes_normalized_mono_pcm_to_cava() {
     let _guard = AUDIO_SINK_TEST_LOCK
         .lock()
         .unwrap_or_else(std::sync::PoisonError::into_inner);
@@ -53,7 +53,7 @@ fn ac_23_audio_filter_exposes_normalized_mono_pcm_to_cava() {
 }
 
 #[test]
-fn ac_23_audio_filter_splits_cava_pcm_into_sixty_hertz_buffers() {
+fn ac_28_audio_filter_splits_cava_pcm_into_sixty_hertz_buffers() {
     let _guard = AUDIO_SINK_TEST_LOCK
         .lock()
         .unwrap_or_else(std::sync::PoisonError::into_inner);
@@ -80,7 +80,7 @@ fn ac_23_audio_filter_splits_cava_pcm_into_sixty_hertz_buffers() {
 }
 
 #[test]
-fn ac_23_cava_pcm_branch_splits_before_replay_gain_normalization() {
+fn ac_28_cava_pcm_branch_splits_before_replay_gain_normalization() {
     let _guard = AUDIO_SINK_TEST_LOCK
         .lock()
         .unwrap_or_else(std::sync::PoisonError::into_inner);
@@ -125,7 +125,7 @@ fn ac_23_cava_pcm_branch_splits_before_replay_gain_normalization() {
 }
 
 #[test]
-fn ac_23_enabled_player_emits_live_cava_frames() {
+fn ac_28_enabled_player_emits_live_cava_frames() {
     let _guard = AUDIO_SINK_TEST_LOCK
         .lock()
         .unwrap_or_else(std::sync::PoisonError::into_inner);
@@ -152,7 +152,7 @@ fn ac_23_enabled_player_emits_live_cava_frames() {
 }
 
 #[test]
-fn ac_23_flac_playback_emits_spectrum_at_display_cadence() {
+fn ac_28_flac_playback_emits_spectrum_at_display_cadence() {
     let _guard = AUDIO_SINK_TEST_LOCK
         .lock()
         .unwrap_or_else(std::sync::PoisonError::into_inner);
@@ -226,7 +226,7 @@ fn ac_26_enabled_uri_playback_emits_live_cava_frames() {
 }
 
 #[test]
-fn ac_23_enabled_player_measures_absolute_bass_pressure() {
+fn ac_28_enabled_player_measures_absolute_bass_pressure() {
     let _guard = AUDIO_SINK_TEST_LOCK
         .lock()
         .unwrap_or_else(std::sync::PoisonError::into_inner);
@@ -272,7 +272,7 @@ fn ac_23_enabled_player_measures_absolute_bass_pressure() {
 }
 
 #[test]
-fn ac_23_filter_replacement_reattaches_the_cava_processor() {
+fn ac_28_filter_replacement_reattaches_the_cava_processor() {
     let _guard = AUDIO_SINK_TEST_LOCK
         .lock()
         .unwrap_or_else(std::sync::PoisonError::into_inner);
@@ -310,7 +310,7 @@ fn ac_23_filter_replacement_reattaches_the_cava_processor() {
 }
 
 #[test]
-fn ac_23_stream_start_invalidates_the_previous_cava_history() {
+fn ac_28_stream_start_invalidates_the_previous_cava_history() {
     let _guard = AUDIO_SINK_TEST_LOCK
         .lock()
         .unwrap_or_else(std::sync::PoisonError::into_inner);

@@ -70,7 +70,7 @@ impl SpectrumFrame {
 
     /// Attaches the absolute bass measurement taken from the same PCM. Kept
     /// separate from the bars because CAVA's auto-sensitivity makes those
-    /// relative, and the glow layer needs an honest level (AC-23).
+    /// relative, and the glow layer needs an honest level (AC-28).
     #[must_use]
     pub fn with_bass_pressure(self, pressure: BassPressure) -> Self {
         Self {

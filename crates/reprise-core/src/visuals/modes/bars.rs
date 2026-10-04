@@ -225,7 +225,7 @@ mod tests {
     }
 
     #[test]
-    fn ac_23_draws_sixty_four_one_to_one_cava_columns() {
+    fn ac_28_draws_sixty_four_one_to_one_cava_columns() {
         let engine = lively_engine();
         let shapes = scene(&test_ctx(&engine, WIDTH, HEIGHT));
         let mut x_positions: Vec<f32> = main_segments(&shapes)
