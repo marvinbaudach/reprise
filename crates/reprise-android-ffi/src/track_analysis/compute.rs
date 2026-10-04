@@ -13,6 +13,8 @@ use reprise_core::render_data_session::RenderDataSession;
 use crate::track_analysis::TrackAnalysisBackfill;
 use crate::{LibraryError, MusicLibrary};
 
+const MAX_FOREGROUND_COMPUTE_ROUNDS: usize = 3;
+
 /// A decode failure crossing the FFI boundary. `Send + Sync` on the trait
 /// below is what lets Kotlin's implementation live on whatever thread the
 /// decode runs on; this error type is what crosses back.
@@ -200,18 +202,18 @@ impl AnalysisInFlight {
     }
 
     fn finish(&self, track_id: i64, cell: &AnalysisCell, outcome: AndroidAnalysisOutcome) {
+        // Every waiter already holds its own clone of `cell`. Retire the map
+        // entry before waking them so a foreground retry after `Cancelled`
+        // cannot immediately join the same completed cell again.
+        self.entries
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .remove(&track_id);
         {
             let (lock, condvar) = &**cell;
             *lock.lock().unwrap_or_else(PoisonError::into_inner) = Some(outcome);
             condvar.notify_all();
         }
-        // Every waiter already holds its own clone of `cell`, so removing
-        // the map entry here cannot lose a result — it only stops a *later*,
-        // independent request for the same id from reading a stale outcome.
-        self.entries
-            .lock()
-            .unwrap_or_else(PoisonError::into_inner)
-            .remove(&track_id);
     }
 
     /// True while `track_id` is claimed by an in-progress decode.
@@ -243,9 +245,11 @@ pub(crate) struct AnalysisContext<'a> {
 
 impl AnalysisContext<'_> {
     /// Computes and stores one track's analysis, deduplicating concurrent
-    /// callers for the same id. `preempt` is the backfill to cancel if its
-    /// current item is a different track (a foreground request only; the
-    /// backfill's own worker passes `None` for its own items).
+    /// callers for the same id. A foreground caller retries an inherited
+    /// background cancellation for at most three rounds; background callers
+    /// make one attempt. `preempt` is the backfill to cancel if its current
+    /// item is a different track (a foreground request only; the backfill's
+    /// own worker passes `None` for its own items).
     pub(crate) fn compute(
         &self,
         track_id: i64,
@@ -253,23 +257,36 @@ impl AnalysisContext<'_> {
         preempt: Option<&TrackAnalysisBackfill>,
         current_slot: Option<&CurrentDecodeSlot>,
     ) -> Result<AndroidAnalysisOutcome, LibraryError> {
-        if self.render_data_already_valid(track_id)? {
-            return Ok(AndroidAnalysisOutcome::AlreadyImported);
-        }
-        match self.in_flight.join_or_claim(track_id) {
-            Claim::Done(outcome) => Ok(outcome),
-            Claim::Mine(cell) => {
-                if let Some(backfill) = preempt {
-                    backfill.preempt_current_unless(track_id);
+        let rounds = if background {
+            1
+        } else {
+            MAX_FOREGROUND_COMPUTE_ROUNDS
+        };
+        for round in 0..rounds {
+            if self.render_data_already_valid(track_id)? {
+                return Ok(AndroidAnalysisOutcome::AlreadyImported);
+            }
+            match self.in_flight.join_or_claim(track_id) {
+                Claim::Done(AndroidAnalysisOutcome::Cancelled)
+                    if !background && round + 1 < rounds =>
+                {
+                    continue;
                 }
-                let result = self.decode_one(track_id, background, current_slot);
-                let outcome_for_waiters = *result
-                    .as_ref()
-                    .unwrap_or(&AndroidAnalysisOutcome::DecodeFailed);
-                self.in_flight.finish(track_id, &cell, outcome_for_waiters);
-                result
+                Claim::Done(outcome) => return Ok(outcome),
+                Claim::Mine(cell) => {
+                    if let Some(backfill) = preempt {
+                        backfill.preempt_current_unless(track_id);
+                    }
+                    let result = self.decode_one(track_id, background, current_slot);
+                    let outcome_for_waiters = *result
+                        .as_ref()
+                        .unwrap_or(&AndroidAnalysisOutcome::DecodeFailed);
+                    self.in_flight.finish(track_id, &cell, outcome_for_waiters);
+                    return result;
+                }
             }
         }
+        unreachable!("the compute loop always returns on its final round")
     }
 
     fn render_data_already_valid(&self, track_id: i64) -> Result<bool, LibraryError> {
