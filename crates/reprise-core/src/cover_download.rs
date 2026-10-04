@@ -81,6 +81,9 @@ pub enum CoverFetchOutcome {
 
 /// Cache key for an album's downloaded cover: normalized album-artist + album,
 /// hashed to hex. One cover per album — every track of an album shares it.
+/// This deliberately does not use `match_key`: cache identity must stay stable.
+/// Consequently, the same album tagged once with `–` and once with `-` gets
+/// two harmless cache keys, while both spellings now match MusicBrainz.
 pub fn album_key(album_artist: &str, album: &str) -> String {
     fn norm(s: &str) -> String {
         s.split_whitespace()

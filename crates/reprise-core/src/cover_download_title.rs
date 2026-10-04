@@ -1,10 +1,12 @@
+use unicode_normalization::UnicodeNormalization;
+
 pub(super) fn match_key(value: &str) -> String {
     let mut folded = String::with_capacity(value.len());
-    for character in value.chars() {
+    for character in value.nfc() {
         match character {
             character if is_dash(character) => folded.push('-'),
-            '’' | '‘' | 'ʼ' | '`' | '´' => folded.push('\''),
-            '“' | '”' => folded.push('"'),
+            '’' | '‘' | '‚' | '‛' | '′' | 'ʼ' | '`' | '´' => folded.push('\''),
+            '“' | '”' | '„' | '‟' | '″' => folded.push('"'),
             '…' => folded.push_str("..."),
             character => folded.push(character),
         }
@@ -17,7 +19,10 @@ pub(super) fn match_key(value: &str) -> String {
 }
 
 fn is_dash(character: char) -> bool {
-    matches!(character, '-' | '‐' | '‑' | '–' | '—' | '−')
+    matches!(
+        character,
+        '-' | '‐' | '‑' | '‒' | '–' | '—' | '―' | '−' | '﹘' | '﹣' | '－'
+    )
 }
 
 pub(super) fn strip_release_decoration(album: &str) -> Option<String> {
@@ -77,19 +82,48 @@ mod tests {
         for variant in [
             "Album 85‐92",
             "Album 85‑92",
+            "Album 85‒92",
             "Album 85–92",
             "Album 85—92",
+            "Album 85―92",
             "Album 85−92",
+            "Album 85﹘92",
+            "Album 85﹣92",
+            "Album 85－92",
         ] {
             assert_eq!(match_key(variant), "album 85-92");
         }
-        for variant in ["Artist’s", "Artist‘s", "Artistʼs", "Artist`s", "Artist´s"] {
+        for variant in [
+            "Artist’s",
+            "Artist‘s",
+            "Artistʼs",
+            "Artist`s",
+            "Artist´s",
+            "Artist′s",
+            "Artist‛s",
+            "Artist‚s",
+        ] {
             assert_eq!(match_key(variant), "artist's");
         }
-        for variant in ["“Quoted”", "“Quoted\"", "\"Quoted”"] {
+        for variant in [
+            "“Quoted”",
+            "“Quoted\"",
+            "\"Quoted”",
+            "\"Quoted″",
+            "„Quoted\"",
+            "‟Quoted\"",
+        ] {
             assert_eq!(match_key(variant), "\"quoted\"");
         }
         assert_eq!(match_key("  Wait…   Now  "), "wait... now");
+        assert_eq!(match_key("A\u{00a0}\u{2009}B"), "a b");
+        assert_ne!(match_key("«Quoted»"), match_key("\"Quoted\""));
+    }
+
+    #[test]
+    fn match_keys_compose_canonical_unicode_without_removing_diacritics() {
+        assert_eq!(match_key("Cafe\u{301}"), match_key("Café"));
+        assert_ne!(match_key("é"), match_key("e"));
     }
 
     #[test]
