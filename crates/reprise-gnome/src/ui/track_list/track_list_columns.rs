@@ -65,6 +65,36 @@ fn enclosing_row(cell: &impl gtk4::prelude::IsA<gtk4::Widget>) -> Option<gtk4::W
     None
 }
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum NowPlayingKey {
+    Track(i64),
+    Episode(i64),
+}
+
+impl From<&QueueItemMetadata> for NowPlayingKey {
+    fn from(item: &QueueItemMetadata) -> Self {
+        match item {
+            QueueItemMetadata::Track(track) => Self::Track(track.id),
+            QueueItemMetadata::Episode(episode) => Self::Episode(episode.id),
+        }
+    }
+}
+
+fn is_now_playing_key(
+    item: NowPlayingKey,
+    playing_track_id: Option<i64>,
+    playing_episode: Option<crate::ui::podcasts::EpisodeMark>,
+) -> bool {
+    match item {
+        NowPlayingKey::Track(track_id) => {
+            playing_episode.is_none() && playing_track_id == Some(track_id)
+        }
+        NowPlayingKey::Episode(episode_id) => {
+            playing_episode.map(|mark| mark.id) == Some(episode_id)
+        }
+    }
+}
+
 pub(in crate::ui) fn toggle_now_playing_cell(
     cell: &impl gtk4::prelude::IsA<gtk4::Widget>,
     playing: bool,
@@ -81,14 +111,14 @@ pub(super) fn sync_now_playing_row(
     item: &QueueItemMetadata,
     shared: std::rc::Weak<Shared>,
 ) {
-    let item = item.clone();
+    let item = NowPlayingKey::from(item);
     let coordinator = coordinator.upcast_ref::<gtk4::Widget>().downgrade();
     gtk4::glib::idle_add_local_once(move || {
         let (Some(shared), Some(coordinator)) = (shared.upgrade(), coordinator.upgrade()) else {
             return;
         };
-        let playing = super::queue_item_presentation::is_now_playing(
-            &item,
+        let playing = is_now_playing_key(
+            item,
             shared.playing_track_id.get(),
             shared.playing_episode.get(),
         );
@@ -653,6 +683,33 @@ pub(in crate::ui) fn append_cover_column(
 /// pure decision so the rule is testable without realising a ColumnView cell.
 pub(super) fn ai_badge_visible(is_ai: bool) -> bool {
     is_ai
+}
+
+#[cfg(test)]
+mod now_playing_key_tests {
+    use super::{is_now_playing_key, NowPlayingKey};
+
+    #[test]
+    fn key_comparison_distinguishes_tracks_and_episodes_with_the_same_id() {
+        let episode = crate::ui::podcasts::EpisodeMark::new(7, false);
+
+        assert!(!is_now_playing_key(
+            NowPlayingKey::Track(7),
+            Some(7),
+            Some(episode)
+        ));
+        assert!(is_now_playing_key(
+            NowPlayingKey::Episode(7),
+            Some(7),
+            Some(episode)
+        ));
+        assert!(is_now_playing_key(NowPlayingKey::Track(7), Some(7), None));
+        assert!(!is_now_playing_key(
+            NowPlayingKey::Episode(7),
+            Some(7),
+            None
+        ));
+    }
 }
 
 #[cfg(test)]
