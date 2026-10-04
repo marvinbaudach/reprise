@@ -12,6 +12,7 @@ pub const CHART_LIMIT: usize = 12;
 const CHART_ENDPOINT: &str = "https://rss.marketingtools.apple.com/api/v2";
 const LOOKUP_ENDPOINT: &str = "https://itunes.apple.com/lookup";
 const ATTEMPTS_PER_REQUEST: usize = 2;
+const _: () = assert!(ATTEMPTS_PER_REQUEST >= 1);
 
 #[derive(Deserialize)]
 struct ChartResponse {
@@ -79,7 +80,12 @@ fn top_podcasts_with(
     country: &str,
     fetch: &mut dyn FnMut(&str) -> Result<super::http::Response, PodcastError>,
 ) -> Result<Vec<SearchResult>, PodcastError> {
-    let storefront = country.to_ascii_lowercase();
+    let storefront = if itunes::is_country_code(country) {
+        country
+    } else {
+        "us"
+    }
+    .to_ascii_lowercase();
     let ids = fetch_step(
         &chart_url(&storefront),
         "chart",
