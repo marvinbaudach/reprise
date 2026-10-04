@@ -22,10 +22,12 @@ pub(crate) const MAX_IMAGE_BYTES: u64 = 20 * 1024 * 1024;
 /// gets rechecked instead of being cached forever.
 const NEGATIVE_MARKER_MAX_AGE: Duration = Duration::from_secs(7 * 24 * 60 * 60);
 
-/// One-shot invalidation for negative markers created before self-healing TTLs.
-/// Do not bump this again: future stale markers must be retired by the TTL, and
-/// a need for another generation means that mechanism should be investigated.
-const NEGATIVE_MARKER_GENERATION: u32 = 2;
+/// Generation 2 was the one-shot invalidation for markers created before
+/// self-healing TTLs (#908). Generation 3 retires markers written by the
+/// pre-#1059 matcher, which could not fold typographic punctuation. The TTL is
+/// the normal retirement path; another bump needs a matcher change of the same
+/// kind as its justification.
+const NEGATIVE_MARKER_GENERATION: u32 = 3;
 
 /// Minimum MusicBrainz search score to even consider a release.
 const MIN_MB_SCORE: i64 = 90;
@@ -79,6 +81,9 @@ pub enum CoverFetchOutcome {
 
 /// Cache key for an album's downloaded cover: normalized album-artist + album,
 /// hashed to hex. One cover per album — every track of an album shares it.
+/// This deliberately does not use `match_key`: cache identity must stay stable.
+/// Consequently, the same album tagged once with `–` and once with `-` gets
+/// two harmless cache keys, while both spellings now match MusicBrainz.
 pub fn album_key(album_artist: &str, album: &str) -> String {
     fn norm(s: &str) -> String {
         s.split_whitespace()
@@ -273,19 +278,13 @@ enum ReleaseSearchResult {
 }
 
 fn parse_best_release(json: &str, album_artist: &str, album: &str) -> ReleaseSearchResult {
-    fn norm(s: &str) -> String {
-        s.split_whitespace()
-            .collect::<Vec<_>>()
-            .join(" ")
-            .to_lowercase()
-    }
     let Ok(value) = serde_json::from_str::<serde_json::Value>(json) else {
         return ReleaseSearchResult::Malformed;
     };
     let Some(releases) = value.get("releases").and_then(serde_json::Value::as_array) else {
         return ReleaseSearchResult::Malformed;
     };
-    let (want_artist, want_album) = (norm(album_artist), norm(album));
+    let (want_artist, want_album) = (match_key(album_artist), match_key(album));
     let mut matches = Vec::new();
     for r in releases {
         let score = r
@@ -306,7 +305,7 @@ fn parse_best_release(json: &str, album_artist: &str, album: &str) -> ReleaseSea
             .and_then(|credit| credit.get("name"))
             .and_then(|name| name.as_str())
             .unwrap_or_default();
-        if norm(title) == want_album && norm(artist) == want_artist {
+        if match_key(title) == want_album && match_key(artist) == want_artist {
             let Some(id) = r.get("id").and_then(serde_json::Value::as_str) else {
                 continue;
             };
@@ -706,7 +705,11 @@ fn store_album_downloaded_with_in(
 #[path = "cover_download_title.rs"]
 mod title;
 
-use title::strip_release_decoration;
+use title::{match_key, strip_release_decoration};
+
+#[cfg(test)]
+#[path = "cover_download_typographic_tests.rs"]
+mod typographic_tests;
 
 #[cfg(test)]
 #[path = "cover_download_retry_tests.rs"]

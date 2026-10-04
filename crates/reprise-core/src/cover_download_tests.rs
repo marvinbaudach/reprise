@@ -226,12 +226,12 @@ fn fetch_short_circuits_on_negative_marker_without_network() {
 }
 
 #[test]
-fn album_negative_marker_uses_the_one_shot_generation() {
+fn album_negative_marker_uses_the_current_generation() {
     let marker = negative_marker_path("album-key");
 
     assert_eq!(
         marker.file_name().and_then(|name| name.to_str()),
-        Some("album-key.notfound2")
+        Some("album-key.notfound3")
     );
 }
 
