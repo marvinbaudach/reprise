@@ -47,6 +47,16 @@ impl SafSource for InertSource {
 /// path_for_track` naturally answers `None` for it, matching the "no sidecar
 /// has ever been registered" state every phone track starts in.
 fn library_with_one_track() -> (tempfile::TempDir, MusicLibrary, i64, PathBuf) {
+    library_with_one_track_and_tree(true)
+}
+
+fn library_with_one_track_without_tree() -> (tempfile::TempDir, MusicLibrary, i64, PathBuf) {
+    library_with_one_track_and_tree(false)
+}
+
+fn library_with_one_track_and_tree(
+    configure_tree: bool,
+) -> (tempfile::TempDir, MusicLibrary, i64, PathBuf) {
     let directory = tempfile::tempdir().unwrap();
     let music = directory.path().join("music");
     std::fs::create_dir(&music).unwrap();
@@ -74,9 +84,11 @@ fn library_with_one_track() -> (tempfile::TempDir, MusicLibrary, i64, PathBuf) {
         directory.path().join("cache").to_str().unwrap(),
     )
     .unwrap();
-    library
-        .set_tree_uri("content://inert".into(), Box::new(InertSource))
-        .unwrap();
+    if configure_tree {
+        library
+            .set_tree_uri("content://inert".into(), Box::new(InertSource))
+            .unwrap();
+    }
     (directory, library, track_id, music)
 }
 
@@ -298,6 +310,29 @@ fn a_missing_sidecar_is_computed_and_stored() {
     let reader = library.reader().unwrap();
     let pending = reprise_core::db::pending_render_data_tracks(&reader).unwrap();
     assert!(!pending.iter().any(|pending| pending.track_id == track_id));
+}
+
+#[test]
+fn nav_15c_a_track_is_computed_before_the_tree_is_registered() {
+    let (_directory, library, track_id, _music) = library_with_one_track_without_tree();
+    library.register_track_pcm_decoder(Box::new(succeeding_decoder(Arc::new(AtomicUsize::new(0)))));
+
+    let outcome = library.import_track_analysis(track_id).unwrap();
+
+    assert_eq!(outcome, AndroidAnalysisOutcome::Computed);
+    let reader = library.reader().unwrap();
+    assert!(
+        reprise_core::db::get_waveform_peaks(&reader, track_id)
+            .unwrap()
+            .is_some(),
+        "computed waveform peaks must be stored"
+    );
+    assert!(
+        reprise_core::db::get_track_spectrogram(&reader, track_id)
+            .unwrap()
+            .is_some(),
+        "computed spectrogram data must be stored"
+    );
 }
 
 /// A decoder registration that only proves how long it lives: its `Drop`
