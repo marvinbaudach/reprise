@@ -1,6 +1,7 @@
 use std::collections::VecDeque;
 
 use super::*;
+use crate::log_capture::CapturedLogs;
 use crate::podcasts::http::Response;
 use crate::podcasts::itunes::SearchResult;
 
@@ -55,6 +56,38 @@ fn lookup_response() -> Result<Response, PodcastError> {
     ))
 }
 
+fn request_steps(requests: &[String]) -> Vec<&'static str> {
+    requests
+        .iter()
+        .map(|url| {
+            if url.starts_with(CHART_ENDPOINT) {
+                "chart"
+            } else if url.starts_with(LOOKUP_ENDPOINT) {
+                "lookup"
+            } else {
+                panic!("unexpected endpoint: {url}");
+            }
+        })
+        .collect()
+}
+
+fn assert_chart_order(rows: &[SearchResult]) {
+    assert_eq!(
+        rows.iter()
+            .map(|row| row.title.as_str())
+            .collect::<Vec<_>>(),
+        ["First show", "Second show"]
+    );
+}
+
+fn chart_log_lines(logs: &CapturedLogs) -> Vec<String> {
+    logs.joined()
+        .lines()
+        .filter(|line| line.contains("podcast chart request failed"))
+        .map(str::to_owned)
+        .collect()
+}
+
 fn result(title: &str, feed_url: &str) -> SearchResult {
     SearchResult {
         title: title.to_owned(),
@@ -95,6 +128,180 @@ fn src_19_an_empty_chart_skips_the_lookup() {
 
     assert!(rows.is_empty());
     assert_eq!(fake.requests, [chart_url("CH")]);
+}
+
+#[test]
+fn src_19a_a_chart_request_that_times_out_is_asked_once_more() {
+    let mut fake = ScriptedFetch::new([
+        Err(PodcastError::Timeout),
+        chart_response(),
+        lookup_response(),
+    ]);
+
+    let rows = top_podcasts_with("CH", &mut |url| fake.fetch(url)).unwrap();
+
+    assert_chart_order(&rows);
+    assert_eq!(request_steps(&fake.requests), ["chart", "chart", "lookup"]);
+}
+
+#[test]
+fn src_19a_a_server_error_on_the_chart_is_asked_once_more() {
+    let mut fake = ScriptedFetch::new([
+        Err(PodcastError::HttpStatus(502)),
+        chart_response(),
+        lookup_response(),
+    ]);
+
+    let rows = top_podcasts_with("CH", &mut |url| fake.fetch(url)).unwrap();
+
+    assert_chart_order(&rows);
+    assert_eq!(request_steps(&fake.requests), ["chart", "chart", "lookup"]);
+}
+
+#[test]
+fn src_19a_a_failed_lookup_is_retried_without_refetching_the_chart() {
+    let mut fake = ScriptedFetch::new([
+        chart_response(),
+        Err(PodcastError::Timeout),
+        lookup_response(),
+    ]);
+
+    let rows = top_podcasts_with("CH", &mut |url| fake.fetch(url)).unwrap();
+
+    assert_chart_order(&rows);
+    assert_eq!(request_steps(&fake.requests), ["chart", "lookup", "lookup"]);
+}
+
+#[test]
+fn src_19a_the_second_failure_ends_the_step() {
+    let mut fake = ScriptedFetch::new([
+        Err(PodcastError::Timeout),
+        Err(PodcastError::HttpStatus(503)),
+    ]);
+
+    let error = top_podcasts_with("CH", &mut |url| fake.fetch(url)).unwrap_err();
+
+    assert!(matches!(error, PodcastError::HttpStatus(503)));
+    assert_eq!(request_steps(&fake.requests), ["chart", "chart"]);
+}
+
+#[test]
+fn src_19a_a_failure_that_will_not_change_is_not_asked_again() {
+    for error in [
+        PodcastError::RateLimited { retry_after: None },
+        PodcastError::SourceGone(404),
+        PodcastError::HttpStatus(403),
+        PodcastError::Transport("offline".to_owned()),
+    ] {
+        let expected_kind = std::mem::discriminant(&error);
+        let mut fake = ScriptedFetch::new([Err(error)]);
+
+        let actual = top_podcasts_with("CH", &mut |url| fake.fetch(url)).unwrap_err();
+
+        assert_eq!(std::mem::discriminant(&actual), expected_kind);
+        assert_eq!(request_steps(&fake.requests), ["chart"]);
+    }
+}
+
+#[test]
+fn src_19a_every_failed_request_leaves_one_log_line() {
+    let logs = CapturedLogs::default();
+    let mut fake = ScriptedFetch::new([
+        Err(PodcastError::Timeout),
+        Err(PodcastError::HttpStatus(502)),
+    ]);
+
+    let error = logs
+        .capture(|| top_podcasts_with("CH", &mut |url| fake.fetch(url)))
+        .unwrap_err();
+
+    assert!(matches!(error, PodcastError::HttpStatus(502)));
+    let lines = chart_log_lines(&logs);
+    assert_eq!(lines.len(), 2, "captured logs: {}", logs.joined());
+    assert!(lines[0].contains("step=\"chart\""));
+    assert!(lines[0].contains("storefront=\"ch\""));
+    assert!(lines[0].contains("attempt=1"));
+    assert!(lines[0].contains("retrying=true"));
+    assert!(lines[0].contains("reason=\"podcast source timed out\""));
+    assert!(!lines[0].contains("status="));
+    assert!(lines[1].contains("step=\"chart\""));
+    assert!(lines[1].contains("storefront=\"ch\""));
+    assert!(lines[1].contains("attempt=2"));
+    assert!(lines[1].contains("retrying=false"));
+    assert!(lines[1].contains("status=502"));
+    assert!(lines[1].contains("reason=\"podcast source returned an HTTP error\""));
+}
+
+#[test]
+fn src_19a_a_recovered_flow_logs_only_its_failed_attempt() {
+    let logs = CapturedLogs::default();
+    let mut fake = ScriptedFetch::new([
+        Err(PodcastError::Timeout),
+        chart_response(),
+        lookup_response(),
+    ]);
+
+    let rows = logs
+        .capture(|| top_podcasts_with("CH", &mut |url| fake.fetch(url)))
+        .unwrap();
+
+    assert_chart_order(&rows);
+    assert_eq!(chart_log_lines(&logs).len(), 1);
+}
+
+#[test]
+fn src_19a_a_first_time_success_logs_nothing() {
+    let logs = CapturedLogs::default();
+    let mut fake = ScriptedFetch::new([chart_response(), lookup_response()]);
+
+    let rows = logs
+        .capture(|| top_podcasts_with("CH", &mut |url| fake.fetch(url)))
+        .unwrap();
+
+    assert_chart_order(&rows);
+    assert!(chart_log_lines(&logs).is_empty());
+}
+
+#[test]
+fn src_19a_an_unreadable_answer_is_logged_and_not_asked_again() {
+    let logs = CapturedLogs::default();
+    let mut fake = ScriptedFetch::new([response("not json")]);
+
+    let error = logs
+        .capture(|| top_podcasts_with("CH", &mut |url| fake.fetch(url)))
+        .unwrap_err();
+
+    assert!(matches!(error, PodcastError::Parse(_)));
+    assert_eq!(request_steps(&fake.requests), ["chart"]);
+    let lines = chart_log_lines(&logs);
+    assert_eq!(lines.len(), 1, "captured logs: {}", logs.joined());
+    assert!(lines[0].contains("reason=\"podcast source returned invalid data\""));
+}
+
+#[test]
+fn src_19a_the_log_line_never_carries_the_url_or_provider_text() {
+    let logs = CapturedLogs::default();
+    let provider_text = format!(
+        "provider failed at https://itunes.apple.com/lookup?id={FIRST_ID},{SECOND_ID}&entity=podcast"
+    );
+    let mut fake = ScriptedFetch::new([
+        chart_response(),
+        Err(PodcastError::Transport(provider_text)),
+    ]);
+
+    let error = logs
+        .capture(|| top_podcasts_with("CH", &mut |url| fake.fetch(url)))
+        .unwrap_err();
+
+    assert!(matches!(error, PodcastError::Transport(_)));
+    let logged = logs.joined();
+    assert!(logged.contains("reason=\"podcast source could not be reached\""));
+    for forbidden in ["://", "apple.com", "lookup?", FIRST_ID, SECOND_ID] {
+        assert!(
+            !logged.contains(forbidden),
+            "chart log leaked {forbidden:?}: {logged}"
+        );
+    }
 }
 
 #[test]

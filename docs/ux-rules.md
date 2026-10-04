@@ -6533,6 +6533,20 @@ listening statistics.
   lookup requests a refused source is promised never to make. Both halves are
   read once, when the dialog is built, and a failed consent lookup counts as
   refused.
+- **SRC-19a** [active] [core] — Extends `SRC-19`: **one flaky answer does not end the
+  chart.** Each of the chip's two requests — the chart feed and the batched lookup — is asked
+  **once more** when it times out or Apple answers with a server error (HTTP 5xx); a failed
+  lookup is asked again on its own, never by fetching the chart a second time. Nothing else is
+  retried: a rate limit is Apple asking us to stop, a 4xx or a storefront that does not exist
+  answers the same way twice, an unreachable host usually means the network is down, and an
+  unreadable answer is not a network accident — each ends the request at once with its
+  classified reason (`POD-13`). The retry adds no wait of its own; the shared
+  one-request-per-second podcast spacing is the only gap between the two attempts. Every
+  failed request — retried or not, an unreadable answer included — leaves **one** log line,
+  `podcast chart request failed`, and a request that succeeds leaves none. The line carries
+  only the step (`chart` or `lookup`), the storefront code, the attempt number, whether a
+  retry follows, the HTTP status when there is one, and the classified reason — never the
+  request URL, the response body or the provider's error text (`POD-3`).
 - **SRC-20** [active] [gtk] — **Dormant Apple Podcasts search results sink
   without losing relevance order.** Search results whose newest episode is at
   least 365 days old move after every fresher result, using the exact boundary

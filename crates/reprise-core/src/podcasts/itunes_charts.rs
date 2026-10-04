@@ -11,6 +11,7 @@ pub const CHART_LIMIT: usize = 12;
 
 const CHART_ENDPOINT: &str = "https://rss.marketingtools.apple.com/api/v2";
 const LOOKUP_ENDPOINT: &str = "https://itunes.apple.com/lookup";
+const ATTEMPTS_PER_REQUEST: usize = 2;
 
 #[derive(Deserialize)]
 struct ChartResponse {
@@ -78,14 +79,70 @@ fn top_podcasts_with(
     country: &str,
     fetch: &mut dyn FnMut(&str) -> Result<super::http::Response, PodcastError>,
 ) -> Result<Vec<SearchResult>, PodcastError> {
-    let chart = fetch(&chart_url(country))?;
-    let ids = parse_chart_ids(&chart.body)?;
+    let storefront = country.to_ascii_lowercase();
+    let ids = fetch_step(
+        &chart_url(&storefront),
+        "chart",
+        &storefront,
+        fetch,
+        parse_chart_ids,
+    )?;
     if ids.is_empty() {
         return Ok(Vec::new());
     }
-    let lookup = fetch(&lookup_url(&ids))?;
-    let rows = itunes::parse_results_with_ids(&lookup.body)?;
+    let rows = fetch_step(
+        &lookup_url(&ids),
+        "lookup",
+        &storefront,
+        fetch,
+        itunes::parse_results_with_ids,
+    )?;
     Ok(in_chart_order(&ids, rows))
+}
+
+fn fetch_step<T>(
+    url: &str,
+    step: &'static str,
+    storefront: &str,
+    fetch: &mut dyn FnMut(&str) -> Result<super::http::Response, PodcastError>,
+    parse: impl Fn(&str) -> Result<T, PodcastError>,
+) -> Result<T, PodcastError> {
+    for attempt in 1..=ATTEMPTS_PER_REQUEST {
+        match fetch(url).and_then(|response| parse(&response.body)) {
+            Ok(value) => return Ok(value),
+            Err(error) => {
+                let retrying = attempt < ATTEMPTS_PER_REQUEST && is_transient(&error);
+                tracing::warn!(
+                    step,
+                    storefront,
+                    attempt,
+                    retrying,
+                    status = error_status(&error),
+                    reason = error.classify(),
+                    "podcast chart request failed"
+                );
+                if !retrying {
+                    return Err(error);
+                }
+            }
+        }
+    }
+    unreachable!("a chart request always has at least one attempt")
+}
+
+fn is_transient(error: &PodcastError) -> bool {
+    matches!(
+        error,
+        PodcastError::Timeout | PodcastError::HttpStatus(500..=599)
+    )
+}
+
+fn error_status(error: &PodcastError) -> Option<u16> {
+    match error {
+        PodcastError::HttpStatus(status) | PodcastError::SourceGone(status) => Some(*status),
+        PodcastError::RateLimited { .. } => Some(429),
+        _ => None,
+    }
 }
 
 #[cfg(test)]
