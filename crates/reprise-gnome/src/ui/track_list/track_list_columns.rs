@@ -393,15 +393,17 @@ pub(in crate::ui) fn append_column(
             tracing::warn!("track list column bind: item is not typed queue metadata");
             return;
         };
-        let metadata = boxed.borrow::<QueueItemMetadata>();
-        render_text_cell(
-            &label,
-            &metadata,
-            sort_id,
-            render.as_ref(),
-            &shared_for_bind,
-        );
-        let rendered_metadata = metadata.clone();
+        {
+            let metadata = boxed.borrow::<QueueItemMetadata>();
+            render_text_cell(
+                &label,
+                &metadata,
+                sort_id,
+                render.as_ref(),
+                &shared_for_bind,
+            );
+        }
+        let rendered_metadata = boxed.clone();
         let rendered_metadata_generation = Cell::new(shared_for_bind.model.metadata_generation());
         let weak_item = item.downgrade();
         now_playing_marker::register_cell(&shared_for_bind, item, {
@@ -410,7 +412,8 @@ pub(in crate::ui) fn append_column(
             move |shared| {
                 let metadata_generation = shared.model.metadata_generation();
                 if metadata_generation == rendered_metadata_generation.get() {
-                    apply_now_playing_item(&label, &rendered_metadata, shared, false);
+                    let metadata = rendered_metadata.borrow::<QueueItemMetadata>();
+                    apply_now_playing_item(&label, &metadata, shared, false);
                     return;
                 }
                 let Some(item) = weak_item.upgrade() else {
@@ -549,7 +552,7 @@ pub(in crate::ui) fn append_cover_column(
                 tracing::warn!("cover column bind: item is not typed queue metadata");
                 return;
             };
-            let metadata = boxed.borrow::<QueueItemMetadata>().clone();
+            let metadata = boxed.borrow::<QueueItemMetadata>();
             let key = item.as_ptr() as usize;
             let cell_state = cell_states
                 .borrow_mut()
@@ -572,11 +575,12 @@ pub(in crate::ui) fn append_cover_column(
                 }),
             );
             apply_now_playing_item(&cover, &metadata, &shared, true);
-            let rendered_metadata = metadata.clone();
+            let rendered_metadata = boxed.clone();
             now_playing_marker::register_cell(&shared, item, {
                 let cover = cover.clone();
                 move |shared| {
-                    apply_now_playing_item(&cover, &rendered_metadata, shared, true);
+                    let metadata = rendered_metadata.borrow::<QueueItemMetadata>();
+                    apply_now_playing_item(&cover, &metadata, shared, true);
                 }
             });
 
