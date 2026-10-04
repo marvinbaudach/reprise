@@ -145,8 +145,9 @@ once it is `[active]`.
 
 ## Completed file ownership — Flathub readiness
 
-The implementation plans were deleted on landing, and no corresponding branch remains
-(checked 2026-10-04). The table remains as the historical strand boundary.
+No corresponding branch remains (checked 2026-10-04). No plan file was named for this work;
+the findings remain in `docs/plans/gnome-conformance.findings.md`. The table remains as the
+historical strand boundary.
 
 | Strand | Owns |
 |---|---|
@@ -347,8 +348,11 @@ The track lists remain as the historical file boundaries.
 
 ## Completed file ownership — multi-surface frontends
 
-The implementation plans were deleted on landing, and no corresponding branch remains
-(checked 2026-10-04). The package tables remain as the historical file boundaries.
+No corresponding branch remains (checked 2026-10-04). The design spec
+`docs/superpowers/specs/2026-08-01-multi-surface-frontends-design.md` and P0 plan
+`docs/superpowers/plans/2026-08-01-multi-surface-p0-s1.md` remain. The historical
+"P0 — groundwork" and "P1a — the mobile slice of reprise-view" subsections later in this file
+remain as the package boundaries.
 
 ## Completed file ownership — Android Now Playing scene
 
