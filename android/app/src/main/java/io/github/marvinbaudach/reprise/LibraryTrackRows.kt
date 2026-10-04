@@ -47,7 +47,6 @@ import androidx.compose.ui.layout.boundsInRoot
 import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.layout.positionInRoot
 import androidx.compose.ui.platform.LocalDensity
-import androidx.compose.ui.text.PlatformTextStyle
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.platform.testTag
@@ -423,9 +422,7 @@ private fun LibraryTrackRow(
                         if (subtitleText != null) {
                             Text(
                                 text = subtitleText,
-                                style = MaterialTheme.typography.bodyMedium.copy(
-                                    platformStyle = PlatformTextStyle(includeFontPadding = true),
-                                ),
+                                style = MaterialTheme.typography.bodyMedium,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                                 maxLines = 1,
                                 overflow = TextOverflow.Ellipsis,
