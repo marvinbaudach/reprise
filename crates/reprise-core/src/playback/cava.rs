@@ -20,7 +20,6 @@ pub const MAX_CAVA_BAR_COUNT: usize = 256;
 const DEFAULT_LOW_CUTOFF_HZ: u32 = 50;
 const DEFAULT_HIGH_CUTOFF_HZ: u32 = 10_000;
 const DEFAULT_NOISE_REDUCTION: f32 = 0.77;
-const DEFAULT_NOISE_FLOOR: f32 = 0.04;
 const DEFAULT_AUTOSENSITIVITY: u32 = 1;
 /// PCM below this magnitude is silence for the renderer's gain search. CAVA
 /// ages its autosensitivity on individual samples, not on a windowed level.
@@ -37,7 +36,6 @@ pub struct CavaConfig {
     pub low_cutoff_hz: u32,
     pub high_cutoff_hz: u32,
     pub noise_reduction: f32,
-    pub noise_floor: f32,
     pub autosensitivity: u32,
 }
 
@@ -49,7 +47,6 @@ impl CavaConfig {
             low_cutoff_hz: DEFAULT_LOW_CUTOFF_HZ,
             high_cutoff_hz: DEFAULT_HIGH_CUTOFF_HZ.min(sample_rate_hz / 2),
             noise_reduction: DEFAULT_NOISE_REDUCTION,
-            noise_floor: DEFAULT_NOISE_FLOOR,
             autosensitivity: DEFAULT_AUTOSENSITIVITY,
         }
     }
@@ -68,8 +65,6 @@ pub enum CavaError {
     HighCutoffAboveNyquist,
     #[error("noise reduction must be finite and between 0 and 1")]
     InvalidNoiseReduction,
-    #[error("noise floor must be finite and between 0 and 1")]
-    InvalidNoiseFloor,
 }
 
 /// Converts successive mono PCM chunks into bounded visualizer bars.
@@ -103,9 +98,6 @@ impl CavaBarProcessor {
         if !config.noise_reduction.is_finite() || !(0.0..=1.0).contains(&config.noise_reduction) {
             return Err(CavaError::InvalidNoiseReduction);
         }
-        if !config.noise_floor.is_finite() || !(0.0..=1.0).contains(&config.noise_floor) {
-            return Err(CavaError::InvalidNoiseFloor);
-        }
         let band_plan = band_plan(config)?;
         let equalizer = equalizer_curve(config, &band_plan);
         let fft_size = fft_size_for_rate(config.sample_rate_hz);
@@ -119,7 +111,6 @@ impl CavaBarProcessor {
             smoother: Smoother::new(
                 config.bar_count,
                 config.noise_reduction,
-                config.noise_floor,
                 config.autosensitivity,
             ),
         })

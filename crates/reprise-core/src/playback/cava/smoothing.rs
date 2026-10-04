@@ -9,7 +9,6 @@ const INITIAL_SENSITIVITY_HEADROOM: f32 = 0.85;
 
 pub(super) struct Smoother {
     noise_reduction: f32,
-    noise_floor: f32,
     autosensitivity: u32,
     sensitivity: f32,
     sensitivity_initializing: bool,
@@ -23,15 +22,9 @@ pub(super) struct Smoother {
 }
 
 impl Smoother {
-    pub(super) fn new(
-        bar_count: usize,
-        noise_reduction: f32,
-        noise_floor: f32,
-        autosensitivity: u32,
-    ) -> Self {
+    pub(super) fn new(bar_count: usize, noise_reduction: f32, autosensitivity: u32) -> Self {
         Self {
             noise_reduction,
-            noise_floor,
             autosensitivity,
             sensitivity: 1.0,
             sensitivity_initializing: true,
@@ -76,7 +69,7 @@ impl Smoother {
             if self.autosensitivity > 0 {
                 *bar *= self.sensitivity;
             }
-            if !bar.is_finite() || *bar <= self.noise_floor {
+            if !bar.is_finite() {
                 *bar = 0.0;
             }
             if *bar < *previous {
@@ -185,7 +178,7 @@ mod tests {
 
     #[test]
     fn cold_rising_signal_does_not_expose_autosensitivity_clipping() {
-        let mut smoother = Smoother::new(64, 0.77, 0.04, 1);
+        let mut smoother = Smoother::new(64, 0.77, 1);
         let mut max_mean = 0.0_f32;
         let mut max_near_full = 0;
 
@@ -218,7 +211,7 @@ mod tests {
     // identical signal again.
     fn cold_start_does_not_inflate_a_quiet_signal_to_full_scale() {
         let quiet_level = 0.10_f32;
-        let mut smoother = Smoother::new(64, 0.77, 0.04, 1);
+        let mut smoother = Smoother::new(64, 0.77, 1);
 
         let mut settled_max = 0.0_f32;
         loop {
@@ -275,7 +268,7 @@ mod tests {
         const SAMPLE_RATE_HZ: u32 = 48_000;
 
         let quiet_level = 0.10_f32;
-        let mut smoother = Smoother::new(64, 0.77, 0.04, 1);
+        let mut smoother = Smoother::new(64, 0.77, 1);
 
         // Run past the initial cold-start transient (which legitimately
         // overshoots while autosensitivity searches, per
@@ -373,7 +366,7 @@ mod tests {
         // signal alone, with no prior loud-signal history. Measured only
         // after the cold-start transient has passed, same as the
         // regression test above.
-        let mut reference = Smoother::new(64, 0.77, 0.04, 1);
+        let mut reference = Smoother::new(64, 0.77, 1);
         loop {
             let mut bars = [quiet_level; 64];
             reference.apply(&mut bars, SAMPLES, SAMPLE_RATE_HZ, true);
@@ -388,7 +381,7 @@ mod tests {
             reference_plateau = reference_plateau.max(bars.iter().cloned().fold(0.0_f32, f32::max));
         }
 
-        let mut smoother = Smoother::new(64, 0.77, 0.04, 1);
+        let mut smoother = Smoother::new(64, 0.77, 1);
         for _ in 0..446 {
             let mut bars = [loud_level; 64];
             smoother.apply(&mut bars, SAMPLES, SAMPLE_RATE_HZ, true);
@@ -421,7 +414,7 @@ mod tests {
 
     #[test]
     fn disabled_autosensitivity_does_not_apply_initial_headroom() {
-        let mut smoother = Smoother::new(1, 0.0, 0.0, 0);
+        let mut smoother = Smoother::new(1, 0.0, 0);
         let mut bars = [1.2];
 
         smoother.apply(&mut bars, 735, 44_100, true);
@@ -431,7 +424,7 @@ mod tests {
 
     #[test]
     fn ac_28_steady_state_overshoot_clips_only_the_overshooting_band() {
-        let mut smoother = Smoother::new(2, 0.0, 0.0, 1);
+        let mut smoother = Smoother::new(2, 0.0, 1);
 
         let mut cold_overshoot = [1.2, 0.2];
         smoother.apply(&mut cold_overshoot, 735, 44_100, true);

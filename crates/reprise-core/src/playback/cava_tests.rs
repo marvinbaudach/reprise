@@ -266,19 +266,6 @@ fn faint_pcm_above_pcm_silence_still_ages_autosensitivity_into_view() {
 }
 
 #[test]
-fn noise_floor_cuts_subthreshold_fft_leakage() {
-    let mut processor = CavaBarProcessor::new(CavaConfig::new(44_100, 10)).unwrap();
-    let whisper: Vec<f32> = sine_chunk(200.0, 0)
-        .into_iter()
-        .map(|sample| sample * 1.0e-5)
-        .collect();
-
-    let bars = processor.process(&whisper);
-
-    assert!(bars.iter().all(|bar| *bar == 0.0));
-}
-
-#[test]
 fn hostile_pcm_and_high_resolution_always_return_finite_bounded_bars() {
     let mut processor = CavaBarProcessor::new(CavaConfig::new(44_100, 256)).unwrap();
     let hostile = [f32::NAN, f32::INFINITY, f32::NEG_INFINITY, 10.0, -10.0];
@@ -433,7 +420,6 @@ fn test_transient_processor() -> CavaBarProcessor {
     let mut config = CavaConfig::new(44_100, 8);
     config.low_cutoff_hz = 1_000;
     config.noise_reduction = 0.0;
-    config.noise_floor = 0.0;
     config.autosensitivity = 0;
     CavaBarProcessor::new(config).unwrap()
 }
