@@ -109,6 +109,7 @@ pub fn import_analysis_bytes_for_track(
     let data = TrackRenderData {
         waveform_peaks: sidecar.waveform_peaks,
         spectrogram: sidecar.spectrogram,
+        loudness: None,
     };
     if crate::db_spectrogram::set_track_render_data(db, track_id, phone_source, &data)?
         == crate::db_spectrogram::SpectrogramStoreOutcome::SourceChanged

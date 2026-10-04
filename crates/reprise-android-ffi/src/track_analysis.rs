@@ -195,6 +195,7 @@ mod tests {
             &TrackRenderData {
                 waveform_peaks: vec![0, u8::MAX],
                 spectrogram: TrackSpectrogram::from_cells(stored_spectrogram_cells()).unwrap(),
+                loudness: None,
             },
         )
         .unwrap();

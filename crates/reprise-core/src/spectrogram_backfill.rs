@@ -147,6 +147,7 @@ mod tests {
             Ok(TrackRenderData {
                 waveform_peaks: vec![call as u8 + 1; buckets],
                 spectrogram: TrackSpectrogram::from_cells(vec![call as u8 + 1; 24]).unwrap(),
+                loudness: None,
             })
         }
     }

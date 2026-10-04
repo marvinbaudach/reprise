@@ -85,6 +85,7 @@ fn analysis_sidecar_for_track_uses_the_database_source_fingerprint() {
     let render_data = crate::waveform::TrackRenderData {
         waveform_peaks: vec![2, 4, 6],
         spectrogram: TrackSpectrogram::from_cells(vec![9; 24]).unwrap(),
+        loudness: None,
     };
     crate::db_spectrogram::set_track_render_data(&db, 7, source(), &render_data).unwrap();
 

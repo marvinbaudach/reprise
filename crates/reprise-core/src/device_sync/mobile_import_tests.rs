@@ -89,6 +89,7 @@ fn render(cell: u8, peak: u8) -> TrackRenderData {
     TrackRenderData {
         waveform_peaks: vec![peak; 4],
         spectrogram: TrackSpectrogram::from_cells(vec![cell; 48]).unwrap(),
+        loudness: None,
     }
 }
 

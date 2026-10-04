@@ -154,6 +154,7 @@ mod tests {
             Ok(TrackRenderData {
                 waveform_peaks: vec![7; buckets],
                 spectrogram: TrackSpectrogram::from_cells(vec![9; 48]).unwrap(),
+                loudness: None,
             })
         }
     }

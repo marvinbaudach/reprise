@@ -3,6 +3,7 @@
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, Ordering};
 
+use crate::library::loudness::MeasuredLoudness;
 use crate::spectrogram::TrackSpectrogram;
 
 pub const STORED_PEAK_COUNT: usize = 1000;
@@ -41,10 +42,11 @@ pub trait WaveformBackend: Send + Sync {
 }
 
 /// The two rendering datasets produced from one decoded PCM stream.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct TrackRenderData {
     pub waveform_peaks: Vec<u8>,
     pub spectrogram: TrackSpectrogram,
+    pub loudness: Option<MeasuredLoudness>,
 }
 
 impl TrackRenderData {
@@ -52,6 +54,7 @@ impl TrackRenderData {
         Self {
             waveform_peaks: Vec::new(),
             spectrogram: TrackSpectrogram::empty(),
+            loudness: None,
         }
     }
 }
