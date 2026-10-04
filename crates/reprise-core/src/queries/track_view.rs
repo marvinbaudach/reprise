@@ -23,9 +23,14 @@ static EMPTY_BROWSE: BrowseFilter = BrowseFilter {
 #[derive(Clone, Copy, Debug)]
 pub struct TrackViewQuery<'a> {
     pub source: &'a ViewSource,
+    /// Always bound as a parameter and never concatenated into SQL. Queue
+    /// views ignore it.
     pub filter: &'a str,
     pub browse: &'a BrowseFilter,
+    /// Read only for [`ViewSource::Queue`]; every other source ignores it.
     pub queue_items: &'a [QueueItem],
+    /// Honoured by [`ViewSource::Library`], [`ViewSource::Genre`], and
+    /// [`ViewSource::RecentlyAdded`] only; every other source ignores it.
     pub exclude_ai: bool,
 }
 
@@ -81,6 +86,10 @@ pub struct RowWindow {
 }
 
 /// Whether a window query should project the track AI-provenance column.
+///
+/// Every source honours this setting. The GTK track list passes [`Self::Project`]
+/// because its rows read the column; callers that never read it can pass
+/// [`Self::Skip`] to spare the window a per-row provenance subquery.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub enum AiColumn {
     #[default]
@@ -104,7 +113,14 @@ pub fn query_track_count(db: &Db, view: &TrackViewQuery<'_>) -> Result<i64, rusq
     query_track_count_dispatch(db.conn(), view)
 }
 
-/// Returns the playable track ids represented by the described track view.
+/// Returns the playable track ids represented by the described track view, in
+/// the order that source's "play this whole view" queue should use, capped at
+/// [`super::QUEUE_LIMIT`]. This is the queue seam: activating a row queues the
+/// whole current view by resolving it to this id list rather than the
+/// [`super::MAX_WINDOW_LIMIT`]-capped [`query_track_window`], which is sized for
+/// one display page rather than a playback queue. The `Vec` alone cannot tell
+/// the caller whether it was truncated by the cap: compare its length with
+/// [`super::is_queue_capped`] and log a warning if so.
 pub fn query_track_ids(
     db: &Db,
     view: &TrackViewQuery<'_>,

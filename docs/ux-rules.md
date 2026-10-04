@@ -1935,7 +1935,8 @@ result.
   with ×-click target) and into the counting per **FIL-2** ("15 of
   1,664 tracks", force-show); like the facet chips it is
   **library-only** and is implemented as a query clause in Core
-  (`queries::query_track_window_browsed_ai`). The filter state is
+  (`queries::query_track_window` with
+  `TrackViewQuery::with_exclude_ai`). The filter state is
   **sticky across sessions** like other view states. **No
   shuffle/auto-queue special rule** in v1: queue refill follows the
   visible view — with the filter active, AI titles are not visible and

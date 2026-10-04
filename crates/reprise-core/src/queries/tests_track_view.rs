@@ -30,8 +30,11 @@ fn seeded_track_views() -> (crate::db::Db, i64, Vec<QueueItem>) {
     (db, playlist_id, queue_items)
 }
 
-fn assert_query_family_agrees(db: &Db, view: &TrackViewQuery<'_>) {
-    let sort = test_sort("title", "asc");
+fn assert_query_family_agrees(db: &Db, view: &TrackViewQuery<'_>, expected_count: usize) {
+    let sort = match view.source {
+        ViewSource::Playlist(_) => test_sort("playlist_order", "asc"),
+        _ => test_sort("title", "asc"),
+    };
     let count = query_track_count(db, view).unwrap();
     let ids = query_track_ids(db, view, sort).unwrap();
     let rows = query_track_window(
@@ -43,8 +46,10 @@ fn assert_query_family_agrees(db: &Db, view: &TrackViewQuery<'_>) {
     )
     .unwrap();
 
-    assert_eq!(count as usize, ids.len());
-    assert_eq!(ids.len(), rows.len());
+    assert_eq!(count as usize, expected_count);
+    assert_eq!(ids.len(), expected_count);
+    assert_eq!(rows.len(), expected_count);
+    assert_eq!(ids, rows.iter().map(|track| track.id).collect::<Vec<_>>());
 }
 
 #[test]
@@ -75,17 +80,20 @@ fn track_view_query_family_agrees_for_each_track_source_shape() {
         &TrackViewQuery::new(&library)
             .with_filter("Keep")
             .with_browse(&browse),
+        3,
     );
     assert_query_family_agrees(
         &db,
         &TrackViewQuery::new(&recently_added)
             .with_filter("Keep")
             .with_browse(&browse),
+        2,
     );
-    assert_query_family_agrees(&db, &TrackViewQuery::new(&playlist).with_filter("Keep"));
+    assert_query_family_agrees(&db, &TrackViewQuery::new(&playlist).with_filter("Keep"), 4);
     assert_query_family_agrees(
         &db,
         &TrackViewQuery::new(&queue).with_queue_items(&queue_items),
+        5,
     );
 }
 

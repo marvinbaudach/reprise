@@ -270,22 +270,22 @@ else
 fi
 
 # Positional APIs become harder to call correctly as their argument lists grow.
-# Keep the remaining explicit exceptions from multiplying, and require this
-# ceiling to fall in the same change whenever an exception is removed.
+# Keep the remaining explicit suppressions from multiplying, and require this
+# ceiling to fall in the same change whenever a suppression is removed.
 too_many_arguments_budget=41
-too_many_arguments=$(rg --count-matches 'allow\(clippy::too_many_arguments\)' \
+too_many_arguments=$(rg --count-matches '(allow|expect)\(clippy::too_many_arguments' \
   crates --glob '*.rs' 2>/dev/null \
   | awk -F: '{ total += $2 } END { print total + 0 }')
 if (( too_many_arguments > too_many_arguments_budget )); then
-  echo "too-many-arguments allows grew from $too_many_arguments_budget to $too_many_arguments" >&2
+  echo "too-many-arguments suppressions grew from $too_many_arguments_budget to $too_many_arguments" >&2
   echo "  replace positional parameters with a cohesive parameter object" >&2
   exit 1
 elif (( too_many_arguments < too_many_arguments_budget )); then
-  echo "too-many-arguments allows are down to $too_many_arguments (budget still says $too_many_arguments_budget)" >&2
+  echo "too-many-arguments suppressions are down to $too_many_arguments (budget still says $too_many_arguments_budget)" >&2
   echo "  lower too_many_arguments_budget in scripts/check-architecture.sh to $too_many_arguments" >&2
   exit 1
 else
-  echo "  too-many-arguments allows: $too_many_arguments (at budget)"
+  echo "  too-many-arguments suppressions: $too_many_arguments (at budget)"
 fi
 
 echo "== Documentation references from code =="
