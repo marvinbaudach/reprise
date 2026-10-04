@@ -99,7 +99,7 @@ pub(super) fn query_track_window_smart(
         return Ok(Vec::new());
     };
     if smart.role.as_deref() == Some(playlists::RECENTLY_ADDED_ROLE) {
-        let browse = super::recently_added_browse(&super::BrowseFilter::default());
+        let browse = super::track_view::recently_added_browse(&super::BrowseFilter::default());
         let recent_view = TrackViewQuery {
             browse: &browse,
             exclude_ai: false,
@@ -134,7 +134,7 @@ pub(super) fn query_track_count_smart(
         return Ok(0);
     };
     if smart.role.as_deref() == Some(playlists::RECENTLY_ADDED_ROLE) {
-        let browse = super::recently_added_browse(&super::BrowseFilter::default());
+        let browse = super::track_view::recently_added_browse(&super::BrowseFilter::default());
         let recent_view = TrackViewQuery {
             browse: &browse,
             exclude_ai: false,
@@ -182,7 +182,7 @@ pub(super) fn query_track_ids_smart(
     };
     if smart.role.as_deref() == Some(playlists::RECENTLY_ADDED_ROLE) {
         let recent_view = TrackViewQuery::new(view.source).with_filter(view.filter);
-        return super::query_track_ids_recently_added(conn, &recent_view, sort);
+        return super::track_view::query_track_ids_recently_added(conn, &recent_view, sort);
     }
     let has_filter = !view.filter.trim().is_empty();
     let member_order = order_clause(&smart.sort_field, &smart.sort_dir);
