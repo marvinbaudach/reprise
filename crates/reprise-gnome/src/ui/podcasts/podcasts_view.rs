@@ -295,7 +295,8 @@ impl PodcastsView {
         let weak = Rc::downgrade(&view);
         view.module_off_state.connect_add(move || {
             if let Some(view) = weak.upgrade() {
-                if let Some(callback) = view.on_open_preferences.borrow().clone() {
+                let callback = view.on_open_preferences.borrow().clone();
+                if let Some(callback) = callback {
                     callback();
                 }
             }

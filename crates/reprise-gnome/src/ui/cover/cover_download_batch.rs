@@ -3,6 +3,7 @@ use std::path::PathBuf;
 use std::rc::{Rc, Weak};
 
 use gtk4::glib;
+use reprise_core::connectivity::Connectivity;
 use reprise_core::db::Db;
 use reprise_core::library::startup_tasks::{self, SignatureTask};
 
@@ -104,6 +105,8 @@ pub(in crate::ui) struct CoverDownloadBatch {
     player: Option<Rc<PlayerController>>,
     generation: Cell<u64>,
     running: Cell<bool>,
+    transient_failure_open: Cell<bool>,
+    network_return_pending: Cell<bool>,
     progress: Cell<BatchProgress>,
     progress_subscribers: ProgressSubscribers<BatchProgress>,
 }
@@ -122,6 +125,8 @@ impl CoverDownloadBatch {
             player: player.cloned(),
             generation: Cell::new(0),
             running: Cell::new(false),
+            transient_failure_open: Cell::new(false),
+            network_return_pending: Cell::new(false),
             progress: Cell::new(BatchProgress::idle()),
             progress_subscribers: ProgressSubscribers::default(),
         })
@@ -168,6 +173,8 @@ impl CoverDownloadBatch {
     }
 
     fn start_pass(self: &Rc<Self>, pass: startup_tasks::ExactTaskPass) {
+        self.transient_failure_open.set(false);
+        self.network_return_pending.set(false);
         let paths = {
             let conn = &self.conn;
             reprise_core::queries::query_live_track_paths(conn)
@@ -270,6 +277,9 @@ impl CoverDownloadBatch {
                     .await
                     .ok();
                 }
+                if outcome_requests_retry(&outcome) {
+                    this.transient_failure_open.set(true);
+                }
                 this.set_progress(this.progress.get().advance(&outcome));
             }
 
@@ -294,7 +304,47 @@ impl CoverDownloadBatch {
     pub(in crate::ui) fn cancel(&self) {
         self.generation.set(self.generation.get().wrapping_add(1));
         self.running.set(false);
+        self.transient_failure_open.set(false);
+        self.network_return_pending.set(false);
         self.set_progress(BatchProgress::idle());
+    }
+
+    pub(in crate::ui) fn wait_for_network_return(&self) {
+        self.network_return_pending.set(true);
+    }
+
+    pub(in crate::ui) fn on_connectivity_changed(
+        self: &Rc<Self>,
+        previous: Connectivity,
+        current: Connectivity,
+    ) {
+        if previous != Connectivity::Offline && current == Connectivity::Offline {
+            self.network_return_pending.set(false);
+        }
+        if previous != Connectivity::Offline || current != Connectivity::Online {
+            return;
+        }
+        if self.running.get() {
+            self.network_return_pending.set(true);
+            return;
+        }
+        if !self.runtime.enabled.get()
+            || !(self.network_return_pending.get()
+                || self.transient_failure_open.get()
+                || self.progress.get().state == BatchState::Failed)
+        {
+            return;
+        }
+        self.start_user_triggered();
+    }
+
+    fn finish_network_return(&self) -> bool {
+        if !self.network_return_pending.replace(false) {
+            return false;
+        }
+        self.runtime.enabled.get()
+            && (self.transient_failure_open.get()
+                || self.progress.get().state == BatchState::Failed)
     }
 
     fn set_progress(&self, progress: BatchProgress) {
@@ -315,6 +365,11 @@ impl CoverDownloadBatch {
     #[cfg(test)]
     pub(in crate::ui) fn generation_for_test(&self) -> u64 {
         self.generation.get()
+    }
+
+    #[cfg(test)]
+    pub(in crate::ui) fn running_for_test(&self) -> bool {
+        self.running.get()
     }
 }
 
@@ -339,6 +394,9 @@ impl Drop for ActiveRun {
         };
         if batch.generation.get() == self.generation {
             batch.running.set(false);
+            if batch.finish_network_return() {
+                batch.start_user_triggered();
+            }
         }
     }
 }
@@ -359,6 +417,10 @@ fn outcome_settles_track(outcome: &DownloadOutcome) -> bool {
     )
 }
 
+fn outcome_requests_retry(outcome: &DownloadOutcome) -> bool {
+    matches!(outcome, DownloadOutcome::TransientFailure)
+}
+
 fn start_request_allowed(running: bool) -> bool {
     !running
 }
@@ -371,7 +433,6 @@ mod tests {
         open_paths, outcome_settles_track, start_request_allowed, BatchProgress, BatchState,
     };
     use crate::ui::cover_download_worker::DownloadOutcome;
-
     #[test]
     fn progress_counts_checked_downloaded_and_unavailable_outcomes() {
         let progress = BatchProgress::running(3)

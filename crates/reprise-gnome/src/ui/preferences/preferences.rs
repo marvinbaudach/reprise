@@ -182,6 +182,10 @@ pub(in crate::ui) struct PreferencesContext {
     pub(super) connectivity: Cell<reprise_core::connectivity::Connectivity>,
     pub(super) on_artwork_permission_changed:
         RefCell<Option<super::preference_online_module_effects::ArtworkPermissionCallback>>,
+    pub(super) on_online_module_state_changed:
+        RefCell<Option<super::preference_online_module_effects::OnlineModuleStateCallback>>,
+    pub(super) online_source_state:
+        Cell<super::preference_online_module_effects::OnlineSourceState>,
     pub(in crate::ui) plugin_rows: RefCell<HashMap<&'static str, glib::WeakRef<gtk4::Widget>>>,
     pub(in crate::ui) pending_plugin_targets: RefCell<Vec<&'static str>>,
 }
@@ -254,6 +258,10 @@ impl PreferencesContext {
             location_city_row: RefCell::new(glib::WeakRef::new()),
             connectivity: Cell::new(reprise_core::connectivity::Connectivity::Online),
             on_artwork_permission_changed: RefCell::new(None),
+            on_online_module_state_changed: RefCell::new(None),
+            online_source_state: Cell::new(
+                super::preference_online_module_effects::OnlineSourceState::read(conn),
+            ),
             plugin_rows: RefCell::new(HashMap::new()),
             pending_plugin_targets: RefCell::new(Vec::new()),
         });

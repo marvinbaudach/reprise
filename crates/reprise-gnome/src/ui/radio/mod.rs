@@ -21,9 +21,11 @@ mod radio_filter_model;
 mod radio_live_cells;
 mod radio_location;
 mod radio_model;
+mod radio_preferences;
 mod radio_presentation;
 mod radio_reveal;
 mod radio_view;
+mod radio_view_copy;
 mod radio_view_search;
 #[cfg(test)]
 mod radio_view_test_hooks;

@@ -2,7 +2,7 @@ msgid ""
 msgstr ""
 "Project-Id-Version: Reprise 0.1.1\n"
 "Report-Msgid-Bugs-To: Marvin Baudach\n"
-"POT-Creation-Date: 2026-09-15 22:02+0200\n"
+"POT-Creation-Date: 2026-10-03 10:33+0200\n"
 "PO-Revision-Date: 2026-07-26 14:47+0200\n"
 "Last-Translator: Reprise contributors\n"
 "Language-Team: Spanish\n"
@@ -75,7 +75,7 @@ msgstr "El panel de información se cerró para ajustarse a la ventana"
 #: crates/reprise-gnome/src/ui/strings_issues.rs:47
 #: crates/reprise-gnome/src/ui/strings_library_doctor.rs:106
 #: crates/reprise-gnome/src/ui/strings_podcasts.rs:186
-#: crates/reprise-gnome/src/ui/strings_radio.rs:64
+#: crates/reprise-gnome/src/ui/strings_radio.rs:67
 msgid "Undo"
 msgstr "Deshacer"
 
@@ -359,7 +359,7 @@ msgstr ""
 #: crates/reprise-gnome/src/ui/strings.rs:245
 #: crates/reprise-gnome/src/ui/strings_sidebar.rs:40
 #: crates/reprise-gnome/src/ui/strings_podcasts.rs:132
-#: crates/reprise-gnome/src/ui/strings_radio.rs:41
+#: crates/reprise-gnome/src/ui/strings_radio.rs:44
 #: crates/reprise-gnome/src/ui/strings_rhythmbox.rs:30
 #: crates/reprise-gnome/src/ui/device_sync/device_sync_strings.rs:96
 #: crates/reprise-gnome/src/ui/sidebar/sidebar_issue_strings.rs:27
@@ -701,7 +701,7 @@ msgstr "No se pudieron quitar las pistas de la biblioteca"
 
 #: crates/reprise-gnome/src/ui/strings.rs:533
 #: crates/reprise-gnome/src/ui/strings_podcasts.rs:97
-#: crates/reprise-gnome/src/ui/strings_radio.rs:65
+#: crates/reprise-gnome/src/ui/strings_radio.rs:68
 #: crates/reprise-view/src/strings/scan.rs:7
 msgid "Retry"
 msgstr "Reintentar"
@@ -3634,7 +3634,7 @@ msgid "Preview"
 msgstr "Vista previa"
 
 #: crates/reprise-gnome/src/ui/strings_podcasts.rs:122
-#: crates/reprise-gnome/src/ui/strings_radio.rs:37
+#: crates/reprise-gnome/src/ui/strings_radio.rs:40
 msgid "Searching…"
 msgstr "Buscando…"
 
@@ -3716,7 +3716,7 @@ msgid "Resolving audio…"
 msgstr "Resolviendo el audio…"
 
 #: crates/reprise-gnome/src/ui/strings_podcasts.rs:149
-#: crates/reprise-gnome/src/ui/strings_radio.rs:56
+#: crates/reprise-gnome/src/ui/strings_radio.rs:59
 msgid "Play"
 msgstr "Reproducir"
 
@@ -4199,131 +4199,139 @@ msgstr ""
 "Busca emisoras en el directorio abierto radio-browser o pega la URL de una "
 "transmisión. No se obtiene nada hasta que hagas una búsqueda."
 
-#: crates/reprise-gnome/src/ui/strings_radio.rs:35
+#: crates/reprise-gnome/src/ui/strings_radio.rs:36
+msgid ""
+"Turn it back on in Online sources to search, add, and play stations again. "
+"Existing stations are kept."
+msgstr ""
+"Vuelve a activarlo en Fuentes en línea para buscar, añadir y reproducir "
+"emisoras. Las emisoras existentes se conservan."
+
+#: crates/reprise-gnome/src/ui/strings_radio.rs:38
 msgid "Add Station"
 msgstr "Añadir emisora"
 
-#: crates/reprise-gnome/src/ui/strings_radio.rs:36
+#: crates/reprise-gnome/src/ui/strings_radio.rs:39
 msgid "Search or paste a stream / M3U / PLS URL"
 msgstr "Busca o pega una URL de transmisión, M3U o PLS"
 
-#: crates/reprise-gnome/src/ui/strings_radio.rs:38
+#: crates/reprise-gnome/src/ui/strings_radio.rs:41
 msgid "RADIO-BROWSER.INFO"
 msgstr "RADIO-BROWSER.INFO"
 
-#: crates/reprise-gnome/src/ui/strings_radio.rs:39
+#: crates/reprise-gnome/src/ui/strings_radio.rs:42
 msgid "matches · by votes"
 msgstr "coincidencias · por votos"
 
-#: crates/reprise-gnome/src/ui/strings_radio.rs:40
+#: crates/reprise-gnome/src/ui/strings_radio.rs:43
 #: crates/reprise-gnome/src/ui/strings_sources.rs:11
 msgid "Add"
 msgstr "Añadir"
 
-#: crates/reprise-gnome/src/ui/strings_radio.rs:42
+#: crates/reprise-gnome/src/ui/strings_radio.rs:45
 msgid "Fetch logo & tags from radio-browser"
 msgstr "Obtener logo y etiquetas de radio-browser"
 
-#: crates/reprise-gnome/src/ui/strings_radio.rs:44
+#: crates/reprise-gnome/src/ui/strings_radio.rs:47
 msgid ""
 "Community database — a play sends the etiquette click count to radio-browser."
 msgstr ""
 "Base de datos comunitaria — una reproducción envía el recuento de clics de "
 "etiqueta a radio-browser."
 
-#: crates/reprise-gnome/src/ui/strings_radio.rs:45
+#: crates/reprise-gnome/src/ui/strings_radio.rs:48
 msgid "Radio stream detected"
 msgstr "Transmisión de radio detectada"
 
-#: crates/reprise-gnome/src/ui/strings_radio.rs:46
+#: crates/reprise-gnome/src/ui/strings_radio.rs:49
 msgid "Playlist file detected"
 msgstr "Archivo de lista de reproducción detectado"
 
-#: crates/reprise-gnome/src/ui/strings_radio.rs:47
+#: crates/reprise-gnome/src/ui/strings_radio.rs:50
 msgid "Could not preview this station"
 msgstr "No se pudo previsualizar esta emisora"
 
-#: crates/reprise-gnome/src/ui/strings_radio.rs:52
+#: crates/reprise-gnome/src/ui/strings_radio.rs:55
 msgid "Search needs a connection — paste a stream URL instead"
 msgstr "La búsqueda necesita conexión — pega la URL de una transmisión"
 
-#: crates/reprise-gnome/src/ui/strings_radio.rs:53
+#: crates/reprise-gnome/src/ui/strings_radio.rs:56
 msgid "Could not search for stations"
 msgstr "No se pudieron buscar emisoras"
 
-#: crates/reprise-gnome/src/ui/strings_radio.rs:54
+#: crates/reprise-gnome/src/ui/strings_radio.rs:57
 msgid "Could not add this station"
 msgstr "No se pudo añadir esta emisora"
 
-#: crates/reprise-gnome/src/ui/strings_radio.rs:55
+#: crates/reprise-gnome/src/ui/strings_radio.rs:58
 msgid "This station is already in Radio"
 msgstr "Esta emisora ya está en Radio"
 
-#: crates/reprise-gnome/src/ui/strings_radio.rs:57
+#: crates/reprise-gnome/src/ui/strings_radio.rs:60
 msgid "Stop"
 msgstr "Detener"
 
-#: crates/reprise-gnome/src/ui/strings_radio.rs:60
+#: crates/reprise-gnome/src/ui/strings_radio.rs:63
 msgid "No connection · Retry"
 msgstr "Sin conexión · Reintentar"
 
-#: crates/reprise-gnome/src/ui/strings_radio.rs:61
+#: crates/reprise-gnome/src/ui/strings_radio.rs:64
 msgid "Copy stream URL"
 msgstr "Copiar URL de transmisión"
 
-#: crates/reprise-gnome/src/ui/strings_radio.rs:62
+#: crates/reprise-gnome/src/ui/strings_radio.rs:65
 msgid "Edit station…"
 msgstr "Editar emisora…"
 
-#: crates/reprise-gnome/src/ui/strings_radio.rs:63
+#: crates/reprise-gnome/src/ui/strings_radio.rs:66
 msgid "Remove favorite"
 msgstr "Quitar favorito"
 
-#: crates/reprise-gnome/src/ui/strings_radio.rs:66
+#: crates/reprise-gnome/src/ui/strings_radio.rs:69
 msgid "Reconnecting live…"
 msgstr "Reconectando en directo…"
 
-#: crates/reprise-gnome/src/ui/strings_radio.rs:67
+#: crates/reprise-gnome/src/ui/strings_radio.rs:70
 msgid "This station isn't broadcasting right now"
 msgstr "Esta emisora no está emitiendo ahora"
 
-#: crates/reprise-gnome/src/ui/strings_radio.rs:68
+#: crates/reprise-gnome/src/ui/strings_radio.rs:71
 msgid "Search order"
 msgstr "Orden de búsqueda"
 
-#: crates/reprise-gnome/src/ui/strings_radio.rs:69
+#: crates/reprise-gnome/src/ui/strings_radio.rs:72
 msgid "Votes"
 msgstr "Votos"
 
-#: crates/reprise-gnome/src/ui/strings_radio.rs:70
+#: crates/reprise-gnome/src/ui/strings_radio.rs:73
 msgid "Name"
 msgstr "Nombre"
 
-#: crates/reprise-gnome/src/ui/strings_radio.rs:71
+#: crates/reprise-gnome/src/ui/strings_radio.rs:74
 msgid "Clicks"
 msgstr "Clics"
 
-#: crates/reprise-gnome/src/ui/strings_radio.rs:72
+#: crates/reprise-gnome/src/ui/strings_radio.rs:75
 msgid "—"
 msgstr "—"
 
-#: crates/reprise-gnome/src/ui/strings_radio.rs:73
+#: crates/reprise-gnome/src/ui/strings_radio.rs:76
 msgid "Report plays to the directory"
 msgstr "Informar de las reproducciones al directorio"
 
-#: crates/reprise-gnome/src/ui/strings_radio.rs:77
+#: crates/reprise-gnome/src/ui/strings_radio.rs:80
 msgid "Top voted"
 msgstr "Más votadas"
 
-#: crates/reprise-gnome/src/ui/strings_radio.rs:78
+#: crates/reprise-gnome/src/ui/strings_radio.rs:81
 msgid "Near you"
 msgstr "Cerca de ti"
 
-#: crates/reprise-gnome/src/ui/strings_radio.rs:79
+#: crates/reprise-gnome/src/ui/strings_radio.rs:82
 msgid "No location set"
 msgstr "Sin ubicación"
 
-#: crates/reprise-gnome/src/ui/strings_radio.rs:81
+#: crates/reprise-gnome/src/ui/strings_radio.rs:84
 msgid ""
 "Near you needs a city to look up stations. It is one setting, shared with "
 "Concerts and local podcasts."
@@ -4331,11 +4339,11 @@ msgstr ""
 "«Cerca de ti» necesita una ciudad para buscar emisoras. Es un único ajuste, "
 "compartido con Conciertos y los pódcast locales."
 
-#: crates/reprise-gnome/src/ui/strings_radio.rs:83
+#: crates/reprise-gnome/src/ui/strings_radio.rs:86
 msgid "Location has no country"
 msgstr "La ubicación no tiene país"
 
-#: crates/reprise-gnome/src/ui/strings_radio.rs:85
+#: crates/reprise-gnome/src/ui/strings_radio.rs:88
 msgid ""
 "Near you filters by country. The location from \"Use current location\" "
 "carries coordinates only — set a city to get one."
@@ -4343,11 +4351,11 @@ msgstr ""
 "«Cerca de ti» filtra por país. La ubicación de «Usar ubicación actual» solo "
 "lleva coordenadas: define una ciudad para obtener uno."
 
-#: crates/reprise-gnome/src/ui/strings_radio.rs:87
+#: crates/reprise-gnome/src/ui/strings_radio.rs:90
 msgid "Open Preferences › Location"
 msgstr "Abrir Preferencias › Ubicación"
 
-#: crates/reprise-gnome/src/ui/strings_radio.rs:92
+#: crates/reprise-gnome/src/ui/strings_radio.rs:95
 #: crates/reprise-gnome/src/ui/strings_filter.rs:39
 #, rust-format
 msgid "{count} station"
@@ -4355,24 +4363,24 @@ msgid_plural "{count} stations"
 msgstr[0] "{count} emisora"
 msgstr[1] "{count} emisoras"
 
-#: crates/reprise-gnome/src/ui/strings_radio.rs:113
+#: crates/reprise-gnome/src/ui/strings_radio.rs:116
 #, rust-format
 msgid "{visible} of {total} stations"
 msgstr "{visible} de {total} emisoras"
 
-#: crates/reprise-gnome/src/ui/strings_radio.rs:121
+#: crates/reprise-gnome/src/ui/strings_radio.rs:124
 #, rust-format
 msgid "{count} match · by votes"
 msgid_plural "{count} matches · by votes"
 msgstr[0] "{count} coincidencia · por votos"
 msgstr[1] "{count} coincidencias · por votos"
 
-#: crates/reprise-gnome/src/ui/strings_radio.rs:129
+#: crates/reprise-gnome/src/ui/strings_radio.rs:132
 #, rust-format
 msgid "Remove “{name}”"
 msgstr "Quitar «{name}»"
 
-#: crates/reprise-gnome/src/ui/strings_radio.rs:134
+#: crates/reprise-gnome/src/ui/strings_radio.rs:137
 #, rust-format
 msgid "Playlist file detected ({kind}) — resolved to {host}"
 msgstr ""

@@ -32,6 +32,9 @@ pub const RADIO_NO_STATIONS: &str = N_!("No stations yet");
 pub const RADIO_NO_STATIONS_DESCRIPTION: &str = N_!(
     "Find stations in the open radio-browser directory, or paste a stream URL. Nothing is fetched until you search."
 );
+pub const RADIO_SOURCE_OFF_DESCRIPTION: &str = N_!(
+    "Turn it back on in Online sources to search, add, and play stations again. Existing stations are kept."
+);
 pub const RADIO_DIALOG_TITLE: &str = N_!("Add Station");
 pub const RADIO_DIALOG_HINT: &str = N_!("Search or paste a stream / M3U / PLS URL");
 pub const RADIO_SEARCHING: &str = N_!("Searching…");

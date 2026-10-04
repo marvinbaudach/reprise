@@ -1,5 +1,6 @@
 //! Display-level coverage for online-module transitions at the composition seam.
 
+use std::cell::Cell;
 use std::rc::Rc;
 
 use gtk4::gio;
@@ -61,6 +62,42 @@ fn lyr_6_the_production_module_transition_starts_lyrics_once_even_offline() {
 
 #[test]
 #[ignore = "requires a display; run via xvfb-run"]
+fn an_unrelated_module_toggle_does_not_refresh_online_source_views() {
+    let _main_context = crate::ui::test_main_context::lock_main_context();
+    let handles = build_online_module_handles();
+    handles
+        .preferences
+        .set_online_sources_enabled(true)
+        .expect("enable online sources");
+    let refreshes = Rc::new(Cell::new(0));
+    handles.preferences.set_on_online_module_state_changed({
+        let refreshes = refreshes.clone();
+        move || refreshes.set(refreshes.get() + 1)
+    });
+
+    handles
+        .preferences
+        .set_module_enabled_for_test(
+            &reprise_core::modules::LIBRARY_DOCTOR_MODULE,
+            false,
+            "unrelated module refresh regression test",
+        )
+        .expect("disable Library Doctor");
+    assert_eq!(refreshes.get(), 0);
+
+    handles
+        .preferences
+        .set_module_enabled_for_test(
+            &reprise_core::modules::RADIO_MODULE,
+            false,
+            "online source refresh control test",
+        )
+        .expect("disable Radio");
+    assert_eq!(refreshes.get(), 1);
+}
+
+#[test]
+#[ignore = "requires a display; run via xvfb-run"]
 fn net_5_enabling_artwork_through_preferences_starts_the_wired_cover_pass() {
     let _main_context = crate::ui::test_main_context::lock_main_context();
     let handles = build_online_module_handles();
@@ -95,6 +132,64 @@ fn net_5_enabling_artwork_through_preferences_starts_the_wired_cover_pass() {
             surface_requests_before[2] + 1,
         ],
         "the production callback must reach every visible-artwork refresh seam"
+    );
+}
+
+#[test]
+#[ignore = "requires a display; run via xvfb-run"]
+fn net_7c_an_offline_artwork_enable_starts_when_the_network_returns() {
+    let _main_context = crate::ui::test_main_context::lock_main_context();
+    let handles = build_online_module_handles();
+    handles.preferences.set_connectivity(Connectivity::Offline);
+    let before = handles.cover_batch.generation_for_test();
+
+    handles
+        .preferences
+        .set_module_enabled_for_test(
+            &reprise_core::modules::ARTWORK_MODULE,
+            true,
+            "NET-7c offline Artwork enable test",
+        )
+        .expect("enable Artwork while offline");
+    assert_eq!(handles.cover_batch.generation_for_test(), before);
+
+    handles
+        .cover_batch
+        .on_connectivity_changed(Connectivity::Offline, Connectivity::Online);
+
+    assert_eq!(handles.cover_batch.generation_for_test(), before + 1);
+}
+
+#[test]
+#[ignore = "requires a display; run via xvfb-run"]
+fn src_10a_enabling_radio_through_preferences_recovers_the_open_view() {
+    let _main_context = crate::ui::test_main_context::lock_main_context();
+    let handles = build_online_module_handles();
+    reprise_core::online_sources::set_enabled(&handles.preferences.conn, true).unwrap();
+    // Through the transition, not the DB: Preferences remembers the source
+    // state it last published, so a direct write would hide the later enable.
+    handles
+        .preferences
+        .set_module_enabled_for_test(&reprise_core::modules::RADIO_MODULE, false, "SRC-10a setup")
+        .expect("disable Radio");
+    let radio = handles.radio();
+
+    assert!(radio.module_off_is_visible_for_test());
+    radio.open_module_preferences_for_test();
+    assert!(handles.preferences.preferences_dialog().is_some());
+
+    handles
+        .preferences
+        .set_module_enabled_for_test(
+            &reprise_core::modules::RADIO_MODULE,
+            true,
+            "SRC-10a production transition test",
+        )
+        .expect("enable Radio");
+
+    assert!(
+        radio.empty_state_is_visible_for_test(),
+        "the already-open Radio view must recover through the Preferences transition"
     );
 }
 

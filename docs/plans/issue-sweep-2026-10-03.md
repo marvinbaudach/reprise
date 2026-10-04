@@ -25,7 +25,7 @@ A triage of the open issues on 2026-10-03 left five that can be fixed now: #1041
 #1051 waits until `feature/android-cover-retry-and-repaint` has landed. #998 is fixed on that
 branch.
 
-## Parallelität
+## Parallelism
 
 Three strands with disjoint file groups. Strand files carry the tasks.
 

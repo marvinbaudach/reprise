@@ -2,6 +2,8 @@
 
 use std::rc::Rc;
 
+use gtk4::prelude::*;
+
 use super::radio_view::{RadioView, Shared};
 
 pub(in crate::ui) struct RadioTestHandle {
@@ -47,5 +49,17 @@ impl RadioTestHandle {
             .borrow()
             .as_ref()
             .is_some_and(|dialog| dialog.is_searching_for_test())
+    }
+
+    pub(in crate::ui) fn module_off_is_visible_for_test(&self) -> bool {
+        self.shared.stack.visible_child_name().as_deref() == Some("module-off")
+    }
+
+    pub(in crate::ui) fn empty_state_is_visible_for_test(&self) -> bool {
+        self.shared.stack.visible_child_name().as_deref() == Some("empty")
+    }
+
+    pub(in crate::ui) fn open_module_preferences_for_test(&self) {
+        self.shared.module_off_state.button().emit_clicked();
     }
 }

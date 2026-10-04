@@ -7,7 +7,7 @@ msgid ""
 msgstr ""
 "Project-Id-Version: Reprise 0.1.0\n"
 "Report-Msgid-Bugs-To: Marvin Baudach\n"
-"POT-Creation-Date: 2026-09-15 22:02+0200\n"
+"POT-Creation-Date: 2026-10-03 10:33+0200\n"
 "PO-Revision-Date: 2026-07-20 11:38+0200\n"
 "Last-Translator: Reprise contributors\n"
 "Language-Team: French\n"
@@ -75,7 +75,7 @@ msgstr ""
 #: crates/reprise-gnome/src/ui/strings_issues.rs:47
 #: crates/reprise-gnome/src/ui/strings_library_doctor.rs:106
 #: crates/reprise-gnome/src/ui/strings_podcasts.rs:186
-#: crates/reprise-gnome/src/ui/strings_radio.rs:64
+#: crates/reprise-gnome/src/ui/strings_radio.rs:67
 msgid "Undo"
 msgstr "Annuler"
 
@@ -356,7 +356,7 @@ msgstr ""
 #: crates/reprise-gnome/src/ui/strings.rs:245
 #: crates/reprise-gnome/src/ui/strings_sidebar.rs:40
 #: crates/reprise-gnome/src/ui/strings_podcasts.rs:132
-#: crates/reprise-gnome/src/ui/strings_radio.rs:41
+#: crates/reprise-gnome/src/ui/strings_radio.rs:44
 #: crates/reprise-gnome/src/ui/strings_rhythmbox.rs:30
 #: crates/reprise-gnome/src/ui/device_sync/device_sync_strings.rs:96
 #: crates/reprise-gnome/src/ui/sidebar/sidebar_issue_strings.rs:27
@@ -689,7 +689,7 @@ msgstr "Impossible de retirer les pistes de la bibliothèque"
 
 #: crates/reprise-gnome/src/ui/strings.rs:533
 #: crates/reprise-gnome/src/ui/strings_podcasts.rs:97
-#: crates/reprise-gnome/src/ui/strings_radio.rs:65
+#: crates/reprise-gnome/src/ui/strings_radio.rs:68
 #: crates/reprise-view/src/strings/scan.rs:7
 msgid "Retry"
 msgstr "Réessayer"
@@ -3497,7 +3497,7 @@ msgid "Preview"
 msgstr ""
 
 #: crates/reprise-gnome/src/ui/strings_podcasts.rs:122
-#: crates/reprise-gnome/src/ui/strings_radio.rs:37
+#: crates/reprise-gnome/src/ui/strings_radio.rs:40
 msgid "Searching…"
 msgstr ""
 
@@ -3573,7 +3573,7 @@ msgid "Resolving audio…"
 msgstr ""
 
 #: crates/reprise-gnome/src/ui/strings_podcasts.rs:149
-#: crates/reprise-gnome/src/ui/strings_radio.rs:56
+#: crates/reprise-gnome/src/ui/strings_radio.rs:59
 msgid "Play"
 msgstr "Lecture"
 
@@ -4042,149 +4042,155 @@ msgid ""
 "Nothing is fetched until you search."
 msgstr ""
 
-#: crates/reprise-gnome/src/ui/strings_radio.rs:35
-msgid "Add Station"
-msgstr ""
-
 #: crates/reprise-gnome/src/ui/strings_radio.rs:36
-msgid "Search or paste a stream / M3U / PLS URL"
+msgid ""
+"Turn it back on in Online sources to search, add, and play stations again. "
+"Existing stations are kept."
 msgstr ""
 
 #: crates/reprise-gnome/src/ui/strings_radio.rs:38
-msgid "RADIO-BROWSER.INFO"
+msgid "Add Station"
 msgstr ""
 
 #: crates/reprise-gnome/src/ui/strings_radio.rs:39
+msgid "Search or paste a stream / M3U / PLS URL"
+msgstr ""
+
+#: crates/reprise-gnome/src/ui/strings_radio.rs:41
+msgid "RADIO-BROWSER.INFO"
+msgstr ""
+
+#: crates/reprise-gnome/src/ui/strings_radio.rs:42
 msgid "matches · by votes"
 msgstr ""
 
-#: crates/reprise-gnome/src/ui/strings_radio.rs:40
+#: crates/reprise-gnome/src/ui/strings_radio.rs:43
 #: crates/reprise-gnome/src/ui/strings_sources.rs:11
 msgid "Add"
 msgstr ""
 
-#: crates/reprise-gnome/src/ui/strings_radio.rs:42
+#: crates/reprise-gnome/src/ui/strings_radio.rs:45
 msgid "Fetch logo & tags from radio-browser"
 msgstr ""
 
-#: crates/reprise-gnome/src/ui/strings_radio.rs:44
+#: crates/reprise-gnome/src/ui/strings_radio.rs:47
 msgid ""
 "Community database — a play sends the etiquette click count to radio-browser."
 msgstr ""
 
-#: crates/reprise-gnome/src/ui/strings_radio.rs:45
+#: crates/reprise-gnome/src/ui/strings_radio.rs:48
 msgid "Radio stream detected"
 msgstr ""
 
-#: crates/reprise-gnome/src/ui/strings_radio.rs:46
+#: crates/reprise-gnome/src/ui/strings_radio.rs:49
 msgid "Playlist file detected"
 msgstr ""
 
-#: crates/reprise-gnome/src/ui/strings_radio.rs:47
+#: crates/reprise-gnome/src/ui/strings_radio.rs:50
 msgid "Could not preview this station"
 msgstr ""
 
-#: crates/reprise-gnome/src/ui/strings_radio.rs:52
+#: crates/reprise-gnome/src/ui/strings_radio.rs:55
 msgid "Search needs a connection — paste a stream URL instead"
 msgstr ""
 
-#: crates/reprise-gnome/src/ui/strings_radio.rs:53
+#: crates/reprise-gnome/src/ui/strings_radio.rs:56
 msgid "Could not search for stations"
 msgstr ""
 
-#: crates/reprise-gnome/src/ui/strings_radio.rs:54
+#: crates/reprise-gnome/src/ui/strings_radio.rs:57
 msgid "Could not add this station"
 msgstr ""
 
-#: crates/reprise-gnome/src/ui/strings_radio.rs:55
+#: crates/reprise-gnome/src/ui/strings_radio.rs:58
 msgid "This station is already in Radio"
 msgstr ""
 
-#: crates/reprise-gnome/src/ui/strings_radio.rs:57
+#: crates/reprise-gnome/src/ui/strings_radio.rs:60
 msgid "Stop"
 msgstr ""
 
-#: crates/reprise-gnome/src/ui/strings_radio.rs:60
+#: crates/reprise-gnome/src/ui/strings_radio.rs:63
 msgid "No connection · Retry"
 msgstr ""
 
-#: crates/reprise-gnome/src/ui/strings_radio.rs:61
+#: crates/reprise-gnome/src/ui/strings_radio.rs:64
 msgid "Copy stream URL"
 msgstr ""
 
-#: crates/reprise-gnome/src/ui/strings_radio.rs:62
+#: crates/reprise-gnome/src/ui/strings_radio.rs:65
 msgid "Edit station…"
 msgstr ""
 
-#: crates/reprise-gnome/src/ui/strings_radio.rs:63
+#: crates/reprise-gnome/src/ui/strings_radio.rs:66
 msgid "Remove favorite"
 msgstr ""
 
-#: crates/reprise-gnome/src/ui/strings_radio.rs:66
+#: crates/reprise-gnome/src/ui/strings_radio.rs:69
 msgid "Reconnecting live…"
 msgstr ""
 
-#: crates/reprise-gnome/src/ui/strings_radio.rs:67
+#: crates/reprise-gnome/src/ui/strings_radio.rs:70
 msgid "This station isn't broadcasting right now"
 msgstr ""
 
-#: crates/reprise-gnome/src/ui/strings_radio.rs:68
+#: crates/reprise-gnome/src/ui/strings_radio.rs:71
 msgid "Search order"
 msgstr ""
 
-#: crates/reprise-gnome/src/ui/strings_radio.rs:69
+#: crates/reprise-gnome/src/ui/strings_radio.rs:72
 msgid "Votes"
 msgstr ""
 
-#: crates/reprise-gnome/src/ui/strings_radio.rs:70
+#: crates/reprise-gnome/src/ui/strings_radio.rs:73
 msgid "Name"
 msgstr ""
 
-#: crates/reprise-gnome/src/ui/strings_radio.rs:71
+#: crates/reprise-gnome/src/ui/strings_radio.rs:74
 msgid "Clicks"
 msgstr ""
 
-#: crates/reprise-gnome/src/ui/strings_radio.rs:72
+#: crates/reprise-gnome/src/ui/strings_radio.rs:75
 msgid "—"
 msgstr ""
 
-#: crates/reprise-gnome/src/ui/strings_radio.rs:73
+#: crates/reprise-gnome/src/ui/strings_radio.rs:76
 msgid "Report plays to the directory"
 msgstr ""
 
-#: crates/reprise-gnome/src/ui/strings_radio.rs:77
+#: crates/reprise-gnome/src/ui/strings_radio.rs:80
 msgid "Top voted"
 msgstr ""
 
-#: crates/reprise-gnome/src/ui/strings_radio.rs:78
+#: crates/reprise-gnome/src/ui/strings_radio.rs:81
 msgid "Near you"
 msgstr ""
 
-#: crates/reprise-gnome/src/ui/strings_radio.rs:79
+#: crates/reprise-gnome/src/ui/strings_radio.rs:82
 msgid "No location set"
 msgstr ""
 
-#: crates/reprise-gnome/src/ui/strings_radio.rs:81
+#: crates/reprise-gnome/src/ui/strings_radio.rs:84
 msgid ""
 "Near you needs a city to look up stations. It is one setting, shared with "
 "Concerts and local podcasts."
 msgstr ""
 
-#: crates/reprise-gnome/src/ui/strings_radio.rs:83
+#: crates/reprise-gnome/src/ui/strings_radio.rs:86
 msgid "Location has no country"
 msgstr ""
 
-#: crates/reprise-gnome/src/ui/strings_radio.rs:85
+#: crates/reprise-gnome/src/ui/strings_radio.rs:88
 msgid ""
 "Near you filters by country. The location from \"Use current location\" "
 "carries coordinates only — set a city to get one."
 msgstr ""
 
-#: crates/reprise-gnome/src/ui/strings_radio.rs:87
+#: crates/reprise-gnome/src/ui/strings_radio.rs:90
 msgid "Open Preferences › Location"
 msgstr ""
 
-#: crates/reprise-gnome/src/ui/strings_radio.rs:92
+#: crates/reprise-gnome/src/ui/strings_radio.rs:95
 #: crates/reprise-gnome/src/ui/strings_filter.rs:39
 #, rust-format
 msgid "{count} station"
@@ -4192,24 +4198,24 @@ msgid_plural "{count} stations"
 msgstr[0] ""
 msgstr[1] ""
 
-#: crates/reprise-gnome/src/ui/strings_radio.rs:113
+#: crates/reprise-gnome/src/ui/strings_radio.rs:116
 #, rust-format
 msgid "{visible} of {total} stations"
 msgstr ""
 
-#: crates/reprise-gnome/src/ui/strings_radio.rs:121
+#: crates/reprise-gnome/src/ui/strings_radio.rs:124
 #, rust-format
 msgid "{count} match · by votes"
 msgid_plural "{count} matches · by votes"
 msgstr[0] ""
 msgstr[1] ""
 
-#: crates/reprise-gnome/src/ui/strings_radio.rs:129
+#: crates/reprise-gnome/src/ui/strings_radio.rs:132
 #, rust-format
 msgid "Remove “{name}”"
 msgstr ""
 
-#: crates/reprise-gnome/src/ui/strings_radio.rs:134
+#: crates/reprise-gnome/src/ui/strings_radio.rs:137
 #, rust-format
 msgid "Playlist file detected ({kind}) — resolved to {host}"
 msgstr ""
