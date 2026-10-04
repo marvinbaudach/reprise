@@ -53,6 +53,7 @@ mod tests {
             "sleep_timer::wire_sleep_timer",
             "nav_back::wire_nav_back",
             "section_search::wire_section_search",
+            "quick_open_wiring::wire_quick_open",
             "clear_all::wire_clear_all",
             "listeners::wire_listeners",
             "view_session::wire_view_session",

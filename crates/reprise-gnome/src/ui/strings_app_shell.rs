@@ -15,6 +15,7 @@ pub const NAVIGATION: &str = N_!("Navigation");
 pub const PLAY_OR_PAUSE: &str = N_!("Play or Pause");
 pub const INCREASE_VOLUME: &str = N_!("Increase Volume");
 pub const DECREASE_VOLUME: &str = N_!("Decrease Volume");
+pub const QUICK_OPEN: &str = N_!("Quick Open");
 pub const SEARCH_LIBRARY: &str = N_!("Search Library");
 pub const ESC_TO_CLOSE: &str = N_!("Esc to close");
 pub const TOGGLE_COMPACT_VIEW: &str = N_!("Toggle Compact View");

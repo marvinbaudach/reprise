@@ -27,6 +27,7 @@ pub mod filter_chip;
 pub mod lyrics;
 pub mod playlists;
 pub mod queue;
+pub mod quick_open;
 pub mod search_chip;
 pub mod search_scope;
 pub mod sleep_timer;
