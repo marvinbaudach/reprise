@@ -59,7 +59,7 @@ impl MusicLibrary {
         Ok(spectrogram.map(|spectrogram| AndroidTrackSpectrogram {
             band_count: SPECTROGRAM_BAND_COUNT as u32,
             frame_rate_hz: SPECTROGRAM_FRAME_RATE_HZ,
-            cells: spectrogram.cells().to_vec(),
+            cells: spectrogram.into_cells(),
         }))
     }
 
