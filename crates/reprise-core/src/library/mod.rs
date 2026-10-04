@@ -7,6 +7,7 @@ pub mod lastfm_stats;
 pub mod library_doctor;
 pub mod listenbrainz;
 pub mod loudness;
+pub mod loudness_store;
 pub mod m3u;
 pub(crate) mod mounts;
 pub mod path_guard;

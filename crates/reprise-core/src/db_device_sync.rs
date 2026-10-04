@@ -457,7 +457,7 @@ mod tests {
         let version: i64 = conn
             .query_row("PRAGMA user_version", [], |row| row.get(0))
             .unwrap();
-        assert_eq!(version, 88);
+        assert_eq!(version, crate::db::SUPPORTED_SCHEMA_VERSION);
     }
 
     fn open_v67_device_sync_shape() -> Connection {

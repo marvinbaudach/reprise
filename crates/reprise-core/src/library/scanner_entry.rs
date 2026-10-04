@@ -111,21 +111,31 @@ pub(super) struct KnownRow {
     missing: bool,
     removed: bool,
     untagged: bool,
+    tag_scan_version: i64,
 }
+
+type KnownRowColumns = (i64, Option<i64>, Option<i64>, i64, i64);
 
 fn known_row(tx: &rusqlite::Transaction, path_str: &str) -> KnownRow {
     // Query failure is deliberately indistinguishable from an absent row:
     // both preserve the scanner's unknown-mtime retry behaviour through the
     // default `KnownRow`. Do not replace this `.ok()` with error propagation.
-    let known: Option<(i64, Option<i64>, Option<i64>, i64)> = tx
+    let known: Option<KnownRowColumns> = tx
         .prepare_cached(
-            "SELECT file_mtime, missing_since, removed_at, untagged FROM tracks WHERE path = ?1",
+            "SELECT file_mtime, missing_since, removed_at, untagged, tag_scan_version
+             FROM tracks WHERE path = ?1",
         )
         .ok()
         .and_then(|mut statement| {
             statement
                 .query_row([path_str], |row| {
-                    Ok((row.get(0)?, row.get(1)?, row.get(2)?, row.get(3)?))
+                    Ok((
+                        row.get(0)?,
+                        row.get(1)?,
+                        row.get(2)?,
+                        row.get(3)?,
+                        row.get(4)?,
+                    ))
                 })
                 .ok()
         });
@@ -139,12 +149,13 @@ fn known_row(tx: &rusqlite::Transaction, path_str: &str) -> KnownRow {
         // recorded path outranks that removal (evidence rule, Beschluss
         // 7/12), so this reappearance check must fire for a tombstoned row
         // too, not only a missing one.
-        removed: known.is_some_and(|(_, _, removed_at, _)| removed_at.is_some()),
+        removed: known.is_some_and(|(_, _, removed_at, ..)| removed_at.is_some()),
         // A present row still flagged `untagged` (an earlier scan couldn't parse
         // its container) must NOT take the unchanged-mtime fast path: excluding
         // it here drops it through to re-read + `repair_damaged_tags`, so a
         // library imported before auto-repair existed stops staying untagged.
-        untagged: known.is_some_and(|(_, _, _, untagged)| untagged != 0),
+        untagged: known.is_some_and(|(_, _, _, untagged, _)| untagged != 0),
+        tag_scan_version: known.map_or(0, |(_, _, _, _, version)| version),
     }
 }
 
@@ -214,7 +225,10 @@ pub(super) fn classify_entry(
         return Ok(EntryPlan::Skip(EntryOutcome::Excluded));
     }
     let known = known_row(scan.tx, &path_str);
-    if known.mtime == Some(facts.mtime) && !known.untagged {
+    if known.mtime == Some(facts.mtime)
+        && known.tag_scan_version >= super::TAG_SCAN_VERSION
+        && !known.untagged
+    {
         if known.missing || known.removed {
             return restore_present_row(scan, path, &path_str, known).map(EntryPlan::Skip);
         }
@@ -371,8 +385,10 @@ fn apply_move(
 const UPSERT_TRACK_SQL: &str =
     "INSERT INTO tracks (path, title, artist, album, album_artist, artist_mbid,
                            year, track_no, disc_no, genre, duration_ms, bitrate_kbps, added_at,
-                           file_mtime, file_size, device, inode, mount_point, untagged)
-                         VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11,?12,?13,?14,?15,?16,?17,?18,?19)
+                           file_mtime, file_size, device, inode, mount_point, untagged,
+                           rg_track_gain, rg_track_peak, rg_album_gain, rg_album_peak,
+                           tag_scan_version)
+                         VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11,?12,?13,?14,?15,?16,?17,?18,?19,?20,?21,?22,?23,?24)
                          ON CONFLICT(path) DO UPDATE SET
                            title=?2, artist=?3, album=?4, album_artist=?5,
                            artist_mbid=COALESCE(?6, artist_mbid),
@@ -381,7 +397,8 @@ const UPSERT_TRACK_SQL: &str =
                            duration_ms=?11, bitrate_kbps=?12, file_mtime=?14,
                            missing_since=NULL, missing_reason=NULL, removed_at=NULL,
                            file_size=?15, device=?16, inode=?17, mount_point=?18,
-                           untagged=?19";
+                           untagged=?19, rg_track_gain=?20, rg_track_peak=?21,
+                           rg_album_gain=?22, rg_album_peak=?23, tag_scan_version=?24";
 
 // `ON CONFLICT(path)` fires whenever this path already
 // has a row — including one still carrying `removed_at`
@@ -410,6 +427,11 @@ fn upsert_track(
         duration_ms,
         bitrate_kbps,
         untagged,
+        rg_track_gain,
+        rg_track_peak,
+        rg_album_gain,
+        rg_album_peak,
+        tag_scan_version,
     ) = params;
     scan.tx
         .prepare_cached(UPSERT_TRACK_SQL)?
@@ -433,6 +455,11 @@ fn upsert_track(
             facts.inode,
             imported.mount_point,
             untagged,
+            rg_track_gain,
+            rg_track_peak,
+            rg_album_gain,
+            rg_album_peak,
+            tag_scan_version,
         ])?;
     Ok(())
 }

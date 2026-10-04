@@ -25,6 +25,7 @@ mod scan_writer;
 pub use scan_writer::ScanWriter;
 
 const AUDIO_EXTENSIONS: [&str; 7] = ["mp3", "flac", "ogg", "opus", "m4a", "aac", "wav"];
+const TAG_SCAN_VERSION: i64 = 1;
 
 type FileStat = (u64, Option<(u64, u64)>);
 type FileMetadata = (i64, Option<FileStat>);
@@ -82,6 +83,11 @@ type TagParams<'a> = (
     i64,
     Option<i32>,
     i64,
+    Option<f64>,
+    Option<f64>,
+    Option<f64>,
+    Option<f64>,
+    i64,
 );
 
 fn now_unix() -> i64 {
@@ -116,6 +122,11 @@ fn tag_param_values<'a>(
         meta.duration_ms,
         meta.bitrate_kbps,
         i64::from(untagged),
+        meta.replay_gain.track_gain_db,
+        meta.replay_gain.track_peak,
+        meta.replay_gain.album_gain_db,
+        meta.replay_gain.album_peak,
+        TAG_SCAN_VERSION,
     )
 }
 
@@ -710,6 +721,10 @@ mod mobile_sync_path_tests;
 #[cfg(test)]
 #[path = "scanner_metadata_persistence_tests.rs"]
 mod metadata_persistence_tests;
+
+#[cfg(test)]
+#[path = "scanner_loudness_tests.rs"]
+mod loudness_tests;
 
 // Task 1.7: the episode/dismiss/directory-dedup test suite lives in its own
 // file, same 800-line reason as every other `_tests.rs` sibling here.
