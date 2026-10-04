@@ -55,18 +55,22 @@ pub fn list(db: &Db, json_output: bool) -> Result<(), CliError> {
 /// per-window cap.
 fn all_playlist_tracks(db: &Db, id: i64) -> Result<Vec<Track>, CliError> {
     let source = ViewSource::Playlist(id);
+    let view = queries::TrackViewQuery::new(&source);
     let mut tracks = Vec::new();
     let mut offset = 0i64;
     loop {
         let page = queries::query_track_window(
             db,
-            &source,
-            "playlist_order",
-            "asc",
-            "",
-            offset,
-            PAGE,
-            &[],
+            &view,
+            queries::TrackSort {
+                field: "playlist_order",
+                dir: "asc",
+            },
+            queries::RowWindow {
+                offset,
+                limit: PAGE,
+            },
+            queries::AiColumn::Project,
         )?;
         let fetched = page.len() as i64;
         tracks.extend(page);

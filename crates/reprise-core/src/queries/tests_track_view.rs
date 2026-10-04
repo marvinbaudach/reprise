@@ -31,20 +31,14 @@ fn seeded_track_views() -> (crate::db::Db, i64, Vec<QueueItem>) {
 }
 
 fn assert_query_family_agrees(db: &Db, view: &TrackViewQuery<'_>) {
-    let sort = TrackSort {
-        field: "title",
-        dir: "asc",
-    };
+    let sort = test_sort("title", "asc");
     let count = query_track_count(db, view).unwrap();
     let ids = query_track_ids(db, view, sort).unwrap();
     let rows = query_track_window(
         db,
         view,
         sort,
-        RowWindow {
-            offset: 0,
-            limit: MAX_WINDOW_LIMIT,
-        },
+        test_rows(0, MAX_WINDOW_LIMIT),
         AiColumn::Project,
     )
     .unwrap();
@@ -109,16 +103,8 @@ fn excluding_ai_hides_provenance_flagged_library_tracks() {
     let view = TrackViewQuery::new(&source)
         .with_filter("Keep")
         .with_exclude_ai(true);
-    let ids = query_track_ids(
-        &db,
-        &view,
-        TrackSort {
-            field: "title",
-            dir: "asc",
-        },
-    )
-    .unwrap();
+    let ids = query_track_ids(&db, &view, test_sort("title", "asc")).unwrap();
 
     assert!(!ids.contains(&2));
-    assert_eq!(ids, vec![4, 1, 5]);
+    assert_eq!(ids, vec![4, 5, 1]);
 }

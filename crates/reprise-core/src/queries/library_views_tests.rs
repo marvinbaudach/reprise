@@ -1,5 +1,7 @@
 use super::*;
-use crate::queries::{query_track_count, query_track_ids, query_track_window, WindowRange};
+use crate::queries::{
+    query_track_count, query_track_ids, query_track_window, test_rows, test_sort, WindowRange,
+};
 use crate::view_source::ViewSource;
 
 fn seeded_library() -> crate::db::Db {
@@ -135,17 +137,31 @@ fn album_source_count_window_and_ids_select_the_exact_album_artist_group() {
         album_artist: "solo".into(),
     };
 
-    assert_eq!(query_track_count(&db, &source, "", &[]).unwrap(), 2);
     assert_eq!(
-        query_track_window(&db, &source, "title", "desc", "", 0, 20, &[])
-            .unwrap()
-            .into_iter()
-            .map(|track| track.title)
-            .collect::<Vec<_>>(),
+        query_track_count(&db, &TrackViewQuery::new(&source)).unwrap(),
+        2
+    );
+    assert_eq!(
+        query_track_window(
+            &db,
+            &TrackViewQuery::new(&source),
+            test_sort("title", "desc"),
+            test_rows(0, 20),
+            AiColumn::Project
+        )
+        .unwrap()
+        .into_iter()
+        .map(|track| track.title)
+        .collect::<Vec<_>>(),
         ["B", "A"]
     );
     assert_eq!(
-        query_track_ids(&db, &source, "title", "asc", "A", &[]).unwrap(),
+        query_track_ids(
+            &db,
+            &TrackViewQuery::new(&source).with_filter("A"),
+            test_sort("title", "asc")
+        )
+        .unwrap(),
         [1]
     );
 }
@@ -248,17 +264,31 @@ fn artist_source_count_window_and_ids_select_the_exact_artist_group() {
     let db = seeded_library();
     let source = ViewSource::Artist(" SOLO ".into());
 
-    assert_eq!(query_track_count(&db, &source, "", &[]).unwrap(), 2);
     assert_eq!(
-        query_track_window(&db, &source, "title", "desc", "", 0, 20, &[])
-            .unwrap()
-            .into_iter()
-            .map(|track| track.title)
-            .collect::<Vec<_>>(),
+        query_track_count(&db, &TrackViewQuery::new(&source)).unwrap(),
+        2
+    );
+    assert_eq!(
+        query_track_window(
+            &db,
+            &TrackViewQuery::new(&source),
+            test_sort("title", "desc"),
+            test_rows(0, 20),
+            AiColumn::Project
+        )
+        .unwrap()
+        .into_iter()
+        .map(|track| track.title)
+        .collect::<Vec<_>>(),
         ["B", "A"]
     );
     assert_eq!(
-        query_track_ids(&db, &source, "title", "asc", "A", &[]).unwrap(),
+        query_track_ids(
+            &db,
+            &TrackViewQuery::new(&source).with_filter("A"),
+            test_sort("title", "asc")
+        )
+        .unwrap(),
         [1]
     );
 }
@@ -289,9 +319,15 @@ fn albums_include_year_duration_added_and_play_count_aggregates() {
 fn artist_source_matches_by_effective_album_artist() {
     let db = seeded_library();
     let solo = ViewSource::Artist(" SOLO ".into());
-    assert_eq!(query_track_count(&db, &solo, "", &[]).unwrap(), 2);
+    assert_eq!(
+        query_track_count(&db, &TrackViewQuery::new(&solo)).unwrap(),
+        2
+    );
     let va = ViewSource::Artist("Various Artists".into());
-    assert_eq!(query_track_count(&db, &va, "", &[]).unwrap(), 2);
+    assert_eq!(
+        query_track_count(&db, &TrackViewQuery::new(&va)).unwrap(),
+        2
+    );
 }
 
 #[test]
@@ -435,7 +471,11 @@ fn artist_album_and_untagged_windows_partition_the_artists_tracks() {
 
     let albums = query_artist_albums(&db, "Solo", full_window()).unwrap();
     let untagged = query_artist_untagged_tracks(&db, "Solo", full_window()).unwrap();
-    let artist_total = query_track_count(&db, &ViewSource::Artist("Solo".into()), "", &[]).unwrap();
+    let artist_total = query_track_count(
+        &db,
+        &TrackViewQuery::new(&ViewSource::Artist("Solo".into())),
+    )
+    .unwrap();
 
     assert_eq!(
         untagged

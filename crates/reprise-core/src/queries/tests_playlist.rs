@@ -30,13 +30,10 @@ fn playlist_window_follows_position_order_by_default() {
 
     let rows = query_track_window(
         &db,
-        &ViewSource::Playlist(playlist_id),
-        "playlist_order",
-        "asc",
-        "",
-        0,
-        10,
-        &[],
+        &TrackViewQuery::new(&ViewSource::Playlist(playlist_id)),
+        test_sort("playlist_order", "asc"),
+        test_rows(0, 10),
+        AiColumn::Project,
     )
     .unwrap();
     let ids: Vec<i64> = rows.iter().map(|t| t.id).collect();
@@ -51,19 +48,20 @@ fn playlist_window_shows_duplicates_as_separate_rows() {
 
     let rows = query_track_window(
         &db,
-        &ViewSource::Playlist(playlist_id),
-        "playlist_order",
-        "asc",
-        "",
-        0,
-        10,
-        &[],
+        &TrackViewQuery::new(&ViewSource::Playlist(playlist_id)),
+        test_sort("playlist_order", "asc"),
+        test_rows(0, 10),
+        AiColumn::Project,
     )
     .unwrap();
     let ids: Vec<i64> = rows.iter().map(|t| t.id).collect();
     assert_eq!(ids, vec![1, 2, 1]);
     assert_eq!(
-        query_track_count(&db, &ViewSource::Playlist(playlist_id), "", &[]).unwrap(),
+        query_track_count(
+            &db,
+            &TrackViewQuery::new(&ViewSource::Playlist(playlist_id))
+        )
+        .unwrap(),
         3
     );
 }
@@ -78,13 +76,10 @@ fn playlist_window_honors_an_explicit_column_sort_override() {
     // playlist order.
     let rows = query_track_window(
         &db,
-        &ViewSource::Playlist(playlist_id),
-        "title",
-        "asc",
-        "",
-        0,
-        10,
-        &[],
+        &TrackViewQuery::new(&ViewSource::Playlist(playlist_id)),
+        test_sort("title", "asc"),
+        test_rows(0, 10),
+        AiColumn::Project,
     )
     .unwrap();
     let titles: Vec<&str> = rows.iter().map(|t| t.title.as_str()).collect();
@@ -105,13 +100,10 @@ fn playlist_window_keeps_missing_tracks_at_their_playlist_positions() {
 
     let rows = query_track_window(
         &db,
-        &ViewSource::Playlist(playlist_id),
-        "playlist_order",
-        "asc",
-        "",
-        0,
-        10,
-        &[],
+        &TrackViewQuery::new(&ViewSource::Playlist(playlist_id)),
+        test_sort("playlist_order", "asc"),
+        test_rows(0, 10),
+        AiColumn::Project,
     )
     .unwrap();
     let rows: Vec<(i64, Option<i64>, Option<i64>)> = rows
@@ -141,7 +133,11 @@ fn playlist_count_includes_missing_members() {
     playlists::add_tracks(&db, playlist_id, &[1, 2, 3]).unwrap();
 
     assert_eq!(
-        query_track_count(&db, &ViewSource::Playlist(playlist_id), "", &[]).unwrap(),
+        query_track_count(
+            &db,
+            &TrackViewQuery::new(&ViewSource::Playlist(playlist_id))
+        )
+        .unwrap(),
         3
     );
 }
@@ -155,11 +151,8 @@ fn playlist_ids_always_follow_position_order_ignoring_sort_param() {
     // Even asking for "title" order, activation ids stay position order.
     let ids = query_track_ids(
         &db,
-        &ViewSource::Playlist(playlist_id),
-        "title",
-        "asc",
-        "",
-        &[],
+        &TrackViewQuery::new(&ViewSource::Playlist(playlist_id)),
+        test_sort("title", "asc"),
     )
     .unwrap();
     assert_eq!(ids, vec![3, 1, 2]);
@@ -204,10 +197,7 @@ fn playlist_visible_ids_include_missing_members_in_position_order() {
             conn,
             playlist_id,
             &view,
-            TrackSort {
-                field: "playlist_order",
-                dir: "asc",
-            },
+            test_sort("playlist_order", "asc"),
         )
         .unwrap(),
         vec![3, 2, 1]
@@ -233,10 +223,7 @@ fn playlist_visible_ids_follow_the_visible_column_sort() {
             conn,
             playlist_id,
             &view,
-            TrackSort {
-                field: "title",
-                dir: "asc",
-            },
+            test_sort("title", "asc"),
         )
         .unwrap(),
         vec![1, 2, 3]
@@ -250,7 +237,11 @@ fn playlist_count_applies_filter() {
     playlists::add_tracks(&db, playlist_id, &[1, 2, 3]).unwrap();
 
     assert_eq!(
-        query_track_count(&db, &ViewSource::Playlist(playlist_id), "Track 2", &[]).unwrap(),
+        query_track_count(
+            &db,
+            &TrackViewQuery::new(&ViewSource::Playlist(playlist_id)).with_filter("Track 2")
+        )
+        .unwrap(),
         1
     );
 }

@@ -11,7 +11,10 @@ use rusqlite::{types::Value, OptionalExtension};
 use super::clauses::{
     like_pattern, metadata_filter_clause, row_to_track, track_projection, PRESENT,
 };
-use super::{query_track_count, query_track_window, MAX_WINDOW_LIMIT};
+use super::{
+    query_track_count, query_track_window, AiColumn, RowWindow, TrackSort, TrackViewQuery,
+    MAX_WINDOW_LIMIT,
+};
 
 /// The library subset a surface wants to read through a bounded window.
 ///
@@ -100,16 +103,21 @@ pub fn query_library_tracks(
         ),
         LibraryTrackOrder::CanonicalAlbum => ("album_canonical", "asc"),
     };
-    let total = query_track_count(db, &source, &request.search, &[])?;
+    let view = TrackViewQuery::new(&source).with_filter(&request.search);
+    let sort = TrackSort {
+        field: sort_field,
+        dir: sort_dir,
+    };
+    let total = query_track_count(db, &view)?;
     let rows = query_track_window(
         db,
-        &source,
-        sort_field,
-        sort_dir,
-        &request.search,
-        request.window.offset,
-        request.window.limit,
-        &[],
+        &view,
+        sort,
+        RowWindow {
+            offset: request.window.offset,
+            limit: request.window.limit,
+        },
+        AiColumn::Project,
     )?;
     Ok(TrackWindow {
         total,

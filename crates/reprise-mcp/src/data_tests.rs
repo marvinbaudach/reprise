@@ -22,7 +22,20 @@ fn scan_one_track(db_path: &Path) -> i64 {
     reprise_core::library::scanner::scan_folder(&db, library_root.path()).unwrap();
 
     let source = ViewSource::Library;
-    let tracks = queries::query_track_window(&db, &source, "title", "asc", "", 0, 10, &[]).unwrap();
+    let tracks = queries::query_track_window(
+        &db,
+        &TrackViewQuery::new(&source),
+        TrackSort {
+            field: "title",
+            dir: "asc",
+        },
+        RowWindow {
+            offset: 0,
+            limit: 10,
+        },
+        AiColumn::Project,
+    )
+    .unwrap();
     assert_eq!(tracks.len(), 1, "expected exactly one scanned track");
     tracks[0].id
 }

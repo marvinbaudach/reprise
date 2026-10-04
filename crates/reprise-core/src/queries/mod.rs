@@ -71,6 +71,20 @@
 //!   table, for a future sidebar badge.
 
 use crate::db::Db;
+#[cfg(test)]
+use crate::{up_next::QueueItem, view_source::ViewSource};
+#[cfg(test)]
+use rusqlite::Connection;
+
+#[cfg(test)]
+fn test_sort<'a>(field: &'a str, dir: &'a str) -> TrackSort<'a> {
+    TrackSort { field, dir }
+}
+
+#[cfg(test)]
+fn test_rows(offset: i64, limit: i64) -> RowWindow {
+    RowWindow { offset, limit }
+}
 
 mod album_directories;
 mod artist_context;

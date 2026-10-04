@@ -502,6 +502,7 @@ pub(super) fn row_to_id(r: &rusqlite::Row) -> rusqlite::Result<i64> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::queries::RowWindow;
 
     fn title_sort() -> TrackSort<'static> {
         TrackSort {
@@ -590,13 +591,16 @@ mod tests {
 
         let rows = crate::queries::query_track_window(
             &db,
-            &crate::view_source::ViewSource::Library,
-            "title",
-            "asc",
-            "",
-            0,
-            100,
-            &[],
+            &TrackViewQuery::new(&crate::view_source::ViewSource::Library),
+            TrackSort {
+                field: "title",
+                dir: "asc",
+            },
+            RowWindow {
+                offset: 0,
+                limit: 100,
+            },
+            AiColumn::Project,
         )
         .unwrap();
         let find = |id: i64| rows.iter().find(|t| t.id == id).expect("row present");

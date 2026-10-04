@@ -353,8 +353,8 @@ impl TrackListModel {
 
     /// Like [`set_query_browsed`](Self::set_query_browsed) but honoring the
     /// FIL-7 AI-exclude filter. When `exclude_ai` is set the window uses the
-    /// core `*_ai` query and the row **count** uses the cheap core
-    /// `query_track_count_browsed_ai` (a `COUNT(*)`), so the total is exact even
+    /// shared track-view query and the row **count** uses the cheap core
+    /// `query_track_count` (a `COUNT(*)`), so the total is exact even
     /// for very large libraries — no longer the `QUEUE_LIMIT`-capped id-list
     /// length. When that count reaches the cap the view's "play all" queue will
     /// be truncated, so it logs the conventional `is_queue_capped` warning.
@@ -428,47 +428,28 @@ impl TrackListModel {
             return None;
         };
         let query_started = diagnostic_trail::start_reload_step();
-        let new_total = if exclude_ai {
-            let conn_ref = &conn;
-            queries::query_track_count_browsed_ai(
-                conn_ref,
-                source,
-                filter,
-                browse,
-                queue_items,
-                true,
-            )
-            .map_or_else(
-                |error| {
-                    tracing::error!(%error, "failed to count non-AI tracks for query");
-                    0
-                },
-                |count| {
-                    let total = count.max(0) as u32;
-                    // The count is exact now, but the "play all" queue this view
-                    // feeds still caps at QUEUE_LIMIT — warn per convention when
-                    // the view is that large, so the truncation is not silent.
-                    if queries::is_queue_capped(total as usize) {
-                        tracing::warn!(
-                            limit = queries::QUEUE_LIMIT,
-                            "AI-filtered view queue capped at {} tracks",
-                            queries::QUEUE_LIMIT
-                        );
-                    }
-                    total
-                },
-            )
-        } else {
-            let conn_ref = &conn;
-            queries::query_track_count_browsed(conn_ref, source, filter, browse, queue_items)
-                .map_or_else(
-                    |error| {
-                        tracing::error!(%error, source = %source.label(), "failed to count tracks for query");
-                        0
-                    },
-                    |n| n.max(0) as u32,
-                )
-        };
+        let view = queries::TrackViewQuery::new(source)
+            .with_filter(filter)
+            .with_browse(browse)
+            .with_queue_items(queue_items)
+            .with_exclude_ai(exclude_ai);
+        let new_total = queries::query_track_count(&conn, &view).map_or_else(
+            |error| {
+                tracing::error!(%error, source = %source.label(), "failed to count tracks for query");
+                0
+            },
+            |count| {
+                let total = count.max(0) as u32;
+                if exclude_ai && queries::is_queue_capped(total as usize) {
+                    tracing::warn!(
+                        limit = queries::QUEUE_LIMIT,
+                        "AI-filtered view queue capped at {} tracks",
+                        queries::QUEUE_LIMIT
+                    );
+                }
+                total
+            },
+        );
         let query_elapsed = diagnostic_trail::finish_reload_step(ReloadStep::Query, query_started)
             .unwrap_or_default();
 
@@ -650,20 +631,25 @@ impl TrackListModel {
                     i64::from(WINDOW_SIZE),
                 )
             } else {
-                queries::query_track_window_browsed_ai(
+                let view = queries::TrackViewQuery::new(&source)
+                    .with_filter(&filter)
+                    .with_browse(&browse)
+                    .with_queue_items(&queue_items)
+                    .with_exclude_ai(exclude_ai);
+                queries::query_track_window(
                     &conn,
-                    &source,
-                    &sort_field,
-                    &sort_dir,
-                    &filter,
-                    &browse,
-                    query_offset,
-                    i64::from(WINDOW_SIZE),
-                    &queue_items,
-                    exclude_ai,
+                    &view,
+                    queries::TrackSort {
+                        field: &sort_field,
+                        dir: &sort_dir,
+                    },
+                    queries::RowWindow {
+                        offset: query_offset,
+                        limit: i64::from(WINDOW_SIZE),
+                    },
                     // INST-10: the AI badge marks every AI-manipulated row, so the
                     // windowed query always projects the real `is_ai` column.
-                    true,
+                    queries::AiColumn::Project,
                 )
                 .map(|tracks| tracks.into_iter().map(QueueItemMetadata::Track).collect())
             }

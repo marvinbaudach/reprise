@@ -128,13 +128,12 @@ fn queue_window_follows_the_ids_order_not_id_order() {
     let queue_ids = track_items(&[3, 1, 2]);
     let rows = query_track_window(
         &db,
-        &ViewSource::Queue,
-        "ignored",
-        "ignored",
-        "ignored",
-        0,
-        10,
-        &queue_ids,
+        &TrackViewQuery::new(&ViewSource::Queue)
+            .with_filter("ignored")
+            .with_queue_items(&queue_ids),
+        test_sort("ignored", "ignored"),
+        test_rows(0, 10),
+        AiColumn::Project,
     )
     .unwrap();
     let ids: Vec<i64> = rows.iter().map(|t| t.id).collect();
@@ -147,13 +146,10 @@ fn queue_window_skips_ids_with_no_matching_row() {
     let queue_ids = track_items(&[3, 999, 1]);
     let rows = query_track_window(
         &db,
-        &ViewSource::Queue,
-        "ignored",
-        "ignored",
-        "",
-        0,
-        10,
-        &queue_ids,
+        &TrackViewQuery::new(&ViewSource::Queue).with_queue_items(&queue_ids),
+        test_sort("ignored", "ignored"),
+        test_rows(0, 10),
+        AiColumn::Project,
     )
     .unwrap();
     let ids: Vec<i64> = rows.iter().map(|t| t.id).collect();
@@ -166,13 +162,10 @@ fn queue_window_slices_by_offset_and_limit_then_reorders() {
     let queue_ids = track_items(&[5, 4, 3, 2, 1]);
     let rows = query_track_window(
         &db,
-        &ViewSource::Queue,
-        "ignored",
-        "ignored",
-        "",
-        2,
-        2,
-        &queue_ids,
+        &TrackViewQuery::new(&ViewSource::Queue).with_queue_items(&queue_ids),
+        test_sort("ignored", "ignored"),
+        test_rows(2, 2),
+        AiColumn::Project,
     )
     .unwrap();
     let ids: Vec<i64> = rows.iter().map(|t| t.id).collect();
@@ -184,7 +177,13 @@ fn queue_count_counts_resolvable_ids_regardless_of_filter() {
     let db = seeded_conn_with_tracks(3);
     let queue_ids = track_items(&[3, 2, 1]);
     assert_eq!(
-        query_track_count(&db, &ViewSource::Queue, "anything", &queue_ids).unwrap(),
+        query_track_count(
+            &db,
+            &TrackViewQuery::new(&ViewSource::Queue)
+                .with_filter("anything")
+                .with_queue_items(&queue_ids)
+        )
+        .unwrap(),
         3
     );
 }
@@ -198,7 +197,11 @@ fn queue_count_excludes_ids_that_no_longer_resolve_to_a_row() {
     let db = seeded_conn_with_tracks(3);
     let queue_ids = track_items(&[3, 999, 1]); // 999 was never inserted
     assert_eq!(
-        query_track_count(&db, &ViewSource::Queue, "", &queue_ids).unwrap(),
+        query_track_count(
+            &db,
+            &TrackViewQuery::new(&ViewSource::Queue).with_queue_items(&queue_ids)
+        )
+        .unwrap(),
         2
     );
 }
@@ -208,7 +211,11 @@ fn queue_count_counts_each_occurrence_of_a_duplicated_resolvable_id() {
     let db = seeded_conn_with_tracks(3);
     let queue_ids = track_items(&[1, 1, 2]); // id 1 queued twice
     assert_eq!(
-        query_track_count(&db, &ViewSource::Queue, "", &queue_ids).unwrap(),
+        query_track_count(
+            &db,
+            &TrackViewQuery::new(&ViewSource::Queue).with_queue_items(&queue_ids)
+        )
+        .unwrap(),
         3
     );
 }
@@ -217,7 +224,7 @@ fn queue_count_counts_each_occurrence_of_a_duplicated_resolvable_id() {
 fn queue_count_is_zero_for_an_empty_queue() {
     let db = seeded_conn_with_tracks(3);
     assert_eq!(
-        query_track_count(&db, &ViewSource::Queue, "", &[]).unwrap(),
+        query_track_count(&db, &TrackViewQuery::new(&ViewSource::Queue)).unwrap(),
         0
     );
 }
@@ -227,7 +234,12 @@ fn queue_ids_are_returned_verbatim() {
     let queue_ids = track_items(&[5, 4, 3]);
     let db = crate::db::Db::open_in_memory().unwrap();
     assert_eq!(
-        query_track_ids(&db, &ViewSource::Queue, "x", "x", "", &queue_ids).unwrap(),
+        query_track_ids(
+            &db,
+            &TrackViewQuery::new(&ViewSource::Queue).with_queue_items(&queue_ids),
+            test_sort("x", "x")
+        )
+        .unwrap(),
         vec![5, 4, 3]
     );
 }
@@ -241,16 +253,17 @@ fn queue_count_matches_window_row_count_when_all_ids_resolve() {
     let db = seeded_conn_with_tracks(5);
     let queue_ids = track_items(&[5, 4, 3, 2, 1]);
 
-    let count = query_track_count(&db, &ViewSource::Queue, "", &queue_ids).unwrap();
+    let count = query_track_count(
+        &db,
+        &TrackViewQuery::new(&ViewSource::Queue).with_queue_items(&queue_ids),
+    )
+    .unwrap();
     let rows = query_track_window(
         &db,
-        &ViewSource::Queue,
-        "ignored",
-        "ignored",
-        "",
-        0,
-        queue_ids.len() as i64,
-        &queue_ids,
+        &TrackViewQuery::new(&ViewSource::Queue).with_queue_items(&queue_ids),
+        test_sort("ignored", "ignored"),
+        test_rows(0, queue_ids.len() as i64),
+        AiColumn::Project,
     )
     .unwrap();
 
@@ -270,16 +283,17 @@ fn queue_count_matches_window_row_count_when_some_ids_do_not_resolve() {
     let db = seeded_conn_with_tracks(3);
     let queue_ids = track_items(&[3, 999, 1, 2]); // 999 doesn't resolve
 
-    let count = query_track_count(&db, &ViewSource::Queue, "", &queue_ids).unwrap();
+    let count = query_track_count(
+        &db,
+        &TrackViewQuery::new(&ViewSource::Queue).with_queue_items(&queue_ids),
+    )
+    .unwrap();
     let rows = query_track_window(
         &db,
-        &ViewSource::Queue,
-        "ignored",
-        "ignored",
-        "",
-        0,
-        queue_ids.len() as i64,
-        &queue_ids,
+        &TrackViewQuery::new(&ViewSource::Queue).with_queue_items(&queue_ids),
+        test_sort("ignored", "ignored"),
+        test_rows(0, queue_ids.len() as i64),
+        AiColumn::Project,
     )
     .unwrap();
 
@@ -303,13 +317,10 @@ fn queue_window_renders_a_duplicated_id_once_per_occurrence() {
 
     let rows = query_track_window(
         &db,
-        &ViewSource::Queue,
-        "ignored",
-        "ignored",
-        "",
-        0,
-        queue_ids.len() as i64,
-        &queue_ids,
+        &TrackViewQuery::new(&ViewSource::Queue).with_queue_items(&queue_ids),
+        test_sort("ignored", "ignored"),
+        test_rows(0, queue_ids.len() as i64),
+        AiColumn::Project,
     )
     .unwrap();
 
@@ -338,16 +349,17 @@ fn queue_count_matches_window_row_count_with_a_duplicated_id() {
     let db = seeded_conn_with_tracks(3);
     let queue_ids = track_items(&[1, 2, 1]); // id 1 queued twice
 
-    let count = query_track_count(&db, &ViewSource::Queue, "", &queue_ids).unwrap();
+    let count = query_track_count(
+        &db,
+        &TrackViewQuery::new(&ViewSource::Queue).with_queue_items(&queue_ids),
+    )
+    .unwrap();
     let rows = query_track_window(
         &db,
-        &ViewSource::Queue,
-        "ignored",
-        "ignored",
-        "",
-        0,
-        queue_ids.len() as i64,
-        &queue_ids,
+        &TrackViewQuery::new(&ViewSource::Queue).with_queue_items(&queue_ids),
+        test_sort("ignored", "ignored"),
+        test_rows(0, queue_ids.len() as i64),
+        AiColumn::Project,
     )
     .unwrap();
     let ids: Vec<i64> = rows.iter().map(|t| t.id).collect();
@@ -370,18 +382,24 @@ fn import_errors_source_is_always_empty_for_now() {
     )
     .unwrap();
 
-    assert!(
-        query_track_window(&db, &ViewSource::ImportErrors, "x", "x", "", 0, 10, &[])
-            .unwrap()
-            .is_empty()
-    );
+    assert!(query_track_window(
+        &db,
+        &TrackViewQuery::new(&ViewSource::ImportErrors),
+        test_sort("x", "x"),
+        test_rows(0, 10),
+        AiColumn::Project
+    )
+    .unwrap()
+    .is_empty());
     assert_eq!(
-        query_track_count(&db, &ViewSource::ImportErrors, "", &[]).unwrap(),
+        query_track_count(&db, &TrackViewQuery::new(&ViewSource::ImportErrors)).unwrap(),
         0
     );
-    assert!(
-        query_track_ids(&db, &ViewSource::ImportErrors, "x", "x", "", &[])
-            .unwrap()
-            .is_empty()
-    );
+    assert!(query_track_ids(
+        &db,
+        &TrackViewQuery::new(&ViewSource::ImportErrors),
+        test_sort("x", "x")
+    )
+    .unwrap()
+    .is_empty());
 }

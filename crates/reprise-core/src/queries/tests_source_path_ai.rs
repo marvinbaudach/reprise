@@ -45,23 +45,30 @@ fn fil_7_count_browsed_ai_excludes_ai_tracks_via_count_star() {
     .unwrap();
     let browse = BrowseFilter::default();
 
-    let all =
-        query_track_count_browsed_ai(&db, &ViewSource::Library, "", &browse, &[], false).unwrap();
+    let all = query_track_count(
+        &db,
+        &TrackViewQuery::new(&ViewSource::Library)
+            .with_browse(&browse)
+            .with_exclude_ai(false),
+    )
+    .unwrap();
     assert_eq!(all, 2, "without the filter both present tracks count");
-    let non_ai =
-        query_track_count_browsed_ai(&db, &ViewSource::Library, "", &browse, &[], true).unwrap();
+    let non_ai = query_track_count(
+        &db,
+        &TrackViewQuery::new(&ViewSource::Library)
+            .with_browse(&browse)
+            .with_exclude_ai(true),
+    )
+    .unwrap();
     assert_eq!(non_ai, 1, "the AI instrumental is excluded from the count");
 
     // The COUNT(*) agrees with the AI-filtered id list it replaces.
-    let ids = query_track_ids_browsed_ai(
+    let ids = query_track_ids(
         &db,
-        &ViewSource::Library,
-        "title",
-        "asc",
-        "",
-        &browse,
-        &[],
-        true,
+        &TrackViewQuery::new(&ViewSource::Library)
+            .with_browse(&browse)
+            .with_exclude_ai(true),
+        test_sort("title", "asc"),
     )
     .unwrap();
     assert_eq!(

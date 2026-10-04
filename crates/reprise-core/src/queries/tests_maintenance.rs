@@ -454,8 +454,11 @@ fn playlist_positions_stay_gapless_and_queue_count_stays_accurate_across_a_mixed
         .copied()
         .map(crate::up_next::QueueItem::Track)
         .collect::<Vec<_>>();
-    let count_before_purge =
-        query_track_count(&db, &ViewSource::Queue, "", &queue_items_before_purge).unwrap();
+    let count_before_purge = query_track_count(
+        &db,
+        &TrackViewQuery::new(&ViewSource::Queue).with_queue_items(&queue_items_before_purge),
+    )
+    .unwrap();
     assert_eq!(
         count_before_purge as usize,
         queue_ids_before_purge.len() - 1,
@@ -473,8 +476,11 @@ fn playlist_positions_stay_gapless_and_queue_count_stays_accurate_across_a_mixed
         !queue_ids_after_purge.contains(&1),
         "purged id must be gone from the queue"
     );
-    let count_after_purge =
-        query_track_count(&db, &ViewSource::Queue, "", &queue_items_after_purge).unwrap();
+    let count_after_purge = query_track_count(
+        &db,
+        &TrackViewQuery::new(&ViewSource::Queue).with_queue_items(&queue_items_after_purge),
+    )
+    .unwrap();
     assert_eq!(
         count_after_purge as usize,
         queue_ids_after_purge.len(),
