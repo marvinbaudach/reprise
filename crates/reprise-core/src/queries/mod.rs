@@ -197,8 +197,10 @@ pub use track_view::{
     TrackViewQuery,
 };
 
-use clauses::build_track_ids_query_browsed;
-use clauses::{build_track_ids_query_base, like_pattern, row_to_id};
+use clauses::{
+    build_track_ids_query_base, build_track_ids_query_browsed, like_pattern, row_to_id,
+    TrackSqlOptions,
+};
 use rusqlite::types::Value;
 
 /// Global constraint: window queries never return more rows than this in one
@@ -215,67 +217,52 @@ fn query_track_window_dispatch(
     ai: AiColumn,
 ) -> Result<Vec<Track>, rusqlite::Error> {
     let source = view.source;
-    let filter = view.filter;
     let browse = view.browse;
-    let queue_items = view.queue_items;
-    let exclude_ai = view.exclude_ai;
-    let TrackSort {
-        field: sort_field,
-        dir: sort_dir,
-    } = sort;
-    let RowWindow { offset, limit } = rows;
-    let project_ai = ai == AiColumn::Project;
     match source {
-        ViewSource::Library => library::query_track_window_library(
-            conn, sort_field, sort_dir, filter, offset, limit, browse, exclude_ai, project_ai,
-        ),
+        ViewSource::Library => library::query_track_window_library(conn, view, sort, rows, ai),
         ViewSource::RecentlyAdded => {
             let browse = recently_added_browse(browse);
-            library::query_track_window_library(
-                conn, sort_field, sort_dir, filter, offset, limit, &browse, exclude_ai, project_ai,
-            )
+            let scoped = TrackViewQuery {
+                browse: &browse,
+                ..*view
+            };
+            library::query_track_window_library(conn, &scoped, sort, rows, ai)
         }
-        ViewSource::Missing => library::query_track_window_missing(
-            conn, sort_field, sort_dir, filter, offset, limit, project_ai,
-        ),
-        ViewSource::Playlist(id) => playlist::query_track_window_playlist(
-            conn, *id, sort_field, sort_dir, filter, offset, limit, project_ai,
-        ),
-        ViewSource::Smart(id) => smart::query_track_window_smart(
-            conn,
-            *id,
-            (sort_field, sort_dir),
-            filter,
-            offset,
-            limit,
-            project_ai,
-        ),
-        ViewSource::Queue => {
-            queue::query_track_window_queue(conn, queue_items, offset, limit, project_ai)
+        ViewSource::Missing => library::query_track_window_missing(conn, view, sort, rows, ai),
+        ViewSource::Playlist(id) => {
+            playlist::query_track_window_playlist(conn, *id, view, sort, rows, ai)
         }
+        ViewSource::Smart(id) => smart::query_track_window_smart(conn, *id, view, sort, rows, ai),
+        ViewSource::Queue => queue::query_track_window_queue(conn, view, rows, ai),
         ViewSource::Album {
             album,
             album_artist,
         } => library_views::query_album_track_window(
             conn,
-            album,
-            album_artist,
-            sort_field,
-            sort_dir,
-            filter,
-            browse,
-            offset,
-            limit,
-            project_ai,
+            library_views::AlbumKey {
+                album,
+                album_artist,
+            },
+            library_views::TrackRefinement::from(view),
+            sort,
+            rows,
+            ai,
         ),
         ViewSource::Artist(artist) => library_views::query_artist_track_window(
-            conn, artist, sort_field, sort_dir, filter, browse, offset, limit, project_ai,
+            conn,
+            artist,
+            library_views::TrackRefinement::from(view),
+            sort,
+            rows,
+            ai,
         ),
         ViewSource::Genre(genre) => {
             let browse = genre_browse(genre, browse);
-            library::query_track_window_library(
-                conn, sort_field, sort_dir, filter, offset, limit, &browse, exclude_ai, project_ai,
-            )
+            let scoped = TrackViewQuery {
+                browse: &browse,
+                ..*view
+            };
+            library::query_track_window_library(conn, &scoped, sort, rows, ai)
         }
         ViewSource::ImportErrors
         | ViewSource::MyStats
@@ -293,21 +280,20 @@ fn query_track_count_dispatch(
     view: &TrackViewQuery<'_>,
 ) -> Result<i64, rusqlite::Error> {
     let source = view.source;
-    let filter = view.filter;
     let browse = view.browse;
     match source {
-        ViewSource::Library => {
-            library::query_track_count_library_ai(conn, filter, browse, view.exclude_ai)
+        ViewSource::Library => library::query_track_count_library_ai(conn, view),
+        ViewSource::RecentlyAdded => {
+            let browse = recently_added_browse(browse);
+            let scoped = TrackViewQuery {
+                browse: &browse,
+                ..*view
+            };
+            library::query_track_count_library_ai(conn, &scoped)
         }
-        ViewSource::RecentlyAdded => library::query_track_count_library_ai(
-            conn,
-            filter,
-            &recently_added_browse(browse),
-            view.exclude_ai,
-        ),
-        ViewSource::Missing => library::query_track_count_missing(conn, filter),
-        ViewSource::Playlist(id) => playlist::query_track_count_playlist(conn, *id, filter),
-        ViewSource::Smart(id) => smart::query_track_count_smart(conn, *id, filter),
+        ViewSource::Missing => library::query_track_count_missing(conn, view),
+        ViewSource::Playlist(id) => playlist::query_track_count_playlist(conn, *id, view),
+        ViewSource::Smart(id) => smart::query_track_count_smart(conn, *id, view),
         // Stage-3 close-out fix: this used to trust `queue_ids.len()`
         // verbatim, on the documented assumption that nothing hard-deletes a
         // `tracks` row. That assumption no longer holds (`remove_missing_tracks`
@@ -319,20 +305,31 @@ fn query_track_count_dispatch(
         // that a `ColumnView` can never be told there are more rows than
         // `query_track_window_queue` will actually render, even if some
         // future caller forgets to purge the queue after a hard-delete.
-        ViewSource::Queue => queue::query_track_count_queue(conn, view.queue_items),
+        ViewSource::Queue => queue::query_track_count_queue(conn, view),
         ViewSource::Album {
             album,
             album_artist,
-        } => library_views::query_album_track_count(conn, album, album_artist, filter, browse),
-        ViewSource::Artist(artist) => {
-            library_views::query_artist_track_count(conn, artist, filter, browse)
-        }
-        ViewSource::Genre(genre) => library::query_track_count_library_ai(
+        } => library_views::query_album_track_count(
             conn,
-            filter,
-            &genre_browse(genre, browse),
-            view.exclude_ai,
+            library_views::AlbumKey {
+                album,
+                album_artist,
+            },
+            library_views::TrackRefinement::from(view),
         ),
+        ViewSource::Artist(artist) => library_views::query_artist_track_count(
+            conn,
+            artist,
+            library_views::TrackRefinement::from(view),
+        ),
+        ViewSource::Genre(genre) => {
+            let browse = genre_browse(genre, browse);
+            let scoped = TrackViewQuery {
+                browse: &browse,
+                ..*view
+            };
+            library::query_track_count_library_ai(conn, &scoped)
+        }
         ViewSource::ImportErrors
         | ViewSource::MyStats
         | ViewSource::Releases
@@ -370,19 +367,13 @@ fn query_track_ids_dispatch(
     let source = view.source;
     let filter = view.filter;
     let browse = view.browse;
-    let TrackSort {
-        field: sort_field,
-        dir: sort_dir,
-    } = sort;
     match source {
         ViewSource::Library => {
             let has_filter = !filter.trim().is_empty();
             let sql = build_track_ids_query_browsed(
-                sort_field,
-                sort_dir,
+                sort,
                 has_filter,
-                browse,
-                view.exclude_ai,
+                TrackSqlOptions::from_view(view, AiColumn::Skip),
             );
             let mut stmt = conn.prepare(&sql)?;
             let mut params = Vec::new();
@@ -394,17 +385,10 @@ fn query_track_ids_dispatch(
             let rows = stmt.query_map(rusqlite::params_from_iter(params), row_to_id)?;
             rows.collect()
         }
-        ViewSource::RecentlyAdded => query_track_ids_recently_added(
-            conn,
-            sort_field,
-            sort_dir,
-            filter,
-            browse,
-            view.exclude_ai,
-        ),
+        ViewSource::RecentlyAdded => query_track_ids_recently_added(conn, view, sort),
         ViewSource::Missing => {
             let has_filter = !filter.trim().is_empty();
-            let sql = build_track_ids_query_base(1, sort_field, sort_dir, has_filter);
+            let sql = build_track_ids_query_base(1, sort, has_filter);
             let mut stmt = conn.prepare(&sql)?;
             let like = like_pattern(filter.trim());
             let rows = if has_filter {
@@ -414,10 +398,8 @@ fn query_track_ids_dispatch(
             };
             rows.collect()
         }
-        ViewSource::Playlist(id) => playlist::query_playable_track_ids_playlist(conn, *id, filter),
-        ViewSource::Smart(id) => {
-            smart::query_track_ids_smart(conn, *id, sort_field, sort_dir, filter)
-        }
+        ViewSource::Playlist(id) => playlist::query_playable_track_ids_playlist(conn, *id, view),
+        ViewSource::Smart(id) => smart::query_track_ids_smart(conn, *id, view, sort),
         ViewSource::Queue => Ok(view
             .queue_items
             .iter()
@@ -428,25 +410,30 @@ fn query_track_ids_dispatch(
             album_artist,
         } => library_views::query_album_track_ids_browsed(
             conn,
-            album,
-            album_artist,
-            sort_field,
-            sort_dir,
-            filter,
-            browse,
+            library_views::AlbumKey {
+                album,
+                album_artist,
+            },
+            library_views::TrackRefinement::from(view),
+            sort,
         ),
         ViewSource::Artist(artist) => library_views::query_artist_track_ids(
-            conn, artist, sort_field, sort_dir, filter, browse,
+            conn,
+            artist,
+            library_views::TrackRefinement::from(view),
+            sort,
         ),
         ViewSource::Genre(genre) => {
             let browse = genre_browse(genre, browse);
+            let scoped = TrackViewQuery {
+                browse: &browse,
+                ..*view
+            };
             let has_filter = !filter.trim().is_empty();
             let sql = build_track_ids_query_browsed(
-                sort_field,
-                sort_dir,
+                sort,
                 has_filter,
-                &browse,
-                view.exclude_ai,
+                TrackSqlOptions::from_view(&scoped, AiColumn::Skip),
             );
             let mut stmt = conn.prepare(&sql)?;
             let mut params = Vec::new();
@@ -488,19 +475,24 @@ fn recently_added_browse(browse: &BrowseFilter) -> BrowseFilter {
 
 fn query_track_ids_recently_added(
     conn: &Connection,
-    sort_field: &str,
-    sort_dir: &str,
-    filter: &str,
-    browse: &BrowseFilter,
-    exclude_ai: bool,
+    view: &TrackViewQuery<'_>,
+    sort: TrackSort<'_>,
 ) -> Result<Vec<i64>, rusqlite::Error> {
-    let browse = recently_added_browse(browse);
-    let has_filter = !filter.trim().is_empty();
-    let sql = build_track_ids_query_browsed(sort_field, sort_dir, has_filter, &browse, exclude_ai);
+    let browse = recently_added_browse(view.browse);
+    let scoped = TrackViewQuery {
+        browse: &browse,
+        ..*view
+    };
+    let has_filter = !view.filter.trim().is_empty();
+    let sql = build_track_ids_query_browsed(
+        sort,
+        has_filter,
+        TrackSqlOptions::from_view(&scoped, AiColumn::Skip),
+    );
     let mut stmt = conn.prepare(&sql)?;
     let mut params = Vec::new();
     if has_filter {
-        params.push(Value::Text(like_pattern(filter.trim())));
+        params.push(Value::Text(like_pattern(view.filter.trim())));
     }
     let (_, browse_values) = browse::browse_clause(&browse, params.len() + 1);
     params.extend(browse_values.into_iter().map(Value::Text));
@@ -522,24 +514,19 @@ pub fn query_visible_track_ids_browsed(
     queue_ids: &[QueueItem],
 ) -> Result<Vec<i64>, rusqlite::Error> {
     let conn = db.conn();
+    let view = TrackViewQuery::new(source)
+        .with_filter(filter)
+        .with_browse(browse)
+        .with_queue_items(queue_ids);
+    let sort = TrackSort {
+        field: sort_field,
+        dir: sort_dir,
+    };
     match source {
         ViewSource::Playlist(id) => {
-            playlist::query_visible_track_ids_playlist(conn, *id, sort_field, sort_dir, filter)
+            playlist::query_visible_track_ids_playlist(conn, *id, &view, sort)
         }
-        _ => {
-            let view = TrackViewQuery::new(source)
-                .with_filter(filter)
-                .with_browse(browse)
-                .with_queue_items(queue_ids);
-            query_track_ids_dispatch(
-                conn,
-                &view,
-                TrackSort {
-                    field: sort_field,
-                    dir: sort_dir,
-                },
-            )
-        }
+        _ => query_track_ids_dispatch(conn, &view, sort),
     }
 }
 

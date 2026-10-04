@@ -176,9 +176,11 @@ fn playlist_playable_ids_exclude_missing_members() {
     .unwrap();
     let playlist_id = playlists::create(&db, "P1").unwrap();
     playlists::add_tracks(&db, playlist_id, &[1, 2, 3]).unwrap();
+    let source = ViewSource::Playlist(playlist_id);
+    let view = TrackViewQuery::new(&source);
 
     assert_eq!(
-        playlist::query_playable_track_ids_playlist(conn, playlist_id, "").unwrap(),
+        playlist::query_playable_track_ids_playlist(conn, playlist_id, &view).unwrap(),
         vec![1, 3]
     );
 }
@@ -194,10 +196,20 @@ fn playlist_visible_ids_include_missing_members_in_position_order() {
     .unwrap();
     let playlist_id = playlists::create(&db, "P1").unwrap();
     playlists::add_tracks(&db, playlist_id, &[3, 2, 1]).unwrap();
+    let source = ViewSource::Playlist(playlist_id);
+    let view = TrackViewQuery::new(&source);
 
     assert_eq!(
-        playlist::query_visible_track_ids_playlist(conn, playlist_id, "playlist_order", "asc", "",)
-            .unwrap(),
+        playlist::query_visible_track_ids_playlist(
+            conn,
+            playlist_id,
+            &view,
+            TrackSort {
+                field: "playlist_order",
+                dir: "asc",
+            },
+        )
+        .unwrap(),
         vec![3, 2, 1]
     );
 }
@@ -213,9 +225,20 @@ fn playlist_visible_ids_follow_the_visible_column_sort() {
     .unwrap();
     let playlist_id = playlists::create(&db, "P1").unwrap();
     playlists::add_tracks(&db, playlist_id, &[3, 2, 1]).unwrap();
+    let source = ViewSource::Playlist(playlist_id);
+    let view = TrackViewQuery::new(&source);
 
     assert_eq!(
-        playlist::query_visible_track_ids_playlist(conn, playlist_id, "title", "asc", "").unwrap(),
+        playlist::query_visible_track_ids_playlist(
+            conn,
+            playlist_id,
+            &view,
+            TrackSort {
+                field: "title",
+                dir: "asc",
+            },
+        )
+        .unwrap(),
         vec![1, 2, 3]
     );
 }

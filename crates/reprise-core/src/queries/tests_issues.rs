@@ -28,7 +28,6 @@ use crate::models::MissingReason;
 /// `query_missing_rows` reads or groups by. `id` doubles as the row's
 /// `path`/`title` disambiguator so callers can seed many rows tersely
 /// without naming each field.
-#[allow(clippy::too_many_arguments)]
 fn seed_missing_track(
     conn: &Connection,
     id: i64,

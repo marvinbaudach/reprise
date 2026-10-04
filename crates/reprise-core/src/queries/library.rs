@@ -7,36 +7,29 @@ use crate::models::Track;
 
 use super::clauses::{
     ai_exclude_clause, build_track_query_base, build_track_query_browsed, filter_clause,
-    like_pattern, row_to_track, MISSING, PRESENT,
+    like_pattern, row_to_track, TrackSqlOptions, MISSING, PRESENT,
 };
 use super::MAX_WINDOW_LIMIT;
-use super::{browse::browse_clause, BrowseFilter};
+use super::{browse::browse_clause, AiColumn, RowWindow, TrackSort, TrackViewQuery};
 use rusqlite::types::Value;
 use rusqlite::Connection;
 
-#[allow(clippy::too_many_arguments)]
 pub(super) fn query_track_window_library(
     conn: &Connection,
-    sort_field: &str,
-    sort_dir: &str,
-    filter: &str,
-    offset: i64,
-    limit: i64,
-    browse: &BrowseFilter,
-    exclude_ai: bool,
-    project_ai: bool,
+    view: &TrackViewQuery<'_>,
+    sort: TrackSort<'_>,
+    rows: RowWindow,
+    ai: AiColumn,
 ) -> Result<Vec<Track>, rusqlite::Error> {
-    let limit = limit.clamp(0, MAX_WINDOW_LIMIT);
-    let has_filter = !filter.trim().is_empty();
-    let sql = build_track_query_browsed(
-        sort_field, sort_dir, has_filter, browse, exclude_ai, project_ai,
-    );
+    let limit = rows.limit.clamp(0, MAX_WINDOW_LIMIT);
+    let has_filter = !view.filter.trim().is_empty();
+    let sql = build_track_query_browsed(sort, has_filter, TrackSqlOptions::from_view(view, ai));
     let mut stmt = conn.prepare(&sql)?;
-    let mut params = vec![Value::Integer(limit), Value::Integer(offset)];
+    let mut params = vec![Value::Integer(limit), Value::Integer(rows.offset)];
     if has_filter {
-        params.push(Value::Text(like_pattern(filter.trim())));
+        params.push(Value::Text(like_pattern(view.filter.trim())));
     }
-    let (_, browse_values) = browse_clause(browse, params.len() + 1);
+    let (_, browse_values) = browse_clause(view.browse, params.len() + 1);
     params.extend(browse_values.into_iter().map(Value::Text));
     let rows = stmt.query_map(rusqlite::params_from_iter(params), row_to_track)?;
     rows.collect()
@@ -44,32 +37,29 @@ pub(super) fn query_track_window_library(
 
 pub(super) fn query_track_window_missing(
     conn: &Connection,
-    sort_field: &str,
-    sort_dir: &str,
-    filter: &str,
-    offset: i64,
-    limit: i64,
-    project_ai: bool,
+    view: &TrackViewQuery<'_>,
+    sort: TrackSort<'_>,
+    rows: RowWindow,
+    ai: AiColumn,
 ) -> Result<Vec<Track>, rusqlite::Error> {
-    let limit = limit.clamp(0, MAX_WINDOW_LIMIT);
-    let has_filter = !filter.trim().is_empty();
-    let sql = build_track_query_base(1, sort_field, sort_dir, has_filter, project_ai);
+    let limit = rows.limit.clamp(0, MAX_WINDOW_LIMIT);
+    let has_filter = !view.filter.trim().is_empty();
+    let sql = build_track_query_base(1, sort, has_filter, ai);
     let mut stmt = conn.prepare(&sql)?;
-    let like = like_pattern(filter.trim());
+    let like = like_pattern(view.filter.trim());
     let rows = if has_filter {
-        stmt.query_map(rusqlite::params![limit, offset, like], row_to_track)?
+        stmt.query_map(rusqlite::params![limit, rows.offset, like], row_to_track)?
     } else {
-        stmt.query_map(rusqlite::params![limit, offset], row_to_track)?
+        stmt.query_map(rusqlite::params![limit, rows.offset], row_to_track)?
     };
     rows.collect()
 }
 
 pub(super) fn query_track_count_library(
     conn: &Connection,
-    filter: &str,
-    browse: &BrowseFilter,
+    view: &TrackViewQuery<'_>,
 ) -> Result<i64, rusqlite::Error> {
-    query_track_count_library_ai(conn, filter, browse, false)
+    query_track_count_library_ai(conn, view)
 }
 
 /// Like [`query_track_count_library`] but honoring the FIL-7 AI-exclude filter
@@ -79,21 +69,19 @@ pub(super) fn query_track_count_library(
 /// id-list length would be.
 pub(super) fn query_track_count_library_ai(
     conn: &Connection,
-    filter: &str,
-    browse: &BrowseFilter,
-    exclude_ai: bool,
+    view: &TrackViewQuery<'_>,
 ) -> Result<i64, rusqlite::Error> {
-    let has_filter = !filter.trim().is_empty();
+    let has_filter = !view.filter.trim().is_empty();
     let browse_first_param = if has_filter { 2 } else { 1 };
-    let (browse_clause, browse_values) = browse_clause(browse, browse_first_param);
+    let (browse_clause, browse_values) = browse_clause(view.browse, browse_first_param);
     let sql = format!(
         "SELECT count(*) FROM tracks WHERE {PRESENT}{}{browse_clause}{}",
         filter_clause(has_filter, 1),
-        ai_exclude_clause(exclude_ai),
+        ai_exclude_clause(view.exclude_ai),
     );
     let mut params = Vec::new();
     if has_filter {
-        params.push(Value::Text(like_pattern(filter.trim())));
+        params.push(Value::Text(like_pattern(view.filter.trim())));
     }
     params.extend(browse_values.into_iter().map(Value::Text));
     conn.query_row(&sql, rusqlite::params_from_iter(params), |r| r.get(0))
@@ -101,15 +89,15 @@ pub(super) fn query_track_count_library_ai(
 
 pub(super) fn query_track_count_missing(
     conn: &Connection,
-    filter: &str,
+    view: &TrackViewQuery<'_>,
 ) -> Result<i64, rusqlite::Error> {
-    let has_filter = !filter.trim().is_empty();
+    let has_filter = !view.filter.trim().is_empty();
     let sql = format!(
         "SELECT count(*) FROM tracks WHERE {MISSING}{}",
         filter_clause(has_filter, 1)
     );
     if has_filter {
-        let like = like_pattern(filter.trim());
+        let like = like_pattern(view.filter.trim());
         conn.query_row(&sql, rusqlite::params![like], |r| r.get(0))
     } else {
         conn.query_row(&sql, [], |r| r.get(0))
