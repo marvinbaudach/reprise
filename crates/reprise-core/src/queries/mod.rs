@@ -763,4 +763,6 @@ mod tests_smart;
 #[cfg(test)]
 mod tests_source_path_ai;
 #[cfg(test)]
+mod tests_track_view;
+#[cfg(test)]
 mod tests_ux_feedback;
