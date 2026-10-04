@@ -15,6 +15,7 @@ pub(in crate::ui) mod preference_new_releases;
 pub(in crate::ui) mod preference_online_master;
 mod preference_online_module_effects;
 pub(in crate::ui) mod preference_playback;
+mod preference_playback_page;
 pub(in crate::ui) mod preference_plugin_chrome;
 pub(in crate::ui) mod preference_plugins;
 pub(in crate::ui) mod preference_podcasts;
