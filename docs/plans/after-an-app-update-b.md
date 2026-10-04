@@ -2,7 +2,7 @@
 slug: after-an-app-update-b
 worktree: /home/marvin/Projects/reprise-after-an-app-update-b
 branch: feature/after-an-app-update-b
-phase: reviewed
+phase: refactored
 codex_session:
 created: 2026-10-04
 ---
