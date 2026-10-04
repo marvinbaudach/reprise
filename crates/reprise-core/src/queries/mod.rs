@@ -95,6 +95,7 @@ mod smart;
 mod stats;
 mod surface_browse;
 mod track_summary;
+mod track_view;
 
 pub use album_directories::query_album_directories;
 pub use artist_context::{query_artist_album_titles, query_stats_album_target_for_path};
@@ -190,6 +191,11 @@ pub use queue::{
 };
 pub use stats::{query_library_stats, query_library_stats_browsed, LibraryStats};
 pub use surface_browse::*;
+pub(crate) use track_view::query_track_ids_in;
+pub use track_view::{
+    query_track_count, query_track_ids, query_track_window, AiColumn, RowWindow, TrackSort,
+    TrackViewQuery,
+};
 
 use clauses::build_track_ids_query_browsed;
 use clauses::{build_track_ids_query_base, like_pattern, row_to_id};
@@ -201,113 +207,24 @@ use rusqlite::types::Value;
 /// size from turning into a full-table scan. Limits capped.
 pub const MAX_WINDOW_LIMIT: i64 = 500;
 
-/// Runs the windowed track query for `source`. `queue_ids` is only read for
-/// `ViewSource::Queue` (see the module doc's `Queue` section); every other
-/// source ignores it, so callers that never show the Queue source may pass
-/// `&[]`. `filter` is always bound as a parameter, never concatenated into
-/// the SQL text (except for `Queue`, which doesn't apply `filter` at all —
-/// see the module doc).
-///
-/// `#[allow(clippy::too_many_arguments)]`: every one of these eight is an
-/// independently meaningful, already-minimal piece of "which rows, in what
-/// order, from where" (source, the three sort/filter values, the window
-/// bounds, and the queue's own id list) — bundling any subset into a struct
-/// would just move the same eight values one level of indirection away
-/// without making any single call site clearer, and every one of this
-/// function's several callers (`TrackListModel::track_at`, this module's own
-/// tests) already names each argument positionally in a way that reads
-/// clearly against this doc comment.
-#[allow(clippy::too_many_arguments)]
-pub fn query_track_window(
-    db: &Db,
-    source: &ViewSource,
-    sort_field: &str,
-    sort_dir: &str,
-    filter: &str,
-    offset: i64,
-    limit: i64,
-    queue_ids: &[QueueItem],
-) -> Result<Vec<Track>, rusqlite::Error> {
-    let conn = db.conn();
-    query_track_window_browsed_ai_conn(
-        conn,
-        source,
-        sort_field,
-        sort_dir,
-        filter,
-        &BrowseFilter::default(),
-        offset,
-        limit,
-        queue_ids,
-        false,
-        true,
-    )
-}
-
-#[allow(clippy::too_many_arguments)]
-pub fn query_track_window_browsed(
-    db: &Db,
-    source: &ViewSource,
-    sort_field: &str,
-    sort_dir: &str,
-    filter: &str,
-    browse: &BrowseFilter,
-    offset: i64,
-    limit: i64,
-    queue_ids: &[QueueItem],
-) -> Result<Vec<Track>, rusqlite::Error> {
-    let conn = db.conn();
-    query_track_window_browsed_ai_conn(
-        conn, source, sort_field, sort_dir, filter, browse, offset, limit, queue_ids, false, true,
-    )
-}
-
-/// Like [`query_track_window_browsed`] but honoring two AI concerns:
-///
-/// - `exclude_ai` (plan 2.4/8, Beschluss 17): when set, tracks flagged in
-///   `track_provenance` are hidden. Only `Library` honors it — that is where
-///   the browse filter row lives.
-/// - `project_ai` (INST-10 / FIX-4): whether to project the real `is_ai` column
-///   (the correlated provenance `EXISTS`) or a literal `0`, which spares the
-///   window a per-row provenance subquery. Honored by **all** sources (the
-///   badge can appear on any track row), so the GTK track list passes `true`;
-///   callers that never read the column pass `false`. The default entry points
-///   above pass `false`/`true`.
-#[allow(clippy::too_many_arguments)]
-pub fn query_track_window_browsed_ai(
-    db: &Db,
-    source: &ViewSource,
-    sort_field: &str,
-    sort_dir: &str,
-    filter: &str,
-    browse: &BrowseFilter,
-    offset: i64,
-    limit: i64,
-    queue_ids: &[QueueItem],
-    exclude_ai: bool,
-    project_ai: bool,
-) -> Result<Vec<Track>, rusqlite::Error> {
-    let conn = db.conn();
-    query_track_window_browsed_ai_conn(
-        conn, source, sort_field, sort_dir, filter, browse, offset, limit, queue_ids, exclude_ai,
-        project_ai,
-    )
-}
-
-#[allow(clippy::too_many_arguments)]
-fn query_track_window_browsed_ai_conn(
+fn query_track_window_dispatch(
     conn: &Connection,
-    source: &ViewSource,
-    sort_field: &str,
-    sort_dir: &str,
-    filter: &str,
-    browse: &BrowseFilter,
-    offset: i64,
-    limit: i64,
-    queue_ids: &[QueueItem],
-    exclude_ai: bool,
-    project_ai: bool,
+    view: &TrackViewQuery<'_>,
+    sort: TrackSort<'_>,
+    rows: RowWindow,
+    ai: AiColumn,
 ) -> Result<Vec<Track>, rusqlite::Error> {
+    let source = view.source;
+    let filter = view.filter;
+    let browse = view.browse;
+    let queue_items = view.queue_items;
+    let exclude_ai = view.exclude_ai;
+    let TrackSort {
+        field: sort_field,
+        dir: sort_dir,
+    } = sort;
+    let RowWindow { offset, limit } = rows;
+    let project_ai = ai == AiColumn::Project;
     match source {
         ViewSource::Library => library::query_track_window_library(
             conn, sort_field, sort_dir, filter, offset, limit, browse, exclude_ai, project_ai,
@@ -334,7 +251,7 @@ fn query_track_window_browsed_ai_conn(
             project_ai,
         ),
         ViewSource::Queue => {
-            queue::query_track_window_queue(conn, queue_ids, offset, limit, project_ai)
+            queue::query_track_window_queue(conn, queue_items, offset, limit, project_ai)
         }
         ViewSource::Album {
             album,
@@ -371,42 +288,23 @@ fn query_track_window_browsed_ai_conn(
     }
 }
 
-/// Counts rows matching `(source, filter)` — see the module doc for how
-/// each source defines "matching". `queue_ids` is only read for
-/// `ViewSource::Queue`.
-pub fn query_track_count(
-    db: &Db,
-    source: &ViewSource,
-    filter: &str,
-    queue_ids: &[QueueItem],
-) -> Result<i64, rusqlite::Error> {
-    let conn = db.conn();
-    query_track_count_browsed_conn(conn, source, filter, &BrowseFilter::default(), queue_ids)
-}
-
-pub fn query_track_count_browsed(
-    db: &Db,
-    source: &ViewSource,
-    filter: &str,
-    browse: &BrowseFilter,
-    queue_ids: &[QueueItem],
-) -> Result<i64, rusqlite::Error> {
-    let conn = db.conn();
-    query_track_count_browsed_conn(conn, source, filter, browse, queue_ids)
-}
-
-fn query_track_count_browsed_conn(
+fn query_track_count_dispatch(
     conn: &Connection,
-    source: &ViewSource,
-    filter: &str,
-    browse: &BrowseFilter,
-    queue_ids: &[QueueItem],
+    view: &TrackViewQuery<'_>,
 ) -> Result<i64, rusqlite::Error> {
+    let source = view.source;
+    let filter = view.filter;
+    let browse = view.browse;
     match source {
-        ViewSource::Library => library::query_track_count_library(conn, filter, browse),
-        ViewSource::RecentlyAdded => {
-            library::query_track_count_library(conn, filter, &recently_added_browse(browse))
+        ViewSource::Library => {
+            library::query_track_count_library_ai(conn, filter, browse, view.exclude_ai)
         }
+        ViewSource::RecentlyAdded => library::query_track_count_library_ai(
+            conn,
+            filter,
+            &recently_added_browse(browse),
+            view.exclude_ai,
+        ),
         ViewSource::Missing => library::query_track_count_missing(conn, filter),
         ViewSource::Playlist(id) => playlist::query_track_count_playlist(conn, *id, filter),
         ViewSource::Smart(id) => smart::query_track_count_smart(conn, *id, filter),
@@ -421,7 +319,7 @@ fn query_track_count_browsed_conn(
         // that a `ColumnView` can never be told there are more rows than
         // `query_track_window_queue` will actually render, even if some
         // future caller forgets to purge the queue after a hard-delete.
-        ViewSource::Queue => queue::query_track_count_queue(conn, queue_ids),
+        ViewSource::Queue => queue::query_track_count_queue(conn, view.queue_items),
         ViewSource::Album {
             album,
             album_artist,
@@ -429,9 +327,12 @@ fn query_track_count_browsed_conn(
         ViewSource::Artist(artist) => {
             library_views::query_artist_track_count(conn, artist, filter, browse)
         }
-        ViewSource::Genre(genre) => {
-            library::query_track_count_library(conn, filter, &genre_browse(genre, browse))
-        }
+        ViewSource::Genre(genre) => library::query_track_count_library_ai(
+            conn,
+            filter,
+            &genre_browse(genre, browse),
+            view.exclude_ai,
+        ),
         ViewSource::ImportErrors
         | ViewSource::MyStats
         | ViewSource::Releases
@@ -461,134 +362,28 @@ pub fn track_source_path(
     .map(|path| path.map(std::path::PathBuf::from))
 }
 
-/// Like [`query_track_count_browsed`] but honoring the FIL-7 AI-exclude filter
-/// (Beschluss 17), matching [`query_track_ids_browsed_ai`]: only `Library`
-/// honors `exclude_ai`, so every other source ignores it and delegates. This is
-/// the cheap `COUNT(*)` the AI-filtered view uses for its total instead of an
-/// id-list length, which would silently cap at `QUEUE_LIMIT`.
-pub fn query_track_count_browsed_ai(
-    db: &Db,
-    source: &ViewSource,
-    filter: &str,
-    browse: &BrowseFilter,
-    queue_ids: &[QueueItem],
-    exclude_ai: bool,
-) -> Result<i64, rusqlite::Error> {
-    let conn = db.conn();
-    match source {
-        ViewSource::Library => {
-            library::query_track_count_library_ai(conn, filter, browse, exclude_ai)
-        }
-        ViewSource::Genre(genre) => library::query_track_count_library_ai(
-            conn,
-            filter,
-            &genre_browse(genre, browse),
-            exclude_ai,
-        ),
-        ViewSource::RecentlyAdded => library::query_track_count_library_ai(
-            conn,
-            filter,
-            &recently_added_browse(browse),
-            exclude_ai,
-        ),
-        _ => query_track_count_browsed_conn(conn, source, filter, browse, queue_ids),
-    }
-}
-
-/// Returns every track id matching `(source, sort_field, sort_dir, filter)`,
-/// in the order that source's "play this whole view" queue should use,
-/// capped at `QUEUE_LIMIT`. This is the queue seam (Stage 2 Task 4; made
-/// source-aware in Stage 3 Task 3): activating a row queues "the whole
-/// current view" by resolving it to this id list rather than the
-/// `MAX_WINDOW_LIMIT`-capped `query_track_window` (which is sized for one
-/// `ColumnView` page, not a playback queue). See the module doc for each
-/// source's ordering. The `Vec` alone can't tell the caller whether it was
-/// truncated by the cap — compare its length with `is_queue_capped` and log
-/// a warning if so.
-pub fn query_track_ids(
-    db: &Db,
-    source: &ViewSource,
-    sort_field: &str,
-    sort_dir: &str,
-    filter: &str,
-    queue_ids: &[QueueItem],
-) -> Result<Vec<i64>, rusqlite::Error> {
-    let conn = db.conn();
-    query_track_ids_in(conn, source, sort_field, sort_dir, filter, queue_ids)
-}
-
-pub(crate) fn query_track_ids_in(
+fn query_track_ids_dispatch(
     conn: &Connection,
-    source: &ViewSource,
-    sort_field: &str,
-    sort_dir: &str,
-    filter: &str,
-    queue_ids: &[QueueItem],
+    view: &TrackViewQuery<'_>,
+    sort: TrackSort<'_>,
 ) -> Result<Vec<i64>, rusqlite::Error> {
-    query_track_ids_browsed_ai_conn(
-        conn,
-        source,
-        sort_field,
-        sort_dir,
-        filter,
-        &BrowseFilter::default(),
-        queue_ids,
-        false,
-    )
-}
-
-pub fn query_track_ids_browsed(
-    db: &Db,
-    source: &ViewSource,
-    sort_field: &str,
-    sort_dir: &str,
-    filter: &str,
-    browse: &BrowseFilter,
-    queue_ids: &[QueueItem],
-) -> Result<Vec<i64>, rusqlite::Error> {
-    let conn = db.conn();
-    query_track_ids_browsed_ai_conn(
-        conn, source, sort_field, sort_dir, filter, browse, queue_ids, false,
-    )
-}
-
-/// Like [`query_track_ids_browsed`] but honoring the AI-exclude filter on the
-/// flat Library source (plan 2.4/8, Beschluss 17): the queue seam "Play all"
-/// builds from hides AI-flagged tracks when `exclude_ai` is set, so
-/// at-queue-end refill follows the visible view. Only `Library` honors it.
-#[allow(clippy::too_many_arguments)]
-pub fn query_track_ids_browsed_ai(
-    db: &Db,
-    source: &ViewSource,
-    sort_field: &str,
-    sort_dir: &str,
-    filter: &str,
-    browse: &BrowseFilter,
-    queue_ids: &[QueueItem],
-    exclude_ai: bool,
-) -> Result<Vec<i64>, rusqlite::Error> {
-    let conn = db.conn();
-    query_track_ids_browsed_ai_conn(
-        conn, source, sort_field, sort_dir, filter, browse, queue_ids, exclude_ai,
-    )
-}
-
-#[allow(clippy::too_many_arguments)]
-fn query_track_ids_browsed_ai_conn(
-    conn: &Connection,
-    source: &ViewSource,
-    sort_field: &str,
-    sort_dir: &str,
-    filter: &str,
-    browse: &BrowseFilter,
-    queue_ids: &[QueueItem],
-    exclude_ai: bool,
-) -> Result<Vec<i64>, rusqlite::Error> {
+    let source = view.source;
+    let filter = view.filter;
+    let browse = view.browse;
+    let TrackSort {
+        field: sort_field,
+        dir: sort_dir,
+    } = sort;
     match source {
         ViewSource::Library => {
             let has_filter = !filter.trim().is_empty();
-            let sql =
-                build_track_ids_query_browsed(sort_field, sort_dir, has_filter, browse, exclude_ai);
+            let sql = build_track_ids_query_browsed(
+                sort_field,
+                sort_dir,
+                has_filter,
+                browse,
+                view.exclude_ai,
+            );
             let mut stmt = conn.prepare(&sql)?;
             let mut params = Vec::new();
             if has_filter {
@@ -599,9 +394,14 @@ fn query_track_ids_browsed_ai_conn(
             let rows = stmt.query_map(rusqlite::params_from_iter(params), row_to_id)?;
             rows.collect()
         }
-        ViewSource::RecentlyAdded => {
-            query_track_ids_recently_added(conn, sort_field, sort_dir, filter, browse, exclude_ai)
-        }
+        ViewSource::RecentlyAdded => query_track_ids_recently_added(
+            conn,
+            sort_field,
+            sort_dir,
+            filter,
+            browse,
+            view.exclude_ai,
+        ),
         ViewSource::Missing => {
             let has_filter = !filter.trim().is_empty();
             let sql = build_track_ids_query_base(1, sort_field, sort_dir, has_filter);
@@ -618,7 +418,8 @@ fn query_track_ids_browsed_ai_conn(
         ViewSource::Smart(id) => {
             smart::query_track_ids_smart(conn, *id, sort_field, sort_dir, filter)
         }
-        ViewSource::Queue => Ok(queue_ids
+        ViewSource::Queue => Ok(view
+            .queue_items
             .iter()
             .filter_map(|item| item.track_id())
             .collect()),
@@ -641,7 +442,11 @@ fn query_track_ids_browsed_ai_conn(
             let browse = genre_browse(genre, browse);
             let has_filter = !filter.trim().is_empty();
             let sql = build_track_ids_query_browsed(
-                sort_field, sort_dir, has_filter, &browse, exclude_ai,
+                sort_field,
+                sort_dir,
+                has_filter,
+                &browse,
+                view.exclude_ai,
             );
             let mut stmt = conn.prepare(&sql)?;
             let mut params = Vec::new();
@@ -704,7 +509,7 @@ fn query_track_ids_recently_added(
 }
 
 /// Returns the ids represented by the current visible view. This differs
-/// from [`query_track_ids_browsed`] only for manual playlists: their missing
+/// from [`query_track_ids`] only for manual playlists: their missing
 /// members remain selectable at their durable positions, while playback
 /// continues to seed queues from playable rows only.
 pub fn query_visible_track_ids_browsed(
@@ -721,9 +526,20 @@ pub fn query_visible_track_ids_browsed(
         ViewSource::Playlist(id) => {
             playlist::query_visible_track_ids_playlist(conn, *id, sort_field, sort_dir, filter)
         }
-        _ => query_track_ids_browsed_ai_conn(
-            conn, source, sort_field, sort_dir, filter, browse, queue_ids, false,
-        ),
+        _ => {
+            let view = TrackViewQuery::new(source)
+                .with_filter(filter)
+                .with_browse(browse)
+                .with_queue_items(queue_ids);
+            query_track_ids_dispatch(
+                conn,
+                &view,
+                TrackSort {
+                    field: sort_field,
+                    dir: sort_dir,
+                },
+            )
+        }
     }
 }
 
