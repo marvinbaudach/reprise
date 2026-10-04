@@ -3206,7 +3206,7 @@ property is set and yet nothing happens.
   failed. A return seen during a running pass is remembered: if that pass then
   leaves a transient failure open or fails, its one retry starts when the pass
   ends. A return after a clean pass does nothing visible.
-  ([#1052](https://github.com/MarvinJWendt/reprise/issues/1052))
+  (#1052)
 - **NET-3** [active] [core] [gtk] — Offline is a state, not an error: no network-backed
   place in the app may treat a missing network connection like an error
   message. The contract covers seven states every network-backed view (feed,
