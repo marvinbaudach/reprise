@@ -135,6 +135,7 @@ internal class MobileSurfaceViewModel(
     private var networkReturnMonitor: NetworkReturnMonitor? = null
     private var reportNetworkReturn: (() -> Unit)? = null
     private var networkReturnPending = false
+    private var artworkNetworkReturnPending = false
 
     var selectedTab by mutableStateOf(BrowseTab.TITLES)
         private set
@@ -178,6 +179,7 @@ internal class MobileSurfaceViewModel(
     private var refreshedAlbumCoverDone = 0L
     private var albumCoverWindowStartedAtMs: Long? = null
     private var albumCoverScheduleGeneration = 0L
+    private var artworkBackfillStopped = false
     @Volatile
     private var artistPhotoBackfillBinding: ArtistPhotoBackfillBinding? = null
     val libraryScanMonitor = Any()
@@ -297,6 +299,10 @@ internal class MobileSurfaceViewModel(
             networkReturnPending = false
             onNetworkReturned()
         }
+        if (artworkNetworkReturnPending) {
+            artworkNetworkReturnPending = false
+            networkReturnedRestartArtwork()
+        }
         networkReturnMonitor?.let { monitor ->
             monitor.start()
             return
@@ -308,6 +314,13 @@ internal class MobileSurfaceViewModel(
             detector = networkReturnDetector,
             onNetworkReturned = {
                 reportNetworkReturn?.invoke() ?: run { networkReturnPending = true }
+            },
+            onRealNetworkReturned = {
+                if (reportNetworkReturn == null) {
+                    artworkNetworkReturnPending = true
+                } else {
+                    networkReturnedRestartArtwork()
+                }
             },
         ).also(NetworkReturnMonitor::start)
     }
@@ -326,6 +339,15 @@ internal class MobileSurfaceViewModel(
         }
         val snapshot = binding.snapshot()
         binding.postToMain { acceptArtistPhotoProgress(snapshot) }
+    }
+
+    fun networkReturnedRestartArtwork() {
+        if (!artworkBackfillStopped) startArtistPhotoBackfill()
+    }
+
+    fun scanCompletedRestartArtwork() {
+        artworkBackfillStopped = false
+        startArtistPhotoBackfill()
     }
 
     fun acceptArtistPhotoProgress(update: ArtistPhotoProgress) {
@@ -394,6 +416,7 @@ internal class MobileSurfaceViewModel(
     }
 
     fun cancelArtistPhotoBackfill() {
+        artworkBackfillStopped = true
         artistPhotoBackfillBinding?.cancel?.invoke()
         dismissArtistPhotoProgress()
     }

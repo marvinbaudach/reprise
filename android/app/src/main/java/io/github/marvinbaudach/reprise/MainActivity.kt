@@ -73,7 +73,7 @@ class MainActivity : ComponentActivity() {
             resolver = contentResolver,
             preferences = getSharedPreferences(PREFERENCES_NAME, MODE_PRIVATE),
             library = library,
-            afterScan = surfaceState::startArtistPhotoBackfill,
+            afterScan = surfaceState::scanCompletedRestartArtwork,
         )
     }
     private val artistPortraitPrefetchDelegate = lazy {
