@@ -48,7 +48,7 @@ impl SafSource for InertSource {
 /// A one-track library with no SAF sync history at all: `analysis_sidecar_
 /// path_for_track` naturally answers `None` for it, matching the "no sidecar
 /// has ever been registered" state every phone track starts in.
-fn library_with_one_track() -> (tempfile::TempDir, MusicLibrary, i64, PathBuf) {
+pub(super) fn library_with_one_track() -> (tempfile::TempDir, MusicLibrary, i64, PathBuf) {
     library_with_one_track_and_tree(true)
 }
 

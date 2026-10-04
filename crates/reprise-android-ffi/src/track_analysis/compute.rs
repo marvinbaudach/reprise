@@ -419,3 +419,7 @@ impl MusicLibrary {
 #[cfg(test)]
 #[path = "compute_tests.rs"]
 mod tests;
+
+#[cfg(test)]
+#[path = "compute_retry_tests.rs"]
+mod retry_tests;
