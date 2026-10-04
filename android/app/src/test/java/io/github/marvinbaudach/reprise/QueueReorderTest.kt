@@ -1,7 +1,9 @@
 package io.github.marvinbaudach.reprise
 
+import kotlinx.coroutines.CoroutineScope
 import org.junit.Assert.assertEquals
 import org.junit.Test
+import kotlin.coroutines.EmptyCoroutineContext
 
 /**
  * The arithmetic behind the drag, on its own.
@@ -52,6 +54,28 @@ class QueueReorderTest {
     fun aDragThatPointsBackAtItsOwnSlotMovesNobody() {
         val shifts = (0..4).map { queueNeighbourShiftRows(it, startSlot = 2, targetSlot = 2) }
         assertEquals(listOf(0, 0, 0, 0, 0), shifts)
+    }
+
+    @Test
+    fun aShorterNeighbourMovesByTheDraggedRowsHeight() {
+        val state = QueueReorderState(CoroutineScope(EmptyCoroutineContext))
+        val draggedRowHeightPx = 96f
+        val neighbourRowHeightPx = 72f
+        state.begin(
+            slot = 0,
+            trackId = 901,
+            rowHeightPx = draggedRowHeightPx,
+            slotCount = 2,
+            pointerRootYPx = 200f,
+        )
+        assertEquals(
+            -draggedRowHeightPx,
+            state.neighbourOffsetPx(
+                shiftRows = -1f,
+                fallbackRowHeightPx = neighbourRowHeightPx,
+            ),
+            0f,
+        )
     }
 
     @Test

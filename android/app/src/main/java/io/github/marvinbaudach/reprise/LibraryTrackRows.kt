@@ -33,6 +33,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -327,14 +328,18 @@ private fun LibraryTrackRow(
     val fontScale = density.fontScale
     val minimumRowHeight = metrics.trackRowHeightDp.dp
     val minimumRowHeightPx = with(density) { minimumRowHeight.toPx() }
-    var measuredRowHeightPx by remember(track.id, metrics.trackRowHeightDp) {
-        mutableIntStateOf(0)
-    }
-    val dragRowHeightPx = trackRowDragHeightPx(
-        measuredHeightPx = measuredRowHeightPx,
-        minimumHeightPx = minimumRowHeightPx,
-    )
     val queueDrag = if (queueActions == null) null else reorder
+    val measuredRowHeightPx = if (queueDrag == null) {
+        null
+    } else {
+        remember(track.id, metrics.trackRowHeightDp) { mutableIntStateOf(0) }
+    }
+    val dragRowHeightPx = {
+        trackRowDragHeightPx(
+            measuredHeightPx = measuredRowHeightPx?.intValue ?: 0,
+            minimumHeightPx = minimumRowHeightPx,
+        )
+    }
     val dragged = queueDrag?.isDragging(queuePosition) == true
     val shiftRows = if (offsetsHold) queueDrag?.neighbourShiftRows(queuePosition) ?: 0 else 0
     // One envelope for the whole lift, read by both the transform and the
@@ -372,7 +377,13 @@ private fun LibraryTrackRow(
                     min = minimumRowHeight,
                     max = if (fontScale <= 1f) minimumRowHeight else Dp.Unspecified,
                 )
-                .onSizeChanged { measuredRowHeightPx = it.height }
+                .then(
+                    if (measuredRowHeightPx == null) {
+                        Modifier
+                    } else {
+                        Modifier.onSizeChanged { measuredRowHeightPx.intValue = it.height }
+                    },
+                )
                 .clipToBounds()
                 .testTag(
                     if (queueActions == null) {
@@ -557,16 +568,20 @@ private fun Modifier.queueDragMotion(
     dragged: Boolean,
     lift: Float,
     shiftRows: Int,
-    rowHeightPx: Float,
+    rowHeightPx: () -> Float,
 ): Modifier {
-    val neighbourOffsetPx by animateFloatAsState(
-        targetValue = shiftRows * rowHeightPx,
+    val neighbourShift by animateFloatAsState(
+        targetValue = shiftRows.toFloat(),
         animationSpec = tween(QUEUE_DRAG_NEIGHBOUR_MS, easing = QueueDragEasing),
         label = "queue-drag-neighbour",
     )
     return graphicsLayer {
         val scale = 1f + (QUEUE_DRAG_LIFT_SCALE - 1f) * lift
-        translationY = if (dragged) reorder.translationPx else neighbourOffsetPx
+        translationY = if (dragged) {
+            reorder.translationPx
+        } else {
+            reorder.neighbourOffsetPx(neighbourShift, rowHeightPx())
+        }
         scaleX = scale
         scaleY = scale
         shadowElevation = QUEUE_DRAG_LIFT_ELEVATION_DP.dp.toPx() * lift
@@ -662,7 +677,7 @@ private fun QueueDragHandle(
     track: LibraryTrack,
     position: Int,
     rowCount: Int,
-    rowHeightPx: Float,
+    rowHeightPx: () -> Float,
     reorder: QueueReorderState,
 ) {
     // Where the finger is on the screen, which is what the auto-scroll edges
@@ -670,6 +685,7 @@ private fun QueueDragHandle(
     // finger's own movement: the handle's layout position stops being the
     // truth the moment the row is translated out from under it.
     var handleTopPx by remember(track.id) { mutableFloatStateOf(0f) }
+    val currentRowHeightPx = rememberUpdatedState(rowHeightPx)
     Box(
         modifier = Modifier
             .width(48.dp)
@@ -678,7 +694,7 @@ private fun QueueDragHandle(
             .onGloballyPositioned { coordinates ->
                 handleTopPx = coordinates.positionInRoot().y
             }
-            .pointerInput(track.id, position, rowCount, rowHeightPx) {
+            .pointerInput(track.id, position, rowCount) {
                 awaitEachGesture {
                     val down = awaitFirstDown(requireUnconsumed = false)
                     // Consuming the down is what keeps the row's own clickable
@@ -687,7 +703,7 @@ private fun QueueDragHandle(
                     reorder.begin(
                         slot = position,
                         trackId = track.id,
-                        rowHeightPx = rowHeightPx,
+                        rowHeightPx = currentRowHeightPx.value(),
                         slotCount = rowCount,
                         pointerRootYPx = handleTopPx + down.position.y,
                     )
