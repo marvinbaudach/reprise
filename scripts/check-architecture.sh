@@ -269,6 +269,25 @@ else
   echo "  ureq agents in reprise-core: $http_boundaries (at budget)"
 fi
 
+# Positional APIs become harder to call correctly as their argument lists grow.
+# Keep the remaining explicit exceptions from multiplying, and require this
+# ceiling to fall in the same change whenever an exception is removed.
+too_many_arguments_budget=41
+too_many_arguments=$(rg --count-matches 'allow\(clippy::too_many_arguments\)' \
+  crates --glob '*.rs' 2>/dev/null \
+  | awk -F: '{ total += $2 } END { print total + 0 }')
+if (( too_many_arguments > too_many_arguments_budget )); then
+  echo "too-many-arguments allows grew from $too_many_arguments_budget to $too_many_arguments" >&2
+  echo "  replace positional parameters with a cohesive parameter object" >&2
+  exit 1
+elif (( too_many_arguments < too_many_arguments_budget )); then
+  echo "too-many-arguments allows are down to $too_many_arguments (budget still says $too_many_arguments_budget)" >&2
+  echo "  lower too_many_arguments_budget in scripts/check-architecture.sh to $too_many_arguments" >&2
+  exit 1
+else
+  echo "  too-many-arguments allows: $too_many_arguments (at budget)"
+fi
+
 echo "== Documentation references from code =="
 
 # Source and scripts cite design documents by path — reprise-stems points at
