@@ -107,6 +107,9 @@ impl<T: Clone> CoverCache<T> {
     }
 
     fn touch(&mut self, path: &Path) {
+        if self.lru.back().is_some_and(|newest| newest == path) {
+            return;
+        }
         self.lru.retain(|candidate| candidate != path);
         self.lru.push_back(path.to_path_buf());
     }
