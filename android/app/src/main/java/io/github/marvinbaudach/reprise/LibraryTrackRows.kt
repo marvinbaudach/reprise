@@ -1,6 +1,5 @@
 package io.github.marvinbaudach.reprise
 
-import androidx.compose.animation.core.animateDpAsState
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.gestures.awaitEachGesture
@@ -12,6 +11,7 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
@@ -31,7 +31,9 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -45,9 +47,11 @@ import androidx.compose.ui.input.pointer.positionChange
 import androidx.compose.ui.layout.LocalPinnableContainer
 import androidx.compose.ui.layout.boundsInRoot
 import androidx.compose.ui.layout.onGloballyPositioned
+import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.layout.positionInRoot
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.semantics.CustomAccessibilityAction
@@ -63,10 +67,14 @@ internal data class QueueRowActions(
 
 private val TrailingColumnMinWidth = 48.dp
 
+internal fun trackRowDragHeightPx(measuredHeightPx: Int, minimumHeightPx: Float): Float =
+    if (measuredHeightPx > 0) measuredHeightPx.toFloat() else minimumHeightPx
+
 /**
- * The library's track list: the 72 dp rows, their continuation sentinel, and
- * the badges the row carries. Shared by the Titles tab and by an opened album,
- * which is why it is not part of either.
+ * The library's track list: rows with a 72 dp floor that grow with the font
+ * scale, their continuation sentinel, and the badges the row carries. Shared
+ * by the Titles tab and by an opened album, which is why it is not part of
+ * either.
  */
 @Composable
 internal fun TrackRows(
@@ -316,7 +324,22 @@ private fun LibraryTrackRow(
     play: () -> Unit,
 ) {
     val contextMenu = rememberTrackContextMenuAnchorState()
+    val density = LocalDensity.current
+    val fontScale = density.fontScale
+    val minimumRowHeight = metrics.trackRowHeightDp.dp
+    val minimumRowHeightPx = with(density) { minimumRowHeight.toPx() }
     val queueDrag = if (queueActions == null) null else reorder
+    val measuredRowHeightPx = if (queueDrag == null) {
+        null
+    } else {
+        remember(track.id, metrics.trackRowHeightDp) { mutableIntStateOf(0) }
+    }
+    val dragRowHeightPx = {
+        trackRowDragHeightPx(
+            measuredHeightPx = measuredRowHeightPx?.intValue ?: 0,
+            minimumHeightPx = minimumRowHeightPx,
+        )
+    }
     val dragged = queueDrag?.isDragging(queuePosition) == true
     val shiftRows = if (offsetsHold) queueDrag?.neighbourShiftRows(queuePosition) ?: 0 else 0
     // One envelope for the whole lift, read by both the transform and the
@@ -328,9 +351,10 @@ private fun LibraryTrackRow(
     } else {
         MaterialTheme.colorScheme.background
     }
-    // The row itself is a fixed-height, clipped Surface, so the context menu's
-    // acknowledgement gets a slot under it rather than a place on top of the
-    // cover and the title. See TrackContextMenuMessage.
+    // The row itself is a clipped Surface with a minimum height, so the text
+    // can establish its measured height and the context menu's acknowledgement
+    // gets a slot under it rather than a place on top of the cover and title.
+    // See TrackContextMenuMessage.
     Column(
         modifier = if (queueDrag == null) {
             Modifier
@@ -342,14 +366,24 @@ private fun LibraryTrackRow(
                     dragged = dragged && offsetsHold,
                     lift = lift,
                     shiftRows = shiftRows,
-                    rowHeightDp = metrics.trackRowHeightDp,
+                    rowHeightPx = dragRowHeightPx,
                 )
         },
     ) {
         Surface(
             modifier = Modifier
                 .fillMaxWidth()
-                .height(metrics.trackRowHeightDp.dp)
+                .heightIn(
+                    min = minimumRowHeight,
+                    max = if (fontScale <= 1f) minimumRowHeight else Dp.Unspecified,
+                )
+                .then(
+                    if (measuredRowHeightPx == null) {
+                        Modifier
+                    } else {
+                        Modifier.onSizeChanged { measuredRowHeightPx.intValue = it.height }
+                    },
+                )
                 .clipToBounds()
                 .testTag(
                     if (queueActions == null) {
@@ -430,13 +464,13 @@ private fun LibraryTrackRow(
                             track = track,
                             position = queuePosition,
                             rowCount = queueRowCount,
-                            rowHeightDp = metrics.trackRowHeightDp,
+                            rowHeightPx = dragRowHeightPx,
                             reorder = queueDrag,
                         )
                     }
                     Column(
                         modifier = Modifier.widthIn(
-                            min = TrailingColumnMinWidth * LocalDensity.current.fontScale,
+                            min = TrailingColumnMinWidth * fontScale,
                         ),
                         horizontalAlignment = Alignment.End,
                         verticalArrangement = Arrangement.spacedBy(2.dp),
@@ -534,16 +568,20 @@ private fun Modifier.queueDragMotion(
     dragged: Boolean,
     lift: Float,
     shiftRows: Int,
-    rowHeightDp: Int,
+    rowHeightPx: () -> Float,
 ): Modifier {
-    val neighbourOffset by animateDpAsState(
-        targetValue = (shiftRows * rowHeightDp).dp,
+    val neighbourShift by animateFloatAsState(
+        targetValue = shiftRows.toFloat(),
         animationSpec = tween(QUEUE_DRAG_NEIGHBOUR_MS, easing = QueueDragEasing),
         label = "queue-drag-neighbour",
     )
     return graphicsLayer {
         val scale = 1f + (QUEUE_DRAG_LIFT_SCALE - 1f) * lift
-        translationY = if (dragged) reorder.translationPx else neighbourOffset.toPx()
+        translationY = if (dragged) {
+            reorder.translationPx
+        } else {
+            reorder.neighbourOffsetPx(neighbourShift, rowHeightPx())
+        }
         scaleX = scale
         scaleY = scale
         shadowElevation = QUEUE_DRAG_LIFT_ELEVATION_DP.dp.toPx() * lift
@@ -639,15 +677,15 @@ private fun QueueDragHandle(
     track: LibraryTrack,
     position: Int,
     rowCount: Int,
-    rowHeightDp: Int,
+    rowHeightPx: () -> Float,
     reorder: QueueReorderState,
 ) {
-    val rowHeightPx = with(LocalDensity.current) { rowHeightDp.dp.toPx() }
     // Where the finger is on the screen, which is what the auto-scroll edges
     // are measured against. Read once at lift-off and carried forward by the
     // finger's own movement: the handle's layout position stops being the
     // truth the moment the row is translated out from under it.
     var handleTopPx by remember(track.id) { mutableFloatStateOf(0f) }
+    val currentRowHeightPx = rememberUpdatedState(rowHeightPx)
     Box(
         modifier = Modifier
             .width(48.dp)
@@ -656,7 +694,7 @@ private fun QueueDragHandle(
             .onGloballyPositioned { coordinates ->
                 handleTopPx = coordinates.positionInRoot().y
             }
-            .pointerInput(track.id, position, rowCount, rowHeightPx) {
+            .pointerInput(track.id, position, rowCount) {
                 awaitEachGesture {
                     val down = awaitFirstDown(requireUnconsumed = false)
                     // Consuming the down is what keeps the row's own clickable
@@ -665,7 +703,7 @@ private fun QueueDragHandle(
                     reorder.begin(
                         slot = position,
                         trackId = track.id,
-                        rowHeightPx = rowHeightPx,
+                        rowHeightPx = currentRowHeightPx.value(),
                         slotCount = rowCount,
                         pointerRootYPx = handleTopPx + down.position.y,
                     )
