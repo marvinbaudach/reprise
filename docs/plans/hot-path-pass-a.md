@@ -2,7 +2,7 @@
 slug: hot-path-pass-a
 worktree: /home/marvin/Projects/reprise-hot-path-pass-a
 branch: feature/hot-path-pass-a
-phase: planned
+phase: refactored
 codex_session:
 created: 2026-10-04
 ---
