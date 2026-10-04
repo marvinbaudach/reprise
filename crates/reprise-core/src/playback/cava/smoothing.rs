@@ -110,8 +110,10 @@ impl Smoother {
             if overshoot {
                 let reduction = (1.0 - 0.02 * framerate_mod).max(0.01);
                 self.sensitivity *= reduction;
-                self.sensitivity_initializing = false;
-                self.sensitivity_settling = true;
+                if self.sensitivity_initializing {
+                    self.sensitivity_initializing = false;
+                    self.sensitivity_settling = true;
+                }
             } else if signal_present {
                 self.sensitivity_settling = false;
                 self.sensitivity *= 1.0 + 0.001 * framerate_mod * self.autosensitivity as f32;
@@ -123,7 +125,7 @@ impl Smoother {
         }
 
         let output_scale = if self.autosensitivity > 0
-            && (protect_initial_output || overshoot)
+            && protect_initial_output
             && max_internal > INITIAL_SENSITIVITY_HEADROOM
         {
             INITIAL_SENSITIVITY_HEADROOM / max_internal
@@ -301,21 +303,15 @@ mod tests {
         // exceeds the output's hard `.clamp(0.0, 1.0)` ceiling and the two
         // `<= plateau_max * 1.05` asserts below can never fail on their own.
         //
-        // Occasionally pinning a single frame to `INITIAL_SENSITIVITY_HEADROOM`
-        // is normal steady-state behaviour (the `overshoot` branch of
-        // `output_scale` fires whenever one frame's internal value ticks
-        // past 1.0) — at this cadence a correctly-fixed `reset()` still
-        // shows short runs of up to 6 consecutive frames pinned there
-        // (measured directly on this exact fixture: temporarily tightening
-        // the threshold below to 0 and reading the panic message). The bug
-        // this test guards against is a much longer *sustained* run: with
-        // the old `reset()` behaviour (re-zeroing
+        // A settled smoother no longer applies the cold-start headroom scale,
+        // so a correctly-fixed `reset()` does not pin frames there. The bug
+        // this test guards against is a sustained run: with the old `reset()`
+        // behaviour (re-zeroing
         // `sensitivity`/`sensitivity_initializing`/`sensitivity_settling`)
         // temporarily reinstated, the same fixture produced a run of 26
         // consecutive frames flat at the headroom immediately after reset,
         // confirmed the same way (`cargo test ... -- --nocapture`, EXIT=101).
-        // The threshold below sits well above the fixed arm's measured
-        // maximum (6) and well below the bug's measured signature (26).
+        // The threshold below remains well below the bug's measured signature.
         let mut post_reset_max = 0.0_f32;
         let mut consecutive_at_headroom = 0;
         let mut max_consecutive_at_headroom = 0;
@@ -431,5 +427,32 @@ mod tests {
         smoother.apply(&mut bars, 735, 44_100, true);
 
         assert_eq!(bars, [1.0]);
+    }
+
+    #[test]
+    fn ac_28_steady_state_overshoot_clips_only_the_overshooting_band() {
+        let mut smoother = Smoother::new(2, 0.0, 0.0, 1);
+
+        let mut cold_overshoot = [1.2, 0.2];
+        smoother.apply(&mut cold_overshoot, 735, 44_100, true);
+        let mut settling_frame = [0.2 / smoother.sensitivity, 0.3 / smoother.sensitivity];
+        smoother.apply(&mut settling_frame, 735, 44_100, true);
+        assert!(!smoother.sensitivity_initializing);
+        assert!(!smoother.sensitivity_settling);
+
+        let steady_sensitivity = smoother.sensitivity;
+        let mut steady_overshoot = [1.2 / steady_sensitivity, 0.4 / steady_sensitivity];
+        let expected_unscaled_band = steady_overshoot[1] * steady_sensitivity;
+        smoother.apply(&mut steady_overshoot, 735, 44_100, true);
+
+        assert_eq!(steady_overshoot[0], 1.0);
+        assert_eq!(steady_overshoot[1], expected_unscaled_band);
+
+        let following_sensitivity = smoother.sensitivity;
+        let mut following_frame = [0.9 / following_sensitivity, 0.4 / following_sensitivity];
+        let expected_following = following_frame.map(|bar| bar * following_sensitivity);
+        smoother.apply(&mut following_frame, 735, 44_100, true);
+
+        assert_eq!(following_frame, expected_following);
     }
 }
