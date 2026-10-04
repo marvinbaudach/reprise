@@ -118,12 +118,17 @@ fn known_row(tx: &rusqlite::Transaction, path_str: &str) -> KnownRow {
     // both preserve the scanner's unknown-mtime retry behaviour through the
     // default `KnownRow`. Do not replace this `.ok()` with error propagation.
     let known: Option<(i64, Option<i64>, Option<i64>, i64)> = tx
-        .query_row(
+        .prepare_cached(
             "SELECT file_mtime, missing_since, removed_at, untagged FROM tracks WHERE path = ?1",
-            [path_str],
-            |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?)),
         )
-        .ok();
+        .ok()
+        .and_then(|mut statement| {
+            statement
+                .query_row([path_str], |row| {
+                    Ok((row.get(0)?, row.get(1)?, row.get(2)?, row.get(3)?))
+                })
+                .ok()
+        });
     KnownRow {
         exists: known.is_some(),
         mtime: known.map(|(file_mtime, ..)| file_mtime),
@@ -406,9 +411,9 @@ fn upsert_track(
         bitrate_kbps,
         untagged,
     ) = params;
-    scan.tx.execute(
-        UPSERT_TRACK_SQL,
-        rusqlite::params![
+    scan.tx
+        .prepare_cached(UPSERT_TRACK_SQL)?
+        .execute(rusqlite::params![
             path_str,
             title,
             artist,
@@ -428,8 +433,7 @@ fn upsert_track(
             facts.inode,
             imported.mount_point,
             untagged,
-        ],
-    )?;
+        ])?;
     Ok(())
 }
 

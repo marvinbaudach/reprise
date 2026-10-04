@@ -186,11 +186,10 @@ pub(crate) fn check_dismissed(
     now: i64,
 ) -> rusqlite::Result<bool> {
     let dismissed: Option<(Option<i64>, Option<i64>)> = tx
-        .query_row(
+        .prepare_cached(
             "SELECT dismissed_mtime, dismissed_size FROM import_errors WHERE path = ?1",
-            [path],
-            |r| Ok((r.get(0)?, r.get(1)?)),
-        )
+        )?
+        .query_row([path], |r| Ok((r.get(0)?, r.get(1)?)))
         .optional()?;
     let Some((Some(dismissed_mtime), Some(dismissed_size))) = dismissed else {
         // No row at all, or a row that was never dismissed
