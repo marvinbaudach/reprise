@@ -2,7 +2,7 @@
 slug: hot-path-pass-b
 worktree: /home/marvin/Projects/reprise-hot-path-pass-b
 branch: feature/hot-path-pass-b
-phase: coded
+phase: reviewed
 codex_session:
 created: 2026-10-04
 ---
