@@ -9,17 +9,21 @@ import java.util.concurrent.RejectedExecutionException
 import java.util.concurrent.atomic.AtomicBoolean
 import io.github.marvinbaudach.reprise.scene.SpectrogramFrames
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.CoroutineName
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.async
 import kotlinx.coroutines.cancel
+import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.selects.select
 import kotlinx.coroutines.withTimeoutOrNull
 import uniffi.reprise_android_ffi.AndroidAnalysisOutcome
 import uniffi.reprise_android_ffi.AndroidTrackRenderBar
@@ -103,6 +107,7 @@ internal class TrackAnalysisLoader(
     private val pauseBetweenAttempts: suspend () -> Unit = { delay(ANALYSIS_RETRY_DELAY_MS) },
 ) : TrackAnalysisPort {
     private val accepting = AtomicBoolean(true)
+    private val closing = CompletableDeferred<Unit>()
     private val job = SupervisorJob()
     private val importScope =
         CoroutineScope(job + importDispatcher + CoroutineName("reprise-analysis-import"))
@@ -131,6 +136,7 @@ internal class TrackAnalysisLoader(
             // request in production. Every attempt still invalidates cached
             // misses and bumps the revision on the main thread.
             for (attempt in 1..MAX_ANALYSIS_ATTEMPTS) {
+                if (attempt > 1 && !accepting.get()) break
                 var outcome: AndroidAnalysisOutcome? = null
                 var failure: Throwable? = null
                 try {
@@ -145,8 +151,19 @@ internal class TrackAnalysisLoader(
                     revision += 1L
                 }
                 if (!trackAnalysisIsNonFinal(outcome, failure)) break
-                if (attempt < MAX_ANALYSIS_ATTEMPTS) pauseBetweenAttempts()
+                if (attempt < MAX_ANALYSIS_ATTEMPTS && !pauseForRetry()) break
             }
+        }
+    }
+
+    private suspend fun pauseForRetry(): Boolean = coroutineScope {
+        val pause = async { pauseBetweenAttempts() }
+        select {
+            closing.onAwait {
+                pause.cancel()
+                false
+            }
+            pause.onAwait { accepting.get() }
         }
     }
 
@@ -338,6 +355,7 @@ internal class TrackAnalysisLoader(
     /** Stops accepting work and lets both lanes' already started work finish. */
     fun shutdown(): Boolean {
         accepting.set(false)
+        closing.complete(Unit)
         job.complete()
         val drained = try {
             runBlocking {
