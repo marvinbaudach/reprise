@@ -68,6 +68,8 @@ mod playing_source_wiring;
 mod section_search;
 #[path = "wiring/session_restore.rs"]
 mod session_restore;
+#[path = "wiring/sleep_timer.rs"]
+mod sleep_timer;
 #[path = "wiring/view_session.rs"]
 mod view_session;
 #[path = "wiring/mod.rs"]
@@ -136,6 +138,7 @@ pub(in crate::ui) fn wire(args: RuntimeWiring<'_>) {
     compact_mode::wire_compact_mode(&args);
     menu::wire_menu(&args, &scratch);
     playing_source::wire_playing_source(&args);
+    sleep_timer::wire_sleep_timer(&args);
     nav_back::wire_nav_back(&args, &scratch);
     section_search::wire_section_search(&args, &scratch);
     clear_all::wire_clear_all(&args, &scratch);

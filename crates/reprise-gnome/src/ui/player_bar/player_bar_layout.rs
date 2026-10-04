@@ -94,6 +94,7 @@ pub(in crate::ui) struct PlayerBarWidgets {
     pub(in crate::ui) time_alignment: gtk4::SizeGroup,
     pub(in crate::ui) volume_icon: gtk4::Button,
     pub(in crate::ui) volume_scale: gtk4::Scale,
+    pub(in crate::ui) sleep_timer: super::sleep_timer_button::SleepTimerButton,
 }
 
 pub(in crate::ui) fn build() -> PlayerBarWidgets {
@@ -358,6 +359,8 @@ pub(in crate::ui) fn build() -> PlayerBarWidgets {
     volume_icon.add_css_class("flat");
 
     let end_zone = gtk4::Box::new(gtk4::Orientation::Horizontal, ZONE_SPACING);
+    let sleep_timer = super::sleep_timer_button::SleepTimerButton::new();
+    end_zone.append(sleep_timer.widget());
     end_zone.append(&volume_icon);
     end_zone.append(&volume_scale);
     end_zone.set_valign(gtk4::Align::Center);
@@ -450,6 +453,7 @@ pub(in crate::ui) fn build() -> PlayerBarWidgets {
         time_alignment,
         volume_icon,
         volume_scale,
+        sleep_timer,
     }
 }
 

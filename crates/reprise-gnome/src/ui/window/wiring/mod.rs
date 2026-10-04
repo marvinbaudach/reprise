@@ -50,6 +50,7 @@ mod tests {
             "compact_mode::wire_compact_mode",
             "menu::wire_menu",
             "playing_source::wire_playing_source",
+            "sleep_timer::wire_sleep_timer",
             "nav_back::wire_nav_back",
             "section_search::wire_section_search",
             "clear_all::wire_clear_all",

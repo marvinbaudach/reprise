@@ -39,6 +39,10 @@ mod tests {
     /// claim instead of trusting the list.
     const GUARDED: &[(&str, &str)] = &[
         (
+            "weather-clear-night-symbolic",
+            "player_bar::sleep_timer_button::available_icon_name → alarm-symbolic",
+        ),
+        (
             "ticket-symbolic",
             "sidebar_presentation::NavIcon::fallback_icon_name → x-office-calendar-symbolic",
         ),

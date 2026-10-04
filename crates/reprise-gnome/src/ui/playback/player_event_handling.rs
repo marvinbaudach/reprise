@@ -196,6 +196,7 @@ impl PlayerController {
                 self.update_mpris_position(position_ms);
                 self.handle_external_position(position_ms, duration_ms);
                 self.retry_pending_local_seek(duration_ms);
+                self.sleep_timer_position_tick();
             }
             PlayerEvent::Buffering {
                 percent,
@@ -209,6 +210,9 @@ impl PlayerController {
                 self.bar.set_buffering(percent, buffered_ms);
             }
             PlayerEvent::TrackFinished => {
+                if self.sleep_timer_track_finished() {
+                    return;
+                }
                 // INST-4b/5b: a finished instrumental preview stops without
                 // advancing the queue (so a stale gapless pre-feed / queue
                 // snapshot can't start playing after it, and no play is credited
@@ -228,6 +232,9 @@ impl PlayerController {
             PlayerEvent::AdvancedToNext => {
                 if self.playback_mode() != super::preview::PlaybackMode::Queue {
                     tracing::warn!("ignoring gapless hand-off during external playback");
+                    return;
+                }
+                if self.sleep_timer_gapless_advance() {
                     return;
                 }
                 // Gapless hand-off: the pre-fed next track is already playing.

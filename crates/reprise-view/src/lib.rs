@@ -29,6 +29,7 @@ pub mod playlists;
 pub mod queue;
 pub mod search_chip;
 pub mod search_scope;
+pub mod sleep_timer;
 pub mod spectral_colour;
 pub mod strings;
 pub mod waveform;
