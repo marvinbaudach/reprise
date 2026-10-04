@@ -20,6 +20,8 @@ pub(crate) mod playback_faults;
 pub(in crate::ui) mod playback_history_transport;
 pub(crate) mod player_callbacks;
 pub(crate) mod player_controller;
+mod player_controller_build;
+mod player_controller_seams;
 mod player_controller_toast;
 mod player_controller_types;
 pub(crate) mod player_controller_wiring;
