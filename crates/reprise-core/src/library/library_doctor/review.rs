@@ -347,7 +347,7 @@ impl DoctorReviewSession {
                     chosen: None,
                 });
             }
-            groups.sort_by_key(|group| {
+            groups.sort_by_cached_key(|group| {
                 tie_templates
                     .get(&group.id)
                     .and_then(|templates| {
@@ -365,7 +365,7 @@ impl DoctorReviewSession {
                     })
             });
         }
-        rows.sort_by_key(|row| sort_keys[&row.id]);
+        rows.sort_by_cached_key(|row| sort_keys[&row.id]);
         Self {
             scan_id: scan.id,
             source_scan,
@@ -427,15 +427,20 @@ impl DoctorReviewSession {
             .iter()
             .map(|row| {
                 (
-                    row.track_id,
-                    row.field,
-                    row.current.clone(),
-                    row.proposed.clone(),
-                    row.source,
+                    (
+                        row.track_id,
+                        row.field,
+                        row.current.clone(),
+                        row.proposed.clone(),
+                        row.source,
+                    ),
                     row.selected,
                 )
             })
-            .collect::<Vec<_>>();
+            .fold(HashMap::new(), |mut selections, (key, selected)| {
+                selections.entry(key).or_insert(selected);
+                selections
+            });
         let prior_groups = self
             .groups
             .iter()
@@ -461,13 +466,14 @@ impl DoctorReviewSession {
             }
         }
         for row in &mut rebuilt.rows {
-            if let Some((.., selected)) = prior_rows.iter().find(|prior| {
-                prior.0 == row.track_id
-                    && prior.1 == row.field
-                    && prior.2 == row.current
-                    && prior.3 == row.proposed
-                    && prior.4 == row.source
-            }) {
+            let key = (
+                row.track_id,
+                row.field,
+                row.current.clone(),
+                row.proposed.clone(),
+                row.source,
+            );
+            if let Some(selected) = prior_rows.get(&key) {
                 row.selected =
                     starts_selected(row.state, row.never_preselect, row.confidence) && *selected;
             }
