@@ -1,10 +1,18 @@
 package io.github.marvinbaudach.reprise
 
+import android.os.Looper
+import java.util.concurrent.CountDownLatch
+import java.util.concurrent.TimeUnit
+import java.util.concurrent.atomic.AtomicInteger
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
+import org.junit.Assert.assertSame
+import org.junit.Assert.assertTrue
 import org.junit.Test
 import org.junit.runner.RunWith
 import org.robolectric.Robolectric
 import org.robolectric.RobolectricTestRunner
+import org.robolectric.Shadows.shadowOf
 import org.robolectric.annotation.Config
 import uniffi.reprise_android_ffi.AndroidAnalysisOutcome
 
@@ -92,16 +100,111 @@ class ReprisePlaybackServiceAnalysisTest {
 
         assertEquals(listOf(41L, 41L, 41L, 7L), service.requestedTrackIds)
     }
+
+    @Test
+    fun nav_15c_background_playback_changes_enter_analysis_on_the_main_thread() {
+        val service = Robolectric.buildService(RecordingAnalysisService::class.java).get()
+
+        Thread {
+            service.coreListener.onPlaybackChanged(m9bSnapshot(trackId = 41))
+        }.also {
+            it.start()
+            it.join(2_000)
+            assertFalse("the playback callback did not return", it.isAlive)
+        }
+
+        assertEquals(emptyList<Long>(), service.requestedTrackIds)
+        shadowOf(Looper.getMainLooper()).idle()
+        assertEquals(listOf(41L), service.requestedTrackIds)
+        assertSame(Looper.getMainLooper().thread, service.requestThreads.single())
+    }
+
+    @Test
+    fun nav_15c_a_stale_settle_cannot_clear_the_current_request() {
+        val service = Robolectric.buildService(RecordingAnalysisService::class.java).get()
+
+        service.coreListener.onPlaybackChanged(m9bSnapshot(trackId = 41))
+        val staleGeneration = service.lastRequestGeneration(41)
+        service.coreListener.onPlaybackChanged(m9bSnapshot(trackId = 7))
+        service.coreListener.onPlaybackChanged(m9bSnapshot(trackId = 41))
+
+        service.settleTrackAnalysis(
+            trackId = 41,
+            requestGeneration = staleGeneration,
+            outcome = AndroidAnalysisOutcome.CANCELLED,
+            error = null,
+        )
+        service.coreListener.onPlaybackChanged(m9bSnapshot(trackId = 41))
+
+        assertEquals(listOf(41L, 7L, 41L), service.requestedTrackIds)
+    }
+
+    @Test
+    fun nav_15c_a_real_failed_request_posts_its_retry_state_to_main() {
+        val service = Robolectric.buildService(ImportingAnalysisService::class.java).get()
+
+        service.coreListener.onPlaybackChanged(m9bSnapshot(trackId = 41))
+        assertTrue("the first import never ran", service.awaitImport(1))
+        val deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(2)
+        while (!service.firstSettlementDelivered() && System.nanoTime() < deadline) {
+            shadowOf(Looper.getMainLooper()).idle()
+            Thread.yield()
+        }
+        assertTrue("the first import never settled", service.firstSettlementDelivered())
+        assertSame(Looper.getMainLooper().thread, service.settlementThreads.single())
+        service.coreListener.onPlaybackChanged(m9bSnapshot(trackId = 41))
+
+        assertTrue("the posted failure did not permit a retry", service.awaitImport(2))
+        assertEquals(2, service.imports.get())
+    }
+}
+
+private class ImportingAnalysisService : ReprisePlaybackService() {
+    val imports = AtomicInteger(0)
+    val settlementThreads = mutableListOf<Thread>()
+    private val imported = listOf(CountDownLatch(1), CountDownLatch(1))
+    private val firstSettlement = CountDownLatch(1)
+
+    override fun importTrackAnalysis(trackId: Long): AndroidAnalysisOutcome {
+        val attempt = imports.incrementAndGet()
+        imported[attempt - 1].countDown()
+        if (attempt == 1) error("decoder stopped")
+        return AndroidAnalysisOutcome.COMPUTED
+    }
+
+    override fun settleTrackAnalysis(
+        trackId: Long,
+        requestGeneration: Long,
+        outcome: AndroidAnalysisOutcome?,
+        error: Throwable?,
+    ) {
+        settlementThreads += Thread.currentThread()
+        super.settleTrackAnalysis(trackId, requestGeneration, outcome, error)
+        firstSettlement.countDown()
+    }
+
+    fun awaitImport(attempt: Int): Boolean = imported[attempt - 1].await(2, TimeUnit.SECONDS)
+
+    fun firstSettlementDelivered(): Boolean = firstSettlement.count == 0L
+
+    override fun startAnalysisBackfill() = Unit
+
+    override fun cancelAnalysisBackfill() = Unit
 }
 
 private class RecordingAnalysisService : ReprisePlaybackService() {
     private val requests = mutableListOf<Pair<Long, Long>>()
     val requestedTrackIds: List<Long>
         get() = requests.map(Pair<Long, Long>::first)
+    val requestThreads = mutableListOf<Thread>()
 
     override fun trackAnalysisRequest(trackId: Long, requestGeneration: Long) {
+        requestThreads += Thread.currentThread()
         requests += trackId to requestGeneration
     }
+
+    fun lastRequestGeneration(trackId: Long): Long =
+        requests.last { (requestedTrackId, _) -> requestedTrackId == trackId }.second
 
     fun settle(trackId: Long, outcome: AndroidAnalysisOutcome) {
         val requestGeneration = requests.last { (requestedTrackId, _) ->

@@ -108,7 +108,11 @@ open class ReprisePlaybackService : MediaSessionService() {
         override fun onPlaybackChanged(snapshot: AndroidPlaybackSnapshot) {
             mutablePlaybackSnapshots.value = snapshot
             if (::sleepTimer.isInitialized) sleepTimer.onPlaybackSnapshot(snapshot)
-            handleTrackAnalysis(snapshot)
+            if (Looper.myLooper() == Looper.getMainLooper()) {
+                handleTrackAnalysis(snapshot)
+            } else {
+                Handler(Looper.getMainLooper()).post { handleTrackAnalysis(snapshot) }
+            }
             if (snapshot.hasRunOut()) {
                 // The queue is empty, so this service has nothing left to keep
                 // alive. `stopSelf` only ends a service nobody is bound to, so
@@ -294,7 +298,7 @@ open class ReprisePlaybackService : MediaSessionService() {
             var outcome: AndroidAnalysisOutcome? = null
             var failure: Throwable? = null
             try {
-                outcome = sharedMusicLibrary().importTrackAnalysis(trackId)
+                outcome = importTrackAnalysis(trackId)
                 if (outcome == AndroidAnalysisOutcome.COMPUTED) {
                     Log.i(TAG_ANALYSIS, "Computed analysis for track $trackId")
                 } else {
@@ -310,7 +314,10 @@ open class ReprisePlaybackService : MediaSessionService() {
         }
     }
 
-    internal fun settleTrackAnalysis(
+    internal open fun importTrackAnalysis(trackId: Long): AndroidAnalysisOutcome =
+        sharedMusicLibrary().importTrackAnalysis(trackId)
+
+    internal open fun settleTrackAnalysis(
         trackId: Long,
         requestGeneration: Long,
         outcome: AndroidAnalysisOutcome?,
