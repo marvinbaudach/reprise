@@ -422,6 +422,99 @@ class TrackAnalysisLoaderTest {
 
         loader.shutdownForTest()
     }
+
+    @Test
+    fun nav_15c_cancelled_import_retries_and_refreshes_after_each_attempt() {
+        val mainHops = ArrayDeque<() -> Unit>()
+        var calls = 0
+        var pauses = 0
+        val loader = TrackAnalysisLoader(
+            importAnalysis = {
+                calls += 1
+                if (calls == 1) AndroidAnalysisOutcome.CANCELLED else AndroidAnalysisOutcome.COMPUTED
+            },
+            readBars = { _, _ -> null },
+            onMainThread = mainHops::add,
+            pauseBetweenAttempts = { pauses += 1 },
+        )
+
+        loader.prepare(41)
+        loader.shutdownForTest()
+        while (mainHops.isNotEmpty()) mainHops.removeFirst().invoke()
+
+        assertEquals(2, calls)
+        assertEquals(1, pauses)
+        assertEquals(2L, loader.revision)
+    }
+
+    @Test
+    fun thrownImportErrorRetriesWithoutCallingAndroidLogFromPlainJunit() {
+        val mainHops = ArrayDeque<() -> Unit>()
+        var calls = 0
+        val loader = TrackAnalysisLoader(
+            importAnalysis = {
+                calls += 1
+                if (calls == 1) error("decoder stopped")
+                AndroidAnalysisOutcome.COMPUTED
+            },
+            readBars = { _, _ -> null },
+            onMainThread = mainHops::add,
+            pauseBetweenAttempts = {},
+        )
+
+        loader.prepare(41)
+        loader.shutdownForTest()
+        while (mainHops.isNotEmpty()) mainHops.removeFirst().invoke()
+
+        assertEquals(2, calls)
+        assertEquals(2L, loader.revision)
+    }
+
+    @Test
+    fun finalImportOutcomeIsRequestedOnce() {
+        val mainHops = ArrayDeque<() -> Unit>()
+        var calls = 0
+        val loader = TrackAnalysisLoader(
+            importAnalysis = {
+                calls += 1
+                AndroidAnalysisOutcome.DECODE_FAILED
+            },
+            readBars = { _, _ -> null },
+            onMainThread = mainHops::add,
+            pauseBetweenAttempts = {},
+        )
+
+        loader.prepare(41)
+        loader.shutdownForTest()
+        while (mainHops.isNotEmpty()) mainHops.removeFirst().invoke()
+
+        assertEquals(1, calls)
+        assertEquals(1L, loader.revision)
+    }
+
+    @Test
+    fun nonFinalImportStopsAfterThreeAttempts() {
+        val mainHops = ArrayDeque<() -> Unit>()
+        var calls = 0
+        var pauses = 0
+        val loader = TrackAnalysisLoader(
+            importAnalysis = {
+                calls += 1
+                AndroidAnalysisOutcome.PHONE_SOURCE_CHANGED
+            },
+            readBars = { _, _ -> null },
+            onMainThread = mainHops::add,
+            pauseBetweenAttempts = { pauses += 1 },
+        )
+
+        loader.prepare(41)
+        loader.shutdownForTest()
+        while (mainHops.isNotEmpty()) mainHops.removeFirst().invoke()
+
+        assertEquals(MAX_ANALYSIS_ATTEMPTS, calls)
+        assertEquals(MAX_ANALYSIS_ATTEMPTS - 1, pauses)
+        assertEquals(MAX_ANALYSIS_ATTEMPTS.toLong(), loader.revision)
+    }
 }
 
 private fun cancelDrainWhileWorkIsStarted(
