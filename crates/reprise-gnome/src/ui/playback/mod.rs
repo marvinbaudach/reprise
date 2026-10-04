@@ -28,6 +28,7 @@ pub(crate) mod player_controller_wiring;
 pub(in crate::ui) mod player_event_handling;
 pub(in crate::ui) mod preview;
 mod queue_change_dispatch;
+mod queue_edit;
 mod queue_insertion;
 pub(crate) mod queue_transport;
 mod seek_start;
