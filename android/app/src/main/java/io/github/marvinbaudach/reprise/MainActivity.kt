@@ -84,6 +84,7 @@ class MainActivity : ComponentActivity() {
         LibrarySession(
             port = sessionPort,
             startPortraitPrefetch = artistPortraitPrefetch::start,
+            afterRestoreConfigured = surfaceState::startArtistPhotoBackfill,
             scanMonitor = surfaceState.libraryScanMonitor,
         )
     }

@@ -87,6 +87,7 @@ private data class ArtworkCacheKey(
 internal class LibrarySession(
     private val port: LibrarySessionPort,
     private val startPortraitPrefetch: () -> Unit = {},
+    private val afterRestoreConfigured: () -> Unit = {},
     private val nowMillis: () -> Long = System::currentTimeMillis,
     private val scanMonitor: Any = Any(),
 ) {
@@ -112,6 +113,7 @@ internal class LibrarySession(
             return LibraryScreenState.TreeUnreadable
         }
         port.configureTree(treeUri)
+        afterRestoreConfigured()
         val state = browseState(selectedTab = selectedTab)
         startPortraitPrefetch()
         return state
