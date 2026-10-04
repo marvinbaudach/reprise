@@ -161,6 +161,12 @@ class LibraryWritesTest {
 
             assertSame(refusal, answers.poll(WAIT_SECONDS, TimeUnit.SECONDS)?.exceptionOrNull())
             assertEquals(2, answers.poll(WAIT_SECONDS, TimeUnit.SECONDS)?.getOrThrow())
+            val idle = CountDownLatch(1)
+            writes.submitUnanswered(
+                work = idle::countDown,
+                onFailure = { throw AssertionError("sentinel failed", it) },
+            )
+            assertTrue(idle.await(WAIT_SECONDS, TimeUnit.SECONDS))
             assertTrue("every completed task must restore the immediate shutdown path", writes.shutdown())
         } finally {
             writes.shutdown()
@@ -263,6 +269,40 @@ class LibraryWritesTest {
             assertTrue("completed answers must restore the immediate shutdown path", writes.shutdown())
         } finally {
             release.countDown()
+        }
+    }
+
+    @Test(timeout = 10_000)
+    fun shutdownReportsNotDrainedWhileAnAnswerIsStillBeingDelivered() {
+        val delivering = CountDownLatch(1)
+        val releaseDelivery = CountDownLatch(1)
+        val idle = CountDownLatch(1)
+        val writes = LibraryWrites(
+            onMainThread = { work -> work() },
+            drainTimeoutMs = 0,
+        )
+        try {
+            writes.submitAnswered(
+                work = {},
+                report = {
+                    delivering.countDown()
+                    releaseDelivery.await()
+                },
+            )
+            writes.submitUnanswered(
+                work = idle::countDown,
+                onFailure = { throw AssertionError("sentinel failed", it) },
+            )
+            assertTrue(delivering.await(WAIT_SECONDS, TimeUnit.SECONDS))
+
+            assertFalse("delivery still belongs to the answered drain", writes.shutdown())
+            releaseDelivery.countDown()
+            assertTrue(idle.await(WAIT_SECONDS, TimeUnit.SECONDS))
+            assertTrue("the delivered answer must restore the immediate path", writes.shutdown())
+        } finally {
+            releaseDelivery.countDown()
+            idle.await(WAIT_SECONDS, TimeUnit.SECONDS)
+            writes.shutdown()
         }
     }
 
