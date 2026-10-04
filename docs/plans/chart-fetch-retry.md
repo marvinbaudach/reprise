@@ -2,7 +2,7 @@
 slug: chart-fetch-retry
 worktree: /home/marvin/Projects/reprise-chart-fetch-retry
 branch: feature/chart-fetch-retry
-phase: reviewed
+phase: refactored
 codex_session:
 created: 2026-10-03
 ---
