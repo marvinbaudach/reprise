@@ -82,6 +82,8 @@ class MiniPlayerFontScaleTest {
         }
         val measuredHeightDp = (player.bottom - player.top).value
 
+        // This only validates that the nonlinear-density fixture diverges from
+        // a line-height estimate; the two 8 dp clearance checks are the proof.
         assertTrue(
             "the fixture must separate the $estimatedHeightDp dp estimate from the " +
                 "$measuredHeightDp dp measured mini-player",
@@ -107,6 +109,69 @@ class MiniPlayerFontScaleTest {
 
     @Test
     fun lastListRowClearsTheGrowingMiniPlayerAtDoubleFontScale() {
+        showListAboveMiniPlayer(surfaceLayout = SurfaceLayout.STACKED)
+
+        assertGrowingPlayerClearsList()
+    }
+
+    @Test
+    @Config(sdk = [36], qualifiers = "w1000dp-h500dp-land")
+    fun wideShortMiniPlayerGrowsWithoutClippingAtDoubleFontScale() {
+        showListAboveMiniPlayer(surfaceLayout = SurfaceLayout.WIDE_SHORT)
+
+        val player = compose.onNodeWithTag("library-mini-player")
+            .getUnclippedBoundsInRoot()
+        val title = compose.onNodeWithText(TRACK_TITLE, useUnmergedTree = true)
+            .getUnclippedBoundsInRoot()
+        val artist = compose.onNodeWithText(TRACK_ARTIST, useUnmergedTree = true)
+            .getUnclippedBoundsInRoot()
+        assertInside(player, TRACK_TITLE)
+        assertInside(player, TRACK_ARTIST)
+        assertTrue(
+            "the title needs 8 dp above it: $title inside $player",
+            title.top - player.top >= 8.dp,
+        )
+        assertTrue(
+            "the artist needs 8 dp below it: $artist inside $player",
+            player.bottom - artist.bottom >= 8.dp,
+        )
+        assertGrowingPlayerClearsList()
+    }
+
+    @Test
+    fun navigationBarLabelsStayInsideAtDoubleFontScale() {
+        showNavigationBar(fontScale = 2f)
+
+        val bar = compose.onNodeWithTag("library-navigation-bar")
+            .getUnclippedBoundsInRoot()
+        libraryDestinations.forEach { destination ->
+            val label = compose.onNodeWithText(destination.label, useUnmergedTree = true)
+                .getUnclippedBoundsInRoot()
+            assertTrue(
+                "${destination.label} starts above the navigation bar: $label outside $bar",
+                label.top >= bar.top,
+            )
+            assertTrue(
+                "${destination.label} ends below the navigation bar: $label outside $bar",
+                label.bottom <= bar.bottom,
+            )
+        }
+        assertTrue(
+            "the double-scale navigation bar must grow beyond its 80 dp floor: $bar",
+            bar.bottom - bar.top > 80.dp,
+        )
+    }
+
+    @Test
+    fun navigationBarStays80DpAtNormalFontScale() {
+        showNavigationBar(fontScale = 1f)
+
+        val bar = compose.onNodeWithTag("library-navigation-bar")
+            .getUnclippedBoundsInRoot()
+        assertEquals("navigation bar bounds: $bar", 80f, (bar.bottom - bar.top).value, 0.1f)
+    }
+
+    private fun showListAboveMiniPlayer(surfaceLayout: SurfaceLayout) {
         compose.setContent {
             RepriseTheme(theme, darkPalette = true) {
                 val currentDensity = LocalDensity.current
@@ -116,7 +181,7 @@ class MiniPlayerFontScaleTest {
                     Scaffold(
                         bottomBar = {
                             LibraryBottomFrame(
-                                surfaceLayout = SurfaceLayout.STACKED,
+                                surfaceLayout = surfaceLayout,
                                 currentTrack = track,
                                 playback = LibraryPlayback(),
                                 progress = { 0f },
@@ -143,7 +208,9 @@ class MiniPlayerFontScaleTest {
             }
         }
         compose.waitForIdle()
+    }
 
+    private fun assertGrowingPlayerClearsList() {
         val row = compose.onNodeWithTag("last-library-row").getUnclippedBoundsInRoot()
         val player = compose.onNodeWithTag("library-mini-player").getUnclippedBoundsInRoot()
         assertTrue(
@@ -151,6 +218,28 @@ class MiniPlayerFontScaleTest {
             player.bottom - player.top > 72.dp,
         )
         assertTrue("the last row must clear the mini-player: $row below $player", row.bottom <= player.top)
+    }
+
+    private fun showNavigationBar(fontScale: Float) {
+        compose.setContent {
+            RepriseTheme(theme, darkPalette = true) {
+                val currentDensity = LocalDensity.current
+                CompositionLocalProvider(
+                    LocalDensity provides Density(currentDensity.density, fontScale),
+                ) {
+                    LibraryBottomFrame(
+                        surfaceLayout = SurfaceLayout.STACKED,
+                        currentTrack = null,
+                        playback = LibraryPlayback(),
+                        progress = { 0f },
+                        shownTab = { BrowseTab.TITLES },
+                        selectTab = {},
+                        openNowPlaying = {},
+                    )
+                }
+            }
+        }
+        compose.waitForIdle()
     }
 
     private fun showMiniPlayer(

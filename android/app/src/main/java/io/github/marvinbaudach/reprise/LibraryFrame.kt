@@ -199,11 +199,17 @@ internal fun LibraryBottomFrame(
         // only the status bar, so this is the one place the bottom inset is
         // spent.
         val systemBarInsets = NavigationBarDefaults.windowInsets
+        val minimumNavigationBarHeight = metrics.navigationBarHeightDp.dp +
+            systemBarInsets.asPaddingValues().calculateBottomPadding()
         NavigationBar(
             modifier = Modifier
-                .height(
-                    metrics.navigationBarHeightDp.dp +
-                    systemBarInsets.asPaddingValues().calculateBottomPadding(),
+                .heightIn(
+                    min = minimumNavigationBarHeight,
+                    max = if (LocalDensity.current.fontScale <= 1f) {
+                        minimumNavigationBarHeight
+                    } else {
+                        Dp.Unspecified
+                    },
                 )
                 .testTag("library-navigation-bar"),
             containerColor = MaterialTheme.colorScheme.surface,
@@ -284,13 +290,11 @@ private fun MiniPlayer(
     val progressRail = MaterialTheme.colorScheme.outlineVariant
     val progressFill = MaterialTheme.colorScheme.primary
     val minimumHeight = metrics.miniPlayerHeightDp.dp
+    val needsTextClearance = LocalDensity.current.fontScale > 1f
     Surface(
         modifier = Modifier
             .fillMaxWidth()
-            .heightIn(
-                min = minimumHeight,
-                max = if (LocalDensity.current.fontScale <= 1f) minimumHeight else Dp.Unspecified,
-            )
+            .heightIn(min = minimumHeight)
             .testTag("library-mini-player")
             .padding(horizontal = 12.dp)
             // The label names the *action*; it does not replace what this node
@@ -305,8 +309,7 @@ private fun MiniPlayer(
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .heightIn(min = minimumHeight)
-                    .padding(horizontal = 8.dp, vertical = 8.dp),
+                    .padding(horizontal = 8.dp),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
                 TrackCover(
@@ -317,6 +320,9 @@ private fun MiniPlayer(
                 )
                 Spacer(Modifier.width(12.dp))
                 Column(modifier = Modifier.weight(1f)) {
+                    if (needsTextClearance) {
+                        Spacer(Modifier.height(8.dp))
+                    }
                     Text(
                         text = track.title,
                         style = MaterialTheme.typography.titleMedium,
@@ -330,6 +336,9 @@ private fun MiniPlayer(
                         maxLines = 1,
                         overflow = TextOverflow.Ellipsis,
                     )
+                    if (needsTextClearance) {
+                        Spacer(Modifier.height(8.dp))
+                    }
                 }
                 IconButton(onClick = controls::previous, modifier = Modifier.size(48.dp)) {
                     MaterialSymbol("skip_previous", "Previous track")
