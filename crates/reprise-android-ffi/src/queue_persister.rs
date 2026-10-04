@@ -109,18 +109,15 @@ impl QueuePersister {
         })
     }
 
-    pub(crate) fn persist(&self, queue: &Queue) -> io::Result<()> {
+    pub(crate) fn persist(&self, queue: Queue) -> io::Result<()> {
         let _serial = self
             .persist_serial
             .lock()
             .unwrap_or_else(std::sync::PoisonError::into_inner);
         let sequence = self.next_sequence.fetch_add(1, Ordering::Relaxed);
-        self.snapshot_file.write(sequence, queue)?;
+        self.snapshot_file.write(sequence, &queue)?;
         if let Some(pending) = self.pending.as_ref() {
-            if let Err(error) = pending.send(PendingSnapshot {
-                sequence,
-                queue: queue.clone(),
-            }) {
+            if let Err(error) = pending.send(PendingSnapshot { sequence, queue }) {
                 tracing::warn!(
                     %error,
                     sequence,

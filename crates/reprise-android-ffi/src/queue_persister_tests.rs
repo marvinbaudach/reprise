@@ -78,7 +78,7 @@ fn a_snapshot_waiting_for_the_writer_commits_after_release() {
     let persister = QueuePersister::spawn(&database_path, Arc::clone(&writer), None).unwrap();
     let held = writer.lock().unwrap();
 
-    persister.persist(&queue(vec![1, 2], 1)).unwrap();
+    persister.persist(queue(vec![1, 2], 1)).unwrap();
     drop(held);
     persister.flush();
 
@@ -93,7 +93,7 @@ fn twenty_snapshots_coalesce_to_the_last_queue() {
     let held = writer.lock().unwrap();
 
     for id in 1..=20 {
-        persister.persist(&queue(vec![id], 0)).unwrap();
+        persister.persist(queue(vec![id], 0)).unwrap();
     }
     drop(held);
     persister.flush();
@@ -110,9 +110,9 @@ fn a_newer_snapshot_survives_an_older_drain_removal() {
     let persister = QueuePersister::spawn(&database_path, Arc::clone(&writer), None).unwrap();
     let held = writer.lock().unwrap();
 
-    persister.persist(&queue(vec![1], 0)).unwrap();
+    persister.persist(queue(vec![1], 0)).unwrap();
     persister.wait_until_worker_attempts(1);
-    persister.persist(&queue(vec![2], 0)).unwrap();
+    persister.persist(queue(vec![2], 0)).unwrap();
     drop(held);
     persister.flush();
 
@@ -133,7 +133,7 @@ fn a_poisoned_writer_stops_the_worker_and_keeps_the_snapshot() {
     .is_err());
     let persister = QueuePersister::spawn(&database_path, writer, None).unwrap();
 
-    persister.persist(&queue(vec![9], 0)).unwrap();
+    persister.persist(queue(vec![9], 0)).unwrap();
     persister.flush();
 
     assert_eq!(persister.successful_commit_count(), 0);
@@ -167,7 +167,7 @@ fn drop_does_not_wait_for_a_held_writer_and_leaves_the_snapshot() {
     let (database_path, writer) = database_in(directory.path());
     let persister = QueuePersister::spawn(&database_path, Arc::clone(&writer), None).unwrap();
     let held = writer.lock().unwrap();
-    persister.persist(&queue(vec![7], 0)).unwrap();
+    persister.persist(queue(vec![7], 0)).unwrap();
 
     let started = Instant::now();
     drop(persister);
@@ -193,7 +193,7 @@ fn a_fresh_session_prefers_the_durable_snapshot_over_the_database() {
     let persister =
         QueuePersister::spawn(&library.database_path, library.writer_handle(), None).unwrap();
     let held = library.writer().unwrap();
-    persister.persist(&queue(vec![ids[1]], 0)).unwrap();
+    persister.persist(queue(vec![ids[1]], 0)).unwrap();
     drop(persister);
     drop(held);
 

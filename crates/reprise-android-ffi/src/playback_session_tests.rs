@@ -1,6 +1,18 @@
 use super::*;
 
 #[test]
+fn enqueue_index_extension_keeps_the_full_queues_first_indices() {
+    let mut track_ids = vec![10, 20, 10];
+    let appended = [20, 30, 30, 10, 40];
+    let mut actual = index_tracks(&track_ids);
+
+    extend_track_index(&mut actual, track_ids.len(), &appended);
+    track_ids.extend(appended);
+
+    assert_eq!(actual, index_tracks(&track_ids));
+}
+
+#[test]
 fn a_snapshot_with_an_out_of_range_cursor_has_no_track_identity() {
     let mut state = SessionState::new();
     state.track_ids = vec![41];
