@@ -1,6 +1,5 @@
 package io.github.marvinbaudach.reprise
 
-import android.content.res.Configuration
 import androidx.activity.ComponentActivity
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.ui.geometry.Offset
@@ -13,12 +12,7 @@ import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performTouchInput
 import androidx.compose.ui.text.TextLayoutResult
 import androidx.compose.ui.unit.Density
-import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.DpRect
-import androidx.compose.ui.unit.TextUnit
-import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.sp
-import io.github.marvinbaudach.reprise.ui.theme.NocturneTypography
 import io.github.marvinbaudach.reprise.ui.theme.RepriseTheme
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
@@ -27,10 +21,8 @@ import org.junit.Rule
 import org.junit.Test
 import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
-import org.robolectric.RuntimeEnvironment
 import org.robolectric.annotation.Config
 import uniffi.reprise_android_ffi.AndroidColorScheme
-import kotlin.math.abs
 
 @RunWith(RobolectricTestRunner::class)
 @Config(sdk = [36], qualifiers = "w500dp-h1000dp")
@@ -50,44 +42,48 @@ class LibraryTrackRowFontScaleTest {
     }
 
     @Test
-    fun rowHeightUsesNonlinearDensityConversionAtDoubleFontScale() {
-        val density = nonlinearDensity(fontScale = 2f)
-        showTrackRows(fontScale = 2f, density = density)
+    fun doubleScaleRowGrowsAroundItsMeasuredText() {
+        showTrackRows(fontScale = 2f)
 
-        val expectedHeightDp = with(density) {
-            NocturneTypography.titleMedium.lineHeight.toDp().value +
-                NocturneTypography.bodyMedium.lineHeight.toDp().value +
-                16f
-        }
-        val linearHeightDp = (
-            NocturneTypography.titleMedium.lineHeight.value +
-                NocturneTypography.bodyMedium.lineHeight.value
-            ) * density.fontScale + 16f
-        val nonlinearGapDp = abs(expectedHeightDp - linearHeightDp)
-        assertTrue(
-            "The fixture no longer distinguishes nonlinear from linear scaling: " +
-                "$nonlinearGapDp dp is below the $NONLINEAR_MINIMUM_GAP_DP dp minimum",
-            nonlinearGapDp >= NONLINEAR_MINIMUM_GAP_DP,
-        )
         val row = compose.onNodeWithTag("library-track-row-901")
             .getUnclippedBoundsInRoot()
-        assertEquals(expectedHeightDp, (row.bottom - row.top).value, 0.1f)
+        val title = compose.onNodeWithText("Title", useUnmergedTree = true)
+            .getUnclippedBoundsInRoot()
+        val subtitle = compose.onNodeWithText("A • B", useUnmergedTree = true)
+            .getUnclippedBoundsInRoot()
+        val rowHeightDp = (row.bottom - row.top).value
+        val measuredTextHeightDp =
+            (title.bottom - title.top).value + (subtitle.bottom - subtitle.top).value
+
+        assertTrue("the double-scale row must grow beyond its 72 dp minimum", rowHeightDp > 72f)
+        assertTrue(
+            "the $rowHeightDp dp row must contain $measuredTextHeightDp dp of measured text",
+            rowHeightDp >= measuredTextHeightDp,
+        )
     }
 
     @Test
-    fun effectiveHeightKeepsBaseRowsAtNormalFontScale() {
-        listOf(72, 64).forEach { baseHeightDp ->
-            assertEquals(
-                baseHeightDp.toFloat(),
-                effectiveTrackRowHeightDp(
-                    baseHeightDp = baseHeightDp,
-                    density = Density(density = 1f, fontScale = 1f),
-                    titleLineHeight = NocturneTypography.titleMedium.lineHeight,
-                    subtitleLineHeight = NocturneTypography.bodyMedium.lineHeight,
-                ),
-                0f,
-            )
-        }
+    fun stackedRowKeepsIts72DpMinimumAtNormalFontScale() {
+        showTrackRows(fontScale = 1f, surfaceLayout = SurfaceLayout.STACKED)
+
+        val row = compose.onNodeWithTag("library-track-row-901")
+            .getUnclippedBoundsInRoot()
+        assertEquals("row bounds: $row", 72f, (row.bottom - row.top).value, 0.1f)
+    }
+
+    @Test
+    fun wideShortRowKeepsIts64DpMinimumAtNormalFontScale() {
+        showTrackRows(fontScale = 1f, surfaceLayout = SurfaceLayout.WIDE_SHORT)
+
+        val row = compose.onNodeWithTag("library-track-row-901")
+            .getUnclippedBoundsInRoot()
+        assertEquals("row bounds: $row", 64f, (row.bottom - row.top).value, 0.1f)
+    }
+
+    @Test
+    fun measuredDragHeightOverridesTheMinimumAndFallsBackBeforeMeasurement() {
+        assertEquals(113f, trackRowDragHeightPx(measuredHeightPx = 113, minimumHeightPx = 72f))
+        assertEquals(72f, trackRowDragHeightPx(measuredHeightPx = 0, minimumHeightPx = 72f))
     }
 
     @Test
@@ -117,7 +113,20 @@ class LibraryTrackRowFontScaleTest {
                 .fetchSemanticsNode().boundsInRoot.top
             handle.performTouchInput {
                 down(center)
-                moveBy(Offset(0f, rowHeightPx))
+                moveBy(Offset(0f, rowHeightPx * 0.49f))
+            }
+            compose.waitForIdle()
+            compose.mainClock.advanceTimeBy(QUEUE_DRAG_NEIGHBOUR_MS * 3L)
+            assertEquals(
+                "less than half the measured row height must not cross a slot",
+                restingSecondTop,
+                compose.onNodeWithTag("queue-track-row-902")
+                    .fetchSemanticsNode().boundsInRoot.top,
+                1f,
+            )
+
+            handle.performTouchInput {
+                moveBy(Offset(0f, rowHeightPx * 0.51f))
             }
             compose.waitForIdle()
             compose.mainClock.advanceTimeBy(QUEUE_DRAG_NEIGHBOUR_MS * 3L)
@@ -144,19 +153,17 @@ class LibraryTrackRowFontScaleTest {
         fontScale: Float,
         tracks: List<LibraryTrack> = listOf(track(901, "Title")),
         queueActions: QueueRowActions? = null,
-        density: Density? = null,
+        surfaceLayout: SurfaceLayout = SurfaceLayout.STACKED,
     ) {
         val surfaceState = MobileSurfaceViewModel()
         compose.setContent {
             RepriseTheme(theme, darkPalette = true) {
                 val currentDensity = LocalDensity.current
                 CompositionLocalProvider(
-                    LocalDensity provides (
-                        density ?: LinearTestDensity(currentDensity.density, fontScale)
-                    ),
+                    LocalDensity provides Density(currentDensity.density, fontScale),
                 ) {
                     TrackRows(
-                        surfaceLayout = SurfaceLayout.STACKED,
+                        surfaceLayout = surfaceLayout,
                         surfaceState = surfaceState,
                         listKey = LibraryListKey.TITLES,
                         tracks = LibraryWindow(
@@ -176,14 +183,6 @@ class LibraryTrackRowFontScaleTest {
         compose.waitForIdle()
     }
 
-    private fun nonlinearDensity(fontScale: Float): Density {
-        val application = RuntimeEnvironment.getApplication()
-        val configuration = Configuration(application.resources.configuration).apply {
-            this.fontScale = fontScale
-        }
-        return Density(application.createConfigurationContext(configuration))
-    }
-
     private fun assertInside(row: DpRect, text: String) {
         val node = compose.onNodeWithText(text, useUnmergedTree = true)
         val textBounds = node.getUnclippedBoundsInRoot()
@@ -200,17 +199,6 @@ class LibraryTrackRowFontScaleTest {
     }
 
     private companion object {
-        private const val NONLINEAR_MINIMUM_GAP_DP = 8f
-
-        private class LinearTestDensity(
-            override val density: Float,
-            override val fontScale: Float,
-        ) : Density {
-            override fun TextUnit.toDp(): Dp = (value * fontScale).dp
-
-            override fun Dp.toSp(): TextUnit = (value / fontScale).sp
-        }
-
         fun track(id: Long, title: String) = LibraryTrack(
             id = id,
             uri = "content://provider/document/$id.flac",

@@ -1,10 +1,5 @@
 package io.github.marvinbaudach.reprise
 
-import androidx.compose.ui.unit.Density
-import androidx.compose.ui.unit.TextUnit
-
-private const val TRACK_ROW_VERTICAL_PADDING_DP = 16f
-
 internal data class LibraryFrameMetrics(
     val filterChipHeightDp: Int,
     val trackRowHeightDp: Int,
@@ -37,19 +32,6 @@ private val wideShortLibraryFrameMetrics = LibraryFrameMetrics(
 internal fun libraryFrameMetrics(layout: SurfaceLayout): LibraryFrameMetrics = when (layout) {
     SurfaceLayout.STACKED -> libraryFrameMetrics
     SurfaceLayout.WIDE_SHORT -> wideShortLibraryFrameMetrics
-}
-
-internal fun effectiveTrackRowHeightDp(
-    baseHeightDp: Int,
-    density: Density,
-    titleLineHeight: TextUnit,
-    subtitleLineHeight: TextUnit,
-): Float {
-    if (density.fontScale <= 1f) return baseHeightDp.toFloat()
-    val scaledTextBlockDp = with(density) {
-        titleLineHeight.toDp().value + subtitleLineHeight.toDp().value
-    }
-    return maxOf(baseHeightDp.toFloat(), scaledTextBlockDp + TRACK_ROW_VERTICAL_PADDING_DP)
 }
 
 internal val libraryDestinations = BrowseTab.entries
