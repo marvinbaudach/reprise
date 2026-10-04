@@ -181,7 +181,7 @@ impl CavaBarProcessor {
         );
     }
 
-    /// Clears all buffered audio, smoothing history, and dynamic gain state.
+    /// Clears buffered audio and smoothing history while retaining the settled gain.
     pub fn reset(&mut self) {
         self.input_buffer.fill(0.0);
         self.smoother.reset();
@@ -191,9 +191,10 @@ impl CavaBarProcessor {
     ///
     /// A different track's samples must not mix into the FFT window, but
     /// unlike [`Self::reset`] the smoother's bar shape (`previous`/`peaks`/
-    /// `fall`/`memory`) and its settled autosensitivity gain survive. The
-    /// next frames therefore fall through the smoother's normal gravity from
-    /// their old heights instead of dropping to zero for one frame.
+    /// `fall`/`memory`) also survives. Both reset paths retain the settled
+    /// autosensitivity gain. The next frames therefore fall through the
+    /// smoother's normal gravity from their old heights instead of dropping
+    /// to zero for one frame.
     pub fn reset_stream(&mut self) {
         self.input_buffer.fill(0.0);
     }

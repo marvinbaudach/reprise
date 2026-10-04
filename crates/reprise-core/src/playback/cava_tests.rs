@@ -318,9 +318,11 @@ fn one_call_uses_the_fft_hop_for_a_lower_sample_rate() {
 }
 
 #[test]
-fn reset_restores_a_fresh_processor_state() {
-    let mut processor = CavaBarProcessor::new(CavaConfig::new(44_100, 10)).unwrap();
-    let mut fresh = CavaBarProcessor::new(CavaConfig::new(44_100, 10)).unwrap();
+fn reset_clears_fft_and_smoothing_history() {
+    let mut config = CavaConfig::new(44_100, 10);
+    config.autosensitivity = 0;
+    let mut processor = CavaBarProcessor::new(config).unwrap();
+    let mut fresh = CavaBarProcessor::new(config).unwrap();
     for chunk in 0..40 {
         processor.process(&sine_chunk(200.0, chunk));
     }
