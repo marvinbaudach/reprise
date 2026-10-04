@@ -85,6 +85,34 @@
 //! `apply_event`'s `PlayerEvent::Error` arm below exactly as before. See that
 //! module's doc comment for the full "diagnose, mark/toast, skip" story.
 //!
+//! ### Toast + track-list-reload seam
+//!
+//! Both `handle_unplayable_track` (now in `playback_faults.rs`) and this
+//! file need to reach widgets the controller doesn't own outright — this is
+//! why the two fields below stay here (and their accessor methods are
+//! `pub(in crate::ui)`, so `playback_faults.rs` can call through them):
+//!
+//! - `toast_overlay: glib::WeakRef<adw::ToastOverlay>` — the overlay is built
+//!   in `window::build` *after* `PlayerController::new` (it wraps the whole
+//!   window), so it can't be a constructor parameter; `set_toast_overlay`
+//!   injects it once `window::build` has it. A `WeakRef`, not a strong
+//!   reference, so the controller can never keep the window alive past its
+//!   natural lifetime; `show_toast` degrades to a log line if the upgrade
+//!   ever fails rather than panicking or silently dropping the toast.
+//! - `reload_track_list: RefCell<Option<Rc<dyn Fn()>>>` — similarly injected
+//!   post-construction via `set_track_list_reload`, since `TrackList` is
+//!   also built after the controller. `window::build` supplies a closure
+//!   over a `Weak<TrackList>`, never a strong `Rc`: a strong reference back
+//!   would be an `Rc` cycle with `TrackList`'s own `Shared.on_activate`,
+//!   which already holds a strong `Rc<PlayerController>`. `Rc<dyn Fn()>`
+//!   (not `Box`) so `reload_track_list()` can clone it out of the `RefCell`
+//!   in one `let` statement before calling it — same hoist-before-calling-
+//!   out shape the queue borrows above use, kept for consistency even though
+//!   this `RefCell` isn't actually subject to the `## Queue borrow
+//!   discipline` hazard: nothing reachable from `reload_track_list()`'s call
+//!   can currently call back into it re-entrantly, so there's no live bug
+//!   here today, just the same defensive shape.
+//!
 //! ## MPRIS (Stage 2 Task 6)
 //!
 //! The window composition root starts media integration once and injects its
@@ -251,8 +279,8 @@ pub struct PlayerController {
     pub(in crate::ui) toast_overlay: glib::WeakRef<adw::ToastOverlay>,
     /// See the module's `## Toast + track-list-reload seam` doc section.
     /// `None` until `set_track_list_reload` is called.
-    /// `pub(super)` only so the sibling `player_controller_toast` can read it —
-    /// the reader moved out of this file, the field's writer did not.
+    /// `pub(super)` only so the sibling `player_controller_toast` can read it
+    /// and `player_controller_seams` can install its writer.
     pub(super) reload_track_list: RefCell<Option<Rc<dyn Fn()>>>,
     /// Refreshes an already-open My Stats page after a real listen event is
     /// committed. Kept separate from the track-list reload seam because a
