@@ -143,9 +143,10 @@ frontend and to the packaging metadata. Its gates are
 and `check-ai-hygiene.sh`. They warn while a rule is `[planned]` and block
 once it is `[active]`.
 
-## Active file ownership — Flathub readiness
+## Completed file ownership — Flathub readiness
 
-Four strands run in parallel. Do not edit files owned by another strand.
+The implementation plans were deleted on landing, and no corresponding branch remains
+(checked 2026-10-04). The table remains as the historical strand boundary.
 
 | Strand | Owns |
 |---|---|
@@ -318,10 +319,10 @@ lock or coordination board exists in this checkout.
 | episodes-as-queue-citizens | Append-only package-5 rule, plan, and completion records in `docs/ux-rules.md`, `docs/plans/podcasts-radio.md`, and `.superpowers/sdd/progress.md` |
 | sibling branches — excluded | `crates/reprise-core/src/podcasts/store.rs`, `crates/reprise-core/src/podcasts/youtube.rs`, and unrelated source UI or packaging work |
 
-## Active file ownership — list geometry service
+## Completed file ownership — list geometry service
 
-Plans: `docs/plans/list-geometry-service.md`, `docs/plans/queue-section-preseed.md`
-Two tracks run in parallel from the same base commit; they share no file.
+The plans were deleted on landing, and no corresponding branch remains (checked 2026-10-04).
+The track lists remain as the historical file boundaries.
 
 **Track 1 · mechanics** — branch `feat/list-geometry-service`
 - `crates/reprise-gnome/src/ui/list_geometry.rs` (new)
@@ -344,16 +345,10 @@ Two tracks run in parallel from the same base commit; they share no file.
 - `crates/reprise-gnome/src/ui/track_list/current_track_selection/delete_follow_display_tests.rs`
 - new display-test files for the large-delete and queue-sections cases
 
-This ownership is ACTIVE. A sibling branch that edits an owned path must
-rebase onto the owning branch first, not merge past it.
+## Completed file ownership — multi-surface frontends
 
-## Active file ownership — multi-surface frontends
-
-Spec: `docs/superpowers/specs/2026-08-01-multi-surface-frontends-design.md`
-Branch: `feature/multi-surface-frontends`
-
-This ownership is ACTIVE. A sibling branch that edits an owned path must
-rebase onto this branch first, not merge past it.
+The implementation plans were deleted on landing, and no corresponding branch remains
+(checked 2026-10-04). The package tables remain as the historical file boundaries.
 
 ## Completed file ownership — Android Now Playing scene
 
