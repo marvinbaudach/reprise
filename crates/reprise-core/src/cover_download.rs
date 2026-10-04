@@ -22,10 +22,12 @@ pub(crate) const MAX_IMAGE_BYTES: u64 = 20 * 1024 * 1024;
 /// gets rechecked instead of being cached forever.
 const NEGATIVE_MARKER_MAX_AGE: Duration = Duration::from_secs(7 * 24 * 60 * 60);
 
-/// One-shot invalidation for negative markers created before self-healing TTLs.
-/// Do not bump this again: future stale markers must be retired by the TTL, and
-/// a need for another generation means that mechanism should be investigated.
-const NEGATIVE_MARKER_GENERATION: u32 = 2;
+/// Generation 2 was the one-shot invalidation for markers created before
+/// self-healing TTLs (#908). Generation 3 retires markers written by the
+/// pre-#1059 matcher, which could not fold typographic punctuation. The TTL is
+/// the normal retirement path; another bump needs a matcher change of the same
+/// kind as its justification.
+const NEGATIVE_MARKER_GENERATION: u32 = 3;
 
 /// Minimum MusicBrainz search score to even consider a release.
 const MIN_MB_SCORE: i64 = 90;

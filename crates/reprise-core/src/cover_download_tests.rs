@@ -231,7 +231,7 @@ fn album_negative_marker_uses_the_one_shot_generation() {
 
     assert_eq!(
         marker.file_name().and_then(|name| name.to_str()),
-        Some("album-key.notfound2")
+        Some("album-key.notfound3")
     );
 }
 

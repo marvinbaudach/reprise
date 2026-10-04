@@ -101,3 +101,31 @@ fn typographic_release_match_downloads_without_a_negative_marker() {
     assert!(matches!(outcome, CoverFetchOutcome::Downloaded(_)));
     assert!(!negative_marker_path_in(&dir, &key).exists());
 }
+
+#[test]
+fn generation_two_negative_marker_does_not_block_a_new_search() {
+    let cache_root = tempfile::tempdir().unwrap();
+    let dir = downloaded_dir_in(cache_root.path());
+    let artist = "Aphex Twin";
+    let album = "Selected Ambient Works 85-92";
+    let key = album_key(artist, album);
+    std::fs::create_dir_all(&dir).unwrap();
+    std::fs::write(dir.join(format!("{key}.notfound2")), b"").unwrap();
+    let mut mb_calls = 0;
+
+    let outcome = fetch_and_cache_with_in(
+        &dir,
+        artist,
+        album,
+        None,
+        &[],
+        &mut |_| {
+            mb_calls += 1;
+            Some(r#"{"releases":[]}"#.to_owned())
+        },
+        &mut |_| panic!("an empty release search must not fetch cover art"),
+    );
+
+    assert_eq!(outcome, CoverFetchOutcome::NotFound);
+    assert_eq!(mb_calls, 1);
+}
