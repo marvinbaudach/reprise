@@ -755,3 +755,17 @@ mod ai_jobs_migration_tests;
 #[cfg(test)]
 #[path = "library/settings_geometry_migration_tests.rs"]
 mod settings_geometry_migration_tests;
+
+#[cfg(test)]
+mod migration_registry_tests {
+    use super::SUPPORTED_SCHEMA_VERSION;
+
+    #[test]
+    fn migration_registry_is_contiguous_and_ends_at_supported_version() {
+        let versions = crate::db_migrations::migration_versions();
+        let expected: Vec<i64> = (19..=SUPPORTED_SCHEMA_VERSION).collect();
+
+        assert_eq!(versions, expected);
+        assert_eq!(versions.last().copied(), Some(SUPPORTED_SCHEMA_VERSION));
+    }
+}
