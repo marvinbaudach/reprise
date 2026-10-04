@@ -188,7 +188,7 @@ fun net_7d_restore_starts_artwork_once_immediately_after_configuring_the_tree() 
 }
 
 @Test
-fun restoreDoesNotStartArtworkWithoutAReadableRememberedTree() {
+fun net_7d_restore_does_not_start_artwork_without_a_readable_remembered_tree() {
     var starts = 0
     val noTree = RecordingLibrarySessionPort(
         rememberedTreeUri = null,

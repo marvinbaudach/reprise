@@ -250,7 +250,11 @@ result.
   the presented track without a result. *Tests:*
   `nav_15c_only_cancelled_changed_or_thrown_analysis_is_non_final`,
   `nav_15c_a_non_final_result_allows_the_current_track_to_request_again`,
-  `nav_15c_cancelled_import_retries_and_refreshes_after_each_attempt`.
+  `nav_15c_background_playback_changes_enter_analysis_on_the_main_thread`,
+  `nav_15c_a_real_failed_request_posts_its_retry_state_to_main`,
+  `nav_15c_a_stale_settle_cannot_clear_the_current_request`,
+  `nav_15c_cancelled_import_retries_and_refreshes_after_each_attempt`,
+  `nav_15c_shutdown_cancels_a_pending_retry_without_another_import`.
 - **NAV-16** [active] [gtk] — **Optional sidebar places carry their own off
   switch and way back.** A secondary click, Menu, or Shift+F10 on Podcasts,
   YouTube, Radio, Releases, or Concerts opens an arrowed menu anchored to the
@@ -3225,7 +3229,13 @@ property is set and yet nothing happens.
   if the user stopped the download in this process; the next scan or app start
   runs it again. The progress card shows as on a start. *Tests:*
   `net_7d_restore_starts_artwork_once_immediately_after_configuring_the_tree`,
-  `net_7d_one_real_network_return_starts_one_background_pass_not_followups`.
+  `net_7d_restore_does_not_start_artwork_without_a_readable_remembered_tree`,
+  `net_7d_activity_recreation_does_not_restart_a_stopped_artwork_pass`,
+  `net_7d_one_real_network_return_starts_one_background_pass_not_followups`,
+  `net_7d_a_pending_real_return_replays_one_artwork_start_after_monitor_restart`,
+  `net_7d_configuration_change_monitor_restart_does_not_duplicate_artwork_start`,
+  `net_7d_a_stopped_download_ignores_the_view_model_network_return_path`,
+  `net_7d_stopped_artwork_waits_for_a_scan_before_network_returns_can_restart_it`.
 - **NET-3** [active] [core] [gtk] — Offline is a state, not an error: no network-backed
   place in the app may treat a missing network connection like an error
   message. The contract covers seven states every network-backed view (feed,

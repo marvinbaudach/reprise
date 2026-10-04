@@ -3,6 +3,7 @@ package io.github.marvinbaudach.reprise
 import android.content.Context
 import android.net.ConnectivityManager
 import android.net.NetworkCapabilities
+import android.os.Looper
 import androidx.test.core.app.ApplicationProvider
 import org.junit.Assert.assertEquals
 import org.junit.Test
@@ -54,7 +55,7 @@ class NetworkReturnBackgroundArtworkTest {
     }
 
     @Test
-    fun stoppedArtworkWaitsForAScanBeforeNetworkReturnsCanRestartIt() {
+    fun net_7d_stopped_artwork_waits_for_a_scan_before_network_returns_can_restart_it() {
         val surface = MobileSurfaceViewModel()
         var starts = 0
         var cancels = 0
@@ -75,7 +76,112 @@ class NetworkReturnBackgroundArtworkTest {
 
         assertEquals(2, starts)
     }
+
+    @Test
+    fun net_7d_activity_recreation_does_not_restart_a_stopped_artwork_pass() {
+        val surface = MobileSurfaceViewModel()
+        var starts = 0
+        surface.bindArtistPhotoBackfill(
+            snapshot = ::idleArtworkProgress,
+            start = { starts += 1 },
+            cancel = {},
+        )
+
+        surface.cancelArtistPhotoBackfill()
+        surface.startArtistPhotoBackfillUnlessStopped()
+        surface.startArtistPhotoBackfillUnlessStopped()
+
+        assertEquals(0, starts)
+    }
+
+    @Test
+    fun net_7d_a_pending_real_return_replays_one_artwork_start_after_monitor_restart() {
+        val context = offlineNetworkContext()
+        val manager = context.getSystemService(ConnectivityManager::class.java)
+        val shadow = shadowOf(manager)
+        val surface = MobileSurfaceViewModel()
+        var starts = 0
+        surface.bindArtistPhotoBackfill(
+            snapshot = ::idleArtworkProgress,
+            start = { starts += 1 },
+            cancel = {},
+        )
+
+        surface.startNetworkReturnMonitor(context) {}
+        shadow.networkCallbacks.single().onCapabilitiesChanged(
+            ShadowNetwork.newInstance(81),
+            validatedWifiCapabilities(),
+        )
+        surface.stopNetworkReturnMonitor()
+        shadowOf(Looper.getMainLooper()).idle()
+        assertEquals(0, starts)
+
+        surface.startNetworkReturnMonitor(context) {}
+        shadowOf(Looper.getMainLooper()).idle()
+
+        assertEquals(1, starts)
+        surface.stopNetworkReturnMonitor()
+    }
+
+    @Test
+    fun net_7d_configuration_change_monitor_restart_does_not_duplicate_artwork_start() {
+        val context = offlineNetworkContext()
+        val manager = context.getSystemService(ConnectivityManager::class.java)
+        val shadow = shadowOf(manager)
+        val surface = MobileSurfaceViewModel()
+        var starts = 0
+        surface.bindArtistPhotoBackfill(
+            snapshot = ::idleArtworkProgress,
+            start = { starts += 1 },
+            cancel = {},
+        )
+
+        surface.startNetworkReturnMonitor(context) {}
+        shadow.networkCallbacks.single().onCapabilitiesChanged(
+            ShadowNetwork.newInstance(82),
+            validatedWifiCapabilities(),
+        )
+        surface.stopNetworkReturnMonitor(configurationChange = true)
+        surface.startNetworkReturnMonitor(context) {}
+        shadowOf(Looper.getMainLooper()).idle()
+
+        assertEquals(1, starts)
+        surface.stopNetworkReturnMonitor()
+    }
+
+    @Test
+    fun net_7d_a_stopped_download_ignores_the_view_model_network_return_path() {
+        val context = offlineNetworkContext()
+        val manager = context.getSystemService(ConnectivityManager::class.java)
+        val shadow = shadowOf(manager)
+        val surface = MobileSurfaceViewModel()
+        var starts = 0
+        surface.bindArtistPhotoBackfill(
+            snapshot = ::idleArtworkProgress,
+            start = { starts += 1 },
+            cancel = {},
+        )
+
+        surface.cancelArtistPhotoBackfill()
+        surface.startNetworkReturnMonitor(context) {}
+        shadow.networkCallbacks.single().onCapabilitiesChanged(
+            ShadowNetwork.newInstance(83),
+            validatedWifiCapabilities(),
+        )
+        shadowOf(Looper.getMainLooper()).idle()
+
+        assertEquals(0, starts)
+        surface.stopNetworkReturnMonitor()
+    }
 }
+
+private fun offlineNetworkContext(): Context =
+    ApplicationProvider.getApplicationContext<Context>().also { context ->
+        shadowOf(context.getSystemService(ConnectivityManager::class.java)).apply {
+            clearAllNetworks()
+            setActiveNetworkInfo(null)
+        }
+    }
 
 private fun idleArtworkProgress() = ArtistPhotoProgress(
     runId = 0,

@@ -342,6 +342,10 @@ internal class MobileSurfaceViewModel(
     }
 
     fun networkReturnedRestartArtwork() {
+        startArtistPhotoBackfillUnlessStopped()
+    }
+
+    fun startArtistPhotoBackfillUnlessStopped() {
         if (!artworkBackfillStopped) startArtistPhotoBackfill()
     }
 
