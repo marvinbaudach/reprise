@@ -273,19 +273,13 @@ enum ReleaseSearchResult {
 }
 
 fn parse_best_release(json: &str, album_artist: &str, album: &str) -> ReleaseSearchResult {
-    fn norm(s: &str) -> String {
-        s.split_whitespace()
-            .collect::<Vec<_>>()
-            .join(" ")
-            .to_lowercase()
-    }
     let Ok(value) = serde_json::from_str::<serde_json::Value>(json) else {
         return ReleaseSearchResult::Malformed;
     };
     let Some(releases) = value.get("releases").and_then(serde_json::Value::as_array) else {
         return ReleaseSearchResult::Malformed;
     };
-    let (want_artist, want_album) = (norm(album_artist), norm(album));
+    let (want_artist, want_album) = (match_key(album_artist), match_key(album));
     let mut matches = Vec::new();
     for r in releases {
         let score = r
@@ -306,7 +300,7 @@ fn parse_best_release(json: &str, album_artist: &str, album: &str) -> ReleaseSea
             .and_then(|credit| credit.get("name"))
             .and_then(|name| name.as_str())
             .unwrap_or_default();
-        if norm(title) == want_album && norm(artist) == want_artist {
+        if match_key(title) == want_album && match_key(artist) == want_artist {
             let Some(id) = r.get("id").and_then(serde_json::Value::as_str) else {
                 continue;
             };
@@ -706,7 +700,11 @@ fn store_album_downloaded_with_in(
 #[path = "cover_download_title.rs"]
 mod title;
 
-use title::strip_release_decoration;
+use title::{match_key, strip_release_decoration};
+
+#[cfg(test)]
+#[path = "cover_download_typographic_tests.rs"]
+mod typographic_tests;
 
 #[cfg(test)]
 #[path = "cover_download_retry_tests.rs"]

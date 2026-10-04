@@ -1,7 +1,29 @@
+pub(super) fn match_key(value: &str) -> String {
+    let mut folded = String::with_capacity(value.len());
+    for character in value.chars() {
+        match character {
+            character if is_dash(character) => folded.push('-'),
+            '’' | '‘' | 'ʼ' | '`' | '´' => folded.push('\''),
+            '“' | '”' => folded.push('"'),
+            '…' => folded.push_str("..."),
+            character => folded.push(character),
+        }
+    }
+    folded
+        .split_whitespace()
+        .collect::<Vec<_>>()
+        .join(" ")
+        .to_lowercase()
+}
+
+fn is_dash(character: char) -> bool {
+    matches!(character, '-' | '‐' | '‑' | '–' | '—' | '−')
+}
+
 pub(super) fn strip_release_decoration(album: &str) -> Option<String> {
     let album = album.trim();
     let spaced_dash = album.char_indices().rev().find(|(index, dash)| {
-        matches!(dash, '-' | '–' | '—')
+        is_dash(*dash)
             && album[..*index]
                 .chars()
                 .next_back()
@@ -51,6 +73,26 @@ mod tests {
     use super::*;
 
     #[test]
+    fn match_keys_fold_typographic_punctuation_and_whitespace() {
+        for variant in [
+            "Album 85‐92",
+            "Album 85‑92",
+            "Album 85–92",
+            "Album 85—92",
+            "Album 85−92",
+        ] {
+            assert_eq!(match_key(variant), "album 85-92");
+        }
+        for variant in ["Artist’s", "Artist‘s", "Artistʼs", "Artist`s", "Artist´s"] {
+            assert_eq!(match_key(variant), "artist's");
+        }
+        for variant in ["“Quoted”", "“Quoted\"", "\"Quoted”"] {
+            assert_eq!(match_key(variant), "\"quoted\"");
+        }
+        assert_eq!(match_key("  Wait…   Now  "), "wait... now");
+    }
+
+    #[test]
     fn release_decoration_stripping_removes_exactly_one_trailing_decoration() {
         for (album, expected) in [
             ("Leave (Get Out) - Single", Some("Leave (Get Out)")),
@@ -58,6 +100,7 @@ mod tests {
             ("Self Inflicted (Deluxe Edition)", Some("Self Inflicted")),
             ("Evolve [Explicit]", Some("Evolve")),
             ("My Forever Drug - Single", Some("My Forever Drug")),
+            ("Album ‐ Single", Some("Album")),
             ("Album – Single", Some("Album")),
             ("Album — EP", Some("Album")),
             ("X-Single", None),
