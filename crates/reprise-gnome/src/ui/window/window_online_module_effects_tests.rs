@@ -166,12 +166,12 @@ fn src_10a_enabling_radio_through_preferences_recovers_the_open_view() {
     let _main_context = crate::ui::test_main_context::lock_main_context();
     let handles = build_online_module_handles();
     reprise_core::online_sources::set_enabled(&handles.preferences.conn, true).unwrap();
-    reprise_core::modules::set_enabled(
-        &handles.preferences.conn,
-        &reprise_core::modules::RADIO_MODULE,
-        false,
-    )
-    .unwrap();
+    // Through the transition, not the DB: Preferences remembers the source
+    // state it last published, so a direct write would hide the later enable.
+    handles
+        .preferences
+        .set_module_enabled_for_test(&reprise_core::modules::RADIO_MODULE, false, "SRC-10a setup")
+        .expect("disable Radio");
     let radio = handles.radio();
 
     assert!(radio.module_off_is_visible_for_test());
