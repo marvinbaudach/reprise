@@ -1,6 +1,6 @@
 use {crate::db_grandfather::grandfather_network_features, rusqlite::Connection, std::path::Path};
 
-const SCHEMA_V1: &str = r#"
+pub(crate) const SCHEMA_V1: &str = r#"
 CREATE TABLE tracks (
   id            INTEGER PRIMARY KEY,
   path          TEXT NOT NULL UNIQUE,
@@ -37,7 +37,7 @@ CREATE TABLE import_errors (
 /// copy+delete). Nullable (`device`/`inode`) because pre-v2 rows have none
 /// until their next scan; `file_size` is `NOT NULL DEFAULT 0` to match the
 /// rest of the tag-derived columns' non-null convention.
-const SCHEMA_V2: &str = r#"
+pub(crate) const SCHEMA_V2: &str = r#"
 ALTER TABLE tracks ADD COLUMN file_size INTEGER NOT NULL DEFAULT 0;
 ALTER TABLE tracks ADD COLUMN device INTEGER;
 ALTER TABLE tracks ADD COLUMN inode INTEGER;
@@ -50,7 +50,7 @@ CREATE INDEX idx_tracks_dev_inode ON tracks(device, inode);
 /// JSON document (field/op/value, AND-joined) with sort and limit options.
 /// Both types support arbitrary `position` ordering (0-indexed, gapless, kept
 /// contiguous across operations).
-const SCHEMA_V3: &str = r#"
+pub(crate) const SCHEMA_V3: &str = r#"
 CREATE TABLE playlists (
   id       INTEGER PRIMARY KEY,
   name     TEXT NOT NULL,
@@ -81,7 +81,7 @@ CREATE TABLE smart_playlists (
 /// `library_root TEXT` column on some singleton row — a key/value table needs
 /// no further migration the next time the app wants to persist one more
 /// small scalar setting.
-const SCHEMA_V4: &str = r#"
+pub(crate) const SCHEMA_V4: &str = r#"
 CREATE TABLE settings (
   key   TEXT PRIMARY KEY,
   value TEXT NOT NULL
@@ -91,7 +91,7 @@ CREATE TABLE settings (
 /// Schema v5: durable, token-free FIFO for completed ListenBrainz listens.
 /// Rows deliberately do not reference `tracks`: a user may remove a library
 /// row while its already-completed listen is still waiting for connectivity.
-const SCHEMA_V5: &str = r#"
+pub(crate) const SCHEMA_V5: &str = r#"
 CREATE TABLE listenbrainz_queue (
   id           INTEGER PRIMARY KEY,
   listened_at  INTEGER NOT NULL,
@@ -106,7 +106,7 @@ CREATE TABLE listenbrainz_queue (
 /// mirrors the ListenBrainz row shape while retaining a separate lifecycle:
 /// either provider can acknowledge or clear its own deliveries without
 /// affecting the other.
-const SCHEMA_V6: &str = r#"
+pub(crate) const SCHEMA_V6: &str = r#"
 CREATE TABLE lastfm_queue (
   id           INTEGER PRIMARY KEY,
   listened_at  INTEGER NOT NULL,
@@ -124,7 +124,7 @@ CREATE TABLE lastfm_queue (
 /// `ON DELETE CASCADE`; schema v23 later replaces that catalog-owned shape
 /// with self-contained historical snapshots. `played_at` is unix seconds and
 /// indexed because every timeseries query filters/buckets on it.
-const SCHEMA_V7: &str = r#"
+pub(crate) const SCHEMA_V7: &str = r#"
 CREATE TABLE listen_events (
   id        INTEGER PRIMARY KEY,
   track_id  INTEGER NOT NULL REFERENCES tracks(id) ON DELETE CASCADE,
@@ -137,13 +137,13 @@ CREATE INDEX idx_listen_events_played_at ON listen_events(played_at);
 /// Schema v8: pre-computed waveform amplitude peaks for the seek bar.
 /// 1000 × u8 (0–255) normalized RMS values, stored as a compact BLOB
 /// (~1 KB per track). Nullable: NULL means not yet analyzed.
-const SCHEMA_V8: &str = r#"
+pub(crate) const SCHEMA_V8: &str = r#"
 ALTER TABLE tracks ADD COLUMN waveform_peaks BLOB;
 "#;
 
 /// Schema v9: durable per-device synchronization preferences and the
 /// Reprise-managed file inventory.
-const SCHEMA_V9: &str = r#"
+pub(crate) const SCHEMA_V9: &str = r#"
 CREATE TABLE device_settings (
   device_serial  TEXT PRIMARY KEY,
   device_name    TEXT NOT NULL,
@@ -209,7 +209,7 @@ CREATE INDEX idx_device_files_serial ON device_files(device_serial);
 /// absent" for any row that predates this migration. Nothing downstream may
 /// ever treat an `'unknown'`-reason row as safely auto-removable without
 /// re-verifying the file first.
-const SCHEMA_V10: &str = r#"
+pub(crate) const SCHEMA_V10: &str = r#"
 ALTER TABLE tracks ADD COLUMN missing_since INTEGER;
 ALTER TABLE tracks ADD COLUMN missing_reason TEXT;
 ALTER TABLE tracks ADD COLUMN mount_point TEXT;
@@ -240,7 +240,7 @@ CREATE TABLE import_errors (
 /// leave the test suite green, and a shipped migration must never be edited
 /// afterwards — the column-drop gets its own version rather than being
 /// retrofitted into v10.
-const SCHEMA_V11: &str = r#"
+pub(crate) const SCHEMA_V11: &str = r#"
 ALTER TABLE tracks DROP COLUMN missing;
 "#;
 
@@ -251,7 +251,7 @@ ALTER TABLE tracks DROP COLUMN missing;
 /// clocks: `fetched_at` records cache age while nullable `seen_at` is the
 /// episode-style badge truth. The fallback accent is retired by v54
 /// (`db_new_releases_accent`); this shipped step keeps it, immutably.
-const SCHEMA_V12: &str = r#"
+pub(crate) const SCHEMA_V12: &str = r#"
 ALTER TABLE tracks ADD COLUMN artist_mbid TEXT;
 ALTER TABLE tracks ADD COLUMN artist_mbid_negative INTEGER NOT NULL DEFAULT 0
   CHECK (artist_mbid_negative IN (0, 1));
@@ -279,7 +279,7 @@ CREATE INDEX idx_new_releases_unseen ON new_releases(seen_at) WHERE seen_at IS N
 /// rows do not enlarge this library-only index. `COLLATE NOCASE` must be part
 /// of the index expression because the visible title order uses that collation
 /// and SQLite cannot satisfy it from a binary-collated title index.
-const SCHEMA_V13: &str = r#"
+pub(crate) const SCHEMA_V13: &str = r#"
 CREATE INDEX idx_tracks_present_title_nocase
 ON tracks(title COLLATE NOCASE)
 WHERE missing_since IS NULL AND removed_at IS NULL;
@@ -301,7 +301,7 @@ WHERE missing_since IS NULL AND removed_at IS NULL;
 /// 13 for this index. Such a database must repair itself here instead of
 /// aborting startup with `no such index`; recreating the index right below
 /// leaves both histories in the same state.
-const SCHEMA_V14: &str = r#"
+pub(crate) const SCHEMA_V14: &str = r#"
 CREATE INDEX idx_tracks_present_album_order
 ON tracks(album COLLATE NOCASE, track_no)
 WHERE missing_since IS NULL AND removed_at IS NULL;
@@ -317,13 +317,13 @@ WHERE missing_since IS NULL AND removed_at IS NULL;
 /// deliberately interprets as disc 1 for backwards compatibility. This stays
 /// after the already-integrated performance migrations so a database created
 /// by schema v14 is upgraded instead of incorrectly skipping the new column.
-const SCHEMA_V15: &str = r#"
+pub(crate) const SCHEMA_V15: &str = r#"
 ALTER TABLE tracks ADD COLUMN disc_no INTEGER;
 "#;
 
 /// Schema v17: indexes the listen-event join direction used by every My Stats
 /// aggregate while retaining the existing played-at-only index.
-const SCHEMA_V17: &str = r#"
+pub(crate) const SCHEMA_V17: &str = r#"
 CREATE INDEX IF NOT EXISTS idx_listen_events_track_played
   ON listen_events(track_id, played_at);
 "#;
@@ -333,7 +333,7 @@ CREATE INDEX IF NOT EXISTS idx_listen_events_track_played
 /// change can be recomputed without decoding the source again. Failed rows
 /// retain their source fingerprint and bounded retry state; a track delete
 /// removes either outcome through the foreign key.
-const SCHEMA_V18: &str = r#"
+pub(crate) const SCHEMA_V18: &str = r#"
 CREATE TABLE track_audio_analysis (
   track_id                INTEGER PRIMARY KEY REFERENCES tracks(id) ON DELETE CASCADE,
   source_mtime            INTEGER NOT NULL CHECK (source_mtime >= 0),

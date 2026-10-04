@@ -1,5 +1,15 @@
 use {rusqlite::Connection, std::path::Path};
 
+#[cfg(test)]
+use {
+    crate::db_grandfather::grandfather_network_features,
+    crate::db_schema_baseline::{
+        SCHEMA_V1, SCHEMA_V10, SCHEMA_V11, SCHEMA_V12, SCHEMA_V13, SCHEMA_V14, SCHEMA_V15,
+        SCHEMA_V17, SCHEMA_V18, SCHEMA_V2, SCHEMA_V3, SCHEMA_V4, SCHEMA_V5, SCHEMA_V6, SCHEMA_V7,
+        SCHEMA_V8, SCHEMA_V9,
+    },
+};
+
 #[path = "db_connection.rs"]
 mod connection;
 #[path = "db_handle.rs"]
@@ -26,7 +36,7 @@ pub enum DbError {
     SchemaNotReady { found: i64, supported: i64 },
 }
 
-pub const SUPPORTED_SCHEMA_VERSION: i64 = 87;
+pub use crate::db_migrations::SUPPORTED_SCHEMA_VERSION;
 
 /// Default SQLite `busy_timeout` (milliseconds) for every connection opened
 /// through [`Db`]: wait up to this long for a write lock instead of failing
@@ -90,75 +100,7 @@ pub(crate) fn migrate_with_cache_dirs(
         cover_cache,
         portrait_cache,
     )?;
-    crate::db_library_doctor::migrate_v19(conn)?;
-    crate::db_tag_write_jobs::migrate_v20(conn)?;
-    crate::db_library_doctor_remote::migrate_v21(conn)?;
-    crate::db_library_doctor_remote::migrate_v22(conn)?;
-    crate::db_mix_planner::migrate_v23(conn)?;
-    crate::db_listen_history::migrate_v24(conn)?;
-    crate::db_library_exclusions::migrate_v25(conn)?;
-    crate::db_new_releases_history::migrate_v26(conn)?;
-    crate::db_drop_audio_analysis_mix::migrate_v27(conn)?;
-    crate::db_change_log::migrate_v28(conn)?;
-    crate::db_ai_jobs::migrate_v29(conn)?;
-    crate::db_artist_news_fetch::migrate_v30(conn)?;
-    crate::db_concerts::migrate_v31(conn)?;
-    crate::db_podcasts_radio::migrate_v32(conn)?;
-    crate::db_podcasts_radio::migrate_v33(conn)?;
-    crate::db_podcasts_radio::migrate_v34(conn)?;
-    crate::db_recently_added::migrate_v35(conn)?;
-    crate::db_device_sync::migrate_v36(conn)?;
-    crate::db_device_sync::migrate_v37(conn)?;
-    crate::db_device_sync::migrate_v38(conn)?;
-    crate::db_release_discography::migrate_v39(conn)?;
-    crate::db_podcasts_radio::migrate_v40(conn)?;
-    crate::db_podcasts_radio::migrate_v41(conn)?;
-    crate::db_device_sync::migrate_v42(conn)?;
-    crate::db_podcasts_radio::migrate_v43(conn)?;
-    crate::db_device_sync::migrate_v44(conn)?;
-    crate::db_sync_log::migrate_v45(conn)?;
-    crate::db_device_sync::migrate_v46(conn)?;
-    crate::db_podcasts_radio::migrate_v47(conn)?;
-    crate::db_podcasts_radio::migrate_v48(conn)?;
-    crate::db_podcasts_radio::migrate_v49(conn)?;
-    crate::db_online_sources::migrate_v50(conn, initial_version > 0, cover_cache, portrait_cache)?;
-    crate::db_podcasts_radio::migrate_v51(conn)?;
-    crate::db_podcasts_radio::migrate_v52(conn)?;
-    crate::db_equalizer::migrate_v53(conn)?;
-    crate::db_play_journal::migrate_v54(conn)?;
-    crate::db_spectrogram::migrate_v55(conn)?;
-    crate::db_new_releases_accent::migrate_v56(conn)?;
-    crate::db_drop_sound_features::migrate_v57(conn)?;
-    crate::db_library_doctor::migrate_v58(conn)?;
-    crate::db_podcasts_radio::migrate_v59(conn)?;
-    crate::db_drop_sound_features::migrate_v60(conn)?;
-    crate::db_mobile_sync::migrate_v61(conn)?;
-    crate::db_releases_view_scope::migrate_v62(conn)?;
-    crate::db_listens_back::migrate_v63(conn)?;
-    crate::db_mobile_sync::migrate_v64(conn)?;
-    crate::db_listens_back::migrate_v65(conn)?;
-    crate::db_library_doctor::migrate_v66(conn)?;
-    crate::db_library_doctor::migrate_v67(conn)?;
-    crate::db_device_sync::migrate_v68(conn)?;
-    crate::db_deleted_releases::migrate_v69(conn)?;
-    crate::db_deleted_releases::migrate_v70(conn)?;
-    crate::db_artwork::migrate_v71(conn)?;
-    crate::db_artwork::migrate_v72(conn)?;
-    crate::db_concerts::migrate_v73(conn)?;
-    crate::db_new_releases_notify::migrate_v74(conn)?;
-    crate::db_concerts::migrate_v75(conn)?;
-    crate::db_concerts::migrate_v76(conn)?;
-    crate::db_podcast_channel_image::migrate_v77(conn)?;
-    crate::db_podcast_resume_scope::migrate_v78(conn)?;
-    crate::library::settings::migrate_v79(conn)?;
-    crate::library::settings::migrate_v80(conn)?;
-    crate::db_sync_log::migrate_v81(conn)?;
-    crate::db_sort_indexes::migrate_v82(conn)?;
-    crate::db_cover_download::migrate_v83(conn)?;
-    crate::db_cover_download::migrate_v84(conn)?;
-    crate::db_smart_playlist_names::migrate_v85(conn)?;
-    crate::db_library_doctor::migrate_v86(conn)?;
-    crate::db_device_sync::migrate_v87(conn)?;
+    crate::db_migrations::run_migrations(conn, initial_version > 0, cover_cache, portrait_cache)?;
     Ok(())
 }
 
