@@ -78,7 +78,11 @@ open class ReprisePlaybackService : MediaSessionService() {
     @OptIn(ExperimentalCoroutinesApi::class)
     private val analysisBackfillScope =
         CoroutineScope(SupervisorJob() + Dispatchers.IO.limitedParallelism(1))
-    private var analysedTrackId: Long? = null
+    private var analysisTrackId: Long? = null
+    private var analysisAttempts = 0
+    private var analysisRequestInFlight = false
+    private var analysisFinal = false
+    private var analysisRequestGeneration = 0L
     private var analysisBackfillRunning = false
     private val analysisBackfillListener = object : TrackAnalysisProgressListener {
         override fun onProgress(progress: TrackAnalysisProgress) {
@@ -256,9 +260,22 @@ open class ReprisePlaybackService : MediaSessionService() {
      */
     private fun handleTrackAnalysis(snapshot: AndroidPlaybackSnapshot) {
         val currentTrackId = snapshot.currentTrackId
-        if (currentTrackId != null && currentTrackId != analysedTrackId) {
-            analysedTrackId = currentTrackId
-            trackAnalysisRequest(currentTrackId)
+        if (currentTrackId != analysisTrackId) {
+            analysisTrackId = currentTrackId
+            analysisAttempts = 0
+            analysisRequestInFlight = false
+            analysisFinal = false
+        }
+        if (
+            currentTrackId != null &&
+            !analysisFinal &&
+            !analysisRequestInFlight &&
+            analysisAttempts < MAX_ANALYSIS_ATTEMPTS
+        ) {
+            analysisAttempts += 1
+            analysisRequestInFlight = true
+            analysisRequestGeneration += 1L
+            trackAnalysisRequest(currentTrackId, analysisRequestGeneration)
         }
         val shouldRun = analysisBackfillShouldRun(
             playing = snapshot.state == AndroidPlaybackState.PLAYING,
@@ -271,18 +288,37 @@ open class ReprisePlaybackService : MediaSessionService() {
     }
 
     /** Overridden in tests with a fake that counts calls instead of decoding. */
-    internal open fun trackAnalysisRequest(trackId: Long) {
+    internal open fun trackAnalysisRequest(trackId: Long, requestGeneration: Long) {
         analysisScope.launch {
             requireOffMainThread("Track analysis import")
+            var outcome: AndroidAnalysisOutcome? = null
+            var failure: Throwable? = null
             try {
-                val outcome = sharedMusicLibrary().importTrackAnalysis(trackId)
+                outcome = sharedMusicLibrary().importTrackAnalysis(trackId)
                 if (outcome == AndroidAnalysisOutcome.COMPUTED) {
                     Log.i(TAG_ANALYSIS, "Computed analysis for track $trackId")
+                } else {
+                    Log.d(TAG_ANALYSIS, "Analysis for track $trackId settled as $outcome")
                 }
             } catch (error: Exception) {
+                failure = error
                 Log.w(TAG_ANALYSIS, "Could not import analysis for track $trackId", error)
             }
+            Handler(Looper.getMainLooper()).post {
+                settleTrackAnalysis(trackId, requestGeneration, outcome, failure)
+            }
         }
+    }
+
+    internal fun settleTrackAnalysis(
+        trackId: Long,
+        requestGeneration: Long,
+        outcome: AndroidAnalysisOutcome?,
+        error: Throwable?,
+    ) {
+        if (trackId != analysisTrackId || requestGeneration != analysisRequestGeneration) return
+        analysisRequestInFlight = false
+        analysisFinal = !trackAnalysisIsNonFinal(outcome, error)
     }
 
     internal open fun startAnalysisBackfill() {
