@@ -6,10 +6,10 @@ use tempfile::TempDir;
 use url::Url;
 
 use super::*;
-use crate::lyrics::breaker::Breaker;
 use crate::lyrics::{
     LyricsBody, LyricsProvider, LyricsQuery, LyricsSource, SourceOutcome, TimedLine,
 };
+use crate::net::breaker::Breaker;
 
 fn query() -> LyricsQuery {
     LyricsQuery {
@@ -527,7 +527,7 @@ fn lrclib_http_status_maps_retry_after_without_sleeping() {
 fn provider_skips_an_open_breaker_unless_forced() {
     let breaker = Breaker::new(3, 300);
     for now in 1..=3 {
-        breaker.record(HOST, crate::lyrics::breaker::BreakerOutcome::Failure, now);
+        breaker.record(HOST, crate::net::breaker::BreakerOutcome::Failure, now);
     }
     let fetch = |_url: &str| FetchOutcome::Found(r#"{"plainLyrics":"fixture"}"#.into());
 
@@ -550,5 +550,19 @@ fn track_path_is_not_part_of_the_remote_request_contract() {
     assert_eq!(
         provider.lookup(&query(), Some(Path::new("/not/read/by/provider"))),
         SourceOutcome::NotFound
+    );
+}
+
+#[test]
+fn lrclib_agent_classifies_statuses_itself() {
+    assert_eq!(
+        agent_policy(),
+        AgentPolicy {
+            timeout: Duration::from_secs(8),
+            status_as_error: false,
+            https_only: false,
+            max_redirects: None,
+            proxy_from_env: true,
+        }
     );
 }

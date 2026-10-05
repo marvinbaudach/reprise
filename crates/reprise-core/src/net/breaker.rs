@@ -4,11 +4,11 @@ use std::sync::{LazyLock, Mutex, MutexGuard};
 const FAILURE_LIMIT: u32 = 3;
 const OPEN_SECONDS: i64 = 5 * 60;
 
-pub(super) static HOST_BREAKER: LazyLock<Breaker> =
+pub(crate) static HOST_BREAKER: LazyLock<Breaker> =
     LazyLock::new(|| Breaker::new(FAILURE_LIMIT, OPEN_SECONDS));
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub(super) enum BreakerOutcome {
+pub(crate) enum BreakerOutcome {
     Success,
     NotFound,
     Failure,
@@ -21,14 +21,14 @@ struct BreakerState {
     retry_after_until: Option<i64>,
 }
 
-pub(super) struct Breaker {
+pub(crate) struct Breaker {
     states: Mutex<HashMap<&'static str, BreakerState>>,
     failure_limit: u32,
     open_seconds: i64,
 }
 
 impl Breaker {
-    pub(super) fn new(failure_limit: u32, open_seconds: i64) -> Self {
+    pub(crate) fn new(failure_limit: u32, open_seconds: i64) -> Self {
         Self {
             states: Mutex::new(HashMap::new()),
             failure_limit,
@@ -36,7 +36,7 @@ impl Breaker {
         }
     }
 
-    pub(super) fn can_attempt(&self, host: &'static str, now: i64, force: bool) -> bool {
+    pub(crate) fn can_attempt(&self, host: &'static str, now: i64, force: bool) -> bool {
         let states = self.states();
         let Some(state) = states.get(host) else {
             return true;
@@ -50,7 +50,7 @@ impl Breaker {
         force || state.open_until.is_none_or(|open_until| now >= open_until)
     }
 
-    pub(super) fn record(&self, host: &'static str, outcome: BreakerOutcome, now: i64) {
+    pub(crate) fn record(&self, host: &'static str, outcome: BreakerOutcome, now: i64) {
         let mut states = self.states();
         let state = states.entry(host).or_default();
         match outcome {
@@ -66,7 +66,7 @@ impl Breaker {
         }
     }
 
-    pub(super) fn record_rate_limited_until(
+    pub(crate) fn record_rate_limited_until(
         &self,
         host: &'static str,
         now: i64,
@@ -85,7 +85,7 @@ impl Breaker {
         );
     }
 
-    pub(super) fn all_open(&self, hosts: &[&'static str], now: i64) -> bool {
+    pub(crate) fn all_open(&self, hosts: &[&'static str], now: i64) -> bool {
         !hosts.is_empty() && hosts.iter().all(|host| !self.can_attempt(host, now, false))
     }
 

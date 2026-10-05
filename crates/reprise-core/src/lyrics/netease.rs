@@ -1,23 +1,22 @@
 use std::path::{Path, PathBuf};
-use std::sync::{LazyLock, Mutex};
 use std::time::{Duration, Instant};
 
 use serde::Deserialize;
 
-use super::breaker::{Breaker, BreakerOutcome, HOST_BREAKER};
 use super::{
     collapse_whitespace, parse_lrc, LyricsBody, LyricsError, LyricsHit, LyricsProvider,
     LyricsQuery, LyricsSource, SourceOutcome,
 };
+use crate::net::breaker::{Breaker, BreakerOutcome, HOST_BREAKER};
+use crate::net::client::{build_agent, AgentPolicy};
+use crate::net::rate::{wait_for_slot, RateLimitKey};
 
 pub(super) const HOST: &str = "music.163.com";
 const SEARCH_URL: &str = "https://music.163.com/api/search/get";
 const LYRIC_URL: &str = "https://music.163.com/api/song/lyric";
 const HTTP_TIMEOUT: Duration = Duration::from_secs(8);
-const REQUEST_INTERVAL: Duration = Duration::from_millis(250);
 const FIXTURE_DIR_ENV: &str = "REPRISE_LYRICS_FIXTURE_DIR";
 const DURATION_TOLERANCE_MS: u64 = 3_000;
-static LAST_REQUEST: LazyLock<Mutex<Option<Instant>>> = LazyLock::new(|| Mutex::new(None));
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 enum FetchOutcome {
@@ -287,15 +286,8 @@ impl NeteaseFetcher for ProductionFetcher {
 }
 
 fn fetch_url(url: &str, timeout: Duration) -> FetchOutcome {
-    wait_for_request_slot();
-    let response = match ureq::Agent::config_builder()
-        .timeout_global(Some(timeout))
-        .user_agent(crate::musicbrainz::user_agent())
-        .build()
-        .new_agent()
-        .get(url)
-        .call()
-    {
+    let _ = wait_for_slot(RateLimitKey::Netease, &mut || false);
+    let response = match build_agent(agent_policy(timeout)).get(url).call() {
         Ok(response) => response,
         Err(ureq::Error::StatusCode(404)) => return FetchOutcome::NotFound,
         Err(ureq::Error::StatusCode(code)) => return FetchOutcome::Failed(code >= 500),
@@ -316,16 +308,9 @@ fn fixture_directory() -> Option<PathBuf> {
     std::env::var(FIXTURE_DIR_ENV).ok().map(PathBuf::from)
 }
 
-fn wait_for_request_slot() {
-    let mut last = LAST_REQUEST
-        .lock()
-        .unwrap_or_else(std::sync::PoisonError::into_inner);
-    if let Some(remaining) =
-        last.and_then(|instant| REQUEST_INTERVAL.checked_sub(instant.elapsed()))
-    {
-        std::thread::sleep(remaining);
-    }
-    *last = Some(Instant::now());
+/// NetEase answers are classified by status code through ureq's status errors.
+const fn agent_policy(timeout: Duration) -> AgentPolicy {
+    AgentPolicy::strict(timeout)
 }
 
 fn normalized(value: &str) -> String {

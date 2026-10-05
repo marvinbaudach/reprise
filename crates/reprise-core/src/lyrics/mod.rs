@@ -11,7 +11,6 @@ use std::path::Path;
 use std::time::{SystemTime, UNIX_EPOCH};
 
 mod batch;
-mod breaker;
 mod cache;
 mod chain;
 mod local;
@@ -133,7 +132,7 @@ fn load_or_fetch_with_cache_context(
 }
 
 pub fn all_network_breakers_open() -> bool {
-    breaker::HOST_BREAKER.all_open(&[lrclib::HOST, netease::HOST], unix_timestamp())
+    crate::net::breaker::HOST_BREAKER.all_open(&[lrclib::HOST, netease::HOST], unix_timestamp())
 }
 
 #[cfg(test)]

@@ -768,3 +768,17 @@ fn cover_1_album_write_failure_does_not_fail_the_cached_download() {
     assert!(!album.path().join("cover.png").exists());
     std::fs::remove_file(cached).ok();
 }
+
+#[test]
+fn cover_art_archive_agent_surfaces_statuses_as_errors() {
+    assert_eq!(
+        agent_policy(),
+        AgentPolicy {
+            timeout: Duration::from_secs(15),
+            status_as_error: true,
+            https_only: false,
+            max_redirects: None,
+            proxy_from_env: true,
+        }
+    );
+}

@@ -1,15 +1,16 @@
 //! Deezer public-API artist portrait client. Blocking; worker-thread only.
-//! Own rate throttle and HTTP agent — deliberately not routed through
+//! Own spacing budget and agent policy — deliberately not routed through
 //! `musicbrainz::get`, which applies MusicBrainz's one-request-per-second limit.
 
 use std::io::Read;
-use std::sync::{Mutex, OnceLock};
-use std::time::{Duration, Instant};
+use std::sync::OnceLock;
+use std::time::Duration;
 
 use crate::musicbrainz::{self, FetchError};
+use crate::net::client::{build_agent, AgentPolicy};
+use crate::net::rate::{wait_for_slot, RateLimitKey};
 
 const HTTP_TIMEOUT: Duration = Duration::from_secs(15);
-const MIN_REQUEST_INTERVAL: Duration = Duration::from_millis(300);
 const MAX_IMAGE_BYTES: u64 = 20 * 1024 * 1024;
 const MAX_SEARCH_RESPONSE_BYTES: u64 = 4 * 1024 * 1024;
 const MISSING_IMAGE_IDENTIFIERS: &[&str] = &[
@@ -19,7 +20,6 @@ const MISSING_IMAGE_IDENTIFIERS: &[&str] = &[
     "d41d8cd98f00b204e9800998ecf8427e",
 ];
 
-static LAST_REQUEST: Mutex<Option<Instant>> = Mutex::new(None);
 static AGENT: OnceLock<ureq::Agent> = OnceLock::new();
 
 pub(crate) struct DeezerArtist {
@@ -149,14 +149,18 @@ fn is_deezer_image_url(url: &str) -> bool {
 }
 
 fn agent() -> &'static ureq::Agent {
-    AGENT.get_or_init(|| {
-        ureq::Agent::config_builder()
-            .timeout_global(Some(HTTP_TIMEOUT))
-            .https_only(true)
-            .user_agent(musicbrainz::user_agent())
-            .build()
-            .new_agent()
-    })
+    AGENT.get_or_init(|| build_agent(agent_policy()))
+}
+
+/// Deezer is reached over HTTPS only, and statuses surface as errors.
+const fn agent_policy() -> AgentPolicy {
+    AgentPolicy {
+        timeout: HTTP_TIMEOUT,
+        status_as_error: true,
+        https_only: true,
+        max_redirects: None,
+        proxy_from_env: true,
+    }
 }
 
 fn map_ureq_error(error: ureq::Error) -> FetchError {
@@ -175,25 +179,27 @@ fn map_ureq_error(error: ureq::Error) -> FetchError {
 }
 
 fn respect_rate_limit() {
-    let now = Instant::now();
-    let next = {
-        let mut guard = LAST_REQUEST
-            .lock()
-            .unwrap_or_else(std::sync::PoisonError::into_inner);
-        let next = guard.map_or(now, |last| (last + MIN_REQUEST_INTERVAL).max(now));
-        *guard = Some(next);
-        next
-    };
-    let delay = next.saturating_duration_since(Instant::now());
-    if !delay.is_zero() {
-        std::thread::sleep(delay);
-    }
+    let _ = wait_for_slot(RateLimitKey::Deezer, &mut || false);
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
     use crate::artist_portrait::test_fixtures::ALL_PLACEHOLDERS_RESPONSE;
+
+    #[test]
+    fn deezer_agent_is_https_only_and_surfaces_statuses_as_errors() {
+        assert_eq!(
+            agent_policy(),
+            AgentPolicy {
+                timeout: Duration::from_secs(15),
+                status_as_error: true,
+                https_only: true,
+                max_redirects: None,
+                proxy_from_env: true,
+            }
+        );
+    }
 
     const HIT: &str = r#"{"data":[
       {"id":1,"link":"https://www.deezer.com/artist/1","name":"Blessthefall","nb_album":12,"nb_fan":3456,"picture":"https://cdn-images.dzcdn.net/images/artist/abc123/500x500-000000-80-0-0.jpg","picture_big":"https://cdn-images.dzcdn.net/images/artist/abc123/500x500-000000-80-0-0.jpg","picture_medium":"https://cdn-images.dzcdn.net/images/artist/abc123/250x250-000000-80-0-0.jpg","picture_small":"https://cdn-images.dzcdn.net/images/artist/abc123/56x56-000000-80-0-0.jpg","picture_xl":"https://cdn-images.dzcdn.net/images/artist/abc123/1000x1000-000000-80-0-0.jpg","radio":true,"tracklist":"https://api.deezer.com/artist/1/top?limit=50","type":"artist"}

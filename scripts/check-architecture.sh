@@ -239,27 +239,23 @@ done
 
 echo "== Engine HTTP boundaries =="
 
-# One shared HTTP boundary is the plan (docs/plans/architecture-consolidation.md
-# §4.4, docs/plans/consolidation-plan.md package 2.1). Until it exists, this
-# budget stops the problem from growing while the waves run: every
-# `ureq::Agent::config_builder()` in the engine is a separate agent, and
-# therefore a separate timeout, user agent, rate limiter and error fold.
+# The engine's one HTTP boundary lives in crates/reprise-core/src/net/client.rs: every metadata
+# provider describes its agent as an `AgentPolicy` and builds it there, so a timeout, user agent
+# or redirect rule is decided once. The four remaining matches are the scrobbling family, which
+# keeps its own identity and auth rhythm outside the boundary.
 #
 # The number is a CEILING and a FLOOR, exactly like the frontend-thinness
 # budgets. Adding a boundary fails here; removing one fails here too until the
 # budget comes down in the same commit. A budget nobody lowers is a budget
 # nobody believes.
-#
-# This is not theoretical: the count went from 13 to 16 in two commits when the
-# lyrics path grew its own lrclib and netease agents, and nothing said a word.
-http_boundary_budget=12
+http_boundary_budget=5
 http_boundaries=$(rg --count-matches 'ureq::Agent::config_builder' \
   crates/reprise-core/src --glob '*.rs' 2>/dev/null \
   | awk -F: '{ total += $2 } END { print total + 0 }')
 if (( http_boundaries > http_boundary_budget )); then
   echo "engine HTTP boundaries grew from $http_boundary_budget to $http_boundaries" >&2
   echo "  route the new fetch through the shared boundary instead of building a second agent" >&2
-  echo "  (docs/plans/consolidation-plan.md, package 2.1)" >&2
+  echo "  (route it through crates/reprise-core/src/net/client.rs)" >&2
   exit 1
 elif (( http_boundaries < http_boundary_budget )); then
   echo "engine HTTP boundaries are down to $http_boundaries (budget still says $http_boundary_budget)" >&2
@@ -268,6 +264,36 @@ elif (( http_boundaries < http_boundary_budget )); then
 else
   echo "  ureq agents in reprise-core: $http_boundaries (at budget)"
 fi
+
+# Only the boundary and the files that deliberately sit outside it may construct an agent:
+# the scrobbling family (own identity, own auth rhythm) and the stream proxy, which relays
+# bytes under ureq's default identity.
+check_core_agent_allowlist() {
+  local file allowed_file is_allowed
+  while IFS= read -r file; do
+    [[ -z "$file" ]] && continue
+    is_allowed=0
+    for allowed_file in "$@"; do
+      if [[ "$file" == "$allowed_file" ]]; then
+        is_allowed=1
+        break
+      fi
+    done
+    if (( is_allowed == 0 )); then
+      echo "$file constructs a ureq agent outside the net boundary" >&2
+      return 1
+    fi
+  done < <(rg -l 'ureq::Agent::(config_builder|new_with_defaults|new_with_config|with_parts)' \
+    crates/reprise-core/src --glob '*.rs' || true)
+}
+
+check_core_agent_allowlist \
+  crates/reprise-core/src/net/client.rs \
+  crates/reprise-core/src/scrobbling.rs \
+  crates/reprise-core/src/scrobbling/lastfm.rs \
+  crates/reprise-core/src/library/lastfm_stats.rs \
+  crates/reprise-core/src/library/listenbrainz.rs \
+  crates/reprise-core/src/podcasts/stream_proxy.rs
 
 # Positional APIs become harder to call correctly as their argument lists grow.
 # Keep the remaining explicit suppressions from multiplying, and require this

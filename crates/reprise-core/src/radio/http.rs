@@ -2,26 +2,21 @@
 
 #[cfg(any(test, feature = "test-fixtures"))]
 use std::path::{Path, PathBuf};
-use std::sync::Mutex;
-use std::time::{Duration, Instant};
+use std::time::Duration;
 
 #[cfg(any(test, feature = "test-fixtures"))]
 use url::Url;
 
 use super::{RadioError, RadioFailureDetail};
 use crate::http_body::{self, BoundedReadError};
+use crate::net::client::{build_agent, AgentPolicy};
+use crate::net::rate::{wait_for_slot, RateLimitKey};
 use crate::source_error::{parse_retry_after, SOURCE_REQUEST_TIMEOUT};
-#[cfg(test)]
-use crate::sources_http::user_agent;
-use crate::sources_http::{build_agent, lock_unpoisoned};
 
 pub const HTTP_TIMEOUT: Duration = SOURCE_REQUEST_TIMEOUT;
 pub const CLICK_TIMEOUT: Duration = Duration::from_secs(5);
-const MIN_REQUEST_INTERVAL: Duration = Duration::from_secs(1);
 #[cfg(any(test, feature = "test-fixtures"))]
 const FIXTURE_DIR_ENV: &str = "REPRISE_RADIO_FIXTURE_DIR";
-
-static LAST_REQUEST: Mutex<Option<Instant>> = Mutex::new(None);
 
 pub fn get(url: &str) -> Result<String, RadioError> {
     get_with_timeout(url, HTTP_TIMEOUT)
@@ -33,7 +28,7 @@ pub fn get_with_timeout(url: &str, timeout: Duration) -> Result<String, RadioErr
         return fixture_get(url, &directory);
     }
     wait_for_request_slot();
-    let response = build_agent(timeout)
+    let response = build_agent(agent_policy(timeout))
         .get(url)
         .call()
         .map_err(classify_transport)?;
@@ -54,7 +49,7 @@ pub fn icy_headers(url: &str) -> Result<Vec<(String, String)>, RadioError> {
         return fixture_icy_headers(url, &directory);
     }
     wait_for_request_slot();
-    let response = build_agent(HTTP_TIMEOUT)
+    let response = build_agent(agent_policy(HTTP_TIMEOUT))
         .get(url)
         .header("Icy-MetaData", "1")
         .call()
@@ -96,7 +91,7 @@ fn source_status_error(status: u16, retry_after: Option<&str>) -> Option<RadioEr
 /// Resolves a scoped radio fixture directory before the environment fallback.
 /// The fallback keeps feature-enabled fixture consumers independent of tests.
 fn fixture_directory() -> Option<PathBuf> {
-    crate::sources_http::fixture_directory(FIXTURE_DIR_ENV)
+    crate::net::fixtures::fixture_directory(FIXTURE_DIR_ENV)
 }
 
 #[cfg(test)]
@@ -109,7 +104,12 @@ pub(crate) fn with_fixture_dir<T>(directory: &Path, operation: impl FnOnce() -> 
         super::servers::reset_cache_for_tests();
     }
 
-    crate::sources_http::with_fixture_dir(FIXTURE_DIR_ENV, directory, reset_source_state, operation)
+    crate::net::fixtures::with_fixture_dir(
+        FIXTURE_DIR_ENV,
+        directory,
+        reset_source_state,
+        operation,
+    )
 }
 
 #[cfg(any(test, feature = "test-fixtures"))]
@@ -219,11 +219,12 @@ fn fixture_icy_headers(url: &str, directory: &Path) -> Result<Vec<(String, Strin
 }
 
 fn wait_for_request_slot() {
-    let mut previous = lock_unpoisoned(&LAST_REQUEST);
-    if let Some(last) = *previous {
-        std::thread::sleep(MIN_REQUEST_INTERVAL.saturating_sub(last.elapsed()));
-    }
-    *previous = Some(Instant::now());
+    let _ = wait_for_slot(RateLimitKey::Radio, &mut || false);
+}
+
+/// Station lookups and ICY probes read the status themselves, so ureq's status errors stay off.
+pub(crate) const fn agent_policy(timeout: Duration) -> AgentPolicy {
+    AgentPolicy::source(timeout)
 }
 
 fn classify_transport(error: ureq::Error) -> RadioError {
@@ -287,9 +288,27 @@ mod tests {
 
     #[test]
     fn user_agent_identifies_reprise_and_contact() {
-        let value = user_agent();
+        let value = crate::net::client::user_agent();
         assert!(value.starts_with("Reprise/"));
-        assert!(value.contains(crate::musicbrainz::CONTACT_URL));
+        assert!(value.contains(crate::net::client::CONTACT_URL));
+    }
+
+    #[test]
+    fn agent_policy_reads_statuses_itself_for_lookups_and_clicks() {
+        for timeout in [HTTP_TIMEOUT, CLICK_TIMEOUT] {
+            assert_eq!(
+                agent_policy(timeout),
+                AgentPolicy {
+                    timeout,
+                    status_as_error: false,
+                    https_only: false,
+                    max_redirects: None,
+                    proxy_from_env: true,
+                }
+            );
+        }
+        assert_eq!(HTTP_TIMEOUT, Duration::from_secs(10));
+        assert_eq!(CLICK_TIMEOUT, Duration::from_secs(5));
     }
 
     #[test]

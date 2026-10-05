@@ -9,6 +9,8 @@ use std::time::{Duration, SystemTime};
 
 use crate::{
     cover, musicbrainz,
+    net::client::{build_agent, AgentPolicy},
+    net::rate::{wait_for_slot, RateLimitKey},
     source_error::{SourceError, SourceErrorKind},
 };
 
@@ -478,18 +480,15 @@ fn mb_get(url: &str) -> Option<String> {
     musicbrainz::get(url).ok()
 }
 
+/// Cover Art Archive answers are read through ureq's status errors.
+const fn agent_policy() -> AgentPolicy {
+    AgentPolicy::strict(HTTP_TIMEOUT)
+}
+
 /// A rate-limited GET returning validated image bytes, a definitive miss, or a retryable failure.
 fn http_get_bytes(url: &str) -> CaaFetchResult {
-    let _ = musicbrainz::wait_for_request_slot(&mut || false);
-    let user_agent = musicbrainz::user_agent();
-    let response = match ureq::Agent::config_builder()
-        .timeout_global(Some(HTTP_TIMEOUT))
-        .user_agent(&user_agent)
-        .build()
-        .new_agent()
-        .get(url)
-        .call()
-    {
+    let _ = wait_for_slot(RateLimitKey::MusicBrainz, &mut || false);
+    let response = match build_agent(agent_policy()).get(url).call() {
         Ok(response) => response,
         Err(ureq::Error::StatusCode(status)) => return classify_caa_status(status),
         Err(_) => return CaaFetchResult::TransientFailure,
