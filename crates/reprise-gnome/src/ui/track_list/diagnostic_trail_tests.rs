@@ -322,10 +322,92 @@ fn reload_cause_distinguishes_search_clear_sort_and_source_transitions() {
     );
 }
 
+/// Why `data_root` may not host the reload measurement, or `None` when it may.
+///
+/// The measurement migrates and writes the database at
+/// `reprise_core::db::default_path()`. Run by hand without isolation that is
+/// the owner's real library, so the data root must be one the caller set
+/// explicitly and must not lie under the default `$HOME/.local/share`. A
+/// relative `XDG_DATA_HOME` counts as unset: `dirs` ignores it and falls back
+/// to that default.
+fn unisolated_data_root_reason(
+    xdg_data_home: Option<&std::path::Path>,
+    home: Option<&std::path::Path>,
+) -> Option<&'static str> {
+    let Some(root) = xdg_data_home.filter(|root| !root.as_os_str().is_empty()) else {
+        return Some("XDG_DATA_HOME is not set");
+    };
+    if !root.is_absolute() {
+        return Some("XDG_DATA_HOME is relative, so the default data directory would be used");
+    }
+    let Some(home) = home else {
+        return Some("HOME is not set, so the real data directory cannot be ruled out");
+    };
+    if root.starts_with(home.join(".local/share")) {
+        return Some("XDG_DATA_HOME lies under $HOME/.local/share, the real data directory");
+    }
+    None
+}
+
+/// Resolves symlinks of an absolute path that exists, so a link into the real
+/// data directory is judged by its target. A relative path stays as given:
+/// resolving it against the working directory would hide that `dirs` ignores it.
+fn resolved(path: &std::path::Path) -> std::path::PathBuf {
+    if path.is_absolute() {
+        path.canonicalize().unwrap_or_else(|_| path.to_path_buf())
+    } else {
+        path.to_path_buf()
+    }
+}
+
 #[test]
-#[ignore = "measurement: uses the generated database under the isolated XDG data root"]
+fn the_reload_measurement_refuses_the_real_or_an_unset_data_root() {
+    use std::path::Path;
+
+    let home = Some(Path::new("/home/owner"));
+    assert!(unisolated_data_root_reason(None, home).is_some());
+    assert!(unisolated_data_root_reason(Some(Path::new("")), home).is_some());
+    assert!(unisolated_data_root_reason(Some(Path::new("share")), home).is_some());
+    assert!(unisolated_data_root_reason(Some(Path::new("/home/owner/.local/share")), home)
+        .is_some());
+    assert!(unisolated_data_root_reason(Some(Path::new("/home/owner/.local/share/x")), home)
+        .is_some());
+    assert!(unisolated_data_root_reason(Some(Path::new("/tmp/xdg-data")), None).is_some());
+}
+
+#[test]
+fn the_reload_measurement_accepts_an_isolated_data_root() {
+    use std::path::Path;
+
+    let home = Some(Path::new("/home/owner"));
+    assert_eq!(
+        unisolated_data_root_reason(Some(Path::new("/tmp/xdg-data")), home),
+        None
+    );
+    assert_eq!(
+        unisolated_data_root_reason(Some(Path::new("/home/owner/.local/sharing")), home),
+        None,
+        "a sibling that merely shares the prefix is not the real directory"
+    );
+    assert_eq!(
+        unisolated_data_root_reason(Some(Path::new("/home/owner/scratch/data")), home),
+        None
+    );
+}
+
+#[test]
+#[ignore = "measurement: needs XDG_DATA_HOME set to a throwaway directory outside $HOME/.local/share; panics otherwise, and run it only through the isolated Xvfb recipe"]
 fn measure_generated_library_reload_latency() {
     use gtk4::prelude::*;
+
+    let xdg_data_home = std::env::var_os("XDG_DATA_HOME").map(std::path::PathBuf::from);
+    let home = std::env::var_os("HOME").map(std::path::PathBuf::from);
+    if let Some(reason) = unisolated_data_root_reason(
+        xdg_data_home.as_deref().map(resolved).as_deref(),
+        home.as_deref().map(resolved).as_deref(),
+    ) {
+        panic!("refusing to open the real library: {reason}");
+    }
 
     let _main_context = crate::ui::test_main_context::lock_main_context();
     gtk4::init().unwrap();
