@@ -13,6 +13,7 @@
 //! its own statement/block, dropped before any call that could re-enter this
 //! controller.
 
+use std::collections::HashSet;
 use std::rc::Rc;
 
 use crate::ui::current_track_selection::CurrentTrackChange;
@@ -70,8 +71,9 @@ struct QueuePurgePlan {
 fn queue_purge_plan(ids: &[i64], loaded: Option<i64>) -> QueuePurgePlan {
     let after_loaded_track = loaded.filter(|id| ids.contains(id));
     let mut immediate = Vec::new();
+    let mut seen = HashSet::new();
     for id in ids.iter().copied() {
-        if Some(id) != after_loaded_track && !immediate.contains(&id) {
+        if Some(id) != after_loaded_track && seen.insert(id) {
             immediate.push(id);
         }
     }

@@ -1,5 +1,6 @@
 //! Transactional track deletion shared by deliberate and automatic paths.
 
+use std::collections::BTreeSet;
 use std::path::Path;
 
 use rusqlite::{Connection, OptionalExtension, Transaction, TransactionBehavior};
@@ -164,6 +165,7 @@ fn delete_requests<'a>(
 ) -> Result<Vec<i64>, rusqlite::Error> {
     let requests = requests.into_iter().collect::<Vec<_>>();
     let mut removed = Vec::with_capacity(requests.len());
+    let mut compaction_pending = BTreeSet::<i64>::new();
     for request in requests {
         let id = request.id();
         if let (Some(excluded_at), RemovalRequest::Path(path_request)) = (exclusion_time, request) {
@@ -176,8 +178,10 @@ fn delete_requests<'a>(
                 continue;
             }
         }
-        let mut statement =
-            tx.prepare("SELECT DISTINCT playlist_id FROM playlist_tracks WHERE track_id = ?1")?;
+        // Read before the delete: the FK cascade removes these rows with it.
+        let mut statement = tx.prepare_cached(
+            "SELECT DISTINCT playlist_id FROM playlist_tracks WHERE track_id = ?1",
+        )?;
         let affected_playlists = statement
             .query_map([id], |row| row.get::<_, i64>(0))?
             .collect::<Result<Vec<_>, _>>()?;
@@ -187,9 +191,12 @@ fn delete_requests<'a>(
             continue;
         }
         removed.push(id);
-        for playlist_id in affected_playlists {
-            playlists::renumber_positions(tx, playlist_id)?;
-        }
+        compaction_pending.extend(affected_playlists);
+    }
+    // Nothing above reads playlist positions, so the gaps the cascades left
+    // can wait until every delete is done: one pass per playlist, not per track.
+    for playlist_id in compaction_pending {
+        playlists::renumber_positions(tx, playlist_id)?;
     }
     Ok(removed)
 }

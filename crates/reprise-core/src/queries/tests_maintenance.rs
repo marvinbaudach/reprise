@@ -351,6 +351,104 @@ fn remove_missing_tracks_compacts_every_affected_playlist_in_one_call() {
 }
 
 #[test]
+fn remove_missing_tracks_keeps_every_playlist_gapless_and_in_order_across_many_gaps() {
+    let db = seeded_conn_with_tracks(8);
+    let conn = db.conn();
+    let p1 = playlists::create(&db, "P1").unwrap();
+    let p2 = playlists::create(&db, "P2").unwrap();
+    let untouched = playlists::create(&db, "Untouched").unwrap();
+    // Track 2 appears twice in P1 and also sits in P2; tracks 2 and 3 are
+    // adjacent in P1, track 6 is not; track 8 stays present.
+    playlists::add_tracks(&db, p1, &[1, 2, 3, 4, 5, 6, 4, 7, 2]).unwrap();
+    playlists::add_tracks(&db, p2, &[6, 7, 2, 8, 1]).unwrap();
+    playlists::add_tracks(&db, untouched, &[1, 4, 5]).unwrap();
+    conn.execute(
+        "UPDATE tracks SET missing_since = 1, missing_reason = 'unknown' WHERE id IN (2, 3, 6)",
+        [],
+    )
+    .unwrap();
+
+    // Track 8 is present (its guarded delete removes nothing) and 99 is unknown.
+    let removed = remove_missing_tracks(&db, &[2, 8, 3, 99, 6]).unwrap();
+    assert_eq!(removed, vec![2, 3, 6]);
+
+    let rows = |playlist_id: i64| -> Vec<(i64, i64)> {
+        conn.prepare(
+            "SELECT position, track_id FROM playlist_tracks \
+             WHERE playlist_id = ?1 ORDER BY position",
+        )
+        .unwrap()
+        .query_map(rusqlite::params![playlist_id], |r| {
+            Ok((r.get(0)?, r.get(1)?))
+        })
+        .unwrap()
+        .collect::<Result<_, _>>()
+        .unwrap()
+    };
+    let numbered = |tracks: &[i64]| -> Vec<(i64, i64)> {
+        tracks
+            .iter()
+            .enumerate()
+            .map(|(position, &track)| (position as i64, track))
+            .collect()
+    };
+    assert_eq!(rows(p1), numbered(&[1, 4, 5, 4, 7]));
+    assert_eq!(rows(p2), numbered(&[7, 8, 1]));
+    assert_eq!(rows(untouched), numbered(&[1, 4, 5]));
+}
+
+#[test]
+fn remove_missing_tracks_renumbers_only_playlists_that_lost_a_row() {
+    let db = seeded_conn_with_tracks(8);
+    let conn = db.conn();
+    let emptied = playlists::create(&db, "Emptied").unwrap();
+    let kept = playlists::create(&db, "Kept").unwrap();
+    playlists::add_tracks(&db, emptied, &[2, 6]).unwrap();
+    playlists::add_tracks(&db, kept, &[8, 8]).unwrap();
+    // Seed a gap by hand: an unaffected playlist must not be rewritten, so the
+    // gap is the witness that no renumbering pass touched it.
+    conn.execute(
+        "UPDATE playlist_tracks SET position = 2 WHERE playlist_id = ?1 AND position = 1",
+        rusqlite::params![kept],
+    )
+    .unwrap();
+    conn.execute(
+        "UPDATE tracks SET missing_since = 1, missing_reason = 'unknown' WHERE id IN (2, 6)",
+        [],
+    )
+    .unwrap();
+
+    // Track 8 is present (its guarded delete removes nothing); 99 is unknown.
+    let removed = remove_missing_tracks(&db, &[2, 8, 99, 6]).unwrap();
+    assert_eq!(removed, vec![2, 6]);
+
+    let rows = |playlist_id: i64| -> Vec<(i64, i64)> {
+        conn.prepare(
+            "SELECT position, track_id FROM playlist_tracks \
+             WHERE playlist_id = ?1 ORDER BY position",
+        )
+        .unwrap()
+        .query_map(rusqlite::params![playlist_id], |r| {
+            Ok((r.get(0)?, r.get(1)?))
+        })
+        .unwrap()
+        .collect::<Result<_, _>>()
+        .unwrap()
+    };
+    assert_eq!(rows(kept), vec![(0, 8), (2, 8)]);
+    // A playlist that loses every track stays, just empty.
+    let playlist_exists: i64 = conn
+        .query_row(
+            "SELECT count(*) FROM playlists WHERE id = ?1",
+            rusqlite::params![emptied],
+            |r| r.get(0),
+        )
+        .unwrap();
+    assert_eq!(playlist_exists, 1, "the emptied playlist is not deleted");
+    assert_eq!(rows(emptied), Vec::<(i64, i64)>::new());
+}
+
+#[test]
 fn remove_missing_tracks_skips_ids_that_are_not_missing() {
     let db = seeded_conn_with_tracks(3);
     let conn = db.conn();
