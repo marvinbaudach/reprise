@@ -41,6 +41,7 @@ const MAX_SHEET_BYTES: u64 = 1 << 20;
 pub(super) struct SheetRef {
     pub(super) path: PathBuf,
     pub(super) mtime: i64,
+    pub(super) size: i64,
 }
 
 impl SheetRef {
@@ -88,7 +89,6 @@ enum SheetState {
 
 struct DirectorySheet {
     reference: SheetRef,
-    size: i64,
     state: SheetState,
     /// Whether the catalog has heard about this state: an issue for an invalid
     /// sheet, the end of one for a sheet that is valid again.
@@ -294,6 +294,7 @@ fn directory_sheet(
     let reference = SheetRef {
         path: entry.path.clone(),
         mtime,
+        size: stat.map_or(0, |(size, _)| size as i64),
     };
     let state = match applied.get(&reference.path_text()) {
         Some((applied_mtime, files)) if *applied_mtime == mtime && !files.is_empty() => {
@@ -303,7 +304,6 @@ fn directory_sheet(
     };
     Some(DirectorySheet {
         reference,
-        size: stat.map_or(0, |(size, _)| size as i64),
         state,
         reported: false,
     })
@@ -390,7 +390,8 @@ fn report_invalid(
 ) -> Result<(), ScanError> {
     let path = sheet.reference.path_text();
     let now = now_unix();
-    if import_errors::check_dismissed(tx, &path, sheet.reference.mtime, sheet.size, now)? {
+    if import_errors::check_dismissed(tx, &path, sheet.reference.mtime, sheet.reference.size, now)?
+    {
         return Ok(());
     }
     tracing::warn!(sheet = %path, %reason, "CUE sheet ignored; its audio stays whole");
@@ -399,20 +400,19 @@ fn report_invalid(
 }
 
 /// Records that a sheet that did parse still cannot be applied to its file,
-/// for instance because a track starts past the end of the audio.
+/// for instance because a track starts past the end of the audio, unless the
+/// user already dismissed this very version of it.
 pub(super) fn report_rejected(
     tx: &Transaction<'_>,
     sheet: &SheetRef,
     reason: &str,
 ) -> Result<(), ScanError> {
     let path = sheet.path_text();
+    let now = now_unix();
+    if import_errors::check_dismissed(tx, &path, sheet.mtime, sheet.size, now)? {
+        return Ok(());
+    }
     tracing::warn!(sheet = %path, %reason, "CUE sheet rejected; its audio stays whole");
-    import_errors::record_error(
-        tx,
-        &path,
-        ImportErrorKind::InvalidCueSheet,
-        reason,
-        now_unix(),
-    )?;
+    import_errors::record_error(tx, &path, ImportErrorKind::InvalidCueSheet, reason, now)?;
     Ok(())
 }

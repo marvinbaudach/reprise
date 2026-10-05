@@ -779,3 +779,7 @@ mod lease_tests;
 #[cfg(test)]
 #[path = "scanner_cue_tests.rs"]
 mod cue_tests;
+
+#[cfg(test)]
+#[path = "scanner_cue_files_tests.rs"]
+mod cue_files_tests;

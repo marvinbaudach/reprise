@@ -83,4 +83,19 @@ takes `segment_index`; never "the first row by accident". Test per site.
 - **C4** — `SegmentedRenderDataSession` wraps one `RenderDataSession` per track instead of
   changing `RenderDataSession` itself. `pending_render_data_tracks` lists whole-file rows;
   `pending_segment_render_data_files` lists CUE files. The Android backfill keeps analysing
-  whole-file rows only until wave 3. `AnalysisSidecar::for_track` is `None` for a CUE track.
+  whole-file rows only until wave 3, and its foreground decode refuses a CUE track. The
+  on-play analysis (`waveform_cache`) asks the backend for the track's own stretch and stores
+  nothing where the backend cannot cut a file. `AnalysisSidecar::for_track` is `None` for a CUE
+  track. `PlaybackItem.segment` is filled where a summary is at hand and ignored by every backend
+  until wave 3.
+
+## Left for wave 3
+
+- Desktop and Android playback ignore `PlaybackItem.segment`: a CUE track plays its file from 0:00.
+- Delete, trash and device sync still treat a path as one track; sync sees several track ids
+  sharing one file and device path. A CUE track shows the interim "Unclassified" copy for its
+  sheet's issue, and the issue is keyed by the sheet, so "Retry" on it finds no audio.
+- The Android backfill and the phone's own scan analyse whole-file tracks only.
+- An issue for a deleted sheet stays until dismissed.
+- Tag scan version 2 re-reads every file once; the scan lists each audio directory a second time
+  (free on Unix, one more cursor query per directory over SAF — not measured).

@@ -12,7 +12,7 @@ use rusqlite::OptionalExtension;
 const SAMPLE_RATE: u32 = 8_000;
 
 /// A mono 8-bit WAV of `seconds` of silence, which lofty reads the duration of.
-fn write_wav(path: &Path, seconds: u32) {
+pub(super) fn write_wav(path: &Path, seconds: u32) {
     let data_len = SAMPLE_RATE * seconds;
     let mut body = Vec::new();
     body.extend_from_slice(b"WAVEfmt ");
@@ -33,7 +33,7 @@ fn write_wav(path: &Path, seconds: u32) {
     std::fs::write(path, out).unwrap();
 }
 
-const THREE_TRACKS: &str = "REM DATE 1979
+pub(super) const THREE_TRACKS: &str = "REM DATE 1979
 REM GENRE \"Post-punk\"
 PERFORMER \"Joy Division\"
 TITLE \"Unknown Pleasures\"
@@ -49,18 +49,18 @@ FILE \"album.wav\" WAVE
     INDEX 01 00:20:00
 ";
 
-fn scan(db: &crate::db::Db, root: &Path) -> ScanReport {
+pub(super) fn scan(db: &crate::db::Db, root: &Path) -> ScanReport {
     completed(scan_folder(db, root).unwrap())
 }
 
 /// An album of three tracks over thirty seconds, scanned once.
-struct Album {
-    dir: tempfile::TempDir,
-    db: crate::db::Db,
+pub(super) struct Album {
+    pub(super) dir: tempfile::TempDir,
+    pub(super) db: crate::db::Db,
 }
 
 impl Album {
-    fn new() -> Self {
+    pub(super) fn new() -> Self {
         let dir = tempfile::tempdir().unwrap();
         write_wav(&dir.path().join("album.wav"), 30);
         std::fs::write(dir.path().join("album.cue"), THREE_TRACKS).unwrap();
@@ -70,19 +70,19 @@ impl Album {
         }
     }
 
-    fn audio(&self) -> PathBuf {
+    pub(super) fn audio(&self) -> PathBuf {
         self.dir.path().join("album.wav")
     }
 
-    fn sheet(&self) -> PathBuf {
+    pub(super) fn sheet(&self) -> PathBuf {
         self.dir.path().join("album.cue")
     }
 
-    fn scan(&self) -> ScanReport {
+    pub(super) fn scan(&self) -> ScanReport {
         scan(&self.db, self.dir.path())
     }
 
-    fn rewrite_sheet(&self, text: &str) {
+    pub(super) fn rewrite_sheet(&self, text: &str) {
         let sheet = self.sheet();
         std::fs::write(&sheet, text).unwrap();
         bump_mtime(&sheet);
@@ -91,7 +91,7 @@ impl Album {
 
 /// Moves a file's mtime forward, so a rewrite within one second still counts as
 /// a change to a scanner that compares whole seconds.
-fn bump_mtime(path: &Path) {
+pub(super) fn bump_mtime(path: &Path) {
     static MINUTES: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(1);
     let minutes = MINUTES.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
     let file = std::fs::File::options().write(true).open(path).unwrap();
@@ -100,7 +100,10 @@ fn bump_mtime(path: &Path) {
 }
 
 /// `(segment_index, start_ms, end_ms, title)` of every row at `path`, in order.
-fn segments_of(conn: &Connection, path: &Path) -> Vec<(i64, Option<i64>, Option<i64>, String)> {
+pub(super) fn segments_of(
+    conn: &Connection,
+    path: &Path,
+) -> Vec<(i64, Option<i64>, Option<i64>, String)> {
     let mut statement = conn
         .prepare(
             "SELECT segment_index, segment_start_ms, segment_end_ms, title FROM tracks \
@@ -116,7 +119,7 @@ fn segments_of(conn: &Connection, path: &Path) -> Vec<(i64, Option<i64>, Option<
         .collect()
 }
 
-fn ids_of(conn: &Connection, path: &Path) -> Vec<i64> {
+pub(super) fn ids_of(conn: &Connection, path: &Path) -> Vec<i64> {
     let mut statement = conn
         .prepare("SELECT id FROM tracks WHERE path = ?1 ORDER BY segment_index")
         .unwrap();
@@ -127,7 +130,7 @@ fn ids_of(conn: &Connection, path: &Path) -> Vec<i64> {
         .collect()
 }
 
-fn issue(conn: &Connection, path: &Path) -> Option<(String, String)> {
+pub(super) fn issue(conn: &Connection, path: &Path) -> Option<(String, String)> {
     conn.query_row(
         "SELECT reason_kind, reason_detail FROM import_errors WHERE path = ?1",
         [path.to_string_lossy().to_string()],
@@ -137,7 +140,7 @@ fn issue(conn: &Connection, path: &Path) -> Option<(String, String)> {
     .unwrap()
 }
 
-fn titles(rows: &[(i64, Option<i64>, Option<i64>, String)]) -> Vec<&str> {
+pub(super) fn titles(rows: &[(i64, Option<i64>, Option<i64>, String)]) -> Vec<&str> {
     rows.iter().map(|row| row.3.as_str()).collect()
 }
 
@@ -514,217 +517,36 @@ fn cue_2_sheets_that_do_not_describe_the_audio_all_leave_it_whole() {
     }
 }
 
-#[test]
-fn a_sheet_over_several_files_gives_each_file_its_own_track() {
-    let dir = tempfile::tempdir().unwrap();
-    write_wav(&dir.path().join("01.wav"), 12);
-    write_wav(&dir.path().join("02.wav"), 20);
-    std::fs::write(
-        dir.path().join("disc.cue"),
-        "PERFORMER \"Band\"\nTITLE \"Disc\"\n\
-         FILE \"01.wav\" WAVE\n  TRACK 01 AUDIO\n    TITLE \"First\"\n    INDEX 01 00:00:00\n\
-         FILE \"02.wav\" WAVE\n  TRACK 02 AUDIO\n    TITLE \"Second\"\n    INDEX 01 00:00:00\n",
-    )
-    .unwrap();
-    let db = crate::db::Db::open_in_memory().unwrap();
-
-    let report = scan(&db, dir.path());
-
-    assert_eq!(report.added, 2);
-    let first = segments_of(db.conn(), &dir.path().join("01.wav"));
-    let second = segments_of(db.conn(), &dir.path().join("02.wav"));
-    assert_eq!(first, [(1, Some(0), Some(12_000), "First".to_string())]);
-    assert_eq!(second, [(1, Some(0), Some(20_000), "Second".to_string())]);
-    let numbers: Vec<i64> = db
-        .conn()
-        .prepare("SELECT track_no FROM tracks ORDER BY track_no")
+/// Dismisses the issue raised against the sheet, as the user would, for the sheet
+/// as it is now.
+pub(super) fn dismiss_sheet_issue(album: &Album) {
+    let metadata = std::fs::metadata(album.sheet()).unwrap();
+    let mtime = metadata
+        .modified()
         .unwrap()
-        .query_map([], |row| row.get(0))
+        .duration_since(std::time::UNIX_EPOCH)
         .unwrap()
-        .map(Result::unwrap)
-        .collect();
-    assert_eq!(numbers, [1, 2]);
-}
-
-#[test]
-fn cue_1a_a_sheet_embedded_in_a_flac_splits_it() {
-    let dir = tempfile::tempdir().unwrap();
-    let audio = fixture_copy(dir.path(), "embedded.flac");
-    embed_sheet(
-        &audio,
-        "FILE \"CDImage.wav\" WAVE\n  TRACK 01 AUDIO\n    TITLE \"A\"\n    INDEX 01 00:00:00\n  \
-         TRACK 02 AUDIO\n    TITLE \"B\"\n    INDEX 01 00:00:40\n",
-    );
-    let db = crate::db::Db::open_in_memory().unwrap();
-
-    let report = scan(&db, dir.path());
-
-    let rows = segments_of(db.conn(), &audio);
-    assert_eq!(titles(&rows), ["A", "B"]);
-    assert_eq!(report.added, 2);
-    let cue_path: Option<String> = db
-        .conn()
-        .query_row(
-            "SELECT cue_path FROM tracks WHERE segment_index = 1",
-            [],
-            |row| row.get(0),
-        )
-        .unwrap();
-    assert_eq!(cue_path, None, "an embedded sheet has no path");
-
-    let again = scan(&db, dir.path());
-    assert_eq!(
-        (again.added, again.updated, again.skipped_unchanged),
-        (0, 0, 1)
-    );
-}
-
-#[test]
-fn a_broken_embedded_sheet_keeps_the_file_whole_and_is_reported_against_it() {
-    let dir = tempfile::tempdir().unwrap();
-    let audio = fixture_copy(dir.path(), "embedded.flac");
-    embed_sheet(&audio, "TRACK 01 AUDIO\n  INDEX 01 99:00:00\n");
-    let db = crate::db::Db::open_in_memory().unwrap();
-
-    scan(&db, dir.path());
-
-    assert_eq!(segments_of(db.conn(), &audio).len(), 1);
-    assert_eq!(
-        issue(db.conn(), &audio).map(|(kind, _)| kind).as_deref(),
-        Some("invalid_cue_sheet")
-    );
-}
-
-fn embed_sheet(path: &Path, sheet: &str) {
-    let mut flac = lofty::flac::FlacFile::read_from(
-        &mut std::fs::File::open(path).unwrap(),
-        lofty::config::ParseOptions::new(),
-    )
-    .unwrap();
-    if flac.vorbis_comments().is_none() {
-        flac.set_vorbis_comments(lofty::ogg::tag::VorbisComments::new());
-    }
-    flac.vorbis_comments_mut()
-        .unwrap()
-        .insert("CUESHEET".to_string(), sheet.to_string());
-    flac.save_to_path(path, lofty::config::WriteOptions::default())
-        .unwrap();
-}
-
-#[test]
-fn cue_3_a_moved_cue_album_keeps_every_track() {
-    let album = Album::new();
-    album.scan();
-    let ids = ids_of(album.db.conn(), &album.audio());
+        .as_secs();
     album
         .db
         .conn()
         .execute(
-            "UPDATE tracks SET play_count = 9 WHERE segment_index = 3",
-            [],
+            "UPDATE import_errors SET dismissed_mtime = ?1, dismissed_size = ?2 WHERE path = ?3",
+            rusqlite::params![
+                mtime as i64,
+                metadata.len() as i64,
+                album.sheet().to_string_lossy()
+            ],
         )
         .unwrap();
-    let moved = album.dir.path().join("moved");
-    std::fs::create_dir(&moved).unwrap();
-    std::fs::rename(album.audio(), moved.join("album.wav")).unwrap();
-    std::fs::rename(album.sheet(), moved.join("album.cue")).unwrap();
-
-    let report = album.scan();
-
-    assert_eq!(report.moved, 1);
-    assert_eq!(report.added, 0);
-    let new_path = moved.join("album.wav");
-    assert_eq!(ids_of(album.db.conn(), &new_path), ids);
-    assert_eq!(row_count(album.db.conn()), 3);
-    let plays: i64 = album
-        .db
-        .conn()
-        .query_row(
-            "SELECT play_count FROM tracks WHERE segment_index = 3",
-            [],
-            |row| row.get(0),
-        )
-        .unwrap();
-    assert_eq!(plays, 9);
 }
 
-#[test]
-fn cue_4_a_track_removed_on_its_own_stays_out_while_its_siblings_stay() {
-    let album = Album::new();
-    album.scan();
-    let removed: (i64, String) = album
-        .db
-        .conn()
-        .query_row(
-            "SELECT id, path FROM tracks WHERE segment_index = 2",
-            [],
-            |row| Ok((row.get(0)?, row.get(1)?)),
-        )
-        .unwrap();
-    let tx = album.db.conn().unchecked_transaction().unwrap();
-    assert!(
-        crate::library::exclusions::record_track(&tx, removed.0, Path::new(&removed.1), 1).unwrap()
-    );
-    tx.execute("DELETE FROM tracks WHERE id = ?1", [removed.0])
-        .unwrap();
-    tx.commit().unwrap();
-
-    album.rewrite_sheet(THREE_TRACKS);
-    album.scan();
-
-    let rows = segments_of(album.db.conn(), &album.audio());
-    assert_eq!(titles(&rows), ["Disorder", "Candidate"]);
-}
-
-#[test]
-fn cue_4_removing_the_whole_file_hides_all_its_tracks() {
-    let album = Album::new();
-    album.scan();
-    let (id, path): (i64, String) = album
-        .db
-        .conn()
-        .query_row(
-            "SELECT id, path FROM tracks WHERE segment_index = 1",
-            [],
-            |row| Ok((row.get(0)?, row.get(1)?)),
-        )
-        .unwrap();
-    // The whole file is excluded by identity, as removing a plain track does.
+pub(super) fn times_seen(album: &Album) -> i64 {
     album
         .db
         .conn()
-        .execute(
-            "INSERT INTO library_exclusions (path, device, inode, file_size, file_mtime, excluded_at, segment_index) \
-             SELECT path, device, inode, file_size, file_mtime, 1, 0 FROM tracks WHERE id = ?1",
-            [id],
-        )
-        .unwrap();
-    album
-        .db
-        .conn()
-        .execute("DELETE FROM tracks WHERE path = ?1", [&path])
-        .unwrap();
-
-    let report = album.scan();
-
-    assert_eq!(row_count(album.db.conn()), 0);
-    assert_eq!(report.excluded, 1);
-}
-
-#[test]
-fn a_changed_audio_file_under_an_unchanged_sheet_is_cut_again() {
-    let album = Album::new();
-    album.scan();
-    let before = ids_of(album.db.conn(), &album.audio());
-
-    write_wav(&album.audio(), 40);
-    bump_mtime(&album.audio());
-    let report = album.scan();
-
-    let rows = segments_of(album.db.conn(), &album.audio());
-    assert_eq!(rows.last().map(|row| row.2), Some(Some(40_000)));
-    assert_eq!(ids_of(album.db.conn(), &album.audio()), before);
-    assert_eq!(report.updated, 3);
+        .query_row("SELECT seen_count FROM import_errors", [], |row| row.get(0))
+        .unwrap()
 }
 
 #[test]
@@ -732,80 +554,37 @@ fn cue_2_a_dismissed_sheet_issue_stays_quiet_until_the_sheet_changes() {
     let album = Album::new();
     album.rewrite_sheet("this is not a cue sheet at all");
     album.scan();
-    let (mtime, size): (i64, i64) = {
-        let metadata = std::fs::metadata(album.sheet()).unwrap();
-        let mtime = metadata
-            .modified()
-            .unwrap()
-            .duration_since(std::time::UNIX_EPOCH)
-            .unwrap()
-            .as_secs();
-        (mtime as i64, metadata.len() as i64)
-    };
-    album
-        .db
-        .conn()
-        .execute(
-            "UPDATE import_errors SET dismissed_mtime = ?1, dismissed_size = ?2 WHERE path = ?3",
-            rusqlite::params![mtime, size, album.sheet().to_string_lossy()],
-        )
-        .unwrap();
-    let seen = |album: &Album| -> i64 {
-        album
-            .db
-            .conn()
-            .query_row("SELECT seen_count FROM import_errors", [], |row| row.get(0))
-            .unwrap()
-    };
-    let before = seen(&album);
+    dismiss_sheet_issue(&album);
+    let before = times_seen(&album);
 
     album.scan();
 
     assert_eq!(
-        seen(&album),
+        times_seen(&album),
         before,
         "a dismissed issue is not raised again"
     );
 }
 
 #[test]
-fn the_progress_estimate_counts_files_not_tracks() {
+fn cue_2_a_dismissed_rejection_stays_quiet_when_the_audio_is_cut_again() {
     let album = Album::new();
+    album.rewrite_sheet(
+        "FILE \"album.wav\" WAVE\n  TRACK 01 AUDIO\n    INDEX 01 00:00:00\n  \
+         TRACK 02 AUDIO\n    INDEX 01 10:00:00\n",
+    );
+    album.scan();
+    dismiss_sheet_issue(&album);
+    let before = times_seen(&album);
+
+    write_wav(&album.audio(), 40);
+    bump_mtime(&album.audio());
     album.scan();
 
-    let estimate = scan_progress::estimated_audio_files(album.db.conn(), album.dir.path()).unwrap();
-
-    assert_eq!(estimate, Some(1));
-}
-
-#[test]
-fn cue_8_a_cue_file_that_disappears_marks_every_track_missing_and_its_return_restores_them() {
-    let album = Album::new();
-    album.scan();
-    let hidden = album.dir.path().join("album.bak");
-    std::fs::rename(album.audio(), &hidden).unwrap();
-    std::fs::rename(album.sheet(), album.dir.path().join("album.cue.bak")).unwrap();
-
-    let report = album.scan();
-
-    assert_eq!(report.vanished, 3);
-    let missing = |album: &Album| -> i64 {
-        album
-            .db
-            .conn()
-            .query_row(
-                "SELECT count(*) FROM tracks WHERE missing_since IS NOT NULL",
-                [],
-                |row| row.get(0),
-            )
-            .unwrap()
-    };
-    assert_eq!(missing(&album), 3);
-
-    std::fs::rename(&hidden, album.audio()).unwrap();
-    std::fs::rename(album.dir.path().join("album.cue.bak"), album.sheet()).unwrap();
-    album.scan();
-
-    assert_eq!(missing(&album), 0);
-    assert_eq!(segments_of(album.db.conn(), &album.audio()).len(), 3);
+    assert_eq!(
+        segments_of(album.db.conn(), &album.audio()).len(),
+        1,
+        "still whole"
+    );
+    assert_eq!(times_seen(&album), before);
 }
