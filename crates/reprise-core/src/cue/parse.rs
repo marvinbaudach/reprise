@@ -27,7 +27,8 @@ impl TrackBuilder {
             } else {
                 self.performer
             },
-            index00: self.index00,
+            // A pregap that starts where the track does is no pregap at all.
+            index00: self.index00.filter(|index00| *index00 != index01),
             index01,
         })
     }
@@ -94,11 +95,13 @@ pub fn parse(bytes: &[u8]) -> Result<CueSheet, CueError> {
                         ..TrackBuilder::default()
                     });
             }
+            // Between a later FILE and its first TRACK there is no owner for these
+            // fields; they must not overwrite the album's.
             "TITLE" => {
                 let value = parse_value(rest);
                 if let Some(track) = current_track(&mut files) {
                     track.title = value;
-                } else {
+                } else if track_numbers.is_empty() {
                     sheet.title = value;
                 }
             }
@@ -106,7 +109,7 @@ pub fn parse(bytes: &[u8]) -> Result<CueSheet, CueError> {
                 let value = parse_value(rest);
                 if let Some(track) = current_track(&mut files) {
                     track.performer = value;
-                } else {
+                } else if track_numbers.is_empty() {
                     sheet.performer = value;
                 }
             }
@@ -234,15 +237,19 @@ fn parse_index(
         .next()
         .and_then(|kind| kind.parse().ok())
         .ok_or_else(invalid)?;
+    // Only INDEX 00 and 01 position a track; sub-indices are not interpreted.
+    if kind > 1 {
+        return Ok(());
+    }
     let value = fields.next().unwrap_or_default();
     let frames = parse_frames(value).ok_or_else(|| CueError::InvalidIndex {
         track: track.number,
         value: value.to_owned(),
     })?;
-    let slot = match kind {
-        0 => &mut track.index00,
-        1 => &mut track.index01,
-        _ => return Ok(()),
+    let slot = if kind == 0 {
+        &mut track.index00
+    } else {
+        &mut track.index01
     };
     if slot.replace(frames).is_some() {
         return Err(CueError::DuplicateIndex {

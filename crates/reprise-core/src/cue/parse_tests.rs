@@ -324,11 +324,74 @@ fn rejects_a_duplicate_index_one() {
 }
 
 #[test]
-fn rejects_an_index_zero_that_is_not_before_index_one() {
-    let error = parse(&one_track("    INDEX 00 00:01:00\n    INDEX 01 00:01:00\n"))
-        .expect_err("pregap of zero length");
+fn a_zero_length_pregap_counts_as_no_pregap() {
+    let sheet = parse(&one_track("    INDEX 00 00:01:00\n    INDEX 01 00:01:00\n"))
+        .expect("pregap of zero length");
+
+    assert_eq!(sheet.files[0].tracks[0].index00, None);
+    assert_eq!(sheet.files[0].tracks[0].index01, Frames(75));
+}
+
+#[test]
+fn rejects_an_index_zero_after_index_one() {
+    let error = parse(&one_track("    INDEX 00 00:02:00\n    INDEX 01 00:01:00\n"))
+        .expect_err("pregap after the track start");
 
     assert_eq!(error, CueError::NonMonotonicIndex { track: 1 });
+}
+
+#[test]
+fn ignores_the_value_of_sub_indices() {
+    let sheet = parse(&one_track("    INDEX 01 00:00:00\n    INDEX 02 garbage\n"))
+        .expect("INDEX 02 is not interpreted");
+
+    assert_eq!(sheet.files[0].tracks[0].index01, Frames(0));
+}
+
+#[test]
+fn still_rejects_an_index_without_a_number() {
+    let error = parse(&one_track("    INDEX x 00:00:00\n    INDEX 01 00:00:00\n"))
+        .expect_err("INDEX needs a number");
+
+    assert!(matches!(error, CueError::InvalidStatement { .. }));
+}
+
+#[test]
+fn title_and_performer_between_a_later_file_and_its_first_track_keep_the_album() {
+    let sheet = parse(
+        br#"PERFORMER "Artist"
+TITLE "Album"
+FILE "a.flac" WAVE
+  TRACK 01 AUDIO
+    INDEX 01 00:00:00
+FILE "b.flac" WAVE
+  TITLE "Stray"
+  PERFORMER "Stranger"
+  TRACK 02 AUDIO
+    TITLE "Two"
+    INDEX 01 00:00:00
+"#,
+    )
+    .expect("stray fields");
+
+    assert_eq!(sheet.title, "Album");
+    assert_eq!(sheet.performer, "Artist");
+    assert_eq!(sheet.files[1].tracks[0].title, "Two");
+    assert_eq!(sheet.files[1].tracks[0].performer, "Artist");
+}
+
+#[test]
+fn album_fields_may_follow_the_first_file_line() {
+    let sheet = parse(
+        br#"FILE "a.flac" WAVE
+TITLE "Album"
+  TRACK 01 AUDIO
+    INDEX 01 00:00:00
+"#,
+    )
+    .expect("album title after FILE");
+
+    assert_eq!(sheet.title, "Album");
 }
 
 #[test]
