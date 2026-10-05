@@ -6,6 +6,7 @@ use super::{CueError, CueFile, CueSheet, CueTrack, Frames};
 #[derive(Default)]
 struct TrackBuilder {
     number: u32,
+    is_audio: bool,
     title: String,
     performer: String,
     index00: Option<Frames>,
@@ -19,6 +20,7 @@ impl TrackBuilder {
             .ok_or(CueError::MissingIndex01 { track: self.number })?;
         Ok(CueTrack {
             number: self.number,
+            is_audio: self.is_audio,
             title: self.title,
             performer: if self.performer.is_empty() {
                 album_performer.to_owned()
@@ -37,8 +39,9 @@ struct FileBuilder {
     tracks: Vec<TrackBuilder>,
 }
 
+/// Parses the bytes of a CUE sheet, decoding UTF-8, UTF-16 or Windows-1252 text.
 pub fn parse(bytes: &[u8]) -> Result<CueSheet, CueError> {
-    let text = decode(bytes);
+    let text = decode(bytes).map_err(|()| CueError::InvalidTextEncoding)?;
     let mut sheet = CueSheet {
         title: String::new(),
         performer: String::new(),
@@ -49,6 +52,7 @@ pub fn parse(bytes: &[u8]) -> Result<CueSheet, CueError> {
     let mut files: Vec<FileBuilder> = Vec::new();
     let mut track_numbers = HashSet::new();
 
+    let text = text.replace("\r\n", "\n").replace('\r', "\n");
     for (offset, raw_line) in text.lines().enumerate() {
         let line_number = offset + 1;
         let line = raw_line.trim();
@@ -66,14 +70,19 @@ pub fn parse(bytes: &[u8]) -> Result<CueSheet, CueError> {
                 tracks: Vec::new(),
             }),
             "TRACK" => {
-                let number = rest
-                    .split_whitespace()
+                let mut fields = rest.split_whitespace();
+                let invalid = || CueError::InvalidStatement {
+                    line: line_number,
+                    statement: line.to_owned(),
+                };
+                let number = fields
                     .next()
                     .and_then(|value| value.parse().ok())
-                    .ok_or_else(|| CueError::InvalidStatement {
-                        line: line_number,
-                        statement: line.to_owned(),
-                    })?;
+                    .ok_or_else(invalid)?;
+                let is_audio = fields
+                    .next()
+                    .ok_or_else(invalid)?
+                    .eq_ignore_ascii_case("AUDIO");
                 if !track_numbers.insert(number) {
                     return Err(CueError::DuplicateTrackNumber { track: number });
                 }
@@ -81,6 +90,7 @@ pub fn parse(bytes: &[u8]) -> Result<CueSheet, CueError> {
                     .tracks
                     .push(TrackBuilder {
                         number,
+                        is_audio,
                         ..TrackBuilder::default()
                     });
             }
@@ -113,6 +123,10 @@ pub fn parse(bytes: &[u8]) -> Result<CueSheet, CueError> {
         }
     }
 
+    if track_numbers.is_empty() {
+        return Err(CueError::EmptySheet);
+    }
+
     sheet.files = files
         .into_iter()
         .map(|file| {
@@ -137,7 +151,7 @@ fn validate_indices(file: &CueFile) -> Result<(), CueError> {
     for track in &file.tracks {
         if previous.is_some_and(|position| track.index01 <= position)
             || track.index00.is_some_and(|position| {
-                position > track.index01 || previous.is_some_and(|previous| position < previous)
+                position >= track.index01 || previous.is_some_and(|previous| position < previous)
             })
         {
             return Err(CueError::NonMonotonicIndex {
@@ -164,17 +178,29 @@ fn parse_rem(rest: &str, sheet: &mut CueSheet) {
 }
 
 fn parse_file_name(rest: &str) -> Option<String> {
+    // The type token never contains a quote, so the last quote closes the name.
     if let Some(quoted) = rest.strip_prefix('"') {
-        return quoted.find('"').map(|end| quoted[..end].to_owned());
+        return quoted.rfind('"').map(|end| quoted[..end].to_owned());
     }
-    rest.split_whitespace().next().map(str::to_owned)
+    // Unquoted names may contain spaces; only the trailing type token is split off.
+    let name = rest
+        .rsplit_once(char::is_whitespace)
+        .map_or(rest, |(name, _type)| name.trim_end());
+    (!name.is_empty()).then(|| name.to_owned())
 }
 
 fn parse_value(value: &str) -> String {
-    value
-        .strip_prefix('"')
-        .and_then(|value| value.strip_suffix('"'))
-        .unwrap_or(value)
+    let Some(quoted) = value.strip_prefix('"') else {
+        return value.to_owned();
+    };
+    // A value that ends in a quote keeps any quotes inside it; otherwise it
+    // ends at the first closing quote and whatever follows is junk.
+    if let Some(inner) = quoted.strip_suffix('"') {
+        return inner.to_owned();
+    }
+    quoted
+        .find('"')
+        .map_or(quoted, |end| &quoted[..end])
         .to_owned()
 }
 
@@ -199,23 +225,30 @@ fn parse_index(
     line: usize,
     statement: &str,
 ) -> Result<(), CueError> {
+    let invalid = || CueError::InvalidStatement {
+        line,
+        statement: statement.to_owned(),
+    };
     let mut fields = rest.split_whitespace();
-    let kind = fields.next();
+    let kind: u32 = fields
+        .next()
+        .and_then(|kind| kind.parse().ok())
+        .ok_or_else(invalid)?;
     let value = fields.next().unwrap_or_default();
     let frames = parse_frames(value).ok_or_else(|| CueError::InvalidIndex {
         track: track.number,
         value: value.to_owned(),
     })?;
-    match kind {
-        Some("00") => track.index00 = Some(frames),
-        Some("01") => track.index01 = Some(frames),
-        Some(_) => {}
-        None => {
-            return Err(CueError::InvalidStatement {
-                line,
-                statement: statement.to_owned(),
-            });
-        }
+    let slot = match kind {
+        0 => &mut track.index00,
+        1 => &mut track.index01,
+        _ => return Ok(()),
+    };
+    if slot.replace(frames).is_some() {
+        return Err(CueError::DuplicateIndex {
+            track: track.number,
+            index: kind,
+        });
     }
     Ok(())
 }

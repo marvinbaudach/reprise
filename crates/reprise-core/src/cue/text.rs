@@ -25,13 +25,19 @@ const CP1252_HIGH: [char; 128] = [
     '\u{00f8}', '\u{00f9}', '\u{00fa}', '\u{00fb}', '\u{00fc}', '\u{00fd}', '\u{00fe}', '\u{00ff}',
 ];
 
-pub(super) fn decode(bytes: &[u8]) -> String {
+pub(super) fn decode(bytes: &[u8]) -> Result<String, ()> {
+    if let Some(bytes) = bytes.strip_prefix(&[0xff, 0xfe]) {
+        return decode_utf16(bytes, u16::from_le_bytes);
+    }
+    if let Some(bytes) = bytes.strip_prefix(&[0xfe, 0xff]) {
+        return decode_utf16(bytes, u16::from_be_bytes);
+    }
     let bytes = bytes.strip_prefix(&[0xef, 0xbb, 0xbf]).unwrap_or(bytes);
     if let Ok(text) = std::str::from_utf8(bytes) {
-        return text.to_owned();
+        return Ok(text.to_owned());
     }
 
-    bytes
+    Ok(bytes
         .iter()
         .map(|byte| {
             if byte.is_ascii() {
@@ -40,5 +46,15 @@ pub(super) fn decode(bytes: &[u8]) -> String {
                 CP1252_HIGH[usize::from(*byte) - 0x80]
             }
         })
-        .collect()
+        .collect())
+}
+
+fn decode_utf16(bytes: &[u8], read: fn([u8; 2]) -> u16) -> Result<String, ()> {
+    let pairs = bytes.chunks_exact(2);
+    if !pairs.remainder().is_empty() {
+        return Err(());
+    }
+    char::decode_utf16(pairs.map(|pair| read([pair[0], pair[1]])))
+        .collect::<Result<String, _>>()
+        .map_err(|_| ())
 }
