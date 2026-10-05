@@ -6,7 +6,6 @@ from __future__ import annotations
 import dataclasses
 import json
 import pathlib
-import subprocess
 import time
 from dataclasses import dataclass
 from typing import Any, Mapping, Sequence
@@ -25,15 +24,24 @@ from actions import (
     TypeAction,
     WaitAction,
 )
-from driver_transport import CliTransport, DriverError, Transport, response_dispatched
+from driver_transport import (
+    RAW_INPUT_DELIVERY_MODE,
+    CliTransport,
+    DriverError,
+    Transport,
+    response_dispatched,
+)
+from hover_preflight import hover_preflight  # noqa: F401  (re-exported)
 from oracles import ActionEvidence, Finding, OracleEngine, Snapshot, normalize_snapshot
 from protocol import ContractError, SCHEMA_VERSION
 from pointer_dispatch import desktop_pointer_payload
 from process_activity import ProcessActivityProbe
-from ui_vocabulary import ACTIONABLE_ROLES, canonical_role, invocable_actions
-
-
-HOVER_PREFLIGHT_TOLERANCE_PX = 3.0
+from ui_vocabulary import (
+    ACTIONABLE_ROLES,
+    canonical_role,
+    invocable_actions,
+    is_entry,
+)
 
 
 def _target_order(item: Mapping[str, Any]) -> tuple[float, float, int]:
@@ -300,7 +308,11 @@ class CuaExecutor:
             _probe_raw, probe = self._snapshot(
                 f"step-{self._step_counter:04}-ax-probe"
             )
-            ax_probe_changed = after.state_signature != probe.state_signature
+            # A probe the driver could not deliver proves nothing about the
+            # target, whatever the snapshot after it looks like.
+            ax_probe_changed = response_dispatched(probe_response) and (
+                after.state_signature != probe.state_signature
+            )
             settled.append(probe)
         sample_gaps = []
         for index, delay in enumerate(self.settle_delays, start=1):
@@ -389,17 +401,25 @@ class CuaExecutor:
             return self._dispatch_evidence(evidence, before_raw, base)
         if isinstance(accepted, ActivateAction):
             target = self._target(before_raw, evidence.target_label)
-            payload = {
-                **base,
-                **self._address(before_raw, target, evidence.dispatch),
-            }
-            return self.transport.call("click", payload)
+            return self.transport.call(
+                "click", self._click_payload(base, before_raw, target, evidence.dispatch)
+            )
         if isinstance(accepted, TypeAction):
             try:
                 text = self.fixture_tokens[accepted.fixture_token]
             except KeyError as error:
                 raise DriverError(f"missing trusted fixture token: {accepted.fixture_token}") from error
             target = self._target(before_raw, accepted.target_label)
+            if accepted.dispatch == "ax" and not is_entry(str(target.get("role"))):
+                # AT-SPI EditableText only exists on an entry. Aimed at anything
+                # else (the "Search all fields" toggle that reveals the search
+                # box) the driver falls back to key events and calls
+                # Component.GrabFocus, which GTK4 does not implement. Focus the
+                # target with a click, as a user does, and type into the
+                # focused widget.
+                focus_response = self._focus_click(base, before_raw, target)
+                response = self.transport.call("type_text", {**base, "text": text})
+                return {**response, "focus_click": focus_response}
             payload = {
                 **base,
                 **self._address(before_raw, target, accepted.dispatch),
@@ -407,11 +427,18 @@ class CuaExecutor:
             }
             return self.transport.call("type_text", payload)
         if isinstance(accepted, PressAction):
-            payload = {**base, "key": accepted.key}
-            if accepted.target_label is not None:
-                target = self._target(before_raw, accepted.target_label)
-                payload.update(self._address(before_raw, target, "ax"))
-            return self.transport.call("press_key", payload)
+            key_payload = {**base, "key": accepted.key}
+            if accepted.target_label is None:
+                return self.transport.call("press_key", key_payload)
+            # press_key addressed to an element makes the driver call AT-SPI
+            # Component.GrabFocus, which GTK4 accessibles do not implement
+            # (NotSupported on a plain Gtk.SearchEntry and Gtk.Button too).
+            # Focus the target the way a user does, with a click, and send the
+            # key to the focused window without an element address.
+            target = self._target(before_raw, accepted.target_label)
+            focus_response = self._focus_click(base, before_raw, target)
+            response = self.transport.call("press_key", key_payload)
+            return {**response, "focus_click": focus_response}
         if isinstance(accepted, HotkeyAction):
             payload = {**base, "keys": list(accepted.keys)}
             return self.transport.call("hotkey", payload)
@@ -449,8 +476,7 @@ class CuaExecutor:
         if evidence.kind == "activate":
             target = self._target(before_raw, evidence.target_label)
             return self.transport.call(
-                "click",
-                {**base, **self._address(before_raw, target, evidence.dispatch)},
+                "click", self._click_payload(base, before_raw, target, evidence.dispatch)
             )
         if evidence.kind == "scroll":
             payload = {
@@ -700,6 +726,37 @@ class CuaExecutor:
             findings.extend(take_transport())
         return findings
 
+    def _focus_click(
+        self,
+        base: Mapping[str, Any],
+        snapshot: Mapping[str, Any],
+        target: Mapping[str, Any],
+    ) -> Mapping[str, Any]:
+        """Click the target to focus it before keys go to the focused window."""
+
+        return self.transport.call(
+            "click", {**base, **self._address(snapshot, target, "px")}
+        )
+
+    def _click_payload(
+        self,
+        base: Mapping[str, Any],
+        snapshot: Mapping[str, Any],
+        target: Mapping[str, Any],
+        dispatch: str,
+    ) -> dict[str, Any]:
+        payload = {**base, **self._address(snapshot, target, dispatch)}
+        if (
+            dispatch == "ax"
+            and "actions" in target
+            and not invocable_actions(target.get("actions"))
+        ):
+            # Nothing to invoke over AT-SPI, so the driver falls to the pointer,
+            # which only works in foreground on a private Xvfb. Asking for it
+            # here keeps its 5 s background wait out of the measured action.
+            payload["delivery_mode"] = RAW_INPUT_DELIVERY_MODE
+        return payload
+
     def _address(
         self,
         snapshot: Mapping[str, Any],
@@ -717,9 +774,9 @@ class CuaExecutor:
                 "a pixel click needs the window origin: cua-driver takes x/y "
                 "with window_id in window coordinates"
             )
-        from hover_geometry import window_pointer_point
+        from hover_geometry import snapshot_frame_scale, window_pointer_point
 
-        x, y = window_pointer_point(frame, origin)
+        x, y = window_pointer_point(frame, origin, snapshot_frame_scale(snapshot))
         return {"x": x, "y": y}
 
     def _retain_step(self, result: StepResult) -> None:
@@ -735,63 +792,3 @@ class CuaExecutor:
         }
         path = self.evidence_dir / f"step-{self._step_counter:04}-result.json"
         path.write_text(json.dumps(payload, indent=2, sort_keys=True) + "\n", encoding="utf-8")
-
-
-def hover_preflight(
-    transport: Transport,
-    *,
-    pid: int,
-    window_id: int,
-    session: str,
-    origin: Any,
-) -> dict[str, Any]:
-    """Verify desktop-pointer dispatch before spending a mission action budget."""
-    try:
-        # Measured on cua-driver 0.19.3 under X11: a session-bound cursor read is
-        # confined to window scope and answers desktop_escalation_required, while
-        # the session-free form reads the real X11 pointer exactly. Escalating the
-        # session is not an option: escalation is permanent and disables the
-        # session-bound get_window_state route used by every mission snapshot.
-        before = _desktop_cursor_position(transport.call("get_cursor_position", {}))
-        candidates = (
-            (origin.x + origin.width * 0.25, origin.y + origin.height * 0.25),
-            (origin.x + origin.width * 0.75, origin.y + origin.height * 0.75),
-        )
-        target = max(candidates, key=lambda point: _distance_squared(before, point))
-        transport.call("move_cursor", desktop_pointer_payload(*target))
-        after = _desktop_cursor_position(transport.call("get_cursor_position", {}))
-    except (DriverError, OSError, subprocess.SubprocessError) as error:
-        raise DriverError("hover dispatch is unsafe on this driver build") from error
-    moved = not _points_close(before, after)
-    reached = _points_close(target, after)
-    verified = moved and reached
-    return {
-        "before": {"source": "x11", "x": before[0], "y": before[1]},
-        "target": {"x": target[0], "y": target[1]},
-        "after": {"source": "x11", "x": after[0], "y": after[1]},
-        "tolerance_px": HOVER_PREFLIGHT_TOLERANCE_PX,
-        "moved_from_before": moved,
-        "reached_target": reached,
-        "verified": verified,
-        "verdict": "pointer-reached-target" if verified else "pointer-did-not-reach-target",
-    }
-
-
-def _desktop_cursor_position(response: Mapping[str, Any]) -> tuple[float, float]:
-    if response.get("source") != "x11":
-        raise DriverError("session-free cursor read did not report the X11 pointer")
-    x, y = response.get("x"), response.get("y")
-    if not all(isinstance(value, (int, float)) and not isinstance(value, bool) for value in (x, y)):
-        raise DriverError("session-free cursor read has no numeric position")
-    return float(x), float(y)
-
-
-def _distance_squared(left: tuple[float, float], right: tuple[float, float]) -> float:
-    return (left[0] - right[0]) ** 2 + (left[1] - right[1]) ** 2
-
-
-def _points_close(left: tuple[float, float], right: tuple[float, float]) -> bool:
-    return all(
-        abs(left_value - right_value) <= HOVER_PREFLIGHT_TOLERANCE_PX
-        for left_value, right_value in zip(left, right)
-    )

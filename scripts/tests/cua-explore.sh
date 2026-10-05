@@ -18,6 +18,8 @@ python3 scripts/tests/cua-explore-click-probe.py
 python3 scripts/tests/cua-explore-fixture-integrity.py
 python3 scripts/tests/cua-explore-target-resolution.py
 python3 scripts/tests/cua-explore-driver-contract.py
+python3 scripts/tests/cua-explore-raw-input.py
+python3 scripts/tests/cua-explore-input-routing.py
 python3 scripts/tests/cua-explore-capture-degradation.py
 python3 scripts/tests/cua-explore-stall-attribution.py
 python3 scripts/tests/cua-explore-timing-feedback.py

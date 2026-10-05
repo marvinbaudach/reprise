@@ -662,5 +662,34 @@ class RunPathTests(unittest.TestCase):
         self.assertIn("Measured positions: 2 of 2", report)
 
 
+class TraceValuesTests(unittest.TestCase):
+    def observation(self, *elements: dict) -> dict:
+        return {"elements": list(elements)}
+
+    def values(self, observation: dict) -> dict:
+        trace = runner._trace_from_observations(
+            {"kind": "type"}, observation, observation
+        )
+        return dict(trace.before_values)
+
+    def test_an_empty_duplicate_label_never_erases_the_typed_value(self) -> None:
+        # "Search all fields" names the toggle and the search box. The audits
+        # read the values as a dict, and the toggle listed second used to win.
+        box = {"label": "Search all fields", "role": "search box", "value": "needle"}
+        toggle = {"label": "Search all fields", "role": "toggle button"}
+        for order in ((box, toggle), (toggle, box)):
+            with self.subTest(first=order[0]["role"]):
+                self.assertEqual(
+                    self.values(self.observation(*order)),
+                    {"Search all fields": "needle"},
+                )
+
+    def test_a_label_without_any_value_reads_as_empty(self) -> None:
+        toggle = {"label": "Search all fields", "role": "toggle button"}
+        self.assertEqual(
+            self.values(self.observation(toggle)), {"Search all fields": ""}
+        )
+
+
 if __name__ == "__main__":
     unittest.main()

@@ -33,6 +33,47 @@ WINDOW_STATE_READINESS_RETRY_DELAYS_SECONDS = (1.0, 2.0, 3.0)
 CAPTURE_RETRY_DELAYS_SECONDS = (1.0, 2.0, 3.0)
 SUCCESS_STATUSES = frozenset({"ok", "success", "succeeded"})
 BACKGROUND_UNAVAILABLE_CODE = "background_unavailable"
+# `background_pointer_failed` is the same refusal from the XInput2 MPX pointer
+# path: the driver creates a uinput pointer and waits for X to attach it as a
+# slave device. Xvfb has no input hotplug, so the wait always times out.
+BACKGROUND_POINTER_FAILED_CODE = "background_pointer_failed"
+BACKGROUND_FAILURE_CODES = frozenset(
+    {BACKGROUND_UNAVAILABLE_CODE, BACKGROUND_POINTER_FAILED_CODE}
+)
+# The keyboard twin of the pointer failure arrives as plain text, not a code
+# object: "virtual master keyboard delivery failed: timed out waiting for X
+# input slave device ... uinput pointer". It is reported under this name.
+BACKGROUND_KEYBOARD_FAILED_CODE = "background_keyboard_failed"
+VIRTUAL_KEYBOARD_FAILURE_PREFIX = "virtual master keyboard delivery failed:"
+# Every mission runs on a private Xvfb, where the background route for raw input
+# cannot work: cua-driver LINUX.md says the MPX pointer "needs a real Xorg +
+# /dev/uinput" and names `delivery_mode:"foreground"` as the escalation. Raw
+# input - a pixel click, a scroll or text without an element, any key press -
+# therefore asks for foreground up front. Choosing it after a failed background
+# attempt would put the driver's 5-6 s wait inside the measured action time, and
+# the feedback and stall oracles would blame the app for it. Foreground here
+# activates a window on the private display, never the live desktop. Calls that
+# address an element stay on the AT-SPI route, which works unchanged.
+RAW_INPUT_DELIVERY_MODE = "foreground"
+# A click addressed to an element with no AT-SPI click action falls to the
+# pointer, and the driver then refuses to aim it when another element owns the
+# element's centre: {"code":"element_bounds_unavailable","effect":"none",
+# "reason":"point_owned_by_another_element"}, exit 1. Measured on 0.33.3 for
+# list rows, whose only action is listitem.scroll-to. The input provably never
+# arrived and the answer says so, so it is booked like the other undelivered
+# shell (retained, no product verdict) instead of ending the run.
+UNDELIVERED_TARGET_CODES = frozenset({"element_bounds_unavailable"})
+KEY_TOOLS = frozenset({"press_key", "hotkey"})
+POINTER_OR_TEXT_TOOLS = frozenset({"click", "scroll", "type_text"})
+ELEMENT_ADDRESS_KEYS = ("element_token", "element_index")
+# get_window_state bounds the whole AT-SPI walk by `timeout_ms` (default 1000)
+# and answers a PARTIAL tree flagged `truncated: true` when it runs out; every
+# element after the cut is silently missing. Reprise's tree is 600-700 nodes and
+# the walk took 1.0-1.2 s on a loaded host (0.33.3, issue 1092), so a snapshot
+# lost the "Music" section row at random and the run ended with "target is not
+# actionable in fresh observation". The budget is a ceiling, not a delay: a walk
+# that finishes sooner returns sooner. The tool's own maximum is 120000.
+SNAPSHOT_WALK_BUDGET_MS = 10_000
 # Measured from the cua-driver 0.19.3 schemas used by the mission actions:
 # `describe` lists delivery_mode for exactly these five. `set_value` does not
 # take it, so it stays out and a refusal there still ends the run.
@@ -109,6 +150,10 @@ class CliTransport:
 
     def call(self, tool: str, payload: Mapping[str, Any]) -> Mapping[str, Any]:
         request_payload = dict(payload)
+        if _is_raw_input(tool, request_payload):
+            request_payload["delivery_mode"] = RAW_INPUT_DELIVERY_MODE
+        if tool == "get_window_state":
+            request_payload.setdefault("timeout_ms", SNAPSHOT_WALK_BUDGET_MS)
         capture_unavailable_reason = None
         if tool == "get_window_state" and self._capture_unavailable_reason is not None:
             request_payload.pop("screenshot_out_file", None)
@@ -134,6 +179,31 @@ class CliTransport:
                 raise DriverError(f"cua-driver {tool} timed out") from error
             if completed.returncode != 0:
                 self._retain_fault(tool, attempt, completed)
+                # Measured on 0.33.3: background_pointer_failed exits 1 with
+                # its code object on stdout, so the exit-0 escape below never
+                # saw it and the first such click ended the run.
+                refusal_code = (
+                    _background_failure_code(
+                        tool, request_payload, completed.stdout or completed.stderr
+                    )
+                    if delivery_escalation is None
+                    else None
+                )
+                if refusal_code is not None:
+                    delivery_escalation = _foreground_escalation(refusal_code)
+                    request_payload["delivery_mode"] = "foreground"
+                    command[2] = json.dumps(
+                        request_payload, separators=(",", ":")
+                    )
+                    continue
+                undelivered = _undelivered_refusal(tool, completed.stdout)
+                if undelivered is not None:
+                    if delivery_escalation is not None:
+                        undelivered = {
+                            **undelivered,
+                            "delivery_escalation": delivery_escalation,
+                        }
+                    return undelivered
                 message = completed.stderr.strip() or completed.stdout.strip()
                 raise DriverError(f"cua-driver {tool} failed: {message[:500]}")
             if not completed.stdout.strip():
@@ -156,6 +226,18 @@ class CliTransport:
                     return confirmation
                 first_line = _first_line(completed.stdout)
                 self._plain_text_fault_line = first_line
+                refusal_code = (
+                    _background_failure_code(tool, request_payload, first_line)
+                    if delivery_escalation is None
+                    else None
+                )
+                if refusal_code is not None:
+                    delivery_escalation = _foreground_escalation(refusal_code)
+                    request_payload["delivery_mode"] = "foreground"
+                    command[2] = json.dumps(
+                        request_payload, separators=(",", ":")
+                    )
+                    continue
                 if _is_capture_failure(tool, request_payload, first_line):
                     if attempt <= len(CAPTURE_RETRY_DELAYS_SECONDS):
                         time.sleep(CAPTURE_RETRY_DELAYS_SECONDS[attempt - 1])
@@ -185,11 +267,9 @@ class CliTransport:
                     delivery_escalation is None
                     and _can_retry_in_foreground(tool, request_payload, response)
                 ):
-                    delivery_escalation = {
-                        "code": BACKGROUND_UNAVAILABLE_CODE,
-                        "from": "background",
-                        "to": "foreground",
-                    }
+                    delivery_escalation = _foreground_escalation(
+                        str(response.get("code"))
+                    )
                     request_payload["delivery_mode"] = "foreground"
                     command[2] = json.dumps(
                         request_payload, separators=(",", ":")
@@ -371,8 +451,67 @@ def _can_retry_in_foreground(
     return (
         tool in DELIVERY_MODE_TOOLS
         and payload.get("delivery_mode") != "foreground"
-        and response.get("code") == BACKGROUND_UNAVAILABLE_CODE
+        and response.get("code") in BACKGROUND_FAILURE_CODES
     )
+
+
+def _foreground_escalation(code: str) -> dict[str, str]:
+    return {"code": code, "from": "background", "to": "foreground"}
+
+
+def _is_raw_input(tool: str, payload: Mapping[str, Any]) -> bool:
+    """True when the call cannot use AT-SPI and so needs the real input route."""
+
+    if "delivery_mode" in payload or tool not in DELIVERY_MODE_TOOLS:
+        return False
+    if tool in KEY_TOOLS:
+        return True
+    return tool in POINTER_OR_TEXT_TOOLS and not any(
+        key in payload for key in ELEMENT_ADDRESS_KEYS
+    )
+
+
+def _undelivered_refusal(tool: str, text: str) -> dict[str, Any] | None:
+    """Re-shape a refusal that proves nothing arrived as the undelivered shell."""
+
+    if tool != "click":
+        return None
+    try:
+        parsed = json.loads(text)
+    except json.JSONDecodeError:
+        return None
+    if (
+        not isinstance(parsed, dict)
+        or parsed.get("code") not in UNDELIVERED_TARGET_CODES
+        or parsed.get("effect") != "none"
+    ):
+        return None
+    return {
+        **parsed,
+        "escalation": {"reason": DELIVERY_FAILED_REASON, "target": "pointer"},
+    }
+
+
+def _background_failure_code(
+    tool: str, payload: Mapping[str, Any], text: str
+) -> str | None:
+    """Name the background refusal in a failed call's text, or None.
+
+    Only a tool whose schema takes delivery_mode and has not asked for
+    foreground yet can escape; everything else keeps failing closed.
+    """
+
+    if tool not in DELIVERY_MODE_TOOLS or payload.get("delivery_mode") == "foreground":
+        return None
+    stripped = text.strip()
+    if stripped.startswith(VIRTUAL_KEYBOARD_FAILURE_PREFIX):
+        return BACKGROUND_KEYBOARD_FAILED_CODE
+    try:
+        parsed = json.loads(stripped)
+    except json.JSONDecodeError:
+        return None
+    code = parsed.get("code") if isinstance(parsed, dict) else None
+    return code if code in BACKGROUND_FAILURE_CODES else None
 
 
 def _payload(response: Mapping[str, Any]) -> Mapping[str, Any]:
