@@ -43,7 +43,7 @@ pub(crate) fn estimated_audio_files(
         crate::library::playlists::escape_like(root_str.trim_end_matches('/'))
     );
     let mut statement = conn.prepare(&format!(
-        "SELECT path FROM tracks WHERE {} AND path LIKE ?1 ESCAPE '\\'",
+        "SELECT DISTINCT path FROM tracks WHERE {} AND path LIKE ?1 ESCAPE '\\'",
         crate::queries::PRESENT
     ))?;
     let paths = statement.query_map(rusqlite::params![pattern], |row| row.get::<_, String>(0))?;

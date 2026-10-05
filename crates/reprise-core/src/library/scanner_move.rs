@@ -26,7 +26,14 @@ pub(crate) const MOVE_MATCH_TOLERANCE_MS: i64 = 2_000;
 pub(crate) struct MoveCandidate {
     pub(crate) id: i64,
     pub(crate) path: String,
+    /// The old file held the tracks of a CUE sheet, so every row at `path` moves
+    /// with it and `id` is only the first of them.
+    pub(crate) segmented: bool,
 }
+
+/// One catalog row a move lookup matched: its id, path, `missing_since` and
+/// `segment_index`.
+type MatchedRow = (i64, String, Option<i64>, i64);
 
 /// Everything `find_move_candidate` needs to know about the file it's
 /// looking for a pre-move identity of. Bundled into one struct (rather than
@@ -50,20 +57,39 @@ pub(crate) struct MoveLookup<'a> {
 /// matches would flag that as a false ambiguity and refuse a move that is in
 /// fact unambiguous (see the
 /// `one_deleted_one_alive_duplicate_is_still_an_unambiguous_move` test).
+///
+/// The tracks of one CUE file all match together, since they share the file's
+/// identity and size. They are one candidate, not an ambiguity: the rows
+/// sharing a path collapse into one candidate that stands for the whole file.
 fn valid_candidates(
     source: &dyn LibrarySource,
-    rows: Vec<(i64, String, Option<i64>)>,
+    rows: Vec<MatchedRow>,
     allowed_ids: Option<&HashSet<i64>>,
 ) -> Vec<MoveCandidate> {
-    rows.into_iter()
-        .filter(|(id, _, _)| allowed_ids.is_none_or(|allowed| allowed.contains(id)))
-        .filter(|(_, path, missing_since)| {
-            missing_since.is_some()
-                || source.probe(Path::new(path), LibraryLinkMode::Follow)
-                    == LibraryPathPresence::Absent
-        })
-        .map(|(id, path, _)| MoveCandidate { id, path })
-        .collect()
+    let mut candidates: Vec<MoveCandidate> = Vec::new();
+    for (id, path, missing_since, segment_index) in rows {
+        if !allowed_ids.is_none_or(|allowed| allowed.contains(&id)) {
+            continue;
+        }
+        let gone = missing_since.is_some()
+            || source.probe(Path::new(&path), LibraryLinkMode::Follow)
+                == LibraryPathPresence::Absent;
+        if !gone {
+            continue;
+        }
+        match candidates.iter_mut().find(|known| known.path == path) {
+            Some(known) => {
+                known.id = known.id.min(id);
+                known.segmented |= segment_index > 0;
+            }
+            None => candidates.push(MoveCandidate {
+                id,
+                path,
+                segmented: segment_index > 0,
+            }),
+        }
+    }
+    candidates
 }
 
 /// Resolves a moved-file candidate for a file at an as-yet-unknown path,
@@ -105,13 +131,14 @@ fn find_move_candidate_inner(
     allowed_ids: Option<&HashSet<i64>>,
 ) -> Result<Option<MoveCandidate>, ScanError> {
     if let Some((device, inode)) = lookup.identity {
-        let rows: Vec<(i64, String, Option<i64>)> = {
+        let rows: Vec<MatchedRow> = {
             let mut stmt = tx.prepare(
-                "SELECT id, path, missing_since FROM tracks WHERE device = ?1 AND inode = ?2",
+                "SELECT id, path, missing_since, segment_index FROM tracks \
+                 WHERE device = ?1 AND inode = ?2",
             )?;
             let mapped = stmt
                 .query_map(rusqlite::params![device, inode], |r| {
-                    Ok((r.get(0)?, r.get(1)?, r.get(2)?))
+                    Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?))
                 })?
                 .collect::<Result<_, _>>()?;
             mapped
@@ -132,9 +159,10 @@ fn find_move_candidate_inner(
         }
     }
 
-    let rows: Vec<(i64, String, Option<i64>)> = {
+    let rows: Vec<MatchedRow> = {
         let fingerprint_query = format!(
-            "SELECT id, path, missing_since FROM tracks WHERE title = ?1 AND artist = ?2 \
+            "SELECT id, path, missing_since, segment_index FROM tracks \
+             WHERE title = ?1 AND artist = ?2 \
              AND album = ?3 AND ABS(duration_ms - ?4) <= {MOVE_MATCH_TOLERANCE_MS} \
              AND file_size = ?5"
         );
@@ -148,7 +176,7 @@ fn find_move_candidate_inner(
                     lookup.duration_ms,
                     lookup.file_size
                 ],
-                |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)),
+                |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?)),
             )?
             .collect::<Result<_, _>>()?;
         mapped
@@ -182,6 +210,35 @@ pub(crate) struct FileIdentity {
     pub(crate) device: Option<i64>,
     pub(crate) inode: Option<i64>,
     pub(crate) mount_point: Option<String>,
+}
+
+/// Carries every row stored for `old_path` to `new_path`, with the identity of
+/// the file at its new place, and returns how many moved. This is how a CUE
+/// file moves: its rows are tracks cut from the file, so their tags stay, since
+/// they belong to the tracks and not to the file. The sheet read next at the new
+/// place refreshes them. Like [`apply_file_identity`], it clears the missing and
+/// removed marks: the caller just proved the file is there.
+pub(crate) fn move_segment_rows(
+    tx: &rusqlite::Transaction,
+    old_path: &str,
+    new_path: &Path,
+    fs: &FileIdentity,
+) -> Result<usize, rusqlite::Error> {
+    tx.execute(
+        "UPDATE tracks SET path = ?2, file_mtime = ?3, file_size = ?4, device = ?5, \
+                           inode = ?6, mount_point = ?7, missing_since = NULL, \
+                           missing_reason = NULL, removed_at = NULL \
+         WHERE path = ?1",
+        rusqlite::params![
+            old_path,
+            new_path.to_string_lossy(),
+            fs.file_mtime,
+            fs.file_size,
+            fs.device,
+            fs.inode,
+            fs.mount_point,
+        ],
+    )
 }
 
 /// Task 1.9: the ONE row-refresh used by move detection (below, in `scanner.
@@ -362,6 +419,7 @@ mod tests {
             Some(MoveCandidate {
                 id: 1,
                 path: "/gone/fingerprint.flac".to_string(),
+                segmented: false,
             })
         );
     }
@@ -401,6 +459,7 @@ mod tests {
             Some(MoveCandidate {
                 id: 1,
                 path: "/gone/identity.flac".to_string(),
+                segmented: false,
             })
         );
     }

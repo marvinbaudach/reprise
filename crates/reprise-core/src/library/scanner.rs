@@ -25,7 +25,9 @@ mod scan_writer;
 pub use scan_writer::ScanWriter;
 
 const AUDIO_EXTENSIONS: [&str; 7] = ["mp3", "flac", "ogg", "opus", "m4a", "aac", "wav"];
-const TAG_SCAN_VERSION: i64 = 1;
+/// Bumped when a scan learns to read something new from the tags, so files
+/// scanned before are read once more. Version 2: the `CUESHEET` of a FLAC.
+const TAG_SCAN_VERSION: i64 = 2;
 
 type FileStat = (u64, Option<(u64, u64)>);
 type FileMetadata = (i64, Option<FileStat>);
@@ -309,11 +311,15 @@ impl WalkState {
                 self.report.moved += 1;
                 self.report.healed += healed;
             }
-            EntryOutcome::Imported { is_update, healed } => {
+            EntryOutcome::Imported {
+                is_update,
+                healed,
+                tracks,
+            } => {
                 if is_update {
-                    self.report.updated += 1;
+                    self.report.updated += tracks;
                 } else {
-                    self.report.added += 1;
+                    self.report.added += tracks;
                 }
                 self.report.healed += healed;
             }
@@ -606,7 +612,12 @@ fn scan_folder_inner(
             failed: HashSet::new(),
         },
     };
-    leases.run_estimate(writer, &mut |conn| progress.initialize(conn, root))?;
+    let mut cues = cue_sheets::CueDirectories::default();
+    leases.run_estimate(writer, &mut |conn| {
+        progress.initialize(conn, root)?;
+        cues.load_applied(conn, root)?;
+        Ok(())
+    })?;
     batches::walk_root_in_batches(
         source,
         writer,
@@ -614,6 +625,7 @@ fn scan_folder_inner(
         &mut state,
         &mut mobile_sync,
         &mut mount_cache,
+        &mut cues,
         progress,
         leases,
     )?;
@@ -665,6 +677,13 @@ mod scan_progress;
 
 #[path = "scanner_entry.rs"]
 mod entry;
+
+// Which sheet describes an audio file, and the layout its tracks take.
+#[path = "scanner_cue.rs"]
+mod cue_sheets;
+
+#[path = "scanner_segments.rs"]
+mod segments;
 
 #[path = "scanner_batches.rs"]
 mod batches;
@@ -756,3 +775,7 @@ mod exclusion_tests;
 #[cfg(test)]
 #[path = "scanner_lease_tests.rs"]
 mod lease_tests;
+
+#[cfg(test)]
+#[path = "scanner_cue_tests.rs"]
+mod cue_tests;

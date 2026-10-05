@@ -7563,6 +7563,35 @@ committee published on 2026-05-29.
   are `Upcoming`, `Missing` and `Incomplete`. Sidebar row labels and the seeded
   smart lists are header case.
 
+## AK. CUE sheets
+
+<!-- REVIEW: rule proposal -->
+
+An album ripped as one audio file plus a `.cue` sheet, or a FLAC that carries
+the sheet in its `CUESHEET` comment, is listed as the tracks the sheet names.
+Reprise only reads sheets: it never writes one, and a track cut from a file has
+no tags of its own to write.
+
+- **CUE-1a** [active] [core] — A sheet beside an audio file, or embedded in a
+  FLAC, lists the file as the sheet's tracks, in sheet order, each with the
+  sheet's title, artist and its own start, end and duration. What the sheet
+  leaves out comes from the file's own tags. The file is never also listed as
+  one track, however the walk happens to order the sheet and the audio.
+- **CUE-1b** [active] [core] — A rescan follows the sheet. When the sheet
+  changes, a track it still has keeps its place in the library, with its rating
+  and play count; when the sheet is removed, the file is one track again; when a
+  sheet appears beside a file already in the library, the file's single track is
+  replaced by the sheet's tracks.
+- **CUE-2** [active] [core] — A sheet that cannot be applied to its audio, because
+  it does not parse, names a file that is not there, has no audio track, names
+  one file twice or places a track past the end of its file, leaves the audio as
+  one ordinary track and raises an issue that names the sheet. Mending the sheet
+  clears the issue, and dismissing it keeps it quiet until the sheet changes.
+- **CUE-3** [active] [core] — A CUE file that moves keeps every one of its
+  tracks, with their ratings and play counts.
+- **CUE-4** [active] [core] — Removing one track of a CUE file from the library
+  hides that track and keeps its siblings; removing the file hides them all.
+
 ## AJ. Showroom (public site)
 
 Rules in this section govern `showroom/`, the public site. Their level is

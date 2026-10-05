@@ -54,7 +54,9 @@ impl WriteErrorKind {
             ImportErrorKind::PermissionDenied => Self::PermissionDenied,
             ImportErrorKind::UnsupportedFormat => Self::UnsupportedFormat,
             ImportErrorKind::UnreadableTags => Self::UnreadableTags,
-            ImportErrorKind::Io | ImportErrorKind::Unknown => Self::Io,
+            ImportErrorKind::Io | ImportErrorKind::Unknown | ImportErrorKind::InvalidCueSheet => {
+                Self::Io
+            }
         }
     }
 }

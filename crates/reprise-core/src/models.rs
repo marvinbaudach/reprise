@@ -175,6 +175,11 @@ pub enum ImportErrorKind {
     /// a `tracing::warn!` when this happens), or a `walkdir` symlink-loop
     /// error with no underlying `io::Error` to inspect.
     Unknown,
+    /// A CUE sheet that cannot be applied to the audio it describes: it does
+    /// not parse, names a file that is not there, or places a track past the
+    /// end of its file. The audio stays in the library as one ordinary track,
+    /// and this issue — keyed by the sheet — says why it was not split.
+    InvalidCueSheet,
 }
 
 impl ImportErrorKind {
@@ -189,6 +194,7 @@ impl ImportErrorKind {
             Self::UnsupportedFormat => "unsupported_format",
             Self::Io => "io",
             Self::Unknown => "unknown",
+            Self::InvalidCueSheet => "invalid_cue_sheet",
         }
     }
 
@@ -205,6 +211,7 @@ impl ImportErrorKind {
             "permission_denied" => Self::PermissionDenied,
             "unsupported_format" => Self::UnsupportedFormat,
             "io" => Self::Io,
+            "invalid_cue_sheet" => Self::InvalidCueSheet,
             _ => Self::Unknown,
         }
     }
@@ -223,6 +230,7 @@ mod tests {
             ImportErrorKind::UnsupportedFormat,
             ImportErrorKind::Io,
             ImportErrorKind::Unknown,
+            ImportErrorKind::InvalidCueSheet,
         ];
         for original in kinds {
             let s = original.as_str();
