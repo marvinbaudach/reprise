@@ -305,6 +305,15 @@ internal class Media3PlaybackPort(
         }
     }
 
+    override fun setGains(currentGainDb: Double, nextGainDb: Double?): Unit = dispatch.call {
+        // Gain only: the queued items stay as they are, so the gapless
+        // prebuffer of the next one survives a settings change.
+        if (nextUri != null && nextGainDb != null) {
+            this.nextGainDb = nextGainDb
+        }
+        trackGainSink?.setGains(currentGainDb, nextUri?.let { this.nextGainDb })
+    }
+
     override fun setTransition(mode: AndroidTransitionMode) = dispatch.call {
         transitionMode = mode
         applyNextItem()

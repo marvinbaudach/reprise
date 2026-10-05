@@ -704,7 +704,7 @@ impl AndroidPlaybackSession {
             playback_settings.equalizer_curve,
         )?;
         backend.set_transition(transition, crossfade_seconds);
-        Ok(())
+        self.inner.refresh_gains()
     }
 }
 

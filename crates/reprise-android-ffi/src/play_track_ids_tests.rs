@@ -252,3 +252,91 @@ fn a_track_whose_uri_is_not_its_database_path_still_gets_its_gain_by_id() {
         -3.0
     )));
 }
+
+fn set_mode(
+    session: &AndroidPlaybackSession,
+    mode: reprise_core::library::settings::ReplayGainMode,
+) {
+    let writer = session.library_writer();
+    let writer = writer.lock().unwrap();
+    reprise_core::library::settings::set_replay_gain_mode(&writer, mode).unwrap();
+}
+
+#[test]
+fn play_20_a_mode_change_reaches_the_playing_track_and_the_pre_fed_one() {
+    use reprise_core::library::settings::ReplayGainMode;
+
+    let directory = tempfile::tempdir().unwrap();
+    let tracks = seed_tracks(directory.path(), &["First", "Second"]);
+    measure_loudness(directory.path(), tracks[0].id, -21.0);
+    measure_loudness(directory.path(), tracks[1].id, -15.0);
+    let calls = Arc::new(Mutex::new(Vec::new()));
+    let session = AndroidPlaybackSession::new(
+        library_in(directory.path()),
+        Box::new(RecordingPort {
+            calls: Arc::clone(&calls),
+            bridge: Arc::new(Mutex::new(None::<Arc<PlaybackEventBridge>>)),
+        }),
+        Box::new(RecordingListener {
+            snapshots: Arc::new(Mutex::new(Vec::new())),
+            report_changes: Arc::new(AtomicUsize::new(0)),
+        }),
+    )
+    .unwrap();
+    session
+        .play_track_ids(vec![tracks[0].id, tracks[1].id], 0)
+        .unwrap();
+    calls.lock().unwrap().clear();
+
+    set_mode(&session, ReplayGainMode::Off);
+    session.reload_playback_settings().unwrap();
+    set_mode(&session, ReplayGainMode::Track);
+    session.reload_playback_settings().unwrap();
+
+    let recorded = calls.lock().unwrap();
+    let gains: Vec<_> = recorded
+        .iter()
+        .filter_map(|call| match call {
+            PortCall::SetGains(current, next) => Some((*current, *next)),
+            _ => None,
+        })
+        .collect();
+    assert_eq!(gains, vec![(0.0, Some(0.0)), (3.0, Some(-3.0))]);
+    // The tracks are not restarted or re-queued to take the new gain.
+    assert!(!recorded.iter().any(|call| matches!(
+        call,
+        PortCall::PlayPath(..) | PortCall::PlayUri(..) | PortCall::SetNext(..)
+    )));
+}
+
+#[test]
+fn a_mode_change_with_nothing_playing_touches_no_gain() {
+    let directory = tempfile::tempdir().unwrap();
+    seed_tracks(directory.path(), &["First"]);
+    let calls = Arc::new(Mutex::new(Vec::new()));
+    let session = AndroidPlaybackSession::new(
+        library_in(directory.path()),
+        Box::new(RecordingPort {
+            calls: Arc::clone(&calls),
+            bridge: Arc::new(Mutex::new(None::<Arc<PlaybackEventBridge>>)),
+        }),
+        Box::new(RecordingListener {
+            snapshots: Arc::new(Mutex::new(Vec::new())),
+            report_changes: Arc::new(AtomicUsize::new(0)),
+        }),
+    )
+    .unwrap();
+    calls.lock().unwrap().clear();
+
+    set_mode(
+        &session,
+        reprise_core::library::settings::ReplayGainMode::Off,
+    );
+    session.reload_playback_settings().unwrap();
+
+    assert!(!calls
+        .lock()
+        .unwrap()
+        .iter()
+        .any(|call| matches!(call, PortCall::SetGains(..))));
+}

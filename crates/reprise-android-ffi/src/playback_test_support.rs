@@ -35,6 +35,7 @@ pub(super) enum PortCall {
     SetSpectrumEnabled(bool),
     Stop,
     SetNext(Option<String>, f64),
+    SetGains(f64, Option<f64>),
     SetTransition(AndroidTransitionMode),
     CurrentGeneration,
 }
@@ -151,6 +152,15 @@ impl AndroidPlaybackPort for RecordingPort {
 
     fn set_next(&self, uri: Option<String>, gain_db: f64) -> Result<(), AndroidPlaybackError> {
         self.record(PortCall::SetNext(uri, gain_db));
+        Ok(())
+    }
+
+    fn set_gains(
+        &self,
+        current_gain_db: f64,
+        next_gain_db: Option<f64>,
+    ) -> Result<(), AndroidPlaybackError> {
+        self.record(PortCall::SetGains(current_gain_db, next_gain_db));
         Ok(())
     }
 

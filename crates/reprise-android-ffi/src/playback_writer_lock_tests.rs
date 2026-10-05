@@ -81,6 +81,14 @@ impl AndroidPlaybackPort for QuietPort {
         Ok(())
     }
 
+    fn set_gains(
+        &self,
+        _current_gain_db: f64,
+        _next_gain_db: Option<f64>,
+    ) -> Result<(), AndroidPlaybackError> {
+        Ok(())
+    }
+
     fn set_transition(&self, _mode: AndroidTransitionMode) -> Result<(), AndroidPlaybackError> {
         Ok(())
     }

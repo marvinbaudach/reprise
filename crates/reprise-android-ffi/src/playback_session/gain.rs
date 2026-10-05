@@ -42,4 +42,30 @@ impl SessionInner {
         }));
         Ok(())
     }
+
+    /// Re-resolves the gain of the playing track and of the pre-fed one, after
+    /// something it depends on (the ReplayGain mode) changed, and hands both to
+    /// the backend without restarting either track. Nothing is playing, nothing
+    /// to do.
+    pub(super) fn refresh_gains(&self) -> Result<(), AndroidPlaybackError> {
+        let backend = self.backend()?;
+        let (current, next) = {
+            let state = self.lock()?;
+            let current = state
+                .current_loaded
+                .then(|| state.current_track_id())
+                .flatten();
+            (current, state.next_track())
+        };
+        let Some(current) = current else {
+            return Ok(());
+        };
+        let current_gain_db = self.gain_db_for(current);
+        let next_gain_db = next.map(|next| self.gain_db_for(next.track_id));
+        backend
+            .set_gains(current_gain_db, next_gain_db)
+            .map_err(|error| AndroidPlaybackError::Backend {
+                detail: error.to_string(),
+            })
+    }
 }

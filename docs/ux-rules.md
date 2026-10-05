@@ -499,16 +499,21 @@ result.
   earlier. The gain belongs to the media item, so replacing the next track after
   its offset was announced, seeking back across the boundary, and a flush all
   leave every buffer with its own track's gain. The sink scales into a buffer of
-  its own and never writes into Media3's (which may be read-only), and a buffer
-  the output stage takes only in part is retried from the same scaled copy. At exactly
-  unity gain the buffer passes through untouched. Proven
-  by JVM tests that put a recording sink behind the gain sink and read what the
-  output stage receives; they do not run Media3's `DefaultAudioSink` or a device.
-  Android has no crossfade; if it gains one, this rule needs a sibling.
+  its own and never writes into Media3's (which may be read-only), a buffer the
+  output stage takes only in part is retried from the same scaled copy, and at
+  exactly unity gain the buffer passes through untouched. Proven by JVM tests
+  that put a recording sink behind the gain sink and read what the output stage
+  receives; they do not run Media3's `DefaultAudioSink` or a device. Android has
+  no crossfade; if it gains one, this rule needs a sibling.
 - **PLAY-21** [active] [android] — Volume normalisation is offered in the
   phone's playback settings with the same three modes as on the desktop,
   **Off**, **Per Track** and **Per Album**, in a row titled "Volume
-  Normalization", and choosing one reports that mode.
+  Normalization", and choosing one reports that mode. The choice applies at
+  once, as on the desktop: the track that is playing and the one pre-fed after
+  it are given the gain of the new mode without being restarted or re-queued.
+  Proven at the session boundary (the port receives the re-resolved gains and
+  no play or re-queue) and in the port (the gain sink applies them); the audible
+  result on a device is a manual check.
 - **SEEK-1** [active] [gtk] — **The seek bar's colour is a reading, not a
   decoration, and it is averaged over time.** The spectral centroid swings
   from beat to beat: taken per bar it puts cyan next to magenta inside two

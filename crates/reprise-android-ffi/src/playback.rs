@@ -128,6 +128,14 @@ pub trait AndroidPlaybackPort: Send + Sync {
     fn set_spectrum_enabled(&self, enabled: bool) -> Result<(), AndroidPlaybackError>;
     fn stop(&self) -> Result<(), AndroidPlaybackError>;
     fn set_next(&self, uri: Option<String>, gain_db: f64) -> Result<(), AndroidPlaybackError>;
+    /// Re-declares the gains of the track that is playing and of the one
+    /// pre-fed after it, without restarting either. `next_gain_db` is `None`
+    /// when nothing is pre-fed.
+    fn set_gains(
+        &self,
+        current_gain_db: f64,
+        next_gain_db: Option<f64>,
+    ) -> Result<(), AndroidPlaybackError>;
     fn set_transition(&self, mode: AndroidTransitionMode) -> Result<(), AndroidPlaybackError>;
     fn current_generation(&self) -> Result<u64, AndroidPlaybackError>;
 }
@@ -154,6 +162,17 @@ impl AndroidPlaybackBackend {
         let bridge = PlaybackEventBridge::new_with_faults(on_event);
         port.set_event_bridge(bridge).map_err(PlaybackError::from)?;
         Ok(Self { port })
+    }
+
+    /// Applies freshly resolved gains to the playing track and the pre-fed one.
+    pub(crate) fn set_gains(
+        &self,
+        current_gain_db: f64,
+        next_gain_db: Option<f64>,
+    ) -> Result<(), PlaybackError> {
+        self.port
+            .set_gains(current_gain_db, next_gain_db)
+            .map_err(PlaybackError::from)
     }
 
     pub fn set_equalizer(

@@ -47,4 +47,29 @@ class Media3PlaybackPortGainTest {
         assertEquals(5_000, scaledAt(sink, 2 * boundaryUs))
         port.release()
     }
+
+    @Test
+    fun aLiveGainChangeReachesTheCurrentAndThePreFedTrackWithoutRequeueing() {
+        val fake = CallbackPlayer(playbackState = Player.STATE_IDLE, playWhenReady = false)
+        val sink = TrackGainAudioSink(probe.sink)
+        val port = Media3PlaybackPort(fake.player, sink) {}
+        port.setNext("/music/b.flac", 0.0)
+        port.playPath("/music/a.flac", 0.0)
+        sink.setOutputStreamOffsetUs(0)
+        sink.setOutputStreamOffsetUs(boundaryUs)
+        val queued = fake.mediaItems.toList()
+
+        port.setGains(halfDb, doubleDb)
+
+        assertEquals(5_000, scaledAt(sink, 100))
+        assertEquals(20_000, scaledAt(sink, boundaryUs))
+        assertEquals(queued, fake.mediaItems)
+
+        // The next track is dropped from the player: a later call with no next
+        // gain must not bring its gain back.
+        port.setNext(null, 0.0)
+        port.setGains(halfDb, null)
+        assertEquals(5_000, scaledAt(sink, boundaryUs))
+        port.release()
+    }
 }
