@@ -160,11 +160,11 @@ use device_sync::{
     device_sync_feedback, device_sync_launcher, device_sync_page, device_sync_runtime,
     device_sync_smoke, device_sync_strings,
 };
-use library_views::artist_avatar;
 use lyrics::{
     lyrics_batch, lyrics_batch_progress, lyrics_smoke, lyrics_strings, lyrics_view, player_lyrics,
 };
 use now_playing::{artist_portrait_worker, now_playing_column};
+use spectrogram::{spectrogram_batch, spectrogram_batch_progress};
 use playback::{audio_effects, player_event_handling, up_next_transport};
 pub(crate) use playback::{now_playing_wiring, player_controller, player_controller_wiring};
 use player_bar::{library_player_bar, player_bar_layout, player_bar_state, waveform_seek};
@@ -181,7 +181,6 @@ use scrobbling::{lastfm_secret, listenbrainz_secret, scrobble_runtime, scrobble_
 pub(crate) use sidebar::sidebar_dnd;
 pub(crate) use sidebar::sidebar_session;
 use sidebar::{sidebar_device_card, sidebar_issue_strings, sidebar_presentation, sidebar_rebuild};
-use spectrogram::{spectrogram_batch, spectrogram_batch_progress};
 pub(crate) use stats::{stats_css, stats_view};
 use tag_edit::{
     autocomplete_entry, tag_editor_dirty, tag_editor_failures, tag_editor_form, tag_editor_save,
