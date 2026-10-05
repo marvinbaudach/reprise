@@ -125,6 +125,10 @@ struct UnauthenticatedClient {
 impl UnauthenticatedClient {
     // `fetch_update` is deprecated since Rust 1.98 in favour of `try_update`,
     // which is only stable since 1.95 — past the workspace MSRV of 1.92.
+    #[allow(
+        deprecated,
+        reason = "fetch_update is deprecated from Rust 1.98; try_update needs a newer MSRV than 1.92"
+    )]
     fn try_acquire(count: &Arc<AtomicUsize>) -> Option<Self> {
         count
             .fetch_update(Ordering::AcqRel, Ordering::Acquire, |current| {
