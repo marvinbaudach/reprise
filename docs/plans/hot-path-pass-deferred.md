@@ -152,9 +152,9 @@ The orchestrator runs these over the whole branch on its own worktree:
 
 ## Landing
 
-- A3, A9 and A10(b) remain open. Before landing, record them in one GitHub issue, together with
+- A3, A9 and A10(b) remain open and are recorded in #1080, together with
   their unblock conditions: A3 and A9 wait for r128 to land, and A10(b) waits for the lint wave.
-  Include the two out-of-scope candidates.
+  The issue also lists the two out-of-scope candidates.
 - That issue, not a plan file, is their durable record.
 
 ## Parallelität
