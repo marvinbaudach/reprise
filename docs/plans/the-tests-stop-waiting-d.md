@@ -168,7 +168,7 @@ are dated.
     the nightly builds cold, against `core-suite`'s 60-minute timeout. Nobody has measured a cold `core-suite`.
     After the merge, read the duration of the first cold nightly's `core-suite` and raise the timeout or give
     the nightly a writer if it comes close.
-- **Task 3 and the Android job.** `android-unit-suite` runs `cargo fetch --locked` without `--target`, unlike
+- **Task 2, the Android job's fetch.** `android-unit-suite` runs `cargo fetch --locked` without `--target`, unlike
   the Arch container jobs (`--target x86_64-unknown-linux-gnu`), so its registry cache holds every target.
 - **Task 4, shape.** The plan said "a new job (or a step) … install `aiohttp tomlkit`". The branch has two jobs,
   `regenerate` (no secret) and `push` (holds the token), joined by an artifact.
@@ -177,7 +177,10 @@ are dated.
     lock that does not match the generator; nothing is resolved at run time. An earlier revision only froze
     resolution at the day of writing, which is no cooldown.
   - The generator output stays byte-identical to the committed `flatpak/cargo-sources.json`.
-  - The generator, the lock and the uv version are pinned together: moving one is a reviewed change.
+  - The generator commit and hash, the uv version and the lock's cut-off are pinned in the contract, and the
+    lock's structure is checked (three direct dependencies, PyPI as the only source, a sha256 on every file).
+    Its content is not: a lock that swaps in another PyPI release published before the cut-off, with its real
+    hash, passes. `--locked` only keeps it consistent with the generator's declared ranges.
   - Every action in the workflow is pinned by commit, and the `push` job runs none.
   - `ci-path-routing.sh` and `release-workflow.sh` pins were edited, although the plan says to edit a pin
     only where the task says so: the first for the containment route, the second for the Flatpak cache step.
