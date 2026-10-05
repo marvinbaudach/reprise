@@ -85,7 +85,7 @@ struct LastFmExpanderSurface {
     sign_in: Option<LastFmSignIn>,
     open_browser: gtk4::Button,
     disconnect: gtk4::Button,
-    test_connection: crate::ui::preference_dependencies::TestConnectionRow,
+    test_connection: crate::ui::preferences::preference_dependencies::TestConnectionRow,
 }
 
 fn build_lastfm_expander(
@@ -94,10 +94,15 @@ fn build_lastfm_expander(
     status: &str,
     bundled: Option<(&str, &str)>,
 ) -> LastFmExpanderSurface {
-    let description =
-        crate::ui::preference_plugins::plugin_description(&reprise_core::modules::LASTFM_MODULE);
+    let description = crate::ui::preferences::preference_plugins::plugin_description(
+        &reprise_core::modules::LASTFM_MODULE,
+    );
     let subtitle = if is_enabled {
-        crate::ui::preference_dependencies::service_subtitle(&description, true, status)
+        crate::ui::preferences::preference_dependencies::service_subtitle(
+            &description,
+            true,
+            status,
+        )
     } else {
         description.clone()
     };
@@ -189,7 +194,7 @@ fn build_lastfm_expander(
     expander.add_row(&credentials_section);
     sens.push(credentials_section.upcast_ref::<gtk4::Widget>().downgrade());
 
-    let test_connection = crate::ui::preference_dependencies::TestConnectionRow::new();
+    let test_connection = crate::ui::preferences::preference_dependencies::TestConnectionRow::new();
     test_connection.row.set_visible(connected);
     expander.add_row(&test_connection.row);
     sens.push(test_connection.row.upcast_ref::<gtk4::Widget>().downgrade());
@@ -321,7 +326,7 @@ impl PreferencesContext {
         let bundled = reprise_core::scrobbling::BUNDLED_API_KEY
             .zip(reprise_core::scrobbling::BUNDLED_SHARED_SECRET);
         let surface = build_lastfm_expander(is_enabled, connected, &status, bundled);
-        let description = crate::ui::preference_plugins::plugin_description(
+        let description = crate::ui::preferences::preference_plugins::plugin_description(
             &reprise_core::modules::LASTFM_MODULE,
         );
 
@@ -330,11 +335,13 @@ impl PreferencesContext {
             let description = description.clone();
             move |status| {
                 if let Some(expander) = expander.upgrade() {
-                    expander.set_subtitle(&crate::ui::preference_dependencies::service_subtitle(
-                        &description,
-                        expander.enables_expansion(),
-                        &status_text(&status),
-                    ));
+                    expander.set_subtitle(
+                        &crate::ui::preferences::preference_dependencies::service_subtitle(
+                            &description,
+                            expander.enables_expansion(),
+                            &status_text(&status),
+                        ),
+                    );
                 }
             }
         }));
@@ -357,11 +364,13 @@ impl PreferencesContext {
             .expander
             .connect_enable_expansion_notify(move |expander| {
                 if let Some(context) = weak.upgrade() {
-                    expander.set_subtitle(&crate::ui::preference_dependencies::service_subtitle(
-                        &description_for_toggle,
-                        expander.enables_expansion(),
-                        &status_text(&context.lastfm.status()),
-                    ));
+                    expander.set_subtitle(
+                        &crate::ui::preferences::preference_dependencies::service_subtitle(
+                            &description_for_toggle,
+                            expander.enables_expansion(),
+                            &status_text(&context.lastfm.status()),
+                        ),
+                    );
                     context.change_lastfm_activation(expander, expander.enables_expansion());
                 }
             });

@@ -11,14 +11,14 @@ use reprise_core::db::Db;
 use reprise_core::equalizer::EqualizerPreset;
 use reprise_core::library::settings::{self, PlayerBarPosition, ReplayGainMode};
 
-use crate::ui::artist_news_worker::ArtistNewsRuntime;
-use crate::ui::artist_portrait_worker::ArtistPortraitRuntime;
+use crate::ui::artist_news::artist_news_worker::ArtistNewsRuntime;
 use crate::ui::concerts::ConcertsRuntime;
 use crate::ui::cover_download_worker::CoverDownloadRuntime;
-use crate::ui::library_player_bar::LibraryPlayerBarShell;
 use crate::ui::location_broadcast::LocationBroadcast;
 use crate::ui::lyrics_batch::LyricsBatch;
+use crate::ui::now_playing::artist_portrait_worker::ArtistPortraitRuntime;
 use crate::ui::now_playing::NowPlayingPanel;
+use crate::ui::player_bar::library_player_bar::LibraryPlayerBarShell;
 use crate::ui::player_controller::PlayerController;
 use crate::ui::podcasts::PodcastsRuntime;
 #[cfg(test)]
@@ -31,7 +31,7 @@ use crate::ui::scrobble_runtime::ScrobbleRuntime;
 use crate::ui::sidebar::Sidebar;
 use crate::ui::strings;
 use crate::ui::track_list::TrackList;
-use crate::ui::window_decorations::WindowDecorations;
+use crate::ui::window::window_decorations::WindowDecorations;
 
 pub(in crate::ui) const SMOKE_ENV: &str = "REPRISE_SMOKE_PREFERENCES";
 
@@ -248,7 +248,7 @@ impl PreferencesContext {
                 settings::get_window_decoration_mode(conn),
             )
         };
-        super::window_navigation::apply_sidebar_visibility(
+        crate::ui::window::window_navigation::apply_sidebar_visibility(
             &self.split_view,
             &self.sidebar_page,
             sidebar_visible,
@@ -430,7 +430,7 @@ impl PreferencesContext {
                 .unwrap_or(EqualizerPreset::Flat)
                 .ten_band_levels(),
         );
-        super::window_navigation::apply_sidebar_visibility(
+        crate::ui::window::window_navigation::apply_sidebar_visibility(
             &self.split_view,
             &self.sidebar_page,
             false,

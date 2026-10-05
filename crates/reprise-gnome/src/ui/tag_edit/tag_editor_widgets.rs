@@ -24,11 +24,11 @@ use libadwaita as adw;
 use libadwaita::prelude::*;
 use reprise_core::library::tag_edit::MixedValue;
 
-use crate::ui::autocomplete_entry::AutocompleteEntry;
 use crate::ui::strings;
-use crate::ui::tag_editor::{STAR_FILLED, STAR_OUTLINE};
-use crate::ui::tag_editor_dirty::UpdateCallback;
-use crate::ui::tag_editor_state::RATING_MAX;
+use crate::ui::tag_edit::autocomplete_entry::AutocompleteEntry;
+use crate::ui::tag_edit::tag_editor::{STAR_FILLED, STAR_OUTLINE};
+use crate::ui::tag_edit::tag_editor_dirty::UpdateCallback;
+use crate::ui::tag_edit::tag_editor_state::RATING_MAX;
 
 /// Builds the cover art area. For single track, shows a thumbnail. For
 /// multi-track, shows a stacked representation with a count badge. No

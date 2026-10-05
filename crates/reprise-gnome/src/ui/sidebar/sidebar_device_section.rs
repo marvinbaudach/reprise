@@ -13,8 +13,8 @@ use super::sidebar_device_card::{
     menu, CancelCallback, CardRegistry, DeviceCard, OpenCallback, CARD_HORIZONTAL_MARGIN,
 };
 use super::Shared;
-use crate::ui::device_sync_runtime::{DeviceSyncRuntime, DeviceSyncState, DeviceView};
-use crate::ui::sidebar_presentation::{SIDEBAR_SURFACE_INSET, SIDEBAR_TEXT_INSET};
+use crate::ui::device_sync::device_sync_runtime::{DeviceSyncRuntime, DeviceSyncState, DeviceView};
+use crate::ui::sidebar::sidebar_presentation::{SIDEBAR_SURFACE_INSET, SIDEBAR_TEXT_INSET};
 
 const ARROW_CLOSED: &str = "pan-end-symbolic";
 const ARROW_OPEN: &str = "pan-down-symbolic";
@@ -337,7 +337,7 @@ fn find_status_label(root: &gtk4::Widget) -> Option<gtk4::Label> {
 #[cfg(test)]
 mod tests {
     use super::{present_and_remembered, DeviceSection};
-    use crate::ui::device_sync_runtime::PlannedSyncPhase;
+    use crate::ui::device_sync::device_sync_runtime::PlannedSyncPhase;
     use crate::ui::sidebar::sidebar_device_card::tests::view;
     use gtk4::prelude::*;
 

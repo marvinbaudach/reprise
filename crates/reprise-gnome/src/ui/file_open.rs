@@ -13,7 +13,7 @@ use reprise_core::db::Db;
 use reprise_core::queries;
 
 use super::player_controller::PlayerController;
-use super::playlist_io;
+use super::playlists::playlist_io;
 use super::sidebar::Sidebar;
 use super::{strings, toasts};
 

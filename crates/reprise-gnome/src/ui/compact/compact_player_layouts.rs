@@ -7,7 +7,7 @@ use super::cover_loader::CoverLoader;
 use super::strings;
 use super::style::buttons;
 use super::style::tokens::TRANSITION;
-use super::waveform_seek::WaveformSeek;
+use crate::ui::player_bar::waveform_seek::WaveformSeek;
 
 pub(in crate::ui) const MINI_WIDTH: i32 = 430;
 pub(in crate::ui) const MINI_HEIGHT: i32 = 76;

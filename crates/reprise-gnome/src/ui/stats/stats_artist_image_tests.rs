@@ -2,7 +2,7 @@ use super::*;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::Arc;
 
-use crate::ui::artist_portrait_worker::ArtistPortraitRuntime;
+use crate::ui::now_playing::artist_portrait_worker::ArtistPortraitRuntime;
 
 /// The walk down the candidate list is plain arithmetic and must hold without a
 /// display: the first candidate is tried first, each failure advances by one,

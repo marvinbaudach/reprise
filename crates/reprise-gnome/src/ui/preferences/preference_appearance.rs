@@ -72,8 +72,8 @@ pub(in crate::ui) fn build(context: &Rc<PreferencesContext>) -> adw::Preferences
             }
             AppearanceSection::WindowDecorations => {
                 let decorations = adw::PreferencesGroup::builder()
-                    .title(super::window_decoration_strings::text(
-                        super::window_decoration_strings::WINDOW_DECORATIONS,
+                    .title(crate::ui::window::window_decoration_strings::text(
+                        crate::ui::window::window_decoration_strings::WINDOW_DECORATIONS,
                     ))
                     .build();
                 decorations.add(&super::preference_window_decorations::row(context));

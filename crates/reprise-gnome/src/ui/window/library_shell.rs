@@ -6,15 +6,15 @@ use gtk4::prelude::*;
 use libadwaita as adw;
 use reprise_core::db::Db;
 
-use super::artist_news_worker::ArtistNewsRuntime;
 use super::info_panel::InfoPanel;
 use super::now_playing_wiring;
 use super::player_controller::PlayerController;
 use super::sidebar::Sidebar;
-use super::stats_view::StatsView;
 use super::strings;
 use super::track_list::TrackList;
+use crate::ui::artist_news::artist_news_worker::ArtistNewsRuntime;
 use crate::ui::nav_history::NavPlace;
+use crate::ui::stats::stats_view::StatsView;
 use reprise_core::view_source::ViewSource;
 
 pub(in crate::ui) struct LibraryShell {
@@ -333,11 +333,11 @@ fn route_to_place_with_viewport(
                 place.browser_place(),
                 viewport,
             );
-            crate::ui::sidebar_session::sync_current_source(&sidebar.shared, &source);
+            crate::ui::sidebar::sidebar_session::sync_current_source(&sidebar.shared, &source);
             source_title.set_title(&scope_title(&source));
         }
         _ => {
-            crate::ui::sidebar_session::prepare_history_reroute(&sidebar.shared, &source);
+            crate::ui::sidebar::sidebar_session::prepare_history_reroute(&sidebar.shared, &source);
             sidebar.refresh_and_select(source, reason);
             let _ = crate::ui::view_session::restore_browser_place_with_viewport(
                 track_list,
@@ -386,7 +386,7 @@ pub(in crate::ui) fn build(
         &strings::text(strings::APP_NAME),
     );
     let split_view = build_split_view(&sidebar_page, &content_nav);
-    super::sidebar_presentation::style_overlay_split_view(&split_view);
+    crate::ui::sidebar::sidebar_presentation::style_overlay_split_view(&split_view);
     LibraryShell {
         sidebar_page,
         split_view,

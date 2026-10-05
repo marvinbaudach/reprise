@@ -34,7 +34,7 @@ pub(super) fn wire_nav_back(w: &RuntimeWiring<'_>, scratch: &WiringScratch) {
                     return;
                 };
                 nav_history.begin_back();
-                crate::ui::sidebar_session::sync_current_source(
+                crate::ui::sidebar::sidebar_session::sync_current_source(
                     &sidebar.shared,
                     &track_list.current_source(),
                 );
@@ -71,7 +71,7 @@ pub(super) fn wire_nav_back(w: &RuntimeWiring<'_>, scratch: &WiringScratch) {
                     return;
                 };
                 nav_history.begin_back();
-                crate::ui::sidebar_session::sync_current_source(
+                crate::ui::sidebar::sidebar_session::sync_current_source(
                     &sidebar.shared,
                     &track_list.current_source(),
                 );

@@ -4,7 +4,7 @@ use gtk4::prelude::*;
 use libadwaita as adw;
 use reprise_core::db::Db;
 
-use super::device_sync_runtime::DeviceSyncRuntime;
+use crate::ui::device_sync::device_sync_runtime::DeviceSyncRuntime;
 
 pub(in crate::ui) fn apply_sidebar_visibility(
     split_view: &adw::OverlaySplitView,
@@ -122,7 +122,12 @@ pub(in crate::ui) fn open_device_place(
     split_view: &adw::OverlaySplitView,
 ) -> bool {
     show_library_content_root(content_navigation);
-    if !super::device_sync_page::open(content_stack, window_title, device_id, runtime) {
+    if !crate::ui::device_sync::device_sync_page::open(
+        content_stack,
+        window_title,
+        device_id,
+        runtime,
+    ) {
         return false;
     }
     if split_view.is_collapsed() {
@@ -137,7 +142,7 @@ pub(in crate::ui) fn open_device_callback(
     window_title: &adw::WindowTitle,
     runtime: &Rc<DeviceSyncRuntime>,
     split_view: &adw::OverlaySplitView,
-) -> super::device_sync_launcher::OpenDevice {
+) -> crate::ui::device_sync::device_sync_launcher::OpenDevice {
     let content_navigation = content_navigation.clone();
     let content_stack = content_stack.clone();
     let window_title = window_title.clone();
@@ -528,10 +533,12 @@ mod tests {
         gtk4::init().unwrap();
         let device_root = tempfile::tempdir().unwrap();
         let backend = Rc::new(
-            crate::ui::device_sync_smoke::SimulatedMtpDeviceBackend::for_root(device_root.path())
-                .unwrap(),
+            crate::ui::device_sync::device_sync_smoke::SimulatedMtpDeviceBackend::for_root(
+                device_root.path(),
+            )
+            .unwrap(),
         );
-        let runtime = super::super::device_sync_runtime::DeviceSyncRuntime::with_backend(
+        let runtime = crate::ui::device_sync::device_sync_runtime::DeviceSyncRuntime::with_backend(
             &test_conn(),
             backend,
         );
@@ -563,7 +570,7 @@ mod tests {
             &content_navigation,
             &content_stack,
             &title,
-            crate::ui::device_sync_smoke::DEVICE_ID,
+            crate::ui::device_sync::device_sync_smoke::DEVICE_ID,
             &runtime,
             &split,
         ));

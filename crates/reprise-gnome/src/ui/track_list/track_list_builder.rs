@@ -278,7 +278,7 @@ pub(in crate::ui) fn build(
             let Some(shared) = shared_weak.upgrade() else {
                 return;
             };
-            crate::ui::tag_edit_flow::begin_for_path(&shared, path);
+            crate::ui::tag_edit::tag_edit_flow::begin_for_path(&shared, path);
         });
     }
     {
@@ -388,7 +388,7 @@ pub(in crate::ui) fn build(
     arm_smoke_sort_column(&column_view, &title_column, &artist_column);
     arm_smoke_reload_oracle(&shared);
     super::track_list_menu_smoke::arm_smoke_menu_action(&shared);
-    super::tag_edit_flow::arm_smoke(&shared);
+    crate::ui::tag_edit::tag_edit_flow::arm_smoke(&shared);
     super::delete_tracks::arm_smoke(&shared);
     super::browse_bar::arm_smoke(&shared);
     track_list_dnd_smoke::arm_smoke_dnd(&shared);

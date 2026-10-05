@@ -146,8 +146,11 @@ pub(crate) mod window;
 // Compatibility surface for the existing frontend. The ownership of every
 // implementation module now lives with its feature directory; these explicit
 // imports keep call sites stable while preventing ui/mod.rs from becoming a
-// second, flattened module tree again.
-use artist_news::artist_news_worker;
+// second, flattened module tree again. Only the browse, compact, cover,
+// lyrics, playback, scan, scrobbling and track_list families still carry
+// aliases; each goes once its call sites are free of in-flight branches, and
+// every other family is reached by its real `crate::ui::<family>::<module>`
+// path.
 pub(crate) use browse::browse_bar;
 use browse::browse_filter_count;
 use compact::{
@@ -156,38 +159,14 @@ use compact::{
 };
 use cover::{cover_download_batch, main_cover_download_progress};
 pub(crate) use cover::{cover_download_worker, cover_loader};
-use device_sync::{
-    device_sync_feedback, device_sync_launcher, device_sync_page, device_sync_runtime,
-    device_sync_smoke, device_sync_strings,
-};
-use library_views::artist_avatar;
 use lyrics::{
     lyrics_batch, lyrics_batch_progress, lyrics_smoke, lyrics_strings, lyrics_view, player_lyrics,
 };
-use now_playing::{artist_portrait_worker, now_playing_column};
 use playback::{audio_effects, player_event_handling, up_next_transport};
 pub(crate) use playback::{now_playing_wiring, player_controller, player_controller_wiring};
-use player_bar::{library_player_bar, player_bar_layout, player_bar_state, waveform_seek};
-pub(crate) use playlists::playlist_io;
-use preferences::{
-    preference_background_bar, preference_dependencies, preference_lastfm, preference_layout,
-    preference_listenbrainz, preference_playback, preference_plugins, preference_rhythmbox,
-    preferences_window,
-};
 pub(crate) use scan::{scan_card_css, scan_flow};
 use scan::{scan_chrome, scan_progress, scan_worker};
 use scrobbling::{lastfm_secret, listenbrainz_secret, scrobble_runtime, scrobble_session};
-#[cfg(test)]
-pub(crate) use sidebar::sidebar_dnd;
-pub(crate) use sidebar::sidebar_session;
-use sidebar::{sidebar_device_card, sidebar_issue_strings, sidebar_presentation, sidebar_rebuild};
-use spectrogram::{spectrogram_batch, spectrogram_batch_progress};
-pub(crate) use stats::{stats_css, stats_view};
-use tag_edit::{
-    autocomplete_entry, tag_editor_dirty, tag_editor_failures, tag_editor_form, tag_editor_save,
-    tag_editor_state, tag_editor_style, tag_editor_widgets,
-};
-pub(crate) use tag_edit::{tag_edit_flow, tag_editor};
 use track_list::{
     column_header_dnd, column_layout_editor, current_track_selection, track_content, track_cover,
     track_list_header_style, track_list_queue_menu, track_list_reload, track_list_row_interaction,
@@ -196,7 +175,6 @@ pub(crate) use track_list::{
     column_layout, rating, track_actions, track_list_activation, track_list_columns,
     track_list_context_menu, track_list_dnd, track_list_model, track_list_sort,
 };
-use window::{library_chrome, window_decoration_strings, window_decorations, window_navigation};
 
 #[cfg(test)]
 mod reactive_light_tests {

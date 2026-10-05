@@ -74,13 +74,13 @@ fn seed_tracks(db: &reprise_core::db::Db, count: usize) {
 
 fn seed_sidebar(handles: &WindowLayoutTestHandles, seed: SidebarSeed) {
     for index in 0..seed.issue_rows {
-        let row = crate::ui::sidebar_presentation::build_issue_nav_row(
+        let row = crate::ui::sidebar::sidebar_presentation::build_issue_nav_row(
             &format!("Issue {}", index + 1),
-            crate::ui::sidebar_presentation::issue_row_presentation(
+            crate::ui::sidebar::sidebar_presentation::issue_row_presentation(
                 1,
-                crate::ui::sidebar_presentation::NavIcon::Missing,
+                crate::ui::sidebar::sidebar_presentation::NavIcon::Missing,
             ),
-            crate::ui::sidebar_presentation::NavIcon::Missing,
+            crate::ui::sidebar::sidebar_presentation::NavIcon::Missing,
         );
         handles.issues_listbox.append(&row);
     }
@@ -552,7 +552,7 @@ fn fb_15_three_running_cards_never_raise_the_window_minimum() {
         .expect("the Library heading is allocated");
     let measured_library_height =
         (library_bounds.y() + library_bounds.height() - heading_bounds.y()).round() as i32
-            + crate::ui::sidebar_presentation::SIDEBAR_SURFACE_INSET;
+            + crate::ui::sidebar::sidebar_presentation::SIDEBAR_SURFACE_INSET;
     assert_eq!(
         measured_library_height,
         crate::ui::sidebar::Sidebar::library_block_min_height_for_test(),

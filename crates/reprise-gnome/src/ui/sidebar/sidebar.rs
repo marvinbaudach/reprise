@@ -54,7 +54,7 @@
 //! `RefCell` either.
 //!
 //! The playlist row's drop target/drop-handling logic lives in the sibling
-//! `ui::sidebar_dnd` module (split out to keep this file under 800 lines,
+//! `ui::sidebar::sidebar_dnd` module (split out to keep this file under 800 lines,
 //! mirroring `track_list.rs`/`track_list_dnd.rs`) — hence `Shared`/`conn`/
 //! `rebuild`/`show_toast`/`on_tracks_added` being `pub(in crate::ui)`.
 
@@ -375,7 +375,7 @@ impl Sidebar {
     #[cfg(test)]
     pub(in crate::ui) fn present_device_for_layout_test(&self) {
         let device = super::sidebar_device_card::tests::view(
-            crate::ui::device_sync_runtime::PlannedSyncPhase::Idle,
+            crate::ui::device_sync::device_sync_runtime::PlannedSyncPhase::Idle,
         );
         let section = super::sidebar_device_section::present_device_section_for_test(&device);
         self.activity_slot.set_device_section(&section);
@@ -514,7 +514,7 @@ impl Sidebar {
     }
 
     pub(in crate::ui) fn restore_source(&self, requested: ViewSource) -> (ViewSource, String) {
-        crate::ui::sidebar_session::restore_source(&self.shared, requested)
+        crate::ui::sidebar::sidebar_session::restore_source(&self.shared, requested)
     }
 
     pub(in crate::ui) fn ensure_startup_build(&self) {
@@ -561,7 +561,7 @@ pub(in crate::ui) fn remember_issue_focus_entry(listbox: &gtk4::ListBox, row: &g
 /// doc comment for the full trigger inventory this makes verifiable in
 /// headless E2E output.
 pub(in crate::ui) fn rebuild(shared: &Rc<Shared>, force_select: Option<ViewSource>, reason: &str) {
-    crate::ui::sidebar_rebuild::rebuild(shared, force_select, reason);
+    crate::ui::sidebar::sidebar_rebuild::rebuild(shared, force_select, reason);
 }
 
 #[cfg(test)]

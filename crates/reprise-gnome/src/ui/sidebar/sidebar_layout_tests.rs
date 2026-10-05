@@ -8,7 +8,7 @@ use reprise_core::library::settings::PlayerBarPosition;
 use super::*;
 use crate::ui::player_bar::library_player_bar::LibraryPlayerBarShell;
 use crate::ui::scan::scan_progress::ScanProgressView;
-use crate::ui::sidebar_presentation;
+use crate::ui::sidebar::sidebar_presentation;
 
 #[test]
 #[ignore = "requires a display; run via xvfb-run"]
@@ -33,7 +33,7 @@ fn sidebar_headings_and_surfaces_share_one_column_edge() {
     sidebar.shared.issues_listbox.set_visible(true);
 
     let device = crate::ui::sidebar::sidebar_device_card::tests::view(
-        crate::ui::device_sync_runtime::PlannedSyncPhase::Idle,
+        crate::ui::device_sync::device_sync_runtime::PlannedSyncPhase::Idle,
     );
     let device_section =
         crate::ui::sidebar::sidebar_device_section::present_device_section_for_test(&device);
@@ -309,7 +309,7 @@ fn assert_idle_job_cards_leave_devices_in_scrolling_places(force_scan_visible: b
     sidebar.widget().set_size_request(240, -1);
 
     let device = crate::ui::sidebar::sidebar_device_card::tests::view(
-        crate::ui::device_sync_runtime::PlannedSyncPhase::Idle,
+        crate::ui::device_sync::device_sync_runtime::PlannedSyncPhase::Idle,
     );
     let device_section =
         crate::ui::sidebar::sidebar_device_section::present_device_section_for_test(&device);
@@ -513,7 +513,7 @@ fn sidebar_geometry_fixture() -> (Sidebar, adw::ApplicationWindow, gtk4::Box, gt
     sidebar.widget().set_size_request(240, -1);
 
     let device = crate::ui::sidebar::sidebar_device_card::tests::view(
-        crate::ui::device_sync_runtime::PlannedSyncPhase::Idle,
+        crate::ui::device_sync::device_sync_runtime::PlannedSyncPhase::Idle,
     );
     let device_section =
         crate::ui::sidebar::sidebar_device_section::present_device_section_for_test(&device);

@@ -13,7 +13,7 @@ use super::file_open::StartupOpenIntent;
 use super::first_run::FirstRunDecision;
 use super::minimal_view::{self, MinimalView, ViewTransition};
 #[cfg(test)]
-use super::window_decorations::WindowContentHost;
+use crate::ui::window::window_decorations::WindowContentHost;
 
 pub(in crate::ui) fn initial_transition(
     db: &Db,

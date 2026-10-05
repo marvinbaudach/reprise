@@ -105,7 +105,7 @@ fn net_5_enabling_artwork_through_preferences_starts_the_wired_cover_pass() {
     handles.preferences.set_connectivity(Connectivity::Online);
     let before = handles.cover_batch.generation_for_test();
     let surface_requests_before = [
-        crate::ui::stats_view::StatsView::artwork_refresh_requests_for_test(),
+        crate::ui::stats::stats_view::StatsView::artwork_refresh_requests_for_test(),
         crate::ui::podcasts::PodcastsView::artwork_refresh_requests_for_test(),
         crate::ui::radio::RadioView::artwork_refresh_requests_for_test(),
     ];
@@ -122,7 +122,7 @@ fn net_5_enabling_artwork_through_preferences_starts_the_wired_cover_pass() {
     assert_eq!(handles.cover_batch.generation_for_test(), before + 1);
     assert_eq!(
         [
-            crate::ui::stats_view::StatsView::artwork_refresh_requests_for_test(),
+            crate::ui::stats::stats_view::StatsView::artwork_refresh_requests_for_test(),
             crate::ui::podcasts::PodcastsView::artwork_refresh_requests_for_test(),
             crate::ui::radio::RadioView::artwork_refresh_requests_for_test(),
         ],

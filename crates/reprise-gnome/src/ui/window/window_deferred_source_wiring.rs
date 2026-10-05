@@ -14,7 +14,7 @@ pub(super) fn install(
     preferences: &Rc<crate::ui::preferences::PreferencesContext>,
     cover_batch: &Rc<crate::ui::cover_download_batch::CoverDownloadBatch>,
     toast_overlay: &adw::ToastOverlay,
-    stats: &DeferredPage<crate::ui::stats_view::StatsView>,
+    stats: &DeferredPage<crate::ui::stats::stats_view::StatsView>,
     concerts: &DeferredPage<crate::ui::concerts::ConcertsView>,
     releases: &Rc<crate::ui::releases::ReleasesView>,
     podcasts: &DeferredPage<crate::ui::podcasts::PodcastsView>,

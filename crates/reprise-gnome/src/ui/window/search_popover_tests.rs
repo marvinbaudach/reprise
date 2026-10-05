@@ -161,7 +161,7 @@ fn search_10_opening_search_changes_no_allocated_height() {
     content.append(&gtk4::Label::new(Some("Library")));
     let player = gtk4::ActionBar::new();
     player.set_center_widget(Some(&gtk4::Label::new(Some("Player"))));
-    let shell = crate::ui::library_player_bar::LibraryPlayerBarShell::new(
+    let shell = crate::ui::player_bar::library_player_bar::LibraryPlayerBarShell::new(
         &content,
         Some(player.upcast_ref()),
         PlayerBarPosition::Bottom,

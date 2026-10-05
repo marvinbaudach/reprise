@@ -27,7 +27,7 @@ use reprise_core::library::scanner::ScanProgress;
 
 use super::tests::{settle_for, settle_layout, test_pages};
 use super::*;
-use crate::ui::preference_background_bar::{BackgroundBar, JobOwner, JobRowState};
+use crate::ui::preferences::preference_background_bar::{BackgroundBar, JobOwner, JobRowState};
 use crate::ui::scan_progress::ScanProgressView;
 
 /// Floor for the counterprobe's measured displacement. The scan card really

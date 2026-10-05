@@ -13,7 +13,9 @@ use reprise_core::device_sync::{
 };
 use reprise_platform_linux::device_sync::{CopyOutcome, DeviceDescriptor};
 
-use crate::ui::device_sync_runtime::{BackendFuture, DeviceBackend, DeviceSyncRuntime};
+use crate::ui::device_sync::device_sync_runtime::{
+    BackendFuture, DeviceBackend, DeviceSyncRuntime,
+};
 
 use super::*;
 

@@ -50,11 +50,11 @@ use reprise_core::library::tag_edit_session::{
 
 use crate::ui::cover_loader::CoverLoader;
 use crate::ui::strings;
-use crate::ui::tag_editor_dirty::parse_number_field;
-use crate::ui::tag_editor_dirty::ProgrammaticChanges;
-use crate::ui::tag_editor_form::{EditorMode, TagEditorForm};
-pub use crate::ui::tag_editor_state::NavigateDirection;
-use crate::ui::tag_editor_widgets::{format_track_subtitle, update_star_display};
+use crate::ui::tag_edit::tag_editor_dirty::parse_number_field;
+use crate::ui::tag_edit::tag_editor_dirty::ProgrammaticChanges;
+use crate::ui::tag_edit::tag_editor_form::{EditorMode, TagEditorForm};
+pub use crate::ui::tag_edit::tag_editor_state::NavigateDirection;
+use crate::ui::tag_edit::tag_editor_widgets::{format_track_subtitle, update_star_display};
 
 pub(in crate::ui) const STAR_FILLED: &str = "\u{2605}";
 pub(in crate::ui) const STAR_OUTLINE: &str = "\u{2606}";
@@ -149,10 +149,10 @@ pub(in crate::ui) fn present(
     let first_track_path = track_paths
         .first()
         .map(|(_, path)| path.to_string_lossy().into_owned());
-    let crate::ui::tag_editor_dirty::DirtyState {
+    let crate::ui::tag_edit::tag_editor_dirty::DirtyState {
         update: update_save_state,
         programmatic_changes,
-    } = crate::ui::tag_editor_dirty::wire(mode, &form, &session);
+    } = crate::ui::tag_edit::tag_editor_dirty::wire(mode, &form, &session);
 
     let browse_handles = clone_browse_field_handles(&form);
 
@@ -173,7 +173,7 @@ pub(in crate::ui) fn present(
     }
 
     let conn_for_save = conn.clone();
-    let save_progress_widgets = crate::ui::tag_edit_flow::SaveProgressWidgets {
+    let save_progress_widgets = crate::ui::tag_edit::tag_edit_flow::SaveProgressWidgets {
         dialog: form.dialog.clone(),
         save_button: form.save_btn.clone(),
         cancel_button: form.cancel_btn.clone(),
@@ -194,8 +194,8 @@ pub(in crate::ui) fn present(
     // needs to call the exact same `on_navigate` the ‹›-buttons already use.
     wire_browse_keyboard_shortcut(&form.dialog, &on_navigate);
 
-    crate::ui::tag_editor_save::wire(
-        crate::ui::tag_editor_save::SaveWidgets {
+    crate::ui::tag_edit::tag_editor_save::wire(
+        crate::ui::tag_edit::tag_editor_save::SaveWidgets {
             dialog: &form.dialog,
             save_button: &form.save_btn,
             cancel_button: &form.cancel_btn,
@@ -212,7 +212,7 @@ pub(in crate::ui) fn present(
                 // defensive no-op rather than spawning an empty write.
                 return;
             }
-            crate::ui::tag_edit_flow::spawn_save(
+            crate::ui::tag_edit::tag_edit_flow::spawn_save(
                 &conn_for_save,
                 save_progress_widgets.clone(),
                 batch,
@@ -357,10 +357,10 @@ fn numeric_display_or_blank(display: Option<String>) -> String {
 /// the two call sites.
 struct BrowseFieldHandles {
     title_row: adw::EntryRow,
-    artist_ac: Rc<crate::ui::autocomplete_entry::AutocompleteEntry>,
-    album_ac: Rc<crate::ui::autocomplete_entry::AutocompleteEntry>,
-    album_artist_ac: Rc<crate::ui::autocomplete_entry::AutocompleteEntry>,
-    genre_ac: Rc<crate::ui::autocomplete_entry::AutocompleteEntry>,
+    artist_ac: Rc<crate::ui::tag_edit::autocomplete_entry::AutocompleteEntry>,
+    album_ac: Rc<crate::ui::tag_edit::autocomplete_entry::AutocompleteEntry>,
+    album_artist_ac: Rc<crate::ui::tag_edit::autocomplete_entry::AutocompleteEntry>,
+    genre_ac: Rc<crate::ui::tag_edit::autocomplete_entry::AutocompleteEntry>,
     year_row: adw::EntryRow,
     track_no_row: adw::EntryRow,
     rating_box: gtk4::Box,

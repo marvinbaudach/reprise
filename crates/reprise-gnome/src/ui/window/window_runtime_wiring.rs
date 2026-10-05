@@ -15,7 +15,6 @@ use reprise_core::library::watcher::WatcherHandle;
 
 use super::cover_download_batch::CoverDownloadBatch;
 use super::first_run::FirstRunDecision;
-use super::library_player_bar::LibraryPlayerBarShell;
 use super::lyrics_batch::LyricsBatch;
 use super::minimal_view::MinimalView;
 use super::now_playing::NowPlayingPanel;
@@ -23,17 +22,19 @@ use super::player_controller::PlayerController;
 use super::preferences::PreferencesContext;
 use super::scan_flow::ScanControls;
 use super::sidebar::Sidebar;
-use super::stats_view::StatsView;
 use super::track_list::TrackList;
 use super::{
     library_shell, podcast_refresh_scheduler, section_search as section_search_ui,
     section_search_wiring, spectrogram_backend, table_columns, window_navigation, window_smoke,
 };
+use crate::ui::player_bar::library_player_bar::LibraryPlayerBarShell;
+use crate::ui::stats::stats_view::StatsView;
 use crate::ui::{
     compact_mode_controls, compact_mode_suggestion, first_run, help,
-    library_doctor as library_doctor_ui, lyrics_smoke, mounts, playlist_io, primary_menu,
-    scan_flow, scan_worker, session_restore as session_restore_ui, shortcuts,
-    spectrogram_batch_progress, startup_quiet, startup_report, view_session as view_session_ui,
+    library_doctor as library_doctor_ui, lyrics_smoke, mounts, playlists::playlist_io,
+    primary_menu, scan_flow, scan_worker, session_restore as session_restore_ui, shortcuts,
+    spectrogram::spectrogram_batch_progress, startup_quiet, startup_report,
+    view_session as view_session_ui,
 };
 
 #[path = "window_artwork_permission_wiring.rs"]

@@ -110,7 +110,7 @@ mod tests {
         let column = super::NowPlayingColumn::new(&content, &panel, false);
         let player = gtk4::Box::new(gtk4::Orientation::Horizontal, 0);
         player.set_height_request(86);
-        let shell = crate::ui::library_player_bar::LibraryPlayerBarShell::new(
+        let shell = crate::ui::player_bar::library_player_bar::LibraryPlayerBarShell::new(
             column.root(),
             Some(player.upcast_ref()),
             PlayerBarPosition::Bottom,

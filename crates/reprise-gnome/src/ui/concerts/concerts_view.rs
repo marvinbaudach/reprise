@@ -297,7 +297,7 @@ impl ConcertsView {
     pub(in crate::ui) fn set_artist_image(
         &self,
         loader: Rc<crate::ui::cover_loader::CoverLoader>,
-        runtime: Rc<crate::ui::artist_portrait_worker::ArtistPortraitRuntime>,
+        runtime: Rc<crate::ui::now_playing::artist_portrait_worker::ArtistPortraitRuntime>,
     ) {
         self.artist_image.set_sources(loader, runtime);
     }
