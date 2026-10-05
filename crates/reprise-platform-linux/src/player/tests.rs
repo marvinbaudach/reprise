@@ -1,5 +1,5 @@
 use super::*;
-use crate::player_effects::{build_audio_filter, requested_state, same_filter_topology};
+use crate::player_effects::{build_audio_filter, update_existing_audio_filter};
 use crate::player_pipeline::{
     buffered_percent_to_ms, download_buffering_flags, is_remote_playback_uri, merge_stream_tags,
     playback_failure_from_bus, BufferingThrottle, AUDIO_SINK_ENV_VAR,
@@ -223,25 +223,27 @@ fn audio_filter_contains_configured_equalizer_and_track_gain() {
     assert_eq!(track_gain.property::<f64>("volume"), 1.0);
 }
 
-#[test]
-fn enabling_equalizer_keeps_filter_topology_stable() {
-    let disabled = AudioEffects::default();
-    let enabled = AudioEffects {
-        equalizer_enabled: true,
-        ..AudioEffects::default()
-    };
-
-    assert!(same_filter_topology(&disabled, &enabled));
+/// The state a pipeline was last asked to be in, pending transitions included.
+fn requested_state(element: &gst::Element) -> gst::State {
+    let (_, current, pending) = element.state(gst::ClockTime::ZERO);
+    if pending == gst::State::VoidPending {
+        current
+    } else {
+        pending
+    }
 }
 
 #[test]
-fn replaygain_mode_changes_keep_filter_topology_stable() {
-    let off = AudioEffects::default();
-    let track = AudioEffects {
-        replay_gain: reprise_core::library::settings::ReplayGainMode::Track,
-        ..AudioEffects::default()
-    };
-    assert!(same_filter_topology(&off, &track));
+fn a_playbin_without_the_filter_elements_reports_instead_of_rebuilding() {
+    let _guard = AUDIO_SINK_TEST_LOCK
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner);
+    gst::init().unwrap();
+    let bare = gst::ElementFactory::make("playbin3").build().unwrap();
+
+    let result = update_existing_audio_filter(&bare, &AudioEffects::default());
+
+    assert!(matches!(result, Err(PlaybackError::Backend(_))));
 }
 
 #[test]
@@ -437,31 +439,6 @@ fn live_audio_effect_change_preserves_a_playable_pipeline() {
         5.0
     );
     assert!(bin.by_name("reprise-track-gain").is_some());
-    drop(playbin);
-    player.stop().unwrap();
-    std::env::remove_var(AUDIO_SINK_ENV_VAR);
-}
-
-#[test]
-fn failed_filter_replacement_restores_requested_playback_state() {
-    let _guard = AUDIO_SINK_TEST_LOCK
-        .lock()
-        .unwrap_or_else(std::sync::PoisonError::into_inner);
-    std::env::set_var(AUDIO_SINK_ENV_VAR, "fakesink");
-    let player = Player::new(Box::new(|_| {})).unwrap();
-    let path = concat!(env!("CARGO_MANIFEST_DIR"), "/tests/fixtures/sine.flac");
-    player.play(item(path)).unwrap();
-    let playbin = player
-        .playbin
-        .lock()
-        .unwrap_or_else(std::sync::PoisonError::into_inner);
-
-    let result = replace_audio_filter(&playbin, &AudioEffects::default(), |_, _| {
-        Err(PlaybackError::Backend("injected filter failure".into()))
-    });
-
-    assert!(result.is_err());
-    assert_eq!(requested_state(&playbin), gst::State::Playing);
     drop(playbin);
     player.stop().unwrap();
     std::env::remove_var(AUDIO_SINK_ENV_VAR);

@@ -13,11 +13,10 @@ use reprise_core::playback::{
 use crate::crossfade::{CrossfadeEngine, IncomingSlot, Transition};
 use crate::gapless::{HandoffFlag, NextUri, PendingGain, QueuedTrack};
 use crate::player_effects::{
-    apply_audio_filter, replace_audio_filter, set_playbin_spectrum_messages,
-    set_playbin_track_gain, update_existing_audio_filter,
+    set_playbin_spectrum_messages, set_playbin_track_gain, update_existing_audio_filter,
 };
 use crate::player_pipeline::{
-    attach_bus_watch, attach_cava_sink, build_playbin, configure_download_buffering, path_to_uri,
+    attach_bus_watch, build_playbin, configure_download_buffering, path_to_uri,
     validated_playback_uri,
 };
 
@@ -529,18 +528,7 @@ impl PlaybackBackend for Player {
             .playbin
             .lock()
             .unwrap_or_else(std::sync::PoisonError::into_inner);
-        if update_existing_audio_filter(&playbin, &current_effects, &effects) {
-            *current_effects = effects;
-            return Ok(());
-        }
-        replace_audio_filter(&playbin, &effects, apply_audio_filter)?;
-        attach_cava_sink(
-            &playbin,
-            self.on_event.clone(),
-            self.spectrum_enabled.clone(),
-            self.cava_stream_generation.clone(),
-        )?;
-        set_playbin_spectrum_messages(&playbin, self.spectrum_enabled.load(Ordering::SeqCst))?;
+        update_existing_audio_filter(&playbin, &effects)?;
         *current_effects = effects;
         Ok(())
     }

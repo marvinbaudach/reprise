@@ -183,36 +183,30 @@ pub(super) fn apply_audio_filter(
     Ok(())
 }
 
-pub(super) fn same_filter_topology(current: &AudioEffects, next: &AudioEffects) -> bool {
-    let _ = (current, next);
-    true
-}
-
-/// Updates properties on the existing filter bin when no elements need to be
-/// added or removed. The equalizer is always present with neutral bands while
-/// disabled, so enabling it never requires a pipeline state transition.
+/// Applies `effects` to the filter bin that is already installed. The filter
+/// has a fixed topology: the equalizer is always present with neutral bands
+/// while disabled, and the track gain is always present, so a live change never
+/// needs a pipeline state transition. A bin that lacks either element is a
+/// construction bug, reported rather than papered over by a rebuild.
 pub(super) fn update_existing_audio_filter(
     playbin: &gst::Element,
-    current: &AudioEffects,
     next: &AudioEffects,
-) -> bool {
-    if !same_filter_topology(current, next) {
-        return false;
-    }
-    let Some(filter) = playbin.property::<Option<gst::Element>>("audio-filter") else {
-        return false;
-    };
-    let Ok(bin) = filter.downcast::<gst::Bin>() else {
-        return false;
-    };
-    let Some(equalizer) = bin.by_name("reprise-equalizer") else {
-        return false;
-    };
-    set_equalizer_bands(&equalizer, next);
+) -> Result<(), PlaybackError> {
+    let bin = playbin
+        .property::<Option<gst::Element>>("audio-filter")
+        .ok_or_else(|| PlaybackError::Backend("GStreamer: playbin has no audio filter".into()))?
+        .downcast::<gst::Bin>()
+        .map_err(|_| PlaybackError::Backend("GStreamer: audio filter is not a bin".into()))?;
+    let equalizer = bin
+        .by_name("reprise-equalizer")
+        .ok_or_else(|| PlaybackError::Backend("GStreamer: audio filter has no equalizer".into()))?;
     if bin.by_name(TRACK_GAIN_NAME).is_none() {
-        return false;
+        return Err(PlaybackError::Backend(
+            "GStreamer: audio filter has no track gain".into(),
+        ));
     }
-    true
+    set_equalizer_bands(&equalizer, next);
+    Ok(())
 }
 
 pub(super) fn set_playbin_track_gain(
@@ -289,53 +283,4 @@ pub(super) fn install_filter_gain_switch(
         gst::PadProbeReturn::Ok
     });
     Ok(())
-}
-
-pub(super) fn requested_state(element: &gst::Element) -> gst::State {
-    let (_, current, pending) = element.state(gst::ClockTime::ZERO);
-    if pending == gst::State::VoidPending {
-        current
-    } else {
-        pending
-    }
-}
-
-fn restore_requested_state(
-    playbin: &gst::Element,
-    state: gst::State,
-    position: Option<gst::ClockTime>,
-) -> Result<(), PlaybackError> {
-    if state == gst::State::Null {
-        return Ok(());
-    }
-    playbin
-        .set_state(state)
-        .map_err(|error| PlaybackError::Backend(format!("GStreamer: {error}")))?;
-    if let Some(position) = position {
-        let _ = playbin.seek_simple(gst::SeekFlags::FLUSH | gst::SeekFlags::KEY_UNIT, position);
-    }
-    Ok(())
-}
-
-pub(super) fn replace_audio_filter(
-    playbin: &gst::Element,
-    effects: &AudioEffects,
-    apply: impl FnOnce(&gst::Element, &AudioEffects) -> Result<(), PlaybackError>,
-) -> Result<(), PlaybackError> {
-    let state = requested_state(playbin);
-    let position = playbin.query_position::<gst::ClockTime>();
-    playbin
-        .set_state(gst::State::Null)
-        .map_err(|error| PlaybackError::Backend(format!("GStreamer: {error}")))?;
-    let apply_result = apply(playbin, effects);
-    let restore_result = restore_requested_state(playbin, state, position);
-    match (apply_result, restore_result) {
-        (Err(error), Err(restore_error)) => {
-            tracing::warn!(%restore_error, "could not restore playback after filter failure");
-            Err(error)
-        }
-        (Err(error), Ok(())) => Err(error),
-        (Ok(()), Err(error)) => Err(error),
-        (Ok(()), Ok(())) => Ok(()),
-    }
 }
