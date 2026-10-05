@@ -139,4 +139,67 @@ rm "$ui_root/sidebar/sidebar_device_card.rs" \
   "$ui_root/scan/scan_progress.rs" \
   "$ui_root/window/window.rs"
 MOTION_TOKEN_ROOT=$fixture "$repo_root/scripts/check-motion-tokens.sh" >/dev/null
+
+# Sibling test files: a file declared only under `#[cfg(test)]` is test code in
+# its entirety, so it may quote a rendered CSS duration like an inline test
+# block does. The `#[path]` form resolves relative to the declaring file.
+mkdir -p "$ui_root/chip"
+printf '%s\n' \
+  'fn chip_css() -> String {' \
+  '    format!(".chip {{ transition: opacity {FADE}; }}")' \
+  '}' \
+  '' \
+  '#[cfg(test)]' \
+  'mod chip_tests;' > "$ui_root/chip/mod.rs"
+printf '%s\n' \
+  'fn quotes_a_duration() {' \
+  '    assert!(css().contains("animation-duration: 999ms"));' \
+  '}' > "$ui_root/chip/chip_tests.rs"
+MOTION_TOKEN_ROOT=$fixture "$repo_root/scripts/check-motion-tokens.sh" >/dev/null
+
+printf '%s\n' \
+  'fn glow() {}' \
+  '' \
+  '#[cfg(test)]' \
+  '#[path = "glow_role_tests.rs"]' \
+  'mod role_tests;' > "$ui_root/glow.rs"
+printf '%s\n' \
+  'fn quotes_a_transition() {' \
+  '    assert!(css().contains("transition: opacity 300ms"));' \
+  '}' > "$ui_root/glow_role_tests.rs"
+MOTION_TOKEN_ROOT=$fixture "$repo_root/scripts/check-motion-tokens.sh" >/dev/null
+rm "$ui_root/glow.rs" "$ui_root/glow_role_tests.rs"
+
+# The same file declared without the attribute is production code.
+printf '%s\n' \
+  'fn chip_css() -> String {' \
+  '    format!(".chip {{ transition: opacity {FADE}; }}")' \
+  '}' \
+  '' \
+  'mod chip_tests;' > "$ui_root/chip/mod.rs"
+if MOTION_TOKEN_ROOT=$fixture "$repo_root/scripts/check-motion-tokens.sh" \
+    >"$fixture/out" 2>"$fixture/err"; then
+  echo "motion token lint exempted a test file declared without #[cfg(test)]" >&2
+  exit 1
+fi
+rg --quiet 'literal CSS animation duration.*chip/chip_tests.rs' "$fixture/err"
+
+# A test-only sibling file is exempt from the CSS scan only: the Rust scan
+# still reads it.
+printf '%s\n' \
+  'fn chip_css() {}' \
+  '' \
+  '#[cfg(test)]' \
+  'mod chip_tests;' > "$ui_root/chip/mod.rs"
+printf '%s\n' 'fn literal_duration() { stack.set_transition_duration(150); }' \
+  > "$ui_root/chip/chip_tests.rs"
+if MOTION_TOKEN_ROOT=$fixture "$repo_root/scripts/check-motion-tokens.sh" \
+    >"$fixture/out" 2>"$fixture/err"; then
+  echo "motion token lint skipped the Rust scan for a test-only sibling file" >&2
+  exit 1
+fi
+rg --quiet 'literal animation duration.*chip/chip_tests.rs' "$fixture/err"
+
+rm "$ui_root/chip/mod.rs" "$ui_root/chip/chip_tests.rs"
+MOTION_TOKEN_ROOT=$fixture "$repo_root/scripts/check-motion-tokens.sh" >/dev/null
 echo "Motion token lint tests passed"

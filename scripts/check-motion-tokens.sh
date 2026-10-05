@@ -73,8 +73,9 @@ duration_literal="\.(?:set_duration|duration)\(\s*${lit}\s*(?:,\s*)?\)"
 #     itself holds a literal) are a review responsibility.
 #   * A declaration split across two source lines is not caught; the app CSS
 #     writes one declaration per line.
-#   * `#[cfg(test)] mod … { … }` blocks are not scanned: an assertion quoting a
-#     rendered duration observes the policy rather than setting one.
+#   * `#[cfg(test)] mod … { … }` blocks, and files declared only under
+#     `#[cfg(test)]`, are not scanned: an assertion quoting a rendered duration
+#     observes the policy rather than setting one.
 css_time='[0-9][0-9.]*m?s(?![-\w])'
 css_literal="(?:animation|transition):[^;\"]{0,200}?${css_time}"
 css_duration_literal="(?:animation|transition)-duration:\s*${css_time}"
@@ -106,6 +107,65 @@ production_source() {
   ' "$1"
 }
 
+# A file declared only under `#[cfg(test)]` is test code in its entirety and is
+# treated like an inline `#[cfg(test)] mod … { … }` block: skipped by the CSS
+# scan, still read by the Rust scan. Resolution follows rustc: `#[path]` is
+# relative to the declaring file's directory; otherwise `dir/mod.rs` declares
+# `dir/NAME.rs` and `dir/stem.rs` declares `dir/stem/NAME.rs` (each also as
+# `…/NAME/mod.rs`). Only the exact line `#[cfg(test)]` counts, so a wider
+# condition such as `cfg(all(test, …))` stays scanned. A file is exempt only if
+# every declaration of it is gated; a file declared nowhere is scanned.
+#
+# Prints one tab-separated record per `mod NAME;` declaration: the declaring
+# file, 1 when the declaration is gated by `#[cfg(test)]` (else 0), the
+# `#[path]` value ("-" when absent) and the module name.
+module_declarations() {
+  xargs awk '
+    FNR == 1 { gated = 0; path = "-" }
+    /^#\[cfg\(test\)\]$/ { gated = 1; next }
+    /^#\[path = "[^"]*"\]$/ {
+      path = $0
+      sub(/^#\[path = "/, "", path)
+      sub(/"\]$/, "", path)
+      next
+    }
+    /^(pub(\([^)]*\))? )?mod [A-Za-z0-9_]+;$/ {
+      name = $0
+      sub(/;$/, "", name)
+      sub(/^.*mod /, "", name)
+      printf "%s\t%d\t%s\t%s\n", FILENAME, gated, path, name
+      gated = 0; path = "-"
+      next
+    }
+    { gated = 0; path = "-" }
+  '
+}
+
+declare -A test_only_files=() production_declared_files=()
+while IFS=$'\t' read -r declaring gated path_attr name; do
+  dir=$(dirname "$declaring")
+  base=$(basename "$declaring" .rs)
+  if [[ $path_attr != "-" ]]; then
+    candidates=("$dir/$path_attr")
+  elif [[ $base == mod ]]; then
+    candidates=("$dir/$name.rs" "$dir/$name/mod.rs")
+  else
+    candidates=("$dir/$base/$name.rs" "$dir/$base/$name/mod.rs")
+  fi
+  for candidate in "${candidates[@]}"; do
+    [[ -f $candidate ]] || continue
+    if [[ $gated == 1 ]]; then
+      test_only_files[$candidate]=1
+    else
+      production_declared_files[$candidate]=1
+    fi
+  done
+done < <(find "$ui_root" -type f -name '*.rs' | sort | module_declarations)
+
+is_test_only_file() {
+  [[ -n ${test_only_files[$1]:-} && -z ${production_declared_files[$1]:-} ]]
+}
+
 failed=0
 while IFS= read -r file; do
   if is_allowlisted "$file"; then
@@ -115,6 +175,9 @@ while IFS= read -r file; do
     echo "ERROR: literal animation duration outside ui/motion.rs or ui/style/tokens.rs: $file" >&2
     rg --line-number --pcre2 --multiline "$timed_literal|$transition_literal|$duration_literal" "$file" >&2 || true
     failed=1
+  fi
+  if is_test_only_file "$file"; then
+    continue
   fi
   if production_source "$file" \
       | rg --quiet --pcre2 "$css_literal|$css_duration_literal"; then
