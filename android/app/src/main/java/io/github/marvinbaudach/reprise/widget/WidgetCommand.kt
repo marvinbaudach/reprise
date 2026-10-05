@@ -5,11 +5,14 @@ import android.content.Context
 import androidx.media3.common.Player
 import androidx.media3.session.MediaController
 import androidx.media3.session.SessionToken
+import com.google.common.util.concurrent.ListenableFuture
 import com.google.common.util.concurrent.MoreExecutors
+import java.util.concurrent.TimeoutException
 import kotlin.coroutines.resume
 import kotlin.coroutines.resumeWithException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.suspendCancellableCoroutine
+import kotlinx.coroutines.withTimeoutOrNull
 import kotlinx.coroutines.withContext
 
 /** What a widget button asks of the player. */
@@ -51,7 +54,7 @@ internal class MediaControllerSink(
         // has one, a widget callback's worker does not.
         withContext(Dispatchers.Main) {
             val token = SessionToken(context, ComponentName(context, serviceClass))
-            val controller = connect(MediaController.Builder(context, token))
+            val controller = awaitConnection(MediaController.Builder(context, token).buildAsync())
             try {
                 applyWidgetCommand(controller, command)
             } finally {
@@ -59,10 +62,23 @@ internal class MediaControllerSink(
             }
         }
     }
+}
 
-    private suspend fun connect(builder: MediaController.Builder): MediaController =
-        suspendCancellableCoroutine { continuation ->
-            val future = builder.buildAsync()
+/** How long a widget tap waits for the service to answer before it gives up. */
+internal const val CONNECT_TIMEOUT_MS = 5_000L
+
+/**
+ * Waits for [future], at most [timeoutMs]. A service that never answers (a
+ * process that is starting slowly, a session that died while connecting) must
+ * not hold the widget's callback open for the system to time out, so the
+ * request is cancelled and a [TimeoutException] says why nothing happened.
+ */
+internal suspend fun <T : Any> awaitConnection(
+    future: ListenableFuture<T>,
+    timeoutMs: Long = CONNECT_TIMEOUT_MS,
+): T {
+    val connected = withTimeoutOrNull(timeoutMs) {
+        suspendCancellableCoroutine<T> { continuation ->
             future.addListener(
                 {
                     try {
@@ -75,4 +91,9 @@ internal class MediaControllerSink(
             )
             continuation.invokeOnCancellation { future.cancel(true) }
         }
+    }
+    return connected ?: run {
+        future.cancel(true)
+        throw TimeoutException("The playback service did not answer within $timeoutMs ms")
+    }
 }
