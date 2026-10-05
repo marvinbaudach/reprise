@@ -11,6 +11,14 @@ scripts/check-release-metadata.sh
 
 echo "== Rust gates =="
 scripts/tests/qa-linters.sh
+# qa-linters.sh no longer runs these: the CI base job calls all five on their
+# own and the merge gate calls three of them, so this gate is the one place
+# that has to.
+scripts/tests/github-flow.sh
+.github/tests/flatpak-cargo-sources.sh
+scripts/tests/worktree-gc.sh
+scripts/tests/worktree-gc-schedule.sh
+scripts/check-architecture.sh
 scripts/tests/msrv.sh
 cargo fmt --check
 cargo clippy --all-targets --workspace -- -D warnings

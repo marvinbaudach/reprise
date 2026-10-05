@@ -204,6 +204,14 @@ require_pattern 'check-listen-report-parity.sh' scripts/check-merge-readiness.sh
 require_pattern 'scripts/tests/msrv.sh' scripts/check-release.sh
 require_pattern '^scripts/check-flatpak-cargo-sources\.sh$' scripts/check-release.sh
 require_pattern '^scripts/check-release-metadata\.sh$' scripts/check-release.sh
+# The release gate reaches these five by this road alone: the tail below no
+# longer runs them, because the CI base job already does (and the merge gate
+# runs the two worktree scripts and the architecture check).
+require_pattern '^scripts/tests/github-flow\.sh$' scripts/check-release.sh
+require_pattern '^\.github/tests/flatpak-cargo-sources\.sh$' scripts/check-release.sh
+require_pattern '^scripts/tests/worktree-gc\.sh$' scripts/check-release.sh
+require_pattern '^scripts/tests/worktree-gc-schedule\.sh$' scripts/check-release.sh
+require_pattern '^scripts/check-architecture\.sh$' scripts/check-release.sh
 require_pattern 'scripts/check-release-metadata\.sh --gate' .github/workflows/ci.yml
 require_pattern 'scripts/check-flatpak-cargo-sources\.sh' .github/workflows/ci.yml
 require_pattern 'Verify worktree hygiene' .github/workflows/ci.yml
@@ -326,17 +334,12 @@ scripts/tests/input-parity.sh
 scripts/tests/android-theme.sh
 scripts/tests/shared-literal-comment-stripping.sh
 scripts/tests/duration-format-parity.sh
-scripts/tests/github-flow.sh
-.github/tests/flatpak-cargo-sources.sh
 scripts/tests/project-quality.sh
 scripts/tests/weekly-portfolio-sync.sh
-scripts/tests/worktree-gc.sh
-scripts/tests/worktree-gc-schedule.sh
 # These three had no caller at all — not here, not in CI, not in the merge gate.
 # They were written, they pass, and nothing ever ran them.
 scripts/tests/architecture-size-limits.sh
 scripts/tests/cua-explore.sh
 scripts/tests/check-android-suite.sh
-scripts/check-architecture.sh
 
 echo "QA linter policy checks passed"
