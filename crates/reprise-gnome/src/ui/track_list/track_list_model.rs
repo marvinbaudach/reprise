@@ -661,6 +661,7 @@ impl TrackListModel {
                     queries::AiColumn::Project,
                 )
                 .map(|tracks| tracks.into_iter().map(QueueItemMetadata::Track).collect())
+                .map_err(Into::into)
             }
         });
 

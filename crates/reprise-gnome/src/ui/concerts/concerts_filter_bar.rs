@@ -122,11 +122,11 @@ pub(super) fn persist_filter(db: &Db, filter: &ConcertFilter) -> Result<(), rusq
         DateHorizon::Next6Months => "next_6_months",
     };
     reprise_core::library::settings::set_setting(db, config::FILTER_HORIZON_KEY, horizon)?;
-    reprise_core::library::settings::set_bool(
+    Ok(reprise_core::library::settings::set_bool(
         db,
         config::FILTER_INCLUDE_SIMILAR_KEY,
         filter.include_similar,
-    )
+    )?)
 }
 
 pub(super) struct ConcertsFilterBar {
