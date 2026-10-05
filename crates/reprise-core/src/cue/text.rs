@@ -50,11 +50,11 @@ pub(super) fn decode(bytes: &[u8]) -> Result<String, ()> {
 }
 
 fn decode_utf16(bytes: &[u8], read: fn([u8; 2]) -> u16) -> Result<String, ()> {
-    let pairs = bytes.chunks_exact(2);
-    if !pairs.remainder().is_empty() {
+    let (pairs, remainder) = bytes.as_chunks::<2>();
+    if !remainder.is_empty() {
         return Err(());
     }
-    char::decode_utf16(pairs.map(|pair| read([pair[0], pair[1]])))
+    char::decode_utf16(pairs.iter().map(|pair| read(*pair)))
         .collect::<Result<String, _>>()
         .map_err(|_| ())
 }
