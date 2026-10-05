@@ -100,6 +100,7 @@ const MIGRATIONS: &[Migration] = &[
     migration!(85, crate::db_smart_playlist_names::migrate_v85),
     migration!(86, crate::db_library_doctor::migrate_v86),
     migration!(87, crate::db_device_sync::migrate_v87),
+    migration!(88, crate::db_playlist_track_index::migrate_v88),
 ];
 
 pub const SUPPORTED_SCHEMA_VERSION: i64 = MIGRATIONS[MIGRATIONS.len() - 1].version;
