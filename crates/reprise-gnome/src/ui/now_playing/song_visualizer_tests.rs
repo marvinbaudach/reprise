@@ -244,7 +244,7 @@ fn resting_engine(ticks: usize) -> VisualEngine {
 /// bass-pressure detector — and writes the scene at named moments, to confirm
 /// on screen what the calibration says in numbers.
 #[test]
-#[ignore = "visual verification: needs REPRISE_VIS_PCM (raw mono f32 44.1 kHz)"]
+#[ignore = "measurement: replays a decoded track and writes PPM frames; needs REPRISE_VIS_PCM (raw mono f32 44.1 kHz), optional REPRISE_VIS_OUT and REPRISE_VIS_MOMENTS"]
 fn render_bass_pressure_moments_ppm() {
     use reprise_core::playback::{
         BassPressureDetector, CavaBarProcessor, CavaConfig, SpectrumFrame, SPECTRUM_BAND_COUNT,
@@ -460,7 +460,7 @@ fn write_ppm(surface: &mut gtk4::cairo::ImageSurface, width: usize, height: usiz
 }
 
 #[test]
-#[ignore = "visual gallery: renders the Bars scene to REPRISE_VIS_OUT for eyeballing"]
+#[ignore = "measurement: renders the Bars scene to PPM files for eyeballing; optional REPRISE_VIS_OUT"]
 fn render_bars_gallery_ppm() {
     let out = std::env::var("REPRISE_VIS_OUT").unwrap_or_else(|_| "/tmp".to_owned());
     let (w, h) = (548.0_f32, 300.0_f32);
@@ -486,7 +486,7 @@ fn render_bars_gallery_ppm() {
 }
 
 #[test]
-#[ignore = "diagnostic: measures the complete scene-build and Cairo-render frame budget"]
+#[ignore = "measurement: wall-clock p95 of the scene-build and Cairo-render frame budget; meaningful only on an idle machine"]
 fn bars_fullscreen_render_budget_diagnostic() {
     use reprise_core::playback::{SpectrumFrame, SPECTRUM_BAND_COUNT};
     use std::time::Instant;

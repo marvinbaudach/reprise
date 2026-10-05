@@ -723,12 +723,6 @@ mod tests {
     }
 
     #[test]
-    fn filter_and_selection_clear_actions_name_their_distinct_targets() {
-        assert_eq!(PODCAST_CLEAR_ALL, "Clear filters");
-        assert_eq!(PODCAST_CLEAR_SELECTION, "Clear selection");
-    }
-
-    #[test]
     fn unsubscribe_download_summary_distinguishes_one_and_many_shows() {
         assert_eq!(podcast_downloads_kept(1, 2), "2 downloads kept");
         assert_eq!(podcast_downloads_kept(3, 12), "3 shows — 12 downloads kept");

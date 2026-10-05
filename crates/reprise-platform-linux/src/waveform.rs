@@ -491,7 +491,7 @@ mod tests {
     }
 
     #[test]
-    #[ignore = "requires two owner-selected real tracks"]
+    #[ignore = "measurement: needs REPRISE_SPECTROGRAM_LOUD_TRACK and REPRISE_SPECTROGRAM_QUIET_TRACK"]
     fn real_tracks_of_different_loudness_keep_visibly_different_levels() {
         let loud_path = std::env::var_os("REPRISE_SPECTROGRAM_LOUD_TRACK")
             .map(PathBuf::from)

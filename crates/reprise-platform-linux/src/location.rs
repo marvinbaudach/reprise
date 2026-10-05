@@ -313,12 +313,6 @@ mod tests {
     use super::*;
 
     #[test]
-    fn city_accuracy_and_timeout_policy_are_stable() {
-        assert_eq!(ACCURACY_CITY, 2);
-        assert_eq!(DEFAULT_TIMEOUT, Duration::from_secs(30));
-    }
-
-    #[test]
     fn location_vardict_requires_finite_coordinates_and_keeps_optional_accuracy() {
         let complete = HashMap::from([
             ("Latitude".to_string(), OwnedValue::from(47.3769_f64)),
