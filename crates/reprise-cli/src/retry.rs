@@ -1,12 +1,18 @@
 //! Bounded write-retry with jittered backoff.
 //!
-//! The database is opened with SQLite's own `busy_timeout` (5 s), which blocks
-//! a writer while another connection holds the write lock. This layer sits on
-//! top for the rarer case where a *long* foreign write (e.g. a full rescan by
-//! the running app) outlasts that timeout and the facade still returns
-//! `SQLITE_BUSY`/`SQLITE_LOCKED`: rather than fail the whole command, the CLI
-//! retries a few times with a short, jittered backoff. Reads never need this —
-//! WAL readers do not block on a writer — so only mutating facades are wrapped.
+//! The database is opened with SQLite's own `busy_timeout` (5 s), but SQLite
+//! waits only when a transaction's first step takes the write lock. A deferred
+//! transaction that has already read and then upgrades to a write while another
+//! connection holds the write lock gets `SQLITE_BUSY` at once: SQLite skips the
+//! busy handler for that upgrade, because waiting there could deadlock. Measured
+//! with `playlist create` against a held `BEGIN IMMEDIATE`, the first attempt
+//! fails at once, not after 5 s.
+//!
+//! Rather than fail the whole command on that `SQLITE_BUSY`/`SQLITE_LOCKED`, the
+//! CLI retries a few times with a short, jittered backoff, about 0.3 s in all. A
+//! foreign write that holds the lock longer (e.g. a full rescan by the running
+//! app) still fails such a command. Reads never need this — WAL readers do not
+//! block on a writer — so only mutating facades are wrapped.
 //!
 //! Each retry says so on stderr (one line, never stdout, which stays
 //! machine-readable), so a write that waits is visible rather than mysterious.
