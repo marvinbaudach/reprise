@@ -8,9 +8,10 @@ use std::net::IpAddr;
 use std::time::Duration;
 
 use ureq::unversioned::resolver::{DefaultResolver, ResolvedSocketAddrs, Resolver};
-use ureq::unversioned::transport::{DefaultConnector, NextTimeout};
+use ureq::unversioned::transport::NextTimeout;
 
 use super::PodcastError;
+use crate::net::client::{build_agent_with_resolver, AgentPolicy};
 
 const HTTP_TIMEOUT: Duration = Duration::from_secs(15);
 const MAX_IMAGE_BYTES: usize = 4 * 1024 * 1024;
@@ -51,22 +52,23 @@ pub fn fetch(url: &str) -> Result<Vec<u8>, PodcastError> {
     fetch_with_resolver(&url, DefaultResolver::default())
 }
 
+/// Artwork hosts must be public: no redirects, no proxy, statuses read by the caller.
+const fn agent_policy() -> AgentPolicy {
+    AgentPolicy {
+        timeout: HTTP_TIMEOUT,
+        status_as_error: false,
+        https_only: false,
+        max_redirects: Some(0),
+        proxy_from_env: false,
+    }
+}
+
 fn fetch_with_resolver(url: &url::Url, resolver: impl Resolver) -> Result<Vec<u8>, PodcastError> {
-    let config = ureq::Agent::config_builder()
-        .timeout_global(Some(HTTP_TIMEOUT))
-        .user_agent(crate::net::user_agent())
-        .http_status_as_error(false)
-        .max_redirects(0)
-        .proxy(None)
-        .build();
-    let response = ureq::Agent::with_parts(
-        config,
-        DefaultConnector::default(),
-        PublicOnlyResolver { inner: resolver },
-    )
-    .get(url.as_str())
-    .call()
-    .map_err(classify_transport)?;
+    let response =
+        build_agent_with_resolver(agent_policy(), PublicOnlyResolver { inner: resolver })
+            .get(url.as_str())
+            .call()
+            .map_err(classify_transport)?;
     let status = response.status().as_u16();
     if !(200..300).contains(&status) {
         return Err(PodcastError::HttpStatus(status));
@@ -187,6 +189,20 @@ mod tests {
             addresses.push(self.address);
             Ok(addresses)
         }
+    }
+
+    #[test]
+    fn artwork_agent_refuses_redirects_and_proxies_and_reads_statuses_itself() {
+        assert_eq!(
+            super::agent_policy(),
+            super::AgentPolicy {
+                timeout: std::time::Duration::from_secs(15),
+                status_as_error: false,
+                https_only: false,
+                max_redirects: Some(0),
+                proxy_from_env: false,
+            }
+        );
     }
 
     #[test]
