@@ -24,11 +24,17 @@ xgettext --directory=. --files-from=po/POTFILES.in --output="$tmp_root/reprise.p
   --package-name=Reprise --package-version=0.1.1 \
   --msgid-bugs-address='Marvin Baudach' --copyright-holder='Marvin Baudach'
 
+# The committed template is the one translators and the merge see; it must say exactly what the
+# sources say, in both directions (msgcmp alone only reports template entries the catalog lacks).
+msgcmp --use-fuzzy --use-untranslated "$tmp_root/reprise.pot" po/reprise.pot
+msgcmp --use-fuzzy --use-untranslated po/reprise.pot "$tmp_root/reprise.pot"
+
 for locale in "${expected_locales[@]}"; do
   catalog="po/$locale.po"
   msgfmt --check --check-format -o "$tmp_root/$locale.mo" "$catalog"
   msgcmp --use-fuzzy --use-untranslated "$catalog" "$tmp_root/reprise.pot"
   test -z "$(msgattrib --only-fuzzy "$catalog")"
+  test -z "$(msgattrib --only-obsolete "$catalog")"
 
   translated=$(msgattrib --translated --no-obsolete "$catalog" \
     | awk '/^msgid / { count++ } END { print count + 0 }')
