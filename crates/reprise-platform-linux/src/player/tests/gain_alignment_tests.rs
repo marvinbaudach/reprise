@@ -16,6 +16,7 @@ const SECOND_GAIN_DB: f64 = 6.0;
 const FIRST_TRACK_SECONDS: u32 = 3;
 const SECOND_TRACK_SECONDS: u32 = 2;
 const DEADLINE: Duration = Duration::from_secs(15);
+const QUEUE_THREAD_STALL: Duration = Duration::from_millis(200);
 
 /// One buffer as it leaves the gain element: which stream it belongs to and the
 /// linear gain the element held while it processed that buffer.
@@ -195,13 +196,45 @@ fn play_19a_the_gain_switch_waits_for_the_tail_queued_ahead_of_it() {
         .unwrap()
         .unwrap();
     let pending: crate::gapless::PendingGain = Arc::new(Mutex::new(None));
-    crate::player_effects::install_filter_gain_switch(&filter, pending.clone()).unwrap();
     let gain = filter
         .clone()
         .downcast::<gst::Bin>()
         .unwrap()
         .by_name("reprise-track-gain")
         .unwrap();
+    // The queue thread that feeds the gain element is asynchronous to the
+    // thread that pushes into the bin. Holding the first STREAM_START back
+    // makes the slowest schedule the only one: the pending gain must be set
+    // only once track A's STREAM_START has passed the switch, as it is in
+    // playback, where `about-to-finish` fires long after the stream began.
+    let gain_sink = gain.static_pad("sink").unwrap();
+    let first_stream_start_held = std::sync::atomic::AtomicBool::new(false);
+    gain_sink.add_probe(gst::PadProbeType::EVENT_DOWNSTREAM, move |_, info| {
+        let is_stream_start = info
+            .event()
+            .is_some_and(|event| event.type_() == gst::EventType::StreamStart);
+        if is_stream_start
+            && !first_stream_start_held.swap(true, std::sync::atomic::Ordering::SeqCst)
+        {
+            std::thread::sleep(QUEUE_THREAD_STALL);
+        }
+        gst::PadProbeReturn::Ok
+    });
+    crate::player_effects::install_filter_gain_switch(&filter, pending.clone()).unwrap();
+    // Added after the switch, so it runs after the switch on the same event.
+    let a_stream_started = Arc::new(std::sync::atomic::AtomicBool::new(false));
+    {
+        let a_stream_started = a_stream_started.clone();
+        gain_sink.add_probe(gst::PadProbeType::EVENT_DOWNSTREAM, move |_, info| {
+            if info
+                .event()
+                .is_some_and(|event| event.type_() == gst::EventType::StreamStart)
+            {
+                a_stream_started.store(true, std::sync::atomic::Ordering::SeqCst);
+            }
+            gst::PadProbeReturn::Ok
+        });
+    }
     gain.set_property("volume", linear(FIRST_GAIN_DB));
 
     let gate = Arc::new((Mutex::new(false), std::sync::Condvar::new()));
@@ -270,6 +303,14 @@ fn play_19a_the_gain_switch_waits_for_the_tail_queued_ahead_of_it() {
         }
     };
     push_track("track-a");
+    let deadline = std::time::Instant::now() + Duration::from_secs(5);
+    while !a_stream_started.load(std::sync::atomic::Ordering::SeqCst) {
+        assert!(
+            std::time::Instant::now() < deadline,
+            "track A's STREAM_START never reached the gain element"
+        );
+        std::thread::sleep(Duration::from_millis(5));
+    }
     *pending.lock().unwrap_or_else(PoisonError::into_inner) = Some(SECOND_GAIN_DB);
     push_track("track-b");
     {
