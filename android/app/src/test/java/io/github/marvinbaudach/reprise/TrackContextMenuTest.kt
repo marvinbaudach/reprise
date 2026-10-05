@@ -79,7 +79,7 @@ class TrackContextMenuTest {
 
         openTitleMenu(track.id)
         compose.onNodeWithText("Delete from device…").performClick()
-        compose.awaitText("1 track deleted")
+        compose.awaitText("1 track will be deleted")
         compose.onNodeWithText("Undo").assertIsDisplayed()
         compose.onNodeWithTag("library-track-row-41").assertDoesNotExist()
         assertEquals(emptyList<List<Long>>(), controls.deleted)
@@ -93,7 +93,7 @@ class TrackContextMenuTest {
 
         openTitleMenu(track.id)
         compose.onNodeWithText("Delete from device…").performClick()
-        compose.awaitText("1 track deleted")
+        compose.awaitText("1 track will be deleted")
         compose.runOnIdle { harness.passTheWindow() }
         compose.waitUntil(AWAIT_TIMEOUT_MS) { controls.deleted.isNotEmpty() }
         assertEquals(listOf(listOf(41L)), controls.deleted)
@@ -401,7 +401,7 @@ class TrackContextMenuTest {
                             loadMore = {},
                         )
                         DeletionMessageLine(harness.surface)
-                        UndoSnackbarHost(harness.surface.pendingDeletions, 0.dp)
+                        UndoSnackbarHost(harness.surface.pendingDeletions) { 0.dp }
                     }
                 }
             }

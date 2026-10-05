@@ -100,7 +100,7 @@ class QueueRemovalUndoTest {
                             harness.surface,
                             SurfaceLayout.STACKED,
                         )
-                        UndoSnackbarHost(harness.surface.pendingDeletions, 0.dp)
+                        UndoSnackbarHost(harness.surface.pendingDeletions) { 0.dp }
                     }
                 }
             }

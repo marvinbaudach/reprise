@@ -736,7 +736,13 @@ internal fun BrowseScreen(
             nowPlayingSheetState = nowPlayingSheetState,
             settingsVisible = settingsVisible,
         )
-        UndoSnackbarHost(surfaceState.pendingDeletions, bottomFrameInset.value)
+        UndoSnackbarHost(surfaceState.pendingDeletions) {
+            undoSnackbarClearance(
+                nowPlayingOpen = nowPlayingSheetState.currentState || nowPlayingSheetState.targetState,
+                layout = surfaceLayout,
+                libraryFrameInset = bottomFrameInset.value,
+            )
+        }
         BrowseSettingsOverlay(
             visible = settingsVisible,
             settings = settings,

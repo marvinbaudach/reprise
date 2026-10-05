@@ -15,6 +15,8 @@ internal class ManualTimers {
 
     fun fire(index: Int) = work[index]()
 
+    val count get() = work.size
+
     fun fireAll() = work.toList().forEach { it() }
 }
 
@@ -38,9 +40,14 @@ internal class RecordingDeletionMessages : DeletionMessages {
 internal class FakeQueueControls(
     initial: List<Long>,
     private val outcome: Result<AndroidTrashReport>? = null,
+    /** How many deletes answer "still connecting" before one is carried out. */
+    var connectFailures: Int = 0,
+    /** Queue removals wait in [heldRemovals] until the test releases them. */
+    var holdRemovals: Boolean = false,
 ) : PlaybackControls {
     val upcoming = initial.toMutableList()
     val deleted = mutableListOf<List<Long>>()
+    val heldRemovals = mutableListOf<() -> Unit>()
     var skips = 0
 
     override fun togglePause() = Unit
@@ -79,9 +86,18 @@ internal class FakeQueueControls(
         expectedTrackId: Long,
         report: (Result<Boolean>) -> Unit,
     ) {
-        val matches = upcoming.getOrNull(position) == expectedTrackId
-        if (matches) upcoming.removeAt(position)
-        report(Result.success(matches))
+        val remove = {
+            val matches = upcoming.getOrNull(position) == expectedTrackId
+            if (matches) upcoming.removeAt(position)
+            report(Result.success(matches))
+        }
+        if (holdRemovals) heldRemovals += remove else remove()
+    }
+
+    fun releaseRemovals() {
+        val held = heldRemovals.toList()
+        heldRemovals.clear()
+        held.forEach { it() }
     }
 
     override fun moveUpcomingTrack(
@@ -112,6 +128,11 @@ internal class FakeQueueControls(
         trackIds: List<Long>,
         report: (Result<AndroidTrashReport>) -> Unit,
     ) {
+        if (connectFailures > 0) {
+            connectFailures -= 1
+            report(Result.failure(IllegalStateException(PLAYBACK_STILL_CONNECTING)))
+            return
+        }
         deleted.add(trackIds)
         upcoming.removeAll(trackIds.toSet())
         report(outcome ?: Result.success(AndroidTrashReport(trackIds, emptyList())))
@@ -128,4 +149,17 @@ internal class DeletionHarness {
     val surface = MobileSurfaceViewModel(scheduleAfter = timers::schedule)
 
     fun passTheWindow() = timers.fireAll()
+}
+
+/** A dispatcher the test runs by hand, so a coroutine can be caught in the middle. */
+internal class ManualDispatcher : kotlinx.coroutines.CoroutineDispatcher() {
+    private val queue = ArrayDeque<Runnable>()
+
+    override fun dispatch(context: kotlin.coroutines.CoroutineContext, block: Runnable) {
+        queue.addLast(block)
+    }
+
+    fun runAll() {
+        while (queue.isNotEmpty()) queue.removeFirst().run()
+    }
 }

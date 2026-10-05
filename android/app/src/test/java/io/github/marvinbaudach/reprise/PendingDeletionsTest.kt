@@ -5,7 +5,6 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
-import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
@@ -40,7 +39,7 @@ class PendingDeletionsTest {
         assertTrue(deletions.isHidden(13))
         assertFalse(deletions.isHidden(12))
         assertEquals(listOf(10L, 12L, 14L), queue.upcoming)
-        assertEquals("2 tracks deleted", deletions.offers.current?.message)
+        assertEquals("2 tracks will be deleted", deletions.offers.current?.message)
         assertEquals(emptyList<List<Long>>(), queue.deleted)
     }
 
@@ -95,11 +94,11 @@ class PendingDeletionsTest {
     }
 
     @Test
-    fun aProcessThatDiesInsideTheWindowDeletesNothing() {
+    fun aClearedScreenDeletesNothingEvenIfItsTimerFiresLater() {
         val queue = FakeQueueControls(listOf(10, 11, 12))
 
         deletions.begin(listOf(11), queue)
-        // The process dies: the screen is cleared, the timer never fires.
+        // The view model is cleared inside the window; the timer still fires.
         deletions.close()
         timers.fireAll()
 
@@ -156,7 +155,7 @@ class PendingDeletionsTest {
     fun aFailedDeleteBringsEveryRowBack() {
         val queue = FakeQueueControls(
             listOf(10, 11),
-            outcome = Result.failure(IllegalStateException("playback is still connecting")),
+            outcome = Result.failure(IllegalStateException("disk full")),
         )
 
         deletions.begin(listOf(10, 11), queue)
@@ -164,7 +163,7 @@ class PendingDeletionsTest {
 
         assertFalse(deletions.isHidden(10))
         assertEquals(
-            "Could not delete tracks: playback is still connecting",
+            "Could not delete tracks: disk full",
             messages.lines.last(),
         )
     }
@@ -251,11 +250,10 @@ class PendingDeletionsTest {
     }
 
     @Test
-    fun aQueueUndoDoesNotCommitAPendingDeleteBeforeItsWindow() {
+    fun aQueueRemovalWaitsForAPendingDeletesWindowInsteadOfEndingIt() {
         val queue = FakeQueueControls(listOf(10, 11, 12))
 
         deletions.begin(listOf(10), queue)
-        // Taking a row out of the queue takes the slot: the delete's undo is gone.
         deletions.removeFromQueueWithUndo(
             position = 1,
             trackId = 12,
@@ -264,7 +262,66 @@ class PendingDeletionsTest {
             refresh = {},
         )
 
-        assertNotNull(deletions.offers.current)
+        // The delete keeps the slot, its undo and its files.
+        assertEquals("1 track will be deleted", deletions.offers.current?.message)
+        assertEquals(emptyList<List<Long>>(), queue.deleted)
+
+        // Its own window passing commits it once, however often the timer fires.
+        timers.fire(0)
+        timers.fire(0)
         assertEquals(listOf(listOf(10L)), queue.deleted)
+
+        // Only now does the queue's undo come up, with a window of its own.
+        assertEquals(QUEUE_REMOVED_MESSAGE, deletions.offers.current?.message)
+        assertEquals(listOf(UNDO_WINDOW_MS, UNDO_WINDOW_MS), timers.delays)
+        deletions.offers.undo(checkNotNull(deletions.offers.current).token)
+        assertEquals(listOf(11L, 12L), queue.upcoming)
+    }
+
+    @Test
+    fun aDeletesUndoBringsTheWaitingQueueOfferUp() {
+        val queue = FakeQueueControls(listOf(10, 11, 12))
+
+        deletions.begin(listOf(10), queue)
+        deletions.removeFromQueueWithUndo(
+            position = 1,
+            trackId = 12,
+            playback = queue,
+            remove = { queue.removeUpcomingTrack(1, 12) {} },
+            refresh = {},
+        )
+        deletions.offers.undo(checkNotNull(deletions.offers.current).token)
+
+        assertEquals(QUEUE_REMOVED_MESSAGE, deletions.offers.current?.message)
+        assertEquals(emptyList<List<Long>>(), queue.deleted)
+    }
+
+    @Test
+    fun aNewDeleteDropsTheQueueOfferThatWasWaiting() {
+        val queue = FakeQueueControls(listOf(10, 11, 12, 13))
+
+        deletions.begin(listOf(10), queue)
+        deletions.removeFromQueueWithUndo(
+            position = 1,
+            trackId = 12,
+            playback = queue,
+            remove = { queue.removeUpcomingTrack(1, 12) {} },
+            refresh = {},
+        )
+        deletions.begin(listOf(13), queue)
+
+        assertEquals(listOf(listOf(10L)), queue.deleted)
+        assertEquals("1 track will be deleted", deletions.offers.current?.message)
+        timers.fire(1)
+        assertNull(deletions.offers.current)
+    }
+
+    @Test
+    fun theOffersWindowIsTheOneTheListenersSettingsNeed() {
+        deletions.undoWindowMs = { 15_000L }
+
+        deletions.begin(listOf(10), FakeQueueControls(listOf(10)))
+
+        assertEquals(15_000L, timers.delays.single())
     }
 }
