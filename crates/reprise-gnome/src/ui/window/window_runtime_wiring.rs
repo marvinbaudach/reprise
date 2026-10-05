@@ -31,8 +31,8 @@ use super::{
 use crate::ui::stats::stats_view::StatsView;
 use crate::ui::{
     compact_mode_controls, compact_mode_suggestion, first_run, help,
-    library_doctor as library_doctor_ui, lyrics_smoke, mounts, playlist_io, primary_menu,
-    scan_flow, scan_worker, session_restore as session_restore_ui, shortcuts,
+    library_doctor as library_doctor_ui, lyrics_smoke, mounts, playlists::playlist_io,
+    primary_menu, scan_flow, scan_worker, session_restore as session_restore_ui, shortcuts,
     spectrogram::spectrogram_batch_progress, startup_quiet, startup_report,
     view_session as view_session_ui,
 };

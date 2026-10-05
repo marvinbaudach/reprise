@@ -5,7 +5,7 @@
 //! doc comment for the pattern this mirrors (reaching into `sidebar.rs`'s
 //! private `Shared` via `pub(in crate::ui)` fields/functions).
 //!
-//! The actual file-write + M3U-serialize logic lives in `ui::playlist_io`
+//! The actual file-write + M3U-serialize logic lives in `ui::playlists::playlist_io`
 //! (shared with the adjacent "Import playlist…" sidebar flow, and with
 //! the `REPRISE_SMOKE_M3U=export:<name>:<path>` dev hook); this module owns
 //! only the widget wiring: the right-click gesture, the `gio::Menu`/
@@ -21,7 +21,7 @@ use gtk4::prelude::*;
 use libadwaita as adw;
 use libadwaita::prelude::*;
 
-use crate::ui::playlist_io;
+use crate::ui::playlists::playlist_io;
 use crate::ui::popover_lifecycle;
 use crate::ui::sidebar::{rebuild, show_toast, Shared};
 use crate::ui::strings;
@@ -200,7 +200,7 @@ pub(in crate::ui) fn delete_playlist(shared: &Rc<Shared>, playlist_id: i64, play
 }
 
 /// Opens the "Export playlist…" save dialog and, on a chosen path, runs
-/// `ui::playlist_io::export_playlist` — the same function the `REPRISE_
+/// `ui::playlists::playlist_io::export_playlist` — the same function the `REPRISE_
 /// SMOKE_M3U=export:<name>:<path>` hook calls, so this dialog callback is a
 /// thin wrapper, not a second implementation. Dismissing the dialog is a
 /// normal, expected outcome (not an error), matching every other

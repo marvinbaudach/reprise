@@ -660,7 +660,7 @@ pub fn playlist_imported_toast(name: &str, matched: usize, total: usize) -> Stri
 }
 
 /// Toast shown when an import matched zero of `total` path lines — no
-/// playlist is created in that case (see `ui::playlist_io::import_playlist`'s
+/// playlist is created in that case (see `ui::playlists::playlist_io::import_playlist`'s
 /// doc comment), so this explicitly calls out that nothing was added.
 pub fn playlist_import_zero_matched_toast(name: &str, total: usize) -> String {
     let total_text = total.to_string();

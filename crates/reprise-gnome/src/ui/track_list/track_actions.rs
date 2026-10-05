@@ -173,7 +173,7 @@ pub fn remove_selected_from_playlist(
 /// "Add to playlist -> New playlist…" menu action: creates a playlist named
 /// `name` and appends `ids` to it, in one transaction — via `library::
 /// playlists::create_with_tracks`, the same transactional primitive
-/// `ui::playlist_io`'s M3U import already uses. Returns `(new_playlist_id,
+/// `ui::playlists::playlist_io`'s M3U import already uses. Returns `(new_playlist_id,
 /// inserted_count)` on success.
 ///
 /// Task 9 review fold-in: this used to call `playlists::create` and `add_
