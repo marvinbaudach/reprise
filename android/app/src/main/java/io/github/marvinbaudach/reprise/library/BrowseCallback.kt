@@ -53,19 +53,25 @@ private const val TAG = "RepriseBrowse"
  *
  * # What is not covered
  *
- *  - [isAllowed][BrowserAccess.isAllowed] is a connect-time snapshot for the
- *    commands (`isTrusted` is fixed when the controller connects); the
- *    entry-point checks above are what a controller that later loses trust
- *    runs into.
- *  - A media button (`ACTION_MEDIA_BUTTON`) is not routed through this
- *    callback: Media3 hands it to the session as the notification controller,
- *    or, from the platform session, as a controller that is never marked
- *    trusted, whoever sent it. A headset or the system cannot be told from an
- *    app that fires the intent, so refusing would break the headset. It reaches
- *    play, pause and skip only, which is the accepted residual.
- *  - `onGetSession` receives only a placeholder controller (the legacy-service
- *    bind and the media-button fallback carry no caller identity), so it cannot
- *    refuse a caller; the per-controller decision is made in `onConnect`.
+ *  - [BrowserAccess.isAllowed] is a connect-time snapshot for the commands
+ *    (`isTrusted` is fixed when the controller connects); the entry-point
+ *    checks above are what a controller that later loses trust runs into.
+ *  - A media button (`ACTION_MEDIA_BUTTON`) is not refused here
+ *    (`onMediaButtonEvent` is not overridden): Media3 hands it to the session as
+ *    the platform session's own caller, never marked trusted whoever sent it,
+ *    and then drives the player as
+ *    the media notification controller, which is this app. A headset or the
+ *    system cannot be told from an app that fires the intent, so refusing would
+ *    break the headset. What a media button can do is what the key code asks
+ *    for: play, pause, stop, skip and the seek keys. That is the accepted
+ *    residual.
+ *  - `onGetSession` cannot refuse a caller either. Media3's service-binder path
+ *    passes the real controller, but that controller is already given nothing by
+ *    `onConnect`; the legacy `MediaBrowserService` bind that Android Auto uses
+ *    passes a placeholder (package `android.media.session.MediaController`,
+ *    uid -1), which fails [BrowserAccess], so returning null there would cut
+ *    Auto off. The per-controller decision is made in `onConnect` and at every
+ *    entry point.
  */
 @androidx.annotation.OptIn(UnstableApi::class)
 internal class BrowseCallback(

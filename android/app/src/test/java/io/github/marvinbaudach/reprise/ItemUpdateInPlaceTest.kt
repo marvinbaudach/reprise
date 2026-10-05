@@ -9,6 +9,8 @@ import androidx.media3.common.Timeline
 import androidx.media3.common.util.UnstableApi
 import androidx.media3.exoplayer.ExoPlayer
 import androidx.media3.exoplayer.source.DefaultMediaSourceFactory
+import io.github.marvinbaudach.reprise.library.TrackMetadata
+import io.github.marvinbaudach.reprise.library.playbackMediaItem
 import androidx.test.core.app.ApplicationProvider
 import org.junit.After
 import org.junit.Assert.assertEquals
@@ -83,6 +85,37 @@ class ItemUpdateInPlaceTest {
         assertEquals(entryBefore, player.currentTimeline.getWindow(0, window).uid)
         assertEquals(emptyList<Int>(), discontinuities)
         assertTrue("transitions: $transitions", transitions.all { it == Player.MEDIA_ITEM_TRANSITION_REASON_PLAYLIST_CHANGED })
+    }
+
+    @Test
+    fun aBareItemCompletedWithIdMetadataAndCoverKeepsItsEntryToo() {
+        // The port starts an unknown track bare and completes it a moment later,
+        // with another media id as well: that replacement must not restart it.
+        val bare = MediaItem.Builder().setUri(uri).build()
+        val full = playbackMediaItem(
+            uri.toString(),
+            TrackMetadata(1, "Song", "Singer", "Album", 1_000, Uri.parse("file:///cache/1.png")),
+            mediaId = "track:recent:1:4",
+        )
+        player.setMediaItems(listOf(bare, MediaItem.fromUri("content://tree/2.flac")))
+        val window = Timeline.Window()
+        val entryBefore = player.currentTimeline.getWindow(0, window).uid
+        val discontinuities = mutableListOf<Int>()
+        player.addListener(object : Player.Listener {
+            override fun onPositionDiscontinuity(
+                oldPosition: Player.PositionInfo,
+                newPosition: Player.PositionInfo,
+                reason: Int,
+            ) {
+                discontinuities += reason
+            }
+        })
+
+        player.replaceMediaItem(0, full)
+
+        assertEquals(full, player.getMediaItemAt(0))
+        assertEquals(entryBefore, player.currentTimeline.getWindow(0, window).uid)
+        assertEquals(emptyList<Int>(), discontinuities)
     }
 
     @Test
