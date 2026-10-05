@@ -774,3 +774,7 @@ impl RadioAddDialog {
 #[cfg(test)]
 #[path = "add_dialog_tests.rs"]
 mod tests;
+
+#[cfg(test)]
+#[path = "add_dialog_chrome_tests.rs"]
+mod chrome_tests;
