@@ -105,6 +105,11 @@ import sys
 
 import yaml
 
+
+def squash_ws(text):
+    return " ".join(str(text).split())
+
+
 with pathlib.Path(sys.argv[1]).open(encoding="utf-8") as stream:
     workflow = yaml.safe_load(stream)
 
@@ -125,8 +130,8 @@ assert push["needs"] == "regenerate", "the push job must wait for the regenerati
 assert "REPRISE_AUTOMERGE_TOKEN" not in yaml.safe_dump(regenerate), (
     "the regenerate job runs third-party code and must hold no secret"
 )
-assert "secrets." not in yaml.safe_dump(regenerate), (
-    "the regenerate job must not read any secret"
+assert not re.search(r"\bsecrets\b", yaml.safe_dump(regenerate)), (
+    "the regenerate job must not read any secret, in any spelling"
 )
 push_steps = push["steps"]
 holders = [s["name"] for s in push_steps if "REPRISE_AUTOMERGE_TOKEN" in yaml.safe_dump(s)]
@@ -174,12 +179,20 @@ assert regenerate["steps"].index(revision[0]) < names.index(
 ), "the commit must be recorded before any third-party code runs"
 
 # The checkout leaves no credential in its clone and is handed no token.
-checkout = regenerate["steps"][0]
-assert checkout["uses"].startswith("actions/checkout@"), checkout
-assert checkout["with"]["persist-credentials"] is False, (
-    "checkout must not leave a credential in the clone"
+checkouts = [
+    step
+    for job in jobs.values()
+    for step in job["steps"]
+    if str(step.get("uses", "")).startswith("actions/checkout@")
+]
+assert checkouts and checkouts[0] is regenerate["steps"][0], (
+    "the regenerate job must start from a checkout"
 )
-assert "token" not in checkout["with"], "checkout must not be handed a token"
+for checkout in checkouts:
+    assert checkout["with"]["persist-credentials"] is False, (
+        "checkout must not leave a credential in the clone"
+    )
+    assert "token" not in checkout["with"], "checkout must not be handed a token"
 # --- What each guard means, not just that its words appear somewhere. ---
 
 # Every condition is one conjunction of exactly these terms: an `||`, a missing
@@ -211,6 +224,7 @@ assert workflow["concurrency"]["group"] == (
 # The handed-over artifact is the single file the push job downloads by name.
 uploads = [s for s in regenerate["steps"] if str(s.get("uses", "")).startswith("actions/upload-artifact@")]
 assert len(uploads) == 1, "the regenerate job must upload exactly one artifact"
+upload_step = uploads[0]
 upload = uploads[0]["with"]
 assert upload["path"] == "${{ runner.temp }}/regenerated/cargo-sources.json", (
     f"the artifact must be the single sources file, not a directory: {upload['path']}"
@@ -262,9 +276,14 @@ rest = yaml.safe_dump({
     "regenerate": regenerate,
     "push": {**push, "steps": push_steps[:-1]},
 })
-assert "secrets." not in rest, "no secret may be read outside the push job's push step"
-assert yaml.safe_dump(push_steps[-1]).count("secrets.") == 1
-assert re.findall(r"secrets\.(\w+)", yaml.safe_dump(workflow)) == ["REPRISE_AUTOMERGE_TOKEN"]
+# `secrets.X`, `secrets['X']` and `toJSON(secrets)` all hand over a secret, so the
+# word itself is counted, in the parsed workflow where comments no longer count.
+assert not re.search(r"\bsecrets\b", rest), "no secret may be read outside the push job's push step"
+assert re.findall(r"\bsecrets\b", yaml.safe_dump(push_steps[-1])) == ["secrets"]
+assert re.findall(r"\bsecrets\b", yaml.safe_dump(workflow)) == ["secrets"], (
+    "the whole workflow may read exactly one secret"
+)
+assert push_steps[-1]["env"]["PUSH_TOKEN"] == "${{ secrets.REPRISE_AUTOMERGE_TOKEN }}"
 assert "github.token" not in yaml.safe_dump(push_steps[-1]), (
     "the Actions token must not be in the step that holds the push token"
 )
@@ -285,6 +304,89 @@ setup_uv = [s for s in regenerate["steps"] if str(s.get("uses", "")).startswith(
 assert len(setup_uv) == 1 and setup_uv[0]["with"]["version"] == "0.12.3", (
     "uv itself must be pinned to a version"
 )
+assert re.fullmatch(r"astral-sh/setup-uv@[0-9a-f]{40}", setup_uv[0]["uses"]), (
+    "setup-uv runs before the generator and must be pinned to a commit, not a tag"
+)
+
+# --- Weakening a step without touching its words (S2, S3, T4). ---
+def walk(node):
+    if isinstance(node, dict):
+        for key, value in node.items():
+            yield key, value
+            yield from walk(value)
+    elif isinstance(node, list):
+        for value in node:
+            yield from walk(value)
+
+
+keys = [key for key, _ in walk(workflow)]
+assert "continue-on-error" not in keys, "no step or job may continue on error"
+assert "shell" not in keys and "defaults" not in keys, (
+    "no step may swap the shell: the default one runs with -e, a custom one may not"
+)
+scripts = "\n".join(
+    str(step.get("run", "")) for job in jobs.values() for step in job["steps"]
+)
+for forbidden in (r"set\s+\+e", r"set\s+-\w*x", r"GIT_TRACE", r"GIT_CURL_VERBOSE", r"\|\|\s*(true|:)\b"):
+    assert not re.search(forbidden, scripts), f"the scripts must not contain {forbidden}"
+
+# The sha256 check is the last thing the fetch step does, and nothing makes its
+# failure acceptable.
+fetch_lines = [line.strip() for line in fetch["run"].strip().splitlines()]
+assert fetch_lines[-1] == 'echo "$GENERATOR_SHA256  $generator" | sha256sum --check --strict', (
+    f"the fetch step must end with the sha256 check, got {fetch_lines[-1]!r}"
+)
+assert not any("||" in line for line in fetch_lines), "the fetch step must not tolerate a failing command"
+assert names.index("Fetch the pinned generator") + 1 == names.index("Regenerate flatpak/cargo-sources.json"), (
+    "nothing may sit between the verified fetch and the run"
+)
+
+# The change flag is what starts, or ends, the push job.
+assert squash_ws(generate).endswith(squash_ws("""
+    if cmp --silent "$RUNNER_TEMP/regenerated/cargo-sources.json" \\
+      "$GITHUB_WORKSPACE/flatpak/cargo-sources.json"; then
+      echo "flatpak/cargo-sources.json already matches Cargo.lock"
+      echo "changed=false" >> "$GITHUB_OUTPUT"
+    else
+      echo "changed=true" >> "$GITHUB_OUTPUT"
+    fi
+""")), "changed=false must follow an identical file and changed=true a different one, and nothing may follow"
+assert upload_step["if"] == "steps.regenerate.outputs.changed == 'true'", (
+    "the artifact is uploaded only when the sources changed"
+)
+
+# Timeouts bound a hung run that holds a runner and, in push, a token.
+assert regenerate.get("timeout-minutes") == 10, "the regenerate job must time out after 10 minutes"
+assert push.get("timeout-minutes") == 5, "the push job must time out after 5 minutes"
+
+# --- The push: target, fail-closed token, token transport (S3, S5). ---
+push_step = push_steps[-1]
+assert push_step["env"] == {
+    "PUSH_TOKEN": "${{ secrets.REPRISE_AUTOMERGE_TOKEN }}",
+    "BRANCH": "${{ github.event.pull_request.head.ref }}",
+}, f"the push step's environment must be exactly the token and the bump's branch: {push_step['env']}"
+assert squash_ws(push_step["run"]).startswith(squash_ws("""
+    if [[ -z $PUSH_TOKEN ]]; then
+      echo "REPRISE_AUTOMERGE_TOKEN is not available to this run" >&2
+      exit 1
+    fi
+""")), "the push step must open by failing closed when its token is missing"
+run = push_step["run"]
+assert not re.search(r"x-access-token:\$|https://[^\s\"']*@", run), (
+    "the token must not be embedded in a URL: the process list would show it"
+)
+assert '"https://github.com/${GITHUB_REPOSITORY}.git"' in run, "the push URL must carry no credential"
+for line in (
+    'echo "::add-mask::$header"',
+    "GIT_CONFIG_COUNT=1 \\",
+    "GIT_CONFIG_KEY_0='http.https://github.com/.extraheader' \\",
+    'GIT_CONFIG_VALUE_0="AUTHORIZATION: basic $header" \\',
+):
+    assert line in run, f"the token must reach git as a masked header in its environment: missing {line}"
+assert run.index('echo "::add-mask::$header"') < run.index("GIT_CONFIG_COUNT=1"), (
+    "the header must be masked before it is used"
+)
+assert not re.search(r"PUSH_TOKEN.*git -c", run), "the token must not sit on a command line"
 PY
 
 # A push by the token's owner makes that owner the event's actor. If routing

@@ -84,8 +84,10 @@ jobs:
         id: revision
         run: echo "sha=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
 
+      # By commit: this job installs and runs code from outside the repository,
+      # and a mutable tag would let that code change without a reviewed edit.
       - name: Set up uv
-        uses: astral-sh/setup-uv@v10.0.1
+        uses: astral-sh/setup-uv@20cfd1bf945f4377ade1205e4dbc17946fc9a30d  # v10.0.1
         with:
           version: "0.12.3"
           enable-cache: false
@@ -232,6 +234,15 @@ jobs:
           git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
           git add flatpak/cargo-sources.json
           git -c core.hooksPath=/dev/null commit --message 'The Flatpak Cargo sources follow Cargo.lock'
-          git -c core.hooksPath=/dev/null push \
-            "https://x-access-token:${PUSH_TOKEN}@github.com/${GITHUB_REPOSITORY}.git" \
+          # The token travels in the environment of the push alone, as an HTTP
+          # header: in the URL or on the command line it would show up in the
+          # process list. Actions masks the secret but not its base64 form, so
+          # the header is masked here before it is used.
+          header=$(printf 'x-access-token:%s' "$PUSH_TOKEN" | base64 --wrap=0)
+          echo "::add-mask::$header"
+          GIT_CONFIG_COUNT=1 \
+            GIT_CONFIG_KEY_0='http.https://github.com/.extraheader' \
+            GIT_CONFIG_VALUE_0="AUTHORIZATION: basic $header" \
+            git -c core.hooksPath=/dev/null push \
+            "https://github.com/${GITHUB_REPOSITORY}.git" \
             "HEAD:refs/heads/$BRANCH"
