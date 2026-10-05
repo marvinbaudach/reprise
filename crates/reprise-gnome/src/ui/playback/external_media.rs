@@ -326,7 +326,10 @@ impl PlayerController {
             return Ok(());
         }
         let result = match source {
-            EpisodeSource::File(path) => self.player.play(&path),
+            EpisodeSource::File(path) => self.player.play(reprise_core::playback::PlaybackItem {
+                path: &path,
+                gain_db: 0.0,
+            }),
             EpisodeSource::Url(uri) => self.player.play_uri(&uri),
         };
         if let Err(error) = result {

@@ -297,6 +297,7 @@ fn library_with_a_synced_sidecar() -> (tempfile::TempDir, MusicLibrary, i64) {
         },
         TrackSpectrogram::from_cells(vec![17; 48]).unwrap(),
         vec![19, 23],
+        None,
     )
     .encode()
     .unwrap();

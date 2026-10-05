@@ -34,7 +34,7 @@ impl AndroidPlaybackPort for ReaderProbePort {
         Ok(())
     }
 
-    fn play_path(&self, _path: String) -> Result<(), AndroidPlaybackError> {
+    fn play_path(&self, _path: String, _gain_db: f64) -> Result<(), AndroidPlaybackError> {
         Ok(())
     }
 
@@ -79,7 +79,15 @@ impl AndroidPlaybackPort for ReaderProbePort {
         Ok(())
     }
 
-    fn set_next(&self, _uri: Option<String>) -> Result<(), AndroidPlaybackError> {
+    fn set_next(&self, _uri: Option<String>, _gain_db: f64) -> Result<(), AndroidPlaybackError> {
+        Ok(())
+    }
+
+    fn set_gains(
+        &self,
+        _current_gain_db: f64,
+        _next_gain_db: Option<f64>,
+    ) -> Result<(), AndroidPlaybackError> {
         Ok(())
     }
 

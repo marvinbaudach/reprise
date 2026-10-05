@@ -1,10 +1,88 @@
-//! Streaming linear-interpolation resampler for the mobile analysis session.
+//! Streaming resampler for the analysis session: linear interpolation behind a
+//! cheap anti-alias low-pass.
 //!
-//! Decision 3 of `docs/plans/the-phone-analyses-its-own-music.md`: no
-//! anti-alias filter, linear interpolation only. The consumer is a 24-band
-//! spectrogram ending at `SPECTROGRAM_HIGH_HZ` (16 kHz); the only aliasing
-//! candidates are the 16-22 kHz remnants of 44.1/48 kHz sources, judged not
-//! worth a filter.
+//! Decision 3 of `docs/plans/the-phone-analyses-its-own-music.md` judged an
+//! anti-alias filter not worth it. That held for the 16-22 kHz remnants of
+//! 44.1/48 kHz sources, but not for high-rate sources (88.2/96/192 kHz), whose
+//! ultrasonic content folds straight into the audible bands of the spectrogram.
+//! When the source rate is above the target, the input therefore runs through an
+//! eighth-order Butterworth low-pass first: four biquads, a constant 20 or so
+//! multiply-adds per input sample, no allocation beyond the chunk copy.
+
+use std::f64::consts::{PI, TAU};
+
+/// Cut-off as a fraction of the *target* rate. Just under its Nyquist (0.5), so
+/// the 16 kHz top of the spectrogram loses a few dB while the first aliasing
+/// frequencies are already well down.
+const CUTOFF_OF_TARGET_RATE: f64 = 0.47;
+/// Butterworth order 8 as four second-order sections.
+const SECTION_COUNT: usize = 4;
+
+/// One direct-form-II-transposed biquad low-pass section.
+struct Biquad {
+    b0: f64,
+    b1: f64,
+    a1: f64,
+    a2: f64,
+    z1: f64,
+    z2: f64,
+}
+
+impl Biquad {
+    /// RBJ low-pass; `b2 == b0` for a low-pass, so it is not stored.
+    fn low_pass(cutoff_hz: f64, sample_rate_hz: f64, q: f64) -> Self {
+        let w0 = TAU * cutoff_hz / sample_rate_hz;
+        let alpha = w0.sin() / (2.0 * q);
+        let a0 = 1.0 + alpha;
+        let b0 = (1.0 - w0.cos()) / 2.0;
+        Self {
+            b0: b0 / a0,
+            b1: (1.0 - w0.cos()) / a0,
+            a1: -2.0 * w0.cos() / a0,
+            a2: (1.0 - alpha) / a0,
+            z1: 0.0,
+            z2: 0.0,
+        }
+    }
+
+    fn process(&mut self, input: f64) -> f64 {
+        let output = self.b0 * input + self.z1;
+        self.z1 = self.b1 * input - self.a1 * output + self.z2;
+        self.z2 = self.b0 * input - self.a2 * output;
+        output
+    }
+}
+
+/// Butterworth low-pass whose state survives chunk boundaries.
+struct AntiAliasFilter {
+    sections: [Biquad; SECTION_COUNT],
+}
+
+impl AntiAliasFilter {
+    fn new(from_hz: u32, to_hz: u32) -> Self {
+        let cutoff_hz = f64::from(to_hz) * CUTOFF_OF_TARGET_RATE;
+        let order = (2 * SECTION_COUNT) as f64;
+        let sections = std::array::from_fn(|index| {
+            // Butterworth pole pairs: Q = 1 / (2 sin((2k - 1) pi / 2N)).
+            let q = 1.0 / (2.0 * ((2 * index + 1) as f64 * PI / (2.0 * order)).sin());
+            Biquad::low_pass(cutoff_hz, f64::from(from_hz), q)
+        });
+        Self { sections }
+    }
+
+    fn filter(&mut self, chunk: &[f32]) -> Vec<f32> {
+        chunk
+            .iter()
+            .map(|sample| {
+                let filtered = self
+                    .sections
+                    .iter_mut()
+                    .fold(f64::from(*sample), |value, section| section.process(value));
+                filtered as f32
+            })
+            .collect()
+    }
+}
 
 /// Streaming resampler that keeps its fractional output phase across chunks.
 ///
@@ -22,6 +100,8 @@ pub struct LinearResampler {
     /// The previous chunk's final input sample, needed to interpolate any
     /// output position that falls before this chunk's first sample.
     last_sample: Option<f32>,
+    /// Present only when decimating: the source rate is above the target.
+    anti_alias: Option<AntiAliasFilter>,
 }
 
 impl LinearResampler {
@@ -32,6 +112,8 @@ impl LinearResampler {
             to_hz,
             position: 0.0,
             last_sample: None,
+            anti_alias: (from_hz > to_hz && to_hz > 0)
+                .then(|| AntiAliasFilter::new(from_hz, to_hz)),
         }
     }
 
@@ -47,6 +129,14 @@ impl LinearResampler {
             self.last_sample = mono.last().copied();
             return;
         }
+        let filtered;
+        let mono = match self.anti_alias.as_mut() {
+            Some(filter) => {
+                filtered = filter.filter(mono);
+                filtered.as_slice()
+            }
+            None => mono,
+        };
         let ratio = f64::from(self.from_hz) / f64::from(self.to_hz);
         let last_index = (mono.len() - 1) as f64;
         while self.position <= last_index {
@@ -138,6 +228,48 @@ mod tests {
             assert!(
                 (whole_sample - ragged_sample).abs() < 1.0e-5,
                 "sample {index} diverged: whole {whole_sample}, ragged {ragged_sample}"
+            );
+        }
+    }
+
+    fn rms(samples: &[f32]) -> f64 {
+        let energy: f64 = samples.iter().map(|s| f64::from(*s).powi(2)).sum();
+        (energy / samples.len() as f64).sqrt()
+    }
+
+    /// Output RMS of a sine, ignoring the filter's start-up transient.
+    fn resampled_rms(from_hz: u32, frequency_hz: f64) -> f64 {
+        let input = sine(from_hz, frequency_hz, from_hz as usize);
+        let mut resampler = LinearResampler::new(from_hz, 32_000);
+        let mut out = Vec::new();
+        resampler.push(&input, &mut out);
+        rms(&out[out.len() / 4..])
+    }
+
+    const SINE_RMS: f64 = std::f64::consts::FRAC_1_SQRT_2;
+
+    #[test]
+    fn content_above_the_target_nyquist_does_not_alias_into_the_band() {
+        // 30 kHz at 96 kHz would fold to 2 kHz; 19 kHz at 44.1 kHz to 13 kHz.
+        assert!(
+            resampled_rms(96_000, 30_000.0) < SINE_RMS * 0.01,
+            "30 kHz leaked: {}",
+            resampled_rms(96_000, 30_000.0)
+        );
+        assert!(
+            resampled_rms(44_100, 19_000.0) < SINE_RMS * 0.25,
+            "19 kHz leaked: {}",
+            resampled_rms(44_100, 19_000.0)
+        );
+    }
+
+    #[test]
+    fn music_band_content_passes_the_anti_alias_filter() {
+        for (from_hz, frequency_hz) in [(48_000, 1_000.0), (44_100, 5_000.0), (96_000, 10_000.0)] {
+            let level = resampled_rms(from_hz, frequency_hz);
+            assert!(
+                level > SINE_RMS * 0.94,
+                "{frequency_hz} Hz at {from_hz} Hz lost too much: {level}"
             );
         }
     }

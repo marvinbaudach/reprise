@@ -540,7 +540,6 @@ class ComposeBehaviorTest {
 
         assertTrue(replacements.isEmpty())
         compose.onNodeWithText("Crossfade").assertDoesNotExist()
-        compose.onNodeWithText("ReplayGain").assertDoesNotExist()
         compose.onNodeWithText("Adjust bands manually").performClick()
         compose.onNodeWithText("Edit equalizer").performClick()
         compose.onNodeWithText(

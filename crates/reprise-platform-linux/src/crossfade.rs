@@ -26,7 +26,7 @@ use std::time::{Duration, Instant};
 use reprise_core::library::settings::TrackTransition;
 use reprise_core::playback::{AudioEffects, PlayerEvent};
 
-use crate::gapless::{HandoffFlag, NextUri};
+use crate::gapless::{HandoffFlag, NextUri, PendingGain, QueuedTrack};
 use crate::player_pipeline::{attach_bus_watch, build_playbin, configure_download_buffering};
 
 /// Geteilter (Modus, Sekunden)-Zustand. Der Ticker liest ihn zur Trigger-
@@ -83,6 +83,7 @@ pub(crate) struct CrossfadeEngine {
     pub(crate) on_event: Arc<dyn Fn(PlayerEvent) + Send + Sync>,
     pub(crate) effects: Arc<Mutex<AudioEffects>>,
     pub(crate) next_uri: NextUri,
+    pub(crate) pending_gain: PendingGain,
     pub(crate) handoff_pending: HandoffFlag,
     pub(crate) transition: Transition,
     /// Guard „gerade läuft eine Überblendung". Verhindert Doppel-Trigger im
@@ -131,7 +132,7 @@ impl CrossfadeEngine {
             return;
         }
         // Nachfolger entnehmen; ohne einen gibt es nichts zu überblenden.
-        let uri = {
+        let queued = {
             let mut slot = self.next_uri.lock().unwrap_or_else(PoisonError::into_inner);
             match slot.take() {
                 Some(uri) => uri,
@@ -144,13 +145,13 @@ impl CrossfadeEngine {
         let my_generation = self.generation.fetch_add(1, Ordering::SeqCst) + 1;
         let total_ms = (seconds as u64) * MS_PER_SECOND;
         let engine = self.clone();
-        std::thread::spawn(move || engine.run(&uri, my_generation, total_ms));
+        std::thread::spawn(move || engine.run(&queued, my_generation, total_ms));
     }
 
     /// Rampen-Thread-Rumpf: baut die Sekundär-Pipeline, spielt sie leise an,
     /// blendet beide Volumes invers über und befördert am Ende. Bricht bei jedem
     /// Schritt ab, sobald `generation` nicht mehr `my_generation` ist.
-    fn run(self, uri: &str, my_generation: u64, total_ms: u64) {
+    fn run(self, queued: &QueuedTrack, my_generation: u64, total_ms: u64) {
         if self.generation.load(Ordering::SeqCst) != my_generation {
             return; // schon abgebrochen, bevor der Thread loslief
         }
@@ -165,6 +166,7 @@ impl CrossfadeEngine {
             self.handoff_pending.clone(),
             self.transition.clone(),
             self.stream_generation.clone(),
+            self.pending_gain.clone(),
         ) {
             Ok(element) => element,
             Err(error) => {
@@ -179,13 +181,21 @@ impl CrossfadeEngine {
         ) {
             tracing::warn!(%error, "crossfade: could not configure spectrum analyzer");
         }
-        if let Err(error) = configure_download_buffering(&secondary, uri, false) {
+        if let Err(error) = configure_download_buffering(&secondary, &queued.uri, false) {
             tracing::warn!(%error, "crossfade: could not configure download buffering");
             let _ = secondary.set_state(gst::State::Null);
             self.crossfading.store(false, Ordering::SeqCst);
             return;
         }
-        secondary.set_property("uri", uri);
+        secondary.set_property("uri", &queued.uri);
+        if let Err(error) =
+            crate::player_effects::set_playbin_track_gain(&secondary, queued.gain_db)
+        {
+            tracing::warn!(%error, "crossfade: could not apply incoming track gain");
+            let _ = secondary.set_state(gst::State::Null);
+            self.crossfading.store(false, Ordering::SeqCst);
+            return;
+        }
         secondary.set_property("volume", 0.0_f64);
         if let Err(error) = secondary.set_state(gst::State::Playing) {
             tracing::warn!(%error, "crossfade: secondary pipeline refused Playing; aborting fade");

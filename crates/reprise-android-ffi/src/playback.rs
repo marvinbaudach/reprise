@@ -2,8 +2,8 @@ use std::sync::Arc;
 
 use reprise_core::library::settings::TrackTransition;
 use reprise_core::playback::{
-    AudioEffects, PlaybackBackend, PlaybackError, PlaybackState, PlayerEvent, StreamEvent,
-    StreamGeneration,
+    AudioEffects, PlaybackBackend, PlaybackError, PlaybackItem, PlaybackState, PlayerEvent,
+    StreamEvent, StreamGeneration,
 };
 
 use crate::{AndroidEqualizerPoint, AndroidEqualizerSnapshot};
@@ -22,6 +22,10 @@ mod writer_lock_tests;
 #[cfg(test)]
 #[path = "playback_tests.rs"]
 mod tests;
+
+#[cfg(test)]
+#[path = "playback_settings_reload_tests.rs"]
+mod settings_reload_tests;
 
 #[cfg(test)]
 #[path = "playback_history_tests.rs"]
@@ -109,7 +113,7 @@ pub trait AndroidPlaybackPort: Send + Sync {
         &self,
         bridge: Arc<PlaybackEventBridge>,
     ) -> Result<(), AndroidPlaybackError>;
-    fn play_path(&self, path: String) -> Result<(), AndroidPlaybackError>;
+    fn play_path(&self, path: String, gain_db: f64) -> Result<(), AndroidPlaybackError>;
     fn play_uri(&self, uri: String) -> Result<(), AndroidPlaybackError>;
     fn toggle_pause(&self) -> Result<AndroidPlaybackState, AndroidPlaybackError>;
     fn seek_to(&self, position_ms: i64) -> Result<(), AndroidPlaybackError>;
@@ -123,7 +127,15 @@ pub trait AndroidPlaybackPort: Send + Sync {
     fn set_audio_effects(&self) -> Result<(), AndroidPlaybackError>;
     fn set_spectrum_enabled(&self, enabled: bool) -> Result<(), AndroidPlaybackError>;
     fn stop(&self) -> Result<(), AndroidPlaybackError>;
-    fn set_next(&self, uri: Option<String>) -> Result<(), AndroidPlaybackError>;
+    fn set_next(&self, uri: Option<String>, gain_db: f64) -> Result<(), AndroidPlaybackError>;
+    /// Re-declares the gains of the track that is playing and of the one
+    /// pre-fed after it, without restarting either. `next_gain_db` is `None`
+    /// when nothing is pre-fed.
+    fn set_gains(
+        &self,
+        current_gain_db: f64,
+        next_gain_db: Option<f64>,
+    ) -> Result<(), AndroidPlaybackError>;
     fn set_transition(&self, mode: AndroidTransitionMode) -> Result<(), AndroidPlaybackError>;
     fn current_generation(&self) -> Result<u64, AndroidPlaybackError>;
 }
@@ -152,6 +164,17 @@ impl AndroidPlaybackBackend {
         Ok(Self { port })
     }
 
+    /// Applies freshly resolved gains to the playing track and the pre-fed one.
+    pub(crate) fn set_gains(
+        &self,
+        current_gain_db: f64,
+        next_gain_db: Option<f64>,
+    ) -> Result<(), PlaybackError> {
+        self.port
+            .set_gains(current_gain_db, next_gain_db)
+            .map_err(PlaybackError::from)
+    }
+
     pub fn set_equalizer(
         &self,
         enabled: bool,
@@ -168,9 +191,9 @@ impl AndroidPlaybackBackend {
 }
 
 impl PlaybackBackend for AndroidPlaybackBackend {
-    fn play(&self, path: &str) -> Result<(), PlaybackError> {
+    fn play(&self, item: PlaybackItem<'_>) -> Result<(), PlaybackError> {
         self.port
-            .play_path(path.to_owned())
+            .play_path(item.path.to_owned(), item.gain_db)
             .map_err(PlaybackError::from)
     }
 
@@ -209,8 +232,11 @@ impl PlaybackBackend for AndroidPlaybackBackend {
         self.port.stop().map_err(PlaybackError::from)
     }
 
-    fn set_next(&self, path: Option<&str>) {
-        let _ = self.port.set_next(path.map(str::to_owned));
+    fn set_next(&self, item: Option<PlaybackItem<'_>>) {
+        let (uri, gain_db) = item.map_or((None, 0.0), |item| {
+            (Some(item.path.to_owned()), item.gain_db)
+        });
+        let _ = self.port.set_next(uri, gain_db);
     }
 
     fn set_transition(&self, mode: TrackTransition, _crossfade_seconds: u8) {

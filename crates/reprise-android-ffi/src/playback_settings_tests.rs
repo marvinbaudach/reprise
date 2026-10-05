@@ -181,3 +181,26 @@ fn volume_key_skip_gesture_uses_the_persisted_playback_settings_boundary() {
             .volume_key_skip_gesture_enabled
     );
 }
+
+#[test]
+fn replaygain_mode_uses_the_shared_default_and_round_trips_every_choice() {
+    let directory = tempfile::tempdir().unwrap();
+    let library = MusicLibrary::open(
+        directory.path().to_str().unwrap(),
+        directory.path().join("cache").to_str().unwrap(),
+    )
+    .unwrap();
+
+    assert_eq!(
+        library.playback_settings().unwrap().replay_gain_mode,
+        AndroidReplayGainMode::Track
+    );
+    for mode in [
+        AndroidReplayGainMode::Off,
+        AndroidReplayGainMode::Track,
+        AndroidReplayGainMode::Album,
+    ] {
+        library.set_replay_gain_mode(mode).unwrap();
+        assert_eq!(library.playback_settings().unwrap().replay_gain_mode, mode);
+    }
+}

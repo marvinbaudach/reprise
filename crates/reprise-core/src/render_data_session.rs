@@ -1,19 +1,47 @@
-//! Mobile-side streaming render-data producer: 16-bit PCM in, waveform peaks
-//! and a spectrogram out. Decision 2 of
+//! Streaming render-data producer: native interleaved PCM in, waveform peaks,
+//! a spectrogram and measured loudness out. Decision 2 of
 //! `docs/plans/the-phone-analyses-its-own-music.md`: all maths stays in
 //! Rust; the platform decoder only pumps PCM. Decision 4: waveform peaks are
 //! re-bucketed from per-frame RMS at the end rather than mapped through an
 //! `expected_samples` upper bound, because that bound is not known until the
 //! stream ends on this path.
 
+use crate::library::loudness::MeasuredLoudness;
 use crate::pcm_resample::LinearResampler;
 use crate::spectrogram::{
     SpectrogramAccumulator, SPECTROGRAM_FRAME_RATE_HZ, SPECTROGRAM_SAMPLE_RATE_HZ,
 };
 use crate::waveform::{TrackRenderData, STORED_PEAK_COUNT};
 
+/// The channel counts of the two layouts whose order is conventional: 5.1 and
+/// 7.1 in WAVE order (FL FR FC LFE BL BR [SL SR]), where the LFE is the fourth
+/// channel. The decoders hand over no channel mask, so any other count (7, 9,
+/// 10 ...) has no layout this code can name and keeps every channel rather
+/// than guessing which one is the LFE. A 6- or 8-channel stream in a different
+/// order would lose the wrong channel; plumbing a mask through the decoders
+/// would close that gap and has not been done.
+const LFE_LAYOUT_CHANNEL_COUNTS: [usize; 2] = [6, 8];
+const LFE_CHANNEL_INDEX: usize = 3;
+
 const SAMPLES_PER_FRAME: usize =
     SPECTROGRAM_SAMPLE_RATE_HZ as usize / SPECTROGRAM_FRAME_RATE_HZ as usize;
+
+/// Mono mix of one interleaved frame. The LFE channel of a 5.1 or 7.1 stream
+/// is left out: it carries only sub-bass effects, and averaging it in would
+/// drag every film soundtrack's spectrogram toward the lows.
+fn downmix_frame<T: Copy>(frame: &[T], to_f32: impl Fn(T) -> f32) -> f32 {
+    let skipped = LFE_LAYOUT_CHANNEL_COUNTS
+        .contains(&frame.len())
+        .then_some(LFE_CHANNEL_INDEX);
+    let (sum, count) = frame
+        .iter()
+        .enumerate()
+        .filter(|(index, _)| Some(*index) != skipped)
+        .fold((0.0_f32, 0_usize), |(sum, count), (_, sample)| {
+            (sum + to_f32(*sample), count + 1)
+        });
+    sum / count as f32
+}
 
 #[derive(Debug, thiserror::Error, Clone, Copy, PartialEq, Eq)]
 pub enum RenderDataSessionError {
@@ -34,7 +62,7 @@ struct StreamConfig {
 /// Streaming producer that turns interleaved 16-bit PCM into the same
 /// [`TrackRenderData`] shape the desktop's GStreamer pipeline produces.
 ///
-/// Downmixes to mono, resamples to [`SPECTROGRAM_SAMPLE_RATE_HZ`] with
+/// Downmixes to mono (without the LFE of a 5.1 stream), resamples to [`SPECTROGRAM_SAMPLE_RATE_HZ`] with
 /// [`LinearResampler`], and feeds [`SpectrogramAccumulator`] directly. The
 /// per-frame RMS needed for the waveform peaks is kept as one running sum of
 /// squares and one count per 1600-sample frame — never a sample buffer — and
@@ -42,6 +70,7 @@ struct StreamConfig {
 pub struct RenderDataSession {
     config: Option<StreamConfig>,
     resampler: Option<LinearResampler>,
+    loudness_meter: Option<ebur128::EbuR128>,
     spectrogram: SpectrogramAccumulator,
     frame_sum_squares: f64,
     frame_samples_seen: u64,
@@ -49,6 +78,8 @@ pub struct RenderDataSession {
     /// stream order; the count is `SAMPLES_PER_FRAME` for every frame but the
     /// last, which may be shorter.
     frames: Vec<(f64, u64)>,
+    peak_count: usize,
+    full_analysis: bool,
 }
 
 impl RenderDataSession {
@@ -57,10 +88,30 @@ impl RenderDataSession {
         Self {
             config: None,
             resampler: None,
+            loudness_meter: None,
             spectrogram: SpectrogramAccumulator::new(),
             frame_sum_squares: 0.0,
             frame_samples_seen: 0,
             frames: Vec::new(),
+            peak_count: STORED_PEAK_COUNT,
+            full_analysis: true,
+        }
+    }
+
+    #[must_use]
+    pub fn with_peak_count(peak_count: usize) -> Self {
+        Self {
+            peak_count,
+            ..Self::new()
+        }
+    }
+
+    #[must_use]
+    pub fn peaks_only(peak_count: usize) -> Self {
+        Self {
+            peak_count,
+            full_analysis: false,
+            ..Self::new()
         }
     }
 
@@ -83,6 +134,49 @@ impl RenderDataSession {
         sample_rate_hz: u32,
         channel_count: u32,
     ) -> Result<(), RenderDataSessionError> {
+        let channels = self.ensure_config(sample_rate_hz, channel_count)?;
+        let complete = &samples[..samples.len() / channels * channels];
+        if let Some(meter) = self.loudness_meter.as_mut() {
+            meter
+                .add_frames_i16(complete)
+                .map_err(|_| RenderDataSessionError::InvalidStreamConfig)?;
+        }
+        let mono: Vec<f32> = complete
+            .chunks_exact(channels)
+            .map(|frame| downmix_frame(frame, |sample| f32::from(sample) / 32_768.0))
+            .collect();
+        self.push_mono(&mono);
+        Ok(())
+    }
+
+    /// Measures interleaved floating-point PCM before downmixing, then feeds
+    /// the existing mono waveform and spectrogram path.
+    pub fn push_pcm_f32(
+        &mut self,
+        samples: &[f32],
+        sample_rate_hz: u32,
+        channel_count: u32,
+    ) -> Result<(), RenderDataSessionError> {
+        let channels = self.ensure_config(sample_rate_hz, channel_count)?;
+        let complete = &samples[..samples.len() / channels * channels];
+        if let Some(meter) = self.loudness_meter.as_mut() {
+            meter
+                .add_frames_f32(complete)
+                .map_err(|_| RenderDataSessionError::InvalidStreamConfig)?;
+        }
+        let mono = complete
+            .chunks_exact(channels)
+            .map(|frame| downmix_frame(frame, |sample| sample))
+            .collect::<Vec<_>>();
+        self.push_mono(&mono);
+        Ok(())
+    }
+
+    fn ensure_config(
+        &mut self,
+        sample_rate_hz: u32,
+        channel_count: u32,
+    ) -> Result<usize, RenderDataSessionError> {
         if sample_rate_hz == 0 || channel_count == 0 {
             return Err(RenderDataSessionError::InvalidStreamConfig);
         }
@@ -100,28 +194,33 @@ impl RenderDataSession {
                     sample_rate_hz,
                     SPECTROGRAM_SAMPLE_RATE_HZ,
                 ));
+                if self.full_analysis {
+                    self.loudness_meter = Some(
+                        ebur128::EbuR128::new(
+                            channel_count,
+                            sample_rate_hz,
+                            ebur128::Mode::I | ebur128::Mode::SAMPLE_PEAK,
+                        )
+                        .map_err(|_| RenderDataSessionError::InvalidStreamConfig)?,
+                    );
+                }
                 self.config = Some(config);
             }
         }
+        Ok(channel_count as usize)
+    }
 
-        let channels = channel_count.max(1) as usize;
-        let mono: Vec<f32> = samples
-            .chunks_exact(channels)
-            .map(|frame| {
-                let sum: f32 = frame.iter().map(|sample| f32::from(*sample)).sum();
-                sum / channels as f32 / 32_768.0
-            })
-            .collect();
-
+    fn push_mono(&mut self, mono: &[f32]) {
         let mut resampled = Vec::with_capacity(mono.len());
         self.resampler
             .as_mut()
             .expect("resampler is set together with config")
-            .push(&mono, &mut resampled);
+            .push(mono, &mut resampled);
 
-        self.spectrogram.push(&resampled);
+        if self.full_analysis {
+            self.spectrogram.push(&resampled);
+        }
         self.accumulate_waveform_frames(&resampled);
-        Ok(())
     }
 
     fn accumulate_waveform_frames(&mut self, resampled: &[f32]) {
@@ -140,7 +239,7 @@ impl RenderDataSession {
 
     /// Ends the stream: the spectrogram comes straight from the accumulator;
     /// the waveform peaks are the per-frame sums re-bucketed into
-    /// [`STORED_PEAK_COUNT`] buckets and normalized exactly like
+    /// the configured number of buckets and normalized exactly like
     /// `finish_waveform` in `waveform.rs`. An empty stream is an error: there
     /// is nothing to show and no track fingerprint to store it under.
     pub fn finish(mut self) -> Result<TrackRenderData, RenderDataSessionError> {
@@ -151,11 +250,33 @@ impl RenderDataSession {
         if self.frames.is_empty() {
             return Err(RenderDataSessionError::EmptyStream);
         }
-        let spectrogram = self.spectrogram.finish();
-        let waveform_peaks = rebucket_peaks(&self.frames, STORED_PEAK_COUNT);
+        let loudness = self.measured_loudness();
+        let spectrogram = if self.full_analysis {
+            self.spectrogram.finish()
+        } else {
+            crate::spectrogram::TrackSpectrogram::empty()
+        };
+        let waveform_peaks = rebucket_peaks(&self.frames, self.peak_count);
         Ok(TrackRenderData {
             waveform_peaks,
             spectrogram,
+            loudness,
+        })
+    }
+
+    fn measured_loudness(&self) -> Option<MeasuredLoudness> {
+        let meter = self.loudness_meter.as_ref()?;
+        let integrated_lufs = meter.loudness_global().ok()?;
+        if !integrated_lufs.is_finite() {
+            return None;
+        }
+        let channels = self.config?.channel_count;
+        let true_peak = (0..channels)
+            .filter_map(|channel| meter.sample_peak(channel).ok())
+            .fold(0.0_f64, f64::max);
+        Some(MeasuredLoudness {
+            integrated_lufs,
+            true_peak,
         })
     }
 }
@@ -440,3 +561,11 @@ mod tests {
         }
     }
 }
+
+#[cfg(test)]
+#[path = "render_data_session_downmix_tests.rs"]
+mod downmix_tests;
+
+#[cfg(test)]
+#[path = "render_data_session_loudness_tests.rs"]
+mod loudness_tests;

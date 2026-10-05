@@ -4,6 +4,7 @@ import android.net.Uri
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import uniffi.reprise_android_ffi.AndroidStoredLibraryDestination
+import uniffi.reprise_android_ffi.AndroidReplayGainMode
 
 /** A JVM-replaceable library edge; activity, service, ViewModel and UI stay real. */
 internal interface MainActivitySurfaceProvider {
@@ -50,6 +51,9 @@ internal data class MainActivitySurfaceDependencies(
     val observeAmbientScheduling: (Boolean) -> Unit,
     val libraryPerformanceObserver: LibraryPerformanceObserver = NoOpLibraryPerformanceObserver,
     val setVolumeKeySkipGestureEnabled: (Boolean) -> PlaybackSettingsUiState = {
+        loadPlaybackSettings()
+    },
+    val setReplayGainMode: (AndroidReplayGainMode) -> PlaybackSettingsUiState = {
         loadPlaybackSettings()
     },
 )

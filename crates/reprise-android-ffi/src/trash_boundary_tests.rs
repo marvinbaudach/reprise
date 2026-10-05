@@ -278,7 +278,7 @@ fn trashing_the_playing_track_advances_plays_and_removes_it_from_upcoming() {
         .lock()
         .unwrap()
         .iter()
-        .any(|call| matches!(call, PortCall::PlayUri(uri) if uri == &track("Next").path)));
+        .any(|call| matches!(call, PortCall::PlayPath(uri, _) if uri == &track("Next").path)));
     let visible_ids = session
         .upcoming_tracks(WindowRange {
             offset: 0,

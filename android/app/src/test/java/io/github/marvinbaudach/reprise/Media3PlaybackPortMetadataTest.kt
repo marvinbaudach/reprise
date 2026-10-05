@@ -134,7 +134,7 @@ class Media3PlaybackPortMetadataTest {
     fun theGaplessNextItemCarriesItsMetadataToo() {
         port.playUri(FIRST)
 
-        port.setNext(SECOND)
+        port.setNext(SECOND, 0.0)
         settle()
 
         assertEquals(listOf("First", "Second"), fake.items.map { it.mediaMetadata.title })
@@ -144,7 +144,7 @@ class Media3PlaybackPortMetadataTest {
     @Test
     fun aNextItemSetBeforeATransitionModeChangeIsNotResolvedAgain() {
         port.playUri(FIRST)
-        port.setNext(SECOND)
+        port.setNext(SECOND, 0.0)
         settle()
         resolved.clear()
 
@@ -158,7 +158,7 @@ class Media3PlaybackPortMetadataTest {
     @Test
     fun aNextItemQueuedBeforeItsMetadataArrivedIsNotReAddedBare() {
         port.playUri(FIRST)
-        port.setNext(SECOND)
+        port.setNext(SECOND, 0.0)
 
         port.setTransition(AndroidTransitionMode.GAPLESS)
         settle()
@@ -192,7 +192,7 @@ class Media3PlaybackPortMetadataTest {
     @Test
     fun aLateCoverIsAttachedToTheMatchingItemOnly() {
         port.playUri(FIRST)
-        port.setNext(SECOND)
+        port.setNext(SECOND, 0.0)
         settle()
         val cover = Uri.parse("file:///cache/first.png")
 
@@ -240,7 +240,7 @@ class Media3PlaybackPortMetadataTest {
         port.playUri(FIRST)
         settle()
 
-        port.setNext(SECOND)
+        port.setNext(SECOND, 0.0)
 
         assertEquals(
             Uri.parse("file:///cache/second.png"),
@@ -264,7 +264,7 @@ class Media3PlaybackPortMetadataTest {
         mediaIds = { trackId -> if (trackId == 11L) "track:recent:11:4" else null }
 
         port.playUri(FIRST)
-        port.setNext(SECOND)
+        port.setNext(SECOND, 0.0)
         settle()
 
         assertEquals(listOf("track:recent:11:4", "12"), fake.items.map { it.mediaId })

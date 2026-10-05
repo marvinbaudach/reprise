@@ -191,6 +191,7 @@ mod tests {
             },
             TrackSpectrogram::from_cells(vec![17; 48]).unwrap(),
             vec![19, 23],
+            None,
         )
         .encode()
         .unwrap();

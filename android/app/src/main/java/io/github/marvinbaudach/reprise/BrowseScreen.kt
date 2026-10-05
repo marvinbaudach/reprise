@@ -37,6 +37,7 @@ import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.drop
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
+import uniffi.reprise_android_ffi.AndroidReplayGainMode
 
 /**
  * The library screen: which tab is showing, what each one has loaded so far,
@@ -86,6 +87,9 @@ internal fun BrowseScreen(
     themeSelection: MobileThemeSelection,
     selectTheme: (MobileTheme) -> Unit,
     setVolumeKeySkipGestureEnabled: (Boolean) -> PlaybackSettingsUiState = { loadPlaybackSettings() },
+    setReplayGainMode: (AndroidReplayGainMode) -> PlaybackSettingsUiState = {
+        loadPlaybackSettings()
+    },
 ) {
     val compositionScope = rememberCoroutineScope()
     val libraryQueryScope = remember(state) {
@@ -765,6 +769,7 @@ internal fun BrowseScreen(
             setEqualizerEnabled = setEqualizerEnabled,
             replaceEqualizerCurve = replaceEqualizerCurve,
             setGaplessEnabled = setGaplessEnabled,
+            setReplayGainMode = setReplayGainMode,
             setVolumeKeySkipGestureEnabled = setVolumeKeySkipGestureEnabled,
         )
     }

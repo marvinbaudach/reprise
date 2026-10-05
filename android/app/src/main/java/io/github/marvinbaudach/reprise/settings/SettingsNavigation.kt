@@ -21,6 +21,7 @@ import io.github.marvinbaudach.reprise.MobileTheme
 import io.github.marvinbaudach.reprise.MobileThemeSelection
 import io.github.marvinbaudach.reprise.PlaybackSettingsScreen
 import io.github.marvinbaudach.reprise.PlaybackSettingsUiState
+import uniffi.reprise_android_ffi.AndroidReplayGainMode
 
 /** How long a settings page takes to slide in or out, in milliseconds. */
 internal const val SETTINGS_PAGE_SLIDE_MS = 300
@@ -49,6 +50,7 @@ internal fun SettingsNavigation(
     setGaplessEnabled: (Boolean) -> Unit,
     selectTheme: (MobileTheme) -> Unit,
     setVolumeKeySkipGestureEnabled: (Boolean) -> Unit = {},
+    setReplayGainMode: (AndroidReplayGainMode) -> Unit = {},
 ) {
     val navController = rememberNavController()
     val entry by navController.currentBackStackEntryAsState()
@@ -128,6 +130,7 @@ internal fun SettingsNavigation(
                 setGaplessEnabled = setGaplessEnabled,
                 selectTheme = selectTheme,
                 setVolumeKeySkipGestureEnabled = setVolumeKeySkipGestureEnabled,
+                setReplayGainMode = setReplayGainMode,
                 pageTitle = "Audio",
                 backContentDescription = "Back to Settings",
             )

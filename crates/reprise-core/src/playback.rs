@@ -37,9 +37,18 @@ impl Default for AudioEffects {
         Self {
             equalizer_enabled: false,
             equalizer_bands: [0.0; 10],
-            replay_gain: crate::library::settings::ReplayGainMode::Off,
+            replay_gain: crate::library::settings::ReplayGainMode::Track,
         }
     }
+}
+
+#[cfg(test)]
+#[test]
+fn play_19_audio_effects_default_to_track_gain() {
+    assert_eq!(
+        AudioEffects::default().replay_gain,
+        crate::library::settings::ReplayGainMode::Track
+    );
 }
 
 /// One-to-one CAVA bars carried by [`SpectrumFrame`].
@@ -360,6 +369,14 @@ mod cava_tests;
 #[path = "playback/bass_pressure_tests.rs"]
 mod bass_pressure_tests;
 
+/// A local track to start: where it plays from and the gain, in dB, its
+/// stream plays at.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct PlaybackItem<'a> {
+    pub path: &'a str,
+    pub gain_db: f64,
+}
+
 /// The audio-playback contract every platform implements (Linux: GStreamer
 /// playbin3 in `player.rs`; future macOS/Windows: AVFoundation / WASAPI —
 /// see "Repository & frontend strategy"). Surface = exactly what the
@@ -391,7 +408,7 @@ mod bass_pressure_tests;
 /// `Fn(PlayerEvent)` construction path is unaffected, and a consumer that
 /// never asks for tagging never observes either new type.
 pub trait PlaybackBackend {
-    fn play(&self, path: &str) -> Result<(), PlaybackError>;
+    fn play(&self, item: PlaybackItem<'_>) -> Result<(), PlaybackError>;
     /// Starts a non-local media URI. Implementations must accept `http`,
     /// `https`, and `file`; local-path callers continue to use [`Self::play`].
     fn play_uri(&self, uri: &str) -> Result<(), PlaybackError>;
@@ -406,6 +423,11 @@ pub trait PlaybackBackend {
     fn seek_to(&self, position_ms: i64) -> Result<(), PlaybackError>;
     fn set_volume(&self, volume: f64);
     fn set_audio_effects(&self, effects: AudioEffects) -> Result<(), PlaybackError>;
+    /// Applies a newly resolved gain to the current local track without
+    /// restarting it. Backends without per-track gain may keep the no-op.
+    fn set_current_gain_db(&self, _gain_db: f64) -> Result<(), PlaybackError> {
+        Ok(())
+    }
     /// Enables or disables the optional spectrum analyzer at runtime. Backends
     /// without an analyzer may keep the default no-op implementation.
     fn set_spectrum_enabled(&self, _enabled: bool) -> Result<(), PlaybackError> {
@@ -422,7 +444,7 @@ pub trait PlaybackBackend {
     /// latest value ("last write wins"). A backend that does not support
     /// gapless handoff may treat this as a no-op — playback then falls back to
     /// the ordinary `TrackFinished`-driven advance.
-    fn set_next(&self, path: Option<&str>);
+    fn set_next(&self, item: Option<PlaybackItem<'_>>);
 
     /// Selects how the backend transitions into the pre-fed next track (see
     /// `set_next`): `Off`/`Gapless` hand off at the end (the frontend only

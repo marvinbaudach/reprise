@@ -93,7 +93,7 @@ mod tests {
     struct TestPlayback;
 
     impl PlaybackBackend for TestPlayback {
-        fn play(&self, _: &str) -> Result<(), PlaybackError> {
+        fn play(&self, _: reprise_core::playback::PlaybackItem<'_>) -> Result<(), PlaybackError> {
             Ok(())
         }
 
@@ -119,7 +119,7 @@ mod tests {
             Ok(())
         }
 
-        fn set_next(&self, _: Option<&str>) {}
+        fn set_next(&self, _: Option<reprise_core::playback::PlaybackItem<'_>>) {}
 
         fn set_transition(&self, _: reprise_core::library::settings::TrackTransition, _: u8) {}
     }

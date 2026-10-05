@@ -49,7 +49,7 @@ fn a_fresh_session_restores_the_saved_order_and_position_paused() {
             .lock()
             .unwrap()
             .iter()
-            .any(|call| matches!(call, PortCall::PlayUri(_))),
+            .any(|call| matches!(call, PortCall::PlayPath(_, _))),
         "restoring must not start Media3",
     );
 
@@ -62,7 +62,7 @@ fn a_fresh_session_restores_the_saved_order_and_position_paused() {
         .lock()
         .unwrap()
         .iter()
-        .any(|call| matches!(call, PortCall::PlayUri(uri) if uri == &track("Third").path)));
+        .any(|call| matches!(call, PortCall::PlayPath(uri, _) if uri == &track("Third").path)));
 }
 
 #[test]

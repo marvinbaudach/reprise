@@ -25,8 +25,11 @@ struct TestPlayback {
 }
 
 impl PlaybackBackend for TestPlayback {
-    fn play(&self, path: &str) -> Result<(), PlaybackError> {
-        self.calls.played_paths.borrow_mut().push(path.to_owned());
+    fn play(&self, path: reprise_core::playback::PlaybackItem<'_>) -> Result<(), PlaybackError> {
+        self.calls
+            .played_paths
+            .borrow_mut()
+            .push(path.path.to_owned());
         Ok(())
     }
 
@@ -61,7 +64,7 @@ impl PlaybackBackend for TestPlayback {
         Ok(())
     }
 
-    fn set_next(&self, _: Option<&str>) {}
+    fn set_next(&self, _: Option<reprise_core::playback::PlaybackItem<'_>>) {}
 
     fn set_transition(&self, _: reprise_core::library::settings::TrackTransition, _: u8) {}
 }

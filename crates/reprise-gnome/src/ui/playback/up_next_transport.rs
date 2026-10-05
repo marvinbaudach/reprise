@@ -114,6 +114,35 @@ fn clear_episode_prefeed(
 }
 
 impl PlayerController {
+    /// Resolves `id` via `queries::query_track_summary` and starts its
+    /// playback — the one place that starts a QUEUE track through
+    /// `Player::play`, shared by `play_from_view` and every queue-stepping call
+    /// site so the "resolve, evaluate prior play tracking, start playback,
+    /// handle failure" sequence exists exactly once (DRY). Ends the previous
+    /// track's listening session first
+    /// (`evaluate_play_tracking`) — a queue step is still a track switch. On
+    /// success, resets `consecutive_skips` to 0 (a good track breaks any skip
+    /// chain). On a `Player::play` failure, hands off to `playback_faults.rs`'s
+    /// `handle_unplayable_track` (diagnose missing-vs-corrupt, mark/toast, then
+    /// auto-skip) rather than resetting outright. A missing DB row or query
+    /// failure has no title/path to toast from, so those just log and go
+    /// straight to `skip_after_failure`. `pub(in crate::ui)` so `mpris_mirror.rs`
+    /// and `playback_faults.rs` can call it too.
+    pub(in crate::ui) fn play_track_id(self: &std::rc::Rc<Self>, id: i64) {
+        self.play_track_id_with_change(
+            id,
+            crate::ui::current_track_selection::CurrentTrackChange::PlaybackStarted,
+        );
+    }
+
+    pub(in crate::ui) fn play_track_id_with_change(
+        self: &std::rc::Rc<Self>,
+        id: i64,
+        change: crate::ui::current_track_selection::CurrentTrackChange,
+    ) {
+        self.present_track(id, StartPlayback::Yes, change);
+    }
+
     pub(in crate::ui) fn present_queue_item(
         self: &std::rc::Rc<Self>,
         item: QueueItem,
@@ -342,15 +371,26 @@ impl PlayerController {
             })
         };
         let prefed_track = next_item.and_then(prefeed_track_id);
-        let path = prefed_track.and_then(|id| {
+        let next_track = prefed_track.and_then(|id| {
             let conn = &self.conn;
             queries::query_track_summary(conn, id)
                 .ok()
                 .flatten()
-                .map(|summary| summary.path)
+                .map(|summary| {
+                    let mode = settings::get_replay_gain_mode(conn);
+                    let gain_db = queries::effective_gain_db(conn, id, mode);
+                    (summary.path, gain_db)
+                })
         });
-        self.prefed_next_track.set(path.as_ref().and(prefed_track));
-        self.player.set_next(path.as_deref());
+        self.prefed_next_track
+            .set(next_track.as_ref().and(prefed_track));
+        self.player
+            .set_next(next_track.as_ref().map(|(path, gain_db)| {
+                reprise_core::playback::PlaybackItem {
+                    path,
+                    gain_db: *gain_db,
+                }
+            }));
     }
 
     pub(in crate::ui) fn play_up_next_at(self: &std::rc::Rc<Self>, position: usize) {

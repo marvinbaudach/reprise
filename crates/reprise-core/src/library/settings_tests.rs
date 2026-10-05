@@ -452,3 +452,13 @@ fn last_viewed_import_errors_defaults_to_zero_round_trips_and_tolerates_corrupti
     set_setting(&conn, LAST_VIEWED_IMPORT_ERRORS_KEY, "nope").unwrap();
     assert_eq!(get_last_viewed_import_errors(&conn).unwrap(), 0);
 }
+
+#[test]
+fn play_19_fresh_replaygain_defaults_to_track_and_explicit_off_stays_off() {
+    let db = crate::db::Db::open_in_memory().unwrap();
+    assert_eq!(get_replay_gain_mode(&db), ReplayGainMode::Track);
+
+    set_replay_gain_mode(&db, ReplayGainMode::Off).unwrap();
+
+    assert_eq!(get_replay_gain_mode(&db), ReplayGainMode::Off);
+}

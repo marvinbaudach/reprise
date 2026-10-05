@@ -2,6 +2,7 @@ package io.github.marvinbaudach.reprise
 
 import uniffi.reprise_android_ffi.AndroidEqualizerSnapshot
 import uniffi.reprise_android_ffi.AndroidPlaybackSettings
+import uniffi.reprise_android_ffi.AndroidReplayGainMode
 
 internal fun playbackSettingsUiState(
     stored: AndroidPlaybackSettings,
@@ -10,6 +11,7 @@ internal fun playbackSettingsUiState(
 ): PlaybackSettingsUiState = PlaybackSettingsUiState(
     equalizerEnabled = stored.equalizerEnabled,
     gaplessEnabled = stored.gaplessEnabled,
+    replayGainMode = stored.replayGainMode,
     equalizerBands = snapshot?.bands.orEmpty().map { band ->
         EqualizerBandUi(
             frequencyHz = band.frequencyHz,

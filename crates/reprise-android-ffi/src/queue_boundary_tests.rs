@@ -118,10 +118,10 @@ fn explicit_enqueue_resolves_live_ids_persists_order_and_starts_nothing() {
         .lock()
         .unwrap()
         .iter()
-        .any(|call| matches!(call, PortCall::PlayUri(_))));
+        .any(|call| matches!(call, PortCall::PlayPath(_, _))));
     assert_eq!(
         calls.lock().unwrap().last(),
-        Some(&PortCall::SetNext(Some(track("Next").path.clone())))
+        Some(&PortCall::SetNext(Some(track("Next").path.clone()), 0.0))
     );
 
     drop(session);
@@ -183,7 +183,7 @@ fn enqueueing_into_an_exhausted_session_revives_it_and_shows_the_pick() {
             .lock()
             .unwrap()
             .iter()
-            .any(|call| matches!(call, PortCall::PlayUri(_))),
+            .any(|call| matches!(call, PortCall::PlayPath(_, _))),
         "reviving the queue is not permission to start playing",
     );
 
@@ -224,7 +224,7 @@ fn stopped_queue_view_and_play_now_share_the_current_row_offset() {
         .lock()
         .unwrap()
         .iter()
-        .any(|call| matches!(call, PortCall::PlayUri(uri) if uri == &tracks[0].path)));
+        .any(|call| matches!(call, PortCall::PlayPath(uri, _) if uri == &tracks[0].path)));
 }
 
 #[test]

@@ -3,7 +3,6 @@
 use std::path::Path;
 
 use reprise_core::library::trash_tracks::{commit_trash, plan_trash, TrashFailure};
-use reprise_core::playback::PlaybackBackend;
 use reprise_core::queries;
 
 use super::{AndroidPlaybackError, AndroidPlaybackSession};
@@ -99,7 +98,7 @@ impl AndroidPlaybackSession {
             commit_trash(&database, &trashed, failures)
         };
 
-        let (removed_current, has_current, next_uri, queue_to_save) = {
+        let (removed_current, has_current, next, queue_to_save) = {
             let mut state = self
                 .inner
                 .lock()
@@ -115,7 +114,7 @@ impl AndroidPlaybackSession {
             (
                 removed_current,
                 state.queue.current().is_some(),
-                state.next_uri(),
+                state.next_track(),
                 state.queue.clone(),
             )
         };
@@ -135,9 +134,8 @@ impl AndroidPlaybackSession {
             }
         } else {
             self.inner
-                .backend()
-                .map_err(|error| playback_as_library_error(&error))?
-                .set_next(next_uri.as_deref());
+                .feed_next(next)
+                .map_err(|error| playback_as_library_error(&error))?;
             self.inner.notify();
         }
 

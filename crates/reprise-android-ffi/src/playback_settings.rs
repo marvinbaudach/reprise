@@ -25,6 +25,33 @@ pub enum AndroidEqualizerPreset {
     LateNight,
 }
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq, uniffi::Enum)]
+pub enum AndroidReplayGainMode {
+    Off,
+    Track,
+    Album,
+}
+
+impl From<settings::ReplayGainMode> for AndroidReplayGainMode {
+    fn from(mode: settings::ReplayGainMode) -> Self {
+        match mode {
+            settings::ReplayGainMode::Off => Self::Off,
+            settings::ReplayGainMode::Track => Self::Track,
+            settings::ReplayGainMode::Album => Self::Album,
+        }
+    }
+}
+
+impl From<AndroidReplayGainMode> for settings::ReplayGainMode {
+    fn from(mode: AndroidReplayGainMode) -> Self {
+        match mode {
+            AndroidReplayGainMode::Off => Self::Off,
+            AndroidReplayGainMode::Track => Self::Track,
+            AndroidReplayGainMode::Album => Self::Album,
+        }
+    }
+}
+
 #[derive(Clone, Debug, PartialEq, uniffi::Record)]
 pub struct AndroidEqualizerPresetDefinition {
     pub preset: AndroidEqualizerPreset,
@@ -101,6 +128,7 @@ pub struct AndroidPlaybackSettings {
     pub equalizer_enabled: bool,
     pub equalizer_curve: Vec<AndroidEqualizerPoint>,
     pub gapless_enabled: bool,
+    pub replay_gain_mode: AndroidReplayGainMode,
     pub volume_key_skip_gesture_enabled: bool,
 }
 
@@ -114,6 +142,7 @@ impl AndroidPlaybackSettings {
                 .map(AndroidEqualizerPoint::from)
                 .collect(),
             gapless_enabled: settings::get_gapless_enabled(db),
+            replay_gain_mode: settings::get_replay_gain_mode(db).into(),
             volume_key_skip_gesture_enabled: settings::get_volume_key_skip_gesture_enabled(db),
         }
     }
@@ -163,6 +192,11 @@ impl MusicLibrary {
     pub fn set_gapless_enabled(&self, enabled: bool) -> Result<(), LibraryError> {
         let writer = self.writer()?;
         settings::set_gapless_enabled(&writer, enabled).map_err(|error| database_error(&error))
+    }
+
+    pub fn set_replay_gain_mode(&self, mode: AndroidReplayGainMode) -> Result<(), LibraryError> {
+        let writer = self.writer()?;
+        settings::set_replay_gain_mode(&writer, mode.into()).map_err(|error| database_error(&error))
     }
 
     pub fn set_volume_key_skip_gesture_enabled(&self, enabled: bool) -> Result<(), LibraryError> {

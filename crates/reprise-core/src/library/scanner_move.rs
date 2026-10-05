@@ -233,6 +233,11 @@ pub(crate) fn apply_file_identity(
         duration_ms_p,
         bitrate_kbps_p,
         untagged_p,
+        rg_track_gain,
+        rg_track_peak,
+        rg_album_gain,
+        rg_album_peak,
+        tag_scan_version,
     ) = super::tag_param_values(title, meta, untagged);
     tx.execute(
         "UPDATE tracks SET path=?1, title=?2, artist=?3, album=?4,
@@ -240,9 +245,11 @@ pub(crate) fn apply_file_identity(
            artist_mbid_negative=CASE WHEN ?6 IS NOT NULL THEN 0 ELSE artist_mbid_negative END,
            year=?7, track_no=?8, disc_no=?9, genre=?10, duration_ms=?11,
            bitrate_kbps=?12, file_mtime=?13, file_size=?14, device=?15,
-           inode=?16, mount_point=?17, untagged=?18, missing_since=NULL,
+           inode=?16, mount_point=?17, untagged=?18, rg_track_gain=?19,
+           rg_track_peak=?20, rg_album_gain=?21, rg_album_peak=?22,
+           tag_scan_version=?23, missing_since=NULL,
            missing_reason=NULL, removed_at=NULL
-         WHERE id=?19",
+         WHERE id=?24",
         rusqlite::params![
             path.to_string_lossy(),
             title_p,
@@ -262,6 +269,11 @@ pub(crate) fn apply_file_identity(
             fs.inode,
             fs.mount_point,
             untagged_p,
+            rg_track_gain,
+            rg_track_peak,
+            rg_album_gain,
+            rg_album_peak,
+            tag_scan_version,
             track_id,
         ],
     )?;

@@ -50,6 +50,7 @@ use std::path::Path;
 
 use super::ScanError;
 use crate::library::import_errors;
+use crate::library::loudness::ReplayGainTags;
 use crate::library::source::{LibrarySource, UnixLibrarySource};
 use crate::library::tag_probe::open_probe;
 use crate::models::ImportErrorKind;
@@ -80,6 +81,7 @@ pub(crate) struct TrackMeta {
     pub(crate) genre: String,
     pub(crate) duration_ms: i64,
     pub(crate) bitrate_kbps: Option<i32>,
+    pub(crate) replay_gain: ReplayGainTags,
 }
 
 // Test-only: proves a dismissed-and-unchanged file's tags never get parsed.
@@ -98,6 +100,7 @@ fn meta_from_tagged(tagged: &lofty::file::TaggedFile) -> TrackMeta {
     let props = tagged.properties();
     let tag = tagged.primary_tag().or_else(|| tagged.first_tag());
     let get = |f: &dyn Fn(&lofty::tag::Tag) -> Option<String>| tag.and_then(f).unwrap_or_default();
+    let replay_gain = replay_gain_from_all_tags(tagged);
     TrackMeta {
         title: get(&|t| t.title().map(|s| s.to_string())),
         artist: get(&|t| t.artist().map(|s| s.to_string())),
@@ -121,6 +124,56 @@ fn meta_from_tagged(tagged: &lofty::file::TaggedFile) -> TrackMeta {
         genre: get(&|t| t.genre().map(|s| s.to_string())),
         duration_ms: props.duration().as_millis() as i64,
         bitrate_kbps: props.audio_bitrate().map(|b| b as i32),
+        replay_gain,
+    }
+}
+
+/// ReplayGain values from every tag of the file, the primary tag first: a
+/// scanner, an encoder or a player may each have written them into a different
+/// one (an MP3's APE tag beside its ID3v2, for instance). The first tag that
+/// carries a value wins, field by field.
+fn replay_gain_from_all_tags(tagged: &lofty::file::TaggedFile) -> ReplayGainTags {
+    use lofty::prelude::*;
+    let primary = tagged.primary_tag_type();
+    let (first, rest): (Vec<_>, Vec<_>) = tagged
+        .tags()
+        .iter()
+        .partition(|tag| tag.tag_type() == primary);
+    first.into_iter().chain(rest).map(replay_gain_tags).fold(
+        ReplayGainTags::default(),
+        |merged, next| ReplayGainTags {
+            track_gain_db: merged.track_gain_db.or(next.track_gain_db),
+            track_peak: merged.track_peak.or(next.track_peak),
+            album_gain_db: merged.album_gain_db.or(next.album_gain_db),
+            album_peak: merged.album_peak.or(next.album_peak),
+        },
+    )
+}
+
+fn replay_gain_tags(tag: &lofty::tag::Tag) -> ReplayGainTags {
+    use lofty::tag::ItemKey;
+    let value = |key| tag.get_string(key).and_then(parse_tag_number);
+    let r128 = |key| value(key).map(|q7_8| q7_8 / 256.0 + 5.0);
+    ReplayGainTags {
+        track_gain_db: value(ItemKey::ReplayGainTrackGain).or_else(|| r128(ItemKey::R128TrackGain)),
+        track_peak: value(ItemKey::ReplayGainTrackPeak),
+        album_gain_db: value(ItemKey::ReplayGainAlbumGain).or_else(|| r128(ItemKey::R128AlbumGain)),
+        album_peak: value(ItemKey::ReplayGainAlbumPeak),
+    }
+}
+
+fn parse_tag_number(value: &str) -> Option<f64> {
+    let normalized = value.trim().replace(',', ".");
+    let number = strip_decibel_suffix(&normalized).trim();
+    number.parse().ok().filter(|value: &f64| value.is_finite())
+}
+
+/// Drops a trailing "dB", whatever its case ("DB" and "Db" occur in the wild).
+fn strip_decibel_suffix(value: &str) -> &str {
+    let split = value.len().saturating_sub(2);
+    match value.get(split..) {
+        Some(suffix) if suffix.eq_ignore_ascii_case("db") => &value[..split],
+        _ => value,
     }
 }
 

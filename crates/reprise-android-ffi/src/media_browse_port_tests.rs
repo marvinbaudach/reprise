@@ -36,7 +36,8 @@ impl AndroidPlaybackPort for ReaderProbePort {
         Ok(())
     }
 
-    fn play_path(&self, _path: String) -> Result<(), AndroidPlaybackError> {
+    fn play_path(&self, _path: String, _gain_db: f64) -> Result<(), AndroidPlaybackError> {
+        self.observe("play_path");
         Ok(())
     }
 
@@ -81,8 +82,16 @@ impl AndroidPlaybackPort for ReaderProbePort {
         Ok(())
     }
 
-    fn set_next(&self, _uri: Option<String>) -> Result<(), AndroidPlaybackError> {
+    fn set_next(&self, _uri: Option<String>, _gain_db: f64) -> Result<(), AndroidPlaybackError> {
         self.observe("set_next");
+        Ok(())
+    }
+
+    fn set_gains(
+        &self,
+        _current_gain_db: f64,
+        _next_gain_db: Option<f64>,
+    ) -> Result<(), AndroidPlaybackError> {
         Ok(())
     }
 
@@ -104,7 +113,7 @@ impl AndroidPlaybackListener for QuietListener {
 }
 
 #[test]
-fn the_library_reader_is_free_while_the_core_calls_play_uri_and_set_next() {
+fn the_library_reader_is_free_while_the_core_calls_play_path_and_set_next() {
     let directory = tempfile::tempdir().unwrap();
     let library = Arc::new(
         MusicLibrary::open(
@@ -140,9 +149,9 @@ fn the_library_reader_is_free_while_the_core_calls_play_uri_and_set_next() {
 
     let observed = observations.lock().unwrap().clone();
     assert!(
-        observed.iter().any(|(call, _)| *call == "play_uri")
+        observed.iter().any(|(call, _)| *call == "play_path")
             && observed.iter().any(|(call, _)| *call == "set_next"),
-        "the probe saw no play_uri and set_next calls: {observed:?}"
+        "the probe saw no play_path and set_next calls: {observed:?}"
     );
     assert!(
         observed.iter().all(|(_, free)| *free),

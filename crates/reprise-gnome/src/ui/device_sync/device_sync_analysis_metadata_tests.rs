@@ -26,6 +26,7 @@ fn seed_render_data(conn: &Db, track_id: i64, cell: u8, peak: u8) {
         &TrackRenderData {
             waveform_peaks: vec![peak; 4],
             spectrogram: TrackSpectrogram::from_cells(vec![cell; 24]).unwrap(),
+            loudness: None,
         },
     )
     .unwrap();

@@ -472,6 +472,48 @@ result.
   the remaining time; no badge dot (FB-4). Firing shows one toast, "Paused by
   sleep timer", only when it actually paused. The timer is session state and is
   never persisted.
+- **PLAY-19** [active] [core] — **Volume normalisation never needs a tag.** A
+  track without ReplayGain tags is normalised from the loudness Reprise measured
+  for it (EBU R128, integrated, aimed at the ReplayGain 2.0 reference of
+  -18 LUFS). A track that carries tags is normalised from them, and the tags win
+  over a measurement of the same track. The mode **Off** disables both sources
+  at once: tags and measurements alike resolve to unity gain. A positive gain
+  never lets the chosen source's peak clip, and a silent track has no measured
+  gain. A fresh library and a default effects state both mean Track; an
+  explicit Off stays Off.
+- **PLAY-20a** [active] [core] — **A track's gain changes at its first sample,
+  gapless.** When playback hands over to the pre-fed next track without a gap,
+  the next track's own gain is already applied when that track's stream starts,
+  before its first buffer reaches the output. The previous track keeps its own
+  gain up to that point, including the tail it still has queued ahead of the
+  output. Proven by the GStreamer backend tests: one reads the gain element at
+  each stream start, one measures the gain every buffer of both tracks leaves
+  with, and one holds the playback queue full to prove the tail keeps its gain.
+- **PLAY-20b** [active] [core] — **A crossfade hands over to the incoming
+  track's own gain.** The pipeline that takes over when a crossfade completes
+  carries the gain of the incoming track, never the outgoing track's.
+- **PLAY-20c** [active] [android] — **A track's gain changes at its first sample
+  on the phone.** The audio sink applies a track's gain to the buffers of that
+  track's stream, chosen by the stream offset Media3 announces: the first buffer
+  at the next track's offset gets the next track's gain, and not a buffer
+  earlier. The gain belongs to the media item, so replacing the next track after
+  its offset was announced, seeking back across the boundary, and a flush all
+  leave every buffer with its own track's gain. The sink scales into a buffer of
+  its own and never writes into Media3's (which may be read-only), a buffer the
+  output stage takes only in part is retried from the same scaled copy, and at
+  exactly unity gain the buffer passes through untouched. Proven by JVM tests
+  that put a recording sink behind the gain sink and read what the output stage
+  receives; they do not run Media3's `DefaultAudioSink` or a device. Android has
+  no crossfade; if it gains one, this rule needs a sibling.
+- **PLAY-21** [active] [android] — Volume normalisation is offered in the
+  phone's playback settings with the same three modes as on the desktop,
+  **Off**, **Per Track** and **Per Album**, in a row titled "Volume
+  Normalization", and choosing one reports that mode. The choice applies at
+  once, as on the desktop: the track that is playing and the one pre-fed after
+  it are given the gain of the new mode without being restarted or re-queued.
+  Proven at the session boundary (the port receives the re-resolved gains and
+  no play or re-queue) and in the port (the gain sink applies them); the audible
+  result on a device is a manual check.
 - **SEEK-1** [active] [gtk] — **The seek bar's colour is a reading, not a
   decoration, and it is averaged over time.** The spectral centroid swings
   from beat to beat: taken per bar it puts cyan next to magenta inside two

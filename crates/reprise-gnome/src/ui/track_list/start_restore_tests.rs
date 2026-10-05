@@ -90,7 +90,7 @@ fn centered_value(track_list: &TrackList, position: u32) -> Option<f64> {
 struct SilentPlayback;
 
 impl PlaybackBackend for SilentPlayback {
-    fn play(&self, _: &str) -> Result<(), PlaybackError> {
+    fn play(&self, _: reprise_core::playback::PlaybackItem<'_>) -> Result<(), PlaybackError> {
         panic!("startup restore must not play")
     }
 
@@ -116,7 +116,7 @@ impl PlaybackBackend for SilentPlayback {
         panic!("startup restore must not stop")
     }
 
-    fn set_next(&self, _: Option<&str>) {}
+    fn set_next(&self, _: Option<reprise_core::playback::PlaybackItem<'_>>) {}
 
     fn set_transition(&self, _: reprise_core::library::settings::TrackTransition, _: u8) {}
 }
