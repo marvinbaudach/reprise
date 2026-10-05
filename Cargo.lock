@@ -2919,6 +2919,7 @@ dependencies = [
  "reprise-platform-linux",
  "reprise-view",
  "rusqlite",
+ "rustix",
  "serde",
  "serde_json",
  "tempfile",
