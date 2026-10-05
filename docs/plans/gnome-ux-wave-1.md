@@ -2,7 +2,7 @@
 slug: gnome-ux-wave-1
 worktree: /home/marvin/Projects/reprise-gnome-ux-wave-1
 branch: feature/gnome-ux-wave-1
-phase: reviewed
+phase: refactored
 codex_session:
 created: 2026-10-04
 ---
