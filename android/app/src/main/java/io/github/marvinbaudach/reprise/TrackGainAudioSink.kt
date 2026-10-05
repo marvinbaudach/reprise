@@ -118,15 +118,30 @@ internal class TrackGainAudioSink(delegate: AudioSink) : ForwardingAudioSink(del
         super.setOutputStreamOffsetUs(outputStreamOffsetUs)
     }
 
-    /** Gives [offsetUs] to the first item that has none; an offset already bound is a repeat. */
+    /**
+     * Binds an announced offset to an item. Offsets rise along the queue, which
+     * holds whatever Media3 does with them internally:
+     *  - an offset an item already has is a repeat and changes nothing;
+     *  - one below the current item's is the current item coming back with a new
+     *    offset after a seek reset it, and the later items' offsets are stale
+     *    until they are announced again;
+     *  - otherwise it belongs to the first item without an offset.
+     */
     private fun bindOffset(offsetUs: Long) {
         if (streams.isEmpty() || streams.any { it.offsetUs == offsetUs }) return
+        val current = streams[0]
+        val currentOffset = current.offsetUs
+        if (currentOffset != null && offsetUs < currentOffset) {
+            current.offsetUs = offsetUs
+            for (index in 1 until streams.size) streams[index].offsetUs = null
+            return
+        }
         val unbound = streams.firstOrNull { it.offsetUs == null }
         if (unbound != null) {
             unbound.offsetUs = offsetUs
         } else {
-            // Every item already has an offset and this is a new one: the
-            // timeline moved, so the latest announcement describes the last item.
+            // Every item already has an offset and this is a new, larger one:
+            // the latest announcement describes the last item.
             streams.last().offsetUs = offsetUs
         }
     }

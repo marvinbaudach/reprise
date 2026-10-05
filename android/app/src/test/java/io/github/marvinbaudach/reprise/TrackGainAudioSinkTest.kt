@@ -296,4 +296,38 @@ class TrackGainAudioSinkTest {
         assertNotSame(input, rig.probe.offers.single().buffer)
         assertEquals(10_116, rig.probe.offers.single().samples.single())
     }
+
+    @Test
+    fun play_19c_a_current_track_announced_again_at_a_smaller_offset_keeps_its_own_gain() {
+        val rig = Rig()
+        rig.startTwoTracks(0.0, DOUBLE_DB)
+        rig.sink.advanceToNext()
+        rig.sink.setNextGain(HALF_DB)
+        rig.sink.setOutputStreamOffsetUs(3 * BOUNDARY_US)
+        assertEquals(5_000, rig.scaledAt(3 * BOUNDARY_US))
+
+        // A seek resets the playing track's offset to a smaller value than it
+        // had; the offsets of the tracks after it are announced anew.
+        rig.sink.flush()
+        rig.sink.setOutputStreamOffsetUs(0)
+        assertEquals(20_000, rig.scaledAt(500_000))
+        rig.sink.setOutputStreamOffsetUs(2 * BOUNDARY_US)
+
+        assertEquals(20_000, rig.scaledAt(2 * BOUNDARY_US - 1))
+        assertEquals(5_000, rig.scaledAt(2 * BOUNDARY_US))
+    }
+
+    @Test
+    fun play_19c_a_smaller_offset_for_the_current_track_does_not_bind_the_unannounced_next() {
+        val rig = Rig()
+        rig.startTwoTracks(0.0, DOUBLE_DB)
+        rig.sink.advanceToNext()
+        rig.sink.setNextGain(HALF_DB)
+
+        rig.sink.flush()
+        rig.sink.setOutputStreamOffsetUs(0)
+
+        assertEquals(20_000, rig.scaledAt(500_000))
+        assertEquals(20_000, rig.scaledAt(5 * BOUNDARY_US))
+    }
 }
