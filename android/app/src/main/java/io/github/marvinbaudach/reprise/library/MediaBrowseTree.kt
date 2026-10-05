@@ -4,7 +4,10 @@ import android.net.Uri
 import androidx.media3.common.MediaItem
 import androidx.media3.common.MediaMetadata
 
-/** The most one parent ever lists, so a browser that cannot page cannot ask for the world. */
+/**
+ * The most one parent ever lists, so a browser that cannot page cannot ask for
+ * the world and one answer stays well inside a binder transaction.
+ */
 internal const val MAX_CHILDREN = 2_000
 
 /** Largest window the library answers in one read. */
@@ -51,13 +54,22 @@ internal class MediaBrowseTree(
 
     /**
      * The children of [parentId] for one page, or `null` when the parent is not
-     * a browsable node. `pageSize` may be [Int.MAX_VALUE] for a browser that
-     * does not page; the answer is then cut at [MAX_CHILDREN].
+     * a browsable node.
+     *
+     * A parent lists at most [MAX_CHILDREN] rows. A page that starts at or past
+     * that row is empty, which is how a paging browser learns the list has
+     * ended, and a page that straddles it is cut there. `pageSize` may be
+     * [Int.MAX_VALUE] for a browser that does not page (Android Auto's legacy
+     * binding asks that way); it then gets the first [MAX_CHILDREN] rows and
+     * has no way to ask for more, which is the price of a bounded answer.
      */
     fun children(parentId: String, page: Int, pageSize: Int): List<MediaItem>? {
         val parent = BrowseId.parse(parentId) ?: return null
-        val limit = pageSize.coerceIn(0, MAX_CHILDREN)
-        val offset = (page.toLong().coerceAtLeast(0) * limit).coerceAtMost(MAX_CHILDREN.toLong()).toInt()
+        val requested = pageSize.coerceIn(0, MAX_CHILDREN)
+        val start = page.toLong().coerceAtLeast(0) * requested
+        if (requested == 0 || start >= MAX_CHILDREN) return emptyList()
+        val offset = start.toInt()
+        val limit = minOf(requested, MAX_CHILDREN - offset)
         return when (parent) {
             BrowseId.Root -> listOf(
                 BrowseId.RecentlyPlayed,

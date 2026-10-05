@@ -118,6 +118,54 @@ class MediaBrowseTreeTest {
     }
 
     @Test
+    fun pagingPastTheCapEndsInsteadOfRepeatingTheLastWindow() {
+        val all = (1L..2_500L).map(::browseTrack)
+        val big = MediaBrowseTree(
+            FixtureBrowseLibrary(playlistContents = mapOf(1L to all)),
+            TEST_LABELS,
+        )
+        val playlist = BrowseId.Playlist(1).mediaId
+
+        fun ids(page: Int, size: Int) =
+            big.children(playlist, page, size)!!.map { it.mediaMetadata.title.toString() }
+
+        assertEquals("Track 1500", ids(2, 500).last())
+        assertEquals("Track 2000", ids(3, 500).last())
+        assertEquals(emptyList<String>(), ids(4, 500))
+        assertEquals(emptyList<String>(), ids(5, 500))
+        assertEquals(emptyList<String>(), ids(1, 2_000))
+        assertEquals(emptyList<String>(), ids(0, 0))
+        assertEquals(emptyList<String>(), ids(Int.MAX_VALUE, 500))
+    }
+
+    @Test
+    fun aWindowThatStraddlesTheCapIsCutAtTheCap() {
+        val all = (1L..2_500L).map(::browseTrack)
+        val big = MediaBrowseTree(
+            FixtureBrowseLibrary(playlistContents = mapOf(1L to all)),
+            TEST_LABELS,
+        )
+
+        val page = big.children(BrowseId.Playlist(1).mediaId, 1, 1_500)!!
+
+        assertEquals(MAX_CHILDREN - 1_500, page.size)
+        assertEquals("Track 1501", page.first().mediaMetadata.title.toString())
+    }
+
+    @Test
+    fun aBrowserThatDoesNotPageGetsTheFirstCapRowsOfABigFolder() {
+        val all = (1L..2_500L).map(::browseTrack)
+        val big = MediaBrowseTree(
+            FixtureBrowseLibrary(playlistContents = mapOf(1L to all)),
+            TEST_LABELS,
+        )
+
+        val page = big.children(BrowseId.Playlist(1).mediaId, 0, Int.MAX_VALUE)!!
+
+        assertEquals(MAX_CHILDREN, page.size)
+    }
+
+    @Test
     fun aPageDeepInTheLibraryReadsOnlyItsOwnWindow() {
         val many = (1..1_300).map { BrowseAlbum("Album $it", "Artist", 1) }
         val big = FixtureBrowseLibrary(albumList = many)
