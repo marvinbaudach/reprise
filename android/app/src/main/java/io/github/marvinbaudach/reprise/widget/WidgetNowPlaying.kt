@@ -16,6 +16,12 @@ internal data class WidgetNowPlaying(
     val artist: String,
     val isPlaying: Boolean,
     val artworkPath: String?,
+    /**
+     * Whether the playback service has a queue to carry on with. Playback that
+     * ran out leaves none, and a transport button then has nothing to act on:
+     * the widget sends the tap to the app instead of to a silent no-op.
+     */
+    val canResume: Boolean = true,
 ) {
     /** Nothing has been played yet: the widget shows the app icon and its name. */
     val isEmpty: Boolean get() = trackId == null
@@ -27,6 +33,7 @@ internal data class WidgetNowPlaying(
             artist = "",
             isPlaying = false,
             artworkPath = null,
+            canResume = false,
         )
     }
 }
@@ -41,8 +48,8 @@ internal fun AndroidPlaybackSnapshot?.widgetKey(): WidgetStateKey =
  * The widget's state after [snapshot].
  *
  * A snapshot without a current track means playback ran out, not that the
- * widget should forget what it last showed: the last track stays, paused.
- * Only a widget that has never seen a track stays empty.
+ * widget should forget what it last showed: the last track stays, paused, with
+ * nothing to resume. Only a widget that has never seen a track stays empty.
  */
 internal fun widgetNowPlaying(
     snapshot: AndroidPlaybackSnapshot?,
@@ -54,10 +61,13 @@ internal fun widgetNowPlaying(
     val trackUri = snapshot?.currentTrackUri
     val playing = snapshot?.state == AndroidPlaybackState.PLAYING
     if (trackId == null || trackUri == null) {
-        return previous.copy(isPlaying = false)
+        return previous.copy(isPlaying = false, canResume = false)
     }
     if (previous.trackId == trackId) {
-        return previous.copy(isPlaying = playing)
+        // A cover that was not there yet is asked for again: it lands a moment
+        // after the track starts, and a miss must not stick for the whole track.
+        val cover = previous.artworkPath ?: artworkPath(trackUri)
+        return previous.copy(isPlaying = playing, artworkPath = cover, canResume = true)
     }
     val track = metadata(trackUri)
     return WidgetNowPlaying(

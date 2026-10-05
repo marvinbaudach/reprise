@@ -51,7 +51,20 @@ class WidgetNowPlayingTest {
 
         val after = map(snapshot(AndroidPlaybackState.STOPPED, null), previous = last)
 
-        assertEquals(last.copy(isPlaying = false), after)
+        assertEquals(last.copy(isPlaying = false, canResume = false), after)
+    }
+
+    @Test
+    fun aTrackInTheQueueCanBeResumedButAnEndedQueueCannot() {
+        val playing = map(snapshot(AndroidPlaybackState.PLAYING, 5))
+        val paused = map(snapshot(AndroidPlaybackState.PAUSED, 5), previous = playing)
+        val ended = map(snapshot(AndroidPlaybackState.STOPPED, null), previous = playing)
+
+        assertTrue(playing.canResume)
+        assertTrue(paused.canResume)
+        assertFalse(ended.canResume)
+        assertFalse(WidgetNowPlaying.Empty.canResume)
+        assertTrue(map(snapshot(AndroidPlaybackState.PLAYING, 6), previous = ended).canResume)
     }
 
     @Test
@@ -68,6 +81,39 @@ class WidgetNowPlayingTest {
 
         assertEquals(emptyList<String>(), reads)
         assertEquals(playing.copy(isPlaying = false), paused)
+    }
+
+    @Test
+    fun aCoverThatWasMissingIsLookedForAgainOnTheNextSnapshotOfTheSameTrack() {
+        var path: String? = null
+        val withoutCover = widgetNowPlaying(
+            snapshot(AndroidPlaybackState.PLAYING, 5),
+            WidgetNowPlaying.Empty,
+            ::metadataFor,
+        ) { path }
+        path = "/cache/5.png"
+
+        val later = widgetNowPlaying(
+            snapshot(AndroidPlaybackState.PAUSED, 5),
+            withoutCover,
+            ::metadataFor,
+        ) { path }
+
+        assertNull(withoutCover.artworkPath)
+        assertEquals("/cache/5.png", later.artworkPath)
+    }
+
+    @Test
+    fun aCoverThatIsKnownIsNotLookedUpAgain() {
+        val known = map(snapshot(AndroidPlaybackState.PLAYING, 5))
+        var lookups = 0
+
+        widgetNowPlaying(snapshot(AndroidPlaybackState.PAUSED, 5), known, ::metadataFor) {
+            lookups += 1
+            null
+        }
+
+        assertEquals(0, lookups)
     }
 
     @Test

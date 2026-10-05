@@ -60,6 +60,28 @@ class RepriseWidgetContentTest {
     }
 
     @Test
+    fun whenThereIsNoQueueToResumeThePlayButtonOpensTheAppInstead() = runGlanceAppWidgetUnitTest {
+        setContext(ApplicationProvider.getApplicationContext())
+        setAppWidgetSize(WIDE_SIZE)
+        val ended = PLAYING.copy(isPlaying = false, canResume = false)
+        provideComposable { RepriseWidgetContent(ended, cover = null) }
+
+        onNode(hasContentDescription("Play")).assertHasStartActivityClickAction(openApp())
+        onNode(hasContentDescription("Next track")).assertHasStartActivityClickAction(openApp())
+        onNode(hasContentDescription("Previous track")).assertHasStartActivityClickAction(openApp())
+    }
+
+    @Test
+    fun theSquareWidgetsPlayButtonOpensTheAppWhenThereIsNothingToResume() = runGlanceAppWidgetUnitTest {
+        setContext(ApplicationProvider.getApplicationContext())
+        setAppWidgetSize(SQUARE_SIZE)
+        val ended = PLAYING.copy(isPlaying = false, canResume = false)
+        provideComposable { RepriseWidgetContent(ended, cover = null) }
+
+        onNode(hasContentDescription("Play")).assertHasStartActivityClickAction(openApp())
+    }
+
+    @Test
     fun tappingTheCoverOpensTheAppInsteadOfSendingACommand() = runGlanceAppWidgetUnitTest {
         setContext(ApplicationProvider.getApplicationContext())
         setAppWidgetSize(WIDE_SIZE)

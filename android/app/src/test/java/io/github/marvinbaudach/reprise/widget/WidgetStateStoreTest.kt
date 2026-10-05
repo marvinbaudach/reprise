@@ -53,4 +53,11 @@ class WidgetStateStoreTest {
 
         assertTrue(store.load().isEmpty)
     }
+
+    @Test
+    fun whetherThereIsAQueueToResumeSurvivesTheProcess() {
+        WidgetStateStore(context).save(state.copy(isPlaying = false, canResume = false))
+
+        assertEquals(false, WidgetStateStore(context).load().canResume)
+    }
 }

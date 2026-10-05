@@ -9,6 +9,7 @@ private const val KEY_TRACK_ID = "track_id"
 private const val KEY_TITLE = "title"
 private const val KEY_ARTIST = "artist"
 private const val KEY_ARTWORK = "artwork"
+private const val KEY_CAN_RESUME = "can_resume"
 private const val NO_TRACK = -1L
 
 /**
@@ -36,6 +37,7 @@ internal class WidgetStateStore(private val preferences: SharedPreferences) {
             artist = preferences.getString(KEY_ARTIST, "").orEmpty(),
             isPlaying = playingInThisProcess,
             artworkPath = preferences.getString(KEY_ARTWORK, null),
+            canResume = preferences.getBoolean(KEY_CAN_RESUME, true),
         )
     }
 
@@ -49,6 +51,7 @@ internal class WidgetStateStore(private val preferences: SharedPreferences) {
                 putString(KEY_TITLE, state.title)
                 putString(KEY_ARTIST, state.artist)
                 putString(KEY_ARTWORK, state.artworkPath)
+                putBoolean(KEY_CAN_RESUME, state.canResume)
             }
         }
     }

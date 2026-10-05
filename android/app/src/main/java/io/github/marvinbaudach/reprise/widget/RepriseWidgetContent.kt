@@ -15,6 +15,7 @@ import androidx.glance.LocalContext
 import androidx.glance.LocalSize
 import androidx.glance.action.Action
 import androidx.glance.action.clickable
+import androidx.glance.appwidget.action.ActionCallback
 import androidx.glance.appwidget.action.actionRunCallback
 import androidx.glance.appwidget.action.actionStartActivity
 import androidx.glance.appwidget.cornerRadius
@@ -116,9 +117,14 @@ private fun WideWidget(context: Context, state: WidgetNowPlaying, cover: Bitmap?
                 )
             }
         }
-        Control(context, R.drawable.ic_widget_previous, R.string.widget_previous, actionRunCallback<PreviousAction>())
-        Control(context, playIcon(state), playDescription(state), actionRunCallback<TogglePlayAction>())
-        Control(context, R.drawable.ic_widget_next, R.string.widget_next, actionRunCallback<NextAction>())
+        Control(
+            context,
+            R.drawable.ic_widget_previous,
+            R.string.widget_previous,
+            transport<PreviousAction>(state, openApp),
+        )
+        Control(context, playIcon(state), playDescription(state), transport<TogglePlayAction>(state, openApp))
+        Control(context, R.drawable.ic_widget_next, R.string.widget_next, transport<NextAction>(state, openApp))
     }
 }
 
@@ -137,7 +143,7 @@ private fun SquareWidget(context: Context, state: WidgetNowPlaying, cover: Bitma
                 contentDescription = context.getString(playDescription(state)),
                 colorFilter = ColorFilter.tint(WidgetOnScrim),
                 modifier = GlanceModifier.size(SQUARE_PLAY).background(WidgetScrim).cornerRadius(SQUARE_PLAY)
-                    .padding(CONTROL_PADDING).clickable(actionRunCallback<TogglePlayAction>()),
+                    .padding(CONTROL_PADDING).clickable(transport<TogglePlayAction>(state, openApp)),
             )
         }
     }
@@ -161,6 +167,15 @@ private fun Control(context: Context, icon: Int, description: Int, action: Actio
         modifier = GlanceModifier.size(CONTROL).padding(CONTROL_PADDING).clickable(action),
     )
 }
+
+/**
+ * What a transport button does. With nothing to resume the service has no queue
+ * to act on, so the tap opens the app, where something can be chosen to play;
+ * a widget cannot start an activity from a callback, so the choice is made here.
+ */
+@Composable
+private inline fun <reified A : ActionCallback> transport(state: WidgetNowPlaying, openApp: Action): Action =
+    if (state.isPlaying || state.canResume) actionRunCallback<A>() else openApp
 
 internal fun playIcon(state: WidgetNowPlaying): Int =
     if (state.isPlaying) R.drawable.ic_widget_pause else R.drawable.ic_widget_play
