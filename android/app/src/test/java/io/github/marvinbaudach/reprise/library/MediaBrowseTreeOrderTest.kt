@@ -75,7 +75,7 @@ class MediaBrowseTreeOrderTest {
 
     @Test
     fun theOrderSurvivesTheLibrarysWindowsAndTheBrowsersPages() {
-        val expected = listOf("Echo", "Delta", "Charlie", "Bravo", "Alpha")
+        val expected = listOf("Echo", "Alpha", "Delta", "Bravo", "Charlie")
         val named = expected.map { BrowseAlbum(it, "Artist", 1) }
         val windowed = MediaBrowseTree(
             FixtureBrowseLibrary(

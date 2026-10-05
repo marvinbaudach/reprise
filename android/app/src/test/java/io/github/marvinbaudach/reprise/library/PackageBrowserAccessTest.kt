@@ -1,14 +1,15 @@
 package io.github.marvinbaudach.reprise.library
 
 import android.content.Context
-import android.content.pm.ApplicationInfo
-import android.content.pm.PackageInfo
-import android.content.pm.Signature
-import android.content.pm.SigningInfo
-import android.os.Bundle
 import android.os.Process
-import androidx.media3.session.MediaSession
 import androidx.test.core.app.ApplicationProvider
+import io.github.marvinbaudach.reprise.library.PackageBrowserAccessFixtures.AUTO_PACKAGE
+import io.github.marvinbaudach.reprise.library.PackageBrowserAccessFixtures.CERTIFICATE
+import io.github.marvinbaudach.reprise.library.PackageBrowserAccessFixtures.OTHER_UID
+import io.github.marvinbaudach.reprise.library.PackageBrowserAccessFixtures.OWNER_UID
+import io.github.marvinbaudach.reprise.library.PackageBrowserAccessFixtures.SIGNED_PACKAGE
+import io.github.marvinbaudach.reprise.library.PackageBrowserAccessFixtures.controller
+import io.github.marvinbaudach.reprise.library.PackageBrowserAccessFixtures.install
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
@@ -16,32 +17,7 @@ import org.junit.Assert.assertTrue
 import org.junit.Test
 import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
-import org.robolectric.Shadows.shadowOf
 import org.robolectric.annotation.Config
-
-internal const val OWNER_UID = 10_321
-internal const val OTHER_UID = 10_322
-internal const val SIGNED_PACKAGE = "com.example.signed"
-private val CERTIFICATE = byteArrayOf(1, 2, 3, 4)
-
-private fun Context.install(packageName: String, uid: Int, withSigningInfo: Boolean) {
-    val info = PackageInfo().apply {
-        this.packageName = packageName
-        applicationInfo = ApplicationInfo().apply {
-            this.packageName = packageName
-            this.uid = uid
-        }
-        if (withSigningInfo) {
-            signingInfo = SigningInfo().also { shadowOf(it).setSignatures(arrayOf(Signature(CERTIFICATE))) }
-        }
-    }
-    shadowOf(packageManager).installPackage(info)
-}
-
-internal fun controller(packageName: String, uid: Int, platformTrusted: Boolean) =
-    MediaSession.ControllerInfo.createTestOnlyControllerInfo(
-        packageName, 1, uid, 1, 1, platformTrusted, Bundle.EMPTY, false,
-    )
 
 /**
  * The part of the access decision that touches the platform: the package
@@ -56,27 +32,27 @@ class PackageBrowserAccessTest {
 
     @Test
     fun theSignersOfAnInstalledPackageAreItsCertificateDigestsWhenTheUidOwnsIt() {
-        context.install(SIGNED_PACKAGE, OWNER_UID, withSigningInfo = true)
+        install(context, SIGNED_PACKAGE, OWNER_UID, withSigningInfo = true)
 
         assertEquals(setOf(certificateDigest(CERTIFICATE)), access.signersOf(SIGNED_PACKAGE, OWNER_UID))
     }
 
     @Test
-    fun aPackageThatTheCallersUidDoesNotOwnHasNoSigners() {
-        context.install(SIGNED_PACKAGE, OWNER_UID, withSigningInfo = true)
+    fun os_9_a_package_the_callers_uid_does_not_own_has_no_signers() {
+        install(context, SIGNED_PACKAGE, OWNER_UID, withSigningInfo = true)
 
         // Same package, so the lookup succeeds, but another app is the one calling.
         assertNull(access.signersOf(SIGNED_PACKAGE, OTHER_UID))
     }
 
     @Test
-    fun aPackageThatIsNotInstalledOrNotVisibleHasNoSigners() {
+    fun aPackageThatIsNotInstalledHasNoSigners() {
         assertNull(access.signersOf("com.example.missing", OWNER_UID))
     }
 
     @Test
     fun aPackageWithoutSigningInfoHasNoSigners() {
-        context.install(SIGNED_PACKAGE, OWNER_UID, withSigningInfo = false)
+        install(context, SIGNED_PACKAGE, OWNER_UID, withSigningInfo = false)
 
         assertNull(access.signersOf(SIGNED_PACKAGE, OWNER_UID))
     }
@@ -87,7 +63,7 @@ class PackageBrowserAccessTest {
     }
 
     @Test
-    fun aControllerThePlatformVouchesForIsLetInThroughMedia3sTrustFlag() {
+    fun os_9_a_controller_the_platform_vouches_for_is_let_in_through_media3s_trust_flag() {
         assertTrue(access.isAllowed(controller("com.android.systemui", OTHER_UID, platformTrusted = true)))
     }
 
@@ -96,12 +72,15 @@ class PackageBrowserAccessTest {
         assertFalse(access.isAllowed(controller("com.example.snoop", OTHER_UID, platformTrusted = false)))
     }
 
+    /**
+     * Pins refusal only. The positive path, a pinned package with its pinned
+     * certificate, cannot be set up here (the pins are Google's real digests) and is
+     * covered by the policy-level `os_9_android_auto_is_trusted_only_with_its_pinned_certificate`.
+     */
     @Test
     fun aStrangerClaimingAnAutoPackageNameIsRefused() {
-        context.install("com.google.android.projection.gearhead", OTHER_UID, withSigningInfo = true)
+        install(context, AUTO_PACKAGE, OTHER_UID, withSigningInfo = true)
 
-        assertFalse(
-            access.isAllowed(controller("com.google.android.projection.gearhead", OTHER_UID, platformTrusted = false)),
-        )
+        assertFalse(access.isAllowed(controller(AUTO_PACKAGE, OTHER_UID, platformTrusted = false)))
     }
 }

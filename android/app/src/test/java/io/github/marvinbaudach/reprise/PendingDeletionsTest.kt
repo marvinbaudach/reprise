@@ -250,9 +250,10 @@ class PendingDeletionsTest {
     }
 
     /**
-     * "Shape" is the queue's size, nothing more: an undo cannot tell a queue that
-     * was reordered, or that lost one row and gained another, from the one the
-     * removal left. The row goes back by its old index, wherever that now is.
+     * Pins a known limitation (FB-17): "shape" is the queue's size, nothing more.
+     * With the same size the row is restored by its old index even if the
+     * neighbours changed, because an undo cannot tell a queue that was reordered,
+     * or that lost one row and gained another, from the one the removal left.
      */
     @Test
     fun fb_17_a_queue_that_kept_its_size_but_was_reshuffled_still_gets_the_row_back_by_its_old_index() {

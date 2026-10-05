@@ -23,7 +23,7 @@ private const val CORE_WINDOW = 2
  */
 private class OrderedCore : MusicLibrary(NoHandle) {
     val playlists = listOf(PlaylistRow(3, "Zebra", 0), PlaylistRow(1, "Apple", 0), PlaylistRow(2, "Mango", 0))
-    val albums = listOf("Echo", "Delta", "Charlie", "Bravo", "Alpha").map(::album)
+    val albums = listOf("Echo", "Alpha", "Delta", "Bravo", "Charlie").map(::album)
     val artists = listOf("Yankee", "Bravo", "Xray", "Alice", "Zed").map { name -> ArtistRow(name, 1, 1, "") }
 
     override fun listPlaylists(): List<PlaylistRow> = playlists

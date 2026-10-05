@@ -2,7 +2,7 @@
 slug: android-ux-wave-2
 worktree:
 branch:
-phase: shipped
+phase: reviewed
 codex_session:
 created: 2026-10-05
 strands: a,b
@@ -25,7 +25,9 @@ Kotlin root `K` = `android/app/src/main/java/io/github/marvinbaudach/reprise/`, 
    nothing is gone yet) with a separate Undo button for 6 s. Only
    when the snackbar times out (or is dismissed by a new delete) is the file actually deleted
    through the existing `trashTracks` path. If the app dies inside the window, nothing is
-   deleted — the safe direction. Undo restores rows and queue positions exactly.
+   deleted — the safe direction. Undo restores the rows, and puts the queue rows back at their old
+   positions when the queue still has the size the delete left; otherwise, or when the delete
+   skipped the playing track, they come back as the next rows to play (as FB-16 and FB-17 say).
 2. Undo snackbar also for **Remove from queue** (re-insert at the old position when the
    queue still has the size the removal left, otherwise as the next row).
 3. The deletion status line ("Deleting N tracks…") must not move the list — overlay, never
@@ -64,7 +66,9 @@ Tasks:
 - a3 **Undo for Remove from queue** (`TrackContextMenu.kt` ~173-176): snackbar "Removed from
   queue" with a separate Undo button; Undo re-inserts at the old position if the queue
   still has the size the removal left (`restoreQueued` compares sizes, nothing else),
-  otherwise puts the row back as the next one to play.
+  otherwise puts the row back as the next one to play. The row also comes back as next when
+  the remembered size is null: `PendingDeletions.begin` clears it when a delete skips the
+  playing track, because the queue's positions are relative to the playing track.
 - a4 **Deletion line shift.** First reproduce with a Robolectric layout test that measures
   the list's top offset with and without a running deletion. Find what reflows (likely a
   padding/inset driven by `deletionProgress`), and make the line a pure overlay. The test

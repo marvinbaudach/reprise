@@ -1703,7 +1703,9 @@ result.
   "Removed from queue" with Undo for the same window as FB-16, and only when
   the queue really lost that one row. Undo puts the row back at its old
   position if the queue still has the size the removal left; otherwise it
-  comes back as next. A queue offer that arrives while a delete's window runs
+  comes back as next. Known limitation: only the size is compared, so a queue
+  that was reordered but kept its size gets the row back by its old index,
+  possibly between different neighbours. A queue offer that arrives while a delete's window runs
   waits for it instead of ending it. *Tests:*
   `fb_17_removing_a_queue_row_offers_an_undo_that_puts_it_back_where_it_was`,
   `fb_17_a_queue_undo_after_the_queue_changed_shape_appends_the_row_next`,
@@ -1776,7 +1778,9 @@ result.
   Everyone else connects with no commands, sees no current item, and gets a
   permission error from every browse and play entry point. *Tests:*
   `os_9_android_auto_is_trusted_only_with_its_pinned_certificate`,
-  `os_9_an_untrusted_controller_gets_no_browse_data_from_any_read_entry_point`.
+  `os_9_an_untrusted_controller_gets_no_browse_data_from_any_read_entry_point`,
+  `os_9_a_package_the_callers_uid_does_not_own_has_no_signers`,
+  `os_9_a_controller_the_platform_vouches_for_is_let_in_through_media3s_trust_flag`.
 - **OS-10** [active] [android] — The home-screen widget comes in two
   placements. The wide one (4×1) shows cover, title, artist and
   previous / play-pause / next; the square one (2×2) is the cover with one
