@@ -3,7 +3,7 @@
 //! The controller owner is intentionally untouched: a weak, main-thread
 //! registry connects the window-owned session state to event handling.
 
-use std::cell::{Cell, RefCell};
+use std::cell::RefCell;
 use std::collections::HashMap;
 use std::rc::{Rc, Weak};
 use std::time::Duration;
@@ -20,14 +20,73 @@ thread_local! {
 
 pub(in crate::ui) struct SleepTimerBinding {
     pub(in crate::ui) timer: Rc<RefCell<SleepTimer>>,
-    retained_volume: Cell<Option<f64>>,
+    fade: RefCell<FadeVolume>,
+}
+
+#[derive(Default)]
+struct FadeVolume {
+    retained: Option<f64>,
+    last_applied: Option<f64>,
+    aborted: bool,
+}
+
+impl FadeVolume {
+    fn apply(&mut self, current: f64, relative: f64) -> Option<f64> {
+        if self.changed_by_user(current) {
+            self.clear();
+            self.aborted = true;
+            return None;
+        }
+        if relative >= 1.0 {
+            return self.restore(current);
+        }
+        let retained = *self.retained.get_or_insert(current);
+        let target = retained * relative;
+        self.last_applied = Some(target);
+        Some(target)
+    }
+
+    fn restore(&mut self, current: f64) -> Option<f64> {
+        if self.changed_by_user(current) {
+            self.clear();
+            self.aborted = true;
+            return None;
+        }
+        let retained = self.retained.take();
+        self.last_applied = None;
+        retained
+    }
+
+    #[cfg(test)]
+    const fn retained(&self) -> Option<f64> {
+        self.retained
+    }
+
+    #[cfg(test)]
+    const fn was_aborted(&self) -> bool {
+        self.aborted
+    }
+
+    fn take_aborted(&mut self) -> bool {
+        std::mem::take(&mut self.aborted)
+    }
+
+    fn changed_by_user(&self, current: f64) -> bool {
+        self.last_applied
+            .is_some_and(|applied| (current - applied).abs() > f64::EPSILON)
+    }
+
+    fn clear(&mut self) {
+        self.retained = None;
+        self.last_applied = None;
+    }
 }
 
 impl SleepTimerBinding {
     pub(in crate::ui) fn new(timer: Rc<RefCell<SleepTimer>>) -> Rc<Self> {
         Rc::new(Self {
             timer,
-            retained_volume: Cell::new(None),
+            fade: RefCell::new(FadeVolume::default()),
         })
     }
 }
@@ -47,7 +106,6 @@ impl PlayerController {
         minutes: u32,
     ) {
         self.restore_sleep_timer_volume(binding);
-        binding.retained_volume.set(Some(self.volume.get()));
         binding.timer.borrow_mut().arm_minutes(now, minutes);
     }
 
@@ -58,9 +116,11 @@ impl PlayerController {
         let Some(item) = self.current_sleep_item() else {
             return false;
         };
-        self.restore_sleep_timer_volume(binding);
-        binding.retained_volume.set(Some(self.volume.get()));
-        binding.timer.borrow_mut().arm_end_of_track(item)
+        let armed = binding.timer.borrow_mut().arm_end_of_track(item);
+        if armed {
+            self.restore_sleep_timer_volume(binding);
+        }
+        armed
     }
 
     pub(in crate::ui) fn cancel_sleep_timer(&self, binding: &SleepTimerBinding) {
@@ -72,6 +132,8 @@ impl PlayerController {
         self: &Rc<Self>,
         binding: &SleepTimerBinding,
         now: Duration,
+        position_ms: i64,
+        duration_ms: i64,
     ) {
         let current_item = self.current_sleep_item();
         let armed_item = binding.timer.borrow().armed_item();
@@ -86,7 +148,6 @@ impl PlayerController {
                 }
             }
         }
-        let (position_ms, duration_ms) = self.sleep_timer_position();
         let action = binding
             .timer
             .borrow_mut()
@@ -95,9 +156,13 @@ impl PlayerController {
         self.sync_sleep_timer_button(binding, now);
     }
 
-    pub(in crate::ui) fn sleep_timer_position_tick(self: &Rc<Self>) {
+    pub(in crate::ui) fn sleep_timer_position_tick(
+        self: &Rc<Self>,
+        position_ms: i64,
+        duration_ms: i64,
+    ) {
         if let Some(binding) = self.sleep_timer_binding() {
-            self.sleep_timer_tick(&binding, monotonic_now());
+            self.sleep_timer_tick(&binding, monotonic_now(), position_ms, duration_ms);
         }
     }
 
@@ -110,15 +175,18 @@ impl PlayerController {
         let (armed, tooltip) = if let Some(minutes) = timer.remaining_minutes(now) {
             (
                 true,
-                crate::i18n::format_message(
-                    &crate::i18n::gettext("Pauses in {minutes} min"),
-                    &[("minutes", &minutes.to_string())],
-                ),
+                crate::ui::strings::sleep_timer_pauses_in(minutes as usize),
             )
         } else if timer.armed_item().is_some() {
-            (true, crate::i18n::gettext("Pauses after this track"))
+            (
+                true,
+                crate::ui::strings::text(crate::ui::strings::PAUSES_AFTER_THIS_TRACK),
+            )
         } else {
-            (false, crate::i18n::gettext("Sleep Timer"))
+            (
+                false,
+                crate::ui::strings::text(crate::ui::strings::SLEEP_TIMER),
+            )
         };
         drop(timer);
         let end_enabled = self
@@ -158,26 +226,55 @@ impl PlayerController {
         BINDINGS.with(|bindings| bindings.borrow().get(&key).and_then(Weak::upgrade))
     }
 
-    fn apply_sleep_timer_action(&self, binding: &SleepTimerBinding, action: SleepAction) {
+    fn apply_sleep_timer_action(self: &Rc<Self>, binding: &SleepTimerBinding, action: SleepAction) {
         match action {
             SleepAction::None => {}
             SleepAction::SetVolume(relative) => {
-                let retained = binding.retained_volume.get().unwrap_or(self.volume.get());
-                self.set_sleep_timer_volume(retained * relative);
+                let target = binding.fade.borrow_mut().apply(self.volume.get(), relative);
+                if binding.fade.borrow_mut().take_aborted() {
+                    binding.timer.borrow_mut().cancel();
+                }
+                if let Some(target) = target {
+                    self.set_sleep_timer_volume(target);
+                }
             }
             SleepAction::Pause => {
-                let status = self
-                    .mpris_state
-                    .lock()
-                    .unwrap_or_else(std::sync::PoisonError::into_inner)
-                    .status;
-                if status == MprisPlaybackStatus::Playing {
-                    if let Err(error) = self.player.toggle_pause() {
-                        tracing::error!(%error, "sleep timer could not pause playback");
-                    }
-                }
+                let paused = self.pause_for_sleep_timer();
                 self.restore_sleep_timer_volume(binding);
-                self.show_toast(&crate::i18n::gettext("Paused by sleep timer"));
+                if paused {
+                    self.show_toast(&crate::ui::strings::sleep_timer_paused());
+                }
+            }
+        }
+    }
+
+    fn pause_for_sleep_timer(self: &Rc<Self>) -> bool {
+        let status = self
+            .mpris_state
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .status;
+        if status != MprisPlaybackStatus::Playing {
+            return false;
+        }
+        if self.toggle_external_pause() {
+            return self
+                .mpris_state
+                .lock()
+                .unwrap_or_else(std::sync::PoisonError::into_inner)
+                .status
+                == MprisPlaybackStatus::Paused;
+        }
+        match self.player.toggle_pause() {
+            Ok(reprise_core::playback::PlaybackState::Paused) => {
+                self.sync_state(reprise_core::playback::PlaybackState::Paused);
+                self.update_mpris_mirror(MprisPlaybackStatus::Paused);
+                true
+            }
+            Ok(_) => false,
+            Err(error) => {
+                tracing::error!(%error, "sleep timer could not pause playback");
+                false
             }
         }
     }
@@ -190,13 +287,13 @@ impl PlayerController {
     }
 
     fn restore_sleep_timer_volume(&self, binding: &SleepTimerBinding) {
-        if let Some(volume) = binding.retained_volume.take() {
+        if let Some(volume) = binding.fade.borrow_mut().restore(self.volume.get()) {
             self.set_sleep_timer_volume(volume);
         }
     }
 
     fn reset_sleep_timer_fade_volume(&self, binding: &SleepTimerBinding) {
-        if let Some(volume) = binding.retained_volume.get() {
+        if let Some(volume) = binding.fade.borrow_mut().restore(self.volume.get()) {
             self.set_sleep_timer_volume(volume);
         }
     }
@@ -218,26 +315,41 @@ impl PlayerController {
                 .map(|(track_id, _)| SleepItem::Track(track_id)),
         }
     }
-
-    fn sleep_timer_position(&self) -> (i64, i64) {
-        let external = self.external.borrow();
-        match external.session.as_ref() {
-            Some(ExternalSession::Podcast(session)) => {
-                let duration = match session.media {
-                    ExternalMedia::Podcast { duration_ms, .. } => duration_ms.unwrap_or(0),
-                    ExternalMedia::Radio { .. } => 0,
-                };
-                (session.position_ms, duration)
-            }
-            Some(ExternalSession::Radio(_)) => (0, 0),
-            None => (
-                self.max_position_ms.get(),
-                self.current_track.get().map_or(0, |(_, duration)| duration),
-            ),
-        }
-    }
 }
 
 pub(in crate::ui) fn monotonic_now() -> Duration {
     Duration::from_micros(u64::try_from(gtk4::glib::monotonic_time()).unwrap_or(0))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::FadeVolume;
+
+    #[test]
+    fn play_18_fade_captures_volume_only_when_it_first_moves() {
+        let mut fade = FadeVolume::default();
+
+        assert_eq!(fade.apply(0.8, 0.5), Some(0.4));
+        assert_eq!(fade.retained(), Some(0.8));
+    }
+
+    #[test]
+    fn play_18_user_volume_change_during_fade_aborts_without_overwriting_it() {
+        let mut fade = FadeVolume::default();
+        assert_eq!(fade.apply(0.8, 0.5), Some(0.4));
+
+        assert_eq!(fade.apply(0.2, 0.375), None);
+        assert!(fade.was_aborted());
+        assert_eq!(fade.restore(0.2), None);
+    }
+
+    #[test]
+    fn play_18_cancel_restores_only_after_a_fade_started() {
+        let mut untouched = FadeVolume::default();
+        assert_eq!(untouched.restore(0.4), None);
+
+        let mut faded = FadeVolume::default();
+        assert_eq!(faded.apply(0.6, 0.875), Some(0.525));
+        assert_eq!(faded.restore(0.525), Some(0.6));
+    }
 }

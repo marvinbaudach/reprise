@@ -15,8 +15,8 @@ pub enum SleepItem {
 
 /// One effect for the platform adapter to apply.
 ///
-/// `SetVolume` is relative to the volume retained when the timer was armed.
-/// The adapter restores that retained volume immediately after `Pause`.
+/// `SetVolume` is relative to the volume captured when the fade first moves.
+/// The adapter restores that volume immediately after `Pause`.
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub enum SleepAction {
     None,
@@ -94,8 +94,17 @@ impl SleepTimer {
                 if duration_ms <= 0 {
                     return SleepAction::None;
                 }
-                let remaining_ms = duration_ms.saturating_sub(position_ms.max(0));
-                FADE_DURATION_MS.saturating_sub(u64::try_from(remaining_ms).unwrap_or(u64::MAX))
+                let duration_ms = u64::try_from(duration_ms).unwrap_or(0);
+                let position_ms = u64::try_from(position_ms.max(0)).unwrap_or(0);
+                let remaining_ms = duration_ms.saturating_sub(position_ms);
+                if remaining_ms > FADE_DURATION_MS {
+                    if self.fade_step() > 0 {
+                        self.set_fade_step(0);
+                        return SleepAction::SetVolume(1.0);
+                    }
+                    return SleepAction::None;
+                }
+                FADE_DURATION_MS.saturating_sub(remaining_ms)
             }
         };
 
@@ -248,7 +257,7 @@ mod tests {
     }
 
     #[test]
-    fn end_of_track_fade_uses_position_and_duration() {
+    fn play_18_end_of_track_fade_uses_position_and_duration() {
         let mut timer = SleepTimer::off();
         assert!(timer.arm_end_of_track(SleepItem::Episode(11)));
 
@@ -256,6 +265,36 @@ mod tests {
         assert_eq!(
             timer.tick(START, 56_500, 60_000),
             SleepAction::SetVolume(0.875)
+        );
+    }
+
+    #[test]
+    fn play_18_seeking_out_of_the_fade_window_restores_full_relative_volume() {
+        let mut timer = SleepTimer::off();
+        assert!(timer.arm_end_of_track(SleepItem::Track(7)));
+        assert_eq!(
+            timer.tick(START, 58_000, 60_000),
+            SleepAction::SetVolume(0.5)
+        );
+
+        assert_eq!(
+            timer.tick(START, 40_000, 60_000),
+            SleepAction::SetVolume(1.0)
+        );
+        assert_eq!(
+            timer.tick(START, 56_500, 60_000),
+            SleepAction::SetVolume(0.875)
+        );
+    }
+
+    #[test]
+    fn play_18_position_past_duration_saturates_at_the_end() {
+        let mut timer = SleepTimer::off();
+        assert!(timer.arm_end_of_track(SleepItem::Track(7)));
+
+        assert_eq!(
+            timer.tick(START, 61_000, 60_000),
+            SleepAction::SetVolume(0.0)
         );
     }
 

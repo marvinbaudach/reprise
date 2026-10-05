@@ -196,7 +196,7 @@ impl PlayerController {
                 self.update_mpris_position(position_ms);
                 self.handle_external_position(position_ms, duration_ms);
                 self.retry_pending_local_seek(duration_ms);
-                self.sleep_timer_position_tick();
+                self.sleep_timer_position_tick(position_ms, duration_ms);
             }
             PlayerEvent::Buffering {
                 percent,
@@ -210,14 +210,21 @@ impl PlayerController {
                 self.bar.set_buffering(percent, buffered_ms);
             }
             PlayerEvent::TrackFinished => {
+                let mode = self.playback_mode();
                 if self.sleep_timer_track_finished() {
+                    if matches!(
+                        mode,
+                        super::preview::PlaybackMode::Podcast
+                            | super::preview::PlaybackMode::QueuedEpisode
+                    ) {
+                        self.finish_external_for_sleep_timer();
+                    }
                     return;
                 }
                 // INST-4b/5b: a finished instrumental preview stops without
                 // advancing the queue (so a stale gapless pre-feed / queue
                 // snapshot can't start playing after it, and no play is credited
                 // to the wrong track); an ordinary queue track advances.
-                let mode = self.playback_mode();
                 if mode == super::preview::PlaybackMode::QueuedEpisode {
                     tracing::info!("queued episode finished: advancing queue");
                     self.finish_external();
@@ -234,14 +241,12 @@ impl PlayerController {
                     tracing::warn!("ignoring gapless hand-off during external playback");
                     return;
                 }
-                if self.sleep_timer_gapless_advance() {
-                    return;
-                }
                 // Gapless hand-off: the pre-fed next track is already playing.
                 // Advance the queue model and reflect the new track WITHOUT
                 // restarting the pipeline. (Real handler wired in below.)
                 tracing::info!("gapless hand-off: advancing queue model without restart");
                 self.advance_gaplessly();
+                self.sleep_timer_gapless_advance();
             }
             PlayerEvent::Spectrum(frame) => {
                 let bass = frame.bass_pressure();

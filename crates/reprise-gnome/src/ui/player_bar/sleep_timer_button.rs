@@ -28,11 +28,13 @@ pub(in crate::ui) struct SleepTimerButton {
     cancel_menu: gtk4::gio::Menu,
     callbacks: Rc<RefCell<Vec<ChoiceCallback>>>,
     armed: Rc<Cell<bool>>,
+    tooltip: RefCell<String>,
+    end_of_track_enabled: Cell<bool>,
 }
 
 impl SleepTimerButton {
     pub(in crate::ui) fn new() -> Self {
-        let label = crate::i18n::gettext("Sleep Timer");
+        let label = crate::ui::strings::text(crate::ui::strings::SLEEP_TIMER);
         let button = gtk4::ToggleButton::builder()
             .icon_name(available_icon_name())
             .tooltip_text(&label)
@@ -63,15 +65,12 @@ impl SleepTimerButton {
         let choices = gtk4::gio::Menu::new();
         for minutes in [15, 30, 45, 60] {
             choices.append(
-                Some(&crate::i18n::format_message(
-                    &crate::i18n::gettext("{minutes} minutes"),
-                    &[("minutes", &minutes.to_string())],
-                )),
+                Some(&crate::ui::strings::sleep_timer_minutes(minutes)),
                 Some(&format!("{ACTION_GROUP}.minutes-{minutes}")),
             );
         }
         choices.append(
-            Some(&crate::i18n::gettext("End of Track")),
+            Some(&crate::ui::strings::text(crate::ui::strings::END_OF_TRACK)),
             Some(&format!("{ACTION_GROUP}.end-of-track")),
         );
         let cancel_menu = gtk4::gio::Menu::new();
@@ -112,6 +111,8 @@ impl SleepTimerButton {
             cancel_menu,
             callbacks,
             armed,
+            tooltip: RefCell::new(label),
+            end_of_track_enabled: Cell::new(true),
         }
     }
 
@@ -124,16 +125,25 @@ impl SleepTimerButton {
     }
 
     fn set_presentation(&self, armed: bool, tooltip: &str, end_of_track_enabled: bool) {
-        self.armed.set(armed);
+        let armed_changed = self.armed.replace(armed) != armed;
         self.button.set_active(armed || self.popover.is_visible());
-        self.button.set_tooltip_text(Some(tooltip));
-        self.end_action.set_enabled(end_of_track_enabled);
-        self.cancel_menu.remove_all();
-        if armed {
-            self.cancel_menu.append(
-                Some(&crate::i18n::gettext("Cancel Sleep Timer")),
-                Some(&format!("{ACTION_GROUP}.cancel")),
-            );
+        if self.tooltip.borrow().as_str() != tooltip {
+            self.button.set_tooltip_text(Some(tooltip));
+            *self.tooltip.borrow_mut() = tooltip.to_owned();
+        }
+        if self.end_of_track_enabled.replace(end_of_track_enabled) != end_of_track_enabled {
+            self.end_action.set_enabled(end_of_track_enabled);
+        }
+        if armed_changed {
+            self.cancel_menu.remove_all();
+            if armed {
+                self.cancel_menu.append(
+                    Some(&crate::ui::strings::text(
+                        crate::ui::strings::CANCEL_SLEEP_TIMER,
+                    )),
+                    Some(&format!("{ACTION_GROUP}.cancel")),
+                );
+            }
         }
     }
 }
@@ -192,7 +202,7 @@ mod tests {
 
     #[test]
     #[ignore = "requires a display; run via xvfb-run"]
-    fn play_sleep_1_moon_button_tracks_armed_and_cancelled_state() {
+    fn play_18_moon_button_tracks_armed_and_cancelled_state() {
         let _main_context = crate::ui::test_main_context::lock_main_context();
         gtk4::init().expect("GTK must initialize under the display runner");
         let control = SleepTimerButton::new();

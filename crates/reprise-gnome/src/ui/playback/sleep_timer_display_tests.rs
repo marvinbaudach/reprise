@@ -66,7 +66,7 @@ fn insert_track(db: &reprise_core::db::Db, id: i64, path: &str) {
 
 #[test]
 #[ignore = "requires a display; run via xvfb-run"]
-fn play_sleep_1_track_finished_pauses_without_advancing() {
+fn play_18_track_finished_pauses_without_advancing() {
     let _main_context = crate::ui::test_main_context::lock_main_context();
     gtk4::init().unwrap();
     let test_root = tempfile::tempdir().unwrap();
@@ -85,9 +85,95 @@ fn play_sleep_1_track_finished_pauses_without_advancing() {
     controller.install_sleep_timer(&binding);
     assert!(controller.arm_sleep_timer_end_of_track(&binding));
 
+    controller.apply_event(PlayerEvent::Position {
+        position_ms: 58_000,
+        duration_ms: 60_000,
+    });
+
     controller.apply_event(PlayerEvent::TrackFinished);
 
     assert_eq!(calls.pauses.get(), 1);
     assert_eq!(controller.current_track.get().map(|(id, _)| id), Some(7));
-    assert_eq!(calls.volumes.borrow().last().copied(), Some(1.0));
+    let volumes = calls.volumes.borrow();
+    assert!(volumes.iter().any(|volume| *volume < 1.0));
+    assert_eq!(volumes.last().copied(), Some(1.0));
+}
+
+#[test]
+#[ignore = "requires a display; run via xvfb-run"]
+fn play_18_gapless_handoff_advances_the_model_before_pausing() {
+    let _main_context = crate::ui::test_main_context::lock_main_context();
+    gtk4::init().unwrap();
+    let test_root = tempfile::tempdir().unwrap();
+    let db = Rc::new(crate::test_db::open().unwrap());
+    insert_track(&db, 7, "/music/first.flac");
+    insert_track(&db, 8, "/music/second.flac");
+    let calls = Rc::new(Calls::default());
+    let controller = controller_with_db(
+        Path::new(test_root.path()),
+        db,
+        Box::new(TestPlayback(calls.clone())),
+    );
+    controller.play_from_view(vec![7, 8], 0, PlayOrigin::library());
+    let timer = Rc::new(RefCell::new(SleepTimer::off()));
+    let binding = SleepTimerBinding::new(timer);
+    controller.install_sleep_timer(&binding);
+    assert!(controller.arm_sleep_timer_end_of_track(&binding));
+
+    controller.apply_event(PlayerEvent::AdvancedToNext);
+
+    assert_eq!(controller.current_track.get().map(|(id, _)| id), Some(8));
+    assert_eq!(calls.pauses.get(), 1);
+}
+
+#[test]
+#[ignore = "requires a display; run via xvfb-run"]
+fn play_18_minute_fade_moves_then_restores_volume() {
+    let _main_context = crate::ui::test_main_context::lock_main_context();
+    gtk4::init().unwrap();
+    let test_root = tempfile::tempdir().unwrap();
+    let db = Rc::new(crate::test_db::open().unwrap());
+    insert_track(&db, 7, "/music/first.flac");
+    let calls = Rc::new(Calls::default());
+    let controller =
+        controller_with_db(test_root.path(), db, Box::new(TestPlayback(calls.clone())));
+    controller.play_from_view(vec![7], 0, PlayOrigin::library());
+    let timer = Rc::new(RefCell::new(SleepTimer::off()));
+    let binding = SleepTimerBinding::new(timer);
+    controller.install_sleep_timer(&binding);
+    controller.arm_sleep_timer_minutes(&binding, std::time::Duration::ZERO, 1);
+
+    controller.sleep_timer_tick(&binding, std::time::Duration::from_millis(56_500), 0, 0);
+    controller.sleep_timer_tick(&binding, std::time::Duration::from_secs(60), 0, 0);
+
+    let volumes = calls.volumes.borrow();
+    assert!(volumes.iter().any(|volume| *volume < 1.0));
+    assert_eq!(volumes.last().copied(), Some(1.0));
+    assert_eq!(calls.pauses.get(), 1);
+}
+
+#[test]
+#[ignore = "requires a display; run via xvfb-run"]
+fn play_18_user_volume_change_during_fade_is_not_overwritten() {
+    let _main_context = crate::ui::test_main_context::lock_main_context();
+    gtk4::init().unwrap();
+    let test_root = tempfile::tempdir().unwrap();
+    let db = Rc::new(crate::test_db::open().unwrap());
+    insert_track(&db, 7, "/music/first.flac");
+    let calls = Rc::new(Calls::default());
+    let controller =
+        controller_with_db(test_root.path(), db, Box::new(TestPlayback(calls.clone())));
+    controller.play_from_view(vec![7], 0, PlayOrigin::library());
+    let timer = Rc::new(RefCell::new(SleepTimer::off()));
+    let binding = SleepTimerBinding::new(timer.clone());
+    controller.install_sleep_timer(&binding);
+    controller.arm_sleep_timer_minutes(&binding, std::time::Duration::ZERO, 1);
+    controller.sleep_timer_tick(&binding, std::time::Duration::from_millis(58_000), 0, 0);
+
+    let calls_before_change = calls.volumes.borrow().len();
+    controller.volume.set(0.2);
+    controller.sleep_timer_tick(&binding, std::time::Duration::from_millis(58_500), 0, 0);
+
+    assert_eq!(calls.volumes.borrow().len(), calls_before_change);
+    assert!(!timer.borrow().is_armed());
 }

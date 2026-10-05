@@ -69,7 +69,7 @@ fn start_ticks(
         let (Some(player), Some(binding)) = (player.upgrade(), binding.upgrade()) else {
             return gtk4::glib::ControlFlow::Break;
         };
-        player.sleep_timer_tick(&binding, monotonic_now());
+        player.sleep_timer_tick(&binding, monotonic_now(), 0, 0);
         if binding.timer.borrow().is_armed() {
             gtk4::glib::ControlFlow::Continue
         } else {

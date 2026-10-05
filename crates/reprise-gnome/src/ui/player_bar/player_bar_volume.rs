@@ -15,15 +15,24 @@ const ICON_VOLUME_MEDIUM: &str = "audio-volume-medium-symbolic";
 const ICON_VOLUME_HIGH: &str = "audio-volume-high-symbolic";
 
 impl PlayerBar {
+    /// Wires the inline volume scale: `f` is called with a `0.0..=1.0` value
+    /// on every user change, but never for a programmatic set via
+    /// `set_volume_indicator` (guarded by `updating_volume` — same shape as
+    /// `connect_shuffle_toggled`'s `updating_shuffle`).
     pub fn connect_volume_changed<F: Fn(f64) + 'static>(&self, f: F) {
         let updating_volume = self.updating_volume.clone();
         self.volume_scale.connect_value_changed(move |scale| {
-            if !updating_volume.get() {
-                f(scale.value());
+            if updating_volume.get() {
+                return;
             }
+            f(scale.value());
         });
     }
 
+    /// Sets the volume scale's value programmatically — used when an MPRIS
+    /// `Volume` write changes the volume externally, so the on-screen control
+    /// follows. Guarded by `updating_volume` so this doesn't re-fire
+    /// `connect_volume_changed`'s callback — see that method's doc comment.
     pub fn set_volume_indicator(&self, volume: f64) {
         self.updating_volume.set(true);
         let clamped = volume.clamp(VOLUME_MIN, VOLUME_MAX);
@@ -32,6 +41,10 @@ impl PlayerBar {
         self.updating_volume.set(false);
     }
 
+    /// Wires the volume icon as a mute toggle. When muted, the scale is driven
+    /// to 0 and `pre_mute_volume` stores the prior level; when unmuted, the
+    /// prior level is restored. `f` is called with the resulting effective
+    /// volume after each toggle.
     pub fn connect_mute_toggled<F: Fn(f64) + 'static>(&self, f: F) {
         let volume_scale = self.volume_scale.clone();
         let muted = Rc::new(Cell::new(false));
@@ -41,6 +54,7 @@ impl PlayerBar {
         self.volume_icon.connect_clicked(move |_| {
             let is_muted = muted.get();
             let result_volume = if is_muted {
+                // Unmute: restore previous volume.
                 let restore = pre_mute_volume.get();
                 updating_volume.set(true);
                 volume_scale.set_value(restore);
@@ -49,6 +63,7 @@ impl PlayerBar {
                 muted.set(false);
                 restore
             } else {
+                // Mute: save current volume and drive to 0.
                 let current = volume_scale.value();
                 pre_mute_volume.set(current);
                 updating_volume.set(true);
@@ -62,6 +77,7 @@ impl PlayerBar {
         });
     }
 
+    /// Updates the volume icon name based on the current volume level.
     fn update_volume_icon(&self, volume: f64) {
         Self::set_volume_icon_static(&self.volume_icon, volume);
     }
