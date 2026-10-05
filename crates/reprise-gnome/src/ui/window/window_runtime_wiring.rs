@@ -33,7 +33,8 @@ use crate::ui::{
     compact_mode_controls, compact_mode_suggestion, first_run, help,
     library_doctor as library_doctor_ui, lyrics_smoke, mounts, playlist_io, primary_menu,
     scan_flow, scan_worker, session_restore as session_restore_ui, shortcuts,
-    spectrogram_batch_progress, startup_quiet, startup_report, view_session as view_session_ui,
+    spectrogram::spectrogram_batch_progress, startup_quiet, startup_report,
+    view_session as view_session_ui,
 };
 
 #[path = "window_artwork_permission_wiring.rs"]
