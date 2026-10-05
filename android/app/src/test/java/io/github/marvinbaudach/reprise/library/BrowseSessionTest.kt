@@ -47,7 +47,10 @@ class BrowseSessionTest {
     @Before
     fun connect() {
         exoPlayer = ExoPlayer.Builder(context).build()
-        callback = BrowseCallback(tree = { MediaBrowseTree(library, TEST_LABELS) })
+        callback = BrowseCallback(
+            tree = { MediaBrowseTree(library, TEST_LABELS) },
+            ownPackage = context.packageName,
+        )
         session = MediaLibrarySession.Builder(
             context,
             BrowsePlayer(exoPlayer) { ids, start -> playRequests += ids to start },
@@ -73,6 +76,15 @@ class BrowseSessionTest {
         }
         shadowOf(Looper.getMainLooper()).idle()
         return future.get()
+    }
+
+    private fun awaitUntil(condition: () -> Boolean) {
+        val deadline = System.currentTimeMillis() + AWAIT_LIMIT_MS
+        while (!condition()) {
+            shadowOf(Looper.getMainLooper()).idle()
+            check(System.currentTimeMillis() < deadline) { "timed out waiting for the play request" }
+            Thread.sleep(5)
+        }
     }
 
     private fun titlesOf(result: LibraryResult<com.google.common.collect.ImmutableList<MediaItem>>) =
@@ -132,7 +144,7 @@ class BrowseSessionTest {
         browser.setMediaItem(tapped)
         browser.prepare()
         browser.play()
-        await(browser.getItem(tapped.mediaId))
+        awaitUntil { playRequests.isNotEmpty() }
 
         assertEquals(listOf(listOf(1L, 2L, 3L) to 1), playRequests)
         assertEquals(
@@ -147,7 +159,7 @@ class BrowseSessionTest {
         val songs = await(browser.getChildren("recent", 0, 10, null))
 
         browser.setMediaItem(songs.value!![1])
-        await(browser.getItem(songs.value!![1].mediaId))
+        awaitUntil { playRequests.isNotEmpty() }
 
         assertEquals(listOf(listOf(3L, 1L) to 1), playRequests)
     }

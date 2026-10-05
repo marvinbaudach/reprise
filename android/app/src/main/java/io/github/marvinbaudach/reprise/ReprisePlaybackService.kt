@@ -113,7 +113,17 @@ open class ReprisePlaybackService : MediaLibraryService() {
             store = WidgetStateStore(this),
             metadata = ::resolveTrackMetadata,
             artworkPath = ::resolveArtworkPath,
-            refresh = { analysisScope.launch { RepriseWidget().updateAll(this@ReprisePlaybackService) } },
+            refresh = {
+                analysisScope.launch {
+                    // Outside the publisher's own guard, and an uncaught failure
+                    // here would take the whole process down.
+                    try {
+                        RepriseWidget().updateAll(this@ReprisePlaybackService)
+                    } catch (error: Exception) {
+                        Log.w(TAG_MEDIA, "Could not redraw the widget", error)
+                    }
+                }
+            },
         )
     }
     private var analysisTrackId: Long? = null
@@ -227,7 +237,7 @@ open class ReprisePlaybackService : MediaLibraryService() {
         mutableSleepTimerStates.value = sleepTimer.state()
         val sessionPlayer = CoreControlledPlayer(player, mediaSessionCommands, this)
         controlledPlayer = sessionPlayer
-        val callback = BrowseCallback(tree = ::browseTree)
+        val callback = BrowseCallback(tree = ::browseTree, ownPackage = packageName)
         browseCallback = callback
         val session = MediaLibrarySession.Builder(
             this,

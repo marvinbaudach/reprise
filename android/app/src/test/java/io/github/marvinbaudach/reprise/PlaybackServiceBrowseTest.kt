@@ -58,6 +58,15 @@ class PlaybackServiceBrowseTest {
         return future.get()
     }
 
+    private fun awaitUntil(condition: () -> Boolean) {
+        val deadline = System.currentTimeMillis() + AWAIT_LIMIT_MS
+        while (!condition()) {
+            shadowOf(Looper.getMainLooper()).idle()
+            check(System.currentTimeMillis() < deadline) { "timed out waiting for the play request" }
+            Thread.sleep(5)
+        }
+    }
+
     private fun browserFor(service: ReprisePlaybackService): MediaBrowser =
         await(
             MediaBrowser.Builder(
@@ -103,7 +112,7 @@ class PlaybackServiceBrowseTest {
         browser.setMediaItem(songs.value!![1])
         browser.prepare()
         browser.play()
-        await(browser.getItem(songs.value!![1].mediaId))
+        awaitUntil { service.playRequests.isNotEmpty() }
 
         assertEquals(listOf(listOf(3L, 1L) to 1), service.playRequests)
         browser.release()
@@ -117,7 +126,7 @@ class PlaybackServiceBrowseTest {
         val songs = await(browser.getChildren("recent", 0, 10, null))
 
         browser.setMediaItem(songs.value!![0])
-        await(browser.getItem(songs.value!![0].mediaId))
+        awaitUntil { service.playRequests.isNotEmpty() }
 
         assertEquals(1, service.playRequests.size)
         browser.release()
