@@ -354,9 +354,9 @@ mod tests {
 
     #[test]
     fn user_agent_identifies_reprise_and_contact() {
-        let value = crate::net::user_agent();
+        let value = crate::net::client::user_agent();
         assert!(value.contains(env!("CARGO_PKG_VERSION")));
-        assert!(value.contains(crate::net::CONTACT_URL));
+        assert!(value.contains(crate::net::client::CONTACT_URL));
     }
 
     #[test]

@@ -10,8 +10,6 @@ pub(crate) mod client;
 pub(crate) mod fixtures;
 pub(crate) mod rate;
 
-pub(crate) use client::{user_agent, CONTACT_URL};
-
 /// Locks a mutex and recovers a poisoned one: a panic elsewhere must not take the limiter with it.
 pub(crate) fn lock_unpoisoned<T>(mutex: &std::sync::Mutex<T>) -> std::sync::MutexGuard<'_, T> {
     mutex

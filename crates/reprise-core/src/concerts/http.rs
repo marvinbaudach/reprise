@@ -4,7 +4,6 @@ use std::fs::OpenOptions;
 use std::io::Write;
 #[cfg(any(test, feature = "test-fixtures"))]
 use std::path::{Path, PathBuf};
-use std::time::Duration;
 #[cfg(any(test, feature = "test-fixtures"))]
 use std::time::{SystemTime, UNIX_EPOCH};
 
@@ -244,6 +243,7 @@ fn percent_decode(value: &str) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::time::Duration;
 
     #[test]
     fn fixture_routes_cover_every_concerts_http_consumer() {
@@ -283,9 +283,9 @@ mod tests {
 
     #[test]
     fn user_agent_identifies_reprise_and_the_contact_url() {
-        let value = crate::net::user_agent();
+        let value = crate::net::client::user_agent();
         assert!(value.contains(env!("CARGO_PKG_VERSION")));
-        assert!(value.contains(crate::net::CONTACT_URL));
+        assert!(value.contains(crate::net::client::CONTACT_URL));
     }
 
     #[test]
