@@ -61,7 +61,9 @@ shared_view=crates/reprise-view/src
 # model itself and its three constructors — raised the floor by 28 lines.
 # Dropping the `#[allow(clippy::enum_variant_names)]` on `QueueReorderOp`, which
 # no longer silenced anything, removed one attribute line and lowered it by one.
-view_floor=2181
+# Quick Open's result model and the sleep timer's decisions moved into
+# `reprise-view::{quick_open,sleep_timer}` (GNOME UX wave 1): +334 lines.
+view_floor=2515
 
 echo "== Frontend thinness =="
 

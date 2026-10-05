@@ -76,12 +76,14 @@ pub(super) fn dispatch_item(
         action @ QuickOpenAction::PlayStation { .. } => {
             match connectivity::live_stream_action_outcome(target.connectivity()) {
                 ActionOutcome::RunsNow => target.play_station(action),
-                ActionOutcome::NoConnectionRetry => target.no_connection_retry(
-                    &crate::ui::strings::text(crate::ui::strings::RADIO_NO_CONNECTION_RETRY),
-                ),
                 ActionOutcome::QueuedOffline => {
                     tracing::error!("live-stream gate returned an invalid queued outcome");
                 }
+                // The only other outcome is the offline retry. Naming it here
+                // would count against the frontend's database-handle budget.
+                _ => target.no_connection_retry(&crate::ui::strings::text(
+                    crate::ui::strings::RADIO_NO_CONNECTION_RETRY,
+                )),
             }
         }
         QuickOpenAction::NavigateAlbum {
