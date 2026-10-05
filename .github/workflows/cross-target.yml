@@ -92,11 +92,10 @@ jobs:
         run: rustup target add x86_64-pc-windows-msvc aarch64-linux-android
 
       # Only dev writes caches: a pull request's entries are scoped to its own
-      # ref, so dev could never read them back.
-      # The downloads are saved even when the run fails, or a red dev would
-      # never warm the cache that would make it green faster, but not when the
-      # run is cancelled: a cancelled run holds a partial registry, and saving
-      # it under the exact key would make every later run hit it and skip the save.
+      # ref, so dev could never read them back. Each save sits right behind the
+      # step that fills its path and hangs on that step's outcome: a failed
+      # download or install is never frozen under the exact key, and a later red
+      # step or a cancelled run changes nothing about what is saved.
       - name: Cache Cargo downloads
         id: cargo_downloads
         uses: actions/cache/restore@v6
@@ -107,6 +106,22 @@ jobs:
           key: cross-cargo-${{ hashFiles('Cargo.lock') }}
           restore-keys: |
             cross-cargo-
+
+      - name: Fetch Cargo dependencies
+        id: cargo_fetch
+        run: cargo fetch --locked
+
+      - name: Save Cargo downloads
+        if: >-
+          github.ref == 'refs/heads/dev' &&
+          steps.cargo_downloads.outputs.cache-hit != 'true' &&
+          steps.cargo_fetch.outcome == 'success'
+        uses: actions/cache/save@v6
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+          key: cross-cargo-${{ hashFiles('Cargo.lock') }}
 
       - name: Cache cargo-xwin
         id: cargo_xwin_cache
@@ -126,6 +141,7 @@ jobs:
           sudo apt-get install -y --no-install-recommends clang llvm lld
 
       - name: Install cargo-xwin
+        id: cargo_xwin_install
         if: steps.cargo_xwin_cache.outputs.cache-hit != 'true'
         run: |
           cargo install --locked --version 0.23.0 cargo-xwin
@@ -133,7 +149,8 @@ jobs:
       - name: Save cargo-xwin
         if: >-
           github.ref == 'refs/heads/dev' &&
-          steps.cargo_xwin_cache.outputs.cache-hit != 'true'
+          steps.cargo_xwin_cache.outputs.cache-hit != 'true' &&
+          steps.cargo_xwin_install.outcome == 'success'
         uses: actions/cache/save@v6
         with:
           path: ~/.cargo/bin/cargo-xwin
@@ -155,15 +172,3 @@ jobs:
           export CARGO_TARGET_AARCH64_LINUX_ANDROID_LINKER="$toolchain/aarch64-linux-android${ANDROID_API}-clang"
           cargo check --locked -p reprise-core --target aarch64-linux-android
           cargo check --locked -p reprise-android-ffi --target aarch64-linux-android
-
-      - name: Save Cargo downloads
-        if: >-
-          !cancelled() &&
-          github.ref == 'refs/heads/dev' &&
-          steps.cargo_downloads.outputs.cache-hit != 'true'
-        uses: actions/cache/save@v6
-        with:
-          path: |
-            ~/.cargo/registry
-            ~/.cargo/git
-          key: cross-cargo-${{ hashFiles('Cargo.lock') }}
