@@ -1,4 +1,6 @@
-use std::path::{Path, PathBuf};
+use std::path::Path;
+#[cfg(any(test, feature = "test-fixtures"))]
+use std::path::PathBuf;
 use std::time::{Duration, Instant};
 
 use serde::Deserialize;
@@ -15,6 +17,7 @@ pub(super) const HOST: &str = "music.163.com";
 const SEARCH_URL: &str = "https://music.163.com/api/search/get";
 const LYRIC_URL: &str = "https://music.163.com/api/song/lyric";
 const HTTP_TIMEOUT: Duration = Duration::from_secs(8);
+#[cfg(any(test, feature = "test-fixtures"))]
 const FIXTURE_DIR_ENV: &str = "REPRISE_LYRICS_FIXTURE_DIR";
 const DURATION_TOLERANCE_MS: u64 = 3_000;
 
@@ -32,10 +35,12 @@ trait NeteaseFetcher {
 
 struct ProductionFetcher;
 
+#[cfg(any(test, feature = "test-fixtures"))]
 pub(super) struct FixtureFetcher<'a> {
     directory: &'a Path,
 }
 
+#[cfg(any(test, feature = "test-fixtures"))]
 impl<'a> FixtureFetcher<'a> {
     pub(super) fn new(directory: &'a Path) -> Self {
         Self { directory }
@@ -240,6 +245,7 @@ fn lyric_url(id: u64) -> Result<String, LyricsError> {
     Ok(url.into())
 }
 
+#[cfg(any(test, feature = "test-fixtures"))]
 fn search_fixture_filename(query: &LyricsQuery) -> String {
     let terms = format!(
         "{} {}",
@@ -252,10 +258,12 @@ fn search_fixture_filename(query: &LyricsQuery) -> String {
     )
 }
 
+#[cfg(any(test, feature = "test-fixtures"))]
 fn lyric_fixture_filename(id: u64) -> String {
     format!("netease-lyric-{id}.json")
 }
 
+#[cfg(any(test, feature = "test-fixtures"))]
 impl NeteaseFetcher for FixtureFetcher<'_> {
     fn search(&self, query: &LyricsQuery, _timeout: Duration) -> FetchOutcome {
         read_fixture(self.directory.join(search_fixture_filename(query)))
@@ -268,20 +276,19 @@ impl NeteaseFetcher for FixtureFetcher<'_> {
 
 impl NeteaseFetcher for ProductionFetcher {
     fn search(&self, query: &LyricsQuery, timeout: Duration) -> FetchOutcome {
-        fixture_directory().map_or_else(
-            || {
-                search_url(query)
-                    .map_or(FetchOutcome::Failed(false), |url| fetch_url(&url, timeout))
-            },
-            |directory| FixtureFetcher::new(&directory).search(query, timeout),
-        )
+        #[cfg(any(test, feature = "test-fixtures"))]
+        if let Some(directory) = fixture_directory() {
+            return FixtureFetcher::new(&directory).search(query, timeout);
+        }
+        search_url(query).map_or(FetchOutcome::Failed(false), |url| fetch_url(&url, timeout))
     }
 
     fn lyric(&self, id: u64, timeout: Duration) -> FetchOutcome {
-        fixture_directory().map_or_else(
-            || lyric_url(id).map_or(FetchOutcome::Failed(false), |url| fetch_url(&url, timeout)),
-            |directory| FixtureFetcher::new(&directory).lyric(id, timeout),
-        )
+        #[cfg(any(test, feature = "test-fixtures"))]
+        if let Some(directory) = fixture_directory() {
+            return FixtureFetcher::new(&directory).lyric(id, timeout);
+        }
+        lyric_url(id).map_or(FetchOutcome::Failed(false), |url| fetch_url(&url, timeout))
     }
 }
 
@@ -297,6 +304,7 @@ fn fetch_url(url: &str, timeout: Duration) -> FetchOutcome {
         .map_or(FetchOutcome::Failed(false), FetchOutcome::Found)
 }
 
+#[cfg(any(test, feature = "test-fixtures"))]
 fn read_fixture(path: PathBuf) -> FetchOutcome {
     std::fs::File::open(path)
         .map_err(|_| ())
@@ -304,6 +312,7 @@ fn read_fixture(path: PathBuf) -> FetchOutcome {
         .map_or(FetchOutcome::Failed(false), FetchOutcome::Found)
 }
 
+#[cfg(any(test, feature = "test-fixtures"))]
 fn fixture_directory() -> Option<PathBuf> {
     std::env::var(FIXTURE_DIR_ENV).ok().map(PathBuf::from)
 }

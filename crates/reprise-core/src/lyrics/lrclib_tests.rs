@@ -98,6 +98,24 @@ fn fixture_uses_source_prefix_and_legacy_name_as_fallback() {
 }
 
 #[test]
+fn a_delay_file_holds_the_fixture_answer() {
+    let temp = TempDir::new().unwrap();
+    let url = request_url(&query()).unwrap();
+    let request = fixture_request(&url).unwrap();
+    let body = r#"{"plainLyrics":"fixture"}"#;
+    let path = temp.path().join(request.legacy_filename());
+    std::fs::write(&path, body).unwrap();
+    std::fs::write(path.with_extension("delay-ms"), "150\n").unwrap();
+
+    let started = std::time::Instant::now();
+    let outcome = fixture_get_at(&url, temp.path(), None);
+
+    // A floor, never a ceiling: a loaded host may be slower, never faster.
+    assert!(started.elapsed() >= Duration::from_millis(150));
+    assert_eq!(outcome, FetchOutcome::Found(body.into()));
+}
+
+#[test]
 fn oversized_fixture_response_is_rejected_before_json_parsing() {
     let temp = TempDir::new().unwrap();
     let request = fixture_request(&request_url(&query()).unwrap()).unwrap();

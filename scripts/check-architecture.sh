@@ -295,6 +295,20 @@ check_core_agent_allowlist \
   crates/reprise-core/src/library/listenbrainz.rs \
   crates/reprise-core/src/podcasts/stream_proxy.rs
 
+echo "== Fixture seams stay out of release builds =="
+
+# A provider's fixture-directory variable is a test seam. Its constant is declared behind
+# cfg(any(test, feature = "test-fixtures")), so the compiler keeps every read behind the same gate.
+ungated_fixture_consts=$(rg -n -U --pcre2 \
+  '(?<!#\[cfg\(any\(test, feature = "test-fixtures"\)\)\]\n)^(?:pub(?:\([a-z]+\))? )?const [A-Z_]*FIXTURE[A-Z_]*: &str' \
+  crates/reprise-core/src --glob '*.rs' --glob '!*_tests.rs' || true)
+if [[ -n $ungated_fixture_consts ]]; then
+  echo "fixture-directory constants must be declared behind cfg(any(test, feature = \"test-fixtures\")):" >&2
+  printf '%s\n' "$ungated_fixture_consts" >&2
+  exit 1
+fi
+echo "  fixture seams: every fixture constant is test-gated"
+
 # Positional APIs become harder to call correctly as their argument lists grow.
 # Keep the remaining explicit suppressions from multiplying, and require this
 # ceiling to fall in the same change whenever a suppression is removed.
