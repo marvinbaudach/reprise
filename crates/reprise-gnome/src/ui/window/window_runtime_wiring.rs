@@ -64,10 +64,25 @@ mod nav_back;
 mod playing_source;
 #[path = "window_playing_source_wiring.rs"]
 mod playing_source_wiring;
+#[path = "quick_open.rs"]
+mod quick_open;
+#[path = "wiring/quick_open_actions.rs"]
+mod quick_open_actions;
+#[path = "wiring/quick_open_data.rs"]
+mod quick_open_data;
+#[cfg(test)]
+#[path = "quick_open_display_tests.rs"]
+mod quick_open_display_tests;
+#[path = "quick_open_row.rs"]
+mod quick_open_row;
+#[path = "wiring/quick_open.rs"]
+mod quick_open_wiring;
 #[path = "wiring/section_search.rs"]
 mod section_search;
 #[path = "wiring/session_restore.rs"]
 mod session_restore;
+#[path = "wiring/sleep_timer.rs"]
+mod sleep_timer;
 #[path = "wiring/view_session.rs"]
 mod view_session;
 #[path = "wiring/mod.rs"]
@@ -136,8 +151,10 @@ pub(in crate::ui) fn wire(args: RuntimeWiring<'_>) {
     compact_mode::wire_compact_mode(&args);
     menu::wire_menu(&args, &scratch);
     playing_source::wire_playing_source(&args);
+    sleep_timer::wire_sleep_timer(&args);
     nav_back::wire_nav_back(&args, &scratch);
     section_search::wire_section_search(&args, &scratch);
+    quick_open_wiring::wire_quick_open(&args, &scratch);
     clear_all::wire_clear_all(&args, &scratch);
     listeners::wire_listeners(&args);
     view_session::wire_view_session(&args, &scratch);

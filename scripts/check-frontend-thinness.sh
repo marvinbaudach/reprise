@@ -61,7 +61,9 @@ shared_view=crates/reprise-view/src
 # model itself and its three constructors — raised the floor by 28 lines.
 # Dropping the `#[allow(clippy::enum_variant_names)]` on `QueueReorderOp`, which
 # no longer silenced anything, removed one attribute line and lowered it by one.
-view_floor=2181
+# Quick Open's result model and the sleep timer's decisions moved into
+# `reprise-view::{quick_open,sleep_timer}` (GNOME UX wave 1): +334 lines.
+view_floor=2515
 
 echo "== Frontend thinness =="
 
@@ -79,8 +81,11 @@ echo "== Frontend thinness =="
 # wizard answers that now, so the count drops by one.
 # Deleting the Artist News fetch worker, whose last request path was already
 # gone, took its `reprise-artist-news` thread with it: threads drop by one.
+# Quick Open names `ActionOutcome::NoConnectionRetry` in its radio dispatch, as
+# the radio view does. The pattern's bare `Connection` counts that variant name,
+# not a database handle: rusqlite rises by one without any new Db access.
 declare -A budget=(
-  [rusqlite]=114
+  [rusqlite]=115
   [filesystem]=13
   [threads]=14
   [workers]=7

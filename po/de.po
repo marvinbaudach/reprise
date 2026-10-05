@@ -2,7 +2,7 @@ msgid ""
 msgstr ""
 "Project-Id-Version: Reprise 0.1.1\n"
 "Report-Msgid-Bugs-To: Marvin Baudach\n"
-"POT-Creation-Date: 2026-10-03 10:33+0200\n"
+"POT-Creation-Date: 2026-10-05 02:23+0200\n"
 "PO-Revision-Date: 2026-07-26 14:47+0200\n"
 "Last-Translator: Marvin Baudach\n"
 "Language-Team: German\n"
@@ -480,6 +480,7 @@ msgid "Scan a folder to build your library"
 msgstr "Lesen Sie einen Ordner ein, um Ihre Musiksammlung aufzubauen"
 
 #: crates/reprise-gnome/src/ui/strings.rs:341
+#: crates/reprise-gnome/src/ui/strings_app_shell.rs:21
 msgid "No results"
 msgstr "Keine Ergebnisse"
 
@@ -550,6 +551,7 @@ msgid "Status"
 msgstr "Status"
 
 #: crates/reprise-gnome/src/ui/strings.rs:394
+#: crates/reprise-gnome/src/ui/strings_app_shell.rs:27
 #: crates/reprise-gnome/src/ui/strings_concerts.rs:15
 #: crates/reprise-gnome/src/ui/strings_releases.rs:14
 #: crates/reprise-gnome/src/ui/strings_tag_edit.rs:166
@@ -558,6 +560,7 @@ msgid "Artist"
 msgstr "Interpret"
 
 #: crates/reprise-gnome/src/ui/strings.rs:395
+#: crates/reprise-gnome/src/ui/strings_app_shell.rs:25
 #: crates/reprise-gnome/src/ui/strings_releases.rs:24
 #: crates/reprise-gnome/src/ui/strings_tag_edit.rs:167
 #: crates/reprise-view/src/strings/browse.rs:14
@@ -565,6 +568,7 @@ msgid "Album"
 msgstr "Album"
 
 #: crates/reprise-gnome/src/ui/strings.rs:396
+#: crates/reprise-gnome/src/ui/strings_app_shell.rs:23
 #: crates/reprise-gnome/src/ui/strings_library_doctor.rs:108
 msgid "Track"
 msgstr "Nr."
@@ -763,6 +767,7 @@ msgstr ""
 "Sie es erneut"
 
 #: crates/reprise-gnome/src/ui/strings.rs:617
+#: crates/reprise-gnome/src/ui/strings_app_shell.rs:88
 #: crates/reprise-gnome/src/ui/strings_library_doctor.rs:158
 #: crates/reprise-gnome/src/ui/strings_filter.rs:32
 #: crates/reprise-gnome/src/ui/strings_tag_edit.rs:271
@@ -880,153 +885,249 @@ msgstr "MIT"
 msgid "Public Domain"
 msgstr "Gemeinfrei"
 
-#: crates/reprise-gnome/src/ui/strings_app_shell.rs:7
+#: crates/reprise-gnome/src/ui/strings_app_shell.rs:9
 msgid "Reveal playing album"
 msgstr "Spielendes Album anzeigen"
 
-#: crates/reprise-gnome/src/ui/strings_app_shell.rs:9
+#: crates/reprise-gnome/src/ui/strings_app_shell.rs:11
 msgid "About Reprise"
 msgstr "Über Reprise"
 
-#: crates/reprise-gnome/src/ui/strings_app_shell.rs:10
+#: crates/reprise-gnome/src/ui/strings_app_shell.rs:12
 msgid "translator-credits"
 msgstr "Marvin Baudach <tomateq@pm.me>"
 
-#: crates/reprise-gnome/src/ui/strings_app_shell.rs:13
+#: crates/reprise-gnome/src/ui/strings_app_shell.rs:15
 msgid "Help"
 msgstr "Hilfe"
 
-#: crates/reprise-gnome/src/ui/strings_app_shell.rs:14
+#: crates/reprise-gnome/src/ui/strings_app_shell.rs:16
 #: crates/reprise-gnome/src/ui/preferences/preference_visual_strings.rs:25
 msgid "Navigation"
 msgstr "Navigation"
 
-#: crates/reprise-gnome/src/ui/strings_app_shell.rs:15
+#: crates/reprise-gnome/src/ui/strings_app_shell.rs:17
 msgid "Play or Pause"
 msgstr "Wiedergabe oder Pause"
 
-#: crates/reprise-gnome/src/ui/strings_app_shell.rs:16
+#: crates/reprise-gnome/src/ui/strings_app_shell.rs:18
 msgid "Increase Volume"
 msgstr "Lautstärke erhöhen"
 
-#: crates/reprise-gnome/src/ui/strings_app_shell.rs:17
+#: crates/reprise-gnome/src/ui/strings_app_shell.rs:19
 msgid "Decrease Volume"
 msgstr "Lautstärke verringern"
 
-#: crates/reprise-gnome/src/ui/strings_app_shell.rs:18
+#: crates/reprise-gnome/src/ui/strings_app_shell.rs:20
+msgid "Quick Open"
+msgstr "Schnell öffnen"
+
+#: crates/reprise-gnome/src/ui/strings_app_shell.rs:22
+msgid "Quick Open search failed"
+msgstr "Schnellöffnen-Suche fehlgeschlagen"
+
+#: crates/reprise-gnome/src/ui/strings_app_shell.rs:24
+msgid "Tracks"
+msgstr "Titel"
+
+#: crates/reprise-gnome/src/ui/strings_app_shell.rs:26
+msgid "Albums"
+msgstr "Alben"
+
+#: crates/reprise-gnome/src/ui/strings_app_shell.rs:28
+#: crates/reprise-gnome/src/ui/strings_news.rs:44
+msgid "Artists"
+msgstr "Interpreten"
+
+#: crates/reprise-gnome/src/ui/strings_app_shell.rs:29
+msgid "Playlist"
+msgstr "Wiedergabeliste"
+
+#: crates/reprise-gnome/src/ui/strings_app_shell.rs:30
+#: crates/reprise-gnome/src/ui/strings_rhythmbox.rs:14
+#: crates/reprise-gnome/src/ui/device_sync/device_sync_strings.rs:91
+msgid "Playlists"
+msgstr "Wiedergabelisten"
+
+#: crates/reprise-gnome/src/ui/strings_app_shell.rs:31
+msgid "Podcast show"
+msgstr "Podcast-Sendung"
+
+#: crates/reprise-gnome/src/ui/strings_app_shell.rs:32
+msgid "Podcast shows"
+msgstr "Podcast-Sendungen"
+
+#: crates/reprise-gnome/src/ui/strings_app_shell.rs:33
+msgid "Radio station"
+msgstr "Radiosender"
+
+#: crates/reprise-gnome/src/ui/strings_app_shell.rs:34
+msgid "Radio stations"
+msgstr "Radiosender"
+
+#: crates/reprise-gnome/src/ui/strings_app_shell.rs:35
+#: crates/reprise-gnome/src/ui/device_sync/device_sync_strings.rs:99
+msgid "Smart playlist"
+msgstr "Intelligente Playlist"
+
+#: crates/reprise-gnome/src/ui/strings_app_shell.rs:36
+msgid "Sleep Timer"
+msgstr "Schlaftimer"
+
+#: crates/reprise-gnome/src/ui/strings_app_shell.rs:37
+msgid "End of Track"
+msgstr "Titelende"
+
+#: crates/reprise-gnome/src/ui/strings_app_shell.rs:38
+msgid "Cancel Sleep Timer"
+msgstr "Schlaftimer abbrechen"
+
+#: crates/reprise-gnome/src/ui/strings_app_shell.rs:39
+msgid "Pauses after this track"
+msgstr "Pausiert nach diesem Titel"
+
+#: crates/reprise-gnome/src/ui/strings_app_shell.rs:40
+msgid "Paused by sleep timer"
+msgstr "Vom Schlaftimer pausiert"
+
+#: crates/reprise-gnome/src/ui/strings_app_shell.rs:41
 msgid "Search Library"
 msgstr "Bibliothek durchsuchen"
 
-#: crates/reprise-gnome/src/ui/strings_app_shell.rs:19
+#: crates/reprise-gnome/src/ui/strings_app_shell.rs:42
 msgid "Esc to close"
 msgstr "Esc zum Schließen"
 
-#: crates/reprise-gnome/src/ui/strings_app_shell.rs:20
+#: crates/reprise-gnome/src/ui/strings_app_shell.rs:43
 msgid "Toggle Compact View"
 msgstr "Kompaktansicht umschalten"
 
-#: crates/reprise-gnome/src/ui/strings_app_shell.rs:21
+#: crates/reprise-gnome/src/ui/strings_app_shell.rs:44
 msgid "Clear Search or Return to Content"
 msgstr "Suche leeren oder zum Inhalt zurückkehren"
 
-#: crates/reprise-gnome/src/ui/strings_app_shell.rs:22
+#: crates/reprise-gnome/src/ui/strings_app_shell.rs:45
 msgid "Play Selected Track"
 msgstr "Ausgewählten Titel wiedergeben"
 
-#: crates/reprise-gnome/src/ui/strings_app_shell.rs:23
+#: crates/reprise-gnome/src/ui/strings_app_shell.rs:46
 msgid "Open Context Menu"
 msgstr "Kontextmenü öffnen"
 
-#: crates/reprise-gnome/src/ui/strings_app_shell.rs:24
+#: crates/reprise-gnome/src/ui/strings_app_shell.rs:47
 msgid "Open Help"
 msgstr "Hilfe öffnen"
 
-#: crates/reprise-gnome/src/ui/strings_app_shell.rs:25
+#: crates/reprise-gnome/src/ui/strings_app_shell.rs:48
 msgid "Open Main Menu"
 msgstr "Hauptmenü öffnen"
 
-#: crates/reprise-gnome/src/ui/strings_app_shell.rs:26
+#: crates/reprise-gnome/src/ui/strings_app_shell.rs:49
 msgid "Close Window"
 msgstr "Fenster schließen"
 
-#: crates/reprise-gnome/src/ui/strings_app_shell.rs:27
+#: crates/reprise-gnome/src/ui/strings_app_shell.rs:50
 msgid "Quit Reprise"
 msgstr "Reprise beenden"
 
-#: crates/reprise-gnome/src/ui/strings_app_shell.rs:30
+#: crates/reprise-gnome/src/ui/strings_app_shell.rs:53
 msgid "Cancel Scan"
 msgstr "Einlesen abbrechen"
 
-#: crates/reprise-gnome/src/ui/strings_app_shell.rs:31
+#: crates/reprise-gnome/src/ui/strings_app_shell.rs:54
 msgid "Keyboard Shortcuts"
 msgstr "Tastenkürzel"
 
-#: crates/reprise-gnome/src/ui/strings_app_shell.rs:32
+#: crates/reprise-gnome/src/ui/strings_app_shell.rs:55
 msgid "Open Keyboard Shortcuts"
 msgstr "Tastenkürzel öffnen"
 
-#: crates/reprise-gnome/src/ui/strings_app_shell.rs:35
+#: crates/reprise-gnome/src/ui/strings_app_shell.rs:58
 msgid "Always on Top"
 msgstr "Immer im Vordergrund"
 
-#: crates/reprise-gnome/src/ui/strings_app_shell.rs:36
+#: crates/reprise-gnome/src/ui/strings_app_shell.rs:59
 msgid "Quit"
 msgstr "Beenden"
 
-#: crates/reprise-gnome/src/ui/strings_app_shell.rs:39
+#: crates/reprise-gnome/src/ui/strings_app_shell.rs:64
+#, rust-format
+msgid "{minutes} minute"
+msgid_plural "{minutes} minutes"
+msgstr[0] "{minutes} Minute"
+msgstr[1] "{minutes} Minuten"
+
+#: crates/reprise-gnome/src/ui/strings_app_shell.rs:74
+#, rust-format
+msgid "Pauses in {minutes} minute"
+msgid_plural "Pauses in {minutes} minutes"
+msgstr[0] "Pausiert in {minutes} Minute"
+msgstr[1] "Pausiert in {minutes} Minuten"
+
+#: crates/reprise-gnome/src/ui/strings_app_shell.rs:97
+#, rust-format
+msgid "Show all {count} in {section}"
+msgstr "Alle {count} in {section} anzeigen"
+
+#: crates/reprise-gnome/src/ui/strings_app_shell.rs:104
+#, rust-format
+msgid "{kind}: {title}, {subtitle}"
+msgstr "{kind}: {title}, {subtitle}"
+
+#: crates/reprise-gnome/src/ui/strings_app_shell.rs:110
 #, rust-format
 msgid "Turn Off {name}"
 msgstr "{name} deaktivieren"
 
-#: crates/reprise-gnome/src/ui/strings_app_shell.rs:43
+#: crates/reprise-gnome/src/ui/strings_app_shell.rs:114
 #, rust-format
 msgid "{name} settings…"
 msgstr "{name}-Einstellungen…"
 
-#: crates/reprise-gnome/src/ui/strings_app_shell.rs:47
+#: crates/reprise-gnome/src/ui/strings_app_shell.rs:118
 #, rust-format
 msgid "Could not turn off {name}"
 msgstr "{name} konnte nicht deaktiviert werden"
 
-#: crates/reprise-gnome/src/ui/strings_app_shell.rs:51
+#: crates/reprise-gnome/src/ui/strings_app_shell.rs:122
 #, rust-format
 msgid "{name} turned off"
 msgstr "{name} deaktiviert"
 
-#: crates/reprise-gnome/src/ui/strings_app_shell.rs:55
+#: crates/reprise-gnome/src/ui/strings_app_shell.rs:126
 #, rust-format
 msgid "{name} turned off · showing Music"
 msgstr "{name} deaktiviert · Musik wird angezeigt"
 
-#: crates/reprise-gnome/src/ui/strings_app_shell.rs:59
+#: crates/reprise-gnome/src/ui/strings_app_shell.rs:130
 msgid "Accent Color"
 msgstr "Akzentfarbe"
 
-#: crates/reprise-gnome/src/ui/strings_app_shell.rs:60
+#: crates/reprise-gnome/src/ui/strings_app_shell.rs:131
 msgid "Choose the Reprise accent or follow the system"
 msgstr "Den Reprise-Akzent verwenden oder dem System folgen"
 
-#: crates/reprise-gnome/src/ui/strings_app_shell.rs:61
+#: crates/reprise-gnome/src/ui/strings_app_shell.rs:132
 msgid "App Accent"
 msgstr "App-Akzent"
 
-#: crates/reprise-gnome/src/ui/strings_app_shell.rs:62
+#: crates/reprise-gnome/src/ui/strings_app_shell.rs:133
 msgid "Color Scheme"
 msgstr "Farbschema"
 
-#: crates/reprise-gnome/src/ui/strings_app_shell.rs:63
+#: crates/reprise-gnome/src/ui/strings_app_shell.rs:134
 msgid "Choose light, dark, or follow system preference"
 msgstr "Hell, dunkel oder entsprechend der Systemeinstellung wählen"
 
-#: crates/reprise-gnome/src/ui/strings_app_shell.rs:64
+#: crates/reprise-gnome/src/ui/strings_app_shell.rs:135
 msgid "Light"
 msgstr "Hell"
 
-#: crates/reprise-gnome/src/ui/strings_app_shell.rs:65
+#: crates/reprise-gnome/src/ui/strings_app_shell.rs:136
 msgid "Dark"
 msgstr "Dunkel"
 
-#: crates/reprise-gnome/src/ui/strings_app_shell.rs:66
+#: crates/reprise-gnome/src/ui/strings_app_shell.rs:137
 msgid "System"
 msgstr "System"
 
@@ -2493,10 +2594,6 @@ msgstr "Fehlende Songtexte laden · kontaktiert LRCLIB und NetEase"
 #: crates/reprise-gnome/src/ui/strings_news.rs:42
 msgid "Enable new releases →"
 msgstr "Neue Veröffentlichungen aktivieren →"
-
-#: crates/reprise-gnome/src/ui/strings_news.rs:44
-msgid "Artists"
-msgstr "Interpreten"
 
 #: crates/reprise-gnome/src/ui/strings_news.rs:45
 msgid "Top artists only"
@@ -4436,11 +4533,6 @@ msgstr "Hinzugefügt am"
 msgid "Play counts & last played"
 msgstr "Wiedergabezähler & zuletzt wiedergegeben"
 
-#: crates/reprise-gnome/src/ui/strings_rhythmbox.rs:14
-#: crates/reprise-gnome/src/ui/device_sync/device_sync_strings.rs:91
-msgid "Playlists"
-msgstr "Wiedergabelisten"
-
 #: crates/reprise-gnome/src/ui/strings_rhythmbox.rs:18
 msgid "Could not read the Rhythmbox library — import stays disabled"
 msgstr ""
@@ -5784,10 +5876,6 @@ msgstr "Sync-Inhalte filtern"
 msgid "Everything"
 msgstr "Alles"
 
-#: crates/reprise-gnome/src/ui/device_sync/device_sync_strings.rs:99
-msgid "Smart playlist"
-msgstr "Intelligente Playlist"
-
 #: crates/reprise-gnome/src/ui/device_sync/device_sync_strings.rs:100
 msgid "Keep smart playlists up to date on each sync"
 msgstr "Intelligente Playlists bei jedem Sync neu auswerten"
@@ -6564,6 +6652,14 @@ msgstr "Clientseitige Dekoration"
 #: crates/reprise-gnome/src/ui/window/window_decoration_strings.rs:18
 msgid "Separate title bar"
 msgstr "Separate Titelleiste"
+
+#, rust-format
+#~ msgid "{minutes} minutes"
+#~ msgstr "{minutes} Minuten"
+
+#, rust-format
+#~ msgid "Pauses in {minutes} minutes"
+#~ msgstr "Pausiert in {minutes} Minuten"
 
 #~ msgid "Recently added"
 #~ msgstr "Kürzlich hinzugefügt"

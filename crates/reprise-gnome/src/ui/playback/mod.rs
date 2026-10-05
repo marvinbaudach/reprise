@@ -37,6 +37,9 @@ mod seek_start_tests;
 pub(crate) mod session_player;
 #[cfg(test)]
 mod session_player_tests;
+#[cfg(test)]
+mod sleep_timer_display_tests;
+pub(in crate::ui) mod sleep_timer_hooks;
 pub(in crate::ui) mod source_item_identity;
 #[cfg(test)]
 pub(in crate::ui) mod test_support;
