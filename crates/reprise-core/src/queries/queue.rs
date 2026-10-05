@@ -10,7 +10,7 @@ use crate::podcasts::EpisodeRow;
 use crate::up_next::QueueItem;
 
 use super::clauses::{row_to_track, track_projection};
-use super::MAX_WINDOW_LIMIT;
+use super::{AiColumn, RowWindow, TrackViewQuery, MAX_WINDOW_LIMIT};
 
 /// Hard cap for playback snapshots and the manual queue.
 pub const QUEUE_LIMIT: i64 = 10_000;
@@ -53,20 +53,24 @@ pub fn query_queue_item_window(
 
 pub(super) fn query_track_window_queue(
     conn: &Connection,
-    items: &[QueueItem],
-    offset: i64,
-    limit: i64,
-    project_ai: bool,
+    view: &TrackViewQuery<'_>,
+    rows: RowWindow,
+    ai: AiColumn,
 ) -> Result<Vec<Track>, rusqlite::Error> {
-    Ok(
-        query_queue_item_window_with_observer(conn, items, offset, limit, project_ai, || {})?
-            .into_iter()
-            .filter_map(|metadata| match metadata {
-                QueueItemMetadata::Track(track) => Some(track),
-                QueueItemMetadata::Episode(_) => None,
-            })
-            .collect(),
-    )
+    Ok(query_queue_item_window_with_observer(
+        conn,
+        view.queue_items,
+        rows.offset,
+        rows.limit,
+        ai == AiColumn::Project,
+        || {},
+    )?
+    .into_iter()
+    .filter_map(|metadata| match metadata {
+        QueueItemMetadata::Track(track) => Some(track),
+        QueueItemMetadata::Episode(_) => None,
+    })
+    .collect())
 }
 
 #[cfg(test)]
@@ -230,9 +234,9 @@ pub(super) fn query_queue_item_count(
 
 pub(super) fn query_track_count_queue(
     conn: &Connection,
-    items: &[QueueItem],
+    view: &TrackViewQuery<'_>,
 ) -> Result<i64, rusqlite::Error> {
-    query_queue_item_count(conn, items)
+    query_queue_item_count(conn, view.queue_items)
 }
 
 fn query_existing_ids(
@@ -256,7 +260,6 @@ fn query_existing_ids(
     rows
 }
 
-#[allow(clippy::too_many_arguments)]
 fn query_durations(
     conn: &Connection,
     source: &str,

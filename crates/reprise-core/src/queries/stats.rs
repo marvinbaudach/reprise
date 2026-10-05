@@ -54,7 +54,11 @@ fn query_library_stats_browsed_conn(
     let filtered_count = if filter.trim().is_empty() && browse.is_empty() {
         None
     } else {
-        Some(library::query_track_count_library(conn, filter, browse)?)
+        let source = crate::view_source::ViewSource::Library;
+        let view = super::TrackViewQuery::new(&source)
+            .with_filter(filter)
+            .with_browse(browse);
+        Some(library::query_track_count_library(conn, &view)?)
     };
     Ok(LibraryStats {
         track_count,

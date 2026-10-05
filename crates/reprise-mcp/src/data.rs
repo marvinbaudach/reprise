@@ -285,18 +285,19 @@ pub fn playlist_contents(
         .map_err(DataError::Db)?
         .ok_or_else(|| DataError::InvalidInput("playlist does not exist".to_owned()))?;
     let source = ViewSource::Playlist(playlist_id);
-    let total = queries::query_track_count(&db, &source, "", &[]).map_err(DataError::Db)?;
+    let view = queries::TrackViewQuery::new(&source);
+    let total = queries::query_track_count(&db, &view).map_err(DataError::Db)?;
     let limit = resolve_limit(limit);
     let offset = i64::from(offset.unwrap_or(0));
     let tracks = queries::query_track_window(
         &db,
-        &source,
-        "playlist_order",
-        "asc",
-        "",
-        offset,
-        limit,
-        &[],
+        &view,
+        queries::TrackSort {
+            field: "playlist_order",
+            dir: "asc",
+        },
+        queries::RowWindow { offset, limit },
+        queries::AiColumn::Project,
     )
     .map_err(DataError::Db)?;
     let tracks: Vec<TrackDto> = tracks.iter().map(TrackDto::from).collect();

@@ -197,7 +197,9 @@ impl DoctorStartPage {
 
     pub(in crate::ui) fn refresh(&self, db: &Db) {
         self.refresh_remote_availability();
-        let track_count = queries::query_track_count(db, &ViewSource::Library, "", &[])
+        let source = ViewSource::Library;
+        let view = queries::TrackViewQuery::new(&source);
+        let track_count = queries::query_track_count(db, &view)
             .unwrap_or_default()
             .max(0) as usize;
         let rates = reprise_core::library_doctor::scan_rates(db).unwrap_or_default();

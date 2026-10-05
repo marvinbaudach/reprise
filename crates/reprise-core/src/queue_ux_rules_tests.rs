@@ -3,6 +3,7 @@
 // gates the mapping. One primary rule ID per test name.
 
 use super::*;
+use crate::queries::{TrackSort, TrackViewQuery};
 
 // UX PLAY-2: double-click plays the row and appends the rest of the visible
 // list from that position onto the queue (activation snapshot).
@@ -77,11 +78,11 @@ fn play_4a_list_playback_and_queue_advance_skip_missing_silently() {
     crate::library::playlists::add_tracks(&db, playlist_id, &[1, 2, 3]).unwrap();
     let playable = crate::queries::query_track_ids(
         &db,
-        &crate::view_source::ViewSource::Playlist(playlist_id),
-        "playlist_order",
-        "asc",
-        "",
-        &[],
+        &TrackViewQuery::new(&crate::view_source::ViewSource::Playlist(playlist_id)),
+        TrackSort {
+            field: "playlist_order",
+            dir: "asc",
+        },
     )
     .unwrap();
     assert_eq!(playable, vec![1, 3], "Play all skips missing list rows");

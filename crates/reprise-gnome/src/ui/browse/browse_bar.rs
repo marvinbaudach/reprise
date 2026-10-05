@@ -617,14 +617,17 @@ fn schedule_smoke_step(
         let filter = shared.filter.borrow().clone();
         let ids = {
             let conn = &shared.conn;
-            queries::query_track_ids_browsed(
+            let source = reprise_core::view_source::ViewSource::Library;
+            let view = queries::TrackViewQuery::new(&source)
+                .with_filter(&filter)
+                .with_browse(&browse);
+            queries::query_track_ids(
                 conn,
-                &reprise_core::view_source::ViewSource::Library,
-                &sort.field,
-                &sort.dir,
-                &filter,
-                &browse,
-                &[],
+                &view,
+                queries::TrackSort {
+                    field: &sort.field,
+                    dir: &sort.dir,
+                },
             )
         };
         let chips: Vec<_> = filter_chips(&browse)

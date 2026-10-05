@@ -15,32 +15,28 @@ fn fil_1c_genre_source_remains_restricted_after_facets_are_cleared() {
 
     let source = ViewSource::Genre("Metalcore".into());
     assert_eq!(
-        query_track_count_browsed(&db, &source, "", &BrowseFilter::default(), &[]).unwrap(),
+        query_track_count(
+            &db,
+            &TrackViewQuery::new(&source).with_browse(&BrowseFilter::default())
+        )
+        .unwrap(),
         2
     );
-    let rows = query_track_window_browsed(
+    let rows = query_track_window(
         &db,
-        &source,
-        "title",
-        "asc",
-        "",
-        &BrowseFilter::default(),
-        0,
-        10,
-        &[],
+        &TrackViewQuery::new(&source).with_browse(&BrowseFilter::default()),
+        test_sort("title", "asc"),
+        test_rows(0, 10),
+        AiColumn::Project,
     )
     .unwrap();
     assert_eq!(rows.len(), 2);
     assert!(rows.iter().all(|track| track.genre == "Metalcore"));
     assert_eq!(
-        query_track_ids_browsed(
+        query_track_ids(
             &db,
-            &source,
-            "title",
-            "asc",
-            "",
-            &BrowseFilter::default(),
-            &[],
+            &TrackViewQuery::new(&source).with_browse(&BrowseFilter::default()),
+            test_sort("title", "asc")
         )
         .unwrap(),
         vec![1, 2]

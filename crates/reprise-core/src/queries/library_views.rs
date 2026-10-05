@@ -9,10 +9,34 @@ use super::clauses::{
     filter_clause, like_pattern, order_clause, row_to_id, row_to_track, track_projection, PRESENT,
 };
 use super::queue::QUEUE_LIMIT;
-use super::{browse::browse_clause, BrowseFilter, TrackWindow, WindowRange, MAX_WINDOW_LIMIT};
+use super::{
+    browse::browse_clause, AiColumn, BrowseFilter, RowWindow, TrackSort, TrackViewQuery,
+    TrackWindow, WindowRange, MAX_WINDOW_LIMIT,
+};
 
 pub(crate) const EFFECTIVE_ALBUM_ARTIST: &str =
     "CASE WHEN TRIM(album_artist) <> '' THEN TRIM(album_artist) ELSE TRIM(artist) END";
+
+#[derive(Clone, Copy)]
+pub(super) struct AlbumKey<'a> {
+    pub(super) album: &'a str,
+    pub(super) album_artist: &'a str,
+}
+
+#[derive(Clone, Copy)]
+pub(super) struct TrackRefinement<'a> {
+    filter: &'a str,
+    browse: &'a BrowseFilter,
+}
+
+impl<'a> From<&TrackViewQuery<'a>> for TrackRefinement<'a> {
+    fn from(view: &TrackViewQuery<'a>) -> Self {
+        Self {
+            filter: view.filter,
+            browse: view.browse,
+        }
+    }
+}
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct AlbumSummary {
@@ -365,26 +389,21 @@ pub fn query_artist_count(db: &Db, filter: &str) -> Result<i64, rusqlite::Error>
     )
 }
 
-#[allow(clippy::too_many_arguments)]
 pub(super) fn query_album_track_window(
     conn: &Connection,
-    album: &str,
-    album_artist: &str,
-    sort_field: &str,
-    sort_dir: &str,
-    filter: &str,
-    browse: &BrowseFilter,
-    offset: i64,
-    limit: i64,
-    project_ai: bool,
+    key: AlbumKey<'_>,
+    refinement: TrackRefinement<'_>,
+    sort: TrackSort<'_>,
+    rows: RowWindow,
+    ai: AiColumn,
 ) -> Result<Vec<Track>, rusqlite::Error> {
-    let limit = limit.clamp(0, MAX_WINDOW_LIMIT);
-    let has_filter = !filter.trim().is_empty();
-    let order = order_clause(sort_field, sort_dir);
+    let limit = rows.limit.clamp(0, MAX_WINDOW_LIMIT);
+    let has_filter = !refinement.filter.trim().is_empty();
+    let order = order_clause(sort.field, sort.dir);
     let filter_sql = filter_clause(has_filter, 5);
     let browse_first_param = if has_filter { 6 } else { 5 };
-    let (browse_sql, browse_values) = browse_clause(browse, browse_first_param);
-    let projection = track_projection("", project_ai);
+    let (browse_sql, browse_values) = browse_clause(refinement.browse, browse_first_param);
+    let projection = track_projection("", ai == AiColumn::Project);
     let sql = format!(
         "SELECT {projection} \
          FROM tracks WHERE {PRESENT} \
@@ -394,12 +413,12 @@ pub(super) fn query_album_track_window(
     );
     let mut params = vec![
         Value::Integer(limit),
-        Value::Integer(offset),
-        Value::Text(album.to_string()),
-        Value::Text(album_artist.to_string()),
+        Value::Integer(rows.offset),
+        Value::Text(key.album.to_string()),
+        Value::Text(key.album_artist.to_string()),
     ];
     if has_filter {
-        params.push(Value::Text(like_pattern(filter.trim())));
+        params.push(Value::Text(like_pattern(refinement.filter.trim())));
     }
     params.extend(browse_values.into_iter().map(Value::Text));
     let mut statement = conn.prepare(&sql)?;
@@ -409,46 +428,40 @@ pub(super) fn query_album_track_window(
 
 pub(super) fn query_album_track_count(
     conn: &Connection,
-    album: &str,
-    album_artist: &str,
-    filter: &str,
-    browse: &BrowseFilter,
+    key: AlbumKey<'_>,
+    refinement: TrackRefinement<'_>,
 ) -> Result<i64, rusqlite::Error> {
-    let has_filter = !filter.trim().is_empty();
+    let has_filter = !refinement.filter.trim().is_empty();
     let filter_sql = filter_clause(has_filter, 3);
     let browse_first_param = if has_filter { 4 } else { 3 };
-    let (browse_sql, browse_values) = browse_clause(browse, browse_first_param);
+    let (browse_sql, browse_values) = browse_clause(refinement.browse, browse_first_param);
     let sql = format!(
         "SELECT count(*) FROM tracks WHERE {PRESENT} \
          AND TRIM(album) = TRIM(?1) COLLATE NOCASE \
          AND {EFFECTIVE_ALBUM_ARTIST} = TRIM(?2) COLLATE NOCASE{filter_sql}{browse_sql}"
     );
     let mut params = vec![
-        Value::Text(album.to_string()),
-        Value::Text(album_artist.to_string()),
+        Value::Text(key.album.to_string()),
+        Value::Text(key.album_artist.to_string()),
     ];
     if has_filter {
-        params.push(Value::Text(like_pattern(filter.trim())));
+        params.push(Value::Text(like_pattern(refinement.filter.trim())));
     }
     params.extend(browse_values.into_iter().map(Value::Text));
     conn.query_row(&sql, rusqlite::params_from_iter(params), |row| row.get(0))
 }
 
-#[allow(clippy::too_many_arguments)]
 pub(super) fn query_album_track_ids_browsed(
     conn: &Connection,
-    album: &str,
-    album_artist: &str,
-    sort_field: &str,
-    sort_dir: &str,
-    filter: &str,
-    browse: &BrowseFilter,
+    key: AlbumKey<'_>,
+    refinement: TrackRefinement<'_>,
+    sort: TrackSort<'_>,
 ) -> Result<Vec<i64>, rusqlite::Error> {
-    let has_filter = !filter.trim().is_empty();
-    let order = order_clause(sort_field, sort_dir);
+    let has_filter = !refinement.filter.trim().is_empty();
+    let order = order_clause(sort.field, sort.dir);
     let filter_sql = filter_clause(has_filter, 3);
     let browse_first_param = if has_filter { 4 } else { 3 };
-    let (browse_sql, browse_values) = browse_clause(browse, browse_first_param);
+    let (browse_sql, browse_values) = browse_clause(refinement.browse, browse_first_param);
     let sql = format!(
         "SELECT id FROM tracks WHERE {PRESENT} \
          AND TRIM(album) = TRIM(?1) COLLATE NOCASE \
@@ -456,11 +469,11 @@ pub(super) fn query_album_track_ids_browsed(
          ORDER BY {order} LIMIT {QUEUE_LIMIT}"
     );
     let mut params = vec![
-        Value::Text(album.to_string()),
-        Value::Text(album_artist.to_string()),
+        Value::Text(key.album.to_string()),
+        Value::Text(key.album_artist.to_string()),
     ];
     if has_filter {
-        params.push(Value::Text(like_pattern(filter.trim())));
+        params.push(Value::Text(like_pattern(refinement.filter.trim())));
     }
     params.extend(browse_values.into_iter().map(Value::Text));
     let mut statement = conn.prepare(&sql)?;
@@ -578,25 +591,21 @@ pub fn query_artist_detail_albums(
     rows.collect()
 }
 
-#[allow(clippy::too_many_arguments)]
 pub(super) fn query_artist_track_window(
     conn: &Connection,
     artist: &str,
-    sort_field: &str,
-    sort_dir: &str,
-    filter: &str,
-    browse: &BrowseFilter,
-    offset: i64,
-    limit: i64,
-    project_ai: bool,
+    refinement: TrackRefinement<'_>,
+    sort: TrackSort<'_>,
+    rows: RowWindow,
+    ai: AiColumn,
 ) -> Result<Vec<Track>, rusqlite::Error> {
-    let limit = limit.clamp(0, MAX_WINDOW_LIMIT);
-    let has_filter = !filter.trim().is_empty();
-    let order = order_clause(sort_field, sort_dir);
+    let limit = rows.limit.clamp(0, MAX_WINDOW_LIMIT);
+    let has_filter = !refinement.filter.trim().is_empty();
+    let order = order_clause(sort.field, sort.dir);
     let filter_sql = filter_clause(has_filter, 4);
     let browse_first_param = if has_filter { 5 } else { 4 };
-    let (browse_sql, browse_values) = browse_clause(browse, browse_first_param);
-    let projection = track_projection("", project_ai);
+    let (browse_sql, browse_values) = browse_clause(refinement.browse, browse_first_param);
+    let projection = track_projection("", ai == AiColumn::Project);
     let sql = format!(
         "SELECT {projection} \
          FROM tracks WHERE {PRESENT} \
@@ -605,11 +614,11 @@ pub(super) fn query_artist_track_window(
     );
     let mut params = vec![
         Value::Integer(limit),
-        Value::Integer(offset),
+        Value::Integer(rows.offset),
         Value::Text(artist.to_string()),
     ];
     if has_filter {
-        params.push(Value::Text(like_pattern(filter.trim())));
+        params.push(Value::Text(like_pattern(refinement.filter.trim())));
     }
     params.extend(browse_values.into_iter().map(Value::Text));
     let mut statement = conn.prepare(&sql)?;
@@ -620,20 +629,19 @@ pub(super) fn query_artist_track_window(
 pub(super) fn query_artist_track_count(
     conn: &Connection,
     artist: &str,
-    filter: &str,
-    browse: &BrowseFilter,
+    refinement: TrackRefinement<'_>,
 ) -> Result<i64, rusqlite::Error> {
-    let has_filter = !filter.trim().is_empty();
+    let has_filter = !refinement.filter.trim().is_empty();
     let filter_sql = filter_clause(has_filter, 2);
     let browse_first_param = if has_filter { 3 } else { 2 };
-    let (browse_sql, browse_values) = browse_clause(browse, browse_first_param);
+    let (browse_sql, browse_values) = browse_clause(refinement.browse, browse_first_param);
     let sql = format!(
         "SELECT count(*) FROM tracks WHERE {PRESENT} \
          AND {EFFECTIVE_ALBUM_ARTIST} = TRIM(?1) COLLATE NOCASE{filter_sql}{browse_sql}"
     );
     let mut params = vec![Value::Text(artist.to_string())];
     if has_filter {
-        params.push(Value::Text(like_pattern(filter.trim())));
+        params.push(Value::Text(like_pattern(refinement.filter.trim())));
     }
     params.extend(browse_values.into_iter().map(Value::Text));
     conn.query_row(&sql, rusqlite::params_from_iter(params), |row| row.get(0))
@@ -642,16 +650,14 @@ pub(super) fn query_artist_track_count(
 pub(super) fn query_artist_track_ids(
     conn: &Connection,
     artist: &str,
-    sort_field: &str,
-    sort_dir: &str,
-    filter: &str,
-    browse: &BrowseFilter,
+    refinement: TrackRefinement<'_>,
+    sort: TrackSort<'_>,
 ) -> Result<Vec<i64>, rusqlite::Error> {
-    let has_filter = !filter.trim().is_empty();
-    let order = order_clause(sort_field, sort_dir);
+    let has_filter = !refinement.filter.trim().is_empty();
+    let order = order_clause(sort.field, sort.dir);
     let filter_sql = filter_clause(has_filter, 2);
     let browse_first_param = if has_filter { 3 } else { 2 };
-    let (browse_sql, browse_values) = browse_clause(browse, browse_first_param);
+    let (browse_sql, browse_values) = browse_clause(refinement.browse, browse_first_param);
     let sql = format!(
         "SELECT id FROM tracks WHERE {PRESENT} \
          AND {EFFECTIVE_ALBUM_ARTIST} = TRIM(?1) COLLATE NOCASE{filter_sql}{browse_sql} \
@@ -659,7 +665,7 @@ pub(super) fn query_artist_track_ids(
     );
     let mut params = vec![Value::Text(artist.to_string())];
     if has_filter {
-        params.push(Value::Text(like_pattern(filter.trim())));
+        params.push(Value::Text(like_pattern(refinement.filter.trim())));
     }
     params.extend(browse_values.into_iter().map(Value::Text));
     let mut statement = conn.prepare(&sql)?;

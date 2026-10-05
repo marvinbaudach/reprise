@@ -8,7 +8,7 @@ use crate::library::playlists;
 use crate::models::{MissingReason, Track};
 
 use super::queue::QUEUE_LIMIT;
-use super::{browse::browse_clause, BrowseFilter};
+use super::{browse::browse_clause, AiColumn, BrowseFilter, TrackSort, TrackViewQuery};
 
 /// The one truth for "row is visible": file present (`missing_since IS
 /// NULL`), not tombstoned (`removed_at IS NULL`) — Task 1.2's centralized
@@ -306,6 +306,23 @@ fn presence_clause(missing_flag: u8) -> &'static str {
     }
 }
 
+#[derive(Clone, Copy)]
+pub(super) struct TrackSqlOptions<'a> {
+    browse: &'a BrowseFilter,
+    exclude_ai: bool,
+    ai: AiColumn,
+}
+
+impl<'a> TrackSqlOptions<'a> {
+    pub(super) fn from_view(view: &TrackViewQuery<'a>, ai: AiColumn) -> Self {
+        Self {
+            browse: view.browse,
+            exclude_ai: view.exclude_ai,
+            ai,
+        }
+    }
+}
+
 /// Builds the parameterized library/missing SELECT for a track window;
 /// `missing_flag` is `0` for the library view, `1` for the missing-files
 /// view — a Rust-side literal (`0`/`1`), never caller input, resolved to
@@ -315,38 +332,35 @@ fn presence_clause(missing_flag: u8) -> &'static str {
 /// SQL. Unknown sort fields silently fall back to sorting by title.
 pub(super) fn build_track_query_base(
     missing_flag: u8,
-    sort_field: &str,
-    sort_dir: &str,
+    sort: TrackSort<'_>,
     has_filter: bool,
-    project_ai: bool,
+    ai: AiColumn,
 ) -> String {
+    let browse = BrowseFilter::default();
     build_track_query_base_browsed(
         missing_flag,
-        sort_field,
-        sort_dir,
+        sort,
         has_filter,
-        &BrowseFilter::default(),
-        false,
-        project_ai,
+        TrackSqlOptions {
+            browse: &browse,
+            exclude_ai: false,
+            ai,
+        },
     )
 }
 
-#[allow(clippy::too_many_arguments)]
 pub(super) fn build_track_query_base_browsed(
     missing_flag: u8,
-    sort_field: &str,
-    sort_dir: &str,
+    sort: TrackSort<'_>,
     has_filter: bool,
-    browse: &BrowseFilter,
-    exclude_ai: bool,
-    project_ai: bool,
+    options: TrackSqlOptions<'_>,
 ) -> String {
-    let order = order_clause(sort_field, sort_dir);
+    let order = order_clause(sort.field, sort.dir);
     let filter_clause = filter_clause(has_filter, 3);
     let browse_first_param = if has_filter { 4 } else { 3 };
-    let (browse_clause, _) = browse_clause(browse, browse_first_param);
-    let ai_clause = ai_exclude_clause(exclude_ai);
-    let projection = track_projection("", project_ai);
+    let (browse_clause, _) = browse_clause(options.browse, browse_first_param);
+    let ai_clause = ai_exclude_clause(options.exclude_ai);
+    let projection = track_projection("", options.ai == AiColumn::Project);
     let presence = presence_clause(missing_flag);
     format!(
         "SELECT {projection} \
@@ -361,20 +375,23 @@ pub(super) fn build_track_query_base_browsed(
 /// read it use `build_track_query_browsed` to opt out. Its only callers are
 /// this module's tests.
 pub fn build_track_query(sort_field: &str, sort_dir: &str, has_filter: bool) -> String {
-    build_track_query_base(0, sort_field, sort_dir, has_filter, true)
+    build_track_query_base(
+        0,
+        TrackSort {
+            field: sort_field,
+            dir: sort_dir,
+        },
+        has_filter,
+        AiColumn::Project,
+    )
 }
 
 pub(super) fn build_track_query_browsed(
-    sort_field: &str,
-    sort_dir: &str,
+    sort: TrackSort<'_>,
     has_filter: bool,
-    browse: &BrowseFilter,
-    exclude_ai: bool,
-    project_ai: bool,
+    options: TrackSqlOptions<'_>,
 ) -> String {
-    build_track_query_base_browsed(
-        0, sort_field, sort_dir, has_filter, browse, exclude_ai, project_ai,
-    )
+    build_track_query_base_browsed(0, sort, has_filter, options)
 }
 
 /// Builds the parameterized `SELECT id` for the queue seam
@@ -386,11 +403,10 @@ pub(super) fn build_track_query_browsed(
 /// never drift from the track list's.
 pub(super) fn build_track_ids_query_base(
     missing_flag: u8,
-    sort_field: &str,
-    sort_dir: &str,
+    sort: TrackSort<'_>,
     has_filter: bool,
 ) -> String {
-    let order = order_clause(sort_field, sort_dir);
+    let order = order_clause(sort.field, sort.dir);
     let filter_clause = filter_clause(has_filter, 1);
     let presence = presence_clause(missing_flag);
     format!(
@@ -402,21 +418,26 @@ pub(super) fn build_track_ids_query_base(
 /// Builds the parameterized `SELECT id` for the library queue seam
 /// (`PRESENT`). See `build_track_ids_query_base`'s doc comment.
 pub fn build_track_ids_query(sort_field: &str, sort_dir: &str, has_filter: bool) -> String {
-    build_track_ids_query_base(0, sort_field, sort_dir, has_filter)
+    build_track_ids_query_base(
+        0,
+        TrackSort {
+            field: sort_field,
+            dir: sort_dir,
+        },
+        has_filter,
+    )
 }
 
 pub(super) fn build_track_ids_query_browsed(
-    sort_field: &str,
-    sort_dir: &str,
+    sort: TrackSort<'_>,
     has_filter: bool,
-    browse: &BrowseFilter,
-    exclude_ai: bool,
+    options: TrackSqlOptions<'_>,
 ) -> String {
-    let order = order_clause(sort_field, sort_dir);
+    let order = order_clause(sort.field, sort.dir);
     let filter_clause = filter_clause(has_filter, 1);
     let browse_first_param = if has_filter { 2 } else { 1 };
-    let (browse_clause, _) = browse_clause(browse, browse_first_param);
-    let ai_clause = ai_exclude_clause(exclude_ai);
+    let (browse_clause, _) = browse_clause(options.browse, browse_first_param);
+    let ai_clause = ai_exclude_clause(options.exclude_ai);
     format!(
         "SELECT id FROM tracks WHERE {PRESENT}{filter_clause}{browse_clause}{ai_clause} \
          ORDER BY {order} LIMIT {QUEUE_LIMIT}"
@@ -481,6 +502,22 @@ pub(super) fn row_to_id(r: &rusqlite::Row) -> rusqlite::Result<i64> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::queries::RowWindow;
+
+    fn title_sort() -> TrackSort<'static> {
+        TrackSort {
+            field: "title",
+            dir: "asc",
+        }
+    }
+
+    fn sql_options(browse: &BrowseFilter, exclude_ai: bool, ai: AiColumn) -> TrackSqlOptions<'_> {
+        TrackSqlOptions {
+            browse,
+            exclude_ai,
+            ai,
+        }
+    }
 
     #[test]
     fn play_count_is_a_whitelisted_numeric_sort() {
@@ -513,16 +550,23 @@ mod tests {
         // The INST-10 `is_ai` projection references `track_provenance` in every
         // build (via `EXISTS(...) AS is_ai`); it is the *exclude* clause
         // (`NOT EXISTS` in the WHERE) that toggles with `exclude_ai`.
-        let off =
-            build_track_query_browsed("title", "asc", false, &BrowseFilter::default(), false, true);
+        let browse = BrowseFilter::default();
+        let off = build_track_query_browsed(
+            title_sort(),
+            false,
+            sql_options(&browse, false, AiColumn::Project),
+        );
         assert!(
             !off.contains("NOT EXISTS"),
             "no exclude clause when the filter is off"
         );
         // The is_ai projection is still present regardless of the filter.
         assert!(off.contains("AS is_ai"));
-        let on =
-            build_track_query_browsed("title", "asc", false, &BrowseFilter::default(), true, true);
+        let on = build_track_query_browsed(
+            title_sort(),
+            false,
+            sql_options(&browse, true, AiColumn::Project),
+        );
         assert!(on.contains("NOT EXISTS"));
         // The exclude clause sits inside the WHERE, before ORDER BY.
         let where_start = on.find("WHERE").unwrap();
@@ -547,13 +591,16 @@ mod tests {
 
         let rows = crate::queries::query_track_window(
             &db,
-            &crate::view_source::ViewSource::Library,
-            "title",
-            "asc",
-            "",
-            0,
-            100,
-            &[],
+            &TrackViewQuery::new(&crate::view_source::ViewSource::Library),
+            TrackSort {
+                field: "title",
+                dir: "asc",
+            },
+            RowWindow {
+                offset: 0,
+                limit: 100,
+            },
+            AiColumn::Project,
         )
         .unwrap();
         let find = |id: i64| rows.iter().find(|t| t.id == id).expect("row present");
@@ -581,13 +628,11 @@ mod tests {
         .unwrap();
 
         let titles = |exclude_ai: bool| -> Vec<String> {
+            let browse = BrowseFilter::default();
             let sql = build_track_query_browsed(
-                "title",
-                "asc",
+                title_sort(),
                 false,
-                &BrowseFilter::default(),
-                exclude_ai,
-                true,
+                sql_options(&browse, exclude_ai, AiColumn::Project),
             );
             let mut stmt = conn.prepare(&sql).unwrap();
             stmt.query_map([1000i64, 0i64], |row| row.get::<_, String>(2))
@@ -610,20 +655,21 @@ mod tests {
     // `is_ai` column is projected, so `row_to_track`'s fixed index is unaffected.
     #[test]
     fn is_ai_projection_is_gated_and_the_off_path_has_no_subquery() {
-        let on =
-            build_track_query_browsed("title", "asc", false, &BrowseFilter::default(), false, true);
+        let browse = BrowseFilter::default();
+        let on = build_track_query_browsed(
+            title_sort(),
+            false,
+            sql_options(&browse, false, AiColumn::Project),
+        );
         assert!(
             on.contains("EXISTS(SELECT 1 FROM track_provenance"),
             "the on-path projects the correlated provenance EXISTS: {on}"
         );
 
         let off = build_track_query_browsed(
-            "title",
-            "asc",
+            title_sort(),
             false,
-            &BrowseFilter::default(),
-            false,
-            false,
+            sql_options(&browse, false, AiColumn::Skip),
         );
         assert!(
             off.contains("0 AS is_ai"),
@@ -648,13 +694,19 @@ mod tests {
         let conn = db.conn();
 
         let plan = |project_ai: bool| -> String {
+            let browse = BrowseFilter::default();
             let sql = build_track_query_browsed(
-                "title",
-                "asc",
+                title_sort(),
                 false,
-                &BrowseFilter::default(),
-                false,
-                project_ai,
+                sql_options(
+                    &browse,
+                    false,
+                    if project_ai {
+                        AiColumn::Project
+                    } else {
+                        AiColumn::Skip
+                    },
+                ),
             );
             let mut stmt = conn.prepare(&format!("EXPLAIN QUERY PLAN {sql}")).unwrap();
             stmt.query_map([1000i64, 0i64], |row| row.get::<_, String>(3))

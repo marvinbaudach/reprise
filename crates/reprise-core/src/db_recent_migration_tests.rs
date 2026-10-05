@@ -1,4 +1,5 @@
 use super::*;
+use crate::queries::{AiColumn, RowWindow, TrackSort, TrackViewQuery};
 
 #[path = "db_equalizer_migration_tests.rs"]
 mod equalizer_migration_tests;
@@ -482,13 +483,16 @@ fn migrate_v12_to_v13_indexes_present_title_order_without_changing_rows() {
     let db = crate::db::Db::from_connection(conn);
     let titles = crate::queries::query_track_window(
         &db,
-        &crate::view_source::ViewSource::Library,
-        "title",
-        "asc",
-        "",
-        0,
-        200,
-        &[],
+        &TrackViewQuery::new(&crate::view_source::ViewSource::Library),
+        TrackSort {
+            field: "title",
+            dir: "asc",
+        },
+        RowWindow {
+            offset: 0,
+            limit: 200,
+        },
+        AiColumn::Project,
     )
     .unwrap()
     .into_iter()
@@ -582,13 +586,16 @@ fn migrate_v13_to_v14_indexes_present_album_order_without_changing_rows() {
     let db = crate::db::Db::from_connection(conn);
     let titles = crate::queries::query_track_window(
         &db,
-        &crate::view_source::ViewSource::Library,
-        "album",
-        "asc",
-        "",
-        0,
-        200,
-        &[],
+        &TrackViewQuery::new(&crate::view_source::ViewSource::Library),
+        TrackSort {
+            field: "album",
+            dir: "asc",
+        },
+        RowWindow {
+            offset: 0,
+            limit: 200,
+        },
+        AiColumn::Project,
     )
     .unwrap()
     .into_iter()

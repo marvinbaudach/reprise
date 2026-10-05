@@ -69,9 +69,17 @@ fn search_filter_treats_a_literal_percent_as_a_literal_not_a_wildcard() {
         )
         .unwrap();
     }
+    let source = ViewSource::Library;
+    let view = TrackViewQuery::new(&source).with_filter("%");
 
-    let rows =
-        query_track_window(&db, &ViewSource::Library, "title", "asc", "%", 0, 10, &[]).unwrap();
+    let rows = query_track_window(
+        &db,
+        &view,
+        test_sort("title", "asc"),
+        test_rows(0, 10),
+        AiColumn::Project,
+    )
+    .unwrap();
     assert_eq!(
         rows.len(),
         1,
@@ -79,20 +87,29 @@ fn search_filter_treats_a_literal_percent_as_a_literal_not_a_wildcard() {
     );
     assert_eq!(rows[0].title, "A%B");
 
-    assert_eq!(
-        query_track_count(&db, &ViewSource::Library, "%", &[]).unwrap(),
-        1
-    );
+    assert_eq!(query_track_count(&db, &view).unwrap(), 1);
 }
 
 #[test]
 fn window_returns_filtered_sorted_tracks() {
     let db = seeded_titled_conn();
-    let rows =
-        query_track_window(&db, &ViewSource::Library, "title", "asc", "", 0, 10, &[]).unwrap();
+    let rows = query_track_window(
+        &db,
+        &TrackViewQuery::new(&ViewSource::Library),
+        test_sort("title", "asc"),
+        test_rows(0, 10),
+        AiColumn::Project,
+    )
+    .unwrap();
     assert_eq!(rows[0].title, "Alpha");
-    let rows =
-        query_track_window(&db, &ViewSource::Library, "title", "asc", "zu", 0, 10, &[]).unwrap();
+    let rows = query_track_window(
+        &db,
+        &TrackViewQuery::new(&ViewSource::Library).with_filter("zu"),
+        test_sort("title", "asc"),
+        test_rows(0, 10),
+        AiColumn::Project,
+    )
+    .unwrap();
     assert_eq!(rows.len(), 1);
     assert_eq!(rows[0].title, "Zulu");
 }
@@ -101,7 +118,7 @@ fn window_returns_filtered_sorted_tracks() {
 fn count_is_zero_for_empty_db() {
     let db = crate::db::Db::open_in_memory().unwrap();
     assert_eq!(
-        query_track_count(&db, &ViewSource::Library, "", &[]).unwrap(),
+        query_track_count(&db, &TrackViewQuery::new(&ViewSource::Library)).unwrap(),
         0
     );
 }
@@ -110,7 +127,7 @@ fn count_is_zero_for_empty_db() {
 fn count_matches_inserted_rows() {
     let db = seeded_titled_conn();
     assert_eq!(
-        query_track_count(&db, &ViewSource::Library, "", &[]).unwrap(),
+        query_track_count(&db, &TrackViewQuery::new(&ViewSource::Library)).unwrap(),
         3
     );
 }
@@ -119,7 +136,11 @@ fn count_matches_inserted_rows() {
 fn count_applies_filter() {
     let db = seeded_titled_conn();
     assert_eq!(
-        query_track_count(&db, &ViewSource::Library, "zu", &[]).unwrap(),
+        query_track_count(
+            &db,
+            &TrackViewQuery::new(&ViewSource::Library).with_filter("zu")
+        )
+        .unwrap(),
         1
     );
 }
@@ -135,7 +156,7 @@ fn count_excludes_missing_rows() {
     )
     .unwrap();
     assert_eq!(
-        query_track_count(&db, &ViewSource::Library, "", &[]).unwrap(),
+        query_track_count(&db, &TrackViewQuery::new(&ViewSource::Library)).unwrap(),
         0
     );
 }
@@ -156,15 +177,19 @@ fn missing_since_excludes_a_row_even_when_the_legacy_missing_column_says_present
     )
     .unwrap();
     assert_eq!(
-        query_track_count(&db, &ViewSource::Library, "", &[]).unwrap(),
+        query_track_count(&db, &TrackViewQuery::new(&ViewSource::Library)).unwrap(),
         0,
         "a set missing_since must exclude the row from the library"
     );
-    assert!(
-        query_track_window(&db, &ViewSource::Library, "title", "asc", "", 0, 10, &[],)
-            .unwrap()
-            .is_empty()
-    );
+    assert!(query_track_window(
+        &db,
+        &TrackViewQuery::new(&ViewSource::Library),
+        test_sort("title", "asc"),
+        test_rows(0, 10),
+        AiColumn::Project
+    )
+    .unwrap()
+    .is_empty());
 }
 
 /// `removed_at` (the tombstone column a later task starts writing for the
@@ -183,15 +208,19 @@ fn removed_at_excludes_a_row_from_the_library_even_while_present() {
     )
     .unwrap();
     assert_eq!(
-        query_track_count(&db, &ViewSource::Library, "", &[]).unwrap(),
+        query_track_count(&db, &TrackViewQuery::new(&ViewSource::Library)).unwrap(),
         0,
         "a tombstoned row must not count as present"
     );
-    assert!(
-        query_track_window(&db, &ViewSource::Library, "title", "asc", "", 0, 10, &[],)
-            .unwrap()
-            .is_empty()
-    );
+    assert!(query_track_window(
+        &db,
+        &TrackViewQuery::new(&ViewSource::Library),
+        test_sort("title", "asc"),
+        test_rows(0, 10),
+        AiColumn::Project
+    )
+    .unwrap()
+    .is_empty());
 }
 
 /// `MissingReason::parse` must never fail to load a row: an unrecognized
@@ -218,7 +247,12 @@ fn missing_reason_parse_falls_back_to_unknown_for_an_unrecognized_value() {
 fn track_ids_follow_whitelist_sort_order() {
     let db = seeded_titled_conn();
     let conn = db.conn();
-    let ids = query_track_ids(&db, &ViewSource::Library, "title", "asc", "", &[]).unwrap();
+    let ids = query_track_ids(
+        &db,
+        &TrackViewQuery::new(&ViewSource::Library),
+        test_sort("title", "asc"),
+    )
+    .unwrap();
     assert_eq!(ids.len(), 3);
 
     // "Alpha" < "Mid" < "Zulu" by title (COLLATE NOCASE) — assert the
@@ -240,7 +274,12 @@ fn track_ids_follow_whitelist_sort_order() {
 fn track_ids_apply_filter() {
     let db = seeded_titled_conn();
     let conn = db.conn();
-    let ids = query_track_ids(&db, &ViewSource::Library, "title", "asc", "zu", &[]).unwrap();
+    let ids = query_track_ids(
+        &db,
+        &TrackViewQuery::new(&ViewSource::Library).with_filter("zu"),
+        test_sort("title", "asc"),
+    )
+    .unwrap();
     assert_eq!(ids.len(), 1);
 
     let expected_id: i64 = conn
@@ -262,7 +301,12 @@ fn track_ids_excludes_missing_rows() {
     )
     .unwrap();
     assert_eq!(
-        query_track_ids(&db, &ViewSource::Library, "title", "asc", "", &[]).unwrap(),
+        query_track_ids(
+            &db,
+            &TrackViewQuery::new(&ViewSource::Library),
+            test_sort("title", "asc")
+        )
+        .unwrap(),
         Vec::<i64>::new()
     );
 }
@@ -445,24 +489,20 @@ fn mark_track_missing_excludes_from_count_and_ids() {
     let id: i64 = conn
         .query_row("SELECT id FROM tracks", [], |r| r.get(0))
         .unwrap();
+    let source = ViewSource::Library;
+    let view = TrackViewQuery::new(&source);
 
+    assert_eq!(query_track_count(&db, &view).unwrap(), 1);
     assert_eq!(
-        query_track_count(&db, &ViewSource::Library, "", &[]).unwrap(),
-        1
-    );
-    assert_eq!(
-        query_track_ids(&db, &ViewSource::Library, "title", "asc", "", &[]).unwrap(),
+        query_track_ids(&db, &view, test_sort("title", "asc")).unwrap(),
         vec![id]
     );
 
     assert!(mark_track_missing_if_current(&db, id, Path::new("/x/a.flac")).unwrap());
 
+    assert_eq!(query_track_count(&db, &view).unwrap(), 0);
     assert_eq!(
-        query_track_count(&db, &ViewSource::Library, "", &[]).unwrap(),
-        0
-    );
-    assert_eq!(
-        query_track_ids(&db, &ViewSource::Library, "title", "asc", "", &[]).unwrap(),
+        query_track_ids(&db, &view, test_sort("title", "asc")).unwrap(),
         Vec::<i64>::new()
     );
 }
@@ -505,7 +545,13 @@ fn library_stats_with_filter_matches_query_track_count_and_keeps_totals_unfilter
     assert_eq!(stats.total_duration_ms, 3000);
     assert_eq!(
         stats.filtered_count,
-        Some(query_track_count(&db, &ViewSource::Library, "zu", &[]).unwrap())
+        Some(
+            query_track_count(
+                &db,
+                &TrackViewQuery::new(&ViewSource::Library).with_filter("zu")
+            )
+            .unwrap()
+        )
     );
     assert_eq!(stats.filtered_count, Some(1));
 }
@@ -545,8 +591,14 @@ fn window_limit_is_clamped() {
 
     // SQLite treats a negative LIMIT as "unlimited"; clamped to 0, a
     // negative caller-supplied limit must return no rows.
-    let rows =
-        query_track_window(&db, &ViewSource::Library, "title", "asc", "", 0, -1, &[]).unwrap();
+    let rows = query_track_window(
+        &db,
+        &TrackViewQuery::new(&ViewSource::Library),
+        test_sort("title", "asc"),
+        test_rows(0, -1),
+        AiColumn::Project,
+    )
+    .unwrap();
     assert_eq!(rows.len(), 0);
 
     // A limit far above MAX_WINDOW_LIMIT is clamped down to the cap,
@@ -554,13 +606,10 @@ fn window_limit_is_clamped() {
     // rows are returned rather than the query becoming unbounded.
     let rows = query_track_window(
         &db,
-        &ViewSource::Library,
-        "title",
-        "asc",
-        "",
-        0,
-        10_000,
-        &[],
+        &TrackViewQuery::new(&ViewSource::Library),
+        test_sort("title", "asc"),
+        test_rows(0, 10_000),
+        AiColumn::Project,
     )
     .unwrap();
     assert_eq!(rows.len(), 3);
@@ -613,37 +662,25 @@ fn browse_and_text_filter_match_across_window_count_ids_and_stats() {
         artist: Some("A".into()),
         ..BrowseFilter::default()
     };
-    let rows = query_track_window_browsed(
+    let source = ViewSource::Library;
+    let view = TrackViewQuery::new(&source)
+        .with_filter("live")
+        .with_browse(&browse);
+    let rows = query_track_window(
         &db,
-        &ViewSource::Library,
-        "title",
-        "asc",
-        "live",
-        &browse,
-        0,
-        10,
-        &[],
+        &view,
+        test_sort("title", "asc"),
+        test_rows(0, 10),
+        AiColumn::Project,
     )
     .unwrap();
     assert_eq!(
         rows.iter().map(|track| track.id).collect::<Vec<_>>(),
         vec![1]
     );
+    assert_eq!(query_track_count(&db, &view).unwrap(), 1);
     assert_eq!(
-        query_track_count_browsed(&db, &ViewSource::Library, "live", &browse, &[]).unwrap(),
-        1
-    );
-    assert_eq!(
-        query_track_ids_browsed(
-            &db,
-            &ViewSource::Library,
-            "title",
-            "asc",
-            "live",
-            &browse,
-            &[],
-        )
-        .unwrap(),
+        query_track_ids(&db, &view, test_sort("title", "asc")).unwrap(),
         vec![1]
     );
     let stats = query_library_stats_browsed(&db, "live", &browse).unwrap();
@@ -659,19 +696,22 @@ fn play_1_scoped_playback_ids_are_the_exact_visible_refined_order() {
         genre: Some("Rock".into()),
         ..BrowseFilter::default()
     };
+    let view = TrackViewQuery::new(&source).with_browse(&browse);
 
-    let rows =
-        query_track_window_browsed(&db, &source, "title", "desc", "", &browse, 0, 10, &[]).unwrap();
+    let rows = query_track_window(
+        &db,
+        &view,
+        test_sort("title", "desc"),
+        test_rows(0, 10),
+        AiColumn::Project,
+    )
+    .unwrap();
     let visible = rows.iter().map(|track| track.id).collect::<Vec<_>>();
-    let playback =
-        query_track_ids_browsed(&db, &source, "title", "desc", "", &browse, &[]).unwrap();
+    let playback = query_track_ids(&db, &view, test_sort("title", "desc")).unwrap();
 
     assert_eq!(visible, vec![2, 1]);
     assert_eq!(playback, visible);
-    assert_eq!(
-        query_track_count_browsed(&db, &source, "", &browse, &[]).unwrap(),
-        2
-    );
+    assert_eq!(query_track_count(&db, &view).unwrap(), 2);
 }
 
 #[test]
@@ -684,7 +724,11 @@ fn non_library_sources_ignore_browse_filter() {
         ..BrowseFilter::default()
     };
     assert_eq!(
-        query_track_count_browsed(&db, &ViewSource::Playlist(playlist), "", &browse, &[],).unwrap(),
+        query_track_count(
+            &db,
+            &TrackViewQuery::new(&ViewSource::Playlist(playlist)).with_browse(&browse)
+        )
+        .unwrap(),
         4
     );
 }
@@ -692,23 +736,33 @@ fn non_library_sources_ignore_browse_filter() {
 #[test]
 fn missing_window_and_count_only_include_missing_rows() {
     let db = seeded_conn_with_missing();
-    let rows =
-        query_track_window(&db, &ViewSource::Missing, "title", "asc", "", 0, 10, &[]).unwrap();
+    let source = ViewSource::Missing;
+    let view = TrackViewQuery::new(&source);
+    let rows = query_track_window(
+        &db,
+        &view,
+        test_sort("title", "asc"),
+        test_rows(0, 10),
+        AiColumn::Project,
+    )
+    .unwrap();
     assert_eq!(rows.len(), 2);
     assert_eq!(rows[0].title, "Mid");
     assert_eq!(rows[1].title, "Zulu");
 
-    assert_eq!(
-        query_track_count(&db, &ViewSource::Missing, "", &[]).unwrap(),
-        2
-    );
+    assert_eq!(query_track_count(&db, &view).unwrap(), 2);
 }
 
 #[test]
 fn missing_ids_are_sorted_like_library() {
     let db = seeded_conn_with_missing();
     let conn = db.conn();
-    let ids = query_track_ids(&db, &ViewSource::Missing, "title", "asc", "", &[]).unwrap();
+    let ids = query_track_ids(
+        &db,
+        &TrackViewQuery::new(&ViewSource::Missing),
+        test_sort("title", "asc"),
+    )
+    .unwrap();
     let by_title: Vec<i64> = {
         let mut stmt = conn
             .prepare(&format!(

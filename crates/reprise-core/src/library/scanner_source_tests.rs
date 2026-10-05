@@ -8,6 +8,7 @@
 
 use super::tests::{completed, fixture_copy, tag_file};
 use super::*;
+use crate::queries::{AiColumn, RowWindow, TrackSort, TrackViewQuery};
 use std::collections::HashMap;
 use std::sync::Mutex;
 
@@ -596,19 +597,23 @@ fn synced_metadata_replaces_only_the_tracks_named_by_the_desktop() {
     assert!(rating_timestamps[0].is_some());
     assert!(rating_timestamps[1].is_some());
     assert_eq!(rating_timestamps[2], None);
-    let favourites = crate::queries::query_track_window_browsed(
+    let favourites = crate::queries::query_track_window(
         &db,
-        &crate::view_source::ViewSource::Library,
-        "artist",
-        "asc",
-        "",
-        &crate::queries::BrowseFilter {
-            rating: Some("5".into()),
-            ..crate::queries::BrowseFilter::default()
+        &TrackViewQuery::new(&crate::view_source::ViewSource::Library).with_browse(
+            &crate::queries::BrowseFilter {
+                rating: Some("5".into()),
+                ..crate::queries::BrowseFilter::default()
+            },
+        ),
+        TrackSort {
+            field: "artist",
+            dir: "asc",
         },
-        0,
-        10,
-        &[],
+        RowWindow {
+            offset: 0,
+            limit: 10,
+        },
+        AiColumn::Project,
     )
     .unwrap();
     assert_eq!(

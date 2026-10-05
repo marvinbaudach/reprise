@@ -255,16 +255,22 @@ fn browsable_snapshot(shared: &Rc<Shared>, ids: &[i64]) -> Option<tag_editor::Br
     };
     let rows = {
         let conn = &shared.conn;
-        reprise_core::queries::query_track_window_browsed(
+        let view = reprise_core::queries::TrackViewQuery::new(&source)
+            .with_filter(&filter)
+            .with_browse(&browse_filter)
+            .with_queue_items(&queue_items);
+        reprise_core::queries::query_track_window(
             conn,
-            &source,
-            &sort.field,
-            &sort.dir,
-            &filter,
-            &browse_filter,
-            0,
-            total,
-            &queue_items,
+            &view,
+            reprise_core::queries::TrackSort {
+                field: &sort.field,
+                dir: &sort.dir,
+            },
+            reprise_core::queries::RowWindow {
+                offset: 0,
+                limit: total,
+            },
+            reprise_core::queries::AiColumn::Project,
         )
     };
     let by_id: std::collections::HashMap<i64, reprise_core::models::Track> = match rows {

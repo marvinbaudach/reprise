@@ -9,7 +9,9 @@
 //! `library_views_tests.rs`, to stay clear of that file's 800-line cap.
 
 use super::*;
-use crate::queries::{query_track_count, query_track_ids, query_track_window};
+use crate::queries::{
+    query_track_count, query_track_ids, query_track_window, test_rows, test_sort,
+};
 use crate::view_source::ViewSource;
 
 fn full_window() -> WindowRange {
@@ -125,33 +127,54 @@ fn artist_track_window_count_and_ids_trim_like_the_row_they_were_listed_from() {
     let nbsp = ViewSource::Artist("Artist\u{a0}".into());
     let padded = ViewSource::Artist(" Artist ".into());
 
-    assert_eq!(query_track_count(&db, &plain, "", &[]).unwrap(), 4);
-    assert_eq!(query_track_count(&db, &nbsp, "", &[]).unwrap(), 2);
-    assert_eq!(query_track_count(&db, &padded, "", &[]).unwrap(), 4);
+    assert_eq!(
+        query_track_count(&db, &TrackViewQuery::new(&plain)).unwrap(),
+        4
+    );
+    assert_eq!(
+        query_track_count(&db, &TrackViewQuery::new(&nbsp)).unwrap(),
+        2
+    );
+    assert_eq!(
+        query_track_count(&db, &TrackViewQuery::new(&padded)).unwrap(),
+        4
+    );
 
     assert_eq!(
-        query_track_window(&db, &plain, "title", "asc", "", 0, 20, &[])
-            .unwrap()
-            .into_iter()
-            .map(|track| track.title)
-            .collect::<Vec<_>>(),
+        query_track_window(
+            &db,
+            &TrackViewQuery::new(&plain),
+            test_sort("title", "asc"),
+            test_rows(0, 20),
+            AiColumn::Project
+        )
+        .unwrap()
+        .into_iter()
+        .map(|track| track.title)
+        .collect::<Vec<_>>(),
         ["A1", "A2", "U1", "U2"]
     );
     assert_eq!(
-        query_track_window(&db, &nbsp, "title", "asc", "", 0, 20, &[])
-            .unwrap()
-            .into_iter()
-            .map(|track| track.title)
-            .collect::<Vec<_>>(),
+        query_track_window(
+            &db,
+            &TrackViewQuery::new(&nbsp),
+            test_sort("title", "asc"),
+            test_rows(0, 20),
+            AiColumn::Project
+        )
+        .unwrap()
+        .into_iter()
+        .map(|track| track.title)
+        .collect::<Vec<_>>(),
         ["N-A", "N-U"]
     );
 
     assert_eq!(
-        query_track_ids(&db, &plain, "title", "asc", "", &[]).unwrap(),
+        query_track_ids(&db, &TrackViewQuery::new(&plain), test_sort("title", "asc")).unwrap(),
         [10, 11, 12, 13]
     );
     assert_eq!(
-        query_track_ids(&db, &nbsp, "title", "asc", "", &[]).unwrap(),
+        query_track_ids(&db, &TrackViewQuery::new(&nbsp), test_sort("title", "asc")).unwrap(),
         [20, 21]
     );
 }
@@ -181,32 +204,50 @@ fn album_track_window_count_and_ids_trim_like_the_row_they_were_listed_from() {
         album_artist: "Zed\u{a0}".into(),
     };
 
-    assert_eq!(query_track_count(&db, &plain, "", &[]).unwrap(), 2);
-    assert_eq!(query_track_count(&db, &nbsp, "", &[]).unwrap(), 1);
+    assert_eq!(
+        query_track_count(&db, &TrackViewQuery::new(&plain)).unwrap(),
+        2
+    );
+    assert_eq!(
+        query_track_count(&db, &TrackViewQuery::new(&nbsp)).unwrap(),
+        1
+    );
 
     assert_eq!(
-        query_track_window(&db, &plain, "title", "asc", "", 0, 20, &[])
-            .unwrap()
-            .into_iter()
-            .map(|track| track.title)
-            .collect::<Vec<_>>(),
+        query_track_window(
+            &db,
+            &TrackViewQuery::new(&plain),
+            test_sort("title", "asc"),
+            test_rows(0, 20),
+            AiColumn::Project
+        )
+        .unwrap()
+        .into_iter()
+        .map(|track| track.title)
+        .collect::<Vec<_>>(),
         ["X1", "X2"]
     );
     assert_eq!(
-        query_track_window(&db, &nbsp, "title", "asc", "", 0, 20, &[])
-            .unwrap()
-            .into_iter()
-            .map(|track| track.title)
-            .collect::<Vec<_>>(),
+        query_track_window(
+            &db,
+            &TrackViewQuery::new(&nbsp),
+            test_sort("title", "asc"),
+            test_rows(0, 20),
+            AiColumn::Project
+        )
+        .unwrap()
+        .into_iter()
+        .map(|track| track.title)
+        .collect::<Vec<_>>(),
         ["NX1"]
     );
 
     assert_eq!(
-        query_track_ids(&db, &plain, "title", "asc", "", &[]).unwrap(),
+        query_track_ids(&db, &TrackViewQuery::new(&plain), test_sort("title", "asc")).unwrap(),
         [30, 31]
     );
     assert_eq!(
-        query_track_ids(&db, &nbsp, "title", "asc", "", &[]).unwrap(),
+        query_track_ids(&db, &TrackViewQuery::new(&nbsp), test_sort("title", "asc")).unwrap(),
         [32]
     );
 }

@@ -619,13 +619,15 @@ fn resolve_selection_track_ids_in(
     selection: &DeviceSelection,
 ) -> Result<Vec<i64>, rusqlite::Error> {
     if selection == &DeviceSelection::EntireLibrary {
+        let source = ViewSource::Library;
+        let view = crate::queries::TrackViewQuery::new(&source);
         return crate::queries::query_track_ids_in(
             conn,
-            &ViewSource::Library,
-            "title",
-            "asc",
-            "",
-            &[],
+            &view,
+            crate::queries::TrackSort {
+                field: "title",
+                dir: "asc",
+            },
         );
     }
     let DeviceSelection::Sources(sources) = selection else {
@@ -638,7 +640,15 @@ fn resolve_selection_track_ids_in(
             SelectionSource::Playlist(id) => ViewSource::Playlist(*id),
             SelectionSource::Smart(id) => ViewSource::Smart(*id),
         };
-        for id in crate::queries::query_track_ids_in(conn, &source, "title", "asc", "", &[])? {
+        let view = crate::queries::TrackViewQuery::new(&source);
+        for id in crate::queries::query_track_ids_in(
+            conn,
+            &view,
+            crate::queries::TrackSort {
+                field: "title",
+                dir: "asc",
+            },
+        )? {
             if seen.insert(id) {
                 selected.push(id);
             }
