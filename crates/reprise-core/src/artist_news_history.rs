@@ -137,9 +137,9 @@ pub(crate) fn query_history_in(
 pub fn query_complete_history(
     db: &crate::db::Db,
     today: NaiveDate,
-) -> Result<Vec<ReleaseHistoryRecord>, rusqlite::Error> {
+) -> Result<Vec<ReleaseHistoryRecord>, crate::CoreError> {
     let conn = db.conn();
-    query_complete_history_in(conn, today)
+    Ok(query_complete_history_in(conn, today)?)
 }
 
 fn query_complete_history_in(

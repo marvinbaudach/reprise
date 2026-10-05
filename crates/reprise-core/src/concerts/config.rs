@@ -53,13 +53,13 @@ pub struct SimilarConfig {
     pub count: usize,
 }
 
-pub fn credentials(db: &crate::db::Db) -> Result<Credentials, rusqlite::Error> {
+pub fn credentials(db: &crate::db::Db) -> Result<Credentials, crate::CoreError> {
     let conn = db.conn();
-    credentials_with_env(
+    Ok(credentials_with_env(
         conn,
         |key| std::env::var(key).ok(),
         BUNDLED_TICKETMASTER_API_KEY,
-    )
+    )?)
 }
 
 pub(crate) fn credentials_with_env(
@@ -82,14 +82,14 @@ pub(crate) fn credentials_with_env(
 /// need to change — but there is only the one home for the data now.
 pub fn location(
     db: &crate::db::Db,
-) -> Result<Option<crate::location::AppLocation>, rusqlite::Error> {
+) -> Result<Option<crate::location::AppLocation>, crate::CoreError> {
     let conn = db.conn();
-    crate::location::app_location_in(conn)
+    Ok(crate::location::app_location_in(conn)?)
 }
 
-pub fn window_days(db: &crate::db::Db) -> Result<i64, rusqlite::Error> {
+pub fn window_days(db: &crate::db::Db) -> Result<i64, crate::CoreError> {
     let conn = db.conn();
-    window_days_in(conn)
+    Ok(window_days_in(conn)?)
 }
 
 pub(crate) fn window_days_in(conn: &Connection) -> Result<i64, rusqlite::Error> {
@@ -98,7 +98,7 @@ pub(crate) fn window_days_in(conn: &Connection) -> Result<i64, rusqlite::Error> 
         .clamp(30, 365))
 }
 
-pub fn persisted_filter(db: &crate::db::Db) -> Result<ConcertFilter, rusqlite::Error> {
+pub fn persisted_filter(db: &crate::db::Db) -> Result<ConcertFilter, crate::CoreError> {
     let conn = db.conn();
     let stored_radius = crate::library::settings::get_setting_in(conn, FILTER_RADIUS_KEY)?;
     let radius_km = match stored_radius {
@@ -123,9 +123,9 @@ pub fn persisted_filter(db: &crate::db::Db) -> Result<ConcertFilter, rusqlite::E
     })
 }
 
-pub fn similar_config(db: &crate::db::Db) -> Result<SimilarConfig, rusqlite::Error> {
+pub fn similar_config(db: &crate::db::Db) -> Result<SimilarConfig, crate::CoreError> {
     let conn = db.conn();
-    similar_config_in(conn)
+    Ok(similar_config_in(conn)?)
 }
 
 pub(crate) fn similar_config_in(conn: &Connection) -> Result<SimilarConfig, rusqlite::Error> {
