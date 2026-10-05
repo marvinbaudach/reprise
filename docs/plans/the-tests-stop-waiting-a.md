@@ -150,4 +150,3 @@ A control run with the real Xvfb on the same test passed.
   `profile.test`, not by package name alone.
 - No `CARGO_*` variable is set at run time: every use under `crates/` is a
   compile-time `env!` (and `build.rs`'s `OUT_DIR`).
-
