@@ -66,7 +66,7 @@ pub fn resolve_file(sheet_dir: &Path, name: &str, existing: &[PathBuf]) -> Optio
     let stem = stem_key(&referenced);
     candidates
         .iter()
-        .filter_map(|c| Some((c.rank?, c.path)).filter(|_| c.stem == stem))
+        .filter_map(|c| (c.stem == stem).then_some((c.rank?, c.path)))
         .min()
         .map(|(_, path)| path.clone())
 }
