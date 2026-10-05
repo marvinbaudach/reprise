@@ -368,10 +368,12 @@ fn the_reload_measurement_refuses_the_real_or_an_unset_data_root() {
     assert!(unisolated_data_root_reason(None, home).is_some());
     assert!(unisolated_data_root_reason(Some(Path::new("")), home).is_some());
     assert!(unisolated_data_root_reason(Some(Path::new("share")), home).is_some());
-    assert!(unisolated_data_root_reason(Some(Path::new("/home/owner/.local/share")), home)
-        .is_some());
-    assert!(unisolated_data_root_reason(Some(Path::new("/home/owner/.local/share/x")), home)
-        .is_some());
+    assert!(
+        unisolated_data_root_reason(Some(Path::new("/home/owner/.local/share")), home).is_some()
+    );
+    assert!(
+        unisolated_data_root_reason(Some(Path::new("/home/owner/.local/share/x")), home).is_some()
+    );
     assert!(unisolated_data_root_reason(Some(Path::new("/tmp/xdg-data")), None).is_some());
 }
 
