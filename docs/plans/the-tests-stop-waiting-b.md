@@ -81,4 +81,3 @@ Verification: the touched test binaries pass 20 × in a row under `heavy-run`
 via `scripts/check-display-tests.sh` (or their exact names in the isolated
 wrapper), and each deterministic rewrite gets a mutation proof (break the
 production behaviour → the test fails).
-
