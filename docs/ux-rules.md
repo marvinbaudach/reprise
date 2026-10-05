@@ -1824,21 +1824,61 @@ result.
   episode still applies its saved resume position and expands its required
   podcast or YouTube group and preview window first. Merely launching and
   closing the app never replaces the persisted queue.
-
-- **START-5** [active] [gtk] — **Ending the process by a termination request
-  keeps the session.** When Reprise receives SIGTERM, SIGHUP or SIGINT (logout,
-  `systemctl --user stop`, a harness restart, Ctrl-C in a terminal) while its
-  main window exists, it saves the same session a normal window close saves —
-  window geometry, the visible browser place with its refinements (START-4,
-  BROWSE-12), the queue, Up Next and the active episode — and then shuts down
-  through the normal window close. The session is written at most once however
-  many routes reach it, so a close that follows a termination request does not
-  save again. A second termination request while that shutdown is still running
-  ends the process at once. A request that arrives before the main window
-  exists ends the process as before; there is no session to save yet. Proven by
-  `start_5_a_saver_without_a_live_window_content_still_saves_geometry`,
-  `start_5_saving_twice_keeps_the_first_session` and the display test
-  `start_5_a_termination_request_saves_the_visible_place_and_closes_the_window`.
+- **START-5a** [active] [gtk] — **A termination request saves the session
+  and shuts down through the window close.** When Reprise receives SIGTERM,
+  SIGHUP or SIGINT (logout, `systemctl --user stop`, a harness restart,
+  Ctrl-C in a terminal; #1093) while its main window exists, it saves the
+  same session a normal window close saves — window geometry, the visible
+  browser place with its refinements (START-4, BROWSE-12), the queue and Up
+  Next — and then closes the window like a normal close, in compact mode
+  too, where the library window was never presented. The session is written
+  at most once however many routes reach it, so a close that follows a
+  termination request does not save again. The clean-exit marker is written
+  with it, deliberately: a termination in the middle of a scan counts as the
+  clean exit a normal close is. *Tests:*
+  `start_5a_a_saver_without_a_live_window_content_still_saves_geometry`,
+  `start_5a_saving_twice_keeps_the_first_session`,
+  `start_5a_a_termination_request_saves_the_visible_place_and_closes_the_window`,
+  `start_5a_a_termination_request_in_compact_mode_saves_without_a_presented_window`,
+  `start_5a_a_termination_request_saves_the_queue_and_up_next`.
+- **START-5b** [active] [gtk] — **A termination request always ends the
+  application.** After the window close the application quits, so an open
+  modal such as the first-run wizard, or any other veto of the close, cannot
+  keep the process alive; the session is already on disk by then. A request
+  that reaches the main loop with no window left quits the application as
+  well instead of being swallowed. *Tests:*
+  `start_5b_the_application_quits_even_when_the_window_refuses_to_close`,
+  `start_5b_a_request_without_a_window_still_quits_the_application`.
+- **START-5c** [active] [gtk] — **Repeated requests are coalesced while the
+  save runs.** A closing terminal sends SIGHUP twice and a service manager
+  follows SIGTERM with SIGHUP within milliseconds, so a repeat that arrives
+  before the main loop has taken the first request, or within three seconds
+  after it did, is ignored. A repeat after that grace ends the process the
+  way the signal normally would, so a wedged shutdown can still be ended; if
+  the main loop never takes the first request, repeats stay coalesced and
+  SIGKILL is the backstop. Once the application has stopped running, every
+  signal takes its normal course. *Tests:*
+  `start_5c_the_first_request_is_forwarded`,
+  `start_5c_a_repeat_before_the_main_loop_took_the_first_is_coalesced`,
+  `start_5c_a_repeat_inside_the_grace_after_the_take_is_coalesced`,
+  `start_5c_a_repeat_after_the_grace_ends_the_process`,
+  `start_5c_a_signal_after_the_application_stopped_ends_the_process`,
+  `start_5c_two_signals_in_quick_succession_reach_the_main_loop_once_and_end_nothing`,
+  `start_5c_a_repeat_stays_coalesced_while_the_main_loop_is_saving`,
+  `start_5c_a_released_listener_lets_every_signal_end_the_process`,
+  `start_5c_a_repeat_right_after_the_first_request_does_not_end_the_process_before_the_save`.
+- **START-5d** [active] [gtk] — **An ignored signal stays ignored.** A
+  termination signal the process inherited as ignored (`nohup reprise &`, a
+  background job) is not listened for and keeps being ignored. *Tests:*
+  `start_5d_signals_that_were_ignored_at_start_are_not_armed`,
+  `start_5d_the_inherited_ignore_disposition_is_detected`.
+- **START-5e** [planned] [gtk] — **What START-5a to START-5d leave unproven.**
+  A request that arrives before the main window exists ends the process as
+  before, since there is no session to save yet. The active episode with its
+  resume position is part of the saved session. The application releases the
+  listener when `run` returns, so a request still unread at that point ends
+  the process too. A handled request exits with status 0, not 128 plus the
+  signal, because a service manager counts exit code 143 as a failed stop.
 
 ## J. Queue view
 
@@ -5736,7 +5776,7 @@ means deterministic and high-confidence, never „without review".
 - **BROWSE-12** [active] [core] [gtk] — **The last browser destination is a
   session value.** Its structured place owns source, scope, search, facets,
   sorting, stable anchor, selection, and content focus and survives a normal
-  restart. Stable source roots such as Podcasts, YouTube, Radio, Releases,
+  restart. A termination request saves it too (START-5a). Stable source roots such as Podcasts, YouTube, Radio, Releases,
   Concerts, and My Stats remain resolvable without a track collection; stale
   database-backed places fall back to the remembered Music root. Back/Forward
   history, utility overlays, and raw widget focus remain process-local.

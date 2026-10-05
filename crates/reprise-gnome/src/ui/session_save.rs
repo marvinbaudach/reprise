@@ -124,7 +124,7 @@ mod tests {
     }
 
     #[test]
-    fn start_5_a_saver_without_a_live_window_content_still_saves_geometry() {
+    fn start_5a_a_saver_without_a_live_window_content_still_saves_geometry() {
         let loaded = SessionState {
             window_width: 800,
             window_height: 600,
@@ -140,7 +140,7 @@ mod tests {
     }
 
     #[test]
-    fn start_5_saving_twice_keeps_the_first_session() {
+    fn start_5a_saving_twice_keeps_the_first_session() {
         let (saver, conn) = bare_saver(SessionState::default(), (800, 600, false));
 
         saver.save_once((1111, 777, false));

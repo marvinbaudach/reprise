@@ -127,7 +127,8 @@ pub(crate) mod table_column_widths;
 mod table_columns;
 mod table_selection;
 mod tag_edit;
-mod termination;
+pub(crate) mod termination;
+mod termination_relay;
 #[cfg(test)]
 pub(crate) mod test_log_capture;
 #[cfg(test)]

@@ -421,7 +421,11 @@ fn main() -> glib::ExitCode {
         handler.open_request(request);
     });
 
-    app.run()
+    let exit_code = app.run();
+    // Nothing is left to save: a signal during teardown ends the process as it
+    // did before START-5 instead of sitting unread in the listener's channel.
+    ui::termination::release();
+    exit_code
 }
 
 #[cfg(test)]
