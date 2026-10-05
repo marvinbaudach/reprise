@@ -81,8 +81,11 @@ echo "== Frontend thinness =="
 # wizard answers that now, so the count drops by one.
 # Deleting the Artist News fetch worker, whose last request path was already
 # gone, took its `reprise-artist-news` thread with it: threads drop by one.
+# Quick Open names `ActionOutcome::NoConnectionRetry` in its radio dispatch, as
+# the radio view does. The pattern's bare `Connection` counts that variant name,
+# not a database handle: rusqlite rises by one without any new Db access.
 declare -A budget=(
-  [rusqlite]=114
+  [rusqlite]=115
   [filesystem]=13
   [threads]=14
   [workers]=7
