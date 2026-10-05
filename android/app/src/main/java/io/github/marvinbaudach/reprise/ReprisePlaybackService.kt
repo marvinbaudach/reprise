@@ -205,9 +205,10 @@ open class ReprisePlaybackService : MediaLibraryService() {
     override fun onCreate() {
         super.onCreate()
         volumeKeySkipGestureEnabled = readVolumeKeySkipGestureEnabled()
+        val renderersFactory = LivePcmRenderersFactory(this, TeeAudioProcessor(livePcmSink))
         val player = ExoPlayer.Builder(
             this,
-            LivePcmRenderersFactory(this, TeeAudioProcessor(livePcmSink)),
+            renderersFactory,
         )
             // Media3 defaults both of these off, and the device confirms it:
             // while a track was playing, the system's audio focus stack was
@@ -234,6 +235,7 @@ open class ReprisePlaybackService : MediaLibraryService() {
                 .build()
             Media3PlaybackPort(
                 player,
+                trackGainSink = renderersFactory.trackGainSink,
                 equalizerChanged = { mutableSettingsRevisions.value += 1L },
                 metadata = TrackMetadataResolver(::resolveTrackMetadata),
                 mediaIdOf = { trackId -> browsePlayContext.get()?.mediaIdOf(trackId) },

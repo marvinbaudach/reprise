@@ -386,7 +386,7 @@ impl SessionInner {
             state.current_loaded = true;
             (uri, next_uri, history_entry)
         };
-        if let Err(error) = backend.play_uri(&uri) {
+        if let Err(error) = backend.play(unity_gain_item(&uri)) {
             let detail = error.to_string();
             if let Ok(mut state) = self.state.lock() {
                 state.snapshot.state = AndroidPlaybackState::Stopped;
@@ -493,6 +493,17 @@ impl AndroidPlaybackSession {
             ),
         });
         let weak = Arc::downgrade(&inner);
+        let gain_library = Arc::clone(&library);
+        let gain_resolver = Arc::new(move |path: &str| {
+            let Ok(reader) = gain_library.reader() else {
+                return 0.0;
+            };
+            let Ok(Some(track_id)) = reprise_core::queries::track_id_for_path(&reader, path) else {
+                return 0.0;
+            };
+            let mode = reprise_core::library::settings::get_replay_gain_mode(&reader);
+            reprise_core::queries::effective_gain_db(&reader, track_id, mode)
+        });
         let backend = AndroidPlaybackBackend::new_with_faults(
             port,
             Box::new(move |event, missing| {
@@ -500,6 +511,7 @@ impl AndroidPlaybackSession {
                     inner.handle_event(event, missing);
                 }
             }),
+            gain_resolver,
         )
         .map_err(|error| AndroidPlaybackError::Backend {
             detail: error.to_string(),

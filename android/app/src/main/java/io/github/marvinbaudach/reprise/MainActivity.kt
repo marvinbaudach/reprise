@@ -48,6 +48,7 @@ import kotlinx.coroutines.launch
 import uniffi.reprise_android_ffi.AndroidColorScheme
 import uniffi.reprise_android_ffi.AndroidEqualizerPoint
 import uniffi.reprise_android_ffi.AndroidEqualizerPreset
+import uniffi.reprise_android_ffi.AndroidReplayGainMode
 import uniffi.reprise_android_ffi.AndroidStoredLibraryDestination
 import uniffi.reprise_android_ffi.ScanProgressListener
 import uniffi.reprise_android_ffi.ScanProgressUpdate
@@ -307,6 +308,7 @@ class MainActivity : ComponentActivity() {
                                 setGaplessEnabled = surface.setGaplessEnabled,
                                 setVolumeKeySkipGestureEnabled =
                                     surface.setVolumeKeySkipGestureEnabled,
+                                setReplayGainMode = surface.setReplayGainMode,
                                 themeSelection = themeSelection,
                                 selectTheme = { palette ->
                                     val currentSelection = themeSelection
@@ -400,6 +402,7 @@ class MainActivity : ComponentActivity() {
             replaceEqualizerCurve = ::replaceEqualizerCurve,
             setGaplessEnabled = ::setGaplessEnabled,
             setVolumeKeySkipGestureEnabled = ::setVolumeKeySkipGestureEnabled,
+            setReplayGainMode = ::setReplayGainMode,
             selectTheme = { current, palette -> themeController.select(current, palette) },
             animationsEnabled = ValueAnimator::areAnimatorsEnabled,
             observeAmbientScheduling = {},
@@ -695,6 +698,12 @@ class MainActivity : ComponentActivity() {
 
     private fun setGaplessEnabled(enabled: Boolean): PlaybackSettingsUiState {
         library.setGaplessEnabled(enabled)
+        boundService.value?.reloadPlaybackSettings()
+        return loadPlaybackSettings()
+    }
+
+    private fun setReplayGainMode(mode: AndroidReplayGainMode): PlaybackSettingsUiState {
+        library.setReplayGainMode(mode)
         boundService.value?.reloadPlaybackSettings()
         return loadPlaybackSettings()
     }

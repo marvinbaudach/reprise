@@ -8,6 +8,7 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import io.github.marvinbaudach.reprise.settings.SettingsNavigation
 import io.github.marvinbaudach.reprise.settings.SettingsOverlay
+import uniffi.reprise_android_ffi.AndroidReplayGainMode
 
 /** What the settings overlay shows, and the one place a read or write of it can fail. */
 @Stable
@@ -53,6 +54,9 @@ internal fun BrowseSettingsOverlay(
     replaceEqualizerCurve: (List<EqualizerCurvePoint>) -> PlaybackSettingsUiState,
     setGaplessEnabled: (Boolean) -> PlaybackSettingsUiState,
     setVolumeKeySkipGestureEnabled: (Boolean) -> PlaybackSettingsUiState,
+    setReplayGainMode: (AndroidReplayGainMode) -> PlaybackSettingsUiState = {
+        settings.state ?: error("Playback settings are not loaded")
+    },
 ) {
     SettingsOverlay(visible = visible) {
         // Never an empty branch: a full-screen surface with no header
@@ -89,6 +93,9 @@ internal fun BrowseSettingsOverlay(
                 },
                 setVolumeKeySkipGestureEnabled = { enabled ->
                     updateSettings { setVolumeKeySkipGestureEnabled(enabled) }
+                },
+                setReplayGainMode = { mode ->
+                    updateSettings { setReplayGainMode(mode) }
                 },
                 selectTheme = selectTheme,
             )

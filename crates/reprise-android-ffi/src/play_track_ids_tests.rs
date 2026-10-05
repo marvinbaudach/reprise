@@ -44,6 +44,55 @@ fn seed_tracks(directory: &Path, titles: &[&str]) -> Vec<reprise_core::models::T
 }
 
 #[test]
+fn set_next_carries_the_gain_resolved_from_the_phone_database() {
+    let directory = tempfile::tempdir().unwrap();
+    let tracks = seed_tracks(directory.path(), &["First", "Second"]);
+    let database_path = directory.path().join(crate::DATABASE_FILE_NAME);
+    let database = reprise_core::db::Db::open_migrated(Some(&database_path)).unwrap();
+    let source = reprise_core::db::track_source_fingerprint(&database, tracks[1].id)
+        .unwrap()
+        .unwrap();
+    reprise_core::db::set_track_render_data(
+        &database,
+        tracks[1].id,
+        source,
+        &reprise_core::waveform::TrackRenderData {
+            waveform_peaks: Vec::new(),
+            spectrogram: reprise_core::spectrogram::TrackSpectrogram::empty(),
+            loudness: Some(reprise_core::library::loudness::MeasuredLoudness {
+                integrated_lufs: -21.0,
+                true_peak: 0.5,
+            }),
+        },
+    )
+    .unwrap();
+    drop(database);
+    let calls = Arc::new(Mutex::new(Vec::new()));
+    let session = AndroidPlaybackSession::new(
+        library_in(directory.path()),
+        Box::new(RecordingPort {
+            calls: Arc::clone(&calls),
+            bridge: Arc::new(Mutex::new(None::<Arc<PlaybackEventBridge>>)),
+        }),
+        Box::new(RecordingListener {
+            snapshots: Arc::new(Mutex::new(Vec::new())),
+            report_changes: Arc::new(AtomicUsize::new(0)),
+        }),
+    )
+    .unwrap();
+    calls.lock().unwrap().clear();
+
+    session
+        .play_track_ids(vec![tracks[0].id, tracks[1].id], 0)
+        .unwrap();
+
+    assert!(calls
+        .lock()
+        .unwrap()
+        .contains(&PortCall::SetNext(Some(tracks[1].path.clone()), 3.0,)));
+}
+
+#[test]
 fn an_id_without_a_live_path_is_skipped_and_the_start_still_names_its_track() {
     let directory = tempfile::tempdir().unwrap();
     let tracks = seed_tracks(directory.path(), &["First", "Second"]);
@@ -78,9 +127,9 @@ fn an_id_without_a_live_path_is_skipped_and_the_start_still_names_its_track() {
     assert_eq!(
         calls.lock().unwrap().as_slice(),
         &[
-            PortCall::PlayUri(tracks[1].path.clone()),
+            PortCall::PlayPath(tracks[1].path.clone(), 0.0),
             PortCall::CurrentGeneration,
-            PortCall::SetNext(None),
+            PortCall::SetNext(None, 0.0),
         ],
     );
 }
@@ -150,9 +199,9 @@ fn id_only_play_resolves_live_paths_and_preserves_the_requested_start() {
     assert_eq!(
         calls.lock().unwrap().as_slice(),
         &[
-            PortCall::PlayUri(tracks[0].path.clone()),
+            PortCall::PlayPath(tracks[0].path.clone(), 0.0),
             PortCall::CurrentGeneration,
-            PortCall::SetNext(Some(tracks[1].path.clone())),
+            PortCall::SetNext(Some(tracks[1].path.clone()), 0.0),
         ],
     );
 }

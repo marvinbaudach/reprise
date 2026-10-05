@@ -98,6 +98,7 @@ internal class Media3PlaybackPort(
     metadata: TrackMetadataResolver = TrackMetadataResolver.None,
     mediaIdOf: (trackId: Long) -> String? = { null },
     metadataExecutor: Executor? = null,
+    private val trackGainSink: TrackGainAudioSink? = null,
     private val equalizerChanged: () -> Unit,
 ) : AndroidPlaybackPort {
     private val items = PlaybackItems(metadata, mediaIdOf)
@@ -117,6 +118,7 @@ internal class Media3PlaybackPort(
     private var generation = 0UL
     private var nextUri: String? = null
     private var released = false
+    private var nextGainDb = 0.0
     private var transitionMode = AndroidTransitionMode.GAPLESS
     private var lastState: AndroidPlaybackState? = null
     private var finishedGeneration: ULong? = null
@@ -198,11 +200,17 @@ internal class Media3PlaybackPort(
         eventBridge = bridge
     }
 
-    override fun playPath(path: String) = playUri(Uri.fromFile(File(path)).toString())
+    override fun playPath(path: String, gainDb: Double) =
+        startWithGain(Uri.fromFile(File(path)).toString(), gainDb)
 
-    override fun playUri(uri: String) {
+    override fun playUri(uri: String) = startWithGain(uri, 0.0)
+
+    private fun startWithGain(uri: String, gainDb: Double) {
         ensureKnown(uri)
-        dispatch.call { start(items.build(uri)) }
+        dispatch.call {
+            trackGainSink?.startPlaylist(gainDb, nextUri?.let { nextGainDb })
+            start(items.build(uri))
+        }
     }
 
     override fun togglePause(): AndroidPlaybackState = dispatch.call {
@@ -264,14 +272,18 @@ internal class Media3PlaybackPort(
 
     override fun stop() = dispatch.call {
         nextUri = null
+        nextGainDb = 0.0
+        trackGainSink?.clearPlaylist()
         player.stop()
         player.clearMediaItems()
     }
 
-    override fun setNext(uri: String?) {
+    override fun setNext(uri: String?, gainDb: Double) {
         uri?.let(::ensureKnown)
         dispatch.call {
             nextUri = uri
+            nextGainDb = gainDb
+            trackGainSink?.setNextGain(uri?.let { gainDb })
             applyNextItem()
         }
     }

@@ -48,9 +48,9 @@ fn fb_6_fault_on_a_multi_track_queue_advances_and_keeps_playing() {
     assert_eq!(
         fixture.calls.lock().unwrap().as_slice(),
         &[
-            PortCall::PlayUri("content://provider/second.flac".to_owned()),
+            PortCall::PlayPath("content://provider/second.flac".to_owned(), 0.0),
             PortCall::CurrentGeneration,
-            PortCall::SetNext(Some("content://provider/third.flac".to_owned())),
+            PortCall::SetNext(Some("content://provider/third.flac".to_owned()), 0.0),
         ]
     );
 }
@@ -236,9 +236,9 @@ fn fb_6_repeat_one_does_not_retry_the_faulted_track() {
     assert_eq!(
         fixture.calls.lock().unwrap().as_slice(),
         &[
-            PortCall::PlayUri("content://provider/second.flac".to_owned()),
+            PortCall::PlayPath("content://provider/second.flac".to_owned(), 0.0),
             PortCall::CurrentGeneration,
-            PortCall::SetNext(Some("content://provider/second.flac".to_owned())),
+            PortCall::SetNext(Some("content://provider/second.flac".to_owned()), 0.0),
         ]
     );
 }

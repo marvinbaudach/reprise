@@ -316,7 +316,7 @@ impl AndroidPlaybackPort for QuietPlaybackPort {
         Ok(())
     }
 
-    fn play_path(&self, _path: String) -> Result<(), AndroidPlaybackError> {
+    fn play_path(&self, _path: String, _gain_db: f64) -> Result<(), AndroidPlaybackError> {
         Ok(())
     }
 
@@ -360,7 +360,7 @@ impl AndroidPlaybackPort for QuietPlaybackPort {
         Ok(())
     }
 
-    fn set_next(&self, _uri: Option<String>) -> Result<(), AndroidPlaybackError> {
+    fn set_next(&self, _uri: Option<String>, _gain_db: f64) -> Result<(), AndroidPlaybackError> {
         Ok(())
     }
 

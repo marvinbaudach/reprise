@@ -19,7 +19,10 @@ use crate::{
 };
 
 fn item(path: &str) -> PlaybackItem<'_> {
-    PlaybackItem { path, gain_db: 0.0 }
+    PlaybackItem {
+        path,
+        gain_db: -4.5,
+    }
 }
 
 #[test]
@@ -55,7 +58,7 @@ fn android_backend_routes_every_core_command_through_the_media3_port() {
         calls.lock().unwrap().as_slice(),
         &[
             PortCall::SetEventBridge,
-            PortCall::PlayPath("/music/song.flac".to_owned()),
+            PortCall::PlayPath("/music/song.flac".to_owned(), -4.5),
             PortCall::PlayUri("content://provider/document/song.flac".to_owned()),
             PortCall::TogglePause,
             PortCall::SeekTo(1_250),
@@ -63,8 +66,11 @@ fn android_backend_routes_every_core_command_through_the_media3_port() {
             PortCall::SetAudioEffects,
             PortCall::SetSpectrumEnabled(true),
             PortCall::Stop,
-            PortCall::SetNext(Some("content://provider/document/next.flac".to_owned())),
-            PortCall::SetNext(None),
+            PortCall::SetNext(
+                Some("content://provider/document/next.flac".to_owned()),
+                -4.5,
+            ),
+            PortCall::SetNext(None, 0.0),
             PortCall::SetTransition(AndroidTransitionMode::Gapless),
             PortCall::CurrentGeneration,
         ]
@@ -161,9 +167,9 @@ fn tapping_a_track_starts_a_core_queue_at_that_position() {
                 ]
             ),
             PortCall::SetTransition(AndroidTransitionMode::Gapless),
-            PortCall::PlayUri("content://provider/second.flac".to_owned()),
+            PortCall::PlayPath("content://provider/second.flac".to_owned(), 0.0),
             PortCall::CurrentGeneration,
-            PortCall::SetNext(Some("content://provider/third.flac".to_owned())),
+            PortCall::SetNext(Some("content://provider/third.flac".to_owned()), 0.0),
         ]
     );
     assert_eq!(
@@ -273,9 +279,10 @@ fn core_queue_owns_gapless_advance_and_manual_next_previous() {
     );
     assert_eq!(
         fixture.calls.lock().unwrap().as_slice(),
-        &[PortCall::SetNext(Some(
-            "content://provider/third.flac".to_owned()
-        ))]
+        &[PortCall::SetNext(
+            Some("content://provider/third.flac".to_owned()),
+            0.0,
+        )]
     );
 
     fixture.session.next().unwrap();
@@ -285,13 +292,13 @@ fn core_queue_owns_gapless_advance_and_manual_next_previous() {
     assert_eq!(
         fixture.calls.lock().unwrap().as_slice(),
         &[
-            PortCall::SetNext(Some("content://provider/third.flac".to_owned())),
-            PortCall::PlayUri("content://provider/third.flac".to_owned()),
+            PortCall::SetNext(Some("content://provider/third.flac".to_owned()), 0.0),
+            PortCall::PlayPath("content://provider/third.flac".to_owned(), 0.0),
             PortCall::CurrentGeneration,
-            PortCall::SetNext(None),
-            PortCall::PlayUri("content://provider/second.flac".to_owned()),
+            PortCall::SetNext(None, 0.0),
+            PortCall::PlayPath("content://provider/second.flac".to_owned(), 0.0),
             PortCall::CurrentGeneration,
-            PortCall::SetNext(Some("content://provider/third.flac".to_owned())),
+            PortCall::SetNext(Some("content://provider/third.flac".to_owned()), 0.0),
         ]
     );
 }
@@ -365,9 +372,9 @@ fn core_queue_starts_the_next_track_when_media3_reports_a_plain_end() {
     assert_eq!(
         fixture.calls.lock().unwrap().as_slice(),
         &[
-            PortCall::PlayUri("content://provider/second.flac".to_owned()),
+            PortCall::PlayPath("content://provider/second.flac".to_owned(), 0.0),
             PortCall::CurrentGeneration,
-            PortCall::SetNext(None),
+            PortCall::SetNext(None, 0.0),
         ]
     );
 }
@@ -446,9 +453,10 @@ fn session_modes_are_readable_and_repeat_one_refeeds_after_media3_auto_advance()
     );
     assert_eq!(
         fixture.calls.lock().unwrap().as_slice(),
-        &[PortCall::SetNext(Some(
-            "content://provider/first.flac".to_owned()
-        ))],
+        &[PortCall::SetNext(
+            Some("content://provider/first.flac".to_owned()),
+            0.0,
+        )],
         "Repeat::One must re-feed the real AdvancedToNext path Media3 emits",
     );
 }
