@@ -9,6 +9,10 @@
 set -euo pipefail
 
 repo_root=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)
+# A relative --extract-to path means the caller's directory, so resolve it before moving.
+if [[ ${1:-} == --extract-to && -n ${2:-} ]]; then
+  set -- "$1" "$(realpath -m -- "$2")"
+fi
 cd "$repo_root"
 
 extract() {
