@@ -457,6 +457,21 @@ result.
 - **PLAY-17** [active] [gtk] — The playing row is highlighted as one row: one
   tint across the full row width with no seams between cells, plus the leading
   accent.
+- **PLAY-18** [active] [gtk] — The sleep timer sits as a moon button left of the
+  volume control in the player bar and offers 15, 30, 45 and 60 minutes, End of
+  track, and Cancel while armed. When it runs out, the volume fades over 4 s in
+  eight steps, playback **pauses** (never stops) through the controller's own
+  pause path — so podcasts keep their resume position and radio follows its
+  disconnect contract — and the volume returns to the user's level. End of track
+  arms on the current item: a natural end runs the item's completion bookkeeping
+  but does not advance; a gapless hand-off advances the queue model first, then
+  pauses. A manual track change re-arms on the new item; seeking out of the fade
+  window restores the volume. A volume change during the fade becomes the new
+  restore level and the fade continues. End of track is disabled while a radio
+  stream plays. Armed, the button carries the `:checked` accent and a tooltip with
+  the remaining time; no badge dot (FB-4). Firing shows one toast, "Paused by
+  sleep timer", only when it actually paused. The timer is session state and is
+  never persisted.
 - **SEEK-1** [active] [gtk] — **The seek bar's colour is a reading, not a
   decoration, and it is averaged over time.** The spectral centroid swings
   from beat to beat: taken per bar it puts cyan next to magenta inside two
@@ -3535,6 +3550,22 @@ property is set and yet nothing happens.
   reached in one move — the restoration is never visible as an intermediate
   position first. The eye lands on the destination, it does not follow the
   list there.)
+- **SEARCH-17** [active] [gtk] — Quick Open (Ctrl+K, listed in the shortcuts
+  dialog, no header button) is a jump-to palette, never a filter: it changes no
+  SEARCH-1a…16 state except through its "Show all" row. It is a centred
+  `AdwDialog` (a bottom sheet on narrow windows) with one entry and one grouped
+  result list — Tracks, Albums, Artists, Playlists, Podcast shows, Radio stations,
+  at most five rows each, only enabled modules, no network sources. It searches
+  one local snapshot taken when it opens, matching real fields only
+  (case- and diacritic-insensitive; exact, then prefix, then word-prefix, then
+  play count). Enter on a track plays it in its album context (artist context
+  without an album, else alone); Alt+Enter is Play Next; albums, artists,
+  playlists and shows navigate and are recorded in NAV-2 history; a station plays
+  under the same NET-3b gate as the radio view. Enter never acts on results older
+  than the typed query. "Show all N" exists only for kinds with a searchable
+  section and hands the raw query to that section as a committed chip
+  (SEARCH-12). An empty query shows up to eight items opened this session.
+  Escape closes and returns focus; playing from it keeps focus where it was.
 - **LYR-4** [active] [gtk] — Centering of the active lyrics line is
   clamped to the top at the start of the song. As long as there aren't
   enough context lines above the active line, the text block sits at the
