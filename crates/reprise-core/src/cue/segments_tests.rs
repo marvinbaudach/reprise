@@ -416,7 +416,7 @@ fn case_insensitive_ties_go_to_the_sorted_first_path() {
 fn the_extension_fallback_prefers_flac_then_wav_then_the_rest() {
     let all = paths(&["/m/a.mp3", "/m/a.wav", "/m/a.flac", "/m/a.m4a"]);
     let wav_up = paths(&["/m/a.mp3", "/m/a.WAV", "/m/a.m4a"]);
-    let rest = paths(&["/m/a.m4a", "/m/a.mp3"]);
+    let rest = paths(&["/m/a.mp3", "/m/a.m4a", "/m/a.ogg"]);
 
     assert_eq!(
         resolve_file(Path::new("/m"), "a.ape", &all),
@@ -428,7 +428,7 @@ fn the_extension_fallback_prefers_flac_then_wav_then_the_rest() {
     );
     assert_eq!(
         resolve_file(Path::new("/m"), "a.ape", &rest),
-        Some(PathBuf::from("/m/a.mp3"))
+        Some(PathBuf::from("/m/a.m4a"))
     );
 }
 
@@ -464,4 +464,5 @@ fn an_absolute_file_name_resolves_only_when_it_is_a_candidate() {
         resolve_file(Path::new("/m"), "/etc/album.flac", &files),
         None
     );
+    assert_eq!(resolve_file(Path::new("/m"), "/m/ALBUM.wav", &files), None);
 }

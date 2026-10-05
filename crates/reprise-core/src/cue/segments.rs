@@ -5,9 +5,7 @@ use super::{CueError, CueFile, CueSheet, Frames};
 
 // Keep this in sync with library::scanner::AUDIO_EXTENSIONS. That constant is
 // private, and the scanner belongs to the parallel r128 strand in wave 1.
-// The order is the preference when a sheet names an extension that is not on
-// disk: lossless containers first, then the rest.
-const EXTENSION_PREFERENCE: [&str; 7] = ["flac", "wav", "mp3", "ogg", "opus", "m4a", "aac"];
+const AUDIO_EXTENSIONS: [&str; 7] = ["mp3", "flac", "ogg", "opus", "m4a", "aac", "wav"];
 
 /// One audio track of a CUE sheet, cut out of the file it lives in.
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -30,12 +28,16 @@ pub struct CueSegment {
 /// Backslashes in `name` count as separators. An exact match wins over a
 /// case-insensitive one, and a file with the same stem but another audio
 /// extension is the last resort, preferring flac, then wav, then the rest.
-/// Ties are broken by sorted path. An absolute `name` only resolves when it is
+/// Ties are broken by sorted path. An absolute `name` resolves only when it is
 /// itself in `existing`.
 pub fn resolve_file(sheet_dir: &Path, name: &str, existing: &[PathBuf]) -> Option<PathBuf> {
-    let referenced = sheet_dir.join(name.replace('\\', "/"));
+    let name = name.replace('\\', "/");
+    let referenced = sheet_dir.join(&name);
     if let Some(exact) = existing.iter().find(|path| *path == &referenced) {
         return Some(exact.clone());
+    }
+    if Path::new(&name).is_absolute() {
+        return None;
     }
     let folded = fold(&referenced);
     if let Some(found) = existing.iter().filter(|path| fold(path) == folded).min() {
@@ -56,11 +58,14 @@ fn fold(path: &Path) -> String {
     path.to_string_lossy().to_lowercase()
 }
 
-fn extension_rank(path: &Path) -> Option<usize> {
+/// 0 for flac, 1 for wav, 2 for any other audio extension, `None` otherwise.
+fn extension_rank(path: &Path) -> Option<u8> {
     let extension = path.extension()?.to_string_lossy().to_lowercase();
-    EXTENSION_PREFERENCE
-        .iter()
-        .position(|candidate| *candidate == extension)
+    match extension.as_str() {
+        "flac" => Some(0),
+        "wav" => Some(1),
+        other => AUDIO_EXTENSIONS.contains(&other).then_some(2),
+    }
 }
 
 /// Cuts the audio tracks of `sheet` into segments.
