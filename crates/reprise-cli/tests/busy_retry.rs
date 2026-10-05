@@ -12,10 +12,10 @@ const RETRY_NOTE: &str = "note: database busy, retrying";
 /// Upper bound for every wait on another thread; a hang fails instead of stalling.
 const WAIT_LIMIT: Duration = Duration::from_secs(30);
 
-/// The CLI's own retry layer only runs once SQLite's `busy_timeout` (5 s) has
-/// given up, so the foreign transaction must outlast it. The holder therefore
-/// does not sleep: it commits when the CLI reports its first retry, which
-/// proves the retry ran and releases the lock at the same moment.
+/// The holder does not sleep for a guessed duration: it commits when the CLI
+/// reports its first retry. That makes the retry layer provably run (the old
+/// version could pass without ever retrying) and releases the lock at the same
+/// moment, whatever the host's speed.
 #[test]
 fn create_waits_out_a_foreign_write_transaction_by_retrying() {
     let h = Harness::new();
