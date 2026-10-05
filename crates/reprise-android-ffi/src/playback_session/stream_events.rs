@@ -178,7 +178,7 @@ impl SessionInner {
         };
 
         if let Some(queue) = queue_to_save {
-            if let Err(error) = self.persist_queue(&queue) {
+            if let Err(error) = self.persist_queue(queue) {
                 tracing::warn!(%error, "could not persist automatic Android queue advance");
             }
         }

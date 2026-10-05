@@ -34,13 +34,15 @@ pub(crate) fn matches_file(
     device: Option<i64>,
     inode: Option<i64>,
 ) -> Result<bool, rusqlite::Error> {
-    conn.query_row(
+    conn.prepare_cached(
         "SELECT EXISTS(
            SELECT 1 FROM library_exclusions
            WHERE (device IS NOT NULL AND inode IS NOT NULL
                   AND device=?2 AND inode=?3)
               OR ((device IS NULL OR inode IS NULL) AND path=?1)
          )",
+    )?
+    .query_row(
         rusqlite::params![path.to_string_lossy(), device, inode],
         |row| row.get(0),
     )

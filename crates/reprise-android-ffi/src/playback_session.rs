@@ -298,6 +298,12 @@ fn index_tracks(track_ids: &[i64]) -> HashMap<i64, usize> {
     indices
 }
 
+fn extend_track_index(indices: &mut HashMap<i64, usize>, old_len: usize, appended_ids: &[i64]) {
+    for (offset, track_id) in appended_ids.iter().copied().enumerate() {
+        indices.entry(track_id).or_insert(old_len + offset);
+    }
+}
+
 /// # The two mutexes, and why their order differs between operations
 ///
 /// `state` and `database` are never held at the same time. Every caller takes
@@ -340,7 +346,7 @@ impl SessionInner {
         })
     }
 
-    fn persist_queue(&self, queue: &Queue) -> Result<(), AndroidPlaybackError> {
+    fn persist_queue(&self, queue: Queue) -> Result<(), AndroidPlaybackError> {
         self.queue
             .persist(queue)
             .map_err(|error| AndroidPlaybackError::Backend {
@@ -456,7 +462,7 @@ impl AndroidPlaybackSession {
         .map_err(|error| AndroidPlaybackError::Backend {
             detail: format!("could not start playback queue persistence: {error}"),
         })?;
-        if let Err(error) = queue.persist(&restored_queue) {
+        if let Err(error) = queue.persist(restored_queue) {
             tracing::warn!(
                 %error,
                 "could not preserve the restored Android playback queue; playback will continue",
@@ -536,7 +542,7 @@ impl AndroidPlaybackSession {
             state.set_tracks(track_ids, uris, start_index);
             state.queue.clone()
         };
-        self.inner.persist_queue(&queue_to_save)?;
+        self.inner.persist_queue(queue_to_save)?;
         self.inner.start_current()
     }
 
@@ -597,7 +603,7 @@ impl AndroidPlaybackSession {
             state.adopt_current_for_play_intent();
             state.queue.clone()
         };
-        self.inner.persist_queue(&queue_to_save)?;
+        self.inner.persist_queue(queue_to_save)?;
         self.inner.start_current()
     }
 
@@ -636,7 +642,7 @@ impl AndroidPlaybackSession {
                 .and_then(|index| u64::try_from(index).ok());
             (state.next_uri(), state.queue.clone())
         };
-        self.inner.persist_queue(&queue_to_save)?;
+        self.inner.persist_queue(queue_to_save)?;
         self.inner.backend()?.set_next(next_uri.as_deref());
         self.inner.notify();
         Ok(())
@@ -649,7 +655,7 @@ impl AndroidPlaybackSession {
             state.snapshot.repeat = mode;
             (state.next_uri(), state.queue.clone())
         };
-        self.inner.persist_queue(&queue_to_save)?;
+        self.inner.persist_queue(queue_to_save)?;
         self.inner.backend()?.set_next(next_uri.as_deref());
         self.inner.notify();
         Ok(())
@@ -724,7 +730,7 @@ impl AndroidPlaybackSession {
             }
             (has_current, state.queue.clone())
         };
-        self.inner.persist_queue(&queue_to_save)?;
+        self.inner.persist_queue(queue_to_save)?;
         if has_current {
             self.inner.start_current()
         } else {

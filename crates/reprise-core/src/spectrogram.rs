@@ -61,6 +61,10 @@ impl TrackSpectrogram {
         &self.cells
     }
 
+    pub fn into_cells(self) -> Vec<u8> {
+        self.cells
+    }
+
     /// Upper edge of the highest stored band with energy above the absolute
     /// spectrogram floor. This is display metadata derived from the existing
     /// render cache, not a second analysis pass.

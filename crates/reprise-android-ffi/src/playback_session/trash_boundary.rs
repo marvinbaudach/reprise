@@ -117,7 +117,7 @@ impl AndroidPlaybackSession {
             )
         };
         self.inner
-            .persist_queue(&queue_to_save)
+            .persist_queue(queue_to_save)
             .map_err(|error| playback_as_library_error(&error))?;
 
         if removed_current {

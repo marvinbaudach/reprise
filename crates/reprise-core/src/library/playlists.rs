@@ -238,12 +238,12 @@ fn append_tracks_rows(
     )?;
 
     let mut inserted = 0u32;
+    let mut statement = conn.prepare_cached(
+        "INSERT INTO playlist_tracks (playlist_id, track_id, position) VALUES (?1, ?2, ?3)",
+    )?;
     for (i, &track_id) in track_ids.iter().enumerate() {
         let position = max_position + 1 + i as i64;
-        conn.execute(
-            "INSERT INTO playlist_tracks (playlist_id, track_id, position) VALUES (?1, ?2, ?3)",
-            params![playlist_id, track_id, position],
-        )?;
+        statement.execute(params![playlist_id, track_id, position])?;
         inserted += 1;
     }
     Ok(inserted)
@@ -404,12 +404,12 @@ pub(crate) fn renumber_positions(
         .collect::<Result<Vec<_>, _>>()?;
     drop(stmt);
 
+    let mut statement = conn.prepare_cached(
+        "UPDATE playlist_tracks SET position = ?1 WHERE playlist_id = ?2 AND position = ?3",
+    )?;
     for (new_pos, &old_pos) in current_positions.iter().enumerate() {
         if old_pos != new_pos as i64 {
-            conn.execute(
-                "UPDATE playlist_tracks SET position = ?1 WHERE playlist_id = ?2 AND position = ?3",
-                params![new_pos as i64, playlist_id, old_pos],
-            )?;
+            statement.execute(params![new_pos as i64, playlist_id, old_pos])?;
         }
     }
     Ok(())
@@ -498,11 +498,13 @@ fn move_position_in(
     )?;
 
     // Re-insert all tracks with updated positions.
-    for (new_pos, track_id_val) in tracks.iter().enumerate() {
-        tx.execute(
+    {
+        let mut statement = tx.prepare_cached(
             "INSERT INTO playlist_tracks (playlist_id, track_id, position) VALUES (?1, ?2, ?3)",
-            params![playlist_id, track_id_val, new_pos as i64],
         )?;
+        for (new_pos, track_id_val) in tracks.iter().enumerate() {
+            statement.execute(params![playlist_id, track_id_val, new_pos as i64])?;
+        }
     }
 
     crate::events::record(&tx, "playlist", &playlist_id.to_string(), "move")?;

@@ -129,7 +129,7 @@ impl AndroidPlaybackSession {
                 }
                 (state.next_uri(), state.queue.clone())
             };
-            self.inner.persist_queue(&queue_to_save)?;
+            self.inner.persist_queue(queue_to_save)?;
             self.inner.backend()?.set_next(next_uri.as_deref());
         }
     }
@@ -162,7 +162,7 @@ impl AndroidPlaybackSession {
             state.adopt_current_for_play_intent();
             state.queue.clone()
         };
-        self.inner.persist_queue(&queue_to_save)?;
+        self.inner.persist_queue(queue_to_save)?;
         self.inner.start_current()?;
         Ok(true)
     }
@@ -190,7 +190,7 @@ impl AndroidPlaybackSession {
             }
             (state.next_uri(), state.queue.clone())
         };
-        self.inner.persist_queue(&queue_to_save)?;
+        self.inner.persist_queue(queue_to_save)?;
         self.inner.backend()?.set_next(next_uri.as_deref());
         self.inner.notify();
         Ok(true)
@@ -215,7 +215,7 @@ impl AndroidPlaybackSession {
             }
             (state.next_uri(), state.queue.clone())
         };
-        self.inner.persist_queue(&queue_to_save)?;
+        self.inner.persist_queue(queue_to_save)?;
         self.inner.backend()?.set_next(next_uri.as_deref());
         self.inner.notify();
         Ok(true)
@@ -240,13 +240,14 @@ impl AndroidPlaybackSession {
             .collect::<Vec<_>>();
         let (taken, next_uri, queue_to_save) = {
             let mut state = self.inner.lock()?;
+            let old_len = state.track_ids.len();
+            super::extend_track_index(&mut state.track_index_by_id, old_len, &track_ids);
             state.track_ids.extend_from_slice(&track_ids);
             state.uris.extend(uris);
-            state.track_index_by_id = super::index_tracks(&state.track_ids);
             let taken = state.queue.enqueue(&track_ids, placement);
             (taken, state.next_uri(), state.queue.clone())
         };
-        self.inner.persist_queue(&queue_to_save)?;
+        self.inner.persist_queue(queue_to_save)?;
         self.inner.backend()?.set_next(next_uri.as_deref());
         self.inner.notify();
         Ok(u32::try_from(taken).unwrap_or(u32::MAX))
