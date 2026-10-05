@@ -21,26 +21,3 @@ fn the_composed_stylesheet_parses_without_errors() {
         errors.join("\n  ")
     );
 }
-
-#[test]
-#[ignore = "probe: prints the composed stylesheet's parse errors with context"]
-fn probe_composed_css_errors() {
-    gtk4::init().unwrap();
-    let css = super::app_css();
-    let lines: Vec<&str> = css.lines().collect();
-    let errors = super::css_parse_errors(&css);
-    println!(
-        "composed stylesheet: {} lines, {} errors",
-        lines.len(),
-        errors.len()
-    );
-    for error in &errors {
-        println!("  {error}");
-    }
-    for number in [515usize, 550] {
-        if let Some(line) = lines.get(number - 1) {
-            let shown: String = line.chars().take(240).collect();
-            println!("line {number}: {shown}");
-        }
-    }
-}
