@@ -172,8 +172,11 @@ jobs:
       # Only dev and the nightly run on main write caches: a pull request's
       # entries are scoped to its own ref, so dev could never read them back,
       # while an entry written on the default branch is readable from every branch.
+      # The downloads are saved even when the run fails, or a red dev would
+      # never warm the cache that would make it green faster.
       - name: Save Cargo downloads
         if: >-
+          always() &&
           (github.ref == 'refs/heads/dev' ||
           (github.ref == 'refs/heads/main' && github.event_name == 'schedule')) &&
           steps.cargo_downloads.outputs.cache-hit != 'true'
@@ -232,6 +235,7 @@ jobs:
 
       - name: Save Cargo downloads
         if: >-
+          always() &&
           (github.ref == 'refs/heads/dev' ||
           (github.ref == 'refs/heads/main' && github.event_name == 'schedule')) &&
           steps.cargo_downloads.outputs.cache-hit != 'true'
@@ -291,6 +295,7 @@ jobs:
       - name: Cache Rust dependencies
         uses: Swatinem/rust-cache@v2
         with:
+          cache-on-failure: true
           save-if: >-
             ${{ github.ref == 'refs/heads/dev' ||
             (github.ref == 'refs/heads/main' && github.event_name == 'schedule') }}
@@ -390,6 +395,7 @@ jobs:
 
       - name: Save Cargo downloads
         if: >-
+          always() &&
           (github.ref == 'refs/heads/dev' ||
           (github.ref == 'refs/heads/main' && github.event_name == 'schedule')) &&
           steps.cargo_downloads.outputs.cache-hit != 'true'
