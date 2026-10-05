@@ -100,7 +100,7 @@ fn meta_from_tagged(tagged: &lofty::file::TaggedFile) -> TrackMeta {
     let props = tagged.properties();
     let tag = tagged.primary_tag().or_else(|| tagged.first_tag());
     let get = |f: &dyn Fn(&lofty::tag::Tag) -> Option<String>| tag.and_then(f).unwrap_or_default();
-    let replay_gain = tag.map_or_else(ReplayGainTags::default, replay_gain_tags);
+    let replay_gain = replay_gain_from_all_tags(tagged);
     TrackMeta {
         title: get(&|t| t.title().map(|s| s.to_string())),
         artist: get(&|t| t.artist().map(|s| s.to_string())),
@@ -128,6 +128,28 @@ fn meta_from_tagged(tagged: &lofty::file::TaggedFile) -> TrackMeta {
     }
 }
 
+/// ReplayGain values from every tag of the file, the primary tag first: a
+/// scanner, an encoder or a player may each have written them into a different
+/// one (an MP3's APE tag beside its ID3v2, for instance). The first tag that
+/// carries a value wins, field by field.
+fn replay_gain_from_all_tags(tagged: &lofty::file::TaggedFile) -> ReplayGainTags {
+    use lofty::prelude::*;
+    let primary = tagged.primary_tag_type();
+    let (first, rest): (Vec<_>, Vec<_>) = tagged
+        .tags()
+        .iter()
+        .partition(|tag| tag.tag_type() == primary);
+    first.into_iter().chain(rest).map(replay_gain_tags).fold(
+        ReplayGainTags::default(),
+        |merged, next| ReplayGainTags {
+            track_gain_db: merged.track_gain_db.or(next.track_gain_db),
+            track_peak: merged.track_peak.or(next.track_peak),
+            album_gain_db: merged.album_gain_db.or(next.album_gain_db),
+            album_peak: merged.album_peak.or(next.album_peak),
+        },
+    )
+}
+
 fn replay_gain_tags(tag: &lofty::tag::Tag) -> ReplayGainTags {
     use lofty::tag::ItemKey;
     let value = |key| tag.get_string(key).and_then(parse_tag_number);
@@ -142,12 +164,17 @@ fn replay_gain_tags(tag: &lofty::tag::Tag) -> ReplayGainTags {
 
 fn parse_tag_number(value: &str) -> Option<f64> {
     let normalized = value.trim().replace(',', ".");
-    let number = normalized
-        .strip_suffix("dB")
-        .or_else(|| normalized.strip_suffix("db"))
-        .unwrap_or(&normalized)
-        .trim();
+    let number = strip_decibel_suffix(&normalized).trim();
     number.parse().ok().filter(|value: &f64| value.is_finite())
+}
+
+/// Drops a trailing "dB", whatever its case ("DB" and "Db" occur in the wild).
+fn strip_decibel_suffix(value: &str) -> &str {
+    let split = value.len().saturating_sub(2);
+    match value.get(split..) {
+        Some(suffix) if suffix.eq_ignore_ascii_case("db") => &value[..split],
+        _ => value,
+    }
 }
 
 /// Pass 1: the ordinary tag+properties read, lofty's own default
