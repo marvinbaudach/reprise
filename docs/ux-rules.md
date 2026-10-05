@@ -1639,6 +1639,40 @@ result.
   and never raises the window's minimum: below the room the LIBRARY floor
   leaves, the block scrolls inside itself. At the minimum window the ISSUES
   heading, one row and one running card are visible.
+- **FB-16** [active] [android] — **Deleting tracks on the phone waits
+  out an Undo window instead of asking first.** The rows disappear and leave
+  the upcoming queue at once; if the playing track is among them, playback
+  skips on. A snackbar says "N tracks will be deleted" with an Undo button —
+  future tense, because nothing is gone yet. The window is 6 s, or longer when
+  the listener's accessibility settings ask for more time. Only when it ends,
+  or when a newer delete takes the snackbar, are the files moved to the trash,
+  once. Undo restores the rows and puts the queue rows back at their old
+  positions; if the queue changed size meanwhile, they come back as next.
+  Unlike FB-7 on the desktop, a screen or process that ends inside the window
+  deletes nothing: here the action is a file deletion, and the safe direction
+  is to keep the file. *Tests:*
+  `fb_16_beginning_hides_the_tracks_and_takes_them_out_of_the_queue_at_once`,
+  `fb_16_undo_restores_the_rows_and_the_queue_exactly`,
+  `fb_16_when_the_window_passes_the_files_are_deleted_once`,
+  `fb_16_a_second_delete_commits_the_first_immediately`,
+  `fb_16_a_cleared_screen_deletes_nothing_even_if_its_timer_fires_later`,
+  `fb_16_the_offer_is_worded_in_the_future_because_nothing_is_deleted_yet`.
+- **FB-17** [active] [android] — "Remove from queue" on the phone offers
+  "Removed from queue" with Undo for the same window as FB-16, and only when
+  the queue really lost that one row. Undo puts the row back at its old
+  position if the queue still has the size the removal left; otherwise it
+  comes back as next. A queue offer that arrives while a delete's window runs
+  waits for it instead of ending it. *Tests:*
+  `fb_17_removing_a_queue_row_offers_an_undo_that_puts_it_back_where_it_was`,
+  `fb_17_a_queue_undo_after_the_queue_changed_shape_appends_the_row_next`.
+- **FB-18** [active] [android] — Neither the Undo snackbar nor the
+  "Deleting N tracks…" line moves the list: both are overlays without layout
+  height. The snackbar floats above the bottom navigation; while the Now
+  Playing sheet is open it sits just above the sheet's transport row instead.
+  *Tests:*
+  `fb_18_the_undo_snackbar_floats_above_the_bottom_frame_without_moving_the_list`,
+  `fb_18_the_titles_tab_stays_where_it_is`,
+  `fb_18_over_the_stacked_sheet_the_snackbar_sits_just_above_the_transport_row`.
 
 ## H. File association & OS integration
 
@@ -1683,6 +1717,38 @@ result.
   `Releases only` while the Concerts module is off. Nothing else notifies.
   Test: `os_7_all_updates_adds_the_concerts_delta`
   (`ui/preferences/preference_new_releases.rs`, `#[cfg(test)]`).
+- **OS-8** [active] [android] — Android Auto and other media browsers see
+  the library as a tree under "Reprise": Recently played (the last 50 songs,
+  newest first), Playlists, Albums, Artists, in that order. Playlists and
+  albums lead to their songs; artists lead to albums, then songs. Folders are
+  paged, capped at 2,000 children. Tapping a song plays its whole container,
+  starting at that song, through the same Core queue the app uses. Search is
+  not offered. *Tests:*
+  `os_8_the_root_lists_the_four_top_level_folders_in_order`,
+  `os_8_tapping_a_song_queues_its_whole_container_positioned_on_the_song`.
+- **OS-9** [active] [android] — Only trusted controllers may browse or drive
+  the session: the app itself (by uid), controllers the platform vouches for
+  (Media3 `isTrusted`), and Android Auto and Wear OS when their single signing
+  certificate matches a pinned digest. A package name alone never suffices.
+  Everyone else connects with no commands, sees no current item, and gets a
+  permission error from every browse and play entry point. *Tests:*
+  `os_9_android_auto_is_trusted_only_with_its_pinned_certificate`,
+  `os_9_an_untrusted_controller_gets_no_browse_data_from_any_read_entry_point`.
+- **OS-10** [active] [android] — The home-screen widget comes in two
+  placements. The wide one (4×1) shows cover, title, artist and
+  previous / play-pause / next; the square one (2×2) is the cover with one
+  play/pause button. The buttons control playback without opening the app;
+  the cover opens the app. Before anything was played the widget shows the
+  app icon and "Reprise" and opens the app; when the queue has run out, play
+  opens the app instead of doing nothing. *Tests:*
+  `os_10_the_wide_widgets_buttons_send_media_commands_to_the_service`,
+  `os_10_the_square_widget_is_a_cover_with_one_play_pause_button`,
+  `os_10_before_anything_was_played_the_widget_shows_the_app_name_and_opens_the_app`.
+- **OS-11** [active] [android] — Every item the player plays carries the
+  track's title, artist, album and duration, and its cover once it is known,
+  so the notification, the lock screen, Android Auto and the widget all name
+  what is playing. *Test:*
+  `os_11_the_item_the_core_starts_carries_the_tracks_metadata`.
 
 ## I. Start state
 

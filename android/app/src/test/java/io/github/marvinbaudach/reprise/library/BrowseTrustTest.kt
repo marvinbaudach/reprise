@@ -58,7 +58,7 @@ class BrowseTrustPolicyTest {
     }
 
     @Test
-    fun androidAutoIsTrustedOnlyWithItsPinnedCertificate() {
+    fun os_9_android_auto_is_trusted_only_with_its_pinned_certificate() {
         assertTrue(allowed(AUTO, signers = setOf(AUTO_RELEASE_KEY)))
     }
 
@@ -199,7 +199,7 @@ class BrowseTrustSessionTest {
     }
 
     @Test
-    fun anUntrustedControllerGetsNoBrowseDataFromAnyReadEntryPoint() {
+    fun os_9_an_untrusted_controller_gets_no_browse_data_from_any_read_entry_point() {
         val browser = browser(connectedAs = false, id = "untrusted-reads")
 
         val results: List<LibraryResult<*>> = listOf(

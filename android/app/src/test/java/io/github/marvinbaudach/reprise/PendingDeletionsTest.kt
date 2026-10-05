@@ -30,7 +30,7 @@ class PendingDeletionsTest {
     )
 
     @Test
-    fun beginningHidesTheTracksAndTakesThemOutOfTheQueueAtOnce() {
+    fun fb_16_beginning_hides_the_tracks_and_takes_them_out_of_the_queue_at_once() {
         val queue = FakeQueueControls(listOf(10, 11, 12, 13, 14))
 
         deletions.begin(listOf(11, 13), queue)
@@ -44,7 +44,7 @@ class PendingDeletionsTest {
     }
 
     @Test
-    fun undoRestoresTheRowsAndTheQueueExactly() {
+    fun fb_16_undo_restores_the_rows_and_the_queue_exactly() {
         val queue = FakeQueueControls(listOf(10, 11, 12, 13, 14, 15))
 
         deletions.begin(listOf(11, 13, 15), queue)
@@ -58,7 +58,7 @@ class PendingDeletionsTest {
     }
 
     @Test
-    fun whenTheWindowPassesTheFilesAreDeletedOnce() {
+    fun fb_16_when_the_window_passes_the_files_are_deleted_once() {
         val queue = FakeQueueControls(listOf(10, 11, 12))
         refreshTicket = 3
 
@@ -79,7 +79,7 @@ class PendingDeletionsTest {
     }
 
     @Test
-    fun aSecondDeleteCommitsTheFirstImmediately() {
+    fun fb_16_a_second_delete_commits_the_first_immediately() {
         val queue = FakeQueueControls(listOf(10, 11, 12, 13))
 
         deletions.begin(listOf(10), queue)
@@ -94,7 +94,7 @@ class PendingDeletionsTest {
     }
 
     @Test
-    fun aClearedScreenDeletesNothingEvenIfItsTimerFiresLater() {
+    fun fb_16_a_cleared_screen_deletes_nothing_even_if_its_timer_fires_later() {
         val queue = FakeQueueControls(listOf(10, 11, 12))
 
         deletions.begin(listOf(11), queue)
@@ -196,7 +196,7 @@ class PendingDeletionsTest {
     }
 
     @Test
-    fun removingAQueueRowOffersAnUndoThatPutsItBackWhereItWas() {
+    fun fb_17_removing_a_queue_row_offers_an_undo_that_puts_it_back_where_it_was() {
         val queue = FakeQueueControls(listOf(10, 11, 12, 13))
         var refreshed = 0
 
@@ -233,7 +233,7 @@ class PendingDeletionsTest {
     }
 
     @Test
-    fun aQueueUndoAfterTheQueueChangedShapeAppendsTheRowNext() {
+    fun fb_17_a_queue_undo_after_the_queue_changed_shape_appends_the_row_next() {
         val queue = FakeQueueControls(listOf(10, 11, 12))
 
         deletions.removeFromQueueWithUndo(

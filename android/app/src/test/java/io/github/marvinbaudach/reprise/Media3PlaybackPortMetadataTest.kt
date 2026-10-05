@@ -75,7 +75,7 @@ class Media3PlaybackPortMetadataTest {
     }
 
     @Test
-    fun theItemTheCoreStartsCarriesTheTracksMetadata() {
+    fun os_11_the_item_the_core_starts_carries_the_tracks_metadata() {
         port.playUri(FIRST)
         settle()
 
