@@ -36,7 +36,7 @@ class RepriseWidgetContentTest {
     }
 
     @Test
-    fun theWideWidgetsButtonsSendMediaCommandsToTheService() = runGlanceAppWidgetUnitTest {
+    fun os_10_the_wide_widgets_buttons_send_media_commands_to_the_service() = runGlanceAppWidgetUnitTest {
         setContext(ApplicationProvider.getApplicationContext())
         setAppWidgetSize(WIDE_SIZE)
         provideComposable { RepriseWidgetContent(PLAYING, covers = WidgetCovers.None) }
@@ -92,7 +92,7 @@ class RepriseWidgetContentTest {
     }
 
     @Test
-    fun theSquareWidgetIsACoverWithOnePlayPauseButton() = runGlanceAppWidgetUnitTest {
+    fun os_10_the_square_widget_is_a_cover_with_one_play_pause_button() = runGlanceAppWidgetUnitTest {
         setContext(ApplicationProvider.getApplicationContext())
         setAppWidgetSize(SQUARE_SIZE)
         provideComposable { RepriseWidgetContent(PLAYING, covers = WidgetCovers.None) }
@@ -107,7 +107,7 @@ class RepriseWidgetContentTest {
     }
 
     @Test
-    fun beforeAnythingWasPlayedTheWidgetShowsTheAppNameAndOpensTheApp() = runGlanceAppWidgetUnitTest {
+    fun os_10_before_anything_was_played_the_widget_shows_the_app_name_and_opens_the_app() = runGlanceAppWidgetUnitTest {
         setContext(ApplicationProvider.getApplicationContext())
         setAppWidgetSize(WIDE_SIZE)
         provideComposable { RepriseWidgetContent(WidgetNowPlaying.Empty, covers = WidgetCovers.None) }

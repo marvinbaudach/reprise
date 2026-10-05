@@ -61,7 +61,7 @@ class UndoSnackbarHostTest {
     }
 
     @Test
-    fun theOfferIsWordedInTheFutureBecauseNothingIsDeletedYet() {
+    fun fb_16_the_offer_is_worded_in_the_future_because_nothing_is_deleted_yet() {
         val queue = FakeQueueControls(listOf(10, 11, 12))
         showHost(queue)
 

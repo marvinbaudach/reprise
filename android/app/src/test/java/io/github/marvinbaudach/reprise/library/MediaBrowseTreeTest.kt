@@ -34,7 +34,7 @@ class MediaBrowseTreeTest {
         tree.children(parent, page, size)!!.map { it.mediaMetadata.title.toString() }
 
     @Test
-    fun theRootListsTheFourTopLevelFoldersInOrder() {
+    fun os_8_the_root_lists_the_four_top_level_folders_in_order() {
         assertEquals(
             listOf("Recently played", "Playlists", "Albums", "Artists"),
             titles(BrowseId.Root.mediaId),
@@ -196,7 +196,7 @@ class MediaBrowseTreeTest {
     }
 
     @Test
-    fun tappingASongQueuesItsWholeContainerPositionedOnTheSong() {
+    fun os_8_tapping_a_song_queues_its_whole_container_positioned_on_the_song() {
         val queue = tree.queueFor(BrowseId.Track(BrowseId.Album("First Album", "Alpha"), 2, 1).mediaId)!!
 
         assertEquals(listOf(1L, 2L), queue.trackIds)

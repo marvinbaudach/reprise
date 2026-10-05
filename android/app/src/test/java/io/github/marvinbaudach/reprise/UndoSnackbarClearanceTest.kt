@@ -38,7 +38,7 @@ class UndoSnackbarClearanceTest {
 
     @Test
     @Config(qualifiers = "w412dp-h916dp-port")
-    fun overTheStackedSheetTheSnackbarSitsJustAboveTheTransportRow() =
+    fun fb_18_over_the_stacked_sheet_the_snackbar_sits_just_above_the_transport_row() =
         assertSitsAboveTheTransport(SurfaceLayout.STACKED)
 
     @Test

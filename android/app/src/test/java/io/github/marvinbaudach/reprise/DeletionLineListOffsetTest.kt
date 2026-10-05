@@ -33,7 +33,7 @@ class DeletionLineListOffsetTest {
     val compose = createAndroidComposeRule<ComponentActivity>()
 
     @Test
-    fun theTitlesTabStaysWhereItIs() {
+    fun fb_18_the_titles_tab_stays_where_it_is() {
         val viewModel = MobileSurfaceViewModel()
         show(viewModel)
         assertDeletionLeavesTheListAlone(viewModel, probeText = SECOND_TITLE)
@@ -69,7 +69,7 @@ class DeletionLineListOffsetTest {
     }
 
     @Test
-    fun theUndoSnackbarFloatsAboveTheBottomFrameWithoutMovingTheList() {
+    fun fb_18_the_undo_snackbar_floats_above_the_bottom_frame_without_moving_the_list() {
         val harness = DeletionHarness()
         show(harness.surface)
         val before = offsets(SECOND_TITLE)

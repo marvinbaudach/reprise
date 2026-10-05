@@ -35,7 +35,7 @@ class TrackCoverLandsAfterTheViewTest {
     val compose = createAndroidComposeRule<ComponentActivity>()
 
     @Test
-    fun anOpenNowPlayingViewSwitchesToACoverThatLandsAfterItsOwnRequestGaveUp() {
+    fun net_7a_an_open_now_playing_view_switches_to_a_cover_that_lands_after_its_own_request_gave_up() {
         val lane = ManualLane()
         val cover = Bitmap.createBitmap(8, 8, Bitmap.Config.ARGB_8888).apply { eraseColor(Color.RED) }
         var onDisk = false
