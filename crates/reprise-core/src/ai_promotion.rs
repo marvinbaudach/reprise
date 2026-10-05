@@ -130,6 +130,12 @@ pub enum PromotionError {
     Db(#[from] rusqlite::Error),
 }
 
+impl From<crate::CoreError> for PromotionError {
+    fn from(error: crate::CoreError) -> Self {
+        Self::Db(error.into())
+    }
+}
+
 /// The source track's fields the final tags are built from.
 struct SourceMeta {
     title: String,
