@@ -1,11 +1,12 @@
 use rusqlite::{Connection, OptionalExtension};
 
+use crate::db::Db;
 use crate::library::loudness::{resolve_gain, GainInputs, ReplayGainTags};
 use crate::library::loudness_store::{album_measured_loudness, measured_loudness};
 use crate::library::settings::ReplayGainMode;
 
-pub fn effective_gain_db(conn: &Connection, track_id: i64, mode: ReplayGainMode) -> f64 {
-    effective_gain_db_result(conn, track_id, mode).unwrap_or_else(|error| {
+pub fn effective_gain_db(db: &Db, track_id: i64, mode: ReplayGainMode) -> f64 {
+    effective_gain_db_result(db.conn(), track_id, mode).unwrap_or_else(|error| {
         tracing::warn!(track_id, %error, "could not resolve track gain; using unity gain");
         0.0
     })
@@ -86,7 +87,7 @@ mod tests {
         let db = track((None, None));
         store_measured(&db);
 
-        assert_eq!(effective_gain_db(db.conn(), 1, ReplayGainMode::Track), 3.0);
+        assert_eq!(effective_gain_db(&db, 1, ReplayGainMode::Track), 3.0);
     }
 
     #[test]
@@ -94,7 +95,7 @@ mod tests {
         let db = track((Some(-4.0), Some(0.5)));
         store_measured(&db);
 
-        assert_eq!(effective_gain_db(db.conn(), 1, ReplayGainMode::Track), -4.0);
+        assert_eq!(effective_gain_db(&db, 1, ReplayGainMode::Track), -4.0);
     }
 
     #[test]
@@ -102,6 +103,6 @@ mod tests {
         let db = track((Some(-4.0), Some(0.5)));
         store_measured(&db);
 
-        assert_eq!(effective_gain_db(db.conn(), 1, ReplayGainMode::Off), 0.0);
+        assert_eq!(effective_gain_db(&db, 1, ReplayGainMode::Off), 0.0);
     }
 }

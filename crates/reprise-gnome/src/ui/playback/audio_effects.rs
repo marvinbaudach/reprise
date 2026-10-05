@@ -16,6 +16,19 @@ pub(in crate::ui) fn persist(db: &Db, effects: &AudioEffects) -> Result<(), rusq
     audio_effect_settings::store(db, effects)
 }
 
+fn apply_current_gain(
+    player: &dyn PlaybackBackend,
+    db: &Db,
+    track_id: Option<i64>,
+    mode: reprise_core::library::settings::ReplayGainMode,
+) -> Result<(), PlaybackError> {
+    let Some(track_id) = track_id else {
+        return Ok(());
+    };
+    let gain_db = reprise_core::queries::effective_gain_db(db, track_id, mode);
+    player.set_current_gain_db(gain_db)
+}
+
 pub(in crate::ui) fn apply_initial(player: &dyn PlaybackBackend, conn: &Rc<Db>) -> AudioEffects {
     let requested = stored(conn);
     if player.set_audio_effects(requested.clone()).is_ok() {
@@ -45,7 +58,14 @@ impl PlayerController {
         effects: AudioEffects,
     ) -> Result<(), PlaybackError> {
         self.player.set_audio_effects(effects.clone())?;
+        apply_current_gain(
+            self.player.as_ref(),
+            &self.conn,
+            self.current_track.get().map(|(track_id, _)| track_id),
+            effects.replay_gain,
+        )?;
         *self.active_audio_effects.borrow_mut() = effects;
+        self.feed_next();
         Ok(())
     }
 
@@ -63,6 +83,7 @@ mod tests {
 
     struct RejectingBackend {
         attempts: RefCell<Vec<AudioEffects>>,
+        gains: RefCell<Vec<f64>>,
     }
 
     impl PlaybackBackend for RejectingBackend {
@@ -93,6 +114,11 @@ mod tests {
             }
         }
 
+        fn set_current_gain_db(&self, gain_db: f64) -> Result<(), PlaybackError> {
+            self.gains.borrow_mut().push(gain_db);
+            Ok(())
+        }
+
         fn stop(&self) -> Result<(), PlaybackError> {
             Ok(())
         }
@@ -115,6 +141,7 @@ mod tests {
         settings::set_replay_gain_mode(&conn, ReplayGainMode::Album).unwrap();
         let backend = RejectingBackend {
             attempts: RefCell::new(Vec::new()),
+            gains: RefCell::new(Vec::new()),
         };
 
         assert_eq!(apply_initial(&backend, &conn), AudioEffects::default());
@@ -135,5 +162,27 @@ mod tests {
         persist(&conn, &effects).unwrap();
 
         assert_eq!(stored(&conn), effects);
+    }
+
+    #[test]
+    fn replaygain_mode_change_applies_the_current_track_gain_without_restarting() {
+        let conn = crate::test_db::open().unwrap();
+        crate::test_db::connection(&conn)
+            .execute(
+                "INSERT INTO tracks \
+                 (id, path, title, added_at, duration_ms, rg_track_gain) \
+                 VALUES (1, '/track.flac', '', 0, 1000, -4.5)",
+                [],
+            )
+            .unwrap();
+        let backend = RejectingBackend {
+            attempts: RefCell::new(Vec::new()),
+            gains: RefCell::new(Vec::new()),
+        };
+
+        apply_current_gain(&backend, &conn, Some(1), ReplayGainMode::Track).unwrap();
+
+        assert_eq!(backend.gains.borrow().as_slice(), [-4.5]);
+        assert!(backend.attempts.borrow().is_empty());
     }
 }

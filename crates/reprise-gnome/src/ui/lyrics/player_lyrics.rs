@@ -361,11 +361,14 @@ pub(in crate::ui) fn lyrics_query_for(summary: &TrackSummary) -> LyricsTrack {
 
 pub(in crate::ui) fn start_track_for_lyrics(
     player: &dyn PlaybackBackend,
+    db: &reprise_core::db::Db,
+    track_id: i64,
+    mode: reprise_core::library::settings::ReplayGainMode,
     summary: &TrackSummary,
 ) -> Result<LyricsTrack, PlaybackError> {
     player.play(reprise_core::playback::PlaybackItem {
         path: &summary.path,
-        gain_db: 0.0,
+        gain_db: reprise_core::queries::effective_gain_db(db, track_id, mode),
     })?;
     Ok(lyrics_query_for(summary))
 }

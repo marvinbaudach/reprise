@@ -411,35 +411,6 @@ impl PlayerController {
         self.bar.widget()
     }
 
-    /// Resolves `id` via `queries::query_track_summary` and starts its
-    /// playback — the one place that starts a QUEUE track through
-    /// `Player::play`, shared by `play_from_view` and every queue-stepping call
-    /// site so the "resolve, evaluate prior play tracking, start playback,
-    /// handle failure" sequence exists exactly once (DRY). Ends the previous
-    /// track's listening session first
-    /// (`evaluate_play_tracking`) — a queue step is still a track switch. On
-    /// success, resets `consecutive_skips` to 0 (a good track breaks any skip
-    /// chain). On a `Player::play` failure, hands off to `playback_faults.rs`'s
-    /// `handle_unplayable_track` (diagnose missing-vs-corrupt, mark/toast, then
-    /// auto-skip) rather than resetting outright. A missing DB row or query
-    /// failure has no title/path to toast from, so those just log and go
-    /// straight to `skip_after_failure`. `pub(in crate::ui)` so `mpris_mirror.rs`
-    /// and `playback_faults.rs` can call it too.
-    pub(in crate::ui) fn play_track_id(self: &Rc<Self>, id: i64) {
-        self.play_track_id_with_change(
-            id,
-            super::current_track_selection::CurrentTrackChange::PlaybackStarted,
-        );
-    }
-
-    pub(in crate::ui) fn play_track_id_with_change(
-        self: &Rc<Self>,
-        id: i64,
-        change: super::current_track_selection::CurrentTrackChange,
-    ) {
-        self.present_track(id, StartPlayback::Yes, change);
-    }
-
     /// Loads `id` as the now-playing track and reflects it across every
     /// surface (bar, Now-Playing, cover, lyrics, scrobble, MPRIS). The single
     /// difference `start` makes: `Yes` starts the pipeline via `play()` (the
@@ -528,11 +499,16 @@ impl PlayerController {
                         &summary.path,
                     );
                 }
+                let replay_gain = self.active_audio_effects.borrow().replay_gain;
                 let (lyrics_result, player_load_ms) =
                     super::instrumentation::timed(|| match start {
-                        StartPlayback::Yes => {
-                            start_track_for_lyrics(self.player.as_ref(), &summary)
-                        }
+                        StartPlayback::Yes => start_track_for_lyrics(
+                            self.player.as_ref(),
+                            &self.conn,
+                            id,
+                            replay_gain,
+                            &summary,
+                        ),
                         // Gapless: the pipeline is already playing this track, so
                         // don't restart it — just build the lyrics key.
                         StartPlayback::No => Ok(lyrics_query_for(&summary)),

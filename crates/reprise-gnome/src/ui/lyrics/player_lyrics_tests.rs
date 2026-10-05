@@ -3,6 +3,7 @@ use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use std::sync::{mpsc, Arc, Mutex};
 
 use gtk4::prelude::*;
+use reprise_core::library::settings::ReplayGainMode;
 use reprise_core::lyrics::{
     LookupOptions, LyricsBody, LyricsHit, LyricsQuery, LyricsSource, TimedLine,
 };
@@ -17,6 +18,7 @@ use super::player_lyrics::{start_track_for_lyrics, PlayerLyrics};
 struct FakePlayback {
     result: RefCell<Option<Result<(), PlaybackError>>>,
     play_calls: Cell<usize>,
+    gains: RefCell<Vec<f64>>,
 }
 
 impl FakePlayback {
@@ -24,6 +26,7 @@ impl FakePlayback {
         Self {
             result: RefCell::new(Some(Ok(()))),
             play_calls: Cell::new(0),
+            gains: RefCell::new(Vec::new()),
         }
     }
 
@@ -31,13 +34,15 @@ impl FakePlayback {
         Self {
             result: RefCell::new(Some(Err(PlaybackError::Backend("synthetic".into())))),
             play_calls: Cell::new(0),
+            gains: RefCell::new(Vec::new()),
         }
     }
 }
 
 impl PlaybackBackend for FakePlayback {
-    fn play(&self, _path: reprise_core::playback::PlaybackItem<'_>) -> Result<(), PlaybackError> {
+    fn play(&self, item: reprise_core::playback::PlaybackItem<'_>) -> Result<(), PlaybackError> {
         self.play_calls.set(self.play_calls.get() + 1);
+        self.gains.borrow_mut().push(item.gain_db);
         self.result.borrow_mut().take().unwrap()
     }
 
@@ -358,7 +363,8 @@ fn lyr_2_an_identical_online_fallback_keeps_the_rendered_local_line() {
 #[test]
 fn successful_backend_start_builds_one_exact_lyrics_query() {
     let backend = FakePlayback::succeeding();
-    let query = start_track_for_lyrics(&backend, &summary()).unwrap();
+    let db = crate::test_db::open().unwrap();
+    let query = start_track_for_lyrics(&backend, &db, 1, ReplayGainMode::Off, &summary()).unwrap();
 
     assert_eq!(backend.play_calls.get(), 1);
     assert_eq!(query.query.title, "Exact title");
@@ -374,8 +380,45 @@ fn successful_backend_start_builds_one_exact_lyrics_query() {
 #[test]
 fn failed_backend_start_never_produces_a_lyrics_query() {
     let backend = FakePlayback::failing();
-    assert!(start_track_for_lyrics(&backend, &summary()).is_err());
+    let db = crate::test_db::open().unwrap();
+    assert!(start_track_for_lyrics(&backend, &db, 1, ReplayGainMode::Off, &summary()).is_err());
     assert_eq!(backend.play_calls.get(), 1);
+}
+
+#[test]
+fn controller_hands_tagged_measured_and_off_gain_to_the_backend() {
+    for (mode, tagged_gain, measured_lufs, expected) in [
+        (ReplayGainMode::Track, Some(-4.0), Some(-21.0), -4.0),
+        (ReplayGainMode::Track, None, Some(-21.0), 3.0),
+        (ReplayGainMode::Off, Some(-4.0), Some(-21.0), 0.0),
+    ] {
+        let db = crate::test_db::open().unwrap();
+        let conn = crate::test_db::connection(&db);
+        conn.execute(
+            "INSERT INTO tracks \
+             (id, path, title, album, artist, added_at, duration_ms, file_mtime, file_size, \
+              device, inode, rg_track_gain, rg_track_peak) \
+             VALUES (1, '/synthetic/song.flac', '', 'Album', 'Artist', 0, 1000, \
+                     11, 22, 33, 44, ?1, 0.5)",
+            [tagged_gain],
+        )
+        .unwrap();
+        if let Some(integrated_lufs) = measured_lufs {
+            conn.execute(
+                "INSERT INTO track_loudness \
+                 (track_id, source_mtime, source_size, source_device, source_inode, \
+                  format_version, integrated_lufs, true_peak) \
+                 VALUES (1, 11, 22, 33, 44, 1, ?1, 0.5)",
+                [integrated_lufs],
+            )
+            .unwrap();
+        }
+        drop(conn);
+
+        let backend = FakePlayback::succeeding();
+        start_track_for_lyrics(&backend, &db, 1, mode, &summary()).unwrap();
+        assert_eq!(backend.gains.borrow().as_slice(), [expected]);
+    }
 }
 
 #[test]
