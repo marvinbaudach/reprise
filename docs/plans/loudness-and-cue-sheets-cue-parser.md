@@ -2,7 +2,7 @@
 slug: loudness-and-cue-sheets-cue-parser
 worktree: /home/marvin/Projects/reprise-loudness-and-cue-sheets-cue-parser
 branch: feature/loudness-and-cue-sheets-cue-parser
-phase: planned
+phase: shipped
 codex_session:
 created: 2026-10-04
 ---
