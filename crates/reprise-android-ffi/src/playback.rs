@@ -2,8 +2,8 @@ use std::sync::Arc;
 
 use reprise_core::library::settings::TrackTransition;
 use reprise_core::playback::{
-    AudioEffects, PlaybackBackend, PlaybackError, PlaybackState, PlayerEvent, StreamEvent,
-    StreamGeneration,
+    AudioEffects, PlaybackBackend, PlaybackError, PlaybackItem, PlaybackState, PlayerEvent,
+    StreamEvent, StreamGeneration,
 };
 
 use crate::{AndroidEqualizerPoint, AndroidEqualizerSnapshot};
@@ -168,9 +168,9 @@ impl AndroidPlaybackBackend {
 }
 
 impl PlaybackBackend for AndroidPlaybackBackend {
-    fn play(&self, path: &str) -> Result<(), PlaybackError> {
+    fn play(&self, item: PlaybackItem<'_>) -> Result<(), PlaybackError> {
         self.port
-            .play_path(path.to_owned())
+            .play_path(item.path.to_owned())
             .map_err(PlaybackError::from)
     }
 
@@ -209,8 +209,8 @@ impl PlaybackBackend for AndroidPlaybackBackend {
         self.port.stop().map_err(PlaybackError::from)
     }
 
-    fn set_next(&self, path: Option<&str>) {
-        let _ = self.port.set_next(path.map(str::to_owned));
+    fn set_next(&self, item: Option<PlaybackItem<'_>>) {
+        let _ = self.port.set_next(item.map(|item| item.path.to_owned()));
     }
 
     fn set_transition(&self, mode: TrackTransition, _crossfade_seconds: u8) {

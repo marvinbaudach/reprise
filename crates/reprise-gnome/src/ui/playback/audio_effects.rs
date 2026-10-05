@@ -66,7 +66,7 @@ mod tests {
     }
 
     impl PlaybackBackend for RejectingBackend {
-        fn play(&self, _: &str) -> Result<(), PlaybackError> {
+        fn play(&self, _: reprise_core::playback::PlaybackItem<'_>) -> Result<(), PlaybackError> {
             Ok(())
         }
 
@@ -97,7 +97,7 @@ mod tests {
             Ok(())
         }
 
-        fn set_next(&self, _path: Option<&str>) {}
+        fn set_next(&self, _path: Option<reprise_core::playback::PlaybackItem<'_>>) {}
 
         fn set_transition(
             &self,

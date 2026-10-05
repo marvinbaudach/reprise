@@ -6,7 +6,7 @@ use reprise_core::library::trash_tracks::{commit_trash, plan_trash, TrashFailure
 use reprise_core::playback::PlaybackBackend;
 use reprise_core::queries;
 
-use super::{AndroidPlaybackError, AndroidPlaybackSession};
+use super::{unity_gain_item, AndroidPlaybackError, AndroidPlaybackSession};
 use crate::LibraryError;
 
 #[uniffi::export(callback_interface)]
@@ -137,7 +137,7 @@ impl AndroidPlaybackSession {
             self.inner
                 .backend()
                 .map_err(|error| playback_as_library_error(&error))?
-                .set_next(next_uri.as_deref());
+                .set_next(next_uri.as_deref().map(unity_gain_item));
             self.inner.notify();
         }
 

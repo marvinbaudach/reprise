@@ -30,7 +30,7 @@ const FIXTURE_SAMPLE_RATE: u32 = 44_100;
 /// Writes a mono 16-bit WAV of `seconds` of a 440 Hz sine. Generated rather
 /// than committed for the reason in the module comment; `write_wav` in
 /// `waveform.rs`'s tests does the same for its own fixtures.
-fn write_sine_wav(path: &Path, seconds: u32) {
+pub(super) fn write_sine_wav(path: &Path, seconds: u32) {
     let total_samples = (FIXTURE_SAMPLE_RATE * seconds) as usize;
     let data_size = u32::try_from(total_samples * 2).unwrap();
     let mut wav = Vec::with_capacity(44 + data_size as usize);
@@ -87,8 +87,8 @@ fn gapless_handoff_never_reports_a_duration_that_moves_the_playhead_backwards() 
     }))
     .unwrap();
 
-    player.play(first.to_str().unwrap()).unwrap();
-    player.set_next(Some(second.to_str().unwrap()));
+    player.play(item(first.to_str().unwrap())).unwrap();
+    player.set_next(Some(item(second.to_str().unwrap())));
 
     // Same pump-until-resolved pattern as `gapless_handoff_advances_without_
     // pipeline_restart`: the bus watch that turns `StreamStart` into

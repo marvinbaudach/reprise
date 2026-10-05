@@ -350,7 +350,10 @@ impl PlayerController {
                 .map(|summary| summary.path)
         });
         self.prefed_next_track.set(path.as_ref().and(prefed_track));
-        self.player.set_next(path.as_deref());
+        self.player.set_next(
+            path.as_deref()
+                .map(|path| reprise_core::playback::PlaybackItem { path, gain_db: 0.0 }),
+        );
     }
 
     pub(in crate::ui) fn play_up_next_at(self: &std::rc::Rc<Self>, position: usize) {

@@ -6,15 +6,15 @@ use std::time::Duration;
 
 use reprise_core::library::settings::{TrackTransition, CROSSFADE_SECONDS_DEFAULT};
 use reprise_core::playback::{
-    AudioEffects, PlaybackBackend, PlaybackError, PlaybackState, PlayerEvent, StreamEvent,
-    StreamGeneration,
+    AudioEffects, PlaybackBackend, PlaybackError, PlaybackItem, PlaybackState, PlayerEvent,
+    StreamEvent, StreamGeneration,
 };
 
 use crate::crossfade::{CrossfadeEngine, IncomingSlot, Transition};
-use crate::gapless::{HandoffFlag, NextUri};
+use crate::gapless::{HandoffFlag, NextUri, PendingGain, QueuedTrack};
 use crate::player_effects::{
     apply_audio_filter, replace_audio_filter, set_playbin_spectrum_messages,
-    update_existing_audio_filter,
+    set_playbin_track_gain, update_existing_audio_filter,
 };
 use crate::player_pipeline::{
     attach_bus_watch, attach_cava_sink, build_playbin, configure_download_buffering, path_to_uri,
@@ -76,6 +76,7 @@ pub struct Player {
     /// by the position ticker when it starts a crossfade (Crossfade mode).
     /// Shared across threads — see `gapless.rs` / `crossfade.rs`.
     next_uri: NextUri,
+    pending_gain: PendingGain,
     /// Set by the `about-to-finish` handler when it hands off a pre-fed URI,
     /// cleared by the bus watch's `StreamStart` handling — together they
     /// distinguish a gapless handoff (emit `AdvancedToNext`) from an ordinary
@@ -150,6 +151,7 @@ impl Player {
 
         let effects = Arc::new(Mutex::new(AudioEffects::default()));
         let next_uri: NextUri = Arc::new(Mutex::new(None));
+        let pending_gain: PendingGain = Arc::new(Mutex::new(None));
         let handoff_pending: HandoffFlag = Arc::new(AtomicBool::new(false));
         // Default (Gapless, DEFAULT): the pipeline behaves gaplessly until the
         // frontend calls `set_transition`, keeping the Phase A gapless tests
@@ -171,6 +173,7 @@ impl Player {
             handoff_pending.clone(),
             transition.clone(),
             stream_generation.clone(),
+            pending_gain.clone(),
         )?;
         let bus_watch = attach_bus_watch(
             &playbin,
@@ -189,6 +192,7 @@ impl Player {
             on_event: on_event.clone(),
             effects: effects.clone(),
             next_uri: next_uri.clone(),
+            pending_gain: pending_gain.clone(),
             handoff_pending: handoff_pending.clone(),
             transition: transition.clone(),
             crossfading: crossfading.clone(),
@@ -250,6 +254,7 @@ impl Player {
             bus_watch,
             effects,
             next_uri,
+            pending_gain,
             handoff_pending,
             transition,
             crossfading,
@@ -309,6 +314,10 @@ impl Player {
             .lock()
             .unwrap_or_else(std::sync::PoisonError::into_inner) = None;
         self.handoff_pending.store(false, Ordering::SeqCst);
+        *self
+            .pending_gain
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner) = None;
     }
 
     /// One playback attempt on the *current* pipeline: `Null` → set the new
@@ -318,7 +327,7 @@ impl Player {
     /// Bumps `stream_generation` only once `Playing` is entered (a failed
     /// attempt never emits an event, nothing to mislabel), still under the
     /// `playbin` lock so no event — `StateChanged` below included — sees stale.
-    fn try_play(&self, uri: &str, live: bool) -> Result<(), PlaybackError> {
+    fn try_play(&self, uri: &str, live: bool, gain_db: f64) -> Result<(), PlaybackError> {
         let playbin = self
             .playbin
             .lock()
@@ -327,6 +336,7 @@ impl Player {
             .set_state(gst::State::Null)
             .map_err(|e| PlaybackError::Backend(format!("GStreamer: {e}")))?;
         configure_download_buffering(&playbin, uri, live)?;
+        set_playbin_track_gain(&playbin, gain_db)?;
         playbin.set_property("uri", uri);
         playbin
             .set_state(gst::State::Playing)
@@ -337,11 +347,17 @@ impl Player {
         Ok(())
     }
 
-    fn play_resolved_uri(&self, uri: &str, source: &str, live: bool) -> Result<(), PlaybackError> {
+    fn play_resolved_uri(
+        &self,
+        uri: &str,
+        source: &str,
+        live: bool,
+        gain_db: f64,
+    ) -> Result<(), PlaybackError> {
         // A manual jump invalidates every gapless/crossfade transition. This
         // applies equally to local paths and external media.
         self.reset_transition();
-        match self.try_play(uri, live) {
+        match self.try_play(uri, live, gain_db) {
             Ok(()) => Ok(()),
             Err(error) => {
                 tracing::warn!(
@@ -350,7 +366,7 @@ impl Player {
                     "playback failed; rebuilding pipeline and retrying once"
                 );
                 self.rebuild_playbin()?;
-                self.try_play(uri, live)
+                self.try_play(uri, live, gain_db)
             }
         }
     }
@@ -376,6 +392,7 @@ impl Player {
             self.handoff_pending.clone(),
             self.transition.clone(),
             self.stream_generation.clone(),
+            self.pending_gain.clone(),
         )?;
         set_playbin_spectrum_messages(&new_playbin, self.spectrum_enabled.load(Ordering::SeqCst))?;
         let new_watch = attach_bus_watch(
@@ -435,19 +452,19 @@ impl PlaybackBackend for Player {
     /// here instead of silently taking every subsequent queue track down
     /// with it, which is the actual fault-tolerance property Task 5 exists
     /// to guarantee (a deleted file must never crash *or dead-end* the app).
-    fn play(&self, path: &str) -> Result<(), PlaybackError> {
-        let uri = path_to_uri(path)?;
-        self.play_resolved_uri(&uri, path, false)
+    fn play(&self, item: PlaybackItem<'_>) -> Result<(), PlaybackError> {
+        let uri = path_to_uri(item.path)?;
+        self.play_resolved_uri(&uri, item.path, false, item.gain_db)
     }
 
     fn play_uri(&self, uri: &str) -> Result<(), PlaybackError> {
         let uri = validated_playback_uri(uri)?;
-        self.play_resolved_uri(&uri, uri.as_str(), false)
+        self.play_resolved_uri(&uri, uri.as_str(), false, 0.0)
     }
 
     fn play_live_uri(&self, uri: &str) -> Result<(), PlaybackError> {
         let uri = validated_playback_uri(uri)?;
-        self.play_resolved_uri(&uri, uri.as_str(), true)
+        self.play_resolved_uri(&uri, uri.as_str(), true, 0.0)
     }
 
     fn toggle_pause(&self) -> Result<PlaybackState, PlaybackError> {
@@ -528,6 +545,11 @@ impl PlaybackBackend for Player {
         Ok(())
     }
 
+    fn set_current_gain_db(&self, gain_db: f64) -> Result<(), PlaybackError> {
+        let playbin = self.playbin.lock().unwrap_or_else(PoisonError::into_inner);
+        set_playbin_track_gain(&playbin, gain_db)
+    }
+
     fn set_spectrum_enabled(&self, enabled: bool) -> Result<(), PlaybackError> {
         let playbin = self.playbin.lock().unwrap_or_else(PoisonError::into_inner);
         set_playbin_spectrum_messages(&playbin, enabled)?;
@@ -563,12 +585,15 @@ impl PlaybackBackend for Player {
     /// clears the slot (falling back to the ordinary `TrackFinished`-driven
     /// advance); an invalid path is logged, never panicked on. "Last write
     /// wins": the frontend re-feeds on every queue change.
-    fn set_next(&self, path: Option<&str>) {
-        let resolved = match path {
-            Some(path) => match path_to_uri(path) {
-                Ok(uri) => Some(uri),
+    fn set_next(&self, item: Option<PlaybackItem<'_>>) {
+        let resolved = match item {
+            Some(item) => match path_to_uri(item.path) {
+                Ok(uri) => Some(QueuedTrack {
+                    uri,
+                    gain_db: item.gain_db,
+                }),
                 Err(error) => {
-                    tracing::warn!(%error, path, "set_next: invalid path; clearing gapless slot");
+                    tracing::warn!(%error, path = item.path, "set_next: invalid path; clearing gapless slot");
                     None
                 }
             },

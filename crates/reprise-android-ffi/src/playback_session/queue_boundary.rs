@@ -7,7 +7,7 @@ use reprise_core::queries::{self, QueueItemMetadata};
 use reprise_core::queue::QueuePlacement;
 use reprise_core::up_next::QueueItem;
 
-use super::{AndroidPlaybackError, AndroidPlaybackSession};
+use super::{unity_gain_item, AndroidPlaybackError, AndroidPlaybackSession};
 use crate::{TrackRow, TrackWindow, WindowRange};
 
 #[uniffi::export]
@@ -130,7 +130,9 @@ impl AndroidPlaybackSession {
                 (state.next_uri(), state.queue.clone())
             };
             self.inner.persist_queue(queue_to_save)?;
-            self.inner.backend()?.set_next(next_uri.as_deref());
+            self.inner
+                .backend()?
+                .set_next(next_uri.as_deref().map(unity_gain_item));
         }
     }
 
@@ -191,7 +193,9 @@ impl AndroidPlaybackSession {
             (state.next_uri(), state.queue.clone())
         };
         self.inner.persist_queue(queue_to_save)?;
-        self.inner.backend()?.set_next(next_uri.as_deref());
+        self.inner
+            .backend()?
+            .set_next(next_uri.as_deref().map(unity_gain_item));
         self.inner.notify();
         Ok(true)
     }
@@ -216,7 +220,9 @@ impl AndroidPlaybackSession {
             (state.next_uri(), state.queue.clone())
         };
         self.inner.persist_queue(queue_to_save)?;
-        self.inner.backend()?.set_next(next_uri.as_deref());
+        self.inner
+            .backend()?
+            .set_next(next_uri.as_deref().map(unity_gain_item));
         self.inner.notify();
         Ok(true)
     }
@@ -248,7 +254,9 @@ impl AndroidPlaybackSession {
             (taken, state.next_uri(), state.queue.clone())
         };
         self.inner.persist_queue(queue_to_save)?;
-        self.inner.backend()?.set_next(next_uri.as_deref());
+        self.inner
+            .backend()?
+            .set_next(next_uri.as_deref().map(unity_gain_item));
         self.inner.notify();
         Ok(u32::try_from(taken).unwrap_or(u32::MAX))
     }

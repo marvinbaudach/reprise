@@ -363,7 +363,10 @@ pub(in crate::ui) fn start_track_for_lyrics(
     player: &dyn PlaybackBackend,
     summary: &TrackSummary,
 ) -> Result<LyricsTrack, PlaybackError> {
-    player.play(&summary.path)?;
+    player.play(reprise_core::playback::PlaybackItem {
+        path: &summary.path,
+        gain_db: 0.0,
+    })?;
     Ok(lyrics_query_for(summary))
 }
 

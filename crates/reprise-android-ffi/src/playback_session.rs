@@ -5,7 +5,7 @@ use std::sync::{Arc, Mutex, MutexGuard, OnceLock};
 
 #[cfg(test)]
 use reprise_core::db::Db;
-use reprise_core::playback::{PlaybackBackend, StreamGeneration};
+use reprise_core::playback::{PlaybackBackend, PlaybackItem, StreamGeneration};
 use reprise_core::queue::{Queue, Repeat};
 
 use crate::listen_export_recorder::ListenExportRecorder;
@@ -14,6 +14,10 @@ use crate::playback::{
     AndroidPlaybackBackend, AndroidPlaybackError, AndroidPlaybackPort, AndroidPlaybackState,
 };
 use crate::queue_persister::QueuePersister;
+
+fn unity_gain_item(path: &str) -> PlaybackItem<'_> {
+    PlaybackItem { path, gain_db: 0.0 }
+}
 
 mod history;
 mod queue_boundary;
@@ -397,7 +401,7 @@ impl SessionInner {
             state.note_playback_started(history_entry);
             state.stream = backend.current_generation();
         }
-        backend.set_next(next_uri.as_deref());
+        backend.set_next(next_uri.as_deref().map(unity_gain_item));
         self.notify();
         Ok(())
     }
@@ -649,7 +653,9 @@ impl AndroidPlaybackSession {
             (state.next_uri(), state.queue.clone())
         };
         self.inner.persist_queue(queue_to_save)?;
-        self.inner.backend()?.set_next(next_uri.as_deref());
+        self.inner
+            .backend()?
+            .set_next(next_uri.as_deref().map(unity_gain_item));
         self.inner.notify();
         Ok(())
     }
@@ -662,7 +668,9 @@ impl AndroidPlaybackSession {
             (state.next_uri(), state.queue.clone())
         };
         self.inner.persist_queue(queue_to_save)?;
-        self.inner.backend()?.set_next(next_uri.as_deref());
+        self.inner
+            .backend()?
+            .set_next(next_uri.as_deref().map(unity_gain_item));
         self.inner.notify();
         Ok(())
     }

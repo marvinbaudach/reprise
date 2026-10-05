@@ -80,7 +80,7 @@ fn ac_28_audio_filter_splits_cava_pcm_into_sixty_hertz_buffers() {
 }
 
 #[test]
-fn ac_28_cava_pcm_branch_splits_before_replay_gain_normalization() {
+fn ac_28_cava_pcm_branch_splits_before_track_gain_normalization() {
     let _guard = AUDIO_SINK_TEST_LOCK
         .lock()
         .unwrap_or_else(std::sync::PoisonError::into_inner);
@@ -102,12 +102,12 @@ fn ac_28_cava_pcm_branch_splits_before_replay_gain_normalization() {
         .filter_map(|pad| pad.parent_element())
         .map(|element| element.name().to_string())
         .collect::<std::collections::HashSet<_>>();
-    let replay_gain = bin.by_name("reprise-replaygain").unwrap();
-    let replay_gain_upstream = replay_gain
+    let track_gain = bin.by_name("reprise-track-gain").unwrap();
+    let track_gain_upstream = track_gain
         .static_pad("sink")
         .and_then(|pad| pad.peer())
         .and_then(|pad| pad.parent_element())
-        .expect("ReplayGain has an upstream playback queue");
+        .expect("track gain has an upstream playback queue");
 
     assert_eq!(
         downstream,
@@ -115,12 +115,12 @@ fn ac_28_cava_pcm_branch_splits_before_replay_gain_normalization() {
             .into_iter()
             .map(str::to_owned)
             .collect(),
-        "the pre-ReplayGain tee must feed independent playback and CAVA branches"
+        "the pre-gain tee must feed independent playback and CAVA branches"
     );
     assert_eq!(
-        replay_gain_upstream.name(),
+        track_gain_upstream.name(),
         "reprise-playback-queue",
-        "ReplayGain must exist only after the audible playback branch splits"
+        "track gain must exist only after the audible playback branch splits"
     );
 }
 
@@ -138,7 +138,7 @@ fn ac_28_enabled_player_emits_live_cava_frames() {
     .unwrap();
     player.set_spectrum_enabled(true).unwrap();
     let path = concat!(env!("CARGO_MANIFEST_DIR"), "/tests/fixtures/sine.flac");
-    player.play(path).unwrap();
+    player.play(item(path)).unwrap();
 
     let frame = wait_for_spectrum_frame(&rx);
 
@@ -165,7 +165,7 @@ fn ac_28_flac_playback_emits_spectrum_at_display_cadence() {
     .unwrap();
     player.set_spectrum_enabled(true).unwrap();
     let path = concat!(env!("CARGO_MANIFEST_DIR"), "/tests/fixtures/sine.flac");
-    player.play(path).unwrap();
+    player.play(item(path)).unwrap();
 
     let deadline = std::time::Instant::now() + Duration::from_secs(5);
     let mut spectrum_frames = 0;
@@ -239,7 +239,7 @@ fn ac_28_enabled_player_measures_absolute_bass_pressure() {
     .unwrap();
     player.set_spectrum_enabled(true).unwrap();
     let path = concat!(env!("CARGO_MANIFEST_DIR"), "/tests/fixtures/sine.flac");
-    player.play(path).unwrap();
+    player.play(item(path)).unwrap();
 
     // The first frames may arrive before a full analysis window has closed, so
     // wait for one that carries a real measurement rather than silence.
@@ -291,7 +291,7 @@ fn ac_28_filter_replacement_reattaches_the_cava_processor() {
         })
         .unwrap();
     let path = concat!(env!("CARGO_MANIFEST_DIR"), "/tests/fixtures/sine.flac");
-    player.play(path).unwrap();
+    player.play(item(path)).unwrap();
 
     let deadline = std::time::Instant::now() + Duration::from_secs(2);
     let frame = loop {

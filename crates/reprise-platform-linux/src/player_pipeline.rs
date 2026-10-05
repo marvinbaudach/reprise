@@ -21,8 +21,12 @@ use reprise_core::playback::{
 };
 
 use crate::crossfade::Transition;
-use crate::gapless::{connect_about_to_finish, note_stream_start, HandoffFlag, NextUri};
-use crate::player_effects::{apply_audio_filter, CAVA_SAMPLE_RATE_HZ, CAVA_SINK_NAME};
+use crate::gapless::{
+    connect_about_to_finish, note_stream_start, HandoffFlag, NextUri, PendingGain,
+};
+use crate::player_effects::{
+    apply_audio_filter, install_stream_start_gain_switch, CAVA_SAMPLE_RATE_HZ, CAVA_SINK_NAME,
+};
 
 pub fn path_to_uri(path: &str) -> Result<String, PlaybackError> {
     if !path.starts_with('/') {
@@ -238,11 +242,13 @@ pub(crate) fn build_playbin(
     handoff_pending: HandoffFlag,
     transition: Transition,
     stream_generation: Arc<AtomicU64>,
+    pending_gain: PendingGain,
 ) -> Result<gst::Element, PlaybackError> {
     let playbin = gst::ElementFactory::make("playbin3")
         .build()
         .map_err(|e| PlaybackError::Backend(format!("GStreamer: {e}")))?;
     apply_audio_filter(&playbin, effects)?;
+    install_stream_start_gain_switch(&playbin, pending_gain.clone())?;
 
     // Gapless handoff: consume any pre-fed URI on `about-to-finish` without a
     // pipeline restart (Gapless mode only — the handler no-ops in Crossfade/Off,
@@ -254,6 +260,7 @@ pub(crate) fn build_playbin(
         handoff_pending,
         transition,
         stream_generation,
+        pending_gain,
     );
 
     if let Ok(sink_name) = std::env::var(AUDIO_SINK_ENV_VAR) {

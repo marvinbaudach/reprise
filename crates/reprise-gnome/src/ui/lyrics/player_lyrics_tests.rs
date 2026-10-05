@@ -36,7 +36,7 @@ impl FakePlayback {
 }
 
 impl PlaybackBackend for FakePlayback {
-    fn play(&self, _path: &str) -> Result<(), PlaybackError> {
+    fn play(&self, _path: reprise_core::playback::PlaybackItem<'_>) -> Result<(), PlaybackError> {
         self.play_calls.set(self.play_calls.get() + 1);
         self.result.borrow_mut().take().unwrap()
     }
@@ -63,7 +63,7 @@ impl PlaybackBackend for FakePlayback {
         unreachable!()
     }
 
-    fn set_next(&self, _path: Option<&str>) {}
+    fn set_next(&self, _path: Option<reprise_core::playback::PlaybackItem<'_>>) {}
 
     fn set_transition(
         &self,

@@ -3,7 +3,8 @@ use std::sync::{Arc, Mutex};
 
 use reprise_core::library::settings::TrackTransition;
 use reprise_core::playback::{
-    AudioEffects, PlaybackBackend, PlaybackState, PlayerEvent, StreamEvent, StreamGeneration,
+    AudioEffects, PlaybackBackend, PlaybackItem, PlaybackState, PlayerEvent, StreamEvent,
+    StreamGeneration,
 };
 
 use super::test_support::{
@@ -17,6 +18,10 @@ use crate::{
     AndroidEqualizerPoint, AndroidPlaybackSession, AndroidPlaybackSnapshot, AndroidRepeatMode,
 };
 
+fn item(path: &str) -> PlaybackItem<'_> {
+    PlaybackItem { path, gain_db: 0.0 }
+}
+
 #[test]
 fn android_backend_routes_every_core_command_through_the_media3_port() {
     let calls = Arc::new(Mutex::new(Vec::new()));
@@ -29,7 +34,7 @@ fn android_backend_routes_every_core_command_through_the_media3_port() {
     )
     .unwrap();
 
-    backend.play("/music/song.flac").unwrap();
+    backend.play(item("/music/song.flac")).unwrap();
     backend
         .play_uri("content://provider/document/song.flac")
         .unwrap();
@@ -41,7 +46,7 @@ fn android_backend_routes_every_core_command_through_the_media3_port() {
         .unwrap_err();
     let spectrum_error = backend.set_spectrum_enabled(true).unwrap_err();
     backend.stop().unwrap();
-    backend.set_next(Some("content://provider/document/next.flac"));
+    backend.set_next(Some(item("content://provider/document/next.flac")));
     backend.set_next(None);
     backend.set_transition(TrackTransition::Crossfade, 8);
     assert_eq!(backend.current_generation(), StreamGeneration::from(23));

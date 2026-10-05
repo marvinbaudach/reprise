@@ -15,6 +15,7 @@ use crate::listen_export_recorder::RecordedListen;
 use crate::play_recorder::RecordedPlay;
 use crate::playback::AndroidPlaybackState;
 
+use super::unity_gain_item;
 use super::SessionInner;
 
 const TRACK_UNAVAILABLE_SKIPPED: &str = "Track unavailable — skipped";
@@ -208,7 +209,7 @@ impl SessionInner {
             }
             FollowUp::Feed(next_uri) => {
                 if let Ok(backend) = self.backend() {
-                    backend.set_next(next_uri.as_deref());
+                    backend.set_next(next_uri.as_deref().map(unity_gain_item));
                 }
                 self.notify();
             }

@@ -26,7 +26,15 @@ use crate::crossfade::Transition;
 /// Slot für den vorgefütterten nächsten URI. `None` = nichts vorgefüttert
 /// (Gapless aus, Queue-Ende, oder manueller Sprung hat ihn invalidiert).
 /// "Last write wins": das Frontend füttert bei jeder Queue-Änderung neu.
-pub(crate) type NextUri = Arc<Mutex<Option<String>>>;
+pub(crate) type NextUri = Arc<Mutex<Option<QueuedTrack>>>;
+
+#[derive(Clone, Debug)]
+pub(crate) struct QueuedTrack {
+    pub(crate) uri: String,
+    pub(crate) gain_db: f64,
+}
+
+pub(crate) type PendingGain = Arc<Mutex<Option<f64>>>;
 
 /// Wird vom `about-to-finish`-Handler auf `true` gesetzt, sobald er einen
 /// vorgefütterten URI tatsächlich in den playbin gereicht hat, und vom
@@ -67,6 +75,7 @@ pub(crate) fn connect_about_to_finish(
     handoff_pending: HandoffFlag,
     transition: Transition,
     stream_generation: Arc<AtomicU64>,
+    pending_gain: PendingGain,
 ) {
     playbin.connect("about-to-finish", false, move |values| {
         let Ok(playbin) = values[0].get::<gst::Element>() else {
@@ -81,9 +90,10 @@ pub(crate) fn connect_about_to_finish(
             .lock()
             .unwrap_or_else(PoisonError::into_inner)
             .take();
-        if let Some(uri) = queued {
-            tracing::debug!(%uri, "gapless: feeding next uri on about-to-finish");
-            playbin.set_property("uri", &uri);
+        if let Some(queued) = queued {
+            tracing::debug!(uri = %queued.uri, "gapless: feeding next uri on about-to-finish");
+            *pending_gain.lock().unwrap_or_else(PoisonError::into_inner) = Some(queued.gain_db);
+            playbin.set_property("uri", &queued.uri);
             stream_generation.fetch_add(1, Ordering::SeqCst);
             handoff_pending.store(true, Ordering::SeqCst);
         }
