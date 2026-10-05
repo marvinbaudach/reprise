@@ -309,13 +309,17 @@ fn play_18_the_gain_element_never_receives_an_unsafe_factor() {
     let _guard = AUDIO_SINK_TEST_LOCK
         .lock()
         .unwrap_or_else(std::sync::PoisonError::into_inner);
-    use crate::player_effects::{linear_gain, MAX_LINEAR_GAIN};
+    use crate::player_effects::linear_gain;
+    use reprise_core::library::loudness::{MAX_GAIN_DB, MIN_GAIN_DB};
 
     assert_eq!(linear_gain(f64::NAN), 1.0);
     assert_eq!(linear_gain(f64::INFINITY), 1.0);
     assert_eq!(linear_gain(f64::NEG_INFINITY), 1.0);
-    assert_eq!(linear_gain(400.0), MAX_LINEAR_GAIN);
-    assert!(linear_gain(-400.0) < 1e-9);
+    // The same -24..+12 dB window Core resolves into and the phone clamps to.
+    assert!((linear_gain(400.0) - linear(MAX_GAIN_DB)).abs() < 1e-9);
+    assert!((linear_gain(-400.0) - linear(MIN_GAIN_DB)).abs() < 1e-9);
+    assert!((linear_gain(MAX_GAIN_DB) - 3.981).abs() < 1e-3);
+    assert!((linear_gain(MIN_GAIN_DB) - 0.0631).abs() < 1e-4);
     assert!((linear_gain(6.0) - linear(6.0)).abs() < 1e-12);
 
     gst::init().unwrap();
@@ -329,5 +333,5 @@ fn play_18_the_gain_element_never_receives_an_unsafe_factor() {
         .by_name("reprise-track-gain")
         .unwrap();
     gain.set_property("volume", linear_gain(400.0));
-    assert_eq!(gain.property::<f64>("volume"), MAX_LINEAR_GAIN);
+    assert!((gain.property::<f64>("volume") - linear(MAX_GAIN_DB)).abs() < 1e-6);
 }
