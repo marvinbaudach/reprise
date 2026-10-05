@@ -1,0 +1,100 @@
+name: Dependabot Flatpak sources
+
+# A Dependabot Cargo bump changes Cargo.lock and nothing else, so
+# flatpak/cargo-sources.json is stale on arrival and "Verify Flatpak Cargo
+# sources" fails on it. This regenerates the file and pushes it onto the bump's
+# own branch.
+#
+# The push has to use REPRISE_AUTOMERGE_TOKEN: a push made with the Actions
+# token starts no new workflow run, so CI would never see the fixed sources.
+# That token is a Dependabot secret, which is exactly what a pull_request run
+# triggered by Dependabot can read.
+#
+# Nothing from the pull request runs with the token. The generator is fetched
+# at a pinned commit and checked against a recorded hash, it only parses
+# Cargo.lock, and it runs in a step that holds no secret; the token reaches
+# only the final push.
+on:
+  pull_request:
+    branches:
+      - dev
+    types:
+      - opened
+      - reopened
+      - synchronize
+    paths:
+      - Cargo.lock
+
+permissions:
+  contents: read
+
+concurrency:
+  group: dependabot-flatpak-sources-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+jobs:
+  regenerate:
+    name: Regenerate Flatpak Cargo sources
+    # The pull request's author, not github.actor: after the first push the
+    # event's actor is the token's owner, and the run must still do its work.
+    if: >-
+      github.repository == 'marvinbaudach/reprise' &&
+      github.event.pull_request.user.login == 'dependabot[bot]' &&
+      github.event.pull_request.base.ref == 'dev' &&
+      github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - name: Check out the bump's branch
+        uses: actions/checkout@v7
+        with:
+          ref: ${{ github.event.pull_request.head.ref }}
+          persist-credentials: false
+
+      - name: Set up uv
+        uses: astral-sh/setup-uv@v10.0.1
+        with:
+          version: "0.12.3"
+          enable-cache: false
+
+      # flatpak/flatpak-builder-tools master as of 2026-10-05.
+      - name: Fetch the pinned generator
+        env:
+          GENERATOR_COMMIT: 74697c75b630d7330e77250fc13cb5ea688d9479
+          GENERATOR_SHA256: 0a2db6be87d75910facef28ab46d4d6460802e8419ab850d0caa6a364d26b380
+        run: |
+          generator="$RUNNER_TEMP/flatpak-cargo-generator.py"
+          curl --fail --silent --show-error --location \
+            --output "$generator" \
+            "https://raw.githubusercontent.com/flatpak/flatpak-builder-tools/$GENERATOR_COMMIT/cargo/flatpak-cargo-generator.py"
+          echo "$GENERATOR_SHA256  $generator" | sha256sum --check --strict
+
+      - name: Regenerate flatpak/cargo-sources.json
+        id: regenerate
+        run: |
+          uv run --script "$RUNNER_TEMP/flatpak-cargo-generator.py" \
+            Cargo.lock -o flatpak/cargo-sources.json
+          if git diff --quiet -- flatpak/cargo-sources.json; then
+            echo "flatpak/cargo-sources.json already matches Cargo.lock"
+            echo "changed=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "changed=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Push the regenerated sources to the bump's branch
+        if: steps.regenerate.outputs.changed == 'true'
+        env:
+          PUSH_TOKEN: ${{ secrets.REPRISE_AUTOMERGE_TOKEN }}
+          BRANCH: ${{ github.event.pull_request.head.ref }}
+        run: |
+          if [[ -z $PUSH_TOKEN ]]; then
+            echo "REPRISE_AUTOMERGE_TOKEN is not available to this run" >&2
+            exit 1
+          fi
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add flatpak/cargo-sources.json
+          git commit --message 'The Flatpak Cargo sources follow Cargo.lock'
+          git push \
+            "https://x-access-token:${PUSH_TOKEN}@github.com/${GITHUB_REPOSITORY}.git" \
+            "HEAD:refs/heads/$BRANCH"

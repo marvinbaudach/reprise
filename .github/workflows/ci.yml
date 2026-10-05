@@ -39,7 +39,10 @@ jobs:
         env:
           EVENT_NAME: ${{ github.event_name }}
           REF_NAME: ${{ github.ref }}
-          ACTOR: ${{ github.actor }}
+          # The pull request's author, not its latest pusher: the Flatpak sources
+          # workflow pushes onto a Dependabot branch as the token's owner, and
+          # that must not turn the bump into a PR whose suites are skipped.
+          ACTOR: ${{ github.event.pull_request.user.login || github.actor }}
           BASE_SHA: ${{ github.event.pull_request.base.sha || github.event.before }}
           HEAD_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
           REPOSITORY_OWNER: ${{ github.repository_owner }}
