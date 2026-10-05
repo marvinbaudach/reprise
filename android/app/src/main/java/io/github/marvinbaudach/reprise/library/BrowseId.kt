@@ -12,7 +12,9 @@ import java.net.URLEncoder
  *
  * A [Track] carries its container: tapping a song in an album must queue that
  * album, tapping it under "Recently played" must queue that list. Without the
- * container a leaf would be a queue of one.
+ * container a leaf would be a queue of one. It carries its position in that
+ * container too, because a playlist may hold the same song twice and the id of
+ * the song alone cannot say which of the two was tapped.
  */
 internal sealed interface BrowseId {
     val mediaId: String
@@ -49,9 +51,9 @@ internal sealed interface BrowseId {
         override val mediaId = "artist:${name.escaped()}"
     }
 
-    /** A playable song, reached through [container]. */
-    data class Track(val container: BrowseId, val trackId: Long) : BrowseId {
-        override val mediaId = "track:${container.mediaId.escaped()}:$trackId"
+    /** A playable song, reached through [container] and listed at [position] in it. */
+    data class Track(val container: BrowseId, val trackId: Long, val position: Int) : BrowseId {
+        override val mediaId = "track:${container.mediaId.escaped()}:$trackId:$position"
     }
 
     companion object {
@@ -68,10 +70,11 @@ internal sealed interface BrowseId {
                 "album" -> if (parts.size == 3) Album(parts[1].unescaped(), parts[2].unescaped()) else null
                 "artist" -> if (parts.size == 2) Artist(parts[1].unescaped()) else null
                 "track" -> {
-                    val container = if (parts.size == 3) parse(parts[1].unescaped()) else null
+                    val container = if (parts.size == 4) parse(parts[1].unescaped()) else null
                     val trackId = parts.longAt(2)
-                    if (container != null && container !is Track && trackId != null) {
-                        Track(container, trackId)
+                    val position = parts.getOrNull(3)?.toIntOrNull()?.takeIf { it >= 0 }
+                    if (container != null && container !is Track && trackId != null && position != null) {
+                        Track(container, trackId, position)
                     } else {
                         null
                     }

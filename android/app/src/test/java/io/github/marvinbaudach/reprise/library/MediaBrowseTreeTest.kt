@@ -179,7 +179,7 @@ class MediaBrowseTreeTest {
 
     @Test
     fun aParentThatIsNotAFolderHasNoChildren() {
-        assertNull(tree.children(BrowseId.Track(BrowseId.RecentlyPlayed, 1).mediaId, 0, 10))
+        assertNull(tree.children(BrowseId.Track(BrowseId.RecentlyPlayed, 1, 0).mediaId, 0, 10))
         assertNull(tree.children("nonsense", 0, 10))
     }
 
@@ -189,15 +189,15 @@ class MediaBrowseTreeTest {
         assertEquals("Gym", tree.item(BrowseId.Playlist(11).mediaId)!!.mediaMetadata.title)
         assertNull(tree.item(BrowseId.Playlist(99).mediaId))
         assertNull(tree.item("nonsense"))
-        val song = tree.item(BrowseId.Track(BrowseId.Playlist(10), 3).mediaId)
+        val song = tree.item(BrowseId.Track(BrowseId.Playlist(10), 3, 1).mediaId)
         assertEquals("Track 3", song!!.mediaMetadata.title)
         assertNotNull(song.localConfiguration)
-        assertNull(tree.item(BrowseId.Track(BrowseId.Playlist(10), 1).mediaId))
+        assertNull(tree.item(BrowseId.Track(BrowseId.Playlist(10), 1, 0).mediaId))
     }
 
     @Test
     fun tappingASongQueuesItsWholeContainerPositionedOnTheSong() {
-        val queue = tree.queueFor(BrowseId.Track(BrowseId.Album("First Album", "Alpha"), 2).mediaId)!!
+        val queue = tree.queueFor(BrowseId.Track(BrowseId.Album("First Album", "Alpha"), 2, 1).mediaId)!!
 
         assertEquals(listOf(1L, 2L), queue.trackIds)
         assertEquals(1, queue.startIndex)
@@ -206,8 +206,8 @@ class MediaBrowseTreeTest {
 
     @Test
     fun theQueueFollowsTheContainerTheSongWasListedUnder() {
-        val fromRecent = tree.queueFor(BrowseId.Track(BrowseId.RecentlyPlayed, 1).mediaId)!!
-        val fromPlaylist = tree.queueFor(BrowseId.Track(BrowseId.Playlist(10), 3).mediaId)!!
+        val fromRecent = tree.queueFor(BrowseId.Track(BrowseId.RecentlyPlayed, 1, 1).mediaId)!!
+        val fromPlaylist = tree.queueFor(BrowseId.Track(BrowseId.Playlist(10), 3, 1).mediaId)!!
 
         assertEquals(listOf(3L, 1L), fromRecent.trackIds)
         assertEquals(1, fromRecent.startIndex)
@@ -215,9 +215,62 @@ class MediaBrowseTreeTest {
         assertEquals(1, fromPlaylist.startIndex)
     }
 
+    private val twice = MediaBrowseTree(
+        FixtureBrowseLibrary(
+            playlistContents = mapOf(1L to listOf(browseTrack(5), browseTrack(6), browseTrack(5))),
+        ),
+        TEST_LABELS,
+    )
+
+    @Test
+    fun everyListedSongCarriesItsPositionEvenWhenASongIsListedTwice() {
+        val ids = twice.children(BrowseId.Playlist(1).mediaId, 0, 10)!!.map { it.mediaId }
+
+        assertEquals(
+            listOf(
+                BrowseId.Track(BrowseId.Playlist(1), 5, 0).mediaId,
+                BrowseId.Track(BrowseId.Playlist(1), 6, 1).mediaId,
+                BrowseId.Track(BrowseId.Playlist(1), 5, 2).mediaId,
+            ),
+            ids,
+        )
+    }
+
+    @Test
+    fun aLaterPageNumbersItsSongsFromTheStartOfTheFolder() {
+        val ids = twice.children(BrowseId.Playlist(1).mediaId, 1, 2)!!.map { it.mediaId }
+
+        assertEquals(listOf(BrowseId.Track(BrowseId.Playlist(1), 5, 2).mediaId), ids)
+    }
+
+    @Test
+    fun tappingTheSecondCopyOfASongStartsTheSecondCopy() {
+        val queue = twice.queueFor(BrowseId.Track(BrowseId.Playlist(1), 5, 2).mediaId)!!
+
+        assertEquals(listOf(5L, 6L, 5L), queue.trackIds)
+        assertEquals(2, queue.startIndex)
+    }
+
+    @Test
+    fun aPositionThatNoLongerHoldsTheSongFallsBackToTheSong() {
+        val queue = twice.queueFor(BrowseId.Track(BrowseId.Playlist(1), 6, 0).mediaId)!!
+
+        assertEquals(1, queue.startIndex)
+        assertNotNull(twice.item(BrowseId.Track(BrowseId.Playlist(1), 6, 7).mediaId))
+    }
+
+    @Test
+    fun theQueueNamesTheRowAPlayingSongBelongsTo() {
+        val queue = twice.queueFor(BrowseId.Track(BrowseId.Playlist(1), 6, 1).mediaId)!!
+
+        assertEquals(BrowseId.Track(BrowseId.Playlist(1), 6, 1).mediaId, queue.mediaIdOf(6))
+        assertEquals(BrowseId.Track(BrowseId.Playlist(1), 5, 0).mediaId, queue.mediaIdOf(5))
+        assertNull(queue.mediaIdOf(99))
+    }
+
     @Test
     fun aSongThatLeftItsContainerPlaysAlone() {
-        val queue = tree.queueFor(BrowseId.Track(BrowseId.Playlist(10), 99).mediaId)!!
+        val queue = tree.queueFor(BrowseId.Track(BrowseId.Playlist(10), 99, 0).mediaId)!!
 
         assertEquals(listOf(99L), queue.trackIds)
         assertEquals(0, queue.startIndex)

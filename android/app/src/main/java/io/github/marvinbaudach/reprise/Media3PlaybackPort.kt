@@ -8,10 +8,14 @@ import androidx.media3.common.C
 import androidx.media3.common.MediaItem
 import androidx.media3.common.PlaybackException
 import androidx.media3.common.Player
-import java.io.File
+import io.github.marvinbaudach.reprise.library.PlaybackItems
 import io.github.marvinbaudach.reprise.library.TrackMetadataResolver
-import io.github.marvinbaudach.reprise.library.playbackMediaItem
+import java.io.File
 import java.io.FileNotFoundException
+import java.util.concurrent.Executor
+import java.util.concurrent.ExecutorService
+import java.util.concurrent.Executors
+import java.util.concurrent.RejectedExecutionException
 import uniffi.reprise_android_ffi.AndroidEqualizerBand
 import uniffi.reprise_android_ffi.AndroidEqualizerBandCapability
 import uniffi.reprise_android_ffi.AndroidEqualizerPoint
@@ -76,19 +80,43 @@ internal fun isMissingFilePlaybackError(error: PlaybackException): Boolean {
     return false
 }
 
-/** Media3 implementation of the foreign half of Core's PlaybackBackend. */
+/**
+ * Media3 implementation of the foreign half of Core's PlaybackBackend.
+ *
+ * Every item carries its track's metadata and cover, which the notification,
+ * lock screen, Android Auto and the widget read from it. They come from a
+ * blocking library read, so the player's own thread never makes one: when the
+ * Core asks for playback on that thread (a notification's next button does) an
+ * unknown track starts bare and is completed in place a moment later. A caller
+ * on any other thread is already blocked and reads straight away.
+ *
+ * [metadataExecutor] runs those reads; the port makes and owns one when none
+ * is given.
+ */
 internal class Media3PlaybackPort(
     private val player: Player,
-    private val metadata: TrackMetadataResolver = TrackMetadataResolver.None,
+    metadata: TrackMetadataResolver = TrackMetadataResolver.None,
+    mediaIdOf: (trackId: Long) -> String? = { null },
+    metadataExecutor: Executor? = null,
     private val equalizerChanged: () -> Unit,
 ) : AndroidPlaybackPort {
+    private val items = PlaybackItems(metadata, mediaIdOf)
+    private val ownedExecutor: ExecutorService? =
+        if (metadataExecutor == null) {
+            Executors.newSingleThreadExecutor { task -> Thread(task, "reprise-metadata") }
+        } else {
+            null
+        }
+    private val metadataExecutor: Executor = metadataExecutor ?: checkNotNull(ownedExecutor)
+    private val resolving = mutableSetOf<String>()
     private val handler = Handler(player.applicationLooper)
     private val dispatch = player.applicationLooper.dispatch(handler)
     private val deviceEqualizer =
         DeviceEqualizer(AndroidEqualizerEngineFactory, CoreEqualizerCurveProjector)
     private var eventBridge: PlaybackEventBridgeInterface? = null
     private var generation = 0UL
-    private var nextItem: MediaItem? = null
+    private var nextUri: String? = null
+    private var released = false
     private var transitionMode = AndroidTransitionMode.GAPLESS
     private var lastState: AndroidPlaybackState? = null
     private var finishedGeneration: ULong? = null
@@ -170,16 +198,11 @@ internal class Media3PlaybackPort(
         eventBridge = bridge
     }
 
-    override fun playPath(path: String) {
-        // Resolved before the hop to the player's thread: a library read has no
-        // business holding that thread, and the caller is already blocked.
-        val item = mediaItemFor(Uri.fromFile(File(path)).toString())
-        dispatch.call { start(item) }
-    }
+    override fun playPath(path: String) = playUri(Uri.fromFile(File(path)).toString())
 
     override fun playUri(uri: String) {
-        val item = mediaItemFor(uri)
-        dispatch.call { start(item) }
+        ensureKnown(uri)
+        dispatch.call { start(items.build(uri)) }
     }
 
     override fun togglePause(): AndroidPlaybackState = dispatch.call {
@@ -240,15 +263,15 @@ internal class Media3PlaybackPort(
     }
 
     override fun stop() = dispatch.call {
-        nextItem = null
+        nextUri = null
         player.stop()
         player.clearMediaItems()
     }
 
     override fun setNext(uri: String?) {
-        val item = uri?.let(::mediaItemFor)
+        uri?.let(::ensureKnown)
         dispatch.call {
-            nextItem = item
+            nextUri = uri
             applyNextItem()
         }
     }
@@ -261,6 +284,8 @@ internal class Media3PlaybackPort(
     override fun currentGeneration(): ULong = dispatch.call { generation }
 
     fun release() = dispatch.call {
+        released = true
+        ownedExecutor?.shutdownNow()
         handler.removeCallbacks(positionTicker)
         player.removeListener(listener)
         deviceEqualizer.release()
@@ -274,7 +299,7 @@ internal class Media3PlaybackPort(
         lastState = null
         player.setMediaItem(mediaItem)
         if (transitionMode == AndroidTransitionMode.GAPLESS) {
-            nextItem?.let { item -> player.addMediaItem(item) }
+            nextUri?.let { uri -> player.addMediaItem(items.build(uri)) }
         }
         player.prepare()
         player.play()
@@ -289,41 +314,58 @@ internal class Media3PlaybackPort(
             player.removeMediaItems(afterCurrent, player.mediaItemCount)
         }
         if (transitionMode == AndroidTransitionMode.GAPLESS) {
-            nextItem?.let { item -> player.addMediaItem(item) }
+            nextUri?.let { uri -> player.addMediaItem(items.build(uri)) }
         }
     }
 
     /**
-     * Gives every queued item with this uri its cover. The item is updated in
+     * Remembers the cover of [uri] and gives every queued item with that uri
+     * its cover. Remembered, so an item built for the same track later (a
+     * replay, the gapless next item) is born with it. The item is updated in
      * place: only its metadata changes, so ExoPlayer keeps the source it is
      * already playing and the notification, lock screen and widget pick the
      * cover up from the metadata change.
      */
     fun attachArtwork(uri: String, artwork: Uri) = dispatch.call {
+        items.rememberCover(uri, artwork)
+        refreshQueued(uri)
+    }
+
+    /** Replaces each queued item for [uri] with a rebuild from what is known now, if that differs. */
+    private fun refreshQueued(uri: String) {
+        val rebuilt = items.build(uri)
         for (index in 0 until player.mediaItemCount) {
             val item = player.getMediaItemAt(index)
-            if (item.localConfiguration?.uri?.toString() != uri || item.mediaMetadata.artworkUri != null) {
-                continue
+            if (item.localConfiguration?.uri?.toString() == uri && item != rebuilt) {
+                player.replaceMediaItem(index, rebuilt)
             }
-            player.replaceMediaItem(
-                index,
-                item.buildUpon()
-                    .setMediaMetadata(item.mediaMetadata.buildUpon().setArtworkUri(artwork).build())
-                    .build(),
-            )
         }
     }
 
-    private fun mediaItemFor(uri: String): MediaItem {
-        val track = try {
-            metadata.resolve(uri)
-        } catch (error: Exception) {
-            // Metadata is decoration: a library that cannot answer must not
-            // stop the music, only leave the notification without a title.
-            Log.w(TAG, "Could not read the metadata for a playing track", error)
-            null
+    /**
+     * Makes sure what is known about [uri] is as complete as it can be before an
+     * item is built: read now by a caller that is blocked anyway, scheduled
+     * for the player's own thread, which must not wait for the library.
+     */
+    private fun ensureKnown(uri: String) {
+        if (items.isKnown(uri)) return
+        if (Looper.myLooper() != player.applicationLooper) {
+            items.resolve(uri)
+            return
         }
-        return playbackMediaItem(uri, track)
+        if (!resolving.add(uri)) return
+        try {
+            metadataExecutor.execute {
+                val found = items.resolve(uri)
+                handler.post {
+                    resolving.remove(uri)
+                    if (found && !released) refreshQueued(uri)
+                }
+            }
+        } catch (error: RejectedExecutionException) {
+            // The port is being released; nothing is left to decorate.
+            resolving.remove(uri)
+        }
     }
 
     private fun discardPlayedItems() {

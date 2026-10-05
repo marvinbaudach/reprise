@@ -53,7 +53,7 @@ class BrowseSessionTest {
         )
         session = MediaLibrarySession.Builder(
             context,
-            BrowsePlayer(exoPlayer) { ids, start -> playRequests += ids to start },
+            BrowsePlayer(exoPlayer) { queue -> playRequests += queue.trackIds to queue.startIndex },
             callback,
         ).setId("browse-session-test").build()
         browser = await(MediaBrowser.Builder(context, session.token).buildAsync())

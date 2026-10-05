@@ -234,9 +234,9 @@ internal class BrowseCallback(
                 ?.let { item -> tree().queueFor(item.mediaId) }
             if (queue != null) {
                 MediaItemsWithStartPosition(
-                    queue.trackIds.map { id ->
+                    queue.trackIds.mapIndexed { position, id ->
                         MediaItem.Builder()
-                            .setMediaId(BrowseId.Track(queue.container, id).mediaId)
+                            .setMediaId(BrowseId.Track(queue.container, id, position).mediaId)
                             .build()
                     },
                     queue.startIndex,

@@ -149,7 +149,7 @@ class BrowseTrustSessionTest {
         )
         val session = MediaLibrarySession.Builder(
             context,
-            BrowsePlayer(exoPlayer) { ids, start -> playRequests += ids to start },
+            BrowsePlayer(exoPlayer) { queue -> playRequests += queue.trackIds to queue.startIndex },
             callback,
         ).setId(id).build()
         val browser = await(MediaBrowser.Builder(context, session.token).buildAsync())
@@ -175,7 +175,7 @@ class BrowseTrustSessionTest {
 
     private val leaf: MediaItem
         get() = MediaItem.Builder()
-            .setMediaId(BrowseId.Track(BrowseId.RecentlyPlayed, 3).mediaId)
+            .setMediaId(BrowseId.Track(BrowseId.RecentlyPlayed, 3, 0).mediaId)
             .setUri("content://tree/3.flac")
             .build()
 

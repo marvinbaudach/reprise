@@ -21,7 +21,15 @@ internal data class BrowseQueue(
     val container: BrowseId,
     val trackIds: List<Long>,
     val startIndex: Int,
-)
+) {
+    /**
+     * The id this queue's listing gave [trackId], so the item that plays can
+     * carry it and a browser can mark the row that is playing. A song that is
+     * in the queue twice answers with its first row.
+     */
+    fun mediaIdOf(trackId: Long): String? =
+        trackIds.indexOf(trackId).takeIf { it >= 0 }?.let { BrowseId.Track(container, trackId, it).mediaId }
+}
 
 /**
  * The browse tree Android Auto and other media browsers walk:
@@ -80,7 +88,8 @@ internal class MediaBrowseTree(
             BrowseId.RecentlyPlayed,
             is BrowseId.Playlist,
             is BrowseId.Album,
-            -> tracks(parent).slice(offset, limit).map { track -> leaf(parent, track) }
+            -> tracks(parent).slice(offset, limit)
+                .mapIndexed { index, track -> leaf(parent, track, offset + index) }
             BrowseId.Playlists -> library.playlists().slice(offset, limit).map(::playlistFolder)
             BrowseId.Albums -> windowed(offset, limit, library::albums).map(::albumFolder)
             BrowseId.Artists -> windowed(offset, limit, library::artists).map(::artistFolder)
@@ -99,7 +108,9 @@ internal class MediaBrowseTree(
     fun queueFor(mediaId: String): BrowseQueue? {
         val leaf = BrowseId.parse(mediaId) as? BrowseId.Track ?: return null
         val ids = tracks(leaf.container).map(BrowseTrack::id)
-        val index = ids.indexOf(leaf.trackId)
+        // The listed position wins, so the second copy of a song in a playlist
+        // starts the second copy; a list that changed since falls back to the song.
+        val index = leaf.position.takeIf { ids.getOrNull(it) == leaf.trackId } ?: ids.indexOf(leaf.trackId)
         return if (index >= 0) {
             BrowseQueue(leaf.container, ids, index)
         } else {
@@ -124,8 +135,13 @@ internal class MediaBrowseTree(
         BrowseId.Root, is BrowseId.Track -> null
     }
 
-    private fun trackItem(id: BrowseId.Track): MediaItem? =
-        tracks(id.container).firstOrNull { it.id == id.trackId }?.let { leaf(id.container, it) }
+    private fun trackItem(id: BrowseId.Track): MediaItem? {
+        val rows = tracks(id.container)
+        val position = id.position.takeIf { rows.getOrNull(it)?.id == id.trackId }
+            ?: rows.indexOfFirst { it.id == id.trackId }.takeIf { it >= 0 }
+            ?: return null
+        return leaf(id.container, rows[position], position)
+    }
 
     private fun tracks(container: BrowseId): List<BrowseTrack> = when (container) {
         BrowseId.RecentlyPlayed -> library.recentlyPlayed(RECENTLY_PLAYED_LIMIT)
@@ -134,9 +150,9 @@ internal class MediaBrowseTree(
         else -> emptyList()
     }
 
-    private fun leaf(container: BrowseId, track: BrowseTrack): MediaItem =
+    private fun leaf(container: BrowseId, track: BrowseTrack, position: Int): MediaItem =
         MediaItem.Builder()
-            .setMediaId(BrowseId.Track(container, track.id).mediaId)
+            .setMediaId(BrowseId.Track(container, track.id, position).mediaId)
             .setUri(Uri.parse(track.uri))
             .setMediaMetadata(track.toTrackMetadata().toMediaMetadata())
             .build()

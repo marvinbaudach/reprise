@@ -9,15 +9,19 @@ import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
 import org.robolectric.annotation.Config
 
-private fun songItem(container: BrowseId, id: Long): MediaItem =
-    MediaItem.Builder().setMediaId(BrowseId.Track(container, id).mediaId).build()
+private fun songItem(container: BrowseId, id: Long, position: Int = 0): MediaItem =
+    MediaItem.Builder().setMediaId(BrowseId.Track(container, id, position).mediaId).build()
 
 @RunWith(RobolectricTestRunner::class)
 @Config(sdk = [36])
 class BrowsePlayerTest {
     private val inner = ItemListPlayer()
     private val requests = mutableListOf<Pair<List<Long>, Int>>()
-    private val player = BrowsePlayer(inner.player) { ids, start -> requests += ids to start }
+    private val queues = mutableListOf<BrowseQueue>()
+    private val player = BrowsePlayer(inner.player) { queue ->
+        queues += queue
+        requests += queue.trackIds to queue.startIndex
+    }
     private val album = BrowseId.Album("A", "B")
 
     @Test
@@ -31,6 +35,13 @@ class BrowsePlayerTest {
         assertEquals(listOf(listOf(1L, 2L, 3L) to 1), requests)
         assertEquals(emptyList<MediaItem>(), inner.items)
         assertFalse(inner.calls.contains("setMediaItems"))
+    }
+
+    @Test
+    fun theCoreIsToldWhichContainerTheSongsCameFrom() {
+        player.setMediaItems(listOf(songItem(album, 1, 0), songItem(album, 2, 1)), 1, 0L)
+
+        assertEquals(listOf(BrowseQueue(album, listOf(1L, 2L), 1)), queues)
     }
 
     @Test

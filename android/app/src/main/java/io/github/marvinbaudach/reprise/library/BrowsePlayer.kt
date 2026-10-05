@@ -20,7 +20,7 @@ import androidx.media3.common.util.UnstableApi
 @androidx.annotation.OptIn(UnstableApi::class)
 internal class BrowsePlayer(
     player: Player,
-    private val playQueue: (trackIds: List<Long>, startIndex: Int) -> Unit,
+    private val playQueue: (BrowseQueue) -> Unit,
 ) : ForwardingPlayer(player) {
     override fun setMediaItem(mediaItem: MediaItem) {
         if (!intercept(listOf(mediaItem), 0)) super.setMediaItem(mediaItem)
@@ -69,10 +69,11 @@ internal class BrowsePlayer(
     /** `true` when [mediaItems] were browse songs and have been played through the Core. */
     private fun intercept(mediaItems: List<MediaItem>, startIndex: Int): Boolean {
         if (mediaItems.isEmpty()) return false
-        val trackIds = mediaItems.map { item ->
-            (BrowseId.parse(item.mediaId) as? BrowseId.Track)?.trackId ?: return false
+        val tracks = mediaItems.map { item ->
+            BrowseId.parse(item.mediaId) as? BrowseId.Track ?: return false
         }
-        playQueue(trackIds, startIndex.coerceIn(0, trackIds.lastIndex))
+        val trackIds = tracks.map(BrowseId.Track::trackId)
+        playQueue(BrowseQueue(tracks.first().container, trackIds, startIndex.coerceIn(0, trackIds.lastIndex)))
         return true
     }
 

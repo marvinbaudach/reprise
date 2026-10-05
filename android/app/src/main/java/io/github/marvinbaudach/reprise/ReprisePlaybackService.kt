@@ -25,6 +25,7 @@ import io.github.marvinbaudach.reprise.library.BrowseLabels
 import io.github.marvinbaudach.reprise.library.BrowserAccess
 import io.github.marvinbaudach.reprise.library.PackageBrowserAccess
 import io.github.marvinbaudach.reprise.library.BrowsePlayer
+import io.github.marvinbaudach.reprise.library.BrowseQueue
 import io.github.marvinbaudach.reprise.library.CurrentTrackArtwork
 import io.github.marvinbaudach.reprise.library.MediaBrowseLibrary
 import io.github.marvinbaudach.reprise.library.MediaBrowseTree
@@ -36,6 +37,7 @@ import io.github.marvinbaudach.reprise.widget.WidgetStateStore
 import androidx.glance.appwidget.updateAll
 import java.io.File
 import java.util.concurrent.Executors
+import java.util.concurrent.atomic.AtomicReference
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
@@ -104,6 +106,13 @@ open class ReprisePlaybackService : MediaLibraryService() {
     private val artworkExecutor = Executors.newSingleThreadExecutor { task ->
         Thread(task, "reprise-artwork")
     }
+
+    /**
+     * The browse queue the Core was last asked to play, so the item that plays
+     * carries the id the browse tree listed it under and a browser can mark the
+     * playing row. Cleared when the app starts something of its own.
+     */
+    private val browsePlayContext = AtomicReference<BrowseQueue?>(null)
     private val currentTrackArtwork = CurrentTrackArtwork(
         executor = artworkExecutor,
         resolve = ::resolveArtwork,
@@ -227,6 +236,7 @@ open class ReprisePlaybackService : MediaLibraryService() {
                 player,
                 equalizerChanged = { mutableSettingsRevisions.value += 1L },
                 metadata = TrackMetadataResolver(::resolveTrackMetadata),
+                mediaIdOf = { trackId -> browsePlayContext.get()?.mediaIdOf(trackId) },
             )
         }
         playbackPort = port
@@ -335,9 +345,10 @@ open class ReprisePlaybackService : MediaLibraryService() {
     }
 
     /** A song tapped in a media browser plays as its container, through the Core. */
-    private fun playBrowseQueue(trackIds: List<Long>, startIndex: Int) {
+    private fun playBrowseQueue(queue: BrowseQueue) {
         try {
-            playTrackIds(trackIds, startIndex)
+            browsePlayContext.set(queue)
+            playTrackIds(queue.trackIds, queue.startIndex)
         } catch (error: Exception) {
             Log.w(TAG_MEDIA, "Could not play a song chosen in a media browser", error)
         }
@@ -499,6 +510,7 @@ open class ReprisePlaybackService : MediaLibraryService() {
         playbackSnapshots.value?.positionMs ?: 0L
 
     internal fun playTracks(tracks: List<LibraryTrack>, startIndex: Int) {
+        browsePlayContext.set(null)
         coreSession().playTracks(
             tracks.map(LibraryTrack::id),
             tracks.map(LibraryTrack::uri),

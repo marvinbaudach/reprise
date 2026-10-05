@@ -41,12 +41,13 @@ internal fun TrackMetadata.toMediaMetadata(): MediaMetadata = MediaMetadata.Buil
 
 /**
  * The item Media3 plays for [uri]. A track the library cannot name still plays:
- * it keeps the bare uri as its id and carries no metadata.
+ * it keeps the bare uri as its id and carries no metadata. [mediaId] overrides
+ * the track id when a browse tree listed the track under another one.
  */
-internal fun playbackMediaItem(uri: String, metadata: TrackMetadata?): MediaItem {
+internal fun playbackMediaItem(uri: String, metadata: TrackMetadata?, mediaId: String? = null): MediaItem {
     val builder = MediaItem.Builder().setUri(Uri.parse(uri))
     if (metadata != null) {
-        builder.setMediaId(metadata.trackId.toString())
+        builder.setMediaId(mediaId ?: metadata.trackId.toString())
         builder.setMediaMetadata(metadata.toMediaMetadata())
     }
     return builder.build()

@@ -17,9 +17,9 @@ class BrowseIdTest {
             BrowseId.Playlist(42),
             album,
             BrowseId.Artist("AC:DC"),
-            BrowseId.Track(album, 7),
-            BrowseId.Track(BrowseId.RecentlyPlayed, 8),
-            BrowseId.Track(BrowseId.Playlist(3), 9),
+            BrowseId.Track(album, 7, 0),
+            BrowseId.Track(BrowseId.RecentlyPlayed, 8, 3),
+            BrowseId.Track(BrowseId.Playlist(3), 9, 41),
         )
 
         ids.forEach { id -> assertEquals(id, BrowseId.parse(id.mediaId)) }
@@ -29,10 +29,11 @@ class BrowseIdTest {
     fun aSongKeepsTheContainerItWasListedIn() {
         val album = BrowseId.Album("A", "B")
 
-        val parsed = BrowseId.parse(BrowseId.Track(album, 5).mediaId) as BrowseId.Track
+        val parsed = BrowseId.parse(BrowseId.Track(album, 5, 12).mediaId) as BrowseId.Track
 
         assertEquals(album, parsed.container)
         assertEquals(5L, parsed.trackId)
+        assertEquals(12, parsed.position)
     }
 
     @Test
@@ -54,6 +55,9 @@ class BrowseIdTest {
             "root:extra",
             "track:recent",
             "track:recent:notanumber",
+            "track:recent:1",
+            "track:recent:1:-1",
+            "track:recent:1:x",
             "12345",
             "content://tree/1.flac",
         ).forEach { id -> assertNull(id, BrowseId.parse(id)) }
@@ -61,7 +65,7 @@ class BrowseIdTest {
 
     @Test
     fun aSongCannotBeTheContainerOfAnotherSong() {
-        val nested = "track:${BrowseId.Track(BrowseId.RecentlyPlayed, 1).mediaId.replace(":", "%3A")}:2"
+        val nested = "track:${BrowseId.Track(BrowseId.RecentlyPlayed, 1, 0).mediaId.replace(":", "%3A")}:2:0"
 
         assertNull(BrowseId.parse(nested))
     }
