@@ -1,6 +1,6 @@
 use rusqlite::{Connection, OptionalExtension};
 
-use super::loudness::MeasuredLoudness;
+use super::loudness::{album_loudness, MeasuredLoudness};
 use crate::spectrogram::TrackSourceFingerprint;
 
 pub const LOUDNESS_FORMAT_VERSION: i64 = 1;
@@ -149,7 +149,7 @@ pub fn album_measured_loudness(
         return Ok(None);
     };
     let mut statement = conn.prepare(&format!(
-        "SELECT l.track_id, l.integrated_lufs, l.true_peak, t.duration_ms \
+        "SELECT l.integrated_lufs, l.true_peak, t.duration_ms \
          FROM tracks t LEFT JOIN track_loudness l ON l.track_id = t.id \
            AND l.format_version = ?3 AND l.source_mtime = t.file_mtime \
            AND l.source_size = t.file_size AND l.source_device IS t.device \
@@ -164,39 +164,32 @@ pub fn album_measured_loudness(
             rusqlite::params![album, artist, LOUDNESS_FORMAT_VERSION],
             |row| {
                 Ok((
-                    row.get::<_, Option<i64>>(0)?,
+                    row.get::<_, Option<f64>>(0)?,
                     row.get::<_, Option<f64>>(1)?,
-                    row.get::<_, Option<f64>>(2)?,
-                    row.get::<_, i64>(3)?,
+                    row.get::<_, i64>(2)?,
                 ))
             },
         )?
         .collect::<Result<Vec<_>, _>>()?;
-    if rows.is_empty() || rows.iter().any(|(id, _, _, _)| id.is_none()) {
+    // A track without a row, or with a NULL (silent) measurement, leaves the
+    // album without a complete measurement: the caller falls back to the track
+    // rule instead of normalising against a partial mean.
+    let measured = rows
+        .iter()
+        .map(|(lufs, peak, duration)| lufs.zip(*peak).map(|(lufs, peak)| (lufs, peak, *duration)))
+        .collect::<Option<Vec<_>>>();
+    let Some(measured) = measured.filter(|tracks| !tracks.is_empty()) else {
         return Ok(None);
-    }
-    let total_duration: i64 = rows
+    };
+    let tracks = measured
         .iter()
-        .map(|(_, _, _, duration)| duration.max(&0))
-        .sum();
-    let weighted_energy: f64 = rows
+        .map(|(lufs, _, duration)| (*lufs, *duration))
+        .collect::<Vec<_>>();
+    let true_peak = measured
         .iter()
-        .filter_map(|(_, lufs, _, duration)| {
-            lufs.filter(|value| value.is_finite())
-                .map(|value| *duration.max(&0) as f64 * 10_f64.powf(value / 10.0))
-        })
-        .sum();
-    if total_duration <= 0 || weighted_energy <= 0.0 {
-        return Ok(None);
-    }
-    let true_peak = rows
-        .iter()
-        .filter_map(|(_, _, peak, _)| *peak)
+        .map(|(_, peak, _)| *peak)
         .fold(0.0_f64, f64::max);
-    Ok(Some((
-        10.0 * (weighted_energy / total_duration as f64).log10(),
-        true_peak,
-    )))
+    Ok(album_loudness(&tracks).map(|lufs| (lufs, true_peak)))
 }
 
 #[cfg(test)]
@@ -351,5 +344,33 @@ mod tests {
             10.0 * ((1_000.0 * 10_f64.powf(-2.0) + 3_000.0 * 10_f64.powf(-1.0)) / 4_000.0).log10();
         assert!((lufs - expected).abs() < 1e-6);
         assert_eq!(peak, 0.8);
+    }
+
+    #[test]
+    fn album_loudness_treats_a_silent_track_as_unmeasured() {
+        let db = crate::db::Db::open_in_memory().unwrap();
+        insert_track(db.conn(), 1, "Album", "Artist", 1_000);
+        insert_track(db.conn(), 2, "Album", "Artist", 3_000);
+        let source = |inode| crate::spectrogram::TrackSourceFingerprint {
+            mtime_seconds: 11,
+            size_bytes: 22,
+            device: Some(33),
+            inode: Some(inode),
+        };
+        write_track_loudness(
+            db.conn(),
+            1,
+            source(41),
+            Some(MeasuredLoudness {
+                integrated_lufs: -20.0,
+                true_peak: 0.5,
+            }),
+        )
+        .unwrap();
+        // A NULL measurement (silence) must neither count as zero energy for
+        // its duration nor be skipped: the album has no complete measurement.
+        write_track_loudness(db.conn(), 2, source(42), None).unwrap();
+
+        assert_eq!(album_measured_loudness(db.conn(), 1).unwrap(), None);
     }
 }
