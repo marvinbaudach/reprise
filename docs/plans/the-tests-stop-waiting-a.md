@@ -86,3 +86,68 @@ list as before, byte-identical after sort), a full
 deliberately broken test name / deliberately failing test that must turn the
 script red (mutation proof).
 
+## Measurement record (task 6, 2026-10-05)
+
+Machine shared with other agent sessions (loadavg 5–16 during the runs). Before
+and after were therefore **interleaved**: per rep and per test, the BASE runner
+(`e0598026a1`, a temporary copy beside the script, never committed) and the new
+runner ran back to back, order alternating by rep, each with its 1-minute
+loadavg logged. Each sample is one invocation of the runner on exactly one test
+(`--rule-named --shard K/642`, K = 100, 300, 500), i.e. the fixed cost (cargo
+check, listing) plus one test. 5 reps × 3 tests per runner. No sample compiled
+anything (`Compiling` count 0 in every log); the build was warm for both.
+
+| Sample (median of 15, loadavg median 7.8) | BASE | new |
+|---|---|---|
+| one test, whole runner invocation | **3.98 s** (min 3.66) | **0.78 s** (min 0.59, max 1.56) |
+| `--list` of one test (fixed cost) | 0.42 s | 0.49 s |
+| per test, K = 100 / 300 / 500 | 3.88 / 3.79 / 4.35 s | 0.75 / 0.78 / 0.84 s |
+
+Two of the 15 BASE samples took **143 s** instead of 4 s (rep 3 of K = 300, rep 2
+of K = 500). In both logs the first attempt sat 135 s in GTK initialisation and ended in
+`Failed to initialize GTK` (a display number that did not serve), after which
+the old runner's retry on `:1099` passed in 0.4 s. The new runner has no such
+sample: it waits for the display number Xvfb itself reports. The median ignores them; the BASE mean is 22.5 s because of them,
+the new mean is 0.87 s.
+
+Full run, new runner only, `--rule-named`: **642 tests, 331 s wall (5 min 31 s)**,
+`passed: 642`, `failed: 0 of 642`, no `Xvfb reported no display` retry, loadavg
+5.32 at the start and 5.93 at the end. The before figure is the plan's ~40 min
+(`DISPLAY_TEST_JOBS=1`), not re-measured. `/tmp` did not grow over the run
+(70 % before, 69 % after; the count of `tmp.*` directories unchanged), so the
+per-worker `TMPDIR` cleanup still reaches every directory, `tmp_home` now
+included in the explicit tidy-up.
+
+The first `cargo test --workspace --no-run` in a fresh worktree took 24 min
+under that load (cold `target/`, pre-seeded copy notwithstanding); it is paid
+once, as in the plan.
+
+### Mutation and fault proofs
+
+| What was broken | Result |
+|---|---|
+| `--exact` name made stale (`${DISPLAY_TEST}_stale`) | `running 0 tests`, `display test matched no executing test binary`, `failed: 1 of 1`, exit 1 |
+| a `panic!` at the top of `doc_2c_the_running_page_offers_cancel_and_nothing_else` | `FAILED`, `failed: 1 of 1`, exit 1 |
+| `Xvfb` replaced (via `PATH`) by one that never writes to `-displayfd` | three attempts (`Xvfb reported no display within 10s (attempt n of 3)`), `failed: 1 of 1`, exit 1, 3 starts, no process left behind |
+| `Xvfb` that reports display `:54321`, which nobody serves, on a test that panics on GTK init failure | one start, `Failed to initialize GTK` in the test's own output, `failed: 1 of 1`, exit 1, **no retry** |
+| `cargo` replaced by one that fails | `building the workspace test binaries failed`, exit 1 |
+| `jq` finding no binary / two binaries | `expected exactly one reprise-gnome test binary, found 0` / `found 2`, exit 1 |
+| the "Workspace tests" gate line given one more `--exclude` | `scripts/tests/qa-linters.sh` exit 1: the selections must stay equal |
+
+A control run with the real Xvfb on the same test passed.
+
+### Deviations from the plan text
+
+- The build uses `--message-format=json-render-diagnostics`, not
+  `--message-format=json`: the latter buries compiler errors in the JSON stream
+  on stdout, so a failed build would show nothing. The artifact messages `jq`
+  reads are identical.
+- `TESTING.md:239-252` needed no change (it lists the commands to run, which are
+  unchanged); the runner is described in "Isolated GTK and desktop tests".
+- The old runner's explicit cleanup omitted `tmp_home`; the rewritten line now
+  includes it.
+- The `reprise` test binary is found by package manifest path, bin name,
+  `profile.test`, not by package name alone.
+- No `CARGO_*` variable is set at run time: every use under `crates/` is a
+  compile-time `env!` (and `build.rs`'s `OUT_DIR`).
+
