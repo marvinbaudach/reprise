@@ -187,7 +187,8 @@ pub struct RuntimeAssets {
 /// `Ready` means both files exist and match their pinned SHA-256 values.
 /// `ModelRequired` is the only recoverable first-use state; the application can
 /// offer the checksummed weights download. Every native-runtime problem is a
-/// packaging/configuration failure and must remain non-actionable in the UI.
+/// packaging/configuration failure and must remain non-actionable in the UI;
+/// it is only reported once the model file exists.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum RuntimeReadiness {
     Ready(RuntimeAssets),
@@ -220,11 +221,19 @@ pub fn runtime_readiness() -> RuntimeReadiness {
 }
 
 /// Purely path-injected readiness check used by tests and packaging probes.
+///
+/// A missing model file is reported first, before the native runtime is
+/// resolved: the download is the state a host can act on, and the runtime check
+/// follows once a model exists.
 pub fn runtime_readiness_in(
     model_dir: &Path,
     spec: &WeightsSpec,
     library_location: &LibraryLocation,
 ) -> RuntimeReadiness {
+    let model_path = weights_path(model_dir, spec);
+    if !model_path.is_file() {
+        return RuntimeReadiness::ModelRequired { path: model_path };
+    }
     let library_path = match resolve_library(library_location) {
         Ok(path) => path,
         Err(error) => {
@@ -245,10 +254,6 @@ pub fn runtime_readiness_in(
         };
     }
 
-    let model_path = weights_path(model_dir, spec);
-    if !model_path.is_file() {
-        return RuntimeReadiness::ModelRequired { path: model_path };
-    }
     match file_sha256(&model_path) {
         Ok(actual) if actual == spec.sha256 => RuntimeReadiness::Ready(RuntimeAssets {
             model_path,
@@ -634,6 +639,24 @@ mod tests {
                 model_id: spec.model_id.to_string(),
                 library_path: library,
             })
+        );
+    }
+
+    #[test]
+    fn a_missing_model_is_reported_before_a_missing_runtime() {
+        let dir = tempfile::tempdir().unwrap();
+        let spec = fake_spec();
+        let location = LibraryLocation {
+            candidates: vec![dir.path().join("libonnxruntime.so")],
+            expected_sha256: Some(sha256_hex(b"runtime bytes")),
+        };
+
+        assert_eq!(
+            runtime_readiness_in(dir.path(), &spec, &location),
+            RuntimeReadiness::ModelRequired {
+                path: weights_path(dir.path(), &spec)
+            },
+            "the download is the actionable state, so it is reported first"
         );
     }
 
