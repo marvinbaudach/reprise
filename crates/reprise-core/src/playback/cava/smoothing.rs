@@ -296,15 +296,16 @@ mod tests {
         // exceeds the output's hard `.clamp(0.0, 1.0)` ceiling and the two
         // `<= plateau_max * 1.05` asserts below can never fail on their own.
         //
-        // A settled smoother no longer applies the cold-start headroom scale,
-        // so a correctly-fixed `reset()` does not pin frames there. The bug
-        // this test guards against is a sustained run: with the old `reset()`
+        // The cold-start headroom scale is the only whole-frame duck left, so
+        // a correctly-fixed `reset()` never pins a frame there. The bug this
+        // test guards against is a sustained run: with the old `reset()`
         // behaviour (re-zeroing
         // `sensitivity`/`sensitivity_initializing`/`sensitivity_settling`)
-        // temporarily reinstated, the same fixture produced a run of 26
+        // temporarily reinstated, the same fixture produced a run of 21
         // consecutive frames flat at the headroom immediately after reset,
-        // confirmed the same way (`cargo test ... -- --nocapture`, EXIT=101).
-        // The threshold below remains well below the bug's measured signature.
+        // while the fixed `reset()` produces none (measured with
+        // `cargo test ... -- --nocapture`). The threshold below sits between
+        // the two measurements.
         let mut post_reset_max = 0.0_f32;
         let mut consecutive_at_headroom = 0;
         let mut max_consecutive_at_headroom = 0;
@@ -330,7 +331,7 @@ mod tests {
         }
 
         assert!(
-            max_consecutive_at_headroom <= 12,
+            max_consecutive_at_headroom <= 10,
             "bars clamped flat at the cold-start headroom for {max_consecutive_at_headroom} \
              consecutive frames instead of tracking the known plateau \
              (plateau_max={plateau_max:.3})"
