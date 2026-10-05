@@ -707,11 +707,31 @@ rg --fixed-strings --quiet "::add-mask::$fake_header" "$sandbox/stdout" || \
 
 # A push by the token's owner makes that owner the event's actor. If routing
 # read the actor, the re-triggered run would treat the bump as a human pull
-# request, skip every suite, and let auto-merge arm on untested code.
-for file in "$ci_workflow" "$cross_target"; do
-    rg --fixed-strings --quiet \
-        'ACTOR: ${{ github.event.pull_request.user.login || github.actor }}' "$file" || \
-        fail "$(basename "$file") must route on the pull request's author, falling back to the actor for pushes"
-done
+# request, skip every suite, and let auto-merge arm on untested code. The step
+# that decides suite reuse must carry the expression itself: another step of the
+# file carrying it, as cross-target.yml has two, proves nothing about this one.
+python3 - "$ci_workflow" "$cross_target" <<'PY' || fail "suite reuse must route on the pull request's author, falling back to the actor for pushes"
+import sys
+
+import yaml
+
+AUTHOR = "${{ github.event.pull_request.user.login || github.actor }}"
+DECIDERS = {sys.argv[1]: ("changes", "routes"), sys.argv[2]: ("suite-skip", "authorization")}
+
+for name, (job, step_id) in DECIDERS.items():
+    with open(name, encoding="utf-8") as stream:
+        workflow = yaml.safe_load(stream)
+    steps = [step for step in workflow["jobs"][job]["steps"] if step.get("id") == step_id]
+    assert len(steps) == 1, f"{name}: job {job} must have exactly one step {step_id}"
+    assert steps[0]["env"]["ACTOR"] == AUTHOR, (
+        f"{name}: {job}/{step_id} must set ACTOR to {AUTHOR}, got {steps[0]['env']['ACTOR']}"
+    )
+    for job_id, other in workflow["jobs"].items():
+        for step in other.get("steps", []):
+            actor = step.get("env", {}).get("ACTOR")
+            assert actor in (None, AUTHOR), (
+                f"{name}: {job_id}/{step.get('name')} sets ACTOR to {actor}, which is not the pull request's author"
+            )
+PY
 
 echo "Dependabot Flatpak sources contracts passed"
