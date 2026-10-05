@@ -1,6 +1,6 @@
 package io.github.marvinbaudach.reprise.library
 
-import android.net.Uri
+import androidx.core.net.toUri
 import androidx.media3.common.MediaItem
 import androidx.media3.common.MediaMetadata
 
@@ -153,7 +153,7 @@ internal class MediaBrowseTree(
     private fun leaf(container: BrowseId, track: BrowseTrack, position: Int): MediaItem =
         MediaItem.Builder()
             .setMediaId(BrowseId.Track(container, track.id, position).mediaId)
-            .setUri(Uri.parse(track.uri))
+            .setUri(track.uri.toUri())
             .setMediaMetadata(track.toTrackMetadata().toMediaMetadata())
             .build()
 
