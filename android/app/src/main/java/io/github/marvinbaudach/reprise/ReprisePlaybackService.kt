@@ -338,6 +338,7 @@ open class ReprisePlaybackService : MediaLibraryService() {
         val port = playbackPort ?: return
         try {
             port.attachArtwork(trackUri, artwork)
+            widgetPublisher.onArtworkAvailable()
         } catch (error: Exception) {
             // The player may have been released while the cover was loading.
             Log.w(TAG_MEDIA, "Could not attach the cover to the playing track", error)

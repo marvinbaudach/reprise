@@ -20,6 +20,8 @@ class WidgetPublisherTest {
     private var refreshes = 0
     private var metadataReads = 0
     private var failMetadata = false
+    private var cover: String? = null
+    private var clock = 0L
     private val publisher = WidgetPublisher(
         executor = Executor { queued.addLast(it) },
         store = store,
@@ -28,8 +30,9 @@ class WidgetPublisherTest {
             if (failMetadata) error("library unavailable")
             metadataFor(uri)
         },
-        artworkPath = { null },
+        artworkPath = { cover },
         refresh = { refreshes += 1 },
+        now = { clock },
     )
 
     @After
@@ -88,6 +91,69 @@ class WidgetPublisherTest {
 
         assertEquals(0, refreshes)
         assertEquals(true, store.load().isEmpty)
+    }
+
+    @Test
+    fun anUpdateThatFailedIsTriedAgainByALaterSnapshotOfTheSameState() {
+        failMetadata = true
+        publisher.onSnapshot(snapshot(AndroidPlaybackState.PLAYING, 3))
+        drain()
+        failMetadata = false
+
+        clock += RETRY_DELAY_MS
+        publisher.onSnapshot(snapshot(AndroidPlaybackState.PLAYING, 3, positionMs = 500))
+        drain()
+
+        assertEquals("Title 3", store.load().title)
+        assertEquals(1, refreshes)
+    }
+
+    @Test
+    fun aLibraryThatKeepsFailingIsNotAskedOnEveryPositionTick() {
+        failMetadata = true
+        publisher.onSnapshot(snapshot(AndroidPlaybackState.PLAYING, 3))
+        drain()
+
+        repeat(20) { tick ->
+            clock += 100
+            publisher.onSnapshot(snapshot(AndroidPlaybackState.PLAYING, 3, positionMs = 100L * tick))
+        }
+        drain()
+
+        assertEquals(1, metadataReads)
+    }
+
+    @Test
+    fun aStateStillBeingPublishedIsNotQueuedTwice() {
+        publisher.onSnapshot(snapshot(AndroidPlaybackState.PLAYING, 3))
+        publisher.onSnapshot(snapshot(AndroidPlaybackState.PLAYING, 3, positionMs = 500))
+
+        assertEquals(1, queued.size)
+    }
+
+    @Test
+    fun aCoverThatWasMissingAtFirstReachesTheWidgetWhenItLands() {
+        publisher.onSnapshot(snapshot(AndroidPlaybackState.PLAYING, 3))
+        drain()
+        assertEquals(null, store.load().artworkPath)
+        cover = "/cache/3.png"
+
+        publisher.onArtworkAvailable()
+        drain()
+
+        assertEquals("/cache/3.png", store.load().artworkPath)
+        assertEquals(2, refreshes)
+    }
+
+    @Test
+    fun aCoverThatIsStillMissingRefreshesNothing() {
+        publisher.onSnapshot(snapshot(AndroidPlaybackState.PLAYING, 3))
+        drain()
+
+        publisher.onArtworkAvailable()
+        drain()
+
+        assertEquals(1, refreshes)
     }
 
     @Test
