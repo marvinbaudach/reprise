@@ -243,8 +243,12 @@ require_pattern 'if \[\[ -f \$display_test_passed \]\]' scripts/check-display-te
 # display, so the old per-test server-number bands and `xvfb-run` are gone, and
 # so is the retry on GTK's init failure — only a server that never reported a
 # display is retried.
-require_pattern '\-displayfd' scripts/check-display-tests.sh
-require_pattern '640x480x24' scripts/check-display-tests.sh
+# Anchored on the code lines: the comments above them name the same flags, so a
+# bare match would stay green after the real Xvfb command or the DISPLAY export
+# changed.
+require_pattern '^\s*Xvfb\s.*-displayfd\b' scripts/check-display-tests.sh
+require_pattern '^\s*Xvfb\s.*-screen 0 640x480x24\b' scripts/check-display-tests.sh
+require_pattern '^\s*DISPLAY=":\$worker_display" \\$' scripts/check-display-tests.sh
 reject_pattern 'server[-_]num|xvfb-run --' scripts/check-display-tests.sh
 require_pattern 'Xvfb reported no display' scripts/check-display-tests.sh
 reject_pattern 'grep -q "Failed to initialize GTK"' scripts/check-display-tests.sh
@@ -254,6 +258,7 @@ reject_pattern 'grep -q "Failed to initialize GTK"' scripts/check-display-tests.
 require_pattern 'cargo test "\$\{workspace_test_selection\[@\]\}" --no-run' scripts/check-display-tests.sh
 require_pattern '\-\-message-format=json' scripts/check-display-tests.sh
 require_pattern 'profile\.test == true' scripts/check-display-tests.sh
+require_pattern '^if \(\( \$\{#test_bins\[@\]\} != 1 \)\); then$' scripts/check-display-tests.sh
 require_pattern 'expected exactly one reprise-gnome test binary' scripts/check-display-tests.sh
 require_pattern '"\$DISPLAY_TEST_BIN" --ignored --exact "\$DISPLAY_TEST"' scripts/check-display-tests.sh
 reject_pattern 'cargo test -p reprise-gnome' scripts/check-display-tests.sh
