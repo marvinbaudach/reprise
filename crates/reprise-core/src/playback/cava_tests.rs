@@ -359,13 +359,11 @@ fn ac_28_cava_resets_keep_the_settled_autosensitivity_gain() {
     full_reset.reset();
     stream_reset.reset_stream();
 
+    let mut processors = [&mut full_reset, &mut stream_reset, &mut fresh];
     let mut loudest = [0.0_f32; 3];
     for frame in 0..PROBE_FRAMES {
         let chunk = quiet_tone_chunk(frame);
-        for (peak, processor) in loudest
-            .iter_mut()
-            .zip([&mut full_reset, &mut stream_reset, &mut fresh])
-        {
+        for (peak, processor) in loudest.iter_mut().zip(processors.iter_mut()) {
             *peak = processor.process(&chunk).into_iter().fold(0.0, f32::max);
         }
     }
