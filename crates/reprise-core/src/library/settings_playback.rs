@@ -110,7 +110,7 @@ pub(in crate::library) fn set_equalizer_curve_in(
 }
 
 pub(in crate::library) fn get_replay_gain_mode_in(conn: &Connection) -> ReplayGainMode {
-    match typed_value(conn, REPLAY_GAIN_MODE_KEY, "off").as_str() {
+    match typed_value(conn, REPLAY_GAIN_MODE_KEY, "track").as_str() {
         "track" => ReplayGainMode::Track,
         "album" => ReplayGainMode::Album,
         "off" => ReplayGainMode::Off,

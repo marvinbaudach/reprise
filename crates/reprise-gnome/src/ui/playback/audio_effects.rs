@@ -35,7 +35,7 @@ pub(in crate::ui) fn apply_initial(player: &dyn PlaybackBackend, conn: &Rc<Db>) 
         return requested;
     }
 
-    tracing::warn!("stored audio effects are unavailable; falling back to disabled effects");
+    tracing::warn!("stored audio effects are unavailable; falling back to defaults");
     let fallback = AudioEffects::default();
     if let Err(error) = player.set_audio_effects(fallback.clone()) {
         tracing::warn!(%error, "could not explicitly restore disabled audio effects");
@@ -44,9 +44,7 @@ pub(in crate::ui) fn apply_initial(player: &dyn PlaybackBackend, conn: &Rc<Db>) 
     if let Err(error) = settings::set_equalizer_enabled(conn, false) {
         tracing::warn!(%error, "could not persist equalizer fallback");
     }
-    if let Err(error) =
-        settings::set_replay_gain_mode(conn, reprise_core::library::settings::ReplayGainMode::Off)
-    {
+    if let Err(error) = settings::set_replay_gain_mode(conn, fallback.replay_gain) {
         tracing::warn!(%error, "could not persist ReplayGain fallback");
     }
     fallback
@@ -147,7 +145,10 @@ mod tests {
         assert_eq!(apply_initial(&backend, &conn), AudioEffects::default());
         assert_eq!(backend.attempts.borrow().len(), 2);
         assert!(!settings::get_equalizer_enabled(&conn));
-        assert_eq!(settings::get_replay_gain_mode(&conn), ReplayGainMode::Off);
+        assert_eq!(
+            settings::get_replay_gain_mode(&conn),
+            AudioEffects::default().replay_gain
+        );
     }
 
     #[test]

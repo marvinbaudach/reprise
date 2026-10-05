@@ -37,9 +37,18 @@ impl Default for AudioEffects {
         Self {
             equalizer_enabled: false,
             equalizer_bands: [0.0; 10],
-            replay_gain: crate::library::settings::ReplayGainMode::Off,
+            replay_gain: crate::library::settings::ReplayGainMode::Track,
         }
     }
+}
+
+#[cfg(test)]
+#[test]
+fn audio_effects_default_to_track_gain() {
+    assert_eq!(
+        AudioEffects::default().replay_gain,
+        crate::library::settings::ReplayGainMode::Track
+    );
 }
 
 /// One-to-one CAVA bars carried by [`SpectrumFrame`].
