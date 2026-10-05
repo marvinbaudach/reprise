@@ -92,6 +92,19 @@ impl Harness {
             .expect("spawn reprise-cli")
     }
 
+    /// Spawns the CLI (with `--db` prepended) with both output streams piped,
+    /// for tests that watch stderr while the process is still running.
+    pub fn spawn_captured(&self, args: &[&str]) -> std::process::Child {
+        Command::new(env!("CARGO_BIN_EXE_reprise-cli"))
+            .arg("--db")
+            .arg(&self.db)
+            .args(args)
+            .stdout(std::process::Stdio::piped())
+            .stderr(std::process::Stdio::piped())
+            .spawn()
+            .expect("spawn reprise-cli")
+    }
+
     /// Every `ai_job` lifecycle event as `(job_id, op)` pairs, via the core
     /// change-log facade — the ground truth for "was this job claimed once".
     pub fn ai_job_events(&self) -> Vec<(String, String)> {

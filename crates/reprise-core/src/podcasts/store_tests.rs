@@ -445,9 +445,27 @@ fn pod_6_episode_removal_undo_and_commit_block_rss_and_youtube_reimport() {
 
 #[test]
 fn pod_6_removing_an_episode_waits_for_a_concurrent_writer() {
-    use std::time::{Duration, Instant};
+    use std::sync::atomic::{AtomicUsize, Ordering};
+    use std::sync::{mpsc, Mutex};
+    use std::time::Duration;
 
-    const WRITER_HOLD: Duration = Duration::from_secs(1);
+    const SETUP_DEADLINE: Duration = Duration::from_secs(10);
+    /// Pause between the removal's lock retries inside the busy handler.
+    const BUSY_POLL: Duration = Duration::from_millis(1);
+
+    // `Connection::busy_handler` takes a plain `fn`, so the handler reports
+    // through statics. Only this test installs it.
+    static BUSY_ENTRIES: AtomicUsize = AtomicUsize::new(0);
+    static BUSY_SIGNAL: Mutex<Option<mpsc::Sender<()>>> = Mutex::new(None);
+
+    fn count_and_signal_busy(_attempts: i32) -> bool {
+        BUSY_ENTRIES.fetch_add(1, Ordering::SeqCst);
+        if let Some(signal) = BUSY_SIGNAL.lock().unwrap().as_ref() {
+            let _ = signal.send(());
+        }
+        std::thread::sleep(BUSY_POLL);
+        true
+    }
 
     let directory = tempfile::tempdir().unwrap();
     let database_path = directory.path().join("library.db");
@@ -465,7 +483,11 @@ fn pod_6_removing_an_episode_waits_for_a_concurrent_writer() {
         .episode_id;
     assert!(tombstone_episode(&db, episode_id, 30).unwrap());
 
-    let (locked, lock_observed) = std::sync::mpsc::sync_channel::<Result<Instant, String>>(1);
+    // The writer commits only once the removal has been seen waiting: the busy
+    // handler signals it, so no clock decides who is first.
+    let (busy_seen, wait_busy) = mpsc::channel();
+    *BUSY_SIGNAL.lock().unwrap() = Some(busy_seen);
+    let (locked, lock_observed) = mpsc::sync_channel::<Result<(), String>>(1);
     let writer = std::thread::spawn(move || -> Result<(), String> {
         let writer_db = match Db::open_ready(&database_path) {
             Ok(db) => db,
@@ -495,17 +517,18 @@ fn pod_6_removing_an_episode_waits_for_a_concurrent_writer() {
             let _ = locked.send(Err(message.clone()));
             return Err(message);
         }
-        let release_at = Instant::now() + WRITER_HOLD;
         locked
-            .send(Ok(release_at))
+            .send(Ok(()))
             .map_err(|error| format!("could not report concurrent writer lock: {error}"))?;
-        std::thread::sleep(WRITER_HOLD);
+        wait_busy
+            .recv_timeout(SETUP_DEADLINE)
+            .map_err(|error| format!("the removal never waited for the lock: {error}"))?;
         transaction
             .commit()
             .map_err(|error| format!("could not commit concurrent write: {error}"))
     });
-    let release_at = match lock_observed.recv_timeout(Duration::from_secs(10)) {
-        Ok(Ok(release_at)) => release_at,
+    match lock_observed.recv_timeout(SETUP_DEADLINE) {
+        Ok(Ok(())) => {}
         Ok(Err(error)) => {
             let writer_result = writer
                 .join()
@@ -520,23 +543,19 @@ fn pod_6_removing_an_episode_waits_for_a_concurrent_writer() {
                 "concurrent writer did not report setup before the deadline: {error}; writer result: {writer_result:?}"
             );
         }
-    };
+    }
 
-    let removal_started = Instant::now();
-    assert!(
-        removal_started < release_at,
-        "episode removal did not start before the concurrent writer's planned release"
-    );
+    db.conn().busy_handler(Some(count_and_signal_busy)).unwrap();
     let removed = commit_remove_episode(&db, episode_id);
-    let removal_finished = Instant::now();
+    BUSY_SIGNAL.lock().unwrap().take();
     writer
         .join()
         .unwrap_or_else(|panic| std::panic::resume_unwind(panic))
         .expect("concurrent writer should finish successfully");
 
     assert!(
-        removal_finished >= release_at,
-        "episode removal returned before the concurrent writer released: removal_finished={removal_finished:?}, release_at={release_at:?}"
+        BUSY_ENTRIES.load(Ordering::SeqCst) >= 1,
+        "episode removal never had to wait, so it proved nothing about the lock"
     );
     assert!(
         removed.is_ok(),

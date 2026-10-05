@@ -395,7 +395,13 @@ fn ignore_list() -> &'static Mutex<HashMap<PathBuf, Instant>> {
 /// early file's window can't expire while later files are still being
 /// written.
 pub fn ignore_path(path: &Path, duration: Duration) {
-    let deadline = Instant::now() + duration;
+    ignore_path_at(path, duration, Instant::now());
+}
+
+/// [`ignore_path`] with the window opening at `now`, so a test can place the
+/// window on a synthetic clock instead of sleeping through it.
+fn ignore_path_at(path: &Path, duration: Duration, now: Instant) {
+    let deadline = now + duration;
     ignore_list()
         .lock()
         .unwrap_or_else(PoisonError::into_inner)
@@ -408,9 +414,15 @@ pub fn ignore_path(path: &Path, duration: Duration) {
 /// recently-written paths at a time, so a stale entry sitting unpruned until
 /// its own path is next checked is not a meaningful leak.
 pub fn is_ignored(path: &Path) -> bool {
+    is_ignored_at(path, Instant::now())
+}
+
+/// [`is_ignored`] as seen at `now`; the synthetic-clock twin of
+/// [`ignore_path_at`].
+fn is_ignored_at(path: &Path, now: Instant) -> bool {
     let mut list = ignore_list().lock().unwrap_or_else(PoisonError::into_inner);
     match list.get(path) {
-        Some(deadline) if *deadline > Instant::now() => true,
+        Some(deadline) if *deadline > now => true,
         Some(_) => {
             list.remove(path);
             false
@@ -453,14 +465,24 @@ mod tests {
     #[test]
     fn ignore_path_marks_a_path_ignored_until_it_expires() {
         let path = PathBuf::from("/tmp/reprise-watcher-test-ignore-marks-until-expired.flac");
-        assert!(!is_ignored(&path), "not ignored before ignore_path");
-
-        ignore_path(&path, Duration::from_millis(50));
-        assert!(is_ignored(&path), "ignored immediately after ignore_path");
-
-        std::thread::sleep(Duration::from_millis(80));
+        let window = Duration::from_millis(50);
+        let opened = Instant::now();
         assert!(
-            !is_ignored(&path),
+            !is_ignored_at(&path, opened),
+            "not ignored before ignore_path"
+        );
+
+        ignore_path_at(&path, window, opened);
+        assert!(
+            is_ignored_at(&path, opened),
+            "ignored immediately after ignore_path"
+        );
+        assert!(
+            is_ignored_at(&path, opened + window - Duration::from_millis(1)),
+            "still ignored just before the window closes"
+        );
+        assert!(
+            !is_ignored_at(&path, opened + window),
             "no longer ignored once the window elapses"
         );
     }

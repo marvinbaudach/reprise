@@ -6,7 +6,7 @@
 use std::sync::mpsc;
 use std::sync::Arc;
 use std::thread;
-use std::time::{Duration, Instant};
+use std::time::Duration;
 
 use super::{
     AndroidPlaybackError, AndroidPlaybackPort, AndroidPlaybackState, AndroidTransitionMode,
@@ -17,13 +17,11 @@ use crate::{
     AndroidPlaybackSession, AndroidPlaybackSnapshot,
 };
 
-/// How long the "scan" keeps the writer. Far above the pass threshold so a
-/// blocked call cannot sneak under it, far below the 5 s ANR budget so the
-/// suite stays quick.
-const WRITER_HELD_FOR: Duration = Duration::from_millis(1500);
-/// A transport call that merely enqueues its persistence finishes in
-/// microseconds; the budget leaves room for a slow CI box.
-const TRANSPORT_BUDGET: Duration = Duration::from_millis(300);
+/// How long a transport call may take to report completion while the writer is
+/// still held. A call that merely enqueues its persistence finishes in
+/// microseconds; this only bounds a regression that parks on the writer, so a
+/// slow box cannot fail a correct call and a blocked one cannot hang the suite.
+const TRANSPORT_COMPLETES_WITHIN: Duration = Duration::from_secs(10);
 
 struct QuietPort;
 
@@ -100,26 +98,37 @@ impl AndroidPlaybackListener for QuietListener {
     fn on_listen_report_changed(&self) {}
 }
 
-/// Runs `transport` while another thread holds the library writer, the way a
-/// scan does, and returns how long the call took.
-fn time_while_writer_is_held(
+/// Runs `transport` on a helper thread while another thread holds the library
+/// writer, the way a scan does, and returns whether it reported completion
+/// *while the writer was still held*. The writer is released only afterwards,
+/// by message rather than by a timer, so the verdict does not depend on how
+/// fast the host is.
+fn completes_while_writer_is_held(
     library: &Arc<crate::MusicLibrary>,
-    transport: impl FnOnce(),
-) -> Duration {
+    transport: impl FnOnce() + Send,
+) -> bool {
     let writer = library.writer_handle();
     let (held, wait_held) = mpsc::channel();
-    let holder = thread::spawn(move || {
-        let guard = writer.lock().unwrap();
-        held.send(()).unwrap();
-        thread::sleep(WRITER_HELD_FOR);
-        drop(guard);
-    });
-    wait_held.recv().unwrap();
-    let started = Instant::now();
-    transport();
-    let elapsed = started.elapsed();
-    holder.join().unwrap();
-    elapsed
+    let (release, wait_release) = mpsc::channel::<()>();
+    let (done, wait_done) = mpsc::channel();
+    thread::scope(|scope| {
+        let holder = scope.spawn(move || {
+            let guard = writer.lock().unwrap();
+            held.send(()).unwrap();
+            // A dropped sender releases too, so a failing test never pins the writer.
+            let _ = wait_release.recv();
+            drop(guard);
+        });
+        wait_held.recv().unwrap();
+        scope.spawn(move || {
+            transport();
+            let _ = done.send(());
+        });
+        let completed = wait_done.recv_timeout(TRANSPORT_COMPLETES_WITHIN).is_ok();
+        drop(release);
+        holder.join().unwrap();
+        completed
+    })
 }
 
 fn session_with_three_tracks(
@@ -146,11 +155,13 @@ fn next_does_not_wait_for_a_scan_holding_the_writer() {
     let directory = tempfile::tempdir().unwrap();
     let (library, session) = session_with_three_tracks(directory.path());
 
-    let elapsed = time_while_writer_is_held(&library, || session.next().unwrap());
+    let completed = completes_while_writer_is_held(&library, || {
+        session.next().unwrap();
+    });
 
     assert!(
-        elapsed < TRANSPORT_BUDGET,
-        "next() waited {elapsed:?} for the writer -- on the main thread that is the ANR \
+        completed,
+        "next() did not finish while the writer was held -- on the main thread that is the ANR \
          'Input dispatching timed out' seen on the device",
     );
     assert_eq!(session.snapshot().unwrap().current_index, Some(1));
@@ -161,14 +172,14 @@ fn play_tracks_does_not_wait_for_a_scan_holding_the_writer() {
     let directory = tempfile::tempdir().unwrap();
     let (library, session) = session_with_three_tracks(directory.path());
 
-    let elapsed = time_while_writer_is_held(&library, || {
+    let completed = completes_while_writer_is_held(&library, || {
         session
             .play_tracks(vec![7, 8], vec!["content://p/7".into(), "content://p/8".into()], 1)
             .unwrap();
     });
 
     assert!(
-        elapsed < TRANSPORT_BUDGET,
-        "play_tracks() waited {elapsed:?} for the writer",
+        completed,
+        "play_tracks() did not finish while the writer was held",
     );
 }

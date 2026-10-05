@@ -441,31 +441,34 @@ fn wait_for_child_revealed(revealer: &gtk4::Revealer, expected: bool) {
 
 fn card_and_full_ranking_snapshot() -> (StatsBandsCard, StatsSnapshot) {
     let conn = crate::test_db::open().unwrap();
-    for (id, artist, duration_ms, plays) in [
-        (1, "Sprinter", 60_000, 10),
-        (2, "Play Runner", 50_000, 9),
-        (3, "Mid", 80_000, 8),
-        (4, "Other Seven", 70_000, 7),
-        (5, "Other Six", 60_000, 6),
-        (6, "Other Five", 60_000, 5),
-        (7, "Marathon", 600_000, 2),
-    ] {
-        insert_artist(&conn, id, artist, duration_ms, plays);
-    }
+    insert_artists(
+        &conn,
+        &[
+            (1, "Sprinter".to_string(), 60_000, 10),
+            (2, "Play Runner".to_string(), 50_000, 9),
+            (3, "Mid".to_string(), 80_000, 8),
+            (4, "Other Seven".to_string(), 70_000, 7),
+            (5, "Other Six".to_string(), 60_000, 6),
+            (6, "Other Five".to_string(), 60_000, 5),
+            (7, "Marathon".to_string(), 600_000, 2),
+        ],
+    );
     snapshot_card(&conn)
 }
 
 fn card_and_snapshot_with(artists: i64) -> (StatsBandsCard, StatsSnapshot) {
     let conn = crate::test_db::open().unwrap();
-    for id in 1..=artists {
-        insert_artist(
-            &conn,
-            id,
-            &format!("Artist {id:02}"),
-            60_000,
-            usize::try_from(artists - id + 1).unwrap(),
-        );
-    }
+    let ranking = (1..=artists)
+        .map(|id| {
+            (
+                id,
+                format!("Artist {id:02}"),
+                60_000,
+                usize::try_from(artists - id + 1).unwrap(),
+            )
+        })
+        .collect::<Vec<_>>();
+    insert_artists(&conn, &ranking);
     snapshot_card(&conn)
 }
 
@@ -475,7 +478,7 @@ fn stats_24_card_titles_wrap_before_they_cut() {
     let _main_context = crate::ui::test_main_context::lock_main_context();
     gtk4::init().unwrap();
     let conn = crate::test_db::open().unwrap();
-    for (id, artist) in [
+    let artists = [
         (
             1,
             "The Exceptionally Long Symphonic Collective From Northern Skies And Distant Shores",
@@ -496,9 +499,16 @@ fn stats_24_card_titles_wrap_before_they_cut() {
             5,
             "The Fifth Expansive Artist Name Used To Exercise Real Pango Layout",
         ),
-    ] {
-        insert_artist(&conn, id, artist, 60_000, usize::try_from(6 - id).unwrap());
-    }
+    ]
+    .map(|(id, artist)| {
+        (
+            id,
+            artist.to_string(),
+            60_000,
+            usize::try_from(6 - id).unwrap(),
+        )
+    });
+    insert_artists(&conn, &artists);
     let (card, snapshot) = snapshot_card(&conn);
     card.set_data(&snapshot);
     let window = gtk4::Window::builder()
@@ -551,36 +561,48 @@ fn descendants(root: &gtk4::Widget) -> Vec<gtk4::Widget> {
     found
 }
 
-fn insert_artist(
-    conn: &reprise_core::db::Db,
-    id: i64,
-    artist: &str,
-    duration_ms: i64,
-    plays: usize,
-) {
-    crate::test_db::connection(conn)
-        .execute(
-            "INSERT INTO tracks \
-             (id, path, title, artist, album, album_artist, genre, duration_ms, added_at) \
-             VALUES (?1, ?2, 'Track', ?3, ?4, '', 'Rock', ?5, 0)",
-            rusqlite::params![
-                id,
-                format!("/music/{id}.flac"),
-                artist,
-                format!("Album {id}"),
-                duration_ms,
-            ],
-        )
-        .unwrap();
-    for play in 0..plays {
-        crate::test_db::connection(conn)
-            .execute(
-                "INSERT INTO listen_events (track_id, played_at, ms_played) \
-                 VALUES (?1, ?2, ?3)",
-                rusqlite::params![id, 1_000 + i64::try_from(play).unwrap(), duration_ms],
+/// The whole fixture goes through one connection and one transaction: opening a
+/// fresh connection per `listen_events` row made the 151-artist ranking cost
+/// ~85 s of the test's run time.
+fn insert_artists(conn: &reprise_core::db::Db, artists: &[(i64, String, i64, usize)]) {
+    let fixture_conn = crate::test_db::connection(conn);
+    let tx = fixture_conn.unchecked_transaction().unwrap();
+    {
+        let mut insert_track = tx
+            .prepare(
+                "INSERT INTO tracks \
+                 (id, path, title, artist, album, album_artist, genre, duration_ms, added_at) \
+                 VALUES (?1, ?2, 'Track', ?3, ?4, '', 'Rock', ?5, 0)",
             )
             .unwrap();
+        let mut insert_play = tx
+            .prepare(
+                "INSERT INTO listen_events (track_id, played_at, ms_played) \
+                 VALUES (?1, ?2, ?3)",
+            )
+            .unwrap();
+        for (id, artist, duration_ms, plays) in artists {
+            insert_track
+                .execute(rusqlite::params![
+                    id,
+                    format!("/music/{id}.flac"),
+                    artist,
+                    format!("Album {id}"),
+                    duration_ms,
+                ])
+                .unwrap();
+            for play in 0..*plays {
+                insert_play
+                    .execute(rusqlite::params![
+                        id,
+                        1_000 + i64::try_from(play).unwrap(),
+                        duration_ms
+                    ])
+                    .unwrap();
+            }
+        }
     }
+    tx.commit().unwrap();
 }
 
 fn snapshot_card(conn: &reprise_core::db::Db) -> (StatsBandsCard, StatsSnapshot) {

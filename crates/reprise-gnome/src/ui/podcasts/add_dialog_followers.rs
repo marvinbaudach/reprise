@@ -248,13 +248,25 @@ pub(super) fn start(
 
 #[cfg(test)]
 mod tests {
-    use std::fs;
-    use std::os::unix::fs::PermissionsExt;
     use std::time::Duration;
 
     use reprise_core::podcasts::ytdlp::{YtDlp, YtDlpTimeouts};
 
     use super::*;
+
+    /// Writes the fake executable through a short-lived `sh` that is waited on,
+    /// so this test process never holds a write descriptor a sibling test's
+    /// `fork` could inherit — that keeps the file busy (`ETXTBSY`) when it is
+    /// executed. The text travels as an argument, not through a pipe.
+    fn write_executable(path: &std::path::Path, contents: &str) {
+        let status = std::process::Command::new("sh")
+            .args(["-c", r#"printf '%s\n' "$1" > "$2" && chmod 755 "$2""#, "_"])
+            .arg(contents)
+            .arg(path)
+            .status()
+            .expect("start the fixture writer");
+        assert!(status.success(), "the fixture writer failed: {status}");
+    }
 
     fn candidate(id: &str, title: &str, url: &str, matching_video_count: usize) -> Candidate {
         Candidate {
@@ -275,7 +287,7 @@ mod tests {
     fn src_9_the_two_argv_search_path_reaches_the_channel_subtitle() {
         let directory = tempfile::tempdir().unwrap();
         let binary = directory.path().join("fake-yt-dlp");
-        fs::write(
+        write_executable(
             &binary,
             r#"#!/bin/sh
 set -eu
@@ -287,11 +299,7 @@ case "$*" in
   *) printf '%s\n' "unexpected arguments: $*" >&2; exit 2 ;;
 esac
 "#,
-        )
-        .unwrap();
-        let mut permissions = fs::metadata(&binary).unwrap().permissions();
-        permissions.set_mode(0o700);
-        fs::set_permissions(&binary, permissions).unwrap();
+        );
         let short = Duration::from_secs(2);
         let runner = YtDlp::with_binary_and_timeouts(
             binary,

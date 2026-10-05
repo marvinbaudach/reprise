@@ -363,8 +363,16 @@ mod tests {
     fn downloaded_placeholder_refreshes_and_preserves_a_stale_cached_portrait() {
         let dir = tmp();
         let cached = cache::store_image(&dir, "Band", b"existing portrait", "jpg").unwrap();
+        // Back-date the cached file instead of waiting for the clock to tick, so
+        // the refresh's fresh mtime is measurably later.
+        let backdated = std::time::SystemTime::now() - std::time::Duration::from_secs(100);
+        std::fs::File::options()
+            .write(true)
+            .open(&cached)
+            .unwrap()
+            .set_times(std::fs::FileTimes::new().set_modified(backdated))
+            .unwrap();
         let before_modified = std::fs::metadata(&cached).unwrap().modified().unwrap();
-        std::thread::sleep(std::time::Duration::from_millis(1_100));
         let stale_now = cache::file_epoch_secs(&cached) + 31 * 24 * 60 * 60;
         let downloads = std::cell::Cell::new(0);
         let mut search = |_: &str| Ok(HIT.to_string());

@@ -60,31 +60,40 @@ fn card_and_snapshot_with(
         .duration_since(std::time::UNIX_EPOCH)
         .unwrap()
         .as_secs() as i64;
-    for id in 1..=tracks {
-        crate::test_db::connection(&conn)
-            .execute(
+    let fixture_conn = crate::test_db::connection(&conn);
+    let tx = fixture_conn.unchecked_transaction().unwrap();
+    {
+        let mut insert_track = tx
+            .prepare(
                 "INSERT INTO tracks \
                  (id, path, title, artist, album, album_artist, genre, duration_ms, added_at) \
                  VALUES (?1, ?2, ?3, ?4, ?5, '', 'Rock', 300000, 0)",
-                rusqlite::params![
+            )
+            .unwrap();
+        let mut insert_play = tx
+            .prepare(
+                "INSERT INTO listen_events (track_id, played_at, ms_played) \
+                 VALUES (?1, ?2, ?3)",
+            )
+            .unwrap();
+        for id in 1..=tracks {
+            insert_track
+                .execute(rusqlite::params![
                     id,
                     format!("/music/{id}.flac"),
                     format!("Track {id}"),
                     format!("Artist {id}"),
                     format!("Album {id}")
-                ],
-            )
-            .unwrap();
-        for play in 0..=(tracks - id) {
-            crate::test_db::connection(&conn)
-                .execute(
-                    "INSERT INTO listen_events (track_id, played_at, ms_played) \
-                     VALUES (?1, ?2, ?3)",
-                    rusqlite::params![id, now - play, id * 60_000],
-                )
+                ])
                 .unwrap();
+            for play in 0..=(tracks - id) {
+                insert_play
+                    .execute(rusqlite::params![id, now - play, id * 60_000])
+                    .unwrap();
+            }
         }
     }
+    tx.commit().unwrap();
     let snapshot = stats_snapshot::compute(
         &conn,
         StatsPeriod::YearToDate(chrono::Local::now().year()),
