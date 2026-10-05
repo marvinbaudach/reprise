@@ -125,6 +125,8 @@ jobs:
     timeout-minutes: 60
     env:
       CARGO_INCREMENTAL: 0
+      CARGO_PROFILE_DEV_DEBUG: 0
+      CARGO_PROFILE_TEST_DEBUG: 0
       CARGO_TERM_COLOR: always
       # Android runs no GTK display tests; keep the project-wide fallback
       # explicit while the display-tests matrix job overrides it below.
