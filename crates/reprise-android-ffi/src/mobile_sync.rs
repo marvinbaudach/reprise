@@ -7,9 +7,10 @@ use crate::{LibraryError, MusicLibrary};
 impl MusicLibrary {
     /// Imports desktop rendering data for the track being presented, or —
     /// when no usable sidecar exists — computes it from the file itself
-    /// (decision 5 of the mother plan). Missing and malformed sidecars are
-    /// ordinary no-data outcomes, not errors; they trigger the compute path
-    /// rather than ending the call.
+    /// (decision 5 of the mother plan). A tree that is not registered yet,
+    /// missing sidecars, and malformed sidecars are ordinary no-data
+    /// outcomes, not errors; they trigger the compute path rather than
+    /// ending the call.
     pub fn import_track_analysis(
         &self,
         track_id: i64,
@@ -28,13 +29,20 @@ impl MusicLibrary {
 }
 
 impl MusicLibrary {
-    /// The sidecar half of [`import_track_analysis`], unchanged from the
-    /// desktop-sync-only behaviour: reads the SAF sidecar registered for
-    /// this track, if any, and imports it.
+    /// The sidecar half of [`import_track_analysis`]: reads and imports the
+    /// SAF sidecar registered for this track, if any. A tree that has not
+    /// been registered yet is equivalent to a missing sidecar because the
+    /// phone-side compute path does not need the tree.
     fn import_via_sidecar(&self, track_id: i64) -> Result<AnalysisImportOutcome, LibraryError> {
         let (source, sidecar_path) = {
             let writer = self.writer()?;
-            let (_, source) = self.configured_tree()?;
+            let source = match self.configured_tree() {
+                Ok((_, source)) => source,
+                Err(LibraryError::TreeNotConfigured) => {
+                    return Ok(AnalysisImportOutcome::Missing);
+                }
+                Err(error) => return Err(error),
+            };
             let sidecar_path =
                 reprise_core::device_sync::mobile_import::analysis_sidecar_path_for_track(
                     &writer, track_id,

@@ -17,6 +17,8 @@ use crate::track_analysis::{
 };
 use crate::MusicLibrary;
 
+use super::CurrentDecodeSlot;
+
 struct InertSource;
 
 impl SafSource for InertSource {
@@ -46,7 +48,17 @@ impl SafSource for InertSource {
 /// A one-track library with no SAF sync history at all: `analysis_sidecar_
 /// path_for_track` naturally answers `None` for it, matching the "no sidecar
 /// has ever been registered" state every phone track starts in.
-fn library_with_one_track() -> (tempfile::TempDir, MusicLibrary, i64, PathBuf) {
+pub(super) fn library_with_one_track() -> (tempfile::TempDir, MusicLibrary, i64, PathBuf) {
+    library_with_one_track_and_tree(true)
+}
+
+fn library_with_one_track_without_tree() -> (tempfile::TempDir, MusicLibrary, i64, PathBuf) {
+    library_with_one_track_and_tree(false)
+}
+
+fn library_with_one_track_and_tree(
+    configure_tree: bool,
+) -> (tempfile::TempDir, MusicLibrary, i64, PathBuf) {
     let directory = tempfile::tempdir().unwrap();
     let music = directory.path().join("music");
     std::fs::create_dir(&music).unwrap();
@@ -74,9 +86,11 @@ fn library_with_one_track() -> (tempfile::TempDir, MusicLibrary, i64, PathBuf) {
         directory.path().join("cache").to_str().unwrap(),
     )
     .unwrap();
-    library
-        .set_tree_uri("content://inert".into(), Box::new(InertSource))
-        .unwrap();
+    if configure_tree {
+        library
+            .set_tree_uri("content://inert".into(), Box::new(InertSource))
+            .unwrap();
+    }
     (directory, library, track_id, music)
 }
 
@@ -107,6 +121,34 @@ fn wait_flag(state: &Arc<(Mutex<bool>, Condvar)>) {
         .wait_timeout_while(guard, Duration::from_secs(10), |set| !*set)
         .unwrap();
     assert!(!timed_out.timed_out(), "the gate was never opened");
+}
+
+fn set_flag(state: &Arc<(Mutex<bool>, Condvar)>) {
+    let (lock, condvar) = &**state;
+    *lock.lock().unwrap() = true;
+    condvar.notify_all();
+}
+
+fn wait_for_in_flight_waiter(library: &MusicLibrary, track_id: i64) {
+    let deadline = std::time::Instant::now() + Duration::from_secs(10);
+    loop {
+        let strong_count = library
+            .analysis_in_flight
+            .entries
+            .lock()
+            .unwrap()
+            .get(&track_id)
+            .map(Arc::strong_count)
+            .unwrap_or_default();
+        if strong_count >= 3 {
+            return;
+        }
+        assert!(
+            std::time::Instant::now() < deadline,
+            "the foreground request never joined the in-flight decode"
+        );
+        std::thread::yield_now();
+    }
 }
 
 /// A [`TrackPcmDecoder`] whose body is an arbitrary closure, counting calls.
@@ -298,6 +340,29 @@ fn a_missing_sidecar_is_computed_and_stored() {
     let reader = library.reader().unwrap();
     let pending = reprise_core::db::pending_render_data_tracks(&reader).unwrap();
     assert!(!pending.iter().any(|pending| pending.track_id == track_id));
+}
+
+#[test]
+fn nav_15c_a_track_is_computed_before_the_tree_is_registered() {
+    let (_directory, library, track_id, _music) = library_with_one_track_without_tree();
+    library.register_track_pcm_decoder(Box::new(succeeding_decoder(Arc::new(AtomicUsize::new(0)))));
+
+    let outcome = library.import_track_analysis(track_id).unwrap();
+
+    assert_eq!(outcome, AndroidAnalysisOutcome::Computed);
+    let reader = library.reader().unwrap();
+    assert!(
+        reprise_core::db::get_waveform_peaks(&reader, track_id)
+            .unwrap()
+            .is_some(),
+        "computed waveform peaks must be stored"
+    );
+    assert!(
+        reprise_core::db::get_track_spectrogram(&reader, track_id)
+            .unwrap()
+            .is_some(),
+        "computed spectrogram data must be stored"
+    );
 }
 
 /// A decoder registration that only proves how long it lives: its `Drop`
@@ -545,4 +610,87 @@ fn two_callers_for_one_track_decode_once() {
     assert_eq!(outcome_a, AndroidAnalysisOutcome::Computed);
     assert_eq!(outcome_b, AndroidAnalysisOutcome::Computed);
     assert_eq!(calls.load(Ordering::SeqCst), 1, "only one decode must run");
+}
+
+#[test]
+fn nav_15c_a_foreground_request_retries_an_inherited_background_cancellation() {
+    let (_directory, library, track_id, _music) = library_with_one_track();
+    let library = Arc::new(library);
+    let calls = Arc::new(AtomicUsize::new(0));
+    let first_decode_started = Arc::new((Mutex::new(false), Condvar::new()));
+    let release_first_decode = Arc::new((Mutex::new(false), Condvar::new()));
+    let first_decode_started_in_decode = Arc::clone(&first_decode_started);
+    let release_first_decode_in_decode = Arc::clone(&release_first_decode);
+    let calls_in_decode = Arc::clone(&calls);
+    library.register_track_pcm_decoder(Box::new(ClosureDecoder::new(
+        Arc::clone(&calls),
+        move |_uri, sink| {
+            if calls_in_decode.load(Ordering::SeqCst) == 1 {
+                set_flag(&first_decode_started_in_decode);
+                wait_flag(&release_first_decode_in_decode);
+                let _ = sink.push_pcm_i16(valid_pcm_bytes(), 32_000, 1);
+                return Ok(());
+            }
+            push_valid_pcm(sink);
+            Ok(())
+        },
+    )));
+
+    let current_slot: Arc<CurrentDecodeSlot> = Arc::new(Mutex::new(None));
+    let library_in_background = Arc::clone(&library);
+    let current_slot_in_background = Arc::clone(&current_slot);
+    let background = std::thread::spawn(move || {
+        library_in_background.analysis_context().compute(
+            track_id,
+            true,
+            None,
+            Some(&current_slot_in_background),
+        )
+    });
+    wait_flag(&first_decode_started);
+
+    let foreground_started = Arc::new((Mutex::new(false), Condvar::new()));
+    let foreground_started_in_thread = Arc::clone(&foreground_started);
+    let library_in_foreground = Arc::clone(&library);
+    let foreground = std::thread::spawn(move || {
+        set_flag(&foreground_started_in_thread);
+        library_in_foreground.import_track_analysis(track_id)
+    });
+    wait_flag(&foreground_started);
+    wait_for_in_flight_waiter(&library, track_id);
+    assert!(
+        !foreground.is_finished(),
+        "the foreground request did not join"
+    );
+    assert_eq!(calls.load(Ordering::SeqCst), 1, "the join must deduplicate");
+
+    current_slot
+        .lock()
+        .unwrap()
+        .as_ref()
+        .expect("the background decode published its sink")
+        .1
+        .cancel();
+    set_flag(&release_first_decode);
+
+    assert_eq!(
+        background.join().unwrap().unwrap(),
+        AndroidAnalysisOutcome::Cancelled
+    );
+    assert_eq!(
+        foreground.join().unwrap().unwrap(),
+        AndroidAnalysisOutcome::Computed
+    );
+    assert_eq!(
+        calls.load(Ordering::SeqCst),
+        2,
+        "the foreground retries once"
+    );
+    let reader = library.reader().unwrap();
+    assert!(reprise_core::db::get_waveform_peaks(&reader, track_id)
+        .unwrap()
+        .is_some());
+    assert!(reprise_core::db::get_track_spectrogram(&reader, track_id)
+        .unwrap()
+        .is_some());
 }
