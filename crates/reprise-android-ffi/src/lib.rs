@@ -24,6 +24,7 @@ mod listen_export_recorder;
 #[cfg(test)]
 mod log_capture;
 mod logging;
+mod media_browse;
 mod mobile_sync;
 mod online_sources;
 mod play_journal;
@@ -60,6 +61,7 @@ pub use library_types::{
 };
 use library_types::{ConfiguredTree, PortraitFetch, DATABASE_FILE_NAME};
 pub use logging::init_logging;
+pub use media_browse::PlaylistRow;
 pub use playback_session::{
     AndroidPlaybackListener, AndroidPlaybackSession, AndroidPlaybackSnapshot, AndroidRepeatMode,
     AndroidTrashFailure, AndroidTrashReport, TrashAction,
