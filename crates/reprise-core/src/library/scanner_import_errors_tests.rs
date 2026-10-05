@@ -34,12 +34,15 @@ fn import_error_row(conn: &Connection, path: &str) -> Option<ImportErrorRowTuple
     .unwrap()
 }
 
+/// How far the first four scans are moved into the past before the fifth.
+const BACKDATE_SECS: i64 = 100;
+
 /// Brief case 1: five scans of the same permanently-broken file must
 /// converge on exactly ONE `import_errors` row, not one per scan — the
 /// episode upsert (`record_error`) replacing the old DELETE-then-INSERT
 /// pair. `seen_count` must land on `5`; `first_seen` must stay pinned to the
-/// first failure; `last_seen` must have actually moved past it (a forced
-/// clock tick before the final scan, so this doesn't rely on the whole loop
+/// first failure; `last_seen` must have actually moved past it (the first four scans are
+/// back-dated before the final one, so this doesn't rely on the whole loop
 /// spanning a wall-clock second boundary on its own).
 #[test]
 fn repeated_scans_of_same_broken_file_produce_one_episode_row() {
@@ -52,11 +55,19 @@ fn repeated_scans_of_same_broken_file_produce_one_episode_row() {
     for _ in 0..4 {
         completed(scan_folder(&conn, tmp.path()).unwrap());
     }
+    // Back-date the episode instead of waiting for the clock to tick: the fifth
+    // scan stamps `last_seen` with the real now, which is then well past it.
+    conn.conn()
+        .execute(
+            "UPDATE import_errors SET first_seen = first_seen - ?2, last_seen = last_seen - ?2 \
+             WHERE path = ?1",
+            rusqlite::params![path_str, BACKDATE_SECS],
+        )
+        .unwrap();
     let (first_seen_after_four, _, seen_count_after_four, _, _) =
         import_error_row(conn.conn(), &path_str).unwrap();
     assert_eq!(seen_count_after_four, 4);
 
-    std::thread::sleep(std::time::Duration::from_millis(1100));
     completed(scan_folder(&conn, tmp.path()).unwrap());
 
     let total_rows: i64 = conn
