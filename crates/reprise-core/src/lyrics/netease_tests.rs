@@ -188,3 +188,19 @@ fn two_request_lookup_shares_one_eight_second_source_budget() {
     assert_eq!(timeouts[0], HTTP_TIMEOUT);
     assert!(timeouts[1] <= HTTP_TIMEOUT);
 }
+
+#[test]
+fn netease_agent_surfaces_statuses_as_errors_with_the_callers_timeout() {
+    let timeout = Duration::from_secs(3);
+    assert_eq!(
+        agent_policy(timeout),
+        AgentPolicy {
+            timeout,
+            status_as_error: true,
+            https_only: false,
+            max_redirects: None,
+            proxy_from_env: true,
+        }
+    );
+    assert_eq!(HTTP_TIMEOUT, Duration::from_secs(8));
+}

@@ -1,8 +1,7 @@
 use std::fs::OpenOptions;
 use std::io::Write;
 use std::path::{Path, PathBuf};
-use std::sync::{LazyLock, Mutex};
-use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
+use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 use serde::{Deserialize, Serialize};
 
@@ -11,19 +10,19 @@ use super::{
     LyricsQuery, LyricsSource, SourceOutcome,
 };
 use crate::net::breaker::{Breaker, BreakerOutcome, HOST_BREAKER};
+use crate::net::client::{build_agent, AgentPolicy};
+use crate::net::rate::{wait_for_slot, RateLimitKey};
 
 pub(super) const HOST: &str = "lrclib.net";
 const API_URL: &str = "https://lrclib.net/api/get";
 const SEARCH_API_URL: &str = "https://lrclib.net/api/search";
 const HTTP_TIMEOUT: Duration = Duration::from_secs(8);
-const REQUEST_INTERVAL: Duration = Duration::from_millis(250);
 const SEARCH_DURATION_TOLERANCE_SECONDS: f64 = 2.0;
 const SEARCH_DURATION_TOLERANCE_MILLIS: u16 = 2_000;
 const FIXTURE_DIR_ENV: &str = "REPRISE_LYRICS_FIXTURE_DIR";
 const LEGACY_FIXTURE_DIR_ENV: &str = "REPRISE_LRCLIB_FIXTURE_DIR";
 const FIXTURE_LOG_ENV: &str = "REPRISE_LYRICS_FIXTURE_LOG";
 const LEGACY_FIXTURE_LOG_ENV: &str = "REPRISE_LRCLIB_FIXTURE_LOG";
-static LAST_REQUEST: LazyLock<Mutex<Option<Instant>>> = LazyLock::new(|| Mutex::new(None));
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(super) enum FetchOutcome {
@@ -450,16 +449,8 @@ fn fetch(url: &str) -> FetchOutcome {
     if let Some(directory) = fixture_directory() {
         return fixture_get_at(url, &directory, fixture_log().as_deref());
     }
-    wait_for_request_slot();
-    let response = match ureq::Agent::config_builder()
-        .timeout_global(Some(HTTP_TIMEOUT))
-        .user_agent(crate::net::user_agent())
-        .http_status_as_error(false)
-        .build()
-        .new_agent()
-        .get(url)
-        .call()
-    {
+    let _ = wait_for_slot(RateLimitKey::Lrclib, &mut || false);
+    let response = match build_agent(agent_policy()).get(url).call() {
         Ok(response) => response,
         Err(_) => return FetchOutcome::Failed(true),
     };
@@ -533,16 +524,9 @@ fn fixture_log() -> Option<PathBuf> {
         .map(PathBuf::from)
 }
 
-fn wait_for_request_slot() {
-    let mut last = LAST_REQUEST
-        .lock()
-        .unwrap_or_else(std::sync::PoisonError::into_inner);
-    if let Some(remaining) =
-        last.and_then(|instant| REQUEST_INTERVAL.checked_sub(instant.elapsed()))
-    {
-        std::thread::sleep(remaining);
-    }
-    *last = Some(Instant::now());
+/// lrclib answers are classified by status code, so ureq's status errors stay off.
+const fn agent_policy() -> AgentPolicy {
+    AgentPolicy::source(HTTP_TIMEOUT)
 }
 
 #[cfg(test)]

@@ -552,3 +552,17 @@ fn track_path_is_not_part_of_the_remote_request_contract() {
         SourceOutcome::NotFound
     );
 }
+
+#[test]
+fn lrclib_agent_classifies_statuses_itself() {
+    assert_eq!(
+        agent_policy(),
+        AgentPolicy {
+            timeout: Duration::from_secs(8),
+            status_as_error: false,
+            https_only: false,
+            max_redirects: None,
+            proxy_from_env: true,
+        }
+    );
+}
