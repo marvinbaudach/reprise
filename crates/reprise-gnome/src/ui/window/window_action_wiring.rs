@@ -15,10 +15,10 @@ use reprise_core::view_source::ViewSource;
 use super::player_controller::PlayerController;
 use super::scan_flow::ScanControls;
 use super::sidebar::Sidebar;
-use super::stats_view::StatsView;
 use super::track_list::TrackList;
 use crate::ui::playback::play_origin;
 use crate::ui::stats::stats_metadata_links::StatsMetadataTarget;
+use crate::ui::stats::stats_view::StatsView;
 use reprise_core::db::Db;
 
 #[derive(Clone, Copy)]

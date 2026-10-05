@@ -22,8 +22,8 @@ use super::super::concerts::{self, ConcertsRuntime, ConcertsView};
 use super::super::cover_loader::CoverLoader;
 use super::super::location_broadcast::LocationBroadcast;
 use super::super::releases::ReleasesView;
-use super::super::stats_view::StatsView;
 use super::content_stack::DeferredPage;
+use crate::ui::stats::stats_view::StatsView;
 
 /// The pages that exist before the library shell is built: the library itself,
 /// the deferred statistics view and the Library Doctor's navigation host.

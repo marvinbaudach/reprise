@@ -83,7 +83,7 @@ fn app_css() -> String {
         super::table_columns::single_sort_indicator::css(),
         super::track_list_header_style::css(),
         super::track_list_row_interaction::css(),
-        super::stats_css::css(),
+        crate::ui::stats::stats_css::css(),
         super::concerts::css::css(),
         super::feed_footer::css(),
         super::releases::css::css(),

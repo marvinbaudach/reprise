@@ -23,12 +23,12 @@ use super::player_controller::PlayerController;
 use super::preferences::PreferencesContext;
 use super::scan_flow::ScanControls;
 use super::sidebar::Sidebar;
-use super::stats_view::StatsView;
 use super::track_list::TrackList;
 use super::{
     library_shell, podcast_refresh_scheduler, section_search as section_search_ui,
     section_search_wiring, spectrogram_backend, table_columns, window_navigation, window_smoke,
 };
+use crate::ui::stats::stats_view::StatsView;
 use crate::ui::{
     compact_mode_controls, compact_mode_suggestion, first_run, help,
     library_doctor as library_doctor_ui, lyrics_smoke, mounts, playlist_io, primary_menu,

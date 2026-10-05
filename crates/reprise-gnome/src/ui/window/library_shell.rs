@@ -10,11 +10,11 @@ use super::info_panel::InfoPanel;
 use super::now_playing_wiring;
 use super::player_controller::PlayerController;
 use super::sidebar::Sidebar;
-use super::stats_view::StatsView;
 use super::strings;
 use super::track_list::TrackList;
 use crate::ui::artist_news::artist_news_worker::ArtistNewsRuntime;
 use crate::ui::nav_history::NavPlace;
+use crate::ui::stats::stats_view::StatsView;
 use reprise_core::view_source::ViewSource;
 
 pub(in crate::ui) struct LibraryShell {
