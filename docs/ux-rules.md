@@ -485,8 +485,10 @@ result.
   gapless.** When playback hands over to the pre-fed next track without a gap,
   the next track's own gain is already applied when that track's stream starts,
   before its first buffer reaches the output. The previous track keeps its own
-  gain up to that point. Proven by the GStreamer backend test, which reads the
-  gain element at each stream start.
+  gain up to that point, including the tail it still has queued ahead of the
+  output. Proven by the GStreamer backend tests: one reads the gain element at
+  each stream start, one measures the gain every buffer of both tracks leaves
+  with, and one holds the playback queue full to prove the tail keeps its gain.
 - **PLAY-20b** [active] [core] — **A crossfade hands over to the incoming
   track's own gain.** The pipeline that takes over when a crossfade completes
   carries the gain of the incoming track, never the outgoing track's.

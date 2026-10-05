@@ -8,6 +8,7 @@ use reprise_core::playback::{PlaybackFailureKind, PlaybackItem, PlaybackSessionI
 
 mod cava_tests;
 mod crossfade_transition_tests;
+mod gain_alignment_tests;
 mod handoff_duration_tests;
 mod stream_generation_tests;
 
@@ -601,7 +602,7 @@ fn play_19a_gapless_handoff_applies_the_next_gain_at_the_second_stream_start() {
         .unwrap()
         .by_name("reprise-track-gain")
         .unwrap();
-    filter.static_pad("sink").unwrap().add_probe(
+    gain.static_pad("src").unwrap().add_probe(
         gst::PadProbeType::EVENT_DOWNSTREAM,
         move |_, info| {
             if info

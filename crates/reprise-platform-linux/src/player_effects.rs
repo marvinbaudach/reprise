@@ -238,6 +238,19 @@ pub(super) fn install_stream_start_gain_switch(
     let filter = playbin
         .property::<Option<gst::Element>>("audio-filter")
         .ok_or_else(|| PlaybackError::Backend("GStreamer: playbin has no audio filter".into()))?;
+    install_filter_gain_switch(&filter, pending_gain)
+}
+
+/// Applies the pending gain when the next stream's `STREAM_START` reaches the
+/// gain element, in the streaming thread, before that stream's first buffer.
+/// The probe sits on the gain element's own sink pad, behind the playback
+/// queue: the queue holds up to a second of the old track's tail, and only
+/// there is the event serialised with that data. A probe on the filter bin's
+/// sink pad would switch the gain before the tail is played.
+pub(super) fn install_filter_gain_switch(
+    filter: &gst::Element,
+    pending_gain: crate::gapless::PendingGain,
+) -> Result<(), PlaybackError> {
     let bin = filter
         .clone()
         .downcast::<gst::Bin>()
@@ -245,9 +258,10 @@ pub(super) fn install_stream_start_gain_switch(
     let gain = bin.by_name(TRACK_GAIN_NAME).ok_or_else(|| {
         PlaybackError::Backend("GStreamer: audio filter has no track gain".into())
     })?;
-    let sink = filter
+    let sink = gain
         .static_pad("sink")
-        .ok_or_else(|| PlaybackError::Backend("GStreamer: audio filter has no sink pad".into()))?;
+        .ok_or_else(|| PlaybackError::Backend("GStreamer: track gain has no sink pad".into()))?;
+    let element = gain.clone();
     sink.add_probe(gst::PadProbeType::EVENT_DOWNSTREAM, move |_, info| {
         if info
             .event()
@@ -258,7 +272,7 @@ pub(super) fn install_stream_start_gain_switch(
                 .unwrap_or_else(PoisonError::into_inner)
                 .take();
             if let Some(gain_db) = next {
-                gain.set_property("volume", 10_f64.powf(gain_db / 20.0));
+                element.set_property("volume", 10_f64.powf(gain_db / 20.0));
             }
         }
         gst::PadProbeReturn::Ok

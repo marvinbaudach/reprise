@@ -101,7 +101,7 @@ player_effects.rs, gapless.rs, crossfade.rs, player_pipeline.rs}`, every
   (`play_uri` for streams/podcasts stays gain-less.)
 - `player_effects.rs`: a `volume` element named `reprise-track-gain` replaces
   `rgvolume`, always present (no more topology change on mode switch).
-- Gain switch: a pad probe on the audio-filter bin's sink pad watches `STREAM_START`
+- Gain switch: a pad probe on the `reprise-track-gain` element's sink pad (behind the playback queue) watches `STREAM_START`
   in the streaming thread and applies the pending next gain before the first buffer of
   the new stream — not at `about-to-finish`, not on the bus.
 - Crossfade: the secondary playbin's filter gets the next item's gain at build time.
