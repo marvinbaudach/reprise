@@ -343,7 +343,7 @@ fn unisolated_data_root_reason(
     let Some(home) = home else {
         return Some("HOME is not set, so the real data directory cannot be ruled out");
     };
-    if root.starts_with(home.join(".local/share")) {
+    if root.starts_with(resolved(&home.join(".local/share"))) {
         return Some("XDG_DATA_HOME lies under $HOME/.local/share, the real data directory");
     }
     None
@@ -375,6 +375,22 @@ fn the_reload_measurement_refuses_the_real_or_an_unset_data_root() {
         unisolated_data_root_reason(Some(Path::new("/home/owner/.local/share/x")), home).is_some()
     );
     assert!(unisolated_data_root_reason(Some(Path::new("/tmp/xdg-data")), None).is_some());
+}
+
+#[cfg(unix)]
+#[test]
+fn the_reload_measurement_refuses_a_data_root_behind_a_symlinked_default() {
+    let home = tempfile::tempdir().expect("temp home");
+    let real = tempfile::tempdir().expect("temp data directory");
+    std::fs::create_dir_all(home.path().join(".local")).expect("create .local");
+    std::os::unix::fs::symlink(real.path(), home.path().join(".local/share"))
+        .expect("link the default data directory");
+
+    assert!(
+        unisolated_data_root_reason(Some(&resolved(real.path())), Some(&resolved(home.path())))
+            .is_some(),
+        "a data root that the default `.local/share` link resolves to is the real directory"
+    );
 }
 
 #[test]
