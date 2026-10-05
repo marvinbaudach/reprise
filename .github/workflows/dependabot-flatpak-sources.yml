@@ -18,9 +18,20 @@ name: Dependabot Flatpak sources
 # - `regenerate` holds no secret. It runs the generator, which pulls its
 #   Python dependencies from PyPI, from outside the checkout and with uv's
 #   config discovery off, and hands over one file as an artifact.
-# - `push` holds the token and runs no uv. It checks the artifact's content
-#   against Cargo.lock, copies the one validated artifact over the sources
-#   file, insists that nothing else changed, and pushes.
+# - `push` holds the token, runs no uv and uses no action at all. It checks
+#   the artifact's content against Cargo.lock, copies the one validated
+#   artifact over the sources file, insists that nothing else changed, and
+#   pushes.
+#
+# Residual risks, accepted: under `pull_request` this workflow file is
+# controlled by the pull request, so a grouped bump that edits the file itself
+# runs its edited version; and the checked-out scripts come from the bump's
+# branch. Only Dependabot authors those branches.
+#
+# After the bot's commit Dependabot treats the pull request as edited and stops
+# rebasing it. A conflicting or stale bump is recovered with
+# `@dependabot recreate`, which rebuilds the branch and re-triggers this
+# regeneration.
 on:
   pull_request:
     branches:
@@ -123,18 +134,35 @@ jobs:
     if: needs.regenerate.outputs.changed == 'true'
     runs-on: ubuntu-24.04
     timeout-minutes: 5
+    # Least privilege for the one step that reads the artifact; everything else
+    # in the job needs only the contents the top level grants.
+    permissions:
+      actions: read
+      contents: read
     steps:
-      - name: Check out the bump's branch
-        uses: actions/checkout@v7
-        with:
-          ref: ${{ needs.regenerate.outputs.sha }}
-          persist-credentials: false
+      # No `uses:` in this job. A grouped Dependabot pull request can bump the
+      # action tags in this very file, and a bumped action would run here
+      # before the token step. The code comes from plain git, the artifact from
+      # the preinstalled gh.
+      - name: Check out the commit the sources were built from
+        env:
+          SHA: ${{ needs.regenerate.outputs.sha }}
+        run: |
+          git init --quiet .
+          git fetch --quiet --depth=1 "https://github.com/${GITHUB_REPOSITORY}" "$SHA"
+          git checkout --quiet --detach FETCH_HEAD
+          if [[ $(git rev-parse HEAD) != "$SHA" ]]; then
+            echo "checked out $(git rev-parse HEAD), not the recorded $SHA" >&2
+            exit 1
+          fi
 
       - name: Fetch the regenerated sources
-        uses: actions/download-artifact@v8
-        with:
-          name: cargo-sources
-          path: ${{ runner.temp }}/regenerated
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+        run: |
+          gh run download "$GITHUB_RUN_ID" --name cargo-sources \
+            --dir "$RUNNER_TEMP/regenerated"
 
       # The artifact comes from a job that ran code from PyPI, so its content
       # is checked against Cargo.lock before it is committed: a valid JSON file

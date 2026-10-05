@@ -126,8 +126,10 @@ for step in push_steps:
     assert "flatpak-cargo-generator" not in yaml.safe_dump(step), (
         "the push job must not run the generator"
     )
-uses = [step.get("uses", "") for step in push_steps]
-assert any(u.startswith("actions/download-artifact@") for u in uses), (
+assert not [s for s in push_steps if "uses" in s], (
+    "the push job must run no third-party action: a bumped tag would run before the token step"
+)
+assert "gh run download" in yaml.safe_dump(push_steps[1]), (
     "the push job must take the regenerated file from the artifact"
 )
 
@@ -142,7 +144,7 @@ assert regenerate["outputs"]["changed"] == "${{ steps.regenerate.outputs.changed
 # The push job builds on the commit the sources were generated from, so a
 # branch that moved in between makes the push fail instead of mixing states.
 assert regenerate["outputs"]["sha"] == "${{ steps.revision.outputs.sha }}"
-assert push["steps"][0]["with"]["ref"] == "${{ needs.regenerate.outputs.sha }}", (
+assert push["steps"][0]["env"]["SHA"] == "${{ needs.regenerate.outputs.sha }}", (
     "the push job must check out the commit the regenerate job recorded"
 )
 revision = [s for s in regenerate["steps"] if s.get("id") == "revision"]
@@ -151,14 +153,13 @@ assert regenerate["steps"].index(revision[0]) < names.index(
     "Fetch the pinned generator"
 ), "the commit must be recorded before any third-party code runs"
 
-# Neither checkout leaves a credential in its clone or is handed the token.
-for job in (regenerate, push):
-    checkout = job["steps"][0]
-    assert checkout["uses"].startswith("actions/checkout@"), checkout
-    assert checkout["with"]["persist-credentials"] is False, (
-        "checkout must not leave a credential in the clone"
-    )
-    assert "token" not in checkout["with"], "checkout must not be handed a token"
+# The checkout leaves no credential in its clone and is handed no token.
+checkout = regenerate["steps"][0]
+assert checkout["uses"].startswith("actions/checkout@"), checkout
+assert checkout["with"]["persist-credentials"] is False, (
+    "checkout must not leave a credential in the clone"
+)
+assert "token" not in checkout["with"], "checkout must not be handed a token"
 PY
 
 # A push by the token's owner makes that owner the event's actor. If routing
