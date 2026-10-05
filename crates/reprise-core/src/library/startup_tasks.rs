@@ -36,9 +36,9 @@ impl SignatureTask {
         }
     }
 
-    fn key(self) -> String {
+    pub(crate) fn key(self) -> String {
         let suffix = match self {
-            Self::Spectrogram => "spectrogram",
+            Self::Spectrogram => "spectrogram-v2",
             Self::CoverDownload => "covers",
         };
         format!("{RECORD_PREFIX}{suffix}")

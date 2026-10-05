@@ -5,6 +5,9 @@ use std::collections::HashSet;
 use rusqlite::{Connection, OptionalExtension};
 
 use crate::db::{Db, DbError};
+#[cfg(test)]
+use crate::library::loudness::MeasuredLoudness;
+use crate::library::loudness_store::{write_track_loudness, LOUDNESS_FORMAT_VERSION};
 use crate::spectrogram::{TrackSourceFingerprint, TrackSpectrogram, SPECTROGRAM_FORMAT_VERSION};
 use crate::waveform::TrackRenderData;
 const SCHEMA_V55: &str = r#"
@@ -87,6 +90,7 @@ pub fn set_track_render_data(
         rusqlite::params![data.waveform_peaks, track_id],
     )?;
     write_spectrogram(&transaction, track_id, source, &data.spectrogram)?;
+    write_track_loudness(&transaction, track_id, source, data.loudness)?;
     transaction.commit()?;
     Ok(SpectrogramStoreOutcome::Stored)
 }
@@ -160,10 +164,19 @@ pub fn complete_render_data_track_ids(db: &Db) -> Result<HashSet<i64>, DbError> 
            AND s.source_size = t.file_size \
            AND s.source_device IS t.device \
            AND s.source_inode IS t.inode \
+         JOIN track_loudness l ON l.track_id = t.id \
+           AND l.format_version = ?2 \
+           AND l.source_mtime = t.file_mtime \
+           AND l.source_size = t.file_size \
+           AND l.source_device IS t.device \
+           AND l.source_inode IS t.inode \
          WHERE t.waveform_peaks IS NOT NULL",
     )?;
     let track_ids = statement
-        .query_map([SPECTROGRAM_FORMAT_VERSION], |row| row.get(0))?
+        .query_map(
+            rusqlite::params![SPECTROGRAM_FORMAT_VERSION, LOUDNESS_FORMAT_VERSION],
+            |row| row.get(0),
+        )?
         .collect::<Result<_, _>>()?;
     Ok(track_ids)
 }
@@ -174,15 +187,16 @@ pub fn complete_render_data_track_ids(db: &Db) -> Result<HashSet<i64>, DbError> 
 /// The invalidation trigger keys on file metadata because that is all it can
 /// see. A caller that rewrites tags knows more than the trigger does: it knows
 /// no sample changed. This type is how that knowledge is carried.
-#[derive(Debug, Clone, Default, PartialEq, Eq)]
+#[derive(Debug, Clone, Default, PartialEq)]
 pub(crate) struct CarriedRenderData {
     waveform_peaks: Option<Vec<u8>>,
     spectrogram: Option<(i64, Vec<u8>)>,
+    loudness: Option<(i64, Option<f64>, Option<f64>)>,
 }
 
 impl CarriedRenderData {
     fn is_empty(&self) -> bool {
-        self.waveform_peaks.is_none() && self.spectrogram.is_none()
+        self.waveform_peaks.is_none() && self.spectrogram.is_none() && self.loudness.is_none()
     }
 }
 
@@ -194,11 +208,15 @@ pub(crate) fn snapshot_render_data(
     track_id: i64,
 ) -> Result<CarriedRenderData, rusqlite::Error> {
     conn.query_row(
-        "SELECT t.waveform_peaks, s.format_version, s.data \
+        "SELECT t.waveform_peaks, s.format_version, s.data, \
+                l.track_id, l.format_version, l.integrated_lufs, l.true_peak \
          FROM tracks t LEFT JOIN track_spectrograms s \
            ON s.track_id = t.id \
           AND s.source_mtime = t.file_mtime AND s.source_size = t.file_size \
           AND s.source_device IS t.device AND s.source_inode IS t.inode \
+         LEFT JOIN track_loudness l ON l.track_id = t.id \
+          AND l.source_mtime = t.file_mtime AND l.source_size = t.file_size \
+          AND l.source_device IS t.device AND l.source_inode IS t.inode \
          WHERE t.id = ?1",
         [track_id],
         |row| {
@@ -207,6 +225,11 @@ pub(crate) fn snapshot_render_data(
             Ok(CarriedRenderData {
                 waveform_peaks: row.get(0)?,
                 spectrogram: format_version.zip(data),
+                loudness: if row.get::<_, Option<i64>>(3)?.is_some() {
+                    Some((row.get(4)?, row.get(5)?, row.get(6)?))
+                } else {
+                    None
+                },
             })
         },
     )
@@ -251,6 +274,25 @@ pub(crate) fn restore_render_data(
                 source.inode,
                 format_version,
                 data,
+            ],
+        )?;
+    }
+    if let Some((format_version, integrated_lufs, true_peak)) = carried.loudness {
+        conn.execute(
+            "INSERT INTO track_loudness \
+             (track_id, source_mtime, source_size, source_device, source_inode, \
+              format_version, integrated_lufs, true_peak) \
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8) \
+             ON CONFLICT(track_id) DO NOTHING",
+            rusqlite::params![
+                track_id,
+                source.mtime_seconds,
+                source.size_bytes,
+                source.device,
+                source.inode,
+                format_version,
+                integrated_lufs,
+                true_peak,
             ],
         )?;
     }
@@ -312,23 +354,30 @@ pub fn pending_render_data_tracks(db: &Db) -> Result<Vec<PendingRenderDataTrack>
            AND s.format_version = ?1 AND s.source_mtime = t.file_mtime \
            AND s.source_size = t.file_size AND s.source_device IS t.device \
            AND s.source_inode IS t.inode \
-         WHERE {} AND (t.waveform_peaks IS NULL OR s.track_id IS NULL) \
+         LEFT JOIN track_loudness l ON l.track_id = t.id \
+           AND l.format_version = ?2 AND l.source_mtime = t.file_mtime \
+           AND l.source_size = t.file_size AND l.source_device IS t.device \
+           AND l.source_inode IS t.inode \
+         WHERE {} AND (t.waveform_peaks IS NULL OR s.track_id IS NULL OR l.track_id IS NULL) \
          ORDER BY t.id",
         crate::queries::PRESENT
     ))?;
     let tracks = statement
-        .query_map([SPECTROGRAM_FORMAT_VERSION], |row| {
-            Ok(PendingRenderDataTrack {
-                track_id: row.get(0)?,
-                path: row.get(1)?,
-                source: TrackSourceFingerprint {
-                    mtime_seconds: row.get(2)?,
-                    size_bytes: row.get(3)?,
-                    device: row.get(4)?,
-                    inode: row.get(5)?,
-                },
-            })
-        })?
+        .query_map(
+            rusqlite::params![SPECTROGRAM_FORMAT_VERSION, LOUDNESS_FORMAT_VERSION],
+            |row| {
+                Ok(PendingRenderDataTrack {
+                    track_id: row.get(0)?,
+                    path: row.get(1)?,
+                    source: TrackSourceFingerprint {
+                        mtime_seconds: row.get(2)?,
+                        size_bytes: row.get(3)?,
+                        device: row.get(4)?,
+                        inode: row.get(5)?,
+                    },
+                })
+            },
+        )?
         .collect::<Result<_, _>>()?;
     Ok(tracks)
 }
@@ -451,9 +500,21 @@ mod tests {
             )
             .unwrap();
         let spectrogram = TrackSpectrogram::from_cells(vec![7; 48]).unwrap();
-        set_waveform_peaks(&db, 1, &[8, 9]).unwrap();
         assert_eq!(
-            set_track_spectrogram(&db, 1, source(), &spectrogram).unwrap(),
+            set_track_render_data(
+                &db,
+                1,
+                source(),
+                &TrackRenderData {
+                    waveform_peaks: vec![8, 9],
+                    spectrogram: spectrogram.clone(),
+                    loudness: Some(MeasuredLoudness {
+                        integrated_lufs: -18.0,
+                        true_peak: 0.9,
+                    }),
+                },
+            )
+            .unwrap(),
             SpectrogramStoreOutcome::Stored
         );
 
@@ -470,10 +531,31 @@ mod tests {
             })
             .unwrap();
         assert_eq!(rows, 0, "stale blob must not remain on overflow pages");
+        let loudness_rows: i64 = db
+            .conn()
+            .query_row("SELECT COUNT(*) FROM track_loudness", [], |row| row.get(0))
+            .unwrap();
+        assert_eq!(loudness_rows, 0);
         assert_eq!(
             set_track_spectrogram(&db, 1, source(), &spectrogram).unwrap(),
             SpectrogramStoreOutcome::SourceChanged
         );
+    }
+
+    #[test]
+    fn pending_render_data_includes_a_track_missing_only_loudness() {
+        let db = Db::open_in_memory().unwrap();
+        db.conn()
+            .execute(
+                "INSERT INTO tracks \
+                 (id, path, title, added_at, file_mtime, file_size, device, inode, waveform_peaks) \
+                 VALUES (1, '/old.flac', '', 0, 11, 22, 33, 44, X'01')",
+                [],
+            )
+            .unwrap();
+        set_track_spectrogram(&db, 1, source(), &TrackSpectrogram::empty()).unwrap();
+
+        assert_eq!(pending_render_data_tracks(&db).unwrap().len(), 1);
     }
 
     #[test]

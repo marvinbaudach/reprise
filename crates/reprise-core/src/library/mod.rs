@@ -26,6 +26,8 @@ pub mod source;
 pub(crate) mod source_test_support;
 mod source_unix;
 pub mod startup_tasks;
+#[cfg(test)]
+mod startup_tasks_loudness_tests;
 pub mod stats;
 pub mod stats_period;
 pub mod stats_screen;

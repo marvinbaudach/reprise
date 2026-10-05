@@ -104,6 +104,7 @@ mod queue;
 mod smart;
 mod stats;
 mod surface_browse;
+mod track_gain;
 mod track_summary;
 mod track_view;
 
@@ -190,6 +191,7 @@ pub use maintenance::{
     remove_tracks_matching_paths, tombstone_tracks, track_id_for_path, undo_tombstone,
 };
 pub use maintenance_missing::mark_track_missing_if_current;
+pub use track_gain::effective_gain_db;
 pub use track_summary::TrackSummary;
 // `remove_tracks_impl`/`RemoveGuard` are the internal shared deletion path
 // `remove_missing_tracks`/`purge_tombstones`/`remove_tracks_matching_paths` all funnel
