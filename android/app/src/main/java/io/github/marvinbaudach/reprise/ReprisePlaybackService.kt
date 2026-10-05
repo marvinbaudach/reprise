@@ -28,6 +28,10 @@ import io.github.marvinbaudach.reprise.library.MediaBrowseLibrary
 import io.github.marvinbaudach.reprise.library.MediaBrowseTree
 import io.github.marvinbaudach.reprise.library.TrackMetadata
 import io.github.marvinbaudach.reprise.library.TrackMetadataResolver
+import io.github.marvinbaudach.reprise.widget.RepriseWidget
+import io.github.marvinbaudach.reprise.widget.WidgetPublisher
+import io.github.marvinbaudach.reprise.widget.WidgetStateStore
+import androidx.glance.appwidget.updateAll
 import java.io.File
 import java.util.concurrent.Executors
 import kotlinx.coroutines.CoroutineScope
@@ -103,6 +107,15 @@ open class ReprisePlaybackService : MediaLibraryService() {
         resolve = ::resolveArtwork,
         attach = ::attachArtwork,
     )
+    private val widgetPublisher by lazy {
+        WidgetPublisher(
+            executor = artworkExecutor,
+            store = WidgetStateStore(this),
+            metadata = ::resolveTrackMetadata,
+            artworkPath = ::resolveArtworkPath,
+            refresh = { analysisScope.launch { RepriseWidget().updateAll(this@ReprisePlaybackService) } },
+        )
+    }
     private var analysisTrackId: Long? = null
     private var analysisAttempts = 0
     private var analysisRequestInFlight = false
@@ -133,6 +146,7 @@ open class ReprisePlaybackService : MediaLibraryService() {
         override fun onPlaybackChanged(snapshot: AndroidPlaybackSnapshot) {
             mutablePlaybackSnapshots.value = snapshot
             currentTrackArtwork.onCurrentTrack(snapshot.currentTrackUri)
+            widgetPublisher.onSnapshot(snapshot)
             if (::sleepTimer.isInitialized) sleepTimer.onPlaybackSnapshot(snapshot)
             if (Looper.myLooper() == Looper.getMainLooper()) {
                 handleTrackAnalysis(snapshot)

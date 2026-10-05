@@ -133,9 +133,14 @@ dependencies {
     implementation("androidx.lifecycle:lifecycle-viewmodel-compose:2.11.0")
     implementation("androidx.media3:media3-exoplayer:1.11.1")
     implementation("androidx.media3:media3-session:1.11.1")
+    // 1.2.0 is the newest stable Glance (1.3.0 is still alpha). It was built
+    // against Compose runtime 1.7 and Kotlin 2.0, both older than this project's
+    // BOM and Kotlin 2.4 plugin, so Gradle resolves the project's newer versions.
+    implementation("androidx.glance:glance-appwidget:1.2.0")
     // UniFFI's Kotlin bindings call into the .so through JNA.
     implementation("net.java.dev.jna:jna:5.19.1@aar")
     testImplementation("junit:junit:4.13.2")
+    testImplementation("androidx.glance:glance-appwidget-testing:1.2.0")
     // The @aar above ships JNA's dispatch stub as an Android jniLib, which the
     // packaged app needs and a JVM unit test cannot find: Robolectric runs on
     // the desktop JVM, where JNA looks for the stub as a classpath resource

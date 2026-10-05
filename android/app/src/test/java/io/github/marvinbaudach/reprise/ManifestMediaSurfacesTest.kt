@@ -3,15 +3,16 @@ package io.github.marvinbaudach.reprise
 import java.io.File
 import javax.xml.parsers.DocumentBuilderFactory
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
 import org.w3c.dom.Element
 
 /**
- * Pins what Android Auto and the system's media browsers read
+ * Pins what Android Auto, the system's media browsers and the launcher read
  * from the manifest. None of them can be proven on the JVM, and each fails
  * silently when its line is missing: the head unit simply does not list the
- * app.
+ * app, the picker simply has no widget.
  */
 class ManifestMediaSurfacesTest {
     private val manifest = File("src/main/AndroidManifest.xml").inputStream().use { stream ->
@@ -42,6 +43,39 @@ class ManifestMediaSurfacesTest {
         assertEquals("@xml/automotive_app_desc", declaration.getAttribute("android:resource"))
         val description = File("src/main/res/xml/automotive_app_desc.xml").readText()
         assertTrue(description, Regex("""<uses\s+name="media"\s*/>""").containsMatchIn(description))
+    }
+
+    @Test
+    fun bothWidgetPlacementsAreReceiversWithTheirProviderInfo() {
+        val receivers = application.children("receiver")
+        val expected = mapOf(
+            ".widget.RepriseWideWidgetReceiver" to "@xml/reprise_widget_wide_info",
+            ".widget.RepriseSquareWidgetReceiver" to "@xml/reprise_widget_square_info",
+        )
+
+        expected.forEach { (name, info) ->
+            val receiver = receivers.singleOrNull { it.name == name }
+            assertNotNull("receiver $name is not declared", receiver)
+            val actions = receiver!!.children("intent-filter")
+                .flatMap { it.children("action") }
+                .map { it.getAttribute("android:name") }
+            assertTrue(actions.toString(), "android.appwidget.action.APPWIDGET_UPDATE" in actions)
+            val provider = receiver.children("meta-data")
+                .single { it.getAttribute("android:name") == "android.appwidget.provider" }
+            assertEquals(info, provider.getAttribute("android:resource"))
+            assertTrue(File("src/main/res/xml/${info.substringAfter('/')}.xml").isFile)
+        }
+    }
+
+    @Test
+    fun theWidgetPickerSizesMatchTheTwoPlacements() {
+        fun attribute(file: String, name: String) =
+            Regex("""android:$name="([^"]*)"""").find(File("src/main/res/xml/$file").readText())!!.groupValues[1]
+
+        assertEquals("4", attribute("reprise_widget_wide_info.xml", "targetCellWidth"))
+        assertEquals("1", attribute("reprise_widget_wide_info.xml", "targetCellHeight"))
+        assertEquals("2", attribute("reprise_widget_square_info.xml", "targetCellWidth"))
+        assertEquals("2", attribute("reprise_widget_square_info.xml", "targetCellHeight"))
     }
 
     private val Element.name: String get() = getAttribute("android:name")

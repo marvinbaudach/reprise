@@ -105,6 +105,33 @@
             </intent-filter>
         </service>
         <!--
+            The home-screen widget, offered twice: a wide placement (4x1) and a
+            square one (2x2). Both draw the same Glance widget, which picks its
+            layout from the size the launcher actually gives it.
+        -->
+        <receiver
+            android:name=".widget.RepriseWideWidgetReceiver"
+            android:exported="true"
+            android:label="@string/widget_label_wide">
+            <intent-filter>
+                <action android:name="android.appwidget.action.APPWIDGET_UPDATE" />
+            </intent-filter>
+            <meta-data
+                android:name="android.appwidget.provider"
+                android:resource="@xml/reprise_widget_wide_info" />
+        </receiver>
+        <receiver
+            android:name=".widget.RepriseSquareWidgetReceiver"
+            android:exported="true"
+            android:label="@string/widget_label_square">
+            <intent-filter>
+                <action android:name="android.appwidget.action.APPWIDGET_UPDATE" />
+            </intent-filter>
+            <meta-data
+                android:name="android.appwidget.provider"
+                android:resource="@xml/reprise_widget_square_info" />
+        </receiver>
+        <!--
             Tells Android Auto this app is a media app. Without it the head unit
             does not list Reprise, however well the browse tree answers.
         -->
