@@ -1825,6 +1825,21 @@ result.
   podcast or YouTube group and preview window first. Merely launching and
   closing the app never replaces the persisted queue.
 
+- **START-5** [active] [gtk] — **Ending the process by a termination request
+  keeps the session.** When Reprise receives SIGTERM, SIGHUP or SIGINT (logout,
+  `systemctl --user stop`, a harness restart, Ctrl-C in a terminal) while its
+  main window exists, it saves the same session a normal window close saves —
+  window geometry, the visible browser place with its refinements (START-4,
+  BROWSE-12), the queue, Up Next and the active episode — and then shuts down
+  through the normal window close. The session is written at most once however
+  many routes reach it, so a close that follows a termination request does not
+  save again. A second termination request while that shutdown is still running
+  ends the process at once. A request that arrives before the main window
+  exists ends the process as before; there is no session to save yet. Proven by
+  `start_5_a_saver_without_a_live_window_content_still_saves_geometry`,
+  `start_5_saving_twice_keeps_the_first_session` and the display test
+  `start_5_a_termination_request_saves_the_visible_place_and_closes_the_window`.
+
 ## J. Queue view
 
 - **QUE-1** [active] [gtk] — A shared queue model feeds two surfaces
