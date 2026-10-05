@@ -1,4 +1,4 @@
-use crate::db::Db;
+use crate::{db::Db, CoreError};
 
 use super::{
     add_tracks_in, create_in, create_smart_in, create_with_tracks_in_db, ensure_role_playlist_in,
@@ -6,39 +6,39 @@ use super::{
     remove_positions_in, rename_in, track_ids_in, PlaylistSummary, SmartPlaylist,
 };
 
-pub fn create(db: &Db, name: &str) -> Result<i64, rusqlite::Error> {
+pub fn create(db: &Db, name: &str) -> Result<i64, CoreError> {
     let conn = db.conn();
-    create_in(conn, name)
+    Ok(create_in(conn, name)?)
 }
 
-pub fn rename(db: &Db, id: i64, name: &str) -> Result<usize, rusqlite::Error> {
+pub fn rename(db: &Db, id: i64, name: &str) -> Result<usize, CoreError> {
     let conn = db.conn();
-    rename_in(conn, id, name)
+    Ok(rename_in(conn, id, name)?)
 }
 
-pub fn list(db: &Db) -> Result<Vec<PlaylistSummary>, rusqlite::Error> {
+pub fn list(db: &Db) -> Result<Vec<PlaylistSummary>, CoreError> {
     let conn = db.conn();
-    list_in(conn)
+    Ok(list_in(conn)?)
 }
 
-pub fn get(db: &Db, id: i64) -> Result<Option<PlaylistSummary>, rusqlite::Error> {
+pub fn get(db: &Db, id: i64) -> Result<Option<PlaylistSummary>, CoreError> {
     let conn = db.conn();
-    get_in(conn, id)
+    Ok(get_in(conn, id)?)
 }
 
-pub fn track_ids(db: &Db, playlist_id: i64) -> Result<Vec<i64>, rusqlite::Error> {
+pub fn track_ids(db: &Db, playlist_id: i64) -> Result<Vec<i64>, CoreError> {
     let conn = db.conn();
-    track_ids_in(conn, playlist_id)
+    Ok(track_ids_in(conn, playlist_id)?)
 }
 
-pub fn add_tracks(db: &Db, playlist_id: i64, track_ids: &[i64]) -> Result<u32, rusqlite::Error> {
+pub fn add_tracks(db: &Db, playlist_id: i64, track_ids: &[i64]) -> Result<u32, CoreError> {
     let conn = db.conn();
-    add_tracks_in(conn, playlist_id, track_ids)
+    Ok(add_tracks_in(conn, playlist_id, track_ids)?)
 }
 
-pub fn create_with_tracks(db: &Db, name: &str, track_ids: &[i64]) -> Result<i64, rusqlite::Error> {
+pub fn create_with_tracks(db: &Db, name: &str, track_ids: &[i64]) -> Result<i64, CoreError> {
     let conn = db.conn();
-    create_with_tracks_in_db(conn, name, track_ids)
+    Ok(create_with_tracks_in_db(conn, name, track_ids)?)
 }
 
 pub fn find_role_playlist(db: &Db, role: &str) -> Result<Option<i64>, rusqlite::Error> {
