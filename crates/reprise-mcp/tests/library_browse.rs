@@ -216,7 +216,7 @@ fn album_search_matches_through_the_effective_album_artist() {
 }
 
 #[test]
-fn search_totals_and_pages_cross_the_page_boundary() {
+fn search_totals_and_pages_by_offset_and_limit() {
     let dir = TempDir::new().unwrap();
     let path = search_db(&dir);
     let mut client = McpClient::start(&path);
