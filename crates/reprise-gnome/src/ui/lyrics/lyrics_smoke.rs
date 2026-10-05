@@ -30,11 +30,6 @@ pub(in crate::ui) fn arm(
         tracing::error!("lyrics smoke failed: playback is unavailable");
         return;
     };
-    if let Err(error) = open_isolated_lyrics_gate(conn) {
-        tracing::error!(%error, "lyrics smoke failed: could not open the isolated lyrics gate");
-        return;
-    }
-    player.recompute_lyrics_enabled();
     let ids = match smoke_track_ids(conn) {
         Ok(ids) => ids,
         Err(error) => {
@@ -54,6 +49,12 @@ pub(in crate::ui) fn arm(
         tracing::error!("lyrics smoke failed: fast synthetic track is absent");
         return;
     };
+    // Settings change only once the three synthetic tracks prove this is the smoke library.
+    if let Err(error) = open_isolated_lyrics_gate(conn) {
+        tracing::error!(%error, "lyrics smoke failed: could not open the isolated lyrics gate");
+        return;
+    }
+    player.recompute_lyrics_enabled();
 
     tracing::info!("{SMOKE_ENV} set: arming synchronized lyrics exercise");
     panel.show_lyrics();
