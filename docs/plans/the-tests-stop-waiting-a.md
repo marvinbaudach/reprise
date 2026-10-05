@@ -2,7 +2,7 @@
 slug: the-tests-stop-waiting-a
 worktree: /home/marvin/Projects/reprise-the-tests-stop-waiting-a
 branch: feature/the-tests-stop-waiting-a
-phase: planned
+phase: coded
 codex_session:
 created: 2026-10-05
 ---
