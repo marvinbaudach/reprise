@@ -309,6 +309,23 @@ ignored display tests as one filtered Rust test invocation: even
 Use `scripts/check-display-tests.sh`, which discovers the tests and launches
 each exact test in its own process.
 
+The runner builds once. It runs the same `cargo test --locked --workspace
+--exclude reprise-platform-linux --no-run` selection as the merge gate's
+"Workspace tests" line (so inside the gate the build compiles nothing; a
+selection of its own would switch on other cargo features and recompile dozens
+of crates), finds the `reprise-gnome` unit-test binary in cargo's JSON artifact
+stream with `jq`, and stops with a named error if it finds none, several, or the
+build fails. Each test then gets its own Xvfb, started with `-displayfd` so the
+server picks and reports a free display itself (no fixed start-up sleep, no
+display-number bands), and one direct exec of that binary with `--ignored
+--exact`, inside its own D-Bus session and temporary XDG roots. A stale test
+name still turns the run red: the run must report exactly one passing test.
+
+Only an Xvfb that never reports a display within ten seconds is retried (three
+attempts). A GTK initialization failure after a reported display is a real
+failure and is not retried. `jq`, `Xvfb` and `dbus-run-session` must be on
+`PATH`.
+
 Every headless GTK command must use a private D-Bus session, Xvfb, temporary
 `XDG_DATA_HOME` and `XDG_CACHE_HOME`, forced X11, unset Wayland display, and
 `REPRISE_AUDIO_SINK=fakesink`. Pointer-driven workflows belong in
