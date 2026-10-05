@@ -91,8 +91,9 @@ jobs:
       - name: Add the cross-compilation Rust targets
         run: rustup target add x86_64-pc-windows-msvc aarch64-linux-android
 
-      # Only dev writes caches: a pull request's entries are scoped to its own
-      # ref, so dev could never read them back.
+      # Only dev and the nightly run on main write caches: a pull request's
+      # entries are scoped to its own ref, so dev could never read them back,
+      # while an entry written on the default branch is readable from every branch.
       - name: Cache Cargo downloads
         id: cargo_downloads
         uses: actions/cache/restore@v6
@@ -127,7 +128,10 @@ jobs:
           cargo install --locked --version 0.23.0 cargo-xwin
 
       - name: Save cargo-xwin
-        if: github.ref == 'refs/heads/dev' && steps.cargo_xwin_cache.outputs.cache-hit != 'true'
+        if: >-
+          (github.ref == 'refs/heads/dev' ||
+          (github.ref == 'refs/heads/main' && github.event_name == 'schedule')) &&
+          steps.cargo_xwin_cache.outputs.cache-hit != 'true'
         uses: actions/cache/save@v6
         with:
           path: ~/.cargo/bin/cargo-xwin
@@ -151,7 +155,10 @@ jobs:
           cargo check --locked -p reprise-android-ffi --target aarch64-linux-android
 
       - name: Save Cargo downloads
-        if: github.ref == 'refs/heads/dev' && steps.cargo_downloads.outputs.cache-hit != 'true'
+        if: >-
+          (github.ref == 'refs/heads/dev' ||
+          (github.ref == 'refs/heads/main' && github.event_name == 'schedule')) &&
+          steps.cargo_downloads.outputs.cache-hit != 'true'
         uses: actions/cache/save@v6
         with:
           path: |

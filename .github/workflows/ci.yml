@@ -169,10 +169,14 @@ jobs:
       - name: Run Android source quality
         run: scripts/check-project-quality.sh --android
 
-      # Only dev writes caches: a pull request's entries are scoped to its own
-      # ref, so dev could never read them back.
+      # Only dev and the nightly run on main write caches: a pull request's
+      # entries are scoped to its own ref, so dev could never read them back,
+      # while an entry written on the default branch is readable from every branch.
       - name: Save Cargo downloads
-        if: github.ref == 'refs/heads/dev' && steps.cargo_downloads.outputs.cache-hit != 'true'
+        if: >-
+          (github.ref == 'refs/heads/dev' ||
+          (github.ref == 'refs/heads/main' && github.event_name == 'schedule')) &&
+          steps.cargo_downloads.outputs.cache-hit != 'true'
         uses: actions/cache/save@v6
         with:
           path: |
@@ -227,7 +231,10 @@ jobs:
         run: .github/scripts/check-gnome-ci.sh
 
       - name: Save Cargo downloads
-        if: github.ref == 'refs/heads/dev' && steps.cargo_downloads.outputs.cache-hit != 'true'
+        if: >-
+          (github.ref == 'refs/heads/dev' ||
+          (github.ref == 'refs/heads/main' && github.event_name == 'schedule')) &&
+          steps.cargo_downloads.outputs.cache-hit != 'true'
         uses: actions/cache/save@v6
         with:
           path: |
@@ -284,7 +291,9 @@ jobs:
       - name: Cache Rust dependencies
         uses: Swatinem/rust-cache@v2
         with:
-          save-if: ${{ github.ref == 'refs/heads/dev' }}
+          save-if: >-
+            ${{ github.ref == 'refs/heads/dev' ||
+            (github.ref == 'refs/heads/main' && github.event_name == 'schedule') }}
 
       - name: Run the complete workspace gate
         run: scripts/ci-quality.sh
@@ -380,7 +389,10 @@ jobs:
         run: scripts/check-display-tests.sh --shard "$DISPLAY_SHARD/$DISPLAY_SHARD_COUNT"
 
       - name: Save Cargo downloads
-        if: github.ref == 'refs/heads/dev' && steps.cargo_downloads.outputs.cache-hit != 'true'
+        if: >-
+          (github.ref == 'refs/heads/dev' ||
+          (github.ref == 'refs/heads/main' && github.event_name == 'schedule')) &&
+          steps.cargo_downloads.outputs.cache-hit != 'true'
         uses: actions/cache/save@v6
         with:
           path: |
