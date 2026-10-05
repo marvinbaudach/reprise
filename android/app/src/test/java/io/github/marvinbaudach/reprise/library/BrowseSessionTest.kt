@@ -8,6 +8,7 @@ import androidx.media3.session.LibraryResult
 import androidx.media3.session.MediaBrowser
 import androidx.media3.session.MediaLibraryService.MediaLibrarySession
 import androidx.test.core.app.ApplicationProvider
+import io.github.marvinbaudach.reprise.CoreControlledPlayer
 import com.google.common.util.concurrent.ListenableFuture
 import org.junit.After
 import org.junit.Assert.assertEquals
@@ -170,4 +171,67 @@ class BrowseSessionTest {
 
         assertEquals("First Album", item.value!!.mediaMetadata.title)
     }
+
+    @Test
+    fun aTapThenPrepareThenPlayStartsTheCoreOnceAndDoesNotToggleItBack() {
+        // The sequence Android Auto sends, through the session's real player
+        // stack (browse interception over the Core-controlled player) with a
+        // Core that starts ExoPlayer the way the port does.
+        val core = RecordingCore(exoPlayer)
+        val stack = CoreControlledPlayer(exoPlayer, core, context)
+        val coreSession = MediaLibrarySession.Builder(
+            context,
+            BrowsePlayer(stack) { queue -> core.start(queue) },
+            callback,
+        ).setId("browse-core-stack").build()
+        val coreBrowser = await(MediaBrowser.Builder(context, coreSession.token).buildAsync())
+        try {
+            val songs = await(coreBrowser.getChildren(BrowseId.Playlist(10).mediaId, 0, 10, null))
+
+            coreBrowser.setMediaItem(songs.value!![1])
+            coreBrowser.prepare()
+            coreBrowser.play()
+            awaitUntil { core.starts.isNotEmpty() }
+            await(coreBrowser.getItem("recent"))
+
+            assertEquals(listOf(BrowseQueue(BrowseId.Playlist(10), listOf(1L, 2L, 3L), 1)), core.starts)
+            assertEquals("no pause toggle may undo the start", 0, core.toggles)
+            assertTrue(exoPlayer.playWhenReady)
+            assertEquals(listOf("content://tree/2.flac"), core.playedUris(exoPlayer))
+        } finally {
+            coreBrowser.release()
+            coreSession.release()
+        }
+    }
+}
+
+/** A Core that starts ExoPlayer on its own item, as the port does, and counts pause toggles. */
+private class RecordingCore(private val exo: ExoPlayer) : CoreControlledPlayer.Commands {
+    val starts = mutableListOf<BrowseQueue>()
+    var toggles = 0
+
+    fun start(queue: BrowseQueue) {
+        starts += queue
+        exo.setMediaItem(MediaItem.fromUri("content://tree/${queue.trackIds[queue.startIndex]}.flac"))
+        exo.prepare()
+        exo.play()
+    }
+
+    fun playedUris(player: ExoPlayer) =
+        (0 until player.mediaItemCount).map { player.getMediaItemAt(it).localConfiguration?.uri.toString() }
+
+    override fun togglePause() {
+        toggles += 1
+        exo.playWhenReady = !exo.playWhenReady
+    }
+
+    override fun next() = Unit
+
+    override fun previousInQueueOrder() = Unit
+
+    override fun isActivityInForeground() = false
+
+    override fun volumeKeySkipGestureEnabled() = false
+
+    override fun hapticTick() = Unit
 }
