@@ -80,6 +80,22 @@ internal fun isMissingFilePlaybackError(error: PlaybackException): Boolean {
     return false
 }
 
+private val URI_SCHEME = Regex("^[a-zA-Z][a-zA-Z0-9+.-]*://")
+
+/**
+ * The playable URI for what Core hands over: a device path or a provider URI.
+ *
+ * A string is only a URI when it begins with a real `scheme://`. A local path
+ * may contain a colon (`/Music/AC:DC/x.mp3`), which `Uri.parse` would read as a
+ * scheme boundary, so everything else is a file path.
+ */
+internal fun playbackUri(path: String): Uri =
+    if (!path.startsWith("/") && URI_SCHEME.containsMatchIn(path)) {
+        Uri.parse(path)
+    } else {
+        Uri.fromFile(File(path))
+    }
+
 /**
  * Media3 implementation of the foreign half of Core's PlaybackBackend.
  *
@@ -209,7 +225,7 @@ internal class Media3PlaybackPort(
         ensureKnown(uri)
         dispatch.call {
             trackGainSink?.startPlaylist(gainDb, nextUri?.let { nextGainDb })
-            start(items.build(uri))
+            start(itemFor(uri))
         }
     }
 
@@ -305,13 +321,19 @@ internal class Media3PlaybackPort(
         eventBridge = null
     }
 
+    /** The item for [uri], with its playable URI read by [playbackUri] so a colon in a local path stays a path. */
+    private fun itemFor(uri: String): MediaItem {
+        val item = items.build(uri)
+        return item.buildUpon().setUri(playbackUri(uri)).build()
+    }
+
     private fun start(mediaItem: MediaItem) {
         generation += 1UL
         finishedGeneration = null
         lastState = null
         player.setMediaItem(mediaItem)
         if (transitionMode == AndroidTransitionMode.GAPLESS) {
-            nextUri?.let { uri -> player.addMediaItem(items.build(uri)) }
+            nextUri?.let { uri -> player.addMediaItem(itemFor(uri)) }
         }
         player.prepare()
         player.play()
@@ -326,7 +348,7 @@ internal class Media3PlaybackPort(
             player.removeMediaItems(afterCurrent, player.mediaItemCount)
         }
         if (transitionMode == AndroidTransitionMode.GAPLESS) {
-            nextUri?.let { uri -> player.addMediaItem(items.build(uri)) }
+            nextUri?.let { uri -> player.addMediaItem(itemFor(uri)) }
         }
     }
 
@@ -345,10 +367,10 @@ internal class Media3PlaybackPort(
 
     /** Replaces each queued item for [uri] with a rebuild from what is known now, if that differs. */
     private fun refreshQueued(uri: String) {
-        val rebuilt = items.build(uri)
+        val rebuilt = itemFor(uri)
         for (index in 0 until player.mediaItemCount) {
             val item = player.getMediaItemAt(index)
-            if (item.localConfiguration?.uri?.toString() == uri && item != rebuilt) {
+            if (item.localConfiguration?.uri == playbackUri(uri) && item != rebuilt) {
                 player.replaceMediaItem(index, rebuilt)
             }
         }
