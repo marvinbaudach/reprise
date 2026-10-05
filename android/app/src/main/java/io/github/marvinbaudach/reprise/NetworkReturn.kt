@@ -55,6 +55,7 @@ internal class NetworkReturnMonitor(
     private val connectivity: ConnectivityManager,
     private val detector: NetworkReturnDetector,
     private val onNetworkReturned: () -> Unit,
+    private val onRealNetworkReturned: () -> Unit = {},
     private val postToMain: (() -> Unit) -> Unit = { work ->
         Handler(Looper.getMainLooper()).post(work)
     },
@@ -168,6 +169,7 @@ internal class NetworkReturnMonitor(
             .joinToString().ifEmpty { "other" }
         logReturn(transports, networks.size)
         postToMain {
+            onRealNetworkReturned()
             onNetworkReturned()
             if (!started) return@postToMain
             cancelFollowUps()

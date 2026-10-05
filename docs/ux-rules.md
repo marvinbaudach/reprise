@@ -241,6 +241,20 @@ result.
   once. Checked by hand because no automated level drives either entry
   point end to end: the cua-e2e scenario that once proved this path drove
   the header item and retired with NAV-7.
+- **NAV-15c** [active] [android] — **The playing track gets its spectrum
+  without a desktop sync.** This holds whether or not the library folder is
+  registered yet, and whether or not a desktop sync ever ran. Without a
+  sidecar the phone computes. A non-final failure (error, cancellation, or a
+  file changing during the computation) is retried at most three times per
+  track and never twice at once. A cancelled background analysis never leaves
+  the presented track without a result. *Tests:*
+  `nav_15c_only_cancelled_changed_or_thrown_analysis_is_non_final`,
+  `nav_15c_a_non_final_result_allows_the_current_track_to_request_again`,
+  `nav_15c_background_playback_changes_enter_analysis_on_the_main_thread`,
+  `nav_15c_a_real_failed_request_posts_its_retry_state_to_main`,
+  `nav_15c_a_stale_settle_cannot_clear_the_current_request`,
+  `nav_15c_cancelled_import_retries_and_refreshes_after_each_attempt`,
+  `nav_15c_shutdown_cancels_a_pending_retry_without_another_import`.
 - **NAV-16** [active] [gtk] — **Optional sidebar places carry their own off
   switch and way back.** A secondary click, Menu, or Shift+F10 on Podcasts,
   YouTube, Radio, Releases, or Concerts opens an arrowed menu anchored to the
@@ -3196,7 +3210,7 @@ property is set and yet nothing happens.
   reaches the other surfaces by NET-7a. A return that happened while the app
   was in the background counts when the app comes back to the foreground. A
   switch between two online networks is not a return. A surface that already
-  shows a real cover is not asked again. There is no polling or restart of the
+  shows a real cover is not asked again. NET-7d governs restarting the
   background pass. The return is followed by at most three bounded retries
   after 3, 10 and 30 seconds while the physical network stays online and the
   app stays in the foreground. A configuration change preserves that schedule;
@@ -3208,6 +3222,20 @@ property is set and yet nothing happens.
   leaves a transient failure open or fails, its one retry starts when the pass
   ends. A return after a clean pass does nothing visible.
   (#1052)
+- **NET-7d** [active] [android] — The cover pass runs on every app start,
+  including after an update without a scan, once the library folder is
+  registered. It restarts once on every real network return after an offline
+  period, but not on a switch between two online networks. It does not restart
+  if the user stopped the download in this process; the next scan or app start
+  runs it again. The progress card shows as on a start. *Tests:*
+  `net_7d_restore_starts_artwork_once_immediately_after_configuring_the_tree`,
+  `net_7d_restore_does_not_start_artwork_without_a_readable_remembered_tree`,
+  `net_7d_activity_recreation_does_not_restart_a_stopped_artwork_pass`,
+  `net_7d_one_real_network_return_starts_one_background_pass_not_followups`,
+  `net_7d_a_pending_real_return_replays_one_artwork_start_after_monitor_restart`,
+  `net_7d_configuration_change_monitor_restart_does_not_duplicate_artwork_start`,
+  `net_7d_a_stopped_download_ignores_the_view_model_network_return_path`,
+  `net_7d_stopped_artwork_waits_for_a_scan_before_network_returns_can_restart_it`.
 - **NET-3** [active] [core] [gtk] — Offline is a state, not an error: no network-backed
   place in the app may treat a missing network connection like an error
   message. The contract covers seven states every network-backed view (feed,

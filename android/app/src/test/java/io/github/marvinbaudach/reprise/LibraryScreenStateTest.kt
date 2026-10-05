@@ -160,6 +160,54 @@ fun rememberedReadableTreeLoadsOnlyTheRememberedDestinationWithoutScanning() {
 }
 
 @Test
+fun net_7d_restore_starts_artwork_once_immediately_after_configuring_the_tree() {
+    val port = RecordingLibrarySessionPort(
+        rememberedTreeUri = "content://provider/tree/Music",
+        readable = true,
+        tracks = listOf(testTrack()),
+    )
+    val session = LibrarySession(
+        port = port,
+        afterRestoreConfigured = { port.operations += "after-restore" },
+    )
+
+    session.restore()
+
+    assertEquals(1, port.operations.count { it == "after-restore" })
+    assertEquals(
+        listOf(
+            "readable:content://provider/tree/Music",
+            "configure:content://provider/tree/Music",
+            "after-restore",
+            "search::0:200",
+            "artists:0:1",
+            "search-albums::0:1",
+        ),
+        port.operations,
+    )
+}
+
+@Test
+fun net_7d_restore_does_not_start_artwork_without_a_readable_remembered_tree() {
+    var starts = 0
+    val noTree = RecordingLibrarySessionPort(
+        rememberedTreeUri = null,
+        readable = true,
+        tracks = listOf(testTrack()),
+    )
+    val unreadableTree = RecordingLibrarySessionPort(
+        rememberedTreeUri = "content://provider/tree/Music",
+        readable = false,
+        tracks = listOf(testTrack()),
+    )
+
+    LibrarySession(noTree, afterRestoreConfigured = { starts += 1 }).restore()
+    LibrarySession(unreadableTree, afterRestoreConfigured = { starts += 1 }).restore()
+
+    assertEquals(0, starts)
+}
+
+@Test
 fun rememberedArtistsDestinationRetainsTheTrueTitleTotalForSettings() {
     val port = RecordingLibrarySessionPort(
         rememberedTreeUri = "content://provider/tree/Music",

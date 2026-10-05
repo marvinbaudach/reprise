@@ -9,16 +9,21 @@ import java.util.concurrent.RejectedExecutionException
 import java.util.concurrent.atomic.AtomicBoolean
 import io.github.marvinbaudach.reprise.scene.SpectrogramFrames
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.CoroutineName
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.async
 import kotlinx.coroutines.cancel
+import kotlinx.coroutines.coroutineScope
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.selects.select
 import kotlinx.coroutines.withTimeoutOrNull
 import uniffi.reprise_android_ffi.AndroidAnalysisOutcome
 import uniffi.reprise_android_ffi.AndroidTrackRenderBar
@@ -26,6 +31,7 @@ import uniffi.reprise_android_ffi.AndroidTrackSpectrogram
 
 private const val TAG = "RepriseAnalysis"
 private const val SHUTDOWN_TIMEOUT_MS = 2_000L
+private const val ANALYSIS_RETRY_DELAY_MS = 2_000L
 
 private data class BarCacheKey(val trackId: Long, val count: Int)
 
@@ -98,8 +104,10 @@ internal class TrackAnalysisLoader(
     private val onMainThread: (() -> Unit) -> Unit,
     private val importDispatcher: CoroutineDispatcher = analysisImportLane(),
     private val readDispatcher: CoroutineDispatcher = analysisReadLane(),
+    private val pauseBetweenAttempts: suspend () -> Unit = { delay(ANALYSIS_RETRY_DELAY_MS) },
 ) : TrackAnalysisPort {
     private val accepting = AtomicBoolean(true)
+    private val closing = CompletableDeferred<Unit>()
     private val job = SupervisorJob()
     private val importScope =
         CoroutineScope(job + importDispatcher + CoroutineName("reprise-analysis-import"))
@@ -122,30 +130,40 @@ internal class TrackAnalysisLoader(
 
     override fun prepare(trackId: Long) {
         submitImport("import analysis for track $trackId") {
-            // Deliberately not logged on `AndroidAnalysisOutcome.COMPUTED`,
-            // unlike the mirrored check in
-            // `ReprisePlaybackService.trackAnalysisRequest`: this lane is
-            // exercised by `TrackAnalysisLoaderTest`, a plain JUnit test with
-            // no Robolectric runner, where an unshadowed `android.util.Log`
-            // call throws — a real, reproduced failure
-            // (`aComputedAnalysisRefreshesTheBars`), not a hypothetical one.
-            // `ReprisePlaybackService` already logs the same message for
-            // every real, foreground-triggered compute, so nothing is lost
-            // on the one path that matters. The `Log.w` below is pre-existing
-            // (unchanged from before this file's two-lane split) and stays
-            // unexercised by these tests, since `importAnalysis` here never
-            // throws — it is not the same kind of risk.
-            try {
-                importAnalysis(trackId)
-            } catch (cancelled: CancellationException) {
-                throw cancelled
-            } catch (error: Throwable) {
-                Log.w(TAG, "Could not import analysis for track $trackId", error)
+            // This lane deliberately does not log import outcomes or errors.
+            // `TrackAnalysisLoaderTest` is plain JUnit, where android.util.Log
+            // is unavailable, while the playback service logs the mirrored
+            // request in production. Every attempt still invalidates cached
+            // misses and bumps the revision on the main thread.
+            for (attempt in 1..MAX_ANALYSIS_ATTEMPTS) {
+                if (attempt > 1 && !accepting.get()) break
+                var outcome: AndroidAnalysisOutcome? = null
+                var failure: Throwable? = null
+                try {
+                    outcome = importAnalysis(trackId)
+                } catch (cancelled: CancellationException) {
+                    throw cancelled
+                } catch (error: Throwable) {
+                    failure = error
+                }
+                onMainThread {
+                    invalidate(trackId)
+                    revision += 1L
+                }
+                if (!trackAnalysisIsNonFinal(outcome, failure)) break
+                if (attempt < MAX_ANALYSIS_ATTEMPTS && !pauseForRetry()) break
             }
-            onMainThread {
-                invalidate(trackId)
-                revision += 1L
+        }
+    }
+
+    private suspend fun pauseForRetry(): Boolean = coroutineScope {
+        val pause = async { pauseBetweenAttempts() }
+        select {
+            closing.onAwait {
+                pause.cancel()
+                false
             }
+            pause.onAwait { accepting.get() }
         }
     }
 
@@ -337,6 +355,7 @@ internal class TrackAnalysisLoader(
     /** Stops accepting work and lets both lanes' already started work finish. */
     fun shutdown(): Boolean {
         accepting.set(false)
+        closing.complete(Unit)
         job.complete()
         val drained = try {
             runBlocking {

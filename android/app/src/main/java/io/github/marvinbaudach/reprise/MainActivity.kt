@@ -73,7 +73,7 @@ class MainActivity : ComponentActivity() {
             resolver = contentResolver,
             preferences = getSharedPreferences(PREFERENCES_NAME, MODE_PRIVATE),
             library = library,
-            afterScan = surfaceState::startArtistPhotoBackfill,
+            afterScan = surfaceState::scanCompletedRestartArtwork,
         )
     }
     private val artistPortraitPrefetchDelegate = lazy {
@@ -84,6 +84,7 @@ class MainActivity : ComponentActivity() {
         LibrarySession(
             port = sessionPort,
             startPortraitPrefetch = artistPortraitPrefetch::start,
+            afterRestoreConfigured = surfaceState::startArtistPhotoBackfillUnlessStopped,
             scanMonitor = surfaceState.libraryScanMonitor,
         )
     }
@@ -228,7 +229,7 @@ class MainActivity : ComponentActivity() {
             surfaceState.bindArtistPortraitRefresh(artwork::artistPortraitsChanged)
             surfaceState.bindAlbumCoverRefresh(artwork::albumCoversChanged)
             surfaceState.connectArtistPhotoBackfill(library) { work -> runOnUiThread(work) }
-            productionSurface().also { surfaceState.startArtistPhotoBackfill() }
+            productionSurface().also { surfaceState.startArtistPhotoBackfillUnlessStopped() }
         }
         collectPlaybackServiceState()
         setContent {
