@@ -156,6 +156,7 @@ require_executable scripts/tests/msrv.sh
 require_executable scripts/tests/github-flow.sh
 require_executable .github/tests/flatpak-cargo-sources.sh
 require_executable .github/tests/dependabot-flatpak-sources.sh
+require_executable .github/tests/ci-cache-writes.sh
 require_executable scripts/tests/project-quality.sh
 require_executable scripts/tests/weekly-portfolio-sync.sh
 require_executable scripts/weekly-portfolio-sync.sh
