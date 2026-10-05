@@ -147,6 +147,9 @@ mod staleness_tests;
 #[path = "visualizer_shape_adoption_tests.rs"]
 mod shape_adoption_tests;
 
+#[path = "visualizer_shape_continuity_tests.rs"]
+mod shape_continuity_tests;
+
 #[derive(Default)]
 struct FakeMonotonicClock {
     now_nanos: AtomicU64,

@@ -115,13 +115,42 @@ fn adopt_shape_keeps_bars_on_screen_through_the_first_live_pcm_block() {
     let before = main_bar_segments(&decode_scene(&engine.scene(272.0, 272.0)), 272.0).len();
     assert!(before > 0, "the adopted shape should already show bars");
 
-    let pcm = stereo_sine_pcm16(200.0, 48_000, 0, 8_192);
+    // One display tick of PCM, as the device delivers it (60 fps at 48 kHz).
+    // A single 8_192-frame block would run sixteen smoother frames inside one
+    // tick, i.e. 170 ms of gravity at once, which no real tick does.
+    let pcm = stereo_sine_pcm16(200.0, 48_000, 0, 800);
     ingest_one_live_block(&engine, &clock, &pcm, 48_000);
 
     let after = main_bar_segments(&decode_scene(&engine.scene(272.0, 272.0)), 272.0).len();
     assert!(
         after * 2 >= before,
         "the first live PCM block dropped the adopted shape to near zero: before={before}, after={after}"
+    );
+}
+
+#[test]
+// The device-sized tick above is what production delivers; this is the jank
+// case, one ~170 ms tick carrying a whole 8_192-frame block, i.e. sixteen
+// smoother frames of gravity at once. A correctly seeded shape falls a long
+// way in that time (measured 832 -> 333 in sum-of-bars units), so the bound
+// is deliberately loose: it only has to catch a collapse to near zero, which
+// is what a seed that sets no smoother memory produces.
+fn adopt_shape_survives_a_janky_170ms_tick_without_collapsing() {
+    let clock = Arc::new(FakeMonotonicClock::default());
+    let engine = AndroidVisualEngine::with_clock(clock.clone());
+    engine.note_track_changed();
+    engine.adopt_shape(vec![0.8; 64]);
+    engine.set_playing(true);
+    let before = main_bar_segments(&decode_scene(&engine.scene(272.0, 272.0)), 272.0).len();
+    assert!(before > 0, "the adopted shape should already show bars");
+
+    let pcm = stereo_sine_pcm16(200.0, 48_000, 0, 8_192);
+    ingest_one_live_block(&engine, &clock, &pcm, 48_000);
+
+    let after = main_bar_segments(&decode_scene(&engine.scene(272.0, 272.0)), 272.0).len();
+    assert!(
+        after * 4 >= before,
+        "a janky tick dropped the adopted shape to near zero: before={before}, after={after}"
     );
 }
 
