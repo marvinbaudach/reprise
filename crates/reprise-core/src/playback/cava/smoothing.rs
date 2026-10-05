@@ -9,7 +9,6 @@ const INITIAL_SENSITIVITY_HEADROOM: f32 = 0.85;
 
 pub(super) struct Smoother {
     noise_reduction: f32,
-    noise_floor: f32,
     autosensitivity: u32,
     sensitivity: f32,
     sensitivity_initializing: bool,
@@ -23,15 +22,9 @@ pub(super) struct Smoother {
 }
 
 impl Smoother {
-    pub(super) fn new(
-        bar_count: usize,
-        noise_reduction: f32,
-        noise_floor: f32,
-        autosensitivity: u32,
-    ) -> Self {
+    pub(super) fn new(bar_count: usize, noise_reduction: f32, autosensitivity: u32) -> Self {
         Self {
             noise_reduction,
-            noise_floor,
             autosensitivity,
             sensitivity: 1.0,
             sensitivity_initializing: true,
@@ -76,7 +69,7 @@ impl Smoother {
             if self.autosensitivity > 0 {
                 *bar *= self.sensitivity;
             }
-            if !bar.is_finite() || *bar <= self.noise_floor {
+            if !bar.is_finite() {
                 *bar = 0.0;
             }
             if *bar < *previous {
@@ -110,8 +103,10 @@ impl Smoother {
             if overshoot {
                 let reduction = (1.0 - 0.02 * framerate_mod).max(0.01);
                 self.sensitivity *= reduction;
-                self.sensitivity_initializing = false;
-                self.sensitivity_settling = true;
+                if self.sensitivity_initializing {
+                    self.sensitivity_initializing = false;
+                    self.sensitivity_settling = true;
+                }
             } else if signal_present {
                 self.sensitivity_settling = false;
                 self.sensitivity *= 1.0 + 0.001 * framerate_mod * self.autosensitivity as f32;
@@ -123,7 +118,7 @@ impl Smoother {
         }
 
         let output_scale = if self.autosensitivity > 0
-            && (protect_initial_output || overshoot)
+            && protect_initial_output
             && max_internal > INITIAL_SENSITIVITY_HEADROOM
         {
             INITIAL_SENSITIVITY_HEADROOM / max_internal
@@ -183,7 +178,7 @@ mod tests {
 
     #[test]
     fn cold_rising_signal_does_not_expose_autosensitivity_clipping() {
-        let mut smoother = Smoother::new(64, 0.77, 0.04, 1);
+        let mut smoother = Smoother::new(64, 0.77, 1);
         let mut max_mean = 0.0_f32;
         let mut max_near_full = 0;
 
@@ -216,7 +211,7 @@ mod tests {
     // identical signal again.
     fn cold_start_does_not_inflate_a_quiet_signal_to_full_scale() {
         let quiet_level = 0.10_f32;
-        let mut smoother = Smoother::new(64, 0.77, 0.04, 1);
+        let mut smoother = Smoother::new(64, 0.77, 1);
 
         let mut settled_max = 0.0_f32;
         loop {
@@ -273,7 +268,7 @@ mod tests {
         const SAMPLE_RATE_HZ: u32 = 48_000;
 
         let quiet_level = 0.10_f32;
-        let mut smoother = Smoother::new(64, 0.77, 0.04, 1);
+        let mut smoother = Smoother::new(64, 0.77, 1);
 
         // Run past the initial cold-start transient (which legitimately
         // overshoots while autosensitivity searches, per
@@ -301,21 +296,16 @@ mod tests {
         // exceeds the output's hard `.clamp(0.0, 1.0)` ceiling and the two
         // `<= plateau_max * 1.05` asserts below can never fail on their own.
         //
-        // Occasionally pinning a single frame to `INITIAL_SENSITIVITY_HEADROOM`
-        // is normal steady-state behaviour (the `overshoot` branch of
-        // `output_scale` fires whenever one frame's internal value ticks
-        // past 1.0) — at this cadence a correctly-fixed `reset()` still
-        // shows short runs of up to 6 consecutive frames pinned there
-        // (measured directly on this exact fixture: temporarily tightening
-        // the threshold below to 0 and reading the panic message). The bug
-        // this test guards against is a much longer *sustained* run: with
-        // the old `reset()` behaviour (re-zeroing
+        // The cold-start headroom scale is the only whole-frame duck left, so
+        // a correctly-fixed `reset()` never pins a frame there. The bug this
+        // test guards against is a sustained run: with the old `reset()`
+        // behaviour (re-zeroing
         // `sensitivity`/`sensitivity_initializing`/`sensitivity_settling`)
-        // temporarily reinstated, the same fixture produced a run of 26
+        // temporarily reinstated, the same fixture produced a run of 21
         // consecutive frames flat at the headroom immediately after reset,
-        // confirmed the same way (`cargo test ... -- --nocapture`, EXIT=101).
-        // The threshold below sits well above the fixed arm's measured
-        // maximum (6) and well below the bug's measured signature (26).
+        // while the fixed `reset()` produces none (measured with
+        // `cargo test ... -- --nocapture`). The threshold below sits between
+        // the two measurements.
         let mut post_reset_max = 0.0_f32;
         let mut consecutive_at_headroom = 0;
         let mut max_consecutive_at_headroom = 0;
@@ -341,7 +331,7 @@ mod tests {
         }
 
         assert!(
-            max_consecutive_at_headroom <= 12,
+            max_consecutive_at_headroom <= 10,
             "bars clamped flat at the cold-start headroom for {max_consecutive_at_headroom} \
              consecutive frames instead of tracking the known plateau \
              (plateau_max={plateau_max:.3})"
@@ -377,7 +367,7 @@ mod tests {
         // signal alone, with no prior loud-signal history. Measured only
         // after the cold-start transient has passed, same as the
         // regression test above.
-        let mut reference = Smoother::new(64, 0.77, 0.04, 1);
+        let mut reference = Smoother::new(64, 0.77, 1);
         loop {
             let mut bars = [quiet_level; 64];
             reference.apply(&mut bars, SAMPLES, SAMPLE_RATE_HZ, true);
@@ -392,7 +382,7 @@ mod tests {
             reference_plateau = reference_plateau.max(bars.iter().cloned().fold(0.0_f32, f32::max));
         }
 
-        let mut smoother = Smoother::new(64, 0.77, 0.04, 1);
+        let mut smoother = Smoother::new(64, 0.77, 1);
         for _ in 0..446 {
             let mut bars = [loud_level; 64];
             smoother.apply(&mut bars, SAMPLES, SAMPLE_RATE_HZ, true);
@@ -425,11 +415,38 @@ mod tests {
 
     #[test]
     fn disabled_autosensitivity_does_not_apply_initial_headroom() {
-        let mut smoother = Smoother::new(1, 0.0, 0.0, 0);
+        let mut smoother = Smoother::new(1, 0.0, 0);
         let mut bars = [1.2];
 
         smoother.apply(&mut bars, 735, 44_100, true);
 
         assert_eq!(bars, [1.0]);
+    }
+
+    #[test]
+    fn ac_28_steady_state_overshoot_clips_only_the_overshooting_band() {
+        let mut smoother = Smoother::new(2, 0.0, 1);
+
+        let mut cold_overshoot = [1.2, 0.2];
+        smoother.apply(&mut cold_overshoot, 735, 44_100, true);
+        let mut settling_frame = [0.2 / smoother.sensitivity, 0.3 / smoother.sensitivity];
+        smoother.apply(&mut settling_frame, 735, 44_100, true);
+        assert!(!smoother.sensitivity_initializing);
+        assert!(!smoother.sensitivity_settling);
+
+        let steady_sensitivity = smoother.sensitivity;
+        let mut steady_overshoot = [1.2 / steady_sensitivity, 0.4 / steady_sensitivity];
+        let expected_unscaled_band = steady_overshoot[1] * steady_sensitivity;
+        smoother.apply(&mut steady_overshoot, 735, 44_100, true);
+
+        assert_eq!(steady_overshoot[0], 1.0);
+        assert_eq!(steady_overshoot[1], expected_unscaled_band);
+
+        let following_sensitivity = smoother.sensitivity;
+        let mut following_frame = [0.9 / following_sensitivity, 0.4 / following_sensitivity];
+        let expected_following = following_frame.map(|bar| bar * following_sensitivity);
+        smoother.apply(&mut following_frame, 735, 44_100, true);
+
+        assert_eq!(following_frame, expected_following);
     }
 }

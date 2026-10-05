@@ -1,7 +1,7 @@
 use super::*;
 
 #[test]
-fn ac_23_visual_chrome_is_a_bars_only_canvas() {
+fn ac_28_visual_chrome_is_a_bars_only_canvas() {
     let css = css();
     assert!(css.contains("color: @reprise_player_accent"));
     assert!(css.contains(".reprise-song-visual-canvas"));
@@ -17,7 +17,7 @@ fn visualizer_has_no_cover_color_input() {
 
 #[test]
 #[ignore = "requires a display; run via xvfb-run"]
-fn ac_23_visual_widget_exposes_only_a_labeled_bars_canvas() {
+fn ac_28_visual_widget_exposes_only_a_labeled_bars_canvas() {
     gtk4::init().unwrap();
     let visualizer = SongVisualizer::new();
 
@@ -31,7 +31,7 @@ fn ac_23_visual_widget_exposes_only_a_labeled_bars_canvas() {
 }
 
 #[test]
-fn ac_23_the_analysis_readout_reports_the_values_the_glow_uses() {
+fn ac_28_the_analysis_readout_reports_the_values_the_glow_uses() {
     let values = analysis_values(
         BassPressure {
             level_dbfs: -14.2,
@@ -58,7 +58,7 @@ fn ac_23_the_analysis_readout_reports_the_values_the_glow_uses() {
 }
 
 #[test]
-fn ac_23_a_silent_analysis_reads_as_a_dash_instead_of_a_bottomed_out_level() {
+fn ac_28_a_silent_analysis_reads_as_a_dash_instead_of_a_bottomed_out_level() {
     let values = analysis_values(
         BassPressure {
             level_dbfs: -140.0,
@@ -81,7 +81,7 @@ fn ac_23_a_silent_analysis_reads_as_a_dash_instead_of_a_bottomed_out_level() {
 
 #[test]
 #[ignore = "requires a display; run via xvfb-run"]
-fn ac_23_the_readout_fits_in_the_strip_left_under_the_canvas() {
+fn ac_28_the_readout_fits_in_the_strip_left_under_the_canvas() {
     // The panel is a fixed 300 px wide and the canvas takes everything above,
     // leaving roughly one strip. A readout taller than that is silently
     // clipped — the live session showed Impact and Breakdown cut off. The
@@ -106,7 +106,7 @@ fn ac_23_the_readout_fits_in_the_strip_left_under_the_canvas() {
 
 #[test]
 #[ignore = "requires a display; run via xvfb-run"]
-fn ac_23_the_readout_names_stay_readable_at_the_panel_width() {
+fn ac_28_the_readout_names_stay_readable_at_the_panel_width() {
     // Caption and value share one line, so the captions are the first thing
     // to be ellipsized when they don't fit — the live session showed "BA…"
     // and "BASELI…". What counts is not the 300 px panel but what is left
@@ -141,7 +141,7 @@ fn ac_23_the_readout_names_stay_readable_at_the_panel_width() {
 
 #[test]
 #[ignore = "requires a display; run via xvfb-run"]
-fn ac_23_the_readout_follows_the_measurement_the_player_delivers() {
+fn ac_28_the_readout_follows_the_measurement_the_player_delivers() {
     use reprise_core::playback::{SpectrumFrame, SPECTRUM_BAND_COUNT};
 
     gtk4::init().unwrap();
@@ -176,7 +176,7 @@ fn ac_23_the_readout_follows_the_measurement_the_player_delivers() {
     assert_eq!(shown[5], "0.45"); // Swell
 
     // `impact` is produced but no longer displayed: since the glow became a
-    // stage light driven by `kick`, nothing reads it, and AC-23 asks this strip
+    // stage light driven by `kick`, nothing reads it, and AC-28 asks this strip
     // to name the analysis the visual actually reacts to.
     assert!(!shown.contains(&"0.87".to_owned()));
 }

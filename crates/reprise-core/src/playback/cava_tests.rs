@@ -48,6 +48,92 @@ fn odd_sample_rate_preserves_cavas_fractional_nyquist_cutoffs() {
 }
 
 #[test]
+/// These are cavacore outputs for this signal; any deviation means the port drifted.
+/// `docs/research/cava-oracle/` regenerates them: harness, pinned fetch, probe results.
+fn ac_28_cava_bars_match_the_cavacore_reference_after_calibration() {
+    const FRAMES: [usize; 4] = [172, 240, 255, 330];
+    const REFERENCE: [[f32; 64]; 4] = [
+        [
+            0.315462, 0.538361, 0.432593, 0.227695, 0.133478, 0.099056, 0.077458, 0.061830,
+            0.051015, 0.027866, 0.023555, 0.020010, 0.017583, 0.015646, 0.013820, 0.011710,
+            0.010882, 0.009944, 0.008711, 0.007743, 0.006963, 0.006320, 0.005764, 0.005153,
+            0.004577, 0.022583, 1.000000, 0.004843, 0.003091, 0.002839, 0.002604, 0.002353,
+            0.002143, 0.001937, 0.001762, 0.001596, 0.001455, 0.001322, 0.001207, 0.001090,
+            0.000992, 0.000902, 0.000820, 0.000746, 0.000680, 0.000619, 0.000949, 0.450923,
+            0.000468, 0.000425, 0.000388, 0.000354, 0.000323, 0.000295, 0.000270, 0.000247,
+            0.000226, 0.000207, 0.000190, 0.209014, 0.000162, 0.000150, 0.000139, 0.000129,
+        ],
+        [
+            0.058821, 0.118953, 0.080272, 0.036906, 0.022331, 0.017028, 0.013680, 0.011222,
+            0.009442, 0.008849, 0.007267, 0.005997, 0.005171, 0.004654, 0.004204, 0.003551,
+            0.003248, 0.002986, 0.002650, 0.002336, 0.002131, 0.001950, 0.001833, 0.001793,
+            0.002247, 0.022507, 1.000000, 0.004799, 0.001217, 0.000944, 0.000827, 0.000729,
+            0.000656, 0.000589, 0.000534, 0.000482, 0.000439, 0.000399, 0.000364, 0.000328,
+            0.000299, 0.000272, 0.000247, 0.000225, 0.000206, 0.000192, 0.000418, 0.123017,
+            0.000157, 0.000130, 0.000117, 0.000107, 0.000097, 0.000089, 0.000081, 0.000074,
+            0.000068, 0.000063, 0.000060, 0.209097, 0.000067, 0.000046, 0.000042, 0.000039,
+        ],
+        [
+            0.429656, 0.687207, 0.587391, 0.333759, 0.196359, 0.145710, 0.114006, 0.091001,
+            0.075086, 0.057741, 0.048798, 0.041457, 0.036423, 0.032416, 0.028631, 0.024266,
+            0.022533, 0.020599, 0.018045, 0.016041, 0.014429, 0.013106, 0.011896, 0.010570,
+            0.010168, 0.021761, 0.952236, 0.008296, 0.006561, 0.005914, 0.005384, 0.004882,
+            0.004438, 0.004014, 0.003651, 0.003307, 0.003013, 0.002738, 0.002500, 0.002259,
+            0.002056, 0.001869, 0.001700, 0.001546, 0.001408, 0.001284, 0.001266, 0.453540,
+            0.000972, 0.000881, 0.000804, 0.000733, 0.000670, 0.000611, 0.000559, 0.000511,
+            0.000468, 0.000429, 0.000394, 0.198836, 0.000337, 0.000310, 0.000287, 0.000268,
+        ],
+        [
+            0.056308, 0.113861, 0.076799, 0.035371, 0.021457, 0.016393, 0.013195, 0.010844,
+            0.009135, 0.009009, 0.007397, 0.006102, 0.005260, 0.004732, 0.004278, 0.003618,
+            0.003308, 0.003033, 0.002696, 0.002386, 0.002149, 0.001996, 0.001845, 0.001783,
+            0.002370, 0.022057, 0.983998, 0.004396, 0.001311, 0.000981, 0.000834, 0.000739,
+            0.000666, 0.000599, 0.000543, 0.000491, 0.000447, 0.000405, 0.000370, 0.000334,
+            0.000304, 0.000277, 0.000252, 0.000230, 0.000211, 0.000203, 0.000858, 0.408962,
+            0.000192, 0.000136, 0.000120, 0.000109, 0.000099, 0.000090, 0.000083, 0.000076,
+            0.000069, 0.000064, 0.000061, 0.205451, 0.000067, 0.000046, 0.000043, 0.000040,
+        ],
+    ];
+
+    let mut processor = CavaBarProcessor::new(CavaConfig::new(44_100, 64)).unwrap();
+    let mut bars = [0.0; 64];
+    let mut reference_index = 0;
+
+    for frame in 0..360 {
+        let chunk: Vec<f32> = (0..735)
+            .map(|sample| {
+                let n = frame * 735 + sample;
+                let t = n as f64 / 44_100.0;
+                let kick = (-(t % 0.5) / 0.06).exp();
+                (0.45 * kick * (std::f64::consts::TAU * 55.0 * t).sin()
+                    + 0.15 * (std::f64::consts::TAU * 440.0 * t).sin()
+                    + 0.08
+                        * (0.5 + 0.5 * (std::f64::consts::TAU * 1.5 * t).sin())
+                        * (std::f64::consts::TAU * 2_500.0 * t).sin()
+                    + 0.04 * (std::f64::consts::TAU * 7_000.0 * t).sin()) as f32
+            })
+            .collect();
+        processor.process_into(&chunk, &mut bars);
+
+        if reference_index < FRAMES.len() && frame == FRAMES[reference_index] {
+            for (bar, (&actual, &expected)) in bars
+                .iter()
+                .zip(REFERENCE[reference_index].iter())
+                .enumerate()
+            {
+                assert!(
+                    (actual - expected).abs() <= 2.0e-3,
+                    "frame {frame}, bar {bar}: expected {expected}, got {actual}"
+                );
+            }
+            reference_index += 1;
+        }
+    }
+
+    assert_eq!(reference_index, FRAMES.len());
+}
+
+#[test]
 fn pcm_sines_land_in_the_same_bands_as_cavas_standalone_test() {
     let mut bass = CavaBarProcessor::new(CavaConfig::new(44_100, 10)).unwrap();
     let mut mids = CavaBarProcessor::new(CavaConfig::new(44_100, 10)).unwrap();
@@ -181,19 +267,6 @@ fn faint_pcm_above_pcm_silence_still_ages_autosensitivity_into_view() {
 }
 
 #[test]
-fn noise_floor_cuts_subthreshold_fft_leakage() {
-    let mut processor = CavaBarProcessor::new(CavaConfig::new(44_100, 10)).unwrap();
-    let whisper: Vec<f32> = sine_chunk(200.0, 0)
-        .into_iter()
-        .map(|sample| sample * 1.0e-5)
-        .collect();
-
-    let bars = processor.process(&whisper);
-
-    assert!(bars.iter().all(|bar| *bar == 0.0));
-}
-
-#[test]
 fn hostile_pcm_and_high_resolution_always_return_finite_bounded_bars() {
     let mut processor = CavaBarProcessor::new(CavaConfig::new(44_100, 256)).unwrap();
     let hostile = [f32::NAN, f32::INFINITY, f32::NEG_INFINITY, 10.0, -10.0];
@@ -246,9 +319,11 @@ fn one_call_uses_the_fft_hop_for_a_lower_sample_rate() {
 }
 
 #[test]
-fn reset_restores_a_fresh_processor_state() {
-    let mut processor = CavaBarProcessor::new(CavaConfig::new(44_100, 10)).unwrap();
-    let mut fresh = CavaBarProcessor::new(CavaConfig::new(44_100, 10)).unwrap();
+fn reset_clears_fft_and_smoothing_history() {
+    let mut config = CavaConfig::new(44_100, 10);
+    config.autosensitivity = 0;
+    let mut processor = CavaBarProcessor::new(config).unwrap();
+    let mut fresh = CavaBarProcessor::new(config).unwrap();
     for chunk in 0..40 {
         processor.process(&sine_chunk(200.0, chunk));
     }
@@ -258,6 +333,50 @@ fn reset_restores_a_fresh_processor_state() {
     assert_eq!(
         processor.process(&sine_chunk(2_000.0, 0)),
         fresh.process(&sine_chunk(2_000.0, 0))
+    );
+}
+
+#[test]
+// Both reset paths clear the bar history but keep the settled autosensitivity
+// gain, so a track change does not re-run the cold-start calibration. A quiet
+// tone makes the gain visible: a fresh processor starts at gain 1.0 and
+// climbs, a settled one has already climbed. Control arm: the fresh
+// processor, fed the identical post-reset chunks.
+fn ac_28_cava_resets_keep_the_settled_autosensitivity_gain() {
+    const SETTLE_FRAMES: usize = 600;
+    const PROBE_FRAMES: usize = 6;
+
+    let config = CavaConfig::new(44_100, 64);
+    let mut full_reset = CavaBarProcessor::new(config).unwrap();
+    let mut stream_reset = CavaBarProcessor::new(config).unwrap();
+    let mut fresh = CavaBarProcessor::new(config).unwrap();
+    for frame in 0..SETTLE_FRAMES {
+        let chunk = quiet_tone_chunk(frame);
+        full_reset.process(&chunk);
+        stream_reset.process(&chunk);
+    }
+
+    full_reset.reset();
+    stream_reset.reset_stream();
+
+    let mut processors = [&mut full_reset, &mut stream_reset, &mut fresh];
+    let mut loudest = [0.0_f32; 3];
+    for frame in 0..PROBE_FRAMES {
+        let chunk = quiet_tone_chunk(frame);
+        for (peak, processor) in loudest.iter_mut().zip(processors.iter_mut()) {
+            *peak = processor.process(&chunk).into_iter().fold(0.0, f32::max);
+        }
+    }
+
+    let [after_full_reset, after_stream_reset, cold] = loudest;
+    assert!(cold > 0.0, "fixture must produce a visible cold bar");
+    assert!(
+        after_full_reset > cold * 2.0,
+        "reset() lost the settled gain: {after_full_reset} vs cold {cold}"
+    );
+    assert!(
+        after_stream_reset > cold * 2.0,
+        "reset_stream() lost the settled gain: {after_stream_reset} vs cold {cold}"
     );
 }
 
@@ -348,7 +467,6 @@ fn test_transient_processor() -> CavaBarProcessor {
     let mut config = CavaConfig::new(44_100, 8);
     config.low_cutoff_hz = 1_000;
     config.noise_reduction = 0.0;
-    config.noise_floor = 0.0;
     config.autosensitivity = 0;
     CavaBarProcessor::new(config).unwrap()
 }
@@ -406,6 +524,17 @@ fn sine_chunk(frequency_hz: f32, chunk: usize) -> Vec<f32> {
             let absolute_sample = chunk * CHUNK_SIZE + sample;
             (std::f32::consts::TAU * frequency_hz * absolute_sample as f32 / 44_100.0).sin()
                 * (20_000.0 / 65_535.0)
+        })
+        .collect()
+}
+
+fn quiet_tone_chunk(chunk: usize) -> Vec<f32> {
+    const CHUNK_SIZE: usize = 735;
+    const AMPLITUDE: f32 = 0.002;
+    (0..CHUNK_SIZE)
+        .map(|sample| {
+            let absolute_sample = chunk * CHUNK_SIZE + sample;
+            (std::f32::consts::TAU * 1_000.0 * absolute_sample as f32 / 44_100.0).sin() * AMPLITUDE
         })
         .collect()
 }

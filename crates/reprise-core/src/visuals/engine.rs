@@ -49,9 +49,9 @@ const PAUSED_LIVE_WAVE_COUNT: f32 = 3.0;
 pub struct ModeCtx<'a> {
     pub peaks: &'a [f32; SPECTRUM_BAND_COUNT],
     pub bars: &'a [f32; SPECTRUM_BAND_COUNT],
-    /// Glow a rhythmic kick reaches, `0..=1` (AC-23).
+    /// Glow a rhythmic kick reaches, `0..=1` (AC-28).
     pub bass_impact: f32,
-    /// Inner aura of a sustained breakdown, `0..=1` (AC-23).
+    /// Inner aura of a sustained breakdown, `0..=1` (AC-28).
     pub bass_aura: f32,
     pub accent: (f32, f32, f32),
     pub accent2: (f32, f32, f32),
@@ -100,7 +100,7 @@ pub struct VisualEngine {
     /// What the scene draws: the live bars, lifted by the idle wave whenever a
     /// track is loaded but not playing (AC-27).
     display_bands: [f32; SPECTRUM_BAND_COUNT],
-    /// The absolute bass measurement the glow layer draws from (AC-23). The
+    /// The absolute bass measurement the glow layer draws from (AC-28). The
     /// engine never derives it from the bars, which CAVA keeps re-normalizing.
     pressure: BassPressure,
     /// The stage light itself: attacked by `kick`, released per frame. Kept
