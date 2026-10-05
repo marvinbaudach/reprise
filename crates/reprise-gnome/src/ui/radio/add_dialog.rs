@@ -17,6 +17,8 @@ use super::images_allowed;
 use super::radio_add_input::{classify_input, AddInput};
 use super::radio_chips::{self, NearYouAction};
 use super::station_preview::StationPreview;
+use crate::ui::source_add_dialog::chrome::{ChromeSpec, SourceAddChrome};
+use crate::ui::source_add_dialog::generation::Generation;
 use crate::ui::{one_shot_task, strings};
 
 type AddedCallback = Rc<dyn Fn()>;
@@ -49,7 +51,7 @@ pub(super) enum AddFailure {
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub(super) struct AddDialogState {
     pub phase: AddDialogPhase,
-    generation: u64,
+    generation: Generation,
     query: Option<String>,
     result_label: Option<String>,
 }
@@ -58,7 +60,7 @@ impl Default for AddDialogState {
     fn default() -> Self {
         Self {
             phase: AddDialogPhase::Idle,
-            generation: 0,
+            generation: Generation::default(),
             query: None,
             result_label: None,
         }
@@ -73,8 +75,8 @@ pub(super) enum AddResult {
 }
 
 impl AddDialogState {
-    pub(super) fn begin(mut self, input: &AddInput) -> (Self, u64) {
-        self.generation = self.generation.wrapping_add(1);
+    pub(super) fn begin(mut self, input: &AddInput) -> (Self, Generation) {
+        self.generation = self.generation.next();
         self.result_label = match input {
             AddInput::Search(query) => Some(query.clone()),
             AddInput::Empty | AddInput::Url(_) => None,
@@ -89,7 +91,7 @@ impl AddDialogState {
         (self, generation)
     }
 
-    pub(super) fn accept(mut self, generation: u64, result: AddResult) -> Self {
+    pub(super) fn accept(mut self, generation: Generation, result: AddResult) -> Self {
         if self.generation != generation {
             return self;
         }
@@ -108,8 +110,8 @@ impl AddDialogState {
 
     /// `RAD-6`: shortcut chips search by tag and/or country, never by the
     /// visible chip label. Their result rows therefore carry no text query.
-    pub(super) fn begin_chip_search(mut self, result_label: String) -> (Self, u64) {
-        self.generation = self.generation.wrapping_add(1);
+    pub(super) fn begin_chip_search(mut self, result_label: String) -> (Self, Generation) {
+        self.generation = self.generation.next();
         self.query = None;
         self.result_label = Some(result_label);
         self.phase = AddDialogPhase::Searching;
@@ -138,6 +140,7 @@ pub(super) fn playlist_kind(value: &str) -> Option<PlaylistKind> {
 }
 
 struct DialogWidgets {
+    chrome: SourceAddChrome,
     dialog: adw::Dialog,
     entry: gtk4::SearchEntry,
     /// `RAD-5`: the shortcut chips, kept addressable for tests. The library
@@ -183,16 +186,9 @@ impl RadioAddDialog {
         connectivity: Rc<Cell<Connectivity>>,
         on_added: impl Fn() + 'static,
     ) -> Rc<Self> {
-        let entry = gtk4::SearchEntry::builder()
-            .placeholder_text(strings::text(strings::RADIO_DIALOG_HINT))
-            .build();
         // `RAD-5`: the three one-click radio-browser searches.
         let chips = radio_chips::build();
         let spinner = gtk4::Spinner::new();
-        let status = gtk4::Label::new(None);
-        status.set_xalign(0.0);
-        status.set_wrap(true);
-        status.add_css_class("reprise-text-secondary");
         let results = gtk4::ListBox::new();
         results.add_css_class("boxed-list");
         results.set_selection_mode(gtk4::SelectionMode::None);
@@ -208,72 +204,53 @@ impl RadioAddDialog {
         fetch_row.append(&fetch_label);
         fetch_row.append(&fetch_metadata);
 
-        let cancel = gtk4::Button::with_label(&strings::text(strings::RADIO_CANCEL));
-        let confirm = gtk4::Button::with_label(&strings::text(strings::RADIO_ADD));
-        confirm.add_css_class("suggested-action");
-        confirm.set_sensitive(false);
-        let buttons = gtk4::Box::new(gtk4::Orientation::Horizontal, 8);
-        buttons.set_halign(gtk4::Align::End);
-        buttons.append(&cancel);
-        buttons.append(&confirm);
-
-        // SRC-7: the same two-line footing as the podcast and channel dialogs —
-        // where the results come from, and why added ones stop appearing.
-        let footnote = gtk4::Label::new(Some(&format!(
-            "{}\n{}",
-            strings::text(strings::RADIO_COMMUNITY_FOOTNOTE),
-            strings::text(strings::SOURCE_SUBSCRIBED_DROP_OUT)
-        )));
-        footnote.set_xalign(0.0);
-        footnote.set_wrap(true);
-        footnote.add_css_class("reprise-text-secondary");
-        footnote.add_css_class("caption");
-
-        let content = gtk4::Box::new(gtk4::Orientation::Vertical, 12);
-        content.set_margin_top(16);
-        content.set_margin_bottom(16);
-        content.set_margin_start(16);
-        content.set_margin_end(16);
-        content.append(&entry);
-        content.append(&chips.root);
-        content.append(&spinner);
-        content.append(&status);
         let location_results = LocationResults::new(&results);
-        content.append(location_results.widget());
-        content.append(&preview);
-        content.append(&fetch_row);
-        content.append(&footnote);
-        content.append(&buttons);
-
-        let header = adw::HeaderBar::new();
-        header.set_title_widget(Some(&adw::WindowTitle::new(
-            &strings::text(strings::RADIO_DIALOG_TITLE),
-            "",
-        )));
-        let toolbar = adw::ToolbarView::new();
-        toolbar.add_top_bar(&header);
-        toolbar.set_content(Some(&content));
-        let dialog = adw::Dialog::builder()
-            .child(&toolbar)
-            .content_width(CONTENT_WIDTH)
-            .content_height(CONTENT_HEIGHT)
-            .build();
+        // SRC-7: the footnote carries the same two-line footing as the podcast and
+        // channel dialogs — where the results come from, and why added ones stop
+        // appearing.
+        let chrome = SourceAddChrome::build(
+            ChromeSpec {
+                title: strings::text(strings::RADIO_DIALOG_TITLE),
+                dialog_title: false,
+                hint: strings::text(strings::RADIO_DIALOG_HINT),
+                footnote: format!(
+                    "{}\n{}",
+                    strings::text(strings::RADIO_COMMUNITY_FOOTNOTE),
+                    strings::text(strings::SOURCE_SUBSCRIBED_DROP_OUT)
+                ),
+                cancel_label: strings::text(strings::RADIO_CANCEL),
+                primary_label: strings::text(strings::RADIO_ADD),
+                content_width: CONTENT_WIDTH,
+                content_height: CONTENT_HEIGHT,
+                margin: 16,
+                status_wraps: true,
+            },
+            |content, status| {
+                content.append(&chips.root);
+                content.append(&spinner);
+                content.append(status);
+                content.append(location_results.widget());
+                content.append(&preview);
+                content.append(&fetch_row);
+            },
+        );
 
         let this = Rc::new(Self {
             widgets: DialogWidgets {
-                dialog,
-                entry,
+                dialog: chrome.dialog.clone(),
+                entry: chrome.entry.clone(),
                 chip_library: chips.library,
                 chip_top_voted: chips.top_voted,
                 chip_near_you: chips.near_you,
                 spinner,
-                status,
+                status: chrome.status.clone(),
                 results,
                 location_results,
                 preview,
-                confirm,
+                confirm: chrome.primary.clone(),
                 fetch_metadata,
                 fetch_row,
+                chrome,
             },
             state: Rc::new(RefCell::new(AddDialogState::default())),
             conn,
@@ -295,14 +272,6 @@ impl RadioAddDialog {
             this.widgets.confirm.connect_clicked(move |_| {
                 if let Some(this) = weak.upgrade() {
                     this.confirm_preview();
-                }
-            });
-        }
-        {
-            let dialog = this.widgets.dialog.downgrade();
-            cancel.connect_clicked(move |_| {
-                if let Some(dialog) = dialog.upgrade() {
-                    dialog.close();
                 }
             });
         }
@@ -420,8 +389,7 @@ impl RadioAddDialog {
                 .set_text(&strings::text(strings::RADIO_SEARCH_NEEDS_NETWORK));
             self.widgets.status.set_visible(true);
         }
-        self.widgets.dialog.present(Some(parent));
-        self.widgets.entry.grab_focus();
+        self.widgets.chrome.present(parent);
     }
 
     fn submit(self: &Rc<Self>, input: &str) {
@@ -549,7 +517,7 @@ impl RadioAddDialog {
     /// earlier search or chip click can never overwrite a newer one.
     fn dispatch(
         self: &Rc<Self>,
-        generation: u64,
+        generation: Generation,
         result: std::io::Result<async_channel::Receiver<Result<AddResult, RadioError>>>,
     ) {
         let receiver = match result {
