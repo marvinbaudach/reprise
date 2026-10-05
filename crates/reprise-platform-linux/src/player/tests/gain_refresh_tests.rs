@@ -38,7 +38,7 @@ fn queued_uri(player: &Player) -> Option<String> {
 }
 
 #[test]
-fn play_19a_a_refed_gain_replaces_the_pending_gain_of_the_handoff_in_flight() {
+fn play_20a_a_refed_gain_replaces_the_pending_gain_of_the_handoff_in_flight() {
     let _guard = AUDIO_SINK_TEST_LOCK
         .lock()
         .unwrap_or_else(std::sync::PoisonError::into_inner);
@@ -64,7 +64,7 @@ fn play_19a_a_refed_gain_replaces_the_pending_gain_of_the_handoff_in_flight() {
 }
 
 #[test]
-fn play_19a_a_different_next_track_leaves_the_pending_gain_alone() {
+fn play_20a_a_different_next_track_leaves_the_pending_gain_alone() {
     let _guard = AUDIO_SINK_TEST_LOCK
         .lock()
         .unwrap_or_else(std::sync::PoisonError::into_inner);
@@ -86,7 +86,7 @@ fn play_19a_a_different_next_track_leaves_the_pending_gain_alone() {
 }
 
 #[test]
-fn play_19b_a_refed_gain_reaches_the_prebuilt_crossfade_secondary() {
+fn play_20b_a_refed_gain_reaches_the_prebuilt_crossfade_secondary() {
     let _guard = AUDIO_SINK_TEST_LOCK
         .lock()
         .unwrap_or_else(std::sync::PoisonError::into_inner);

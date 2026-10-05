@@ -23,7 +23,7 @@ use crate::player_pipeline::AUDIO_SINK_ENV_VAR;
 
 /// Starts the real crossfade engine at a deterministic in-window position.
 ///
-/// The separate `play_19b_crossfade_promotion_carries_the_next_gain_from_the_first_sample` test
+/// The separate `play_20b_crossfade_promotion_carries_the_next_gain_from_the_first_sample` test
 /// owns the 500 ms position-ticker integration. Generation tests must not
 /// duplicate that scheduler dependency: under host load the ticker can miss
 /// their fixed deadline even though promotion and event tagging are correct.
@@ -159,7 +159,7 @@ fn tagged_event_carries_the_generation_current_when_its_stream_started() {
 /// a pipeline restart) is a new stream even though no `play`/`play_uri` call
 /// drove it — see `gapless.rs::connect_about_to_finish`'s doc comment for why
 /// the bump sits at the URI swap. Mirrors the deterministic, bus-driven
-/// `play_19a_gapless_handoff_applies_the_next_gain_at_the_second_stream_start` test above, tagged.
+/// `play_20a_gapless_handoff_applies_the_next_gain_at_the_second_stream_start` test above, tagged.
 #[test]
 fn gapless_handoff_carries_a_newer_generation_than_the_track_it_replaced() {
     let _guard = AUDIO_SINK_TEST_LOCK
@@ -216,7 +216,7 @@ fn gapless_handoff_carries_a_newer_generation_than_the_track_it_replaced() {
 /// sits at promotion rather than when the silent secondary pipeline first
 /// starts (position ticks read through `self.playbin` still describe the
 /// *outgoing* track for the whole ramp; bumping earlier would mislabel
-/// them). Mirrors `play_19b_crossfade_promotion_carries_the_next_gain_from_the_first_sample`.
+/// them). Mirrors `play_20b_crossfade_promotion_carries_the_next_gain_from_the_first_sample`.
 #[test]
 fn crossfade_promotion_carries_a_newer_generation_than_the_track_it_replaced() {
     let _guard = AUDIO_SINK_TEST_LOCK

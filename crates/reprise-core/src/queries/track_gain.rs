@@ -106,7 +106,7 @@ mod tests {
     }
 
     #[test]
-    fn play_18_measured_gain_normalises_an_untagged_track() {
+    fn play_19_measured_gain_normalises_an_untagged_track() {
         let db = track((None, None));
         store_measured(&db);
 
@@ -114,7 +114,7 @@ mod tests {
     }
 
     #[test]
-    fn play_18_tagged_gain_wins_over_the_measurement() {
+    fn play_19_tagged_gain_wins_over_the_measurement() {
         let db = track((Some(-4.0), Some(0.5)));
         store_measured(&db);
 
@@ -122,7 +122,7 @@ mod tests {
     }
 
     #[test]
-    fn play_18_off_disables_tags_and_measurements() {
+    fn play_19_off_disables_tags_and_measurements() {
         let db = track((Some(-4.0), Some(0.5)));
         store_measured(&db);
 
@@ -139,7 +139,7 @@ mod tests {
     }
 
     #[test]
-    fn play_18_off_runs_no_query_at_all() {
+    fn play_19_off_runs_no_query_at_all() {
         // A connection without a schema: any query would fail.
         let bare = Connection::open_in_memory().unwrap();
 
@@ -150,7 +150,7 @@ mod tests {
     }
 
     #[test]
-    fn play_18_only_album_mode_runs_the_album_lookup() {
+    fn play_19_only_album_mode_runs_the_album_lookup() {
         let db = track((None, None));
         store_measured(&db);
         let before = ALBUM_LOOKUPS.load(Ordering::SeqCst);

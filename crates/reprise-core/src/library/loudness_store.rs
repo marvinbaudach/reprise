@@ -31,18 +31,18 @@ BEGIN
 END;
 "#;
 
-pub(crate) fn migrate_v88(conn: &Connection) -> Result<(), rusqlite::Error> {
+pub(crate) fn migrate_v89(conn: &Connection) -> Result<(), rusqlite::Error> {
     let version: i64 = conn.query_row("PRAGMA user_version", [], |row| row.get(0))?;
     let has_loudness_table: bool = conn.query_row(
         "SELECT EXISTS(SELECT 1 FROM sqlite_schema WHERE type='table' AND name='track_loudness')",
         [],
         |row| row.get(0),
     )?;
-    if version >= 88 && has_loudness_table {
+    if version >= 89 && has_loudness_table {
         return Ok(());
     }
     let transaction = conn.unchecked_transaction()?;
-    if version < 88 {
+    if version < 89 {
         for (column, declaration) in [
             ("rg_track_gain", "REAL"),
             ("rg_track_peak", "REAL"),
@@ -61,7 +61,7 @@ pub(crate) fn migrate_v88(conn: &Connection) -> Result<(), rusqlite::Error> {
                 ))?;
             }
         }
-        transaction.pragma_update(None, "user_version", 88)?;
+        transaction.pragma_update(None, "user_version", 89)?;
     }
     transaction.execute_batch(LOUDNESS_SCHEMA)?;
     transaction.commit()
@@ -214,15 +214,15 @@ mod tests {
     }
 
     #[test]
-    fn migration_v88_adds_replaygain_columns_once() {
+    fn migration_v89_adds_replaygain_columns_once() {
         let conn = Connection::open_in_memory().unwrap();
         conn.execute_batch(
             "CREATE TABLE tracks (id INTEGER PRIMARY KEY, path TEXT NOT NULL UNIQUE);\
-             PRAGMA user_version = 87;",
+             PRAGMA user_version = 88;",
         )
         .unwrap();
 
-        migrate_v88(&conn).unwrap();
+        migrate_v89(&conn).unwrap();
 
         for column in [
             "rg_track_gain",
@@ -243,25 +243,25 @@ mod tests {
         let version: i64 = conn
             .query_row("PRAGMA user_version", [], |row| row.get(0))
             .unwrap();
-        assert_eq!(version, 88);
+        assert_eq!(version, 89);
 
-        migrate_v88(&conn).unwrap();
+        migrate_v89(&conn).unwrap();
     }
 
     #[test]
-    fn migration_v88_adds_the_loudness_table_even_when_columns_already_landed() {
+    fn migration_v89_adds_the_loudness_table_even_when_columns_already_landed() {
         let conn = Connection::open_in_memory().unwrap();
         conn.execute_batch(
             "PRAGMA foreign_keys = ON;
              CREATE TABLE tracks (id INTEGER PRIMARY KEY, path TEXT NOT NULL UNIQUE,
                rg_track_gain REAL, rg_track_peak REAL, rg_album_gain REAL, rg_album_peak REAL,
                tag_scan_version INTEGER NOT NULL DEFAULT 0);
-             PRAGMA user_version = 88;",
+             PRAGMA user_version = 89;",
         )
         .unwrap();
 
-        migrate_v88(&conn).unwrap();
-        migrate_v88(&conn).unwrap();
+        migrate_v89(&conn).unwrap();
+        migrate_v89(&conn).unwrap();
 
         let tables: i64 = conn
             .query_row(

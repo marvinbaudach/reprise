@@ -31,7 +31,7 @@ private class Rig {
 
 class TrackGainAudioSinkTest {
     @Test
-    fun play_19c_gain_switches_when_the_first_buffer_reaches_the_queued_stream_offset() {
+    fun play_20c_gain_switches_when_the_first_buffer_reaches_the_queued_stream_offset() {
         val rig = Rig()
         rig.startTwoTracks(HALF_DB, DOUBLE_DB)
 
@@ -97,7 +97,7 @@ class TrackGainAudioSinkTest {
     }
 
     @Test
-    fun play_19c_a_next_track_replaced_after_its_offset_was_announced_plays_with_the_new_gain() {
+    fun play_20c_a_next_track_replaced_after_its_offset_was_announced_plays_with_the_new_gain() {
         val rig = Rig()
         rig.startTwoTracks(0.0, DOUBLE_DB)
 
@@ -111,7 +111,7 @@ class TrackGainAudioSinkTest {
     }
 
     @Test
-    fun play_19c_a_backward_seek_across_the_boundary_plays_the_earlier_track_with_its_own_gain() {
+    fun play_20c_a_backward_seek_across_the_boundary_plays_the_earlier_track_with_its_own_gain() {
         val rig = Rig()
         rig.startTwoTracks(HALF_DB, DOUBLE_DB)
         assertEquals(20_000, rig.scaledAt(BOUNDARY_US))
@@ -177,7 +177,7 @@ class TrackGainAudioSinkTest {
     }
 
     @Test
-    fun play_19c_a_read_only_input_buffer_is_scaled_without_being_written_into() {
+    fun play_20c_a_read_only_input_buffer_is_scaled_without_being_written_into() {
         val rig = Rig()
         rig.startTwoTracks(HALF_DB, null)
         // MediaCodec output buffers can be read-only, and a read-only view is
@@ -195,7 +195,7 @@ class TrackGainAudioSinkTest {
     }
 
     @Test
-    fun play_19c_a_partially_consumed_buffer_is_retried_from_the_same_scaled_copy() {
+    fun play_20c_a_partially_consumed_buffer_is_retried_from_the_same_scaled_copy() {
         val rig = Rig()
         rig.startTwoTracks(HALF_DB, DOUBLE_DB)
         rig.probe.consumeBytesPerCall = Short.SIZE_BYTES
@@ -298,7 +298,7 @@ class TrackGainAudioSinkTest {
     }
 
     @Test
-    fun play_19c_a_current_track_announced_again_at_a_smaller_offset_keeps_its_own_gain() {
+    fun play_20c_a_current_track_announced_again_at_a_smaller_offset_keeps_its_own_gain() {
         val rig = Rig()
         rig.startTwoTracks(0.0, DOUBLE_DB)
         rig.sink.advanceToNext()
@@ -318,7 +318,7 @@ class TrackGainAudioSinkTest {
     }
 
     @Test
-    fun play_19c_a_smaller_offset_for_the_current_track_does_not_bind_the_unannounced_next() {
+    fun play_20c_a_smaller_offset_for_the_current_track_does_not_bind_the_unannounced_next() {
         val rig = Rig()
         rig.startTwoTracks(0.0, DOUBLE_DB)
         rig.sink.advanceToNext()

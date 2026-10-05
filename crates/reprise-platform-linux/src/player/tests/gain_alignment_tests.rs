@@ -103,7 +103,7 @@ fn write_wavs(directory: &Path) -> (std::path::PathBuf, std::path::PathBuf) {
 }
 
 #[test]
-fn play_19a_every_buffer_of_each_track_carries_that_tracks_gain() {
+fn play_20a_every_buffer_of_each_track_carries_that_tracks_gain() {
     let _guard = AUDIO_SINK_TEST_LOCK
         .lock()
         .unwrap_or_else(std::sync::PoisonError::into_inner);
@@ -187,7 +187,7 @@ fn constant_buffer() -> gst::Buffer {
 /// the sink is slower than the decoder. Measured on the actual samples: every
 /// buffer of A must still be scaled by A's gain once the gate opens.
 #[test]
-fn play_19a_the_gain_switch_waits_for_the_tail_queued_ahead_of_it() {
+fn play_20a_the_gain_switch_waits_for_the_tail_queued_ahead_of_it() {
     let _guard = AUDIO_SINK_TEST_LOCK
         .lock()
         .unwrap_or_else(std::sync::PoisonError::into_inner);
@@ -346,7 +346,7 @@ fn play_19a_the_gain_switch_waits_for_the_tail_queued_ahead_of_it() {
 }
 
 #[test]
-fn play_18_the_gain_element_never_receives_an_unsafe_factor() {
+fn play_19_the_gain_element_never_receives_an_unsafe_factor() {
     let _guard = AUDIO_SINK_TEST_LOCK
         .lock()
         .unwrap_or_else(std::sync::PoisonError::into_inner);

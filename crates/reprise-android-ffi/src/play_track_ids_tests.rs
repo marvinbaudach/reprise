@@ -263,7 +263,7 @@ fn set_mode(
 }
 
 #[test]
-fn play_20_a_mode_change_reaches_the_playing_track_and_the_pre_fed_one() {
+fn play_21_a_mode_change_reaches_the_playing_track_and_the_pre_fed_one() {
     use reprise_core::library::settings::ReplayGainMode;
 
     let directory = tempfile::tempdir().unwrap();

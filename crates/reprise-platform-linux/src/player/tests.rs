@@ -547,7 +547,7 @@ fn playback_backend_trait_object_drives_play_and_stop() {
 ///
 /// Holds `AUDIO_SINK_TEST_LOCK` for its full duration — see that lock.
 #[test]
-fn play_19a_gapless_handoff_applies_the_next_gain_at_the_second_stream_start() {
+fn play_20a_gapless_handoff_applies_the_next_gain_at_the_second_stream_start() {
     let _guard = AUDIO_SINK_TEST_LOCK
         .lock()
         .unwrap_or_else(std::sync::PoisonError::into_inner);

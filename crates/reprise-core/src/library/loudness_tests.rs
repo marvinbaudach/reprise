@@ -17,7 +17,7 @@ fn album_loudness_is_a_duration_weighted_energy_mean() {
 }
 
 #[test]
-fn play_18_gain_resolution_covers_every_source_and_fallback() {
+fn play_19_gain_resolution_covers_every_source_and_fallback() {
     let measured = MeasuredLoudness {
         integrated_lufs: -20.0,
         true_peak: 0.5,
@@ -101,7 +101,7 @@ fn play_18_gain_resolution_covers_every_source_and_fallback() {
 }
 
 #[test]
-fn play_18_peak_caps_positive_gain_for_the_chosen_source() {
+fn play_19_peak_caps_positive_gain_for_the_chosen_source() {
     let result = resolve_gain(GainInputs {
         mode: ReplayGainMode::Track,
         tags: ReplayGainTags {
@@ -128,7 +128,7 @@ fn play_18_peak_caps_positive_gain_for_the_chosen_source() {
 }
 
 #[test]
-fn play_18_silence_has_no_measured_gain() {
+fn play_19_silence_has_no_measured_gain() {
     let result = resolve_gain(GainInputs {
         measured: Some(MeasuredLoudness {
             integrated_lufs: f64::NEG_INFINITY,
@@ -157,7 +157,7 @@ fn tagged_track(gain_db: f64) -> GainInputs {
 }
 
 #[test]
-fn play_18_gain_stays_inside_the_audible_safe_range() {
+fn play_19_gain_stays_inside_the_audible_safe_range() {
     assert_eq!(resolve_gain(tagged_track(40.0)).gain_db, MAX_GAIN_DB);
     assert_eq!(resolve_gain(tagged_track(-60.0)).gain_db, MIN_GAIN_DB);
     assert_eq!(resolve_gain(tagged_track(-3.5)).gain_db, -3.5);
@@ -173,7 +173,7 @@ fn play_18_gain_stays_inside_the_audible_safe_range() {
 }
 
 #[test]
-fn play_18_a_non_finite_gain_is_unity() {
+fn play_19_a_non_finite_gain_is_unity() {
     for hostile in [f64::NAN, f64::INFINITY, f64::NEG_INFINITY] {
         let result = resolve_gain(tagged_track(hostile));
         assert_eq!(result.gain_db, 0.0, "{hostile} must not reach the player");
