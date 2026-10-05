@@ -23,10 +23,12 @@ name: Dependabot Flatpak sources
 #   artifact over the sources file, insists that nothing else changed, and
 #   pushes.
 #
-# Residual risks, accepted: under `pull_request` this workflow file is
+# The `push` job runs no code from the pull request: the validator comes from
+# the base commit, and it reads the pull request's Cargo.lock as data only.
+#
+# Residual risk, accepted: under `pull_request` this workflow file is
 # controlled by the pull request, so a grouped bump that edits the file itself
-# runs its edited version; and the checked-out scripts come from the bump's
-# branch. Only Dependabot authors those branches.
+# runs its edited version. Only Dependabot authors those branches.
 #
 # After the bot's commit Dependabot treats the pull request as edited and stops
 # rebasing it. A conflicting or stale bump is recovered with
@@ -188,12 +190,26 @@ jobs:
             exit 1
           fi
 
+      # The validator is fetched from the base commit, not taken from the
+      # bump's branch: this job holds the token, and a script from the branch
+      # could write GITHUB_ENV or GITHUB_PATH before the token step runs.
+      - name: Fetch the validator from the base commit
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+        run: |
+          git init --quiet "$RUNNER_TEMP/base"
+          git -C "$RUNNER_TEMP/base" fetch --quiet --depth=1 \
+            "https://github.com/${GITHUB_REPOSITORY}" "$BASE_SHA"
+          git -C "$RUNNER_TEMP/base" checkout --quiet --detach FETCH_HEAD
+
       # The artifact comes from a job that ran code from PyPI, so its content
       # is checked against Cargo.lock before it is committed: a valid JSON file
       # is not enough, because the Flatpak release build consumes it with
       # secrets. This runs before, and apart from, the step that holds the token.
       - name: Validate the regenerated sources against Cargo.lock
-        run: scripts/check-flatpak-cargo-sources.sh Cargo.lock "$RUNNER_TEMP/regenerated/cargo-sources.json"
+        run: |
+          "$RUNNER_TEMP/base/scripts/check-flatpak-cargo-sources.sh" \
+            "$GITHUB_WORKSPACE/Cargo.lock" "$RUNNER_TEMP/regenerated/cargo-sources.json"
 
       - name: Replace the sources and push them to the bump's branch
         env:

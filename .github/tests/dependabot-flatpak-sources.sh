@@ -94,8 +94,8 @@ rg --fixed-strings --quiet 'git -c core.hooksPath=/dev/null commit' "$workflow" 
     fail "the commit must run with hooks disabled"
 rg --fixed-strings --quiet 'git -c core.hooksPath=/dev/null push' "$workflow" || \
     fail "the push must run with hooks disabled"
-rg --fixed-strings --quiet \
-    'scripts/check-flatpak-cargo-sources.sh Cargo.lock "$RUNNER_TEMP/regenerated/cargo-sources.json"' "$workflow" || \
+rg --multiline --quiet \
+    '"\$RUNNER_TEMP/base/scripts/check-flatpak-cargo-sources\.sh" \\\n            "\$GITHUB_WORKSPACE/Cargo\.lock" "\$RUNNER_TEMP/regenerated/cargo-sources\.json"' "$workflow" || \
     fail "the handed-over artifact must be validated against Cargo.lock before it is committed"
 
 python3 - "$workflow" "$generator_commit" "$generator_sha256" <<'PY' || fail "the job split does not isolate the token from the generator"
@@ -224,6 +224,27 @@ downloads = [
 assert downloads == [upload["name"]], (
     f"the push job must download the artifact the regenerate job uploads: {downloads} vs {upload['name']}"
 )
+
+# The push job runs no script from the pull request: the validator is fetched
+# from the base commit into its own directory, and every other `scripts/` path
+# in the job must be reached through that copy.
+base_fetch = next(s for s in push_steps if s["name"] == "Fetch the validator from the base commit")
+assert base_fetch["env"] == {"BASE_SHA": "${{ github.event.pull_request.base.sha }}"}, (
+    "the validator must come from the pull request's base commit"
+)
+assert 'git -C "$RUNNER_TEMP/base" fetch --quiet --depth=1' in base_fetch["run"]
+assert push_steps.index(base_fetch) < [s["name"] for s in push_steps].index(
+    "Validate the regenerated sources against Cargo.lock"
+)
+for step in push_steps:
+    local = re.findall(r"(?<![\w/$}])(?:\./)?scripts/[\w./-]+", step.get("run", ""))
+    assert not local, f"the push job must not run code from the pull request worktree: {local}"
+    assert "$GITHUB_WORKSPACE/scripts" not in step.get("run", "")
+validate = next(s for s in push_steps if s["name"].startswith("Validate the regenerated"))
+assert "$RUNNER_TEMP/base/scripts/check-flatpak-cargo-sources.sh" in validate["run"], (
+    "the validator must be the base commit's copy"
+)
+assert "secrets." not in yaml.safe_dump(validate) and "token" not in yaml.safe_dump(validate).lower()
 
 # The push is a plain fast-forward of the bump's own branch.
 pushes = [s["run"] for s in push_steps if "git -c core.hooksPath=/dev/null push" in s.get("run", "")]
