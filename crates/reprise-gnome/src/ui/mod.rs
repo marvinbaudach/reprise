@@ -167,11 +167,6 @@ pub(crate) use playback::{now_playing_wiring, player_controller, player_controll
 pub(crate) use scan::{scan_card_css, scan_flow};
 use scan::{scan_chrome, scan_progress, scan_worker};
 use scrobbling::{lastfm_secret, listenbrainz_secret, scrobble_runtime, scrobble_session};
-use tag_edit::{
-    autocomplete_entry, tag_editor_dirty, tag_editor_failures, tag_editor_form, tag_editor_save,
-    tag_editor_state, tag_editor_style, tag_editor_widgets,
-};
-pub(crate) use tag_edit::{tag_edit_flow, tag_editor};
 use track_list::{
     column_header_dnd, column_layout_editor, current_track_selection, track_content, track_cover,
     track_list_header_style, track_list_queue_menu, track_list_reload, track_list_row_interaction,

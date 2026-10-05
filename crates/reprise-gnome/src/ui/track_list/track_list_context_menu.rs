@@ -58,7 +58,7 @@ use crate::ui::dialogs;
 use crate::ui::popover_lifecycle;
 use crate::ui::show_in_files;
 use crate::ui::strings;
-use crate::ui::tag_edit_flow;
+use crate::ui::tag_edit::tag_edit_flow;
 use crate::ui::track_actions;
 use crate::ui::track_list::{reload, show_toast, Shared};
 use crate::ui::track_list_queue_menu;

@@ -31,13 +31,13 @@ use reprise_core::library::tag_edit_session::{
     FieldValue, PendingScope, SessionMode, TagEditSession, TagField,
 };
 
-use crate::ui::autocomplete_entry::AutocompleteEntry;
 use crate::ui::strings;
-use crate::ui::tag_editor_form::{
+use crate::ui::tag_edit::autocomplete_entry::AutocompleteEntry;
+use crate::ui::tag_edit::tag_editor_form::{
     apply_mixed_field_presentation, mixed_field_presentation, EditorMode, TagEditorForm,
 };
-use crate::ui::tag_editor_state::{number_patch, ParseFieldError};
-use crate::ui::tag_editor_widgets::wire_star_clicks;
+use crate::ui::tag_edit::tag_editor_state::{number_patch, ParseFieldError};
+use crate::ui::tag_edit::tag_editor_widgets::wire_star_clicks;
 
 pub(in crate::ui) type UpdateCallback = Rc<dyn Fn()>;
 

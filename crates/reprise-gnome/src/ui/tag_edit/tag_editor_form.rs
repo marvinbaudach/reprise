@@ -21,9 +21,9 @@ use reprise_core::library::tag_edit::MixedValue;
 use reprise_core::library::tag_edit_session::{TagEditSession, TagField};
 use reprise_core::queries::autocomplete::AutocompleteColumn;
 
-use crate::ui::autocomplete_entry::AutocompleteEntry;
 use crate::ui::strings;
-use crate::ui::tag_editor_widgets::*;
+use crate::ui::tag_edit::autocomplete_entry::AutocompleteEntry;
+use crate::ui::tag_edit::tag_editor_widgets::*;
 
 #[derive(Clone, Copy)]
 pub(in crate::ui) struct EditorMode {
@@ -422,7 +422,7 @@ fn text_bridge(session: &TagEditSession, field: TagField, current_id: i64) -> Mi
         // empty value as the "empty" sentinel (mixed-placeholder vocabulary),
         // so strip it back to a real blank — otherwise a track with no genre
         // shows the literal word "empty" in the field.
-        None => MixedValue::Uniform(crate::ui::tag_editor::display_or_blank(
+        None => MixedValue::Uniform(crate::ui::tag_edit::tag_editor::display_or_blank(
             session.effective_display(current_id, field),
         )),
     }

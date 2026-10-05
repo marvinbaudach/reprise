@@ -581,7 +581,7 @@ impl TrackList {
     /// Opens the existing batch tag editor for an explicit present-track id
     /// set, used by album-container actions.
     pub(in crate::ui) fn edit_tags_for_ids(&self, ids: &[i64]) {
-        crate::ui::tag_edit_flow::begin_for_ids(&self.shared, ids);
+        crate::ui::tag_edit::tag_edit_flow::begin_for_ids(&self.shared, ids);
     }
 }
 

@@ -152,7 +152,7 @@ pub(in crate::ui) fn wire(context: ActionWiring<'_>) {
             }
         });
     }
-    super::tag_edit_flow::wire_refresh(track_list, sidebar, player);
+    crate::ui::tag_edit::tag_edit_flow::wire_refresh(track_list, sidebar, player);
 
     stats_view.on_materialized({
         let conn = conn.clone();

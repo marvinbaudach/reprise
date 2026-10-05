@@ -93,7 +93,7 @@ fn app_css() -> String {
         super::radio::css(),
         super::source_empty_state::css(),
         super::toasts::css(),
-        super::tag_editor_style::css(),
+        crate::ui::tag_edit::tag_editor_style::css(),
         info_panel_clip_css(),
         super::issues::css(),
         super::library_doctor::css(),

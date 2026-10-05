@@ -38,13 +38,13 @@ use crate::ui::one_shot_task;
 use crate::ui::player_controller::PlayerController;
 use crate::ui::sidebar::Sidebar;
 use crate::ui::strings;
+use crate::ui::tag_edit::tag_editor;
+use crate::ui::tag_edit::tag_editor_failures;
 use crate::ui::tag_edit::tag_reload_anchor::{
     post_save_reload_anchor, save_patches_sort_key, OpenedReloadState,
 };
 use crate::ui::tag_edit::tag_save_refresh::{self, TagSaveRefresh};
 use crate::ui::tag_edit::tag_write_admission;
-use crate::ui::tag_editor;
-use crate::ui::tag_editor_failures;
 use crate::ui::track_list::tag_mutation_refresh::{
     refresh_after_tag_mutation_with_save_anchor, refresh_after_tag_mutation_with_save_change,
 };
