@@ -116,7 +116,10 @@ The tasks live in one file per strand; each carries its own status block.
 ## Post-merge cross-checks
 
 1. After a, b, c: `scripts/check-display-tests.sh --list` count = (count before
-   a) − 5 re-tagged; the full CI display sweep is green with `failed: 0`.
+   a) − 6: the five re-tagged tests plus the deleted `probe_composed_css_errors`,
+   which was itself an ignored display test. Display tests that other commits
+   add or remove in between shift the expectation by their own count. The full
+   CI display sweep is green with `failed: 0`.
 2. After a: a full `workflow_dispatch` CI run — the landing run of a
    `scripts/`-only change proves nothing (routes to no suite).
 3. After d: another `workflow_dispatch` run; compare per-job medians with the
