@@ -139,7 +139,7 @@
     <!-- One entry per promoted release, not per merge into dev. Every merge
          raises the workspace version; only a promotion to main ships one.
          See docs/agents/branching.md and RELEASING.md. -->
-    <release version="0.1.246" date="2026-10-05" type="stable">
+    <release version="0.1.248" date="2026-10-05" type="stable">
       <description>
         <p>Adds a sleep timer to the player bar. A moon button left of the volume control stops playback after 15, 30, 45 or 60 minutes, or at the end of the current track. When the time runs out, the volume fades over four seconds, playback pauses, and the volume returns to where it was.</p>
         <p xml:lang="de">Ergänzt die Wiedergabeleiste um einen Schlaftimer. Ein Mond-Knopf links neben der Lautstärke beendet die Wiedergabe nach 15, 30, 45 oder 60 Minuten oder am Ende des aktuellen Titels. Läuft die Zeit ab, wird die Lautstärke über vier Sekunden ausgeblendet, die Wiedergabe pausiert, und die Lautstärke kehrt auf ihren alten Wert zurück.</p>
