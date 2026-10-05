@@ -65,4 +65,3 @@ Verification: workspace clippy + tests for the touched crates;
 `scripts/check-ux-traceability.sh`; `scripts/check-display-tests.sh --list`
 no longer lists the five re-tagged tests and lists everything else unchanged.
 The count comparison against strand a's runner happens post-merge.
-
