@@ -349,7 +349,12 @@ pub fn build(
         &split_view,
     );
     sidebar.bind_device_sync(&device_sync, open_device.clone());
-    super::device_sync_feedback::install(&header, &split_view, &toast_overlay, &device_sync);
+    crate::ui::device_sync::device_sync_feedback::install(
+        &header,
+        &split_view,
+        &toast_overlay,
+        &device_sync,
+    );
     info_panel.retain_for_window(&window);
     if let Some(player) = &player {
         super::window_now_playing_wiring::install(player, &info_panel, &queue_model);

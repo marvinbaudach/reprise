@@ -5,8 +5,8 @@ use std::rc::Rc;
 use gtk4::gio;
 use gtk4::prelude::*;
 
-use crate::ui::device_sync_runtime::DeviceSyncRuntime;
-use crate::ui::device_sync_strings;
+use crate::ui::device_sync::device_sync_runtime::DeviceSyncRuntime;
+use crate::ui::device_sync::device_sync_strings;
 
 const ACTION_GROUP: &str = "remembered-device";
 const ACTION_RENAME: &str = "rename";

@@ -10,11 +10,11 @@ use reprise_core::waveform::RenderDataBackend;
 
 use super::super::concerts::ConcertsRuntime;
 use super::super::cover_download_worker::{self, CoverDownloadRuntime};
-use super::super::device_sync_runtime::DeviceSyncRuntime;
 use super::super::player_controller::PlayerController;
 use super::super::podcasts::PodcastsRuntime;
 use super::super::scrobble_runtime::ScrobbleRuntime;
 use crate::ui::artist_news::artist_news_worker::ArtistNewsRuntime;
+use crate::ui::device_sync::device_sync_runtime::DeviceSyncRuntime;
 use crate::ui::now_playing::artist_portrait_worker::ArtistPortraitRuntime;
 
 pub(super) struct WindowRuntimes {
@@ -65,8 +65,8 @@ pub(super) fn setup(
     );
     super::super::startup_report::mark("MPRIS");
 
-    let device_sync =
-        super::super::device_sync_smoke::runtime_from_env(conn).unwrap_or_else(|| {
+    let device_sync = crate::ui::device_sync::device_sync_smoke::runtime_from_env(conn)
+        .unwrap_or_else(|| {
             DeviceSyncRuntime::new(
                 conn,
                 reprise_platform_linux::device_sync::DeviceMonitor::new(),
@@ -74,7 +74,7 @@ pub(super) fn setup(
         });
     device_sync
         .bind_agent_device_sync(&media.device_sync_state, media.device_sync_commands.clone());
-    super::super::device_sync_smoke::arm(&device_sync);
+    crate::ui::device_sync::device_sync_smoke::arm(&device_sync);
     super::super::startup_report::mark("device sync");
 
     let player = match super::player_backends::build(waveform_backend, media) {

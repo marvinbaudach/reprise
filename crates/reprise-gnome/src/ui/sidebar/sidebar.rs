@@ -375,7 +375,7 @@ impl Sidebar {
     #[cfg(test)]
     pub(in crate::ui) fn present_device_for_layout_test(&self) {
         let device = super::sidebar_device_card::tests::view(
-            crate::ui::device_sync_runtime::PlannedSyncPhase::Idle,
+            crate::ui::device_sync::device_sync_runtime::PlannedSyncPhase::Idle,
         );
         let section = super::sidebar_device_section::present_device_section_for_test(&device);
         self.activity_slot.set_device_section(&section);

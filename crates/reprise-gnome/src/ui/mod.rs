@@ -155,10 +155,6 @@ use compact::{
 };
 use cover::{cover_download_batch, main_cover_download_progress};
 pub(crate) use cover::{cover_download_worker, cover_loader};
-use device_sync::{
-    device_sync_feedback, device_sync_launcher, device_sync_page, device_sync_runtime,
-    device_sync_smoke, device_sync_strings,
-};
 use lyrics::{
     lyrics_batch, lyrics_batch_progress, lyrics_smoke, lyrics_strings, lyrics_view, player_lyrics,
 };
