@@ -1,5 +1,6 @@
 package io.github.marvinbaudach.reprise
 
+import androidx.media3.common.util.UnstableApi
 import androidx.media3.exoplayer.audio.AudioSink
 import androidx.media3.exoplayer.audio.ForwardingAudioSink
 import java.nio.ByteBuffer
@@ -15,6 +16,7 @@ import kotlin.math.roundToInt
  * buffer this sink sees is 16-bit PCM; `configure` is final in the base class,
  * which is why the width is a contract of the factory rather than checked here.
  */
+@androidx.annotation.OptIn(UnstableApi::class)
 internal class TrackGainAudioSink(delegate: AudioSink) : ForwardingAudioSink(delegate) {
     internal companion object {
         // The same bounds Core resolves into, re-checked here because this value
