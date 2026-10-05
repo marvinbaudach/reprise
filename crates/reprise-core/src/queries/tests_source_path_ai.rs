@@ -27,6 +27,64 @@ fn track_source_path_returns_the_absolute_path_or_none() {
     );
 }
 
+fn insert_track_at(db: &crate::db::Db, id: i64, path: &str) {
+    db.conn()
+        .execute(
+            "INSERT INTO tracks (id, path, title, artist, added_at, file_mtime, file_size) \
+             VALUES (?1, ?2, 'S', 'A', 1, 1, 1)",
+            rusqlite::params![id, path],
+        )
+        .unwrap();
+}
+
+#[test]
+fn track_source_paths_resolves_present_ids_and_omits_missing_ones() {
+    let db = crate::db::Db::open_in_memory().unwrap();
+    insert_track_at(&db, 1, "/music/a.flac");
+    insert_track_at(&db, 2, "/music/b.flac");
+
+    let paths = track_source_paths(&db, &[2, 999, 1]).unwrap();
+
+    assert_eq!(paths.len(), 2, "the missing id has no entry");
+    assert_eq!(paths[&1], std::path::PathBuf::from("/music/a.flac"));
+    assert_eq!(paths[&2], std::path::PathBuf::from("/music/b.flac"));
+    assert!(track_source_paths(&db, &[]).unwrap().is_empty());
+}
+
+#[test]
+fn track_source_paths_tolerates_duplicate_ids() {
+    let db = crate::db::Db::open_in_memory().unwrap();
+    insert_track_at(&db, 7, "/music/seven.flac");
+
+    let paths = track_source_paths(&db, &[7, 7, 8, 7]).unwrap();
+
+    assert_eq!(paths.len(), 1);
+    assert_eq!(paths[&7], std::path::PathBuf::from("/music/seven.flac"));
+}
+
+#[test]
+fn track_source_paths_resolves_more_ids_than_one_chunk_holds() {
+    let db = crate::db::Db::open_in_memory().unwrap();
+    let count = i64::try_from(queue::SOURCE_PATH_CHUNK).unwrap() * 2 + 17;
+    for id in 1..=count {
+        insert_track_at(&db, id, &format!("/music/{id}.flac"));
+    }
+    // One id past the last row stays missing; one id repeats across chunks.
+    let mut ids: Vec<i64> = (1..=count + 1).collect();
+    ids.push(1);
+
+    let paths = track_source_paths(&db, &ids).unwrap();
+
+    assert_eq!(paths.len(), usize::try_from(count).unwrap());
+    for id in [1, count / 2, count] {
+        assert_eq!(
+            paths[&id],
+            std::path::PathBuf::from(format!("/music/{id}.flac"))
+        );
+    }
+    assert!(!paths.contains_key(&(count + 1)));
+}
+
 #[test]
 fn fil_7_count_browsed_ai_excludes_ai_tracks_via_count_star() {
     // The cheap COUNT(*) variant that replaces the QUEUE_LIMIT-capped

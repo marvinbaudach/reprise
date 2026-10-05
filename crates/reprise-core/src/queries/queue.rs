@@ -1,6 +1,7 @@
 //! `ViewSource::Queue` queries over the caller-owned manual queue order.
 
 use std::collections::{HashMap, HashSet};
+use std::path::PathBuf;
 
 use rusqlite::Connection;
 
@@ -14,6 +15,10 @@ use super::{AiColumn, RowWindow, TrackViewQuery, MAX_WINDOW_LIMIT};
 
 /// Hard cap for playback snapshots and the manual queue.
 pub const QUEUE_LIMIT: i64 = 10_000;
+
+/// Ids bound per `IN (...)` statement in [`track_source_paths`], kept well
+/// under SQLite's bound-variable limit (999 on older builds).
+pub(super) const SOURCE_PATH_CHUNK: usize = 500;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum QueueItemMetadata {
@@ -176,6 +181,31 @@ fn query_episodes(conn: &Connection, ids: &[i64]) -> Result<Vec<EpisodeRow>, rus
         )?
         .collect();
     rows
+}
+
+/// The absolute on-disk paths of many tracks in one pass, keyed by id.
+/// Missing rows have no entry; duplicate ids resolve once. Same lookup as
+/// [`super::track_source_path`], one statement per [`SOURCE_PATH_CHUNK`] ids
+/// instead of one per id.
+pub fn track_source_paths(db: &Db, ids: &[i64]) -> Result<HashMap<i64, PathBuf>, rusqlite::Error> {
+    let conn = db.conn();
+    let distinct = distinct_ids(ids.iter().copied());
+    let mut paths = HashMap::with_capacity(distinct.len());
+    for chunk in distinct.chunks(SOURCE_PATH_CHUNK) {
+        let sql = format!(
+            "SELECT id, path FROM tracks WHERE id IN ({})",
+            placeholders(chunk.len())
+        );
+        let mut statement = conn.prepare(&sql)?;
+        let rows = statement.query_map(rusqlite::params_from_iter(chunk), |row| {
+            Ok((row.get::<_, i64>(0)?, row.get::<_, String>(1)?))
+        })?;
+        for row in rows {
+            let (id, path) = row?;
+            paths.insert(id, PathBuf::from(path));
+        }
+    }
+    Ok(paths)
 }
 
 /// Sums durations in queue order. Missing duration contributes zero.

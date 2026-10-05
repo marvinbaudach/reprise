@@ -265,20 +265,20 @@ impl AndroidPlaybackSession {
                 .map_err(|error| AndroidPlaybackError::Backend {
                     detail: error.to_string(),
                 })?;
-        requested_ids
+        let paths = queries::track_source_paths(&database, &requested_ids).map_err(|error| {
+            AndroidPlaybackError::Backend {
+                detail: format!("{error_context}: {error}"),
+            }
+        })?;
+        Ok(requested_ids
             .into_iter()
             .enumerate()
             .filter_map(|(index, track_id)| {
-                queries::track_source_path(&database, track_id)
-                    .map_err(|error| AndroidPlaybackError::Backend {
-                        detail: format!("{error_context}: {error}"),
-                    })
-                    .transpose()
-                    .map(|result| {
-                        result.map(|path| (index, track_id, path.to_string_lossy().into_owned()))
-                    })
+                paths
+                    .get(&track_id)
+                    .map(|path| (index, track_id, path.to_string_lossy().into_owned()))
             })
-            .collect()
+            .collect())
     }
 }
 
