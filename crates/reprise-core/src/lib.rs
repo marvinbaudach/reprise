@@ -44,6 +44,7 @@ mod db_artwork;
 mod db_change_log;
 mod db_concerts;
 mod db_cover_download;
+mod db_cue_segments;
 mod db_deleted_releases;
 mod db_device_sync;
 mod db_drop_audio_analysis_mix;

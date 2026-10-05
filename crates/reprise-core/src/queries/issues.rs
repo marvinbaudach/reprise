@@ -48,7 +48,7 @@ use crate::library::settings::{self, AutoCleanSetting};
 use crate::library::source::LibraryPathPresence;
 use crate::models::{MissingReason, Track};
 
-use super::clauses::{row_to_track, MISSING};
+use super::clauses::{row_to_track, track_projection, MISSING};
 
 /// Which card a [`MissingGroup`] represents. See the module doc for why a
 /// missing mount identity is `Unlocatable`, never a nameless `Unavailable`.
@@ -75,15 +75,12 @@ pub struct MissingGroup {
     pub track_count: u32,
 }
 
-/// The full projection [`query_missing_rows`] needs — identical 22-column
-/// shape to `clauses::row_to_track`'s expectations (see that function's own
-/// doc comment), kept as one `const` so the three branches of `query_
-/// missing_rows` can never drift apart on which columns they select.
-const MISSING_ROWS_SELECT: &str = "SELECT id, path, title, artist, album, album_artist, year, \
-     track_no, genre, duration_ms, bitrate_kbps, rating, play_count, last_played_at, added_at, \
-     file_mtime, missing_since, missing_reason, untagged, file_size, device, inode, \
-     EXISTS(SELECT 1 FROM track_provenance tp WHERE tp.track_id = tracks.id AND tp.ai = 1) AS is_ai \
-     FROM tracks";
+/// The full projection [`query_missing_rows`] needs, built from the same
+/// column list every other track query reads through `clauses::row_to_track`,
+/// so the three branches of `query_missing_rows` can never drift from it.
+fn missing_rows_select() -> String {
+    format!("SELECT {} FROM tracks", track_projection("", true))
+}
 
 /// The one SQL definition of "no location we can name". Keeping the reason
 /// values derived from [`MissingReason`] and keeping this predicate shared by
@@ -285,8 +282,9 @@ pub fn query_missing_rows_matching(
     };
     let path_filter = path_clause(path_query, params.len() + 1);
     let sql = format!(
-        "{MISSING_ROWS_SELECT} WHERE {MISSING} AND {state_filter}{path_filter} \
-         ORDER BY artist COLLATE NOCASE, album COLLATE NOCASE, track_no LIMIT ?1 OFFSET ?2"
+        "{} WHERE {MISSING} AND {state_filter}{path_filter} \
+         ORDER BY artist COLLATE NOCASE, album COLLATE NOCASE, track_no LIMIT ?1 OFFSET ?2",
+        missing_rows_select()
     );
     let mut stmt = conn.prepare(&sql)?;
     if !path_filter.is_empty() {

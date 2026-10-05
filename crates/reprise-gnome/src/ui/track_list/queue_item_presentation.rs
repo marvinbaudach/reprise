@@ -196,6 +196,7 @@ mod tests {
     /// shared id, so it must be a real one.
     fn track_with_colliding_id() -> QueueItemMetadata {
         QueueItemMetadata::Track(Track {
+            segment: None,
             id: 7,
             path: "/music/seven.flac".into(),
             title: "Track Seven".into(),

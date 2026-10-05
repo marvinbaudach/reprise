@@ -389,7 +389,7 @@ const UPSERT_TRACK_SQL: &str =
                            rg_track_gain, rg_track_peak, rg_album_gain, rg_album_peak,
                            tag_scan_version)
                          VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11,?12,?13,?14,?15,?16,?17,?18,?19,?20,?21,?22,?23,?24)
-                         ON CONFLICT(path) DO UPDATE SET
+                         ON CONFLICT(path, segment_index) DO UPDATE SET
                            title=?2, artist=?3, album=?4, album_artist=?5,
                            artist_mbid=COALESCE(?6, artist_mbid),
                            artist_mbid_negative=CASE WHEN ?6 IS NOT NULL THEN 0 ELSE artist_mbid_negative END,
@@ -400,7 +400,7 @@ const UPSERT_TRACK_SQL: &str =
                            untagged=?19, rg_track_gain=?20, rg_track_peak=?21,
                            rg_album_gain=?22, rg_album_peak=?23, tag_scan_version=?24";
 
-// `ON CONFLICT(path)` fires whenever this path already
+// `ON CONFLICT(path, segment_index)` fires whenever this path already
 // has a row — including one still carrying `removed_at`
 // from a prior tombstone: the walk just proved the file
 // is there, so `removed_at=NULL` in the `DO UPDATE SET`

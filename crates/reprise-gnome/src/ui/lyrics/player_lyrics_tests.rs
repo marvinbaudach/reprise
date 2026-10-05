@@ -80,6 +80,7 @@ impl PlaybackBackend for FakePlayback {
 
 fn summary() -> TrackSummary {
     TrackSummary {
+        segment: None,
         path: "/synthetic/song.flac".into(),
         title: "Exact title".into(),
         artist: "Exact artist".into(),

@@ -5,7 +5,7 @@
 //! (Refactoring & Extensibility Task 1) — a pure move, no behavior change.
 
 use crate::library::playlists;
-use crate::models::{MissingReason, Track};
+use crate::models::{MissingReason, Track, TrackSegment};
 
 use super::queue::QUEUE_LIMIT;
 use super::{browse::browse_clause, AiColumn, BrowseFilter, TrackSort, TrackViewQuery};
@@ -214,7 +214,7 @@ pub(super) fn ai_projection(project_ai: bool) -> &'static str {
 /// `path` arrive where `title` is read — a silent shift, not a missing column
 /// and not a compile error. [`PRESENT`] above exists for the same reason, and
 /// its doc comment records what the last such drift cost.
-const TRACK_COLUMNS: [&str; 22] = [
+const TRACK_COLUMNS: [&str; 26] = [
     "id",
     "path",
     "title",
@@ -237,15 +237,24 @@ const TRACK_COLUMNS: [&str; 22] = [
     "file_size",
     "device",
     "inode",
+    "segment_index",
+    "segment_start_ms",
+    "segment_end_ms",
+    "cue_path",
 ];
 
+/// Where the gated `is_ai` column sits: straight after the stored columns.
+const IS_AI_INDEX: usize = TRACK_COLUMNS.len();
+/// Where the playlist window's own `pt.position` sits: after `is_ai`.
+const PLAYLIST_POSITION_INDEX: usize = IS_AI_INDEX + 1;
+
 /// The projection every track query selects: the stored [`TRACK_COLUMNS`]
-/// followed by the gated `is_ai` column `row_to_track` reads at index 22.
+/// followed by the gated `is_ai` column `row_to_track` reads at [`IS_AI_INDEX`].
 ///
 /// `qualifier` prefixes each stored column and is empty for the queries that
 /// read `tracks` alone; the playlist window passes `"tracks."` because it joins
 /// `playlist_tracks` and would otherwise leave `id` ambiguous. It appends its
-/// own `pt.position` after this projection, at index 23.
+/// own `pt.position` after this projection, at [`PLAYLIST_POSITION_INDEX`].
 pub(super) fn track_projection(qualifier: &str, project_ai: bool) -> String {
     let columns = TRACK_COLUMNS
         .iter()
@@ -477,21 +486,37 @@ pub(super) fn row_to_track(r: &rusqlite::Row) -> rusqlite::Result<Track> {
         inode: r.get(21)?,
         playlist_position: None,
         // INST-10: the `EXISTS(track_provenance … ai = 1) AS is_ai` column every
-        // windowed track SELECT projects at index 22.
-        is_ai: r.get::<_, i64>(22)? != 0,
+        // windowed track SELECT projects after the stored columns.
+        is_ai: r.get::<_, i64>(IS_AI_INDEX)? != 0,
+        segment: row_segment(r)?,
     })
 }
 
-/// Same 22-column shape as `row_to_track`, plus a trailing `pt.position`
-/// column (index 22) — used only by `query_track_window_playlist`, the one
+/// The segment of a CUE track, read from the four `segment_*`/`cue_path`
+/// columns at positions 22 to 25. `segment_index = 0` is a whole-file track.
+fn row_segment(r: &rusqlite::Row) -> rusqlite::Result<Option<TrackSegment>> {
+    let index: i64 = r.get(22)?;
+    if index == 0 {
+        return Ok(None);
+    }
+    Ok(Some(TrackSegment {
+        index,
+        start_ms: r.get::<_, Option<i64>>(23)?.unwrap_or(0),
+        end_ms: r.get::<_, Option<i64>>(24)?.unwrap_or(0),
+        cue_path: r.get(25)?,
+    }))
+}
+
+/// Same shape as `row_to_track`, plus a trailing `pt.position`
+/// column (at [`PLAYLIST_POSITION_INDEX`]) — used only by `query_track_window_playlist`, the one
 /// query that actually joins `playlist_tracks AS pt`. See `Track::
 /// playlist_position`'s doc comment for why this is the sole populating
 /// call site.
 pub(super) fn row_to_playlist_track(r: &rusqlite::Row) -> rusqlite::Result<Track> {
     let mut track = row_to_track(r)?;
-    // `is_ai` sits at index 22 (read by `row_to_track`); `pt.position` follows
-    // it at index 23 in the playlist SELECTs.
-    track.playlist_position = Some(r.get(23)?);
+    // `is_ai` sits at `IS_AI_INDEX` (read by `row_to_track`); `pt.position`
+    // follows it in the playlist SELECTs.
+    track.playlist_position = Some(r.get(PLAYLIST_POSITION_INDEX)?);
     Ok(track)
 }
 

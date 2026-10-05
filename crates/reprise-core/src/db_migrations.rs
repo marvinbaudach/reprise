@@ -102,6 +102,7 @@ const MIGRATIONS: &[Migration] = &[
     migration!(87, crate::db_device_sync::migrate_v87),
     migration!(88, crate::db_playlist_track_index::migrate_v88),
     migration!(89, crate::library::loudness_store::migrate_v89),
+    migration!(90, crate::db_cue_segments::migrate_v90),
 ];
 
 pub const SUPPORTED_SCHEMA_VERSION: i64 = MIGRATIONS[MIGRATIONS.len() - 1].version;
@@ -129,4 +130,27 @@ pub(crate) fn migration_versions() -> Vec<i64> {
         .iter()
         .map(|migration| migration.version)
         .collect()
+}
+
+/// Applies only the migrations up to and including `last_version`, so a test
+/// can build the schema as it was before a later migration and then run that
+/// one on rows of its own.
+#[cfg(test)]
+pub(crate) fn run_migrations_through(
+    conn: &Connection,
+    last_version: i64,
+) -> Result<(), rusqlite::Error> {
+    let scratch = tempfile::tempdir().expect("scratch cache directory");
+    let context = MigrationContext {
+        existing_database: false,
+        cover_cache: scratch.path(),
+        portrait_cache: scratch.path(),
+    };
+    for migration in MIGRATIONS
+        .iter()
+        .take_while(|migration| migration.version <= last_version)
+    {
+        (migration.run)(conn, &context)?;
+    }
+    Ok(())
 }

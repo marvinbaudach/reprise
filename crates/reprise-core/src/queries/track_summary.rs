@@ -27,6 +27,10 @@ pub struct TrackSummary {
     /// Optional release year displayed by metadata-rich player surfaces.
     pub year: Option<i32>,
     pub duration_ms: i64,
+    /// The slice of `path` this track plays, `None` for a whole-file track.
+    /// Position and duration are relative to the segment, so a consumer that
+    /// plays `path` has to honour it.
+    pub segment: Option<crate::models::TrackSegment>,
 }
 
 impl TrackSummary {

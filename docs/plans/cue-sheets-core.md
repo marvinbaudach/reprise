@@ -1,31 +1,37 @@
 ---
 slug: cue-sheets-core
-worktree:
-branch:
-phase: planned
+worktree: ../reprise-cue-sheets-core
+branch: feature/cue-sheets-core
+phase: coding
 codex_session:
 created: 2026-10-04
 ---
 # CUE sheets — core (wave 2)
 
-Starts from dev only after both wave-1 strands of `docs/plans/loudness-and-cue-sheets.md` landed (it needs `cue/**`, `PlaybackItem`, `tag_scan_version` and per-track loudness). Spec: `docs/superpowers/specs/2026-10-04-cue-sheets-design.md`; decisions 4–7 of the mother plan bind this plan. Migration number: next free after r128's v88.
+Starts from dev only after both wave-1 strands of `docs/plans/loudness-and-cue-sheets.md` landed (it needs `cue/**`, `PlaybackItem`, `tag_scan_version` and per-track loudness). Spec: `docs/superpowers/specs/2026-10-04-cue-sheets-design.md`; decisions 4–7 of the mother plan bind this plan. Migration number: v90 — r128's loudness migration took v89.
 
 ## Parallelität
 Cannot be cut: C1–C4 all change `tracks` identity, the scanner write path and the contract, and every later task compiles against C1.
 
 ## Tasks
 
-### C1 — Track identity: `segment_index`, table rebuild (migration v89)
+### C1 — Track identity: `segment_index`, table rebuild (migration v90)
 - Columns `segment_index INTEGER NOT NULL DEFAULT 0` (0 = whole file),
   `segment_start_ms INTEGER`, `segment_end_ms INTEGER`, `cue_path TEXT` (NULL for an
-  embedded sheet). Uniqueness becomes `UNIQUE(path, segment_index)` — not
+  embedded sheet), `cue_mtime INTEGER` (the sheet's mtime, NULL for an embedded sheet: the
+  rescan needs it to notice a changed sheet, and nothing else stores it).
+  `library_exclusions` gains `segment_index INTEGER NOT NULL DEFAULT 0` in the same
+  migration and its two unique indexes include it, so removing one CUE track from the
+  library hides that track only. Uniqueness becomes `UNIQUE(path, segment_index)` — not
   `(path, segment_start_ms)`: SQLite treats NULLs as distinct in UNIQUE, so a nullable
   start column would allow duplicate whole-file rows.
 - Requires rebuilding `tracks` (inline UNIQUE cannot be dropped): 12-step procedure with
   `PRAGMA foreign_keys=OFF` **outside** the transaction, copy, drop, rename, recreate
   every index and trigger on `tracks`, `PRAGMA foreign_key_check`, ON again. Test on a
   DB with rows in all ten referencing tables.
-- `Track`, `TRACK_COLUMNS`, `row_to_track`, `TrackSummary` gain the segment fields.
+- `Track` and `TrackSummary` gain one `segment: Option<TrackSegment>` field (`index`,
+  `start_ms`, `end_ms`, `cue_path`; `None` = whole file); `TRACK_COLUMNS` and `row_to_track`
+  read the four columns.
 
 ### C2 — Scanner: sheets beside files and embedded `CUESHEET`
 - The walk collects `.cue` entries per directory (precedent: `mobile_sync.observe`);

@@ -15,9 +15,10 @@ use rusqlite::{Connection, OptionalExtension};
 
 use super::clauses::PRESENT;
 use super::TrackSummary;
+use crate::models::TrackSegment;
 
-const TRACK_SUMMARY_COLUMNS: &str =
-    "path, title, artist, album, album_artist, genre, artist_mbid, year, duration_ms";
+const TRACK_SUMMARY_COLUMNS: &str = "path, title, artist, album, album_artist, genre, \
+     artist_mbid, year, duration_ms, segment_index, segment_start_ms, segment_end_ms, cue_path";
 
 fn row_to_summary(row: &rusqlite::Row<'_>) -> Result<TrackSummary, rusqlite::Error> {
     Ok(TrackSummary {
@@ -30,7 +31,26 @@ fn row_to_summary(row: &rusqlite::Row<'_>) -> Result<TrackSummary, rusqlite::Err
         artist_mbid: row.get(6)?,
         year: row.get(7)?,
         duration_ms: row.get(8)?,
+        segment: row_segment(row, 9)?,
     })
+}
+
+/// The segment a summary row carries, read from the four columns that start at
+/// `first`; `segment_index = 0` is a whole-file track.
+fn row_segment(
+    row: &rusqlite::Row<'_>,
+    first: usize,
+) -> Result<Option<TrackSegment>, rusqlite::Error> {
+    let index: i64 = row.get(first)?;
+    if index == 0 {
+        return Ok(None);
+    }
+    Ok(Some(TrackSegment {
+        index,
+        start_ms: row.get::<_, Option<i64>>(first + 1)?.unwrap_or(0),
+        end_ms: row.get::<_, Option<i64>>(first + 2)?.unwrap_or(0),
+        cue_path: row.get(first + 3)?,
+    }))
 }
 
 /// Resolves one track id to its `TrackSummary` — the queue's per-track
@@ -44,22 +64,9 @@ pub fn query_track_summary(db: &Db, id: i64) -> Result<Option<TrackSummary>, Cor
     let conn = db.conn();
     Ok(conn
         .query_row(
-            "SELECT path, title, artist, album, album_artist, genre, artist_mbid,
-                year, duration_ms FROM tracks WHERE id = ?1",
+            &format!("SELECT {TRACK_SUMMARY_COLUMNS} FROM tracks WHERE id = ?1"),
             rusqlite::params![id],
-            |r| {
-                Ok(TrackSummary {
-                    path: r.get(0)?,
-                    title: r.get(1)?,
-                    artist: r.get(2)?,
-                    album: r.get(3)?,
-                    album_artist: r.get(4)?,
-                    genre: r.get(5)?,
-                    artist_mbid: r.get(6)?,
-                    year: r.get(7)?,
-                    duration_ms: r.get(8)?,
-                })
-            },
+            row_to_summary,
         )
         .optional()?)
 }
