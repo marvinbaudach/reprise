@@ -1,12 +1,70 @@
 use chrono::{FixedOffset, NaiveDate, TimeZone, Utc};
 use rusqlite::params;
 
-use super::{compute, SortBy};
+use super::{compute, ribbon_points, RibbonPoint, SortBy};
 use crate::library::group_key::GroupKind;
-use crate::library::stats_period::{Granularity, StatsPeriod};
-use crate::library::stats_screen::group_track_ids;
+use crate::library::stats_period::{Bucket, Granularity, StatsPeriod};
+use crate::library::stats_screen::{group_track_ids, ListenRow};
 
 const NOW_2026_07_19: i64 = 1_784_424_000;
+
+#[test]
+fn ribbon_prefix_sum_matches_the_filtering_oracle_at_every_edge() {
+    let buckets = vec![
+        bucket("First", 10, 20),
+        bucket("Empty", 20, 30),
+        bucket("All", 30, 50),
+        bucket("Last", 50, 60),
+    ];
+    let rows = vec![
+        listen_row(10, 1),
+        listen_row(19, 2),
+        listen_row(30, 4),
+        listen_row(31, 8),
+        listen_row(49, 16),
+        listen_row(50, 32),
+        listen_row(60, 64),
+    ];
+
+    assert_eq!(
+        ribbon_points(&rows, &buckets),
+        ribbon_oracle(&rows, &buckets)
+    );
+    let all_events = vec![bucket("All events", 10, 61)];
+    assert_eq!(
+        ribbon_points(&rows, &all_events),
+        ribbon_oracle(&rows, &all_events)
+    );
+    assert_eq!(ribbon_points(&[], &buckets), ribbon_oracle(&[], &buckets));
+}
+
+fn ribbon_oracle(rows: &[ListenRow], buckets: &[Bucket]) -> Vec<RibbonPoint> {
+    buckets
+        .iter()
+        .map(|bucket| RibbonPoint {
+            label: bucket.label.clone(),
+            total_ms: rows
+                .iter()
+                .filter(|row| row.played_at >= bucket.start_unix && row.played_at < bucket.end_unix)
+                .map(|row| row.ms)
+                .sum(),
+            open: bucket.open,
+        })
+        .collect()
+}
+
+fn bucket(label: &str, start_unix: i64, end_unix: i64) -> Bucket {
+    Bucket {
+        label: label.to_string(),
+        start_unix,
+        end_unix,
+        open: false,
+    }
+}
+
+fn listen_row(played_at: i64, ms: i64) -> ListenRow {
+    ListenRow { played_at, ms }
+}
 
 #[test]
 fn stats_0_play_definition_consistent_time_and_count() {

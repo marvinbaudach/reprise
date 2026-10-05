@@ -10,7 +10,7 @@
 //!   options — never from whatever the controls happen to say now.
 
 use reprise_core::library_doctor::{
-    group_review_rows, scan_summary, DoctorField, DoctorProblemCount, DoctorReviewFilter,
+    count_review_groups, scan_summary, DoctorField, DoctorProblemCount, DoctorReviewFilter,
     DoctorReviewSession, DoctorScan, DoctorScanPhase, DoctorScanSummary, DoctorWriteReport,
     DoctorWriteRowState, ProblemClass,
 };
@@ -153,7 +153,7 @@ impl SummaryBlocks {
     pub(super) fn from_scan(scan: &DoctorScan, remote_visible: bool, quiet: &QuietOutcome) -> Self {
         let summary = scan_summary(scan, remote_visible);
         let session = DoctorReviewSession::from_scan(scan.clone(), DoctorReviewFilter::NeedsReview);
-        let albums = group_review_rows(scan, &session).len();
+        let albums = count_review_groups(scan, &session);
         let lines = PROBLEM_CLASSES
             .into_iter()
             .filter_map(|class| {

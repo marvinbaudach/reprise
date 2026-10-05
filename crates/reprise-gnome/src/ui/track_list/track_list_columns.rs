@@ -15,6 +15,7 @@ use gtk4::glib;
 use gtk4::prelude::*;
 
 use super::now_playing_marker;
+use super::queue_item_presentation::{is_now_playing_key, NowPlayingKey};
 pub(in crate::ui) use super::rating_column::append_rating_column;
 use crate::ui::cover_loader::CoverLoader;
 use crate::ui::playing_marker;
@@ -81,14 +82,14 @@ pub(super) fn sync_now_playing_row(
     item: &QueueItemMetadata,
     shared: std::rc::Weak<Shared>,
 ) {
-    let item = item.clone();
+    let item = NowPlayingKey::from(item);
     let coordinator = coordinator.upcast_ref::<gtk4::Widget>().downgrade();
     gtk4::glib::idle_add_local_once(move || {
         let (Some(shared), Some(coordinator)) = (shared.upgrade(), coordinator.upgrade()) else {
             return;
         };
-        let playing = super::queue_item_presentation::is_now_playing(
-            &item,
+        let playing = is_now_playing_key(
+            item,
             shared.playing_track_id.get(),
             shared.playing_episode.get(),
         );
@@ -393,15 +394,17 @@ pub(in crate::ui) fn append_column(
             tracing::warn!("track list column bind: item is not typed queue metadata");
             return;
         };
-        let metadata = boxed.borrow::<QueueItemMetadata>();
-        render_text_cell(
-            &label,
-            &metadata,
-            sort_id,
-            render.as_ref(),
-            &shared_for_bind,
-        );
-        let rendered_metadata = metadata.clone();
+        {
+            let metadata = boxed.borrow::<QueueItemMetadata>();
+            render_text_cell(
+                &label,
+                &metadata,
+                sort_id,
+                render.as_ref(),
+                &shared_for_bind,
+            );
+        }
+        let rendered_metadata = boxed.clone();
         let rendered_metadata_generation = Cell::new(shared_for_bind.model.metadata_generation());
         let weak_item = item.downgrade();
         now_playing_marker::register_cell(&shared_for_bind, item, {
@@ -410,7 +413,8 @@ pub(in crate::ui) fn append_column(
             move |shared| {
                 let metadata_generation = shared.model.metadata_generation();
                 if metadata_generation == rendered_metadata_generation.get() {
-                    apply_now_playing_item(&label, &rendered_metadata, shared, false);
+                    let metadata = rendered_metadata.borrow::<QueueItemMetadata>();
+                    apply_now_playing_item(&label, &metadata, shared, false);
                     return;
                 }
                 let Some(item) = weak_item.upgrade() else {
@@ -549,7 +553,7 @@ pub(in crate::ui) fn append_cover_column(
                 tracing::warn!("cover column bind: item is not typed queue metadata");
                 return;
             };
-            let metadata = boxed.borrow::<QueueItemMetadata>().clone();
+            let metadata = boxed.borrow::<QueueItemMetadata>();
             let key = item.as_ptr() as usize;
             let cell_state = cell_states
                 .borrow_mut()
@@ -572,11 +576,12 @@ pub(in crate::ui) fn append_cover_column(
                 }),
             );
             apply_now_playing_item(&cover, &metadata, &shared, true);
-            let rendered_metadata = metadata.clone();
+            let rendered_metadata = boxed.clone();
             now_playing_marker::register_cell(&shared, item, {
                 let cover = cover.clone();
                 move |shared| {
-                    apply_now_playing_item(&cover, &rendered_metadata, shared, true);
+                    let metadata = rendered_metadata.borrow::<QueueItemMetadata>();
+                    apply_now_playing_item(&cover, &metadata, shared, true);
                 }
             });
 

@@ -137,14 +137,15 @@ pub(in crate::ui) fn append_title_column(
         if let Some(ai_badge) = label.next_sibling() {
             ai_badge.set_visible(track.is_some_and(|track| ai_badge_visible(track.is_ai)));
         }
-        let rendered_metadata = metadata.clone();
+        let rendered_metadata = boxed.clone();
         now_playing_marker::register_cell(&shared_for_bind, item, {
             let row = row.clone();
             let eq = eq.clone();
             let label = label.clone();
             move |shared| {
-                let playing = apply_now_playing_item(&row, &rendered_metadata, shared, false);
-                sync_now_playing_row(&row, &rendered_metadata, row_shared.clone());
+                let metadata = rendered_metadata.borrow::<QueueItemMetadata>();
+                let playing = apply_now_playing_item(&row, &metadata, shared, false);
+                sync_now_playing_row(&row, &metadata, row_shared.clone());
                 eq.set_visible(playing);
                 toggle_class(&label, NOW_PLAYING_TITLE_CLASS, playing);
             }

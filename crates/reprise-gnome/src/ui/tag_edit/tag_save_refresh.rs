@@ -1,7 +1,7 @@
 //! Chooses whether a successful Tag Editor save can refresh realised rating
 //! cells in place or must re-run the current track query.
 
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 
 use reprise_core::library::tag_edit::TrackWrite;
 use reprise_core::queries::BrowseFilter;
@@ -104,6 +104,7 @@ pub(super) fn first_view_mismatch(before: &[i64], after: &[i64]) -> i64 {
 }
 
 pub(super) fn tag_changed_ids(writes: &[TrackWrite], updated_ids: &[i64]) -> Vec<i64> {
+    let updated_ids = updated_ids.iter().copied().collect::<HashSet<_>>();
     writes
         .iter()
         .filter(|write| !write.patch.tags.is_empty() && updated_ids.contains(&write.id))
