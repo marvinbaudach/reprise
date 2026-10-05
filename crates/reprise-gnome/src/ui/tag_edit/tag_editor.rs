@@ -59,7 +59,10 @@ use crate::ui::tag_editor_widgets::{format_track_subtitle, update_star_display};
 pub(in crate::ui) const STAR_FILLED: &str = "\u{2605}";
 pub(in crate::ui) const STAR_OUTLINE: &str = "\u{2606}";
 
-#[cfg_attr(not(test), allow(dead_code))]
+#[cfg_attr(
+    not(test),
+    allow(dead_code, reason = "only tests inspect the presented dialog handles")
+)]
 pub(in crate::ui) struct PresentedTagEditor {
     pub(in crate::ui) dialog: adw::Dialog,
     pub(in crate::ui) cover_picture: gtk4::Picture,

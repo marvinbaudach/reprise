@@ -40,7 +40,6 @@ impl DeviceSyncRuntime {
         self.recompute_delta(&device_id)
     }
 
-    #[cfg_attr(not(test), allow(dead_code))]
     pub fn set_transfer_profile(
         self: &Rc<Self>,
         device_id: &str,
@@ -51,7 +50,6 @@ impl DeviceSyncRuntime {
         self.update_settings(settings)
     }
 
-    #[cfg_attr(not(test), allow(dead_code))]
     pub fn set_playlist_selected(
         self: &Rc<Self>,
         device_id: &str,
@@ -71,7 +69,6 @@ impl DeviceSyncRuntime {
         self.update_settings(settings)
     }
 
-    #[cfg_attr(not(test), allow(dead_code))]
     pub fn set_remove_deleted(
         self: &Rc<Self>,
         device_id: &str,
@@ -82,7 +79,6 @@ impl DeviceSyncRuntime {
         self.update_settings(settings)
     }
 
-    #[cfg_attr(not(test), allow(dead_code))]
     pub fn set_sync_automatically(
         self: &Rc<Self>,
         device_id: &str,
@@ -238,7 +234,6 @@ impl DeviceSyncRuntime {
         Ok(())
     }
 
-    #[cfg_attr(not(test), allow(dead_code))]
     pub(super) fn settings_for_update(&self, device_id: &str) -> Result<DeviceSettings, String> {
         self.device_states
             .borrow()

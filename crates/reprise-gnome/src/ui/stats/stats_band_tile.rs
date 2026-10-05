@@ -36,7 +36,13 @@ pub(super) struct StatsBandTile {
     artist_image: Rc<RefCell<Option<Rc<StatsArtistImage>>>>,
     current_candidates: Rc<RefCell<Vec<String>>>,
     cover_generation: Rc<Cell<u64>>,
-    #[cfg_attr(not(test), allow(dead_code))]
+    #[cfg_attr(
+        not(test),
+        allow(
+            dead_code,
+            reason = "only tests inspect this value; production code never reads it"
+        )
+    )]
     pub(super) image_loaded: Rc<Cell<Option<bool>>>,
 }
 

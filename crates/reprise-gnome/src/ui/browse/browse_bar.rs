@@ -65,7 +65,13 @@ pub struct BrowseBar {
     clear_all: gtk4::Button,
     /// FIL-1c: the left zone holding the place pill; empty at sidebar places.
     place_zone: gtk4::Box,
-    #[cfg_attr(not(test), allow(dead_code))]
+    #[cfg_attr(
+        not(test),
+        allow(
+            dead_code,
+            reason = "only tests inspect this value; production code never reads it"
+        )
+    )]
     scope_button: RefCell<Option<gtk4::Button>>,
     pub(super) chooser_facets: RefCell<Vec<BrowseFacet>>,
     pub(super) chooser_facet: Cell<Option<BrowseFacet>>,
