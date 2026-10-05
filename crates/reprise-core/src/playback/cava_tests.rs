@@ -49,6 +49,7 @@ fn odd_sample_rate_preserves_cavas_fractional_nyquist_cutoffs() {
 
 #[test]
 /// These are cavacore outputs for this signal; any deviation means the port drifted.
+/// `docs/research/cava-oracle/` regenerates them: harness, pinned fetch, probe results.
 fn ac_28_cava_bars_match_the_cavacore_reference_after_calibration() {
     const FRAMES: [usize; 4] = [172, 240, 255, 330];
     const REFERENCE: [[f32; 64]; 4] = [
