@@ -81,6 +81,8 @@ mod deleted_releases;
 pub mod device_sync;
 pub mod diagnostics;
 pub mod equalizer;
+pub mod error;
+pub use error::CoreError;
 pub mod events;
 pub mod external_link;
 pub mod fingerprint;
