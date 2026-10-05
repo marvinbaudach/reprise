@@ -142,12 +142,12 @@ fn serve_origin(
         write_response(stream, 403, &[], &[]);
         return;
     }
-    if let Some(status) = failures
+    let status = failures
         .lock()
         .unwrap()
         .get_mut(&range.start)
-        .and_then(VecDeque::pop_front)
-    {
+        .and_then(VecDeque::pop_front);
+    if let Some(status) = status {
         write_response(stream, status, &[], &[]);
         return;
     }

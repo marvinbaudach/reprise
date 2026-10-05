@@ -167,12 +167,12 @@ impl TrackAnalysisBackfill {
         {
             sink.cancel();
         }
-        if let Some(handle) = self
+        let worker = self
             .worker
             .lock()
             .unwrap_or_else(PoisonError::into_inner)
-            .take()
-        {
+            .take();
+        if let Some(handle) = worker {
             let _ = handle.join();
         }
     }

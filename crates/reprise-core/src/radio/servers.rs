@@ -56,7 +56,8 @@ pub fn parse_servers(json: &str) -> Result<Vec<String>, RadioError> {
 }
 
 pub fn discover() -> Result<ServerPool, RadioError> {
-    if let Some(cached) = lock_unpoisoned(&CACHED_SERVERS).clone() {
+    let cached = lock_unpoisoned(&CACHED_SERVERS).clone();
+    if let Some(cached) = cached {
         return Ok(cached);
     }
     let servers = parse_servers(&super::http::get(DISCOVERY_URL)?)?;
