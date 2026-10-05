@@ -27,6 +27,29 @@ def fail(message: str) -> None:
     sys.exit(f"check-flatpak-cargo-sources.sh: {message}")
 
 
+# Python keeps the last of two equal keys, and flatpak-builder's own parser may
+# keep another, so a file that repeats a key could pass this check and build
+# differently. Duplicates and non-finite numbers are therefore rejected outright.
+def reject_duplicate_keys(pairs):
+    keys = [key for key, _ in pairs]
+    repeated = sorted({key for key in keys if keys.count(key) > 1})
+    if repeated:
+        raise ValueError(f"duplicate key {repeated[0]!r}")
+    return dict(pairs)
+
+
+def reject_constant(constant: str):
+    raise ValueError(f"non-finite number {constant}")
+
+
+def parse_json(text: str):
+    return json.loads(
+        text,
+        object_pairs_hook=reject_duplicate_keys,
+        parse_constant=reject_constant,
+    )
+
+
 try:
     with lock_path.open("rb") as lock_stream:
         lock_data = tomllib.load(lock_stream)
@@ -34,9 +57,8 @@ except (OSError, tomllib.TOMLDecodeError) as error:
     fail(f"cannot read {lock_path}: {error}")
 
 try:
-    with sources_path.open(encoding="utf-8") as sources_stream:
-        sources_data = json.load(sources_stream)
-except (OSError, json.JSONDecodeError) as error:
+    sources_data = parse_json(sources_path.read_text(encoding="utf-8"))
+except (OSError, ValueError) as error:
     fail(f"cannot read {sources_path}: {error}")
 
 if not isinstance(sources_data, list):
@@ -75,8 +97,8 @@ def package_of(source: dict, what: str) -> str:
     if not isinstance(destination, str) or not destination.startswith(vendor_prefix):
         fail(f"{sources_path} has {what} without a {vendor_prefix}<name>-<version> dest")
     package = destination.removeprefix(vendor_prefix)
-    if not package or "/" in package:
-        fail(f"{sources_path} has an invalid {what} dest: {destination}")
+    if not package or "/" in package or package in {".", ".."}:
+        fail(f"{sources_path} has {what} with an invalid dest: {destination}")
     return package
 
 
@@ -152,9 +174,9 @@ for package, (name, version, checksum) in sorted(lock_packages.items()):
         problems.append(f"{package}: no {checksum_filename} entry")
         continue
     try:
-        contents = json.loads(inline["contents"])
-    except (TypeError, json.JSONDecodeError):
-        problems.append(f"{package}: {checksum_filename} contents are not JSON")
+        contents = parse_json(inline["contents"])
+    except (TypeError, ValueError):
+        problems.append(f"{package}: {checksum_filename} contents are not plain JSON")
         continue
     if contents != {"package": checksum, "files": {}}:
         problems.append(f"{package}: {checksum_filename} contents differ from the Cargo.lock checksum")

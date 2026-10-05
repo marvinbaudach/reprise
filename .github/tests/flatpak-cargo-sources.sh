@@ -98,6 +98,9 @@ rejects 'extra inline file' \
   'not allowed'
 rejects 'extra archive key' '.[0] += {"post-install": "true"}' 'keys'
 rejects 'extra inline key' '.[1] += {"perms": "0755"}' 'keys'
+rejects 'archive with a build-time key' '.[0] += {"strip-components": 0}' 'keys'
+rejects 'archive with a command list' '.[0] += {"commands": ["true"]}' 'keys'
+rejects 'archive with a destination file name' '.[0] += {"dest-filename": "x"}' 'keys'
 rejects 'archive checksum differs from Cargo.lock' \
   '.[0].sha256 = ("0" * 64)' 'sha256 does not equal'
 rejects 'archive from another host' \
@@ -110,13 +113,58 @@ rejects 'checksum file names another package' \
 rejects 'checksum file lists files' \
   '.[1].contents = ({"package": "'"$checksum"'", "files": {"build.rs": "0"}} | tojson)' \
   '.cargo-checksum.json contents differ'
-rejects 'checksum file is not JSON' '.[1].contents = "not json"' 'not JSON'
+rejects 'checksum file is not JSON' '.[1].contents = "not json"' 'not plain JSON'
 rejects 'altered Cargo config' \
   '.[2].contents += "[net]\noffline = false\n"' 'not allowed'
+rejects 'archive dest climbing out of the vendor directory' \
+  '.[0].dest = "cargo/vendor/.."' 'invalid dest'
+rejects 'archive dest below the package' \
+  '.[0].dest = "cargo/vendor/rusqlite-0.40.2/../x"' 'invalid dest'
+rejects 'archive dest with a trailing slash' \
+  '.[0].dest = "cargo/vendor/rusqlite-0.40.2/"' 'invalid dest'
+rejects 'absolute archive dest' '.[0].dest = "/cargo/vendor/rusqlite-0.40.2"' 'dest'
+rejects 'archive dest of another name' '.[0].dest = "cargo/vendor/other-1.0.0"' 'Orphaned'
+rejects 'checksum file with a repeated key' \
+  '.[1].contents = "{\"package\": \"0\", \"package\": \"'"$checksum"'\", \"files\": {}}"' \
+  'not plain JSON'
+rejects 'checksum file with a non-finite number' \
+  '.[1].contents = "{\"package\": NaN, \"files\": {}}"' 'not plain JSON'
 rejects 'Cargo config twice' '. + [.[2]]' 'exactly once'
 rejects 'Cargo config missing' 'del(.[2])' 'exactly once'
 rejects 'duplicate archive' '. + [.[0]]' 'twice'
 rejects 'duplicate checksum file' '. + [.[1]]' 'two checksum files'
 rejects 'checksum file without archive' 'del(.[0])' 'Missing from Flatpak Cargo sources'
+
+# jq cannot write a repeated key or a bare NaN, so these two edit the text.
+rejects_text() {
+  local label=$1 expression=$2 expected=$3 tampered output status
+  tampered="$tmp_root/tampered.json"
+  jq --compact-output . "$matching_sources" | sed "$expression" > "$tampered"
+  cmp --silent <(jq --compact-output . "$matching_sources") "$tampered" && {
+    printf 'tampering (%s) changed nothing\n' "$label" >&2
+    exit 1
+  }
+  set +e
+  output=$(scripts/check-flatpak-cargo-sources.sh "$lock_file" "$tampered" 2>&1)
+  status=$?
+  set -e
+  [[ $status -eq 1 ]] && grep -Fq -- "$expected" <<< "$output" || {
+    printf 'tampered sources (%s) must fail with %q, got %s:\n%s\n' \
+      "$label" "$expected" "$status" "$output" >&2
+    exit 1
+  }
+}
+
+rejects_text 'repeated type key' \
+  's/"type":"archive"/"type":"shell","type":"archive"/' 'duplicate key'
+rejects_text 'repeated archive-type key' \
+  's/"archive-type":"tar-gzip"/"archive-type":"tar-gzip","archive-type":"tar-bz2"/' \
+  'duplicate key'
+rejects_text 'repeated url key' \
+  's|"url":|"url":"https://example.com/x.crate","url":|' 'duplicate key'
+rejects_text 'non-finite number' 's/"archive-type":"tar-gzip"/"archive-type":NaN/' \
+  'non-finite number'
+rejects_text 'infinite number' 's/"archive-type":"tar-gzip"/"archive-type":-Infinity/' \
+  'non-finite number'
 
 printf 'Flatpak Cargo source contracts passed\n'
