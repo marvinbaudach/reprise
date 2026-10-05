@@ -4386,11 +4386,12 @@ STYLE-1).
   quantized cutoff frequencies, and a fixed frequency EQ, as well as
   auto-sensitivity, integral, and gravity, exactly as `cavacore` computes
   them; there is no noise-floor gate. An auto-sensitivity overshoot clips
-  only the overshooting band to 1.0. Only the cold-start calibration, until
-  the first frame without overshoot after the first overshoot, scales a
-  whole frame down to headroom. Digital silence does not increase
-  sensitivity; non-finite inputs and outputs are neutralized, and all
-  internal feedback loops stay bounded.
+  only the overshooting band to 1.0. Whole-frame scaling to headroom
+  happens only while the smoother is still in its initial calibration: from
+  construction until the first non-overshooting frame with signal after the
+  first overshoot; silent frames do not end calibration. Digital silence
+  does not increase sensitivity; non-finite inputs and outputs are
+  neutralized, and all internal feedback loops stay bounded.
   The scene engine takes over every CAVA band in the same frame without
   a second loudness mapping, normalization, or live envelope. It draws
   64 frequency-dependent, finely segmented neon columns one to one, with
