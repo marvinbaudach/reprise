@@ -11,7 +11,7 @@ use reprise_core::db::Db;
 use reprise_core::equalizer::EqualizerPreset;
 use reprise_core::library::settings::{self, PlayerBarPosition, ReplayGainMode};
 
-use crate::ui::artist_news_worker::ArtistNewsRuntime;
+use crate::ui::artist_news::artist_news_worker::ArtistNewsRuntime;
 use crate::ui::artist_portrait_worker::ArtistPortraitRuntime;
 use crate::ui::concerts::ConcertsRuntime;
 use crate::ui::cover_download_worker::CoverDownloadRuntime;

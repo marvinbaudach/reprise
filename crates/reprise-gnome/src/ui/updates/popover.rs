@@ -8,7 +8,7 @@ use std::rc::Rc;
 use gtk4::prelude::*;
 use libadwaita as adw;
 
-use crate::ui::artist_news_worker::ArtistNewsRuntime;
+use crate::ui::artist_news::artist_news_worker::ArtistNewsRuntime;
 use crate::ui::concerts::ConcertsRuntime;
 use crate::ui::strings;
 

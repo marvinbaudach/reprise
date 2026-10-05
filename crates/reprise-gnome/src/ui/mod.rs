@@ -147,7 +147,6 @@ pub(crate) mod window;
 // implementation module now lives with its feature directory; these explicit
 // imports keep call sites stable while preventing ui/mod.rs from becoming a
 // second, flattened module tree again.
-use artist_news::artist_news_worker;
 pub(crate) use browse::browse_bar;
 use browse::browse_filter_count;
 use compact::{

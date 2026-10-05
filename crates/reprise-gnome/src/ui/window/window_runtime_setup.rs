@@ -8,7 +8,6 @@ use libadwaita as adw;
 use reprise_core::db::Db;
 use reprise_core::waveform::RenderDataBackend;
 
-use super::super::artist_news_worker::ArtistNewsRuntime;
 use super::super::artist_portrait_worker::ArtistPortraitRuntime;
 use super::super::concerts::ConcertsRuntime;
 use super::super::cover_download_worker::{self, CoverDownloadRuntime};
@@ -16,6 +15,7 @@ use super::super::device_sync_runtime::DeviceSyncRuntime;
 use super::super::player_controller::PlayerController;
 use super::super::podcasts::PodcastsRuntime;
 use super::super::scrobble_runtime::ScrobbleRuntime;
+use crate::ui::artist_news::artist_news_worker::ArtistNewsRuntime;
 
 pub(super) struct WindowRuntimes {
     pub cover_download: CoverDownloadRuntime,
