@@ -15,8 +15,8 @@ name: Dependabot Flatpak sources
 # GITHUB_PATH/GITHUB_ENV files, so code that runs before a token is used could
 # plant a git hook or a PATH entry that takes the token.
 #
-# - `regenerate` holds no secret. It runs the generator, which pulls its
-#   Python dependencies from PyPI, from outside the checkout and with uv's
+# - `regenerate` holds no secret. It runs the generator, with the Python
+#   dependencies from a hashed lock, from outside the checkout and with uv's
 #   config discovery off, and hands over one file as an artifact.
 # - `push` holds the token, runs no uv and uses no action at all. It checks
 #   the artifact's content against Cargo.lock, copies the one validated
@@ -108,15 +108,23 @@ jobs:
 
       # Run from the temp directory with config discovery off, so no uv.toml or
       # pyproject.toml from the pull request steers uv. The generator's own
-      # dependencies are unpinned ranges, so resolution is frozen at a fixed
-      # date: a PyPI release published later cannot change what this run
-      # executes. Moving the date is a reviewed change to this file.
+      # dependencies are unpinned ranges, so they are locked with hashes in
+      # .github/flatpak-cargo-generator.lock, which uv reads beside the script
+      # and --locked insists on: nothing is resolved at run time, a file whose
+      # hash differs is refused, and a lock that does not match the generator is
+      # an error. The lock was cut at 2026-09-28, more than a week before this
+      # change, so a release published in that week is not in it. To move it, run
+      # `uv lock --no-config --script <generator> --exclude-newer <date>` on the
+      # pinned generator and copy the .lock file over; the contract test pins the
+      # date in both places. Moving it is a reviewed change to this file.
       - name: Regenerate flatpak/cargo-sources.json
         id: regenerate
         run: |
           mkdir "$RUNNER_TEMP/regenerated"
+          cp "$GITHUB_WORKSPACE/.github/flatpak-cargo-generator.lock" \
+            "$RUNNER_TEMP/flatpak-cargo-generator.py.lock"
           cd "$RUNNER_TEMP" || exit 1
-          uv run --no-config --exclude-newer 2026-10-05T00:00:00Z \
+          uv run --no-config --locked --exclude-newer 2026-09-28T00:00:00Z \
             --script "$RUNNER_TEMP/flatpak-cargo-generator.py" \
             "$GITHUB_WORKSPACE/Cargo.lock" \
             -o "$RUNNER_TEMP/regenerated/cargo-sources.json"

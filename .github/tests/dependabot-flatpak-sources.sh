@@ -65,15 +65,17 @@ fi
 # The regeneration must produce what the documented invocation produces, or the
 # file it writes would not satisfy the check script. It runs from outside the
 # checkout with uv's config discovery off and its resolution frozen at a fixed
-# date, so neither the pull request nor a later PyPI release can steer uv.
+# date, so neither the pull request nor a later PyPI release can steer uv. Its
+# dependencies come from a hashed lock beside the script, and --locked refuses
+# anything the lock does not already say.
 rg --fixed-strings --quiet \
     'flatpak-cargo-generator.py Cargo.lock -o flatpak/cargo-sources.json' \
     "$repo_root/flatpak/README.md" || \
     fail "flatpak/README.md no longer documents the invocation this job reproduces"
 rg --multiline --quiet \
-    'cd "\$RUNNER_TEMP" \|\| exit 1\n          uv run --no-config --exclude-newer 2026-10-05T00:00:00Z \\\n            --script "\$RUNNER_TEMP/flatpak-cargo-generator\.py" \\\n            "\$GITHUB_WORKSPACE/Cargo\.lock" \\\n            -o "\$RUNNER_TEMP/regenerated/cargo-sources\.json"' \
+    'cp "\$GITHUB_WORKSPACE/\.github/flatpak-cargo-generator\.lock" \\\n            "\$RUNNER_TEMP/flatpak-cargo-generator\.py\.lock"\n          cd "\$RUNNER_TEMP" \|\| exit 1\n          uv run --no-config --locked --exclude-newer 2026-09-28T00:00:00Z \\\n            --script "\$RUNNER_TEMP/flatpak-cargo-generator\.py" \\\n            "\$GITHUB_WORKSPACE/Cargo\.lock" \\\n            -o "\$RUNNER_TEMP/regenerated/cargo-sources\.json"' \
     "$workflow" || \
-    fail "the generator must run from the temp directory as: uv run --no-config --exclude-newer <date> --script <generator> <workspace>/Cargo.lock -o <temp>/cargo-sources.json"
+    fail "the generator must run from the temp directory as: the hashed lock copied beside the generator, then uv run --no-config --locked --exclude-newer <date> --script <generator> <workspace>/Cargo.lock -o <temp>/cargo-sources.json"
 
 # The no-op run has to stay a no-op: that is what ends the loop, because a
 # token push starts a new run of this very job.
@@ -98,10 +100,11 @@ rg --multiline --quiet \
     '"\$RUNNER_TEMP/base/scripts/check-flatpak-cargo-sources\.sh" \\\n            "\$GITHUB_WORKSPACE/Cargo\.lock" "\$RUNNER_TEMP/regenerated/cargo-sources\.json"' "$workflow" || \
     fail "the handed-over artifact must be validated against Cargo.lock before it is committed"
 
-python3 - "$workflow" "$generator_commit" "$generator_sha256" <<'PY' || fail "the job split does not isolate the token from the generator"
+python3 - "$workflow" "$generator_commit" "$generator_sha256" "$repo_root/.github/flatpak-cargo-generator.lock" <<'PY' || fail "the job split does not isolate the token from the generator"
 import pathlib
 import re
 import sys
+import tomllib
 
 import yaml
 
@@ -299,10 +302,33 @@ assert "github.token" not in yaml.safe_dump(regenerate), "the regenerate job nee
 
 # The generator runs pinned and isolated, with no moving dependency.
 generate = next(s for s in regenerate["steps"] if s.get("id") == "regenerate")["run"]
-assert "--no-config" in generate and "--exclude-newer" in generate, (
-    "the generator must run with uv config discovery off and resolution frozen at a date"
+assert "--no-config" in generate and "--locked" in generate, (
+    "the generator must run with uv config discovery off and its hashed lock enforced"
 )
-assert re.search(r"--exclude-newer \d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z", generate)
+LOCK_CUTOFF = "2026-09-28T00:00:00Z"
+assert f"--exclude-newer {LOCK_CUTOFF}" in generate, (
+    f"the cut-off must be {LOCK_CUTOFF}: more than a week behind this change, and the lock's own"
+)
+assert "--frozen" not in generate and "--no-sync" not in generate and "--with" not in generate, (
+    "--frozen skips the lock's consistency check, and nothing may add a dependency beside it"
+)
+# The lock is what the job installs from: every package is a pinned PyPI release
+# and every file it may install carries a sha256, so uv refuses a substitute.
+lock = tomllib.loads(pathlib.Path(sys.argv[4]).read_text(encoding="utf-8"))
+assert lock["options"]["exclude-newer"] == LOCK_CUTOFF, "the lock must be cut at the pinned date"
+assert {item["name"] for item in lock["manifest"]["requirements"]} == {"aiohttp", "pyyaml", "tomlkit"}, (
+    "the lock must cover exactly the generator's three direct dependencies"
+)
+for package in lock["package"]:
+    assert package["source"] == {"registry": "https://pypi.org/simple"}, (
+        f"{package['name']} must come from PyPI, not {package['source']}"
+    )
+    files = [*package.get("wheels", []), *([package["sdist"]] if "sdist" in package else [])]
+    assert files, f"{package['name']} lists no file to install"
+    for entry in files:
+        assert re.fullmatch(r"sha256:[0-9a-f]{64}", entry.get("hash", "")), (
+            f"{package['name']}: every file in the lock needs a sha256, got {entry}"
+        )
 fetch = next(s for s in regenerate["steps"] if s["name"] == "Fetch the pinned generator")
 assert fetch["env"] == {
     "GENERATOR_COMMIT": generator_commit,
