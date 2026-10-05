@@ -30,6 +30,37 @@ reject_pattern() {
   fi
 }
 
+# The display runner builds with the selection of the merge gate's "Workspace
+# tests" line, so that inside the gate the build is a no-op and no second set of
+# cargo features is compiled. Pinning the runner's text alone would let the two
+# drift apart silently; this compares them. Both sides must be non-empty, or two
+# failed extractions would compare equal and prove nothing.
+verify_display_runner_selection() {
+  local gate_selection runner_selection
+  gate_selection=$(awk '
+    /^gate "Workspace tests"/ { collecting = 1 }
+    collecting { text = text " " $0; if ($0 !~ /\\$/) { exit } }
+    END {
+      sub(/.*cargo test /, "", text)
+      gsub(/[ \t]+/, " ", text)
+      sub(/^ /, "", text)
+      sub(/ $/, "", text)
+      print text
+    }' scripts/check-merge-readiness.sh)
+  runner_selection=$(sed -n 's/^workspace_test_selection=(\(.*\))$/\1/p' \
+    scripts/check-display-tests.sh)
+  if [[ -z $gate_selection || -z $runner_selection ]]; then
+    echo "display runner selection check found no selection to compare" \
+      "(gate: '$gate_selection', runner: '$runner_selection')" >&2
+    exit 1
+  fi
+  if [[ $gate_selection != "$runner_selection" ]]; then
+    echo "scripts/check-display-tests.sh builds with '$runner_selection' but the" \
+      "\"Workspace tests\" gate runs 'cargo test $gate_selection'; keep them equal" >&2
+    exit 1
+  fi
+}
+
 verify_workflow_run_block_indentation() {
   local scratch_root actual_dir expected_dir
   scratch_root=$(mktemp -d)
@@ -208,8 +239,31 @@ require_pattern 'GTK_USE_PORTAL=0' scripts/check-display-tests.sh
 require_pattern 'GSK_RENDERER=cairo' scripts/check-display-tests.sh
 require_pattern 'cleanup_worker_roots' scripts/check-display-tests.sh
 require_pattern 'if \[\[ -f \$display_test_passed \]\]' scripts/check-display-tests.sh
-require_pattern 'server-num' scripts/check-display-tests.sh
-require_pattern_order 'if env' 'dbus-run-session -- xvfb-run' scripts/check-display-tests.sh
+# The runner owns its X server: `-displayfd` makes Xvfb pick and report a free
+# display, so the old per-test server-number bands and `xvfb-run` are gone, and
+# so is the retry on GTK's init failure — only a server that never reported a
+# display is retried.
+# Anchored on the code lines: the comments above them name the same flags, so a
+# bare match would stay green after the real Xvfb command or the DISPLAY export
+# changed.
+require_pattern '^\s*Xvfb\s.*-displayfd\b' scripts/check-display-tests.sh
+require_pattern '^\s*Xvfb\s.*-screen 0 640x480x24\b' scripts/check-display-tests.sh
+require_pattern '^\s*DISPLAY=":\$worker_display" \\$' scripts/check-display-tests.sh
+reject_pattern 'server[-_]num|xvfb-run --' scripts/check-display-tests.sh
+require_pattern 'Xvfb reported no display' scripts/check-display-tests.sh
+reject_pattern 'grep -q "Failed to initialize GTK"' scripts/check-display-tests.sh
+# One build, one direct exec per test: the cargo selection builds the test
+# binaries once, the binary is found by package, bin and profile.test, and a
+# missing or ambiguous binary stops the run.
+require_pattern 'cargo test "\$\{workspace_test_selection\[@\]\}" --no-run' scripts/check-display-tests.sh
+require_pattern '\-\-message-format=json' scripts/check-display-tests.sh
+require_pattern 'profile\.test == true' scripts/check-display-tests.sh
+require_pattern '^if \(\( \$\{#test_bins\[@\]\} != 1 \)\); then$' scripts/check-display-tests.sh
+require_pattern 'expected exactly one reprise-gnome test binary' scripts/check-display-tests.sh
+require_pattern '"\$DISPLAY_TEST_BIN" --ignored --exact "\$DISPLAY_TEST"' scripts/check-display-tests.sh
+reject_pattern 'cargo test -p reprise-gnome' scripts/check-display-tests.sh
+require_pattern_order 'if env' 'dbus-run-session --' scripts/check-display-tests.sh
+verify_display_runner_selection
 require_pattern 'DISPLAY_TEST_JOBS: 1' .github/workflows/ci.yml
 require_pattern 'Frontend lint' scripts/check-architecture.sh
 require_pattern 'cargo machete --with-metadata' scripts/check-frontend-thinness.sh
