@@ -15,7 +15,6 @@ use reprise_core::library::watcher::WatcherHandle;
 
 use super::cover_download_batch::CoverDownloadBatch;
 use super::first_run::FirstRunDecision;
-use super::library_player_bar::LibraryPlayerBarShell;
 use super::lyrics_batch::LyricsBatch;
 use super::minimal_view::MinimalView;
 use super::now_playing::NowPlayingPanel;
@@ -28,6 +27,7 @@ use super::{
     library_shell, podcast_refresh_scheduler, section_search as section_search_ui,
     section_search_wiring, spectrogram_backend, table_columns, window_navigation, window_smoke,
 };
+use crate::ui::player_bar::library_player_bar::LibraryPlayerBarShell;
 use crate::ui::stats::stats_view::StatsView;
 use crate::ui::{
     compact_mode_controls, compact_mode_suggestion, first_run, help,

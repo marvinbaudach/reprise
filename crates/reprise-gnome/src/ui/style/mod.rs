@@ -72,7 +72,7 @@ fn app_css() -> String {
         crate::ui::window::library_chrome::css(),
         super::now_playing::css(),
         super::lyrics_view::css(),
-        super::player_bar_layout::css(),
+        crate::ui::player_bar::player_bar_layout::css(),
         super::preference_layout::css(),
         super::preference_playback::css(),
         super::preference_background_bar::css(),

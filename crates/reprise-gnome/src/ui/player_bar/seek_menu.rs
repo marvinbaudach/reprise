@@ -6,8 +6,8 @@
 
 use gtk4::prelude::*;
 
+use crate::ui::player_bar::waveform_seek::WaveformSeek;
 use crate::ui::strings;
-use crate::ui::waveform_seek::WaveformSeek;
 
 /// The action group the seek bar's context menu lives in, and the one entry in
 /// it. One item, because there is one thing about this bar a menu can usefully

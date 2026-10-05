@@ -164,7 +164,6 @@ use lyrics::{
 };
 use playback::{audio_effects, player_event_handling, up_next_transport};
 pub(crate) use playback::{now_playing_wiring, player_controller, player_controller_wiring};
-use player_bar::{library_player_bar, player_bar_layout, player_bar_state, waveform_seek};
 use preferences::{
     preference_background_bar, preference_dependencies, preference_lastfm, preference_layout,
     preference_listenbrainz, preference_playback, preference_plugins, preference_rhythmbox,

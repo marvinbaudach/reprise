@@ -276,7 +276,10 @@ fn play_16_the_play_buttons_keep_the_playback_accent_and_white_glyph() {
     use super::color_math::{contrast_ratio, parse_hex_rgb};
 
     for (css, selector) in [
-        (crate::ui::player_bar_layout::css(), ".player-bar-play"),
+        (
+            crate::ui::player_bar::player_bar_layout::css(),
+            ".player-bar-play",
+        ),
         (
             crate::ui::compact_player_layouts::mini_css(),
             ".mini-player-play",

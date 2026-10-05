@@ -18,11 +18,11 @@ use gtk4::prelude::*;
 use libadwaita::prelude::AnimationExt;
 
 use crate::ui::motion;
+use crate::ui::player_bar::player_bar_layout::{self, PlayerBarWidgets};
 use crate::ui::player_bar::transport_glyph::{Glyph, TransportGlyph};
-use crate::ui::player_bar_layout::{self, PlayerBarWidgets};
+use crate::ui::player_bar::waveform_seek::WaveformSeek;
 use crate::ui::strings;
 use crate::ui::swell::Swell;
-use crate::ui::waveform_seek::WaveformSeek;
 use reprise_core::format::{format_duration, format_remaining};
 use reprise_core::library::settings::SeekColouring;
 use reprise_core::playback::PlaybackState;

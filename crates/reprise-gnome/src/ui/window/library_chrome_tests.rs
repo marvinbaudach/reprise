@@ -410,7 +410,7 @@ fn header_stays_above_a_player_bar_shell() {
     let header = adw::HeaderBar::new();
     let navigation = test_navigation();
     let player = gtk4::ActionBar::new();
-    let shell = super::super::library_player_bar::LibraryPlayerBarShell::new(
+    let shell = crate::ui::player_bar::library_player_bar::LibraryPlayerBarShell::new(
         &navigation,
         Some(player.upcast_ref()),
         reprise_core::library::settings::PlayerBarPosition::Top,

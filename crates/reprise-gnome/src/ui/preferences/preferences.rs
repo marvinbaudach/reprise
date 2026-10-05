@@ -14,11 +14,11 @@ use reprise_core::library::settings::{self, PlayerBarPosition, ReplayGainMode};
 use crate::ui::artist_news::artist_news_worker::ArtistNewsRuntime;
 use crate::ui::concerts::ConcertsRuntime;
 use crate::ui::cover_download_worker::CoverDownloadRuntime;
-use crate::ui::library_player_bar::LibraryPlayerBarShell;
 use crate::ui::location_broadcast::LocationBroadcast;
 use crate::ui::lyrics_batch::LyricsBatch;
 use crate::ui::now_playing::artist_portrait_worker::ArtistPortraitRuntime;
 use crate::ui::now_playing::NowPlayingPanel;
+use crate::ui::player_bar::library_player_bar::LibraryPlayerBarShell;
 use crate::ui::player_controller::PlayerController;
 use crate::ui::podcasts::PodcastsRuntime;
 #[cfg(test)]
