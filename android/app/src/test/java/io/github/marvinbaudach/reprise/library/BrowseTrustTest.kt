@@ -4,19 +4,23 @@ import android.content.Context
 import android.os.Bundle
 import android.os.Looper
 import androidx.media3.common.MediaItem
+import androidx.media3.common.MediaMetadata
 import androidx.media3.common.Player
 import androidx.media3.exoplayer.ExoPlayer
 import androidx.media3.session.LibraryResult
 import androidx.media3.session.MediaBrowser
 import androidx.media3.session.MediaLibraryService.MediaLibrarySession
+import androidx.media3.session.MediaSession
 import androidx.media3.session.SessionCommand
 import androidx.media3.session.SessionError
 import androidx.test.core.app.ApplicationProvider
 import com.google.common.util.concurrent.ListenableFuture
+import java.util.concurrent.ExecutionException
 import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
+import org.junit.Assert.assertThrows
 import org.junit.Assert.assertTrue
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -155,6 +159,20 @@ class BrowseTrustSessionTest {
         return browser
     }
 
+    private fun secretItem(uri: String, title: String) = MediaItem.Builder()
+        .setMediaId(uri)
+        .setUri(uri)
+        .setMediaMetadata(MediaMetadata.Builder().setTitle(title).build())
+        .build()
+
+    private fun sessionOnPlayer(): MediaLibrarySession {
+        val session = MediaLibrarySession.Builder(context, exoPlayer, object : MediaLibrarySession.Callback {})
+            .setId("trust-test-${opened.size}")
+            .build()
+        opened += AutoCloseable { session.release() }
+        return session
+    }
+
     private val leaf: MediaItem
         get() = MediaItem.Builder()
             .setMediaId(BrowseId.Track(BrowseId.RecentlyPlayed, 3).mediaId)
@@ -257,10 +275,127 @@ class BrowseTrustSessionTest {
     }
 
     @Test
-    fun anUntrustedControllerKeepsTheTransport() {
-        val browser = browser(connectedAs = false, id = "untrusted-transport")
+    fun anUntrustedControllerIsGivenNoPlayerCommandAtAll() {
+        val browser = browser(connectedAs = false, id = "untrusted-player-commands")
 
+        listOf(
+            Player.COMMAND_PLAY_PAUSE,
+            Player.COMMAND_STOP,
+            Player.COMMAND_SEEK_IN_CURRENT_MEDIA_ITEM,
+            Player.COMMAND_SET_MEDIA_ITEM,
+            Player.COMMAND_CHANGE_MEDIA_ITEMS,
+            Player.COMMAND_SET_SHUFFLE_MODE,
+            Player.COMMAND_SET_SPEED_AND_PITCH,
+            Player.COMMAND_SET_DEVICE_VOLUME_WITH_FLAGS,
+            Player.COMMAND_GET_TIMELINE,
+            Player.COMMAND_GET_CURRENT_MEDIA_ITEM,
+            Player.COMMAND_GET_METADATA,
+        ).forEach { command ->
+            assertFalse("command $command", browser.isCommandAvailable(command))
+        }
+        assertEquals(emptySet<SessionCommand>(), browser.availableSessionCommands.commands)
+    }
+
+    @Test
+    fun anUntrustedControllerSeesNeitherTheCurrentItemNorTheTimeline() {
+        exoPlayer.setMediaItems(
+            listOf(
+                secretItem("file:///music/secret-1.flac", "Secret Song"),
+                secretItem("file:///music/secret-2.flac", "Secret Next"),
+            ),
+        )
+        val browser = browser(connectedAs = false, id = "untrusted-snoop")
+        settle(browser)
+
+        assertNull(browser.currentMediaItem)
+        assertTrue(browser.currentTimeline.isEmpty)
+        assertEquals(0, browser.mediaItemCount)
+        assertEquals(MediaMetadata.EMPTY, browser.mediaMetadata)
+        assertEquals(MediaMetadata.EMPTY, browser.playlistMetadata)
+    }
+
+    @Test
+    fun aTrustedControllerStillSeesTheCurrentItem() {
+        exoPlayer.setMediaItem(secretItem("file:///music/ok.flac", "Open Song"))
+        val browser = browser(connectedAs = true, id = "trusted-current")
+        settle(browser)
+
+        assertEquals("Open Song", browser.currentMediaItem?.mediaMetadata?.title)
         assertTrue(browser.isCommandAvailable(Player.COMMAND_PLAY_PAUSE))
+    }
+
+    @Test
+    fun aControllerThatLosesTrustCannotDriveThePlayer() {
+        exoPlayer.playWhenReady = true
+        val browser = browser(connectedAs = true, id = "revoked-transport")
+        allowed = false
+
+        browser.pause()
+        browser.seekTo(5_000)
+        browser.setMediaItem(MediaItem.fromUri("http://example.invalid/stream"))
+        browser.setMediaItems(listOf(MediaItem.fromUri("file:///etc/passwd")))
+        browser.addMediaItem(MediaItem.fromUri("content://other.app/secret"))
+        browser.stop()
+        browser.setShuffleModeEnabled(true)
+        browser.setPlaybackSpeed(2f)
+        settle(browser)
+
+        assertTrue(exoPlayer.playWhenReady)
+        assertEquals(0, exoPlayer.mediaItemCount)
+        assertFalse(exoPlayer.shuffleModeEnabled)
+        assertEquals(1f, exoPlayer.playbackParameters.speed, 0f)
+    }
+
+    @Test
+    fun aRefusedPlayerCommandIsAnsweredWithPermissionDenied() {
+        val callback = BrowseCallback(
+            tree = { MediaBrowseTree(library, TEST_LABELS) },
+            access = BrowserAccess { false },
+        )
+        opened += AutoCloseable { callback.close() }
+        val stranger = MediaSession.ControllerInfo.createTestOnlyControllerInfo(
+            "com.example.snoop", 1, STRANGER_UID, 1, 1, false, Bundle.EMPTY, false,
+        )
+
+        assertEquals(
+            SessionError.ERROR_PERMISSION_DENIED,
+            callback.onPlayerCommandRequest(sessionOnPlayer(), stranger, Player.COMMAND_PLAY_PAUSE),
+        )
+    }
+
+    @Test
+    fun aControllerThatMayNotBrowseCannotSmuggleInAUriItem() {
+        val callback = BrowseCallback(
+            tree = { MediaBrowseTree(library, TEST_LABELS) },
+            access = BrowserAccess { false },
+        )
+        opened += AutoCloseable { callback.close() }
+        val stranger = MediaSession.ControllerInfo.createTestOnlyControllerInfo(
+            "com.example.snoop", 1, STRANGER_UID, 1, 1, false, Bundle.EMPTY, false,
+        )
+        val uriItem = MediaItem.fromUri("file:///etc/passwd")
+
+        assertThrows(ExecutionException::class.java) {
+            await(callback.onAddMediaItems(sessionOnPlayer(), stranger, listOf(uriItem)))
+        }
+        assertThrows(ExecutionException::class.java) {
+            await(callback.onSetMediaItems(sessionOnPlayer(), stranger, listOf(uriItem), 0, 0))
+        }
+    }
+
+    @Test
+    fun aTrustedControllerStillCanSetAnItemWithAUri() {
+        val callback = BrowseCallback(
+            tree = { MediaBrowseTree(library, TEST_LABELS) },
+            access = BrowserAccess { true },
+        )
+        opened += AutoCloseable { callback.close() }
+        val friend = MediaSession.ControllerInfo.createTestOnlyControllerInfo(
+            "com.example.friend", 1, STRANGER_UID, 1, 1, true, Bundle.EMPTY, false,
+        )
+        val uriItem = MediaItem.fromUri("file:///music/a.flac")
+
+        assertEquals(listOf(uriItem), await(callback.onAddMediaItems(sessionOnPlayer(), friend, listOf(uriItem))))
     }
 
     @Test
