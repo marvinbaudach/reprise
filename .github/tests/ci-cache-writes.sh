@@ -18,7 +18,8 @@ repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 if [[ $# -gt 0 ]]; then
     workflows=("$@")
 else
-    workflows=("$repo_root"/.github/workflows/*.yml)
+    shopt -s nullglob
+    workflows=("$repo_root"/.github/workflows/*.yml "$repo_root"/.github/workflows/*.yaml)
 fi
 
 python3 - "${workflows[@]}" <<'PY' || { printf 'CI cache writes contract failed\n' >&2; exit 1; }
