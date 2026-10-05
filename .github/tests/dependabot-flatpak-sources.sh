@@ -77,6 +77,12 @@ rg --fixed-strings --quiet "if: needs.regenerate.outputs.changed == 'true'" "$wo
 rg --fixed-strings --quiet \
     "if [[ \$changes != ' M flatpak/cargo-sources.json' ]]; then" "$workflow" || \
     fail "the push must refuse to commit anything but flatpak/cargo-sources.json"
+rg --fixed-strings --quiet "if [[ \$listing != 'f cargo-sources.json' ]]; then" "$workflow" || \
+    fail "the downloaded artifact must be exactly one regular file named cargo-sources.json"
+rg --fixed-strings --quiet 'git -c core.hooksPath=/dev/null commit' "$workflow" || \
+    fail "the commit must run with hooks disabled"
+rg --fixed-strings --quiet 'git -c core.hooksPath=/dev/null push' "$workflow" || \
+    fail "the push must run with hooks disabled"
 rg --fixed-strings --quiet \
     'scripts/check-flatpak-cargo-sources.sh Cargo.lock "$RUNNER_TEMP/regenerated/cargo-sources.json"' "$workflow" || \
     fail "the handed-over artifact must be validated against Cargo.lock before it is committed"

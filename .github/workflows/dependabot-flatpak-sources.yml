@@ -163,6 +163,14 @@ jobs:
         run: |
           gh run download "$GITHUB_RUN_ID" --name cargo-sources \
             --dir "$RUNNER_TEMP/regenerated"
+          # Exactly one regular file, not a symlink, with the expected name:
+          # %y reports a symlink as `l` instead of following it.
+          listing=$(find "$RUNNER_TEMP/regenerated" -mindepth 1 -printf '%y %P\n')
+          if [[ $listing != 'f cargo-sources.json' ]]; then
+            printf 'expected the artifact to hold only cargo-sources.json, got:\n%s\n' \
+              "$listing" >&2
+            exit 1
+          fi
 
       # The artifact comes from a job that ran code from PyPI, so its content
       # is checked against Cargo.lock before it is committed: a valid JSON file
@@ -191,7 +199,7 @@ jobs:
           git config user.name 'github-actions[bot]'
           git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
           git add flatpak/cargo-sources.json
-          git commit --message 'The Flatpak Cargo sources follow Cargo.lock'
-          git push \
+          git -c core.hooksPath=/dev/null commit --message 'The Flatpak Cargo sources follow Cargo.lock'
+          git -c core.hooksPath=/dev/null push \
             "https://x-access-token:${PUSH_TOKEN}@github.com/${GITHUB_REPOSITORY}.git" \
             "HEAD:refs/heads/$BRANCH"
