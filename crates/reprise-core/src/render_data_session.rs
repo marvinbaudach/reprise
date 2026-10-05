@@ -13,19 +13,26 @@ use crate::spectrogram::{
 };
 use crate::waveform::{TrackRenderData, STORED_PEAK_COUNT};
 
-/// Streams with at least this many channels are 5.1 or wider.
-const SURROUND_MIN_CHANNELS: usize = 6;
-/// WAVE channel order (FL FR FC LFE BL BR ...): the LFE is the fourth channel.
+/// The channel counts of the two layouts whose order is conventional: 5.1 and
+/// 7.1 in WAVE order (FL FR FC LFE BL BR [SL SR]), where the LFE is the fourth
+/// channel. The decoders hand over no channel mask, so any other count (7, 9,
+/// 10 ...) has no layout this code can name and keeps every channel rather
+/// than guessing which one is the LFE. A 6- or 8-channel stream in a different
+/// order would lose the wrong channel; plumbing a mask through the decoders
+/// would close that gap and has not been done.
+const LFE_LAYOUT_CHANNEL_COUNTS: [usize; 2] = [6, 8];
 const LFE_CHANNEL_INDEX: usize = 3;
 
 const SAMPLES_PER_FRAME: usize =
     SPECTROGRAM_SAMPLE_RATE_HZ as usize / SPECTROGRAM_FRAME_RATE_HZ as usize;
 
-/// Mono mix of one interleaved frame. The LFE channel of a 5.1-or-wider stream
+/// Mono mix of one interleaved frame. The LFE channel of a 5.1 or 7.1 stream
 /// is left out: it carries only sub-bass effects, and averaging it in would
 /// drag every film soundtrack's spectrogram toward the lows.
 fn downmix_frame<T: Copy>(frame: &[T], to_f32: impl Fn(T) -> f32) -> f32 {
-    let skipped = (frame.len() >= SURROUND_MIN_CHANNELS).then_some(LFE_CHANNEL_INDEX);
+    let skipped = LFE_LAYOUT_CHANNEL_COUNTS
+        .contains(&frame.len())
+        .then_some(LFE_CHANNEL_INDEX);
     let (sum, count) = frame
         .iter()
         .enumerate()
