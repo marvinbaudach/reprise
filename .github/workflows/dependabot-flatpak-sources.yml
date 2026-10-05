@@ -1,8 +1,8 @@
 name: Dependabot Flatpak sources
 
-# A Dependabot Cargo bump changes Cargo.lock and nothing else, so
-# flatpak/cargo-sources.json is stale on arrival and "Verify Flatpak Cargo
-# sources" fails on it. This regenerates the file and pushes it onto the bump's
+# A Dependabot Cargo bump changes Cargo.lock without touching
+# flatpak/cargo-sources.json, so the sources are stale on arrival and "Verify
+# Flatpak Cargo sources" fails on it. This regenerates the file and pushes it onto the bump's
 # own branch.
 #
 # The push has to use REPRISE_AUTOMERGE_TOKEN: a push made with the Actions
@@ -53,12 +53,20 @@ jobs:
     timeout-minutes: 10
     outputs:
       changed: ${{ steps.regenerate.outputs.changed }}
+      sha: ${{ steps.revision.outputs.sha }}
     steps:
       - name: Check out the bump's branch
         uses: actions/checkout@v7
         with:
           ref: ${{ github.event.pull_request.head.ref }}
           persist-credentials: false
+
+      # The push job checks out exactly this commit. If Dependabot moves the
+      # branch in between, the push is rejected instead of grafting sources
+      # built from the old lock file onto the new tip.
+      - name: Record the commit the sources are built from
+        id: revision
+        run: echo "sha=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
 
       - name: Set up uv
         uses: astral-sh/setup-uv@v10.0.1
@@ -115,7 +123,7 @@ jobs:
       - name: Check out the bump's branch
         uses: actions/checkout@v7
         with:
-          ref: ${{ github.event.pull_request.head.ref }}
+          ref: ${{ needs.regenerate.outputs.sha }}
           persist-credentials: false
 
       - name: Fetch the regenerated sources

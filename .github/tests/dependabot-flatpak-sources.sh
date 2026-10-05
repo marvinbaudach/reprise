@@ -137,6 +137,18 @@ assert names.index("Fetch the pinned generator") < names.index(
 ), "the generator must be fetched and verified before it runs"
 assert regenerate["outputs"]["changed"] == "${{ steps.regenerate.outputs.changed }}"
 
+# The push job builds on the commit the sources were generated from, so a
+# branch that moved in between makes the push fail instead of mixing states.
+assert regenerate["outputs"]["sha"] == "${{ steps.revision.outputs.sha }}"
+assert push["steps"][0]["with"]["ref"] == "${{ needs.regenerate.outputs.sha }}", (
+    "the push job must check out the commit the regenerate job recorded"
+)
+revision = [s for s in regenerate["steps"] if s.get("id") == "revision"]
+assert len(revision) == 1 and "git rev-parse HEAD" in revision[0]["run"]
+assert regenerate["steps"].index(revision[0]) < names.index(
+    "Fetch the pinned generator"
+), "the commit must be recorded before any third-party code runs"
+
 # Neither checkout leaves a credential in its clone or is handed the token.
 for job in (regenerate, push):
     checkout = job["steps"][0]
