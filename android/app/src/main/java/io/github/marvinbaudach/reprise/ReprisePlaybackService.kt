@@ -15,11 +15,17 @@ import android.util.Log
 import androidx.media3.common.AudioAttributes
 import androidx.media3.common.C
 import androidx.media3.common.Player
-import androidx.media3.session.MediaSession
-import androidx.media3.session.MediaSessionService
 import androidx.media3.exoplayer.ExoPlayer
 import androidx.media3.exoplayer.audio.TeeAudioProcessor
+import androidx.media3.session.MediaLibraryService
+import androidx.media3.session.MediaSession
+import io.github.marvinbaudach.reprise.library.AndroidMediaBrowseLibrary
+import io.github.marvinbaudach.reprise.library.BrowseCallback
+import io.github.marvinbaudach.reprise.library.BrowseLabels
+import io.github.marvinbaudach.reprise.library.BrowsePlayer
 import io.github.marvinbaudach.reprise.library.CurrentTrackArtwork
+import io.github.marvinbaudach.reprise.library.MediaBrowseLibrary
+import io.github.marvinbaudach.reprise.library.MediaBrowseTree
 import io.github.marvinbaudach.reprise.library.TrackMetadata
 import io.github.marvinbaudach.reprise.library.TrackMetadataResolver
 import java.io.File
@@ -50,9 +56,13 @@ import uniffi.reprise_android_ffi.TrashAction
 private const val TAG_ANALYSIS = "RepriseAnalysis"
 private const val TAG_MEDIA = "RepriseMedia"
 
-/** Owns Media3 for background playback, notifications and external controls. */
-open class ReprisePlaybackService : MediaSessionService() {
-    private var mediaSession: MediaSession? = null
+/**
+ * Owns Media3 for background playback, notifications and external controls,
+ * and serves the library as a browse tree for Android Auto.
+ */
+open class ReprisePlaybackService : MediaLibraryService() {
+    private var mediaSession: MediaLibrarySession? = null
+    private var browseCallback: BrowseCallback? = null
     private var controlledPlayer: CoreControlledPlayer? = null
     private var playbackPort: Media3PlaybackPort? = null
     private var coreSession: AndroidPlaybackSession? = null
@@ -203,7 +213,13 @@ open class ReprisePlaybackService : MediaSessionService() {
         mutableSleepTimerStates.value = sleepTimer.state()
         val sessionPlayer = CoreControlledPlayer(player, mediaSessionCommands, this)
         controlledPlayer = sessionPlayer
-        val session = MediaSession.Builder(this, sessionPlayer).build()
+        val callback = BrowseCallback(tree = ::browseTree)
+        browseCallback = callback
+        val session = MediaLibrarySession.Builder(
+            this,
+            BrowsePlayer(sessionPlayer, ::playBrowseQueue),
+            callback,
+        ).build()
         mediaSession = session
         // Handing the session to the service is what puts Media3 in charge of
         // the notification and of the foreground lifetime. `addSession` is the
@@ -237,12 +253,35 @@ open class ReprisePlaybackService : MediaSessionService() {
             coreListener,
         )
 
-    override fun onBind(intent: Intent): IBinder? =
-        if (intent.action == LOCAL_BIND_ACTION) localBinder else super.onBind(intent)
+    override fun onBind(intent: Intent?): IBinder? =
+        if (intent?.action == LOCAL_BIND_ACTION) localBinder else super.onBind(intent)
 
     override fun onGetSession(
         controllerInfo: MediaSession.ControllerInfo,
-    ): MediaSession? = mediaSession
+    ): MediaLibrarySession? = mediaSession
+
+    /** The session media browsers and controllers connect to; tests connect through it. */
+    internal val librarySession: MediaLibrarySession? get() = mediaSession
+
+    private var browseTreeCache: MediaBrowseTree? = null
+
+    /** Built on the browse thread, the first time a browser asks. */
+    @Synchronized
+    internal fun browseTree(): MediaBrowseTree = browseTreeCache
+        ?: MediaBrowseTree(
+            browseLibrary(),
+            BrowseLabels(
+                root = getString(R.string.media_browse_root),
+                recentlyPlayed = getString(R.string.media_browse_recently_played),
+                playlists = getString(R.string.media_browse_playlists),
+                albums = getString(R.string.media_browse_albums),
+                artists = getString(R.string.media_browse_artists),
+            ),
+        ).also { browseTreeCache = it }
+
+    /** Overridden in tests, where the native library cannot load. */
+    internal open fun browseLibrary(): MediaBrowseLibrary =
+        AndroidMediaBrowseLibrary(sharedMusicLibrary())
 
     /** What the notification, lock screen, Auto and the widget show for [uri]. */
     internal open fun resolveTrackMetadata(uri: String): TrackMetadata? =
@@ -266,8 +305,19 @@ open class ReprisePlaybackService : MediaSessionService() {
         }
     }
 
+    /** A song tapped in a media browser plays as its container, through the Core. */
+    private fun playBrowseQueue(trackIds: List<Long>, startIndex: Int) {
+        try {
+            playTrackIds(trackIds, startIndex)
+        } catch (error: Exception) {
+            Log.w(TAG_MEDIA, "Could not play a song chosen in a media browser", error)
+        }
+    }
+
     override fun onDestroy() {
         if (::sleepTimer.isInitialized) sleepTimer.close()
+        browseCallback?.close()
+        browseCallback = null
         artworkExecutor.shutdownNow()
         // Synchronous and direct rather than through the overridable,
         // scope-launched `cancelAnalysisBackfill`: the scope is cancelled

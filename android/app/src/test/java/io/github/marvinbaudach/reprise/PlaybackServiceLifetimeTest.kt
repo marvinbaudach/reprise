@@ -6,6 +6,7 @@ import android.os.Looper
 import androidx.media3.common.DeviceInfo
 import androidx.media3.common.MediaItem
 import androidx.media3.common.Player
+import io.github.marvinbaudach.reprise.library.BrowsePlayer
 import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
@@ -137,7 +138,9 @@ class PlaybackServiceLifetimeTest {
         )
         assertTrue(
             "the registered session has to be the one that carries the transport",
-            service.sessions.first().player is CoreControlledPlayer,
+            // The browse wrapper keeps library play requests inside the Core and
+            // forwards everything else to the Core-controlled player.
+            (service.sessions.first().player as? BrowsePlayer)?.wrappedPlayer is CoreControlledPlayer,
         )
     }
 
@@ -173,7 +176,9 @@ class PlaybackServiceLifetimeTest {
     @Test
     fun reloadingPlaybackSettingsPublishesTheRecomputedDeviceInfo() {
         val service = buildPlaybackServiceController(volumeKeySkipGestureEnabled = false).get()
-        val controlledPlayer = service.sessions.first().player as CoreControlledPlayer
+        // The session's player is the browse wrapper around the Core-controlled one.
+        val controlledPlayer =
+            (service.sessions.first().player as BrowsePlayer).wrappedPlayer as CoreControlledPlayer
         val wrappedPlayer = controlledPlayer.wrappedPlayer
 
         // Bring the wrapped player to a remote-eligible state without going

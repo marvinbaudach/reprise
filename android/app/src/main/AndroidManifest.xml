@@ -95,7 +95,22 @@
             <intent-filter>
                 <action android:name="androidx.media3.session.MediaSessionService" />
             </intent-filter>
+            <!--
+                The browse tree: media3's own action for apps, and the platform's
+                legacy one, which Android Auto still binds with.
+            -->
+            <intent-filter>
+                <action android:name="androidx.media3.session.MediaLibraryService" />
+                <action android:name="android.media.browse.MediaBrowserService" />
+            </intent-filter>
         </service>
+        <!--
+            Tells Android Auto this app is a media app. Without it the head unit
+            does not list Reprise, however well the browse tree answers.
+        -->
+        <meta-data
+            android:name="com.google.android.gms.car.application"
+            android:resource="@xml/automotive_app_desc" />
     </application>
 
 </manifest>
