@@ -1,6 +1,6 @@
 # The cavacore oracle
 
-The golden test `ac_28_cava_bars_match_the_cavacore_reference_after_calibration`
+The golden test `ac_29_cava_bars_match_the_cavacore_reference_after_calibration`
 (`crates/reprise-core/src/playback/cava_tests.rs`) pins the Rust CAVA port to
 numbers produced by the original C `cavacore`. This directory holds everything
 needed to regenerate them. `cavacore` itself is MIT-licensed and is **not**
@@ -22,8 +22,9 @@ sha256sum cavacore.c cavacore.h
 
 gcc -O2 -o oracle <repo>/docs/research/cava-oracle/oracle.c cavacore.c -I. -lfftw3 -lm
 python3 <repo>/docs/research/cava-oracle/gen.py synth.f32          # 360 frames x 735 samples
-./oracle synth.f32 bars.csv cutoffs.txt                            # one CSV row per frame
+./oracle synth.f32 bars.csv cutoffs.txt sens.txt                   # one CSV row per frame, gain per frame
 sed -n '173p;241p;256p;331p' bars.csv                              # frames 172, 240, 255, 330
+sed -n '101p' sens.txt                                             # the gain after frame 100
 ```
 
 `oracle.c` mirrors the port's configuration: 64 bars, 44.1 kHz mono, autosens
@@ -32,6 +33,18 @@ on, noise reduction 0.77, 50-10 000 Hz, input scaled by 65535
 `cavacore` estimates its framerate from the sample counts it is given, exactly
 as the port does, so no framerate is configured on either side. Frame `k` is the
 output after chunk `k`, 0-based, so it is row `k + 1` of the CSV.
+
+## The gain the test starts from
+
+The port does not climb from a cold start the way `cavacore` does: at a stream
+boundary it measures the gain from the new audio (AC-29), so its gain history
+before the pinned frames differs from `cavacore`'s by design. The test therefore
+feeds the port the first 101 frames, then sets its gain to `cavacore`'s own gain
+after frame 100 (`0.745497722`, the fourth output of `oracle.c`, row 101 of
+`sens.txt`) and compares from frame 172 on. From that frame both run the same
+creep, which is what the reference pins. Every comparison after it is
+unchanged, and the overshoot limit cycle at frames 255 and 330 still depends on
+the port making `cavacore`'s decisions frame by frame.
 
 ## What the test pins
 
@@ -46,7 +59,9 @@ output after chunk `k`, 0-based, so it is row `k + 1` of the CSV.
 
 Measured margin (2026-10-05): the port differs from the reference by at most
 1.1e-6 at the pinned frames, which is the rounding of the six-digit reference.
-The 2e-3 tolerance is about 2000 times that.
+The 2e-3 tolerance is about 2000 times that. With the gain injected as
+described above the margin is unchanged (2026-10-06: the test still passes at
+a tolerance of 1.2e-6).
 
 ## Robustness probe
 

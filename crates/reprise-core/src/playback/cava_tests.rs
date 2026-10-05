@@ -50,8 +50,15 @@ fn odd_sample_rate_preserves_cavas_fractional_nyquist_cutoffs() {
 #[test]
 /// These are cavacore outputs for this signal; any deviation means the port drifted.
 /// `docs/research/cava-oracle/` regenerates them: harness, pinned fetch, probe results.
-fn ac_28_cava_bars_match_the_cavacore_reference_after_calibration() {
+fn ac_29_cava_bars_match_the_cavacore_reference_after_calibration() {
     const FRAMES: [usize; 4] = [172, 240, 255, 330];
+    // The port estimates its gain from the new audio's level instead of
+    // climbing from a cold start (AC-29), so its gain history before this
+    // frame legitimately differs from cavacore's. From here both run the same
+    // creep, which is what the reference pins. 0.745497722 is cavacore's own
+    // gain after this frame (`oracle.c`'s fourth output).
+    const CAVACORE_GAIN_FRAME: usize = 100;
+    const CAVACORE_GAIN: f32 = 0.745_497_7;
     const REFERENCE: [[f32; 64]; 4] = [
         [
             0.315462, 0.538361, 0.432593, 0.227695, 0.133478, 0.099056, 0.077458, 0.061830,
@@ -100,6 +107,9 @@ fn ac_28_cava_bars_match_the_cavacore_reference_after_calibration() {
     let mut reference_index = 0;
 
     for frame in 0..360 {
+        if frame == CAVACORE_GAIN_FRAME + 1 {
+            processor.adopt_sensitivity(CAVACORE_GAIN);
+        }
         let chunk: Vec<f32> = (0..735)
             .map(|sample| {
                 let n = frame * 735 + sample;
@@ -187,12 +197,17 @@ fn gravity_keeps_a_peak_alive_then_releases_it_to_zero() {
     assert!(tail < 0.001, "gravity tail should settle, got {tail}");
 }
 
+// A constant tone settles where cavacore's creep pins it, just under full
+// height. cavacore reached that within 300 chunks by climbing from a cold
+// start; the port measures the tone instead and holds that gain for the seven
+// seconds the boundary tracks (AC-29), so the creep takes over later: by chunk
+// 1500 (about 17 s) the tone sits at the same pinned height.
 #[test]
 fn autosensitivity_matches_cavas_pinned_two_hundred_hertz_blueprint() {
     let mut processor = CavaBarProcessor::new(CavaConfig::new(44_100, 10)).unwrap();
     let mut bars = Vec::new();
 
-    for chunk in 0..300 {
+    for chunk in 0..1_500 {
         bars = processor.process(&sine_chunk(200.0, chunk));
     }
 
@@ -336,22 +351,26 @@ fn reset_clears_fft_and_smoothing_history() {
     );
 }
 
+// Neither reset path carries the settled autosensitivity gain into the next
+// stream: another song's loudness says nothing about this one's, so the gain
+// is measured again from its audio (AC-29). A gain settled on a faint tone is
+// about two orders of magnitude too high for a loud one, which makes the
+// carried gain visible as pinned bars. Control arm: a fresh processor fed the
+// identical loud chunks.
 #[test]
-// Both reset paths clear the bar history but keep the settled autosensitivity
-// gain, so a track change does not re-run the cold-start calibration. A quiet
-// tone makes the gain visible: a fresh processor starts at gain 1.0 and
-// climbs, a settled one has already climbed. Control arm: the fresh
-// processor, fed the identical post-reset chunks.
-fn ac_28_cava_resets_keep_the_settled_autosensitivity_gain() {
+fn ac_29_resets_measure_the_next_streams_level_instead_of_keeping_the_old_gain() {
     const SETTLE_FRAMES: usize = 600;
-    const PROBE_FRAMES: usize = 6;
+    const PROBE_FRAMES: usize = 90;
+    const FAINT: f32 = 0.002;
+    const LOUD: f32 = 0.5;
+    const PINNED: f32 = 0.99;
 
     let config = CavaConfig::new(44_100, 64);
     let mut full_reset = CavaBarProcessor::new(config).unwrap();
     let mut stream_reset = CavaBarProcessor::new(config).unwrap();
     let mut fresh = CavaBarProcessor::new(config).unwrap();
     for frame in 0..SETTLE_FRAMES {
-        let chunk = quiet_tone_chunk(frame);
+        let chunk = tone_chunk(FAINT, frame);
         full_reset.process(&chunk);
         stream_reset.process(&chunk);
     }
@@ -360,23 +379,26 @@ fn ac_28_cava_resets_keep_the_settled_autosensitivity_gain() {
     stream_reset.reset_stream();
 
     let mut processors = [&mut full_reset, &mut stream_reset, &mut fresh];
+    let mut pinned_frames = [0_usize; 3];
     let mut loudest = [0.0_f32; 3];
     for frame in 0..PROBE_FRAMES {
-        let chunk = quiet_tone_chunk(frame);
-        for (peak, processor) in loudest.iter_mut().zip(processors.iter_mut()) {
-            *peak = processor.process(&chunk).into_iter().fold(0.0, f32::max);
+        let chunk = tone_chunk(LOUD, frame);
+        for (index, processor) in processors.iter_mut().enumerate() {
+            let bars = processor.process(&chunk);
+            pinned_frames[index] += usize::from(bars.iter().any(|bar| *bar >= PINNED));
+            loudest[index] = bars.iter().copied().fold(0.0, f32::max);
         }
     }
 
-    let [after_full_reset, after_stream_reset, cold] = loudest;
-    assert!(cold > 0.0, "fixture must produce a visible cold bar");
+    let [full, stream, cold] = pinned_frames;
     assert!(
-        after_full_reset > cold * 2.0,
-        "reset() lost the settled gain: {after_full_reset} vs cold {cold}"
+        full <= cold + 5 && stream <= cold + 5,
+        "a reset carried the faint tone's gain: pinned frames full={full}, \
+         stream={stream}, fresh={cold}"
     );
     assert!(
-        after_stream_reset > cold * 2.0,
-        "reset_stream() lost the settled gain: {after_stream_reset} vs cold {cold}"
+        (loudest[0] - loudest[2]).abs() <= 0.1 && (loudest[1] - loudest[2]).abs() <= 0.1,
+        "a reset left the loud tone at another height than a fresh processor: {loudest:?}"
     );
 }
 
@@ -528,13 +550,12 @@ fn sine_chunk(frequency_hz: f32, chunk: usize) -> Vec<f32> {
         .collect()
 }
 
-fn quiet_tone_chunk(chunk: usize) -> Vec<f32> {
+fn tone_chunk(amplitude: f32, chunk: usize) -> Vec<f32> {
     const CHUNK_SIZE: usize = 735;
-    const AMPLITUDE: f32 = 0.002;
     (0..CHUNK_SIZE)
         .map(|sample| {
             let absolute_sample = chunk * CHUNK_SIZE + sample;
-            (std::f32::consts::TAU * 1_000.0 * absolute_sample as f32 / 44_100.0).sin() * AMPLITUDE
+            (std::f32::consts::TAU * 1_000.0 * absolute_sample as f32 / 44_100.0).sin() * amplitude
         })
         .collect()
 }

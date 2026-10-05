@@ -20,7 +20,7 @@ mod spectrogram_frame_tests;
 #[cfg(test)]
 mod bars_source_tests {
     #[test]
-    fn ac_28_builds_bars_without_visual_mode_state() {
+    fn ac_29_builds_bars_without_visual_mode_state() {
         let engine = include_str!("visuals/engine.rs");
         for removed in ["pub enum VisualMode", "set_mode(", "fn mode("] {
             assert!(

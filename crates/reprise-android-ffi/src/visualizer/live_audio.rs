@@ -148,7 +148,8 @@ impl LiveAudioState {
         // the FFT window, but it deliberately keeps the smoother's bar shape
         // (see `CavaBarProcessor::reset_stream`): the next analyzed frame
         // then falls from that shape instead of dropping to zero for one
-        // frame while the swipe's new panel has not shown anything yet.
+        // frame while the swipe's new panel has not shown anything yet. The
+        // sensitivity is measured again from the new audio (AC-29).
         self.processor.reset_stream();
         self.pressure_detector.reset();
         self.mono_samples.clear();

@@ -166,7 +166,8 @@ fn an_adopted_shape_is_not_followed_by_a_sag_either() {
 
 /// A bass-heavy shape of the kind a phone shows during a quiet passage: the
 /// lowest bands stand tallest, the highs trail off, and nothing comes near the
-/// top of the range, so the cold-start headroom clamp cannot hide the seed.
+/// top of the range, so the ceiling a pending boundary estimate applies cannot
+/// hide the seed.
 fn quiet_shape() -> Vec<f32> {
     (0..SPECTRUM_BAND_COUNT)
         .map(|index| {

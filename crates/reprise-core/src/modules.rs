@@ -433,7 +433,7 @@ mod tests {
     }
 
     #[test]
-    fn ac_28_song_visuals_are_a_live_default_on_module_with_an_off_switch() {
+    fn ac_29_song_visuals_are_a_live_default_on_module_with_an_off_switch() {
         let db = migrated_db();
         let descriptor = ALL_MODULES
             .iter()

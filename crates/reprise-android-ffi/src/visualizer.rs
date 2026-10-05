@@ -674,3 +674,8 @@ fn finite_unit(value: f32) -> f32 {
 mod pcm_tests {
     include!("visualizer_pcm_tests.rs");
 }
+
+#[cfg(test)]
+mod boundary_tests {
+    include!("visualizer_boundary_tests.rs");
+}

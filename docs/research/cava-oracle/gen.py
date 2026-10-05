@@ -3,7 +3,7 @@
 
 usage: gen.py out.f32 [frames]     (default 360 frames of 735 samples)
 
-The formula is the one `ac_28_cava_bars_match_the_cavacore_reference_after_
+The formula is the one `ac_29_cava_bars_match_the_cavacore_reference_after_
 calibration` in crates/reprise-core/src/playback/cava_tests.rs computes: each
 sample is evaluated in f64 and then rounded to f32.
 """

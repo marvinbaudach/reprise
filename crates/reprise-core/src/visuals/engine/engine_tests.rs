@@ -10,7 +10,7 @@ fn bars_builds_a_finite_sane_nonempty_scene() {
 }
 
 #[test]
-fn ac_28_ingest_uses_cava_values_without_a_second_bar_envelope() {
+fn ac_29_ingest_uses_cava_values_without_a_second_bar_envelope() {
     let mut engine = VisualEngine::new();
     engine.set_playing(true);
     let bars = std::array::from_fn(|index| index as f32 / SPECTRUM_BAND_COUNT as f32);
@@ -196,7 +196,7 @@ fn current_bands_reports_the_displayed_bars_not_the_raw_ones() {
 
 /// A stage light: the hit throws it to full, then it falls.
 #[test]
-fn ac_28_a_bass_hit_throws_the_glow_to_full_and_then_it_falls() {
+fn ac_29_a_bass_hit_throws_the_glow_to_full_and_then_it_falls() {
     let mut engine = VisualEngine::new();
     engine.set_has_track(true);
     engine.set_playing(true);
@@ -231,7 +231,7 @@ fn ac_28_a_bass_hit_throws_the_glow_to_full_and_then_it_falls() {
 /// limited master — measured over three real tracks it tops out at 0.85 —
 /// so the glow must not be sourced from it.
 #[test]
-fn ac_28_the_glow_reads_the_kick_and_not_the_impact() {
+fn ac_29_the_glow_reads_the_kick_and_not_the_impact() {
     let mut engine = VisualEngine::new();
     engine.set_has_track(true);
     engine.set_playing(true);
@@ -299,7 +299,7 @@ fn broad_glow_alphas(engine: &VisualEngine) -> Vec<f32> {
 }
 
 #[test]
-fn ac_28_loud_cava_bass_bands_alone_never_ignite_the_glow() {
+fn ac_29_loud_cava_bass_bands_alone_never_ignite_the_glow() {
     // The exact failure this replaced: CAVA's auto-sensitivity lifts the
     // low bands during a quiet sung passage until they read like a drop.
     let mut bars = [0.0; SPECTRUM_BAND_COUNT];
@@ -311,7 +311,7 @@ fn ac_28_loud_cava_bass_bands_alone_never_ignite_the_glow() {
 }
 
 #[test]
-fn ac_28_the_measured_kick_ignites_the_broad_glows() {
+fn ac_29_the_measured_kick_ignites_the_broad_glows() {
     // Bars stay empty; only the attack reading drives the stage light.
     let engine = engine_with([0.0; SPECTRUM_BAND_COUNT], hit(1.0, 0.0));
 
@@ -319,7 +319,7 @@ fn ac_28_the_measured_kick_ignites_the_broad_glows() {
 }
 
 #[test]
-fn ac_28_a_rhythmic_kick_glows_softer_than_a_full_drop() {
+fn ac_29_a_rhythmic_kick_glows_softer_than_a_full_drop() {
     let kick = engine_with([0.4; SPECTRUM_BAND_COUNT], hit(STEADY_GLOW, 0.0));
     let drop = engine_with([0.4; SPECTRUM_BAND_COUNT], hit(1.0, 0.0));
 
@@ -334,7 +334,7 @@ fn ac_28_a_rhythmic_kick_glows_softer_than_a_full_drop() {
 }
 
 #[test]
-fn ac_28_only_a_sustained_breakdown_adds_the_inner_auras() {
+fn ac_29_only_a_sustained_breakdown_adds_the_inner_auras() {
     let kicking = engine_with([0.4; SPECTRUM_BAND_COUNT], hit(1.0, 0.0));
     let breakdown = engine_with([0.4; SPECTRUM_BAND_COUNT], hit(1.0, 1.0));
 
@@ -343,7 +343,7 @@ fn ac_28_only_a_sustained_breakdown_adds_the_inner_auras() {
 }
 
 #[test]
-fn ac_28_the_glow_leaves_with_the_track_when_playback_stops() {
+fn ac_29_the_glow_leaves_with_the_track_when_playback_stops() {
     let mut engine = engine_with([0.4; SPECTRUM_BAND_COUNT], hit(1.0, 1.0));
     engine.set_playing(false);
 
