@@ -52,6 +52,12 @@ emit_routes() {
         display=true
     fi
 
+    # The core suite's workspace gate already tests the GNOME crate, so a
+    # change that routes core does not run the GNOME suite on top of it.
+    if [[ $core == true ]]; then
+        gnome=false
+    fi
+
     printf 'android=%s\ngnome=%s\ncore=%s\ndisplay=%s\n' \
         "$android" "$gnome" "$core" "$display"
 }
@@ -71,7 +77,7 @@ case "${1:-}" in
         base_sha=$4
         head_sha=$5
         if [[ $event == schedule || $event == push && $ref == refs/heads/main ]]; then
-            printf 'android=true\ngnome=true\ncore=true\ndisplay=true\n'
+            printf 'android=true\ngnome=false\ncore=true\ndisplay=true\n'
             exit 0
         fi
         if [[ $event == workflow_dispatch || -z $base_sha || $base_sha =~ ^0+$ ]] || \

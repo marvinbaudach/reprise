@@ -54,6 +54,10 @@ expect_routes false false false false ruff.toml
 expect_routes false false false false .yamllint.yaml
 expect_routes false false false false .markdownlint-cli2.jsonc
 expect_routes true false true true unexpected-product-root/new-source.rs
+# The core suite's workspace gate already tests the GNOME crate, so a path set
+# that routes core never routes the GNOME suite; a GNOME-only set still does.
+expect_routes true false true true crates/reprise-core/src/lib.rs crates/reprise-gnome/src/main.rs
+expect_routes true false true true crates/reprise-view/src/lib.rs crates/reprise-core/src/lib.rs
 
 expect_diff_routes() {
     local expected_android=$1
@@ -74,8 +78,8 @@ expect_diff_routes() {
         fail "expected display=$expected_display for $event on $ref; got: $output"
 }
 
-expect_diff_routes true true true true push refs/heads/main
-expect_diff_routes true true true true schedule refs/heads/main
+expect_diff_routes true false true true push refs/heads/main
+expect_diff_routes true false true true schedule refs/heads/main
 
 [[ $("$classifier" --suite-skip pull_request refs/pull/12/merge \
     contributor marvinbaudach head dev) == true ]] || \
