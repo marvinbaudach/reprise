@@ -217,8 +217,7 @@ internal class Media3PlaybackPort(
         eventBridge = bridge
     }
 
-    override fun playPath(path: String, gainDb: Double) =
-        startWithGain(Uri.fromFile(File(path)).toString(), gainDb)
+    override fun playPath(path: String, gainDb: Double) = startWithGain(path, gainDb)
 
     override fun playUri(uri: String) = startWithGain(uri, 0.0)
 
