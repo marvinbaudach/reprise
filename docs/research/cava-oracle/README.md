@@ -37,8 +37,8 @@ output after chunk `k`, 0-based, so it is row `k + 1` of the CSV.
 
 - Frames 172, 240, 255 and 330, all 64 bars each, at **2e-3 absolute**.
 - Frames 172 and 240: cavacore clips bar 26 (the constant 440 Hz tone) to 1.0
-  and leaves every other band untouched. Frame 255 sits just after the kick,
-  frame 330 is another clipped steady frame.
+  and leaves every other band untouched. At frames 255 and 330 bar 26 is just
+  under the clip (0.952 and 0.984), so a different overshoot history would show.
 - Bar 26 sits in the autosensitivity limit cycle: the gain steps down 2 % on an
   overshoot and creeps back up 0.1 % per frame. The pinned frames therefore
   depend on the port making the same overshoot decisions as cavacore frame by
