@@ -108,6 +108,9 @@ fn session_with_library(
         }),
     )
     .unwrap();
+    // The session persists its restored queue on a background worker that takes
+    // the writer. Let it finish, so a writer probe sees only the trash run.
+    session.flush_queue_persistence();
     (session, calls)
 }
 
