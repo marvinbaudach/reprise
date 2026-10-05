@@ -4,12 +4,12 @@ use std::{
     fs::{self, OpenOptions},
     os::unix::fs::PermissionsExt,
     path::{Path, PathBuf},
-    thread,
+    process::Command,
     time::{Duration, Instant},
 };
 
 use super::test_support::{fake_binary, short_timeouts, CapturedLogs};
-use super::{collect_output, YtDlp, YtDlpTimeouts};
+use super::{collect_output, spawn_retrying_busy, YtDlp, YtDlpTimeouts};
 
 #[test]
 fn missing_binary_and_failed_process_are_readable() {
@@ -102,22 +102,53 @@ fn unexecutable_component_is_actionable_and_logged_without_its_path() {
     }
 }
 
+/// A fake binary that is still open for writing: `execve` answers `ETXTBSY`
+/// until the returned writer is dropped.
+#[cfg(target_os = "linux")]
+fn busy_binary(directory: &Path) -> (PathBuf, fs::File) {
+    let binary = fake_binary(directory, "printf '%s\\n' '2026.07.26'");
+    let writer = OpenOptions::new().write(true).open(&binary).unwrap();
+    (binary, writer)
+}
+
 #[cfg(target_os = "linux")]
 #[test]
-fn executable_file_busy_is_retried_before_reporting_a_start_failure() {
+fn executable_file_busy_is_retried_until_the_writer_lets_go() {
+    // A sibling test's `fork` can briefly inherit the held descriptor and keep
+    // the file busy after the drop, so the budget is generous and the count
+    // is only required to be non-zero; the callback releases the writer once.
+    const RETRIES: usize = 10_000;
+    const DELAY: Duration = Duration::from_millis(1);
+
     let directory = tempfile::tempdir().unwrap();
-    let binary = fake_binary(directory.path(), "printf '%s\\n' '2026.07.26'");
-    let writer = OpenOptions::new().write(true).open(&binary).unwrap();
-    let release = thread::spawn(move || {
-        thread::sleep(Duration::from_millis(25));
-        drop(writer);
-    });
-    let runner = YtDlp::with_binary_and_timeouts(binary, short_timeouts());
+    let (binary, writer) = busy_binary(directory.path());
+    let mut writer = Some(writer);
+    let mut busy_calls = 0;
 
-    let version = runner.probe_version();
+    let mut child = spawn_retrying_busy(&mut Command::new(&binary), RETRIES, DELAY, || {
+        busy_calls += 1;
+        drop(writer.take());
+    })
+    .expect("the retry outlasts the writer");
 
-    release.join().unwrap();
-    assert_eq!(version.unwrap(), "2026.07.26");
+    assert!(child.wait().unwrap().success());
+    assert!(busy_calls >= 1, "the open writer made the first spawn busy");
+}
+
+#[cfg(target_os = "linux")]
+#[test]
+fn executable_file_busy_is_reported_once_the_retries_are_spent() {
+    let directory = tempfile::tempdir().unwrap();
+    let (binary, _writer) = busy_binary(directory.path());
+    let mut busy_calls = 0;
+
+    let error = spawn_retrying_busy(&mut Command::new(&binary), 2, Duration::ZERO, || {
+        busy_calls += 1;
+    })
+    .expect_err("a file that stays open for writing never starts");
+
+    assert_eq!(error.kind(), std::io::ErrorKind::ExecutableFileBusy);
+    assert_eq!(busy_calls, 2, "one callback per retry, none after the last");
 }
 
 #[test]

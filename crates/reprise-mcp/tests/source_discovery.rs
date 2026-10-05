@@ -16,6 +16,20 @@ fn fixture_db(dir: &TempDir) -> std::path::PathBuf {
     path
 }
 
+/// Writes the fake executable through a short-lived `sh` that is waited on, so
+/// this test process never holds a write descriptor a sibling test's `fork`
+/// could inherit — that keeps the file busy (`ETXTBSY`) when it is executed.
+/// The text travels as an argument, not through a pipe.
+fn write_executable(path: &std::path::Path, contents: &str) {
+    let status = std::process::Command::new("sh")
+        .args(["-c", r#"printf '%s\n' "$1" > "$2" && chmod 755 "$2""#, "_"])
+        .arg(contents)
+        .arg(path)
+        .status()
+        .expect("start the fixture writer");
+    assert!(status.success(), "the fixture writer failed: {status}");
+}
+
 #[test]
 fn lists_the_discovery_tool_with_an_object_input_schema() {
     let dir = TempDir::new().unwrap();
@@ -127,12 +141,10 @@ fn rss_search_hides_an_already_subscribed_feed_and_keeps_a_meaningful_query_stri
 
 #[test]
 fn youtube_search_omits_the_subscriber_count_only_when_the_channel_hides_it() {
-    use std::os::unix::fs::PermissionsExt;
-
     let dir = TempDir::new().unwrap();
     let path = fixture_db(&dir);
     let fake_ytdlp = dir.path().join("yt-dlp");
-    std::fs::write(
+    write_executable(
         &fake_ytdlp,
         r#"#!/bin/sh
 set -eu
@@ -149,9 +161,7 @@ case "$*" in
   *) printf '%s\n' "unexpected arguments: $*" >&2; exit 2 ;;
 esac
 "#,
-    )
-    .unwrap();
-    std::fs::set_permissions(&fake_ytdlp, std::fs::Permissions::from_mode(0o755)).unwrap();
+    );
     set_bool_setting(&path, CAP_SOURCES_MANAGE, true);
     set_bool_setting(&path, "online-sources-enabled", true);
     // YouTube is a peer module, independent of Podcasts (issue #96) — it
