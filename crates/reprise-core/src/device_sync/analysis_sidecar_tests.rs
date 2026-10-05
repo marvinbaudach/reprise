@@ -1,5 +1,6 @@
 use std::path::Path;
 
+use crate::library::loudness::MeasuredLoudness;
 use crate::spectrogram::{TrackSourceFingerprint, TrackSpectrogram};
 
 use super::*;
@@ -19,6 +20,10 @@ fn analysis_sidecar_round_trips_its_source_fingerprint_and_render_data() {
         source(),
         TrackSpectrogram::from_cells(vec![7; 48]).unwrap(),
         vec![3, 5, 8, 13],
+        Some(MeasuredLoudness {
+            integrated_lufs: -17.25,
+            true_peak: 0.91,
+        }),
     );
 
     let encoded = sidecar.encode().unwrap();
@@ -29,21 +34,34 @@ fn analysis_sidecar_round_trips_its_source_fingerprint_and_render_data() {
 }
 
 #[test]
-fn analysis_sidecar_rejects_a_recognisable_future_version() {
-    let mut encoded = AnalysisSidecar::new(source(), TrackSpectrogram::empty(), vec![1])
+fn analysis_sidecar_decodes_version_one_without_loudness() {
+    let mut encoded = AnalysisSidecar::new(source(), TrackSpectrogram::empty(), vec![1], None)
         .encode()
         .unwrap();
-    encoded[8..10].copy_from_slice(&2_u16.to_le_bytes());
+    encoded[8..10].copy_from_slice(&1_u16.to_le_bytes());
+    encoded.truncate(encoded.len() - 17);
+
+    let decoded = AnalysisSidecar::decode(&encoded).unwrap();
+
+    assert_eq!(decoded.loudness, None);
+}
+
+#[test]
+fn analysis_sidecar_rejects_a_recognisable_future_version() {
+    let mut encoded = AnalysisSidecar::new(source(), TrackSpectrogram::empty(), vec![1], None)
+        .encode()
+        .unwrap();
+    encoded[8..10].copy_from_slice(&3_u16.to_le_bytes());
 
     assert_eq!(
         AnalysisSidecar::decode(&encoded),
-        Err(AnalysisSidecarError::UnsupportedVersion(2))
+        Err(AnalysisSidecarError::UnsupportedVersion(3))
     );
 }
 
 #[test]
 fn analysis_sidecar_reports_an_invalid_optional_field_tag_separately_from_magic() {
-    let mut encoded = AnalysisSidecar::new(source(), TrackSpectrogram::empty(), vec![1])
+    let mut encoded = AnalysisSidecar::new(source(), TrackSpectrogram::empty(), vec![1], None)
         .encode()
         .unwrap();
     encoded[26] = 7;
@@ -85,8 +103,16 @@ fn analysis_sidecar_for_track_uses_the_database_source_fingerprint() {
     let render_data = crate::waveform::TrackRenderData {
         waveform_peaks: vec![2, 4, 6],
         spectrogram: TrackSpectrogram::from_cells(vec![9; 24]).unwrap(),
-        loudness: None,
+        loudness: Some(MeasuredLoudness {
+            integrated_lufs: -19.0,
+            true_peak: 0.8,
+        }),
     };
+    crate::db_spectrogram::set_waveform_peaks(&db, 7, &render_data.waveform_peaks).unwrap();
+    crate::db_spectrogram::set_track_spectrogram(&db, 7, source(), &render_data.spectrogram)
+        .unwrap();
+    assert_eq!(AnalysisSidecar::for_track(&db, 7).unwrap(), None);
+
     crate::db_spectrogram::set_track_render_data(&db, 7, source(), &render_data).unwrap();
 
     let sidecar = AnalysisSidecar::for_track(&db, 7).unwrap().unwrap();
@@ -94,4 +120,5 @@ fn analysis_sidecar_for_track_uses_the_database_source_fingerprint() {
     assert_eq!(sidecar.source, source());
     assert_eq!(sidecar.waveform_peaks, vec![2, 4, 6]);
     assert_eq!(sidecar.spectrogram.cells(), &[9; 24]);
+    assert_eq!(sidecar.loudness, render_data.loudness);
 }

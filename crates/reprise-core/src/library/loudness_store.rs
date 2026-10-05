@@ -104,6 +104,13 @@ pub fn measured_loudness(
     conn: &Connection,
     track_id: i64,
 ) -> Result<Option<MeasuredLoudness>, rusqlite::Error> {
+    Ok(stored_loudness(conn, track_id)?.flatten())
+}
+
+pub(crate) fn stored_loudness(
+    conn: &Connection,
+    track_id: i64,
+) -> Result<Option<Option<MeasuredLoudness>>, rusqlite::Error> {
     conn.query_row(
         "SELECT l.integrated_lufs, l.true_peak \
          FROM track_loudness l JOIN tracks t ON t.id = l.track_id \
@@ -122,7 +129,6 @@ pub fn measured_loudness(
         },
     )
     .optional()
-    .map(Option::flatten)
 }
 
 pub fn album_measured_loudness(

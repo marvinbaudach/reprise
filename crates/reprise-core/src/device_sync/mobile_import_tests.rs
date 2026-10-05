@@ -2,6 +2,7 @@ use std::collections::HashMap;
 use std::io::Cursor;
 use std::path::{Path, PathBuf};
 
+use crate::library::loudness::MeasuredLoudness;
 use crate::library::source::{
     LibraryDirectoryEntry, LibraryLinkMode, LibraryPathPresence, LibraryReadHandle, LibrarySource,
     LibraryWalkOrder, LibraryWalkVisitor,
@@ -89,7 +90,10 @@ fn render(cell: u8, peak: u8) -> TrackRenderData {
     TrackRenderData {
         waveform_peaks: vec![peak; 4],
         spectrogram: TrackSpectrogram::from_cells(vec![cell; 48]).unwrap(),
-        loudness: None,
+        loudness: Some(MeasuredLoudness {
+            integrated_lufs: -19.0,
+            true_peak: 0.75,
+        }),
     }
 }
 
@@ -98,6 +102,7 @@ fn sidecar(source: TrackSourceFingerprint, data: &TrackRenderData) -> Vec<u8> {
         source,
         data.spectrogram.clone(),
         data.waveform_peaks.clone(),
+        data.loudness,
     )
     .encode()
     .unwrap()
@@ -131,6 +136,31 @@ fn assert_render(db: &Db, expected: &TrackRenderData) {
         crate::db_spectrogram::get_track_spectrogram(db, 1).unwrap(),
         Some(expected.spectrogram.clone())
     );
+    assert_eq!(
+        crate::library::loudness_store::measured_loudness(db.conn(), 1).unwrap(),
+        expected.loudness
+    );
+}
+
+#[test]
+fn version_one_sidecar_still_imports_without_loudness() {
+    let db = seeded();
+    let data = render(7, 3);
+    let mut bytes = sidecar(desktop_source(1), &data);
+    bytes[8..10].copy_from_slice(&1_u16.to_le_bytes());
+    bytes.truncate(bytes.len() - 17);
+
+    assert_eq!(
+        import_analysis_bytes_for_track(&db, 1, "/phone/song.reprise-analysis", &bytes).unwrap(),
+        AnalysisImportOutcome::Imported
+    );
+    assert_eq!(
+        crate::library::loudness_store::measured_loudness(db.conn(), 1).unwrap(),
+        None
+    );
+    assert!(crate::db_spectrogram::complete_render_data_track_ids(&db)
+        .unwrap()
+        .contains(&1));
 }
 
 #[test]

@@ -645,6 +645,7 @@ fn played_track_imports_its_sidecar_under_the_phone_source_fingerprint_only() {
         },
         TrackSpectrogram::from_cells(vec![7; 48]).unwrap(),
         vec![2, 3, 5, 8],
+        None,
     )
     .encode()
     .unwrap();

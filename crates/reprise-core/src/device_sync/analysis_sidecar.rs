@@ -3,21 +3,24 @@
 //! The format is deliberately owned by Core so every producer and consumer
 //! uses the same parser. It starts with `RPA-SIDE`, a little-endian `u16`
 //! version, the existing [`TrackSourceFingerprint`], two little-endian `u32`
-//! byte lengths, then the raw spectrogram cells and waveform peaks.
+//! byte lengths, the raw spectrogram cells and waveform peaks, and (from v2)
+//! an optional integrated-loudness and true-peak pair.
 
 use std::path::Path;
 
+use crate::library::loudness::MeasuredLoudness;
 use crate::spectrogram::{TrackSourceFingerprint, TrackSpectrogram};
 
 const MAGIC: &[u8; 8] = b"RPA-SIDE";
-pub const FORMAT_VERSION: u16 = 1;
+pub const FORMAT_VERSION: u16 = 2;
 pub const EXTENSION: &str = "reprise-analysis";
 
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, PartialEq)]
 pub struct AnalysisSidecar {
     pub source: TrackSourceFingerprint,
     pub spectrogram: TrackSpectrogram,
     pub waveform_peaks: Vec<u8>,
+    pub loudness: Option<MeasuredLoudness>,
 }
 
 impl AnalysisSidecar {
@@ -25,11 +28,13 @@ impl AnalysisSidecar {
         source: TrackSourceFingerprint,
         spectrogram: TrackSpectrogram,
         waveform_peaks: Vec<u8>,
+        loudness: Option<MeasuredLoudness>,
     ) -> Self {
         Self {
             source,
             spectrogram,
             waveform_peaks,
+            loudness,
         }
     }
 
@@ -39,7 +44,7 @@ impl AnalysisSidecar {
         let waveform_len =
             u32::try_from(self.waveform_peaks.len()).map_err(|_| AnalysisSidecarError::TooLarge)?;
         let mut bytes = Vec::with_capacity(
-            8 + 2 + 16 + 18 + 8 + self.spectrogram.cells().len() + self.waveform_peaks.len(),
+            8 + 2 + 16 + 18 + 8 + self.spectrogram.cells().len() + self.waveform_peaks.len() + 17,
         );
         bytes.extend_from_slice(MAGIC);
         bytes.extend_from_slice(&FORMAT_VERSION.to_le_bytes());
@@ -51,6 +56,18 @@ impl AnalysisSidecar {
         bytes.extend_from_slice(&waveform_len.to_le_bytes());
         bytes.extend_from_slice(self.spectrogram.cells());
         bytes.extend_from_slice(&self.waveform_peaks);
+        match self.loudness {
+            Some(loudness) => {
+                bytes.push(1);
+                bytes.extend_from_slice(&loudness.integrated_lufs.to_le_bytes());
+                bytes.extend_from_slice(&loudness.true_peak.to_le_bytes());
+            }
+            None => {
+                bytes.push(0);
+                bytes.extend_from_slice(&0.0_f64.to_le_bytes());
+                bytes.extend_from_slice(&0.0_f64.to_le_bytes());
+            }
+        }
         Ok(bytes)
     }
 
@@ -60,7 +77,7 @@ impl AnalysisSidecar {
             return Err(AnalysisSidecarError::InvalidMagic);
         }
         let version = reader.u16()?;
-        if version != FORMAT_VERSION {
+        if !matches!(version, 1 | FORMAT_VERSION) {
             return Err(AnalysisSidecarError::UnsupportedVersion(version));
         }
         let source = TrackSourceFingerprint {
@@ -73,6 +90,22 @@ impl AnalysisSidecar {
         let waveform_len = reader.u32()? as usize;
         let spectrogram_cells = reader.take(spectrogram_len)?.to_vec();
         let waveform_peaks = reader.take(waveform_len)?.to_vec();
+        let loudness = if version == 1 {
+            None
+        } else {
+            match reader.take(1)?[0] {
+                0 => {
+                    reader.f64()?;
+                    reader.f64()?;
+                    None
+                }
+                1 => Some(MeasuredLoudness {
+                    integrated_lufs: reader.f64()?,
+                    true_peak: reader.f64()?,
+                }),
+                tag => return Err(AnalysisSidecarError::InvalidLoudnessTag(tag)),
+            }
+        };
         if !reader.is_empty() {
             return Err(AnalysisSidecarError::TrailingBytes);
         }
@@ -85,7 +118,7 @@ impl AnalysisSidecar {
                 },
             }
         })?;
-        Ok(Self::new(source, spectrogram, waveform_peaks))
+        Ok(Self::new(source, spectrogram, waveform_peaks, loudness))
     }
 
     /// Loads one complete, currently source-valid rendering dataset.
@@ -105,7 +138,16 @@ impl AnalysisSidecar {
         let Some(waveform_peaks) = crate::db_spectrogram::get_waveform_peaks(db, track_id)? else {
             return Ok(None);
         };
-        Ok(Some(Self::new(source, spectrogram, waveform_peaks)))
+        let Some(loudness) = crate::library::loudness_store::stored_loudness(db.conn(), track_id)?
+        else {
+            return Ok(None);
+        };
+        Ok(Some(Self::new(
+            source,
+            spectrogram,
+            waveform_peaks,
+            loudness,
+        )))
     }
 }
 
@@ -115,6 +157,8 @@ pub enum AnalysisSidecarError {
     InvalidMagic,
     #[error("analysis sidecar optional field has invalid tag {0}")]
     InvalidOptionalFieldTag(u8),
+    #[error("analysis sidecar loudness field has invalid tag {0}")]
+    InvalidLoudnessTag(u8),
     #[error("analysis sidecar version {0} is not supported")]
     UnsupportedVersion(u16),
     #[error("analysis sidecar ended before its declared data")]
@@ -185,6 +229,14 @@ impl<'a> Reader<'a> {
 
     fn i64(&mut self) -> Result<i64, AnalysisSidecarError> {
         Ok(i64::from_le_bytes(
+            self.take(8)?
+                .try_into()
+                .expect("eight bytes were requested"),
+        ))
+    }
+
+    fn f64(&mut self) -> Result<f64, AnalysisSidecarError> {
+        Ok(f64::from_le_bytes(
             self.take(8)?
                 .try_into()
                 .expect("eight bytes were requested"),
