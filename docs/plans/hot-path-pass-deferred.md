@@ -2,7 +2,7 @@
 slug: hot-path-pass-deferred
 worktree: /home/marvin/Projects/reprise-hot-path-pass-deferred
 branch: feature/hot-path-pass-deferred
-phase: refactored
+phase: shipped
 codex_session:
 created: 2026-10-05
 ---
