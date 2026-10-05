@@ -92,8 +92,11 @@ pub(crate) fn connect_about_to_finish(
             .take();
         if let Some(queued) = queued {
             tracing::debug!(uri = %queued.uri, "gapless: feeding next uri on about-to-finish");
-            *pending_gain.lock().unwrap_or_else(PoisonError::into_inner) = Some(queued.gain_db);
+            // The uri goes first: `Player::set_next` treats a pending gain as
+            // "this uri is already handed off", so the uri must be visible by
+            // the time the gain is.
             playbin.set_property("uri", &queued.uri);
+            *pending_gain.lock().unwrap_or_else(PoisonError::into_inner) = Some(queued.gain_db);
             stream_generation.fetch_add(1, Ordering::SeqCst);
             handoff_pending.store(true, Ordering::SeqCst);
         }

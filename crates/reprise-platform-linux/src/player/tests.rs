@@ -9,6 +9,7 @@ use reprise_core::playback::{PlaybackFailureKind, PlaybackItem, PlaybackSessionI
 mod cava_tests;
 mod crossfade_transition_tests;
 mod gain_alignment_tests;
+mod gain_refresh_tests;
 mod handoff_duration_tests;
 mod stream_generation_tests;
 

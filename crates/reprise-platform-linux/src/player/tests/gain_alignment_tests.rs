@@ -187,6 +187,9 @@ fn constant_buffer() -> gst::Buffer {
 /// buffer of A must still be scaled by A's gain once the gate opens.
 #[test]
 fn play_19a_the_gain_switch_waits_for_the_tail_queued_ahead_of_it() {
+    let _guard = AUDIO_SINK_TEST_LOCK
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner);
     gst::init().unwrap();
     let filter = build_audio_filter(&AudioEffects::default())
         .unwrap()
@@ -303,6 +306,9 @@ fn play_19a_the_gain_switch_waits_for_the_tail_queued_ahead_of_it() {
 
 #[test]
 fn play_18_the_gain_element_never_receives_an_unsafe_factor() {
+    let _guard = AUDIO_SINK_TEST_LOCK
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner);
     use crate::player_effects::{linear_gain, MAX_LINEAR_GAIN};
 
     assert_eq!(linear_gain(f64::NAN), 1.0);
