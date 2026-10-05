@@ -118,27 +118,28 @@ case "${1:-}" in
         fi
         ;;
     --contain)
-        if (( $# != 4 )); then
-            echo "usage: $0 --contain EVENT ACTOR SOURCES_STATUS" >&2
+        if (( $# != 3 )); then
+            echo "usage: $0 --contain EVENT SOURCES_STATUS" >&2
             exit 64
         fi
         event=$2
-        actor=$3
-        sources_status=$4
-        # A Dependabot bump whose Flatpak sources are stale would burn the suites
-        # on a pull request that is red anyway, and nothing a human reads. It
-        # keeps base-contracts, where the same check fails, and loses the suites.
-        # This is NOT suite reuse: reuse turns the Quality gate green, and an
-        # auto-merge armed pull request would merge with broken sources.
-        if [[ $event == pull_request && $actor == "dependabot[bot]" \
-            && $sources_status != 0 ]]; then
+        sources_status=$3
+        # A pull request whose Flatpak sources are stale is red anyway: dev would
+        # go red after the merge. A Dependabot bump would burn its suites on it,
+        # and keeps base-contracts, where the same check fails. A human pull
+        # request skips its suites and base-contracts as suite reuse, so without
+        # this verdict nothing would run the check and its Quality gate would be
+        # green. Either way the gate must be red until the sources match. This is
+        # NOT suite reuse: reuse turns the Quality gate green, and an auto-merge
+        # armed pull request would merge with broken sources.
+        if [[ $event == pull_request && $sources_status != 0 ]]; then
             echo true
         else
             echo false
         fi
         ;;
     *)
-        echo "usage: $0 --paths [PATH ...] | --diff EVENT REF BASE_SHA HEAD_SHA | --suite-skip EVENT REF ACTOR REPOSITORY_OWNER HEAD_SHA DEV_SHA | --contain EVENT ACTOR SOURCES_STATUS" >&2
+        echo "usage: $0 --paths [PATH ...] | --diff EVENT REF BASE_SHA HEAD_SHA | --suite-skip EVENT REF ACTOR REPOSITORY_OWNER HEAD_SHA DEV_SHA | --contain EVENT SOURCES_STATUS" >&2
         exit 64
         ;;
 esac

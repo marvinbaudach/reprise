@@ -23,13 +23,14 @@ contained=${12}
     echo "changed-path routing did not succeed: $changes_result" >&2
     exit 1
 }
-# A contained run skipped its suites because the Flatpak sources of a Dependabot
-# bump are stale. That is a failure to report, never a skip to wave through:
-# whatever base-contracts says, the gate stays red until the sources are fixed.
+# A contained run found the Flatpak sources of its pull request stale, whoever
+# authored it. That is a failure to report, never a skip to wave through: a
+# Dependabot bump lost its suites for it, and a human pull request never ran
+# base-contracts. Whatever they say, the gate stays red until the sources are fixed.
 case "$contained" in
     true)
-        echo "the Flatpak Cargo sources are stale for this Dependabot bump; its suites were skipped" \
-            "and the gate stays red until flatpak/cargo-sources.json matches Cargo.lock" >&2
+        echo "flatpak/cargo-sources.json does not match Cargo.lock; the gate stays red until" \
+            "it does (flatpak/README.md says how to regenerate it)" >&2
         exit 1
         ;;
     false) ;;

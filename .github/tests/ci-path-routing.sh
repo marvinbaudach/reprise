@@ -124,22 +124,24 @@ if "$aggregator" success success true false skipped false skipped false skipped 
     fail "an owner skip must require the base contract job to be skipped"
 fi
 
-# --- Containment: a Dependabot bump with stale Flatpak sources. ---
-# Its suites are skipped, base-contracts still runs, and the Quality gate stays
-# red. This is NOT suite reuse: reuse skips base-contracts too, so the very check
-# that is red would never run, and the aggregator turns green on that path.
-[[ $("$classifier" --contain pull_request 'dependabot[bot]' 1) == true ]] || \
-    fail "a Dependabot pull request with red Flatpak sources must be contained"
-[[ $("$classifier" --contain pull_request 'dependabot[bot]' 0) == false ]] || \
-    fail "a Dependabot pull request with green Flatpak sources must run its suites"
-[[ $("$classifier" --contain pull_request 'dependabot[bot]' unexpected) == true ]] || \
+# --- Containment: a pull request with stale Flatpak sources. ---
+# A Dependabot bump loses its suites, keeps base-contracts, and the Quality gate
+# stays red. A human pull request skips base-contracts as suite reuse, so
+# nothing else would run the check: its verdict alone turns the gate red. Neither
+# is suite reuse: reuse skips base-contracts, and the aggregator turns green.
+[[ $("$classifier" --contain pull_request 1) == true ]] || \
+    fail "a pull request with red Flatpak sources must be contained, whoever wrote it"
+[[ $("$classifier" --contain pull_request 0) == false ]] || \
+    fail "a pull request with green Flatpak sources must run its suites"
+[[ $("$classifier" --contain pull_request unexpected) == true ]] || \
     fail "an unreadable sources status must fail closed"
-[[ $("$classifier" --contain pull_request contributor 1) == false ]] || \
-    fail "a human pull request is never contained: it skips its suites as suite reuse already"
-[[ $("$classifier" --contain push refs/heads/dev 1) == false ]] || \
-    fail "a push is never contained"
-[[ $("$classifier" --contain push 'dependabot[bot]' 1) == false ]] || \
-    fail "only a pull request is contained, whoever pushed"
+[[ $("$classifier" --contain push 1) == false ]] || \
+    fail "a push is never contained: base-contracts runs the check there"
+[[ $("$classifier" --contain workflow_dispatch 1) == false ]] || \
+    fail "only a pull request is contained"
+if "$classifier" --contain pull_request contributor 1 2>/dev/null; then
+    fail "--contain takes no actor: the verdict must not depend on who wrote the pull request"
+fi
 "$aggregator" success success false false skipped false skipped false skipped false skipped false
 if "$aggregator" success success false false skipped false skipped false skipped false skipped true 2>/dev/null; then
     fail "a contained run must fail the Quality gate even when every result reads as skipped"
@@ -253,10 +255,32 @@ expect_output core true "Dependabot PR with green Flatpak sources must still run
     "$(output_of core)" success "$(output_of display)" success "$(output_of contained)" || \
     fail "Dependabot PR with green Flatpak sources and green suites must pass the gate"
 
+# A human pull request skips base-contracts as suite reuse, so the routing job is
+# the only place that can notice stale sources: the gate must go red there too.
 run_step "$workflow" changes routes contributor 1
-expect_output suite_skip true "human PR"
-expect_output contained false "human PR"
-[[ $sources_check_ran == false ]] || fail "a human pull request must not run the sources check in the routing job"
+case_name="human PR with red Flatpak sources"
+[[ $sources_check_ran == true ]] || fail "$case_name: the sources check never ran"
+expect_output suite_skip true "$case_name"
+expect_output contained true "$case_name must be contained"
+for surface in android gnome core display; do
+    expect_output "$surface" false "$case_name must skip the $surface suite"
+done
+for base_result in skipped success; do
+    if "$aggregator" success "$base_result" "$(output_of suite_skip)" \
+        "$(output_of android)" skipped "$(output_of gnome)" skipped \
+        "$(output_of core)" skipped "$(output_of display)" skipped \
+        "$(output_of contained)" 2>/dev/null; then
+        fail "$case_name must end with a red Quality gate (base-contracts: $base_result)"
+    fi
+done
+run_step "$workflow" changes routes contributor 0
+expect_output suite_skip true "human PR with green Flatpak sources"
+expect_output contained false "human PR with green Flatpak sources"
+[[ $sources_check_ran == true ]] || fail "a human pull request must run the sources check in the routing job"
+"$aggregator" success skipped "$(output_of suite_skip)" \
+    "$(output_of android)" skipped "$(output_of gnome)" skipped \
+    "$(output_of core)" skipped "$(output_of display)" skipped "$(output_of contained)" || \
+    fail "a human PR with green Flatpak sources must keep its green, skipped gate"
 
 # cross-target.yml: the same decision, and its compilation job honours it.
 run_step "$cross_target" suite-skip containment 'dependabot[bot]' 1 false
@@ -265,7 +289,7 @@ expect_output contained true "cross-target: a Dependabot PR with red Flatpak sou
 run_step "$cross_target" suite-skip containment 'dependabot[bot]' 0 false
 expect_output contained false "cross-target: a Dependabot PR with green Flatpak sources"
 run_step "$cross_target" suite-skip containment contributor 1 true
-expect_output contained false "cross-target: a human PR"
+expect_output contained false "cross-target: a suite-reuse run is skipped by its own verdict, and ci.yml judges the sources"
 [[ $sources_check_ran == false ]] || fail "cross-target: a suite-reuse run must not run the sources check"
 run_step "$cross_target" suite-skip authorization 'dependabot[bot]' 1
 expect_output suite_skip false "cross-target: a Dependabot PR with red Flatpak sources must not be suite reuse"

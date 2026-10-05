@@ -58,14 +58,17 @@ jobs:
               "$HEAD_SHA" "$dev_sha"
           )
           echo "suite_skip=$suite_skip" >> "$GITHUB_OUTPUT"
-          # A Dependabot bump with stale Flatpak sources is red anyway: it loses
-          # its suites but keeps base-contracts, and the Quality gate stays red.
-          # This is not suite reuse, which would turn the gate green.
+          # A pull request with stale Flatpak sources is red anyway, whoever wrote
+          # it, so this runs for every pull request: a Dependabot bump loses its
+          # suites but keeps base-contracts, and a human pull request, which skips
+          # base-contracts as suite reuse, would otherwise never run the check.
+          # The Quality gate stays red for both. This is not suite reuse, which
+          # would turn the gate green.
           sources_status=0
-          if [[ $EVENT_NAME == pull_request && $suite_skip == false ]]; then
+          if [[ $EVENT_NAME == pull_request ]]; then
             scripts/check-flatpak-cargo-sources.sh || sources_status=$?
           fi
-          contained=$(.github/scripts/ci-paths.sh --contain "$EVENT_NAME" "$ACTOR" "$sources_status")
+          contained=$(.github/scripts/ci-paths.sh --contain "$EVENT_NAME" "$sources_status")
           echo "contained=$contained" >> "$GITHUB_OUTPUT"
           if [[ $suite_skip == true || $contained == true ]]; then
             printf 'android=false\ngnome=false\ncore=false\ndisplay=false\n' >> "$GITHUB_OUTPUT"

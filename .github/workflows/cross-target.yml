@@ -69,21 +69,21 @@ jobs:
           )
           echo "suite_skip=$suite_skip" >> "$GITHUB_OUTPUT"
 
-      # A Dependabot bump with stale Flatpak sources is red anyway (ci.yml keeps
+      # A pull request with stale Flatpak sources is red anyway (ci.yml keeps
       # the Quality gate red for it), so the cross-target compilation is skipped
-      # too. This is not suite reuse.
-      - name: Contain a bump with stale Flatpak sources
+      # too. A suite-reuse run skips this job already, and ci.yml has judged it.
+      # This is not suite reuse.
+      - name: Contain a pull request with stale Flatpak sources
         id: containment
         env:
           EVENT_NAME: ${{ github.event_name }}
-          ACTOR: ${{ github.event.pull_request.user.login || github.actor }}
           SUITE_SKIP: ${{ steps.authorization.outputs.suite_skip }}
         run: |
           sources_status=0
           if [[ $EVENT_NAME == pull_request && $SUITE_SKIP == false ]]; then
             scripts/check-flatpak-cargo-sources.sh || sources_status=$?
           fi
-          contained=$(.github/scripts/ci-paths.sh --contain "$EVENT_NAME" "$ACTOR" "$sources_status")
+          contained=$(.github/scripts/ci-paths.sh --contain "$EVENT_NAME" "$sources_status")
           echo "contained=$contained" >> "$GITHUB_OUTPUT"
 
   cross-target:
