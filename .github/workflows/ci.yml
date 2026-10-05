@@ -112,6 +112,8 @@ jobs:
           scripts/check-architecture.sh
           scripts/check-shell.sh
           for contract in .github/tests/*.sh; do
+            # The self-test run above already ran this one, through the tail of qa-linters.sh.
+            [[ $contract == .github/tests/flatpak-cargo-sources.sh ]] && continue
             GITHUB_ACTIONS=false "$contract"
           done
 

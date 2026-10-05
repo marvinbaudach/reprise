@@ -218,6 +218,7 @@ require_pattern 'scripts/tests/worktree-gc-schedule\.sh' .github/workflows/ci.ym
 require_pattern 'Run the script self-tests' .github/workflows/ci.yml
 require_pattern 'scripts/tests/qa-linters\.sh' .github/workflows/ci.yml
 require_pattern '^          scripts/check-shell\.sh$' .github/workflows/ci.yml
+require_pattern '^            \[\[ \$contract == \.github/tests/flatpak-cargo-sources\.sh \]\] && continue$' .github/workflows/ci.yml
 require_pattern '^        run: scripts/check-project-quality\.sh --project --showroom$' .github/workflows/ci.yml
 require_pattern '^          scripts/check-architecture\.sh$' .github/workflows/ci.yml
 require_pattern_order 'Verify worktree hygiene' 'Verify project source quality' .github/workflows/ci.yml
