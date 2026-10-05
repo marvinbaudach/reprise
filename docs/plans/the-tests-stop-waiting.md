@@ -120,8 +120,12 @@ The tasks live in one file per strand; each carries its own status block.
    which was itself an ignored display test. Display tests that other commits
    add or remove in between shift the expectation by their own count. The full
    CI display sweep is green with `failed: 0`.
+   **Done 2026-10-05:** dispatch run 37334157056 swept 975 = 979 − 6 + 2 (#1114
+   added two), `failed: 0`.
 2. After a: a full `workflow_dispatch` CI run — the landing run of a
    `scripts/`-only change proves nothing (routes to no suite).
+   **Done 2026-10-05:** run 37334157056 on dev `8d11e44770` (after a, b and c) is
+   green.
 3. After d: another `workflow_dispatch` run; compare per-job medians with the
    table above over the next 10 dev pushes.
 

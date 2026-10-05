@@ -91,3 +91,25 @@ Contract pins every task must keep green (all exit 0 today):
 
 Verification: every contract test above, `scripts/check-shell.sh`, and a
 `workflow_dispatch` run of the branch (CI-infra changes route to no suite).
+
+## Measured inputs (2026-10-05)
+
+- **Before**, run 37312084327 (push, dev `037eb5da48`, before #1116): four display shards
+  of 7.97, 8.18, 7.98 and 8.00 min. The old runner compiled per test, which took ~3 min of
+  build and ~4 min of execution per shard. 979 display tests, `failed: 0`, 5 measurement
+  tools skipped.
+- **After**, run 37334157056 (`workflow_dispatch`, dev `8d11e44770`, after a, b and c):
+  four display shards of 5.98, 5.88, 5.83 and 3.85 min. Shard 4 ran on a faster runner.
+  Per shard, setup (containers, system dependencies, checkout) takes ~1 min and the
+  `cargo test --no-run` build ~4.1–4.2 min (2m23 on the fast runner). Executing the 243–244
+  tests then takes only 30–48 s at `DISPLAY_TEST_JOBS: 4`, so all four shards together
+  spend ~170 s executing.
+- **Task 5 extrapolation** (not measured), slowest shard: N=1 ≈ 1 + 4.2 + ~3 ≈ 8.2 min,
+  which is at the 8 min ceiling. N=2 ≈ 1 + 4.2 + ~1.5 ≈ 6.7 min. N=4 is measured at 6.0 min.
+  The rule therefore points at N=2, unless a measured N=1 run stays under 8 min.
+- **Android JVM unit suite:** 13.85 min in the after run and 13.82 min before. The median of
+  eight successful runs on 2026-10-05 is ~13.4 min. Task 5's 11.2 min matches only one
+  run, 37261721361.
+- **Routing:** a dispatch routes `gnome=false` by design (`.github/scripts/ci-paths.sh:11-13`).
+  The core suite's complete workspace gate covers the GNOME crate, so the skipped GNOME
+  job is not a gap.
