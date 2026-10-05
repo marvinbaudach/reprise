@@ -1706,7 +1706,8 @@ result.
   comes back as next. A queue offer that arrives while a delete's window runs
   waits for it instead of ending it. *Tests:*
   `fb_17_removing_a_queue_row_offers_an_undo_that_puts_it_back_where_it_was`,
-  `fb_17_a_queue_undo_after_the_queue_changed_shape_appends_the_row_next`.
+  `fb_17_a_queue_undo_after_the_queue_changed_shape_appends_the_row_next`,
+  `fb_17_a_queue_that_kept_its_size_but_was_reshuffled_still_gets_the_row_back_by_its_old_index`.
 - **FB-18** [active] [android] — Neither the Undo snackbar nor the
   "Deleting N tracks…" line moves the list: both are overlays without layout
   height. The snackbar floats above the bottom navigation; while the Now
@@ -1785,7 +1786,8 @@ result.
   opens the app instead of doing nothing. *Tests:*
   `os_10_the_wide_widgets_buttons_send_media_commands_to_the_service`,
   `os_10_the_square_widget_is_a_cover_with_one_play_pause_button`,
-  `os_10_before_anything_was_played_the_widget_shows_the_app_name_and_opens_the_app`.
+  `os_10_before_anything_was_played_the_widget_shows_the_app_name_and_opens_the_app`,
+  `os_10_before_anything_was_played_the_square_widget_shows_the_app_name_and_opens_the_app`.
 - **OS-11** [active] [android] — Every item the player plays carries the
   track's title, artist, album and duration, and its cover once it is known,
   so the notification, the lock screen, Android Auto and the widget all name

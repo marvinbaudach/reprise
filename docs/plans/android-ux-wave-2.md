@@ -2,7 +2,7 @@
 slug: android-ux-wave-2
 worktree:
 branch:
-phase: planned
+phase: shipped
 codex_session:
 created: 2026-10-05
 strands: a,b
@@ -21,11 +21,13 @@ Kotlin root `K` = `android/app/src/main/java/io/github/marvinbaudach/reprise/`, 
 ## Decisions (grill, 2026-10-04/05)
 
 1. **Deferred delete replaces the confirm dialog.** Deleting tracks removes them from the
-   list and the queue at once and shows a snackbar "N tracks deleted · Undo" for 6 s. Only
+   list and the queue at once and shows a snackbar "N tracks will be deleted" (future tense:
+   nothing is gone yet) with a separate Undo button for 6 s. Only
    when the snackbar times out (or is dismissed by a new delete) is the file actually deleted
    through the existing `trashTracks` path. If the app dies inside the window, nothing is
    deleted — the safe direction. Undo restores rows and queue positions exactly.
-2. Undo snackbar also for **Remove from queue** (re-insert at the old position).
+2. Undo snackbar also for **Remove from queue** (re-insert at the old position when the
+   queue still has the size the removal left, otherwise as the next row).
 3. The deletion status line ("Deleting N tracks…") must not move the list — overlay, never
    reflow (decided 2026-10-04). It already lives in an overlay `Box` layer
    (`LibraryStatusChrome.kt`), so the 24 px shift comes from somewhere else: measure first.
@@ -60,8 +62,9 @@ Tasks:
   restores the exact list and queue; timeout calls deleteTracks once; process-death
   simulation deletes nothing.
 - a3 **Undo for Remove from queue** (`TrackContextMenu.kt` ~173-176): snackbar "Removed from
-  queue · Undo"; Undo re-inserts at the old position if the queue has not changed shape,
-  otherwise appends next.
+  queue" with a separate Undo button; Undo re-inserts at the old position if the queue
+  still has the size the removal left (`restoreQueued` compares sizes, nothing else),
+  otherwise puts the row back as the next one to play.
 - a4 **Deletion line shift.** First reproduce with a Robolectric layout test that measures
   the list's top offset with and without a running deletion. Find what reflows (likely a
   padding/inset driven by `deletionProgress`), and make the line a pure overlay. The test
@@ -120,7 +123,8 @@ Two strands, disjoint by the ownership lists above. Shared-risk files and how th
 Merge order: a, then b (b is larger and touches the manifest/gradle; rebasing it is the
 cheaper side).
 
-Post-merge cross-checks (read files no single strand owns):
+Post-merge cross-checks (read files no single strand owns): status 2026-10-05: step 1 passed on dev,
+step 3 landed as #1118, step 2 (the phone pass) is still open.
 1. `scripts/check-android-suite.sh` and the Rust gates on merged `dev`.
 2. On the phone (device lock!): deferred delete + undo, queue undo, deletion line does not
    move the list, #998 cover appears, widget both sizes, notification shows title/cover,

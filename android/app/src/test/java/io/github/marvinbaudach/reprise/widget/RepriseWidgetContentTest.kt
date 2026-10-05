@@ -119,6 +119,18 @@ class RepriseWidgetContentTest {
     }
 
     @Test
+    fun os_10_before_anything_was_played_the_square_widget_shows_the_app_name_and_opens_the_app() = runGlanceAppWidgetUnitTest {
+        setContext(ApplicationProvider.getApplicationContext())
+        setAppWidgetSize(SQUARE_SIZE)
+        provideComposable { RepriseWidgetContent(WidgetNowPlaying.Empty, covers = WidgetCovers.None) }
+
+        onNode(hasText("Reprise")).assertExists()
+        onNode(hasContentDescription("Play")).assertDoesNotExist()
+        onNode(hasContentDescription("Pause")).assertDoesNotExist()
+        onNode(hasContentDescription("Open Reprise")).assertHasStartActivityClickAction(openApp())
+    }
+
+    @Test
     fun aTrackWithoutATitleStillGetsAWidgetText() = runGlanceAppWidgetUnitTest {
         setContext(ApplicationProvider.getApplicationContext())
         setAppWidgetSize(WIDE_SIZE)

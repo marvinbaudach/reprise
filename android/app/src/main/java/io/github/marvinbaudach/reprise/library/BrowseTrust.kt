@@ -92,7 +92,7 @@ internal class PackageBrowserAccess(private val context: Context) : BrowserAcces
      * `null` when the package is not installed, not visible, or not owned by [uid],
      * and below API 28, which has no `GET_SIGNING_CERTIFICATES`.
      */
-    private fun signersOf(packageName: String, uid: Int): Set<String>? {
+    internal fun signersOf(packageName: String, uid: Int): Set<String>? {
         if (Build.VERSION.SDK_INT < Build.VERSION_CODES.P) return null
         return try {
             @Suppress("DEPRECATION") // the flags overload needs API 33; minSdk is 26
