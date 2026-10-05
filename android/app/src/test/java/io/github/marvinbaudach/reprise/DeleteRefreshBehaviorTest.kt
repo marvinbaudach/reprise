@@ -58,7 +58,8 @@ class DeleteRefreshBehaviorTest {
     private inner class Screen(songs: List<CatalogSong>) {
         val port = InMemoryCatalogPort(songs)
         val session = LibrarySession(port)
-        val surface = MobileSurfaceViewModel()
+        val timers = ManualTimers()
+        val surface = MobileSurfaceViewModel(scheduleAfter = timers::schedule)
         var browse by mutableStateOf(session.refreshBrowse(previous = null).state)
         val controls = DeletionControls(
             remove = port::remove,
@@ -74,6 +75,19 @@ class DeleteRefreshBehaviorTest {
 
         init {
             surface.bindLibraryStateReporter { state -> browse = state as LibraryScreenState.Browse }
+        }
+
+        /** Chooses Delete on a title row, lets the undo window pass, and waits for the answer. */
+        fun deleteRow(trackId: Long) {
+            compose.onNodeWithTag("library-track-row-$trackId").performTouchInput { longClick() }
+            compose.onNodeWithText("Delete from device…").performClick()
+            passTheUndoWindow()
+        }
+
+        fun passTheUndoWindow() {
+            compose.waitUntil(5_000) { surface.pendingDeletions.offers.current != null }
+            compose.runOnIdle { timers.fireAll() }
+            compose.waitForIdle()
         }
 
         fun show() {
@@ -122,6 +136,7 @@ class DeleteRefreshBehaviorTest {
         private val onLibraryChanged: () -> Unit,
     ) : PlaybackControls {
         val requested = mutableListOf<List<Long>>()
+        val played = mutableListOf<List<Long>>()
 
         /** Ids the "provider" refuses to delete; everything else goes. */
         var refused: Set<Long> = emptySet()
@@ -138,6 +153,10 @@ class DeleteRefreshBehaviorTest {
         override fun setRepeat(mode: AndroidRepeatMode) = Unit
         override fun setFavourite(trackId: Long, favourite: Boolean, report: (String?) -> Unit) =
             report(null)
+
+        override fun playTrackIds(trackIds: List<Long>, startIndex: Int) {
+            played += trackIds
+        }
 
         override fun deleteTracks(
             trackIds: List<Long>,
@@ -169,14 +188,6 @@ class DeleteRefreshBehaviorTest {
         }
     }
 
-    private fun deleteRow(trackId: Long, title: String) {
-        compose.onNodeWithTag("library-track-row-$trackId").performTouchInput { longClick() }
-        compose.onNodeWithText("Delete from device…").performClick()
-        compose.awaitText("Delete $title?")
-        compose.onNodeWithText("Delete").performClick()
-        compose.waitForIdle()
-    }
-
     private fun openArtistPage(name: String) {
         compose.onNodeWithText("Artists").performClick()
         compose.waitForIdle()
@@ -202,7 +213,7 @@ class DeleteRefreshBehaviorTest {
         compose.waitForIdle()
         compose.onNodeWithText("Song 0451").assertIsDisplayed()
 
-        deleteRow(451, "Song 0451")
+        screen.deleteRow(451)
 
         compose.onNodeWithText("Song 0451").assertDoesNotExist()
         compose.onNodeWithText("Song 0452").assertIsDisplayed()
@@ -220,7 +231,7 @@ class DeleteRefreshBehaviorTest {
         compose.waitForIdle()
         compose.onNodeWithText("Bolero One").assertDoesNotExist()
 
-        deleteRow(2, "Aria Two")
+        screen.deleteRow(2)
 
         compose.onNodeWithText("Search titles").assertIsDisplayed()
         assertEquals("Aria", screen.surface.searchText)
@@ -237,12 +248,27 @@ class DeleteRefreshBehaviorTest {
         openArtistPage("Aria")
         compose.onNodeWithText("Loose A").assertIsDisplayed()
 
-        deleteRow(4, "Loose A")
+        screen.deleteRow(4)
 
         compose.onNodeWithText("Loose A").assertDoesNotExist()
         compose.onNodeWithText("Loose B").assertIsDisplayed()
         compose.onNodeWithText("First Light").assertIsDisplayed()
         compose.onNodeWithText("Bolero").assertDoesNotExist()
+    }
+
+    @Test
+    fun theArtistPagePlayLeavesOutATrackWaitingToBeDeleted() {
+        val screen = Screen(aria + bolero)
+        screen.show()
+        openArtistPage("Aria")
+        compose.onNodeWithTag("library-track-row-4").performTouchInput { longClick() }
+        compose.onNodeWithText("Delete from device…").performClick()
+        compose.waitUntil(5_000) { screen.surface.pendingDeletions.offers.current != null }
+
+        compose.onNodeWithTag("artist-detail-play").performClick()
+        compose.waitUntil(5_000) { screen.controls.played.isNotEmpty() }
+
+        assertEquals(listOf(1L, 2L, 3L, 5L, 8L), screen.controls.played.single().sorted())
     }
 
     @Test
@@ -254,9 +280,7 @@ class DeleteRefreshBehaviorTest {
 
         compose.onNodeWithText("Only").performTouchInput { longClick() }
         compose.onNodeWithText("Delete from device…").performClick()
-        compose.awaitText("Delete")
-        compose.onNodeWithText("Delete").performClick()
-        compose.waitForIdle()
+        screen.passTheUndoWindow()
 
         compose.onNodeWithText("Bolero").assertDoesNotExist()
         compose.onNodeWithText("Aria").assertIsDisplayed()
@@ -272,7 +296,7 @@ class DeleteRefreshBehaviorTest {
         compose.waitForIdle()
         compose.onNodeWithText("Wind One").assertIsDisplayed()
 
-        deleteRow(8, "Wind One")
+        screen.deleteRow(8)
 
         compose.onNodeWithText("Wind One").assertDoesNotExist()
         compose.onNodeWithText("Second Wind").assertDoesNotExist()
@@ -285,10 +309,11 @@ class DeleteRefreshBehaviorTest {
         screen.controls.holdOutcome = true
         screen.show()
 
-        deleteRow(6, "Bolero One")
+        screen.deleteRow(6)
 
         compose.onNodeWithText("Deleting 1 track…").assertIsDisplayed()
-        compose.onNodeWithText("Bolero One").assertIsDisplayed()
+        // Hidden since the undo was offered, and not shown again while it runs.
+        compose.onNodeWithText("Bolero One").assertDoesNotExist()
 
         screen.controls.release()
         compose.waitForIdle()
@@ -306,9 +331,7 @@ class DeleteRefreshBehaviorTest {
 
         compose.onNodeWithText("Only").performTouchInput { longClick() }
         compose.onNodeWithText("Delete from device…").performClick()
-        compose.awaitText("Delete")
-        compose.onNodeWithText("Delete").performClick()
-        compose.waitForIdle()
+        screen.passTheUndoWindow()
 
         // The album row, and the whole page around it, are gone; only a
         // message the screen owns can still say what happened.
@@ -326,9 +349,7 @@ class DeleteRefreshBehaviorTest {
 
         compose.onNodeWithText("Only").performTouchInput { longClick() }
         compose.onNodeWithText("Delete from device…").performClick()
-        compose.awaitText("Delete")
-        compose.onNodeWithText("Delete").performClick()
-        compose.waitForIdle()
+        screen.passTheUndoWindow()
 
         compose.onNodeWithText("1 of 2 could not be deleted").assertIsDisplayed()
         assertEquals(1L, screen.browse.artists.rows.first { it.name == "Bolero" }.trackCount)

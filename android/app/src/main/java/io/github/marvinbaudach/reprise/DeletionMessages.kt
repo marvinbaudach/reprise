@@ -82,6 +82,13 @@ internal interface DeletionMessages {
      * to answer must not end the other's progress line.
      */
     fun begin(text: String): DeletionRun
+
+    /**
+     * Where a delete waits, hidden and undoable, before it runs. Null outside
+     * the library screen: a row there has no snackbar to offer an undo from,
+     * so it does not delete at all.
+     */
+    val pendingDeletions: PendingDeletions? get() = null
 }
 
 internal val LocalDeletionMessages = staticCompositionLocalOf<DeletionMessages?> { null }

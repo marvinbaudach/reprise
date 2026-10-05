@@ -21,7 +21,6 @@ import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
-import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Modifier
@@ -88,9 +87,6 @@ internal fun BrowseScreen(
     selectTheme: (MobileTheme) -> Unit,
     setVolumeKeySkipGestureEnabled: (Boolean) -> PlaybackSettingsUiState = { loadPlaybackSettings() },
 ) {
-    val trackAnalysis = LocalTrackAnalysis.current
-    val playbackControls = LocalPlaybackControls.current
-    val trackArtwork = LocalTrackArtwork.current
     val compositionScope = rememberCoroutineScope()
     val libraryQueryScope = remember(state) {
         CoroutineScope(
@@ -183,6 +179,7 @@ internal fun BrowseScreen(
         pageCount = { BrowseTab.entries.size },
     )
     val statusTopInset = remember { mutableStateOf(0.dp) }
+    val bottomFrameInset = remember { mutableStateOf(0.dp) }
     // What the bar marks and what the header counts is the page the gesture has
     // already committed to — not the one it settled on. `settledPage`, which the
     // state below is driven from, holds its old value for the whole drag *and*
@@ -238,7 +235,9 @@ internal fun BrowseScreen(
         }
     }
 
-    fun play(selection: PlaybackSelection) {
+    fun play(requested: PlaybackSelection) {
+        // Tracks waiting to be deleted are not played, and not queued.
+        val selection = surfaceState.pendingDeletions.visibleSelection(requested) ?: return
         browseError = null
         browseErrorOrigin = null
         playTracks(selection) { message ->
@@ -506,34 +505,10 @@ internal fun BrowseScreen(
         }
     }
 
-    // The row behind the mini player and the sheet is database I/O, so it is
-    // asked for from an effect and answered later, never fetched inside the
-    // composition. Reads no longer wait for a folder scan, but they still do
-    // not belong on the main thread. See [TrackLoader].
-    var answeredTrack by remember { mutableStateOf<AnsweredTrack?>(null) }
-    val playingTrackId = playback.currentTrackId
-    val latestPlayingTrackId by rememberUpdatedState(playingTrackId)
-    LaunchedEffect(playingTrackId, playbackControls, trackArtwork) {
-        surfaceState.prefetchUpcomingArtwork(playingTrackId, playbackControls, trackArtwork)
-    }
-    LaunchedEffect(playingTrackId, playback.currentTrackUri) {
-        if (playingTrackId != null) {
-            trackAnalysis.prepare(playingTrackId)
-            loadTrack(playingTrackId) { track ->
-                if (latestPlayingTrackId != null) {
-                    answeredTrack = AnsweredTrack(playingTrackId, track)
-                }
-            }
-        } else {
-            answeredTrack = null
-        }
-    }
-    // The last answered row stays in place while a new track is being read, but
-    // its actions are disabled because it no longer answers for what is playing.
-    // A stopped session still blanks immediately: no replacement answer is due.
-    val lastAnsweredTrack = answeredTrack
-    val shownTrack = if (playingTrackId == null) null else lastAnsweredTrack?.track
-    val shownTrackIsStale = lastAnsweredTrack != null && lastAnsweredTrack.id != playingTrackId
+    val shown = rememberShownTrack(playback, surfaceState, loadTrack)
+    val playingTrackId = shown.playingTrackId
+    val shownTrack = shown.track
+    val shownTrackIsStale = shown.isStale
     val nowPlayingSheetState = remember { MutableTransitionState(false) }
     nowPlayingSheetState.targetState =
         nowPlayingExpanded && playingTrackId != null && shownTrack != null
@@ -556,6 +531,13 @@ internal fun BrowseScreen(
             visibleArtists = visibleArtists,
         )
     }
+    // Lists that resolve their own ids play them through this, and so skip what
+    // a pending delete is hiding. Not provided to the snackbar host below: it
+    // binds the real transport, and must unbind that same one.
+    val realControls = LocalPlaybackControls.current
+    val visibleControls = remember(realControls, surfaceState.pendingDeletions) {
+        VisibleTracksPlaybackControls(realControls, surfaceState.pendingDeletions)
+    }
     Box(modifier = Modifier.fillMaxSize()) {
         val libraryScaffold: @Composable (Modifier) -> Unit = { frameModifier ->
             Scaffold(
@@ -574,6 +556,7 @@ internal fun BrowseScreen(
                     )
                 },
             ) { contentPadding ->
+                SideEffect { bottomFrameInset.value = contentPadding.calculateBottomPadding() }
                 Column(
                     modifier = Modifier
                         .fillMaxSize()
@@ -736,18 +719,20 @@ internal fun BrowseScreen(
                 }
             }
         }
-        if (!surfaceState.dockMode) {
-            if (surfaceLayout == SurfaceLayout.WIDE_SHORT) {
-                Row(modifier = Modifier.fillMaxSize()) {
-                    LibraryNavigationRail(
-                        surfaceLayout = surfaceLayout,
-                        shownTab = shownTab,
-                        selectTab = ::selectDestination,
-                    )
-                    libraryScaffold(Modifier.weight(1f))
+        CompositionLocalProvider(LocalPlaybackControls provides visibleControls) {
+            if (!surfaceState.dockMode) {
+                if (surfaceLayout == SurfaceLayout.WIDE_SHORT) {
+                    Row(modifier = Modifier.fillMaxSize()) {
+                        LibraryNavigationRail(
+                            surfaceLayout = surfaceLayout,
+                            shownTab = shownTab,
+                            selectTab = ::selectDestination,
+                        )
+                        libraryScaffold(Modifier.weight(1f))
+                    }
+                } else {
+                    libraryScaffold(Modifier.fillMaxSize())
                 }
-            } else {
-                libraryScaffold(Modifier.fillMaxSize())
             }
         }
         BrowseNowPlayingLayer(
@@ -760,6 +745,13 @@ internal fun BrowseScreen(
             nowPlayingSheetState = nowPlayingSheetState,
             settingsVisible = settingsVisible,
         )
+        UndoSnackbarHost(surfaceState.pendingDeletions) {
+            undoSnackbarClearance(
+                nowPlayingOpen = nowPlayingSheetState.currentState || nowPlayingSheetState.targetState,
+                layout = surfaceLayout,
+                libraryFrameInset = bottomFrameInset.value,
+            )
+        }
         BrowseSettingsOverlay(
             visible = settingsVisible,
             settings = settings,
