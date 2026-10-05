@@ -11,6 +11,13 @@ use super::player_controller::PlayerController;
 
 const SMOKE_ENV: &str = "REPRISE_SMOKE_LYRICS";
 
+/// Opens the global online-sources gate and then the Online Lyrics module. A fresh isolated
+/// database leaves the gate off, and the lyrics view only asks the network while both are on.
+fn open_isolated_lyrics_gate(conn: &Db) -> Result<(), reprise_core::CoreError> {
+    reprise_core::online_sources::set_enabled(conn, true)?;
+    reprise_core::modules::set_enabled(conn, &reprise_core::modules::ONLINE_LYRICS_MODULE, true)
+}
+
 pub(in crate::ui) fn arm(
     player: Option<&Rc<PlayerController>>,
     panel: &Rc<NowPlayingPanel>,
@@ -23,10 +30,11 @@ pub(in crate::ui) fn arm(
         tracing::error!("lyrics smoke failed: playback is unavailable");
         return;
     };
-    if let Err(error) = player.set_online_lyrics_enabled(true) {
-        tracing::error!(%error, "lyrics smoke failed: could not enable the isolated lyrics module");
+    if let Err(error) = open_isolated_lyrics_gate(conn) {
+        tracing::error!(%error, "lyrics smoke failed: could not open the isolated lyrics gate");
         return;
     }
+    player.recompute_lyrics_enabled();
     let ids = match smoke_track_ids(conn) {
         Ok(ids) => ids,
         Err(error) => {
@@ -122,3 +130,7 @@ fn log_snapshot(
         "lyrics smoke state"
     );
 }
+
+#[cfg(test)]
+#[path = "lyrics_smoke_tests.rs"]
+mod tests;
