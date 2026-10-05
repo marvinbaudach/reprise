@@ -13,7 +13,7 @@ private const val TAG = "RepriseWidget"
  * One class per button, because a Glance action callback is instantiated by
  * the framework by class and carries no constructor arguments.
  */
-internal abstract class WidgetCommandAction(private val command: WidgetCommand) : ActionCallback {
+internal abstract class WidgetCommandAction(internal val command: WidgetCommand) : ActionCallback {
     override suspend fun onAction(context: Context, glanceId: GlanceId, parameters: ActionParameters) {
         try {
             sink(context).send(command)
