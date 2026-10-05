@@ -1,4 +1,4 @@
-use crate::db::Db;
+use crate::{db::Db, CoreError};
 
 use super::{
     get_auto_clean_armed_at_in, get_bool_in, get_browse_visible_in, get_color_scheme_in,
@@ -30,29 +30,29 @@ pub fn get_setting(db: &Db, key: &str) -> Result<Option<String>, rusqlite::Error
     get_setting_in(conn, key)
 }
 
-pub fn set_setting(db: &Db, key: &str, value: &str) -> Result<(), rusqlite::Error> {
+pub fn set_setting(db: &Db, key: &str, value: &str) -> Result<(), CoreError> {
     let conn = db.conn();
-    set_setting_in(conn, key, value)
+    Ok(set_setting_in(conn, key, value)?)
 }
 
-pub fn get_bool(db: &Db, key: &str, default: bool) -> Result<bool, rusqlite::Error> {
+pub fn get_bool(db: &Db, key: &str, default: bool) -> Result<bool, CoreError> {
     let conn = db.conn();
-    get_bool_in(conn, key, default)
+    Ok(get_bool_in(conn, key, default)?)
 }
 
-pub fn set_bool(db: &Db, key: &str, value: bool) -> Result<(), rusqlite::Error> {
+pub fn set_bool(db: &Db, key: &str, value: bool) -> Result<(), CoreError> {
     let conn = db.conn();
-    set_bool_in(conn, key, value)
+    Ok(set_bool_in(conn, key, value)?)
 }
 
-pub fn get_library_root(db: &Db) -> Result<Option<String>, rusqlite::Error> {
+pub fn get_library_root(db: &Db) -> Result<Option<String>, CoreError> {
     let conn = db.conn();
-    get_library_root_in(conn)
+    Ok(get_library_root_in(conn)?)
 }
 
-pub fn set_library_root(db: &Db, root: &str) -> Result<(), rusqlite::Error> {
+pub fn set_library_root(db: &Db, root: &str) -> Result<(), CoreError> {
     let conn = db.conn();
-    set_library_root_in(conn, root)
+    Ok(set_library_root_in(conn, root)?)
 }
 
 pub fn get_last_scan_relinked(db: &Db) -> Result<Option<u32>, rusqlite::Error> {

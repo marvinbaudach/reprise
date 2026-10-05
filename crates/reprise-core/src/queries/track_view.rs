@@ -3,10 +3,10 @@ use super::clauses::{
     TrackSqlOptions,
 };
 use super::{browse, library, library_views, playlist, queue, smart, BrowseFilter};
-use crate::db::Db;
 use crate::models::Track;
 use crate::up_next::QueueItem;
 use crate::view_source::ViewSource;
+use crate::{db::Db, CoreError};
 use rusqlite::types::Value;
 use rusqlite::Connection;
 
@@ -104,13 +104,19 @@ pub fn query_track_window(
     sort: TrackSort<'_>,
     rows: RowWindow,
     ai: AiColumn,
-) -> Result<Vec<Track>, rusqlite::Error> {
-    query_track_window_dispatch(db.conn(), view, sort, rows, ai)
+) -> Result<Vec<Track>, CoreError> {
+    Ok(query_track_window_dispatch(
+        db.conn(),
+        view,
+        sort,
+        rows,
+        ai,
+    )?)
 }
 
 /// Counts every row in the described track view.
-pub fn query_track_count(db: &Db, view: &TrackViewQuery<'_>) -> Result<i64, rusqlite::Error> {
-    query_track_count_dispatch(db.conn(), view)
+pub fn query_track_count(db: &Db, view: &TrackViewQuery<'_>) -> Result<i64, CoreError> {
+    Ok(query_track_count_dispatch(db.conn(), view)?)
 }
 
 /// Returns the playable track ids represented by the described track view, in

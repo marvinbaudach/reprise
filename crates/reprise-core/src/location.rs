@@ -87,7 +87,11 @@ pub fn default_radius_km(db: &Db) -> Result<f64, rusqlite::Error> {
 }
 
 pub fn set_default_radius_km(db: &Db, radius_km: f64) -> Result<(), rusqlite::Error> {
-    crate::library::settings::set_setting(db, LOCATION_DEFAULT_RADIUS_KEY, &radius_km.to_string())
+    Ok(crate::library::settings::set_setting(
+        db,
+        LOCATION_DEFAULT_RADIUS_KEY,
+        &radius_km.to_string(),
+    )?)
 }
 
 pub(crate) fn app_location_in(conn: &Connection) -> Result<Option<AppLocation>, rusqlite::Error> {

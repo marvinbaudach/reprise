@@ -3,9 +3,9 @@
 //! alignment, caching, and prefetch remain with their existing owners.
 
 use crate::browser::SortDirection;
-use crate::db::Db;
 use crate::models::Track;
 use crate::view_source::ViewSource;
+use crate::{db::Db, CoreError};
 use rusqlite::{types::Value, OptionalExtension};
 
 use super::clauses::{
@@ -176,7 +176,7 @@ pub fn query_library_metadata_text_search(
     db: &Db,
     text: &str,
     window: WindowRange,
-) -> Result<TrackWindow, rusqlite::Error> {
+) -> Result<TrackWindow, CoreError> {
     let has_filter = !text.trim().is_empty();
     let pattern = like_pattern(text.trim());
     let count_sql = format!(

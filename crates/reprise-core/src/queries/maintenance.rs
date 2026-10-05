@@ -6,11 +6,11 @@
 use std::collections::{HashMap, HashSet};
 use std::path::PathBuf;
 
-use crate::db::Db;
 use crate::device_sync::SyncTrack;
 use crate::library::source::{
     LibraryLinkMode, LibraryPathPresence, LibrarySource, UnixLibrarySource,
 };
+use crate::{db::Db, CoreError};
 use rusqlite::{Connection, OptionalExtension};
 
 use super::clauses::PRESENT;
@@ -40,27 +40,28 @@ fn row_to_summary(row: &rusqlite::Row<'_>) -> Result<TrackSummary, rusqlite::Err
 /// matching row (e.g. deleted between queueing and playback) — never an
 /// error; the caller decides how to degrade (skip/stop), matching every
 /// other fallible path in this module.
-pub fn query_track_summary(db: &Db, id: i64) -> Result<Option<TrackSummary>, rusqlite::Error> {
+pub fn query_track_summary(db: &Db, id: i64) -> Result<Option<TrackSummary>, CoreError> {
     let conn = db.conn();
-    conn.query_row(
-        "SELECT path, title, artist, album, album_artist, genre, artist_mbid,
+    Ok(conn
+        .query_row(
+            "SELECT path, title, artist, album, album_artist, genre, artist_mbid,
                 year, duration_ms FROM tracks WHERE id = ?1",
-        rusqlite::params![id],
-        |r| {
-            Ok(TrackSummary {
-                path: r.get(0)?,
-                title: r.get(1)?,
-                artist: r.get(2)?,
-                album: r.get(3)?,
-                album_artist: r.get(4)?,
-                genre: r.get(5)?,
-                artist_mbid: r.get(6)?,
-                year: r.get(7)?,
-                duration_ms: r.get(8)?,
-            })
-        },
-    )
-    .optional()
+            rusqlite::params![id],
+            |r| {
+                Ok(TrackSummary {
+                    path: r.get(0)?,
+                    title: r.get(1)?,
+                    artist: r.get(2)?,
+                    album: r.get(3)?,
+                    album_artist: r.get(4)?,
+                    genre: r.get(5)?,
+                    artist_mbid: r.get(6)?,
+                    year: r.get(7)?,
+                    duration_ms: r.get(8)?,
+                })
+            },
+        )
+        .optional()?)
 }
 
 /// Returns every non-missing track id for validating persisted playback
@@ -105,7 +106,7 @@ pub fn query_random_live_track_ids(db: &Db) -> Result<Vec<i64>, rusqlite::Error>
 /// rejects ids that exist but are currently missing (`missing_since` set), so a
 /// caller can list exactly which ids it must not accept. An empty input is an
 /// empty result with no query issued.
-pub fn filter_present(db: &Db, ids: &[i64]) -> Result<Vec<i64>, rusqlite::Error> {
+pub fn filter_present(db: &Db, ids: &[i64]) -> Result<Vec<i64>, CoreError> {
     let conn = db.conn();
     if ids.is_empty() {
         return Ok(Vec::new());

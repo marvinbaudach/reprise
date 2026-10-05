@@ -70,7 +70,7 @@
 //!   task builds ahead of time: a bare count of the existing `import_errors`
 //!   table, for a future sidebar badge.
 
-use crate::db::Db;
+use crate::{db::Db, CoreError};
 #[cfg(test)]
 use crate::{up_next::QueueItem, view_source::ViewSource};
 #[cfg(test)]
@@ -224,17 +224,15 @@ pub const MAX_WINDOW_LIMIT: i64 = 500;
 /// `source_track_id` to the file its backend reads (P3b) — cheaper than
 /// fetching a whole [`maintenance::query_track_summary`], and the seam that
 /// keeps productive frontend code out of assembling SQL.
-pub fn track_source_path(
-    db: &Db,
-    track_id: i64,
-) -> Result<Option<std::path::PathBuf>, rusqlite::Error> {
+pub fn track_source_path(db: &Db, track_id: i64) -> Result<Option<std::path::PathBuf>, CoreError> {
     let conn = db.conn();
     use rusqlite::OptionalExtension;
-    conn.query_row("SELECT path FROM tracks WHERE id = ?1", [track_id], |row| {
-        row.get::<_, String>(0)
-    })
-    .optional()
-    .map(|path| path.map(std::path::PathBuf::from))
+    let path = conn
+        .query_row("SELECT path FROM tracks WHERE id = ?1", [track_id], |row| {
+            row.get::<_, String>(0)
+        })
+        .optional()?;
+    Ok(path.map(std::path::PathBuf::from))
 }
 
 // `tests.rs` holds the core suite (query-builder/whitelist/LIKE-escaping,
