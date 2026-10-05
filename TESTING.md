@@ -303,7 +303,7 @@ as a release-green signal. Do not weaken `msgcmp` to hide the mismatch.
 
 ## Isolated GTK and desktop tests
 
-GTK can be initialized from only one thread per test process. Never run the 75
+GTK can be initialized from only one thread per test process. Never run the
 ignored display tests as one filtered Rust test invocation: even
 `--test-threads=1` may execute successive tests on different harness threads.
 Use `scripts/check-display-tests.sh`, which discovers the tests and launches
