@@ -1,5 +1,6 @@
 use super::*;
 use crate::dto::PlayParams;
+use reprise_core::queries::{AiColumn, RowWindow, TrackSort, TrackViewQuery};
 
 /// Seeds one real track row via the actual scanner (`reprise_core::
 /// library::scanner::scan_folder`) over a temp copy of the shared
