@@ -30,7 +30,7 @@ class TrackGainAudioSinkTest {
         }
 
     @Test
-    fun gainSwitchesWhenTheFirstBufferReachesTheQueuedStreamOffset() {
+    fun play_19c_gain_switches_when_the_first_buffer_reaches_the_queued_stream_offset() {
         val sink = TrackGainAudioSink(delegate())
         sink.startPlaylist(-6.020599913, 6.020599913)
         sink.setOutputStreamOffsetUs(0)

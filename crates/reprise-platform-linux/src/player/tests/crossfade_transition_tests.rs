@@ -5,7 +5,7 @@ use reprise_core::library::settings::TrackTransition;
 /// selected, the position ticker must spin up a second playbin for the
 /// pre-fed successor and promote it without stopping the primary pipeline.
 #[test]
-fn crossfade_promotes_second_pipeline_and_advances_once() {
+fn play_19b_crossfade_promotion_carries_the_next_gain_from_the_first_sample() {
     let _guard = AUDIO_SINK_TEST_LOCK
         .lock()
         .unwrap_or_else(std::sync::PoisonError::into_inner);

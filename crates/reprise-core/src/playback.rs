@@ -44,7 +44,7 @@ impl Default for AudioEffects {
 
 #[cfg(test)]
 #[test]
-fn audio_effects_default_to_track_gain() {
+fn play_18_audio_effects_default_to_track_gain() {
     assert_eq!(
         AudioEffects::default().replay_gain,
         crate::library::settings::ReplayGainMode::Track

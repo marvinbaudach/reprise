@@ -83,7 +83,7 @@ mod tests {
     }
 
     #[test]
-    fn play_measured_gain_normalises_an_untagged_track() {
+    fn play_18_measured_gain_normalises_an_untagged_track() {
         let db = track((None, None));
         store_measured(&db);
 
@@ -91,7 +91,7 @@ mod tests {
     }
 
     #[test]
-    fn play_tagged_gain_wins_over_the_measurement() {
+    fn play_18_tagged_gain_wins_over_the_measurement() {
         let db = track((Some(-4.0), Some(0.5)));
         store_measured(&db);
 
@@ -99,7 +99,7 @@ mod tests {
     }
 
     #[test]
-    fn play_off_disables_tags_and_measurements() {
+    fn play_18_off_disables_tags_and_measurements() {
         let db = track((Some(-4.0), Some(0.5)));
         store_measured(&db);
 

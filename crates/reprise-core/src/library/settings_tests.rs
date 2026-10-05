@@ -454,7 +454,7 @@ fn last_viewed_import_errors_defaults_to_zero_round_trips_and_tolerates_corrupti
 }
 
 #[test]
-fn fresh_replaygain_defaults_to_track_and_explicit_off_stays_off() {
+fn play_18_fresh_replaygain_defaults_to_track_and_explicit_off_stays_off() {
     let db = crate::db::Db::open_in_memory().unwrap();
     assert_eq!(get_replay_gain_mode(&db), ReplayGainMode::Track);
 

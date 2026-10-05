@@ -28,7 +28,7 @@ class ReplayGainSettingsTest {
     )
 
     @Test
-    fun replayGainSettingsOfferOffPerTrackAndPerAlbum() {
+    fun play_20_the_playback_settings_offer_off_per_track_and_per_album() {
         val chosen = mutableListOf<AndroidReplayGainMode>()
         compose.setContent {
             RepriseTheme(nocturneForTests, darkPalette = true) {
