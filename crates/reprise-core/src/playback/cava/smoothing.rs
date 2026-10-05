@@ -47,8 +47,7 @@ impl Smoother {
     ) {
         self.update_framerate(new_samples, sample_rate_hz);
         let framerate_mod = CAVA_REFERENCE_FRAMERATE / self.framerate;
-        let integral_mod = framerate_mod.powf(0.1);
-        let integral_feedback = (self.noise_reduction / integral_mod).min(MAX_INTEGRAL_FEEDBACK);
+        let integral_feedback = self.integral_feedback(framerate_mod);
         let gravity_mod = (self.noise_reduction > 0.1)
             .then(|| framerate_mod.powf(2.5) * 2.0 / self.noise_reduction);
         // Preserve CAVA's gain search exactly, but do not expose its clipped
@@ -148,16 +147,43 @@ impl Smoother {
         self.memory.fill(0.0);
     }
 
-    /// Seeds `previous`/`peaks` from another shape, leaving `fall`, `memory`,
-    /// and the autosensitivity gain untouched. Shorter input than `bar_count`
-    /// seeds only its own bars; longer input is truncated by `zip`.
+    /// Seeds the smoother with a shape a viewer has already seen, so the next
+    /// frame continues it. Leaves the autosensitivity gain and `framerate`
+    /// untouched. Shorter input than `bar_count` seeds only its own bars;
+    /// longer input is truncated by `zip`.
+    ///
+    /// `bars` is the smoother's displayed output, which `apply` builds as
+    /// `bar + memory * integral_feedback`: it has the integral term in it,
+    /// while `previous`/`peaks` hold the bar *before* that term is added. The
+    /// state whose next frame reproduces `bars` is therefore `memory = bars`
+    /// and `previous = peaks = bars * (1 - integral_feedback)`, with `fall`
+    /// restarted so the first falling frame equals its peak. Storing `bars`
+    /// itself in `previous`/`peaks` would draw the next frame at about
+    /// `1 / (1 - integral_feedback)` times the shape, clip it, and drive the
+    /// autosensitivity gain down.
     pub(super) fn seed_shape(&mut self, bars: &[f32]) {
-        for (previous, bar) in self.previous.iter_mut().zip(bars.iter()) {
-            *previous = (if bar.is_finite() { *bar } else { 0.0 }).clamp(0.0, 1.0);
+        let feedback = self.integral_feedback(CAVA_REFERENCE_FRAMERATE / self.framerate);
+        let seeded = self
+            .previous
+            .iter_mut()
+            .zip(self.peaks.iter_mut())
+            .zip(self.fall.iter_mut())
+            .zip(self.memory.iter_mut())
+            .zip(bars.iter());
+        for ((((previous, peak), fall), memory), bar) in seeded {
+            let shown = (if bar.is_finite() { *bar } else { 0.0 }).clamp(0.0, 1.0);
+            let pre_integral = shown * (1.0 - feedback);
+            *previous = pre_integral;
+            *peak = pre_integral;
+            *fall = 0.0;
+            *memory = shown;
         }
-        for (peak, bar) in self.peaks.iter_mut().zip(bars.iter()) {
-            *peak = (if bar.is_finite() { *bar } else { 0.0 }).clamp(0.0, 1.0);
-        }
+    }
+
+    /// The share of last frame's output that `apply` adds to this frame.
+    fn integral_feedback(&self, framerate_mod: f32) -> f32 {
+        let integral_mod = framerate_mod.powf(0.1);
+        (self.noise_reduction / integral_mod).min(MAX_INTEGRAL_FEEDBACK)
     }
 
     fn update_framerate(&mut self, new_samples: usize, sample_rate_hz: u32) {
@@ -411,6 +437,87 @@ mod tests {
              loud-to-quiet track change: converged_max={converged_max:.3}, \
              reference_plateau={reference_plateau:.3}"
         );
+    }
+
+    // `seed_shape` takes the bars a viewer saw, which are the smoother's
+    // post-integral output (`bar + memory * integral_feedback`), while
+    // `previous`/`peaks` hold the pre-integral bar. Seeding the displayed
+    // shape straight into them made the next frame come out at about
+    // 1 / (1 - noise_reduction) times the seed: the whole spectrum jumped,
+    // clipped, and knocked autosensitivity down.
+    const SEED_FRAME_SAMPLES: usize = 800;
+    const SEED_SAMPLE_RATE_HZ: u32 = 48_000;
+    const SEED_TOLERANCE: f32 = 0.02;
+
+    fn displayed_shape() -> [f32; 8] {
+        [0.05, 0.2, 0.35, 0.5, 0.65, 0.8, 0.9, 0.3]
+    }
+
+    fn assert_continues(shape: &[f32], frame: &[f32]) {
+        for (index, (seed, drawn)) in shape.iter().zip(frame).enumerate() {
+            assert!(
+                (drawn - seed).abs() <= seed * SEED_TOLERANCE + 1.0e-4,
+                "band {index} did not continue the seeded shape: seed={seed:.4}, \
+                 drawn={drawn:.4}"
+            );
+        }
+    }
+
+    #[test]
+    fn a_seeded_shape_continues_on_the_next_frame_of_steady_input() {
+        let shape = displayed_shape();
+        let mut smoother = Smoother::new(shape.len(), 0.77, 0);
+        // A smoother that has been running holds integral memory from its
+        // old shape, as the live processor does across a track change.
+        for _ in 0..30 {
+            let mut earlier = [0.1; 8];
+            smoother.apply(&mut earlier, SEED_FRAME_SAMPLES, SEED_SAMPLE_RATE_HZ, true);
+        }
+        // The raw input that reproduces `shape` at steady state is the
+        // pre-integral bar: `shape * (1 - integral_feedback)`.
+        let feedback = smoother.integral_feedback(CAVA_REFERENCE_FRAMERATE / smoother.framerate);
+        let mut frame = shape.map(|bar| bar * (1.0 - feedback));
+
+        smoother.seed_shape(&shape);
+        smoother.apply(&mut frame, SEED_FRAME_SAMPLES, SEED_SAMPLE_RATE_HZ, true);
+
+        assert_continues(&shape, &frame);
+    }
+
+    #[test]
+    fn a_seeded_shape_falls_from_where_it_stood_when_the_input_drops_away() {
+        let shape = displayed_shape();
+        let mut smoother = Smoother::new(shape.len(), 0.77, 0);
+        // Leave `fall` mid-gravity: a seed must restart the fall, or the
+        // first frame would already be below the shape the viewer saw.
+        for _ in 0..10 {
+            let mut loud = [0.8; 8];
+            smoother.apply(&mut loud, SEED_FRAME_SAMPLES, SEED_SAMPLE_RATE_HZ, true);
+            let mut silent = [0.0; 8];
+            smoother.apply(&mut silent, SEED_FRAME_SAMPLES, SEED_SAMPLE_RATE_HZ, true);
+        }
+        let mut frame = [0.0; 8];
+
+        smoother.seed_shape(&shape);
+        smoother.apply(&mut frame, SEED_FRAME_SAMPLES, SEED_SAMPLE_RATE_HZ, false);
+
+        assert_continues(&shape, &frame);
+    }
+
+    #[test]
+    fn a_hostile_seed_is_clamped_into_the_unit_range() {
+        let mut smoother = Smoother::new(4, 0.77, 0);
+        let mut frame = [0.0; 4];
+
+        smoother.seed_shape(&[f32::NAN, 7.0, -3.0, f32::INFINITY]);
+        smoother.apply(&mut frame, SEED_FRAME_SAMPLES, SEED_SAMPLE_RATE_HZ, false);
+
+        assert!(
+            frame.iter().all(|bar| (0.0..=1.0).contains(bar)),
+            "{frame:?}"
+        );
+        assert_eq!(frame[0], 0.0);
+        assert_eq!(frame[2], 0.0);
     }
 
     #[test]

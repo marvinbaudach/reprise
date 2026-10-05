@@ -115,7 +115,10 @@ fn adopt_shape_keeps_bars_on_screen_through_the_first_live_pcm_block() {
     let before = main_bar_segments(&decode_scene(&engine.scene(272.0, 272.0)), 272.0).len();
     assert!(before > 0, "the adopted shape should already show bars");
 
-    let pcm = stereo_sine_pcm16(200.0, 48_000, 0, 8_192);
+    // One display tick of PCM, as the device delivers it (60 fps at 48 kHz).
+    // A single 8_192-frame block would run sixteen smoother frames inside one
+    // tick, i.e. 170 ms of gravity at once, which no real tick does.
+    let pcm = stereo_sine_pcm16(200.0, 48_000, 0, 800);
     ingest_one_live_block(&engine, &clock, &pcm, 48_000);
 
     let after = main_bar_segments(&decode_scene(&engine.scene(272.0, 272.0)), 272.0).len();

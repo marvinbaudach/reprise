@@ -199,12 +199,12 @@ impl CavaBarProcessor {
         self.input_buffer.fill(0.0);
     }
 
-    /// Seeds the smoother's bar shape (`previous`/`peaks`) from another
-    /// processor's last output, without touching the FFT input buffer or the
-    /// settled autosensitivity gain. Used to hand a freshly constructed
-    /// processor a starting shape before its first real audio block arrives,
-    /// so its first frames fall from that shape instead of climbing from
-    /// zero.
+    /// Seeds the smoother with a shape already on screen — another
+    /// processor's last output — so the next frame continues it, without
+    /// touching the FFT input buffer or the settled autosensitivity gain. Used
+    /// to hand a freshly constructed processor a starting shape before its
+    /// first real audio block arrives, so its first frames fall from that
+    /// shape instead of climbing from zero.
     pub fn seed_shape(&mut self, bars: &[f32]) {
         self.smoother.seed_shape(bars);
     }
