@@ -11,6 +11,7 @@ use reprise_core::db::DbError;
 use reprise_core::library::playlists;
 use reprise_core::queries;
 use reprise_core::view_source::ViewSource;
+use reprise_core::CoreError;
 
 use crate::capability;
 pub(crate) use crate::data_concerts::list_concerts;
@@ -32,7 +33,7 @@ pub const MAX_TRACK_IDS: usize = 500;
 #[derive(Debug)]
 pub enum DataError {
     /// A query failed.
-    Db(rusqlite::Error),
+    Db(CoreError),
     /// The database could not be opened.
     Open(DbError),
     /// The required capability is not granted.
@@ -406,20 +407,12 @@ pub fn resolve_play_ids(
 // track_id` foreign-key violation here is therefore only a rare race (a track
 // hard-deleted between the check and the insert); surface it as caller-fixable
 // input rather than an opaque internal error.
-fn map_create_error(error: rusqlite::Error) -> DataError {
-    if is_constraint_violation(&error) {
+fn map_create_error(error: CoreError) -> DataError {
+    if error.is_conflict() {
         DataError::InvalidInput("one or more track ids do not exist in the library".to_string())
     } else {
         DataError::Db(error)
     }
-}
-
-fn is_constraint_violation(error: &rusqlite::Error) -> bool {
-    matches!(
-        error,
-        rusqlite::Error::SqliteFailure(failure, _)
-            if failure.code == rusqlite::ErrorCode::ConstraintViolation
-    )
 }
 
 #[cfg(all(test, feature = "mpris"))]

@@ -21,11 +21,10 @@ mpris = ["dep:zbus", "dep:reprise-runtime-protocol"]
 
 [dependencies]
 # The seam back to the library is core-only (enforced by
-# scripts/check-architecture.sh, extended in package I). `rusqlite` is a direct
-# dependency only because the core facades surface `rusqlite::Error` in their
-# signatures — it is an external crate, not a second workspace edge.
+# scripts/check-architecture.sh, extended in package I). The core facades hand
+# out `reprise_core::CoreError`, which classifies busy and constraint failures
+# in core, so the server needs no SQLite crate of its own.
 reprise-core = { path = "../reprise-core" }
-rusqlite = { version = "0.40", features = ["bundled"] }
 # Official MCP Rust SDK (Tier 2). Pinned exactly (`=`) and additionally guarded
 # by the JSON-RPC fixtures under `tests/` so an SDK bump is a deliberate,
 # reviewed single commit — see docs/plans/multi-frontend-core.md (§2.5, risk
