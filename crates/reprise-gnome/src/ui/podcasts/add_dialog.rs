@@ -268,8 +268,10 @@ pub(super) fn present(
                         PodcastKind::Rss,
                         &url,
                         &generation,
-                        &status,
-                        &results,
+                        ResultSurface {
+                            status: &status,
+                            results: &results,
+                        },
                         &conn,
                         &on_added,
                     );
@@ -285,8 +287,10 @@ pub(super) fn present(
                         PodcastKind::Youtube,
                         &url,
                         &generation,
-                        &status,
-                        &results,
+                        ResultSurface {
+                            status: &status,
+                            results: &results,
+                        },
                         &conn,
                         &on_added,
                     );
@@ -383,15 +387,19 @@ fn search(
                 task,
                 request_generation,
                 context.generation,
-                context.status,
-                &section,
+                ResultSurface {
+                    status: context.status,
+                    results: &section,
+                },
                 context.conn,
                 context.on_added,
-                strings::text(strings::PODCAST_APPLE_RESULTS),
-                Some(query),
-                auto_download_default,
-                empty_status,
-                None,
+                AddOptions {
+                    heading: strings::text(strings::PODCAST_APPLE_RESULTS),
+                    query: Some(query),
+                    auto_download_default,
+                    empty_status,
+                    follower_request: None,
+                },
             );
         }
         PodcastKind::Youtube => {
@@ -424,15 +432,19 @@ fn search(
                 task,
                 request_generation,
                 context.generation,
-                context.status,
-                &section,
+                ResultSurface {
+                    status: context.status,
+                    results: &section,
+                },
                 context.conn,
                 context.on_added,
-                strings::text(strings::PODCAST_YOUTUBE_RESULTS),
-                Some(query),
-                auto_download_default,
-                empty_status,
-                Some(follower_request),
+                AddOptions {
+                    heading: strings::text(strings::PODCAST_YOUTUBE_RESULTS),
+                    query: Some(query),
+                    auto_download_default,
+                    empty_status,
+                    follower_request: Some(follower_request),
+                },
             );
         }
     }
@@ -456,39 +468,58 @@ fn load_charts(request_generation: Generation, country: String, context: &Search
         task,
         request_generation,
         context.generation,
-        context.status,
-        &section,
+        ResultSurface {
+            status: context.status,
+            results: &section,
+        },
         context.conn,
         context.on_added,
-        heading,
-        None,
-        auto_download_default,
-        empty_status,
-        None,
+        AddOptions {
+            heading,
+            query: None,
+            auto_download_default,
+            empty_status,
+            follower_request: None,
+        },
     );
 }
 
-#[expect(
-    clippy::too_many_arguments,
-    reason = "receiver, generation token, result widgets and the add options; should take a parameter object"
-)]
-fn attach_candidates(
-    receiver: std::io::Result<async_channel::Receiver<Result<Vec<Candidate>, String>>>,
-    request_generation: Generation,
-    generation: &Rc<Cell<Generation>>,
-    status: &gtk4::Label,
-    results: &gtk4::Box,
-    conn: &Rc<Db>,
-    on_added: &OnAdded,
+/// The two widgets a candidate list is rendered into.
+#[derive(Clone, Copy)]
+struct ResultSurface<'a> {
+    status: &'a gtk4::Label,
+    results: &'a gtk4::Box,
+}
+
+/// How the candidates of one request are offered: the list heading, the query that produced
+/// them, the auto-download default, the empty-list status, and the YouTube follower request.
+struct AddOptions {
     heading: String,
     query: Option<String>,
     auto_download_default: bool,
     empty_status: String,
     follower_request: Option<YoutubeFollowerRequest>,
+}
+
+fn attach_candidates(
+    receiver: std::io::Result<async_channel::Receiver<Result<Vec<Candidate>, String>>>,
+    request_generation: Generation,
+    generation: &Rc<Cell<Generation>>,
+    surface: ResultSurface<'_>,
+    conn: &Rc<Db>,
+    on_added: &OnAdded,
+    options: AddOptions,
 ) {
+    let AddOptions {
+        heading,
+        query,
+        auto_download_default,
+        empty_status,
+        follower_request,
+    } = options;
     let generation = generation.clone();
-    let status = status.clone();
-    let results = results.clone();
+    let status = surface.status.clone();
+    let results = surface.results.clone();
     let conn = conn.clone();
     let on_added = on_added.clone();
     gtk4::glib::spawn_future_local(async move {
@@ -563,17 +594,12 @@ fn preview_error(error: &podcasts::PodcastError) -> String {
     error.classify().to_owned()
 }
 
-#[expect(
-    clippy::too_many_arguments,
-    reason = "request identity plus the dialog's result widgets; should take a parameter object"
-)]
 fn preview(
     request_generation: Generation,
     kind: PodcastKind,
     url: &str,
     generation: &Rc<Cell<Generation>>,
-    status: &gtk4::Label,
-    results: &gtk4::Box,
+    surface: ResultSurface<'_>,
     conn: &Rc<Db>,
     on_added: &OnAdded,
 ) {
@@ -644,8 +670,8 @@ fn preview(
         },
     );
     let generation = generation.clone();
-    let status = status.clone();
-    let results = results.clone();
+    let status = surface.status.clone();
+    let results = surface.results.clone();
     let conn = conn.clone();
     let on_added = on_added.clone();
     gtk4::glib::spawn_future_local(async move {
