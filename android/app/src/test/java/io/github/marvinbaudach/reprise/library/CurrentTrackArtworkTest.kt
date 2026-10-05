@@ -2,6 +2,7 @@ package io.github.marvinbaudach.reprise.library
 
 import android.net.Uri
 import java.util.concurrent.Executor
+import java.util.concurrent.RejectedExecutionException
 import org.junit.Assert.assertEquals
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -40,6 +41,20 @@ class CurrentTrackArtworkTest {
         )
     }
 
+    @Test
+    fun aSnapshotThatArrivesAfterTheExecutorShutDownIsDroppedNotThrown() {
+        val closed = CurrentTrackArtwork(
+            executor = { throw RejectedExecutionException("shut down") },
+            resolve = { null },
+            attach = { _, _ -> },
+        )
+
+        closed.onCurrentTrack("content://tree/1.flac")
+    }
+
+    // Fetching once is right because the player remembers the cover per uri
+    // (`Media3PlaybackPortMetadataTest.aTrackPlayedAgainStartsWithItsCoverAndAsksNothing`):
+    // a replay builds its item with the cover instead of asking again.
     @Test
     fun theSameTrackIsFetchedOnceHoweverOftenPlaybackChanges() {
         repeat(5) { artwork.onCurrentTrack("content://tree/1.flac") }

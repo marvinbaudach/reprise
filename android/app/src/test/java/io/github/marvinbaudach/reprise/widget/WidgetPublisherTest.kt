@@ -89,4 +89,19 @@ class WidgetPublisherTest {
         assertEquals(0, refreshes)
         assertEquals(true, store.load().isEmpty)
     }
+
+    @Test
+    fun aSnapshotThatArrivesAfterTheExecutorShutDownIsDroppedNotThrown() {
+        val closed = WidgetPublisher(
+            executor = Executor { throw java.util.concurrent.RejectedExecutionException("shut down") },
+            store = store,
+            metadata = { uri -> metadataFor(uri) },
+            artworkPath = { null },
+            refresh = { refreshes += 1 },
+        )
+
+        closed.onSnapshot(snapshot(AndroidPlaybackState.PLAYING, 3))
+
+        assertEquals(0, refreshes)
+    }
 }

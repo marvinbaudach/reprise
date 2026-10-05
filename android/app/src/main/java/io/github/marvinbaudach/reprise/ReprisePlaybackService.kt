@@ -347,7 +347,6 @@ open class ReprisePlaybackService : MediaLibraryService() {
         if (::sleepTimer.isInitialized) sleepTimer.close()
         browseCallback?.close()
         browseCallback = null
-        artworkExecutor.shutdownNow()
         // Synchronous and direct rather than through the overridable,
         // scope-launched `cancelAnalysisBackfill`: the scope is cancelled
         // right below, which would race an async call and drop it.
@@ -360,6 +359,9 @@ open class ReprisePlaybackService : MediaLibraryService() {
         analysisBackfillScope.cancel()
         coreSession?.close()
         coreSession = null
+        // After the Core session: closing it can still report a last snapshot,
+        // and that reaches the artwork and widget work queued on this executor.
+        artworkExecutor.shutdownNow()
         mediaSession?.let { session ->
             // Unsubscribe Media3 before releasing: it holds this session in its
             // own map and would otherwise be left with a released one.

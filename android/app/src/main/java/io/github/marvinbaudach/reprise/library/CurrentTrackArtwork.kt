@@ -3,12 +3,15 @@ package io.github.marvinbaudach.reprise.library
 import android.net.Uri
 import android.util.Log
 import java.util.concurrent.Executor
+import java.util.concurrent.RejectedExecutionException
 
 private const val TAG = "RepriseArtwork"
 
 /**
  * Fetches the cover of whichever track is playing and hands it to the player
- * once it is there.
+ * once it is there. The player remembers the cover for that uri, so a track that
+ * plays again (tapped again, repeat-one, stop and play) is not fetched again and
+ * still starts with its cover.
  *
  * A cover comes from the music folder through the document provider, so it
  * cannot be had on the playback path without delaying the first note. The item
@@ -30,14 +33,20 @@ internal class CurrentTrackArtwork(
     fun onCurrentTrack(trackUri: String?) {
         if (trackUri == null || trackUri == requested) return
         requested = trackUri
-        executor.execute {
-            val artwork = try {
-                resolve(trackUri)
-            } catch (error: Exception) {
-                Log.w(TAG, "Could not load the cover of the playing track", error)
-                null
+        try {
+            executor.execute {
+                val artwork = try {
+                    resolve(trackUri)
+                } catch (error: Exception) {
+                    Log.w(TAG, "Could not load the cover of the playing track", error)
+                    null
+                }
+                if (artwork != null) attach(trackUri, artwork)
             }
-            if (artwork != null) attach(trackUri, artwork)
+        } catch (error: RejectedExecutionException) {
+            // The service is shutting down, and the Core's last snapshot got here
+            // after the executor did; there is nobody left to show a cover to.
+            Log.d(TAG, "The cover loader is shut down", error)
         }
     }
 }

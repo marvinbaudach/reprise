@@ -3,6 +3,7 @@ package io.github.marvinbaudach.reprise.widget
 import android.util.Log
 import io.github.marvinbaudach.reprise.library.TrackMetadata
 import java.util.concurrent.Executor
+import java.util.concurrent.RejectedExecutionException
 import uniffi.reprise_android_ffi.AndroidPlaybackSnapshot
 
 private const val TAG = "RepriseWidget"
@@ -33,7 +34,12 @@ internal class WidgetPublisher(
             if (key == published) return
             published = key
         }
-        executor.execute { publish(snapshot) }
+        try {
+            executor.execute { publish(snapshot) }
+        } catch (error: RejectedExecutionException) {
+            // The service is shutting down; its last snapshot has nobody to draw for.
+            Log.d(TAG, "The widget publisher is shut down", error)
+        }
     }
 
     private fun publish(snapshot: AndroidPlaybackSnapshot?) {
