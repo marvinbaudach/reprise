@@ -9,6 +9,8 @@ import androidx.media3.common.MediaItem
 import androidx.media3.common.PlaybackException
 import androidx.media3.common.Player
 import java.io.File
+import io.github.marvinbaudach.reprise.library.TrackMetadataResolver
+import io.github.marvinbaudach.reprise.library.playbackMediaItem
 import java.io.FileNotFoundException
 import uniffi.reprise_android_ffi.AndroidEqualizerBand
 import uniffi.reprise_android_ffi.AndroidEqualizerBandCapability
@@ -77,6 +79,7 @@ internal fun isMissingFilePlaybackError(error: PlaybackException): Boolean {
 /** Media3 implementation of the foreign half of Core's PlaybackBackend. */
 internal class Media3PlaybackPort(
     private val player: Player,
+    private val metadata: TrackMetadataResolver = TrackMetadataResolver.None,
     private val equalizerChanged: () -> Unit,
 ) : AndroidPlaybackPort {
     private val handler = Handler(player.applicationLooper)
@@ -85,7 +88,7 @@ internal class Media3PlaybackPort(
         DeviceEqualizer(AndroidEqualizerEngineFactory, CoreEqualizerCurveProjector)
     private var eventBridge: PlaybackEventBridgeInterface? = null
     private var generation = 0UL
-    private var nextUri: String? = null
+    private var nextItem: MediaItem? = null
     private var transitionMode = AndroidTransitionMode.GAPLESS
     private var lastState: AndroidPlaybackState? = null
     private var finishedGeneration: ULong? = null
@@ -167,12 +170,16 @@ internal class Media3PlaybackPort(
         eventBridge = bridge
     }
 
-    override fun playPath(path: String) = dispatch.call {
-        start(MediaItem.fromUri(Uri.fromFile(File(path))))
+    override fun playPath(path: String) {
+        // Resolved before the hop to the player's thread: a library read has no
+        // business holding that thread, and the caller is already blocked.
+        val item = mediaItemFor(Uri.fromFile(File(path)).toString())
+        dispatch.call { start(item) }
     }
 
-    override fun playUri(uri: String) = dispatch.call {
-        start(MediaItem.fromUri(Uri.parse(uri)))
+    override fun playUri(uri: String) {
+        val item = mediaItemFor(uri)
+        dispatch.call { start(item) }
     }
 
     override fun togglePause(): AndroidPlaybackState = dispatch.call {
@@ -233,14 +240,17 @@ internal class Media3PlaybackPort(
     }
 
     override fun stop() = dispatch.call {
-        nextUri = null
+        nextItem = null
         player.stop()
         player.clearMediaItems()
     }
 
-    override fun setNext(uri: String?) = dispatch.call {
-        nextUri = uri
-        applyNextItem()
+    override fun setNext(uri: String?) {
+        val item = uri?.let(::mediaItemFor)
+        dispatch.call {
+            nextItem = item
+            applyNextItem()
+        }
     }
 
     override fun setTransition(mode: AndroidTransitionMode) = dispatch.call {
@@ -264,7 +274,7 @@ internal class Media3PlaybackPort(
         lastState = null
         player.setMediaItem(mediaItem)
         if (transitionMode == AndroidTransitionMode.GAPLESS) {
-            nextUri?.let { player.addMediaItem(MediaItem.fromUri(it)) }
+            nextItem?.let { item -> player.addMediaItem(item) }
         }
         player.prepare()
         player.play()
@@ -279,8 +289,41 @@ internal class Media3PlaybackPort(
             player.removeMediaItems(afterCurrent, player.mediaItemCount)
         }
         if (transitionMode == AndroidTransitionMode.GAPLESS) {
-            nextUri?.let { player.addMediaItem(MediaItem.fromUri(it)) }
+            nextItem?.let { item -> player.addMediaItem(item) }
         }
+    }
+
+    /**
+     * Gives every queued item with this uri its cover. The item is updated in
+     * place: only its metadata changes, so ExoPlayer keeps the source it is
+     * already playing and the notification, lock screen and widget pick the
+     * cover up from the metadata change.
+     */
+    fun attachArtwork(uri: String, artwork: Uri) = dispatch.call {
+        for (index in 0 until player.mediaItemCount) {
+            val item = player.getMediaItemAt(index)
+            if (item.localConfiguration?.uri?.toString() != uri || item.mediaMetadata.artworkUri != null) {
+                continue
+            }
+            player.replaceMediaItem(
+                index,
+                item.buildUpon()
+                    .setMediaMetadata(item.mediaMetadata.buildUpon().setArtworkUri(artwork).build())
+                    .build(),
+            )
+        }
+    }
+
+    private fun mediaItemFor(uri: String): MediaItem {
+        val track = try {
+            metadata.resolve(uri)
+        } catch (error: Exception) {
+            // Metadata is decoration: a library that cannot answer must not
+            // stop the music, only leave the notification without a title.
+            Log.w(TAG, "Could not read the metadata for a playing track", error)
+            null
+        }
+        return playbackMediaItem(uri, track)
     }
 
     private fun discardPlayedItems() {

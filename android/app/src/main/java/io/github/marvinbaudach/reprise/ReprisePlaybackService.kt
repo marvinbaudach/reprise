@@ -15,10 +15,15 @@ import android.util.Log
 import androidx.media3.common.AudioAttributes
 import androidx.media3.common.C
 import androidx.media3.common.Player
-import androidx.media3.exoplayer.ExoPlayer
-import androidx.media3.exoplayer.audio.TeeAudioProcessor
 import androidx.media3.session.MediaSession
 import androidx.media3.session.MediaSessionService
+import androidx.media3.exoplayer.ExoPlayer
+import androidx.media3.exoplayer.audio.TeeAudioProcessor
+import io.github.marvinbaudach.reprise.library.CurrentTrackArtwork
+import io.github.marvinbaudach.reprise.library.TrackMetadata
+import io.github.marvinbaudach.reprise.library.TrackMetadataResolver
+import java.io.File
+import java.util.concurrent.Executors
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
@@ -29,6 +34,7 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
 import uniffi.reprise_android_ffi.AndroidAnalysisOutcome
+import uniffi.reprise_android_ffi.AndroidArtworkSize
 import uniffi.reprise_android_ffi.AndroidEqualizerSnapshot
 import uniffi.reprise_android_ffi.AndroidPlaybackListener
 import uniffi.reprise_android_ffi.AndroidPlaybackSession
@@ -42,6 +48,7 @@ import uniffi.reprise_android_ffi.TrackAnalysisProgressListener
 import uniffi.reprise_android_ffi.TrashAction
 
 private const val TAG_ANALYSIS = "RepriseAnalysis"
+private const val TAG_MEDIA = "RepriseMedia"
 
 /** Owns Media3 for background playback, notifications and external controls. */
 open class ReprisePlaybackService : MediaSessionService() {
@@ -78,6 +85,14 @@ open class ReprisePlaybackService : MediaSessionService() {
     @OptIn(ExperimentalCoroutinesApi::class)
     private val analysisBackfillScope =
         CoroutineScope(SupervisorJob() + Dispatchers.IO.limitedParallelism(1))
+    private val artworkExecutor = Executors.newSingleThreadExecutor { task ->
+        Thread(task, "reprise-artwork")
+    }
+    private val currentTrackArtwork = CurrentTrackArtwork(
+        executor = artworkExecutor,
+        resolve = ::resolveArtwork,
+        attach = ::attachArtwork,
+    )
     private var analysisTrackId: Long? = null
     private var analysisAttempts = 0
     private var analysisRequestInFlight = false
@@ -107,6 +122,7 @@ open class ReprisePlaybackService : MediaSessionService() {
     internal val coreListener = object : AndroidPlaybackListener {
         override fun onPlaybackChanged(snapshot: AndroidPlaybackSnapshot) {
             mutablePlaybackSnapshots.value = snapshot
+            currentTrackArtwork.onCurrentTrack(snapshot.currentTrackUri)
             if (::sleepTimer.isInitialized) sleepTimer.onPlaybackSnapshot(snapshot)
             if (Looper.myLooper() == Looper.getMainLooper()) {
                 handleTrackAnalysis(snapshot)
@@ -171,7 +187,11 @@ open class ReprisePlaybackService : MediaSessionService() {
                 .buildUpon()
                 .setAudioOffloadPreferences(livePcmAudioOffloadPreferences())
                 .build()
-            Media3PlaybackPort(player) { mutableSettingsRevisions.value += 1L }
+            Media3PlaybackPort(
+                player,
+                equalizerChanged = { mutableSettingsRevisions.value += 1L },
+                metadata = TrackMetadataResolver(::resolveTrackMetadata),
+            )
         }
         playbackPort = port
         sleepTimer = SleepTimerController(
@@ -224,8 +244,31 @@ open class ReprisePlaybackService : MediaSessionService() {
         controllerInfo: MediaSession.ControllerInfo,
     ): MediaSession? = mediaSession
 
+    /** What the notification, lock screen, Auto and the widget show for [uri]. */
+    internal open fun resolveTrackMetadata(uri: String): TrackMetadata? =
+        sharedMusicLibrary().trackByUri(uri)?.let { row ->
+            TrackMetadata(row.id, row.title, row.artist, row.album, row.durationMs)
+        }
+
+    internal open fun resolveArtworkPath(trackUri: String): String? =
+        sharedMusicLibrary().trackArtwork(trackUri, AndroidArtworkSize.NOW_PLAYING)
+
+    private fun resolveArtwork(trackUri: String): Uri? =
+        resolveArtworkPath(trackUri)?.let { path -> Uri.fromFile(File(path)) }
+
+    private fun attachArtwork(trackUri: String, artwork: Uri) {
+        val port = playbackPort ?: return
+        try {
+            port.attachArtwork(trackUri, artwork)
+        } catch (error: Exception) {
+            // The player may have been released while the cover was loading.
+            Log.w(TAG_MEDIA, "Could not attach the cover to the playing track", error)
+        }
+    }
+
     override fun onDestroy() {
         if (::sleepTimer.isInitialized) sleepTimer.close()
+        artworkExecutor.shutdownNow()
         // Synchronous and direct rather than through the overridable,
         // scope-launched `cancelAnalysisBackfill`: the scope is cancelled
         // right below, which would race an async call and drop it.
