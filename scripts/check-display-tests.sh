@@ -416,12 +416,8 @@ run_display_test() {
         :
       fi
       stop_worker_xvfb
-      # An explicit if: under `set -e` a bare `[[ ... ]] && break` would abort
-      # the worker on the common case, before the status is ever written.
-      if [[ ! -f $display_test_passed ]]; then
-        # What the server itself had to say can explain a failed test.
-        sed 's/^/xvfb: /' "$marker_dir/xvfb-$attempt.log" || true
-      fi
+      # A server that reported its display is not retried, whatever the test
+      # did: the result stands.
       break
     done
     if [[ -f $display_test_passed ]]; then
