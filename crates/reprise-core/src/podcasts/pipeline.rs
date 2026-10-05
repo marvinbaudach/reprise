@@ -287,6 +287,12 @@ pub enum PipelineError {
     SubscriptionNotFound,
 }
 
+impl From<crate::CoreError> for PipelineError {
+    fn from(error: crate::CoreError) -> Self {
+        Self::Database(error.into())
+    }
+}
+
 #[path = "pipeline_download.rs"]
 mod download;
 #[cfg(test)]

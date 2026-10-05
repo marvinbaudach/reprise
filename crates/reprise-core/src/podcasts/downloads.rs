@@ -5,7 +5,7 @@ use std::path::{Path, PathBuf};
 use rusqlite::{params, Connection};
 
 use crate::artist_news_refresh::fnv1a_64;
-use crate::db::Db;
+use crate::{db::Db, CoreError};
 
 use super::config::CleanupPolicy;
 use super::{PodcastError, PodcastKind};
@@ -47,9 +47,14 @@ pub fn set_downloaded_file(
     episode_id: i64,
     path: Option<&str>,
     downloaded_bytes: Option<i64>,
-) -> Result<(), rusqlite::Error> {
+) -> Result<(), CoreError> {
     let conn = db.conn();
-    set_downloaded_file_in(conn, episode_id, path, downloaded_bytes)
+    Ok(set_downloaded_file_in(
+        conn,
+        episode_id,
+        path,
+        downloaded_bytes,
+    )?)
 }
 
 pub(crate) fn set_downloaded_file_in(

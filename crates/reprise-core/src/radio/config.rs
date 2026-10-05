@@ -1,6 +1,7 @@
 //! Persisted radio configuration.
 
 use super::search::SearchOrder;
+use crate::CoreError;
 use rusqlite::Connection;
 
 pub const SEARCH_ORDER_KEY: &str = "radio.search_order";
@@ -24,9 +25,9 @@ impl Default for RadioConfig {
     }
 }
 
-pub fn load(db: &crate::db::Db) -> Result<RadioConfig, rusqlite::Error> {
+pub fn load(db: &crate::db::Db) -> Result<RadioConfig, CoreError> {
     let conn = db.conn();
-    load_in(conn)
+    Ok(load_in(conn)?)
 }
 
 fn load_in(conn: &Connection) -> Result<RadioConfig, rusqlite::Error> {

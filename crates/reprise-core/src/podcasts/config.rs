@@ -1,6 +1,6 @@
 //! Persisted podcast behavior and filter settings.
 
-use crate::db::Db;
+use crate::{db::Db, CoreError};
 use rusqlite::Connection;
 
 use super::PodcastKind;
@@ -172,9 +172,9 @@ pub struct PodcastFilterConfig {
     pub downloaded_only: bool,
 }
 
-pub fn load(db: &Db) -> Result<PodcastConfig, rusqlite::Error> {
+pub fn load(db: &Db) -> Result<PodcastConfig, CoreError> {
     let conn = db.conn();
-    load_in(conn)
+    Ok(load_in(conn)?)
 }
 
 pub(crate) fn load_in(conn: &Connection) -> Result<PodcastConfig, rusqlite::Error> {
@@ -308,9 +308,9 @@ pub fn save_filter(db: &Db, filter: &PodcastFilterConfig) -> Result<(), rusqlite
 /// (`NET-1a`) with the kind's own module (Podcasts for RSS, YouTube for
 /// YouTube). Every podcast/YouTube network entry point routes through this
 /// instead of checking a module flag alone.
-pub fn source_network_allowed(db: &Db, kind: PodcastKind) -> Result<bool, rusqlite::Error> {
+pub fn source_network_allowed(db: &Db, kind: PodcastKind) -> Result<bool, CoreError> {
     let conn = db.conn();
-    source_network_allowed_in(conn, kind)
+    Ok(source_network_allowed_in(conn, kind)?)
 }
 
 pub(crate) fn source_network_allowed_in(
