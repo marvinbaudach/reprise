@@ -242,9 +242,13 @@ scripts/cua-e2e/run.sh
 scripts/check-lyrics-smoke.sh
 ```
 
-The release checker currently inherits a translation-catalog mismatch from
-`main`; reconcile the generated POT with `po/de.po` before treating that check
-as a release-green signal. Do not weaken `msgcmp` to hide the mismatch.
+After adding, changing or deleting a translatable string, run
+`scripts/update-catalogs.sh`: it re-extracts `po/reprise.pot`, merges every
+locale in `po/LINGUAS` without fuzzy guessing, and drops obsolete entries. Then
+translate every new `de` and `es` entry. `scripts/tests/gettext-catalogs.sh`
+(part of merge readiness and the release check) refuses untranslated `de`/`es`
+entries, fuzzy or obsolete entries in any locale, and a committed template that
+differs from a fresh extraction. Do not weaken `msgcmp` to hide a mismatch.
 
 ## Priority automation gaps
 
