@@ -107,10 +107,12 @@ jobs:
             quality/package-lock.json
             showroom/package-lock.json
 
+      # setup-uv caches on every ref by default and saves on a miss; only dev may.
       - name: Set up uv
         uses: astral-sh/setup-uv@v10.0.1
         with:
           version: "0.12.3"
+          save-cache: ${{ github.ref == 'refs/heads/dev' }}
 
       - name: Verify worktree hygiene
         run: |
@@ -310,10 +312,12 @@ jobs:
             quality/package-lock.json
             showroom/package-lock.json
 
+      # setup-uv caches on every ref by default and saves on a miss; only dev may.
       - name: Set up uv
         uses: astral-sh/setup-uv@v10.0.1
         with:
           version: "0.12.3"
+          save-cache: ${{ github.ref == 'refs/heads/dev' }}
 
       - name: Cache Rust dependencies
         uses: Swatinem/rust-cache@v2

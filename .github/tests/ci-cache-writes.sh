@@ -43,9 +43,12 @@ WRITERS = {
     "release.yml": PUSH,
 }
 
-# The built-in caches of the setup-* actions have no save switch, so they write
-# on any ref on a key miss, Dependabot pull requests included. They are small
-# and accepted; they are pinned here so a new one cannot slip in unseen.
+# The one stated exception to "only the writer writes": the built-in caches of
+# actions/setup-node and actions/setup-java have no save switch, so they write on
+# any ref on a key miss, Dependabot pull requests included (npm twice and gradle
+# in ci.yml, npm in pages.yml). They are small and accepted; they are pinned here
+# so a new one cannot slip in unseen. astral-sh/setup-uv is no exception: its
+# default is a cache on every ref, and it does have a switch, checked below.
 BUILTIN_CACHES = {
     "ci.yml": ["gradle", "npm", "npm"],
     "pages.yml": ["npm"],
@@ -83,6 +86,20 @@ for name in sys.argv[1:]:
         errors.append(f"{path.name}: a plain actions/cache step restores and saves on every ref")
     if writer is None and re.search(r"actions/cache/(restore|save)@", text):
         errors.append(f"{path.name}: this workflow has no cache policy; add one to WRITERS before it caches")
+
+    for job_id, job in jobs.items():
+        for step in job.get("steps", []):
+            if not str(step.get("uses", "")).startswith("astral-sh/setup-uv@"):
+                continue
+            options = step.get("with", {})
+            saves_on = squash(options.get("save-cache", "")).replace("${{ ", "").replace(" }}", "")
+            if options.get("enable-cache") is False:
+                continue
+            if writer is None or saves_on != writer:
+                wanted = (f"enable-cache: false or save-cache: ${{{{ {writer} }}}}" if writer
+                          else "enable-cache: false, as this workflow has no cache policy")
+                errors.append(f"{path.name}:{job_id}: setup-uv saves a cache on every ref by default; "
+                              f"it needs {wanted}")
 
     builtin = sorted(
         str(step["with"]["cache"])
