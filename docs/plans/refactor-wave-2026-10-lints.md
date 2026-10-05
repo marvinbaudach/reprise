@@ -2,7 +2,7 @@
 slug: refactor-wave-2026-10-lints
 worktree: /home/marvin/Projects/reprise-refactor-wave-2026-10-lints
 branch: feature/refactor-wave-2026-10-lints
-phase: refactored
+phase: shipped
 codex_session:
 created: 2026-10-05
 ---
