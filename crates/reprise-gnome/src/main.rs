@@ -226,6 +226,14 @@ fn ensure_window(
 }
 
 fn main() -> glib::ExitCode {
+    // `run` owns the application, so everything it holds (the database among
+    // it) is dropped before the process may end by a handled termination signal.
+    let exit_code = run();
+    ui::termination::finish();
+    exit_code
+}
+
+fn run() -> glib::ExitCode {
     register_app_resources();
     ui::track_list::diagnostic_trail::mark_process_start();
     init_logging();

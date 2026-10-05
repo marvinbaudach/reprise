@@ -6,10 +6,17 @@
 //! signals, saves the session through the same [`SessionSaver`] the close
 //! handler uses, and then closes the window like any other close.
 //!
-//! The exit status after a handled request is 0, not 128 plus the signal. The
-//! request is answered by an orderly save and quit, and a service manager
-//! counts an exit code of 143 after SIGTERM as a failed stop unless the unit
-//! declares it a success, whereas dying from the signal itself is clean.
+//! The save and quit are an orderly answer, but the process still ends the way
+//! the signal would have ended it: once the application has run and been torn
+//! down, [`finish`] re-raises the handled signal with its default action, so a
+//! shell sees death by that signal (128 plus its number) and a service manager
+//! sees the stop it asked for. SIGTERM, SIGHUP and SIGINT count as a clean stop
+//! to systemd; a plain exit status of 143 would not.
+//!
+//! Two safety nets keep the listener from making a stuck process unkillable:
+//! a repeat signal ends the process once the first request has had its grace,
+//! and a watchdog ends it if the main loop never reads the first request at all
+//! (see `termination_relay`).
 
 use std::io;
 use std::rc::Rc;
@@ -67,14 +74,16 @@ async fn serve(
     let Ok(signal) = received.recv().await else {
         return;
     };
-    shared.mark_taken();
+    shared.mark_taken(signal);
     tracing::info!(signal, "termination requested; saving the session");
     handle_request(window.upgrade().as_ref(), &saver);
 }
 
 /// Stops acting on termination requests once the application has stopped
-/// running: nothing is left to save, so a signal during teardown ends the
-/// process as it did before START-5, including one still waiting unread.
+/// running: nothing is left to save, so a first signal during teardown ends
+/// the process as it did before START-5, including one still waiting unread.
+/// A repeat of a request already handled keeps its grace, so it cannot cut the
+/// teardown short.
 pub(crate) fn release() {
     let Some(listener) = LISTENER.get() else {
         return;
@@ -82,6 +91,15 @@ pub(crate) fn release() {
     listener.shared.release();
     if let Ok(signal) = listener.received.try_recv() {
         end_process(signal);
+    }
+}
+
+/// The last thing the process does, after the application has run and been
+/// torn down: when a termination request was handled, end the process by that
+/// signal's default action so its exit status says so. A normal exit returns.
+pub(crate) fn finish() {
+    if let Some(listener) = LISTENER.get() {
+        termination_relay::end_as_handled(&listener.shared, end_process);
     }
 }
 
@@ -124,6 +142,11 @@ pub(super) fn handle(window: &adw::ApplicationWindow, saver: &SessionSaver) {
 }
 
 fn start() -> io::Result<Option<&'static Listener>> {
+    termination_relay::start_once(&LISTENER, register)
+}
+
+/// Installs the signal handlers and the listener thread.
+fn register() -> io::Result<Option<Listener>> {
     let signals = termination_relay::armed(&TERMINATION_SIGNALS, termination_relay::is_ignored);
     if signals.is_empty() {
         tracing::info!("every termination signal was inherited as ignored; leaving them ignored");
@@ -137,8 +160,9 @@ fn start() -> io::Result<Option<&'static Listener>> {
         shared.clone(),
         sender,
         end_process,
+        termination_relay::WEDGE_LIMIT,
     )?;
-    Ok(Some(LISTENER.get_or_init(|| Listener { shared, received })))
+    Ok(Some(Listener { shared, received }))
 }
 
 /// Ends the process the way `signal` normally would.

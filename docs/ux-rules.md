@@ -1836,6 +1836,7 @@ result.
   termination request does not save again. The clean-exit marker is written
   with it, deliberately: a termination in the middle of a scan counts as the
   clean exit a normal close is. *Tests:*
+  `start_5a_the_clean_exit_marker_is_written_with_the_session`,
   `start_5a_a_saver_without_a_live_window_content_still_saves_geometry`,
   `start_5a_saving_twice_keeps_the_first_session`,
   `start_5a_a_termination_request_saves_the_visible_place_and_closes_the_window`,
@@ -1850,35 +1851,60 @@ result.
   `start_5b_the_application_quits_even_when_the_window_refuses_to_close`,
   `start_5b_a_request_without_a_window_still_quits_the_application`.
 - **START-5c** [active] [gtk] — **Repeated requests are coalesced while the
-  save runs.** A closing terminal sends SIGHUP twice and a service manager
-  follows SIGTERM with SIGHUP within milliseconds, so a repeat that arrives
-  before the main loop has taken the first request, or within three seconds
-  after it did, is ignored. A repeat after that grace ends the process the
-  way the signal normally would, so a wedged shutdown can still be ended; if
-  the main loop never takes the first request, repeats stay coalesced and
-  SIGKILL is the backstop. Once the application has stopped running, every
-  signal takes its normal course. *Tests:*
+  save runs, and a main loop that never answers cannot hold the process.** A
+  closing terminal sends SIGHUP twice and a service manager follows SIGTERM
+  with SIGHUP within milliseconds, so a repeat that arrives before the main
+  loop has taken the first request, or within three seconds after it did, is
+  ignored, also while the application is being torn down, so it cannot cut
+  the database close short. A repeat after that grace ends the process the
+  way the signal normally would, so a wedged shutdown can still be ended. If
+  the main loop has not taken the first request ten seconds after it arrived
+  (longer than the grace), a watchdog ends the process the same way, with or
+  without a repeat signal; a first signal reaching an application that has
+  already stopped running takes its normal course at once. *Tests:*
   `start_5c_the_first_request_is_forwarded`,
   `start_5c_a_repeat_before_the_main_loop_took_the_first_is_coalesced`,
   `start_5c_a_repeat_inside_the_grace_after_the_take_is_coalesced`,
   `start_5c_a_repeat_after_the_grace_ends_the_process`,
-  `start_5c_a_signal_after_the_application_stopped_ends_the_process`,
+  `start_5c_a_first_signal_after_the_application_stopped_ends_the_process`,
+  `start_5c_a_repeat_inside_the_grace_is_coalesced_after_the_application_stopped`,
+  `start_5c_a_repeat_after_the_grace_ends_the_process_once_the_application_stopped`,
+  `start_5c_a_stopped_application_ends_a_request_nothing_will_take`,
   `start_5c_two_signals_in_quick_succession_reach_the_main_loop_once_and_end_nothing`,
   `start_5c_a_repeat_stays_coalesced_while_the_main_loop_is_saving`,
-  `start_5c_a_released_listener_lets_every_signal_end_the_process`,
+  `start_5c_a_first_signal_reaching_a_released_listener_ends_the_process`,
+  `start_5c_a_repeat_during_teardown_does_not_end_the_process_inside_the_grace`,
+  `start_5c_a_request_the_main_loop_never_takes_ends_the_process_without_a_repeat`,
+  `start_5c_the_watchdog_leaves_a_request_the_main_loop_took_alone`,
+  `start_5c_the_wedge_limit_outlasts_the_repeat_grace`,
   `start_5c_a_repeat_right_after_the_first_request_does_not_end_the_process_before_the_save`.
 - **START-5d** [active] [gtk] — **An ignored signal stays ignored.** A
   termination signal the process inherited as ignored (`nohup reprise &`, a
   background job) is not listened for and keeps being ignored. *Tests:*
   `start_5d_signals_that_were_ignored_at_start_are_not_armed`,
   `start_5d_the_inherited_ignore_disposition_is_detected`.
-- **START-5e** [planned] [gtk] — **What START-5a to START-5d leave unproven.**
+- **START-5e** [active] [gtk] — **A handled request ends the process by its
+  signal.** After the save and quit, once the application has run and been
+  torn down, the process ends with the default action of the signal it
+  handled, so a shell sees death by that signal (128 plus its number) and a
+  service manager sees the stop it asked for, instead of an unrelated exit
+  status of 0. The first handled signal decides; a normal exit, with no
+  request handled, ends nothing. *Tests:*
+  `start_5e_a_handled_signal_ends_the_process_the_way_that_signal_would`,
+  `start_5e_a_normal_exit_without_a_handled_signal_ends_nothing`,
+  `start_5e_the_first_handled_signal_decides_the_exit`.
+- **START-5f** [active] [gtk] — **One listener per process.** Arming the
+  listener a second time registers nothing: a second set of signal handlers
+  would let the first signal end the process unsaved. A start that armed
+  nothing, because every signal was inherited as ignored, may be retried.
+  *Tests:* `start_5f_a_second_start_registers_nothing`,
+  `start_5f_a_start_that_armed_nothing_may_be_retried`.
+- **START-5g** [planned] [gtk] — **What START-5a to START-5f leave unproven.**
   A request that arrives before the main window exists ends the process as
   before, since there is no session to save yet. The active episode with its
   resume position is part of the saved session. The application releases the
   listener when `run` returns, so a request still unread at that point ends
-  the process too. A handled request exits with status 0, not 128 plus the
-  signal, because a service manager counts exit code 143 as a failed stop.
+  the process too.
 
 ## J. Queue view
 
@@ -5776,10 +5802,11 @@ means deterministic and high-confidence, never „without review".
 - **BROWSE-12** [active] [core] [gtk] — **The last browser destination is a
   session value.** Its structured place owns source, scope, search, facets,
   sorting, stable anchor, selection, and content focus and survives a normal
-  restart. A termination request saves it too (START-5a). Stable source roots such as Podcasts, YouTube, Radio, Releases,
-  Concerts, and My Stats remain resolvable without a track collection; stale
-  database-backed places fall back to the remembered Music root. Back/Forward
-  history, utility overlays, and raw widget focus remain process-local.
+  restart. A termination request saves it too (START-5a). Stable source
+  roots such as Podcasts, YouTube, Radio, Releases, Concerts, and My Stats
+  remain resolvable without a track collection; stale database-backed places
+  fall back to the remembered Music root. Back/Forward history, utility
+  overlays, and raw widget focus remain process-local.
 
 - **BROWSE-13** [active] [gtk] — **A track-list cover is its album link.**
   When the currently bound track has a nonblank album, its cover exposes the

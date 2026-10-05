@@ -2,6 +2,7 @@ use std::cell::{Cell, RefCell};
 use std::rc::Rc;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::{mpsc, Arc};
+use std::time::Duration;
 
 use gtk4::gio;
 use gtk4::glib;
@@ -305,6 +306,7 @@ fn start_5c_a_repeat_right_after_the_first_request_does_not_end_the_process_befo
         move |_| {
             ended_by_thread.fetch_add(1, Ordering::SeqCst);
         },
+        Duration::from_secs(3600),
     )
     .unwrap();
     // A closing terminal's two SIGHUPs, or SIGTERM followed by SIGHUP.

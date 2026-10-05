@@ -107,6 +107,8 @@ impl SessionSaver {
 mod tests {
     use super::*;
 
+    const LIBRARY_ROOT: &str = "/music/library";
+
     /// A saver as it stands before the library is up or after the list was
     /// torn down: no live track list, no player.
     fn bare_saver(loaded: SessionState, geometry: (i32, i32, bool)) -> (SessionSaver, Rc<Db>) {
@@ -149,5 +151,20 @@ mod tests {
         let restored = session::load(&conn);
         assert_eq!((restored.window_width, restored.window_height), (1111, 777));
         assert!(!restored.maximized);
+    }
+
+    #[test]
+    fn start_5a_the_clean_exit_marker_is_written_with_the_session() {
+        let (saver, conn) = bare_saver(SessionState::default(), (800, 600, false));
+        reprise_core::library::settings::set_library_root(&conn, LIBRARY_ROOT).unwrap();
+
+        saver.save_once((800, 600, false));
+
+        let clean_exit = session::load(&conn).clean_exit;
+        assert_eq!(
+            clean_exit.map(|marker| marker.library_root),
+            Some(LIBRARY_ROOT.to_owned()),
+            "a termination request counts as the clean exit a window close is"
+        );
     }
 }
