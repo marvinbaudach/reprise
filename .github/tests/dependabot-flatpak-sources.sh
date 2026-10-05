@@ -57,15 +57,16 @@ fi
 
 # The regeneration must produce what the documented invocation produces, or the
 # file it writes would not satisfy the check script. It runs from outside the
-# checkout with uv's config discovery off, so the pull request cannot steer uv.
+# checkout with uv's config discovery off and its resolution frozen at a fixed
+# date, so neither the pull request nor a later PyPI release can steer uv.
 rg --fixed-strings --quiet \
     'flatpak-cargo-generator.py Cargo.lock -o flatpak/cargo-sources.json' \
     "$repo_root/flatpak/README.md" || \
     fail "flatpak/README.md no longer documents the invocation this job reproduces"
 rg --multiline --quiet \
-    'cd "\$RUNNER_TEMP" \|\| exit 1\n          uv run --no-config --script "\$RUNNER_TEMP/flatpak-cargo-generator\.py" \\\n            "\$GITHUB_WORKSPACE/Cargo\.lock" \\\n            -o "\$RUNNER_TEMP/regenerated/cargo-sources\.json"' \
+    'cd "\$RUNNER_TEMP" \|\| exit 1\n          uv run --no-config --exclude-newer 2026-10-05T00:00:00Z \\\n            --script "\$RUNNER_TEMP/flatpak-cargo-generator\.py" \\\n            "\$GITHUB_WORKSPACE/Cargo\.lock" \\\n            -o "\$RUNNER_TEMP/regenerated/cargo-sources\.json"' \
     "$workflow" || \
-    fail "the generator must run from the temp directory as: uv run --no-config --script <generator> <workspace>/Cargo.lock -o <temp>/cargo-sources.json"
+    fail "the generator must run from the temp directory as: uv run --no-config --exclude-newer <date> --script <generator> <workspace>/Cargo.lock -o <temp>/cargo-sources.json"
 
 # The no-op run has to stay a no-op: that is what ends the loop, because a
 # token push starts a new run of this very job.
@@ -76,8 +77,9 @@ rg --fixed-strings --quiet "if: needs.regenerate.outputs.changed == 'true'" "$wo
 rg --fixed-strings --quiet \
     "if [[ \$changes != ' M flatpak/cargo-sources.json' ]]; then" "$workflow" || \
     fail "the push must refuse to commit anything but flatpak/cargo-sources.json"
-rg --fixed-strings --quiet 'jq empty "$regenerated"' "$workflow" || \
-    fail "the handed-over artifact must be validated as JSON before it is committed"
+rg --fixed-strings --quiet \
+    'scripts/check-flatpak-cargo-sources.sh Cargo.lock "$RUNNER_TEMP/regenerated/cargo-sources.json"' "$workflow" || \
+    fail "the handed-over artifact must be validated against Cargo.lock before it is committed"
 
 python3 - "$workflow" <<'PY' || fail "the job split does not isolate the token from the generator"
 import pathlib

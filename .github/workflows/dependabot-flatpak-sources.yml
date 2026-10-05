@@ -18,9 +18,9 @@ name: Dependabot Flatpak sources
 # - `regenerate` holds no secret. It runs the generator, which pulls its
 #   Python dependencies from PyPI, from outside the checkout and with uv's
 #   config discovery off, and hands over one file as an artifact.
-# - `push` holds the token and runs no uv and no pull request code. It copies
-#   the one validated artifact over the sources file, insists that nothing
-#   else changed, and pushes.
+# - `push` holds the token and runs no uv. It checks the artifact's content
+#   against Cargo.lock, copies the one validated artifact over the sources
+#   file, insists that nothing else changed, and pushes.
 on:
   pull_request:
     branches:
@@ -87,13 +87,17 @@ jobs:
           echo "$GENERATOR_SHA256  $generator" | sha256sum --check --strict
 
       # Run from the temp directory with config discovery off, so no uv.toml or
-      # pyproject.toml from the pull request steers uv.
+      # pyproject.toml from the pull request steers uv. The generator's own
+      # dependencies are unpinned ranges, so resolution is frozen at a fixed
+      # date: a PyPI release published later cannot change what this run
+      # executes. Moving the date is a reviewed change to this file.
       - name: Regenerate flatpak/cargo-sources.json
         id: regenerate
         run: |
           mkdir "$RUNNER_TEMP/regenerated"
           cd "$RUNNER_TEMP" || exit 1
-          uv run --no-config --script "$RUNNER_TEMP/flatpak-cargo-generator.py" \
+          uv run --no-config --exclude-newer 2026-10-05T00:00:00Z \
+            --script "$RUNNER_TEMP/flatpak-cargo-generator.py" \
             "$GITHUB_WORKSPACE/Cargo.lock" \
             -o "$RUNNER_TEMP/regenerated/cargo-sources.json"
           if cmp --silent "$RUNNER_TEMP/regenerated/cargo-sources.json" \
@@ -132,6 +136,13 @@ jobs:
           name: cargo-sources
           path: ${{ runner.temp }}/regenerated
 
+      # The artifact comes from a job that ran code from PyPI, so its content
+      # is checked against Cargo.lock before it is committed: a valid JSON file
+      # is not enough, because the Flatpak release build consumes it with
+      # secrets. This runs before, and apart from, the step that holds the token.
+      - name: Validate the regenerated sources against Cargo.lock
+        run: scripts/check-flatpak-cargo-sources.sh Cargo.lock "$RUNNER_TEMP/regenerated/cargo-sources.json"
+
       - name: Replace the sources and push them to the bump's branch
         env:
           PUSH_TOKEN: ${{ secrets.REPRISE_AUTOMERGE_TOKEN }}
@@ -142,7 +153,6 @@ jobs:
             exit 1
           fi
           regenerated="$RUNNER_TEMP/regenerated/cargo-sources.json"
-          jq empty "$regenerated"
           cp "$regenerated" flatpak/cargo-sources.json
           changes=$(git status --porcelain)
           if [[ $changes != ' M flatpak/cargo-sources.json' ]]; then
