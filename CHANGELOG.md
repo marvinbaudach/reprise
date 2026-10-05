@@ -4,6 +4,64 @@ Reprise release notes are curated from the changes that reached the stable
 branch. They describe user-visible changes rather than reproducing commit
 messages.
 
+## [0.1.235] - 2026-10-05
+
+### Library
+
+- A cover is found when the title differs only by typographic punctuation. An
+  album tagged "Selected Ambient Works 85-92" never got a cover, because
+  MusicBrainz titles it with an en dash and the lookup compared titles and
+  artists strictly; the miss then wrote a not-found marker that blocked every
+  retry for seven days. Dashes, apostrophes, quotes and the ellipsis now match
+  their plain forms for album and artist alike, accents still count, and the
+  markers the old matching wrote stop blocking at once.
+- Stopping the artwork run no longer swallows the next cover pass. An idle stop
+  was remembered and cancelled the next, unrelated cover pass; a stop that came
+  between the artist portraits finishing and the cover pass starting was lost,
+  so the cover pass started anyway. A stop now cancels exactly the pass it was
+  meant for, and a failure in between no longer leaves the hand-over stuck.
+- Covers retry when the desktop comes back online. Artwork now starts at most
+  one cover pass when the network returns, if switching it on was waiting for a
+  connection or the previous pass left a temporary failure behind. A return
+  during a running pass is retried once that pass ends, and a drop back offline
+  cancels the pending retry.
+
+### Podcasts and online sources
+
+- The "Popular in <country>" chip in Add Podcast survives one flaky answer. It
+  failed on the first timeout or server error from Apple's chart service, which
+  answered badly in three of eight probes, and left nothing in the journal. Each
+  of its two requests, the chart and the lookup behind it, is now asked once
+  more after a timeout or a 5xx; rate limits, client errors and unreadable
+  answers still end it at once. Every failed attempt leaves one warning line in
+  the journal with the step, storefront, attempt and reason, and never the URL
+  or the provider's text. In the worst case the chip shows "Searching…" for
+  about 40 seconds instead of 20.
+- Radio says when it is turned off. With the Radio module off, the page showed
+  an empty list. It now shows a note with a button that opens Preferences, and
+  a Radio page that is already open recovers in place once Radio is switched
+  on. Other source pages refresh only when their own online state changes, so
+  an unrelated module toggle leaves them alone.
+
+### Android
+
+- A cover that failed offline arrives once the network is back. A cover that
+  could not be fetched while the phone was offline never appeared later; only a
+  relaunch brought it. The app now notices a validated network returning and
+  retries at once, then again after 3, 10 and 30 seconds for VPN tunnels that
+  come up late. Retries survive a rotation, a return that happens while the app
+  is stopped is delivered once on restart, and the now-playing cover, the
+  mini-player and the list row repaint when the cover lands.
+- Track rows grow with the font scale. At a font scale of 2.0 the Titles list
+  and the queue clipped the duration and the subtitle. Rows now take the height
+  of their content and stay at 72 and 64 dp at scale 1.0 and below. Dragging in
+  the queue follows the measured height, so a drag of one or two rows moves the
+  track by exactly one or two places.
+- The mini-player and the tab bar grow with the font scale. The mini-player cut
+  through the subtitle's descenders at a font scale of 2.0 because its height
+  was fixed, and the navigation bar had the same fixed height. Both keep their
+  usual height at scale 1.0 and grow with their content above it.
+
 ## [0.1.225] - 2026-10-03
 
 ### Device sync
