@@ -1,6 +1,10 @@
 use super::settings::ReplayGainMode;
 
 pub const REFERENCE_LUFS: f64 = -18.0;
+/// The widest correction playback ever applies. Both bounds are far outside what
+/// real material needs, so a hostile or corrupt tag cannot blast or mute a track.
+pub const MIN_GAIN_DB: f64 = -24.0;
+pub const MAX_GAIN_DB: f64 = 12.0;
 
 #[derive(Debug, Clone, Copy, Default, PartialEq)]
 pub struct ReplayGainTags {
@@ -99,9 +103,20 @@ fn resolved(gain_db: f64, peak: Option<f64>, source: GainSource) -> ResolvedGain
     let peak_cap = peak
         .filter(|peak| peak.is_finite() && *peak > 0.0)
         .map(|peak| -20.0 * peak.log10());
+    let capped = peak_cap.map_or(gain_db, |cap| gain_db.min(cap));
     ResolvedGain {
-        gain_db: peak_cap.map_or(gain_db, |cap| gain_db.min(cap)),
+        gain_db: safe_gain_db(capped),
         source,
+    }
+}
+
+/// Non-finite values mean "unknown", which plays at unity; finite ones are
+/// clamped into `[MIN_GAIN_DB, MAX_GAIN_DB]`.
+fn safe_gain_db(gain_db: f64) -> f64 {
+    if gain_db.is_finite() {
+        gain_db.clamp(MIN_GAIN_DB, MAX_GAIN_DB)
+    } else {
+        0.0
     }
 }
 

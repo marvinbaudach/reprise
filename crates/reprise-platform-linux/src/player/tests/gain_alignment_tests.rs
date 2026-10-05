@@ -300,3 +300,28 @@ fn play_19a_the_gain_switch_waits_for_the_tail_queued_ahead_of_it() {
         );
     }
 }
+
+#[test]
+fn play_18_the_gain_element_never_receives_an_unsafe_factor() {
+    use crate::player_effects::{linear_gain, MAX_LINEAR_GAIN};
+
+    assert_eq!(linear_gain(f64::NAN), 1.0);
+    assert_eq!(linear_gain(f64::INFINITY), 1.0);
+    assert_eq!(linear_gain(f64::NEG_INFINITY), 1.0);
+    assert_eq!(linear_gain(400.0), MAX_LINEAR_GAIN);
+    assert!(linear_gain(-400.0) < 1e-9);
+    assert!((linear_gain(6.0) - linear(6.0)).abs() < 1e-12);
+
+    gst::init().unwrap();
+    let filter = build_audio_filter(&AudioEffects::default())
+        .unwrap()
+        .unwrap();
+    let gain = filter
+        .clone()
+        .downcast::<gst::Bin>()
+        .unwrap()
+        .by_name("reprise-track-gain")
+        .unwrap();
+    gain.set_property("volume", linear_gain(400.0));
+    assert_eq!(gain.property::<f64>("volume"), MAX_LINEAR_GAIN);
+}

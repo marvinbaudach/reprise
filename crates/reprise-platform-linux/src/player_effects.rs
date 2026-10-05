@@ -8,6 +8,8 @@ use reprise_core::playback::{AudioEffects, PlaybackError};
 pub(super) const CAVA_SINK_NAME: &str = "reprise-cava-sink";
 pub(super) const TRACK_GAIN_NAME: &str = "reprise-track-gain";
 pub(super) const CAVA_SAMPLE_RATE_HZ: i32 = 44_100;
+/// GStreamer's `volume` element rejects (and warns about) factors above 10.
+pub(super) const MAX_LINEAR_GAIN: f64 = 10.0;
 // Keep about 130 ms of 60 Hz analysis buffers for short scheduling stalls, but
 // stay bounded because this branch must never back-pressure audible playback.
 const CAVA_SINK_MAX_QUEUED_BUFFERS: u32 = 8;
@@ -226,9 +228,18 @@ pub(super) fn set_playbin_track_gain(
     let gain = bin.by_name(TRACK_GAIN_NAME).ok_or_else(|| {
         PlaybackError::Backend("GStreamer: audio filter has no track gain".into())
     })?;
-    let linear = 10_f64.powf(gain_db / 20.0);
-    gain.set_property("volume", linear);
+    gain.set_property("volume", linear_gain(gain_db));
     Ok(())
+}
+
+/// The `volume` factor for a gain in decibels. A non-finite gain plays at unity
+/// and the factor stays inside the element's `0..=10` range, so a bad value
+/// from any caller can neither mute the stream by accident nor blast it.
+pub(super) fn linear_gain(gain_db: f64) -> f64 {
+    if !gain_db.is_finite() {
+        return 1.0;
+    }
+    10_f64.powf(gain_db / 20.0).clamp(0.0, MAX_LINEAR_GAIN)
 }
 
 pub(super) fn install_stream_start_gain_switch(
@@ -272,7 +283,7 @@ pub(super) fn install_filter_gain_switch(
                 .unwrap_or_else(PoisonError::into_inner)
                 .take();
             if let Some(gain_db) = next {
-                element.set_property("volume", 10_f64.powf(gain_db / 20.0));
+                element.set_property("volume", linear_gain(gain_db));
             }
         }
         gst::PadProbeReturn::Ok

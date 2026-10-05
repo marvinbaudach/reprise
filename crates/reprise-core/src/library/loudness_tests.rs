@@ -145,3 +145,37 @@ fn play_18_silence_has_no_measured_gain() {
         }
     );
 }
+
+fn tagged_track(gain_db: f64) -> GainInputs {
+    GainInputs {
+        tags: ReplayGainTags {
+            track_gain_db: Some(gain_db),
+            ..ReplayGainTags::default()
+        },
+        ..inputs(ReplayGainMode::Track)
+    }
+}
+
+#[test]
+fn play_18_gain_stays_inside_the_audible_safe_range() {
+    assert_eq!(resolve_gain(tagged_track(40.0)).gain_db, MAX_GAIN_DB);
+    assert_eq!(resolve_gain(tagged_track(-60.0)).gain_db, MIN_GAIN_DB);
+    assert_eq!(resolve_gain(tagged_track(-3.5)).gain_db, -3.5);
+
+    let very_quiet = resolve_gain(GainInputs {
+        measured: Some(MeasuredLoudness {
+            integrated_lufs: -80.0,
+            true_peak: 0.0,
+        }),
+        ..inputs(ReplayGainMode::Track)
+    });
+    assert_eq!(very_quiet.gain_db, MAX_GAIN_DB);
+}
+
+#[test]
+fn play_18_a_non_finite_gain_is_unity() {
+    for hostile in [f64::NAN, f64::INFINITY, f64::NEG_INFINITY] {
+        let result = resolve_gain(tagged_track(hostile));
+        assert_eq!(result.gain_db, 0.0, "{hostile} must not reach the player");
+    }
+}

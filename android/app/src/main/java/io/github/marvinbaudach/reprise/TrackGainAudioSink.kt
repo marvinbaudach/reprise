@@ -15,6 +15,21 @@ import kotlin.math.roundToInt
  * which is why the width is a contract of the factory rather than checked here.
  */
 internal class TrackGainAudioSink(delegate: AudioSink) : ForwardingAudioSink(delegate) {
+    internal companion object {
+        // The same bounds Core resolves into, re-checked here because this value
+        // reaches the audio thread: a bad one must not blast or mute playback.
+        const val MIN_GAIN_DB = -24.0
+        const val MAX_GAIN_DB = 12.0
+
+        /** Linear factor for [gainDb]; a gain that is not finite plays at unity. */
+        fun linearGain(gainDb: Double): Double =
+            if (gainDb.isFinite()) {
+                10.0.pow(gainDb.coerceIn(MIN_GAIN_DB, MAX_GAIN_DB) / 20.0)
+            } else {
+                1.0
+            }
+    }
+
     private data class Boundary(val offsetUs: Long, val gainDb: Double)
 
     private val queuedGains = ArrayDeque<Double>()
@@ -85,7 +100,7 @@ internal class TrackGainAudioSink(delegate: AudioSink) : ForwardingAudioSink(del
     ): Boolean {
         synchronized(this) {
             while (boundaries.isNotEmpty() && presentationTimeUs >= boundaries.peekFirst().offsetUs) {
-                currentLinearGain = 10.0.pow(boundaries.removeFirst().gainDb / 20.0)
+                currentLinearGain = linearGain(boundaries.removeFirst().gainDb)
                 clearScaledBufferMarker()
             }
             scaleOnce(buffer, presentationTimeUs)
