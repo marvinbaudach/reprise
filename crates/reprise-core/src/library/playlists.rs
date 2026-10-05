@@ -396,7 +396,7 @@ pub(crate) fn renumber_positions(
     conn: &Connection,
     playlist_id: i64,
 ) -> Result<(), rusqlite::Error> {
-    let mut stmt = conn.prepare(
+    let mut stmt = conn.prepare_cached(
         "SELECT position FROM playlist_tracks WHERE playlist_id = ?1 ORDER BY position ASC",
     )?;
     let current_positions: Vec<i64> = stmt
