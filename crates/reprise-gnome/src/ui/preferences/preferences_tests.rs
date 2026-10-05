@@ -1,5 +1,5 @@
 use super::*;
-use crate::ui::preference_plugins::plugin_applies_live;
+use crate::ui::preferences::preference_plugins::plugin_applies_live;
 
 #[test]
 fn set_10_optional_capability_deep_links_target_plugin_rows() {

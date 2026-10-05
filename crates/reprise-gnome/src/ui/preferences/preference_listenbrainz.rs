@@ -73,7 +73,7 @@ struct ListenBrainzExpanderSurface {
     token: adw::PasswordEntryRow,
     connect: gtk4::Button,
     disconnect: gtk4::Button,
-    test_connection: crate::ui::preference_dependencies::TestConnectionRow,
+    test_connection: crate::ui::preferences::preference_dependencies::TestConnectionRow,
 }
 
 fn build_listenbrainz_expander(
@@ -81,11 +81,15 @@ fn build_listenbrainz_expander(
     connected: bool,
     status: &str,
 ) -> ListenBrainzExpanderSurface {
-    let description = crate::ui::preference_plugins::plugin_description(
+    let description = crate::ui::preferences::preference_plugins::plugin_description(
         &reprise_core::modules::LISTENBRAINZ_MODULE,
     );
     let subtitle = if is_enabled {
-        crate::ui::preference_dependencies::service_subtitle(&description, true, status)
+        crate::ui::preferences::preference_dependencies::service_subtitle(
+            &description,
+            true,
+            status,
+        )
     } else {
         description.clone()
     };
@@ -126,7 +130,7 @@ fn build_listenbrainz_expander(
     expander.add_row(&connect_row);
 
     // Test connection
-    let test_connection = crate::ui::preference_dependencies::TestConnectionRow::new();
+    let test_connection = crate::ui::preferences::preference_dependencies::TestConnectionRow::new();
     test_connection.row.set_visible(connected);
     expander.add_row(&test_connection.row);
 
@@ -262,7 +266,7 @@ impl PreferencesContext {
         let status = status_text(&self.listenbrainz.status());
         let surface = build_listenbrainz_expander(is_enabled, connected, &status);
 
-        let description = crate::ui::preference_plugins::plugin_description(
+        let description = crate::ui::preferences::preference_plugins::plugin_description(
             &reprise_core::modules::LISTENBRAINZ_MODULE,
         );
 
@@ -272,11 +276,13 @@ impl PreferencesContext {
             let description = description.clone();
             move |status| {
                 if let Some(expander) = expander.upgrade() {
-                    expander.set_subtitle(&crate::ui::preference_dependencies::service_subtitle(
-                        &description,
-                        expander.enables_expansion(),
-                        &status_text(&status),
-                    ));
+                    expander.set_subtitle(
+                        &crate::ui::preferences::preference_dependencies::service_subtitle(
+                            &description,
+                            expander.enables_expansion(),
+                            &status_text(&status),
+                        ),
+                    );
                 }
             }
         }));
@@ -303,11 +309,13 @@ impl PreferencesContext {
             .connect_enable_expansion_notify(move |expander| {
                 if let Some(context) = weak.upgrade() {
                     // Update subtitle immediately
-                    expander.set_subtitle(&crate::ui::preference_dependencies::service_subtitle(
-                        &description_for_toggle,
-                        expander.enables_expansion(),
-                        &status_text(&context.listenbrainz.status()),
-                    ));
+                    expander.set_subtitle(
+                        &crate::ui::preferences::preference_dependencies::service_subtitle(
+                            &description_for_toggle,
+                            expander.enables_expansion(),
+                            &status_text(&context.listenbrainz.status()),
+                        ),
+                    );
                     context.change_listenbrainz_activation(expander, expander.enables_expansion());
                 }
             });

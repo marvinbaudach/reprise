@@ -14,7 +14,7 @@ use reprise_core::online_sources::{self, WizardSourceSelection};
 
 use crate::ui::{
     first_run_sources::{self, SourceWidgets},
-    preference_rhythmbox,
+    preferences::preference_rhythmbox,
     scan_flow::ScanControls,
     strings,
 };

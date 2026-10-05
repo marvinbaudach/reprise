@@ -451,7 +451,9 @@ pub fn build(
         let preferences = Rc::downgrade(&preferences);
         info_panel.lyrics_view().set_on_settings(move || {
             if let Some(preferences) = preferences.upgrade() {
-                preferences.present_plugins(crate::ui::preference_plugins::ONLINE_LYRICS_TARGETS);
+                preferences.present_plugins(
+                    crate::ui::preferences::preference_plugins::ONLINE_LYRICS_TARGETS,
+                );
             }
         });
     }

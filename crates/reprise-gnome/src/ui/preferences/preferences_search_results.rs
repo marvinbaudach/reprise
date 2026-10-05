@@ -9,7 +9,7 @@ use libadwaita as adw;
 use libadwaita::prelude::*;
 
 use super::preferences_search_index::{IndexedRow, SearchDocument};
-use crate::ui::preferences_window::PageId;
+use crate::ui::preferences::preferences_window::PageId;
 
 struct RowOrigin {
     parent: gtk4::ListBox,

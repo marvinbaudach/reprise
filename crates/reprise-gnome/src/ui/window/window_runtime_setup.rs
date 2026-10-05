@@ -47,8 +47,8 @@ pub(super) fn setup(
         reprise_core::scrobbling::ScrobbleProvider::LastFm,
         "Last.fm",
     );
-    super::super::preference_lastfm::bootstrap(conn, &lastfm);
-    super::super::preference_listenbrainz::bootstrap(conn, &listenbrainz);
+    crate::ui::preferences::preference_lastfm::bootstrap(conn, &lastfm);
+    crate::ui::preferences::preference_listenbrainz::bootstrap(conn, &listenbrainz);
     super::window_smoke::arm_listenbrainz(conn, &listenbrainz);
     super::window_smoke::arm_lastfm(conn, &lastfm);
     let artist_news = ArtistNewsRuntime::setup(conn);
