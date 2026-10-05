@@ -183,6 +183,7 @@ internal fun BrowseScreen(
         pageCount = { BrowseTab.entries.size },
     )
     val statusTopInset = remember { mutableStateOf(0.dp) }
+    val bottomFrameInset = remember { mutableStateOf(0.dp) }
     // What the bar marks and what the header counts is the page the gesture has
     // already committed to — not the one it settled on. `settledPage`, which the
     // state below is driven from, holds its old value for the whole drag *and*
@@ -238,7 +239,9 @@ internal fun BrowseScreen(
         }
     }
 
-    fun play(selection: PlaybackSelection) {
+    fun play(requested: PlaybackSelection) {
+        // Tracks waiting to be deleted are not played, and not queued.
+        val selection = surfaceState.pendingDeletions.visibleSelection(requested) ?: return
         browseError = null
         browseErrorOrigin = null
         playTracks(selection) { message ->
@@ -512,6 +515,7 @@ internal fun BrowseScreen(
     // not belong on the main thread. See [TrackLoader].
     var answeredTrack by remember { mutableStateOf<AnsweredTrack?>(null) }
     val playingTrackId = playback.currentTrackId
+    SideEffect { surfaceState.observePlayingTrack(playingTrackId) }
     val latestPlayingTrackId by rememberUpdatedState(playingTrackId)
     LaunchedEffect(playingTrackId, playbackControls, trackArtwork) {
         surfaceState.prefetchUpcomingArtwork(playingTrackId, playbackControls, trackArtwork)
@@ -574,6 +578,7 @@ internal fun BrowseScreen(
                     )
                 },
             ) { contentPadding ->
+                SideEffect { bottomFrameInset.value = contentPadding.calculateBottomPadding() }
                 Column(
                     modifier = Modifier
                         .fillMaxSize()
@@ -760,6 +765,7 @@ internal fun BrowseScreen(
             nowPlayingSheetState = nowPlayingSheetState,
             settingsVisible = settingsVisible,
         )
+        UndoSnackbarHost(surfaceState.pendingDeletions, bottomFrameInset.value)
         BrowseSettingsOverlay(
             visible = settingsVisible,
             settings = settings,

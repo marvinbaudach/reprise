@@ -250,6 +250,7 @@ internal class MobileSurfaceViewModel(
             keepLoadedWindows(refreshed.state.catalogShape(), windows)
         }
         updateLibraryState(refreshed.state)
+        pendingDeletions.libraryRefreshed(ticket)
     }
 
     override fun say(text: String) {
@@ -268,6 +269,21 @@ internal class MobileSurfaceViewModel(
     fun dismissDeletionMessage() {
         deletionMessage = null
     }
+
+    /** What is playing, as the library screen last saw it: a delete of it skips on. */
+    var playingTrackId: Long? = null
+        private set
+
+    fun observePlayingTrack(trackId: Long?) {
+        playingTrackId = trackId
+    }
+
+    override val pendingDeletions = PendingDeletions(
+        offers = UndoOffers(scheduleAfter),
+        messages = this,
+        currentTrackId = { playingTrackId },
+        latestRefreshTicket = { refreshTickets },
+    )
 
     fun bindArtistPhotoBackfill(
         snapshot: () -> ArtistPhotoProgress,
@@ -632,6 +648,7 @@ internal class MobileSurfaceViewModel(
     }
 
     override fun onCleared() {
+        pendingDeletions.close()
         stopNetworkReturnMonitor()
         albumCoverScheduleGeneration++
         refreshAlbumCovers = {}

@@ -3,12 +3,14 @@ package io.github.marvinbaudach.reprise
 import androidx.activity.ComponentActivity
 import androidx.compose.ui.test.getUnclippedBoundsInRoot
 import androidx.compose.ui.test.junit4.v2.createAndroidComposeRule
+import androidx.compose.ui.test.onAllNodesWithText
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
 import io.github.marvinbaudach.reprise.ui.theme.RepriseTheme
 import kotlin.math.roundToInt
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertTrue
 import org.junit.Rule
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -64,6 +66,31 @@ class DeletionLineListOffsetTest {
         val viewModel = MobileSurfaceViewModel()
         show(viewModel)
         assertDeletionLeavesTheListAlone(viewModel, probeText = SECOND_TITLE)
+    }
+
+    @Test
+    fun theUndoSnackbarFloatsAboveTheBottomFrameWithoutMovingTheList() {
+        val harness = DeletionHarness()
+        show(harness.surface)
+        val before = offsets(SECOND_TITLE)
+
+        compose.runOnIdle {
+            harness.surface.pendingDeletions.offers.show("Removed from queue", onUndo = {})
+        }
+        compose.waitUntil(WAIT_MS) {
+            compose.onAllNodesWithText("Removed from queue").fetchSemanticsNodes().isNotEmpty()
+        }
+        compose.waitForIdle()
+
+        assertEquals("while offered", before, offsets(SECOND_TITLE))
+        val snackbarBottom = compose.onNodeWithTag("undo-snackbar-host")
+            .getUnclippedBoundsInRoot().bottom.value.toPixels()
+        val frameTop = topOfTag("library-navigation-bar")
+        assertTrue("snackbar ends at $snackbarBottom, frame starts at $frameTop", snackbarBottom <= frameTop)
+
+        compose.runOnIdle { harness.passTheWindow() }
+        compose.waitForIdle()
+        assertEquals("once gone", before, offsets(SECOND_TITLE))
     }
 
     private fun assertDeletionLeavesTheListAlone(
@@ -159,6 +186,7 @@ class DeletionLineListOffsetTest {
     )
 
     private companion object {
+        const val WAIT_MS = 5_000L
         const val FIRST_TITLE = "First song"
         const val SECOND_TITLE = "Second song"
         const val ARTIST = "Only artist"

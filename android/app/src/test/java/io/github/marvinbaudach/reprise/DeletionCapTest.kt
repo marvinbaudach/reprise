@@ -8,6 +8,7 @@ import androidx.compose.ui.test.junit4.v2.createAndroidComposeRule
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertNull
 import org.junit.Rule
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -17,7 +18,7 @@ import org.robolectric.annotation.Config
 /**
  * The id queries behind "delete this album/artist" stop at [TRACK_ID_QUERY_LIMIT]
  * rows, silently. A selection that hits the stop may have been cut short, so
- * deleting what came back would delete part of a selection the dialog named
+ * deleting what came back would delete part of a selection the listener meant
  * whole.
  */
 @RunWith(RobolectricTestRunner::class)
@@ -26,26 +27,27 @@ class DeletionCapTest {
     @get:Rule
     val compose = createAndroidComposeRule<ComponentActivity>()
 
+    private val harness = DeletionHarness()
+
     @Test
-    fun aSelectionAtTheQueryLimitIsRefusedBeforeAnyDialogAsksAboutIt() {
+    fun aSelectionAtTheQueryLimitIsRefusedBeforeAnythingIsHidden() {
         val controls = RecordingContextMenuControls()
         showMenuFor(controls, ids = TRACK_ID_QUERY_LIMIT)
 
         compose.onNodeWithText("Delete from device…").performClick()
         compose.awaitText("too large to delete at once", substring = true)
-        compose.onNodeWithText("Delete 10000 tracks from Big Artist?").assertDoesNotExist()
-        compose.onNodeWithText("Delete").assertDoesNotExist()
+        assertNull(harness.surface.pendingDeletions.offers.current)
         assertEquals(emptyList<List<Long>>(), controls.deleted)
     }
 
     @Test
-    fun aSelectionJustUnderTheLimitIsAskedAboutOnceAndDeletedWhole() {
+    fun aSelectionJustUnderTheLimitIsResolvedOnceAndDeletedWhole() {
         val controls = RecordingContextMenuControls()
         val resolves = showMenuFor(controls, ids = TRACK_ID_QUERY_LIMIT - 1)
 
         compose.onNodeWithText("Delete from device…").performClick()
-        compose.awaitText("Delete 9999 tracks from Big Artist?")
-        compose.onNodeWithText("Delete").performClick()
+        compose.waitUntil(AWAIT_TIMEOUT_MS) { harness.surface.pendingDeletions.offers.current != null }
+        compose.runOnIdle { harness.passTheWindow() }
         compose.waitForIdle()
 
         assertEquals(TRACK_ID_QUERY_LIMIT - 1, controls.deleted.single().size)
@@ -87,8 +89,12 @@ class DeletionCapTest {
         )
         compose.setContent {
             MaterialTheme {
-                CompositionLocalProvider(LocalPlaybackControls provides controls) {
+                CompositionLocalProvider(
+                    LocalPlaybackControls provides controls,
+                    LocalDeletionMessages provides harness.surface,
+                ) {
                     Column {
+                        DeletionMessageLine(harness.surface)
                         TrackContextMenu(anchor = anchor, target = target)
                         TrackContextMenuMessage(anchor)
                     }

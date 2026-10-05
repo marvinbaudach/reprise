@@ -26,24 +26,22 @@ class ArtistContextMenuTest {
     @get:Rule
     val compose = createAndroidComposeRule<ComponentActivity>()
 
+    private val harness = DeletionHarness()
     private val artist = LibraryArtist("Whole Artist", 3, 2, "content://artists/whole")
     private val otherArtist = LibraryArtist("Other Artist", 1, 1, "content://artists/other")
 
     @Test
-    fun longPressingAnArtistDeletesEveryUnwindowedIdAfterConfirming() {
+    fun longPressingAnArtistDeletesEveryUnwindowedIdOnceTheUndoWindowPasses() {
         val controls = RecordingContextMenuControls()
         composeArtists(controls, selectedArtist = null)
 
         compose.onNodeWithText("Whole Artist").performTouchInput { longClick() }
         compose.onNodeWithText("Delete from device…").performClick()
-        compose.awaitText("Delete 3 tracks from Whole Artist?")
-        compose.onNodeWithText("Cancel").performClick()
+        compose.waitUntil(AWAIT_TIMEOUT_MS) { harness.surface.pendingDeletions.offers.current != null }
         assertEquals(emptyList<List<Long>>(), controls.deleted)
 
-        compose.onNodeWithText("Whole Artist").performTouchInput { longClick() }
-        compose.onNodeWithText("Delete from device…").performClick()
-        compose.awaitText("Delete 3 tracks from Whole Artist?")
-        compose.onNodeWithText("Delete", useUnmergedTree = true).performClick()
+        compose.runOnIdle { harness.passTheWindow() }
+        compose.waitUntil(AWAIT_TIMEOUT_MS) { controls.deleted.isNotEmpty() }
 
         assertEquals(listOf(listOf(9L, 7L, 5L)), controls.deleted)
     }
@@ -64,7 +62,7 @@ class ArtistContextMenuTest {
     }
 
     @Test
-    fun theArtistPageOverflowDeletesTheWholeArtistAfterConfirming() {
+    fun theArtistPageOverflowDeletesTheWholeArtistOnceTheUndoWindowPasses() {
         val controls = RecordingContextMenuControls()
         composeArtists(
             controls,
@@ -82,8 +80,9 @@ class ArtistContextMenuTest {
 
         compose.onNodeWithTag("artist-detail-overflow").performClick()
         compose.onNodeWithText("Delete from device…").performClick()
-        compose.awaitText("Delete 3 tracks from Whole Artist?")
-        compose.onNodeWithText("Delete", useUnmergedTree = true).performClick()
+        compose.waitUntil(AWAIT_TIMEOUT_MS) { harness.surface.pendingDeletions.offers.current != null }
+        compose.runOnIdle { harness.passTheWindow() }
+        compose.waitUntil(AWAIT_TIMEOUT_MS) { controls.deleted.isNotEmpty() }
 
         // The page has only its first album window loaded; the menu still
         // takes every track the artist has.
@@ -121,11 +120,12 @@ class ArtistContextMenuTest {
         controls: RecordingContextMenuControls,
         selectedArtist: ArtistTrackList?,
     ) {
-        val surfaceState = MobileSurfaceViewModel()
+        val surfaceState = harness.surface
         compose.setContent {
             MaterialTheme {
                 CompositionLocalProvider(
                     LocalPlaybackControls provides controls,
+                    LocalDeletionMessages provides harness.surface,
                     LocalAlbumTrackIds provides { listOf(4L) },
                     LocalArtistTrackIds provides { selected ->
                         if (selected == artist) listOf(9L, 7L, 5L) else listOf(4L)

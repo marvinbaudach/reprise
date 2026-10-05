@@ -92,7 +92,13 @@ internal fun TrackRows(
     owner: String = "",
 ) {
     val metrics = libraryFrameMetrics(surfaceLayout)
-    val content = trackListContent(tracks, lastRequestedOffset)
+    val deletions = surfaceState.pendingDeletions
+    // Hidden here, at render time, and never cut out of the window: its paging
+    // offsets count its rows. The queue is not filtered — a delete takes its
+    // tracks out of the queue itself.
+    val content = trackListContent(tracks, lastRequestedOffset).filterNot { item ->
+        queueActions == null && item is TrackListContent.Row && deletions.isHidden(item.track.id)
+    }
     val anchor = surfaceState.scrollPosition(listKey, owner).within(content.size)
     val rowKey: (TrackListContent) -> Any = if (queueActions == null) {
         TrackListContent::libraryRowKey

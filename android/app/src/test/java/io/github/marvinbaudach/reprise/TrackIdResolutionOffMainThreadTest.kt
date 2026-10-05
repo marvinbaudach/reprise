@@ -8,14 +8,12 @@ import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
-import androidx.compose.ui.test.assertCountEquals
 import androidx.compose.ui.test.assertIsEnabled
 import androidx.compose.ui.test.assertIsNotEnabled
 import androidx.compose.ui.test.hasAnyAncestor
 import androidx.compose.ui.test.hasTestTag
 import androidx.compose.ui.test.hasText
 import androidx.compose.ui.test.junit4.v2.createAndroidComposeRule
-import androidx.compose.ui.test.onAllNodesWithText
 import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
@@ -56,7 +54,15 @@ class TrackIdResolutionOffMainThreadTest {
     private var shownArtist by mutableStateOf(artist)
     private lateinit var anchor: TrackContextMenuAnchorState
 
+    private val timers = ManualTimers()
     private val deletionMessages = object : DeletionMessages {
+        override val pendingDeletions = PendingDeletions(
+            offers = UndoOffers(timers::schedule),
+            messages = this,
+            currentTrackId = { null },
+            latestRefreshTicket = { 0 },
+        )
+
         override fun say(text: String) {
             deletionSays += text
         }
@@ -68,7 +74,7 @@ class TrackIdResolutionOffMainThreadTest {
     }
 
     @Test
-    fun deletingResolvesTheIdsOffTheMainThreadAndThenAsks() {
+    fun deletingResolvesTheIdsOffTheMainThreadAndThenOffersTheUndo() {
         val resolvedOn = AtomicReference<Thread>()
         showMenu(RecordingContextMenuControls()) {
             resolvedOn.set(Thread.currentThread())
@@ -76,7 +82,7 @@ class TrackIdResolutionOffMainThreadTest {
         }
 
         compose.onNodeWithText("Delete from device…").performClick()
-        compose.awaitText("Delete 3 tracks from Whole Artist?")
+        awaitUndoOffer()
 
         assertNotNull("the resolver never ran", resolvedOn.get())
         assertNotSame(Looper.getMainLooper().thread, resolvedOn.get())
@@ -110,7 +116,7 @@ class TrackIdResolutionOffMainThreadTest {
     }
 
     @Test
-    fun noDialogAppearsUntilTheResolutionHasAnswered() {
+    fun noUndoIsOfferedUntilTheResolutionHasAnswered() {
         val gate = CountDownLatch(1)
         showMenu(RecordingContextMenuControls()) {
             gate.await(GATE_MS, TimeUnit.MILLISECONDS)
@@ -119,10 +125,10 @@ class TrackIdResolutionOffMainThreadTest {
 
         compose.onNodeWithText("Delete from device…").performClick()
         compose.waitForIdle()
-        compose.onNodeWithText("Delete 3 tracks from Whole Artist?").assertDoesNotExist()
+        assertNull(deletionMessages.pendingDeletions.offers.current)
 
         gate.countDown()
-        compose.awaitText("Delete 3 tracks from Whole Artist?")
+        awaitUndoOffer()
     }
 
     @Test
@@ -142,11 +148,11 @@ class TrackIdResolutionOffMainThreadTest {
         compose.onNodeWithText("Delete from device…").performClick()
 
         gate.countDown()
-        compose.awaitText("Delete 3 tracks from Whole Artist?")
+        awaitUndoOffer()
         compose.waitForIdle()
 
         assertEquals("the target was resolved once", 1, resolves.get())
-        compose.onAllNodesWithText("Delete 3 tracks from Whole Artist?").assertCountEquals(1)
+        assertEquals("one delete was offered", 1, timers.delays.size)
     }
 
     @Test
@@ -162,12 +168,12 @@ class TrackIdResolutionOffMainThreadTest {
         compose.waitForIdle()
 
         assertEquals(listOf("Could not load the tracks: catalog unavailable"), deletionSays)
-        compose.onNodeWithText("Delete 3 tracks from Whole Artist?").assertDoesNotExist()
+        assertNull(deletionMessages.pendingDeletions.offers.current)
 
         reopenMenu()
         compose.onNodeWithText("Delete from device…").assertIsEnabled()
         compose.onNodeWithText("Delete from device…").performClick()
-        compose.awaitText("Delete 3 tracks from Whole Artist?")
+        awaitUndoOffer()
     }
 
     @Test
@@ -295,6 +301,10 @@ class TrackIdResolutionOffMainThreadTest {
 
     private fun menuItem(label: String) =
         hasText(label) and hasAnyAncestor(hasTestTag("library-track-context-menu"))
+
+    private fun awaitUndoOffer() {
+        compose.waitUntil(WAIT_MS) { deletionMessages.pendingDeletions.offers.current != null }
+    }
 
     private fun reopenMenu() {
         compose.runOnIdle { anchor.expanded = true }
