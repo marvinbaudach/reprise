@@ -18,7 +18,6 @@ pub(super) enum PodcastsEmptyState {
 /// Decides which of the six states a render pass is in. Never renders
 /// anything itself — `podcasts_view.rs` reads the copy for each case
 /// separately, so this stays testable without a display.
-#[allow(clippy::too_many_arguments)]
 pub(super) fn podcasts_empty_state_for(
     subscription_count: usize,
     total_episodes: usize,

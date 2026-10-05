@@ -1,5 +1,3 @@
-#![allow(dead_code)]
-
 use std::cell::{Cell, RefCell};
 use std::path::PathBuf;
 use std::rc::Rc;
@@ -251,7 +249,8 @@ impl ConcertsRuntime {
         self.settings_subscribers.notify();
     }
 
-    pub(in crate::ui) fn request(&self, request: ConcertsRequest) -> bool {
+    #[cfg(test)]
+    fn request(&self, request: ConcertsRequest) -> bool {
         self.queue(request, None)
     }
 

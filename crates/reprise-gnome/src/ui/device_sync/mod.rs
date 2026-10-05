@@ -27,5 +27,8 @@ mod device_sync_rate_tests;
 mod device_sync_runtime_tests;
 #[cfg(test)]
 mod device_sync_surface_tests;
-#[allow(unused_imports)]
+#[allow(
+    unused_imports,
+    reason = "child modules share the parent UI vocabulary through this import"
+)]
 use super::*;

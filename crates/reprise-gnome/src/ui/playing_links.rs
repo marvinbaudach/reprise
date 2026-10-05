@@ -9,7 +9,7 @@ pub(in crate::ui) enum LinkSurface {
     Cover,
 }
 
-#[allow(dead_code)] // Exhaustive contract exercised by PLAY-12 tests.
+#[cfg(test)]
 pub(in crate::ui) const SURFACES: [LinkSurface; 3] = [
     LinkSurface::Title,
     LinkSurface::Subtitle,

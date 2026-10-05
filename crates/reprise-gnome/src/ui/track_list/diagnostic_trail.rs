@@ -553,7 +553,10 @@ pub(crate) fn record_window_query(elapsed: Duration) {
     });
 }
 
-#[allow(clippy::too_many_arguments)]
+#[expect(
+    clippy::too_many_arguments,
+    reason = "the UI seam keeps its independent collaborators explicit"
+)]
 pub(crate) fn finish_reload_breakdown(
     trail: &DiagnosticTrail,
     reload_id: u64,

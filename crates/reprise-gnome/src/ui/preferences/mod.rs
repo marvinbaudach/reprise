@@ -32,6 +32,9 @@ pub(in crate::ui) mod preferences_window;
 #[path = "preferences.rs"]
 mod surface;
 
-#[allow(unused_imports)]
+#[allow(
+    unused_imports,
+    reason = "child modules share the parent UI vocabulary through this import"
+)]
 use super::*;
 pub(in crate::ui) use surface::{action_row, replay_gain_index, PreferencesContext, SMOKE_ENV};

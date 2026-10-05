@@ -22,7 +22,10 @@ pub(crate) mod sidebar_session;
 #[path = "sidebar.rs"]
 mod surface;
 
-#[allow(unused_imports)]
+#[allow(
+    unused_imports,
+    reason = "child modules share the parent UI vocabulary through this import"
+)]
 use super::*;
 pub(in crate::ui) use sidebar_place::{
     apply_marking, find_row, has_sidebar_row, resolve_select_source, select_row_in_its_listbox,

@@ -168,7 +168,8 @@ impl PlayerBar {
     pub fn new() -> Self {
         let PlayerBarWidgets {
             root,
-            info_box: _,
+            #[cfg(test)]
+                info_box: _,
             cover,
             cover_button,
             cover_lift,

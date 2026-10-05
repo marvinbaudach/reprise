@@ -96,7 +96,6 @@ impl DeviceBackend for GioDeviceBackend {
         })
     }
 
-    #[allow(clippy::too_many_arguments)]
     fn replace_track(
         &self,
         _device_id: String,

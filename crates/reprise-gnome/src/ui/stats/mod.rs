@@ -16,5 +16,8 @@ mod stats_songs_playback;
 mod stats_songs_row_actions;
 pub(crate) mod stats_view;
 pub(in crate::ui) mod stats_view_widgets;
-#[allow(unused_imports)]
+#[expect(
+    unused_imports,
+    reason = "child modules share the parent UI vocabulary through this import"
+)]
 use super::*;

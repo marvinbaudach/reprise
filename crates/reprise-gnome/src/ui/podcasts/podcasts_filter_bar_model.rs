@@ -3,7 +3,6 @@ use std::rc::Rc;
 
 use reprise_core::db::Db;
 use reprise_core::podcasts::{self, PodcastKind};
-use reprise_view::search_scope::SearchScope;
 
 use super::super::podcasts_presentation::{active, LibrarySummary, PodcastFilter};
 use crate::ui::browse::filter_bar::{
@@ -106,12 +105,6 @@ impl FilterModel for PodcastsModel {
             selections.push(SelectionDescriptor::new(DOWNLOADED_FACET, "true", label));
         }
         selections
-    }
-    fn search_scope(&self) -> SearchScope {
-        match self.kind {
-            PodcastKind::Rss => SearchScope::Podcasts,
-            PodcastKind::Youtube => SearchScope::Youtube,
-        }
     }
     fn add_filter_label(&self) -> String {
         format!("+ {}", strings::text(strings::PODCAST_ADD_FILTER))

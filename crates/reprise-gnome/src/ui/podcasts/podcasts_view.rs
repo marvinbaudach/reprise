@@ -106,6 +106,7 @@ pub(in crate::ui) struct PodcastsView {
     end_of_results: Rc<crate::ui::end_of_results::EndOfResults>,
     group_container: gtk4::Box,
     stack: gtk4::Stack,
+    #[cfg(test)]
     loading_row: gtk4::Box,
     waiting_for_model: Cell<bool>,
     youtube_detail: Rc<YoutubeChannelDetail>,
@@ -126,6 +127,7 @@ pub(in crate::ui) struct PodcastsView {
     on_open_preferences: RefCell<Option<Rc<dyn Fn()>>>,
     on_open_youtube_preferences: RefCell<Option<Rc<dyn Fn()>>>,
     footer: gtk4::Box,
+    #[cfg(test)]
     footer_add: gtk4::Button,
     footer_status: gtk4::Label,
     footer_spinner: gtk4::Spinner,
@@ -214,6 +216,8 @@ impl PodcastsView {
             refresh_stack,
             refresh_spinner,
         } = super::podcasts_footer::build(kind);
+        #[cfg(not(test))]
+        let _ = &footer_add;
 
         let root = gtk4::Box::new(gtk4::Orientation::Vertical, 0);
         root.add_css_class("reprise-podcasts-source");
@@ -237,6 +241,7 @@ impl PodcastsView {
             end_of_results,
             group_container,
             stack,
+            #[cfg(test)]
             loading_row,
             waiting_for_model: Cell::new(false),
             youtube_detail,
@@ -250,6 +255,7 @@ impl PodcastsView {
             on_open_preferences: RefCell::new(None),
             on_open_youtube_preferences: RefCell::new(None),
             footer,
+            #[cfg(test)]
             footer_add,
             footer_status,
             footer_spinner,

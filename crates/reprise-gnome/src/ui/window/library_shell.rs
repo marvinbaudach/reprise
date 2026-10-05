@@ -75,7 +75,10 @@ fn arm_smoke_detail_view(sidebar: &Rc<Sidebar>) {
     });
 }
 
-#[allow(clippy::too_many_arguments)]
+#[expect(
+    clippy::too_many_arguments,
+    reason = "the UI seam keeps its independent collaborators explicit"
+)]
 pub(in crate::ui) fn wire_source_routing(
     sidebar: &Rc<Sidebar>,
     nav_history: &Rc<crate::ui::nav_history::NavHistory>,
@@ -292,7 +295,10 @@ pub(in crate::ui) fn route_to_place_centering_anchor(
 
 // These window-owned collaborators stay explicit so this routing seam does not
 // create a second state holder.
-#[allow(clippy::too_many_arguments)]
+#[expect(
+    clippy::too_many_arguments,
+    reason = "the UI seam keeps its independent collaborators explicit"
+)]
 fn route_to_place_with_viewport(
     place: &NavPlace,
     sidebar: &Rc<Sidebar>,
@@ -353,7 +359,6 @@ fn scope_title(source: &ViewSource) -> String {
         .unwrap_or_else(|| source.label())
 }
 
-#[allow(clippy::too_many_arguments)]
 pub(in crate::ui) fn build(
     _window: &adw::ApplicationWindow,
     conn: &Rc<Db>,

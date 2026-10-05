@@ -7,5 +7,8 @@ pub(crate) mod scan_flow;
 pub(in crate::ui) mod scan_progress;
 pub(in crate::ui) mod scan_watcher;
 pub(in crate::ui) mod scan_worker;
-#[allow(unused_imports)]
+#[allow(
+    unused_imports,
+    reason = "child modules share the parent UI vocabulary through this import"
+)]
 use super::*;

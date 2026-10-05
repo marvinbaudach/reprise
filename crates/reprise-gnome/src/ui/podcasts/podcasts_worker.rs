@@ -238,6 +238,7 @@ impl PodcastsRuntime {
         }
     }
 
+    #[cfg(test)]
     pub(in crate::ui) fn subscribe_enabled(&self, callback: impl Fn(bool) + 'static) {
         let callback: OnEnabled = Rc::new(callback);
         callback(self.enabled.get());

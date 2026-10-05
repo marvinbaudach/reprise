@@ -148,7 +148,10 @@ pub(in crate::ui) struct PreferencesContext {
 }
 
 impl PreferencesContext {
-    #[allow(clippy::too_many_arguments)]
+    #[expect(
+        clippy::too_many_arguments,
+        reason = "the UI seam keeps its independent collaborators explicit"
+    )]
     pub(in crate::ui) fn new(
         window: &adw::ApplicationWindow,
         conn: &Rc<Db>,

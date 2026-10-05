@@ -1,5 +1,3 @@
-#![allow(dead_code)]
-
 use std::cell::{Cell, RefCell};
 use std::path::PathBuf;
 use std::rc::Rc;
@@ -16,7 +14,15 @@ pub(in crate::ui) struct ArtistNewsRequest {
 
 #[derive(Debug)]
 pub(in crate::ui) struct ArtistNewsResponse {
+    #[allow(
+        dead_code,
+        reason = "the response payload is consumed only by diagnostic request targets"
+    )]
     pub generation: u64,
+    #[allow(
+        dead_code,
+        reason = "the response payload is consumed only by diagnostic request targets"
+    )]
     pub result: Result<ArtistNews, NewsError>,
 }
 
@@ -95,6 +101,10 @@ impl EnabledSubscribers {
 
 pub(in crate::ui) struct ArtistNewsRuntime {
     pub enabled: Rc<Cell<bool>>,
+    #[allow(
+        dead_code,
+        reason = "holding the sender keeps the background worker alive"
+    )]
     worker: async_channel::Sender<ArtistNewsRequest>,
     subscribers: EnabledSubscribers,
 }
@@ -145,15 +155,6 @@ impl ArtistNewsRuntime {
     ) {
         self.subscribers
             .subscribe(self.enabled.get(), is_alive, callback);
-    }
-
-    pub(in crate::ui) fn request(&self, request: ArtistNewsRequest) {
-        if !self.enabled.get() || request.artist.trim().is_empty() {
-            return;
-        }
-        if let Err(error) = self.worker.try_send(request) {
-            tracing::warn!(%error, "could not queue Artist News request");
-        }
     }
 
     #[cfg(test)]

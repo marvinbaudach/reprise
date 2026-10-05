@@ -8,5 +8,8 @@ pub(in crate::ui) mod smoke;
 /// Flathub rename. Remove this fallback a few releases after the transition.
 const LEGACY_APP_ID: &str = "org.reprise.Reprise";
 
-#[allow(unused_imports)]
+#[expect(
+    unused_imports,
+    reason = "child modules share the parent UI vocabulary through this import"
+)]
 use super::*;

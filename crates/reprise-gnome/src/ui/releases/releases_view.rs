@@ -1,7 +1,5 @@
 //! Releases full-view table, filters, status surface, and refresh footer.
 
-#![allow(dead_code)]
-
 use std::cell::{Cell, RefCell};
 use std::path::{Path, PathBuf};
 use std::rc::Rc;

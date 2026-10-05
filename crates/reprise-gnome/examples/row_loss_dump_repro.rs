@@ -14,10 +14,16 @@
 use gtk4::gio;
 use gtk4::prelude::*;
 
-#[allow(dead_code)]
+#[expect(
+    dead_code,
+    reason = "the item completes a UI contract exercised by selected targets"
+)]
 #[path = "../src/ui/track_list/diagnostic_trail.rs"]
 mod diagnostic_trail;
-#[allow(dead_code)]
+#[expect(
+    dead_code,
+    reason = "the item completes a UI contract exercised by selected targets"
+)]
 #[path = "../src/ui/track_list/row_loss_watchdog_state.rs"]
 mod row_loss_watchdog_state;
 

@@ -19,7 +19,6 @@ pub(super) fn install(track_list: &Rc<TrackList>) {
     );
 }
 
-#[allow(clippy::too_many_arguments)]
 pub(super) fn active_table(
     window: &libadwaita::ApplicationWindow,
     content_stack: &gtk4::Stack,

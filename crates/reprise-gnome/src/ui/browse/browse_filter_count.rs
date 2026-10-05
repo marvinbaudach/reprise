@@ -23,7 +23,10 @@ fn idle_library_caption(count: usize, total_duration_ms: i64) -> String {
     )
 }
 
-#[allow(clippy::too_many_arguments)]
+#[expect(
+    clippy::too_many_arguments,
+    reason = "the UI seam keeps its independent collaborators explicit"
+)]
 pub(in crate::ui) fn update(
     bar: &Rc<BrowseBar>,
     conn: &Rc<Db>,

@@ -103,14 +103,6 @@ impl PodcastsView {
         }
     }
 
-    pub(in crate::ui::podcasts) fn show_queued_offline(&self) {
-        if let Some(overlay) = self.toast_overlay.upgrade() {
-            overlay.add_toast(crate::ui::toasts::plain(&strings::text(
-                strings::PODCAST_QUEUED_OFFLINE,
-            )));
-        }
-    }
-
     pub(super) fn clear_fetch_failure(&self) {
         self.fetch_failure.replace(None);
         self.error_banner.hide();

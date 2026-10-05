@@ -27,7 +27,10 @@ thread_local! {
     static HANDLES: RefCell<Option<WindowLayoutTestHandles>> = const { RefCell::new(None) };
 }
 
-#[allow(clippy::too_many_arguments)]
+#[expect(
+    clippy::too_many_arguments,
+    reason = "the UI seam keeps its independent collaborators explicit"
+)]
 pub(super) fn publish(
     window: &adw::ApplicationWindow,
     split_view: &adw::OverlaySplitView,

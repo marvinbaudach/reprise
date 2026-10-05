@@ -112,6 +112,7 @@ impl PodcastSelection {
         );
     }
 
+    #[cfg(test)]
     pub(super) fn set_selected(&mut self, episode_id: i64, selected: bool) {
         if selected {
             self.selected.insert(episode_id);

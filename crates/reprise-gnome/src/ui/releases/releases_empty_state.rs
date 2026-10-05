@@ -1,5 +1,3 @@
-#![allow(dead_code)]
-
 use reprise_core::artist_news::ReleasesFilter;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]

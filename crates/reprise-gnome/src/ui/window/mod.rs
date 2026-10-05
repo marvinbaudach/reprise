@@ -43,6 +43,9 @@ mod window_runtime_setup;
 pub(in crate::ui) mod window_runtime_wiring;
 pub(in crate::ui) mod window_smoke;
 
-#[allow(unused_imports)]
+#[allow(
+    unused_imports,
+    reason = "child modules share the parent UI vocabulary through this import"
+)]
 use super::*;
 pub(crate) use surface::build;

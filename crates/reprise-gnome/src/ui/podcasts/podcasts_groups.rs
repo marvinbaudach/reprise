@@ -117,7 +117,11 @@ struct EpisodeArtworkContext {
     factory: EpisodeArtworkFactory,
 }
 
-#[allow(clippy::too_many_arguments)]
+#[expect(
+    clippy::too_many_arguments,
+    reason = "the UI seam keeps its independent collaborators explicit"
+)]
+#[cfg(test)]
 pub(super) fn replace(
     container: &gtk4::Box,
     groups: &[RenderedSourceGroup],
@@ -149,7 +153,10 @@ pub(super) fn replace(
     )
 }
 
-#[allow(clippy::too_many_arguments)]
+#[expect(
+    clippy::too_many_arguments,
+    reason = "the UI seam keeps its independent collaborators explicit"
+)]
 pub(super) fn replace_with_sync(
     container: &gtk4::Box,
     groups: &[RenderedSourceGroup],
@@ -485,6 +492,7 @@ fn group_header_with_rebind(
     header.upcast()
 }
 
+#[cfg(test)]
 fn episode_row(
     row: &EpisodeRow,
     title_parts: &TitleParts,

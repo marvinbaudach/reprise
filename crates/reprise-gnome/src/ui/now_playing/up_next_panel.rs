@@ -676,7 +676,10 @@ fn install_drag_autoscroll(scrolled: &gtk4::ScrolledWindow) {
     scrolled.add_controller(motion);
 }
 
-#[allow(clippy::too_many_arguments)]
+#[expect(
+    clippy::too_many_arguments,
+    reason = "the UI seam keeps its independent collaborators explicit"
+)]
 fn autoscroll_value(
     current: f64,
     lower: f64,

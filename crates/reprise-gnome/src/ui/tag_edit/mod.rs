@@ -11,5 +11,8 @@ pub(in crate::ui) mod tag_editor_widgets;
 pub(in crate::ui) mod tag_reload_anchor;
 mod tag_save_refresh;
 mod tag_write_admission;
-#[allow(unused_imports)]
+#[expect(
+    unused_imports,
+    reason = "child modules share the parent UI vocabulary through this import"
+)]
 use super::*;

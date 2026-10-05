@@ -84,7 +84,10 @@ pub(crate) mod track_playback_selection;
 mod track_reveal;
 pub(in crate::ui) mod view_state_memory;
 
-#[allow(unused_imports)]
+#[allow(
+    unused_imports,
+    reason = "child modules share the parent UI vocabulary through this import"
+)]
 use super::*;
 pub(in crate::ui) use playlist_reorder_guard::playlist_reorder_allowed;
 pub(in crate::ui) use surface::{

@@ -6,7 +6,10 @@ use libadwaita as adw;
 
 use super::super::content_stack::DeferredPage;
 
-#[allow(clippy::too_many_arguments)]
+#[expect(
+    clippy::too_many_arguments,
+    reason = "the UI seam keeps its independent collaborators explicit"
+)]
 pub(super) fn install(
     preferences: &Rc<crate::ui::preferences::PreferencesContext>,
     cover_batch: &Rc<crate::ui::cover_download_batch::CoverDownloadBatch>,

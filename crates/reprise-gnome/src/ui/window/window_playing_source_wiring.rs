@@ -15,7 +15,10 @@ use crate::ui::playing_links::LinkSurface;
 
 use super::super::metadata_navigation::MetadataNavigator;
 
-#[allow(clippy::too_many_arguments)]
+#[expect(
+    clippy::too_many_arguments,
+    reason = "the UI seam keeps its independent collaborators explicit"
+)]
 pub(super) fn install(
     app: &adw::Application,
     window: &adw::ApplicationWindow,

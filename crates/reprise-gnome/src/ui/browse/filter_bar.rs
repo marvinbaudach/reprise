@@ -1,12 +1,9 @@
 //! Shared refinement bar for every table-like source.
 
-#![allow(dead_code)] // B1 lands the shared grammar before B2 moves callers onto it.
-
 use std::cell::{Cell, RefCell};
 use std::rc::Rc;
 
 use gtk4::prelude::*;
-use reprise_view::search_scope::SearchScope;
 
 use crate::ui::filter_bar_layout::{self, FilterBarLayout};
 
@@ -157,7 +154,6 @@ pub(in crate::ui) trait FilterModel: 'static {
     fn persistence_key(&self) -> &'static str;
     fn query<'a>(&self, filter: &'a Self::Filter) -> &'a str;
     fn selections(&self, filter: &Self::Filter) -> Vec<SelectionDescriptor>;
-    fn search_scope(&self) -> SearchScope;
     fn add_filter_label(&self) -> String;
     fn clear_all_label(&self) -> String;
     fn count_text(&self, shown: usize, total: usize, active: bool) -> CountText;
@@ -189,7 +185,9 @@ pub(in crate::ui) struct FilterBar<M: FilterModel> {
     pub(in crate::ui) chips: gtk4::Box,
     pub(in crate::ui) add_filter: gtk4::MenuButton,
     pub(in crate::ui) result_label: gtk4::Label,
+    #[cfg(test)]
     pub(in crate::ui) count: gtk4::Label,
+    #[cfg(test)]
     pub(in crate::ui) result: gtk4::Label,
     pub(in crate::ui) clear_all: gtk4::Button,
     pub(in crate::ui) facet_list: gtk4::ListBox,
@@ -257,7 +255,9 @@ impl<M: FilterModel> FilterBar<M> {
             chips,
             add_filter,
             result_label: result_label.clone(),
+            #[cfg(test)]
             count: result_label.clone(),
+            #[cfg(test)]
             result: result_label,
             clear_all,
             facet_list,
@@ -537,6 +537,7 @@ impl<M: FilterModel> FilterBar<M> {
             .collect()
     }
 
+    #[cfg(test)]
     pub(in crate::ui) fn count_text(&self) -> String {
         self.result_label.text().to_string()
     }

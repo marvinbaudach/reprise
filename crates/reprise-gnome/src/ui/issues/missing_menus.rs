@@ -68,7 +68,10 @@ pub(super) fn install_row_context_menu(
     row.add_controller(keys);
 }
 
-#[allow(clippy::too_many_arguments)]
+#[expect(
+    clippy::too_many_arguments,
+    reason = "the UI seam keeps its independent collaborators explicit"
+)]
 fn show_row_menu(
     shared: &Rc<Shared>,
     listbox: &gtk4::ListBox,
