@@ -34,13 +34,14 @@ use reprise_core::queries;
 use reprise_core::stem_separation::{
     FakeStemBackend, ProgressPermille, StemError, StemSeparationBackend, PROGRESS_COMPLETE,
 };
+use reprise_core::CoreError;
 use serde_json::json;
 
 use crate::clock::now_unix;
 use crate::commands::instrumental::map_promotion_error;
 use crate::error::CliError;
 use crate::output::print_json;
-use crate::retry::{rusqlite_is_busy, with_retry};
+use crate::retry::with_retry;
 use crate::staging;
 
 /// Runs a mutating `ai_jobs` facade call under the shared busy-retry policy.
@@ -48,8 +49,8 @@ use crate::staging;
 /// `SQLITE_BUSY_SNAPSHOT` when a peer commits between a claim's read and write;
 /// retrying with a fresh transaction (and a fresh `now`) is exactly the right
 /// response, so no legitimate claim/heartbeat/transition is lost to contention.
-fn retrying<T>(op: impl FnMut() -> Result<T, rusqlite::Error>) -> Result<T, CliError> {
-    with_retry(op, rusqlite_is_busy).map_err(CliError::from)
+fn retrying<T>(op: impl FnMut() -> Result<T, CoreError>) -> Result<T, CliError> {
+    with_retry(op, CoreError::is_busy).map_err(CliError::from)
 }
 
 /// Minimum spacing between in-place progress writes (plan 2.2: ≤ 2 writes/s).
@@ -276,7 +277,7 @@ impl RunState<'_> {
     fn on_progress(&self, permille: ProgressPermille) {
         let beat = with_retry(
             || ai_jobs::heartbeat(self.db, self.job_id, self.worker, now_unix(), self.lease),
-            rusqlite_is_busy,
+            CoreError::is_busy,
         );
         match beat {
             Ok(outcome) => {
@@ -300,7 +301,7 @@ impl RunState<'_> {
         if self.should_write_progress(permille) {
             let written = with_retry(
                 || ai_jobs::set_progress(self.db, self.job_id, self.worker, permille),
-                rusqlite_is_busy,
+                CoreError::is_busy,
             );
             if let Err(error) = written {
                 self.infra_error.set(Some(error.to_string()));
