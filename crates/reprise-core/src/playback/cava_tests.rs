@@ -337,6 +337,52 @@ fn reset_clears_fft_and_smoothing_history() {
 }
 
 #[test]
+// Both reset paths clear the bar history but keep the settled autosensitivity
+// gain, so a track change does not re-run the cold-start calibration. A quiet
+// tone makes the gain visible: a fresh processor starts at gain 1.0 and
+// climbs, a settled one has already climbed. Control arm: the fresh
+// processor, fed the identical post-reset chunks.
+fn ac_28_cava_resets_keep_the_settled_autosensitivity_gain() {
+    const SETTLE_FRAMES: usize = 600;
+    const PROBE_FRAMES: usize = 6;
+
+    let config = CavaConfig::new(44_100, 64);
+    let mut full_reset = CavaBarProcessor::new(config).unwrap();
+    let mut stream_reset = CavaBarProcessor::new(config).unwrap();
+    let mut fresh = CavaBarProcessor::new(config).unwrap();
+    for frame in 0..SETTLE_FRAMES {
+        let chunk = quiet_tone_chunk(frame);
+        full_reset.process(&chunk);
+        stream_reset.process(&chunk);
+    }
+
+    full_reset.reset();
+    stream_reset.reset_stream();
+
+    let mut loudest = [0.0_f32; 3];
+    for frame in 0..PROBE_FRAMES {
+        let chunk = quiet_tone_chunk(frame);
+        for (peak, processor) in loudest
+            .iter_mut()
+            .zip([&mut full_reset, &mut stream_reset, &mut fresh])
+        {
+            *peak = processor.process(&chunk).into_iter().fold(0.0, f32::max);
+        }
+    }
+
+    let [after_full_reset, after_stream_reset, cold] = loudest;
+    assert!(cold > 0.0, "fixture must produce a visible cold bar");
+    assert!(
+        after_full_reset > cold * 2.0,
+        "reset() lost the settled gain: {after_full_reset} vs cold {cold}"
+    );
+    assert!(
+        after_stream_reset > cold * 2.0,
+        "reset_stream() lost the settled gain: {after_stream_reset} vs cold {cold}"
+    );
+}
+
+#[test]
 // Regression test for the swipe bug this fix addresses: a stream boundary
 // used to call the same full `reset()` a track change needs, which zeroed
 // the smoother's bar shape along with the FFT input buffer. The very next
@@ -480,6 +526,17 @@ fn sine_chunk(frequency_hz: f32, chunk: usize) -> Vec<f32> {
             let absolute_sample = chunk * CHUNK_SIZE + sample;
             (std::f32::consts::TAU * frequency_hz * absolute_sample as f32 / 44_100.0).sin()
                 * (20_000.0 / 65_535.0)
+        })
+        .collect()
+}
+
+fn quiet_tone_chunk(chunk: usize) -> Vec<f32> {
+    const CHUNK_SIZE: usize = 735;
+    const AMPLITUDE: f32 = 0.002;
+    (0..CHUNK_SIZE)
+        .map(|sample| {
+            let absolute_sample = chunk * CHUNK_SIZE + sample;
+            (std::f32::consts::TAU * 1_000.0 * absolute_sample as f32 / 44_100.0).sin() * AMPLITUDE
         })
         .collect()
 }
