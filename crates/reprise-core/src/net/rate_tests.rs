@@ -132,7 +132,11 @@ fn cancelled_wait_keeps_a_reservation_made_after_it() {
     let slot = Mutex::new(None);
     let acquired = wait_on(&slot, Duration::from_secs(1), &mut || {
         // A second caller reserves while the first is still waiting.
-        reserve(&mut lock_unpoisoned(&slot), Instant::now(), Duration::from_secs(1));
+        reserve(
+            &mut lock_unpoisoned(&slot),
+            Instant::now(),
+            Duration::from_secs(1),
+        );
         true
     });
     assert!(!acquired);

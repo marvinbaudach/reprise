@@ -57,7 +57,10 @@ fn build_config_applies_exactly_the_policy() {
         max_redirects: None,
         proxy_from_env: true,
     });
-    assert_eq!(strict_https.timeouts().global, Some(Duration::from_secs(15)));
+    assert_eq!(
+        strict_https.timeouts().global,
+        Some(Duration::from_secs(15))
+    );
     assert!(strict_https.http_status_as_error());
     assert!(strict_https.https_only());
     assert_eq!(strict_https.max_redirects(), DEFAULT_MAX_REDIRECTS);

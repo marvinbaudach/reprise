@@ -4,11 +4,11 @@ use std::time::{Duration, Instant};
 
 use serde::Deserialize;
 
-use super::breaker::{Breaker, BreakerOutcome, HOST_BREAKER};
 use super::{
     collapse_whitespace, parse_lrc, LyricsBody, LyricsError, LyricsHit, LyricsProvider,
     LyricsQuery, LyricsSource, SourceOutcome,
 };
+use crate::net::breaker::{Breaker, BreakerOutcome, HOST_BREAKER};
 
 pub(super) const HOST: &str = "music.163.com";
 const SEARCH_URL: &str = "https://music.163.com/api/search/get";

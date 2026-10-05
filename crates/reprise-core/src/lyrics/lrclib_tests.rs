@@ -6,10 +6,10 @@ use tempfile::TempDir;
 use url::Url;
 
 use super::*;
-use crate::lyrics::breaker::Breaker;
 use crate::lyrics::{
     LyricsBody, LyricsProvider, LyricsQuery, LyricsSource, SourceOutcome, TimedLine,
 };
+use crate::net::breaker::Breaker;
 
 fn query() -> LyricsQuery {
     LyricsQuery {
@@ -527,7 +527,7 @@ fn lrclib_http_status_maps_retry_after_without_sleeping() {
 fn provider_skips_an_open_breaker_unless_forced() {
     let breaker = Breaker::new(3, 300);
     for now in 1..=3 {
-        breaker.record(HOST, crate::lyrics::breaker::BreakerOutcome::Failure, now);
+        breaker.record(HOST, crate::net::breaker::BreakerOutcome::Failure, now);
     }
     let fetch = |_url: &str| FetchOutcome::Found(r#"{"plainLyrics":"fixture"}"#.into());
 

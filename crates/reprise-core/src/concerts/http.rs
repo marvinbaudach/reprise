@@ -4,8 +4,7 @@ use std::fs::OpenOptions;
 use std::io::Write;
 #[cfg(any(test, feature = "test-fixtures"))]
 use std::path::{Path, PathBuf};
-use std::sync::Mutex;
-use std::time::{Duration, Instant};
+use std::time::Duration;
 #[cfg(any(test, feature = "test-fixtures"))]
 use std::time::{SystemTime, UNIX_EPOCH};
 
@@ -14,26 +13,22 @@ use url::Url;
 
 use super::ProviderError;
 use crate::http_body::{self, BoundedReadError};
+use crate::net::client::{build_agent, AgentPolicy};
+use crate::net::rate::{wait_for_slot, RateLimitKey};
 use crate::source_error::{parse_retry_after, SOURCE_REQUEST_TIMEOUT};
-#[cfg(test)]
-use crate::sources_http::user_agent;
-use crate::sources_http::{build_agent, lock_unpoisoned};
 
-const MIN_REQUEST_INTERVAL: Duration = Duration::from_secs(1);
 #[cfg(any(test, feature = "test-fixtures"))]
 const FIXTURE_DIR_ENV: &str = "REPRISE_CONCERTS_FIXTURE_DIR";
 #[cfg(any(test, feature = "test-fixtures"))]
 const FIXTURE_LOG_ENV: &str = "REPRISE_CONCERTS_FIXTURE_LOG";
 
-static LAST_REQUEST: Mutex<Option<Instant>> = Mutex::new(None);
-
 pub fn get(url: &str) -> Result<String, ProviderError> {
-    let _ = wait_for_request_slot(&mut || false);
+    let _ = wait_for_slot(RateLimitKey::Concerts, &mut || false);
     #[cfg(any(test, feature = "test-fixtures"))]
     if let Some(directory) = fixture_directory() {
         return fixture_get(url, &directory);
     }
-    let response = build_agent(SOURCE_REQUEST_TIMEOUT)
+    let response = build_agent(agent_policy())
         .get(url)
         .call()
         .map_err(classify_transport)?;
@@ -57,7 +52,7 @@ pub fn get(url: &str) -> Result<String, ProviderError> {
 /// Resolves a scoped concerts fixture directory before the environment fallback.
 /// The fallback keeps feature-enabled fixture consumers independent of tests.
 fn fixture_directory() -> Option<PathBuf> {
-    crate::sources_http::fixture_directory(FIXTURE_DIR_ENV)
+    crate::net::fixtures::fixture_directory(FIXTURE_DIR_ENV)
 }
 
 #[cfg(test)]
@@ -67,7 +62,12 @@ fn fixture_directory() -> Option<PathBuf> {
 pub(crate) fn with_fixture_dir<T>(directory: &Path, operation: impl FnOnce() -> T) -> T {
     fn reset_source_state() {}
 
-    crate::sources_http::with_fixture_dir(FIXTURE_DIR_ENV, directory, reset_source_state, operation)
+    crate::net::fixtures::with_fixture_dir(
+        FIXTURE_DIR_ENV,
+        directory,
+        reset_source_state,
+        operation,
+    )
 }
 
 #[cfg(any(test, feature = "test-fixtures"))]
@@ -193,25 +193,9 @@ fn append_fixture_log(request: &FixtureRequest) -> Result<(), ProviderError> {
     writeln!(file, "{timestamp}\t{}", request.filename()).map_err(|_| ProviderError::Transport)
 }
 
-pub(crate) fn wait_for_request_slot(cancelled: &mut dyn FnMut() -> bool) -> bool {
-    const SLICE: Duration = Duration::from_millis(50);
-    let mut previous = lock_unpoisoned(&LAST_REQUEST);
-    let mut delay = previous.map_or(Duration::ZERO, |instant| {
-        MIN_REQUEST_INTERVAL.saturating_sub(instant.elapsed())
-    });
-    while !delay.is_zero() {
-        if cancelled() {
-            return false;
-        }
-        let slice = delay.min(SLICE);
-        std::thread::sleep(slice);
-        delay = delay.saturating_sub(slice);
-    }
-    if cancelled() {
-        return false;
-    }
-    *previous = Some(Instant::now());
-    true
+/// The listings are read by status code, so ureq's status errors stay off.
+pub(crate) const fn agent_policy() -> AgentPolicy {
+    AgentPolicy::source(SOURCE_REQUEST_TIMEOUT)
 }
 
 fn classify_transport(error: ureq::Error) -> ProviderError {
@@ -299,9 +283,23 @@ mod tests {
 
     #[test]
     fn user_agent_identifies_reprise_and_the_contact_url() {
-        let value = user_agent();
+        let value = crate::net::user_agent();
         assert!(value.contains(env!("CARGO_PKG_VERSION")));
-        assert!(value.contains(crate::musicbrainz::CONTACT_URL));
+        assert!(value.contains(crate::net::CONTACT_URL));
+    }
+
+    #[test]
+    fn agent_policy_reads_statuses_itself() {
+        assert_eq!(
+            agent_policy(),
+            AgentPolicy {
+                timeout: Duration::from_secs(10),
+                status_as_error: false,
+                https_only: false,
+                max_redirects: None,
+                proxy_from_env: true,
+            }
+        );
     }
 
     #[test]

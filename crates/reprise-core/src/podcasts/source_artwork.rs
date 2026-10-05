@@ -54,7 +54,7 @@ pub fn fetch(url: &str) -> Result<Vec<u8>, PodcastError> {
 fn fetch_with_resolver(url: &url::Url, resolver: impl Resolver) -> Result<Vec<u8>, PodcastError> {
     let config = ureq::Agent::config_builder()
         .timeout_global(Some(HTTP_TIMEOUT))
-        .user_agent(super::http::user_agent())
+        .user_agent(crate::net::user_agent())
         .http_status_as_error(false)
         .max_redirects(0)
         .proxy(None)

@@ -6,11 +6,11 @@ use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
 use serde::{Deserialize, Serialize};
 
-use super::breaker::{Breaker, BreakerOutcome, HOST_BREAKER};
 use super::{
     parse_lrc, rounded_duration_seconds, LyricsBody, LyricsError, LyricsHit, LyricsProvider,
     LyricsQuery, LyricsSource, SourceOutcome,
 };
+use crate::net::breaker::{Breaker, BreakerOutcome, HOST_BREAKER};
 
 pub(super) const HOST: &str = "lrclib.net";
 const API_URL: &str = "https://lrclib.net/api/get";

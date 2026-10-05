@@ -4,10 +4,10 @@ use std::path::Path;
 use tempfile::TempDir;
 
 use super::*;
-use crate::lyrics::breaker::Breaker;
 use crate::lyrics::{
     LyricsBody, LyricsProvider, LyricsQuery, LyricsSource, SourceOutcome, TimedLine,
 };
+use crate::net::breaker::Breaker;
 
 fn query() -> LyricsQuery {
     LyricsQuery {
@@ -142,7 +142,7 @@ fn provider_skips_an_open_breaker_unless_forced() {
     let fetcher = FixtureFetcher::new(temp.path());
     let breaker = Breaker::new(3, 300);
     for now in 1..=3 {
-        breaker.record(HOST, crate::lyrics::breaker::BreakerOutcome::Failure, now);
+        breaker.record(HOST, crate::net::breaker::BreakerOutcome::Failure, now);
     }
 
     assert_eq!(
