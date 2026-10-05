@@ -500,7 +500,8 @@ result.
   its offset was announced, seeking back across the boundary, and a flush all
   leave every buffer with its own track's gain. The sink scales into a buffer of
   its own and never writes into Media3's (which may be read-only), and a buffer
-  the output stage takes only in part is retried from the same scaled copy. Proven
+  the output stage takes only in part is retried from the same scaled copy. At exactly
+  unity gain the buffer passes through untouched. Proven
   by JVM tests that put a recording sink behind the gain sink and read what the
   output stage receives; they do not run Media3's `DefaultAudioSink` or a device.
   Android has no crossfade; if it gains one, this rule needs a sibling.

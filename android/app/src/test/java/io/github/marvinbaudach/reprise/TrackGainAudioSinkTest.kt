@@ -257,4 +257,43 @@ class TrackGainAudioSinkTest {
         // What was left of the input is scaled with the gain now in force.
         assertEquals(listOf(40_000.coerceAtMost(Short.MAX_VALUE.toInt())), rig.probe.offers.last().samples)
     }
+
+    @Test
+    fun aUnityGainForwardsTheInputBufferItselfUntouched() {
+        val rig = Rig()
+        rig.startTwoTracks(0.0, null)
+        val input = pcm16(10_000, -10_000)
+
+        assertEquals(true, rig.sink.handleBuffer(input, 0, 1))
+
+        assertSame(input, rig.probe.offers.single().buffer)
+        assertEquals(listOf(10_000, -10_000), rig.probe.offers.single().samples)
+    }
+
+    @Test
+    fun aBufferForwardedAtUnityStaysUntouchedAcrossItsRetries() {
+        val rig = Rig()
+        rig.startTwoTracks(0.0, null)
+        rig.probe.consumeBytesPerCall = Short.SIZE_BYTES
+        val input = pcm16(10_000, 20_000)
+
+        assertEquals(false, rig.sink.handleBuffer(input, 0, 1))
+        rig.sink.setGains(HALF_DB, null)
+        assertEquals(true, rig.sink.handleBuffer(input, 0, 1))
+
+        rig.probe.offers.forEach { assertSame(input, it.buffer) }
+        assertEquals(listOf(20_000), rig.probe.offers.last().samples)
+    }
+
+    @Test
+    fun aGainAwayFromUnityStillScalesIntoTheCopy() {
+        val rig = Rig()
+        rig.startTwoTracks(0.1, null)
+        val input = pcm16(10_000)
+
+        rig.sink.handleBuffer(input, 0, 1)
+
+        assertNotSame(input, rig.probe.offers.single().buffer)
+        assertEquals(10_116, rig.probe.offers.single().samples.single())
+    }
 }

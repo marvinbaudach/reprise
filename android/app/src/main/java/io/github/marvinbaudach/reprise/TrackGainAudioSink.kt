@@ -22,6 +22,8 @@ internal class TrackGainAudioSink(delegate: AudioSink) : ForwardingAudioSink(del
         const val MIN_GAIN_DB = -24.0
         const val MAX_GAIN_DB = 12.0
 
+        private const val UNITY_GAIN = 1.0
+
         // The current item and the pre-fed next one; the player holds no more.
         private const val MAX_STREAMS = 2
 
@@ -54,6 +56,7 @@ internal class TrackGainAudioSink(delegate: AudioSink) : ForwardingAudioSink(del
     private var pendingInput: ByteBuffer? = null
     private var pendingPresentationTimeUs = Long.MIN_VALUE
     private var pendingInputStart = 0
+    private var pendingBypass = false
 
     @Synchronized
     fun startPlaylist(currentGainDb: Double, nextGainDb: Double?) {
@@ -148,8 +151,8 @@ internal class TrackGainAudioSink(delegate: AudioSink) : ForwardingAudioSink(del
     ): Boolean {
         val forwarded = synchronized(this) {
             val isRetry = pendingInput === buffer && pendingPresentationTimeUs == presentationTimeUs
-            if (!isRetry) scaleIntoScratch(buffer, presentationTimeUs)
-            scratch
+            if (!isRetry) beginOffer(buffer, presentationTimeUs)
+            if (pendingBypass) buffer else scratch
         }
         val consumedAll = try {
             super.handleBuffer(forwarded, presentationTimeUs, encodedAccessUnitCount)
@@ -159,9 +162,9 @@ internal class TrackGainAudioSink(delegate: AudioSink) : ForwardingAudioSink(del
         }
         synchronized(this) {
             if (consumedAll) {
-                buffer.position(buffer.limit())
+                if (forwarded !== buffer) buffer.position(buffer.limit())
                 clearPendingBuffer()
-            } else {
+            } else if (forwarded !== buffer) {
                 // The delegate took only part of the copy; the renderer offers
                 // the same input again and expects it to show what is left.
                 buffer.position(pendingInputStart + forwarded.position())
@@ -171,14 +174,24 @@ internal class TrackGainAudioSink(delegate: AudioSink) : ForwardingAudioSink(del
     }
 
     /**
-     * Writes the scaled samples of [input] into the sink's own buffer and
-     * remembers which input they came from, so a retry is forwarded as it is.
+     * Starts forwarding [input]: at exactly unity gain the input itself goes
+     * through untouched; otherwise its scaled samples are written into the
+     * sink's own buffer. Either way the choice is remembered with the input it
+     * was made for, so a retry is forwarded as it is, whatever the gain became.
      *
      * The input is only read: it is Media3's codec output, which can be
      * read-only, and nothing downstream should see it change under it.
      */
-    private fun scaleIntoScratch(input: ByteBuffer, presentationTimeUs: Long) {
+    private fun beginOffer(input: ByteBuffer, presentationTimeUs: Long) {
         val gain = linearGain(gainDbAt(presentationTimeUs))
+        pendingInput = input
+        pendingPresentationTimeUs = presentationTimeUs
+        pendingInputStart = input.position()
+        pendingBypass = gain == UNITY_GAIN
+        if (!pendingBypass) scaleIntoScratch(input, gain)
+    }
+
+    private fun scaleIntoScratch(input: ByteBuffer, gain: Double) {
         val start = input.position()
         val length = input.remaining()
         if (scratch.capacity() < length) {
@@ -199,14 +212,12 @@ internal class TrackGainAudioSink(delegate: AudioSink) : ForwardingAudioSink(del
         }
         if (offset < length) scratch.put(offset, input.get(start + offset))
         scratch.limit(length).position(0)
-        pendingInput = input
-        pendingPresentationTimeUs = presentationTimeUs
-        pendingInputStart = start
     }
 
     private fun clearPendingBuffer() {
         pendingInput = null
         pendingPresentationTimeUs = Long.MIN_VALUE
         pendingInputStart = 0
+        pendingBypass = false
     }
 }
