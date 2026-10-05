@@ -6,7 +6,8 @@ on:
     branches:
       - main
       - dev
-  # Run every suite nightly so rolling-toolchain lints surface before promotion.
+  # Run the full suite selection nightly so rolling-toolchain lints surface
+  # before promotion.
   schedule:
     - cron: '17 3 * * *'
   workflow_dispatch:
@@ -110,7 +111,6 @@ jobs:
         run: |
           scripts/check-architecture.sh
           scripts/check-shell.sh
-          scripts/tests/github-flow.sh
           for contract in .github/tests/*.sh; do
             GITHUB_ACTIONS=false "$contract"
           done

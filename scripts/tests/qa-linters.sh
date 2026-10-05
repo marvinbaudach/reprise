@@ -155,6 +155,7 @@ require_executable scripts/tests/duration-format-parity.sh
 require_executable scripts/tests/msrv.sh
 require_executable scripts/tests/github-flow.sh
 require_executable .github/tests/flatpak-cargo-sources.sh
+require_executable .github/tests/dependabot-flatpak-sources.sh
 require_executable scripts/tests/project-quality.sh
 require_executable scripts/tests/weekly-portfolio-sync.sh
 require_executable scripts/weekly-portfolio-sync.sh
@@ -204,11 +205,8 @@ require_pattern 'check-listen-report-parity.sh' scripts/check-merge-readiness.sh
 require_pattern 'scripts/tests/msrv.sh' scripts/check-release.sh
 require_pattern '^scripts/check-flatpak-cargo-sources\.sh$' scripts/check-release.sh
 require_pattern '^scripts/check-release-metadata\.sh$' scripts/check-release.sh
-# The release gate reaches these five by this road alone: the tail below no
-# longer runs them, because the CI base job already does (and the merge gate
-# runs the two worktree scripts and the architecture check).
-require_pattern '^scripts/tests/github-flow\.sh$' scripts/check-release.sh
-require_pattern '^\.github/tests/flatpak-cargo-sources\.sh$' scripts/check-release.sh
+# The release gate reaches these three by this road alone: the tail below no
+# longer runs them, because the CI base job and the merge gate already do.
 require_pattern '^scripts/tests/worktree-gc\.sh$' scripts/check-release.sh
 require_pattern '^scripts/tests/worktree-gc-schedule\.sh$' scripts/check-release.sh
 require_pattern '^scripts/check-architecture\.sh$' scripts/check-release.sh
@@ -334,6 +332,10 @@ scripts/tests/input-parity.sh
 scripts/tests/android-theme.sh
 scripts/tests/shared-literal-comment-stripping.sh
 scripts/tests/duration-format-parity.sh
+# The merge gate has no other call for these two, and the CI base job skips them
+# on pull requests, so the tail is their only pre-merge run.
+scripts/tests/github-flow.sh
+.github/tests/flatpak-cargo-sources.sh
 scripts/tests/project-quality.sh
 scripts/tests/weekly-portfolio-sync.sh
 # These three had no caller at all — not here, not in CI, not in the merge gate.
