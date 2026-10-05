@@ -206,3 +206,11 @@ Play the two measured kinds of material (rock, bass-heavy electronic) in
 Song Visuals on desktop and Android. The kick should lift its bands without the
 rest of the spectrum flinching, and quiet bands should fall smoothly instead of
 cutting out. Headless runs cannot judge feel.
+
+With the noise-floor gate gone and the settled gain kept across `reset()` and
+track changes, two situations now behave as cavacore does, and the human check
+should look at them. A louder track right after a quieter one, or a track that
+starts after a long fade-out tail still above the 1e-6 silence epsilon, clips
+bands at 1.0 for some tens of frames while the gain steps down 2 % per frame.
+That is cavacore behaviour, not a regression. Near-silent noise is no longer
+suppressed: quiet bands show it and fall through gravity instead of being cut.
