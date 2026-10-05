@@ -36,6 +36,12 @@ pub enum DbError {
     SchemaNotReady { found: i64, supported: i64 },
 }
 
+impl From<crate::CoreError> for DbError {
+    fn from(error: crate::CoreError) -> Self {
+        Self::Sqlite(error.into())
+    }
+}
+
 pub use crate::db_migrations::SUPPORTED_SCHEMA_VERSION;
 
 /// Default SQLite `busy_timeout` (milliseconds) for every connection opened

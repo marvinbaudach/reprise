@@ -60,25 +60,15 @@ fn jitter_ms() -> u64 {
     nanos % (MAX_JITTER_MS + 1)
 }
 
-/// Whether a `rusqlite::Error` is a transient busy/locked failure worth
-/// retrying.
-pub fn rusqlite_is_busy(error: &rusqlite::Error) -> bool {
-    matches!(
-        error,
-        rusqlite::Error::SqliteFailure(inner, _)
-            if inner.code == rusqlite::ErrorCode::DatabaseBusy
-                || inner.code == rusqlite::ErrorCode::DatabaseLocked
-    )
-}
-
 /// Whether a scan failure is a transient busy/locked failure worth retrying —
-/// `ScanError` wraps the underlying `rusqlite`/`DbError` cause.
+/// `ScanError` wraps the underlying SQLite or `DbError` cause.
 pub fn scan_is_busy(error: &reprise_core::library::scanner::ScanError) -> bool {
     use reprise_core::db::DbError;
     use reprise_core::library::scanner::ScanError;
+    use reprise_core::library::stats::is_database_busy;
     match error {
-        ScanError::Sqlite(inner) => rusqlite_is_busy(inner),
-        ScanError::Db(DbError::Sqlite(inner)) => rusqlite_is_busy(inner),
+        ScanError::Sqlite(inner) => is_database_busy(inner),
+        ScanError::Db(DbError::Sqlite(inner)) => is_database_busy(inner),
         _ => false,
     }
 }
@@ -164,29 +154,5 @@ mod tests {
         );
         assert_eq!(result.unwrap_err(), FakeError::Fatal);
         assert_eq!(calls.get(), 1, "a fatal error is returned on the first try");
-    }
-
-    #[test]
-    fn rusqlite_busy_and_locked_are_retryable() {
-        let busy = rusqlite::Error::SqliteFailure(
-            rusqlite::ffi::Error::new(rusqlite::ffi::SQLITE_BUSY),
-            None,
-        );
-        let locked = rusqlite::Error::SqliteFailure(
-            rusqlite::ffi::Error::new(rusqlite::ffi::SQLITE_LOCKED),
-            None,
-        );
-        assert!(rusqlite_is_busy(&busy));
-        assert!(rusqlite_is_busy(&locked));
-    }
-
-    #[test]
-    fn rusqlite_other_failures_are_not_retryable() {
-        let readonly = rusqlite::Error::SqliteFailure(
-            rusqlite::ffi::Error::new(rusqlite::ffi::SQLITE_READONLY),
-            None,
-        );
-        assert!(!rusqlite_is_busy(&readonly));
-        assert!(!rusqlite_is_busy(&rusqlite::Error::QueryReturnedNoRows));
     }
 }

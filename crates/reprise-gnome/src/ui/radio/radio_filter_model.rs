@@ -145,7 +145,11 @@ fn setting(db: &Db, key: &str) -> Result<Option<String>, rusqlite::Error> {
 }
 
 fn persist_value(db: &Db, key: &str, value: Option<&str>) -> Result<(), rusqlite::Error> {
-    reprise_core::library::settings::set_setting(db, key, value.unwrap_or_default())
+    Ok(reprise_core::library::settings::set_setting(
+        db,
+        key,
+        value.unwrap_or_default(),
+    )?)
 }
 
 pub(super) struct RadioModel {

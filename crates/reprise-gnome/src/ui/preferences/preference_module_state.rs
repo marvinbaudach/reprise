@@ -49,9 +49,11 @@ fn persist_module_state(
         }
         "online_lyrics" => match &context.player {
             Some(player) => player.set_online_lyrics_enabled(enabled),
-            None => reprise_core::modules::set_enabled(&context.conn, descriptor, enabled),
+            None => reprise_core::modules::set_enabled(&context.conn, descriptor, enabled)
+                .map_err(Into::into),
         },
-        _ => reprise_core::modules::set_enabled(&context.conn, descriptor, enabled),
+        _ => reprise_core::modules::set_enabled(&context.conn, descriptor, enabled)
+            .map_err(Into::into),
     };
     result.map_err(|error| error.to_string())
 }

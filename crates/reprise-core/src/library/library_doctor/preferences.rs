@@ -1,6 +1,6 @@
 //! Persistent opt-in state shared by every Library Doctor surface.
 
-use crate::db::Db;
+use crate::{db::Db, CoreError};
 use std::time::Duration;
 
 pub const REMOTE_CONSENT_VERSION: u32 = 1;
@@ -60,9 +60,7 @@ fn measured_rate(checked_tracks: usize, elapsed: Duration) -> Option<f64> {
     (minutes > 0.0).then(|| checked_tracks as f64 / minutes)
 }
 
-pub fn remote_suggestion_preference(
-    db: &Db,
-) -> Result<RemoteSuggestionPreference, rusqlite::Error> {
+pub fn remote_suggestion_preference(db: &Db) -> Result<RemoteSuggestionPreference, CoreError> {
     let conn = db.conn();
     let consented = crate::library::settings::get_setting_in(conn, REMOTE_CONSENT_VERSION_KEY)?
         .and_then(|value| value.parse::<u32>().ok())

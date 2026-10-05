@@ -48,7 +48,11 @@ pub fn set_notification_preference(
     db: &crate::db::Db,
     preference: UpdateNotifications,
 ) -> Result<(), rusqlite::Error> {
-    crate::library::settings::set_setting(db, UPDATE_NOTIFICATIONS_KEY, preference.as_setting())
+    Ok(crate::library::settings::set_setting(
+        db,
+        UPDATE_NOTIFICATIONS_KEY,
+        preference.as_setting(),
+    )?)
 }
 
 /// Returns releases whose date boundary is reached by this due-check run.

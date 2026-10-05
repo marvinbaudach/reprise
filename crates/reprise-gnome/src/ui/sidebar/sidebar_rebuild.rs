@@ -184,7 +184,12 @@ pub(in crate::ui) fn rebuild(shared: &Rc<Shared>, force_select: Option<ViewSourc
             concerts::config::persisted_filter(conn)
                 .and_then(|filter| {
                     let location = concerts::config::location(conn)?;
-                    concerts::count_upcoming(conn, &filter, location.as_ref(), today)
+                    Ok(concerts::count_upcoming(
+                        conn,
+                        &filter,
+                        location.as_ref(),
+                        today,
+                    )?)
                 })
                 .unwrap_or_else(|error| {
                     tracing::error!(%error, "failed to count Concerts rows for sidebar badge");

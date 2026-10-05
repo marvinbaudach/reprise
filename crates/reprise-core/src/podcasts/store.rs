@@ -2,7 +2,7 @@
 
 use rusqlite::{params, Connection, OptionalExtension, Transaction, TransactionBehavior};
 
-use crate::db::Db;
+use crate::{db::Db, CoreError};
 
 use super::feed::ParsedEpisode;
 use super::{EpisodeRow, PodcastKind, SubscriptionRow};
@@ -40,13 +40,9 @@ pub struct FetchSuccess<'a> {
     pub image_url: Option<&'a str>,
 }
 
-pub fn add_or_restore(
-    db: &Db,
-    subscription: &NewSubscription,
-    now: i64,
-) -> Result<i64, rusqlite::Error> {
+pub fn add_or_restore(db: &Db, subscription: &NewSubscription, now: i64) -> Result<i64, CoreError> {
     let conn = db.conn();
-    add_or_restore_in(conn, subscription, now)
+    Ok(add_or_restore_in(conn, subscription, now)?)
 }
 
 pub fn add_or_restore_with_baseline(
@@ -54,7 +50,7 @@ pub fn add_or_restore_with_baseline(
     subscription: &NewSubscription,
     now: i64,
     future_only_baseline: Option<&[String]>,
-) -> Result<i64, rusqlite::Error> {
+) -> Result<i64, CoreError> {
     let conn = db.conn();
     let transaction = conn.unchecked_transaction()?;
     let subscription_id = add_or_restore_in(&transaction, subscription, now)?;
@@ -100,9 +96,9 @@ pub(crate) fn add_or_restore_in(
     Ok(subscription_id)
 }
 
-pub fn active_subscriptions(db: &Db) -> Result<Vec<SubscriptionRow>, rusqlite::Error> {
+pub fn active_subscriptions(db: &Db) -> Result<Vec<SubscriptionRow>, CoreError> {
     let conn = db.conn();
-    active_subscriptions_in(conn)
+    Ok(active_subscriptions_in(conn)?)
 }
 
 pub(crate) fn active_subscriptions_in(
@@ -120,9 +116,9 @@ pub(crate) fn active_subscriptions_in(
     rows.collect::<Result<Vec<_>, _>>()
 }
 
-pub fn subscription(db: &Db, id: i64) -> Result<Option<SubscriptionRow>, rusqlite::Error> {
+pub fn subscription(db: &Db, id: i64) -> Result<Option<SubscriptionRow>, CoreError> {
     let conn = db.conn();
-    subscription_in(conn, id)
+    Ok(subscription_in(conn, id)?)
 }
 
 pub(crate) fn subscription_in(
@@ -171,7 +167,7 @@ pub fn update_subscription_details(
     id: i64,
     title: Option<&str>,
     auto_download: Option<bool>,
-) -> Result<bool, rusqlite::Error> {
+) -> Result<bool, CoreError> {
     let conn = db.conn();
     Ok(conn.execute(
         "UPDATE podcast_subscriptions
@@ -269,9 +265,9 @@ pub fn upsert_episode(
     subscription_id: i64,
     episode: &ParsedEpisode,
     now: i64,
-) -> Result<Option<UpsertResult>, rusqlite::Error> {
+) -> Result<Option<UpsertResult>, CoreError> {
     let conn = db.conn();
-    upsert_episode_in(conn, subscription_id, episode, now)
+    Ok(upsert_episode_in(conn, subscription_id, episode, now)?)
 }
 
 pub(crate) fn upsert_episode_in(
@@ -334,9 +330,9 @@ pub(crate) fn upsert_episode_in(
     }))
 }
 
-pub fn episode(db: &Db, id: i64) -> Result<Option<EpisodeRow>, rusqlite::Error> {
+pub fn episode(db: &Db, id: i64) -> Result<Option<EpisodeRow>, CoreError> {
     let conn = db.conn();
-    episode_in(conn, id)
+    Ok(episode_in(conn, id)?)
 }
 
 pub(crate) fn episode_in(
@@ -362,9 +358,9 @@ pub fn update_fetch_success(
     id: i64,
     now: i64,
     metadata: FetchSuccess<'_>,
-) -> Result<(), rusqlite::Error> {
+) -> Result<(), CoreError> {
     let conn = db.conn();
-    update_fetch_success_in(conn, id, now, metadata)
+    Ok(update_fetch_success_in(conn, id, now, metadata)?)
 }
 
 pub(crate) fn update_fetch_success_in(
@@ -508,7 +504,7 @@ pub fn mark_unplayed(db: &Db, episode_id: i64) -> Result<(), rusqlite::Error> {
     Ok(())
 }
 
-pub fn tombstone_episode(db: &Db, id: i64, now: i64) -> Result<bool, rusqlite::Error> {
+pub fn tombstone_episode(db: &Db, id: i64, now: i64) -> Result<bool, CoreError> {
     let conn = db.conn();
     Ok(conn.execute(
         "UPDATE podcast_episodes
@@ -528,7 +524,7 @@ pub fn undo_remove_episode(db: &Db, id: i64) -> Result<bool, rusqlite::Error> {
     )? != 0)
 }
 
-pub fn commit_remove_episode(db: &Db, id: i64) -> Result<Option<String>, rusqlite::Error> {
+pub fn commit_remove_episode(db: &Db, id: i64) -> Result<Option<String>, CoreError> {
     let conn = db.conn();
     let transaction = Transaction::new_unchecked(conn, TransactionBehavior::Immediate)?;
     let removed = transaction
@@ -562,7 +558,7 @@ pub fn commit_remove_episode(db: &Db, id: i64) -> Result<Option<String>, rusqlit
     Ok(downloaded_path)
 }
 
-pub fn tombstone_subscription(db: &Db, id: i64, now: i64) -> Result<(), rusqlite::Error> {
+pub fn tombstone_subscription(db: &Db, id: i64, now: i64) -> Result<(), CoreError> {
     let conn = db.conn();
     conn.execute(
         "UPDATE podcast_subscriptions SET removed_at = ?2 WHERE id = ?1",
@@ -580,7 +576,7 @@ pub fn undo_remove_subscription(db: &Db, id: i64) -> Result<(), rusqlite::Error>
     Ok(())
 }
 
-pub fn commit_remove_subscription(db: &Db, id: i64) -> Result<(), rusqlite::Error> {
+pub fn commit_remove_subscription(db: &Db, id: i64) -> Result<(), CoreError> {
     let conn = db.conn();
     conn.execute(
         "DELETE FROM podcast_subscriptions WHERE id = ?1 AND removed_at IS NOT NULL",

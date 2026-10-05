@@ -51,7 +51,7 @@ pub(crate) fn fnv1a_64(bytes: &[u8]) -> u64 {
 /// and starts the displayed age when the whole run finishes. The artist ledger
 /// remains the compatibility fallback for databases refreshed before that
 /// timestamp existed.
-pub fn latest_fetched_at(db: &crate::db::Db) -> Result<Option<i64>, rusqlite::Error> {
+pub fn latest_fetched_at(db: &crate::db::Db) -> Result<Option<i64>, crate::CoreError> {
     let conn = db.conn();
     let latest_attempt = crate::artist_news_ledger::latest_attempt(conn)?;
     let latest_completion = crate::library::settings::get_new_releases_last_completed_at(db)?;

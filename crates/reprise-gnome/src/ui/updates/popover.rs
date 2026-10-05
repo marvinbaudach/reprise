@@ -498,7 +498,12 @@ impl NewReleasesPopover {
         let unseen = reprise_core::concerts::config::persisted_filter(conn)
             .and_then(|filter| {
                 let location = reprise_core::concerts::config::location(conn)?;
-                reprise_core::concerts::count_unseen(conn, &filter, location.as_ref(), today)
+                Ok(reprise_core::concerts::count_unseen(
+                    conn,
+                    &filter,
+                    location.as_ref(),
+                    today,
+                )?)
             })
             .unwrap_or_else(|error| {
                 tracing::warn!(%error, "could not count unseen Concerts updates");

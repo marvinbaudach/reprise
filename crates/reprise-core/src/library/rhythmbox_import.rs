@@ -102,6 +102,12 @@ pub enum RhythmboxImportError {
     Database(#[from] rusqlite::Error),
 }
 
+impl From<crate::CoreError> for RhythmboxImportError {
+    fn from(error: crate::CoreError) -> Self {
+        Self::Database(error.into())
+    }
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum Field {
     Location,

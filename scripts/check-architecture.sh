@@ -414,11 +414,12 @@ for frontend_sql in \
 done
 
 # The headless surfaces route every database operation through named core
-# facades too. They hold a rusqlite Connection only to open the migrated
-# database and to read busy/lock error codes — never to assemble SQL. This is
-# the "no SQL outside core" gate extended to reprise-cli/reprise-mcp (plan
-# §2.5). Uppercase statement keywords match real queries, not prose; test
-# fixtures (under tests/) may still use SQL to arrange and inspect their data.
+# facades too. They no longer name rusqlite at all: core's CoreError is what
+# the facades hand out, and busy/conflict classification happens in core —
+# they never assemble SQL. This is the "no SQL outside core" gate extended to
+# reprise-cli/reprise-mcp (plan §2.5). Uppercase statement keywords match real
+# queries, not prose; test fixtures (under tests/) may still use SQL and
+# rusqlite directly to arrange and inspect their data.
 # `rg -U` (multiline) plus `\s+`/`[\s\S]` gaps catch keywords split across a
 # line break — e.g. `UPDATE` on one line and `foo SET …` on the next — which a
 # line-anchored pattern would miss.
@@ -426,6 +427,23 @@ for headless_src in crates/reprise-cli/src crates/reprise-mcp/src; do
   if rg --quiet -U '\b(SELECT|INSERT\s+INTO|UPDATE\b[\s\S]{0,200}?\bSET\b|DELETE\s+FROM|CREATE\s+TABLE|CREATE\s+INDEX|DROP\s+TABLE|ALTER\s+TABLE)\b' \
     "$headless_src" --glob '*.rs'; then
     echo "productive SQL is not allowed outside reprise-core: $headless_src" >&2
+    exit 1
+  fi
+done
+
+# The headless surfaces never name rusqlite: reprise_core::CoreError is the error type the facades
+# hand out, and busy/conflict classification happens in core. `rusqlite` stays a dev-dependency only,
+# because the integration tests under tests/ arrange their fixtures in SQL.
+for surface in reprise-cli reprise-mcp; do
+  direct_deps=$(run_dependency_probe "$surface direct dependencies" \
+    -p "$surface" --all-features -e normal --depth 1 --prefix none --target all) || exit 1
+  if printf '%s\n' "$direct_deps" | rg --quiet '^rusqlite '; then
+    echo "$surface must not depend on rusqlite; return reprise_core::CoreError from the core facade instead" >&2
+    exit 1
+  fi
+  if rg --quiet -w 'rusqlite' "crates/$surface/src" --glob '*.rs'; then
+    echo "$surface sources must not name rusqlite; the core facades return CoreError" >&2
+    rg -n -w 'rusqlite' "crates/$surface/src" --glob '*.rs' >&2
     exit 1
   fi
 done

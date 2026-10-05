@@ -89,9 +89,8 @@ fn source_total(
     let view = queries::TrackViewQuery::new(source)
         .with_browse(&browse)
         .with_queue_items(&queue_items);
-    queries::query_track_count(conn, &view).and_then(|value| {
-        usize::try_from(value).map_err(|_| rusqlite::Error::IntegralValueOutOfRange(0, value))
-    })
+    let value = queries::query_track_count(conn, &view)?;
+    usize::try_from(value).map_err(|_| rusqlite::Error::IntegralValueOutOfRange(0, value))
 }
 
 #[cfg(test)]

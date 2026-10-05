@@ -144,11 +144,10 @@ pub fn import_playlist(conn: &Rc<Db>, file_path: &Path) -> Result<ImportOutcome,
         None
     } else {
         let conn_ref = &conn;
-        Some(playlists::create_with_tracks(
-            conn_ref,
-            &name,
-            &matched_ids,
-        )?)
+        Some(
+            playlists::create_with_tracks(conn_ref, &name, &matched_ids)
+                .map_err(|error| ImportError::Db(error.into()))?,
+        )
     };
 
     Ok(ImportOutcome {

@@ -82,7 +82,7 @@ fn is_outside_library(path: &Path, library_root: Option<&Path>) -> bool {
 
 fn library_root(context: &LocateContext) -> Result<Option<PathBuf>, rusqlite::Error> {
     let conn = &context.conn;
-    settings::get_library_root(conn).map(|root| root.map(PathBuf::from))
+    Ok(settings::get_library_root(conn)?.map(PathBuf::from))
 }
 
 pub(super) fn locate_file(context: LocateContext, target: RelinkTarget) {

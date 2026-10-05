@@ -1,7 +1,7 @@
 //! Read-only projections and detail queries for the visual library views.
 
-use crate::db::Db;
 use crate::models::Track;
+use crate::{db::Db, CoreError};
 use rusqlite::types::Value;
 use rusqlite::Connection;
 
@@ -189,18 +189,18 @@ fn row_to_artist_summary(row: &rusqlite::Row<'_>) -> rusqlite::Result<ArtistSumm
 /// [`query_albums`] with no filter, but without a window or a count query.
 /// It is what a caller that filters or pages in memory reads instead of
 /// walking `query_albums` window by window.
-pub fn query_all_albums(db: &Db) -> Result<Vec<AlbumSummary>, rusqlite::Error> {
+pub fn query_all_albums(db: &Db) -> Result<Vec<AlbumSummary>, CoreError> {
     let mut statement = db.conn().prepare(&album_summaries_sql(""))?;
     let rows = statement.query_map([], row_to_album_summary)?;
-    rows.collect()
+    Ok(rows.collect::<Result<_, _>>()?)
 }
 
 /// Every artist summary in one query, in the order and with the aggregates of
 /// [`query_artists`] with no filter, but without a window or a count query.
-pub fn query_all_artists(db: &Db) -> Result<Vec<ArtistSummary>, rusqlite::Error> {
+pub fn query_all_artists(db: &Db) -> Result<Vec<ArtistSummary>, CoreError> {
     let mut statement = db.conn().prepare(&artist_summaries_sql(""))?;
     let rows = statement.query_map([], row_to_artist_summary)?;
-    rows.collect()
+    Ok(rows.collect::<Result<_, _>>()?)
 }
 
 /// Returns one row per case-insensitive `(album, effective album artist)`
@@ -384,14 +384,14 @@ pub fn query_artists(
 /// total reported by [`query_albums`] without materializing every
 /// [`AlbumSummary`]. Same presence, blank-album and text filters and same
 /// case-insensitive grouping keys, so the two always agree.
-pub fn query_album_count(db: &Db, filter: &str) -> Result<i64, rusqlite::Error> {
+pub fn query_album_count(db: &Db, filter: &str) -> Result<i64, CoreError> {
     let conn = db.conn();
     let has_filter = !filter.trim().is_empty();
     let filter_sql = album_summary_filter_clause(has_filter, 1);
     let params = has_filter
         .then(|| Value::Text(like_pattern(filter.trim())))
         .into_iter();
-    conn.query_row(
+    Ok(conn.query_row(
         &format!(
             "SELECT COUNT(*) FROM ( \
                SELECT 1 FROM tracks \
@@ -401,28 +401,28 @@ pub fn query_album_count(db: &Db, filter: &str) -> Result<i64, rusqlite::Error> 
         ),
         rusqlite::params_from_iter(params),
         |row| row.get(0),
-    )
+    )?)
 }
 
 /// Counts the distinct effective album artists — the exact total reported by
 /// [`query_artists`] without materializing every [`ArtistSummary`]. Same
 /// presence, blank-artist and text filters and case-insensitive key as
 /// `query_artists`, so the two always agree.
-pub fn query_artist_count(db: &Db, filter: &str) -> Result<i64, rusqlite::Error> {
+pub fn query_artist_count(db: &Db, filter: &str) -> Result<i64, CoreError> {
     let conn = db.conn();
     let has_filter = !filter.trim().is_empty();
     let filter_sql = artist_summary_filter_clause(has_filter, 1);
     let params = has_filter
         .then(|| Value::Text(like_pattern(filter.trim())))
         .into_iter();
-    conn.query_row(
+    Ok(conn.query_row(
         &format!(
             "SELECT COUNT(DISTINCT LOWER({EFFECTIVE_ALBUM_ARTIST})) FROM tracks \
              WHERE {PRESENT} AND TRIM({EFFECTIVE_ALBUM_ARTIST}) <> ''{filter_sql}"
         ),
         rusqlite::params_from_iter(params),
         |row| row.get(0),
-    )
+    )?)
 }
 
 pub(super) fn query_album_track_window(

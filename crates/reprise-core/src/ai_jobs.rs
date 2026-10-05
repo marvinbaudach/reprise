@@ -38,6 +38,7 @@ use rusqlite::{params, Connection, OptionalExtension, Transaction, TransactionBe
 
 use crate::ai_staging::StagingStore;
 use crate::events;
+use crate::CoreError;
 
 mod query;
 
@@ -252,9 +253,16 @@ pub fn enqueue_instrumental_batch(
     model_id: &str,
     auto_promote: bool,
     now: i64,
-) -> Result<BatchOutcome, rusqlite::Error> {
+) -> Result<BatchOutcome, CoreError> {
     let conn = db.conn();
-    enqueue_instrumental_batch_in(conn, staging, source_track_ids, model_id, auto_promote, now)
+    Ok(enqueue_instrumental_batch_in(
+        conn,
+        staging,
+        source_track_ids,
+        model_id,
+        auto_promote,
+        now,
+    )?)
 }
 
 pub(crate) fn enqueue_instrumental_batch_in(
@@ -384,7 +392,7 @@ pub fn claim_next(
     worker: i64,
     now: i64,
     lease_secs: i64,
-) -> Result<Option<ClaimedJob>, rusqlite::Error> {
+) -> Result<Option<ClaimedJob>, CoreError> {
     let conn = db.conn();
     let lease_expires_at = now.saturating_add(lease_secs);
     let tx = Transaction::new_unchecked(conn, TransactionBehavior::Immediate)?;
@@ -451,7 +459,7 @@ pub fn heartbeat(
     worker: i64,
     now: i64,
     lease_secs: i64,
-) -> Result<HeartbeatOutcome, rusqlite::Error> {
+) -> Result<HeartbeatOutcome, CoreError> {
     let conn = db.conn();
     let lease_expires_at = now.saturating_add(lease_secs);
     let still_owner = conn.execute(
@@ -482,7 +490,7 @@ pub fn set_progress(
     job_id: i64,
     worker: i64,
     permille: u16,
-) -> Result<bool, rusqlite::Error> {
+) -> Result<bool, CoreError> {
     let conn = db.conn();
     let clamped = permille.min(crate::stem_separation::PROGRESS_COMPLETE);
     let changed = conn.execute(
@@ -514,9 +522,9 @@ pub fn mark_failed(
     worker: i64,
     error_kind: &str,
     now: i64,
-) -> Result<bool, rusqlite::Error> {
+) -> Result<bool, CoreError> {
     let conn = db.conn();
-    finish_owned(
+    Ok(finish_owned(
         conn,
         job_id,
         worker,
@@ -524,7 +532,7 @@ pub fn mark_failed(
         Some(error_kind),
         now,
         "fail",
-    )
+    )?)
 }
 
 /// Acks a requested cancel on a running job the worker owns
@@ -535,9 +543,9 @@ pub fn mark_cancelled(
     job_id: i64,
     worker: i64,
     now: i64,
-) -> Result<bool, rusqlite::Error> {
+) -> Result<bool, CoreError> {
     let conn = db.conn();
-    events::in_txn(conn, |conn| {
+    Ok(events::in_txn(conn, |conn| {
         let changed = conn.execute(
             "UPDATE ai_jobs SET status = 'cancelled', finished_at = ?1 \
              WHERE id = ?2 AND claimed_by = ?3 AND status = 'running' AND cancel_requested = 1",
@@ -547,7 +555,7 @@ pub fn mark_cancelled(
             events::record(conn, JOB_ENTITY, &job_id.to_string(), "cancel")?;
         }
         Ok(changed == 1)
-    })
+    })?)
 }
 
 /// Shared terminal transition for the worker's owned running job.
@@ -595,9 +603,9 @@ pub fn request_cancel(
     db: &crate::db::Db,
     job_id: i64,
     now: i64,
-) -> Result<CancelOutcome, rusqlite::Error> {
+) -> Result<CancelOutcome, CoreError> {
     let conn = db.conn();
-    events::in_txn(conn, |conn| {
+    Ok(events::in_txn(conn, |conn| {
         let queued_cancelled = conn.execute(
             "UPDATE ai_jobs SET status = 'cancelled', cancel_requested = 1, finished_at = ?1 \
              WHERE id = ?2 AND status = 'queued'",
@@ -616,7 +624,7 @@ pub fn request_cancel(
         } else {
             Ok(CancelOutcome::NotCancellable)
         }
-    })
+    })?)
 }
 
 /// Attaches the promoted library track to a `done` job (staged -> saved),
@@ -678,7 +686,7 @@ pub fn discard_staged(
     staging: &StagingStore,
     job_id: i64,
     now: i64,
-) -> Result<bool, rusqlite::Error> {
+) -> Result<bool, CoreError> {
     let conn = db.conn();
     let discarded = events::in_txn(conn, |conn| {
         let changed = conn.execute(

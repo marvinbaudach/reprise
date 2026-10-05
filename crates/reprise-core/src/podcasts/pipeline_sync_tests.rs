@@ -138,15 +138,7 @@ fn concurrent_removal_cannot_commit_between_the_active_check_and_sync_commit() {
             if event == SyncProgress::FetchingArtwork {
                 let removal =
                     super::super::store::tombstone_subscription(&remover, subscription_id, 11);
-                removal_was_blocked = matches!(
-                    removal,
-                    Err(rusqlite::Error::SqliteFailure(error, _))
-                        if matches!(
-                            error.code,
-                            rusqlite::ErrorCode::DatabaseBusy
-                                | rusqlite::ErrorCode::DatabaseLocked
-                        )
-                );
+                removal_was_blocked = removal.is_err_and(|error| error.is_busy());
             }
         },
     )

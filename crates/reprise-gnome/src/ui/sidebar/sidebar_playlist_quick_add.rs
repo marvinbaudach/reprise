@@ -25,7 +25,7 @@ pub(super) fn placeholder_name() -> String {
 
 #[cfg(test)]
 pub(super) fn create_placeholder(db: &Db) -> Result<i64, rusqlite::Error> {
-    playlists::create(db, &placeholder_name())
+    Ok(playlists::create(db, &placeholder_name())?)
 }
 
 pub(super) fn commit_name(db: &Db, id: i64, requested: &str) -> Result<bool, rusqlite::Error> {
@@ -33,11 +33,11 @@ pub(super) fn commit_name(db: &Db, id: i64, requested: &str) -> Result<bool, rus
     if requested.is_empty() {
         return Ok(false);
     }
-    playlists::rename(db, id, requested).map(|changed| changed > 0)
+    Ok(playlists::rename(db, id, requested)? > 0)
 }
 
 pub(super) fn discard_placeholder(db: &Db, id: i64) -> Result<bool, rusqlite::Error> {
-    playlists::delete(db, id, &placeholder_name())
+    Ok(playlists::delete(db, id, &placeholder_name())?)
 }
 
 pub(in crate::ui) fn begin(shared: &Rc<Shared>) {
