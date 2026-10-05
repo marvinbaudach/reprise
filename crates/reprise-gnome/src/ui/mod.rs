@@ -146,7 +146,11 @@ pub(crate) mod window;
 // Compatibility surface for the existing frontend. The ownership of every
 // implementation module now lives with its feature directory; these explicit
 // imports keep call sites stable while preventing ui/mod.rs from becoming a
-// second, flattened module tree again.
+// second, flattened module tree again. Only the browse, compact, cover,
+// lyrics, playback, scan, scrobbling and track_list families still carry
+// aliases; each goes once its call sites are free of in-flight branches, and
+// every other family is reached by its real `crate::ui::<family>::<module>`
+// path.
 pub(crate) use browse::browse_bar;
 use browse::browse_filter_count;
 use compact::{
