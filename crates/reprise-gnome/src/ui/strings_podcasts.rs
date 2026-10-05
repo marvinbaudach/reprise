@@ -1,5 +1,3 @@
-#![allow(dead_code)]
-
 macro_rules! N_ {
     ($message:literal) => {
         $message
@@ -10,19 +8,13 @@ use super::{formatted, plural, text};
 
 pub const PODCASTS: &str = N_!("Podcasts");
 pub const YOUTUBE: &str = N_!("YouTube");
-pub const PODCASTS_DESCRIPTION: &str =
-    N_!("Contacts publishers and Apple Podcasts for feeds and search; YouTube sources use yt-dlp");
-pub const PODCAST_DATE: &str = N_!("Date");
-pub const PODCAST_EPISODE: &str = N_!("Episode");
-pub const PODCAST_SHOW: &str = N_!("Show");
 pub const JUMP_TO_PLAYING_EPISODE: &str = N_!("Jump to the playing episode");
 pub const GO_TO_PLAYING_CHANNEL: &str = N_!("Go to the channel");
 pub const EPISODE_NOT_IN_SUBSCRIPTIONS: &str =
     N_!("This episode is no longer in your subscriptions");
-pub const PODCAST_LENGTH: &str = N_!("Length");
-pub const PODCAST_SOURCE: &str = N_!("Source");
-pub const PODCAST_STATUS: &str = N_!("Status");
+#[cfg(test)]
 pub const PODCAST_SOURCE_RSS: &str = N_!("RSS");
+#[cfg(test)]
 pub const PODCAST_SOURCE_YOUTUBE: &str = N_!("YouTube");
 pub const PODCAST_STATUS_NEW: &str = N_!("New");
 pub const PODCAST_STATUS_RESUME: &str = N_!("Resume");
@@ -43,7 +35,6 @@ pub const YOUTUBE_ADD: &str = N_!("Add channel");
 pub const PODCAST_ADD_FILTER: &str = N_!("Add filter");
 pub const PODCAST_FILTER_UNPLAYED: &str = N_!("Unplayed");
 pub const PODCAST_FILTER_DOWNLOADED: &str = N_!("Downloaded");
-pub const PODCAST_FILTER_SOURCE: &str = N_!("Source");
 pub const PODCAST_CLEAR_ALL: &str = N_!("Clear filters");
 /// Beside the selection count. "Clear filters" drops the current view's
 /// query and facets, so the two actions must name their distinct targets.
@@ -133,19 +124,13 @@ pub const PODCAST_CANCEL: &str = N_!("Cancel");
 pub const PODCAST_RSS_DETECTED: &str = N_!("RSS feed detected");
 pub const PODCAST_YOUTUBE_DETECTED: &str =
     N_!("YouTube channel detected — videos become episodes · audio only via yt-dlp");
-pub const PODCAST_IMPORT_LATEST: &str = N_!("Import the latest episodes");
 pub const PODCAST_AUTO_DOWNLOAD: &str = N_!("Fill this subscription to its download limit");
-pub const PODCAST_YOUTUBE_FOOTNOTE: &str =
-    N_!("YouTube subscriptions are played audio-only via yt-dlp.");
 pub const PODCAST_PREVIEW_FAILED: &str = N_!("Could not preview this podcast");
 pub const PODCAST_SEARCH_FAILED: &str = N_!("Could not search for podcasts");
 pub const PODCAST_SUBSCRIBE_FAILED: &str = N_!("Could not subscribe to this podcast");
 pub const PODCAST_ALREADY_SUBSCRIBED: &str = N_!("This source is already subscribed");
 pub const PODCAST_YTDLP_MISSING: &str =
     N_!("YouTube component is unavailable — reinstall or repair Reprise");
-pub const PODCAST_YTDLP_BLOCKED: &str =
-    N_!("YouTube blocked the request — update yt-dlp (Preferences)");
-pub const PODCAST_RESOLVING_AUDIO: &str = N_!("Resolving audio…");
 pub const PODCAST_PLAY: &str = N_!("Play");
 pub const PODCAST_COPY_URL: &str = N_!("Copy episode URL");
 pub const PODCAST_OPEN_IN_BROWSER: &str = N_!("Open in browser");
@@ -154,7 +139,6 @@ pub const PODCAST_MARK_PLAYED: &str = N_!("Mark as played");
 pub const PODCAST_MARK_UNPLAYED: &str = N_!("Mark as unplayed");
 pub const PODCAST_DOWNLOAD: &str = N_!("Download episode");
 pub const PODCAST_DELETE_DOWNLOAD: &str = N_!("Delete download");
-pub const PODCAST_NOT_DOWNLOADED: &str = N_!("Not downloaded");
 pub const PODCAST_DOWNLOAD_QUEUED: &str = N_!("Queued");
 pub const PODCAST_DOWNLOADING: &str = N_!("Downloading");
 pub const PODCAST_DOWNLOAD_MISSING: &str = N_!("File missing");
@@ -430,10 +414,6 @@ fn library_summary(subjects: &str, episodes: usize, new: usize) -> String {
             ("new", &new.to_string()),
         ],
     )
-}
-
-pub fn podcast_filtered_count(visible: usize, total: usize) -> String {
-    filtered_episode_count(&visible.to_string(), total)
 }
 
 /// FIL-2: the same line with the shown number accented. The bold goes in as

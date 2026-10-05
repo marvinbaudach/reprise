@@ -1,5 +1,3 @@
-#![allow(dead_code)]
-
 macro_rules! N_ {
     ($message:literal) => {
         $message

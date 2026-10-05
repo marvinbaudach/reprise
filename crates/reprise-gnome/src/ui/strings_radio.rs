@@ -1,5 +1,3 @@
-#![allow(dead_code)]
-
 macro_rules! N_ {
     ($message:literal) => {
         $message
@@ -9,8 +7,6 @@ macro_rules! N_ {
 use super::{formatted, plural};
 
 pub const RADIO: &str = N_!("Radio");
-pub const RADIO_DESCRIPTION: &str =
-    N_!("Contacts radio-browser.info for search; each favorite play reports its etiquette click");
 pub const RADIO_STATION: &str = N_!("Station");
 pub const JUMP_TO_PLAYING_STATION: &str = N_!("Go to the playing station");
 pub const STATION_NOT_IN_FAVORITES: &str = N_!("This station is no longer in your favorites");
@@ -39,8 +35,6 @@ pub const RADIO_DIALOG_TITLE: &str = N_!("Add Station");
 pub const RADIO_DIALOG_HINT: &str = N_!("Search or paste a stream / M3U / PLS URL");
 pub const RADIO_SEARCHING: &str = N_!("Searching…");
 pub const RADIO_RESULTS_HEADER: &str = N_!("RADIO-BROWSER.INFO");
-pub const RADIO_MATCHES_BY_VOTES: &str = N_!("matches · by votes");
-pub const RADIO_ADD_RESULT: &str = N_!("Add");
 pub const RADIO_CANCEL: &str = N_!("Cancel");
 pub const RADIO_FETCH_METADATA: &str = N_!("Fetch logo & tags from radio-browser");
 pub const RADIO_COMMUNITY_FOOTNOTE: &str =
@@ -66,7 +60,6 @@ pub const RADIO_EDIT: &str = N_!("Edit station…");
 pub const RADIO_REMOVE_FAVORITE: &str = N_!("Remove favorite");
 pub const RADIO_UNDO: &str = N_!("Undo");
 pub const RADIO_RETRY: &str = N_!("Retry");
-pub const RADIO_RECONNECTING: &str = N_!("Reconnecting live…");
 pub const RADIO_RECONNECT_FAILED: &str = N_!("This station isn't broadcasting right now");
 pub const RADIO_SEARCH_ORDER: &str = N_!("Search order");
 pub const RADIO_ORDER_VOTES: &str = N_!("Votes");
@@ -99,10 +92,6 @@ pub fn radio_station_count(count: usize) -> String {
     )
 }
 
-pub fn radio_filtered_count(visible: usize, total: usize) -> String {
-    filtered_station_count(&visible.to_string(), total)
-}
-
 /// FIL-2: the same line with the shown number accented. The bold goes in as
 /// the *argument*, not as a substring search over the rendered sentence — a
 /// translation that puts the total first would otherwise bold the wrong
@@ -130,13 +119,6 @@ pub fn radio_results_count(count: usize) -> String {
 
 pub fn radio_remove_named(name: &str) -> String {
     formatted(N_!("Remove “{name}”"), &[("name", name)])
-}
-
-pub fn radio_playlist_detected(kind: &str, host: &str) -> String {
-    formatted(
-        N_!("Playlist file detected ({kind}) — resolved to {host}"),
-        &[("kind", kind), ("host", host)],
-    )
 }
 
 #[cfg(test)]

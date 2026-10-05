@@ -1,5 +1,3 @@
-#![allow(dead_code)]
-
 macro_rules! N_ {
     ($message:literal) => {
         $message
@@ -7,39 +5,18 @@ macro_rules! N_ {
 }
 
 use super::{formatted, plural, text};
-pub const INFORMATION: &str = N_!("Information");
 /// Tooltip of the headerbar info panel toggle (TIP-1b).
 pub const INFO_PANEL_TOGGLE: &str = N_!("Toggle info panel");
 pub const NOW_PLAYING_NOTHING: &str = N_!("Nothing playing");
 pub const UP_NEXT: &str = N_!("Up Next");
 pub const QUEUE_EMPTY: &str = N_!("Queue is empty");
 pub const QUEUE_NEXT_IN_QUEUE: &str = N_!("Next in Queue");
-pub const ARTIST_NEWS: &str = N_!("Artist & Album News");
-pub const ARTIST_NEWS_DESCRIPTION: &str =
-    N_!("Show upcoming and newly released albums from MusicBrainz (network; off by default)");
-pub const ARTIST_NEWS_PRIVACY: &str =
-    N_!("When enabled, selected artist names are sent to MusicBrainz. Reprise never sends file paths or listening history.");
-pub const NEWS_DISABLED_TITLE: &str = N_!("Artist News is Off");
-pub const NEWS_SELECT_TRACK: &str = N_!("Select a track to see artist and album news.");
-pub const NEWS_MULTIPLE_SELECTION: &str =
-    N_!("Artist News is paused while multiple tracks are selected.");
-pub const NEWS_NO_ARTIST: &str = N_!("This track has no artist information.");
-pub const NEWS_LOADING: &str = N_!("Checking MusicBrainz for album news…");
-pub const NEWS_NONE: &str = N_!("No new or upcoming regular albums found.");
-pub const NEWS_ERROR: &str = N_!("Artist News is temporarily unavailable.");
-pub const NEWS_UNMATCHED: &str = N_!("Artist could not be matched.");
-pub const NEWS_AMBIGUOUS: &str = N_!("Artist could not be matched unambiguously.");
-pub const NEWS_UPCOMING: &str = N_!("Upcoming");
-pub const NEWS_NEW: &str = N_!("New");
-pub const NEWS_REFRESH: &str = N_!("Refresh Artist News");
-pub const NEWS_OPEN_MUSICBRAINZ: &str = N_!("Open in MusicBrainz");
 pub const NEW_RELEASES: &str = N_!("New Releases");
 pub const NEW_RELEASES_DESCRIPTION: &str =
     N_!("Show upcoming releases and missing albums or EPs · contacts MusicBrainz");
 pub const ONLINE_LYRICS: &str = N_!("Online Lyrics");
 pub const ONLINE_LYRICS_DESCRIPTION: &str =
     N_!("Load missing lyrics · contacts LRCLIB and NetEase");
-pub const ENABLE_NEW_RELEASES: &str = N_!("Enable new releases →");
 pub const DISMISS: &str = N_!("Dismiss");
 pub const NEW_RELEASES_ARTISTS: &str = N_!("Artists");
 pub const TOP_ARTISTS_ONLY: &str = N_!("Top artists only");
@@ -47,16 +24,18 @@ pub const ALL_ARTISTS: &str = N_!("All artists");
 pub const FETCH_NOW: &str = N_!("Fetch now");
 pub const UPDATES_HEADER: &str = N_!("Updates");
 pub const NEW_RELEASES_CHECKING: &str = N_!("Checking for new releases…");
-pub const NEW_RELEASES_NONE: &str = N_!("No upcoming releases from your artists");
 pub const UPDATES_NO_NEW_RELEASES: &str = N_!("No new releases");
 pub const UPDATES_NO_NEW_CONCERTS: &str = N_!("No new concerts");
 pub const UPDATES_RELEASED: &str = N_!("Released");
-pub const SEE_ALL_RELEASES: &str = N_!("See all");
 pub const HIDE_RELEASE: &str = N_!("Hide");
+#[cfg(test)]
 const NEWS_FEED_LOADED_AT: &str = N_!("Up to date — loaded at {time}");
+#[cfg(test)]
 const NEWS_FEED_CHECKED_AT: &str = N_!("Up to date — checked {time}");
 const NEWS_FEED_NOT_LOADED: &str = N_!("Not loaded yet");
+#[cfg(test)]
 const NEWS_FEED_NETWORK_OFF: &str = N_!("Online sources are off");
+#[cfg(test)]
 const NEWS_FEED_RELOAD: &str = N_!("Reload");
 pub const RELEASES_UPDATING: &str = N_!("Updating releases …");
 pub const RELEASES_UPDATE_FAILED: &str = N_!("Update failed — showing saved releases from {time}");
@@ -64,16 +43,6 @@ pub const RELEASES_OFFLINE: &str = N_!("Offline — showing saved releases from 
 pub const UPDATES_UPDATING: &str = N_!("Updating …");
 pub const UPDATES_UPDATE_FAILED: &str = N_!("Update failed — showing saved updates from {time}");
 pub const UPDATES_OFFLINE: &str = N_!("Offline — showing saved updates from {time}");
-
-pub fn tracks_selected(count: usize) -> String {
-    let count_text = count.to_string();
-    plural(
-        "{count} track selected",
-        "{count} tracks selected",
-        count,
-        &[("count", &count_text)],
-    )
-}
 
 pub fn up_next_footer(count: usize, duration: &str) -> String {
     let count_text =
@@ -96,38 +65,6 @@ pub fn queue_context_tail(source: &str, count: usize) -> String {
         &[("source", source), ("count", &count_text)],
     )
 }
-
-pub fn news_release_meta(primary_type: &str, date: &str) -> String {
-    formatted(
-        N_!("{type} · {date}"),
-        &[("type", primary_type), ("date", date)],
-    )
-}
-
-pub fn news_updated(timestamp: i64) -> String {
-    let date = news_timestamp_date(timestamp);
-    formatted(N_!("MusicBrainz · Updated {date}"), &[("date", &date)])
-}
-
-pub fn news_cached(timestamp: i64) -> String {
-    let date = news_timestamp_date(timestamp);
-    formatted(N_!("Cached · Updated {date}"), &[("date", &date)])
-}
-
-pub fn new_releases_hidden(count: usize) -> String {
-    let count = count.to_string();
-    formatted(N_!("{count} hidden · Show"), &[("count", &count)])
-}
-
-pub const NEW_RELEASES_HEADER: &str = N_!("New Releases");
-pub const RELEASED: &str = N_!("released");
-pub const IN_LIBRARY: &str = N_!("In library");
-pub const NEW_RELEASES_PARTIALLY_OWNED: &str = N_!("Single in library");
-pub const SHOW_IN_LIBRARY: &str = N_!("Show in library");
-pub const OPEN_ANNOUNCEMENT: &str = N_!("Open announcement");
-pub const SHOW_AGAIN: &str = N_!("Show again");
-pub const ALL_CAUGHT_UP: &str = N_!("All caught up");
-pub const RETENTION_SIX_MONTHS: &str = N_!("Retention: 6 months");
 
 /// „in N d" for a release that is still `days` days out. Only meant for
 /// `days > 0`; whether `days <= 0` reads as „today" or „released" is a UI
