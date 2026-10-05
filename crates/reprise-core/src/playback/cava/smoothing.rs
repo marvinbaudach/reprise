@@ -152,15 +152,30 @@ impl Smoother {
     /// untouched. Shorter input than `bar_count` seeds only its own bars;
     /// longer input is truncated by `zip`.
     ///
-    /// `bars` is the smoother's displayed output, which `apply` builds as
-    /// `bar + memory * integral_feedback`: it has the integral term in it,
-    /// while `previous`/`peaks` hold the bar *before* that term is added. The
-    /// state whose next frame reproduces `bars` is therefore `memory = bars`
-    /// and `previous = peaks = bars * (1 - integral_feedback)`, with `fall`
+    /// `bars` is the displayed shape, approximately the smoother's own
+    /// output: on Android it is the visual engine's `current_bands()`, which
+    /// may already be decayed or blended toward idle. `apply` builds its
+    /// output as `bar + memory * integral_feedback`, so the displayed shape
+    /// has the integral term in it, while `previous`/`peaks` hold the bar
+    /// *before* that term is added. The state whose next frame reproduces
+    /// `bars` is therefore `memory = bars` and
+    /// `previous = peaks = bars * (1 - integral_feedback)`, with `fall`
     /// restarted so the first falling frame equals its peak. Storing `bars`
     /// itself in `previous`/`peaks` would draw the next frame at about
     /// `1 / (1 - integral_feedback)` times the shape, clip it, and drive the
     /// autosensitivity gain down.
+    ///
+    /// Two limits on "continues":
+    /// - The headroom duck is not bypassed. A pending seed on a fresh
+    ///   smoother that is still in cold-start calibration
+    ///   (`sensitivity_initializing`), with any bar above 0.85, gets its first
+    ///   live frame scaled by `0.85 / max_internal`, so the spectrum shrinks by
+    ///   up to 15 % until calibration settles. A follow-up change replaces the
+    ///   cold calibration, so this is documented rather than fixed here.
+    /// - `integral_feedback` is evaluated with the framerate from before the
+    ///   next `apply` runs `update_framerate`. Normally the difference is about
+    ///   1e-3; a tiny first chunk can push the real feedback toward the 0.98
+    ///   cap and overshoot that one frame.
     pub(super) fn seed_shape(&mut self, bars: &[f32]) {
         let feedback = self.integral_feedback(CAVA_REFERENCE_FRAMERATE / self.framerate);
         let seeded = self
@@ -201,6 +216,10 @@ impl Smoother {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    const SEED_FRAME_SAMPLES: usize = 800;
+    const SEED_SAMPLE_RATE_HZ: u32 = 48_000;
+    const SEED_TOLERANCE: f32 = 0.02;
 
     #[test]
     fn cold_rising_signal_does_not_expose_autosensitivity_clipping() {
@@ -445,10 +464,6 @@ mod tests {
     // shape straight into them made the next frame come out at about
     // 1 / (1 - noise_reduction) times the seed: the whole spectrum jumped,
     // clipped, and knocked autosensitivity down.
-    const SEED_FRAME_SAMPLES: usize = 800;
-    const SEED_SAMPLE_RATE_HZ: u32 = 48_000;
-    const SEED_TOLERANCE: f32 = 0.02;
-
     fn displayed_shape() -> [f32; 8] {
         [0.05, 0.2, 0.35, 0.5, 0.65, 0.8, 0.9, 0.3]
     }
@@ -506,7 +521,11 @@ mod tests {
 
     #[test]
     fn a_hostile_seed_is_clamped_into_the_unit_range() {
-        let mut smoother = Smoother::new(4, 0.77, 0);
+        // Autosensitivity must be on: with it off the gain never moves, and
+        // `apply`'s own final clamp and non-finite handling would hide a
+        // missing seed clamp. An unclamped 7.0 comes out of `apply` far above
+        // 1.0, which reads as an overshoot and lowers the gain.
+        let mut smoother = Smoother::new(4, 0.77, 1);
         let mut frame = [0.0; 4];
 
         smoother.seed_shape(&[f32::NAN, 7.0, -3.0, f32::INFINITY]);
@@ -518,6 +537,12 @@ mod tests {
         );
         assert_eq!(frame[0], 0.0);
         assert_eq!(frame[2], 0.0);
+        assert_eq!(
+            smoother.sensitivity, 1.0,
+            "a hostile seed reached the autosensitivity gain"
+        );
+        assert!(smoother.sensitivity_initializing);
+        assert!(!smoother.sensitivity_settling);
     }
 
     #[test]

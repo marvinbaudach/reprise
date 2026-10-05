@@ -129,6 +129,32 @@ fn adopt_shape_keeps_bars_on_screen_through_the_first_live_pcm_block() {
 }
 
 #[test]
+// The device-sized tick above is what production delivers; this is the jank
+// case, one ~170 ms tick carrying a whole 8_192-frame block, i.e. sixteen
+// smoother frames of gravity at once. A correctly seeded shape falls a long
+// way in that time (measured 832 -> 333 in sum-of-bars units), so the bound
+// is deliberately loose: it only has to catch a collapse to near zero, which
+// is what a seed that sets no smoother memory produces.
+fn adopt_shape_survives_a_janky_170ms_tick_without_collapsing() {
+    let clock = Arc::new(FakeMonotonicClock::default());
+    let engine = AndroidVisualEngine::with_clock(clock.clone());
+    engine.note_track_changed();
+    engine.adopt_shape(vec![0.8; 64]);
+    engine.set_playing(true);
+    let before = main_bar_segments(&decode_scene(&engine.scene(272.0, 272.0)), 272.0).len();
+    assert!(before > 0, "the adopted shape should already show bars");
+
+    let pcm = stereo_sine_pcm16(200.0, 48_000, 0, 8_192);
+    ingest_one_live_block(&engine, &clock, &pcm, 48_000);
+
+    let after = main_bar_segments(&decode_scene(&engine.scene(272.0, 272.0)), 272.0).len();
+    assert!(
+        after * 4 >= before,
+        "a janky tick dropped the adopted shape to near zero: before={before}, after={after}"
+    );
+}
+
+#[test]
 fn ui_reads_do_not_wait_for_live_pcm_processing() {
     let engine = Arc::new(AndroidVisualEngine::new());
 

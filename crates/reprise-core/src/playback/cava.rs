@@ -205,6 +205,12 @@ impl CavaBarProcessor {
     /// to hand a freshly constructed processor a starting shape before its
     /// first real audio block arrives, so its first frames fall from that
     /// shape instead of climbing from zero.
+    ///
+    /// "Continues" has one exception: on a fresh processor still in cold-start
+    /// calibration, a seed with any bar above 0.85 has its first live frame
+    /// scaled by the headroom duck (`0.85 / max_internal`), shrinking the
+    /// spectrum by up to 15 % until calibration settles. See
+    /// `Smoother::seed_shape` for this and the framerate approximation.
     pub fn seed_shape(&mut self, bars: &[f32]) {
         self.smoother.seed_shape(bars);
     }
