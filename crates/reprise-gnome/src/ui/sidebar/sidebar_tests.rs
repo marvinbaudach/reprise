@@ -1,5 +1,6 @@
 use super::super::sidebar_boundary_navigation::{first_issue_row, last_main_row};
 use super::*;
+use crate::ui::sidebar::{sidebar_dnd, sidebar_presentation};
 
 /// Builds a bare `Shared` over a fresh in-memory database — enough for
 /// `rebuild` and the drop-handler functions, without an `adw::
@@ -132,7 +133,7 @@ fn handle_queue_drop_dispatches_ids_to_the_wired_callback() {
         reprise_core::up_next::QueueItem::Episode(7),
     ];
     let expected_after_episode_filter = [reprise_core::up_next::QueueItem::Track(7)];
-    assert!(crate::ui::sidebar_dnd::handle_queue_drop(&shared, &items));
+    assert!(sidebar_dnd::handle_queue_drop(&shared, &items));
     assert_eq!(
         *seen.borrow(),
         expected_after_episode_filter,
@@ -145,7 +146,7 @@ fn handle_queue_drop_is_a_noop_without_ids_or_callback() {
     gtk4::init().unwrap();
     let shared = test_shared();
     // No callback wired at all: report failure, don't panic.
-    assert!(!crate::ui::sidebar_dnd::handle_queue_drop(
+    assert!(!sidebar_dnd::handle_queue_drop(
         &shared,
         &[reprise_core::up_next::QueueItem::Track(7)]
     ));
@@ -159,7 +160,7 @@ fn handle_queue_drop_is_a_noop_without_ids_or_callback() {
             true
         }));
     }
-    assert!(!crate::ui::sidebar_dnd::handle_queue_drop(&shared, &[]));
+    assert!(!sidebar_dnd::handle_queue_drop(&shared, &[]));
     assert!(!invoked.get());
 }
 
@@ -359,13 +360,10 @@ fn acc_3_bottom_pinned_issues_collection_is_a_tab_stop() {
     gtk4::init().unwrap();
     let issues = gtk4::ListBox::new();
     configure_issues_listbox(&issues);
-    let row = crate::ui::sidebar_presentation::build_issue_nav_row(
+    let row = sidebar_presentation::build_issue_nav_row(
         "Missing files",
-        crate::ui::sidebar_presentation::issue_row_presentation(
-            1,
-            crate::ui::sidebar_presentation::NavIcon::Missing,
-        ),
-        crate::ui::sidebar_presentation::NavIcon::Missing,
+        sidebar_presentation::issue_row_presentation(1, sidebar_presentation::NavIcon::Missing),
+        sidebar_presentation::NavIcon::Missing,
     );
     issues.append(&row);
 
@@ -496,13 +494,10 @@ fn acc_3_focus_transfer_between_sidebar_collections_does_not_resync_mid_flight()
     wire_row_selected(&shared);
     wire_focus_leave_resync(&shared);
     rebuild(&shared, None, "test build");
-    let missing = crate::ui::sidebar_presentation::build_issue_nav_row(
+    let missing = sidebar_presentation::build_issue_nav_row(
         "Missing files",
-        crate::ui::sidebar_presentation::issue_row_presentation(
-            1,
-            crate::ui::sidebar_presentation::NavIcon::Missing,
-        ),
-        crate::ui::sidebar_presentation::NavIcon::Missing,
+        sidebar_presentation::issue_row_presentation(1, sidebar_presentation::NavIcon::Missing),
+        sidebar_presentation::NavIcon::Missing,
     );
     shared.issues_listbox.append(&missing);
     remember_issue_focus_entry(&shared.issues_listbox, &missing);
@@ -546,13 +541,10 @@ fn acc_3_sidebar_collection_boundaries_link_main_and_issues() {
     gtk4::init().unwrap();
     let shared = test_shared();
     rebuild(&shared, None, "test build");
-    let missing = crate::ui::sidebar_presentation::build_issue_nav_row(
+    let missing = sidebar_presentation::build_issue_nav_row(
         "Missing files",
-        crate::ui::sidebar_presentation::issue_row_presentation(
-            1,
-            crate::ui::sidebar_presentation::NavIcon::Missing,
-        ),
-        crate::ui::sidebar_presentation::NavIcon::Missing,
+        sidebar_presentation::issue_row_presentation(1, sidebar_presentation::NavIcon::Missing),
+        sidebar_presentation::NavIcon::Missing,
     );
     shared.issues_listbox.append(&missing);
     shared.rows.borrow_mut().push((

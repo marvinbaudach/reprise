@@ -9,7 +9,7 @@ use libadwaita::prelude::*;
 
 use crate::ui::info_panel::InfoPanel;
 use crate::ui::now_playing::now_playing_column::PANEL_WIDTH;
-use crate::ui::sidebar_presentation::SIDEBAR_MIN_WIDTH;
+use crate::ui::sidebar::sidebar_presentation::SIDEBAR_MIN_WIDTH;
 use crate::ui::track_list::responsive_columns::FOLD_BREAKPOINT_WIDTH;
 
 const CONSTRAINED_WIDTH: i32 = SIDEBAR_MIN_WIDTH as i32 + PANEL_WIDTH + FOLD_BREAKPOINT_WIDTH;
@@ -530,7 +530,7 @@ mod tests {
         }
         assert_eq!(
             CONSTRAINED_WIDTH,
-            crate::ui::sidebar_presentation::SIDEBAR_MIN_WIDTH as i32
+            crate::ui::sidebar::sidebar_presentation::SIDEBAR_MIN_WIDTH as i32
                 + crate::ui::now_playing::now_playing_column::PANEL_WIDTH
                 + crate::ui::track_list::responsive_columns::FOLD_BREAKPOINT_WIDTH,
             "the window threshold must account for both flank widths before the table \

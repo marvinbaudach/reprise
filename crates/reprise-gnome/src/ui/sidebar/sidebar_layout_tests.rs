@@ -8,7 +8,7 @@ use reprise_core::library::settings::PlayerBarPosition;
 use super::*;
 use crate::ui::player_bar::library_player_bar::LibraryPlayerBarShell;
 use crate::ui::scan::scan_progress::ScanProgressView;
-use crate::ui::sidebar_presentation;
+use crate::ui::sidebar::sidebar_presentation;
 
 #[test]
 #[ignore = "requires a display; run via xvfb-run"]

@@ -14,7 +14,7 @@ use super::sidebar_device_card::{
 };
 use super::Shared;
 use crate::ui::device_sync_runtime::{DeviceSyncRuntime, DeviceSyncState, DeviceView};
-use crate::ui::sidebar_presentation::{SIDEBAR_SURFACE_INSET, SIDEBAR_TEXT_INSET};
+use crate::ui::sidebar::sidebar_presentation::{SIDEBAR_SURFACE_INSET, SIDEBAR_TEXT_INSET};
 
 const ARROW_CLOSED: &str = "pan-end-symbolic";
 const ARROW_OPEN: &str = "pan-down-symbolic";

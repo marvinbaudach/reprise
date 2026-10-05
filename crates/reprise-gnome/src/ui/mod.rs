@@ -167,10 +167,6 @@ pub(crate) use playback::{now_playing_wiring, player_controller, player_controll
 pub(crate) use scan::{scan_card_css, scan_flow};
 use scan::{scan_chrome, scan_progress, scan_worker};
 use scrobbling::{lastfm_secret, listenbrainz_secret, scrobble_runtime, scrobble_session};
-#[cfg(test)]
-pub(crate) use sidebar::sidebar_dnd;
-pub(crate) use sidebar::sidebar_session;
-use sidebar::{sidebar_device_card, sidebar_issue_strings, sidebar_presentation, sidebar_rebuild};
 use tag_edit::{
     autocomplete_entry, tag_editor_dirty, tag_editor_failures, tag_editor_form, tag_editor_save,
     tag_editor_state, tag_editor_style, tag_editor_widgets,

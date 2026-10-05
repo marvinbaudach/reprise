@@ -219,7 +219,7 @@ fn the_sidebar_keeps_its_column_at_a_narrow_viewport() {
     );
 
     let split = build_split_view(&sidebar_page, &content);
-    super::super::sidebar_presentation::style_overlay_split_view(&split);
+    crate::ui::sidebar::sidebar_presentation::style_overlay_split_view(&split);
     split.set_show_sidebar(true);
     let window = gtk4::Window::builder().child(&split).build();
     window.set_default_size(600, 700);

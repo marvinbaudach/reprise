@@ -271,7 +271,7 @@ pub(in crate::ui) fn wire(context: ActionWiring<'_>) {
                 return;
             };
             if let Some(track_list) = track_list_weak.upgrade() {
-                crate::ui::sidebar_session::sync_current_source(
+                crate::ui::sidebar::sidebar_session::sync_current_source(
                     &sidebar.shared,
                     &track_list.current_source(),
                 );

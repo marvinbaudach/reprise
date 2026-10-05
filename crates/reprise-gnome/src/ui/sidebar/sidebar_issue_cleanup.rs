@@ -18,8 +18,8 @@ use reprise_core::queries;
 use reprise_core::view_source::ViewSource;
 
 use crate::ui::popover_lifecycle;
+use crate::ui::sidebar::sidebar_issue_strings as copy;
 use crate::ui::sidebar::{rebuild, show_toast, OnRemoveMissing, Shared};
-use crate::ui::sidebar_issue_strings as copy;
 use crate::ui::strings;
 
 const ACTION_DISMISS_ALL: &str = "dismiss-all";

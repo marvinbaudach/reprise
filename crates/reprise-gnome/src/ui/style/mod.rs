@@ -66,7 +66,7 @@ fn app_css() -> String {
         super::eq_bars::css(),
         super::playing_marker::css(),
         super::cover_lift::css(),
-        super::sidebar_device_card::css(),
+        crate::ui::sidebar::sidebar_device_card::css(),
         super::source_context_surface::css(),
         super::track_list::queue_sections::css(),
         crate::ui::window::library_chrome::css(),

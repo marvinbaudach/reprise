@@ -15,7 +15,7 @@
 //! handle directly keeps raw connections and SQL behind Core's named
 //! operations, keeps both call sites identical, and matches this project's
 //! existing seam for such dual-path functions
-//! (e.g. `ui::sidebar_dnd::handle_playlist_drop`, `ui::track_list_context_
+//! (e.g. `ui::sidebar::sidebar_dnd::handle_playlist_drop`, `ui::track_list_context_
 //! menu`'s `handle_*` functions called from both real actions and their
 //! `REPRISE_SMOKE_MENU_ACTION` hook).
 //!
