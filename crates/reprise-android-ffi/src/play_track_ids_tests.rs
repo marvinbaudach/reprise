@@ -43,30 +43,33 @@ fn seed_tracks(directory: &Path, titles: &[&str]) -> Vec<reprise_core::models::T
     .rows
 }
 
-#[test]
-fn set_next_carries_the_gain_resolved_from_the_phone_database() {
-    let directory = tempfile::tempdir().unwrap();
-    let tracks = seed_tracks(directory.path(), &["First", "Second"]);
-    let database_path = directory.path().join(crate::DATABASE_FILE_NAME);
+fn measure_loudness(directory: &Path, track_id: i64, integrated_lufs: f64) {
+    let database_path = directory.join(crate::DATABASE_FILE_NAME);
     let database = reprise_core::db::Db::open_migrated(Some(&database_path)).unwrap();
-    let source = reprise_core::db::track_source_fingerprint(&database, tracks[1].id)
+    let source = reprise_core::db::track_source_fingerprint(&database, track_id)
         .unwrap()
         .unwrap();
     reprise_core::db::set_track_render_data(
         &database,
-        tracks[1].id,
+        track_id,
         source,
         &reprise_core::waveform::TrackRenderData {
             waveform_peaks: Vec::new(),
             spectrogram: reprise_core::spectrogram::TrackSpectrogram::empty(),
             loudness: Some(reprise_core::library::loudness::MeasuredLoudness {
-                integrated_lufs: -21.0,
+                integrated_lufs,
                 true_peak: 0.5,
             }),
         },
     )
     .unwrap();
-    drop(database);
+}
+
+#[test]
+fn set_next_carries_the_gain_resolved_from_the_phone_database() {
+    let directory = tempfile::tempdir().unwrap();
+    let tracks = seed_tracks(directory.path(), &["First", "Second"]);
+    measure_loudness(directory.path(), tracks[1].id, -21.0);
     let calls = Arc::new(Mutex::new(Vec::new()));
     let session = AndroidPlaybackSession::new(
         library_in(directory.path()),
@@ -204,4 +207,48 @@ fn id_only_play_resolves_live_paths_and_preserves_the_requested_start() {
             PortCall::SetNext(Some(tracks[1].path.clone()), 0.0),
         ],
     );
+}
+
+#[test]
+fn a_track_whose_uri_is_not_its_database_path_still_gets_its_gain_by_id() {
+    let directory = tempfile::tempdir().unwrap();
+    let tracks = seed_tracks(directory.path(), &["First", "Second"]);
+    measure_loudness(directory.path(), tracks[0].id, -21.0);
+    measure_loudness(directory.path(), tracks[1].id, -15.0);
+    let calls = Arc::new(Mutex::new(Vec::new()));
+    let session = AndroidPlaybackSession::new(
+        library_in(directory.path()),
+        Box::new(RecordingPort {
+            calls: Arc::clone(&calls),
+            bridge: Arc::new(Mutex::new(None::<Arc<PlaybackEventBridge>>)),
+        }),
+        Box::new(RecordingListener {
+            snapshots: Arc::new(Mutex::new(Vec::new())),
+            report_changes: Arc::new(AtomicUsize::new(0)),
+        }),
+    )
+    .unwrap();
+    calls.lock().unwrap().clear();
+
+    // The phone plays provider URIs that are not the paths Core stores.
+    session
+        .play_tracks(
+            vec![tracks[0].id, tracks[1].id],
+            vec![
+                "content://provider/document/first".to_owned(),
+                "content://provider/document/second".to_owned(),
+            ],
+            0,
+        )
+        .unwrap();
+
+    let recorded = calls.lock().unwrap();
+    assert!(recorded.contains(&PortCall::PlayPath(
+        "content://provider/document/first".to_owned(),
+        3.0
+    )));
+    assert!(recorded.contains(&PortCall::SetNext(
+        Some("content://provider/document/second".to_owned()),
+        -3.0
+    )));
 }

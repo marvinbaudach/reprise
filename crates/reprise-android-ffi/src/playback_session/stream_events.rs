@@ -15,7 +15,7 @@ use crate::listen_export_recorder::RecordedListen;
 use crate::play_recorder::RecordedPlay;
 use crate::playback::AndroidPlaybackState;
 
-use super::unity_gain_item;
+use super::gain::QueuedTrack;
 use super::SessionInner;
 
 const TRACK_UNAVAILABLE_SKIPPED: &str = "Track unavailable — skipped";
@@ -35,7 +35,7 @@ impl SessionInner {
         enum FollowUp {
             None,
             Start,
-            Feed(Option<String>),
+            Feed(Option<QueuedTrack>),
             Stop,
         }
 
@@ -113,7 +113,7 @@ impl SessionInner {
                             state.note_playback_started(history_entry);
                         }
                         (
-                            FollowUp::Feed(state.next_uri()),
+                            FollowUp::Feed(state.next_track()),
                             play,
                             Some(state.queue.clone()),
                         )
@@ -207,9 +207,9 @@ impl SessionInner {
                     self.notify();
                 }
             }
-            FollowUp::Feed(next_uri) => {
-                if let Ok(backend) = self.backend() {
-                    backend.set_next(next_uri.as_deref().map(unity_gain_item));
+            FollowUp::Feed(next) => {
+                if let Err(error) = self.feed_next(next) {
+                    tracing::warn!(%error, "could not pre-feed the next Android queue item");
                 }
                 self.notify();
             }

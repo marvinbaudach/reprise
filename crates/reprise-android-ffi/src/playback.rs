@@ -57,7 +57,6 @@ mod listen_export_playback_tests;
 
 type EventHandler = dyn Fn(StreamEvent) + Send + Sync + 'static;
 type FaultAwareEventHandler = dyn Fn(StreamEvent, Option<bool>) + Send + Sync + 'static;
-type GainResolver = dyn Fn(&str) -> f64 + Send + Sync + 'static;
 
 /// The playback states Media3 must report back to Core.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, uniffi::Enum)]
@@ -136,7 +135,6 @@ pub trait AndroidPlaybackPort: Send + Sync {
 /// Adapts the foreign Media3 command port to Core's playback contract.
 pub struct AndroidPlaybackBackend {
     port: Box<dyn AndroidPlaybackPort>,
-    gain_resolver: Option<Arc<GainResolver>>,
 }
 
 impl AndroidPlaybackBackend {
@@ -146,23 +144,16 @@ impl AndroidPlaybackBackend {
     ) -> Result<Self, PlaybackError> {
         let bridge = PlaybackEventBridge::new(on_event);
         port.set_event_bridge(bridge).map_err(PlaybackError::from)?;
-        Ok(Self {
-            port,
-            gain_resolver: None,
-        })
+        Ok(Self { port })
     }
 
     pub(crate) fn new_with_faults(
         port: Box<dyn AndroidPlaybackPort>,
         on_event: Box<FaultAwareEventHandler>,
-        gain_resolver: Arc<GainResolver>,
     ) -> Result<Self, PlaybackError> {
         let bridge = PlaybackEventBridge::new_with_faults(on_event);
         port.set_event_bridge(bridge).map_err(PlaybackError::from)?;
-        Ok(Self {
-            port,
-            gain_resolver: Some(gain_resolver),
-        })
+        Ok(Self { port })
     }
 
     pub fn set_equalizer(
@@ -182,12 +173,8 @@ impl AndroidPlaybackBackend {
 
 impl PlaybackBackend for AndroidPlaybackBackend {
     fn play(&self, item: PlaybackItem<'_>) -> Result<(), PlaybackError> {
-        let gain_db = self
-            .gain_resolver
-            .as_ref()
-            .map_or(item.gain_db, |resolve| resolve(item.path));
         self.port
-            .play_path(item.path.to_owned(), gain_db)
+            .play_path(item.path.to_owned(), item.gain_db)
             .map_err(PlaybackError::from)
     }
 
@@ -228,11 +215,7 @@ impl PlaybackBackend for AndroidPlaybackBackend {
 
     fn set_next(&self, item: Option<PlaybackItem<'_>>) {
         let (uri, gain_db) = item.map_or((None, 0.0), |item| {
-            let gain_db = self
-                .gain_resolver
-                .as_ref()
-                .map_or(item.gain_db, |resolve| resolve(item.path));
-            (Some(item.path.to_owned()), gain_db)
+            (Some(item.path.to_owned()), item.gain_db)
         });
         let _ = self.port.set_next(uri, gain_db);
     }
