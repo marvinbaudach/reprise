@@ -203,7 +203,7 @@ pub(crate) use maintenance::{remove_tracks_impl, RemoveGuard};
 pub use playlist::query_playlist_tracks_full;
 pub use queue::{
     is_queue_capped, query_available_episode_ids, query_queue_duration_ms, query_queue_item_window,
-    QueueItemMetadata, QUEUE_LIMIT,
+    track_source_paths, QueueItemMetadata, QUEUE_LIMIT,
 };
 pub use stats::{query_library_stats, query_library_stats_browsed, LibraryStats};
 pub use surface_browse::*;

@@ -54,15 +54,15 @@ impl AndroidPlaybackSession {
     ) -> Result<AndroidTrashReport, LibraryError> {
         let (plan, already_gone) = {
             let database = self.inner.library.writer()?;
+            let paths = queries::track_source_paths(&database, &track_ids).map_err(|error| {
+                LibraryError::Query {
+                    detail: format!("could not resolve a track for deletion: {error}"),
+                }
+            })?;
             let mut tracks = Vec::with_capacity(track_ids.len());
             let mut already_gone = Vec::new();
             for track_id in track_ids {
-                let path = queries::track_source_path(&database, track_id).map_err(|error| {
-                    LibraryError::Query {
-                        detail: format!("could not resolve a track for deletion: {error}"),
-                    }
-                })?;
-                match path {
+                match paths.get(&track_id).cloned() {
                     Some(path) => tracks.push((track_id, path)),
                     None => already_gone.push(AndroidTrashFailure {
                         track_id,

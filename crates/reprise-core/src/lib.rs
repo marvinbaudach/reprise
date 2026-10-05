@@ -62,6 +62,7 @@ mod db_new_releases_history;
 mod db_new_releases_notify;
 mod db_online_sources;
 mod db_play_journal;
+mod db_playlist_track_index;
 mod db_podcast_channel_image;
 mod db_podcast_resume_scope;
 mod db_podcasts_radio;

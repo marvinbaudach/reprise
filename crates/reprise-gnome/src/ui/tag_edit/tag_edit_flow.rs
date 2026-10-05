@@ -555,11 +555,7 @@ fn finish_apply(
             tag_save_refresh::first_view_mismatch(&state.view_ids, after)
         });
     if updated > 0 {
-        let tag_changed_paths: Vec<PathBuf> = writes
-            .iter()
-            .filter(|write| !write.patch.tags.is_empty() && report.updated_ids.contains(&write.id))
-            .map(|write| write.path.clone())
-            .collect();
+        let tag_changed_paths = tag_save_refresh::tag_changed_paths(writes, &report.updated_ids);
         let live_reload = opened_reload.unwrap_or_else(|| OpenedReloadState {
             anchor: capture_reload_anchor(shared),
             view_ids: shared.current_view_ids(),
