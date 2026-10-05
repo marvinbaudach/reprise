@@ -4,6 +4,52 @@ Reprise release notes are curated from the changes that reached the stable
 branch. They describe user-visible changes rather than reproducing commit
 messages.
 
+## [0.1.246] - 2026-10-05
+
+### Playback and presentation
+
+- The player bar has a sleep timer. A moon button left of the volume control
+  stops playback after 15, 30, 45 or 60 minutes, or at the end of the current
+  track, and the same menu cancels it. When the time runs out, the volume fades
+  over four seconds, playback pauses, and the volume returns to where it was.
+- Ctrl+K opens Quick Open. It jumps to a track, album, artist, playlist,
+  podcast show or radio station by name, and radio stations appear only when
+  the Radio module is allowed online.
+- The Song Visuals bars move like CAVA's again. A kick drum pulled the whole
+  spectrum down for a moment, and quiet bands snapped to zero instead of
+  falling. The port now matches CAVA's own core: the frame-wide duck applies
+  only while the bars calibrate at the start, and quiet bands fall smoothly.
+  This holds on the desktop and on Android. A louder track that follows a quiet
+  one may touch the top for a moment, as it does in CAVA.
+
+### Android
+
+- Deleting tracks can be undone. Instead of a confirmation dialog, the deleted
+  tracks leave the list and the queue at once, and a snackbar offers Undo for
+  six seconds, or longer when accessibility settings ask for it. Only then are
+  the files moved to the trash. If the app is closed or killed in that window,
+  nothing is deleted, and Undo puts the rows and their queue positions back.
+  Tracks waiting to be deleted cannot be played from album or artist pages.
+- Removing a track from the queue can be undone. The row returns to its old
+  place.
+- Android Auto can browse the library. It offers Recently played, Playlists,
+  Albums, and Artists with their albums and songs, and a tapped song plays with
+  its list as the queue. Only Android Auto, Wear and the app itself may browse
+  or control playback this way.
+- A home-screen widget controls playback, in a 4×1 and a 2×2 size. Tapping the
+  cover opens the app, and with nothing to resume the buttons open the app as
+  well. The notification, the lock screen, Android Auto and the widget all show
+  the title, artist, album, duration and cover.
+- After an app update the phone shows the visualizer and fetches covers by
+  itself. Until the library folder was picked again or a scan ran, the track
+  restored after the update never got its waveform and spectrogram, so the
+  visualizer stayed blank, and album covers were not downloaded. The phone now
+  computes the analysis even before the folder is registered, retries one that
+  was cancelled or failed up to three times, and starts the cover pass as soon
+  as the restored folder is registered. A real network return also restarts
+  the background cover pass once, unless the artwork download was stopped by
+  hand.
+
 ## [0.1.235] - 2026-10-05
 
 ### Library
