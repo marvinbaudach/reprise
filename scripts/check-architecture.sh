@@ -298,7 +298,7 @@ check_core_agent_allowlist \
 # Positional APIs become harder to call correctly as their argument lists grow.
 # Keep the remaining explicit suppressions from multiplying, and require this
 # ceiling to fall in the same change whenever a suppression is removed.
-too_many_arguments_budget=29
+too_many_arguments_budget=19
 too_many_arguments=$(rg -U --count-matches '(allow|expect)\(\s*clippy::too_many_arguments' \
   crates --glob '*.rs' 2>/dev/null \
   | awk -F: '{ total += $2 } END { print total + 0 }')
