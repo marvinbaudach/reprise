@@ -1,5 +1,3 @@
-#![allow(dead_code)]
-
 use std::borrow::Cow;
 
 use chrono::NaiveDate;
@@ -241,11 +239,13 @@ pub(super) fn release_link(entry: &HistoryEntry) -> Option<ReleaseLink<'_>> {
     })
 }
 
-pub(super) fn release_link_label(entry: &HistoryEntry) -> Option<String> {
+#[cfg(test)]
+fn release_link_label(entry: &HistoryEntry) -> Option<String> {
     release_link(entry).map(|link| link.label())
 }
 
-pub(super) fn release_link_target(entry: &HistoryEntry) -> Option<Cow<'_, str>> {
+#[cfg(test)]
+fn release_link_target(entry: &HistoryEntry) -> Option<Cow<'_, str>> {
     release_link(entry).map(|link| link.target)
 }
 

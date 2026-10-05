@@ -226,7 +226,10 @@ impl AndroidVisualEngine {
     }
 
     /// Installs one already-smoothed spectrogram frame.
-    #[allow(clippy::needless_pass_by_value)] // UniFFI cannot export borrowed slices.
+    #[expect(
+        clippy::needless_pass_by_value,
+        reason = "UniFFI cannot export borrowed slices"
+    )]
     pub fn ingest_bands(&self, bands: Vec<f32>) {
         let has_analysis = !bands.is_empty();
         let frame = spectrum_frame_from_bands(&bands);
@@ -275,7 +278,10 @@ impl AndroidVisualEngine {
     /// processor already exists, or held until the first PCM block creates
     /// one otherwise (this engine has no live audio yet, so there is
     /// normally nothing to seed immediately). Empty input is a no-op.
-    #[allow(clippy::needless_pass_by_value)] // UniFFI cannot export borrowed slices.
+    #[expect(
+        clippy::needless_pass_by_value,
+        reason = "UniFFI cannot export borrowed slices"
+    )]
     pub fn adopt_shape(&self, bands: Vec<f32>) {
         if bands.is_empty() {
             return;
@@ -304,7 +310,10 @@ impl AndroidVisualEngine {
     }
 
     /// Downmixes interleaved little-endian PCM16 into the live-audio ring buffer.
-    #[allow(clippy::needless_pass_by_value)] // UniFFI cannot export borrowed byte slices.
+    #[expect(
+        clippy::needless_pass_by_value,
+        reason = "UniFFI cannot export borrowed byte slices"
+    )]
     pub fn ingest_pcm_i16(
         &self,
         bytes: Vec<u8>,

@@ -86,6 +86,7 @@ impl PodcastFilter {
         }
     }
 
+    #[cfg(test)]
     pub(super) fn with_query(&self, query: &str) -> Self {
         Self {
             query: query.trim().to_owned(),
@@ -310,6 +311,7 @@ pub(super) fn author_line<'a>(title: &str, author: Option<&'a str>) -> Option<&'
     Some(author)
 }
 
+#[cfg(test)]
 pub(super) fn source_pill(kind: PodcastKind) -> Pill {
     match kind {
         PodcastKind::Rss => Pill {

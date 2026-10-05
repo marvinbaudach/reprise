@@ -30,7 +30,10 @@ enum PreparedAction {
 }
 
 // These independent scanner services stay explicit so their mutable lease-bound lifetimes remain visible.
-#[allow(clippy::too_many_arguments)]
+#[expect(
+    clippy::too_many_arguments,
+    reason = "independent scanner services keep their lease-bound lifetimes explicit"
+)]
 pub(super) fn walk_root_in_batches<'source>(
     source: &'source dyn LibrarySource,
     writer: &dyn ScanWriter,
@@ -86,7 +89,10 @@ pub(super) fn walk_root_in_batches<'source>(
 }
 
 // These independent scanner services stay explicit so their mutable lease-bound lifetimes remain visible.
-#[allow(clippy::too_many_arguments)]
+#[expect(
+    clippy::too_many_arguments,
+    reason = "independent scanner services keep their lease-bound lifetimes explicit"
+)]
 fn process_batch<'source>(
     mut items: Vec<LibraryWalkItem>,
     source: &'source dyn LibrarySource,

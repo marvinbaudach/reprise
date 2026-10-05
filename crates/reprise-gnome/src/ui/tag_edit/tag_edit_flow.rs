@@ -90,7 +90,7 @@ enum ApplyOrigin {
 // `strings::track_edit_result_toast` it wraps — kept for its
 // `ApplyOrigin::ImportHint` suppression rule, which `finish_apply` still
 // applies inline, and pinned by its own unit test.
-#[allow(dead_code)]
+#[cfg(test)]
 fn completion_toast(origin: ApplyOrigin, updated: usize, failed: usize) -> Option<String> {
     if origin == ApplyOrigin::ImportHint && updated > 0 && failed == 0 {
         None

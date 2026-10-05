@@ -39,7 +39,6 @@ impl DeviceBackend for FailingCopyBackend {
         })
     }
 
-    #[allow(clippy::too_many_arguments)]
     fn replace_track(
         &self,
         _device_id: String,

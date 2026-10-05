@@ -14,7 +14,7 @@ members = [
 default-members = ["crates/reprise-gnome"]
 
 [workspace.package]
-version = "0.1.235"
+version = "0.1.236"
 authors = ["Marvin Baudach"]
 edition = "2021"
 # gtk-rs 0.22 and gstreamer-rs 0.25 set the current dependency floor.
@@ -32,6 +32,10 @@ license = "GPL-3.0-or-later"
 # unnested_or_patterns (readability in match arms). Moved to
 # `[workspace.lints]` in Task 6 so the same curated set keeps applying to all
 # three crates after the workspace split.
+# significant_drop_in_scrutinee catches a lock or RefCell guard living through a
+# match or if-let body, the codebase's recurring panic and deadlock class.
+# allow_attributes_without_reason keeps every suppression explaining why the
+# code needs the exception, so a stale one is easy to judge and delete.
 [workspace.lints.clippy]
 needless_pass_by_value = "warn"
 redundant_closure_for_method_calls = "warn"
@@ -39,3 +43,5 @@ semicolon_if_nothing_returned = "warn"
 uninlined_format_args = "warn"
 map_unwrap_or = "warn"
 unnested_or_patterns = "warn"
+significant_drop_in_scrutinee = "warn"
+allow_attributes_without_reason = "warn"

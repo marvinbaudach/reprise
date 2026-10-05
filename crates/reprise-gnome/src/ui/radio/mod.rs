@@ -1,6 +1,4 @@
 //! Internet Radio source surface.
-#![allow(dead_code)]
-
 mod add_dialog;
 mod add_dialog_location;
 mod add_dialog_network;

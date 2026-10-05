@@ -43,7 +43,10 @@ pub struct AndroidTrashReport {
 #[uniffi::export]
 impl AndroidPlaybackSession {
     // UniFFI transfers callback objects by value across the ABI.
-    #[allow(clippy::needless_pass_by_value)]
+    #[expect(
+        clippy::needless_pass_by_value,
+        reason = "UniFFI hands owned callbacks across the FFI boundary"
+    )]
     pub fn trash_tracks(
         &self,
         track_ids: Vec<i64>,

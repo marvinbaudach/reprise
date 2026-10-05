@@ -109,7 +109,6 @@ pub(in crate::ui::player_bar::waveform_seek) struct State {
     pub(in crate::ui::player_bar::waveform_seek) last_drawn_drag_fraction: Option<f64>,
     // Pause desaturation animation.
     pub(in crate::ui::player_bar::waveform_seek) desaturation_progress: f64, // 0.0 = full chroma, 1.0 = paused chroma
-    #[allow(dead_code)] // Consumed by the PlayerBar/Compact wiring in MOT-5 Phase B.
     pub(in crate::ui::player_bar::waveform_seek) desaturation_target: f64,
     pub(in crate::ui::player_bar::waveform_seek) min_bar_height: f64,
     pub(in crate::ui::player_bar::waveform_seek) max_bar_height: f64,

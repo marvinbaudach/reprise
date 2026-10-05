@@ -7,7 +7,10 @@
 //! real library at `~/.local/share/reprise/reprise.db` is never touched —
 //! `--db` always points at the temp file.
 
-#![allow(dead_code)]
+#![allow(
+    dead_code,
+    reason = "each integration-test target uses a different harness subset"
+)]
 
 use std::path::PathBuf;
 use std::process::{Command, Output};

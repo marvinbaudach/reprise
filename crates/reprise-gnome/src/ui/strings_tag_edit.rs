@@ -183,23 +183,7 @@ pub const TAG_PER_TRACK: &str = N_!("per track");
 pub const TAG_WILL_APPLY: &str = N_!("will be applied to all {count}");
 pub const TAG_SAVE: &str = N_!("Save");
 pub const TAG_SAVE_COUNT: &str = N_!("Save {count}");
-// Pre-F1 pending-bar header copy ("N changes pending"), superseded by the
-// review footer's TAG-5 summary line ("2 fields · 30 tracks affected").
-// Kept — strings.rs is append-only — rather than deleted.
-#[allow(dead_code)]
-pub const TAG_PENDING_CHANGES: &str = N_!("{count} change pending");
-#[allow(dead_code)] // Append-only gettext key superseded by the TAG-5 summary.
-pub const TAG_PENDING_CHANGES_PLURAL: &str = N_!("{count} changes pending");
 pub const TAG_REVERT: &str = N_!("Revert");
-// Superseded by TAG-8's two-answer discard prompt (`tag_discard_prompt_title`
-// + `TAG_KEEP_EDITING`, below): a discard prompt with a "Save" way out
-// defeats its own purpose ("Speichern ist nie der Ausweg aus einer
-// Schließen-Geste" — Beschluss TAG-8). Kept — `strings_tag_edit.rs` is
-// append-only — rather than deleted.
-#[allow(dead_code)]
-pub const TAG_UNSAVED_TITLE: &str = N_!("Save changes?");
-#[allow(dead_code)] // Append-only gettext key superseded by the TAG-8 prompt.
-pub const TAG_UNSAVED_SAVE: &str = N_!("Save");
 pub const TAG_UNSAVED_DISCARD: &str = N_!("Discard");
 
 const TAG_DISCARD_PROMPT_TITLE: &str = N_!("Discard changes to {count} track?");
@@ -221,17 +205,6 @@ pub fn tag_discard_prompt_title(pending_track_count: usize) -> String {
 /// TAG-8's default (non-destructive) discard-prompt response.
 pub const TAG_KEEP_EDITING: &str = N_!("Keep editing");
 
-// Prepared for the Shortcuts-Overlay entry (`ui/help.rs`'s
-// `NAVIGATION_SHORTCUTS`/a new "Tag Editor" section) that documents TAG-8's
-// Ctrl+Enter save shortcut — `help.rs` is outside this package's ownership
-// this wave (see the E1/E2 report), so the copy is staged here, unused,
-// rather than left undone.
-#[allow(dead_code)]
-pub const TAG_SAVE_SHORTCUT: &str = N_!("Save Tags");
-// Retained for a future cover-write feature: v1 (3a layout, Beschluss #1)
-// dropped the "Change cover…" affordance from the tag editor entirely.
-#[allow(dead_code)]
-pub const TAG_CHANGE_COVER: &str = N_!("Change cover\u{2026}");
 // 3a layout (TAG-3/Beschluss #2): header subtitle for Multi mode, and the
 // tooltip on Title/Track-number once they're locked read-only there.
 pub const TAG_SUBTITLE_MULTI: &str =
@@ -246,17 +219,6 @@ pub fn tag_edit_title_multi(count: usize) -> String {
 pub fn tag_save_count(count: usize) -> String {
     let count_text = count.to_string();
     formatted(TAG_SAVE_COUNT, &[("count", &count_text)])
-}
-
-#[allow(dead_code)] // Superseded by Task F1's TAG-5 summary line; see TAG_PENDING_CHANGES.
-pub fn tag_pending_count(count: usize) -> String {
-    let count_text = count.to_string();
-    plural(
-        TAG_PENDING_CHANGES,
-        TAG_PENDING_CHANGES_PLURAL,
-        count,
-        &[("count", &count_text)],
-    )
 }
 
 pub fn tag_will_apply(count: usize) -> String {

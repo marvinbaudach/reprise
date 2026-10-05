@@ -2,8 +2,6 @@
 //!
 //! Wave 2 source views consume these state types. E2 intentionally lands the
 //! complete state seam before those callers.
-#![allow(dead_code)]
-
 use std::rc::Rc;
 use std::sync::atomic::{AtomicU64, Ordering};
 
@@ -481,13 +479,6 @@ impl ExternalPlaybackState {
         }
     }
 
-    pub(in crate::ui) fn begin_preview(&mut self, path: String) {
-        self.session = None;
-        self.preview_path = Some(path);
-        self.play_next = None;
-        self.bump_generation();
-    }
-
     pub(in crate::ui) fn clear_preview(&mut self) {
         self.preview_path = None;
     }
@@ -637,6 +628,7 @@ pub(in crate::ui) enum RadioPhase {
 pub(in crate::ui) enum RadioCommand {
     Disconnect,
     Reconnect,
+    #[cfg(test)]
     Stop,
 }
 
@@ -648,6 +640,7 @@ pub(in crate::ui) struct RadioPresentation {
 }
 
 impl RadioPresentation {
+    #[cfg(test)]
     pub(in crate::ui) fn connected() -> Self {
         Self {
             phase: RadioPhase::Connected,
@@ -668,6 +661,7 @@ impl RadioPresentation {
         self.inline_error.as_deref()
     }
 
+    #[cfg(test)]
     pub(in crate::ui) fn table_now_playing(&self) -> Option<&str> {
         (self.phase == RadioPhase::Connected)
             .then(|| self.last_title())
@@ -678,6 +672,7 @@ impl RadioPresentation {
         self.phase == RadioPhase::Connected
     }
 
+    #[cfg(test)]
     pub(in crate::ui) fn is_empty(&self) -> bool {
         false
     }
@@ -716,6 +711,7 @@ impl RadioPresentation {
         self.inline_error = Some(message);
     }
 
+    #[cfg(test)]
     pub(in crate::ui) fn activation(&self) -> RadioCommand {
         if self.phase == RadioPhase::Connected {
             RadioCommand::Stop

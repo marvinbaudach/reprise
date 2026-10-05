@@ -6,7 +6,10 @@ use libadwaita as adw;
 
 use super::super::content_stack::DeferredPage;
 
-#[allow(clippy::too_many_arguments)]
+#[expect(
+    clippy::too_many_arguments,
+    reason = "one handle per deferred page it wires; should take a parameter object"
+)]
 pub(super) fn install(
     preferences: &Rc<crate::ui::preferences::PreferencesContext>,
     cover_batch: &Rc<crate::ui::cover_download_batch::CoverDownloadBatch>,

@@ -7,7 +7,7 @@ use std::time::Duration;
 use gtk4::gio;
 // Re-exported for the `#[path]` child test modules below, which reach it
 // through `use super::*;` rather than importing it a second time.
-#[allow(unused_imports)]
+use super::device_sync_runtime::*;
 use gtk4::gio::prelude::*;
 use reprise_core::db::Db;
 use reprise_core::device_sync::browser::{StorageKind, StorageOption};
@@ -17,10 +17,6 @@ use reprise_core::device_sync::{
     DeviceStorageSnapshot, ManagedDeviceFile, SelectionSource, StorageId,
 };
 use reprise_platform_linux::device_sync::{CopyOutcome, DeviceDescriptor};
-#[allow(unused_imports)]
-use reprise_platform_linux::device_transfer::{TranscodeProfile, TranscodeRequest, TranscodedFile};
-
-use super::device_sync_runtime::*;
 
 const SETTLE_UNTIL_TIMEOUT: Duration = Duration::from_secs(5);
 

@@ -3,6 +3,9 @@ pub(in crate::ui) mod browse_bar_chips;
 mod browse_chooser;
 pub(in crate::ui) mod browse_filter_count;
 pub(in crate::ui) mod filter_bar;
-#[allow(unused_imports)]
+#[expect(
+    unused_imports,
+    reason = "child modules share the parent UI vocabulary through this import"
+)]
 use super::*;
 pub(in crate::ui) use reprise_view::browse as filter_restriction;

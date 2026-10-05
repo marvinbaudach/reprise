@@ -176,7 +176,10 @@ impl ConcertsSection {
         *self.on_open_view.borrow_mut() = on_open_view;
     }
 
-    #[allow(clippy::too_many_arguments)]
+    #[expect(
+        clippy::too_many_arguments,
+        reason = "the popover's render state, including an unused credentials flag; should drop it and take a parameter object"
+    )]
     pub(super) fn render(
         &self,
         enabled: bool,

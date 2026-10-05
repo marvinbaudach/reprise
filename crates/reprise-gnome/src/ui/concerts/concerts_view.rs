@@ -1,5 +1,3 @@
-#![allow(dead_code)]
-
 use std::cell::{Cell, RefCell};
 use std::rc::Rc;
 
@@ -337,10 +335,6 @@ impl ConcertsView {
             tracing::warn!(%error, "could not load concerts view");
         }
         maybe_background_refresh(&self.shared);
-    }
-
-    pub(in crate::ui) fn set_on_clear_filters(&self, callback: impl Fn() + 'static) {
-        *self.shared.on_clear_filters.borrow_mut() = Some(Rc::new(callback));
     }
 
     pub(in crate::ui) fn set_on_launch_error(&self, callback: impl Fn(String) + 'static) {

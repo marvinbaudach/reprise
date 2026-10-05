@@ -277,7 +277,7 @@ fn panel_has_no_local_header_refresh_or_close_buttons() {
 
 #[test]
 #[ignore = "requires a display; run via xvfb-run"]
-#[allow(deprecated)]
+#[expect(deprecated, reason = "the compatible API supports the workspace MSRV")]
 fn npp_2_no_volume_in_panel() {
     gtk4::init().unwrap();
     let content = gtk4::Box::new(gtk4::Orientation::Vertical, 0);

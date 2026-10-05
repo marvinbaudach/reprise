@@ -2,9 +2,15 @@
 pub(in crate::ui) enum SelectMode {
     // Kept in the resolver's complete operation vocabulary; GTK performs
     // non-Shift selection directly while the capture seam only observes it.
-    #[allow(dead_code)]
+    #[allow(
+        dead_code,
+        reason = "GTK owns plain selection while tests exercise the complete resolver vocabulary"
+    )]
     Only,
-    #[allow(dead_code)] // GTK handles non-Shift toggles before this resolver.
+    #[allow(
+        dead_code,
+        reason = "GTK owns plain selection while tests exercise the complete resolver vocabulary"
+    )]
     Toggle,
     Range,
     RangeAdditive,
@@ -33,8 +39,16 @@ pub(in crate::ui) struct AnchorState<Id> {
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub(in crate::ui) enum SelectionOp {
     SelectOnly(u32),
+    #[allow(
+        dead_code,
+        reason = "GTK owns toggles while tests exercise the complete resolver vocabulary"
+    )]
     Toggle(u32),
-    SelectRange { start: u32, len: u32, replace: bool },
+    SelectRange {
+        start: u32,
+        len: u32,
+        replace: bool,
+    },
 }
 
 pub(in crate::ui) fn validate<Id: PartialEq>(
@@ -59,17 +73,21 @@ pub(in crate::ui) fn resolve<Id: Clone>(
     mode: SelectMode,
 ) -> (SelectionOp, AnchorState<Id>) {
     match mode {
-        SelectMode::Only | SelectMode::Toggle => {
-            let op = if mode == SelectMode::Only {
-                SelectionOp::SelectOnly(target.position)
-            } else {
-                SelectionOp::Toggle(target.position)
-            };
+        SelectMode::Only => {
+            let position = target.position;
             let moved = AnchorState {
                 anchor: Some(target.clone()),
                 cursor: Some(target),
             };
-            (op, moved)
+            (SelectionOp::SelectOnly(position), moved)
+        }
+        SelectMode::Toggle => {
+            let position = target.position;
+            let moved = AnchorState {
+                anchor: Some(target.clone()),
+                cursor: Some(target),
+            };
+            (SelectionOp::Toggle(position), moved)
         }
         SelectMode::Range | SelectMode::RangeAdditive => {
             // Without a user-owned anchor, the fallback is the range anchor.

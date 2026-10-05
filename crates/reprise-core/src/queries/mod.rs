@@ -125,14 +125,20 @@ pub(crate) use clauses::PRESENT;
 // reasoning as `build_track_query` below, to keep that one string in sync
 // with the predicate it is meant to test rather than drifting as a
 // hand-copied literal.
-#[allow(unused_imports)]
+#[allow(
+    unused_imports,
+    reason = "only a test helper reads it, so the non-test build sees an unused import"
+)]
 pub(crate) use clauses::MISSING;
 // `build_track_query`'s only current caller is this module's own test suite
 // (`tests::query_builder_whitelists_and_sorts` et al.) — re-exported `pub`
 // regardless, to keep `crate::queries::build_track_query` resolving exactly
 // as it did before this split, matching this file's own non-test build
 // where the re-export would otherwise look unused.
-#[allow(unused_imports)]
+#[allow(
+    unused_imports,
+    reason = "only tests call it, so the non-test build sees an unused import"
+)]
 pub use clauses::build_track_query;
 // Task 2.1: the missing-file group queries the 18a "self-healing" card list
 // is built directly against — see `issues`'s module doc for the full

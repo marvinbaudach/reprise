@@ -676,7 +676,10 @@ fn install_drag_autoscroll(scrolled: &gtk4::ScrolledWindow) {
     scrolled.add_controller(motion);
 }
 
-#[allow(clippy::too_many_arguments)]
+#[expect(
+    clippy::too_many_arguments,
+    reason = "eight scalar geometry inputs of one easing step"
+)]
 fn autoscroll_value(
     current: f64,
     lower: f64,

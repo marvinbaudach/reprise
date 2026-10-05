@@ -27,7 +27,10 @@ thread_local! {
     static HANDLES: RefCell<Option<WindowLayoutTestHandles>> = const { RefCell::new(None) };
 }
 
-#[allow(clippy::too_many_arguments)]
+#[expect(
+    clippy::too_many_arguments,
+    reason = "eight widget handles published to the layout test hook; should take a parameter object"
+)]
 pub(super) fn publish(
     window: &adw::ApplicationWindow,
     split_view: &adw::OverlaySplitView,

@@ -41,5 +41,8 @@ pub(in crate::ui) mod source_item_identity;
 #[cfg(test)]
 pub(in crate::ui) mod test_support;
 pub(in crate::ui) mod up_next_transport;
-#[allow(unused_imports)]
+#[allow(
+    unused_imports,
+    reason = "child modules share the parent UI vocabulary through this import"
+)]
 use super::*;

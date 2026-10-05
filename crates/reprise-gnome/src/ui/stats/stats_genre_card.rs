@@ -26,7 +26,13 @@ pub(in crate::ui) struct StatsGenreCard {
     on_unify: StringCallback,
     on_open_genre: StringCallback,
     segment_reveals: Rc<RefCell<Vec<HorizontalReveal>>>,
-    #[cfg_attr(not(test), allow(dead_code))]
+    #[cfg_attr(
+        not(test),
+        allow(
+            dead_code,
+            reason = "only tests inspect this value; production code never reads it"
+        )
+    )]
     genre_buttons: Rc<RefCell<Vec<gtk4::Button>>>,
 }
 

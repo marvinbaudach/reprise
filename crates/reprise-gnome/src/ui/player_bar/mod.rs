@@ -15,7 +15,10 @@ mod waveform_primitives;
 pub(in crate::ui) mod waveform_seek;
 pub(in crate::ui) use reprise_view::waveform as waveform_shape;
 
-#[allow(unused_imports)]
+#[allow(
+    unused_imports,
+    reason = "child modules share the parent UI vocabulary through this import"
+)]
 use super::*;
 pub(in crate::ui) use surface::{
     PlayerBar, ICON_NEXT, ICON_PREVIOUS, ICON_REPEAT_ALL, ICON_SHUFFLE,

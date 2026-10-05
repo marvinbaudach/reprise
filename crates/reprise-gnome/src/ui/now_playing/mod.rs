@@ -14,7 +14,10 @@ mod surface;
 mod surface_css;
 pub(in crate::ui) mod up_next_panel;
 
-#[allow(unused_imports)]
+#[allow(
+    unused_imports,
+    reason = "child modules share the parent UI vocabulary through this import"
+)]
 use super::*;
 pub(in crate::ui) use surface::NowPlayingPanel;
 

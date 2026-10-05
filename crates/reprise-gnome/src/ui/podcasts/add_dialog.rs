@@ -35,6 +35,7 @@ use super::add_dialog_subscription::{baseline_for_import_choice, subscribe};
 use super::add_dialog_subscription::{configured_auto_download_default, subscribe_offline};
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[cfg(test)]
 pub(super) enum AddDialogPhase {
     Idle,
     Searching,
@@ -486,7 +487,10 @@ fn load_charts(request_generation: u64, country: String, context: &SearchContext
     );
 }
 
-#[allow(clippy::too_many_arguments)]
+#[expect(
+    clippy::too_many_arguments,
+    reason = "receiver, generation token, result widgets and the add options; should take a parameter object"
+)]
 fn attach_candidates(
     receiver: std::io::Result<async_channel::Receiver<Result<Vec<Candidate>, String>>>,
     request_generation: u64,
@@ -578,7 +582,10 @@ fn preview_error(error: &podcasts::PodcastError) -> String {
     error.classify().to_owned()
 }
 
-#[allow(clippy::too_many_arguments)]
+#[expect(
+    clippy::too_many_arguments,
+    reason = "request identity plus the dialog's result widgets; should take a parameter object"
+)]
 fn preview(
     request_generation: u64,
     kind: PodcastKind,

@@ -71,6 +71,7 @@ pub(super) struct Shared {
     error_banner: SourceErrorBanner,
     pub(super) root: gtk4::Widget,
     footer: gtk4::Box,
+    #[cfg(test)]
     footer_add: gtk4::Button,
     pub(super) add_dialog: RefCell<Option<Rc<RadioAddDialog>>>,
     toast_overlay: gtk4::glib::WeakRef<adw::ToastOverlay>,
@@ -235,6 +236,7 @@ impl RadioView {
             error_banner,
             root: root.upcast(),
             footer,
+            #[cfg(test)]
             footer_add,
             add_dialog: RefCell::new(None),
             toast_overlay: gtk4::glib::WeakRef::new(),
@@ -362,14 +364,6 @@ impl RadioView {
 
     pub(in crate::ui) fn set_on_mutated(&self, callback: impl Fn() + 'static) {
         *self.shared.on_mutated.borrow_mut() = Some(Rc::new(callback));
-    }
-
-    pub(in crate::ui) fn set_on_station_activated(&self, callback: impl Fn(i64) + 'static) {
-        *self.shared.on_activated.borrow_mut() = Some(Rc::new(callback));
-    }
-
-    pub(in crate::ui) fn set_on_station_removed(&self, callback: impl Fn(i64) + 'static) {
-        *self.shared.on_removed.borrow_mut() = Some(Rc::new(callback));
     }
 }
 

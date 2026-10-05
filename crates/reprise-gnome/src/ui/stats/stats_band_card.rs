@@ -18,7 +18,13 @@ type StringCallback = Rc<RefCell<Option<Rc<dyn Fn(String)>>>>;
 #[derive(Clone)]
 pub(in crate::ui) struct StatsBandCard {
     root: gtk4::Overlay,
-    #[cfg_attr(not(test), allow(dead_code))]
+    #[cfg_attr(
+        not(test),
+        allow(
+            dead_code,
+            reason = "only tests inspect this value; production code never reads it"
+        )
+    )]
     card_click: gtk4::GestureClick,
     picture: gtk4::Picture,
     fallback: gtk4::Label,
@@ -30,7 +36,13 @@ pub(in crate::ui) struct StatsBandCard {
     artist_image: Rc<RefCell<Option<Rc<StatsArtistImage>>>>,
     current_candidates: Rc<RefCell<Vec<String>>>,
     cover_generation: Rc<Cell<u64>>,
-    #[cfg_attr(not(test), allow(dead_code))]
+    #[cfg_attr(
+        not(test),
+        allow(
+            dead_code,
+            reason = "only tests inspect this value; production code never reads it"
+        )
+    )]
     pub(super) image_loaded: Rc<Cell<Option<bool>>>,
     on_open_artist: StringCallback,
     on_unify: StringCallback,

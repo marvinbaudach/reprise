@@ -12,7 +12,6 @@ pub(in crate::ui) struct NowPlayingColumn {
 }
 
 impl NowPlayingColumn {
-    #[allow(clippy::needless_pass_by_value)]
     pub(in crate::ui) fn new(
         content: &impl IsA<gtk4::Widget>,
         sidebar: &adw::ToolbarView,

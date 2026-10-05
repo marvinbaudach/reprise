@@ -358,7 +358,10 @@ impl TrackListModel {
     /// for very large libraries — no longer the `QUEUE_LIMIT`-capped id-list
     /// length. When that count reaches the cap the view's "play all" queue will
     /// be truncated, so it logs the conventional `is_queue_capped` warning.
-    #[allow(clippy::too_many_arguments)]
+    #[expect(
+        clippy::too_many_arguments,
+        reason = "one view description spread over seven arguments; should take a TrackViewQuery"
+    )]
     pub fn set_query_browsed_ai(
         &self,
         source: &ViewSource,
@@ -381,7 +384,10 @@ impl TrackListModel {
         )
     }
 
-    #[allow(clippy::too_many_arguments)]
+    #[expect(
+        clippy::too_many_arguments,
+        reason = "one view description plus a model change; should take a TrackViewQuery"
+    )]
     pub(super) fn set_query_browsed_ai_changed(
         &self,
         source: &ViewSource,
@@ -409,7 +415,10 @@ impl TrackListModel {
     /// a block move. A valid move exposes a shorter intermediate model only
     /// during its removal signal; all guards and the generation advance occur
     /// once before either shape emits.
-    #[allow(clippy::too_many_arguments)]
+    #[expect(
+        clippy::too_many_arguments,
+        reason = "one view description plus an optional model change; should take a TrackViewQuery"
+    )]
     fn set_query_browsed_ai_inner(
         &self,
         source: &ViewSource,

@@ -41,11 +41,13 @@ pub(super) fn station_position(rows: &[StationRow], station_id: i64) -> Option<u
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[cfg(test)]
 pub(super) enum StationRevealOutcome {
     Reveal,
     NotListed,
 }
 
+#[cfg(test)]
 pub(super) fn station_reveal_outcome(rows: &[StationRow], station_id: i64) -> StationRevealOutcome {
     if station_position(rows, station_id).is_some() {
         StationRevealOutcome::Reveal

@@ -272,12 +272,12 @@ impl Player {
     fn abort_crossfade(&self) {
         self.fade_generation.fetch_add(1, Ordering::SeqCst);
         self.crossfading.store(false, Ordering::SeqCst);
-        if let Some(secondary) = self
+        let secondary = self
             .incoming
             .lock()
             .unwrap_or_else(PoisonError::into_inner)
-            .take()
-        {
+            .take();
+        if let Some(secondary) = secondary {
             let _ = secondary.set_state(gst::State::Null);
         }
         let user_volume = *self

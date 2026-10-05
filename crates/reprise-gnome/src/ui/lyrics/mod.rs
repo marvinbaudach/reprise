@@ -12,5 +12,8 @@ pub(in crate::ui) mod player_lyrics;
 mod lyrics_view_tests;
 #[cfg(test)]
 mod player_lyrics_tests;
-#[allow(unused_imports)]
+#[allow(
+    unused_imports,
+    reason = "child modules share the parent UI vocabulary through this import"
+)]
 use super::*;

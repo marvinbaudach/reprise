@@ -5,5 +5,8 @@ pub(in crate::ui) mod compact_player_layouts;
 pub(in crate::ui) mod compact_player_menu;
 pub(in crate::ui) mod compact_player_scroll;
 pub(in crate::ui) mod minimal_view;
-#[allow(unused_imports)]
+#[allow(
+    unused_imports,
+    reason = "child modules share the parent UI vocabulary through this import"
+)]
 use super::*;

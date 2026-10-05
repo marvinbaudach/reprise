@@ -17,7 +17,6 @@ pub(in crate::ui) struct NavPlace {
 }
 
 impl NavPlace {
-    #[cfg_attr(not(test), allow(dead_code))]
     pub(in crate::ui) fn browser(browser: BrowserPlace) -> Self {
         Self { browser }
     }

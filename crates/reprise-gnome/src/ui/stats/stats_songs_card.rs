@@ -62,7 +62,13 @@ impl CoverGenerations {
 
 #[derive(Clone)]
 struct SummaryRenderer {
-    #[cfg_attr(not(test), allow(dead_code))]
+    #[cfg_attr(
+        not(test),
+        allow(
+            dead_code,
+            reason = "only tests inspect this value; production code never reads it"
+        )
+    )]
     rows: gtk4::Box,
     columns: [gtk4::Box; 2],
     bars: Rc<RefCell<Vec<gtk4::LevelBar>>>,
@@ -80,12 +86,30 @@ pub(in crate::ui) struct StatsSongsCard {
     root: gtk4::Box,
     summary: SummaryRenderer,
     full: ContinuationParts,
-    #[cfg_attr(not(test), allow(dead_code))]
+    #[cfg_attr(
+        not(test),
+        allow(
+            dead_code,
+            reason = "only tests inspect this value; production code never reads it"
+        )
+    )]
     revealer: gtk4::Revealer,
-    #[cfg_attr(not(test), allow(dead_code))]
+    #[cfg_attr(
+        not(test),
+        allow(
+            dead_code,
+            reason = "only tests inspect this value; production code never reads it"
+        )
+    )]
     reveal_button: gtk4::Button,
     full_rows: gtk4::Box,
-    #[cfg_attr(not(test), allow(dead_code))]
+    #[cfg_attr(
+        not(test),
+        allow(
+            dead_code,
+            reason = "only tests inspect this value; production code never reads it"
+        )
+    )]
     sort_toggle: adw::ToggleGroup,
     snapshot: Rc<RefCell<Option<StatsSnapshot>>>,
     sort_by: Rc<Cell<SortBy>>,
@@ -244,7 +268,7 @@ impl StatsSongsCard {
 
     /// The continuation lives inside the card (STATS-22); only the tests still
     /// need a handle on it, to prove exactly that.
-    #[cfg_attr(not(test), allow(dead_code))]
+    #[cfg(test)]
     pub(in crate::ui) fn expanded_widget(&self) -> &gtk4::Revealer {
         &self.revealer
     }

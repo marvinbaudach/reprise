@@ -7236,7 +7236,10 @@ committee published on 2026-05-29.
   model, no banner comment blocks drawn from repeated `=` or `-`, no emoji in
   comments.
 - **GP-20** [active] [core] — No dead code: no unused items, and no
-  `#[allow(dead_code)]` without a stated reason on the same or preceding line.
+  `#[allow(dead_code)]` or `#[expect(dead_code)]` without a stated reason in
+  the attribute's own `reason = "…"` argument. A comment on the same or
+  preceding line no longer counts; clippy's `allow_attributes_without_reason`
+  and `scripts/check-ai-hygiene.sh` both enforce it.
 - **GP-21** [active] [gtk] — Labels, titles, menu items and status badges use
   HIG header capitalisation; descriptions and status lines use sentence case.
   The Plugins count badge keeps its uppercase rendering. The Releases badges

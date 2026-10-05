@@ -144,7 +144,10 @@ fn recording_identities(recording: &Recording, confidence: u8) -> Vec<RemoteIden
         .collect()
 }
 
-#[allow(clippy::too_many_arguments)]
+#[expect(
+    clippy::too_many_arguments,
+    reason = "each value is independent identity evidence from AcoustID"
+)]
 fn identity(
     recording: &Recording,
     recording_mbid: String,

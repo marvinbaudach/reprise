@@ -52,7 +52,6 @@ pub use news::*;
 
 #[path = "strings_concerts.rs"]
 mod concerts;
-#[allow(unused_imports)]
 pub use concerts::*;
 
 #[path = "strings_location.rs"]
@@ -60,11 +59,9 @@ mod location;
 pub use location::*;
 #[path = "strings_releases.rs"]
 mod releases;
-#[allow(unused_imports)]
 pub use releases::*;
 #[path = "strings_notifications.rs"]
 mod notifications;
-#[allow(unused_imports)]
 pub use notifications::*;
 #[path = "strings_filter.rs"]
 mod filter;
@@ -111,24 +108,20 @@ pub use library_doctor_search::*;
 
 #[path = "strings_podcasts.rs"]
 mod podcasts;
-#[allow(unused_imports)]
 pub use podcasts::*;
 
 #[path = "strings_radio.rs"]
 mod radio;
-#[allow(unused_imports)]
 pub use radio::*;
 
 // SRC-7: the row-level add action is shared by Podcasts, YouTube and Radio,
 // so its wording lives in one place instead of three.
 #[path = "strings_sources.rs"]
 mod sources;
-#[allow(unused_imports)]
 pub use sources::*;
 
 #[path = "strings_online_sources.rs"]
 mod online_sources;
-#[allow(unused_imports)]
 pub use online_sources::*;
 
 pub const ONBOARDING_WELCOME: &str = N_!("Welcome to Reprise");
@@ -163,12 +156,6 @@ pub const COMPACT_MODE_SUGGESTION: &str = N_!("This window may be easier to use 
 pub const USE_COMPACT_MODE: &str = N_!("Use Compact Mode");
 // Compact Mode opens through the menu action; the Library header has no duplicate control.
 pub const RESTORE_FULL_WINDOW: &str = N_!("Restore Full Window");
-#[allow(dead_code)] // Append-only gettext key retained for repeat-state copy.
-pub const REPEAT_OFF: &str = N_!("Repeat Off");
-#[allow(dead_code)] // Append-only gettext key retained for repeat-state copy.
-pub const REPEAT_ALL: &str = N_!("Repeat All");
-#[allow(dead_code)] // Append-only gettext key retained for repeat-state copy.
-pub const REPEAT_ONE: &str = N_!("Repeat One");
 pub const VIEW_MODE_SAVE_FAILED: &str = N_!("Could not save the window view");
 pub const COMPACT_PLAYER_UNAVAILABLE: &str = N_!("Compact player is unavailable");
 pub const PREFERENCES: &str = N_!("Preferences");
@@ -308,9 +295,9 @@ pub fn delete_result_toast(removed: usize, failed: usize, trashed: bool) -> Stri
 // Superseded by Task F2's FB-3 split: `tag_save_result_toast` (no
 // failures) and `tag_save_result_toast_with_failures` (paired with the
 // "Details" action button and the 10 s unverdrängbar timeout FB-1 requires
-// for an action toast) in strings_tag_edit.rs. Kept — strings.rs is
-// append-only — rather than deleted.
-#[allow(dead_code)]
+// for an action toast) in strings_tag_edit.rs. Kept only for
+// `completion_toast`'s unit test in `tag_edit_flow.rs`.
+#[cfg(test)]
 pub fn track_edit_result_toast(updated: usize, failed: usize) -> String {
     let updated_text = updated.to_string();
     let failed_text = failed.to_string();

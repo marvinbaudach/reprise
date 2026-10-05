@@ -253,7 +253,10 @@ mod playback_failure_redaction_tests {
 /// passed to `Player::new`.
 // `Spectrum` carries a fixed 64-band snapshot (~276 B) emitted ~60×/s; boxing
 // it would add a per-frame heap allocation on the audio hot path.
-#[allow(clippy::large_enum_variant)]
+#[expect(
+    clippy::large_enum_variant,
+    reason = "boxing spectrum frames would allocate on the audio hot path"
+)]
 #[derive(Debug, Clone)]
 pub enum PlayerEvent {
     StateChanged(PlaybackState),

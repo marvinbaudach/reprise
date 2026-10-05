@@ -25,10 +25,8 @@ pub enum QueueRow {
 
 /// A drag-reorder over the composite view, resolved to what it means.
 // All three variants end in "Next" for a real reason (Play Next / Up Next
-// are the section names QUE-3 defines), not an accidental naming pattern —
-// clippy's postfix heuristic doesn't know that, so it's silenced here.
+// are the section names QUE-3 defines), not an accidental naming pattern.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-#[allow(clippy::enum_variant_names)]
 pub enum QueueReorderOp {
     /// Reorder within the Play Next section.
     WithinPlayNext { from: usize, to: usize },

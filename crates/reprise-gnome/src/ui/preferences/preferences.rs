@@ -148,7 +148,10 @@ pub(in crate::ui) struct PreferencesContext {
 }
 
 impl PreferencesContext {
-    #[allow(clippy::too_many_arguments)]
+    #[expect(
+        clippy::too_many_arguments,
+        reason = "one handle per runtime or panel the preference pages configure; should take a context struct"
+    )]
     pub(in crate::ui) fn new(
         window: &adw::ApplicationWindow,
         conn: &Rc<Db>,

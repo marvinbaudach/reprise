@@ -12,6 +12,7 @@ pub(super) const ACTION_EDIT: &str = "edit";
 pub(super) const ACTION_REMOVE: &str = "remove";
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[cfg(test)]
 pub(super) enum StationAction {
     Play,
     Stop,
@@ -20,12 +21,14 @@ pub(super) enum StationAction {
     Remove,
 }
 
+#[cfg(test)]
 impl StationAction {
     pub(super) const fn is_queue_action(&self) -> bool {
         false
     }
 }
 
+#[cfg(test)]
 pub(super) fn station_actions(playing: bool) -> Vec<StationAction> {
     vec![
         if playing {
@@ -56,6 +59,7 @@ pub(super) fn play_menu_label(connectivity: Connectivity, playing: bool) -> &'st
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[cfg(test)]
 pub(super) enum RemovalStage {
     Visible,
     Tombstoned,
@@ -63,12 +67,14 @@ pub(super) enum RemovalStage {
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[cfg(test)]
 pub(super) enum RemovalEvent {
     Remove,
     Undo,
     ToastDismissed,
 }
 
+#[cfg(test)]
 pub(super) fn removal_transition(stage: RemovalStage, event: RemovalEvent) -> RemovalStage {
     match (stage, event) {
         (RemovalStage::Visible, RemovalEvent::Remove) => RemovalStage::Tombstoned,

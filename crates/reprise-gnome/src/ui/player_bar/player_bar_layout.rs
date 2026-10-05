@@ -55,9 +55,9 @@ const ICON_VOLUME_HIGH: &str = "audio-volume-high-symbolic";
 
 pub(in crate::ui) struct PlayerBarWidgets {
     pub(in crate::ui) root: gtk4::Box,
-    #[allow(dead_code)] // Exposed for structural player-bar layout tests.
+    #[cfg(test)]
     pub(in crate::ui) center_box: gtk4::CenterBox,
-    #[allow(dead_code)] // Exposed for structural player-bar layout tests.
+    #[cfg(test)]
     pub(in crate::ui) info_box: gtk4::Box,
     pub(in crate::ui) cover: gtk4::Image,
     pub(in crate::ui) cover_button: gtk4::Button,
@@ -415,7 +415,9 @@ pub(in crate::ui) fn build() -> PlayerBarWidgets {
 
     PlayerBarWidgets {
         root,
+        #[cfg(test)]
         center_box,
+        #[cfg(test)]
         info_box,
         cover,
         cover_button,

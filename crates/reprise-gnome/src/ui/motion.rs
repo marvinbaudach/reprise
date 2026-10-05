@@ -46,7 +46,7 @@ pub(in crate::ui) const STANDARD_EASING: adw::Easing = adw::Easing::EaseOutCubic
 /// Retained without a Rust call site: accent changes ride whatever transition
 /// their consuming widgets already declare (MOT-1). `AMBIENT_MS` itself is
 /// still live — waveform build/crossfade and the plugin settle use it.
-#[allow(dead_code)]
+#[cfg(test)]
 pub(in crate::ui) const AMBIENT_EASING: adw::Easing = adw::Easing::EaseOutCubic;
 const STATS_DRIVER_EASING: adw::Easing = adw::Easing::Linear;
 const STATS_BEZIER_X1: f64 = 0.16;
@@ -57,9 +57,9 @@ const STATS_BEZIER_Y2: f64 = 1.0;
 pub(in crate::ui) const MICRO_CSS_EASING: &str = "ease-out";
 // Kept for a complete CSS-easing token set and pinned by the motion-token
 // tests; no CSS rule consumes the standard/ambient curve yet.
-#[allow(dead_code)]
+#[cfg(test)]
 pub(in crate::ui) const STANDARD_CSS_EASING: &str = "cubic-bezier(0.16, 1, 0.3, 1)";
-#[allow(dead_code)] // Complete CSS token set; currently pinned by tests only.
+#[cfg(test)]
 pub(in crate::ui) const AMBIENT_CSS_EASING: &str = STANDARD_CSS_EASING;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -76,7 +76,7 @@ pub(in crate::ui) const STANDARD: MotionToken = MotionToken {
     duration_ms: STANDARD_MS,
     easing: STANDARD_EASING,
 };
-#[allow(dead_code)] // Complete motion token set; currently pinned by tests only.
+#[cfg(test)]
 pub(in crate::ui) const AMBIENT: MotionToken = MotionToken {
     duration_ms: AMBIENT_MS,
     easing: AMBIENT_EASING,

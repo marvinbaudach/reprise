@@ -104,6 +104,7 @@ impl YoutubeChannelState {
         }
     }
 
+    #[cfg(test)]
     pub(super) fn set_selected(&mut self, subscription_id: i64, episode_id: i64, selected: bool) {
         self.selection(subscription_id)
             .borrow_mut()
@@ -282,7 +283,6 @@ impl YoutubeChannelDetail {
         group.add_action(&select_row);
     }
 
-    #[allow(clippy::too_many_arguments)]
     pub(super) fn update(
         self: &Rc<Self>,
         groups: &[RenderedSourceGroup],

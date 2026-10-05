@@ -421,7 +421,7 @@ fn run_worker_with_depth(
     while let Ok(job) = receiver.recv_blocking() {
         if let Some(measurement) = measurement {
             // `try_update` replaces this from Rust 1.98, but is past the 1.92 MSRV.
-            #[allow(deprecated)]
+            #[allow(deprecated, reason = "fetch_update is deprecated from Rust 1.98")]
             let _ = measurement.queued_jobs.fetch_update(
                 Ordering::Relaxed,
                 Ordering::Relaxed,
