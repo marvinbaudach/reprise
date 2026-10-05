@@ -345,7 +345,26 @@ pub fn get_waveform_peaks(db: &Db, track_id: i64) -> Result<Option<Vec<u8>>, DbE
     Ok(result)
 }
 
-/// Returns live tracks whose rendering data is absent or stale, in stable id order.
+/// One track of a CUE file that still needs its rendering data.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct PendingSegmentTrack {
+    pub track_id: i64,
+    pub start_ms: i64,
+    pub end_ms: i64,
+}
+
+/// A CUE file with at least one track that still needs rendering data. The file
+/// is decoded once for all of them.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct PendingSegmentFile {
+    pub path: String,
+    pub source: TrackSourceFingerprint,
+    pub tracks: Vec<PendingSegmentTrack>,
+}
+
+/// Returns live whole-file tracks whose rendering data is absent or stale, in
+/// stable id order. The tracks of a CUE file are not among them: each is a
+/// stretch of a file, and [`pending_segment_render_data_files`] lists them.
 pub fn pending_render_data_tracks(db: &Db) -> Result<Vec<PendingRenderDataTrack>, DbError> {
     let mut statement = db.conn().prepare(&format!(
         "SELECT t.id, t.path, t.file_mtime, t.file_size, t.device, t.inode \
@@ -358,7 +377,8 @@ pub fn pending_render_data_tracks(db: &Db) -> Result<Vec<PendingRenderDataTrack>
            AND l.format_version = ?2 AND l.source_mtime = t.file_mtime \
            AND l.source_size = t.file_size AND l.source_device IS t.device \
            AND l.source_inode IS t.inode \
-         WHERE {} AND (t.waveform_peaks IS NULL OR s.track_id IS NULL OR l.track_id IS NULL) \
+         WHERE {} AND t.segment_index = 0 \
+           AND (t.waveform_peaks IS NULL OR s.track_id IS NULL OR l.track_id IS NULL) \
          ORDER BY t.id",
         crate::queries::PRESENT
     ))?;
@@ -380,6 +400,61 @@ pub fn pending_render_data_tracks(db: &Db) -> Result<Vec<PendingRenderDataTrack>
         )?
         .collect::<Result<_, _>>()?;
     Ok(tracks)
+}
+
+/// Returns the CUE files with live tracks whose rendering data is absent or
+/// stale, each with just those tracks in play order, in stable path order.
+pub fn pending_segment_render_data_files(db: &Db) -> Result<Vec<PendingSegmentFile>, DbError> {
+    let mut statement = db.conn().prepare(&format!(
+        "SELECT t.id, t.path, t.file_mtime, t.file_size, t.device, t.inode, \
+                t.segment_start_ms, t.segment_end_ms \
+         FROM tracks t \
+         LEFT JOIN track_spectrograms s ON s.track_id = t.id \
+           AND s.format_version = ?1 AND s.source_mtime = t.file_mtime \
+           AND s.source_size = t.file_size AND s.source_device IS t.device \
+           AND s.source_inode IS t.inode \
+         LEFT JOIN track_loudness l ON l.track_id = t.id \
+           AND l.format_version = ?2 AND l.source_mtime = t.file_mtime \
+           AND l.source_size = t.file_size AND l.source_device IS t.device \
+           AND l.source_inode IS t.inode \
+         WHERE {} AND t.segment_index > 0 \
+           AND t.segment_start_ms IS NOT NULL AND t.segment_end_ms IS NOT NULL \
+           AND (t.waveform_peaks IS NULL OR s.track_id IS NULL OR l.track_id IS NULL) \
+         ORDER BY t.path, t.segment_index",
+        crate::queries::PRESENT
+    ))?;
+    let rows = statement.query_map(
+        rusqlite::params![SPECTROGRAM_FORMAT_VERSION, LOUDNESS_FORMAT_VERSION],
+        |row| {
+            Ok((
+                row.get::<_, String>(1)?,
+                TrackSourceFingerprint {
+                    mtime_seconds: row.get(2)?,
+                    size_bytes: row.get(3)?,
+                    device: row.get(4)?,
+                    inode: row.get(5)?,
+                },
+                PendingSegmentTrack {
+                    track_id: row.get(0)?,
+                    start_ms: row.get(6)?,
+                    end_ms: row.get(7)?,
+                },
+            ))
+        },
+    )?;
+    let mut files: Vec<PendingSegmentFile> = Vec::new();
+    for row in rows {
+        let (path, source, track) = row?;
+        match files.last_mut() {
+            Some(file) if file.path == path => file.tracks.push(track),
+            _ => files.push(PendingSegmentFile {
+                path,
+                source,
+                tracks: vec![track],
+            }),
+        }
+    }
+    Ok(files)
 }
 
 #[cfg(test)]

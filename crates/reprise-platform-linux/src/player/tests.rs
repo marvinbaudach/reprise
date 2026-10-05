@@ -14,7 +14,11 @@ mod handoff_duration_tests;
 mod stream_generation_tests;
 
 fn item(path: &str) -> PlaybackItem<'_> {
-    PlaybackItem { path, gain_db: 0.0 }
+    PlaybackItem {
+        segment: None,
+        path,
+        gain_db: 0.0,
+    }
 }
 
 #[test]
@@ -597,11 +601,13 @@ fn play_20a_gapless_handoff_applies_the_next_gain_at_the_second_stream_start() {
     );
     player
         .play(PlaybackItem {
+            segment: None,
             path: first.to_str().unwrap(),
             gain_db: -6.0,
         })
         .unwrap();
     player.set_next(Some(PlaybackItem {
+        segment: None,
         path: second.to_str().unwrap(),
         gain_db: 6.0,
     }));

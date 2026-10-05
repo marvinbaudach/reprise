@@ -81,6 +81,20 @@ CREATE UNIQUE INDEX idx_library_exclusions_identity
   ON library_exclusions(device, inode, segment_index)
   WHERE device IS NOT NULL AND inode IS NOT NULL;";
 
+/// A track whose stretch of the file changes, because the sheet was edited, no
+/// longer matches the analysis stored for it. `invalidate_track_render_data`
+/// covers a changed file; this covers a changed cut of an unchanged one.
+const INVALIDATE_SEGMENT_ANALYSIS: &str = "
+CREATE TRIGGER IF NOT EXISTS invalidate_segment_render_data
+AFTER UPDATE OF segment_start_ms, segment_end_ms ON tracks
+WHEN OLD.segment_start_ms IS NOT NEW.segment_start_ms
+  OR OLD.segment_end_ms IS NOT NEW.segment_end_ms
+BEGIN
+  DELETE FROM track_spectrograms WHERE track_id = NEW.id;
+  DELETE FROM track_loudness WHERE track_id = NEW.id;
+  UPDATE tracks SET waveform_peaks = NULL WHERE id = NEW.id;
+END;";
+
 pub(crate) fn migrate_v90(conn: &Connection) -> Result<(), rusqlite::Error> {
     let version: i64 = conn.query_row("PRAGMA user_version", [], |row| row.get(0))?;
     if version >= VERSION {
@@ -95,6 +109,7 @@ pub(crate) fn migrate_v90(conn: &Connection) -> Result<(), rusqlite::Error> {
         if !has_column(&transaction, "library_exclusions", "segment_index")? {
             transaction.execute_batch(REBUILD_EXCLUSIONS)?;
         }
+        transaction.execute_batch(INVALIDATE_SEGMENT_ANALYSIS)?;
         transaction.pragma_update(None, "user_version", VERSION)?;
         return transaction.commit();
     }
@@ -141,6 +156,7 @@ fn rebuild(conn: &Connection) -> Result<(), rusqlite::Error> {
         transaction.execute_batch(&statement)?;
     }
     transaction.execute_batch(REBUILD_EXCLUSIONS)?;
+    transaction.execute_batch(INVALIDATE_SEGMENT_ANALYSIS)?;
     let violations: i64 =
         transaction.query_row("SELECT count(*) FROM pragma_foreign_key_check", [], |row| {
             row.get(0)

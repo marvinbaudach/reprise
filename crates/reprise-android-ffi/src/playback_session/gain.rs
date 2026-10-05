@@ -37,6 +37,7 @@ impl SessionInner {
         let backend = self.backend()?;
         let resolved = next.map(|next| (self.gain_db_for(next.track_id), next.uri));
         backend.set_next(resolved.as_ref().map(|(gain_db, uri)| PlaybackItem {
+            segment: None,
             path: uri,
             gain_db: *gain_db,
         }));

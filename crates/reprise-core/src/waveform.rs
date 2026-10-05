@@ -4,6 +4,7 @@ use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, Ordering};
 
 use crate::library::loudness::MeasuredLoudness;
+use crate::render_data_segments::SegmentBounds;
 use crate::spectrogram::TrackSpectrogram;
 
 pub const STORED_PEAK_COUNT: usize = 1000;
@@ -87,6 +88,21 @@ pub trait RenderDataBackend: WaveformBackend {
         } else {
             Ok(data)
         }
+    }
+
+    /// Decodes `path` once and returns the render data of each of `segments`, in
+    /// the order given: the tracks a CUE sheet cuts out of one file. A segment
+    /// the stream never reaches comes back as [`TrackRenderData::empty`].
+    fn extract_segment_render_data_cancellable(
+        &self,
+        _path: &Path,
+        _segments: &[SegmentBounds],
+        _buckets: usize,
+        _cancelled: &AtomicBool,
+    ) -> Result<Vec<TrackRenderData>, WaveformError> {
+        Err(WaveformError::DecodeFailed(
+            "platform backend does not cut a file into tracks".into(),
+        ))
     }
 }
 

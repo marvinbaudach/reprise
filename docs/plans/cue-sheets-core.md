@@ -2,7 +2,7 @@
 slug: cue-sheets-core
 worktree: ../reprise-cue-sheets-core
 branch: feature/cue-sheets-core
-phase: coding
+phase: coded
 codex_session:
 created: 2026-10-04
 ---
@@ -62,3 +62,25 @@ takes `segment_index`; never "the first row by accident". Test per site.
   collide); the phone analyses segments itself with the same session code.
 
 ---
+
+## As built (deviations from the tasks above)
+
+- **C1** — v90 also adds `cue_mtime` (the sheet's mtime; without it a changed sheet cannot be
+  noticed) and `library_exclusions.segment_index` with both unique indexes widened. The rebuild
+  renames with `legacy_alter_table` because `listen_events_fill_snapshot` reads `tracks`; ten
+  referencing tables was nine foreign keys on eight tables. `Track`/`TrackSummary` carry one
+  `segment: Option<TrackSegment>`. A second trigger drops a track's analysis when its cut changes.
+- **C2** — the tag-scan version is 2 (a FLAC's `CUESHEET` is read in the same open as its tags),
+  so every file is read once more. lofty 0.25 has no `ItemKey::Unknown`; the comment comes from
+  `FlacFile` directly. A sheet is found by listing the directory of each audio file before the
+  batch is classified, not by observing the walk, which delivers a sheet after its audio.
+  Sheets an earlier scan applied are recognised from `cue_path` + `cue_mtime` and not re-read.
+  A sheet that parses but does not fit leaves a whole-file row that remembers it. A broken sheet
+  is `ImportErrorKind::InvalidCueSheet`, keyed by the sheet. `report.added/updated` count tracks.
+- **C3** — `track_ids_for_path` is new; `track_id_for_path` is the first track. Tag editing,
+  Rhythmbox ratings, sidecars, mobile metadata and instrumental promotion address whole-file
+  rows. `(id, path)` sites are unchanged: they already name one row.
+- **C4** — `SegmentedRenderDataSession` wraps one `RenderDataSession` per track instead of
+  changing `RenderDataSession` itself. `pending_render_data_tracks` lists whole-file rows;
+  `pending_segment_render_data_files` lists CUE files. The Android backfill keeps analysing
+  whole-file rows only until wave 3. `AnalysisSidecar::for_track` is `None` for a CUE track.

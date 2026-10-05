@@ -379,16 +379,18 @@ impl PlayerController {
                 .map(|summary| {
                     let mode = settings::get_replay_gain_mode(conn);
                     let gain_db = queries::effective_gain_db(conn, id, mode);
-                    (summary.path, gain_db)
+                    let segment = summary.playback_segment();
+                    (summary.path, gain_db, segment)
                 })
         });
         self.prefed_next_track
             .set(next_track.as_ref().and(prefed_track));
         self.player
-            .set_next(next_track.as_ref().map(|(path, gain_db)| {
+            .set_next(next_track.as_ref().map(|(path, gain_db, segment)| {
                 reprise_core::playback::PlaybackItem {
                     path,
                     gain_db: *gain_db,
+                    segment: *segment,
                 }
             }));
     }

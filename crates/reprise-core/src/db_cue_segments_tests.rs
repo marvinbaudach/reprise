@@ -165,7 +165,9 @@ fn the_rebuild_keeps_every_row_reference_index_and_trigger() {
         "no column was lost"
     );
     assert_eq!(schema_names(&conn, "index"), indexes_before);
-    assert_eq!(schema_names(&conn, "trigger"), triggers_before);
+    let mut triggers_expected = triggers_before;
+    triggers_expected.insert("invalidate_segment_render_data".to_string());
+    assert_eq!(schema_names(&conn, "trigger"), triggers_expected);
 }
 
 #[test]
@@ -328,4 +330,44 @@ fn a_rewound_version_does_not_rebuild_the_table_again() {
         )
         .unwrap();
     assert_eq!(kept, (3, 200));
+}
+
+#[test]
+fn cue_9_a_changed_cut_of_an_unchanged_file_drops_the_analysis_of_that_track_only() {
+    let conn = at_v89();
+    conn.execute_batch(SEED).unwrap();
+    super::migrate_v90(&conn).unwrap();
+    conn.execute_batch(
+        "UPDATE tracks SET segment_index = 1, segment_start_ms = 0, segment_end_ms = 500 WHERE id = 1;
+         UPDATE tracks SET segment_index = 2, segment_start_ms = 500, segment_end_ms = 900,
+                           path = '/m/a.flac' WHERE id = 2;
+         DELETE FROM track_spectrograms;
+         DELETE FROM track_loudness;
+         INSERT INTO track_spectrograms (track_id, source_mtime, source_size, source_device,
+                                         source_inode, format_version, data)
+         VALUES (1, 100, 1000, 7, 71, 1, zeroblob(24)), (2, 200, 2000, 7, 72, 1, zeroblob(24));
+         INSERT INTO track_loudness (track_id, source_mtime, source_size, source_device,
+                                     source_inode, format_version)
+         VALUES (1, 100, 1000, 7, 71, 1), (2, 200, 2000, 7, 72, 1);",
+    )
+    .unwrap();
+
+    conn.execute("UPDATE tracks SET segment_end_ms = 950 WHERE id = 2", [])
+        .unwrap();
+
+    assert_eq!(
+        count(&conn, "track_spectrograms"),
+        1,
+        "track 2 lost its analysis"
+    );
+    assert_eq!(count(&conn, "track_loudness"), 1, "track 1 kept its own");
+    let kept: i64 = conn
+        .query_row("SELECT track_id FROM track_spectrograms", [], |row| {
+            row.get(0)
+        })
+        .unwrap();
+    assert_eq!(kept, 1);
+    conn.execute("UPDATE tracks SET title = 'Renamed' WHERE id = 1", [])
+        .unwrap();
+    assert_eq!(count(&conn, "track_spectrograms"), 1);
 }

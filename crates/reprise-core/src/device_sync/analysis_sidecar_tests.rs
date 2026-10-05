@@ -122,3 +122,38 @@ fn analysis_sidecar_for_track_uses_the_database_source_fingerprint() {
     assert_eq!(sidecar.spectrogram.cells(), &[9; 24]);
     assert_eq!(sidecar.loudness, render_data.loudness);
 }
+
+#[test]
+fn cue_10_no_analysis_sidecar_is_made_for_a_track_cut_from_a_file() {
+    let db = crate::db::Db::open_in_memory().unwrap();
+    db.conn()
+        .execute(
+            "INSERT INTO tracks \
+             (id, path, title, added_at, file_mtime, file_size, device, inode, \
+              segment_index, segment_start_ms, segment_end_ms) \
+             VALUES (7, '/library/live.flac', 'One', 0, ?1, ?2, ?3, ?4, 1, 0, 1000), \
+                    (8, '/library/song.flac', 'Song', 0, ?1, ?2, ?3, ?4, 0, NULL, NULL)",
+            rusqlite::params![
+                source().mtime_seconds,
+                source().size_bytes,
+                source().device,
+                source().inode
+            ],
+        )
+        .unwrap();
+    let render_data = crate::waveform::TrackRenderData {
+        waveform_peaks: vec![2, 4, 6],
+        spectrogram: TrackSpectrogram::from_cells(vec![9; 24]).unwrap(),
+        loudness: Some(MeasuredLoudness {
+            integrated_lufs: -19.0,
+            true_peak: 0.8,
+        }),
+    };
+    for track_id in [7, 8] {
+        crate::db_spectrogram::set_track_render_data(&db, track_id, source(), &render_data)
+            .unwrap();
+    }
+
+    assert_eq!(AnalysisSidecar::for_track(&db, 7).unwrap(), None);
+    assert!(AnalysisSidecar::for_track(&db, 8).unwrap().is_some());
+}

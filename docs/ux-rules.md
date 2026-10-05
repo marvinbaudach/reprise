@@ -7604,6 +7604,12 @@ no tags of its own to write.
   sheet by its length, not by a track's title.
 - **CUE-8** [active] [core] — A CUE file that disappears marks every one of its
   tracks missing, and one that returns restores them all.
+- **CUE-9** [active] [core] — Each track of a CUE file has its own waveform,
+  spectrogram and loudness, measured from its own stretch of the file with a
+  single decode of the file for all of its tracks. A track whose cut changes
+  loses its analysis and is measured again; its siblings keep theirs.
+- **CUE-10** [active] [core] — A track cut from a file gets no sync analysis
+  sidecar, because one file's tracks would all write the same sidecar name.
 
 ## AJ. Showroom (public site)
 

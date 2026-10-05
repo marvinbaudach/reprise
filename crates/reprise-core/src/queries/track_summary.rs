@@ -34,6 +34,14 @@ pub struct TrackSummary {
 }
 
 impl TrackSummary {
+    /// The `(start_ms, end_ms)` a player cuts out of `path`, `None` for a
+    /// whole-file track.
+    pub fn playback_segment(&self) -> Option<(i64, i64)> {
+        self.segment
+            .as_ref()
+            .map(|segment| (segment.start_ms, segment.end_ms))
+    }
+
     /// Returns the effective album artist: `album_artist` when non-empty
     /// (trimmed), `artist` otherwise. Mirrors the SQL expression
     /// `CASE WHEN TRIM(album_artist) <> '' THEN TRIM(album_artist) ELSE

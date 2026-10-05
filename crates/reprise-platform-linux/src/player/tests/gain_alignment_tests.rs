@@ -119,11 +119,13 @@ fn play_20a_every_buffer_of_each_track_carries_that_tracks_gain() {
 
     player
         .play(PlaybackItem {
+            segment: None,
             path: first.to_str().unwrap(),
             gain_db: FIRST_GAIN_DB,
         })
         .unwrap();
     player.set_next(Some(PlaybackItem {
+        segment: None,
         path: second.to_str().unwrap(),
         gain_db: SECOND_GAIN_DB,
     }));

@@ -380,12 +380,17 @@ mod boundary_tests;
 #[path = "playback/bass_pressure_tests.rs"]
 mod bass_pressure_tests;
 
-/// A local track to start: where it plays from and the gain, in dB, its
-/// stream plays at.
+/// A local track to start: where it plays from, the gain, in dB, its stream
+/// plays at, and the part of the file it covers.
+///
+/// `segment` is the `(start_ms, end_ms)` of a track cut from a larger file by a
+/// CUE sheet; position and duration are then relative to it. `None` plays the
+/// whole file. A backend that does not cut segments yet plays the whole file.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct PlaybackItem<'a> {
     pub path: &'a str,
     pub gain_db: f64,
+    pub segment: Option<(i64, i64)>,
 }
 
 /// The audio-playback contract every platform implements (Linux: GStreamer
