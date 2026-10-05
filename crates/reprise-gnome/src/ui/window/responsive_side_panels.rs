@@ -8,7 +8,7 @@ use libadwaita as adw;
 use libadwaita::prelude::*;
 
 use crate::ui::info_panel::InfoPanel;
-use crate::ui::now_playing_column::PANEL_WIDTH;
+use crate::ui::now_playing::now_playing_column::PANEL_WIDTH;
 use crate::ui::sidebar_presentation::SIDEBAR_MIN_WIDTH;
 use crate::ui::track_list::responsive_columns::FOLD_BREAKPOINT_WIDTH;
 
@@ -520,7 +520,7 @@ mod tests {
     fn style_7_panel_and_table_thresholds_stay_coherent() {
         const {
             assert!(
-                crate::ui::now_playing_column::INFO_PANEL_COLLAPSE_WIDTH
+                crate::ui::now_playing::now_playing_column::INFO_PANEL_COLLAPSE_WIDTH
                     + (SIDEBAR_MIN_WIDTH as i32)
                     < CONSTRAINED_WIDTH,
                 "the info panel breakpoint is measured in the content pane, so adding the \
@@ -531,7 +531,7 @@ mod tests {
         assert_eq!(
             CONSTRAINED_WIDTH,
             crate::ui::sidebar_presentation::SIDEBAR_MIN_WIDTH as i32
-                + crate::ui::now_playing_column::PANEL_WIDTH
+                + crate::ui::now_playing::now_playing_column::PANEL_WIDTH
                 + crate::ui::track_list::responsive_columns::FOLD_BREAKPOINT_WIDTH,
             "the window threshold must account for both flank widths before the table \
              reaches its fold width"

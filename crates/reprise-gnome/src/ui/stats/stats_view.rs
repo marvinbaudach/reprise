@@ -29,8 +29,8 @@ thread_local! {
     static ARTWORK_REFRESH_REQUESTS: Cell<u64> = const { Cell::new(0) };
 }
 use super::stats_view_widgets::card;
-use crate::ui::artist_portrait_worker::ArtistPortraitRuntime;
 use crate::ui::cover_loader::CoverLoader;
+use crate::ui::now_playing::artist_portrait_worker::ArtistPortraitRuntime;
 use crate::ui::strings;
 
 const CONTENT_MAX_WIDTH: i32 = 1120;

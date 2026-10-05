@@ -162,7 +162,6 @@ use device_sync::{
 use lyrics::{
     lyrics_batch, lyrics_batch_progress, lyrics_smoke, lyrics_strings, lyrics_view, player_lyrics,
 };
-use now_playing::{artist_portrait_worker, now_playing_column};
 use playback::{audio_effects, player_event_handling, up_next_transport};
 pub(crate) use playback::{now_playing_wiring, player_controller, player_controller_wiring};
 use player_bar::{library_player_bar, player_bar_layout, player_bar_state, waveform_seek};

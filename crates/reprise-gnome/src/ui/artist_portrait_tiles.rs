@@ -9,8 +9,8 @@ use gtk4::prelude::*;
 use gtk4::{gio, glib};
 use reprise_core::cover::ThumbnailSize;
 
-use crate::ui::artist_portrait_worker::ArtistPortraitRuntime;
 use crate::ui::cover_loader::CoverLoader;
+use crate::ui::now_playing::artist_portrait_worker::ArtistPortraitRuntime;
 use crate::ui::updates::release_cover::LazyReleaseCover;
 
 pub(in crate::ui) type CachedPortraitResolver = Arc<dyn Fn(&str) -> Option<PathBuf> + Send + Sync>;

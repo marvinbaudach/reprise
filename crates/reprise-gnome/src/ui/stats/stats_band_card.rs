@@ -350,8 +350,8 @@ mod tests {
     use reprise_core::library::group_key::Group;
     use reprise_core::library::stats_screen::RankedGroup;
 
-    use crate::ui::artist_portrait_worker::ArtistPortraitRuntime;
     use crate::ui::cover_loader::CoverLoader;
+    use crate::ui::now_playing::artist_portrait_worker::ArtistPortraitRuntime;
 
     const TINY_PNG: &[u8] = &[
         0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A, 0x00, 0x00, 0x00, 0x0D, 0x49, 0x48, 0x44,
