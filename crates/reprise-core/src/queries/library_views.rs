@@ -110,21 +110,10 @@ fn artist_albums_selection(param_index: u8) -> String {
     )
 }
 
-/// Returns one row per case-insensitive `(album, effective album artist)`
-/// pair. Blank albums and missing tracks are excluded; the lowest track id
-/// supplies stable display spelling and the representative cover path. A
-/// non-blank filter matches the album title or effective album artist.
-pub fn query_albums(
-    db: &Db,
-    filter: &str,
-    window: WindowRange,
-) -> Result<AlbumWindow, rusqlite::Error> {
-    let total = query_album_count(db, filter)?;
-    let conn = db.conn();
-    let limit = window.limit.clamp(0, MAX_WINDOW_LIMIT);
-    let has_filter = !filter.trim().is_empty();
-    let filter_sql = album_summary_filter_clause(has_filter, 3);
-    let sql = format!(
+/// The grouped album summary query, ordered, with no row limit. Callers append
+/// their own `LIMIT`/`OFFSET`, or none for the one-pass list.
+fn album_summaries_sql(filter_sql: &str) -> String {
+    format!(
         "WITH grouped AS ( \
            SELECT LOWER(TRIM(album)) AS album_key, \
                   LOWER({EFFECTIVE_ALBUM_ARTIST}) AS artist_key, \
@@ -145,26 +134,98 @@ pub fn query_albums(
                 COALESCE(grouped.total_play_count, 0) \
          FROM grouped JOIN tracks ON tracks.id = grouped.representative_id \
          ORDER BY TRIM(tracks.album) COLLATE NOCASE ASC, \
-                  {EFFECTIVE_ALBUM_ARTIST} COLLATE NOCASE ASC \
-         LIMIT ?1 OFFSET ?2"
+                  {EFFECTIVE_ALBUM_ARTIST} COLLATE NOCASE ASC"
+    )
+}
+
+/// The grouped artist summary query, ordered, with no row limit. Callers append
+/// their own `LIMIT`/`OFFSET`, or none for the one-pass list.
+fn artist_summaries_sql(filter_sql: &str) -> String {
+    format!(
+        "WITH grouped AS ( \
+           SELECT LOWER({EFFECTIVE_ALBUM_ARTIST}) AS artist_key, \
+                  MIN(id) AS representative_id, \
+                  COUNT(*) AS track_count, \
+                  COUNT(DISTINCT CASE WHEN TRIM(album) <> '' \
+                        THEN LOWER(TRIM(album)) END) AS album_count, \
+                  COALESCE(SUM(play_count), 0) AS total_plays, \
+                  COALESCE(MAX(last_played_at), 0) AS last_played_at \
+           FROM tracks \
+           WHERE {PRESENT} AND TRIM({EFFECTIVE_ALBUM_ARTIST}) <> ''{filter_sql} \
+           GROUP BY artist_key \
+         ) \
+         SELECT {EFFECTIVE_ALBUM_ARTIST}, grouped.track_count, grouped.album_count, \
+                grouped.total_plays, grouped.last_played_at, tracks.path \
+         FROM grouped JOIN tracks ON tracks.id = grouped.representative_id \
+         ORDER BY {EFFECTIVE_ALBUM_ARTIST} COLLATE NOCASE ASC"
+    )
+}
+
+fn row_to_album_summary(row: &rusqlite::Row<'_>) -> rusqlite::Result<AlbumSummary> {
+    Ok(AlbumSummary {
+        album: row.get(0)?,
+        album_artist: row.get(1)?,
+        representative_path: row.get(2)?,
+        track_count: row.get(3)?,
+        year: row.get(4)?,
+        total_duration_ms: row.get(5)?,
+        max_added_at: row.get(6)?,
+        total_play_count: row.get(7)?,
+    })
+}
+
+fn row_to_artist_summary(row: &rusqlite::Row<'_>) -> rusqlite::Result<ArtistSummary> {
+    Ok(ArtistSummary {
+        artist: row.get(0)?,
+        track_count: row.get(1)?,
+        album_count: row.get(2)?,
+        total_plays: row.get(3)?,
+        last_played_at: row.get(4)?,
+        representative_path: row.get(5)?,
+    })
+}
+
+/// Every album summary in one query, in the order and with the aggregates of
+/// [`query_albums`] with no filter, but without a window or a count query.
+/// It is what a caller that filters or pages in memory reads instead of
+/// walking `query_albums` window by window.
+pub fn query_all_albums(db: &Db) -> Result<Vec<AlbumSummary>, rusqlite::Error> {
+    let mut statement = db.conn().prepare(&album_summaries_sql(""))?;
+    let rows = statement.query_map([], row_to_album_summary)?;
+    rows.collect()
+}
+
+/// Every artist summary in one query, in the order and with the aggregates of
+/// [`query_artists`] with no filter, but without a window or a count query.
+pub fn query_all_artists(db: &Db) -> Result<Vec<ArtistSummary>, rusqlite::Error> {
+    let mut statement = db.conn().prepare(&artist_summaries_sql(""))?;
+    let rows = statement.query_map([], row_to_artist_summary)?;
+    rows.collect()
+}
+
+/// Returns one row per case-insensitive `(album, effective album artist)`
+/// pair. Blank albums and missing tracks are excluded; the lowest track id
+/// supplies stable display spelling and the representative cover path. A
+/// non-blank filter matches the album title or effective album artist.
+pub fn query_albums(
+    db: &Db,
+    filter: &str,
+    window: WindowRange,
+) -> Result<AlbumWindow, rusqlite::Error> {
+    let total = query_album_count(db, filter)?;
+    let conn = db.conn();
+    let limit = window.limit.clamp(0, MAX_WINDOW_LIMIT);
+    let has_filter = !filter.trim().is_empty();
+    let sql = format!(
+        "{} LIMIT ?1 OFFSET ?2",
+        album_summaries_sql(&album_summary_filter_clause(has_filter, 3))
     );
     let mut statement = conn.prepare(&sql)?;
     let mut params = vec![Value::Integer(limit), Value::Integer(window.offset)];
     if has_filter {
         params.push(Value::Text(like_pattern(filter.trim())));
     }
-    let rows = statement.query_map(rusqlite::params_from_iter(params), |row| {
-        Ok(AlbumSummary {
-            album: row.get(0)?,
-            album_artist: row.get(1)?,
-            representative_path: row.get(2)?,
-            track_count: row.get(3)?,
-            year: row.get(4)?,
-            total_duration_ms: row.get(5)?,
-            max_added_at: row.get(6)?,
-            total_play_count: row.get(7)?,
-        })
-    })?;
+    let rows = statement.query_map(rusqlite::params_from_iter(params), row_to_album_summary)?;
     let rows = rows.collect::<Result<Vec<_>, _>>()?;
     Ok(AlbumWindow {
         total,
@@ -301,41 +362,16 @@ pub fn query_artists(
     let conn = db.conn();
     let limit = window.limit.clamp(0, MAX_WINDOW_LIMIT);
     let has_filter = !filter.trim().is_empty();
-    let filter_sql = artist_summary_filter_clause(has_filter, 3);
     let sql = format!(
-        "WITH grouped AS ( \
-           SELECT LOWER({EFFECTIVE_ALBUM_ARTIST}) AS artist_key, \
-                  MIN(id) AS representative_id, \
-                  COUNT(*) AS track_count, \
-                  COUNT(DISTINCT CASE WHEN TRIM(album) <> '' \
-                        THEN LOWER(TRIM(album)) END) AS album_count, \
-                  COALESCE(SUM(play_count), 0) AS total_plays, \
-                  COALESCE(MAX(last_played_at), 0) AS last_played_at \
-           FROM tracks \
-           WHERE {PRESENT} AND TRIM({EFFECTIVE_ALBUM_ARTIST}) <> ''{filter_sql} \
-           GROUP BY artist_key \
-         ) \
-         SELECT {EFFECTIVE_ALBUM_ARTIST}, grouped.track_count, grouped.album_count, \
-                grouped.total_plays, grouped.last_played_at, tracks.path \
-         FROM grouped JOIN tracks ON tracks.id = grouped.representative_id \
-         ORDER BY {EFFECTIVE_ALBUM_ARTIST} COLLATE NOCASE ASC \
-         LIMIT ?1 OFFSET ?2"
+        "{} LIMIT ?1 OFFSET ?2",
+        artist_summaries_sql(&artist_summary_filter_clause(has_filter, 3))
     );
     let mut statement = conn.prepare(&sql)?;
     let mut params = vec![Value::Integer(limit), Value::Integer(window.offset)];
     if has_filter {
         params.push(Value::Text(like_pattern(filter.trim())));
     }
-    let rows = statement.query_map(rusqlite::params_from_iter(params), |row| {
-        Ok(ArtistSummary {
-            artist: row.get(0)?,
-            track_count: row.get(1)?,
-            album_count: row.get(2)?,
-            total_plays: row.get(3)?,
-            last_played_at: row.get(4)?,
-            representative_path: row.get(5)?,
-        })
-    })?;
+    let rows = statement.query_map(rusqlite::params_from_iter(params), row_to_artist_summary)?;
     let rows = rows.collect::<Result<Vec<_>, _>>()?;
     Ok(ArtistWindow {
         total,
@@ -680,3 +716,7 @@ mod tests;
 #[cfg(test)]
 #[path = "library_views_trim_tests.rs"]
 mod trim_tests;
+
+#[cfg(test)]
+#[path = "library_views_one_pass_tests.rs"]
+mod one_pass_tests;

@@ -25,7 +25,6 @@ pub const DEFAULT_SEARCH_LIMIT: i64 = 50;
 pub const MAX_SEARCH_LIMIT: i64 = 200;
 /// Maximum explicit track ids accepted by a write tool (spec limit).
 pub const MAX_TRACK_IDS: usize = 500;
-const SUMMARY_WINDOW_SIZE: i64 = 500;
 
 /// A failure while serving a request. The `error`/`server`-facing variants are
 /// logged and mapped to opaque protocol errors (never leaked); the
@@ -113,56 +112,6 @@ pub fn search_tracks(
     })
 }
 
-fn all_artist_summaries(db: &Db) -> Result<Vec<queries::ArtistSummary>, DataError> {
-    let mut offset = 0;
-    let mut rows = Vec::new();
-    loop {
-        let window = queries::query_artists(
-            db,
-            "",
-            queries::WindowRange {
-                offset,
-                limit: SUMMARY_WINDOW_SIZE,
-            },
-        )
-        .map_err(DataError::Db)?;
-        let returned = i64::try_from(window.rows.len()).unwrap_or(i64::MAX);
-        if returned == 0 && window.has_more {
-            return Err(DataError::Db(rusqlite::Error::InvalidQuery));
-        }
-        rows.extend(window.rows);
-        if !window.has_more {
-            return Ok(rows);
-        }
-        offset = offset.saturating_add(returned);
-    }
-}
-
-fn all_album_summaries(db: &Db) -> Result<Vec<queries::AlbumSummary>, DataError> {
-    let mut offset = 0;
-    let mut rows = Vec::new();
-    loop {
-        let window = queries::query_albums(
-            db,
-            "",
-            queries::WindowRange {
-                offset,
-                limit: SUMMARY_WINDOW_SIZE,
-            },
-        )
-        .map_err(DataError::Db)?;
-        let returned = i64::try_from(window.rows.len()).unwrap_or(i64::MAX);
-        if returned == 0 && window.has_more {
-            return Err(DataError::Db(rusqlite::Error::InvalidQuery));
-        }
-        rows.extend(window.rows);
-        if !window.has_more {
-            return Ok(rows);
-        }
-        offset = offset.saturating_add(returned);
-    }
-}
-
 /// Paginated artist discovery using the same effective-album-artist grouping
 /// as the native Artists view.
 pub fn search_artists(
@@ -175,7 +124,8 @@ pub fn search_artists(
     require_read(&db)?;
 
     let needle = query.trim().to_lowercase();
-    let matching: Vec<_> = all_artist_summaries(&db)?
+    let matching: Vec<_> = queries::query_all_artists(&db)
+        .map_err(DataError::Db)?
         .into_iter()
         .filter(|artist| artist.artist.to_lowercase().contains(&needle))
         .collect();
@@ -213,7 +163,8 @@ pub fn search_albums(
     require_read(&db)?;
 
     let needle = query.trim().to_lowercase();
-    let matching: Vec<_> = all_album_summaries(&db)?
+    let matching: Vec<_> = queries::query_all_albums(&db)
+        .map_err(DataError::Db)?
         .into_iter()
         .filter(|album| {
             album.album.to_lowercase().contains(&needle)
