@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
-# Pins the CI cache split: pull requests only read caches, dev and the nightly
-# run on main write them. An entry written on the default branch is readable
-# from every branch, a pull request's own entries are readable by nothing else.
+# Pins the CI cache split: pull requests only read caches, only dev writes
+# them. A pull request's own entries are readable by nothing else, so writing
+# them only evicts the entries dev reads.
 #
 # Takes workflow files as arguments so a mutated copy can be checked; without
 # arguments it checks ci.yml and cross-target.yml.
@@ -24,10 +24,7 @@ import sys
 
 import yaml
 
-WRITERS = (
-    "github.ref == 'refs/heads/dev' || "
-    "(github.ref == 'refs/heads/main' && github.event_name == 'schedule')"
-)
+WRITERS = "github.ref == 'refs/heads/dev'"
 
 
 def squash(text) -> str:
@@ -53,9 +50,11 @@ for name in sys.argv[1:]:
                           f"restores {restored}, saves {saved}")
         for save in saves:
             condition = squash(save.get("if", ""))
-            if f"({WRITERS}) &&" not in condition:
-                errors.append(f"{where}: save '{save.get('name')}' must be guarded by ({WRITERS}), "
+            if f"{WRITERS} &&" not in condition:
+                errors.append(f"{where}: save '{save.get('name')}' must be guarded by {WRITERS}, "
                               f"got {condition!r}")
+            if "||" in condition or "schedule" in condition or "refs/heads/main" in condition:
+                errors.append(f"{where}: save '{save.get('name')}' must write on dev alone, got {condition!r}")
             if "cache-hit != 'true'" not in condition:
                 errors.append(f"{where}: save '{save.get('name')}' must skip when the restore hit")
             if "always()" in condition:

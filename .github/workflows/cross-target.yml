@@ -91,9 +91,8 @@ jobs:
       - name: Add the cross-compilation Rust targets
         run: rustup target add x86_64-pc-windows-msvc aarch64-linux-android
 
-      # Only dev and the nightly run on main write caches: a pull request's
-      # entries are scoped to its own ref, so dev could never read them back,
-      # while an entry written on the default branch is readable from every branch.
+      # Only dev writes caches: a pull request's entries are scoped to its own
+      # ref, so dev could never read them back.
       # The downloads are saved even when the run fails, or a red dev would
       # never warm the cache that would make it green faster, but not when the
       # run is cancelled: a cancelled run holds a partial registry, and saving
@@ -133,8 +132,7 @@ jobs:
 
       - name: Save cargo-xwin
         if: >-
-          (github.ref == 'refs/heads/dev' ||
-          (github.ref == 'refs/heads/main' && github.event_name == 'schedule')) &&
+          github.ref == 'refs/heads/dev' &&
           steps.cargo_xwin_cache.outputs.cache-hit != 'true'
         uses: actions/cache/save@v6
         with:
@@ -161,8 +159,7 @@ jobs:
       - name: Save Cargo downloads
         if: >-
           !cancelled() &&
-          (github.ref == 'refs/heads/dev' ||
-          (github.ref == 'refs/heads/main' && github.event_name == 'schedule')) &&
+          github.ref == 'refs/heads/dev' &&
           steps.cargo_downloads.outputs.cache-hit != 'true'
         uses: actions/cache/save@v6
         with:
