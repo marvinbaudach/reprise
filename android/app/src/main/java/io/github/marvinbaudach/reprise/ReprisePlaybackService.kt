@@ -17,8 +17,27 @@ import androidx.media3.common.C
 import androidx.media3.common.Player
 import androidx.media3.exoplayer.ExoPlayer
 import androidx.media3.exoplayer.audio.TeeAudioProcessor
+import androidx.media3.session.MediaLibraryService
 import androidx.media3.session.MediaSession
-import androidx.media3.session.MediaSessionService
+import io.github.marvinbaudach.reprise.library.AndroidMediaBrowseLibrary
+import io.github.marvinbaudach.reprise.library.BrowseCallback
+import io.github.marvinbaudach.reprise.library.BrowseLabels
+import io.github.marvinbaudach.reprise.library.BrowserAccess
+import io.github.marvinbaudach.reprise.library.PackageBrowserAccess
+import io.github.marvinbaudach.reprise.library.BrowsePlayer
+import io.github.marvinbaudach.reprise.library.BrowseQueue
+import io.github.marvinbaudach.reprise.library.CurrentTrackArtwork
+import io.github.marvinbaudach.reprise.library.MediaBrowseLibrary
+import io.github.marvinbaudach.reprise.library.MediaBrowseTree
+import io.github.marvinbaudach.reprise.library.TrackMetadata
+import io.github.marvinbaudach.reprise.library.TrackMetadataResolver
+import io.github.marvinbaudach.reprise.widget.RepriseWidget
+import io.github.marvinbaudach.reprise.widget.WidgetPublisher
+import io.github.marvinbaudach.reprise.widget.WidgetStateStore
+import androidx.glance.appwidget.updateAll
+import java.io.File
+import java.util.concurrent.Executors
+import java.util.concurrent.atomic.AtomicReference
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
@@ -29,6 +48,7 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
 import uniffi.reprise_android_ffi.AndroidAnalysisOutcome
+import uniffi.reprise_android_ffi.AndroidArtworkSize
 import uniffi.reprise_android_ffi.AndroidEqualizerSnapshot
 import uniffi.reprise_android_ffi.AndroidPlaybackListener
 import uniffi.reprise_android_ffi.AndroidPlaybackSession
@@ -42,10 +62,15 @@ import uniffi.reprise_android_ffi.TrackAnalysisProgressListener
 import uniffi.reprise_android_ffi.TrashAction
 
 private const val TAG_ANALYSIS = "RepriseAnalysis"
+private const val TAG_MEDIA = "RepriseMedia"
 
-/** Owns Media3 for background playback, notifications and external controls. */
-open class ReprisePlaybackService : MediaSessionService() {
-    private var mediaSession: MediaSession? = null
+/**
+ * Owns Media3 for background playback, notifications and external controls,
+ * and serves the library as a browse tree for Android Auto.
+ */
+open class ReprisePlaybackService : MediaLibraryService() {
+    private var mediaSession: MediaLibrarySession? = null
+    private var browseCallback: BrowseCallback? = null
     private var controlledPlayer: CoreControlledPlayer? = null
     private var playbackPort: Media3PlaybackPort? = null
     private var coreSession: AndroidPlaybackSession? = null
@@ -78,6 +103,40 @@ open class ReprisePlaybackService : MediaSessionService() {
     @OptIn(ExperimentalCoroutinesApi::class)
     private val analysisBackfillScope =
         CoroutineScope(SupervisorJob() + Dispatchers.IO.limitedParallelism(1))
+    private val artworkExecutor = Executors.newSingleThreadExecutor { task ->
+        Thread(task, "reprise-artwork")
+    }
+
+    /**
+     * The browse queue the Core was last asked to play, so the item that plays
+     * carries the id the browse tree listed it under and a browser can mark the
+     * playing row. Cleared when the app starts something of its own.
+     */
+    private val browsePlayContext = AtomicReference<BrowseQueue?>(null)
+    private val currentTrackArtwork = CurrentTrackArtwork(
+        executor = artworkExecutor,
+        resolve = ::resolveArtwork,
+        attach = ::attachArtwork,
+    )
+    private val widgetPublisher by lazy {
+        WidgetPublisher(
+            executor = artworkExecutor,
+            store = WidgetStateStore(this),
+            metadata = ::resolveTrackMetadata,
+            artworkPath = ::resolveArtworkPath,
+            refresh = {
+                analysisScope.launch {
+                    // Outside the publisher's own guard, and an uncaught failure
+                    // here would take the whole process down.
+                    try {
+                        RepriseWidget().updateAll(this@ReprisePlaybackService)
+                    } catch (error: Exception) {
+                        Log.w(TAG_MEDIA, "Could not redraw the widget", error)
+                    }
+                }
+            },
+        )
+    }
     private var analysisTrackId: Long? = null
     private var analysisAttempts = 0
     private var analysisRequestInFlight = false
@@ -107,6 +166,8 @@ open class ReprisePlaybackService : MediaSessionService() {
     internal val coreListener = object : AndroidPlaybackListener {
         override fun onPlaybackChanged(snapshot: AndroidPlaybackSnapshot) {
             mutablePlaybackSnapshots.value = snapshot
+            currentTrackArtwork.onCurrentTrack(snapshot.currentTrackUri)
+            widgetPublisher.onSnapshot(snapshot)
             if (::sleepTimer.isInitialized) sleepTimer.onPlaybackSnapshot(snapshot)
             if (Looper.myLooper() == Looper.getMainLooper()) {
                 handleTrackAnalysis(snapshot)
@@ -171,7 +232,12 @@ open class ReprisePlaybackService : MediaSessionService() {
                 .buildUpon()
                 .setAudioOffloadPreferences(livePcmAudioOffloadPreferences())
                 .build()
-            Media3PlaybackPort(player) { mutableSettingsRevisions.value += 1L }
+            Media3PlaybackPort(
+                player,
+                equalizerChanged = { mutableSettingsRevisions.value += 1L },
+                metadata = TrackMetadataResolver(::resolveTrackMetadata),
+                mediaIdOf = { trackId -> browsePlayContext.get()?.mediaIdOf(trackId) },
+            )
         }
         playbackPort = port
         sleepTimer = SleepTimerController(
@@ -183,7 +249,13 @@ open class ReprisePlaybackService : MediaSessionService() {
         mutableSleepTimerStates.value = sleepTimer.state()
         val sessionPlayer = CoreControlledPlayer(player, mediaSessionCommands, this)
         controlledPlayer = sessionPlayer
-        val session = MediaSession.Builder(this, sessionPlayer).build()
+        val callback = BrowseCallback(tree = ::browseTree, access = browserAccess())
+        browseCallback = callback
+        val session = MediaLibrarySession.Builder(
+            this,
+            BrowsePlayer(sessionPlayer, ::playBrowseQueue),
+            callback,
+        ).build()
         mediaSession = session
         // Handing the session to the service is what puts Media3 in charge of
         // the notification and of the foreground lifetime. `addSession` is the
@@ -217,15 +289,76 @@ open class ReprisePlaybackService : MediaSessionService() {
             coreListener,
         )
 
-    override fun onBind(intent: Intent): IBinder? =
-        if (intent.action == LOCAL_BIND_ACTION) localBinder else super.onBind(intent)
+    override fun onBind(intent: Intent?): IBinder? =
+        if (intent?.action == LOCAL_BIND_ACTION) localBinder else super.onBind(intent)
 
     override fun onGetSession(
         controllerInfo: MediaSession.ControllerInfo,
-    ): MediaSession? = mediaSession
+    ): MediaLibrarySession? = mediaSession
+
+    /** The session media browsers and controllers connect to; tests connect through it. */
+    internal val librarySession: MediaLibrarySession? get() = mediaSession
+
+    private var browseTreeCache: MediaBrowseTree? = null
+
+    /** Built on the browse thread, the first time a browser asks. */
+    @Synchronized
+    internal fun browseTree(): MediaBrowseTree = browseTreeCache
+        ?: MediaBrowseTree(
+            browseLibrary(),
+            BrowseLabels(
+                root = getString(R.string.media_browse_root),
+                recentlyPlayed = getString(R.string.media_browse_recently_played),
+                playlists = getString(R.string.media_browse_playlists),
+                albums = getString(R.string.media_browse_albums),
+                artists = getString(R.string.media_browse_artists),
+            ),
+        ).also { browseTreeCache = it }
+
+    /** Who may browse; overridden in tests to stand in for another app. */
+    internal open fun browserAccess(): BrowserAccess = PackageBrowserAccess(this)
+
+    /** Overridden in tests, where the native library cannot load. */
+    internal open fun browseLibrary(): MediaBrowseLibrary =
+        AndroidMediaBrowseLibrary(sharedMusicLibrary())
+
+    /** What the notification, lock screen, Auto and the widget show for [uri]. */
+    internal open fun resolveTrackMetadata(uri: String): TrackMetadata? =
+        sharedMusicLibrary().trackByUri(uri)?.let { row ->
+            TrackMetadata(row.id, row.title, row.artist, row.album, row.durationMs)
+        }
+
+    internal open fun resolveArtworkPath(trackUri: String): String? =
+        sharedMusicLibrary().trackArtwork(trackUri, AndroidArtworkSize.NOW_PLAYING)
+
+    private fun resolveArtwork(trackUri: String): Uri? =
+        resolveArtworkPath(trackUri)?.let { path -> Uri.fromFile(File(path)) }
+
+    private fun attachArtwork(trackUri: String, artwork: Uri) {
+        val port = playbackPort ?: return
+        try {
+            port.attachArtwork(trackUri, artwork)
+            widgetPublisher.onArtworkAvailable()
+        } catch (error: Exception) {
+            // The player may have been released while the cover was loading.
+            Log.w(TAG_MEDIA, "Could not attach the cover to the playing track", error)
+        }
+    }
+
+    /** A song tapped in a media browser plays as its container, through the Core. */
+    private fun playBrowseQueue(queue: BrowseQueue) {
+        try {
+            browsePlayContext.set(queue)
+            playTrackIds(queue.trackIds, queue.startIndex)
+        } catch (error: Exception) {
+            Log.w(TAG_MEDIA, "Could not play a song chosen in a media browser", error)
+        }
+    }
 
     override fun onDestroy() {
         if (::sleepTimer.isInitialized) sleepTimer.close()
+        browseCallback?.close()
+        browseCallback = null
         // Synchronous and direct rather than through the overridable,
         // scope-launched `cancelAnalysisBackfill`: the scope is cancelled
         // right below, which would race an async call and drop it.
@@ -238,6 +371,9 @@ open class ReprisePlaybackService : MediaSessionService() {
         analysisBackfillScope.cancel()
         coreSession?.close()
         coreSession = null
+        // After the Core session: closing it can still report a last snapshot,
+        // and that reaches the artwork and widget work queued on this executor.
+        artworkExecutor.shutdownNow()
         mediaSession?.let { session ->
             // Unsubscribe Media3 before releasing: it holds this session in its
             // own map and would otherwise be left with a released one.
@@ -375,6 +511,7 @@ open class ReprisePlaybackService : MediaSessionService() {
         playbackSnapshots.value?.positionMs ?: 0L
 
     internal fun playTracks(tracks: List<LibraryTrack>, startIndex: Int) {
+        browsePlayContext.set(null)
         coreSession().playTracks(
             tracks.map(LibraryTrack::id),
             tracks.map(LibraryTrack::uri),

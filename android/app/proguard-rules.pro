@@ -5,3 +5,7 @@
 -keep class * implements com.sun.jna.** { *; }
 -keep class uniffi.** { *; }
 -dontwarn java.awt.**
+
+# Glance instantiates a widget button's callback from its class name when the
+# button is tapped, so R8 must neither rename nor remove those classes.
+-keep class * implements androidx.glance.appwidget.action.ActionCallback { <init>(); }
