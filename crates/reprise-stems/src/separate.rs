@@ -162,7 +162,10 @@ fn pack_segment(
 
 /// Reduces one segment's stems to the instrumental (all sources except the
 /// vocals) and overlap-adds it into the accumulator with the transition window.
-#[allow(clippy::too_many_arguments)]
+#[expect(
+    clippy::too_many_arguments,
+    reason = "the overlap-add loop keeps its independent buffers and geometry explicit"
+)]
 fn accumulate_instrumental(
     accumulator: &mut [Vec<f32>],
     summed_weight: &mut [f32],

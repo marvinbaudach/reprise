@@ -272,8 +272,8 @@ fi
 # Positional APIs become harder to call correctly as their argument lists grow.
 # Keep the remaining explicit suppressions from multiplying, and require this
 # ceiling to fall in the same change whenever a suppression is removed.
-too_many_arguments_budget=41
-too_many_arguments=$(rg --count-matches '(allow|expect)\(clippy::too_many_arguments' \
+too_many_arguments_budget=40
+too_many_arguments=$(rg -U --count-matches '(allow|expect)\(\s*clippy::too_many_arguments' \
   crates --glob '*.rs' 2>/dev/null \
   | awk -F: '{ total += $2 } END { print total + 0 }')
 if (( too_many_arguments > too_many_arguments_budget )); then

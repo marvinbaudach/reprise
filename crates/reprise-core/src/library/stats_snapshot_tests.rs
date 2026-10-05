@@ -645,7 +645,10 @@ fn migrated_conn() -> crate::db::Db {
     crate::db::Db::open_in_memory().unwrap()
 }
 
-#[allow(clippy::too_many_arguments)]
+#[expect(
+    clippy::too_many_arguments,
+    reason = "the fixture exposes each track column varied by these tests"
+)]
 fn insert_track(
     conn: &crate::db::Db,
     id: i64,

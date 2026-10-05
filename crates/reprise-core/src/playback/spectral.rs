@@ -44,7 +44,6 @@ impl Band {
 }
 
 impl BandPlan {
-    #[allow(clippy::too_many_arguments)]
     pub(crate) fn new(
         sample_rate_hz: u32,
         band_count: usize,

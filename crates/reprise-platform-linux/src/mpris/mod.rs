@@ -739,7 +739,10 @@ impl MprisPlayer {
     // `DynamicDeserialize` from a `&Message`, so — unlike `set_loop_status`'s
     // `&str` — this parameter can't be taken by reference; clippy's
     // `needless_pass_by_value` doesn't know that constraint.
-    #[allow(clippy::needless_pass_by_value)]
+    #[expect(
+        clippy::needless_pass_by_value,
+        reason = "zbus requires the owned object path in this interface signature"
+    )]
     fn set_position(&self, track_id: ObjectPath<'_>, position: i64) {
         let snapshot = self.snapshot();
         if let Some(command) = set_position_command(&snapshot, track_id.as_str(), position) {
