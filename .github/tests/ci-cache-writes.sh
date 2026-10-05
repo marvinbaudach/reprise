@@ -4,9 +4,12 @@
 # for release.yml (which pushes on main alone). A pull request's own entries are
 # readable by nothing else, so writing them only evicts what dev reads.
 #
-# Every explicit save sits behind the step that fills its path and hangs on that
-# step's outcome, so a failed download or install is never frozen under the
-# exact key and a cancelled run saves nothing.
+# Every explicit save sits directly behind the step that fills its path and hangs
+# on that step's outcome, so a failed download or install is never frozen under
+# the exact key, a cancelled run saves nothing, and a red test step further down
+# cannot skip it (a step after a failed one runs only under its own status
+# function, and the saves have none). The one step allowed between a filler and
+# its save is named in GAPS below.
 #
 # Takes workflow files as arguments so a mutated copy can be checked; without
 # arguments it checks every workflow under .github/workflows/. The policy is
@@ -46,6 +49,14 @@ WRITERS = {
 BUILTIN_CACHES = {
     "ci.yml": ["gradle", "npm", "npm"],
     "pages.yml": ["npm"],
+}
+
+# The steps allowed to sit between a save's filling step and the save itself,
+# keyed by workflow, job and save. The Flatpak runtimes are verified after the
+# install and before they are frozen, so a runtime that failed its check is
+# never cached. Nothing else may come between.
+GAPS = {
+    ("release.yml", "flatpak", "Save cached Flatpak runtimes"): ["Verify restored Flatpak runtimes"],
 }
 
 STATUS_FUNCTIONS = re.compile(r"\b(always|cancelled|failure|success)\(\)")
@@ -121,6 +132,11 @@ for name in sys.argv[1:]:
                               f"restore and itself, got {condition!r}")
                 continue
             filler = fillers[0]
+            between = [s.get("name") for s in steps[next(i for i, s in enumerate(steps) if s is filler) + 1:hi]]
+            allowed = GAPS.get((path.name, job_id, save.get("name")), [])
+            if between != allowed:
+                errors.append(f"{label} must sit directly behind its filling step '{filler.get('name')}', "
+                              f"so a red step in between cannot skip it; steps between: {between}, allowed: {allowed}")
             if filler.get("continue-on-error"):
                 errors.append(f"{label}: the filling step '{filler.get('name')}' must not continue on error")
             expected = sorted([writer, hit, f"steps.{filler['id']}.outcome == 'success'"])
