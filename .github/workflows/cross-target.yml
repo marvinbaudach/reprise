@@ -95,7 +95,9 @@ jobs:
       # entries are scoped to its own ref, so dev could never read them back,
       # while an entry written on the default branch is readable from every branch.
       # The downloads are saved even when the run fails, or a red dev would
-      # never warm the cache that would make it green faster.
+      # never warm the cache that would make it green faster, but not when the
+      # run is cancelled: a cancelled run holds a partial registry, and saving
+      # it under the exact key would make every later run hit it and skip the save.
       - name: Cache Cargo downloads
         id: cargo_downloads
         uses: actions/cache/restore@v6
@@ -158,7 +160,7 @@ jobs:
 
       - name: Save Cargo downloads
         if: >-
-          always() &&
+          !cancelled() &&
           (github.ref == 'refs/heads/dev' ||
           (github.ref == 'refs/heads/main' && github.event_name == 'schedule')) &&
           steps.cargo_downloads.outputs.cache-hit != 'true'

@@ -58,8 +58,10 @@ for name in sys.argv[1:]:
                               f"got {condition!r}")
             if "cache-hit != 'true'" not in condition:
                 errors.append(f"{where}: save '{save.get('name')}' must skip when the restore hit")
-            if "cargo_downloads" in condition and not condition.startswith("always() &&"):
-                errors.append(f"{where}: the Cargo downloads save must run on a red run too (always())")
+            if "always()" in condition:
+                errors.append(f"{where}: a cache save must not use always(): a cancelled run would save a partial cache")
+            if "cargo_downloads" in condition and not condition.startswith("!cancelled() &&"):
+                errors.append(f"{where}: the Cargo downloads save must run on a red run too (!cancelled(), never always())")
         for step in steps:
             if not str(step.get("uses", "")).startswith("Swatinem/rust-cache@"):
                 continue
