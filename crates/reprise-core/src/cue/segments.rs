@@ -23,44 +23,105 @@ pub struct CueSegment {
     pub genre: Option<String>,
 }
 
+/// Extensions a `FILE` line may name besides the ones the scanner reads.
+const REFERENCED_ONLY_EXTENSIONS: [&str; 9] = [
+    "ape", "wv", "tta", "wma", "aiff", "aif", "alac", "dsf", "mpc",
+];
+
 /// Finds the candidate that a `FILE` name refers to.
 ///
 /// Backslashes in `name` count as separators. An exact match wins over a
 /// case-insensitive one, and a file with the same stem but another audio
 /// extension is the last resort, preferring flac, then wav, then the rest.
-/// Ties are broken by sorted path. An absolute `name` resolves only when it is
-/// itself in `existing`.
+/// Ties are broken by sorted path. A name without a known audio extension,
+/// such as `Vol.1`, keeps its whole name as the stem. An absolute `name`,
+/// Unix, UNC or with a Windows drive, resolves exactly when it is itself in
+/// `existing`; otherwise only its file name is looked up in `sheet_dir`.
 pub fn resolve_file(sheet_dir: &Path, name: &str, existing: &[PathBuf]) -> Option<PathBuf> {
     let name = name.replace('\\', "/");
     let referenced = sheet_dir.join(&name);
     if let Some(exact) = existing.iter().find(|path| *path == &referenced) {
         return Some(exact.clone());
     }
-    if Path::new(&name).is_absolute() {
-        return None;
+    let referenced = if is_absolute(&name) {
+        let base = name.rsplit('/').next().filter(|base| !base.is_empty())?;
+        sheet_dir.join(base)
+    } else {
+        referenced
+    };
+
+    let candidates: Vec<Candidate> = existing.iter().map(Candidate::new).collect();
+    if let Some(exact) = candidates.iter().find(|c| *c.path == referenced) {
+        return Some(exact.path.clone());
     }
     let folded = fold(&referenced);
-    if let Some(found) = existing.iter().filter(|path| fold(path) == folded).min() {
+    if let Some(found) = candidates
+        .iter()
+        .filter(|c| c.folded == folded)
+        .map(|c| c.path)
+        .min()
+    {
         return Some(found.clone());
     }
-    let stem = fold(&referenced.with_extension(""));
-    existing
+    let stem = stem_key(&referenced);
+    candidates
         .iter()
-        .filter_map(|path| {
-            let rank = extension_rank(path)?;
-            (fold(&path.with_extension("")) == stem).then_some((rank, path))
-        })
+        .filter_map(|c| Some((c.rank?, c.path)).filter(|_| c.stem == stem))
         .min()
         .map(|(_, path)| path.clone())
+}
+
+/// An existing file with the keys the lookup passes compare, folded once.
+struct Candidate<'a> {
+    path: &'a PathBuf,
+    folded: String,
+    stem: String,
+    rank: Option<u8>,
+}
+
+impl<'a> Candidate<'a> {
+    fn new(path: &'a PathBuf) -> Self {
+        Self {
+            path,
+            folded: fold(path),
+            stem: stem_key(path),
+            rank: extension_rank(path),
+        }
+    }
+}
+
+fn is_absolute(name: &str) -> bool {
+    let mut chars = name.chars();
+    let drive = chars.next().is_some_and(|c| c.is_ascii_alphabetic())
+        && chars.next() == Some(':')
+        && chars.next() == Some('/');
+    drive || Path::new(name).is_absolute()
 }
 
 fn fold(path: &Path) -> String {
     path.to_string_lossy().to_lowercase()
 }
 
+/// The folded path without its extension, when that extension is an audio one.
+fn stem_key(path: &Path) -> String {
+    if lowercase_extension(path).is_some_and(|extension| is_audio_extension(&extension)) {
+        fold(&path.with_extension(""))
+    } else {
+        fold(path)
+    }
+}
+
+fn lowercase_extension(path: &Path) -> Option<String> {
+    Some(path.extension()?.to_string_lossy().to_lowercase())
+}
+
+fn is_audio_extension(extension: &str) -> bool {
+    AUDIO_EXTENSIONS.contains(&extension) || REFERENCED_ONLY_EXTENSIONS.contains(&extension)
+}
+
 /// 0 for flac, 1 for wav, 2 for any other audio extension, `None` otherwise.
 fn extension_rank(path: &Path) -> Option<u8> {
-    let extension = path.extension()?.to_string_lossy().to_lowercase();
+    let extension = lowercase_extension(path)?;
     match extension.as_str() {
         "flac" => Some(0),
         "wav" => Some(1),
@@ -74,11 +135,19 @@ fn extension_rank(path: &Path) -> Option<u8> {
 /// that file's duration in milliseconds; `None` means the file is missing.
 /// Files holding no audio track are never resolved. Each segment ends where
 /// the next track of its file starts, so a pregap belongs to the track before
-/// it, and the last track of a file ends at that file's duration.
+/// it, and the last track of a file ends at that file's duration. A sheet
+/// without any audio track is an error, never an empty list.
 pub fn segments(
     sheet: &CueSheet,
     resolve: impl Fn(&CueFile) -> Option<(PathBuf, i64)>,
 ) -> Result<Vec<CueSegment>, CueError> {
+    if !sheet
+        .files
+        .iter()
+        .any(|file| file.tracks.iter().any(|track| track.is_audio))
+    {
+        return Err(CueError::NoAudioTracks);
+    }
     let mut result = Vec::new();
     let mut seen = HashSet::new();
     for file in &sheet.files {

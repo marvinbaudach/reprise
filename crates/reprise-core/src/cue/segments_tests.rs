@@ -453,16 +453,80 @@ fn backslashes_in_file_names_are_separators() {
 }
 
 #[test]
-fn an_absolute_file_name_resolves_only_when_it_is_a_candidate() {
+fn an_absolute_file_name_resolves_when_it_is_a_candidate() {
     let files = paths(&["/m/album.flac", "/elsewhere/album.flac"]);
 
     assert_eq!(
         resolve_file(Path::new("/m"), "/elsewhere/album.flac", &files),
         Some(PathBuf::from("/elsewhere/album.flac"))
     );
+}
+
+#[test]
+fn an_absolute_file_name_outside_the_candidates_falls_back_to_its_basename() {
+    let files = paths(&["/m/album.flac", "/other/b.flac"]);
+
     assert_eq!(
         resolve_file(Path::new("/m"), "/etc/album.flac", &files),
-        None
+        Some(PathBuf::from("/m/album.flac"))
     );
-    assert_eq!(resolve_file(Path::new("/m"), "/m/ALBUM.wav", &files), None);
+    assert_eq!(
+        resolve_file(Path::new("/m"), "/m/ALBUM.wav", &files),
+        Some(PathBuf::from("/m/album.flac"))
+    );
+    assert_eq!(resolve_file(Path::new("/m"), "/etc/b.flac", &files), None);
+}
+
+#[test]
+fn a_windows_absolute_file_name_falls_back_to_its_basename() {
+    let files = paths(&["/m/a.flac"]);
+
+    assert_eq!(
+        resolve_file(Path::new("/m"), "C:\\Music\\a.flac", &files),
+        Some(PathBuf::from("/m/a.flac"))
+    );
+    assert_eq!(
+        resolve_file(Path::new("/m"), "\\\\nas\\share\\a.flac", &files),
+        Some(PathBuf::from("/m/a.flac"))
+    );
+}
+
+#[test]
+fn a_relative_file_name_never_falls_back_to_its_basename() {
+    let files = paths(&["/m/a.flac"]);
+
+    assert_eq!(resolve_file(Path::new("/m"), "sub/a.flac", &files), None);
+}
+
+#[test]
+fn a_file_name_with_a_dotted_stem_and_no_extension_keeps_its_dot() {
+    let files = paths(&["/m/Vol.1.flac", "/m/Vol.wav"]);
+
+    assert_eq!(
+        resolve_file(Path::new("/m"), "Vol.1", &files),
+        Some(PathBuf::from("/m/Vol.1.flac"))
+    );
+}
+
+#[test]
+fn a_dotted_stem_survives_an_extension_swap() {
+    let files = paths(&["/m/Vol.1.flac"]);
+
+    assert_eq!(
+        resolve_file(Path::new("/m"), "Vol.1.ape", &files),
+        Some(PathBuf::from("/m/Vol.1.flac"))
+    );
+}
+
+#[test]
+fn a_sheet_without_audio_tracks_is_an_error() {
+    let sheet = parse(
+        br#"FILE "data.bin" BINARY
+  TRACK 01 MODE1/2352
+    INDEX 01 00:00:00
+"#,
+    )
+    .expect("parseable sheet");
+
+    assert_eq!(run(&sheet, &[]), Err(CueError::NoAudioTracks));
 }

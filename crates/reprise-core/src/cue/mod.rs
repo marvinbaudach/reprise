@@ -42,6 +42,8 @@ pub struct CueTrack {
 pub enum CueError {
     #[error("CUE sheet contains no tracks")]
     EmptySheet,
+    #[error("CUE sheet has no audio tracks")]
+    NoAudioTracks,
     #[error("CUE sheet has invalid text encoding")]
     InvalidTextEncoding,
     #[error("invalid CUE statement on line {line}: {statement}")]
