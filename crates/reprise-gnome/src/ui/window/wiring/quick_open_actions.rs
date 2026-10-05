@@ -4,6 +4,7 @@ use std::rc::Rc;
 
 use reprise_core::browser::navigation::{NavigationIntent, SidebarTarget, SourceKind};
 use reprise_core::browser::{AlbumKey, ArtistKey, BrowserPlace};
+use reprise_core::connectivity::{self, ActionOutcome, Connectivity};
 use reprise_core::db::Db;
 use reprise_core::view_source::ViewSource;
 use reprise_view::quick_open::{QuickOpenAction, QuickOpenCandidate, QuickOpenKind};
@@ -11,26 +12,48 @@ use reprise_view::search_scope::SearchScope;
 
 use super::super::{metadata_navigation::MetadataNavigator, section_search::SectionSearch};
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-enum TrackActivation {
-    PlayNext,
-    PlayContext,
+pub(super) trait DispatchTarget {
+    fn play_next(&mut self, track_id: i64);
+    fn play_context(
+        &mut self,
+        track_id: i64,
+        album: Option<&str>,
+        album_artist: Option<&str>,
+        artist: Option<&str>,
+    );
+    fn play_station(&mut self, action: &QuickOpenAction);
+    fn navigate(&mut self, intent: NavigationIntent, reason: &'static str);
+    fn connectivity(&self) -> Connectivity;
+    fn no_connection_retry(&mut self, message: &str);
 }
 
-const fn track_activation(play_next: bool) -> TrackActivation {
-    if play_next {
-        TrackActivation::PlayNext
-    } else {
-        TrackActivation::PlayContext
+pub(super) struct RuntimeDispatch<'a> {
+    player: Option<&'a Rc<crate::ui::player_controller::PlayerController>>,
+    db: &'a Db,
+    navigator: &'a MetadataNavigator,
+    connectivity: Connectivity,
+}
+
+impl<'a> RuntimeDispatch<'a> {
+    pub(super) const fn new(
+        player: Option<&'a Rc<crate::ui::player_controller::PlayerController>>,
+        db: &'a Db,
+        navigator: &'a MetadataNavigator,
+        connectivity: Connectivity,
+    ) -> Self {
+        Self {
+            player,
+            db,
+            navigator,
+            connectivity,
+        }
     }
 }
 
 pub(super) fn dispatch_item(
     item: &QuickOpenCandidate,
     play_next: bool,
-    player: Option<&Rc<crate::ui::player_controller::PlayerController>>,
-    db: &Db,
-    navigator: &MetadataNavigator,
+    target: &mut impl DispatchTarget,
 ) {
     match &item.action {
         QuickOpenAction::PlayTrack {
@@ -39,56 +62,46 @@ pub(super) fn dispatch_item(
             album_artist,
             artist,
         } => {
-            let Some(player) = player else { return };
-            match track_activation(play_next) {
-                TrackActivation::PlayNext => {
-                    player.play_next(&[*track_id]);
-                }
-                TrackActivation::PlayContext => play_track_context(
-                    player,
-                    db,
+            if play_next {
+                target.play_next(*track_id);
+            } else {
+                target.play_context(
                     *track_id,
                     album.as_deref(),
                     album_artist.as_deref(),
                     artist.as_deref(),
-                ),
+                );
             }
         }
-        QuickOpenAction::PlayStation {
-            station_id,
-            name,
-            stream_url,
-            uuid,
-        } => {
-            let Some(player) = player else { return };
-            let media = crate::ui::playback::external_media::ExternalMedia::Radio {
-                station_id: *station_id,
-                name: name.clone(),
-                stream_url: stream_url.clone(),
-                uuid: uuid.clone(),
-            };
-            if let Err(error) = player.play_external(media) {
-                tracing::warn!(%error, "quick-open station could not start");
+        action @ QuickOpenAction::PlayStation { .. } => {
+            match connectivity::live_stream_action_outcome(target.connectivity()) {
+                ActionOutcome::RunsNow => target.play_station(action),
+                ActionOutcome::NoConnectionRetry => target.no_connection_retry(
+                    &crate::ui::strings::text(crate::ui::strings::RADIO_NO_CONNECTION_RETRY),
+                ),
+                ActionOutcome::QueuedOffline => {
+                    tracing::error!("live-stream gate returned an invalid queued outcome");
+                }
             }
         }
         QuickOpenAction::NavigateAlbum {
             album,
             album_artist,
-        } => navigator.navigate(
+        } => target.navigate(
             NavigationIntent::OpenAlbum {
                 album: AlbumKey::new(album, album_artist),
                 anchor_track_id: None,
             },
             "quick open album",
         ),
-        QuickOpenAction::NavigateArtist { artist } => navigator.navigate(
+        QuickOpenAction::NavigateArtist { artist } => target.navigate(
             NavigationIntent::OpenArtist {
                 artist: ArtistKey::new(artist),
                 anchor_track_id: None,
             },
             "quick open artist",
         ),
-        QuickOpenAction::NavigatePlaylist { playlist_id, smart } => navigator.navigate(
+        QuickOpenAction::NavigatePlaylist { playlist_id, smart } => target.navigate(
             NavigationIntent::Sidebar(if *smart {
                 SidebarTarget::Smart(*playlist_id)
             } else {
@@ -96,7 +109,7 @@ pub(super) fn dispatch_item(
             }),
             "quick open playlist",
         ),
-        QuickOpenAction::NavigatePodcast { subscription_id } => navigator.navigate(
+        QuickOpenAction::NavigatePodcast { subscription_id } => target.navigate(
             NavigationIntent::RevealEpisode {
                 subscription_id: *subscription_id,
                 episode_id: None,
@@ -104,6 +117,63 @@ pub(super) fn dispatch_item(
             },
             "quick open podcast",
         ),
+    }
+}
+
+impl DispatchTarget for RuntimeDispatch<'_> {
+    fn play_next(&mut self, track_id: i64) {
+        if let Some(player) = self.player {
+            player.play_next(&[track_id]);
+        }
+    }
+
+    fn play_context(
+        &mut self,
+        track_id: i64,
+        album: Option<&str>,
+        album_artist: Option<&str>,
+        artist: Option<&str>,
+    ) {
+        if let Some(player) = self.player {
+            play_track_context(player, self.db, track_id, album, album_artist, artist);
+        }
+    }
+
+    fn play_station(&mut self, action: &QuickOpenAction) {
+        let Some(player) = self.player else { return };
+        let QuickOpenAction::PlayStation {
+            station_id,
+            name,
+            stream_url,
+            uuid,
+        } = action
+        else {
+            return;
+        };
+        let media = crate::ui::playback::external_media::ExternalMedia::Radio {
+            station_id: *station_id,
+            name: name.clone(),
+            stream_url: stream_url.clone(),
+            uuid: uuid.clone(),
+        };
+        if let Err(error) = player.play_external(media) {
+            tracing::warn!(%error, "quick-open station could not start");
+        }
+    }
+
+    fn navigate(&mut self, intent: NavigationIntent, reason: &'static str) {
+        self.navigator.navigate(intent, reason);
+    }
+
+    fn connectivity(&self) -> Connectivity {
+        self.connectivity
+    }
+
+    fn no_connection_retry(&mut self, message: &str) {
+        tracing::debug!("quick-open radio play skipped: no connection, retry when online");
+        if let Some(player) = self.player {
+            player.show_toast(message);
+        }
     }
 }
 
@@ -187,6 +257,68 @@ fn show_all_target(kind: QuickOpenKind) -> Option<(SidebarTarget, SearchScope)> 
 mod tests {
     use super::*;
 
+    #[derive(Default)]
+    struct RecordingDispatch {
+        connectivity: Connectivity,
+        played_next: Vec<i64>,
+        stations: usize,
+        retry_messages: Vec<String>,
+    }
+
+    impl DispatchTarget for RecordingDispatch {
+        fn play_next(&mut self, track_id: i64) {
+            self.played_next.push(track_id);
+        }
+
+        fn play_context(&mut self, _: i64, _: Option<&str>, _: Option<&str>, _: Option<&str>) {}
+
+        fn play_station(&mut self, _: &QuickOpenAction) {
+            self.stations += 1;
+        }
+
+        fn navigate(&mut self, _: NavigationIntent, _: &'static str) {}
+
+        fn connectivity(&self) -> Connectivity {
+            self.connectivity
+        }
+
+        fn no_connection_retry(&mut self, message: &str) {
+            self.retry_messages.push(message.to_owned());
+        }
+    }
+
+    fn track_candidate() -> QuickOpenCandidate {
+        QuickOpenCandidate::new(
+            QuickOpenKind::Track,
+            "Blue".into(),
+            "Joni Mitchell".into(),
+            vec!["Blue".into()],
+            0,
+            QuickOpenAction::PlayTrack {
+                track_id: 7,
+                album: None,
+                album_artist: None,
+                artist: None,
+            },
+        )
+    }
+
+    fn station_candidate() -> QuickOpenCandidate {
+        QuickOpenCandidate::new(
+            QuickOpenKind::Radio,
+            "Radio".into(),
+            String::new(),
+            vec!["Radio".into()],
+            0,
+            QuickOpenAction::PlayStation {
+                station_id: 9,
+                name: "Radio".into(),
+                stream_url: "https://radio.test/stream".into(),
+                uuid: None,
+            },
+        )
+    }
+
     #[test]
     fn search_17_track_context_falls_from_album_to_artist_to_track() {
         let (album, _) = resolve_track_context(
@@ -231,8 +363,32 @@ mod tests {
     }
 
     #[test]
-    fn search_17_alt_enter_dispatches_play_next() {
-        assert_eq!(track_activation(true), TrackActivation::PlayNext);
-        assert_eq!(track_activation(false), TrackActivation::PlayContext);
+    fn search_17_alt_enter_dispatches_play_next_through_the_player_seam() {
+        let mut target = RecordingDispatch::default();
+
+        dispatch_item(&track_candidate(), true, &mut target);
+
+        assert_eq!(target.played_next, vec![7]);
+    }
+
+    #[test]
+    fn search_17_radio_dispatch_uses_the_live_stream_gate() {
+        let mut offline = RecordingDispatch {
+            connectivity: Connectivity::Offline,
+            ..RecordingDispatch::default()
+        };
+        dispatch_item(&station_candidate(), false, &mut offline);
+        assert_eq!(offline.stations, 0);
+        assert_eq!(
+            offline.retry_messages,
+            vec![crate::ui::strings::text(
+                crate::ui::strings::RADIO_NO_CONNECTION_RETRY
+            )]
+        );
+
+        let mut online = RecordingDispatch::default();
+        dispatch_item(&station_candidate(), false, &mut online);
+        assert_eq!(online.stations, 1);
+        assert!(online.retry_messages.is_empty());
     }
 }

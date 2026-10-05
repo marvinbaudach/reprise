@@ -55,17 +55,17 @@ fn search_17_ctrl_k_navigates_to_an_album_and_escape_restores_focus() {
             Rc::new(move |_, generation, _| {
                 panel.set_results(
                     generation,
-                    vec![QuickOpenRow::Item(QuickOpenCandidate {
-                        kind: QuickOpenKind::Album,
-                        title: "Blue".into(),
-                        subtitle: "Joni Mitchell".into(),
-                        search_text: vec!["Blue".into()],
-                        play_count: 10,
-                        action: QuickOpenAction::NavigateAlbum {
+                    vec![QuickOpenRow::Item(QuickOpenCandidate::new(
+                        QuickOpenKind::Album,
+                        "Blue".into(),
+                        "Joni Mitchell".into(),
+                        vec!["Blue".into()],
+                        10,
+                        QuickOpenAction::NavigateAlbum {
                             album: "Blue".into(),
                             album_artist: "Joni Mitchell".into(),
                         },
-                    })],
+                    ))],
                 );
             })
         },
@@ -104,6 +104,9 @@ fn search_17_ctrl_k_navigates_to_an_album_and_escape_restores_focus() {
     panel.entry().set_text("blue");
     settle_until("album result is visible", || panel.result_count() == 1);
     panel.entry().emit_activate();
+    settle_until("fresh album result activated", || {
+        navigated.borrow().is_some()
+    });
     assert_eq!(
         navigated.borrow().as_ref(),
         Some(&ViewSource::Album {
@@ -160,19 +163,19 @@ fn search_17_play_restores_focus_to_the_invoking_list_row() {
             Rc::new(move |_, generation, _| {
                 panel.set_results(
                     generation,
-                    vec![QuickOpenRow::Item(QuickOpenCandidate {
-                        kind: QuickOpenKind::Track,
-                        title: "Blue".into(),
-                        subtitle: "Joni Mitchell".into(),
-                        search_text: vec!["Blue".into()],
-                        play_count: 10,
-                        action: QuickOpenAction::PlayTrack {
+                    vec![QuickOpenRow::Item(QuickOpenCandidate::new(
+                        QuickOpenKind::Track,
+                        "Blue".into(),
+                        "Joni Mitchell".into(),
+                        vec!["Blue".into()],
+                        10,
+                        QuickOpenAction::PlayTrack {
                             track_id: 7,
                             album: Some("Blue".into()),
                             album_artist: Some("Joni Mitchell".into()),
                             artist: Some("Joni Mitchell".into()),
                         },
-                    })],
+                    ))],
                 );
             })
         },
@@ -193,5 +196,67 @@ fn search_17_play_restores_focus_to_the_invoking_list_row() {
     settle_until("play action dispatched", || played.get());
     settle_until("quick open closed", || !panel.is_visible());
     settle_until("focus returned to the track row", || invoker.has_focus());
+    window.close();
+}
+
+#[test]
+#[ignore = "requires a display; run via xvfb-run"]
+fn search_17_typing_then_enter_waits_for_fresh_results() {
+    let _main_context = crate::ui::test_main_context::lock_main_context();
+    gtk4::init().unwrap();
+    let app = adw::Application::builder()
+        .application_id("io.github.marvinbaudach.Reprise.QuickOpenFreshTest")
+        .flags(gio::ApplicationFlags::NON_UNIQUE)
+        .build();
+    app.register(None::<&gio::Cancellable>).unwrap();
+    let window = adw::ApplicationWindow::new(&app);
+    window.present();
+
+    let panel = Rc::new(QuickOpenPanel::new());
+    let activated = Rc::new(RefCell::new(None::<String>));
+    wire_quick_open_shortcut(
+        &app,
+        &window,
+        &panel,
+        {
+            let panel = panel.clone();
+            Rc::new(move |query, generation, _| {
+                let title = if query.is_empty() { "Recent" } else { "Fresh" };
+                panel.set_results(
+                    generation,
+                    vec![QuickOpenRow::Item(QuickOpenCandidate::new(
+                        QuickOpenKind::Album,
+                        title.into(),
+                        String::new(),
+                        vec![title.into()],
+                        0,
+                        QuickOpenAction::NavigateAlbum {
+                            album: title.into(),
+                            album_artist: "Artist".into(),
+                        },
+                    ))],
+                );
+            })
+        },
+        {
+            let activated = activated.clone();
+            Rc::new(move |row, _| {
+                let QuickOpenRow::Item(item) = row else {
+                    return;
+                };
+                activated.replace(Some(item.title));
+            })
+        },
+    );
+
+    ActionGroupExt::activate_action(&window, "quick-open", None);
+    settle_until("recent result is visible", || panel.result_count() == 1);
+    panel.entry().set_text("fresh");
+    panel.entry().emit_activate();
+
+    assert_eq!(activated.borrow().as_deref(), None);
+    settle_until("fresh result activates after debounce", || {
+        activated.borrow().as_deref() == Some("Fresh")
+    });
     window.close();
 }

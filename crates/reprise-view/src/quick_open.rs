@@ -16,32 +16,6 @@ pub enum QuickOpenKind {
     Radio,
 }
 
-impl QuickOpenKind {
-    #[must_use]
-    pub const fn singular_label(self) -> &'static str {
-        match self {
-            Self::Track => "Track",
-            Self::Album => "Album",
-            Self::Artist => "Artist",
-            Self::Playlist => "Playlist",
-            Self::Podcast => "Podcast show",
-            Self::Radio => "Radio station",
-        }
-    }
-
-    #[must_use]
-    pub const fn section_label(self) -> &'static str {
-        match self {
-            Self::Track => "Tracks",
-            Self::Album => "Albums",
-            Self::Artist => "Artists",
-            Self::Playlist => "Playlists",
-            Self::Podcast => "Podcast shows",
-            Self::Radio => "Radio stations",
-        }
-    }
-}
-
 /// Semantic action carried by a result; GTK only decides how to dispatch it.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum QuickOpenAction {
@@ -83,6 +57,33 @@ pub struct QuickOpenCandidate {
     pub search_text: Vec<String>,
     pub play_count: i64,
     pub action: QuickOpenAction,
+    normalized_title: String,
+    normalized_search_text: Vec<String>,
+}
+
+impl QuickOpenCandidate {
+    #[must_use]
+    pub fn new(
+        kind: QuickOpenKind,
+        title: String,
+        subtitle: String,
+        search_text: Vec<String>,
+        play_count: i64,
+        action: QuickOpenAction,
+    ) -> Self {
+        let normalized_title = normalize(&title);
+        let normalized_search_text = search_text.iter().map(|value| normalize(value)).collect();
+        Self {
+            kind,
+            title,
+            subtitle,
+            search_text,
+            play_count,
+            action,
+            normalized_title,
+            normalized_search_text,
+        }
+    }
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -114,13 +115,13 @@ pub struct QuickOpenGroup {
 /// Filters candidates with the quick-open boundary rule, then applies the
 /// contract's rank and per-group cap.
 #[must_use]
-pub fn rank_and_group(candidates: Vec<QuickOpenCandidate>, query: &str) -> Vec<QuickOpenGroup> {
+pub fn rank_and_group(candidates: &[QuickOpenCandidate], query: &str) -> Vec<QuickOpenGroup> {
     let raw_query = query.trim().to_owned();
     let query = normalize(&raw_query);
     if query.is_empty() {
         return Vec::new();
     }
-    let mut grouped = BTreeMap::<QuickOpenKind, Vec<(u8, QuickOpenCandidate)>>::new();
+    let mut grouped = BTreeMap::<QuickOpenKind, Vec<(u8, &QuickOpenCandidate)>>::new();
     let mut section_counts = BTreeMap::<QuickOpenKind, usize>::new();
     for candidate in candidates {
         if supports_show_all(candidate.kind)
@@ -132,7 +133,7 @@ pub fn rank_and_group(candidates: Vec<QuickOpenCandidate>, query: &str) -> Vec<Q
             *section_counts.entry(candidate.kind).or_default() += 1;
             grouped.entry(candidate.kind).or_default();
         }
-        let Some(rank) = match_rank(&candidate, &query) else {
+        let Some(rank) = match_rank(candidate, &query) else {
             continue;
         };
         grouped
@@ -154,7 +155,7 @@ pub fn rank_and_group(candidates: Vec<QuickOpenCandidate>, query: &str) -> Vec<Q
             let mut rows = candidates
                 .into_iter()
                 .take(MAX_ROWS_PER_GROUP)
-                .map(|(_, candidate)| QuickOpenRow::Item(candidate))
+                .map(|(_, candidate)| QuickOpenRow::Item(candidate.clone()))
                 .collect::<Vec<_>>();
             let section_total = section_counts.get(&kind).copied().unwrap_or(total);
             if section_total > MAX_ROWS_PER_GROUP && supports_show_all(kind) {
@@ -170,18 +171,16 @@ pub fn rank_and_group(candidates: Vec<QuickOpenCandidate>, query: &str) -> Vec<Q
 }
 
 fn match_rank(candidate: &QuickOpenCandidate, query: &str) -> Option<u8> {
-    let title = normalize(&candidate.title);
-    if title == query {
+    if candidate.normalized_title == query {
         return Some(3);
     }
-    if title.starts_with(query) {
+    if candidate.normalized_title.starts_with(query) {
         return Some(2);
     }
     candidate
-        .search_text
+        .normalized_search_text
         .iter()
-        .map(|value| normalize(value))
-        .any(|value| word_prefix(&value, query))
+        .any(|value| word_prefix(value, query))
         .then_some(1)
 }
 
@@ -227,19 +226,19 @@ mod tests {
     use super::*;
 
     fn candidate(kind: QuickOpenKind, title: &str, plays: i64, id: i64) -> QuickOpenCandidate {
-        QuickOpenCandidate {
+        QuickOpenCandidate::new(
             kind,
-            title: title.into(),
-            subtitle: "Fixture artist".into(),
-            search_text: vec![title.into()],
-            play_count: plays,
-            action: QuickOpenAction::PlayTrack {
+            title.into(),
+            "Fixture artist".into(),
+            vec![title.into()],
+            plays,
+            QuickOpenAction::PlayTrack {
                 track_id: id,
                 album: None,
                 album_artist: None,
                 artist: None,
             },
-        }
+        )
     }
 
     #[test]
@@ -250,7 +249,7 @@ mod tests {
             candidate(QuickOpenKind::Track, "Debeyonce", 0, 3),
         ];
 
-        let groups = rank_and_group(candidates, "BEYONCÉ");
+        let groups = rank_and_group(&candidates, "BEYONCÉ");
         let ids = groups[0]
             .rows
             .iter()
@@ -265,7 +264,7 @@ mod tests {
 
         let punctuation = vec![candidate(QuickOpenKind::Track, "AC/DC", 0, 4)];
         assert_eq!(
-            rank_and_group(punctuation, "dc")[0].rows[0]
+            rank_and_group(&punctuation, "dc")[0].rows[0]
                 .item()
                 .map(|item| item.title.as_str()),
             Some("AC/DC")
@@ -281,7 +280,7 @@ mod tests {
             candidate(QuickOpenKind::Track, "Blue Moon", 20, 4),
         ];
 
-        let rows = rank_and_group(candidates, "blue").remove(0).rows;
+        let rows = rank_and_group(&candidates, "blue").remove(0).rows;
         let ids = rows
             .iter()
             .filter_map(QuickOpenRow::item)
@@ -299,19 +298,19 @@ mod tests {
         let mut candidates = (0..7)
             .map(|id| candidate(QuickOpenKind::Track, &format!("Match {id}"), id, id))
             .collect::<Vec<_>>();
-        candidates.push(QuickOpenCandidate {
-            kind: QuickOpenKind::Album,
-            title: "Match Album".into(),
-            subtitle: "Artist".into(),
-            search_text: vec!["Match Album".into()],
-            play_count: 0,
-            action: QuickOpenAction::NavigateAlbum {
+        candidates.push(QuickOpenCandidate::new(
+            QuickOpenKind::Album,
+            "Match Album".into(),
+            "Artist".into(),
+            vec!["Match Album".into()],
+            0,
+            QuickOpenAction::NavigateAlbum {
                 album: "Match Album".into(),
                 album_artist: "Artist".into(),
             },
-        });
+        ));
 
-        let groups = rank_and_group(candidates, "match");
+        let groups = rank_and_group(&candidates, "match");
 
         assert_eq!(
             groups.iter().map(|group| group.kind).collect::<Vec<_>>(),
@@ -348,7 +347,7 @@ mod tests {
         let mut artist = candidate(QuickOpenKind::Artist, "Beyonce", 0, 1);
         artist.subtitle = "27 tracks".into();
 
-        assert!(rank_and_group(vec![artist], "tr").is_empty());
+        assert!(rank_and_group(&[artist], "tr").is_empty());
     }
 
     #[test]
@@ -357,7 +356,7 @@ mod tests {
             .map(|id| candidate(QuickOpenKind::Album, &format!("Blue {id}"), id, id))
             .collect::<Vec<_>>();
 
-        let rows = rank_and_group(albums, "blue").remove(0).rows;
+        let rows = rank_and_group(&albums, "blue").remove(0).rows;
         assert_eq!(rows.len(), 5);
         assert!(rows.iter().all(|row| row.item().is_some()));
     }
@@ -368,7 +367,7 @@ mod tests {
             .map(|id| candidate(QuickOpenKind::Track, &format!("Beyonce {id}"), id, id))
             .collect::<Vec<_>>();
 
-        let rows = rank_and_group(tracks, "  BEYONCÉ  ").remove(0).rows;
+        let rows = rank_and_group(&tracks, "  BEYONCÉ  ").remove(0).rows;
         assert!(matches!(
             rows.last(),
             Some(QuickOpenRow::ShowAll { query, .. }) if query == "BEYONCÉ"
@@ -382,7 +381,7 @@ mod tests {
             .collect::<Vec<_>>();
         tracks.push(candidate(QuickOpenKind::Track, "Ablue", 0, 9));
 
-        let rows = rank_and_group(tracks, "blue").remove(0).rows;
+        let rows = rank_and_group(&tracks, "blue").remove(0).rows;
         assert!(matches!(
             rows.last(),
             Some(QuickOpenRow::ShowAll { count: 7, .. })

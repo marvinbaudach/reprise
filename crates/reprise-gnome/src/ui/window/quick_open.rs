@@ -13,6 +13,7 @@ use super::quick_open_row::{self, PresentedRow};
 
 type QueryCallback = Rc<dyn Fn(String, u64, bool)>;
 type ActivateCallback = Rc<dyn Fn(QuickOpenRow, bool)>;
+type CloseCallback = Rc<dyn Fn()>;
 
 #[derive(Clone)]
 struct Activation {
@@ -22,13 +23,16 @@ struct Activation {
     restore_focus: Rc<Cell<bool>>,
     generation: Rc<Cell<u64>>,
     results_generation: Rc<Cell<u64>>,
+    pending: Rc<Cell<Option<bool>>>,
 }
 
 impl Activation {
     fn row(&self, position: u32, play_next: bool) {
-        if !results_are_fresh(self.generation.get(), self.results_generation.get()) {
+        if self.generation.get() != self.results_generation.get() {
+            self.pending.set(Some(play_next));
             return;
         }
+        self.pending.set(None);
         let row = self
             .rows
             .borrow()
@@ -53,11 +57,13 @@ pub(super) struct QuickOpenPanel {
     rows: Rc<RefCell<Vec<PresentedRow>>>,
     on_query: Rc<RefCell<Option<QueryCallback>>>,
     on_activate: Rc<RefCell<Option<ActivateCallback>>>,
+    on_close: Rc<RefCell<Option<CloseCallback>>>,
     focus_guard: Rc<RefCell<Option<crate::ui::transient_focus::TransientFocusGuard>>>,
     restore_focus: Rc<Cell<bool>>,
     open: Rc<Cell<bool>>,
     generation: Rc<Cell<u64>>,
     results_generation: Rc<Cell<u64>>,
+    activation: Activation,
     suppress_query: Rc<Cell<bool>>,
 }
 
@@ -115,7 +121,17 @@ impl QuickOpenPanel {
         let on_query: Rc<RefCell<Option<QueryCallback>>> = Rc::new(RefCell::new(None));
         let generation = Rc::new(Cell::new(0u64));
         let results_generation = Rc::new(Cell::new(0u64));
+        let pending = Rc::new(Cell::new(None));
         let suppress_query = Rc::new(Cell::new(false));
+        entry.connect_changed({
+            let generation = generation.clone();
+            let suppress_query = suppress_query.clone();
+            move |_| {
+                if !suppress_query.get() {
+                    generation.set(generation.get().wrapping_add(1));
+                }
+            }
+        });
         entry.connect_search_changed({
             let on_query = on_query.clone();
             let generation = generation.clone();
@@ -124,10 +140,8 @@ impl QuickOpenPanel {
                 if suppress_query.get() {
                     return;
                 }
-                let next = generation.get().wrapping_add(1);
-                generation.set(next);
                 if let Some(callback) = on_query.borrow().clone() {
-                    callback(entry.text().to_string(), next, false);
+                    callback(entry.text().to_string(), generation.get(), false);
                 }
             }
         });
@@ -140,6 +154,7 @@ impl QuickOpenPanel {
             restore_focus: restore_focus.clone(),
             generation: generation.clone(),
             results_generation: results_generation.clone(),
+            pending: pending.clone(),
         };
         list.connect_activate({
             let activation = activation.clone();
@@ -159,6 +174,7 @@ impl QuickOpenPanel {
         let focus_guard = Rc::new(RefCell::new(
             None::<crate::ui::transient_focus::TransientFocusGuard>,
         ));
+        let on_close = Rc::new(RefCell::new(None::<CloseCallback>));
         let open = Rc::new(Cell::new(false));
         dialog.connect_closed({
             let focus_guard = focus_guard.clone();
@@ -167,13 +183,16 @@ impl QuickOpenPanel {
             let generation = generation.clone();
             let results_generation = results_generation.clone();
             let suppress_query = suppress_query.clone();
+            let pending = pending.clone();
             let entry = entry.clone();
             let rows = rows.clone();
             let store = store.clone();
+            let on_close = on_close.clone();
             move |_| {
                 open.set(false);
                 generation.set(generation.get().wrapping_add(1));
                 results_generation.set(0);
+                pending.set(None);
                 suppress_query.set(true);
                 entry.set_text("");
                 suppress_query.set(false);
@@ -184,6 +203,9 @@ impl QuickOpenPanel {
                     if let Some(guard) = guard {
                         guard.restore();
                     }
+                }
+                if let Some(callback) = on_close.borrow().clone() {
+                    callback();
                 }
             }
         });
@@ -198,11 +220,13 @@ impl QuickOpenPanel {
             rows,
             on_query,
             on_activate,
+            on_close,
             focus_guard,
             restore_focus,
             open,
             generation,
             results_generation,
+            activation,
             suppress_query,
         }
     }
@@ -213,6 +237,10 @@ impl QuickOpenPanel {
 
     pub(super) fn connect_activate(&self, callback: impl Fn(QuickOpenRow, bool) + 'static) {
         self.on_activate.replace(Some(Rc::new(callback)));
+    }
+
+    pub(super) fn connect_closed(&self, callback: impl Fn() + 'static) {
+        self.on_close.replace(Some(Rc::new(callback)));
     }
 
     pub(super) fn present(&self, parent: &adw::ApplicationWindow) {
@@ -273,18 +301,22 @@ impl QuickOpenPanel {
             self.stack.set_visible_child_name("status");
         }
         self.results_generation.set(generation);
+        if let Some(play_next) = self.activation.pending.take() {
+            self.activation.row(self.selection.selected(), play_next);
+        }
     }
 
-    pub(super) fn set_error(&self, generation: u64, detail: &str) {
+    pub(super) fn set_error(&self, generation: u64) {
         if !self.accepts_generation(generation) {
             return;
         }
         self.status.set_title(&crate::ui::strings::text(
             crate::ui::strings::QUICK_OPEN_SEARCH_FAILED,
         ));
-        self.status.set_description(Some(detail));
+        self.status.set_description(None);
         self.stack.set_visible_child_name("status");
         self.results_generation.set(0);
+        self.activation.pending.set(None);
     }
 
     #[cfg(test)]
@@ -317,10 +349,6 @@ impl QuickOpenPanel {
     pub(super) fn press_escape(&self) {
         self.dialog.force_close();
     }
-}
-
-const fn results_are_fresh(current: u64, results: u64) -> bool {
-    current == results
 }
 
 fn restores_focus(row: &QuickOpenRow) -> bool {
@@ -418,11 +446,5 @@ mod tests {
             ),
             Some(true)
         );
-    }
-
-    #[test]
-    fn search_17_stale_results_cannot_activate() {
-        assert!(!results_are_fresh(8, 7));
-        assert!(results_are_fresh(8, 8));
     }
 }

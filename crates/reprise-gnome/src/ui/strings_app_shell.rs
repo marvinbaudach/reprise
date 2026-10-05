@@ -100,6 +100,9 @@ pub fn quick_open_show_all(count: usize, section: &str) -> String {
 }
 
 pub fn quick_open_accessible(kind: &str, title: &str, subtitle: &str) -> String {
+    if subtitle.is_empty() {
+        return format!("{kind}: {title}");
+    }
     super::formatted(
         N_!("{kind}: {title}, {subtitle}"),
         &[("kind", kind), ("title", title), ("subtitle", subtitle)],
@@ -135,3 +138,13 @@ pub const COLOR_SCHEME_SUBTITLE: &str = N_!("Choose light, dark, or follow syste
 pub const SCHEME_LIGHT: &str = N_!("Light");
 pub const SCHEME_DARK: &str = N_!("Dark");
 pub const SCHEME_SYSTEM: &str = N_!("System");
+
+#[cfg(test)]
+mod tests {
+    #[test]
+    fn search_17_accessible_label_has_no_empty_subtitle_punctuation() {
+        let label = super::quick_open_accessible("Track", "Silence", "");
+        assert!(!label.ends_with(", "));
+        assert!(label.contains("Silence"));
+    }
+}

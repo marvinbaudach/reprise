@@ -33,8 +33,8 @@ podcast resume on Android (Android has no podcasts), #1018 and #1055 (fixed by
    that wave owns; whichever lands second adapts the call sites.
 2. The sleep timer **pauses** (not stops) after the fade and restores the volume.
 3. Quick open is bound to **Ctrl+K**; no header button.
-4. Quick open is a floating `AdwDialog` panel in the upper third of the window,
-   ~560 px wide, no header bar; it becomes a bottom sheet on narrow windows.
+4. Quick open is a centred `AdwDialog` (libadwaita offers no vertical placement),
+   ~560 px wide, with no header bar; it becomes a bottom sheet on narrow windows.
 5. Enter on a track plays it **in its album context** (queue = album from that
    track); no album → artist context; neither → the track alone. Alt+Enter = Play
    Next.
@@ -112,9 +112,9 @@ It must not change any SEARCH-* behaviour.
 ### Behaviour
 
 - Shortcut: **Ctrl+K**. Also listed in the shortcuts dialog. No header button.
-- A floating `AdwDialog` panel in the upper third of the window, ~560 px wide,
-  no header bar, with one entry and one result list. It reflows nothing; on narrow
-  windows it becomes a bottom sheet.
+- A centred `AdwDialog` (libadwaita offers no vertical placement), ~560 px wide,
+  with no header bar, one entry and one result list. It reflows nothing; on
+  narrow windows it becomes a bottom sheet.
 - Sources, grouped in this order, at most 5 rows each, then "Show all N in
   <section>": Tracks, Albums, Artists, Playlists, Podcast shows, Radio stations.
   No episodes, no YouTube, no releases. Only enabled modules contribute
@@ -208,3 +208,6 @@ first (smaller, proves the wiring), then quick open.
    and SEARCH-17 to `docs/ux-rules.md` in this PR.
 2. After refactor-wave C lands: re-run the sleep-timer display tests (C moves
    playback seams that the timer calls into).
+3. NAV-2 origin for quick open opened from Podcasts/Radio/Doctor uses
+   `track_list.browser_place()`; fixing it needs `window/library_shell`
+   (refactor-wave C) — follow-up issue.
