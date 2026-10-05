@@ -18,11 +18,7 @@ fi
 tmp_root=$(mktemp -d)
 trap 'find "$tmp_root" -type f -delete; rmdir "$tmp_root"' EXIT
 
-xgettext --directory=. --files-from=po/POTFILES.in --output="$tmp_root/reprise.pot" \
-  --from-code=UTF-8 --language=Rust '--keyword=N_!:1' --keyword=plural:1,2 \
-  '--keyword=history_plural:1c,2,3' '--keyword=history_outcome:1c,2' \
-  --package-name=Reprise --package-version=0.1.1 \
-  --msgid-bugs-address='Marvin Baudach' --copyright-holder='Marvin Baudach'
+scripts/update-catalogs.sh --extract-to "$tmp_root/reprise.pot"
 
 # The committed template is the one translators and the merge see; it must say exactly what the
 # sources say, in both directions (msgcmp alone only reports template entries the catalog lacks).

@@ -134,6 +134,7 @@ require_executable scripts/check-project-quality.sh
 require_executable scripts/check-flatpak-cargo-sources.sh
 require_executable scripts/check-release-metadata.sh
 require_executable scripts/install-git-hooks.sh
+require_executable scripts/update-catalogs.sh
 require_executable scripts/performance-baseline.sh
 require_executable scripts/performance-compare.sh
 require_executable scripts/performance-query-compare.sh
