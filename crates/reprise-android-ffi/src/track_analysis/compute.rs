@@ -320,6 +320,14 @@ impl AnalysisContext<'_> {
             let track = reprise_core::queries::query_present_track_by_id(&reader, track_id)
                 .map_err(query_error)?
                 .ok_or(LibraryError::TrackNotFound { track_id })?;
+            // A track cut from a CUE file is a stretch of its file, and this decode
+            // measures the whole file. Storing that under the track would be wrong
+            // for good: the stored fingerprint is the file's, so nothing would ever
+            // measure the track again. The phone cuts tracks out of the decode in a
+            // later change; until then such a track has no analysis.
+            if track.segment.is_some() {
+                return Ok(AndroidAnalysisOutcome::DecodeFailed);
+            }
             let fingerprint = reprise_core::db::track_source_fingerprint(&reader, track_id)
                 .map_err(database_error)?
                 .ok_or(LibraryError::TrackNotFound { track_id })?;

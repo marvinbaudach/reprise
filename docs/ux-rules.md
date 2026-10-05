@@ -7606,8 +7606,11 @@ no tags of its own to write.
   tracks missing, and one that returns restores them all.
 - **CUE-9** [active] [core] — Each track of a CUE file has its own waveform,
   spectrogram and loudness, measured from its own stretch of the file with a
-  single decode of the file for all of its tracks. A track whose cut changes
-  loses its analysis and is measured again; its siblings keep theirs.
+  single decode of the file for all of its tracks. A track played before the
+  backfill reaches it is measured from its own stretch too, never from the whole
+  file; where no backend can cut the file, it simply has no analysis. A track
+  whose cut changes loses its analysis and is measured again; its siblings keep
+  theirs.
 - **CUE-10** [active] [core] — A track cut from a file gets no sync analysis
   sidecar, because one file's tracks would all write the same sidecar name.
 

@@ -524,6 +524,53 @@ fn a_zero_sample_rate_chunk_is_refused_and_reported_as_decode_failed() {
 }
 
 #[test]
+fn a_track_cut_from_a_file_is_never_given_the_analysis_of_the_whole_file() {
+    let (_directory, library, _whole, music) = library_with_one_track();
+    std::fs::write(
+        music.join("song.cue"),
+        "FILE \"song.flac\" WAVE\n  TRACK 01 AUDIO\n    INDEX 01 00:00:00\n  \
+         TRACK 02 AUDIO\n    INDEX 01 00:00:40\n",
+    )
+    .unwrap();
+    scan_folder(&library.writer_handle().lock().unwrap(), &music).unwrap();
+    let cue_track = {
+        let reader = library.reader().unwrap();
+        query_library_text_search(
+            &reader,
+            "",
+            WindowRange {
+                offset: 0,
+                limit: 10,
+            },
+        )
+        .unwrap()
+        .rows
+        .into_iter()
+        .find(|track| track.segment.is_some())
+        .expect("the sheet cut the file into tracks")
+        .id
+    };
+    let calls = Arc::new(AtomicUsize::new(0));
+    library.register_track_pcm_decoder(Box::new(succeeding_decoder(Arc::clone(&calls))));
+
+    let outcome = library.import_track_analysis(cue_track).unwrap();
+
+    assert_eq!(outcome, AndroidAnalysisOutcome::DecodeFailed);
+    assert_eq!(
+        calls.load(Ordering::SeqCst),
+        0,
+        "the file is not decoded for it"
+    );
+    let reader = library.reader().unwrap();
+    assert!(reprise_core::db::get_waveform_peaks(&reader, cue_track)
+        .unwrap()
+        .is_none());
+    assert!(reprise_core::db::get_track_spectrogram(&reader, cue_track)
+        .unwrap()
+        .is_none());
+}
+
+#[test]
 fn a_file_replaced_during_the_decode_is_not_stored() {
     let (_directory, library, track_id, music) = library_with_one_track();
     let writer = library.writer_handle();
