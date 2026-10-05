@@ -22,6 +22,21 @@ import java.security.MessageDigest
  *  3. It is a pinned package (Android Auto, Wear OS) whose uid owns that package
  *     *and* whose single signing certificate matches a pinned digest. A name alone is
  *     never enough: a sideloaded app can call itself anything.
+ *
+ * Known edges, each accepted on purpose:
+ *
+ *  - [platformTrusted] is Media3's `isTrusted`, which is true for the system UI
+ *    and for every app the user has given notification access or the platform's
+ *    media-control permission. Such an app can already read and drive any media
+ *    session through the platform, so letting it browse adds no new exposure.
+ *  - The decision is a snapshot of the controller as it connected. A package
+ *    that is replaced by another signer afterwards is caught only because every
+ *    entry point asks again; the connect-time command sets are not revisited.
+ *  - The pins fail closed. A rotated Android Auto or Wear OS signing key, a
+ *    device below API 28 (no `GET_SIGNING_CERTIFICATES`), and a package that is
+ *    invisible to this app (a work profile, a missing `<queries>` entry) all
+ *    come out as "refused", never as "allowed"; the cost is a head unit that
+ *    shows an empty library until the pin list is updated.
  */
 internal fun isAllowedBrowser(
     packageName: String,
