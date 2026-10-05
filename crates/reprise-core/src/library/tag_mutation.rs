@@ -147,16 +147,21 @@ pub(crate) fn validate_registered_track(
     id: i64,
     path: &Path,
 ) -> Result<(), String> {
-    let registered_path = conn
+    let registered = conn
         .query_row(
-            "SELECT path FROM tracks WHERE id=?1 AND removed_at IS NULL",
+            "SELECT path, segment_index FROM tracks WHERE id=?1 AND removed_at IS NULL",
             [id],
-            |row| row.get::<_, String>(0),
+            |row| Ok((row.get::<_, String>(0)?, row.get::<_, i64>(1)?)),
         )
         .optional()
         .map_err(|error| format!("could not validate track path before edit: {error}"))?;
-    match registered_path {
-        Some(registered) if registered == path.to_string_lossy() => Ok(()),
+    match registered {
+        // A CUE track's tags live in the sheet, not in the file it is cut from:
+        // writing the file would change every track in it.
+        Some((_, segment_index)) if segment_index > 0 => {
+            Err("this track is part of a CUE sheet and cannot be edited".into())
+        }
+        Some((registered, _)) if registered == path.to_string_lossy() => Ok(()),
         _ => Err("track path changed before edit; refusing stale request".into()),
     }
 }

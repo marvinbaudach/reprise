@@ -289,7 +289,7 @@ pub fn merge_stats(
         let current = transaction
             .query_row(
                 "SELECT rating, rated_at, play_count, added_at, last_played_at \
-                 FROM tracks WHERE path = ?1",
+                 FROM tracks WHERE path = ?1 AND segment_index = 0",
                 [&path],
                 |row| {
                     Ok((
@@ -375,7 +375,7 @@ pub fn merge_stats(
             });
             transaction.execute(
                 "UPDATE tracks SET rating = ?1, rated_at = ?2, play_count = ?3, \
-                                   added_at = ?4, last_played_at = ?5 WHERE path = ?6",
+                                   added_at = ?4, last_played_at = ?5 WHERE path = ?6 AND segment_index = 0",
                 rusqlite::params![
                     next_rating,
                     next_rated_at,
@@ -405,7 +405,7 @@ pub fn undo_rhythmbox_import(
     for entry in &rollback.entries {
         let affected = transaction.execute(
             "UPDATE tracks SET rating = ?1, rated_at = ?2, play_count = ?3, \
-                               added_at = ?4, last_played_at = ?5 WHERE path = ?6",
+                               added_at = ?4, last_played_at = ?5 WHERE path = ?6 AND segment_index = 0",
             rusqlite::params![
                 entry.rating,
                 entry.rated_at,
@@ -531,7 +531,7 @@ pub fn prescan_rhythmdb_with_source(
                             let path_str = track.path.to_string_lossy();
                             let in_db = conn
                                 .query_row(
-                                    "SELECT 1 FROM tracks WHERE path = ?1",
+                                    "SELECT 1 FROM tracks WHERE path = ?1 AND segment_index = 0",
                                     [&path_str],
                                     |_| Ok(()),
                                 )
@@ -694,9 +694,11 @@ pub fn merge_playlists(
         for path in &playlist.paths {
             let path = path.to_string_lossy();
             let track_id = conn
-                .query_row("SELECT id FROM tracks WHERE path=?1", [&path], |row| {
-                    row.get::<_, i64>(0)
-                })
+                .query_row(
+                    "SELECT id FROM tracks WHERE path=?1 ORDER BY segment_index LIMIT 1",
+                    [&path],
+                    |row| row.get::<_, i64>(0),
+                )
                 .optional()?;
             match track_id {
                 Some(track_id) if seen.insert(track_id) => track_ids.push(track_id),

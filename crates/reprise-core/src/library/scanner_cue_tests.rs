@@ -777,3 +777,35 @@ fn the_progress_estimate_counts_files_not_tracks() {
 
     assert_eq!(estimate, Some(1));
 }
+
+#[test]
+fn cue_8_a_cue_file_that_disappears_marks_every_track_missing_and_its_return_restores_them() {
+    let album = Album::new();
+    album.scan();
+    let hidden = album.dir.path().join("album.bak");
+    std::fs::rename(album.audio(), &hidden).unwrap();
+    std::fs::rename(album.sheet(), album.dir.path().join("album.cue.bak")).unwrap();
+
+    let report = album.scan();
+
+    assert_eq!(report.vanished, 3);
+    let missing = |album: &Album| -> i64 {
+        album
+            .db
+            .conn()
+            .query_row(
+                "SELECT count(*) FROM tracks WHERE missing_since IS NOT NULL",
+                [],
+                |row| row.get(0),
+            )
+            .unwrap()
+    };
+    assert_eq!(missing(&album), 3);
+
+    std::fs::rename(&hidden, album.audio()).unwrap();
+    std::fs::rename(album.dir.path().join("album.cue.bak"), album.sheet()).unwrap();
+    album.scan();
+
+    assert_eq!(missing(&album), 0);
+    assert_eq!(segments_of(album.db.conn(), &album.audio()).len(), 3);
+}

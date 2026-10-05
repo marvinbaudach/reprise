@@ -737,12 +737,20 @@ pub fn query_import_error_count(db: &Db) -> Result<i64, rusqlite::Error> {
 /// if no track has that exact path — not an error; the caller (`ui::
 /// playlist_io::import_playlist`) treats an unmatched path as "not found",
 /// counted but not added.
+///
+/// A file that holds the tracks of a CUE sheet has one row per track. The path
+/// then stands for the first of them: an M3U names files, not tracks inside
+/// them. Callers that mean the whole file use [`track_ids_for_path`].
 pub fn track_id_for_path(db: &Db, path: &str) -> Result<Option<i64>, rusqlite::Error> {
+    Ok(track_ids_for_path(db, path)?.first().copied())
+}
+
+/// Every track id stored for `path`, in the order they play inside the file: one
+/// for an ordinary file, one per track for a file cut by a CUE sheet.
+pub fn track_ids_for_path(db: &Db, path: &str) -> Result<Vec<i64>, rusqlite::Error> {
     let conn = db.conn();
-    conn.query_row(
-        "SELECT id FROM tracks WHERE path = ?1",
-        rusqlite::params![path],
-        |r| r.get(0),
-    )
-    .optional()
+    let mut statement =
+        conn.prepare("SELECT id FROM tracks WHERE path = ?1 ORDER BY segment_index, id")?;
+    let ids = statement.query_map(rusqlite::params![path], |row| row.get(0))?;
+    ids.collect()
 }

@@ -7591,6 +7591,19 @@ no tags of its own to write.
   tracks, with their ratings and play counts.
 - **CUE-4** [active] [core] — Removing one track of a CUE file from the library
   hides that track and keeps its siblings; removing the file hides them all.
+- **CUE-5** [active] [core] — A track cut from a sheet is read-only. It has no
+  tag-editing seed and no tag write passes validation for it, because its tags
+  live in the sheet and writing the file would change every track in it.
+- **CUE-6** [active] [core] — A path stands for the whole file wherever a lookup
+  takes one. Opening a CUE file queues all its tracks in play order; an M3U or a
+  Rhythmbox playlist that names it resolves to its first track; a rating or
+  play-count import, a sync sidecar and an instrumental promotion address
+  whole-file tracks only, and a sync device path reaches each of the tracks.
+- **CUE-7** [active] [core] — Locating a missing CUE track moves the file with
+  all of its tracks and leaves their tags alone; the file is compared with the
+  sheet by its length, not by a track's title.
+- **CUE-8** [active] [core] — A CUE file that disappears marks every one of its
+  tracks missing, and one that returns restores them all.
 
 ## AJ. Showroom (public site)
 

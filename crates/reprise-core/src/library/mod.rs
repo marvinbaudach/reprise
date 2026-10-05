@@ -36,6 +36,8 @@ pub mod tag_edit;
 pub mod taste;
 // The single seam that opens library content for a lofty parser — see its
 // module doc for why all four tag readers go through one place.
+#[cfg(test)]
+mod cue_tag_edit_tests;
 mod tag_edit_seed;
 pub mod tag_edit_session;
 mod tag_edit_write;

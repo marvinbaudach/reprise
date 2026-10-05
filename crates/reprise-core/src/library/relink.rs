@@ -55,25 +55,36 @@ pub fn probe_relink_with_source(
             track_id: target.track_id,
         });
     }
-    let (old_duration_ms, old_title): (i64, String) = conn
+    let (mut old_duration_ms, old_title, segment_index): (i64, String, i64) = conn
         .query_row(
             &format!(
-                "SELECT duration_ms, title FROM tracks \
+                "SELECT duration_ms, title, segment_index FROM tracks \
                  WHERE id = ?1 AND path = ?2 AND {}",
                 crate::queries::MISSING
             ),
             rusqlite::params![target.track_id, target.old_path.to_string_lossy()],
-            |row| Ok((row.get(0)?, row.get(1)?)),
+            |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)),
         )
         .optional()?
         .ok_or(ScanError::RelinkTargetChanged {
             track_id: target.track_id,
         })?;
+    if segment_index > 0 {
+        // A track cut from a file is compared by the length of the whole file,
+        // which is where the last track ends; its title is the sheet's, not the
+        // file's.
+        old_duration_ms = conn.query_row(
+            "SELECT coalesce(max(segment_end_ms), 0) FROM tracks WHERE path = ?1",
+            [target.old_path.to_string_lossy()],
+            |row| row.get(0),
+        )?;
+    }
     let meta = super::scanner::track_meta::read_meta(new_path)?;
     let new_title = (!meta.title.is_empty()).then_some(meta.title);
     let duration_mismatch =
         old_duration_ms.abs_diff(meta.duration_ms) > MOVE_MATCH_TOLERANCE_MS.unsigned_abs();
-    let title_mismatch = new_title.as_deref().is_some_and(|title| title != old_title);
+    let title_mismatch =
+        segment_index == 0 && new_title.as_deref().is_some_and(|title| title != old_title);
     if !duration_mismatch && !title_mismatch {
         return Ok(None);
     }
@@ -123,37 +134,47 @@ pub fn relink_track_with_source(
         super::mounts::mount_point_of(new_path).map(|path| path.to_string_lossy().into_owned());
 
     let tx = conn.unchecked_transaction()?;
-    let still_missing = tx
+    let segment_index: Option<i64> = tx
         .query_row(
             &format!(
-                "SELECT 1 FROM tracks WHERE id = ?1 AND path = ?2 AND {}",
+                "SELECT segment_index FROM tracks WHERE id = ?1 AND path = ?2 AND {}",
                 crate::queries::MISSING
             ),
             rusqlite::params![target.track_id, target.old_path.to_string_lossy()],
-            |_| Ok(()),
+            |row| row.get(0),
         )
-        .optional()?
-        .is_some();
-    if !still_missing {
+        .optional()?;
+    let Some(segment_index) = segment_index else {
         return Err(ScanError::RelinkTargetChanged {
             track_id: target.track_id,
         });
+    };
+    let identity = super::scanner::move_detect::FileIdentity {
+        file_mtime: facts.mtime,
+        file_size: facts.size as i64,
+        device,
+        inode,
+        mount_point,
+    };
+    if segment_index > 0 {
+        // The file moves with all of its tracks; none of them takes the file's tags.
+        super::scanner::move_detect::move_segment_rows(
+            &tx,
+            &target.old_path.to_string_lossy(),
+            new_path,
+            &identity,
+        )?;
+    } else {
+        super::scanner::move_detect::apply_file_identity(
+            &tx,
+            target.track_id,
+            new_path,
+            &title,
+            &meta,
+            false,
+            &identity,
+        )?;
     }
-    super::scanner::move_detect::apply_file_identity(
-        &tx,
-        target.track_id,
-        new_path,
-        &title,
-        &meta,
-        false,
-        &super::scanner::move_detect::FileIdentity {
-            file_mtime: facts.mtime,
-            file_size: facts.size as i64,
-            device,
-            inode,
-            mount_point,
-        },
-    )?;
     tx.commit()?;
     Ok(())
 }
@@ -283,25 +304,46 @@ fn relink_from_folder_with_source(
                 if still_missing {
                     let (device, inode) = identity
                         .map_or((None, None), |(device, inode)| (Some(device), Some(inode)));
-                    super::scanner::move_detect::apply_file_identity(
-                        &tx,
-                        candidate.id,
-                        path,
-                        &title,
-                        &meta,
-                        false,
-                        &super::scanner::move_detect::FileIdentity {
-                            file_mtime: facts.mtime,
-                            file_size: facts.size as i64,
-                            device,
-                            inode,
-                            mount_point,
-                        },
-                    )?;
+                    let file_identity = super::scanner::move_detect::FileIdentity {
+                        file_mtime: facts.mtime,
+                        file_size: facts.size as i64,
+                        device,
+                        inode,
+                        mount_point,
+                    };
+                    if candidate.segmented {
+                        super::scanner::move_detect::move_segment_rows(
+                            &tx,
+                            &candidate.path,
+                            path,
+                            &file_identity,
+                        )?;
+                    } else {
+                        super::scanner::move_detect::apply_file_identity(
+                            &tx,
+                            candidate.id,
+                            path,
+                            &title,
+                            &meta,
+                            false,
+                            &file_identity,
+                        )?;
+                    }
                     relinked = relinked.saturating_add(1);
                 }
-                remaining.remove(&candidate.id);
-                expected_paths.remove(&candidate.id);
+                // A CUE file stands for all of its tracks at once.
+                let settled: Vec<i64> = expected_paths
+                    .iter()
+                    .filter(|(id, old)| {
+                        **id == candidate.id
+                            || (candidate.segmented && old.to_string_lossy() == candidate.path)
+                    })
+                    .map(|(id, _)| *id)
+                    .collect();
+                for id in settled {
+                    remaining.remove(&id);
+                    expected_paths.remove(&id);
+                }
             }
             tx.commit()?;
             on_progress(processed, total);
