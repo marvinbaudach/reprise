@@ -36,8 +36,15 @@ class UndoSnackbarHostTest {
     private val harness = DeletionHarness()
     private val deletions get() = harness.surface.pendingDeletions
 
+    /**
+     * On a device the snackbar's result reaches the host a frame after the tap,
+     * and the window's timer can fire in between; the tap decides on its own.
+     * Robolectric delivers that result inline, so this pins the outcome — the
+     * tap restores, the timer afterwards finds nothing to commit — but cannot
+     * by itself tell the tap-decides design from the result-driven one.
+     */
     @Test
-    fun anUndoTapIsDecidedInTheTapEvenIfTheWindowEndsInTheSameFrame() {
+    fun anUndoTapRestoresEvenIfTheWindowEndsRightAfterIt() {
         val queue = FakeQueueControls(listOf(10, 11, 12))
         showHost(queue)
         compose.runOnIdle { deletions.begin(listOf(11), queue) }
@@ -45,8 +52,7 @@ class UndoSnackbarHostTest {
 
         compose.mainClock.autoAdvance = false
         compose.onNodeWithText("Undo").performClick()
-        // The timer wins the race for the next frame.
-        compose.runOnIdle { harness.passTheWindow() }
+        harness.passTheWindow()
         compose.mainClock.autoAdvance = true
         compose.waitForIdle()
 
@@ -75,6 +81,19 @@ class UndoSnackbarHostTest {
 
         assertEquals(20_000L, undoWindowFor(manager))
         assertEquals(UNDO_WINDOW_MS, undoWindowFor(null))
+    }
+
+    @Test
+    fun theHostGivesTheOfferTheWindowTheAccessibilitySettingsAskFor() {
+        val manager = ApplicationProvider.getApplicationContext<Context>()
+            .getSystemService(AccessibilityManager::class.java)
+        shadowOf(manager).setInteractiveUiTimeout(20_000)
+        val queue = FakeQueueControls(listOf(10, 11))
+        showHost(queue)
+
+        compose.runOnIdle { deletions.begin(listOf(10), queue) }
+
+        assertEquals(20_000L, harness.timers.delays.last())
     }
 
     @Test
