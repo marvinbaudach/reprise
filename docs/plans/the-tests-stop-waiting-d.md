@@ -113,3 +113,47 @@ Verification: every contract test above, `scripts/check-shell.sh`, and a
 - **Routing:** a dispatch routes `gnome=false` by design (`.github/scripts/ci-paths.sh:11-13`).
   The core suite's complete workspace gate covers the GNOME crate, so the skipped GNOME
   job is not a gap.
+
+## Deviations
+
+What the branch does differently from the tasks above, and why. User decisions
+are dated.
+
+- **Task 2, cache policy.**
+  - Only `dev` writes the CI caches, as planned. A nightly-on-main writer was added
+    and then reverted (2026-10-05): nothing waits on that run, a cold nightly costs
+    no runner minutes, and its entries share the 10 GB quota with the ones dev reads.
+  - Each explicit `actions/cache/save` hangs on the outcome of the step that filled
+    its path, so a failed download is never frozen under the exact key. The Cargo
+    registry therefore has its own `cargo fetch --locked` step per job (the Arch
+    container jobs fetch `--target x86_64-unknown-linux-gnu`), and the save sits
+    right behind it. cargo-xwin's save hangs on its install step. This adds a step
+    the plan did not name and is unverified until a dispatch run.
+  - rust-cache also sets `cache-on-failure: true`, which the plan did not.
+  - `release.yml` was declared untouched ("runs on `main` only"), but it also runs on
+    pull requests. Its Flatpak-runtime and Android Cargo caches are now a restore plus
+    a save that runs on push events only.
+  - `.github/tests/ci-cache-writes.sh` pins all of this over every workflow. The
+    `setup-*` built-in caches (`npm`, `gradle`) have no save switch and stay as an
+    accepted residue, pinned by count.
+- **Task 4, route BOTH (2026-10-05).** The regeneration push and the containment
+  fallback both exist.
+  - The token's `contents:write` pre-check was not done: only a real push proves it.
+  - Containment is not `suite_skip`. A Dependabot pull request whose Flatpak sources
+    are stale loses its suites, keeps `base-contracts`, and the Quality gate stays red:
+    `ci.yml` `changes` and `cross-target.yml` `suite-skip` emit a separate `contained`
+    output, and `require-ci-results.sh` takes it as a twelfth argument and fails on it.
+    `suite_skip` would skip `base-contracts` and turn the gate green.
+  - Hardening beyond the plan: the push validates with the base commit's validator, the
+    push job runs no `uses:`, the regenerate job checks out by commit, setup-uv is pinned
+    by commit, and the token reaches git as a masked HTTP header instead of a URL.
+  - `scripts/check-flatpak-cargo-sources.sh` now validates content (crates.io URL and
+    checksum), which the plan's ownership did not list; the push is only as safe as that check.
+  - `ACTOR` for suite routing is `pull_request.user.login || github.actor` in `ci.yml` and
+    `cross-target.yml`. Without it the token push would skip every later run's suites.
+- **Task 5.** N=2 is extrapolated, not measured. This branch's dispatch run is the confirmation.
+- **Task 6.** `github-flow.sh` and `.github/tests/flatpak-cargo-sources.sh` stay in the
+  `qa-linters.sh` tail: the merge gate has no other call for them. CI skips
+  `flatpak-cargo-sources.sh` in its contract loop and drops its direct `github-flow.sh` call, so
+  nothing runs twice. The stale comment in the merge-readiness script was updated; no
+  parallel strand owns that file any more.
