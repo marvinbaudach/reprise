@@ -1,5 +1,6 @@
 //! Keeps persisted playback-effect settings and the platform player in sync.
 
+use std::cell::RefCell;
 use std::rc::Rc;
 
 use reprise_core::db::Db;
@@ -50,19 +51,38 @@ pub(in crate::ui) fn apply_initial(player: &dyn PlaybackBackend, conn: &Rc<Db>) 
     fallback
 }
 
+/// Hands `effects` to the backend and records them as active. The backend's
+/// verdict on the effects decides the outcome; the live gain update that
+/// follows is best effort and only logged, because returning early after the
+/// backend already switched would leave the controller describing the old state.
+fn commit_effects(
+    player: &dyn PlaybackBackend,
+    db: &Db,
+    track_id: Option<i64>,
+    effects: AudioEffects,
+    active: &RefCell<AudioEffects>,
+) -> Result<(), PlaybackError> {
+    player.set_audio_effects(effects.clone())?;
+    let mode = effects.replay_gain;
+    *active.borrow_mut() = effects;
+    if let Err(error) = apply_current_gain(player, db, track_id, mode) {
+        tracing::warn!(%error, "could not apply the new gain to the playing track");
+    }
+    Ok(())
+}
+
 impl PlayerController {
     pub(in crate::ui) fn set_audio_effects(
         &self,
         effects: AudioEffects,
     ) -> Result<(), PlaybackError> {
-        self.player.set_audio_effects(effects.clone())?;
-        apply_current_gain(
+        commit_effects(
             self.player.as_ref(),
             &self.conn,
             self.current_track.get().map(|(track_id, _)| track_id),
-            effects.replay_gain,
+            effects,
+            &self.active_audio_effects,
         )?;
-        *self.active_audio_effects.borrow_mut() = effects;
         self.feed_next();
         Ok(())
     }
@@ -77,11 +97,11 @@ mod tests {
     use super::*;
     use reprise_core::library::settings::ReplayGainMode;
     use reprise_core::playback::{PlaybackBackend, PlaybackState};
-    use std::cell::RefCell;
 
     struct RejectingBackend {
         attempts: RefCell<Vec<AudioEffects>>,
         gains: RefCell<Vec<f64>>,
+        gain_fails: bool,
     }
 
     impl PlaybackBackend for RejectingBackend {
@@ -114,7 +134,11 @@ mod tests {
 
         fn set_current_gain_db(&self, gain_db: f64) -> Result<(), PlaybackError> {
             self.gains.borrow_mut().push(gain_db);
-            Ok(())
+            if self.gain_fails {
+                Err(PlaybackError::Backend("gain unavailable".into()))
+            } else {
+                Ok(())
+            }
         }
 
         fn stop(&self) -> Result<(), PlaybackError> {
@@ -140,6 +164,7 @@ mod tests {
         let backend = RejectingBackend {
             attempts: RefCell::new(Vec::new()),
             gains: RefCell::new(Vec::new()),
+            gain_fails: false,
         };
 
         assert_eq!(apply_initial(&backend, &conn), AudioEffects::default());
@@ -179,11 +204,40 @@ mod tests {
         let backend = RejectingBackend {
             attempts: RefCell::new(Vec::new()),
             gains: RefCell::new(Vec::new()),
+            gain_fails: false,
         };
 
         apply_current_gain(&backend, &conn, Some(1), ReplayGainMode::Track).unwrap();
 
         assert_eq!(backend.gains.borrow().as_slice(), [-4.5]);
         assert!(backend.attempts.borrow().is_empty());
+    }
+
+    #[test]
+    fn a_failing_gain_update_leaves_controller_and_backend_in_agreement() {
+        let conn = crate::test_db::open().unwrap();
+        crate::test_db::connection(&conn)
+            .execute(
+                "INSERT INTO tracks (id, path, title, added_at, duration_ms) \
+                 VALUES (1, '/track.flac', '', 0, 1000)",
+                [],
+            )
+            .unwrap();
+        let backend = RejectingBackend {
+            attempts: RefCell::new(Vec::new()),
+            gains: RefCell::new(Vec::new()),
+            gain_fails: true,
+        };
+        let active = RefCell::new(AudioEffects {
+            equalizer_enabled: true,
+            ..AudioEffects::default()
+        });
+
+        // The backend accepts the default effects, so the controller must
+        // record them even though the live gain update fails afterwards.
+        commit_effects(&backend, &conn, Some(1), AudioEffects::default(), &active).unwrap();
+
+        assert_eq!(*active.borrow(), AudioEffects::default());
+        assert_eq!(backend.gains.borrow().len(), 1);
     }
 }
