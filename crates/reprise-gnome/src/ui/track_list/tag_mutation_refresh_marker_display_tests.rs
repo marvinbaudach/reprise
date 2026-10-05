@@ -4,7 +4,6 @@ use gtk4::prelude::*;
 
 use super::super::track_list_model_change::{ModelChange, ModelChangeKind};
 use super::super::TrackList;
-use reprise_core::queries::BrowseFilter;
 use reprise_core::view_source::ViewSource;
 
 fn label_with_text(widget: &gtk4::Widget, expected: &str) -> Option<gtk4::Label> {
@@ -75,13 +74,9 @@ fn narrowed_removal_then_marker_reapply_keeps_surviving_cell_text() {
         .unwrap();
     let generation = track_list.shared.model.generation();
     track_list.shared.model.set_query_browsed_ai_changed(
-        &ViewSource::Library,
+        reprise_core::queries::TrackViewQuery::new(&ViewSource::Library),
         "title",
         "asc",
-        "",
-        &BrowseFilter::default(),
-        &[],
-        false,
         ModelChange {
             kind: ModelChangeKind::Span,
             position: 0,

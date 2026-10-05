@@ -23,28 +23,22 @@ fn idle_library_caption(count: usize, total_duration_ms: i64) -> String {
     )
 }
 
-#[expect(
-    clippy::too_many_arguments,
-    reason = "the query inputs (source, search, browse, AI exclusion, queue) should travel as one TrackViewQuery"
-)]
 pub(in crate::ui) fn update(
     bar: &Rc<BrowseBar>,
     conn: &Rc<Db>,
-    source: &ViewSource,
+    view: queries::TrackViewQuery<'_>,
     count: usize,
-    search: &str,
-    browse: &BrowseFilter,
-    exclude_ai: bool,
-    queue_ids: &[i64],
 ) {
+    let source = view.source;
     bar.set_source_context(source);
-    bar.set_search(search);
+    bar.set_search(view.filter);
     if !super::filter_restriction::is_track_source(source) {
         bar.hide_result_count();
         return;
     }
-    let restricted = super::filter_restriction::is_restricted(search, browse, exclude_ai);
-    let total = source_total(conn, source, restricted, count, queue_ids);
+    let restricted =
+        super::filter_restriction::is_restricted(view.filter, view.browse, view.exclude_ai);
+    let total = source_total(conn, view, restricted, count);
     match total {
         Ok(total) if matches!(source, ViewSource::Library) && !restricted => {
             match queries::query_library_stats_browsed(conn, "", &BrowseFilter::default()) {
@@ -69,27 +63,21 @@ pub(in crate::ui) fn update(
 
 fn source_total(
     conn: &Db,
-    source: &ViewSource,
+    view: queries::TrackViewQuery<'_>,
     restricted: bool,
     count: usize,
-    queue_ids: &[i64],
 ) -> Result<usize, rusqlite::Error> {
-    if !restricted || matches!(source, ViewSource::Queue) {
+    if !restricted || matches!(view.source, ViewSource::Queue) {
         return Ok(count);
     }
     // The counting base is always the current place. Substituting the library
     // here is what made an artist page read "3 of 9 tracks" — filter vocabulary
     // at a location that is not a filter (FIL-2).
-    let queue_items = queue_ids
-        .iter()
-        .copied()
-        .map(reprise_core::up_next::QueueItem::Track)
-        .collect::<Vec<_>>();
     let browse = BrowseFilter::default();
-    let view = queries::TrackViewQuery::new(source)
+    let counting_view = queries::TrackViewQuery::new(view.source)
         .with_browse(&browse)
-        .with_queue_items(&queue_items);
-    let value = queries::query_track_count(conn, &view)?;
+        .with_queue_items(view.queue_items);
+    let value = queries::query_track_count(conn, &counting_view)?;
     usize::try_from(value).map_err(|_| rusqlite::Error::IntegralValueOutOfRange(0, value))
 }
 
@@ -120,11 +108,23 @@ mod tests {
     fn fil_2a_source_total_is_the_unfiltered_source_count() {
         let conn = seeded_conn();
         assert_eq!(
-            source_total(&conn, &ViewSource::Playlist(7), true, 1, &[]).unwrap(),
+            source_total(
+                &conn,
+                queries::TrackViewQuery::new(&ViewSource::Playlist(7)),
+                true,
+                1
+            )
+            .unwrap(),
             2
         );
         assert_eq!(
-            source_total(&conn, &ViewSource::Library, true, 1, &[]).unwrap(),
+            source_total(
+                &conn,
+                queries::TrackViewQuery::new(&ViewSource::Library),
+                true,
+                1
+            )
+            .unwrap(),
             3
         );
     }
@@ -134,7 +134,13 @@ mod tests {
     fn fil_2a_source_total_equals_count_when_idle() {
         let conn = seeded_conn();
         assert_eq!(
-            source_total(&conn, &ViewSource::Playlist(7), false, 2, &[]).unwrap(),
+            source_total(
+                &conn,
+                queries::TrackViewQuery::new(&ViewSource::Playlist(7)),
+                false,
+                2
+            )
+            .unwrap(),
             2
         );
     }
@@ -146,9 +152,18 @@ mod tests {
         let conn = seeded_conn();
         let artist = ViewSource::Artist("Caskets".into());
 
-        assert_eq!(source_total(&conn, &artist, true, 1, &[]).unwrap(), 1);
         assert_eq!(
-            source_total(&conn, &ViewSource::Library, true, 1, &[]).unwrap(),
+            source_total(&conn, queries::TrackViewQuery::new(&artist), true, 1).unwrap(),
+            1
+        );
+        assert_eq!(
+            source_total(
+                &conn,
+                queries::TrackViewQuery::new(&ViewSource::Library),
+                true,
+                1
+            )
+            .unwrap(),
             3,
             "the library still counts against itself"
         );
@@ -160,7 +175,13 @@ mod tests {
     fn fil_2a_queue_total_counts_the_queue_snapshot() {
         let conn = seeded_conn();
         assert_eq!(
-            source_total(&conn, &ViewSource::Queue, true, 3, &[]).unwrap(),
+            source_total(
+                &conn,
+                queries::TrackViewQuery::new(&ViewSource::Queue),
+                true,
+                3
+            )
+            .unwrap(),
             3
         );
     }
@@ -188,12 +209,8 @@ mod tests {
         update(
             &bar,
             &conn,
-            &ViewSource::Library,
+            queries::TrackViewQuery::new(&ViewSource::Library),
             3,
-            "",
-            &BrowseFilter::default(),
-            false,
-            &[],
         );
 
         assert_eq!(bar.result_count(), Some((3, 3)));
