@@ -369,6 +369,14 @@ mod cava_tests;
 #[path = "playback/bass_pressure_tests.rs"]
 mod bass_pressure_tests;
 
+/// A local track to start: where it plays from and the gain, in dB, its
+/// stream plays at.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct PlaybackItem<'a> {
+    pub path: &'a str,
+    pub gain_db: f64,
+}
+
 /// The audio-playback contract every platform implements (Linux: GStreamer
 /// playbin3 in `player.rs`; future macOS/Windows: AVFoundation / WASAPI —
 /// see "Repository & frontend strategy"). Surface = exactly what the
@@ -399,12 +407,6 @@ mod bass_pressure_tests;
 /// not trustworthy substitutes for it. This is purely additive: the plain
 /// `Fn(PlayerEvent)` construction path is unaffected, and a consumer that
 /// never asks for tagging never observes either new type.
-#[derive(Debug, Clone, Copy, PartialEq)]
-pub struct PlaybackItem<'a> {
-    pub path: &'a str,
-    pub gain_db: f64,
-}
-
 pub trait PlaybackBackend {
     fn play(&self, item: PlaybackItem<'_>) -> Result<(), PlaybackError>;
     /// Starts a non-local media URI. Implementations must accept `http`,
