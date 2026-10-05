@@ -145,7 +145,8 @@ jobs:
           cache: gradle
 
       - name: Cache Cargo downloads
-        uses: actions/cache@v6
+        id: cargo_downloads
+        uses: actions/cache/restore@v6
         with:
           path: |
             ~/.cargo/registry
@@ -164,6 +165,17 @@ jobs:
 
       - name: Run Android source quality
         run: scripts/check-project-quality.sh --android
+
+      # Only dev writes caches: a pull request's entries are scoped to its own
+      # ref, so dev could never read them back.
+      - name: Save Cargo downloads
+        if: github.ref == 'refs/heads/dev' && steps.cargo_downloads.outputs.cache-hit != 'true'
+        uses: actions/cache/save@v6
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+          key: android-cargo-${{ runner.os }}-${{ hashFiles('Cargo.lock') }}
 
   gnome-suite:
     name: GNOME quality suite
@@ -198,7 +210,8 @@ jobs:
           fetch-depth: 0
 
       - name: Cache Cargo downloads
-        uses: actions/cache@v6
+        id: cargo_downloads
+        uses: actions/cache/restore@v6
         with:
           path: |
             ~/.cargo/registry
@@ -209,6 +222,15 @@ jobs:
 
       - name: Run the targeted GNOME gate
         run: .github/scripts/check-gnome-ci.sh
+
+      - name: Save Cargo downloads
+        if: github.ref == 'refs/heads/dev' && steps.cargo_downloads.outputs.cache-hit != 'true'
+        uses: actions/cache/save@v6
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+          key: cargo-${{ runner.os }}-${{ hashFiles('Cargo.lock') }}
 
   core-suite:
     name: Core and workspace quality suite
@@ -258,6 +280,8 @@ jobs:
 
       - name: Cache Rust dependencies
         uses: Swatinem/rust-cache@v2
+        with:
+          save-if: ${{ github.ref == 'refs/heads/dev' }}
 
       - name: Run the complete workspace gate
         run: scripts/ci-quality.sh
@@ -304,7 +328,8 @@ jobs:
           fetch-depth: 0
 
       - name: Cache Cargo downloads
-        uses: actions/cache@v6
+        id: cargo_downloads
+        uses: actions/cache/restore@v6
         with:
           path: |
             ~/.cargo/registry
@@ -350,6 +375,15 @@ jobs:
           DISPLAY_SHARD: ${{ matrix.shard }}
           DISPLAY_SHARD_COUNT: ${{ strategy.job-total }}
         run: scripts/check-display-tests.sh --shard "$DISPLAY_SHARD/$DISPLAY_SHARD_COUNT"
+
+      - name: Save Cargo downloads
+        if: github.ref == 'refs/heads/dev' && steps.cargo_downloads.outputs.cache-hit != 'true'
+        uses: actions/cache/save@v6
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+          key: cargo-${{ runner.os }}-${{ hashFiles('Cargo.lock') }}
 
   quality:
     name: Quality gate

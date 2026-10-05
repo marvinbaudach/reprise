@@ -88,8 +88,11 @@ jobs:
       - name: Add the cross-compilation Rust targets
         run: rustup target add x86_64-pc-windows-msvc aarch64-linux-android
 
+      # Only dev writes caches: a pull request's entries are scoped to its own
+      # ref, so dev could never read them back.
       - name: Cache Cargo downloads
-        uses: actions/cache@v6
+        id: cargo_downloads
+        uses: actions/cache/restore@v6
         with:
           path: |
             ~/.cargo/registry
@@ -100,7 +103,7 @@ jobs:
 
       - name: Cache cargo-xwin
         id: cargo_xwin_cache
-        uses: actions/cache@v6
+        uses: actions/cache/restore@v6
         with:
           path: ~/.cargo/bin/cargo-xwin
           key: cargo-xwin-${{ runner.os }}-0.23.0
@@ -120,6 +123,13 @@ jobs:
         run: |
           cargo install --locked --version 0.23.0 cargo-xwin
 
+      - name: Save cargo-xwin
+        if: github.ref == 'refs/heads/dev' && steps.cargo_xwin_cache.outputs.cache-hit != 'true'
+        uses: actions/cache/save@v6
+        with:
+          path: ~/.cargo/bin/cargo-xwin
+          key: cargo-xwin-${{ runner.os }}-0.23.0
+
       - name: cargo check reprise-core for x86_64-pc-windows-msvc
         run: cargo xwin check --locked -p reprise-core --target x86_64-pc-windows-msvc
 
@@ -136,3 +146,12 @@ jobs:
           export CARGO_TARGET_AARCH64_LINUX_ANDROID_LINKER="$toolchain/aarch64-linux-android${ANDROID_API}-clang"
           cargo check --locked -p reprise-core --target aarch64-linux-android
           cargo check --locked -p reprise-android-ffi --target aarch64-linux-android
+
+      - name: Save Cargo downloads
+        if: github.ref == 'refs/heads/dev' && steps.cargo_downloads.outputs.cache-hit != 'true'
+        uses: actions/cache/save@v6
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+          key: cross-cargo-${{ hashFiles('Cargo.lock') }}
