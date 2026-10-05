@@ -22,6 +22,8 @@ import androidx.media3.session.MediaSession
 import io.github.marvinbaudach.reprise.library.AndroidMediaBrowseLibrary
 import io.github.marvinbaudach.reprise.library.BrowseCallback
 import io.github.marvinbaudach.reprise.library.BrowseLabels
+import io.github.marvinbaudach.reprise.library.BrowserAccess
+import io.github.marvinbaudach.reprise.library.PackageBrowserAccess
 import io.github.marvinbaudach.reprise.library.BrowsePlayer
 import io.github.marvinbaudach.reprise.library.CurrentTrackArtwork
 import io.github.marvinbaudach.reprise.library.MediaBrowseLibrary
@@ -237,7 +239,7 @@ open class ReprisePlaybackService : MediaLibraryService() {
         mutableSleepTimerStates.value = sleepTimer.state()
         val sessionPlayer = CoreControlledPlayer(player, mediaSessionCommands, this)
         controlledPlayer = sessionPlayer
-        val callback = BrowseCallback(tree = ::browseTree, ownPackage = packageName)
+        val callback = BrowseCallback(tree = ::browseTree, access = browserAccess())
         browseCallback = callback
         val session = MediaLibrarySession.Builder(
             this,
@@ -302,6 +304,9 @@ open class ReprisePlaybackService : MediaLibraryService() {
                 artists = getString(R.string.media_browse_artists),
             ),
         ).also { browseTreeCache = it }
+
+    /** Who may browse; overridden in tests to stand in for another app. */
+    internal open fun browserAccess(): BrowserAccess = PackageBrowserAccess(this)
 
     /** Overridden in tests, where the native library cannot load. */
     internal open fun browseLibrary(): MediaBrowseLibrary =

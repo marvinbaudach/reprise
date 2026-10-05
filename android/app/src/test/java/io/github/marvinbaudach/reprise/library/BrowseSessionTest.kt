@@ -49,7 +49,7 @@ class BrowseSessionTest {
         exoPlayer = ExoPlayer.Builder(context).build()
         callback = BrowseCallback(
             tree = { MediaBrowseTree(library, TEST_LABELS) },
-            ownPackage = context.packageName,
+            access = BrowserAccess { true },
         )
         session = MediaLibrarySession.Builder(
             context,

@@ -1,5 +1,6 @@
 package io.github.marvinbaudach.reprise
 
+import io.github.marvinbaudach.reprise.library.PINNED_SIGNERS
 import java.io.File
 import javax.xml.parsers.DocumentBuilderFactory
 import org.junit.Assert.assertEquals
@@ -76,6 +77,16 @@ class ManifestMediaSurfacesTest {
         assertEquals("1", attribute("reprise_widget_wide_info.xml", "targetCellHeight"))
         assertEquals("2", attribute("reprise_widget_square_info.xml", "targetCellWidth"))
         assertEquals("2", attribute("reprise_widget_square_info.xml", "targetCellHeight"))
+    }
+
+    @Test
+    fun theSignaturePinnedPackagesAreVisibleToTheCertificateCheck() {
+        val declared = manifest.documentElement.children("queries")
+            .flatMap { it.children("package") }
+            .map { it.getAttribute("android:name") }
+        // Without a <queries> entry the package manager hides the package on
+        // API 30+, the certificate lookup fails, and Android Auto is refused.
+        assertTrue(declared.toString(), PINNED_SIGNERS.keys.all { it in declared })
     }
 
     private val Element.name: String get() = getAttribute("android:name")
