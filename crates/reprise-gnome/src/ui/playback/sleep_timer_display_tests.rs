@@ -3,7 +3,7 @@ use std::path::Path;
 use std::rc::Rc;
 
 use reprise_core::playback::{
-    AudioEffects, PlaybackBackend, PlaybackError, PlaybackState, PlayerEvent,
+    AudioEffects, PlaybackBackend, PlaybackError, PlaybackItem, PlaybackState, PlayerEvent,
 };
 use reprise_core::podcasts::feed::ParsedEpisode;
 use reprise_core::podcasts::store::{self, NewSubscription};
@@ -26,7 +26,7 @@ struct Calls {
 struct TestPlayback(Rc<Calls>);
 
 impl PlaybackBackend for TestPlayback {
-    fn play(&self, _: &str) -> Result<(), PlaybackError> {
+    fn play(&self, _: PlaybackItem<'_>) -> Result<(), PlaybackError> {
         self.0.plays.set(self.0.plays.get() + 1);
         Ok(())
     }
@@ -57,7 +57,7 @@ impl PlaybackBackend for TestPlayback {
         Ok(())
     }
 
-    fn set_next(&self, _: Option<&str>) {}
+    fn set_next(&self, _: Option<PlaybackItem<'_>>) {}
 
     fn set_transition(&self, _: reprise_core::library::settings::TrackTransition, _: u8) {}
 }

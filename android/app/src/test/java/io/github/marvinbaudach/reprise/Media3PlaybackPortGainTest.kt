@@ -26,7 +26,7 @@ class Media3PlaybackPortGainTest {
     fun theAutomaticTransitionMakesTheNextTracksGainTheCurrentOne() {
         val fake = CallbackPlayer(playbackState = Player.STATE_IDLE, playWhenReady = false)
         val sink = TrackGainAudioSink(probe.sink)
-        val port = Media3PlaybackPort(fake.player, sink) {}
+        val port = Media3PlaybackPort(fake.player, trackGainSink = sink) {}
         port.setNext("/music/b.flac", doubleDb)
         port.playPath("/music/a.flac", halfDb)
         sink.setOutputStreamOffsetUs(0)
@@ -52,7 +52,7 @@ class Media3PlaybackPortGainTest {
     fun aLiveGainChangeReachesTheCurrentAndThePreFedTrackWithoutRequeueing() {
         val fake = CallbackPlayer(playbackState = Player.STATE_IDLE, playWhenReady = false)
         val sink = TrackGainAudioSink(probe.sink)
-        val port = Media3PlaybackPort(fake.player, sink) {}
+        val port = Media3PlaybackPort(fake.player, trackGainSink = sink) {}
         port.setNext("/music/b.flac", 0.0)
         port.playPath("/music/a.flac", 0.0)
         sink.setOutputStreamOffsetUs(0)
