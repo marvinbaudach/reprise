@@ -29,7 +29,7 @@ class RepriseWidgetContentTest {
     fun theWideWidgetShowsTitleAndArtist() = runGlanceAppWidgetUnitTest {
         setContext(ApplicationProvider.getApplicationContext())
         setAppWidgetSize(WIDE_SIZE)
-        provideComposable { RepriseWidgetContent(PLAYING, cover = null) }
+        provideComposable { RepriseWidgetContent(PLAYING, covers = WidgetCovers.None) }
 
         onNode(hasText("Nightcall")).assertExists()
         onNode(hasText("Kavinsky")).assertExists()
@@ -39,7 +39,7 @@ class RepriseWidgetContentTest {
     fun theWideWidgetsButtonsSendMediaCommandsToTheService() = runGlanceAppWidgetUnitTest {
         setContext(ApplicationProvider.getApplicationContext())
         setAppWidgetSize(WIDE_SIZE)
-        provideComposable { RepriseWidgetContent(PLAYING, cover = null) }
+        provideComposable { RepriseWidgetContent(PLAYING, covers = WidgetCovers.None) }
 
         onNode(hasContentDescription("Previous track"))
             .assertHasRunCallbackClickAction<PreviousAction>()
@@ -53,7 +53,7 @@ class RepriseWidgetContentTest {
     fun aPausedWidgetOffersPlay() = runGlanceAppWidgetUnitTest {
         setContext(ApplicationProvider.getApplicationContext())
         setAppWidgetSize(WIDE_SIZE)
-        provideComposable { RepriseWidgetContent(PLAYING.copy(isPlaying = false), cover = null) }
+        provideComposable { RepriseWidgetContent(PLAYING.copy(isPlaying = false), covers = WidgetCovers.None) }
 
         onNode(hasContentDescription("Play"))
             .assertHasRunCallbackClickAction<TogglePlayAction>()
@@ -64,7 +64,7 @@ class RepriseWidgetContentTest {
         setContext(ApplicationProvider.getApplicationContext())
         setAppWidgetSize(WIDE_SIZE)
         val ended = PLAYING.copy(isPlaying = false, canResume = false)
-        provideComposable { RepriseWidgetContent(ended, cover = null) }
+        provideComposable { RepriseWidgetContent(ended, covers = WidgetCovers.None) }
 
         onNode(hasContentDescription("Play")).assertHasStartActivityClickAction(openApp())
         onNode(hasContentDescription("Next track")).assertHasStartActivityClickAction(openApp())
@@ -76,7 +76,7 @@ class RepriseWidgetContentTest {
         setContext(ApplicationProvider.getApplicationContext())
         setAppWidgetSize(SQUARE_SIZE)
         val ended = PLAYING.copy(isPlaying = false, canResume = false)
-        provideComposable { RepriseWidgetContent(ended, cover = null) }
+        provideComposable { RepriseWidgetContent(ended, covers = WidgetCovers.None) }
 
         onNode(hasContentDescription("Play")).assertHasStartActivityClickAction(openApp())
     }
@@ -85,7 +85,7 @@ class RepriseWidgetContentTest {
     fun tappingTheCoverOpensTheAppInsteadOfSendingACommand() = runGlanceAppWidgetUnitTest {
         setContext(ApplicationProvider.getApplicationContext())
         setAppWidgetSize(WIDE_SIZE)
-        provideComposable { RepriseWidgetContent(PLAYING, cover = null) }
+        provideComposable { RepriseWidgetContent(PLAYING, covers = WidgetCovers.None) }
 
         onNode(hasContentDescription("Open Reprise"))
             .assertHasStartActivityClickAction(openApp())
@@ -95,7 +95,7 @@ class RepriseWidgetContentTest {
     fun theSquareWidgetIsACoverWithOnePlayPauseButton() = runGlanceAppWidgetUnitTest {
         setContext(ApplicationProvider.getApplicationContext())
         setAppWidgetSize(SQUARE_SIZE)
-        provideComposable { RepriseWidgetContent(PLAYING, cover = null) }
+        provideComposable { RepriseWidgetContent(PLAYING, covers = WidgetCovers.None) }
 
         onNode(hasContentDescription("Open Reprise"))
             .assertHasStartActivityClickAction(openApp())
@@ -110,7 +110,7 @@ class RepriseWidgetContentTest {
     fun beforeAnythingWasPlayedTheWidgetShowsTheAppNameAndOpensTheApp() = runGlanceAppWidgetUnitTest {
         setContext(ApplicationProvider.getApplicationContext())
         setAppWidgetSize(WIDE_SIZE)
-        provideComposable { RepriseWidgetContent(WidgetNowPlaying.Empty, cover = null) }
+        provideComposable { RepriseWidgetContent(WidgetNowPlaying.Empty, covers = WidgetCovers.None) }
 
         onNode(hasText("Reprise")).assertExists()
         onNode(hasContentDescription("Next track")).assertDoesNotExist()
@@ -122,7 +122,7 @@ class RepriseWidgetContentTest {
     fun aTrackWithoutATitleStillGetsAWidgetText() = runGlanceAppWidgetUnitTest {
         setContext(ApplicationProvider.getApplicationContext())
         setAppWidgetSize(WIDE_SIZE)
-        provideComposable { RepriseWidgetContent(PLAYING.copy(title = "", artist = ""), cover = null) }
+        provideComposable { RepriseWidgetContent(PLAYING.copy(title = "", artist = ""), covers = WidgetCovers.None) }
 
         onNode(hasText("Unknown title")).assertExists()
     }

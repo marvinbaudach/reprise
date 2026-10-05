@@ -48,7 +48,7 @@ internal val WIDE_SIZE = DpSize(250.dp, 56.dp)
 internal val SQUARE_SIZE = DpSize(110.dp, 110.dp)
 
 private val CORNER = 20.dp
-private val COVER_WIDE = 56.dp
+internal val COVER_WIDE = 56.dp
 private val CONTROL = 40.dp
 private val CONTROL_PADDING = 8.dp
 private val SQUARE_PLAY = 48.dp
@@ -57,18 +57,19 @@ private val SQUARE_PLAY = 48.dp
 internal fun isWide(size: DpSize): Boolean = size.width >= 180.dp && size.height < 100.dp
 
 /**
- * The widget's content. [cover] is already decoded and downscaled: Glance turns
- * a bitmap into a RemoteViews payload that crosses a binder, which has a hard
- * size limit.
+ * The widget's content. [covers] are already decoded and downscaled to their
+ * slots: Glance turns a bitmap into a RemoteViews payload that crosses a
+ * binder, which has a hard size limit.
  */
 @Composable
-internal fun RepriseWidgetContent(state: WidgetNowPlaying, cover: Bitmap?) {
+internal fun RepriseWidgetContent(state: WidgetNowPlaying, covers: WidgetCovers) {
     val context = LocalContext.current
     val openApp = actionStartActivity(Intent(context, MainActivity::class.java))
+    val size = LocalSize.current
     when {
         state.isEmpty -> EmptyWidget(context, openApp)
-        isWide(LocalSize.current) -> WideWidget(context, state, cover, openApp)
-        else -> SquareWidget(context, state, cover, openApp)
+        isWide(size) -> WideWidget(context, state, covers.forSize(size), openApp)
+        else -> SquareWidget(context, state, covers.forSize(size), openApp)
     }
 }
 
