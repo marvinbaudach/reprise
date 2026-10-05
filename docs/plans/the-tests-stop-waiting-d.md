@@ -2,15 +2,15 @@
 slug: the-tests-stop-waiting-d
 worktree: /home/marvin/Projects/reprise-the-tests-stop-waiting-d
 branch: feature/the-tests-stop-waiting-d
-phase: refactored
+phase: reviewed
 codex_session:
 created: 2026-10-05
 ---
 # The tests stop waiting — strand d: CI polish
 
-Mother plan: `docs/plans/the-tests-stop-waiting.md`. Read its "Why", "The cut"
-and "Decisions from the grill" before starting. Touch only the files this
-strand owns.
+This strand's mother plan was retired once strands a, b and c had landed
+(`docs/plans/README.md`). What it carried that still matters here is below:
+"Measured inputs" and "Deviations". Touch only the files this strand owns.
 
 **Wave 2.** Cut this strand's worktree from the `dev` that strand a produced — not before.
 
@@ -41,7 +41,8 @@ Contract pins every task must keep green (all exit 0 today):
      the `github-flow.sh:50-51` path pins).
    - setup-java's `cache: gradle` has no save switch and its block is pinned
      verbatim — left alone; named here so nobody "forgets" it.
-   - `release.yml` caches run on `main` only — untouched.
+   - `release.yml` was assumed to run on `main` only and left untouched. It also runs on
+     pull requests; see Deviations.
 3. **The GNOME suite does not repeat the core suite.** In
    `.github/scripts/ci-paths.sh` `emit_routes`, after the loop: `core=true` ⇒
    `gnome=false` (`display` stays `gnome || core`, computed before the
@@ -151,6 +152,48 @@ are dated.
     checksum), which the plan's ownership did not list; the push is only as safe as that check.
   - `ACTOR` for suite routing is `pull_request.user.login || github.actor` in `ci.yml` and
     `cross-target.yml`. Without it the token push would skip every later run's suites.
+- **Task 2, accepted residue and consequences (D1, D5, R16, R17).**
+  - The exception to "only `dev` writes" is exactly three built-in caches: `setup-node`'s `npm` (twice in
+    `ci.yml`) and `setup-java`'s `gradle`, plus `npm` in `pages.yml`. They have no save switch, are small, and
+    are pinned by count in `ci-cache-writes.sh`. `astral-sh/setup-uv` is **not** an exception: it caches on
+    every ref by default, so each `ci.yml` step now saves on `dev` only, and the contract requires either
+    `save-cache` on the writer's condition or `enable-cache: false`.
+  - A save sits directly behind the step that fills its path, and the contract pins the position. The Flatpak
+    runtime verification is the one step allowed in between; a failed verification must not be cached.
+  - **Accepted (R16).** After this change only a push saves `release.yml`'s caches, so its pull-request runs
+    start mostly cold. The Flatpak runtime key has no hash and the install uses `--or-update`, so a hit is never
+    refreshed. A Flatpak job is skipped on a main push that does not publish, so saves are rare and expire
+    after 7 idle days.
+  - **Post-merge check (R17).** A run on `main` cannot read `dev`'s caches, so once `main`'s own entries expire
+    the nightly builds cold, against `core-suite`'s 60-minute timeout. Nobody has measured a cold `core-suite`.
+    After the merge, read the duration of the first cold nightly's `core-suite` and raise the timeout or give
+    the nightly a writer if it comes close.
+- **Task 3 and the Android job.** `android-unit-suite` runs `cargo fetch --locked` without `--target`, unlike
+  the Arch container jobs (`--target x86_64-unknown-linux-gnu`), so its registry cache holds every target.
+- **Task 4, shape.** The plan said "a new job (or a step) … install `aiohttp tomlkit`". The branch has two jobs,
+  `regenerate` (no secret) and `push` (holds the token), joined by an artifact.
+  - The generator's dependencies come from a hashed lock, `.github/flatpak-cargo-generator.lock`, cut at
+    2026-09-28 (more than a week before the change). `uv run --locked` refuses a file whose hash differs and a
+    lock that does not match the generator; nothing is resolved at run time. An earlier revision only froze
+    resolution at the day of writing, which is no cooldown.
+  - The generator output stays byte-identical to the committed `flatpak/cargo-sources.json`.
+  - The generator, the lock and the uv version are pinned together: moving one is a reviewed change.
+  - Every action in the workflow is pinned by commit, and the `push` job runs none.
+  - `ci-path-routing.sh` and `release-workflow.sh` pins were edited, although the plan says to edit a pin
+    only where the task says so: the first for the containment route, the second for the Flatpak cache step.
+- **Task 4, stale sources fail the Quality gate for every pull request (R6).** `changes` runs
+  `check-flatpak-cargo-sources.sh` on every `pull_request` run, and `ci-paths.sh --contain` no longer asks who
+  wrote it. Before, a human pull request skipped `base-contracts` as suite reuse, so nothing ran the check and
+  its gate was green while `dev` went red after the merge. This changes behaviour for every PR, not only for
+  Dependabot's. `cross-target.yml`'s `suite-skip` job runs the check only when it is not suite reuse,
+  because a suite-reuse run skips the compilation anyway and `ci.yml` has already judged it.
+- **Task 4, Dependabot stops rebasing (T3).** After the bot's commit Dependabot treats the pull request as
+  edited and stops rebasing it. A conflicting or stale bump is recovered with `@dependabot recreate`, which
+  rebuilds the branch and re-triggers the regeneration. The workflow header says so too.
+- **Task 4, review round 3.** The `push` job is pinned command by command in the contract, which also runs its
+  real steps against a throwaway repository with only `git push` stubbed. That covers the loop guard against the
+  commit step, symlinks at `flatpak` and at the sources file, a stray path, and tracing never printing the
+  base64 header. Suite routing's `ACTOR` is pinned per deciding step.
 - **Task 5.** N=2 is extrapolated, not measured. This branch's dispatch run is the confirmation.
 - **Task 6.** `github-flow.sh` and `.github/tests/flatpak-cargo-sources.sh` stay in the
   `qa-linters.sh` tail: the merge gate has no other call for them. CI skips
