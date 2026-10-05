@@ -211,14 +211,17 @@ impl PlayerController {
             }
             PlayerEvent::TrackFinished => {
                 let mode = self.playback_mode();
+                if matches!(
+                    mode,
+                    super::preview::PlaybackMode::Podcast
+                        | super::preview::PlaybackMode::QueuedEpisode
+                ) && self.sleep_timer_arms_finished_external()
+                {
+                    self.finish_external_for_sleep_timer();
+                    self.finish_sleep_timer_after_external_completion();
+                    return;
+                }
                 if self.sleep_timer_track_finished() {
-                    if matches!(
-                        mode,
-                        super::preview::PlaybackMode::Podcast
-                            | super::preview::PlaybackMode::QueuedEpisode
-                    ) {
-                        self.finish_external_for_sleep_timer();
-                    }
                     return;
                 }
                 // INST-4b/5b: a finished instrumental preview stops without

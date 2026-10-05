@@ -27,15 +27,13 @@ pub(in crate::ui) struct SleepTimerBinding {
 struct FadeVolume {
     retained: Option<f64>,
     last_applied: Option<f64>,
-    aborted: bool,
 }
 
 impl FadeVolume {
     fn apply(&mut self, current: f64, relative: f64) -> Option<f64> {
         if self.changed_by_user(current) {
-            self.clear();
-            self.aborted = true;
-            return None;
+            self.retained = Some(current);
+            self.last_applied = None;
         }
         if relative >= 1.0 {
             return self.restore(current);
@@ -48,9 +46,7 @@ impl FadeVolume {
 
     fn restore(&mut self, current: f64) -> Option<f64> {
         if self.changed_by_user(current) {
-            self.clear();
-            self.aborted = true;
-            return None;
+            self.retained = Some(current);
         }
         let retained = self.retained.take();
         self.last_applied = None;
@@ -62,23 +58,9 @@ impl FadeVolume {
         self.retained
     }
 
-    #[cfg(test)]
-    const fn was_aborted(&self) -> bool {
-        self.aborted
-    }
-
-    fn take_aborted(&mut self) -> bool {
-        std::mem::take(&mut self.aborted)
-    }
-
     fn changed_by_user(&self, current: f64) -> bool {
         self.last_applied
             .is_some_and(|applied| (current - applied).abs() > f64::EPSILON)
-    }
-
-    fn clear(&mut self) {
-        self.retained = None;
-        self.last_applied = None;
     }
 }
 
@@ -200,6 +182,27 @@ impl PlayerController {
         self.finish_sleep_timer(SleepTimer::on_track_finished)
     }
 
+    pub(in crate::ui) fn sleep_timer_arms_finished_external(&self) -> bool {
+        let Some(binding) = self.sleep_timer_binding() else {
+            return false;
+        };
+        let armed_item = binding.timer.borrow().armed_item();
+        armed_item == self.current_sleep_item()
+    }
+
+    pub(in crate::ui) fn finish_sleep_timer_after_external_completion(self: &Rc<Self>) {
+        let Some(binding) = self.sleep_timer_binding() else {
+            return;
+        };
+        let action = binding.timer.borrow_mut().on_track_finished();
+        if action != SleepAction::Pause {
+            return;
+        }
+        self.restore_sleep_timer_volume(&binding);
+        self.sync_sleep_timer_button(&binding, monotonic_now());
+        self.show_toast(&crate::ui::strings::sleep_timer_paused());
+    }
+
     pub(in crate::ui) fn sleep_timer_gapless_advance(self: &Rc<Self>) -> bool {
         self.finish_sleep_timer(SleepTimer::on_gapless_advance)
     }
@@ -231,9 +234,6 @@ impl PlayerController {
             SleepAction::None => {}
             SleepAction::SetVolume(relative) => {
                 let target = binding.fade.borrow_mut().apply(self.volume.get(), relative);
-                if binding.fade.borrow_mut().take_aborted() {
-                    binding.timer.borrow_mut().cancel();
-                }
                 if let Some(target) = target {
                     self.set_sleep_timer_volume(target);
                 }
@@ -334,13 +334,14 @@ mod tests {
     }
 
     #[test]
-    fn play_18_user_volume_change_during_fade_aborts_without_overwriting_it() {
+    fn play_18_user_volume_change_during_fade_rebases_the_fade() {
         let mut fade = FadeVolume::default();
         assert_eq!(fade.apply(0.8, 0.5), Some(0.4));
 
-        assert_eq!(fade.apply(0.2, 0.375), None);
-        assert!(fade.was_aborted());
-        assert_eq!(fade.restore(0.2), None);
+        let rebased = fade.apply(0.2, 0.375).unwrap();
+        assert!((rebased - 0.075).abs() < f64::EPSILON);
+        assert_eq!(fade.retained(), Some(0.2));
+        assert_eq!(fade.restore(0.075), Some(0.2));
     }
 
     #[test]
