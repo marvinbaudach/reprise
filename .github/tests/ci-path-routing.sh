@@ -103,26 +103,225 @@ expect_diff_routes true false true true schedule refs/heads/main
     marvinbaudach marvinbaudach head dev) == false ]] || \
     fail "a main revision different from dev must run every selected suite"
 
-"$aggregator" success success false true success false skipped false skipped false skipped
-"$aggregator" success success false false skipped true success false skipped true success
-"$aggregator" success success false true success false skipped true success true success
-"$aggregator" success success false false skipped false skipped false skipped false skipped
-"$aggregator" success skipped true false skipped false skipped false skipped false skipped
-if "$aggregator" success success false true skipped false skipped false skipped false skipped 2>/dev/null; then
+"$aggregator" success success false true success false skipped false skipped false skipped false
+"$aggregator" success success false false skipped true success false skipped true success false
+"$aggregator" success success false true success false skipped true success true success false
+"$aggregator" success success false false skipped false skipped false skipped false skipped false
+"$aggregator" success skipped true false skipped false skipped false skipped false skipped false
+if "$aggregator" success success false true skipped false skipped false skipped false skipped false 2>/dev/null; then
     fail "a selected Android route must not accept a skipped Android suite"
 fi
-if "$aggregator" success success false false skipped maybe skipped false skipped false skipped 2>/dev/null; then
+if "$aggregator" success success false false skipped maybe skipped false skipped false skipped false 2>/dev/null; then
     fail "an invalid GNOME route must fail closed"
 fi
-if "$aggregator" success success false false skipped false skipped false skipped true failure 2>/dev/null; then
+if "$aggregator" success success false false skipped false skipped false skipped true failure false 2>/dev/null; then
     fail "a selected display route must not accept a failed display matrix"
 fi
-if "$aggregator" success failure false false skipped false skipped false skipped false skipped 2>/dev/null; then
+if "$aggregator" success failure false false skipped false skipped false skipped false skipped false 2>/dev/null; then
     fail "a failed base contract job must fail the aggregate Quality gate"
 fi
-if "$aggregator" success success true false skipped false skipped false skipped false skipped 2>/dev/null; then
+if "$aggregator" success success true false skipped false skipped false skipped false skipped false 2>/dev/null; then
     fail "an owner skip must require the base contract job to be skipped"
 fi
+
+# --- Containment: a Dependabot bump with stale Flatpak sources. ---
+# Its suites are skipped, base-contracts still runs, and the Quality gate stays
+# red. This is NOT suite reuse: reuse skips base-contracts too, so the very check
+# that is red would never run, and the aggregator turns green on that path.
+[[ $("$classifier" --contain pull_request 'dependabot[bot]' 1) == true ]] || \
+    fail "a Dependabot pull request with red Flatpak sources must be contained"
+[[ $("$classifier" --contain pull_request 'dependabot[bot]' 0) == false ]] || \
+    fail "a Dependabot pull request with green Flatpak sources must run its suites"
+[[ $("$classifier" --contain pull_request 'dependabot[bot]' unexpected) == true ]] || \
+    fail "an unreadable sources status must fail closed"
+[[ $("$classifier" --contain pull_request contributor 1) == false ]] || \
+    fail "a human pull request is never contained: it skips its suites as suite reuse already"
+[[ $("$classifier" --contain push refs/heads/dev 1) == false ]] || \
+    fail "a push is never contained"
+[[ $("$classifier" --contain push 'dependabot[bot]' 1) == false ]] || \
+    fail "only a pull request is contained, whoever pushed"
+"$aggregator" success success false false skipped false skipped false skipped false skipped false
+if "$aggregator" success success false false skipped false skipped false skipped false skipped true 2>/dev/null; then
+    fail "a contained run must fail the Quality gate even when every result reads as skipped"
+fi
+if "$aggregator" success failure false false skipped false skipped false skipped false skipped true 2>/dev/null; then
+    fail "a contained run must fail the Quality gate when base-contracts failed"
+fi
+if "$aggregator" success success true false skipped false skipped false skipped false skipped true 2>/dev/null; then
+    fail "a contained run must fail the Quality gate even when suite reuse is also set"
+fi
+if "$aggregator" success success false false skipped false skipped false skipped false skipped maybe 2>/dev/null; then
+    fail "an invalid containment value must fail closed"
+fi
+
+# Run the routing steps of the real workflows, extracted from the YAML, against a
+# stubbed git and a stubbed sources check. Reading the workflow text would not
+# notice a containment that is wired through `suite_skip`, which turns the gate
+# green; running it does.
+sandbox=$(mktemp -d "${TMPDIR:-/tmp}/ci-contain.XXXXXX")
+trap 'rm -rf "$sandbox"' EXIT
+mkdir -p "$sandbox/bin" "$sandbox/ws/.github/scripts" "$sandbox/ws/scripts"
+command cp -f "$classifier" "$sandbox/ws/.github/scripts/ci-paths.sh"
+cat > "$sandbox/bin/git" <<'STUB'
+#!/usr/bin/env bash
+case "$1" in
+    fetch) exit 0 ;;
+    rev-parse) echo 1111111111111111111111111111111111111111 ;;
+    *) exit 1 ;;
+esac
+STUB
+cat > "$sandbox/ws/scripts/check-flatpak-cargo-sources.sh" <<'STUB'
+#!/usr/bin/env bash
+touch "$STUB_MARKER"
+exit "$STUB_SOURCES_STATUS"
+STUB
+chmod +x "$sandbox/bin/git" "$sandbox/ws/scripts/check-flatpak-cargo-sources.sh"
+
+extract_step_script() {
+    python3 - "$1" "$2" "$3" <<'PY'
+import sys
+
+import yaml
+
+with open(sys.argv[1], encoding="utf-8") as stream:
+    workflow = yaml.safe_load(stream)
+for step in workflow["jobs"][sys.argv[2]]["steps"]:
+    if step.get("id") == sys.argv[3]:
+        print(step["run"])
+        break
+else:
+    sys.exit(f"{sys.argv[1]}: job {sys.argv[2]} has no step {sys.argv[3]}")
+PY
+}
+
+# run_step WORKFLOW JOB STEP ACTOR SOURCES_STATUS [SUITE_SKIP]: leaves the step's
+# outputs in $step_output and whether the sources check ran in $sources_check_ran.
+run_step() {
+    local file=$1 job=$2 step=$3 actor=$4 status=$5 suite_skip=${6:-}
+    extract_step_script "$file" "$job" "$step" > "$sandbox/step.sh" || \
+        fail "cannot extract $job/$step from $(basename "$file")"
+    : > "$sandbox/outputs"
+    rm -f "$sandbox/marker"
+    (
+        cd "$sandbox/ws"
+        PATH="$sandbox/bin:$PATH" EVENT_NAME=pull_request REF_NAME=refs/pull/9/merge \
+            ACTOR=$actor REPOSITORY_OWNER=marvinbaudach BASE_SHA=base HEAD_SHA=head \
+            SUITE_SKIP=$suite_skip STUB_SOURCES_STATUS=$status STUB_MARKER="$sandbox/marker" \
+            GITHUB_OUTPUT="$sandbox/outputs" bash -e "$sandbox/step.sh" > "$sandbox/step.log" 2>&1
+    ) || fail "the $job/$step step of $(basename "$file") failed: $(tail -3 "$sandbox/step.log")"
+    step_output=$(cat "$sandbox/outputs")
+    sources_check_ran=false
+    [[ -e $sandbox/marker ]] && sources_check_ran=true
+    return 0
+}
+
+output_of() {
+    sed -n "s/^$1=//p" <<<"$step_output" | tail -1
+}
+
+expect_output() {
+    [[ $(output_of "$1") == "$2" ]] || \
+        fail "$3: expected $1=$2, got '$(output_of "$1")' in: $step_output"
+}
+
+# ci.yml: the case that matters. Dependabot PR, red Flatpak sources -> Quality gate red.
+run_step "$workflow" changes routes 'dependabot[bot]' 1
+case_name="Dependabot PR with red Flatpak sources"
+[[ $sources_check_ran == true ]] || fail "$case_name: the sources check never ran"
+expect_output suite_skip false "$case_name must keep base-contracts, so it must not be suite reuse"
+expect_output contained true "$case_name must be contained"
+for surface in android gnome core display; do
+    expect_output "$surface" false "$case_name must skip the $surface suite"
+done
+# base-contracts runs and fails on the same check; the gate must be red whether it
+# reports that failure or, hypothetically, a success.
+for base_result in failure success; do
+    if "$aggregator" success "$base_result" "$(output_of suite_skip)" \
+        "$(output_of android)" skipped "$(output_of gnome)" skipped \
+        "$(output_of core)" skipped "$(output_of display)" skipped \
+        "$(output_of contained)" 2>/dev/null; then
+        fail "$case_name must end with a red Quality gate (base-contracts: $base_result)"
+    fi
+done
+
+run_step "$workflow" changes routes 'dependabot[bot]' 0
+expect_output suite_skip false "Dependabot PR with green Flatpak sources"
+expect_output contained false "Dependabot PR with green Flatpak sources"
+expect_output core true "Dependabot PR with green Flatpak sources must still run its suites"
+"$aggregator" success success "$(output_of suite_skip)" \
+    "$(output_of android)" success "$(output_of gnome)" skipped \
+    "$(output_of core)" success "$(output_of display)" success "$(output_of contained)" || \
+    fail "Dependabot PR with green Flatpak sources and green suites must pass the gate"
+
+run_step "$workflow" changes routes contributor 1
+expect_output suite_skip true "human PR"
+expect_output contained false "human PR"
+[[ $sources_check_ran == false ]] || fail "a human pull request must not run the sources check in the routing job"
+
+# cross-target.yml: the same decision, and its compilation job honours it.
+run_step "$cross_target" suite-skip containment 'dependabot[bot]' 1 false
+[[ $sources_check_ran == true ]] || fail "cross-target: the sources check never ran"
+expect_output contained true "cross-target: a Dependabot PR with red Flatpak sources"
+run_step "$cross_target" suite-skip containment 'dependabot[bot]' 0 false
+expect_output contained false "cross-target: a Dependabot PR with green Flatpak sources"
+run_step "$cross_target" suite-skip containment contributor 1 true
+expect_output contained false "cross-target: a human PR"
+[[ $sources_check_ran == false ]] || fail "cross-target: a suite-reuse run must not run the sources check"
+run_step "$cross_target" suite-skip authorization 'dependabot[bot]' 1
+expect_output suite_skip false "cross-target: a Dependabot PR with red Flatpak sources must not be suite reuse"
+
+python3 - "$workflow" "$cross_target" <<'PY' || fail "the containment wiring in the workflows is wrong"
+import re
+import sys
+
+import yaml
+
+
+def squash(text) -> str:
+    return " ".join(str(text).split())
+
+
+with open(sys.argv[1], encoding="utf-8") as stream:
+    ci = yaml.safe_load(stream)
+with open(sys.argv[2], encoding="utf-8") as stream:
+    cross = yaml.safe_load(stream)
+
+jobs = ci["jobs"]
+# base-contracts is the check that goes red, so containment must never switch it off.
+assert squash(jobs["base-contracts"]["if"]) == "needs.changes.outputs.suite_skip != 'true'", (
+    "base-contracts must run unless the run is suite reuse; containment must not skip it"
+)
+for name in ("android-unit-suite", "gnome-suite", "core-suite", "display-tests"):
+    assert squash(jobs[name]["if"]).startswith("needs.changes.outputs.suite_skip != 'true' &&"), name
+assert jobs["changes"]["outputs"]["contained"] == "${{ steps.routes.outputs.contained }}"
+assert jobs["changes"]["outputs"]["suite_skip"] == "${{ steps.routes.outputs.suite_skip }}", (
+    "the routing job's suite_skip must be the classifier's verdict alone, never containment"
+)
+
+routes = next(s for s in jobs["changes"]["steps"] if s.get("id") == "routes")["run"]
+assert len(re.findall(r"^\s*suite_skip=", routes, flags=re.MULTILINE)) == 1, (
+    "suite_skip must have exactly one producer: ci-paths.sh --suite-skip"
+)
+assert re.search(r"^\s*suite_skip=\$\(\s*\.github/scripts/ci-paths\.sh --suite-skip", routes, flags=re.MULTILINE)
+
+gate = next(s for s in jobs["quality"]["steps"] if s["name"] == "Require every selected gate")
+assert gate["env"]["CONTAINED"] == "${{ needs.changes.outputs.contained }}"
+assert squash(gate["run"]).endswith('"$DISPLAY_ROUTE" "$DISPLAY_RESULT" "$CONTAINED"'), (
+    "the Quality gate must hand the containment verdict to the aggregator last"
+)
+assert gate["env"]["SUITE_SKIP"] == "${{ needs.changes.outputs.suite_skip }}", (
+    "the gate's suite reuse input must be the routing job's suite_skip alone"
+)
+
+assert cross["jobs"]["suite-skip"]["outputs"]["contained"] == "${{ steps.containment.outputs.contained }}"
+assert cross["jobs"]["suite-skip"]["outputs"]["suite_skip"] == "${{ steps.authorization.outputs.suite_skip }}", (
+    "cross-target's suite_skip must be the classifier's verdict alone, never containment"
+)
+assert squash(cross["jobs"]["cross-target"]["if"]) == (
+    "needs['suite-skip'].outputs.suite_skip != 'true' && "
+    "needs['suite-skip'].outputs.contained != 'true'"
+), "the cross-target job must skip both suite reuse and a contained bump"
+PY
 
 rg --multiline --quiet \
     '^  quality:\n    name: Quality gate\n    needs: \[changes, base-contracts, android-unit-suite, gnome-suite, core-suite, display-tests\]\n    if: always\(\)' \

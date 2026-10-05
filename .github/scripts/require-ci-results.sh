@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-if (( $# != 11 )); then
-    echo "usage: $0 CHANGES_RESULT BASE_RESULT SUITE_SKIP ANDROID_ROUTE ANDROID_RESULT GNOME_ROUTE GNOME_RESULT CORE_ROUTE CORE_RESULT DISPLAY_ROUTE DISPLAY_RESULT" >&2
+if (( $# != 12 )); then
+    echo "usage: $0 CHANGES_RESULT BASE_RESULT SUITE_SKIP ANDROID_ROUTE ANDROID_RESULT GNOME_ROUTE GNOME_RESULT CORE_ROUTE CORE_RESULT DISPLAY_ROUTE DISPLAY_RESULT CONTAINED" >&2
     exit 64
 fi
 
@@ -17,11 +17,27 @@ core_route=$8
 core_result=$9
 display_route=${10}
 display_result=${11}
+contained=${12}
 
 [[ $changes_result == success ]] || {
     echo "changed-path routing did not succeed: $changes_result" >&2
     exit 1
 }
+# A contained run skipped its suites because the Flatpak sources of a Dependabot
+# bump are stale. That is a failure to report, never a skip to wave through:
+# whatever base-contracts says, the gate stays red until the sources are fixed.
+case "$contained" in
+    true)
+        echo "the Flatpak Cargo sources are stale for this Dependabot bump; its suites were skipped" \
+            "and the gate stays red until flatpak/cargo-sources.json matches Cargo.lock" >&2
+        exit 1
+        ;;
+    false) ;;
+    *)
+        echo "containment produced an invalid value: $contained" >&2
+        exit 1
+        ;;
+esac
 case "$suite_skip" in
     true)
         [[ $base_result == skipped ]] || {

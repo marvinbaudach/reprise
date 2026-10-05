@@ -40,6 +40,7 @@ jobs:
     runs-on: ubuntu-24.04
     outputs:
       suite_skip: ${{ steps.authorization.outputs.suite_skip }}
+      contained: ${{ steps.containment.outputs.contained }}
     steps:
       - name: Check out the tested revision
         uses: actions/checkout@v7
@@ -68,10 +69,29 @@ jobs:
           )
           echo "suite_skip=$suite_skip" >> "$GITHUB_OUTPUT"
 
+      # A Dependabot bump with stale Flatpak sources is red anyway (ci.yml keeps
+      # the Quality gate red for it), so the cross-target compilation is skipped
+      # too. This is not suite reuse.
+      - name: Contain a bump with stale Flatpak sources
+        id: containment
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          ACTOR: ${{ github.event.pull_request.user.login || github.actor }}
+          SUITE_SKIP: ${{ steps.authorization.outputs.suite_skip }}
+        run: |
+          sources_status=0
+          if [[ $EVENT_NAME == pull_request && $SUITE_SKIP == false ]]; then
+            scripts/check-flatpak-cargo-sources.sh || sources_status=$?
+          fi
+          contained=$(.github/scripts/ci-paths.sh --contain "$EVENT_NAME" "$ACTOR" "$sources_status")
+          echo "contained=$contained" >> "$GITHUB_OUTPUT"
+
   cross-target:
     name: Core and Android FFI cross-target check
     needs: suite-skip
-    if: needs['suite-skip'].outputs.suite_skip != 'true'
+    if: >-
+      needs['suite-skip'].outputs.suite_skip != 'true' &&
+      needs['suite-skip'].outputs.contained != 'true'
     runs-on: ubuntu-24.04
     timeout-minutes: 45
     env:
