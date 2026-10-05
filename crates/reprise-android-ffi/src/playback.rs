@@ -24,6 +24,10 @@ mod writer_lock_tests;
 mod tests;
 
 #[cfg(test)]
+#[path = "playback_settings_reload_tests.rs"]
+mod settings_reload_tests;
+
+#[cfg(test)]
 #[path = "playback_history_tests.rs"]
 mod history_tests;
 
