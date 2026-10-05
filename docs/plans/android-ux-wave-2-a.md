@@ -2,7 +2,7 @@
 slug: android-ux-wave-2-a
 worktree: /home/marvin/Projects/reprise-android-ux-wave-2-a
 branch: feature/android-ux-wave-2-a
-phase: planned
+phase: coded
 codex_session:
 created: 2026-10-05
 ---
