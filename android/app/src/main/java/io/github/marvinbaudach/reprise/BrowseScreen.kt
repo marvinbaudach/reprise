@@ -21,7 +21,6 @@ import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
-import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Modifier
@@ -88,9 +87,6 @@ internal fun BrowseScreen(
     selectTheme: (MobileTheme) -> Unit,
     setVolumeKeySkipGestureEnabled: (Boolean) -> PlaybackSettingsUiState = { loadPlaybackSettings() },
 ) {
-    val trackAnalysis = LocalTrackAnalysis.current
-    val playbackControls = LocalPlaybackControls.current
-    val trackArtwork = LocalTrackArtwork.current
     val compositionScope = rememberCoroutineScope()
     val libraryQueryScope = remember(state) {
         CoroutineScope(
@@ -509,35 +505,10 @@ internal fun BrowseScreen(
         }
     }
 
-    // The row behind the mini player and the sheet is database I/O, so it is
-    // asked for from an effect and answered later, never fetched inside the
-    // composition. Reads no longer wait for a folder scan, but they still do
-    // not belong on the main thread. See [TrackLoader].
-    var answeredTrack by remember { mutableStateOf<AnsweredTrack?>(null) }
-    val playingTrackId = playback.currentTrackId
-    SideEffect { surfaceState.observePlayingTrack(playingTrackId) }
-    val latestPlayingTrackId by rememberUpdatedState(playingTrackId)
-    LaunchedEffect(playingTrackId, playbackControls, trackArtwork) {
-        surfaceState.prefetchUpcomingArtwork(playingTrackId, playbackControls, trackArtwork)
-    }
-    LaunchedEffect(playingTrackId, playback.currentTrackUri) {
-        if (playingTrackId != null) {
-            trackAnalysis.prepare(playingTrackId)
-            loadTrack(playingTrackId) { track ->
-                if (latestPlayingTrackId != null) {
-                    answeredTrack = AnsweredTrack(playingTrackId, track)
-                }
-            }
-        } else {
-            answeredTrack = null
-        }
-    }
-    // The last answered row stays in place while a new track is being read, but
-    // its actions are disabled because it no longer answers for what is playing.
-    // A stopped session still blanks immediately: no replacement answer is due.
-    val lastAnsweredTrack = answeredTrack
-    val shownTrack = if (playingTrackId == null) null else lastAnsweredTrack?.track
-    val shownTrackIsStale = lastAnsweredTrack != null && lastAnsweredTrack.id != playingTrackId
+    val shown = rememberShownTrack(playback, surfaceState, loadTrack)
+    val playingTrackId = shown.playingTrackId
+    val shownTrack = shown.track
+    val shownTrackIsStale = shown.isStale
     val nowPlayingSheetState = remember { MutableTransitionState(false) }
     nowPlayingSheetState.targetState =
         nowPlayingExpanded && playingTrackId != null && shownTrack != null
