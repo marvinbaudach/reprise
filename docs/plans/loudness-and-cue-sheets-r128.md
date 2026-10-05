@@ -2,7 +2,7 @@
 slug: loudness-and-cue-sheets-r128
 worktree: /home/marvin/Projects/reprise-loudness-and-cue-sheets-r128
 branch: feature/loudness-and-cue-sheets-r128
-phase: planned
+phase: shipped
 codex_session:
 created: 2026-10-04
 ---
