@@ -290,7 +290,7 @@ fn fetch_url(url: &str, timeout: Duration) -> FetchOutcome {
     wait_for_request_slot();
     let response = match ureq::Agent::config_builder()
         .timeout_global(Some(timeout))
-        .user_agent(crate::musicbrainz::user_agent())
+        .user_agent(crate::net::user_agent())
         .build()
         .new_agent()
         .get(url)

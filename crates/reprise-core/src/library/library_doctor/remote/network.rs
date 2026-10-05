@@ -86,7 +86,7 @@ impl NetworkProvider {
         let agent = ureq::Agent::config_builder()
             .timeout_global(Some(HTTP_TIMEOUT))
             .http_status_as_error(false)
-            .user_agent(crate::musicbrainz::user_agent())
+            .user_agent(crate::net::user_agent())
             .build()
             .new_agent();
         Self {

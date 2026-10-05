@@ -453,7 +453,7 @@ fn fetch(url: &str) -> FetchOutcome {
     wait_for_request_slot();
     let response = match ureq::Agent::config_builder()
         .timeout_global(Some(HTTP_TIMEOUT))
-        .user_agent(crate::musicbrainz::user_agent())
+        .user_agent(crate::net::user_agent())
         .http_status_as_error(false)
         .build()
         .new_agent()

@@ -153,7 +153,7 @@ fn agent() -> &'static ureq::Agent {
         ureq::Agent::config_builder()
             .timeout_global(Some(HTTP_TIMEOUT))
             .https_only(true)
-            .user_agent(musicbrainz::user_agent())
+            .user_agent(crate::net::user_agent())
             .build()
             .new_agent()
     })
