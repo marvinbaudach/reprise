@@ -493,10 +493,17 @@ result.
   track's own gain.** The pipeline that takes over when a crossfade completes
   carries the gain of the incoming track, never the outgoing track's.
 - **PLAY-20c** [active] [android] — **A track's gain changes at its first sample
-  on the phone.** The audio sink applies the gain queued for a stream when the
-  first buffer of that stream reaches that stream's output offset, and not a
-  buffer earlier. Android has no crossfade; if it gains one, this rule needs a
-  sibling.
+  on the phone.** The audio sink applies a track's gain to the buffers of that
+  track's stream, chosen by the stream offset Media3 announces: the first buffer
+  at the next track's offset gets the next track's gain, and not a buffer
+  earlier. The gain belongs to the media item, so replacing the next track after
+  its offset was announced, seeking back across the boundary, and a flush all
+  leave every buffer with its own track's gain. The sink scales into a buffer of
+  its own and never writes into Media3's (which may be read-only), and a buffer
+  the output stage takes only in part is retried from the same scaled copy. Proven
+  by JVM tests that put a recording sink behind the gain sink and read what the
+  output stage receives; they do not run Media3's `DefaultAudioSink` or a device.
+  Android has no crossfade; if it gains one, this rule needs a sibling.
 - **PLAY-21** [active] [android] — Volume normalisation is offered in the
   phone's playback settings with the same three modes as on the desktop,
   **Off**, **Per Track** and **Per Album**, in a row titled "Volume

@@ -3,6 +3,7 @@ package io.github.marvinbaudach.reprise
 import androidx.media3.exoplayer.audio.AudioSink
 import androidx.media3.exoplayer.audio.ForwardingAudioSink
 import java.nio.ByteBuffer
+import java.nio.ByteOrder
 import kotlin.math.pow
 import kotlin.math.roundToInt
 
@@ -24,6 +25,9 @@ internal class TrackGainAudioSink(delegate: AudioSink) : ForwardingAudioSink(del
         // The current item and the pre-fed next one; the player holds no more.
         private const val MAX_STREAMS = 2
 
+        // Room for a few tens of milliseconds of stereo audio; it grows on demand.
+        private const val INITIAL_SCRATCH_BYTES = 16 * 1024
+
         /** Linear factor for [gainDb]; a gain that is not finite plays at unity. */
         fun linearGain(gainDb: Double): Double =
             if (gainDb.isFinite()) {
@@ -40,16 +44,23 @@ internal class TrackGainAudioSink(delegate: AudioSink) : ForwardingAudioSink(del
     // the item, never to a position in a queue, so replacing the next item,
     // seeking back across a boundary and flushing all leave the right gain.
     private val streams = ArrayList<Stream>(MAX_STREAMS)
-    private var lastScaledBuffer: ByteBuffer? = null
-    private var lastScaledPresentationTimeUs = Long.MIN_VALUE
-    private var lastScaledLimit = -1
+
+    // The scaled copy that is forwarded, and the input it was made from. A
+    // buffer the output stage only partly takes is offered again by the
+    // renderer, as the same object at the same time: that retry is forwarded
+    // from the copy as it stands, not scaled a second time.
+    private var scratch: ByteBuffer =
+        ByteBuffer.allocateDirect(INITIAL_SCRATCH_BYTES).order(ByteOrder.LITTLE_ENDIAN)
+    private var pendingInput: ByteBuffer? = null
+    private var pendingPresentationTimeUs = Long.MIN_VALUE
+    private var pendingInputStart = 0
 
     @Synchronized
     fun startPlaylist(currentGainDb: Double, nextGainDb: Double?) {
         streams.clear()
         streams.add(Stream(currentGainDb))
         nextGainDb?.let { streams.add(Stream(it)) }
-        clearScaledBufferMarker()
+        clearPendingBuffer()
     }
 
     /**
@@ -86,11 +97,16 @@ internal class TrackGainAudioSink(delegate: AudioSink) : ForwardingAudioSink(del
     @Synchronized
     fun clearPlaylist() {
         streams.clear()
-        clearScaledBufferMarker()
+        clearPendingBuffer()
+    }
+
+    override fun reset() {
+        synchronized(this) { clearPendingBuffer() }
+        super.reset()
     }
 
     override fun flush() {
-        synchronized(this) { clearScaledBufferMarker() }
+        synchronized(this) { clearPendingBuffer() }
         super.flush()
     }
 
@@ -130,40 +146,67 @@ internal class TrackGainAudioSink(delegate: AudioSink) : ForwardingAudioSink(del
         presentationTimeUs: Long,
         encodedAccessUnitCount: Int,
     ): Boolean {
-        synchronized(this) {
-            scaleOnce(buffer, presentationTimeUs, linearGain(gainDbAt(presentationTimeUs)))
+        val forwarded = synchronized(this) {
+            val isRetry = pendingInput === buffer && pendingPresentationTimeUs == presentationTimeUs
+            if (!isRetry) scaleIntoScratch(buffer, presentationTimeUs)
+            scratch
         }
-        return super.handleBuffer(buffer, presentationTimeUs, encodedAccessUnitCount)
+        val consumedAll = try {
+            super.handleBuffer(forwarded, presentationTimeUs, encodedAccessUnitCount)
+        } catch (failure: Throwable) {
+            synchronized(this) { clearPendingBuffer() }
+            throw failure
+        }
+        synchronized(this) {
+            if (consumedAll) {
+                buffer.position(buffer.limit())
+                clearPendingBuffer()
+            } else {
+                // The delegate took only part of the copy; the renderer offers
+                // the same input again and expects it to show what is left.
+                buffer.position(pendingInputStart + forwarded.position())
+            }
+        }
+        return consumedAll
     }
 
-    private fun scaleOnce(buffer: ByteBuffer, presentationTimeUs: Long, gain: Double) {
-        if (
-            lastScaledBuffer === buffer &&
-            lastScaledPresentationTimeUs == presentationTimeUs &&
-            lastScaledLimit == buffer.limit()
-        ) {
-            return
+    /**
+     * Writes the scaled samples of [input] into the sink's own buffer and
+     * remembers which input they came from, so a retry is forwarded as it is.
+     *
+     * The input is only read: it is Media3's codec output, which can be
+     * read-only, and nothing downstream should see it change under it.
+     */
+    private fun scaleIntoScratch(input: ByteBuffer, presentationTimeUs: Long) {
+        val gain = linearGain(gainDbAt(presentationTimeUs))
+        val start = input.position()
+        val length = input.remaining()
+        if (scratch.capacity() < length) {
+            scratch = ByteBuffer.allocateDirect(maxOf(length, scratch.capacity() * 2))
+                .order(ByteOrder.LITTLE_ENDIAN)
         }
-        var index = buffer.position()
-        while (index + 1 < buffer.limit()) {
-            val low = buffer.get(index).toInt() and 0xff
-            val high = buffer.get(index + 1).toInt()
+        scratch.clear()
+        var offset = 0
+        while (offset + 1 < length) {
+            val low = input.get(start + offset).toInt() and 0xff
+            val high = input.get(start + offset + 1).toInt()
             val sample = ((high shl 8) or low).toShort().toInt()
             val scaled = (sample * gain)
                 .roundToInt()
                 .coerceIn(Short.MIN_VALUE.toInt(), Short.MAX_VALUE.toInt())
-            buffer.put(index, (scaled and 0xff).toByte())
-            buffer.put(index + 1, ((scaled ushr 8) and 0xff).toByte())
-            index += Short.SIZE_BYTES
+            scratch.putShort(offset, scaled.toShort())
+            offset += Short.SIZE_BYTES
         }
-        lastScaledBuffer = buffer
-        lastScaledPresentationTimeUs = presentationTimeUs
-        lastScaledLimit = buffer.limit()
+        if (offset < length) scratch.put(offset, input.get(start + offset))
+        scratch.limit(length).position(0)
+        pendingInput = input
+        pendingPresentationTimeUs = presentationTimeUs
+        pendingInputStart = start
     }
 
-    private fun clearScaledBufferMarker() {
-        lastScaledBuffer = null
-        lastScaledPresentationTimeUs = Long.MIN_VALUE
-        lastScaledLimit = -1
+    private fun clearPendingBuffer() {
+        pendingInput = null
+        pendingPresentationTimeUs = Long.MIN_VALUE
+        pendingInputStart = 0
     }
 }

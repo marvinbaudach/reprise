@@ -2,8 +2,6 @@ package io.github.marvinbaudach.reprise
 
 import androidx.media3.common.MediaItem
 import androidx.media3.common.Player
-import java.nio.ByteBuffer
-import java.nio.ByteOrder
 import org.junit.Assert.assertEquals
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -17,18 +15,17 @@ class Media3PlaybackPortGainTest {
     private val doubleDb = 6.020599913
     private val boundaryUs = 1_000_000L
 
+    private val probe = RecordingAudioSink()
+
     private fun scaledAt(sink: TrackGainAudioSink, presentationTimeUs: Long): Int {
-        val buffer = ByteBuffer.allocate(Short.SIZE_BYTES).order(ByteOrder.LITTLE_ENDIAN)
-        buffer.putShort(10_000)
-        buffer.flip()
-        sink.handleBuffer(buffer, presentationTimeUs, 1)
-        return buffer.getShort(0).toInt()
+        sink.handleBuffer(pcm16(10_000), presentationTimeUs, 1)
+        return probe.offers.last().samples.single()
     }
 
     @Test
     fun theAutomaticTransitionMakesTheNextTracksGainTheCurrentOne() {
         val fake = CallbackPlayer(playbackState = Player.STATE_IDLE, playWhenReady = false)
-        val sink = TrackGainAudioSink(inertAudioSink())
+        val sink = TrackGainAudioSink(probe.sink)
         val port = Media3PlaybackPort(fake.player, sink) {}
         port.setNext("/music/b.flac", doubleDb)
         port.playPath("/music/a.flac", halfDb)
