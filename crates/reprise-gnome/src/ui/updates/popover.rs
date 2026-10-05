@@ -396,7 +396,6 @@ impl NewReleasesPopover {
         }
         self.concerts_section.render(
             concerts_enabled,
-            concerts.credentials,
             concerts.delta.total,
             concerts.delta.unseen,
             &concerts.delta.shown,
