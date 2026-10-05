@@ -2,7 +2,7 @@
 slug: gnome-ux-wave-1
 worktree: /home/marvin/Projects/reprise-gnome-ux-wave-1
 branch: feature/gnome-ux-wave-1
-phase: planned
+phase: reviewed
 codex_session:
 created: 2026-10-04
 ---
@@ -41,7 +41,7 @@ podcast resume on Android (Android has no podcasts), #1018 and #1055 (fixed by
 6. Sources: tracks, albums, artists, playlists, podcast **shows**, radio stations.
    No episodes, no YouTube, no releases.
 7. Code now, but **merge only after `after-an-app-update-b` has landed**, with
-   PLAY-SLEEP-1 and SEARCH-16 added to `docs/ux-rules.md` in the same PR and the
+   PLAY-18 and SEARCH-17 added to `docs/ux-rules.md` in the same PR and the
    display tests carrying those rule IDs. If that plan stalls, fall back to a
    follow-up rules PR.
 
@@ -168,13 +168,13 @@ why the wave is a single strand.
 Before landing, rebase onto the dev that plan produced and add these rules in the
 same PR (Opus writes them; they are part of the landing step):
 
-- **PLAY-SLEEP-1** [proposed] [gtk] — sleep timer choices, fade, pause, end-of-track
+- **PLAY-18** [proposed] [gtk] — sleep timer choices, fade, pause, end-of-track
   semantics, session-only state.
-- **SEARCH-16** [proposed] [gtk] — quick open is jump-to, not filter; Ctrl+K; groups
+- **SEARCH-17** [proposed] [gtk] — quick open is jump-to, not filter; Ctrl+K; groups
   and actions as above; never alters the section search state except through
   "Show all".
 
-Codex names the display tests `play_sleep_1_*` and `search_16_*` from the start,
+Codex names the display tests `play_18_*` and `search_17_*` from the start,
 so the rule records only have to be added, not the tests renamed.
 
 ## Tests
@@ -204,7 +204,7 @@ first (smaller, proves the wiring), then quick open.
   calls `route_to_place` and existing controller methods.
 
 **Post-merge cross-checks:**
-1. Gate for landing: `after-an-app-update-b` has landed; rebase, add PLAY-SLEEP-1
-   and SEARCH-16 to `docs/ux-rules.md` in this PR.
+1. Gate for landing: `after-an-app-update-b` has landed; rebase, add PLAY-18
+   and SEARCH-17 to `docs/ux-rules.md` in this PR.
 2. After refactor-wave C lands: re-run the sleep-timer display tests (C moves
    playback seams that the timer calls into).

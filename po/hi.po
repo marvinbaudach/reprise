@@ -7,7 +7,7 @@ msgid ""
 msgstr ""
 "Project-Id-Version: Reprise 0.1.0\n"
 "Report-Msgid-Bugs-To: Marvin Baudach\n"
-"POT-Creation-Date: 2026-10-03 10:33+0200\n"
+"POT-Creation-Date: 2026-10-05 02:23+0200\n"
 "PO-Revision-Date: 2026-07-20 11:38+0200\n"
 "Last-Translator: Reprise contributors\n"
 "Language-Team: Hindi\n"
@@ -461,6 +461,7 @@ msgid "Scan a folder to build your library"
 msgstr "अपनी लाइब्रेरी बनाने के लिए फ़ोल्डर स्कैन करें"
 
 #: crates/reprise-gnome/src/ui/strings.rs:341
+#: crates/reprise-gnome/src/ui/strings_app_shell.rs:21
 msgid "No results"
 msgstr "कोई परिणाम नहीं"
 
@@ -531,6 +532,7 @@ msgid "Status"
 msgstr "स्थिति"
 
 #: crates/reprise-gnome/src/ui/strings.rs:394
+#: crates/reprise-gnome/src/ui/strings_app_shell.rs:27
 #: crates/reprise-gnome/src/ui/strings_concerts.rs:15
 #: crates/reprise-gnome/src/ui/strings_releases.rs:14
 #: crates/reprise-gnome/src/ui/strings_tag_edit.rs:166
@@ -539,6 +541,7 @@ msgid "Artist"
 msgstr "कलाकार"
 
 #: crates/reprise-gnome/src/ui/strings.rs:395
+#: crates/reprise-gnome/src/ui/strings_app_shell.rs:25
 #: crates/reprise-gnome/src/ui/strings_releases.rs:24
 #: crates/reprise-gnome/src/ui/strings_tag_edit.rs:167
 #: crates/reprise-view/src/strings/browse.rs:14
@@ -546,6 +549,7 @@ msgid "Album"
 msgstr "एल्बम"
 
 #: crates/reprise-gnome/src/ui/strings.rs:396
+#: crates/reprise-gnome/src/ui/strings_app_shell.rs:23
 #: crates/reprise-gnome/src/ui/strings_library_doctor.rs:108
 msgid "Track"
 msgstr "ट्रैक"
@@ -740,6 +744,7 @@ msgid "Could not remove — reload the playlist and try again"
 msgstr ""
 
 #: crates/reprise-gnome/src/ui/strings.rs:617
+#: crates/reprise-gnome/src/ui/strings_app_shell.rs:88
 #: crates/reprise-gnome/src/ui/strings_library_doctor.rs:158
 #: crates/reprise-gnome/src/ui/strings_filter.rs:32
 #: crates/reprise-gnome/src/ui/strings_tag_edit.rs:271
@@ -854,153 +859,249 @@ msgstr ""
 msgid "Public Domain"
 msgstr ""
 
-#: crates/reprise-gnome/src/ui/strings_app_shell.rs:7
+#: crates/reprise-gnome/src/ui/strings_app_shell.rs:9
 msgid "Reveal playing album"
 msgstr ""
 
-#: crates/reprise-gnome/src/ui/strings_app_shell.rs:9
+#: crates/reprise-gnome/src/ui/strings_app_shell.rs:11
 msgid "About Reprise"
 msgstr ""
 
-#: crates/reprise-gnome/src/ui/strings_app_shell.rs:10
+#: crates/reprise-gnome/src/ui/strings_app_shell.rs:12
 msgid "translator-credits"
 msgstr "Reprise contributors"
 
-#: crates/reprise-gnome/src/ui/strings_app_shell.rs:13
+#: crates/reprise-gnome/src/ui/strings_app_shell.rs:15
 msgid "Help"
 msgstr "मदद"
 
-#: crates/reprise-gnome/src/ui/strings_app_shell.rs:14
+#: crates/reprise-gnome/src/ui/strings_app_shell.rs:16
 #: crates/reprise-gnome/src/ui/preferences/preference_visual_strings.rs:25
 msgid "Navigation"
 msgstr "संचरण"
 
-#: crates/reprise-gnome/src/ui/strings_app_shell.rs:15
+#: crates/reprise-gnome/src/ui/strings_app_shell.rs:17
 msgid "Play or Pause"
 msgstr ""
 
-#: crates/reprise-gnome/src/ui/strings_app_shell.rs:16
+#: crates/reprise-gnome/src/ui/strings_app_shell.rs:18
 msgid "Increase Volume"
 msgstr "आवाज़ बढ़ाएं"
 
-#: crates/reprise-gnome/src/ui/strings_app_shell.rs:17
+#: crates/reprise-gnome/src/ui/strings_app_shell.rs:19
 msgid "Decrease Volume"
 msgstr "आवाज़ घटाएं"
 
-#: crates/reprise-gnome/src/ui/strings_app_shell.rs:18
-msgid "Search Library"
-msgstr ""
-
-#: crates/reprise-gnome/src/ui/strings_app_shell.rs:19
-msgid "Esc to close"
-msgstr ""
-
 #: crates/reprise-gnome/src/ui/strings_app_shell.rs:20
-msgid "Toggle Compact View"
-msgstr ""
-
-#: crates/reprise-gnome/src/ui/strings_app_shell.rs:21
-msgid "Clear Search or Return to Content"
+msgid "Quick Open"
 msgstr ""
 
 #: crates/reprise-gnome/src/ui/strings_app_shell.rs:22
-msgid "Play Selected Track"
-msgstr ""
-
-#: crates/reprise-gnome/src/ui/strings_app_shell.rs:23
-msgid "Open Context Menu"
+msgid "Quick Open search failed"
 msgstr ""
 
 #: crates/reprise-gnome/src/ui/strings_app_shell.rs:24
+msgid "Tracks"
+msgstr "ट्रैक"
+
+#: crates/reprise-gnome/src/ui/strings_app_shell.rs:26
+msgid "Albums"
+msgstr "एल्बम"
+
+#: crates/reprise-gnome/src/ui/strings_app_shell.rs:28
+#: crates/reprise-gnome/src/ui/strings_news.rs:44
+msgid "Artists"
+msgstr "कलाकार"
+
+#: crates/reprise-gnome/src/ui/strings_app_shell.rs:29
+msgid "Playlist"
+msgstr "प्लेलिस्ट"
+
+#: crates/reprise-gnome/src/ui/strings_app_shell.rs:30
+#: crates/reprise-gnome/src/ui/strings_rhythmbox.rs:14
+#: crates/reprise-gnome/src/ui/device_sync/device_sync_strings.rs:91
+msgid "Playlists"
+msgstr "प्लेलिस्ट"
+
+#: crates/reprise-gnome/src/ui/strings_app_shell.rs:31
+msgid "Podcast show"
+msgstr ""
+
+#: crates/reprise-gnome/src/ui/strings_app_shell.rs:32
+msgid "Podcast shows"
+msgstr ""
+
+#: crates/reprise-gnome/src/ui/strings_app_shell.rs:33
+msgid "Radio station"
+msgstr "रेडियो स्टेशन"
+
+#: crates/reprise-gnome/src/ui/strings_app_shell.rs:34
+msgid "Radio stations"
+msgstr "रेडियो स्टेशन"
+
+#: crates/reprise-gnome/src/ui/strings_app_shell.rs:35
+#: crates/reprise-gnome/src/ui/device_sync/device_sync_strings.rs:99
+msgid "Smart playlist"
+msgstr ""
+
+#: crates/reprise-gnome/src/ui/strings_app_shell.rs:36
+msgid "Sleep Timer"
+msgstr ""
+
+#: crates/reprise-gnome/src/ui/strings_app_shell.rs:37
+msgid "End of Track"
+msgstr ""
+
+#: crates/reprise-gnome/src/ui/strings_app_shell.rs:38
+msgid "Cancel Sleep Timer"
+msgstr ""
+
+#: crates/reprise-gnome/src/ui/strings_app_shell.rs:39
+msgid "Pauses after this track"
+msgstr "इस ट्रैक के बाद रुकता है"
+
+#: crates/reprise-gnome/src/ui/strings_app_shell.rs:40
+msgid "Paused by sleep timer"
+msgstr ""
+
+#: crates/reprise-gnome/src/ui/strings_app_shell.rs:41
+msgid "Search Library"
+msgstr ""
+
+#: crates/reprise-gnome/src/ui/strings_app_shell.rs:42
+msgid "Esc to close"
+msgstr ""
+
+#: crates/reprise-gnome/src/ui/strings_app_shell.rs:43
+msgid "Toggle Compact View"
+msgstr ""
+
+#: crates/reprise-gnome/src/ui/strings_app_shell.rs:44
+msgid "Clear Search or Return to Content"
+msgstr ""
+
+#: crates/reprise-gnome/src/ui/strings_app_shell.rs:45
+msgid "Play Selected Track"
+msgstr ""
+
+#: crates/reprise-gnome/src/ui/strings_app_shell.rs:46
+msgid "Open Context Menu"
+msgstr ""
+
+#: crates/reprise-gnome/src/ui/strings_app_shell.rs:47
 msgid "Open Help"
 msgstr ""
 
-#: crates/reprise-gnome/src/ui/strings_app_shell.rs:25
+#: crates/reprise-gnome/src/ui/strings_app_shell.rs:48
 msgid "Open Main Menu"
 msgstr "मुख्य मेनू खोलें"
 
-#: crates/reprise-gnome/src/ui/strings_app_shell.rs:26
+#: crates/reprise-gnome/src/ui/strings_app_shell.rs:49
 msgid "Close Window"
 msgstr "विंडो बंद करे"
 
-#: crates/reprise-gnome/src/ui/strings_app_shell.rs:27
+#: crates/reprise-gnome/src/ui/strings_app_shell.rs:50
 msgid "Quit Reprise"
 msgstr ""
 
-#: crates/reprise-gnome/src/ui/strings_app_shell.rs:30
+#: crates/reprise-gnome/src/ui/strings_app_shell.rs:53
 msgid "Cancel Scan"
 msgstr ""
 
-#: crates/reprise-gnome/src/ui/strings_app_shell.rs:31
+#: crates/reprise-gnome/src/ui/strings_app_shell.rs:54
 msgid "Keyboard Shortcuts"
 msgstr "कुंजीपट शॉर्टकट"
 
-#: crates/reprise-gnome/src/ui/strings_app_shell.rs:32
+#: crates/reprise-gnome/src/ui/strings_app_shell.rs:55
 msgid "Open Keyboard Shortcuts"
 msgstr ""
 
-#: crates/reprise-gnome/src/ui/strings_app_shell.rs:35
+#: crates/reprise-gnome/src/ui/strings_app_shell.rs:58
 msgid "Always on Top"
 msgstr "हमेशा शीर्ष पर"
 
-#: crates/reprise-gnome/src/ui/strings_app_shell.rs:36
+#: crates/reprise-gnome/src/ui/strings_app_shell.rs:59
 msgid "Quit"
 msgstr "बंद करें"
 
-#: crates/reprise-gnome/src/ui/strings_app_shell.rs:39
+#: crates/reprise-gnome/src/ui/strings_app_shell.rs:64
+#, rust-format
+msgid "{minutes} minute"
+msgid_plural "{minutes} minutes"
+msgstr[0] ""
+msgstr[1] ""
+
+#: crates/reprise-gnome/src/ui/strings_app_shell.rs:74
+#, rust-format
+msgid "Pauses in {minutes} minute"
+msgid_plural "Pauses in {minutes} minutes"
+msgstr[0] ""
+msgstr[1] ""
+
+#: crates/reprise-gnome/src/ui/strings_app_shell.rs:97
+#, rust-format
+msgid "Show all {count} in {section}"
+msgstr "{section} में सभी {count} दिखाएँ"
+
+#: crates/reprise-gnome/src/ui/strings_app_shell.rs:104
+#, rust-format
+msgid "{kind}: {title}, {subtitle}"
+msgstr ""
+
+#: crates/reprise-gnome/src/ui/strings_app_shell.rs:110
 #, rust-format
 msgid "Turn Off {name}"
 msgstr ""
 
-#: crates/reprise-gnome/src/ui/strings_app_shell.rs:43
+#: crates/reprise-gnome/src/ui/strings_app_shell.rs:114
 #, rust-format
 msgid "{name} settings…"
 msgstr ""
 
-#: crates/reprise-gnome/src/ui/strings_app_shell.rs:47
+#: crates/reprise-gnome/src/ui/strings_app_shell.rs:118
 #, rust-format
 msgid "Could not turn off {name}"
 msgstr ""
 
-#: crates/reprise-gnome/src/ui/strings_app_shell.rs:51
+#: crates/reprise-gnome/src/ui/strings_app_shell.rs:122
 #, rust-format
 msgid "{name} turned off"
 msgstr ""
 
-#: crates/reprise-gnome/src/ui/strings_app_shell.rs:55
+#: crates/reprise-gnome/src/ui/strings_app_shell.rs:126
 #, rust-format
 msgid "{name} turned off · showing Music"
 msgstr ""
 
-#: crates/reprise-gnome/src/ui/strings_app_shell.rs:59
+#: crates/reprise-gnome/src/ui/strings_app_shell.rs:130
 msgid "Accent Color"
 msgstr ""
 
-#: crates/reprise-gnome/src/ui/strings_app_shell.rs:60
+#: crates/reprise-gnome/src/ui/strings_app_shell.rs:131
 msgid "Choose the Reprise accent or follow the system"
 msgstr ""
 
-#: crates/reprise-gnome/src/ui/strings_app_shell.rs:61
+#: crates/reprise-gnome/src/ui/strings_app_shell.rs:132
 msgid "App Accent"
 msgstr ""
 
-#: crates/reprise-gnome/src/ui/strings_app_shell.rs:62
+#: crates/reprise-gnome/src/ui/strings_app_shell.rs:133
 msgid "Color Scheme"
 msgstr "रंग योजना"
 
-#: crates/reprise-gnome/src/ui/strings_app_shell.rs:63
+#: crates/reprise-gnome/src/ui/strings_app_shell.rs:134
 msgid "Choose light, dark, or follow system preference"
 msgstr ""
 
-#: crates/reprise-gnome/src/ui/strings_app_shell.rs:64
+#: crates/reprise-gnome/src/ui/strings_app_shell.rs:135
 msgid "Light"
 msgstr ""
 
-#: crates/reprise-gnome/src/ui/strings_app_shell.rs:65
+#: crates/reprise-gnome/src/ui/strings_app_shell.rs:136
 msgid "Dark"
 msgstr ""
 
-#: crates/reprise-gnome/src/ui/strings_app_shell.rs:66
+#: crates/reprise-gnome/src/ui/strings_app_shell.rs:137
 msgid "System"
 msgstr "प्रणाली"
 
@@ -2399,10 +2500,6 @@ msgstr ""
 #: crates/reprise-gnome/src/ui/strings_news.rs:42
 msgid "Enable new releases →"
 msgstr ""
-
-#: crates/reprise-gnome/src/ui/strings_news.rs:44
-msgid "Artists"
-msgstr "कलाकार"
 
 #: crates/reprise-gnome/src/ui/strings_news.rs:45
 msgid "Top artists only"
@@ -4263,11 +4360,6 @@ msgstr ""
 msgid "Play counts & last played"
 msgstr ""
 
-#: crates/reprise-gnome/src/ui/strings_rhythmbox.rs:14
-#: crates/reprise-gnome/src/ui/device_sync/device_sync_strings.rs:91
-msgid "Playlists"
-msgstr "प्लेलिस्ट"
-
 #: crates/reprise-gnome/src/ui/strings_rhythmbox.rs:18
 msgid "Could not read the Rhythmbox library — import stays disabled"
 msgstr ""
@@ -5548,10 +5640,6 @@ msgstr ""
 msgid "Everything"
 msgstr ""
 
-#: crates/reprise-gnome/src/ui/device_sync/device_sync_strings.rs:99
-msgid "Smart playlist"
-msgstr ""
-
 #: crates/reprise-gnome/src/ui/device_sync/device_sync_strings.rs:100
 msgid "Keep smart playlists up to date on each sync"
 msgstr ""
@@ -6360,10 +6448,6 @@ msgstr ""
 
 #~ msgid "Concerts fetch failed"
 #~ msgstr "कॉन्सर्ट लाने में विफल"
-
-#, rust-format
-#~ msgid "Show all concerts ({count}) →"
-#~ msgstr "सभी कॉन्सर्ट दिखाएं ({count}) →"
 
 #, rust-format
 #~ msgid "Show all releases ({count}) →"

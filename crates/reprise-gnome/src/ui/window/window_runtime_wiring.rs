@@ -66,6 +66,10 @@ mod playing_source;
 mod playing_source_wiring;
 #[path = "quick_open.rs"]
 mod quick_open;
+#[path = "wiring/quick_open_actions.rs"]
+mod quick_open_actions;
+#[path = "wiring/quick_open_data.rs"]
+mod quick_open_data;
 #[cfg(test)]
 #[path = "quick_open_display_tests.rs"]
 mod quick_open_display_tests;

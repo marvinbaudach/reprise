@@ -82,20 +82,19 @@ fn row_widgets(item: &gtk4::ListItem) -> Option<RowWidgets> {
 fn bind(widgets: &RowWidgets, presented: &PresentedRow) {
     let kind = row_kind(&presented.row);
     widgets.heading.set_visible(presented.starts_group);
-    widgets.heading.set_label(kind.section_label());
+    widgets.heading.set_label(&section_label(kind));
     let (title, subtitle, accessible) = match &presented.row {
         QuickOpenRow::Item(item) => (
             item.title.clone(),
             item.subtitle.clone(),
-            format!(
-                "{}: {}, {}",
-                item.kind.singular_label(),
-                item.title,
-                item.subtitle
+            crate::ui::strings::quick_open_accessible(
+                &singular_label(item.kind),
+                &item.title,
+                &item.subtitle,
             ),
         ),
         QuickOpenRow::ShowAll { count, .. } => {
-            let title = format!("Show all {count} in {}", kind.section_label());
+            let title = crate::ui::strings::quick_open_show_all(*count, &section_label(kind));
             (title.clone(), String::new(), title)
         }
     };
@@ -105,6 +104,30 @@ fn bind(widgets: &RowWidgets, presented: &PresentedRow) {
     widgets
         .root
         .update_property(&[gtk4::accessible::Property::Label(&accessible)]);
+}
+
+fn singular_label(kind: QuickOpenKind) -> String {
+    let message = match kind {
+        QuickOpenKind::Track => crate::ui::strings::QUICK_OPEN_TRACK,
+        QuickOpenKind::Album => crate::ui::strings::QUICK_OPEN_ALBUM,
+        QuickOpenKind::Artist => crate::ui::strings::QUICK_OPEN_ARTIST,
+        QuickOpenKind::Playlist => crate::ui::strings::QUICK_OPEN_PLAYLIST,
+        QuickOpenKind::Podcast => crate::ui::strings::QUICK_OPEN_PODCAST_SHOW,
+        QuickOpenKind::Radio => crate::ui::strings::QUICK_OPEN_RADIO_STATION,
+    };
+    crate::ui::strings::text(message)
+}
+
+fn section_label(kind: QuickOpenKind) -> String {
+    let message = match kind {
+        QuickOpenKind::Track => crate::ui::strings::QUICK_OPEN_TRACKS,
+        QuickOpenKind::Album => crate::ui::strings::QUICK_OPEN_ALBUMS,
+        QuickOpenKind::Artist => crate::ui::strings::QUICK_OPEN_ARTISTS,
+        QuickOpenKind::Playlist => crate::ui::strings::QUICK_OPEN_PLAYLISTS,
+        QuickOpenKind::Podcast => crate::ui::strings::QUICK_OPEN_PODCAST_SHOWS,
+        QuickOpenKind::Radio => crate::ui::strings::QUICK_OPEN_RADIO_STATIONS,
+    };
+    crate::ui::strings::text(message)
 }
 
 pub(super) const fn row_kind(row: &QuickOpenRow) -> QuickOpenKind {

@@ -25,7 +25,7 @@ fn settle_until(label: &str, condition: impl Fn() -> bool) {
 
 #[test]
 #[ignore = "requires a display; run via xvfb-run"]
-fn search_16_ctrl_k_navigates_to_an_album_and_escape_restores_focus() {
+fn search_17_ctrl_k_navigates_to_an_album_and_escape_restores_focus() {
     let _main_context = crate::ui::test_main_context::lock_main_context();
     gtk4::init().unwrap();
     let app = adw::Application::builder()
@@ -50,18 +50,25 @@ fn search_16_ctrl_k_navigates_to_an_album_and_escape_restores_focus() {
         &app,
         &window,
         &panel,
-        Rc::new(|_| {
-            vec![QuickOpenRow::Item(QuickOpenCandidate {
-                kind: QuickOpenKind::Album,
-                title: "Blue".into(),
-                subtitle: "Joni Mitchell".into(),
-                play_count: 10,
-                action: QuickOpenAction::NavigateAlbum {
-                    album: "Blue".into(),
-                    album_artist: "Joni Mitchell".into(),
-                },
-            })]
-        }),
+        {
+            let panel = panel.clone();
+            Rc::new(move |_, generation, _| {
+                panel.set_results(
+                    generation,
+                    vec![QuickOpenRow::Item(QuickOpenCandidate {
+                        kind: QuickOpenKind::Album,
+                        title: "Blue".into(),
+                        subtitle: "Joni Mitchell".into(),
+                        search_text: vec!["Blue".into()],
+                        play_count: 10,
+                        action: QuickOpenAction::NavigateAlbum {
+                            album: "Blue".into(),
+                            album_artist: "Joni Mitchell".into(),
+                        },
+                    })],
+                );
+            })
+        },
         {
             let history = history.clone();
             let navigated = navigated.clone();
@@ -119,5 +126,72 @@ fn search_16_ctrl_k_navigates_to_an_album_and_escape_restores_focus() {
     panel.press_escape();
     settle_until("Escape closed quick open", || !panel.is_visible());
     settle_until("focus returned to the invoker", || invoker.has_focus());
+    window.close();
+}
+
+#[test]
+#[ignore = "requires a display; run via xvfb-run"]
+fn search_17_play_restores_focus_to_the_invoking_list_row() {
+    let _main_context = crate::ui::test_main_context::lock_main_context();
+    gtk4::init().unwrap();
+    let app = adw::Application::builder()
+        .application_id("io.github.marvinbaudach.Reprise.QuickOpenFocusTest")
+        .flags(gio::ApplicationFlags::NON_UNIQUE)
+        .build();
+    app.register(None::<&gio::Cancellable>).unwrap();
+    let window = adw::ApplicationWindow::new(&app);
+    let list = gtk4::ListBox::new();
+    let invoker = gtk4::ListBoxRow::new();
+    invoker.set_child(Some(&gtk4::Label::new(Some("Library track"))));
+    invoker.set_focusable(true);
+    list.append(&invoker);
+    window.set_content(Some(&list));
+    window.present();
+    invoker.grab_focus();
+
+    let panel = Rc::new(QuickOpenPanel::new());
+    let played = Rc::new(std::cell::Cell::new(false));
+    wire_quick_open_shortcut(
+        &app,
+        &window,
+        &panel,
+        {
+            let panel = panel.clone();
+            Rc::new(move |_, generation, _| {
+                panel.set_results(
+                    generation,
+                    vec![QuickOpenRow::Item(QuickOpenCandidate {
+                        kind: QuickOpenKind::Track,
+                        title: "Blue".into(),
+                        subtitle: "Joni Mitchell".into(),
+                        search_text: vec!["Blue".into()],
+                        play_count: 10,
+                        action: QuickOpenAction::PlayTrack {
+                            track_id: 7,
+                            album: Some("Blue".into()),
+                            album_artist: Some("Joni Mitchell".into()),
+                            artist: Some("Joni Mitchell".into()),
+                        },
+                    })],
+                );
+            })
+        },
+        {
+            let played = played.clone();
+            Rc::new(move |_, _| played.set(true))
+        },
+    );
+
+    ActionGroupExt::activate_action(&window, "quick-open", None);
+    settle_until("quick open entry has focus", || {
+        panel.entry_contains_focus()
+    });
+    panel.entry().set_text("blue");
+    settle_until("track result is visible", || panel.result_count() == 1);
+    panel.entry().emit_activate();
+
+    settle_until("play action dispatched", || played.get());
+    settle_until("quick open closed", || !panel.is_visible());
+    settle_until("focus returned to the track row", || invoker.has_focus());
     window.close();
 }
