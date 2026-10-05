@@ -55,8 +55,8 @@ android {
         applicationId = "io.github.marvinbaudach.reprise"
         minSdk = 26
         targetSdk = 37
-        versionCode = 186
-        versionName = "0.1.186"
+        versionCode = 187
+        versionName = "0.1.187"
         buildConfigField("String", "REPRISE_CORE_VERSION", "\"${workspacePackageValue("version")}\"")
         buildConfigField("String", "REPRISE_CORE_LICENSE", "\"${workspacePackageValue("license")}\"")
         buildConfigField("String", "REPRISE_MOBILE_LICENSE", "\"GPL-3.0-or-later\"")
