@@ -423,7 +423,10 @@ pub struct AndroidPlaybackSession {
 #[uniffi::export]
 impl AndroidPlaybackSession {
     #[uniffi::constructor]
-    #[allow(clippy::needless_pass_by_value)]
+    #[expect(
+        clippy::needless_pass_by_value,
+        reason = "UniFFI hands owned interface objects across the FFI boundary"
+    )]
     pub fn new(
         library: Arc<crate::MusicLibrary>,
         port: Box<dyn AndroidPlaybackPort>,
@@ -617,7 +620,10 @@ impl AndroidPlaybackSession {
     }
 
     // UniFFI transfers optional byte buffers by value across the ABI.
-    #[allow(clippy::needless_pass_by_value)]
+    #[expect(
+        clippy::needless_pass_by_value,
+        reason = "UniFFI hands owned byte buffers across the FFI boundary"
+    )]
     pub fn prepare_listen_report(
         &self,
         acknowledgement: Option<Vec<u8>>,

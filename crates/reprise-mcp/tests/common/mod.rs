@@ -7,11 +7,17 @@
 //! time out (no test can hang), and stderr is collected so tests can prove
 //! logging never touches stdout.
 
-#![allow(dead_code)]
+#![allow(
+    dead_code,
+    reason = "each integration-test target uses a different harness subset"
+)]
 // Test-harness ergonomics: request builders take owned `serde_json::Value`
 // payloads (callers pass `json!({...})` literals); the values are serialized
 // into the outgoing frame, so by-value is the natural shape here.
-#![allow(clippy::needless_pass_by_value)]
+#![expect(
+    clippy::needless_pass_by_value,
+    reason = "request builders consume inline JSON payloads"
+)]
 
 use std::io::{BufRead, BufReader, Write};
 use std::path::Path;

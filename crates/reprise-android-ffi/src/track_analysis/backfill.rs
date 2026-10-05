@@ -91,7 +91,6 @@ impl TrackAnalysisBackfill {
     }
 
     /// Starts a run. A call while a run is already active is a no-op.
-    #[allow(clippy::too_many_arguments)]
     pub fn start(
         &self,
         reader: Arc<Mutex<Db>>,

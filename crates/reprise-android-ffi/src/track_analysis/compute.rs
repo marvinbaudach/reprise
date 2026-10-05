@@ -106,7 +106,10 @@ impl AnalysisPcmSink {
 impl AnalysisPcmSink {
     /// `false` tells the decoder to stop: either cancelled, or the session
     /// refused this chunk (a rate or channel change mid-stream).
-    #[allow(clippy::needless_pass_by_value)] // UniFFI cannot export borrowed byte slices.
+    #[expect(
+        clippy::needless_pass_by_value,
+        reason = "UniFFI cannot export borrowed byte slices"
+    )]
     pub fn push_pcm_i16(&self, bytes: Vec<u8>, sample_rate_hz: u32, channel_count: u32) -> bool {
         if self.is_cancelled() {
             return false;
