@@ -17,6 +17,10 @@ pub struct ReplayGainTags {
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct MeasuredLoudness {
     pub integrated_lufs: f64,
+    /// Linear sample peak across channels. The name is historical: the meter
+    /// started out measuring the oversampled true peak, which cost a quarter
+    /// more backfill time than the sample peak for a clipping guard that only
+    /// matters to the cap in `resolve_gain`.
     pub true_peak: f64,
 }
 

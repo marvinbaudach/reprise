@@ -52,7 +52,7 @@ Files: `Cargo.toml` (`ebur128 = "0.1"` in reprise-core), `render_data_session.rs
 (+ `render_data_session_loudness_tests.rs` if the file nears 800 lines),
 `waveform.rs` (core: `TrackRenderData` gains `loudness: Option<MeasuredLoudness>`),
 `reprise-platform-linux/src/waveform.rs`.
-- The session measures with `ebur128::EbuR128::new(channels, rate, Mode::I | Mode::TRUE_PEAK)`
+- The session measures with `ebur128::EbuR128::new(channels, rate, Mode::I | Mode::SAMPLE_PEAK)` (true peak cost 26 % more wall-clock than sample peak on the backfill, so the plan's own switch rule applied)
   on the interleaved input **before** the downmix. Add `push_pcm_f32` beside
   `push_pcm_i16`; both feed the meter and the existing mono path.
 - Desktop extraction switches its caps to `audio/x-raw,format=F32LE,layout=interleaved`

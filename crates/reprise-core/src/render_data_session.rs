@@ -192,7 +192,7 @@ impl RenderDataSession {
                         ebur128::EbuR128::new(
                             channel_count,
                             sample_rate_hz,
-                            ebur128::Mode::I | ebur128::Mode::TRUE_PEAK,
+                            ebur128::Mode::I | ebur128::Mode::SAMPLE_PEAK,
                         )
                         .map_err(|_| RenderDataSessionError::InvalidStreamConfig)?,
                     );
@@ -265,7 +265,7 @@ impl RenderDataSession {
         }
         let channels = self.config?.channel_count;
         let true_peak = (0..channels)
-            .filter_map(|channel| meter.true_peak(channel).ok())
+            .filter_map(|channel| meter.sample_peak(channel).ok())
             .fold(0.0_f64, f64::max);
         Some(MeasuredLoudness {
             integrated_lufs,
