@@ -13,8 +13,28 @@ use crate::spectrogram::{
 };
 use crate::waveform::{TrackRenderData, STORED_PEAK_COUNT};
 
+/// Streams with at least this many channels are 5.1 or wider.
+const SURROUND_MIN_CHANNELS: usize = 6;
+/// WAVE channel order (FL FR FC LFE BL BR ...): the LFE is the fourth channel.
+const LFE_CHANNEL_INDEX: usize = 3;
+
 const SAMPLES_PER_FRAME: usize =
     SPECTROGRAM_SAMPLE_RATE_HZ as usize / SPECTROGRAM_FRAME_RATE_HZ as usize;
+
+/// Mono mix of one interleaved frame. The LFE channel of a 5.1-or-wider stream
+/// is left out: it carries only sub-bass effects, and averaging it in would
+/// drag every film soundtrack's spectrogram toward the lows.
+fn downmix_frame<T: Copy>(frame: &[T], to_f32: impl Fn(T) -> f32) -> f32 {
+    let skipped = (frame.len() >= SURROUND_MIN_CHANNELS).then_some(LFE_CHANNEL_INDEX);
+    let (sum, count) = frame
+        .iter()
+        .enumerate()
+        .filter(|(index, _)| Some(*index) != skipped)
+        .fold((0.0_f32, 0_usize), |(sum, count), (_, sample)| {
+            (sum + to_f32(*sample), count + 1)
+        });
+    sum / count as f32
+}
 
 #[derive(Debug, thiserror::Error, Clone, Copy, PartialEq, Eq)]
 pub enum RenderDataSessionError {
@@ -35,7 +55,7 @@ struct StreamConfig {
 /// Streaming producer that turns interleaved 16-bit PCM into the same
 /// [`TrackRenderData`] shape the desktop's GStreamer pipeline produces.
 ///
-/// Downmixes to mono, resamples to [`SPECTROGRAM_SAMPLE_RATE_HZ`] with
+/// Downmixes to mono (without the LFE of a 5.1 stream), resamples to [`SPECTROGRAM_SAMPLE_RATE_HZ`] with
 /// [`LinearResampler`], and feeds [`SpectrogramAccumulator`] directly. The
 /// per-frame RMS needed for the waveform peaks is kept as one running sum of
 /// squares and one count per 1600-sample frame — never a sample buffer — and
@@ -116,10 +136,7 @@ impl RenderDataSession {
         }
         let mono: Vec<f32> = complete
             .chunks_exact(channels)
-            .map(|frame| {
-                let sum: f32 = frame.iter().map(|sample| f32::from(*sample)).sum();
-                sum / channels as f32 / 32_768.0
-            })
+            .map(|frame| downmix_frame(frame, |sample| f32::from(sample) / 32_768.0))
             .collect();
         self.push_mono(&mono);
         Ok(())
@@ -142,7 +159,7 @@ impl RenderDataSession {
         }
         let mono = complete
             .chunks_exact(channels)
-            .map(|frame| frame.iter().sum::<f32>() / channels as f32)
+            .map(|frame| downmix_frame(frame, |sample| sample))
             .collect::<Vec<_>>();
         self.push_mono(&mono);
         Ok(())
@@ -537,6 +554,10 @@ mod tests {
         }
     }
 }
+
+#[cfg(test)]
+#[path = "render_data_session_downmix_tests.rs"]
+mod downmix_tests;
 
 #[cfg(test)]
 #[path = "render_data_session_loudness_tests.rs"]
