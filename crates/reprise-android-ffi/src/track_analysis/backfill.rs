@@ -167,12 +167,10 @@ impl TrackAnalysisBackfill {
         {
             sink.cancel();
         }
-        let worker = self
-            .worker
-            .lock()
-            .unwrap_or_else(PoisonError::into_inner)
-            .take();
-        if let Some(handle) = worker {
+        // The guard stays held through the join: a `start()` racing this call
+        // blocks on the worker slot until the run has ended, then restarts.
+        let mut worker = self.worker.lock().unwrap_or_else(PoisonError::into_inner);
+        if let Some(handle) = worker.take() {
             let _ = handle.join();
         }
     }
