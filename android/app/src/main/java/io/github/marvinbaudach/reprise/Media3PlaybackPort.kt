@@ -184,6 +184,7 @@ internal class Media3PlaybackPort(
             }
             generation += 1UL
             finishedGeneration = null
+            trackGainSink?.advanceToNext()
             emit(AndroidPlayerEvent.AdvancedToNext)
             discardPlayedItems()
         }

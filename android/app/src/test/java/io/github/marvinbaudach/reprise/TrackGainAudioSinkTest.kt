@@ -7,19 +7,21 @@ import java.nio.ByteOrder
 import org.junit.Assert.assertEquals
 import org.junit.Test
 
+internal fun inertAudioSink(): AudioSink = Proxy.newProxyInstance(
+    AudioSink::class.java.classLoader,
+    arrayOf(AudioSink::class.java),
+) { _, method, _ ->
+    when (method.returnType) {
+        java.lang.Boolean.TYPE -> true
+        java.lang.Integer.TYPE -> 0
+        java.lang.Long.TYPE -> 0L
+        java.lang.Float.TYPE -> 0f
+        else -> null
+    }
+} as AudioSink
+
 class TrackGainAudioSinkTest {
-    private fun delegate(): AudioSink = Proxy.newProxyInstance(
-        AudioSink::class.java.classLoader,
-        arrayOf(AudioSink::class.java),
-    ) { _, method, _ ->
-        when (method.returnType) {
-            java.lang.Boolean.TYPE -> true
-            java.lang.Integer.TYPE -> 0
-            java.lang.Long.TYPE -> 0L
-            java.lang.Float.TYPE -> 0f
-            else -> null
-        }
-    } as AudioSink
+    private fun delegate(): AudioSink = inertAudioSink()
 
     private fun pcm16(vararg samples: Int): ByteBuffer = ByteBuffer
         .allocate(samples.size * Short.SIZE_BYTES)
@@ -120,5 +122,110 @@ class TrackGainAudioSinkTest {
         assertEquals(3.981, TrackGainAudioSink.linearGain(1_000.0), 0.001)
         assertEquals(0.0631, TrackGainAudioSink.linearGain(-1_000.0), 0.0001)
         assertEquals(2.0, TrackGainAudioSink.linearGain(6.0206), 0.001)
+    }
+
+    /** The first sample of a one-sample buffer at [presentationTimeUs], scaled. */
+    private fun scaledAt(sink: TrackGainAudioSink, presentationTimeUs: Long): Int {
+        val buffer = pcm16(10_000)
+        sink.handleBuffer(buffer, presentationTimeUs, 1)
+        return buffer.getShort(0).toInt()
+    }
+
+    private companion object {
+        const val HALF_DB = -6.020599913
+        const val DOUBLE_DB = 6.020599913
+        const val BOUNDARY_US = 1_000_000L
+    }
+
+    @Test
+    fun aNextTrackReplacedAfterItsOffsetWasAnnouncedPlaysWithTheNewGain() {
+        val sink = TrackGainAudioSink(delegate())
+        sink.startPlaylist(0.0, DOUBLE_DB)
+        sink.setOutputStreamOffsetUs(0)
+        sink.setOutputStreamOffsetUs(BOUNDARY_US)
+
+        // The next track is replaced; Media3 re-reads it and announces the
+        // same offset again, which must not be mistaken for the old stream.
+        sink.setNextGain(HALF_DB)
+        sink.setOutputStreamOffsetUs(BOUNDARY_US)
+
+        assertEquals(10_000, scaledAt(sink, BOUNDARY_US - 1))
+        assertEquals(5_000, scaledAt(sink, BOUNDARY_US))
+    }
+
+    @Test
+    fun aBackwardSeekAcrossTheBoundaryPlaysTheEarlierTrackWithItsOwnGain() {
+        val sink = TrackGainAudioSink(delegate())
+        sink.startPlaylist(HALF_DB, DOUBLE_DB)
+        sink.setOutputStreamOffsetUs(0)
+        sink.setOutputStreamOffsetUs(BOUNDARY_US)
+        assertEquals(20_000, scaledAt(sink, BOUNDARY_US))
+
+        // The seek flushes the sink and Media3 announces the first stream again.
+        sink.flush()
+        sink.setOutputStreamOffsetUs(0)
+        sink.setOutputStreamOffsetUs(BOUNDARY_US)
+
+        assertEquals(5_000, scaledAt(sink, 500_000))
+        assertEquals(20_000, scaledAt(sink, BOUNDARY_US))
+    }
+
+    @Test
+    fun aFlushWithoutANewAnnouncementDoesNotLeaveTheNextTracksGainBehind() {
+        val sink = TrackGainAudioSink(delegate())
+        sink.startPlaylist(HALF_DB, DOUBLE_DB)
+        sink.setOutputStreamOffsetUs(0)
+        sink.setOutputStreamOffsetUs(BOUNDARY_US)
+        assertEquals(20_000, scaledAt(sink, BOUNDARY_US))
+
+        sink.flush()
+
+        assertEquals(5_000, scaledAt(sink, 500_000))
+    }
+
+    @Test
+    fun afterTheAutomaticTransitionTheNextTrackIsTheCurrentOne() {
+        val sink = TrackGainAudioSink(delegate())
+        sink.startPlaylist(HALF_DB, DOUBLE_DB)
+        sink.setOutputStreamOffsetUs(0)
+        sink.setOutputStreamOffsetUs(BOUNDARY_US)
+        assertEquals(20_000, scaledAt(sink, BOUNDARY_US))
+
+        sink.advanceToNext()
+        sink.setNextGain(HALF_DB)
+        sink.setOutputStreamOffsetUs(BOUNDARY_US)
+        sink.setOutputStreamOffsetUs(2 * BOUNDARY_US)
+
+        // A seek inside the track that is now current keeps its gain, and the
+        // newly fed track takes over at its own offset.
+        sink.flush()
+        assertEquals(20_000, scaledAt(sink, BOUNDARY_US + 1))
+        assertEquals(5_000, scaledAt(sink, 2 * BOUNDARY_US))
+    }
+
+    @Test
+    fun aLiveGainChangeReachesTheCurrentAndTheNextTrack() {
+        val sink = TrackGainAudioSink(delegate())
+        sink.startPlaylist(0.0, 0.0)
+        sink.setOutputStreamOffsetUs(0)
+        sink.setOutputStreamOffsetUs(BOUNDARY_US)
+        assertEquals(10_000, scaledAt(sink, 100))
+
+        sink.setGains(HALF_DB, DOUBLE_DB)
+
+        assertEquals(5_000, scaledAt(sink, 100))
+        assertEquals(20_000, scaledAt(sink, BOUNDARY_US))
+    }
+
+    @Test
+    fun aNextTrackThatWasRemovedStopsApplyingItsGain() {
+        val sink = TrackGainAudioSink(delegate())
+        sink.startPlaylist(0.0, DOUBLE_DB)
+        sink.setOutputStreamOffsetUs(0)
+        sink.setOutputStreamOffsetUs(BOUNDARY_US)
+
+        sink.setNextGain(null)
+
+        assertEquals(10_000, scaledAt(sink, BOUNDARY_US))
     }
 }
