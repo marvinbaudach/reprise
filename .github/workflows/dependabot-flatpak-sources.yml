@@ -59,17 +59,20 @@ jobs:
       github.repository == 'marvinbaudach/reprise' &&
       github.event.pull_request.user.login == 'dependabot[bot]' &&
       github.event.pull_request.base.ref == 'dev' &&
-      github.event.pull_request.head.repo.full_name == github.repository
+      github.event.pull_request.head.repo.full_name == github.repository &&
+      startsWith(github.event.pull_request.head.ref, 'dependabot/')
     runs-on: ubuntu-24.04
     timeout-minutes: 10
     outputs:
       changed: ${{ steps.regenerate.outputs.changed }}
       sha: ${{ steps.revision.outputs.sha }}
     steps:
-      - name: Check out the bump's branch
+      # By commit, not by branch name: a branch that moves between the event
+      # and this checkout must not change what the sources are built from.
+      - name: Check out the bump's commit
         uses: actions/checkout@v7
         with:
-          ref: ${{ github.event.pull_request.head.ref }}
+          ref: ${{ github.event.pull_request.head.sha }}
           persist-credentials: false
 
       # The push job checks out exactly this commit. If Dependabot moves the

@@ -35,6 +35,11 @@ rg --fixed-strings --quiet "github.event.pull_request.base.ref == 'dev'" "$workf
 rg --fixed-strings --quiet \
     'github.event.pull_request.head.repo.full_name == github.repository' "$workflow" || \
     fail "the job must reject pull requests from forks"
+rg --fixed-strings --quiet \
+    "startsWith(github.event.pull_request.head.ref, 'dependabot/')" "$workflow" || \
+    fail "the job must accept only Dependabot's own branches"
+rg --fixed-strings --quiet 'ref: ${{ github.event.pull_request.head.sha }}' "$workflow" || \
+    fail "the regenerate job must check out the pull request's head commit, not its branch name"
 rg --fixed-strings --quiet "github.repository == 'marvinbaudach/reprise'" "$workflow" || \
     fail "the job must be bound to this repository"
 if rg --quiet '^[^#]*github\.actor' "$workflow"; then
