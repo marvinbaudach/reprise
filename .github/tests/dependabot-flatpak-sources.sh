@@ -188,6 +188,14 @@ checkouts = [
 assert checkouts and checkouts[0] is regenerate["steps"][0], (
     "the regenerate job must start from a checkout"
 )
+# Every action here runs in a job that executes PyPI code or hands over its
+# result, so a tag that could move is not enough: each is pinned to a commit.
+for job in jobs.values():
+    for step in job["steps"]:
+        if "uses" in step:
+            assert re.fullmatch(r"[\w.-]+/[\w.-]+@[0-9a-f]{40}", step["uses"]), (
+                f"every action must be pinned to a 40-hex commit, got {step['uses']}"
+            )
 for checkout in checkouts:
     assert checkout["with"]["persist-credentials"] is False, (
         "checkout must not leave a credential in the clone"

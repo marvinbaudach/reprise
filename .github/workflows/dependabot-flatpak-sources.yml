@@ -70,9 +70,11 @@ jobs:
       sha: ${{ steps.revision.outputs.sha }}
     steps:
       # By commit, not by branch name: a branch that moves between the event
-      # and this checkout must not change what the sources are built from.
+      # and this checkout must not change what the sources are built from. Every
+      # action in this job is pinned by commit, not tag: the job runs code from
+      # PyPI, and a tag could move to code that reads what that code leaves behind.
       - name: Check out the bump's commit
-        uses: actions/checkout@v7
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
         with:
           ref: ${{ github.event.pull_request.head.sha }}
           persist-credentials: false
@@ -128,7 +130,7 @@ jobs:
 
       - name: Hand over the regenerated sources
         if: steps.regenerate.outputs.changed == 'true'
-        uses: actions/upload-artifact@v7
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a  # v7.0.1
         with:
           name: cargo-sources
           path: ${{ runner.temp }}/regenerated/cargo-sources.json
