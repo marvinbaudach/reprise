@@ -156,6 +156,11 @@ jobs:
     permissions:
       actions: read
       contents: read
+    # The bot's identity is defined once. The commit step writes it and the loop
+    # guard reads it back, so the guard recognises exactly what the commit makes.
+    env:
+      BOT_EMAIL: 41898282+github-actions[bot]@users.noreply.github.com
+      COMMIT_SUBJECT: The Flatpak Cargo sources follow Cargo.lock
     steps:
       # No `uses:` in this job. A grouped Dependabot pull request can bump the
       # action tags in this very file, and a bumped action would run here
@@ -178,9 +183,7 @@ jobs:
       # start a new run of this workflow that does the same, forever.
       - name: Refuse to chase a regeneration that does not settle
         run: |
-          bot='41898282+github-actions[bot]@users.noreply.github.com'
-          subject='The Flatpak Cargo sources follow Cargo.lock'
-          if [[ $(git log -1 --format='%ae %s' HEAD) == "$bot $subject" ]]; then
+          if [[ $(git log -1 --format='%ae %s' HEAD) == "$BOT_EMAIL $COMMIT_SUBJECT" ]]; then
             echo "the tip is already the regeneration commit and the sources" \
               "still differ; not pushing again" >&2
             exit 1
@@ -233,21 +236,33 @@ jobs:
             exit 1
           fi
           regenerated="$RUNNER_TEMP/regenerated/cargo-sources.json"
-          cp "$regenerated" flatpak/cargo-sources.json
-          changes=$(git status --porcelain)
+          # The checkout is the bump's, so either path can be a symlink that leads
+          # the copy out of it, into a file of the runner.
+          if [[ -L flatpak ]]; then
+            echo "flatpak is a symlink; refusing to write through it" >&2
+            exit 1
+          fi
+          if [[ -L flatpak/cargo-sources.json ]]; then
+            echo "flatpak/cargo-sources.json is a symlink; refusing to write through it" >&2
+            exit 1
+          fi
+          cp --remove-destination "$regenerated" flatpak/cargo-sources.json
+          changes=$(git status --porcelain --untracked-files=all)
           if [[ $changes != ' M flatpak/cargo-sources.json' ]]; then
             printf 'expected only flatpak/cargo-sources.json to change, got:\n%s\n' \
               "$changes" >&2
             exit 1
           fi
           git config user.name 'github-actions[bot]'
-          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git config user.email "$BOT_EMAIL"
           git add flatpak/cargo-sources.json
-          git -c core.hooksPath=/dev/null commit --message 'The Flatpak Cargo sources follow Cargo.lock'
+          git -c core.hooksPath=/dev/null commit --message "$COMMIT_SUBJECT"
           # The token travels in the environment of the push alone, as an HTTP
           # header: in the URL or on the command line it would show up in the
           # process list. Actions masks the secret but not its base64 form, so
-          # the header is masked here before it is used.
+          # the header is masked here before it is used, and tracing is off while
+          # it exists: a trace would print the unmasked value.
+          { set +x; } 2>/dev/null
           header=$(printf 'x-access-token:%s' "$PUSH_TOKEN" | base64 --wrap=0)
           echo "::add-mask::$header"
           GIT_CONFIG_COUNT=1 \

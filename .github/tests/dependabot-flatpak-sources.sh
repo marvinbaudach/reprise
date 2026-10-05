@@ -44,7 +44,7 @@ rg --fixed-strings --quiet 'ref: ${{ github.event.pull_request.head.sha }}' "$wo
     fail "the regenerate job must check out the pull request's head commit, not its branch name"
 rg --fixed-strings --quiet "github.repository == 'marvinbaudach/reprise'" "$workflow" || \
     fail "the job must be bound to this repository"
-if rg --quiet '^[^#]*github\.actor' "$workflow"; then
+if rg --ignore-case --quiet '^[^#]*github\.actor' "$workflow"; then
     fail "the guard must read the pull request's author: github.actor is the token's owner after the first push"
 fi
 
@@ -84,7 +84,7 @@ rg --fixed-strings --quiet 'cmp --silent "$RUNNER_TEMP/regenerated/cargo-sources
 rg --fixed-strings --quiet "if: needs.regenerate.outputs.changed == 'true'" "$workflow" || \
     fail "the push job must run only when the sources changed"
 rg --fixed-strings --quiet \
-    'if [[ $(git log -1 --format='"'%ae %s'"' HEAD) == "$bot $subject" ]]; then' \
+    'if [[ $(git log -1 --format='"'%ae %s'"' HEAD) == "$BOT_EMAIL $COMMIT_SUBJECT" ]]; then' \
     "$workflow" || \
     fail "the push job must refuse to push on top of its own regeneration commit"
 rg --fixed-strings --quiet \
@@ -129,21 +129,34 @@ assert sorted(jobs) == ["push", "regenerate"], (
 regenerate, push = jobs["regenerate"], jobs["push"]
 assert push["needs"] == "regenerate", "the push job must wait for the regeneration"
 
+# Context names are case-insensitive in Actions (`SECRETS`, `Github.Token`), so
+# every match below ignores case.
+def dump(node):
+    return yaml.safe_dump(node)
+
+
+def mentions(node, word):
+    return re.search(rf"\b{re.escape(word)}\b", dump(node), re.IGNORECASE) is not None
+
+
 # The token lives in the push job alone, and only in its last step.
-assert "REPRISE_AUTOMERGE_TOKEN" not in yaml.safe_dump(regenerate), (
+assert not mentions(regenerate, "REPRISE_AUTOMERGE_TOKEN"), (
     "the regenerate job runs third-party code and must hold no secret"
 )
-assert not re.search(r"\bsecrets\b", yaml.safe_dump(regenerate)), (
+assert not mentions(regenerate, "secrets"), (
     "the regenerate job must not read any secret, in any spelling"
 )
 push_steps = push["steps"]
-holders = [s["name"] for s in push_steps if "REPRISE_AUTOMERGE_TOKEN" in yaml.safe_dump(s)]
+holders = [s["name"] for s in push_steps if mentions(s, "REPRISE_AUTOMERGE_TOKEN")]
 assert holders == [push_steps[-1]["name"]], (
     f"only the push job's last step may see REPRISE_AUTOMERGE_TOKEN, got {holders}"
 )
-assert "REPRISE_AUTOMERGE_TOKEN" not in yaml.safe_dump(
-    {key: value for key, value in push.items() if key != "steps"}
+assert not mentions(
+    {key: value for key, value in push.items() if key != "steps"}, "REPRISE_AUTOMERGE_TOKEN"
 ), "the token must not be set job-wide"
+assert not mentions(
+    {key: value for key, value in push.items() if key != "steps"}, "secrets"
+), "no secret may be set job-wide"
 
 # The push job executes nothing from the pull request and nothing from PyPI.
 assert "uv" not in yaml.safe_dump(push).replace("runs-on", ""), (
@@ -289,16 +302,18 @@ rest = yaml.safe_dump({
 })
 # `secrets.X`, `secrets['X']` and `toJSON(secrets)` all hand over a secret, so the
 # word itself is counted, in the parsed workflow where comments no longer count.
-assert not re.search(r"\bsecrets\b", rest), "no secret may be read outside the push job's push step"
-assert re.findall(r"\bsecrets\b", yaml.safe_dump(push_steps[-1])) == ["secrets"]
-assert re.findall(r"\bsecrets\b", yaml.safe_dump(workflow)) == ["secrets"], (
+assert not re.search(r"\bsecrets\b", rest, re.IGNORECASE), (
+    "no secret may be read outside the push job's push step"
+)
+assert re.findall(r"\bsecrets\b", yaml.safe_dump(push_steps[-1]), re.IGNORECASE) == ["secrets"]
+assert re.findall(r"\bsecrets\b", yaml.safe_dump(workflow), re.IGNORECASE) == ["secrets"], (
     "the whole workflow may read exactly one secret"
 )
 assert push_steps[-1]["env"]["PUSH_TOKEN"] == "${{ secrets.REPRISE_AUTOMERGE_TOKEN }}"
-assert "github.token" not in yaml.safe_dump(push_steps[-1]), (
+assert not mentions(push_steps[-1], "github.token"), (
     "the Actions token must not be in the step that holds the push token"
 )
-assert "github.token" not in yaml.safe_dump(regenerate), "the regenerate job needs no token"
+assert not mentions(regenerate, "github.token"), "the regenerate job needs no token"
 
 # The generator runs pinned and isolated, with no moving dependency.
 generate = next(s for s in regenerate["steps"] if s.get("id") == "regenerate")["run"]
@@ -361,7 +376,13 @@ assert "shell" not in keys and "defaults" not in keys, (
 scripts = "\n".join(
     str(step.get("run", "")) for job in jobs.values() for step in job["steps"]
 )
-for forbidden in (r"set\s+\+e", r"set\s+-\w*x", r"GIT_TRACE", r"GIT_CURL_VERBOSE", r"\|\|\s*(true|:)\b"):
+# Tracing is the way a masked value leaks: the base64 header is not masked until
+# the step has built it, and `set -o xtrace` or `bash -x` prints it before that.
+# The one allowed switch is `set +x`, which turns tracing off.
+for forbidden in (
+    r"set\s+\+e", r"set\s+-\w*x", r"\bxtrace\b", r"BASH_XTRACEFD", r"\bPS4\b",
+    r"(?<![\w-])-\w*x\b", r"GIT_TRACE", r"GIT_CURL_VERBOSE", r"\|\|\s*(true|:)\b",
+):
     assert not re.search(forbidden, scripts), f"the scripts must not contain {forbidden}"
 
 # The sha256 check is the last thing the fetch step does, and nothing makes its
@@ -421,7 +442,268 @@ assert run.index('echo "::add-mask::$header"') < run.index("GIT_CONFIG_COUNT=1")
     "the header must be masked before it is used"
 )
 assert not re.search(r"PUSH_TOKEN.*git -c", run), "the token must not sit on a command line"
+
+# --- The push job, pinned whole: every command it runs is on this list. ---
+# The job holds a token that can push, so a command added to it, a guard
+# neutralised without touching its words (`|| echo skip`, a `!` in front of the
+# validator, a forged `changes=`), or a changed bot identity must break this
+# contract instead of passing a text search. Comments do not count.
+for job_name, job in jobs.items():
+    assert job["runs-on"] == "ubuntu-24.04", (
+        f"the {job_name} job must run on the GitHub-hosted ubuntu-24.04, not {job['runs-on']}"
+    )
+for step in push_steps:
+    assert "||" not in step.get("run", ""), (
+        f"no command of the push job may be made optional with ||: {step['name']}"
+    )
+assert push["env"] == {
+    "BOT_EMAIL": "41898282+github-actions[bot]@users.noreply.github.com",
+    "COMMIT_SUBJECT": "The Flatpak Cargo sources follow Cargo.lock",
+}, "the bot identity must be defined once, in the push job's environment, and nowhere else"
+
+
+def uncommented(run):
+    return squash_ws("\n".join(line for line in str(run).splitlines() if not line.lstrip().startswith("#")))
+
+
+PUSH_BODIES = {
+    'Check out the commit the sources were built from': r'''
+git init --quiet .
+git fetch --quiet --depth=1 "https://github.com/${GITHUB_REPOSITORY}" "$SHA"
+git checkout --quiet --detach FETCH_HEAD
+if [[ $(git rev-parse HEAD) != "$SHA" ]]; then
+  echo "checked out $(git rev-parse HEAD), not the recorded $SHA" >&2
+  exit 1
+fi
+''',
+    'Refuse to chase a regeneration that does not settle': r'''
+if [[ $(git log -1 --format='%ae %s' HEAD) == "$BOT_EMAIL $COMMIT_SUBJECT" ]]; then
+  echo "the tip is already the regeneration commit and the sources" \
+    "still differ; not pushing again" >&2
+  exit 1
+fi
+''',
+    'Fetch the regenerated sources': r'''
+gh run download "$GITHUB_RUN_ID" --name cargo-sources \
+  --dir "$RUNNER_TEMP/regenerated"
+listing=$(find "$RUNNER_TEMP/regenerated" -mindepth 1 -printf '%y %P\n')
+if [[ $listing != 'f cargo-sources.json' ]]; then
+  printf 'expected the artifact to hold only cargo-sources.json, got:\n%s\n' \
+    "$listing" >&2
+  exit 1
+fi
+''',
+    'Fetch the validator from the base commit': r'''
+git init --quiet "$RUNNER_TEMP/base"
+git -C "$RUNNER_TEMP/base" fetch --quiet --depth=1 \
+  "https://github.com/${GITHUB_REPOSITORY}" "$BASE_SHA"
+git -C "$RUNNER_TEMP/base" checkout --quiet --detach FETCH_HEAD
+''',
+    'Validate the regenerated sources against Cargo.lock': r'''
+"$RUNNER_TEMP/base/scripts/check-flatpak-cargo-sources.sh" \
+  "$GITHUB_WORKSPACE/Cargo.lock" "$RUNNER_TEMP/regenerated/cargo-sources.json"
+''',
+    "Replace the sources and push them to the bump's branch": r'''
+if [[ -z $PUSH_TOKEN ]]; then
+  echo "REPRISE_AUTOMERGE_TOKEN is not available to this run" >&2
+  exit 1
+fi
+regenerated="$RUNNER_TEMP/regenerated/cargo-sources.json"
+if [[ -L flatpak ]]; then
+  echo "flatpak is a symlink; refusing to write through it" >&2
+  exit 1
+fi
+if [[ -L flatpak/cargo-sources.json ]]; then
+  echo "flatpak/cargo-sources.json is a symlink; refusing to write through it" >&2
+  exit 1
+fi
+cp --remove-destination "$regenerated" flatpak/cargo-sources.json
+changes=$(git status --porcelain --untracked-files=all)
+if [[ $changes != ' M flatpak/cargo-sources.json' ]]; then
+  printf 'expected only flatpak/cargo-sources.json to change, got:\n%s\n' \
+    "$changes" >&2
+  exit 1
+fi
+git config user.name 'github-actions[bot]'
+git config user.email "$BOT_EMAIL"
+git add flatpak/cargo-sources.json
+git -c core.hooksPath=/dev/null commit --message "$COMMIT_SUBJECT"
+{ set +x; } 2>/dev/null
+header=$(printf 'x-access-token:%s' "$PUSH_TOKEN" | base64 --wrap=0)
+echo "::add-mask::$header"
+GIT_CONFIG_COUNT=1 \
+  GIT_CONFIG_KEY_0='http.https://github.com/.extraheader' \
+  GIT_CONFIG_VALUE_0="AUTHORIZATION: basic $header" \
+  git -c core.hooksPath=/dev/null push \
+  "https://github.com/${GITHUB_REPOSITORY}.git" \
+  "HEAD:refs/heads/$BRANCH"
+''',
+}
+assert [step["name"] for step in push_steps] == list(PUSH_BODIES), (
+    "the push job's steps must be exactly: " + ", ".join(PUSH_BODIES)
+)
+for step in push_steps:
+    assert uncommented(step["run"]) == squash_ws(PUSH_BODIES[step["name"]]), (
+        f"the push job's step '{step['name']}' must run exactly the pinned commands, got: {uncommented(step['run'])}"
+    )
 PY
+
+# --- Run the real push-job steps, extracted from the YAML, in a throwaway repo. ---
+# The text pins above say what the steps contain; this says what they do. Only
+# `git push` is stubbed. The same bot identity must come out of the commit step
+# that the loop guard recognises, or every push would start another run.
+sandbox=$(mktemp -d "${TMPDIR:-/tmp}/flatpak-sources-push.XXXXXX")
+trap 'rm -rf "$sandbox"' EXIT
+mkdir -p "$sandbox/bin" "$sandbox/home"
+real_git=$(command -v git)
+
+python3 - "$workflow" "$sandbox" <<'PY' || fail "cannot extract the push job's steps from $workflow"
+import pathlib
+import shlex
+import sys
+
+import yaml
+
+with open(sys.argv[1], encoding="utf-8") as stream:
+    push = yaml.safe_load(stream)["jobs"]["push"]
+out = pathlib.Path(sys.argv[2])
+steps = {step["name"]: step for step in push["steps"]}
+(out / "guard.sh").write_text(steps["Refuse to chase a regeneration that does not settle"]["run"])
+(out / "token.sh").write_text(push["steps"][-1]["run"])
+(out / "job.env").write_text(
+    "".join(f"export {key}={shlex.quote(str(value))}\n" for key, value in push["env"].items())
+)
+PY
+
+# A git that behaves as git does, except that a push is recorded and not sent.
+cat > "$sandbox/bin/git" <<STUB
+#!/usr/bin/env bash
+for argument in "\$@"; do
+    if [[ \$argument == push ]]; then
+        { printf 'ARG %s\n' "\$@"; env | sed -n '/^GIT_CONFIG_/s/^/ENV /p'; } > "$sandbox/push.log"
+        exit 0
+    fi
+done
+exec "$real_git" "\$@"
+STUB
+chmod +x "$sandbox/bin/git"
+
+fake_token=ghp_FakeTokenForTheContractTest0123456789
+fake_header=$(printf 'x-access-token:%s' "$fake_token" | base64 --wrap=0)
+# The file is written by the extraction above, so there is nothing to follow.
+# shellcheck disable=SC1091
+source "$sandbox/job.env"
+
+# new_checkout: a checkout of a bump, as the push job leaves it before the token
+# step, plus the artifact the earlier steps validated.
+new_checkout() {
+    rm -rf "$sandbox/ws" "$sandbox/temp" "$sandbox/outside" "$sandbox/push.log"
+    mkdir -p "$sandbox/ws/flatpak" "$sandbox/temp/regenerated" "$sandbox/outside"
+    printf 'previous sources\n' > "$sandbox/ws/flatpak/cargo-sources.json"
+    printf 'regenerated sources\n' > "$sandbox/temp/regenerated/cargo-sources.json"
+    printf 'untouched\n' > "$sandbox/outside/sentinel"
+    (
+        cd "$sandbox/ws"
+        "$real_git" init --quiet .
+        "$real_git" add -A
+        "$real_git" -c user.name=Dependabot -c user.email=support@github.com commit --quiet --message 'Bump a crate'
+    )
+}
+
+# commit_all MESSAGE: commits the checkout as a human would.
+commit_all() {
+    "$real_git" -C "$sandbox/ws" add -A
+    "$real_git" -C "$sandbox/ws" -c user.name=Someone -c user.email=someone@example.com \
+        commit --quiet --allow-empty --message "$1"
+}
+
+# run_script SCRIPT [BASH OPTION] [TOKEN]: runs a step the way Actions does, with
+# the job's environment and nothing inherited from this machine.
+run_script() {
+    local script=$1 option=${2:--e} token=${3-$fake_token}
+    (
+        cd "$sandbox/ws"
+        env -i PATH="$sandbox/bin:$PATH" HOME="$sandbox/home" GIT_CONFIG_NOSYSTEM=1 \
+            BOT_EMAIL="$BOT_EMAIL" COMMIT_SUBJECT="$COMMIT_SUBJECT" \
+            RUNNER_TEMP="$sandbox/temp" GITHUB_WORKSPACE="$sandbox/ws" \
+            GITHUB_REPOSITORY=marvinbaudach/reprise PUSH_TOKEN="$token" \
+            BRANCH=dependabot/cargo/a-crate-1.2.3 \
+            bash --noprofile --norc "$option" "$sandbox/$script"
+    ) > "$sandbox/stdout" 2> "$sandbox/stderr"
+}
+
+tip() { "$real_git" -C "$sandbox/ws" log -1 --format="$1"; }
+
+# 1. The commit step makes what the guard recognises, and the push is what it should be.
+new_checkout
+run_script token.sh || fail "the token step failed on a clean checkout: $(tail -n 3 "$sandbox/stderr")"
+[[ $(tip %s) == 'The Flatpak Cargo sources follow Cargo.lock' ]] || \
+    fail "the commit step must make the regeneration commit, got '$(tip %s)'"
+[[ $(tip %ae) == '41898282+github-actions[bot]@users.noreply.github.com' ]] || \
+    fail "the commit must be authored by the bot, got '$(tip %ae)'"
+[[ $(cat "$sandbox/ws/flatpak/cargo-sources.json") == 'regenerated sources' ]] || \
+    fail "the step must install the regenerated file"
+[[ -f $sandbox/push.log ]] || fail "the step must push"
+rg --fixed-strings --line-regexp --quiet 'ARG HEAD:refs/heads/dependabot/cargo/a-crate-1.2.3' "$sandbox/push.log" || \
+    fail "the push must send HEAD to the bump's branch"
+rg --fixed-strings --line-regexp --quiet 'ARG https://github.com/marvinbaudach/reprise.git' "$sandbox/push.log" || \
+    fail "the push URL must carry no credential"
+rg --fixed-strings --quiet "ENV GIT_CONFIG_VALUE_0=AUTHORIZATION: basic $fake_header" "$sandbox/push.log" || \
+    fail "the token must reach git as a basic-auth header in its environment"
+if rg --fixed-strings --quiet "$fake_token" "$sandbox/push.log"; then
+    fail "the token must not appear in the push's arguments or environment, only its base64 header"
+fi
+if run_script guard.sh; then
+    fail "the loop guard must refuse to push on top of the commit the push step just made"
+fi
+rg --fixed-strings --quiet 'not pushing again' "$sandbox/stderr" || \
+    fail "the loop guard must refuse for its own reason, got: $(tail -n 3 "$sandbox/stderr")"
+# The controls: a tip that is not the bot's commit passes the guard, and so does
+# one that has the bot's address but another subject.
+new_checkout
+run_script guard.sh || fail "the loop guard must not stop an ordinary bump: $(tail -n 3 "$sandbox/stderr")"
+"$real_git" -C "$sandbox/ws" -c user.name=x -c "user.email=$BOT_EMAIL" \
+    commit --quiet --allow-empty --message 'Some other subject'
+run_script guard.sh || fail "the loop guard must match the subject as well as the author"
+
+# 2. A symlink in the bump's checkout must not lead the copy out of it.
+new_checkout
+rm "$sandbox/ws/flatpak/cargo-sources.json"
+ln -s "$sandbox/outside/sentinel" "$sandbox/ws/flatpak/cargo-sources.json"
+commit_all 'Link the file'
+if run_script token.sh; then fail "the step must refuse a symlink at flatpak/cargo-sources.json"; fi
+[[ $(cat "$sandbox/outside/sentinel") == untouched ]] || fail "the copy followed a symlink out of the checkout"
+[[ ! -e $sandbox/push.log ]] || fail "nothing may be pushed after a symlink was found"
+new_checkout
+rm -r "$sandbox/ws/flatpak"
+ln -s "$sandbox/outside" "$sandbox/ws/flatpak"
+printf 'outside\n' > "$sandbox/outside/cargo-sources.json"
+commit_all 'Link the directory'
+if run_script token.sh; then fail "the step must refuse a symlink at flatpak"; fi
+[[ $(cat "$sandbox/outside/cargo-sources.json") == outside ]] || \
+    fail "the copy followed a symlinked directory out of the checkout"
+
+# 3. Anything else in the checkout stops the step before it commits.
+new_checkout
+printf 'stray\n' > "$sandbox/ws/stray.txt"
+head_before=$(tip %H)
+if run_script token.sh; then fail "the step must refuse to commit when another path differs"; fi
+[[ $(tip %H) == "$head_before" && ! -e $sandbox/push.log ]] || \
+    fail "nothing may be committed or pushed after a stray path was found"
+
+# 4. No token, no push; and tracing never prints the header.
+new_checkout
+if run_script token.sh -e ''; then fail "the step must fail closed without a token"; fi
+[[ ! -e $sandbox/push.log ]] || fail "nothing may be pushed without a token"
+new_checkout
+run_script token.sh -ex || fail "the token step failed under bash -x: $(tail -n 3 "$sandbox/stderr")"
+if rg --fixed-strings --quiet "$fake_header" "$sandbox/stderr"; then
+    fail "a trace of the token step printed the unmasked base64 header"
+fi
+[[ $(rg --fixed-strings --count "$fake_header" "$sandbox/stdout") == 1 ]] || \
+    fail "the header must reach the log exactly once"
+rg --fixed-strings --quiet "::add-mask::$fake_header" "$sandbox/stdout" || \
+    fail "the header must reach the log only inside the add-mask command"
 
 # A push by the token's owner makes that owner the event's actor. If routing
 # read the actor, the re-triggered run would treat the bump as a human pull
