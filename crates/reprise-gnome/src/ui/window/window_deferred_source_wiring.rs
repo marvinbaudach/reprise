@@ -8,7 +8,7 @@ use super::super::content_stack::DeferredPage;
 
 #[expect(
     clippy::too_many_arguments,
-    reason = "the UI seam keeps its independent collaborators explicit"
+    reason = "one handle per deferred page it wires; should take a parameter object"
 )]
 pub(super) fn install(
     preferences: &Rc<crate::ui::preferences::PreferencesContext>,

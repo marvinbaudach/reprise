@@ -70,7 +70,7 @@ pub(super) fn install_row_context_menu(
 
 #[expect(
     clippy::too_many_arguments,
-    reason = "the UI seam keeps its independent collaborators explicit"
+    reason = "row widgets, group kind, two capability flags and the click position; should take a parameter object"
 )]
 fn show_row_menu(
     shared: &Rc<Shared>,

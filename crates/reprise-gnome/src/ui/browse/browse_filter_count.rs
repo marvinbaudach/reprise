@@ -25,7 +25,7 @@ fn idle_library_caption(count: usize, total_duration_ms: i64) -> String {
 
 #[expect(
     clippy::too_many_arguments,
-    reason = "the UI seam keeps its independent collaborators explicit"
+    reason = "the query inputs (source, search, browse, AI exclusion, queue) should travel as one TrackViewQuery"
 )]
 pub(in crate::ui) fn update(
     bar: &Rc<BrowseBar>,

@@ -150,7 +150,7 @@ pub(in crate::ui) struct PreferencesContext {
 impl PreferencesContext {
     #[expect(
         clippy::too_many_arguments,
-        reason = "the UI seam keeps its independent collaborators explicit"
+        reason = "one handle per runtime or panel the preference pages configure; should take a context struct"
     )]
     pub(in crate::ui) fn new(
         window: &adw::ApplicationWindow,

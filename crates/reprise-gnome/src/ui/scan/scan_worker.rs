@@ -111,7 +111,7 @@ pub(in crate::ui) fn spawn_scan(
 
 #[expect(
     clippy::too_many_arguments,
-    reason = "the UI seam keeps its independent collaborators explicit"
+    reason = "the scan outcome, folder, database path and the widgets and watcher state it updates; should take a parameter object"
 )]
 fn reconcile_outcome(
     outcome: Result<Result<ProcessedScanOutcome, ScanError>, async_channel::RecvError>,

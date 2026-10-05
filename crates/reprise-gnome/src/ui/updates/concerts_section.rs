@@ -178,7 +178,7 @@ impl ConcertsSection {
 
     #[expect(
         clippy::too_many_arguments,
-        reason = "the UI seam keeps its independent collaborators explicit"
+        reason = "the popover's render state, including an unused credentials flag; should drop it and take a parameter object"
     )]
     pub(super) fn render(
         &self,

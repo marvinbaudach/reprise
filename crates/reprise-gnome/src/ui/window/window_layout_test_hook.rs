@@ -29,7 +29,7 @@ thread_local! {
 
 #[expect(
     clippy::too_many_arguments,
-    reason = "the UI seam keeps its independent collaborators explicit"
+    reason = "eight widget handles published to the layout test hook; should take a parameter object"
 )]
 pub(super) fn publish(
     window: &adw::ApplicationWindow,

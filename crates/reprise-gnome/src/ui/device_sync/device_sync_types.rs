@@ -68,7 +68,7 @@ pub trait DeviceBackend {
     /// to be unchanged.
     #[expect(
         clippy::too_many_arguments,
-        reason = "the UI seam keeps its independent collaborators explicit"
+        reason = "mirrors one MTP copy request field by field; should take a copy-request struct"
     )]
     fn replace_track(
         &self,

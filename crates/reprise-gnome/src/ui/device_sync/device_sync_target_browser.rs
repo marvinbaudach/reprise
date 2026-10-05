@@ -445,7 +445,7 @@ pub(in crate::ui) fn present(
 /// (`cover_loader.rs`).
 #[expect(
     clippy::too_many_arguments,
-    reason = "the UI seam keeps its independent collaborators explicit"
+    reason = "the request identity, generation token and both callbacks should travel as a parameter object"
 )]
 async fn load_folders_if_current(
     runtime: Rc<DeviceSyncRuntime>,

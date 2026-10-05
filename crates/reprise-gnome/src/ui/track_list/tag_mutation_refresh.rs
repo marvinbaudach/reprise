@@ -159,7 +159,7 @@ pub(in crate::ui) fn refresh_after_tag_mutation_with_view_ids(
 
 #[expect(
     clippy::too_many_arguments,
-    reason = "the UI seam keeps its independent collaborators explicit"
+    reason = "mutation scope, reload anchor and viewport, and model change; should take a parameter object"
 )]
 pub(in crate::ui) fn refresh_after_tag_mutation_with_model_change(
     shared: &Rc<Shared>,

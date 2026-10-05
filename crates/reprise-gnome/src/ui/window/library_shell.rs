@@ -77,7 +77,7 @@ fn arm_smoke_detail_view(sidebar: &Rc<Sidebar>) {
 
 #[expect(
     clippy::too_many_arguments,
-    reason = "the UI seam keeps its independent collaborators explicit"
+    reason = "one handle per routed content page; should take the ContentPages bundle that route_to_place_with_viewport already takes"
 )]
 pub(in crate::ui) fn wire_source_routing(
     sidebar: &Rc<Sidebar>,
@@ -297,7 +297,7 @@ pub(in crate::ui) fn route_to_place_centering_anchor(
 // create a second state holder.
 #[expect(
     clippy::too_many_arguments,
-    reason = "the UI seam keeps its independent collaborators explicit"
+    reason = "the target place, sidebar, track list and focus handles beside ContentPages and a viewport; should take a parameter object"
 )]
 fn route_to_place_with_viewport(
     place: &NavPlace,

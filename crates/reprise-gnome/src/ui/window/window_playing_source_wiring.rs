@@ -17,7 +17,7 @@ use super::super::metadata_navigation::MetadataNavigator;
 
 #[expect(
     clippy::too_many_arguments,
-    reason = "the UI seam keeps its independent collaborators explicit"
+    reason = "one handle per surface wired to the playing source; should take a parameter object"
 )]
 pub(super) fn install(
     app: &adw::Application,

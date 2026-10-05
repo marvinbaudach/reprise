@@ -360,7 +360,7 @@ impl TrackListModel {
     /// be truncated, so it logs the conventional `is_queue_capped` warning.
     #[expect(
         clippy::too_many_arguments,
-        reason = "the UI seam keeps its independent collaborators explicit"
+        reason = "one view description spread over seven arguments; should take a TrackViewQuery"
     )]
     pub fn set_query_browsed_ai(
         &self,
@@ -386,7 +386,7 @@ impl TrackListModel {
 
     #[expect(
         clippy::too_many_arguments,
-        reason = "the UI seam keeps its independent collaborators explicit"
+        reason = "one view description plus a model change; should take a TrackViewQuery"
     )]
     pub(super) fn set_query_browsed_ai_changed(
         &self,
@@ -417,7 +417,7 @@ impl TrackListModel {
     /// once before either shape emits.
     #[expect(
         clippy::too_many_arguments,
-        reason = "the UI seam keeps its independent collaborators explicit"
+        reason = "one view description plus an optional model change; should take a TrackViewQuery"
     )]
     fn set_query_browsed_ai_inner(
         &self,

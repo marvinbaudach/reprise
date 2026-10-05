@@ -119,18 +119,25 @@ pub use doctor::{count_doctor_findings, count_pending_doctor_findings, DoctorFin
 // doc comment for why a flag-plus-date pair is retired in favor of this one
 // predicate.
 pub(crate) use clauses::PRESENT;
-// Library code and test helpers share this predicate through the query seam;
-// rustc does not count same-crate references through a re-export as import use.
+// `MISSING`'s only current caller outside this module tree is `library::
+// scanner_vanished_tests`'s `missing_count` helper, which mirrors this
+// predicate for a direct-SQL assertion — re-exported regardless, same
+// reasoning as `build_track_query` below, to keep that one string in sync
+// with the predicate it is meant to test rather than drifting as a
+// hand-copied literal.
 #[allow(
     unused_imports,
-    reason = "same-crate callers use the shared predicate through this query seam"
+    reason = "only a test helper reads it, so the non-test build sees an unused import"
 )]
 pub(crate) use clauses::MISSING;
-// Tests and the scalability example share this seam; the library target alone
-// does not count the public re-export as used.
+// `build_track_query`'s only current caller is this module's own test suite
+// (`tests::query_builder_whitelists_and_sorts` et al.) — re-exported `pub`
+// regardless, to keep `crate::queries::build_track_query` resolving exactly
+// as it did before this split, matching this file's own non-test build
+// where the re-export would otherwise look unused.
 #[allow(
     unused_imports,
-    reason = "tests and the scalability example use this public query seam"
+    reason = "only tests call it, so the non-test build sees an unused import"
 )]
 pub use clauses::build_track_query;
 // Task 2.1: the missing-file group queries the 18a "self-healing" card list

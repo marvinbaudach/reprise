@@ -77,10 +77,12 @@ echo "== Frontend thinness =="
 # banner, and with it the frontend's last `rusqlite::Error` return type: its
 # `initial_visibility` asked the Db whether to show the banner at all. The
 # wizard answers that now, so the count drops by one.
+# Deleting the Artist News fetch worker, whose last request path was already
+# gone, took its `reprise-artist-news` thread with it: threads drop by one.
 declare -A budget=(
   [rusqlite]=114
   [filesystem]=13
-  [threads]=15
+  [threads]=14
   [workers]=7
 )
 
@@ -257,7 +259,6 @@ echo "== Dead-code allowlist =="
 allowlist=$(cat <<'ALLOWLIST'
 crates/reprise-cli/tests/common/mod.rs:1
 crates/reprise-gnome/examples/row_loss_dump_repro.rs:2
-crates/reprise-gnome/src/ui/artist_news/artist_news_worker.rs:3
 crates/reprise-gnome/src/ui/browse/browse_bar.rs:1
 crates/reprise-gnome/src/ui/stats/stats_band_card.rs:2
 crates/reprise-gnome/src/ui/stats/stats_band_tile.rs:1

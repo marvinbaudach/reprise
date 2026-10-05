@@ -489,7 +489,7 @@ fn load_charts(request_generation: u64, country: String, context: &SearchContext
 
 #[expect(
     clippy::too_many_arguments,
-    reason = "the UI seam keeps its independent collaborators explicit"
+    reason = "receiver, generation token, result widgets and the add options; should take a parameter object"
 )]
 fn attach_candidates(
     receiver: std::io::Result<async_channel::Receiver<Result<Vec<Candidate>, String>>>,
@@ -584,7 +584,7 @@ fn preview_error(error: &podcasts::PodcastError) -> String {
 
 #[expect(
     clippy::too_many_arguments,
-    reason = "the UI seam keeps its independent collaborators explicit"
+    reason = "request identity plus the dialog's result widgets; should take a parameter object"
 )]
 fn preview(
     request_generation: u64,

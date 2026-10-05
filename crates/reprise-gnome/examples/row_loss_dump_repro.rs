@@ -16,13 +16,13 @@ use gtk4::prelude::*;
 
 #[expect(
     dead_code,
-    reason = "the item completes a UI contract exercised by selected targets"
+    reason = "the example #[path]-includes this module whole but drives only part of it"
 )]
 #[path = "../src/ui/track_list/diagnostic_trail.rs"]
 mod diagnostic_trail;
 #[expect(
     dead_code,
-    reason = "the item completes a UI contract exercised by selected targets"
+    reason = "the example #[path]-includes this module whole but drives only part of it"
 )]
 #[path = "../src/ui/track_list/row_loss_watchdog_state.rs"]
 mod row_loss_watchdog_state;

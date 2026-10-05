@@ -119,7 +119,7 @@ struct EpisodeArtworkContext {
 
 #[expect(
     clippy::too_many_arguments,
-    reason = "the UI seam keeps its independent collaborators explicit"
+    reason = "the render inputs of the source group list; should take a parameter object shared with replace_with_sync"
 )]
 #[cfg(test)]
 pub(super) fn replace(
@@ -155,7 +155,7 @@ pub(super) fn replace(
 
 #[expect(
     clippy::too_many_arguments,
-    reason = "the UI seam keeps its independent collaborators explicit"
+    reason = "replace's render inputs plus the syncing map; should take the same parameter object"
 )]
 pub(super) fn replace_with_sync(
     container: &gtk4::Box,

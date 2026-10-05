@@ -678,7 +678,7 @@ fn install_drag_autoscroll(scrolled: &gtk4::ScrolledWindow) {
 
 #[expect(
     clippy::too_many_arguments,
-    reason = "the UI seam keeps its independent collaborators explicit"
+    reason = "eight scalar geometry inputs of one easing step"
 )]
 fn autoscroll_value(
     current: f64,
