@@ -1,8 +1,7 @@
 //! Network implementation hidden behind the deep remote-provider seam.
 
 use std::collections::HashMap;
-use std::sync::{Mutex, MutexGuard};
-use std::time::{Duration, Instant};
+use std::time::Duration;
 
 use serde_json::Value;
 
@@ -14,19 +13,16 @@ use super::{
     RemoteProviderError, RemoteProviderResult, RemoteTrackMetadata,
 };
 use crate::library::library_doctor::ScanControl;
+use crate::net::client::{build_agent, AgentPolicy};
+use crate::net::rate::{reserve_slot, wait_for_slot, RateLimitKey};
 
 const HTTP_TIMEOUT: Duration = Duration::from_secs(15);
-#[cfg(test)]
-const MUSICBRAINZ_INTERVAL: Duration = Duration::from_secs(1);
-const ACOUSTID_INTERVAL: Duration = Duration::from_millis(334);
 const WAIT_SLICE: Duration = Duration::from_millis(50);
 const MAX_ATTEMPTS: usize = 3;
 const ACOUSTID_ENDPOINT: &str = "https://api.acoustid.org/v2/lookup";
 
 /// Compile-time client key. A build without it keeps pure MusicBrainz useful.
 pub const BUNDLED_ACOUSTID_CLIENT_KEY: Option<&str> = option_env!("REPRISE_ACOUSTID_CLIENT_KEY");
-
-static LAST_ACOUSTID: Mutex<Option<Instant>> = Mutex::new(None);
 
 #[derive(Default)]
 pub(crate) struct NoNetworkProvider;
@@ -83,12 +79,7 @@ enum NetworkSource {
 
 impl NetworkProvider {
     pub(crate) fn new() -> Self {
-        let agent = ureq::Agent::config_builder()
-            .timeout_global(Some(HTTP_TIMEOUT))
-            .http_status_as_error(false)
-            .user_agent(crate::net::user_agent())
-            .build()
-            .new_agent();
+        let agent = build_agent(agent_policy());
         Self {
             agent,
             dedup: HashMap::new(),
@@ -107,8 +98,8 @@ impl NetworkProvider {
         let key = format!("mb:{lookup_kind}:{url}");
         let agent = self.agent.clone();
         self.memoized(NetworkSource::MusicBrainz, key, || {
-            request_with_retry(&Mutex::new(None), Duration::ZERO, control, |control| {
-                if !crate::musicbrainz::wait_for_request_slot(&mut || {
+            request_with_retry(None, control, |control| {
+                if !wait_for_slot(RateLimitKey::MusicBrainz, &mut || {
                     control() == ScanControl::Cancel
                 }) {
                     return Err(RemoteProviderError::Cancelled);
@@ -132,7 +123,7 @@ impl NetworkProvider {
         let agent = self.agent.clone();
         let form = acoustid_form(client, fingerprint, duration);
         self.memoized(NetworkSource::AcoustId, key, || {
-            request_with_retry(&LAST_ACOUSTID, ACOUSTID_INTERVAL, control, |_| {
+            request_with_retry(Some(RateLimitKey::AcoustId), control, |_| {
                 http_post(&agent, &form)
             })
             .and_then(|body| parse_acoustid(&body))
@@ -311,14 +302,17 @@ fn http_post(
     })
 }
 
+/// `spacing` names the slot to reserve before each attempt; the MusicBrainz path waits for its
+/// own slot inside `request` so that it can poll for cancellation while it does.
 fn request_with_retry(
-    limiter: &Mutex<Option<Instant>>,
-    interval: Duration,
+    spacing: Option<RateLimitKey>,
     control: &mut dyn FnMut() -> ScanControl,
     mut request: impl FnMut(&mut dyn FnMut() -> ScanControl) -> Result<HttpReply, RemoteProviderError>,
 ) -> Result<String, RemoteProviderError> {
     for attempt in 0..MAX_ATTEMPTS {
-        rate_limit(limiter, interval, control)?;
+        if let Some(key) = spacing {
+            cancellable_sleep(reserve_slot(key), control)?;
+        }
         if control() == ScanControl::Cancel {
             return Err(RemoteProviderError::Cancelled);
         }
@@ -356,31 +350,6 @@ fn request_with_retry(
     Err(RemoteProviderError::InvalidResponse)
 }
 
-fn rate_limit(
-    limiter: &Mutex<Option<Instant>>,
-    interval: Duration,
-    control: &mut dyn FnMut() -> ScanControl,
-) -> Result<(), RemoteProviderError> {
-    let delay = {
-        let mut previous = lock_unpoisoned(limiter);
-        let now = Instant::now();
-        let delay = request_delay(*previous, now, interval);
-        *previous = Some(now + delay);
-        delay
-    };
-    cancellable_sleep(delay, control)
-}
-
-fn request_delay(previous: Option<Instant>, now: Instant, interval: Duration) -> Duration {
-    previous.map_or(Duration::ZERO, |value| {
-        if value > now {
-            value.duration_since(now).saturating_add(interval)
-        } else {
-            interval.saturating_sub(now.duration_since(value))
-        }
-    })
-}
-
 fn cancellable_sleep(
     mut remaining: Duration,
     control: &mut dyn FnMut() -> ScanControl,
@@ -394,6 +363,11 @@ fn cancellable_sleep(
         remaining = remaining.saturating_sub(slice);
     }
     Ok(())
+}
+
+/// Both providers answer through their status codes, so ureq's status errors stay off.
+const fn agent_policy() -> AgentPolicy {
+    AgentPolicy::source(HTTP_TIMEOUT)
 }
 
 fn acoustid_form(client: &str, fingerprint: &str, duration: u64) -> Vec<(String, String)> {
@@ -729,12 +703,6 @@ fn percentage(value: Option<f64>) -> u8 {
     value
         .map(|score| (score.clamp(0.0, 1.0) * 100.0).round() as u8)
         .unwrap_or_default()
-}
-
-fn lock_unpoisoned<T>(mutex: &Mutex<T>) -> MutexGuard<'_, T> {
-    mutex
-        .lock()
-        .unwrap_or_else(std::sync::PoisonError::into_inner)
 }
 
 #[cfg(test)]

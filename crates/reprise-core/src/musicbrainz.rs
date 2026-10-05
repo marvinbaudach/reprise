@@ -179,12 +179,6 @@ fn classify_error(error: ureq::Error) -> FetchError {
     }
 }
 
-/// Shares MusicBrainz's process-wide request slot with cancellable jobs.
-/// Returns `false` when cancellation happens before the slot is acquired.
-pub(crate) fn wait_for_request_slot(cancelled: &mut dyn FnMut() -> bool) -> bool {
-    wait_for_slot(RateLimitKey::MusicBrainz, cancelled)
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
