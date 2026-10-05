@@ -2,7 +2,7 @@
 slug: refactor-wave-2026-10-a
 worktree: /home/marvin/Projects/reprise-refactor-wave-2026-10-a
 branch: feature/refactor-wave-2026-10-a
-phase: refactored
+phase: shipped
 codex_session:
 created: 2026-10-04
 ---
