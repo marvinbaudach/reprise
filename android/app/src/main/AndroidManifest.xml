@@ -1,5 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
-<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+<manifest xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:tools="http://schemas.android.com/tools">
 
     <!-- SAF grants access to the selected tree without broad storage permissions. -->
 
@@ -28,6 +29,15 @@
         runs the same gesture with nothing but the animation.
     -->
     <uses-permission android:name="android.permission.VIBRATE" />
+
+    <!--
+        Glance pulls in WorkManager, which asks to be told when the phone boots so
+        it can re-arm its periodic jobs. Reprise schedules none, so the
+        permission would only be a grant nobody uses.
+    -->
+    <uses-permission
+        android:name="android.permission.RECEIVE_BOOT_COMPLETED"
+        tools:node="remove" />
 
     <!--
         Since API 30 an app only sees the packages it declares here, plus
