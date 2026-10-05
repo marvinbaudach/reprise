@@ -9,7 +9,7 @@ use reprise_core::library::tag_edit::{TagPatch, TrackEditPatch, TrackWrite};
 use super::super::track_list_model_change::ModelChangeKind;
 use super::super::track_list_reload::{capture_reload_anchor, ReloadViewport};
 use super::super::TrackList;
-use super::refresh_after_tag_mutation_with_model_change;
+use super::{refresh_after_tag_mutation_with_model_change, TagMutationChange};
 
 const FIRST_EDITED_POSITION: u32 = 40;
 const EDITED: usize = 8;
@@ -165,9 +165,11 @@ fn tag_1_artist_save_on_contiguous_rows_emits_one_block_move() {
         &[],
         anchor,
         ReloadViewport::PostSaveSortAnchor,
-        Some(change),
-        after_ids.clone(),
-        false,
+        Some(TagMutationChange {
+            model: change,
+            current_ids: after_ids.clone(),
+            metadata_only: false,
+        }),
     );
     crate::ui::test_settle::settle_for(Duration::from_millis(500));
 

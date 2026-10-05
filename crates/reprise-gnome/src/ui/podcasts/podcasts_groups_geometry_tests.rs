@@ -94,20 +94,22 @@ fn src_13_replace_returns_one_channel_widget_per_group() {
         let widgets = replace(
             &container,
             &[rendered()],
-            None,
-            &Rc::new(RefCell::new(if expanded {
-                BTreeSet::from([1])
-            } else {
-                BTreeSet::new()
-            })),
-            &Rc::new(RefCell::new(BTreeSet::new())),
-            &BTreeMap::new(),
-            false,
-            &Rc::new(crate::test_db::open().unwrap()),
-            Connectivity::Online,
-            None,
-            &Rc::new(RefCell::new(PodcastSelection::default())),
-            "",
+            GroupRenderInputs {
+                playing_episode: None,
+                expanded_sources: &Rc::new(RefCell::new(if expanded {
+                    BTreeSet::from([1])
+                } else {
+                    BTreeSet::new()
+                })),
+                expanded_episode_sources: &Rc::new(RefCell::new(BTreeSet::new())),
+                download_states: &BTreeMap::new(),
+                images_allowed: false,
+                conn: &Rc::new(crate::test_db::open().unwrap()),
+                connectivity: Connectivity::Online,
+                unavailable_episode: None,
+                selection: &Rc::new(RefCell::new(PodcastSelection::default())),
+                query: "",
+            },
         );
         (container, widgets)
     };
@@ -173,16 +175,18 @@ fn src_16_episode_media_starts_after_group_media_in_both_source_views() {
     let widgets = replace(
         &container,
         &groups,
-        None,
-        &Rc::new(RefCell::new(BTreeSet::from([1, 2]))),
-        &Rc::new(RefCell::new(BTreeSet::new())),
-        &BTreeMap::new(),
-        false,
-        &Rc::new(crate::test_db::open().unwrap()),
-        Connectivity::Online,
-        None,
-        &Rc::new(RefCell::new(PodcastSelection::default())),
-        "",
+        GroupRenderInputs {
+            playing_episode: None,
+            expanded_sources: &Rc::new(RefCell::new(BTreeSet::from([1, 2]))),
+            expanded_episode_sources: &Rc::new(RefCell::new(BTreeSet::new())),
+            download_states: &BTreeMap::new(),
+            images_allowed: false,
+            conn: &Rc::new(crate::test_db::open().unwrap()),
+            connectivity: Connectivity::Online,
+            unavailable_episode: None,
+            selection: &Rc::new(RefCell::new(PodcastSelection::default())),
+            query: "",
+        },
     );
     let window = gtk4::Window::builder()
         .default_width(1_200)

@@ -25,6 +25,14 @@ struct ReloadQueryKey {
     exclude_ai: bool,
 }
 
+/// A model change the reload must apply after a tag mutation, with the ids that are current
+/// after it and whether the mutation touched metadata only.
+pub(in crate::ui) struct TagMutationChange {
+    pub(in crate::ui) model: ModelChange,
+    pub(in crate::ui) current_ids: Vec<i64>,
+    pub(in crate::ui) metadata_only: bool,
+}
+
 struct ReloadChange {
     model: ModelChange,
     current_ids: Vec<i64>,
@@ -151,31 +159,27 @@ pub(in crate::ui) fn refresh_after_tag_mutation_with_view_ids(
         paths,
         anchor,
         ReloadViewport::PreserveAnchor,
-        reload_change,
-        after_ids,
-        metadata_only,
+        reload_change.map(|model| TagMutationChange {
+            model,
+            current_ids: after_ids,
+            metadata_only,
+        }),
     )
 }
 
-#[expect(
-    clippy::too_many_arguments,
-    reason = "mutation scope, reload anchor and viewport, and model change; should take a parameter object"
-)]
 pub(in crate::ui) fn refresh_after_tag_mutation_with_model_change(
     shared: &Rc<Shared>,
     ids: &[i64],
     paths: &[PathBuf],
     anchor: ReloadAnchor,
     viewport: ReloadViewport,
-    model_change: Option<ModelChange>,
-    current_ids: Vec<i64>,
-    metadata_only: bool,
+    change: Option<TagMutationChange>,
 ) -> ReloadReceipt {
-    let reload_change = model_change.map(|model| ReloadChange {
-        model,
-        current_ids,
+    let reload_change = change.map(|change| ReloadChange {
+        model: change.model,
+        current_ids: change.current_ids,
         query: reload_query_key(shared),
-        metadata_only,
+        metadata_only: change.metadata_only,
     });
     refresh_with_reload_change(shared, ids, paths, anchor, viewport, reload_change)
 }
@@ -196,9 +200,11 @@ pub(in crate::ui) fn refresh_after_tag_mutation_with_save_change(
             paths,
             anchor,
             ReloadViewport::PostSaveSortAnchor,
-            Some(model_change),
-            after_ids,
-            false,
+            Some(TagMutationChange {
+                model: model_change,
+                current_ids: after_ids,
+                metadata_only: false,
+            }),
         ),
         ModelChangeKind::Span => refresh_after_tag_mutation_with_view_ids(
             shared, ids, paths, anchor, before_ids, after_ids,

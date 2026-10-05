@@ -146,7 +146,6 @@ fn nr_35_the_concerts_section_header_carries_the_unseen_count() {
     });
     section.render(
         true,
-        true,
         415,
         true,
         &[],

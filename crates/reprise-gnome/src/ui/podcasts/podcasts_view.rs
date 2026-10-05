@@ -24,7 +24,7 @@ use super::podcasts_download_presentation::refreshed_download_states;
 use super::podcasts_empty_state::{podcasts_empty_state_for, PodcastsEmptyState};
 use super::podcasts_filter_bar::PodcastsFilterBar;
 use super::podcasts_footer::PodcastsFooter;
-use super::podcasts_groups;
+use super::podcasts_groups::{self, GroupRenderInputs};
 use super::podcasts_playback::EpisodeMark;
 use super::podcasts_presentation::{
     active as filter_active, apply_filter, filter_without_hiding, filter_without_hiding_group,
@@ -470,16 +470,18 @@ impl PodcastsView {
         let rendered_widgets = podcasts_groups::replace_with_sync(
             &self.group_container,
             &rendered_groups,
-            self.playing_episode.get(),
-            &self.expanded_sources,
-            &self.expanded_episode_sources,
-            &download_states,
-            images_allowed,
-            &self.conn,
-            self.connectivity.get(),
-            self.unavailable_episode.get(),
-            &self.selection,
-            &filter.query,
+            GroupRenderInputs {
+                playing_episode: self.playing_episode.get(),
+                expanded_sources: &self.expanded_sources,
+                expanded_episode_sources: &self.expanded_episode_sources,
+                download_states: &download_states,
+                images_allowed,
+                conn: &self.conn,
+                connectivity: self.connectivity.get(),
+                unavailable_episode: self.unavailable_episode.get(),
+                selection: &self.selection,
+                query: &filter.query,
+            },
             &syncing,
         );
         self.download_widgets.replace(rendered_widgets.downloads);

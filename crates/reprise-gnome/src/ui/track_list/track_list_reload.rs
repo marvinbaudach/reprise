@@ -52,7 +52,7 @@ use crate::ui::track_list::track_list_empty_state::{
 use crate::ui::track_list::track_list_model_change::ModelChange;
 use crate::ui::track_list::Shared;
 use crate::ui::track_list_sort::{apply_direct_source_sort, apply_route_default_sort};
-use reprise_core::queries::BrowseFilter;
+use reprise_core::queries::{self, BrowseFilter};
 use reprise_core::view_source::ViewSource;
 
 #[path = "track_list_reload_geometry.rs"]
@@ -624,26 +624,19 @@ fn run_query(shared: &Rc<Shared>, model_change: Option<ModelChange>) {
             None
         } else {
             shared.model.set_sections(Vec::new());
+            let view = queries::TrackViewQuery::new(&source)
+                .with_filter(&filter)
+                .with_browse(&browse)
+                .with_exclude_ai(exclude_ai);
             match model_change {
-                Some(change) => shared.model.set_query_browsed_ai_changed(
-                    &source,
-                    &sort.field,
-                    &sort.dir,
-                    &filter,
-                    &browse,
-                    &[],
-                    exclude_ai,
-                    change,
-                ),
-                None => shared.model.set_query_browsed_ai(
-                    &source,
-                    &sort.field,
-                    &sort.dir,
-                    &filter,
-                    &browse,
-                    &[],
-                    exclude_ai,
-                ),
+                Some(change) => {
+                    shared
+                        .model
+                        .set_query_browsed_ai_changed(view, &sort.field, &sort.dir, change)
+                }
+                None => shared
+                    .model
+                    .set_query_browsed_ai(view, &sort.field, &sort.dir),
             }
         };
 
@@ -673,12 +666,11 @@ fn run_query(shared: &Rc<Shared>, model_change: Option<ModelChange>) {
         browse_filter_count::update(
             &shared.browse_bar,
             &shared.conn,
-            &source,
+            queries::TrackViewQuery::new(&source)
+                .with_filter(&filter)
+                .with_browse(&browse)
+                .with_exclude_ai(exclude_ai),
             count,
-            &filter,
-            &browse,
-            exclude_ai,
-            &[],
         );
     });
     diagnostic_trail::measure_reload_step(ReloadStep::EmptyState, || {

@@ -340,15 +340,11 @@ impl TrackListModel {
         browse: &BrowseFilter,
         queue_items: &[QueueItem],
     ) -> Option<Duration> {
-        self.set_query_browsed_ai(
-            source,
-            sort_field,
-            sort_dir,
-            filter,
-            browse,
-            queue_items,
-            false,
-        )
+        let view = queries::TrackViewQuery::new(source)
+            .with_filter(filter)
+            .with_browse(browse)
+            .with_queue_items(queue_items);
+        self.set_query_browsed_ai(view, sort_field, sort_dir)
     }
 
     /// Like [`set_query_browsed`](Self::set_query_browsed) but honoring the
@@ -358,78 +354,43 @@ impl TrackListModel {
     /// for very large libraries — no longer the `QUEUE_LIMIT`-capped id-list
     /// length. When that count reaches the cap the view's "play all" queue will
     /// be truncated, so it logs the conventional `is_queue_capped` warning.
-    #[expect(
-        clippy::too_many_arguments,
-        reason = "one view description spread over seven arguments; should take a TrackViewQuery"
-    )]
     pub fn set_query_browsed_ai(
         &self,
-        source: &ViewSource,
+        view: queries::TrackViewQuery<'_>,
         sort_field: &str,
         sort_dir: &str,
-        filter: &str,
-        browse: &BrowseFilter,
-        queue_items: &[QueueItem],
-        exclude_ai: bool,
     ) -> Option<Duration> {
-        self.set_query_browsed_ai_inner(
-            source,
-            sort_field,
-            sort_dir,
-            filter,
-            browse,
-            queue_items,
-            exclude_ai,
-            None,
-        )
+        self.set_query_browsed_ai_inner(view, sort_field, sort_dir, None)
     }
 
-    #[expect(
-        clippy::too_many_arguments,
-        reason = "one view description plus a model change; should take a TrackViewQuery"
-    )]
     pub(super) fn set_query_browsed_ai_changed(
         &self,
-        source: &ViewSource,
+        view: queries::TrackViewQuery<'_>,
         sort_field: &str,
         sort_dir: &str,
-        filter: &str,
-        browse: &BrowseFilter,
-        queue_items: &[QueueItem],
-        exclude_ai: bool,
         change: ModelChange,
     ) -> Option<Duration> {
-        self.set_query_browsed_ai_inner(
-            source,
-            sort_field,
-            sort_dir,
-            filter,
-            browse,
-            queue_items,
-            exclude_ai,
-            Some(change),
-        )
+        self.set_query_browsed_ai_inner(view, sort_field, sort_dir, Some(change))
     }
 
     /// Replaces the query state with either one covering-span invalidation or
     /// a block move. A valid move exposes a shorter intermediate model only
     /// during its removal signal; all guards and the generation advance occur
     /// once before either shape emits.
-    #[expect(
-        clippy::too_many_arguments,
-        reason = "one view description plus an optional model change; should take a TrackViewQuery"
-    )]
     fn set_query_browsed_ai_inner(
         &self,
-        source: &ViewSource,
+        view: queries::TrackViewQuery<'_>,
         sort_field: &str,
         sort_dir: &str,
-        filter: &str,
-        browse: &BrowseFilter,
-        queue_items: &[QueueItem],
-        exclude_ai: bool,
         requested_change: Option<ModelChange>,
     ) -> Option<Duration> {
+        let queries::TrackViewQuery {
+            source,
+            filter,
+            browse,
+            queue_items,
+            exclude_ai,
+        } = view;
         let old_total = self.imp().state.borrow().total;
 
         let Some(conn) = self.imp().conn.borrow().clone() else {
@@ -437,11 +398,6 @@ impl TrackListModel {
             return None;
         };
         let query_started = diagnostic_trail::start_reload_step();
-        let view = queries::TrackViewQuery::new(source)
-            .with_filter(filter)
-            .with_browse(browse)
-            .with_queue_items(queue_items)
-            .with_exclude_ai(exclude_ai);
         let new_total = queries::query_track_count(&conn, &view).map_or_else(
             |error| {
                 tracing::error!(%error, source = %source.label(), "failed to count tracks for query");

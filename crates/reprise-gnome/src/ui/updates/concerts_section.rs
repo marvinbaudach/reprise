@@ -176,14 +176,9 @@ impl ConcertsSection {
         *self.on_open_view.borrow_mut() = on_open_view;
     }
 
-    #[expect(
-        clippy::too_many_arguments,
-        reason = "the popover's render state, including an unused credentials flag; should drop it and take a parameter object"
-    )]
     pub(super) fn render(
         &self,
         enabled: bool,
-        _has_credentials: bool,
         total: usize,
         unseen: bool,
         rows: &[ConcertRow],
