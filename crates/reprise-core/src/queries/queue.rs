@@ -186,7 +186,7 @@ fn query_episodes(conn: &Connection, ids: &[i64]) -> Result<Vec<EpisodeRow>, rus
 
 /// The absolute on-disk paths of many tracks in one pass, keyed by id.
 /// Missing rows have no entry; duplicate ids resolve once. Same lookup as
-/// [`super::track_source_path`], one statement per [`SOURCE_PATH_CHUNK`] ids
+/// [`super::track_source_path`], one statement per `SOURCE_PATH_CHUNK` ids
 /// instead of one per id.
 pub fn track_source_paths(db: &Db, ids: &[i64]) -> Result<HashMap<i64, PathBuf>, rusqlite::Error> {
     let conn = db.conn();
