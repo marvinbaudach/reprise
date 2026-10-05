@@ -2,7 +2,7 @@
 slug: the-visualizer-follows-cava
 worktree: /home/marvin/Projects/reprise-the-visualizer-follows-cava
 branch: feature/the-visualizer-follows-cava
-phase: refactored
+phase: shipped
 codex_session:
 created: 2026-10-04
 ---
