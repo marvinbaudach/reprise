@@ -80,7 +80,7 @@ rg --fixed-strings --quiet 'cmp --silent "$RUNNER_TEMP/regenerated/cargo-sources
 rg --fixed-strings --quiet "if: needs.regenerate.outputs.changed == 'true'" "$workflow" || \
     fail "the push job must run only when the sources changed"
 rg --fixed-strings --quiet \
-    "if [[ \$tip == '41898282+github-actions[bot]@users.noreply.github.com The Flatpak Cargo sources follow Cargo.lock' ]]; then" \
+    'if [[ $(git log -1 --format='"'%ae %s'"' HEAD) == "$bot $subject" ]]; then' \
     "$workflow" || \
     fail "the push job must refuse to push on top of its own regeneration commit"
 rg --fixed-strings --quiet \

@@ -164,9 +164,11 @@ jobs:
       # start a new run of this workflow that does the same, forever.
       - name: Refuse to chase a regeneration that does not settle
         run: |
-          tip=$(git log -1 --format='%ae %s' HEAD)
-          if [[ $tip == '41898282+github-actions[bot]@users.noreply.github.com The Flatpak Cargo sources follow Cargo.lock' ]]; then
-            echo "the tip is already the regeneration commit and the sources still differ; not pushing again" >&2
+          bot='41898282+github-actions[bot]@users.noreply.github.com'
+          subject='The Flatpak Cargo sources follow Cargo.lock'
+          if [[ $(git log -1 --format='%ae %s' HEAD) == "$bot $subject" ]]; then
+            echo "the tip is already the regeneration commit and the sources" \
+              "still differ; not pushing again" >&2
             exit 1
           fi
 
