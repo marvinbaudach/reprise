@@ -24,7 +24,7 @@ rg --multiline --quiet \
     '^on:\n  pull_request:\n    branches:\n      - dev\n    types:\n      - opened\n      - reopened\n      - synchronize\n    paths:\n      - Cargo\.lock\n\npermissions:\n  contents: read\n' \
     "$workflow" || \
     fail "the job must react to dev pull requests that change Cargo.lock, with read-only Actions permissions"
-if rg --quiet 'pull_request_target|workflow_run|^  push:' "$workflow"; then
+if rg --quiet 'pull_request_target|workflow_run' "$workflow"; then
     fail "the job must run from the pull_request event only, which is what hands it the Dependabot secrets"
 fi
 rg --fixed-strings --quiet \
@@ -55,25 +55,31 @@ if rg --quiet 'flatpak-builder-tools/(master|main|HEAD)' "$workflow"; then
     fail "the generator must never be fetched from a moving ref"
 fi
 
-# The regeneration must be the invocation the repository documents and the
-# check script prints, or the file it writes would not satisfy that check.
-rg --multiline --quiet \
-    'flatpak-cargo-generator\.py" \\\n            Cargo\.lock -o flatpak/cargo-sources\.json' \
-    "$workflow" || \
-    fail "the generator must run as: flatpak-cargo-generator.py Cargo.lock -o flatpak/cargo-sources.json"
+# The regeneration must produce what the documented invocation produces, or the
+# file it writes would not satisfy the check script. It runs from outside the
+# checkout with uv's config discovery off, so the pull request cannot steer uv.
 rg --fixed-strings --quiet \
     'flatpak-cargo-generator.py Cargo.lock -o flatpak/cargo-sources.json' \
     "$repo_root/flatpak/README.md" || \
-    fail "flatpak/README.md no longer documents the invocation this job runs"
+    fail "flatpak/README.md no longer documents the invocation this job reproduces"
+rg --multiline --quiet \
+    'cd "\$RUNNER_TEMP" \|\| exit 1\n          uv run --no-config --script "\$RUNNER_TEMP/flatpak-cargo-generator\.py" \\\n            "\$GITHUB_WORKSPACE/Cargo\.lock" \\\n            -o "\$RUNNER_TEMP/regenerated/cargo-sources\.json"' \
+    "$workflow" || \
+    fail "the generator must run from the temp directory as: uv run --no-config --script <generator> <workspace>/Cargo.lock -o <temp>/cargo-sources.json"
 
 # The no-op run has to stay a no-op: that is what ends the loop, because a
 # token push starts a new run of this very job.
-rg --fixed-strings --quiet 'git diff --quiet -- flatpak/cargo-sources.json' "$workflow" || \
+rg --fixed-strings --quiet 'cmp --silent "$RUNNER_TEMP/regenerated/cargo-sources.json"' "$workflow" || \
     fail "the job must detect whether the regeneration changed anything"
-rg --fixed-strings --quiet "if: steps.regenerate.outputs.changed == 'true'" "$workflow" || \
-    fail "the push must happen only when the sources changed"
+rg --fixed-strings --quiet "if: needs.regenerate.outputs.changed == 'true'" "$workflow" || \
+    fail "the push job must run only when the sources changed"
+rg --fixed-strings --quiet \
+    "if [[ \$changes != ' M flatpak/cargo-sources.json' ]]; then" "$workflow" || \
+    fail "the push must refuse to commit anything but flatpak/cargo-sources.json"
+rg --fixed-strings --quiet 'jq empty "$regenerated"' "$workflow" || \
+    fail "the handed-over artifact must be validated as JSON before it is committed"
 
-python3 - "$workflow" <<'PY' || fail "the token must reach the push step and nothing else"
+python3 - "$workflow" <<'PY' || fail "the job split does not isolate the token from the generator"
 import pathlib
 import sys
 
@@ -82,30 +88,63 @@ import yaml
 with pathlib.Path(sys.argv[1]).open(encoding="utf-8") as stream:
     workflow = yaml.safe_load(stream)
 
-steps = workflow["jobs"]["regenerate"]["steps"]
-holders = [
-    step["name"]
-    for step in steps
-    if "REPRISE_AUTOMERGE_TOKEN" in yaml.safe_dump(step)
-]
-assert holders == ["Push the regenerated sources to the bump's branch"], (
-    f"only the push step may see REPRISE_AUTOMERGE_TOKEN, got {holders}"
+# PyYAML reads the bare key `on` as the boolean True.
+assert list(workflow[True]) == ["pull_request"], (
+    f"the workflow must trigger on pull_request alone, got {list(workflow[True])}"
+)
+jobs = workflow["jobs"]
+assert sorted(jobs) == ["push", "regenerate"], (
+    f"the work must be split into exactly a regenerate and a push job, got {sorted(jobs)}"
+)
+regenerate, push = jobs["regenerate"], jobs["push"]
+assert push["needs"] == "regenerate", "the push job must wait for the regeneration"
+
+# The token lives in the push job alone, and only in its last step.
+assert "REPRISE_AUTOMERGE_TOKEN" not in yaml.safe_dump(regenerate), (
+    "the regenerate job runs third-party code and must hold no secret"
+)
+assert "secrets." not in yaml.safe_dump(regenerate), (
+    "the regenerate job must not read any secret"
+)
+push_steps = push["steps"]
+holders = [s["name"] for s in push_steps if "REPRISE_AUTOMERGE_TOKEN" in yaml.safe_dump(s)]
+assert holders == [push_steps[-1]["name"]], (
+    f"only the push job's last step may see REPRISE_AUTOMERGE_TOKEN, got {holders}"
 )
 assert "REPRISE_AUTOMERGE_TOKEN" not in yaml.safe_dump(
-    {key: value for key, value in workflow["jobs"]["regenerate"].items() if key != "steps"}
+    {key: value for key, value in push.items() if key != "steps"}
 ), "the token must not be set job-wide"
 
-names = [step["name"] for step in steps]
+# The push job executes nothing from the pull request and nothing from PyPI.
+assert "uv" not in yaml.safe_dump(push).replace("runs-on", ""), (
+    "the push job must not install or run uv"
+)
+for step in push_steps:
+    assert "setup-uv" not in step.get("uses", ""), "the push job must not set up uv"
+    assert "flatpak-cargo-generator" not in yaml.safe_dump(step), (
+        "the push job must not run the generator"
+    )
+uses = [step.get("uses", "") for step in push_steps]
+assert any(u.startswith("actions/download-artifact@") for u in uses), (
+    "the push job must take the regenerated file from the artifact"
+)
+
+# The generator is fetched and verified before it runs, and only the
+# regenerate job does either.
+names = [step["name"] for step in regenerate["steps"]]
 assert names.index("Fetch the pinned generator") < names.index(
     "Regenerate flatpak/cargo-sources.json"
 ), "the generator must be fetched and verified before it runs"
+assert regenerate["outputs"]["changed"] == "${{ steps.regenerate.outputs.changed }}"
 
-checkout = steps[0]
-assert checkout["uses"].startswith("actions/checkout@"), checkout
-assert checkout["with"]["persist-credentials"] is False, (
-    "checkout must not leave a credential in the clone"
-)
-assert "token" not in checkout["with"], "checkout must not be handed the push token"
+# Neither checkout leaves a credential in its clone or is handed the token.
+for job in (regenerate, push):
+    checkout = job["steps"][0]
+    assert checkout["uses"].startswith("actions/checkout@"), checkout
+    assert checkout["with"]["persist-credentials"] is False, (
+        "checkout must not leave a credential in the clone"
+    )
+    assert "token" not in checkout["with"], "checkout must not be handed a token"
 PY
 
 # A push by the token's owner makes that owner the event's actor. If routing

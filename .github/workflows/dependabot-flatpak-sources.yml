@@ -10,10 +10,17 @@ name: Dependabot Flatpak sources
 # That token is a Dependabot secret, which is exactly what a pull_request run
 # triggered by Dependabot can read.
 #
-# Nothing from the pull request runs with the token. The generator is fetched
-# at a pinned commit and checked against a recorded hash, it only parses
-# Cargo.lock, and it runs in a step that holds no secret; the token reaches
-# only the final push.
+# The work is split in two jobs because a job is the isolation boundary:
+# everything in one job shares a workspace, a .git directory and the
+# GITHUB_PATH/GITHUB_ENV files, so code that runs before a token is used could
+# plant a git hook or a PATH entry that takes the token.
+#
+# - `regenerate` holds no secret. It runs the generator, which pulls its
+#   Python dependencies from PyPI, from outside the checkout and with uv's
+#   config discovery off, and hands over one file as an artifact.
+# - `push` holds the token and runs no uv and no pull request code. It copies
+#   the one validated artifact over the sources file, insists that nothing
+#   else changed, and pushes.
 on:
   pull_request:
     branches:
@@ -44,6 +51,8 @@ jobs:
       github.event.pull_request.head.repo.full_name == github.repository
     runs-on: ubuntu-24.04
     timeout-minutes: 10
+    outputs:
+      changed: ${{ steps.regenerate.outputs.changed }}
     steps:
       - name: Check out the bump's branch
         uses: actions/checkout@v7
@@ -69,26 +78,68 @@ jobs:
             "https://raw.githubusercontent.com/flatpak/flatpak-builder-tools/$GENERATOR_COMMIT/cargo/flatpak-cargo-generator.py"
           echo "$GENERATOR_SHA256  $generator" | sha256sum --check --strict
 
+      # Run from the temp directory with config discovery off, so no uv.toml or
+      # pyproject.toml from the pull request steers uv.
       - name: Regenerate flatpak/cargo-sources.json
         id: regenerate
         run: |
-          uv run --script "$RUNNER_TEMP/flatpak-cargo-generator.py" \
-            Cargo.lock -o flatpak/cargo-sources.json
-          if git diff --quiet -- flatpak/cargo-sources.json; then
+          mkdir "$RUNNER_TEMP/regenerated"
+          cd "$RUNNER_TEMP" || exit 1
+          uv run --no-config --script "$RUNNER_TEMP/flatpak-cargo-generator.py" \
+            "$GITHUB_WORKSPACE/Cargo.lock" \
+            -o "$RUNNER_TEMP/regenerated/cargo-sources.json"
+          if cmp --silent "$RUNNER_TEMP/regenerated/cargo-sources.json" \
+            "$GITHUB_WORKSPACE/flatpak/cargo-sources.json"; then
             echo "flatpak/cargo-sources.json already matches Cargo.lock"
             echo "changed=false" >> "$GITHUB_OUTPUT"
           else
             echo "changed=true" >> "$GITHUB_OUTPUT"
           fi
 
-      - name: Push the regenerated sources to the bump's branch
+      - name: Hand over the regenerated sources
         if: steps.regenerate.outputs.changed == 'true'
+        uses: actions/upload-artifact@v7
+        with:
+          name: cargo-sources
+          path: ${{ runner.temp }}/regenerated/cargo-sources.json
+          if-no-files-found: error
+          retention-days: 1
+
+  push:
+    name: Push the regenerated sources
+    needs: regenerate
+    if: needs.regenerate.outputs.changed == 'true'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - name: Check out the bump's branch
+        uses: actions/checkout@v7
+        with:
+          ref: ${{ github.event.pull_request.head.ref }}
+          persist-credentials: false
+
+      - name: Fetch the regenerated sources
+        uses: actions/download-artifact@v8
+        with:
+          name: cargo-sources
+          path: ${{ runner.temp }}/regenerated
+
+      - name: Replace the sources and push them to the bump's branch
         env:
           PUSH_TOKEN: ${{ secrets.REPRISE_AUTOMERGE_TOKEN }}
           BRANCH: ${{ github.event.pull_request.head.ref }}
         run: |
           if [[ -z $PUSH_TOKEN ]]; then
             echo "REPRISE_AUTOMERGE_TOKEN is not available to this run" >&2
+            exit 1
+          fi
+          regenerated="$RUNNER_TEMP/regenerated/cargo-sources.json"
+          jq empty "$regenerated"
+          cp "$regenerated" flatpak/cargo-sources.json
+          changes=$(git status --porcelain)
+          if [[ $changes != ' M flatpak/cargo-sources.json' ]]; then
+            printf 'expected only flatpak/cargo-sources.json to change, got:\n%s\n' \
+              "$changes" >&2
             exit 1
           fi
           git config user.name 'github-actions[bot]'
