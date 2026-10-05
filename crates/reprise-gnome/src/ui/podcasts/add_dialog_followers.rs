@@ -12,6 +12,7 @@ use reprise_core::podcasts::discovery::Candidate;
 use reprise_core::podcasts::{self, PodcastKind};
 
 use crate::ui::one_shot_task;
+use crate::ui::source_add_dialog::generation::Generation;
 use crate::ui::strings;
 
 use super::add_dialog_results::{search_result_markup, subscriber_order, youtube_subtitle};
@@ -159,8 +160,8 @@ impl YoutubeResults {
         &self,
         counts: &[(String, Option<u64>)],
         cancelled: bool,
-        current_generation: u64,
-        request_generation: u64,
+        current_generation: Generation,
+        request_generation: Generation,
     ) -> bool {
         if cancelled || current_generation != request_generation {
             return false;
@@ -195,8 +196,8 @@ pub(super) fn start(
     results: YoutubeResults,
     request: YoutubeFollowerRequest,
     conn: &Db,
-    generation: Rc<Cell<u64>>,
-    request_generation: u64,
+    generation: Rc<Cell<Generation>>,
+    request_generation: Generation,
 ) {
     // `NET-1a`: permission is re-read after wave 1. It can change while the
     // first search is running, and an earlier allow is not authority for a
@@ -421,7 +422,13 @@ esac
         let subtitle = row.subtitle.clone();
         results.push(candidate, row);
 
-        let applied = results.apply_if_current(&[("UC-stale".into(), Some(62_400))], false, 2, 1);
+        let request = Generation::default();
+        let applied = results.apply_if_current(
+            &[("UC-stale".into(), Some(62_400))],
+            false,
+            request.next(),
+            request,
+        );
 
         assert!(!applied);
         assert_eq!(subtitle.text(), "3 matching videos · audio only");
