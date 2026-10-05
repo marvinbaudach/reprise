@@ -99,7 +99,7 @@ fn contrast_3_secondary_surfaces_use_verified_level() {
         ),
         (
             "sidebar sections",
-            crate::ui::library_chrome::css(),
+            crate::ui::window::library_chrome::css(),
             ".reprise-library-sidebar .caption-heading",
         ),
         (

@@ -31,7 +31,7 @@ use crate::ui::scrobble_runtime::ScrobbleRuntime;
 use crate::ui::sidebar::Sidebar;
 use crate::ui::strings;
 use crate::ui::track_list::TrackList;
-use crate::ui::window_decorations::WindowDecorations;
+use crate::ui::window::window_decorations::WindowDecorations;
 
 pub(in crate::ui) const SMOKE_ENV: &str = "REPRISE_SMOKE_PREFERENCES";
 
@@ -248,7 +248,7 @@ impl PreferencesContext {
                 settings::get_window_decoration_mode(conn),
             )
         };
-        super::window_navigation::apply_sidebar_visibility(
+        crate::ui::window::window_navigation::apply_sidebar_visibility(
             &self.split_view,
             &self.sidebar_page,
             sidebar_visible,
@@ -430,7 +430,7 @@ impl PreferencesContext {
                 .unwrap_or(EqualizerPreset::Flat)
                 .ten_band_levels(),
         );
-        super::window_navigation::apply_sidebar_visibility(
+        crate::ui::window::window_navigation::apply_sidebar_visibility(
             &self.split_view,
             &self.sidebar_page,
             false,
