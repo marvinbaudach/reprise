@@ -59,7 +59,9 @@ shared_view=crates/reprise-view/src
 # model into `reprise-view::filter_chip` — the owned `ChipLead`, the
 # `ChipRemoveLabel` split between shared and GTK-only remove text, the chip
 # model itself and its three constructors — raised the floor by 28 lines.
-view_floor=2182
+# Dropping the `#[allow(clippy::enum_variant_names)]` on `QueueReorderOp`, which
+# no longer silenced anything, removed one attribute line and lowered it by one.
+view_floor=2181
 
 echo "== Frontend thinness =="
 
@@ -236,54 +238,35 @@ fi
 
 echo "== Dead-code allowlist =="
 
-# `#[allow(dead_code)]` is how an escape hatch survives review: it silences
+# A dead-code suppression is how an escape hatch survives review: it silences
 # the one compiler warning that would have asked why the item still exists.
 # The extraction ahead will produce plenty of candidates, so the existing
 # ones are pinned per file. A new one has to justify itself by editing this
 # list, in the commit that adds it.
 #
-# Both spellings count. The inner form `#![allow(dead_code)]` silences a
-# whole *file* rather than one item, so it is the broader escape hatch of the
-# two — and it used to slip past this check entirely, because the pattern
-# only looked for the outer one. A gate that catches the narrow case and
-# misses the wide one is worse than no gate: it reads as coverage.
+# Every spelling counts, because a gate that catches one form and misses the
+# others reads as coverage. Suppressions now carry a `reason = "..."`, which
+# rustfmt lays out across several lines, so the pattern is multi-line (`-U`)
+# and matches the lint name anywhere inside the attribute's argument list:
+# `#[allow(dead_code, ...)]`, `#[expect(dead_code, ...)]`, the inner `#![...]`
+# forms that silence a whole *file*, `#[cfg_attr(..., allow(dead_code, ...))]`
+# and lists such as `allow(unused, dead_code)`. The count is per file, so
+# swapping one suppression for another in the same file still has to be
+# reviewed here. The pattern allows one level of nested parentheses, which is
+# what a `cfg_attr(feature = "x", allow(...))` wrapper needs.
 allowlist=$(cat <<'ALLOWLIST'
 crates/reprise-cli/tests/common/mod.rs:1
 crates/reprise-gnome/examples/row_loss_dump_repro.rs:2
-crates/reprise-gnome/src/ui/artist_news/artist_news_worker.rs:1
-crates/reprise-gnome/src/ui/browse/filter_bar.rs:1
-crates/reprise-gnome/src/ui/concerts/concerts_columns.rs:1
-crates/reprise-gnome/src/ui/concerts/concerts_model.rs:1
-crates/reprise-gnome/src/ui/concerts/concerts_presentation.rs:1
-crates/reprise-gnome/src/ui/concerts/concerts_view.rs:1
-crates/reprise-gnome/src/ui/concerts/concerts_worker.rs:1
-crates/reprise-gnome/src/ui/motion.rs:4
-crates/reprise-gnome/src/ui/playback/external_media.rs:1
-crates/reprise-gnome/src/ui/playback/external_media_state.rs:1
-crates/reprise-gnome/src/ui/playback/preview.rs:1
-crates/reprise-gnome/src/ui/player_bar/player_bar_layout.rs:2
-crates/reprise-gnome/src/ui/player_bar/waveform_seek.rs:2
-crates/reprise-gnome/src/ui/player_bar/waveform_seek_state.rs:1
-crates/reprise-gnome/src/ui/playing_links.rs:1
-crates/reprise-gnome/src/ui/podcasts/mod.rs:1
-crates/reprise-gnome/src/ui/radio/mod.rs:1
-crates/reprise-gnome/src/ui/releases/releases_empty_state.rs:1
-crates/reprise-gnome/src/ui/releases/releases_model.rs:1
-crates/reprise-gnome/src/ui/releases/releases_presentation.rs:1
-crates/reprise-gnome/src/ui/releases/releases_view.rs:1
-crates/reprise-gnome/src/ui/strings.rs:4
-crates/reprise-gnome/src/ui/strings_concerts.rs:1
-crates/reprise-gnome/src/ui/strings_news.rs:1
-crates/reprise-gnome/src/ui/strings_notifications.rs:1
-crates/reprise-gnome/src/ui/strings_online_sources.rs:1
-crates/reprise-gnome/src/ui/strings_podcasts.rs:1
-crates/reprise-gnome/src/ui/strings_radio.rs:1
-crates/reprise-gnome/src/ui/strings_releases.rs:1
-crates/reprise-gnome/src/ui/strings_sources.rs:1
-crates/reprise-gnome/src/ui/strings_tag_edit.rs:7
-crates/reprise-gnome/src/ui/table_selection/anchor.rs:2
-crates/reprise-gnome/src/ui/tag_edit/tag_edit_flow.rs:1
-crates/reprise-gnome/src/ui/updates/release_cover.rs:1
+crates/reprise-gnome/src/ui/artist_news/artist_news_worker.rs:3
+crates/reprise-gnome/src/ui/browse/browse_bar.rs:1
+crates/reprise-gnome/src/ui/stats/stats_band_card.rs:2
+crates/reprise-gnome/src/ui/stats/stats_band_tile.rs:1
+crates/reprise-gnome/src/ui/stats/stats_bands_card.rs:1
+crates/reprise-gnome/src/ui/stats/stats_genre_card.rs:1
+crates/reprise-gnome/src/ui/stats/stats_songs_card.rs:4
+crates/reprise-gnome/src/ui/stats/stats_view.rs:3
+crates/reprise-gnome/src/ui/table_selection/anchor.rs:3
+crates/reprise-gnome/src/ui/tag_edit/tag_editor.rs:1
 crates/reprise-mcp/tests/common/mod.rs:1
 ALLOWLIST
 )
@@ -293,13 +276,13 @@ ALLOWLIST
 # the check passes or fails depending on the contributor's locale rather
 # than on the code. It flip-flopped exactly once, between two commits
 # whose authors' shells disagreed, before this line existed.
-actual_allows=$(rg --no-heading --count '#!?\[allow\(dead_code\)\]' crates --glob '*.rs' | LC_ALL=C sort)
+actual_allows=$(rg -U --no-heading --count '(allow|expect)\(([^()]|\([^()]*\))*\bdead_code\b' crates --glob '*.rs' | LC_ALL=C sort)
 
 if [[ $actual_allows != "$allowlist" ]]; then
   echo "dead-code allowlist drifted:" >&2
   diff <(echo "$allowlist") <(echo "$actual_allows") >&2 || true
   echo "  a '<' line is an entry that disappeared — delete it from the allowlist here" >&2
-  echo "  a '>' line is a new #[allow(dead_code)] — justify it in the commit and add it" >&2
+  echo "  a '>' line is a new dead-code suppression — justify it in the commit and add it" >&2
   failed=1
 else
   echo "  $(echo "$actual_allows" | wc -l) files, unchanged"
