@@ -5,6 +5,7 @@ import android.graphics.Bitmap
 import android.graphics.BitmapFactory
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.DpSize
+import androidx.core.graphics.scale
 import androidx.glance.GlanceId
 import androidx.glance.appwidget.GlanceAppWidget
 import androidx.glance.appwidget.GlanceAppWidgetReceiver
@@ -86,10 +87,8 @@ internal fun decodeCover(path: String, maxPx: Int = WIDGET_COVER_MAX_PX): Bitmap
     val longest = maxOf(decoded.width, decoded.height)
     if (longest <= maxPx) return decoded
     val scale = maxPx.toFloat() / longest
-    return Bitmap.createScaledBitmap(
-        decoded,
+    return decoded.scale(
         (decoded.width * scale).toInt().coerceAtLeast(1),
         (decoded.height * scale).toInt().coerceAtLeast(1),
-        true,
     ).also { if (it !== decoded) decoded.recycle() }
 }

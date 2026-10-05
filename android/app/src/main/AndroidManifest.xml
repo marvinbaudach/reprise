@@ -70,8 +70,13 @@
         Android 26 and 27 otherwise permit cleartext traffic by default. The
         portrait client already enforces HTTPS; this pins the platform side as
         a second lock.
+
+        The browse service answers search with "not supported", so no activity
+        claims `MEDIA_PLAY_FROM_SEARCH`: a voice request would find nothing to
+        play. Add the filter together with search, not before it.
     -->
     <application
+        tools:ignore="MissingIntentFilterForMediaSearch"
         android:name=".RepriseApplication"
         android:icon="@mipmap/ic_launcher"
         android:roundIcon="@mipmap/ic_launcher_round"

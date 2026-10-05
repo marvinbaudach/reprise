@@ -87,6 +87,6 @@ internal sealed interface BrowseId {
 
 private fun List<String>.longAt(index: Int): Long? = getOrNull(index)?.toLongOrNull()
 
-private fun String.escaped(): String = URLEncoder.encode(this, Charsets.UTF_8)
+private fun String.escaped(): String = URLEncoder.encode(this, "UTF-8")
 
-private fun String.unescaped(): String = URLDecoder.decode(this, Charsets.UTF_8)
+private fun String.unescaped(): String = URLDecoder.decode(this, "UTF-8")

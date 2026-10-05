@@ -1,6 +1,7 @@
 package io.github.marvinbaudach.reprise.library
 
 import android.net.Uri
+import androidx.core.net.toUri
 import androidx.media3.common.MediaItem
 import androidx.media3.common.MediaMetadata
 
@@ -45,7 +46,7 @@ internal fun TrackMetadata.toMediaMetadata(): MediaMetadata = MediaMetadata.Buil
  * the track id when a browse tree listed the track under another one.
  */
 internal fun playbackMediaItem(uri: String, metadata: TrackMetadata?, mediaId: String? = null): MediaItem {
-    val builder = MediaItem.Builder().setUri(Uri.parse(uri))
+    val builder = MediaItem.Builder().setUri(uri.toUri())
     if (metadata != null) {
         builder.setMediaId(mediaId ?: metadata.trackId.toString())
         builder.setMediaMetadata(metadata.toMediaMetadata())

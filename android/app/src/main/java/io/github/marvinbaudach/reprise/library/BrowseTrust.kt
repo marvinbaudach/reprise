@@ -4,6 +4,7 @@ import android.content.Context
 import android.content.pm.PackageManager
 import android.os.Build
 import android.os.Process
+import androidx.media3.common.util.UnstableApi
 import androidx.media3.session.MediaSession
 import java.security.MessageDigest
 
@@ -76,6 +77,7 @@ internal fun interface BrowserAccess {
 }
 
 /** [BrowserAccess] answered from the caller's uid and the installed package's signers. */
+@androidx.annotation.OptIn(UnstableApi::class)
 internal class PackageBrowserAccess(private val context: Context) : BrowserAccess {
     override fun isAllowed(controller: MediaSession.ControllerInfo): Boolean =
         isAllowedBrowser(
@@ -86,21 +88,27 @@ internal class PackageBrowserAccess(private val context: Context) : BrowserAcces
             signersOf = ::signersOf,
         )
 
-    /** `null` when the package is not installed, not visible, or not owned by [uid]. */
-    private fun signersOf(packageName: String, uid: Int): Set<String>? = try {
-        @Suppress("DEPRECATION") // the flags overload needs API 33; minSdk is 26
-        val info = context.packageManager.getPackageInfo(
-            packageName,
-            PackageManager.GET_SIGNING_CERTIFICATES,
-        )
-        val owner = info.applicationInfo?.uid
-        val signers = info.signingInfo?.apkContentsSigners
-        if (owner != uid || signers == null || Build.VERSION.SDK_INT < Build.VERSION_CODES.P) {
+    /**
+     * `null` when the package is not installed, not visible, or not owned by [uid],
+     * and below API 28, which has no `GET_SIGNING_CERTIFICATES`.
+     */
+    private fun signersOf(packageName: String, uid: Int): Set<String>? {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.P) return null
+        return try {
+            @Suppress("DEPRECATION") // the flags overload needs API 33; minSdk is 26
+            val info = context.packageManager.getPackageInfo(
+                packageName,
+                PackageManager.GET_SIGNING_CERTIFICATES,
+            )
+            val owner = info.applicationInfo?.uid
+            val signers = info.signingInfo?.apkContentsSigners
+            if (owner != uid || signers == null) {
+                null
+            } else {
+                signers.map { signer -> certificateDigest(signer.toByteArray()) }.toSet()
+            }
+        } catch (error: PackageManager.NameNotFoundException) {
             null
-        } else {
-            signers.map { signer -> certificateDigest(signer.toByteArray()) }.toSet()
         }
-    } catch (error: PackageManager.NameNotFoundException) {
-        null
     }
 }
