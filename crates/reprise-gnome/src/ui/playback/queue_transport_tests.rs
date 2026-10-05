@@ -129,6 +129,14 @@ fn queue_purge_without_a_loaded_deleted_track_is_immediate() {
 }
 
 #[test]
+fn queue_purge_deduplicates_immediate_ids_in_first_seen_order() {
+    let plan = queue_purge_plan(&[30, 20, 30, 10, 20, 40], Some(10));
+
+    assert_eq!(plan.immediate, vec![30, 20, 40]);
+    assert_eq!(plan.after_loaded_track, Some(10));
+}
+
+#[test]
 fn stopped_toggle_starts_current_queue_track_without_autoplay() {
     assert_eq!(
         toggle_action(
