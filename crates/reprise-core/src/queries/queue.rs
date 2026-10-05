@@ -17,7 +17,8 @@ use super::{AiColumn, RowWindow, TrackViewQuery, MAX_WINDOW_LIMIT};
 pub const QUEUE_LIMIT: i64 = 10_000;
 
 /// Ids bound per `IN (...)` statement in [`track_source_paths`], kept well
-/// under SQLite's bound-variable limit (999 on older builds).
+/// under the bundled SQLite's bound-variable limit of 32766, and under the 999
+/// of builds before 3.32.
 pub(super) const SOURCE_PATH_CHUNK: usize = 500;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
