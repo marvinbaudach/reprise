@@ -105,7 +105,7 @@ fn reserve_after_the_interval_elapsed_waits_nothing_and_records_now() {
 }
 
 #[test]
-fn reserve_inside_the_interval_waits_the_rest_and_records_the_send_time() {
+fn fetch_respects_rate_limit() {
     let now = Instant::now();
     let mut slot = Some(now - Duration::from_millis(250));
     let delay = reserve(&mut slot, now, RateLimitKey::MusicBrainz.interval());
