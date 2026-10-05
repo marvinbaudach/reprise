@@ -1,3 +1,4 @@
+mod active_content_focus;
 pub(in crate::ui) mod content_stack;
 pub(in crate::ui) mod focus_evidence;
 pub(in crate::ui) mod library_chrome;
@@ -27,6 +28,7 @@ mod window_build_badge;
 mod window_content_pages;
 pub(in crate::ui) mod window_decoration_strings;
 pub(in crate::ui) mod window_decorations;
+mod window_first_paint;
 mod window_header;
 #[cfg(test)]
 mod window_layout_test_hook;

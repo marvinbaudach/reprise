@@ -537,7 +537,17 @@ mod tests {
     #[test]
     fn player_cover_loading_has_no_cover_color_pipeline() {
         let wiring = include_str!("now_playing_wiring.rs");
-        let controller = include_str!("player_controller.rs");
+        let controllers = [
+            ("controller", include_str!("player_controller.rs")),
+            (
+                "controller build",
+                include_str!("player_controller_build.rs"),
+            ),
+            (
+                "controller seams",
+                include_str!("player_controller_seams.rs"),
+            ),
+        ];
         let style = include_str!("../style/mod.rs");
         for retired in [
             ["apply_cover", "_accent"].concat(),
@@ -546,10 +556,9 @@ mod tests {
             ["cover", "_accent", "_last"].concat(),
         ] {
             assert!(!wiring.contains(&retired), "wiring retained {retired}");
-            assert!(
-                !controller.contains(&retired),
-                "controller retained {retired}"
-            );
+            for (name, controller) in controllers {
+                assert!(!controller.contains(&retired), "{name} retained {retired}");
+            }
         }
         assert!(!style.contains(&["mod cover", "_accent;"].concat()));
     }
