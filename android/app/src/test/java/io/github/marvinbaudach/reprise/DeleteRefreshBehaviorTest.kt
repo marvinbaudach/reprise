@@ -136,6 +136,7 @@ class DeleteRefreshBehaviorTest {
         private val onLibraryChanged: () -> Unit,
     ) : PlaybackControls {
         val requested = mutableListOf<List<Long>>()
+        val played = mutableListOf<List<Long>>()
 
         /** Ids the "provider" refuses to delete; everything else goes. */
         var refused: Set<Long> = emptySet()
@@ -152,6 +153,10 @@ class DeleteRefreshBehaviorTest {
         override fun setRepeat(mode: AndroidRepeatMode) = Unit
         override fun setFavourite(trackId: Long, favourite: Boolean, report: (String?) -> Unit) =
             report(null)
+
+        override fun playTrackIds(trackIds: List<Long>, startIndex: Int) {
+            played += trackIds
+        }
 
         override fun deleteTracks(
             trackIds: List<Long>,
@@ -249,6 +254,21 @@ class DeleteRefreshBehaviorTest {
         compose.onNodeWithText("Loose B").assertIsDisplayed()
         compose.onNodeWithText("First Light").assertIsDisplayed()
         compose.onNodeWithText("Bolero").assertDoesNotExist()
+    }
+
+    @Test
+    fun theArtistPagePlayLeavesOutATrackWaitingToBeDeleted() {
+        val screen = Screen(aria + bolero)
+        screen.show()
+        openArtistPage("Aria")
+        compose.onNodeWithTag("library-track-row-4").performTouchInput { longClick() }
+        compose.onNodeWithText("Delete from device…").performClick()
+        compose.waitUntil(5_000) { screen.surface.pendingDeletions.offers.current != null }
+
+        compose.onNodeWithTag("artist-detail-play").performClick()
+        compose.waitUntil(5_000) { screen.controls.played.isNotEmpty() }
+
+        assertEquals(listOf(1L, 2L, 3L, 5L, 8L), screen.controls.played.single().sorted())
     }
 
     @Test

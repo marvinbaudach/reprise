@@ -531,6 +531,13 @@ internal fun BrowseScreen(
             visibleArtists = visibleArtists,
         )
     }
+    // Lists that resolve their own ids play them through this, and so skip what
+    // a pending delete is hiding. Not provided to the snackbar host below: it
+    // binds the real transport, and must unbind that same one.
+    val realControls = LocalPlaybackControls.current
+    val visibleControls = remember(realControls, surfaceState.pendingDeletions) {
+        VisibleTracksPlaybackControls(realControls, surfaceState.pendingDeletions)
+    }
     Box(modifier = Modifier.fillMaxSize()) {
         val libraryScaffold: @Composable (Modifier) -> Unit = { frameModifier ->
             Scaffold(
@@ -712,18 +719,20 @@ internal fun BrowseScreen(
                 }
             }
         }
-        if (!surfaceState.dockMode) {
-            if (surfaceLayout == SurfaceLayout.WIDE_SHORT) {
-                Row(modifier = Modifier.fillMaxSize()) {
-                    LibraryNavigationRail(
-                        surfaceLayout = surfaceLayout,
-                        shownTab = shownTab,
-                        selectTab = ::selectDestination,
-                    )
-                    libraryScaffold(Modifier.weight(1f))
+        CompositionLocalProvider(LocalPlaybackControls provides visibleControls) {
+            if (!surfaceState.dockMode) {
+                if (surfaceLayout == SurfaceLayout.WIDE_SHORT) {
+                    Row(modifier = Modifier.fillMaxSize()) {
+                        LibraryNavigationRail(
+                            surfaceLayout = surfaceLayout,
+                            shownTab = shownTab,
+                            selectTab = ::selectDestination,
+                        )
+                        libraryScaffold(Modifier.weight(1f))
+                    }
+                } else {
+                    libraryScaffold(Modifier.fillMaxSize())
                 }
-            } else {
-                libraryScaffold(Modifier.fillMaxSize())
             }
         }
         BrowseNowPlayingLayer(

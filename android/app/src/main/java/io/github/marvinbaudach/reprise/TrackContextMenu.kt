@@ -245,9 +245,22 @@ internal fun TrackContextMenu(
         return outcome
             .onFailure { error -> reportFailure(couldNotLoadTracks(error)) }
             .getOrNull()
-            // Tracks already waiting to be deleted are not there to act on.
-            ?.let { ids -> pendingDeletions?.withoutHidden(ids) ?: ids }
     }
+
+    // Tracks already waiting to be deleted are not there to act on. Saying so
+    // when that is all there was: an action that does nothing, silently, reads
+    // as a tap that was lost.
+    fun withoutPending(ids: List<Long>, say: (String) -> Unit): List<Long>? {
+        val visible = pendingDeletions?.withoutHidden(ids) ?: ids
+        if (visible.isEmpty() && ids.isNotEmpty()) {
+            say(EVERYTHING_TAPPED_IS_BEING_DELETED)
+            return null
+        }
+        return visible
+    }
+
+    suspend fun actionableIds(): List<Long>? =
+        resolvedIds()?.let { ids -> withoutPending(ids, anchor::say) }
 
     fun queued(outcome: Result<UInt>) {
         val text = outcome.fold(
@@ -276,7 +289,7 @@ internal fun TrackContextMenu(
             enabled = !resolving,
             onClick = {
                 anchor.expanded = false
-                whileResolving { resolvedIds()?.let(target.play) }
+                whileResolving { actionableIds()?.let(target.play) }
             },
         )
         DropdownMenuItem(
@@ -285,7 +298,7 @@ internal fun TrackContextMenu(
             onClick = {
                 anchor.expanded = false
                 whileResolving {
-                    resolvedIds()?.let { ids -> controls.queueTracksNext(ids, ::queued) }
+                    actionableIds()?.let { ids -> controls.queueTracksNext(ids, ::queued) }
                 }
             },
         )
@@ -295,7 +308,7 @@ internal fun TrackContextMenu(
             onClick = {
                 anchor.expanded = false
                 whileResolving {
-                    resolvedIds()?.let { ids -> controls.queueTracksLast(ids, ::queued) }
+                    actionableIds()?.let { ids -> controls.queueTracksLast(ids, ::queued) }
                 }
             },
         )
@@ -307,10 +320,14 @@ internal fun TrackContextMenu(
                 anchor.expanded = false
                 whileResolving {
                     resolvedIds(deletionMessages::say)?.let { ids ->
-                        deletableIds(ids, deletionMessages)?.let { deletable ->
-                            pendingDeletions?.begin(deletable, controls)
-                                ?: deletionMessages.say(DELETION_UNAVAILABLE)
-                        }
+                        // The cap is checked on the whole answer, hidden rows
+                        // included: a capped answer stays refused.
+                        deletableIds(ids, deletionMessages)
+                    }?.let { ids ->
+                        withoutPending(ids, deletionMessages::say)
+                    }?.let { deletable ->
+                        pendingDeletions?.begin(deletable, controls)
+                            ?: deletionMessages.say(DELETION_UNAVAILABLE)
                     }
                 }
             },

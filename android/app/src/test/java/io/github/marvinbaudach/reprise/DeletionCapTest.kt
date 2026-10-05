@@ -55,6 +55,31 @@ class DeletionCapTest {
     }
 
     @Test
+    fun aCappedAnswerIsStillRefusedWhenSomeOfItsRowsWereAlreadyHidden() {
+        val controls = RecordingContextMenuControls()
+        showMenuFor(controls, ids = TRACK_ID_QUERY_LIMIT)
+        compose.runOnIdle { harness.surface.pendingDeletions.begin(listOf(1, 2, 3), controls) }
+
+        compose.onNodeWithText("Delete from device…").performClick()
+
+        compose.awaitText("too large to delete at once", substring = true)
+        assertEquals(false, harness.surface.pendingDeletions.isHidden(4))
+        assertEquals("3 tracks will be deleted", harness.surface.pendingDeletions.offers.current?.message)
+    }
+
+    @Test
+    fun anActionOnTracksThatAreAllAboutToBeDeletedSaysSo() {
+        val controls = RecordingContextMenuControls()
+        showMenuFor(controls, ids = 3)
+        compose.runOnIdle { harness.surface.pendingDeletions.begin(listOf(1, 2, 3), controls) }
+
+        compose.onNodeWithText("Play next").performClick()
+
+        compose.awaitText(EVERYTHING_TAPPED_IS_BEING_DELETED)
+        assertEquals(emptyList<List<Long>>(), controls.queuedNext)
+    }
+
+    @Test
     fun theLimitEqualsTheCoreQueueLimit() {
         assertEquals(rustConstant("crates/reprise-core/src/queries/queue.rs", "QUEUE_LIMIT"), TRACK_ID_QUERY_LIMIT.toLong())
     }
