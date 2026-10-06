@@ -51,10 +51,6 @@ serde_json = "1.0"
 # and SIGINT into a channel message the main loop handles (START-5), and
 # `emulate_default_handler` lets a repeated signal still end a wedged shutdown.
 signal-hook = "0.4"
-# `sigaction` query: a termination signal the parent set to SIG_IGN (`nohup`, a
-# background job) stays ignored (START-5d). Already in the lock through
-# `reprise-core`.
-libc = "0.2"
 chrono = { version = "0.4", default-features = false, features = ["clock"] }
 [dev-dependencies]
 # `time` gives the display tests a safe per-thread CPU clock, so a frame budget

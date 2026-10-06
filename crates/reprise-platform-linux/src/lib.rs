@@ -17,6 +17,7 @@ pub mod mpris;
 pub mod player;
 mod player_effects;
 pub(crate) mod player_pipeline;
+pub mod signals;
 pub mod spectrogram_backfill;
 pub mod trash;
 pub mod waveform;

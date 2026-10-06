@@ -147,7 +147,10 @@ fn start() -> io::Result<Option<&'static Listener>> {
 
 /// Installs the signal handlers and the listener thread.
 fn register() -> io::Result<Option<Listener>> {
-    let signals = termination_relay::armed(&TERMINATION_SIGNALS, termination_relay::is_ignored);
+    let signals = termination_relay::armed(
+        &TERMINATION_SIGNALS,
+        reprise_platform_linux::signals::signal_is_ignored,
+    );
     if signals.is_empty() {
         tracing::info!("every termination signal was inherited as ignored; leaving them ignored");
         return Ok(None);

@@ -27,6 +27,8 @@ gio = { version = "0.22", features = ["v2_74"] }
 # Host trash implementation used outside Flatpak. Sandboxed deletion is
 # routed through the XDG Trash portal in `src/trash.rs` instead.
 trash = "5"
+# `sigaction` query in `src/signals.rs`; already in the lock through `reprise-core`.
+libc = "0.2"
 [dev-dependencies]
 tempfile = "3"
 # The device-sync tests capture the warnings the sync path emits, so they

@@ -310,8 +310,8 @@ fn start_5c_a_repeat_right_after_the_first_request_does_not_end_the_process_befo
     )
     .unwrap();
     // A closing terminal's two SIGHUPs, or SIGTERM followed by SIGHUP.
-    feed.send(libc::SIGTERM).unwrap();
-    feed.send(libc::SIGHUP).unwrap();
+    feed.send(signal_hook::consts::SIGTERM).unwrap();
+    feed.send(signal_hook::consts::SIGHUP).unwrap();
     let (window, saver) = (f.window.downgrade(), f.saver.clone());
 
     let quit_in_time = run_until_quit(&f.app, move || {
