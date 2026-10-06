@@ -15,6 +15,7 @@ use reprise_core::{podcasts, radio};
 
 use super::sidebar_dnd;
 use super::sidebar_export;
+use super::sidebar_headers;
 use super::sidebar_issue_cleanup;
 use super::sidebar_module_menu;
 use super::sidebar_playlist_quick_add;
@@ -230,7 +231,7 @@ pub(in crate::ui) fn rebuild(shared: &Rc<Shared>, force_select: Option<ViewSourc
     *shared.releases_count_label.borrow_mut() = None;
     *shared.playlist_add_button.borrow_mut() = None;
 
-    sidebar_presentation::append_header(
+    sidebar_headers::append_header(
         &shared.listbox,
         &strings::text(strings::SIDEBAR_SECTION_LIBRARY),
     );
@@ -276,7 +277,7 @@ pub(in crate::ui) fn rebuild(shared: &Rc<Shared>, force_select: Option<ViewSourc
         NavIcon::Queue,
     );
 
-    let playlist_add_button = sidebar_presentation::append_header_with_action(
+    let playlist_add_button = sidebar_headers::append_header_with_action(
         &shared.listbox,
         &strings::text(strings::SIDEBAR_SECTION_PLAYLISTS),
         &strings::text(strings::SIDEBAR_NEW_PLAYLIST),
@@ -295,7 +296,7 @@ pub(in crate::ui) fn rebuild(shared: &Rc<Shared>, force_select: Option<ViewSourc
             NavIcon::Playlist,
         );
     }
-    sidebar_presentation::append_header(
+    sidebar_headers::append_header(
         &shared.listbox,
         &strings::text(strings::SIDEBAR_SECTION_SMART),
     );

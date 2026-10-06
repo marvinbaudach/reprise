@@ -129,6 +129,8 @@ mod table_selection;
 mod tag_edit;
 pub(crate) mod termination;
 #[cfg(test)]
+pub(crate) mod test_accessible_label;
+#[cfg(test)]
 pub(crate) mod test_log_capture;
 #[cfg(test)]
 pub(crate) mod test_main_context;

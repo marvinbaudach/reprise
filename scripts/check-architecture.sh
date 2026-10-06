@@ -478,8 +478,11 @@ fi
 # display-regression test modules, which need it to drive xdotool and can
 # only reach it through `gdk4_x11::ffi::gdk_x11_surface_get_xid`, a raw FFI
 # binding that cannot be written safely wherever it lives.
+# test_accessible_label.rs: the test-only reader for an accessible label, which
+# gtk4-rs cannot read; it calls the variadic `gtk_test_accessible_check_property`.
 check_frontend_allowlist 'unsafe[[:space:]]*\{' 'unsafe frontend block' \
   crates/reprise-gnome/src/ui/compact/compact_mode_controls.rs \
+  crates/reprise-gnome/src/ui/test_accessible_label.rs \
   crates/reprise-gnome/src/ui/test_x11_window.rs
 
 if rg --quiet 'reqwest::blocking' crates/reprise-gnome/src --glob '*.rs'; then

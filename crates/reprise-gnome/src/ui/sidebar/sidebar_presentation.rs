@@ -7,7 +7,7 @@ use crate::ui::strings;
 use reprise_core::format::format_thousands;
 
 const ICON_WIDTH: i32 = 16;
-const ROW_HORIZONTAL_MARGIN: i32 = 12;
+pub(super) const ROW_HORIZONTAL_MARGIN: i32 = 12;
 // These mirror libadwaita's current `.navigation-sidebar > row` geometry.
 // Keep the platform rules untouched; the Xvfb layout regression catches drift.
 pub(in crate::ui) const SIDEBAR_SURFACE_INSET: i32 = 6;
@@ -15,7 +15,7 @@ const ADWAITA_NAVIGATION_ROW_PADDING: i32 = 8;
 pub(in crate::ui) const SIDEBAR_TEXT_INSET: i32 =
     SIDEBAR_SURFACE_INSET + ADWAITA_NAVIGATION_ROW_PADDING + ROW_HORIZONTAL_MARGIN;
 const ROW_VERTICAL_MARGIN: i32 = 5;
-const ROW_SPACING: i32 = 10;
+pub(super) const ROW_SPACING: i32 = 10;
 pub(in crate::ui) const SIDEBAR_MIN_WIDTH: f64 = 240.0;
 const SIDEBAR_MAX_WIDTH: f64 = 240.0;
 const SIDEBAR_WIDTH_FRACTION: f64 = 0.22;
@@ -208,77 +208,6 @@ pub(in crate::ui) fn build_issue_nav_row(
     row
 }
 
-fn section_header_label(text: &str) -> gtk4::Label {
-    let label = gtk4::Label::builder()
-        .label(text)
-        .xalign(0.0)
-        .accessible_role(gtk4::AccessibleRole::Heading)
-        .build();
-    label.add_css_class("caption-heading");
-    label.add_css_class("reprise-text-secondary");
-    label.set_margin_top(14);
-    label.set_margin_bottom(4);
-    label
-}
-
-fn navigation_header_label(text: &str) -> gtk4::Label {
-    let label = section_header_label(text);
-    label.set_margin_start(ROW_HORIZONTAL_MARGIN);
-    label.set_margin_end(ROW_HORIZONTAL_MARGIN);
-    label
-}
-
-fn standalone_header_label(text: &str) -> gtk4::Label {
-    let label = section_header_label(text);
-    label.set_margin_start(SIDEBAR_TEXT_INSET);
-    label.set_margin_end(SIDEBAR_TEXT_INSET);
-    label
-}
-
-pub(in crate::ui) fn append_header(listbox: &gtk4::ListBox, text: &str) -> gtk4::ListBoxRow {
-    let label = navigation_header_label(text);
-    let row = gtk4::ListBoxRow::builder()
-        .child(&label)
-        .selectable(false)
-        .activatable(false)
-        .focusable(false)
-        .accessible_role(gtk4::AccessibleRole::Presentation)
-        .build();
-    listbox.append(&row);
-    row
-}
-
-pub(in crate::ui) fn append_header_with_action(
-    listbox: &gtk4::ListBox,
-    text: &str,
-    action_name: &str,
-    on_activate: impl Fn() + 'static,
-) -> gtk4::Button {
-    let hbox = gtk4::Box::new(gtk4::Orientation::Horizontal, ROW_SPACING);
-    let label = navigation_header_label(text);
-    label.set_hexpand(true);
-    hbox.append(&label);
-
-    let button = gtk4::Button::from_icon_name("list-add-symbolic");
-    button.add_css_class("flat");
-    button.set_tooltip_text(Some(action_name));
-    button.update_property(&[gtk4::accessible::Property::Label(action_name)]);
-    // a11y-semantics: role=button name=new-playlist state=focusable action=activate
-    button.set_focusable(true);
-    button.connect_clicked(move |_| on_activate());
-    hbox.append(&button);
-
-    let row = gtk4::ListBoxRow::builder()
-        .child(&hbox)
-        .selectable(false)
-        .activatable(false)
-        .focusable(false)
-        .accessible_role(gtk4::AccessibleRole::Presentation)
-        .build();
-    listbox.append(&row);
-    button
-}
-
 pub(in crate::ui) fn build_editable_playlist_row(
     title: &str,
     count: Option<i64>,
@@ -307,10 +236,6 @@ pub(in crate::ui) fn build_editable_playlist_row(
     }
 
     (editable_navigation_row(&hbox, title), editor)
-}
-
-pub(in crate::ui) fn problem_header() -> gtk4::Label {
-    standalone_header_label(&strings::text(strings::SIDEBAR_SECTION_ISSUES))
 }
 
 /// Pins the navigation sidebar at [`SIDEBAR_MIN_WIDTH`] real pixels (NPP-1).
@@ -412,6 +337,7 @@ const fn resolved_icon_name(icon: NavIcon, primary_available: bool) -> &'static 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::ui::sidebar::sidebar_headers::append_header;
 
     /// UX NPP-1: the sidebar half of the fixed 240/300 geometry — pinned to a
     /// single value, not a range, so the asymmetry against the 300 px panel is
@@ -530,18 +456,6 @@ mod tests {
             ),
             Some("433 fixes ready".to_owned())
         );
-    }
-
-    #[test]
-    #[ignore = "requires a display; run via xvfb-run"]
-    fn problem_sources_use_a_labeled_section_header() {
-        gtk4::init().unwrap();
-        let label = problem_header();
-
-        assert_eq!(label.text(), "ISSUES");
-        assert!(label.has_css_class("caption-heading"));
-        assert!(label.has_css_class("reprise-text-secondary"));
-        assert_eq!(label.accessible_role(), gtk4::AccessibleRole::Heading);
     }
 
     #[test]
