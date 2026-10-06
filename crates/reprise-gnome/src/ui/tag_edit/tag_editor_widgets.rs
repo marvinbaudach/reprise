@@ -485,7 +485,7 @@ mod tests {
     /// outcome, so it does not depend on how long construction takes.
     #[test]
     #[ignore = "requires a display; run via xvfb-run"]
-    fn build_cover_area_returns_a_placeholder_without_touching_the_file() {
+    fn build_cover_area_returns_an_empty_placeholder_without_loading_a_cover() {
         let _main_context = crate::ui::test_main_context::lock_main_context();
         gtk4::init().unwrap();
         let temp = tempfile::tempdir().unwrap();
