@@ -9,7 +9,8 @@ use reprise_core::playback::SPECTRUM_BAND_COUNT;
 use reprise_core::visuals::{Fill, Geom, Rgba, Scene, Shape};
 
 use crate::visualizer::{
-    encode_scene, AndroidVisualEngine, MonotonicClock, LIVE_AUDIO_STALE_AFTER,
+    encode_scene, AndroidVisualEngine, MonotonicClock, ADOPTABLE_SHAPE_MAX_AGE,
+    LIVE_AUDIO_STALE_AFTER,
 };
 
 #[test]

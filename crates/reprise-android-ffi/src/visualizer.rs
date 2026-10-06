@@ -23,6 +23,15 @@ use live_audio::{
 
 const MAX_PCM_CHANNEL_COUNT: usize = 32;
 pub(crate) const LIVE_AUDIO_STALE_AFTER: Duration = Duration::from_millis(500);
+/// How long the phone waits for the transport to answer a committed swipe;
+/// mirrors `NOW_PLAYING_ANSWER_GRACE_MS` in `NowPlayingSheet.kt`.
+const TRANSPORT_ANSWER_GRACE: Duration = Duration::from_millis(1_500);
+/// How long the last live shape stays adoptable: the old stream goes stale
+/// after [`LIVE_AUDIO_STALE_AFTER`], and the swipe's new panel may compose up
+/// to [`TRANSPORT_ANSWER_GRACE`] after that. A shape older than this is one the
+/// viewer saw fall away long ago, which must not pop back on screen.
+pub(crate) const ADOPTABLE_SHAPE_MAX_AGE: Duration =
+    LIVE_AUDIO_STALE_AFTER.saturating_add(TRANSPORT_ANSWER_GRACE);
 
 pub(crate) trait MonotonicClock: Send + Sync {
     fn now(&self) -> Duration;
@@ -102,14 +111,17 @@ struct VisualState {
     // the last picture on screen, which reads better than decaying it away
     // for a gap of unknown length.
     awaiting_stream_after_reset: bool,
-    // The bars live PCM last drew while playback ran, kept for
-    // `adoptable_bands`. A swipe's new panel reads it instead of the
-    // displayed bars, which a stop or a transport blip has already decayed
-    // toward the resting shape by the time that panel composes. Deliberately
-    // outlives `note_track_changed`, which clears the display but not this;
-    // only a stored-analysis frame (`ingest_bands`) replaces it, because that
-    // is then what the viewer sees of the new song.
-    last_live_bands: Option<[f32; SPECTRUM_BAND_COUNT]>,
+    // The bars live PCM last drew while playback ran, stamped with the engine
+    // clock time they were drawn at, kept for `adoptable_bands`. A swipe's new
+    // panel reads it instead of the displayed bars, which a stop or a
+    // transport blip has already decayed toward the resting shape by the time
+    // that panel composes. Deliberately outlives `note_track_changed`, which
+    // clears the display but not this. The next live tick replaces it, a
+    // stored-analysis frame (`ingest_bands`) or a user pause
+    // (`set_playback_intended(false)`) clears it, and it expires after
+    // `ADOPTABLE_SHAPE_MAX_AGE`: Media3 keeps playback intended through the
+    // end of the queue or a stall, so no pause ever clears it there.
+    last_live_bands: Option<(Duration, [f32; SPECTRUM_BAND_COUNT])>,
     last_live_audio_at: Option<Duration>,
     live_pressure: BassPressure,
     playing: bool,
@@ -124,6 +136,14 @@ impl VisualState {
             self.last_visual_tick_at = now;
         }
         self.engine.set_playing(playing);
+    }
+
+    /// The last live shape, unless it is older than `ADOPTABLE_SHAPE_MAX_AGE`
+    /// at `now`. The one place that bound is applied.
+    fn fresh_live_bands(&self, now: Duration) -> Option<[f32; SPECTRUM_BAND_COUNT]> {
+        self.last_live_bands
+            .filter(|(drawn_at, _)| now.saturating_sub(*drawn_at) <= ADOPTABLE_SHAPE_MAX_AGE)
+            .map(|(_, bands)| bands)
     }
 }
 
@@ -293,13 +313,27 @@ impl AndroidVisualEngine {
     /// seeds the new song with a shape the viewer never saw at full height,
     /// so its first PCM block pops. This survives `note_track_changed` and a
     /// `set_playing(false)`; a user pause (`set_playback_intended(false)`)
-    /// clears it, because the viewer then sees the resting display.
+    /// clears it, because the viewer then sees the resting display. It also
+    /// expires once the shape is older than the live-audio staleness plus the
+    /// transport's answer grace, so a song that ended or stalled minutes ago
+    /// does not resurrect its last picture on a later swipe.
     pub fn adoptable_bands(&self) -> Vec<f32> {
         let state = self.lock();
+        let now = self.clock.now();
         state
-            .last_live_bands
+            .fresh_live_bands(now)
             .unwrap_or(*state.engine.current_bands())
             .to_vec()
+    }
+
+    /// Whether [`Self::adoptable_bands`] is the last live shape rather than
+    /// the displayed-bars fallback. Exists so the adoption log can name the
+    /// source instead of inferring it from equality. A separate call from
+    /// `adoptable_bands`, so a live tick between the two can disagree; that
+    /// is acceptable for a diagnostic line.
+    pub fn adoptable_bands_are_live(&self) -> bool {
+        let state = self.lock();
+        state.fresh_live_bands(self.clock.now()).is_some()
     }
 
     /// Seeds a freshly created engine with another engine's bar shape.
@@ -506,7 +540,7 @@ impl AndroidVisualEngine {
 
         let advanced = state.engine.advance_by(elapsed);
         if ingested_live_frame {
-            state.last_live_bands = Some(*state.engine.current_bands());
+            state.last_live_bands = Some((now, *state.engine.current_bands()));
         }
         advanced || ingested_live_frame
     }

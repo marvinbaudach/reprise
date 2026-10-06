@@ -53,6 +53,53 @@ fn ac_29_adoptable_bands_survive_a_stop_of_the_old_stream() {
 }
 
 #[test]
+fn ac_29_a_long_stopped_song_does_not_hand_its_old_shape_to_a_later_swipe() {
+    let clock = Arc::new(FakeMonotonicClock::default());
+    let engine = AndroidVisualEngine::with_clock(clock.clone());
+    play_live_tone(&engine, &clock);
+
+    // The queue ended or the stream stalled with playback still intended, so
+    // no pause cleared the shape; minutes later the user swipes.
+    engine.set_playing(false);
+    clock.advance(Duration::from_secs(120));
+    engine.tick();
+
+    assert_eq!(
+        engine.adoptable_bands(),
+        engine.current_bands(),
+        "a shape the viewer saw fall away minutes ago must not pop back on screen"
+    );
+}
+
+#[test]
+fn ac_29_the_last_live_shape_stays_adoptable_until_the_staleness_and_answer_grace_pass() {
+    let clock = Arc::new(FakeMonotonicClock::default());
+    let engine = AndroidVisualEngine::with_clock(clock.clone());
+    play_live_tone(&engine, &clock);
+    let live_shape = engine.current_bands();
+    engine.set_playing(false);
+
+    clock.advance(ADOPTABLE_SHAPE_MAX_AGE);
+    assert_eq!(engine.adoptable_bands(), live_shape);
+    assert!(engine.adoptable_bands_are_live());
+
+    clock.advance(Duration::from_millis(1));
+    engine.tick();
+    assert_eq!(engine.adoptable_bands(), engine.current_bands());
+    assert_ne!(engine.adoptable_bands(), live_shape);
+    assert!(!engine.adoptable_bands_are_live());
+}
+
+#[test]
+fn ac_29_the_adoption_source_flag_names_the_fallback_without_live_audio() {
+    let engine = AndroidVisualEngine::new();
+    engine.set_playing(true);
+    engine.ingest_bands(vec![0.4; 24]);
+
+    assert!(!engine.adoptable_bands_are_live());
+}
+
+#[test]
 fn ac_29_a_track_change_keeps_the_last_live_shape_for_adoption() {
     let clock = Arc::new(FakeMonotonicClock::default());
     let engine = AndroidVisualEngine::with_clock(clock.clone());
