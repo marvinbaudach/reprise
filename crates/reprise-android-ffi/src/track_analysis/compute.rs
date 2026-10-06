@@ -117,15 +117,18 @@ impl AnalysisPcmSink {
         self.cut_short.load(Ordering::Acquire)
     }
 
-    /// What has been decoded so far, read under the session lock the decoder
-    /// pushes through. `None` before one peak bucket is complete and once the
-    /// session has been taken to finish.
+    /// What has been decoded so far. Only the copy of the decoded frames is
+    /// taken under the session lock the decoder pushes through; the picture is
+    /// built after it is released. `None` before one peak bucket is complete
+    /// and once the session has been taken to finish.
     pub(super) fn partial(&self, expected_frames: usize) -> Option<PartialRenderData> {
-        self.session
+        let source = self
+            .session
             .lock()
             .unwrap_or_else(PoisonError::into_inner)
             .as_ref()?
-            .partial(expected_frames)
+            .partial_source();
+        source.render(expected_frames)
     }
 
     fn refused_reason(&self) -> Option<String> {

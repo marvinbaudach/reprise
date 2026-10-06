@@ -17,15 +17,20 @@ use crate::MusicLibrary;
 use super::compute::AnalysisPcmSink;
 
 const MILLIS_PER_SECOND: i64 = 1_000;
+/// The longest duration a track may claim and still report progress: one
+/// week. A duration tag is untrusted input; past this it is taken as wrong
+/// rather than placing the peak buckets against it.
+const MAX_EXPECTED_DURATION_MS: i64 = 7 * 24 * 60 * 60 * MILLIS_PER_SECOND;
 
 /// The track's length in spectrogram frames, `ceil(duration * 20 Hz)`, or
-/// `None` when the duration is unknown (zero or negative): without it the
-/// peak buckets cannot be placed, so such a track reports no progress.
+/// `None` when the duration is unknown (zero or negative) or absurd (longer
+/// than a week): without a believable length the peak buckets cannot be
+/// placed, so such a track reports no progress.
 pub(crate) fn expected_frame_count(duration_ms: i64) -> Option<usize> {
-    if duration_ms <= 0 {
+    if !(1..=MAX_EXPECTED_DURATION_MS).contains(&duration_ms) {
         return None;
     }
-    let frame_milliseconds = duration_ms.saturating_mul(i64::from(SPECTROGRAM_FRAME_RATE_HZ));
+    let frame_milliseconds = duration_ms * i64::from(SPECTROGRAM_FRAME_RATE_HZ);
     usize::try_from((frame_milliseconds + MILLIS_PER_SECOND - 1) / MILLIS_PER_SECOND).ok()
 }
 

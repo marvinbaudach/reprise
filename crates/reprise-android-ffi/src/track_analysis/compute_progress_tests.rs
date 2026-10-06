@@ -289,6 +289,14 @@ fn nav_15d_a_track_without_duration_has_no_expected_length() {
 }
 
 #[test]
+fn nav_15d_an_absurd_duration_has_no_expected_length() {
+    assert_eq!(expected_frame_count(i64::MAX), None);
+    assert_eq!(expected_frame_count(i64::MAX / 20), None);
+    // A full day of audio still reports progress.
+    assert_eq!(expected_frame_count(86_400_000), Some(1_728_000));
+}
+
+#[test]
 fn nav_15d_progress_for_zero_bars_is_none() {
     let (_directory, library, track_id, _music) = library_with_one_track();
     let library = Arc::new(library);

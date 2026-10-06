@@ -15,7 +15,7 @@ use crate::waveform::{TrackRenderData, STORED_PEAK_COUNT};
 
 #[path = "render_data_partial.rs"]
 mod partial;
-pub use partial::PartialRenderData;
+pub use partial::{PartialRenderData, PartialSource};
 
 /// The channel counts of the two layouts whose order is conventional: 5.1 and
 /// 7.1 in WAVE order (FL FR FC LFE BL BR [SL SR]), where the LFE is the fourth
