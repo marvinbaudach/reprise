@@ -104,7 +104,13 @@ def validate_scratch_root(path: pathlib.Path | str) -> pathlib.Path:
     root = pathlib.Path(path).expanduser().resolve(strict=False)
     if root.exists():
         raise FixtureError(f"scratch root already exists: {root}")
-    if not any(root != base and _is_within(root, base) for base in approved_scratch_bases()):
+    bases = approved_scratch_bases()
+    worktree_base = WORKTREE_SCRATCH_BASE.expanduser().resolve(strict=False)
+    # A checkout may itself live under the cache scratch base, so being inside
+    # an approved base is not enough: inside the checkout only its own scratch
+    # parent is allowed.
+    in_checkout = _is_within(root, REPO_ROOT.resolve()) and not _is_within(root, worktree_base)
+    if in_checkout or not any(root != base and _is_within(root, base) for base in bases):
         raise FixtureError(
             "scratch root is protected; use an approved disk-backed Reprise scratch parent"
         )
