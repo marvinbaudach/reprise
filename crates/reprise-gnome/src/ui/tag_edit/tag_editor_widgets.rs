@@ -473,6 +473,16 @@ mod tests {
             .expect("cover picture")
     }
 
+    /// Opening the tag editor must not resolve, decode or load a cover on the
+    /// UI thread: the shared cover loader fills the picture after the dialog
+    /// is presented.
+    ///
+    /// The folder image is a real, decodable PNG. A decodable file is what lets
+    /// the empty paintable prove the guarantee: the synchronous loader this
+    /// replaced (`cover::resolve_source` + `cover::thumbnail`) would find it,
+    /// decode it and set a texture, whereas an undecodable file would fail
+    /// quietly and leave the picture empty either way. The check is on the
+    /// outcome, so it does not depend on how long construction takes.
     #[test]
     #[ignore = "requires a display; run via xvfb-run"]
     fn build_cover_area_returns_a_placeholder_without_touching_the_file() {
@@ -481,17 +491,24 @@ mod tests {
         let temp = tempfile::tempdir().unwrap();
         let track = temp.path().join("track.flac");
         std::fs::write(&track, b"not an audio file").unwrap();
-        std::fs::write(temp.path().join("cover.jpg"), vec![0x5a; 20 * 1024 * 1024]).unwrap();
+        let pixel = [0x5a_u8, 0x5a, 0x5a, 0xff];
+        gdk::MemoryTexture::new(
+            1,
+            1,
+            gdk::MemoryFormat::R8g8b8a8,
+            &glib::Bytes::from(&pixel),
+            4,
+        )
+        .save_to_png(temp.path().join("cover.png"))
+        .expect("write a decodable folder image");
 
-        let started = std::time::Instant::now();
         let (area, picture) = build_cover_area(&[(1, track)], false);
 
-        assert!(
-            started.elapsed() < std::time::Duration::from_millis(50),
-            "building the placeholder performed cover I/O"
-        );
         assert_eq!(cover_picture(&area), picture);
-        assert!(picture.paintable().is_none());
+        assert!(
+            picture.paintable().is_none(),
+            "building the cover area loaded the folder image on the calling thread"
+        );
     }
 
     #[test]
