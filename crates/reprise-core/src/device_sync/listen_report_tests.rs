@@ -459,3 +459,45 @@ fn a_history_insert_failure_rolls_back_the_play_and_acknowledgement() {
         0
     );
 }
+
+#[test]
+fn cue_6_a_phone_listen_of_a_file_cut_into_tracks_credits_none_of_them() {
+    let db = crate::db::Db::open_in_memory().unwrap();
+    for (id, index) in [(5, 2), (6, 1)] {
+        db.conn()
+            .execute(
+                "INSERT INTO tracks (id, path, title, added_at, segment_index, play_count, rating)
+                 VALUES (?1, '/music/live.flac', ?2, 1, ?3, 0, 0)",
+                rusqlite::params![id, format!("Part {index}"), index],
+            )
+            .unwrap();
+        db.conn()
+            .execute(
+                "INSERT INTO device_files
+                 (device_serial, track_id, source_path, source_size, source_mtime,
+                  device_path, device_size, profile_fingerprint, pinned)
+                 VALUES ('phone-a', ?1, '/music/live.flac', 100, 1, 'Live/live.opus', 80,
+                         'opus-v1', 0)",
+                [id],
+            )
+            .unwrap();
+    }
+    let report = ListenReport::new(
+        vec![listen(3, "Live/live.opus", 1_754_600_100)],
+        vec![rating(4, "Live/live.opus", 5, 1_754_600_200)],
+    );
+
+    let summary = apply_listen_report(&db, "phone-a", &report).unwrap();
+
+    assert_eq!((summary.listens_applied, summary.unresolved), (0, 2));
+    assert_eq!(summary.acknowledged_sequence, Some(4));
+    let touched: i64 = db
+        .conn()
+        .query_row(
+            "SELECT count(*) FROM tracks WHERE play_count > 0 OR rating > 0",
+            [],
+            |row| row.get(0),
+        )
+        .unwrap();
+    assert_eq!(touched, 0, "a listen of the whole file is no track's listen");
+}
