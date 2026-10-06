@@ -17,11 +17,12 @@ internal object VisualizerEdgeLog {
         Log.d(VISUALIZER_LOG_TAG, "noteTrackChanged track=$trackId")
     }
 
-    fun adoptShape(adoptable: FloatArray, displayed: FloatArray) {
+    /** [fromLastLive] is the engine's own word for the source, never inferred from equality. */
+    fun adoptShape(adoptable: FloatArray, displayed: FloatArray, fromLastLive: Boolean) {
         Log.d(
             VISUALIZER_LOG_TAG,
             "adoptShape energy=${energy(adoptable)} displayedEnergy=${energy(displayed)} " +
-                "differsFromDisplay=${!adoptable.contentEquals(displayed)}",
+                "fromLastLive=$fromLastLive",
         )
     }
 

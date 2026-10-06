@@ -646,6 +646,7 @@ private class RecordingSceneEngine(
     override fun ingestBands(bands: FloatArray) = Unit
     override fun currentBands(): FloatArray = reportedBands
     override fun adoptableBands(): FloatArray = reportedAdoptableBands ?: reportedBands
+    override fun adoptableBandsAreLive(): Boolean = reportedAdoptableBands != null
     override fun adoptShape(bands: FloatArray) {
         callSequence += "adoptShape"
         adoptedShapes += bands

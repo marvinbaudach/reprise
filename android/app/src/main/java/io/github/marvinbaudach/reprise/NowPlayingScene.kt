@@ -426,7 +426,11 @@ private fun rememberVisualSceneEngine(
         val created = engine
         if (created != null && shouldAdoptLiveShape(live, previousLiveEngine, created)) {
             val adoptable = previousLiveEngine!!.adoptableBands()
-            VisualizerEdgeLog.adoptShape(adoptable, previousLiveEngine.currentBands())
+            VisualizerEdgeLog.adoptShape(
+                adoptable,
+                previousLiveEngine.currentBands(),
+                previousLiveEngine.adoptableBandsAreLive(),
+            )
             adoptable
         } else {
             null

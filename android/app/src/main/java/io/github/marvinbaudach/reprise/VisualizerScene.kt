@@ -44,9 +44,14 @@ internal interface VisualSceneEngine : AutoCloseable {
     /**
      * The shape a panel taking over the live slot should adopt: the last bars live audio drew,
      * which survives a stop or a transport blip that has already decayed [currentBands] by the
-     * time the new panel composes. Falls back to [currentBands] when no live audio has drawn.
+     * time the new panel composes. Falls back to [currentBands] when no live audio has drawn, or
+     * when the last live shape is older than the stale-audio window plus the transport's answer
+     * grace (a song that ended or stalled long ago).
      */
     fun adoptableBands(): FloatArray = currentBands()
+
+    /** Whether [adoptableBands] is the last live shape rather than the [currentBands] fallback. */
+    fun adoptableBandsAreLive(): Boolean = false
 
     /** Seeds a freshly created engine with another engine's [adoptableBands]. */
     fun adoptShape(bands: FloatArray) = Unit
@@ -123,6 +128,8 @@ internal class NativeVisualSceneEngine(
     override fun currentBands(): FloatArray = native.currentBands().toFloatArray()
 
     override fun adoptableBands(): FloatArray = native.adoptableBands().toFloatArray()
+
+    override fun adoptableBandsAreLive(): Boolean = native.adoptableBandsAreLive()
 
     override fun adoptShape(bands: FloatArray) = native.adoptShape(bands.asList())
 
