@@ -22,7 +22,7 @@ FIXTURE = (
 )
 sys.path.insert(0, str(EXPLORE_ROOT))
 
-from actions import ActivateAction, PressAction, ScrollAction, TypeAction  # noqa: E402
+from actions import ActivateAction, ScrollAction, TypeAction  # noqa: E402
 from driver import CliTransport, CuaExecutor, DriverError  # noqa: E402
 from driver_transport import SUCCESS_CONTRACT, response_dispatched  # noqa: E402
 from hover_geometry import WindowGeometry  # noqa: E402
