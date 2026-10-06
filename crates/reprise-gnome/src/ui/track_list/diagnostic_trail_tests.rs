@@ -322,14 +322,25 @@ fn reload_cause_distinguishes_search_clear_sort_and_source_transitions() {
     );
 }
 
+/// The file whose presence in a data root says "this directory is a throwaway
+/// made for the reload measurement". The operator creates it in a fresh
+/// `mktemp -d` root for this measurement only; nothing in the repo does.
+const THROWAWAY_MARKER: &str = ".reprise-throwaway-data-root";
+
 /// Why `data_root` may not host the reload measurement, or `None` when it may.
 ///
 /// The measurement migrates and writes the database at
 /// `reprise_core::db::default_path()`. Run by hand without isolation that is
-/// the owner's real library, so the data root must be one the caller set
-/// explicitly and must not lie under the default `$HOME/.local/share`. A
-/// relative `XDG_DATA_HOME` counts as unset: `dirs` ignores it and falls back
-/// to that default.
+/// the owner's real library. Ruling out the default location is not enough:
+/// an owner whose library lives under a custom `XDG_DATA_HOME` (say `~/data`
+/// exported from a shell profile) passes every check on the path alone, and
+/// nothing in the environment says which root is the real one. So the guard
+/// also demands positive proof: the root must contain [`THROWAWAY_MARKER`],
+/// which the operator creates in a fresh throwaway root, and every root
+/// without it is refused. The path checks stay as the first line: the root
+/// must be one the caller set explicitly (a relative `XDG_DATA_HOME` counts as
+/// unset, `dirs` ignores it) and must not lie under the default
+/// `$HOME/.local/share`, marker or no marker.
 fn unisolated_data_root_reason(
     xdg_data_home: Option<&std::path::Path>,
     home: Option<&std::path::Path>,
@@ -346,6 +357,13 @@ fn unisolated_data_root_reason(
     if root.starts_with(resolved(&home.join(".local/share"))) {
         return Some("XDG_DATA_HOME lies under $HOME/.local/share, the real data directory");
     }
+    let marked = std::fs::symlink_metadata(root.join(THROWAWAY_MARKER))
+        .is_ok_and(|marker| marker.file_type().is_file());
+    if !marked {
+        return Some(
+            "XDG_DATA_HOME has no .reprise-throwaway-data-root marker, so it is not proven to be a throwaway directory",
+        );
+    }
     None
 }
 
@@ -360,28 +378,61 @@ fn resolved(path: &std::path::Path) -> std::path::PathBuf {
     }
 }
 
+/// A throwaway-looking data root that carries the marker, as the operator makes it.
+fn marked_data_root() -> tempfile::TempDir {
+    let root = tempfile::tempdir().expect("temp data directory");
+    std::fs::write(root.path().join(THROWAWAY_MARKER), b"").expect("write the marker");
+    root
+}
+
+/// Asserts that `reason` names the check that fired. The roots below do not
+/// exist, so the marker check would refuse every one of them; matching on the
+/// reason is what makes each case prove its own branch.
+fn assert_refused_because(reason: Option<&str>, expected: &str) {
+    let reason = reason.expect("the data root must be refused");
+    assert!(
+        reason.contains(expected),
+        "{reason:?} does not say {expected:?}"
+    );
+}
+
 #[test]
 fn the_reload_measurement_refuses_the_real_or_an_unset_data_root() {
     use std::path::Path;
 
     let home = Some(Path::new("/home/owner"));
-    assert!(unisolated_data_root_reason(None, home).is_some());
-    assert!(unisolated_data_root_reason(Some(Path::new("")), home).is_some());
-    assert!(unisolated_data_root_reason(Some(Path::new("share")), home).is_some());
-    assert!(
-        unisolated_data_root_reason(Some(Path::new("/home/owner/.local/share")), home).is_some()
+    assert_refused_because(
+        unisolated_data_root_reason(None, home),
+        "XDG_DATA_HOME is not set",
     );
-    assert!(
-        unisolated_data_root_reason(Some(Path::new("/home/owner/.local/share/x")), home).is_some()
+    assert_refused_because(
+        unisolated_data_root_reason(Some(Path::new("")), home),
+        "XDG_DATA_HOME is not set",
     );
-    assert!(unisolated_data_root_reason(Some(Path::new("/tmp/xdg-data")), None).is_some());
+    assert_refused_because(
+        unisolated_data_root_reason(Some(Path::new("share")), home),
+        "XDG_DATA_HOME is relative",
+    );
+    assert_refused_because(
+        unisolated_data_root_reason(Some(Path::new("/home/owner/.local/share")), home),
+        "under $HOME/.local/share",
+    );
+    assert_refused_because(
+        unisolated_data_root_reason(Some(Path::new("/home/owner/.local/share/x")), home),
+        "under $HOME/.local/share",
+    );
+    let marked = marked_data_root();
+    assert_refused_because(
+        unisolated_data_root_reason(Some(marked.path()), None),
+        "HOME is not set",
+    );
 }
 
 #[cfg(unix)]
 #[test]
 fn the_reload_measurement_refuses_a_data_root_behind_a_symlinked_default() {
     let home = tempfile::tempdir().expect("temp home");
-    let real = tempfile::tempdir().expect("temp data directory");
+    let real = marked_data_root();
     std::fs::create_dir_all(home.path().join(".local")).expect("create .local");
     std::os::unix::fs::symlink(real.path(), home.path().join(".local/share"))
         .expect("link the default data directory");
@@ -389,32 +440,88 @@ fn the_reload_measurement_refuses_a_data_root_behind_a_symlinked_default() {
     assert!(
         unisolated_data_root_reason(Some(&resolved(real.path())), Some(&resolved(home.path())))
             .is_some(),
-        "a data root that the default `.local/share` link resolves to is the real directory"
+        "a data root that the default `.local/share` link resolves to is the real directory, \
+         marker or not"
     );
 }
 
 #[test]
-fn the_reload_measurement_accepts_an_isolated_data_root() {
+fn the_reload_measurement_refuses_a_marked_root_under_the_default_data_directory() {
+    let home = tempfile::tempdir().expect("temp home");
+    let default_root = home.path().join(".local/share/reprise-data");
+    std::fs::create_dir_all(&default_root).expect("create the default data directory");
+    std::fs::write(default_root.join(THROWAWAY_MARKER), b"").expect("write the marker");
+
+    assert!(
+        unisolated_data_root_reason(Some(&default_root), Some(home.path())).is_some(),
+        "the marker cannot launder the real data directory"
+    );
+}
+
+#[test]
+fn the_reload_measurement_refuses_a_custom_root_without_the_marker() {
+    let home = tempfile::tempdir().expect("temp home");
+    let custom = tempfile::tempdir().expect("an owner's custom XDG_DATA_HOME");
+    std::fs::create_dir_all(custom.path().join("reprise")).expect("create the library directory");
+    std::fs::write(custom.path().join("reprise/reprise.db"), b"").expect("a real-looking database");
+
+    let reason = unisolated_data_root_reason(Some(custom.path()), Some(home.path()))
+        .expect("an unmarked root is refused, wherever it lives");
+    assert!(reason.contains(THROWAWAY_MARKER), "{reason}");
+}
+
+#[test]
+fn the_reload_measurement_accepts_a_marked_isolated_data_root() {
     use std::path::Path;
 
-    let home = Some(Path::new("/home/owner"));
+    let home = tempfile::tempdir().expect("temp home");
+    let marked = marked_data_root();
     assert_eq!(
-        unisolated_data_root_reason(Some(Path::new("/tmp/xdg-data")), home),
+        unisolated_data_root_reason(Some(marked.path()), Some(home.path())),
         None
     );
     assert_eq!(
-        unisolated_data_root_reason(Some(Path::new("/home/owner/.local/sharing")), home),
+        unisolated_data_root_reason(Some(marked.path()), Some(Path::new("/home/owner"))),
+        None
+    );
+
+    let sibling = home.path().join(".local/sharing");
+    std::fs::create_dir_all(&sibling).expect("create the sibling");
+    std::fs::write(sibling.join(THROWAWAY_MARKER), b"").expect("write the marker");
+    assert_eq!(
+        unisolated_data_root_reason(Some(&sibling), Some(home.path())),
         None,
         "a sibling that merely shares the prefix is not the real directory"
     );
-    assert_eq!(
-        unisolated_data_root_reason(Some(Path::new("/home/owner/scratch/data")), home),
-        None
-    );
 }
 
 #[test]
-#[ignore = "measurement: needs XDG_DATA_HOME set to a throwaway directory outside $HOME/.local/share; panics otherwise, and run it only through the isolated Xvfb recipe"]
+fn the_reload_measurement_does_not_take_a_directory_for_the_marker() {
+    let home = tempfile::tempdir().expect("temp home");
+    let root = tempfile::tempdir().expect("temp data directory");
+    std::fs::create_dir(root.path().join(THROWAWAY_MARKER)).expect("a directory by that name");
+
+    assert!(unisolated_data_root_reason(Some(root.path()), Some(home.path())).is_some());
+}
+
+/// Prints reload latency samples against whatever library sits in
+/// `XDG_DATA_HOME`. Run it only through the isolated recipe in `AGENTS.md`,
+/// with a fresh `mktemp -d` data directory. The marker is this measurement's
+/// own extra step, which the general recipe does not take:
+///
+/// ```text
+/// data=$(mktemp -d); touch "$data/.reprise-throwaway-data-root"
+/// dbus-run-session -- xvfb-run -a env XDG_DATA_HOME=$data XDG_CACHE_HOME=$(mktemp -d) \
+///   GDK_BACKEND=x11 WAYLAND_DISPLAY= REPRISE_AUDIO_SINK=fakesink <test binary> \
+///   --ignored --exact <this test> --nocapture
+/// ```
+///
+/// Without the marker it refuses, see [`unisolated_data_root_reason`]. The test
+/// creates no library of its own: `$data/reprise/reprise.db` must already be a
+/// migrated database seeded from a generated fixture, never a copy of the real
+/// one. On an empty root it stops at `SchemaNotReady`.
+#[test]
+#[ignore = "measurement: needs XDG_DATA_HOME set to a throwaway directory outside $HOME/.local/share that holds a .reprise-throwaway-data-root marker file; panics otherwise, and run it only through the isolated Xvfb recipe"]
 fn measure_generated_library_reload_latency() {
     use gtk4::prelude::*;
 

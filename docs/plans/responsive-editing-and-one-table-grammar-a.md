@@ -73,7 +73,7 @@ list does.
 
 Tests, written first:
 
-- `tag_editor_widgets.rs`: `build_cover_area_returns_a_placeholder_without_touching_the_file`
+- `tag_editor_widgets.rs`: `build_cover_area_returns_an_empty_placeholder_without_loading_a_cover`
   — a fixture path under `tempfile` with a 20 MB junk "cover" next to it; assert
   the returned picture has no paintable and that the call returns in under
   50 ms (upper bound generous on purpose; the point is "no decode", not a
