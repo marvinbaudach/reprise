@@ -16,90 +16,60 @@
 //! Two safety nets keep the listener from making a stuck process unkillable:
 //! a repeat signal ends the process once the first request has had its grace,
 //! and a watchdog ends it if the main loop never reads the first request at all
-//! (see `termination_relay`).
+//! (see `reprise_platform_linux::termination`).
 
-use std::io;
 use std::rc::Rc;
-use std::sync::{Arc, OnceLock};
 
 use gtk4::gio;
 use gtk4::glib;
 use gtk4::prelude::*;
 use libadwaita as adw;
-use signal_hook::consts::{SIGHUP, SIGINT, SIGTERM};
-use signal_hook::iterator::Signals;
-use signal_hook::low_level::emulate_default_handler;
+use reprise_platform_linux::termination::{self, Relay};
 
 use crate::ui::session_restore::live_geometry;
 use crate::ui::session_save::SessionSaver;
-use crate::ui::termination_relay::{self, Shared};
-
-const TERMINATION_SIGNALS: [i32; 3] = [SIGTERM, SIGHUP, SIGINT];
-
-/// The one listener of the process; signal dispositions are process-wide.
-static LISTENER: OnceLock<Listener> = OnceLock::new();
-
-struct Listener {
-    shared: Arc<Shared>,
-    received: async_channel::Receiver<i32>,
-}
 
 /// Arms the listener for `window`. Before this runs, a termination request
 /// keeps its default disposition: the process ends and there is no session to
 /// save yet. A signal the process inherited as ignored stays ignored.
 pub(super) fn wire(window: &adw::ApplicationWindow, saver: Rc<SessionSaver>) {
-    let listener = match start() {
-        Ok(Some(listener)) => listener,
+    let relay = match termination::start() {
+        Ok(Some(relay)) => relay.clone(),
         Ok(None) => return,
         Err(error) => {
             tracing::warn!(%error, "could not listen for termination signals; the session is saved on window close only");
             return;
         }
     };
-    glib::spawn_future_local(serve(
-        listener.received.clone(),
-        listener.shared.clone(),
-        window.downgrade(),
-        saver,
-    ));
+    glib::spawn_future_local(serve(relay, window.downgrade(), saver));
 }
 
 /// The main-loop half: waits for the first request and acts on it.
 async fn serve(
-    received: async_channel::Receiver<i32>,
-    shared: Arc<Shared>,
+    relay: Relay,
     window: glib::WeakRef<adw::ApplicationWindow>,
     saver: Rc<SessionSaver>,
 ) {
-    let Ok(signal) = received.recv().await else {
+    let Some(signal) = relay.take_request().await else {
         return;
     };
-    shared.mark_taken(signal);
     tracing::info!(signal, "termination requested; saving the session");
     handle_request(window.upgrade().as_ref(), &saver);
 }
 
-/// Stops acting on termination requests once the application has stopped
-/// running: nothing is left to save, so a first signal during teardown ends
-/// the process as it did before START-5, including one still waiting unread.
-/// A repeat of a request already handled keeps its grace, so it cannot cut the
-/// teardown short.
+/// Tells the relay the application has stopped running (see
+/// [`Relay::release`]).
 pub(crate) fn release() {
-    let Some(listener) = LISTENER.get() else {
-        return;
-    };
-    listener.shared.release();
-    if let Ok(signal) = listener.received.try_recv() {
-        end_process(signal);
+    if let Some(relay) = termination::running() {
+        relay.release();
     }
 }
 
 /// The last thing the process does, after the application has run and been
-/// torn down: when a termination request was handled, end the process by that
-/// signal's default action so its exit status says so. A normal exit returns.
+/// torn down (see [`Relay::finish`]).
 pub(crate) fn finish() {
-    if let Some(listener) = LISTENER.get() {
-        termination_relay::end_as_handled(&listener.shared, end_process);
+    if let Some(relay) = termination::running() {
+        relay.finish();
     }
 }
 
@@ -138,40 +108,6 @@ pub(super) fn handle(window: &adw::ApplicationWindow, saver: &SessionSaver) {
     window.close();
     if let Some(application) = application {
         application.quit();
-    }
-}
-
-fn start() -> io::Result<Option<&'static Listener>> {
-    termination_relay::start_once(&LISTENER, register)
-}
-
-/// Installs the signal handlers and the listener thread.
-fn register() -> io::Result<Option<Listener>> {
-    let signals = termination_relay::armed(
-        &TERMINATION_SIGNALS,
-        reprise_platform_linux::signals::signal_is_ignored,
-    );
-    if signals.is_empty() {
-        tracing::info!("every termination signal was inherited as ignored; leaving them ignored");
-        return Ok(None);
-    }
-    let mut signals = Signals::new(signals)?;
-    let (sender, received) = async_channel::bounded(1);
-    let shared = Arc::new(Shared::default());
-    termination_relay::spawn(
-        move |deliver| signals.forever().for_each(deliver),
-        shared.clone(),
-        sender,
-        end_process,
-        termination_relay::WEDGE_LIMIT,
-    )?;
-    Ok(Some(Listener { shared, received }))
-}
-
-/// Ends the process the way `signal` normally would.
-fn end_process(signal: i32) {
-    if let Err(error) = emulate_default_handler(signal) {
-        tracing::error!(%error, signal, "could not end the process on a termination signal");
     }
 }
 

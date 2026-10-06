@@ -46,11 +46,6 @@ gettext-rs = { version = "0.8.0", features = ["gettext-system"] }
 oo7 = { version = "0.6", default-features = false, features = ["async-std", "native_crypto"] }
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
-# Not a new package: `reprise-cli` already depends on it at this version.
-# glib 0.22 has no `unix_signal_add`, so a listener thread turns SIGTERM, SIGHUP
-# and SIGINT into a channel message the main loop handles (START-5), and
-# `emulate_default_handler` lets a repeated signal still end a wedged shutdown.
-signal-hook = "0.4"
 chrono = { version = "0.4", default-features = false, features = ["clock"] }
 [dev-dependencies]
 # `time` gives the display tests a safe per-thread CPU clock, so a frame budget

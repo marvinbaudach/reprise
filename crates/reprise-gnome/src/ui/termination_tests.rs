@@ -14,6 +14,7 @@ use reprise_core::playback::{AudioEffects, PlaybackBackend, PlaybackError, Playb
 use reprise_core::queue::{QueueSnapshot, Repeat};
 use reprise_core::up_next::{QueueItem, UpNextQueue};
 use reprise_core::view_source::ViewSource;
+use reprise_platform_linux::termination::{SIGHUP, SIGTERM};
 
 use super::*;
 use crate::ui::nav_history::{NavHistory, NavPlace};
@@ -294,15 +295,11 @@ fn start_5c_a_repeat_right_after_the_first_request_does_not_end_the_process_befo
     let f = fixture(false);
     f.window.present();
     settle_until_mapped(f._track_list.widget());
-    let shared = Arc::new(Shared::default());
-    let (sender, received) = async_channel::bounded(1);
     let (feed, source) = mpsc::channel();
     let ended = Arc::new(AtomicUsize::new(0));
     let ended_by_thread = ended.clone();
-    let listener = termination_relay::spawn(
+    let (relay, listener) = termination::spawn_relay(
         move |deliver| source.into_iter().for_each(deliver),
-        shared.clone(),
-        sender,
         move |_| {
             ended_by_thread.fetch_add(1, Ordering::SeqCst);
         },
@@ -310,12 +307,12 @@ fn start_5c_a_repeat_right_after_the_first_request_does_not_end_the_process_befo
     )
     .unwrap();
     // A closing terminal's two SIGHUPs, or SIGTERM followed by SIGHUP.
-    feed.send(signal_hook::consts::SIGTERM).unwrap();
-    feed.send(signal_hook::consts::SIGHUP).unwrap();
+    feed.send(SIGTERM).unwrap();
+    feed.send(SIGHUP).unwrap();
     let (window, saver) = (f.window.downgrade(), f.saver.clone());
 
     let quit_in_time = run_until_quit(&f.app, move || {
-        glib::spawn_future_local(serve(received, shared, window, saver));
+        glib::spawn_future_local(serve(relay, window, saver));
     });
     drop(feed);
     listener.join().unwrap();
