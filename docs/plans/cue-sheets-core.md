@@ -2,7 +2,7 @@
 slug: cue-sheets-core
 worktree: ../reprise-cue-sheets-core
 branch: feature/cue-sheets-core
-phase: refactored
+phase: shipped
 codex_session:
 created: 2026-10-04
 ---
