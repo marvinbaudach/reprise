@@ -152,6 +152,14 @@ open class ReprisePlaybackService : MediaLibraryService() {
     private var analysisFinal = false
     private var analysisRequestGeneration = 0L
     private var analysisBackfillRunning = false
+    private val analysisBackfillStopGrace = BackfillStopGrace(
+        handler = Handler(Looper.getMainLooper()),
+        graceMs = ANALYSIS_BACKFILL_STOP_GRACE_MS,
+        onExpired = {
+            analysisBackfillRunning = false
+            cancelAnalysisBackfill()
+        },
+    )
     private val analysisBackfillListener = object : TrackAnalysisProgressListener {
         override fun onProgress(progress: TrackAnalysisProgress) {
             Log.i(
@@ -373,11 +381,8 @@ open class ReprisePlaybackService : MediaLibraryService() {
         // Synchronous and direct rather than through the overridable,
         // scope-launched `cancelAnalysisBackfill`: the scope is cancelled
         // right below, which would race an async call and drop it.
-        try {
-            sharedMusicLibrary().cancelTrackAnalysisBackfill()
-        } catch (error: Exception) {
-            Log.w(TAG_ANALYSIS, "Could not cancel the track analysis backfill", error)
-        }
+        analysisBackfillStopGrace.clear()
+        cancelAnalysisBackfillNow()
         analysisScope.cancel()
         analysisBackfillScope.cancel()
         analysisSupersedeScope.cancel()
@@ -432,13 +437,29 @@ open class ReprisePlaybackService : MediaLibraryService() {
             analysisRequestGeneration += 1L
             trackAnalysisRequest(currentTrackId, analysisRequestGeneration)
         }
+        val powerSaveMode = isPowerSaveModeOn()
         val shouldRun = analysisBackfillShouldRun(
-            playing = snapshot.state == AndroidPlaybackState.PLAYING,
-            powerSaveMode = isPowerSaveModeOn(),
+            playing = snapshot.state.hasPlayIntent,
+            powerSaveMode = powerSaveMode,
         )
-        if (shouldRun != analysisBackfillRunning) {
-            analysisBackfillRunning = shouldRun
-            if (shouldRun) startAnalysisBackfill() else cancelAnalysisBackfill()
+        when {
+            shouldRun -> {
+                analysisBackfillStopGrace.clear()
+                if (!analysisBackfillRunning) {
+                    analysisBackfillRunning = true
+                    startAnalysisBackfill()
+                }
+            }
+            // The user asked for less work: no grace.
+            powerSaveMode -> {
+                analysisBackfillStopGrace.clear()
+                if (analysisBackfillRunning) {
+                    analysisBackfillRunning = false
+                    cancelAnalysisBackfill()
+                }
+            }
+            // Any other departure from play intent is given the grace period.
+            analysisBackfillRunning -> analysisBackfillStopGrace.schedule()
         }
     }
 
@@ -523,6 +544,19 @@ open class ReprisePlaybackService : MediaLibraryService() {
     internal open fun cancelAnalysisBackfill() {
         analysisBackfillScope.launch {
             sharedMusicLibrary().cancelTrackAnalysisBackfill()
+        }
+    }
+
+    /**
+     * Synchronous and direct rather than through the scope-launched
+     * [cancelAnalysisBackfill]: `onDestroy` cancels that scope right after,
+     * which would race an async call and drop it.
+     */
+    internal open fun cancelAnalysisBackfillNow() {
+        try {
+            sharedMusicLibrary().cancelTrackAnalysisBackfill()
+        } catch (error: Exception) {
+            Log.w(TAG_ANALYSIS, "Could not cancel the track analysis backfill", error)
         }
     }
 

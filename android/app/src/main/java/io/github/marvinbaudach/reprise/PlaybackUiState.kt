@@ -148,5 +148,5 @@ internal fun AndroidPlaybackSnapshot.toUiState(): PlaybackUiState = PlaybackUiSt
     error = error,
 )
 
-private val AndroidPlaybackState.hasPlayIntent: Boolean
+internal val AndroidPlaybackState.hasPlayIntent: Boolean
     get() = this == AndroidPlaybackState.PLAYING || this == AndroidPlaybackState.BUFFERING
