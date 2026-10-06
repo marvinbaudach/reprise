@@ -5,6 +5,15 @@ mod text;
 pub use parse::parse;
 pub use segments::{resolve_file, segments, CueSegment};
 
+/// A sheet is a few kilobytes; one that claims more is not a sheet. The cap holds
+/// for a sheet beside its audio and one embedded in it alike.
+pub const MAX_SHEET_BYTES: usize = 1 << 20;
+
+/// More tracks than any release has, ten times a CD's 99. Every track is a row
+/// written while the scan holds the database writer, so a sheet that claims more
+/// is refused rather than written.
+pub const MAX_TRACKS: usize = 999;
+
 /// A position in CD frames: 75 per second, as written in `MM:SS:FF`.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord)]
 pub struct Frames(pub u32);
@@ -42,6 +51,10 @@ pub struct CueTrack {
 pub enum CueError {
     #[error("CUE sheet contains no tracks")]
     EmptySheet,
+    #[error("CUE sheet is larger than a CUE sheet can be")]
+    TooLarge,
+    #[error("CUE sheet has more than {limit} tracks")]
+    TooManyTracks { limit: usize },
     #[error("CUE sheet has no audio tracks")]
     NoAudioTracks,
     #[error("CUE sheet has invalid text encoding")]

@@ -91,7 +91,7 @@ fn a_broken_embedded_sheet_keeps_the_file_whole_and_is_reported_against_it() {
     );
 }
 
-fn embed_sheet(path: &Path, sheet: &str) {
+pub(super) fn embed_sheet(path: &Path, sheet: &str) {
     let mut flac = lofty::flac::FlacFile::read_from(
         &mut std::fs::File::open(path).unwrap(),
         lofty::config::ParseOptions::new(),

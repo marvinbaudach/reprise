@@ -32,9 +32,6 @@ use crate::models::ImportErrorKind;
 
 use super::{is_audio_file, now_unix, scanner_file_metadata, ScanError};
 
-/// A sheet is a few kilobytes; one that claims more is not a sheet.
-const MAX_SHEET_BYTES: u64 = 1 << 20;
-
 /// The sheet that governs an audio file, as far as the catalog needs to know
 /// to decide whether the file is up to date.
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -384,14 +381,12 @@ fn read_sheet(source: &dyn LibrarySource, path: &Path) -> Result<Vec<u8>, String
     let reader = source
         .open_read(path)
         .map_err(|error| format!("the sheet cannot be read: {error}"))?;
+    // One byte past the cap is enough for `cue::parse` to refuse the sheet.
     let mut bytes = Vec::new();
     reader
-        .take(MAX_SHEET_BYTES + 1)
+        .take(cue::MAX_SHEET_BYTES as u64 + 1)
         .read_to_end(&mut bytes)
         .map_err(|error| format!("the sheet cannot be read: {error}"))?;
-    if bytes.len() as u64 > MAX_SHEET_BYTES {
-        return Err("the sheet is larger than a CUE sheet can be".to_string());
-    }
     Ok(bytes)
 }
 

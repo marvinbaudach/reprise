@@ -449,3 +449,34 @@ fn ignores_junk_after_a_closing_quote() {
     assert_eq!(sheet.title, "Album");
     assert_eq!(sheet.files[0].tracks[0].title, "Song");
 }
+
+#[test]
+fn rejects_a_sheet_larger_than_a_sheet_can_be() {
+    let mut bytes = b"FILE \"a.flac\" WAVE\n  TRACK 01 AUDIO\n    INDEX 01 00:00:00\n".to_vec();
+    bytes.resize(super::MAX_SHEET_BYTES + 1, b' ');
+
+    assert_eq!(parse(&bytes), Err(CueError::TooLarge));
+}
+
+#[test]
+fn rejects_a_sheet_with_more_tracks_than_a_sheet_can_hold() {
+    let mut text = String::from("FILE \"a.flac\" WAVE\n");
+    for number in 1..=super::MAX_TRACKS + 1 {
+        let (minutes, seconds) = (number / 60, number % 60);
+        text.push_str(&format!(
+            "  TRACK {number:02} AUDIO\n    INDEX 01 {minutes:02}:{seconds:02}:00\n"
+        ));
+    }
+
+    assert_eq!(
+        parse(text.as_bytes()),
+        Err(CueError::TooManyTracks {
+            limit: super::MAX_TRACKS
+        })
+    );
+    let within: String = text
+        .split_inclusive('\n')
+        .take(1 + 2 * super::MAX_TRACKS)
+        .collect();
+    assert!(parse(within.as_bytes()).is_ok());
+}
