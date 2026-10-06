@@ -30,6 +30,8 @@ import org.robolectric.annotation.Config
 import org.robolectric.annotation.GraphicsMode
 import uniffi.reprise_android_ffi.AndroidColorScheme
 
+private const val MAX_FRAMES_TO_SWAP = 12
+
 /** The analysis claim is pixels: bars and plain fallback must really paint differently. */
 @RunWith(RobolectricTestRunner::class)
 @Config(sdk = [36], qualifiers = "w500dp-h200dp")
@@ -95,7 +97,8 @@ class SpectralSeekTrackPixelsTest {
 
     @Test
     fun nav_15d_final_bars_replace_the_partial() {
-        showTrack(positionMs = 0)
+        // A cue revision makes a fresh bar swap build in; the swap from a partial must not.
+        showTrack(positionMs = 0, cueRevision = 1)
         analysis.partial(
             PartialTrackAnalysis(
                 coveredFraction = 0.5f,
@@ -106,15 +109,62 @@ class SpectralSeekTrackPixelsTest {
         compose.waitForIdle()
         assertTrue("the partial never painted", render().redInk(0, 250) > 40)
 
+        compose.mainClock.autoAdvance = false
         analysis.answer(List(80) { SpectralBar(false, 0.9f, 0.0, 1.0, 0.0) })
+        var swapped: PixelMap? = null
+        repeat(MAX_FRAMES_TO_SWAP) {
+            if (swapped == null) {
+                compose.mainClock.advanceTimeByFrame()
+                render().takeIf { it.redInk(0, it.width) == 0 }?.let { swapped = it }
+            }
+        }
+        assertTrue("the final bars never replaced the partial", swapped != null)
+        repeat(2) { compose.mainClock.advanceTimeByFrame() }
+        val afterEffects = render()
+        compose.mainClock.autoAdvance = true
         compose.waitForIdle()
         val final = render()
+
+        assertEquals(
+            "the final bars grew in again instead of replacing the partial at full height",
+            0,
+            swapped!!.differenceCount(final),
+        )
+        assertEquals(0, afterEffects.differenceCount(final))
 
         assertEquals("the partial bars were still painted", 0, final.redInk(0, final.width))
         assertTrue(
             "the final bars did not span the right half",
             final.greenInk(final.width / 2, final.width) > 40,
         )
+    }
+
+    @Test
+    fun nav_15d_a_poll_before_the_revision_bump_keeps_the_partial() {
+        showTrack(positionMs = 0)
+        analysis.partial(halfDecoded())
+        compose.waitForIdle()
+        assertTrue("the partial never painted", render().redInk(0, 250) > 40)
+
+        // The decode stored its result: the poll sees nothing, the revision has not moved yet.
+        compose.mainClock.autoAdvance = false
+        analysis.dropProgressWithoutRevision()
+        compose.mainClock.advanceTimeBy(2 * ANALYSIS_PROGRESS_POLL_MS)
+
+        assertTrue("the partial flashed away", render().redInk(0, 250) > 40)
+    }
+
+    @Test
+    fun nav_15d_a_decode_that_ends_without_a_result_clears_the_partial() {
+        showTrack(positionMs = 0)
+        analysis.partial(halfDecoded())
+        compose.waitForIdle()
+        assertTrue("the partial never painted", render().redInk(0, 250) > 40)
+
+        analysis.partial(null)
+        compose.waitForIdle()
+
+        assertEquals(0, render().redInk(0, 500))
     }
 
     @Test
@@ -158,7 +208,13 @@ class SpectralSeekTrackPixelsTest {
         assertTrue("the played fraction has no full-height accent marker", brightMarkerPixels >= 20)
     }
 
-    private fun showTrack(positionMs: Long = 120_000) {
+    private fun halfDecoded() = PartialTrackAnalysis(
+        coveredFraction = 0.5f,
+        bars = List(40) { SpectralBar(false, 0.9f, 1.0, 0.0, 0.0) },
+        frames = SpectrogramFrames(bandCount = 2, frameRateHz = 20, cells = byteArrayOf()),
+    )
+
+    private fun showTrack(positionMs: Long = 120_000, cueRevision: Int = 0) {
         val theme = MobileThemeSelection(
             palette = MobileTheme.NOCTURNE,
             colorScheme = AndroidColorScheme.SYSTEM,
@@ -171,7 +227,7 @@ class SpectralSeekTrackPixelsTest {
                         PlainSeekTrack(positionMs, 120_000)
                     } else {
                         CompositionLocalProvider(LocalTrackAnalysis provides analysis) {
-                            SpectralSeekTrack(9, positionMs, 120_000)
+                            SpectralSeekTrack(9, positionMs, 120_000, cueRevision)
                         }
                     }
                 }
@@ -233,6 +289,10 @@ private class PixelAnalysis : TrackAnalysisPort {
     fun partial(answer: PartialTrackAnalysis?) {
         progress = answer
         revision += 1L
+    }
+
+    fun dropProgressWithoutRevision() {
+        progress = null
     }
 
     override fun prepare(trackId: Long) = Unit

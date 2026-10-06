@@ -14,6 +14,8 @@ import androidx.compose.ui.unit.dp
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.isActive
 
+private const val NEVER_SEEN = -1L
+
 /** How often a surface without final analysis asks the running decode for more. */
 internal const val ANALYSIS_PROGRESS_POLL_MS = 1_000L
 
@@ -32,10 +34,21 @@ internal fun rememberAnalysisProgress(
     active: Boolean,
 ): PartialTrackAnalysis? {
     var progress by remember(trackId, count) { mutableStateOf<PartialTrackAnalysis?>(null) }
+    val lastSeenAtRevision = remember(trackId, count) { longArrayOf(NEVER_SEEN) }
     LaunchedEffect(analysis, trackId, count, revision, active) {
         if (!active) return@LaunchedEffect
         while (isActive) {
-            analysis.loadProgress(trackId, count) { answer -> progress = answer }
+            analysis.loadProgress(trackId, count) { answer ->
+                if (answer != null) {
+                    lastSeenAtRevision[0] = revision
+                    progress = answer
+                } else if (lastSeenAtRevision[0] != revision) {
+                    // Nothing new since the last import attempt ended: the decode is gone
+                    // without a result. A null before that is the moment between the
+                    // decode's store and the revision bump that delivers the final data.
+                    progress = null
+                }
+            }
             delay(ANALYSIS_PROGRESS_POLL_MS)
         }
     }

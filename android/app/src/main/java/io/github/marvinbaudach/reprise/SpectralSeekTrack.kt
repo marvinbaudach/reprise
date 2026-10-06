@@ -13,6 +13,7 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -27,6 +28,7 @@ import androidx.compose.ui.graphics.nativeCanvas
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.unit.dp
 import io.github.marvinbaudach.reprise.ui.theme.spectralColour
+import java.util.concurrent.atomic.AtomicBoolean
 import kotlin.math.floor
 import kotlin.math.min
 
@@ -72,6 +74,7 @@ internal fun SpectralSeekTrack(
         }
 
         val ready = bars
+        val partialSeen = remember(trackId) { AtomicBoolean(false) }
         val partial = rememberAnalysisProgress(
             analysis, trackId, count, revision, active = ready.isNullOrEmpty(),
         )
@@ -80,13 +83,15 @@ internal fun SpectralSeekTrack(
             if (partial == null || partial.bars.isEmpty()) {
                 PlainSeekTrack(positionMs, durationMs)
             } else {
-                // No build animation for a partial picture: it snaps in and grows.
+                // No build animation for a partial picture: it snaps in and grows, and the
+                // final bars replace it at full height instead of growing in again.
+                SideEffect { partialSeen.set(true) }
+                LaunchedEffect(trackId) { buildElapsed.snapTo(PARTIAL_BUILD_ELAPSED_MS) }
                 SpectralBars(
                     partial.bars,
                     positionMs,
                     durationMs,
-                    buildElapsedMs = WAVEFORM_BUILD_MS +
-                        MAXIMUM_SPECTRAL_BAR_COUNT * WAVEFORM_STAGGER_MS.toFloat(),
+                    buildElapsedMs = PARTIAL_BUILD_ELAPSED_MS,
                     coveredFraction = partial.coveredFraction,
                 )
             }
@@ -94,7 +99,8 @@ internal fun SpectralSeekTrack(
             val buildDuration = WAVEFORM_BUILD_MS +
                 (ready.size - 1).coerceAtLeast(0) * WAVEFORM_STAGGER_MS
             LaunchedEffect(trackId, cueRevision, animationsEnabled) {
-                if (!shouldBuild) {
+                val replacesPartial = partialSeen.getAndSet(false)
+                if (!shouldBuild || replacesPartial) {
                     buildElapsed.snapTo(buildDuration.toFloat())
                 } else {
                     buildElapsed.snapTo(0f)
@@ -230,4 +236,6 @@ private fun androidx.compose.ui.graphics.drawscope.DrawScope.drawSeekMarker(
 
 private const val WAVEFORM_BUILD_MS = 560
 private const val WAVEFORM_STAGGER_MS = 5
+private const val PARTIAL_BUILD_ELAPSED_MS =
+    (WAVEFORM_BUILD_MS + MAXIMUM_SPECTRAL_BAR_COUNT * WAVEFORM_STAGGER_MS).toFloat()
 private val WAVEFORM_BUILD_EASING = CubicBezierEasing(0.22f, 1f, 0.36f, 1f)
