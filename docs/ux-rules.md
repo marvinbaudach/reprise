@@ -4876,6 +4876,10 @@ STYLE-1).
   which were a known gap, and states the dimming a rise inside the span
   leaves.*
 
+  **Swipes on the phone.** On the phone, a swipe to another song hands the new
+  song's bars the outgoing song's last live shape, never an already decayed
+  one.
+
 - **AC-24** [active] [gtk] — The reactive light lives on the panel's blurred
   cover bloom, the cover in the player bar and the playhead, nowhere else; the
   panel cover itself deliberately keeps variant 4b's static shadow. The bloom

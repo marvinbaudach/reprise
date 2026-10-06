@@ -34,13 +34,26 @@ internal interface VisualSceneEngine : AutoCloseable {
     /**
      * The engine's currently displayed bar values. A panel taking over the
      * live slot during a swipe gets a new lease over the shared live engine.
-     * Its explicit `noteTrackChanged()` resets that engine's CAVA history;
-     * reading before the reset and passing the shape to [adoptShape] carries
-     * the displayed bars across it (see [shouldAdoptLiveShape]).
+     * Its explicit `noteTrackChanged()` resets that engine's CAVA history; the
+     * shape it carries across that reset is [adoptableBands], read before the
+     * reset (see [shouldAdoptLiveShape]), because the display may already have
+     * decayed.
      */
     fun currentBands(): FloatArray = FloatArray(0)
 
-    /** Seeds a freshly created engine with another engine's [currentBands]. */
+    /**
+     * The shape a panel taking over the live slot should adopt: the last bars live audio drew,
+     * which survives a stop or a transport blip that has already decayed [currentBands] by the
+     * time the new panel composes. Falls back to [currentBands] when no live audio has drawn, or
+     * when the last live shape is older than the stale-audio window plus the transport's answer
+     * grace (a song that ended or stalled long ago).
+     */
+    fun adoptableBands(): FloatArray = currentBands()
+
+    /** Whether [adoptableBands] is the last live shape rather than the [currentBands] fallback. */
+    fun adoptableBandsAreLive(): Boolean = false
+
+    /** Seeds a freshly created engine with another engine's [adoptableBands]. */
     fun adoptShape(bands: FloatArray) = Unit
     fun hasLiveAudio(): Boolean = false
     fun bassPressure(): VisualBassPressure = VisualBassPressure.SILENT
@@ -114,6 +127,10 @@ internal class NativeVisualSceneEngine(
 
     override fun currentBands(): FloatArray = native.currentBands().toFloatArray()
 
+    override fun adoptableBands(): FloatArray = native.adoptableBands().toFloatArray()
+
+    override fun adoptableBandsAreLive(): Boolean = native.adoptableBandsAreLive()
+
     override fun adoptShape(bands: FloatArray) = native.adoptShape(bands.asList())
 
     override fun setPlaybackIntent(playbackIntended: Boolean) =
@@ -133,7 +150,10 @@ internal class NativeVisualSceneEngine(
         )
     }
 
-    override fun resetAudioStream() = native.resetAudioStream()
+    override fun resetAudioStream() {
+        VisualizerEdgeLog.resetAudioStream()
+        native.resetAudioStream()
+    }
 
     override fun resetAudioHistory() = native.resetAudioHistory()
 

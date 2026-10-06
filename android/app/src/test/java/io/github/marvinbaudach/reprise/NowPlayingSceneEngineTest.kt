@@ -241,6 +241,43 @@ class NowPlayingSceneEngineTest {
     }
 
     @Test
+    fun ac_29_the_new_live_panel_adopts_the_last_live_shape_not_the_decayed_display() {
+        // The outgoing audio can stop, or the transport can blip, before the new panel composes
+        // (the `slow-next` case). By then the engine's displayed bars have decayed toward the
+        // resting shape; the panel taking over must adopt the last shape live audio drew instead.
+        val factory = RecordingSceneEngineFactory(distinctEngines = true)
+        val analysis = UnanalysedSpectrogramAnalysis()
+        val surfaceState = MobileSurfaceViewModel()
+        var currentIndex by mutableStateOf(0)
+
+        compose.setContent {
+            SwipeScene(
+                factory,
+                analysis,
+                surfaceState,
+                positionPx = 0f,
+                withNeighbour = true,
+                currentIndex = currentIndex,
+            )
+        }
+        compose.waitForIdle()
+        val outgoing = factory.createdEngines[0]
+        outgoing.setCurrentBands(DECAYED_BANDS)
+        outgoing.setAdoptableBands(SEED_BANDS)
+
+        currentIndex = 1
+        compose.waitForIdle()
+
+        val incoming = factory.createdEngines[1]
+        assertArrayEquals(
+            "the new live engine must adopt the last live shape, not the decayed display",
+            SEED_BANDS,
+            incoming.adoptedShapes.single(),
+            0f,
+        )
+    }
+
+    @Test
     fun shouldAdoptLiveShapeOnlyForANewLivePanelWithADifferentPredecessor() {
         val previous = RecordingSceneEngine()
         val created = RecordingSceneEngine()
@@ -581,6 +618,7 @@ private class RecordingSceneEngine(
     var tintedCalls = 0
         private set
     private var reportedBands: FloatArray = FloatArray(0)
+    private var reportedAdoptableBands: FloatArray? = null
     val adoptedShapes = mutableListOf<FloatArray>()
 
     /**
@@ -595,6 +633,11 @@ private class RecordingSceneEngine(
         reportedBands = bands
     }
 
+    /** What [adoptableBands] reports; until set it mirrors the displayed bars, as the default does. */
+    fun setAdoptableBands(bands: FloatArray) {
+        reportedAdoptableBands = bands
+    }
+
     override fun setAccent(red: Float, green: Float, blue: Float) = Unit
     override fun setPlaying(playing: Boolean) = Unit
     override fun noteTrackChanged() {
@@ -602,6 +645,8 @@ private class RecordingSceneEngine(
     }
     override fun ingestBands(bands: FloatArray) = Unit
     override fun currentBands(): FloatArray = reportedBands
+    override fun adoptableBands(): FloatArray = reportedAdoptableBands ?: reportedBands
+    override fun adoptableBandsAreLive(): Boolean = reportedAdoptableBands != null
     override fun adoptShape(bands: FloatArray) {
         callSequence += "adoptShape"
         adoptedShapes += bands
@@ -643,3 +688,4 @@ private const val DISPLAY_FRAME_MS = 16L
 private val FLAT_RECT_RECORD = listOf(0f, 1f, 1f, 1f, 1f, 0f, 0f, 4f, 0f, 0f, 10f, 10f)
 
 private val SEED_BANDS = floatArrayOf(0.2f, 0.5f, 0.8f)
+private val DECAYED_BANDS = floatArrayOf(0.02f, 0.05f, 0.04f)

@@ -218,6 +218,45 @@ fn reset_stream_holds_the_bar_shape_until_the_next_stream_speaks_or_playback_sto
 }
 
 #[test]
+// The stop bound of the hold, pinned on its own: the test above only stops
+// after the new stream has spoken, which releases the hold by itself and so
+// never proves that `set_playing(false)` clears it. Here the new stream never
+// speaks: a stop must let the held picture fall at once, and resuming playback
+// must not bring it back, because the hold is gone and not merely hidden.
+fn ac_29_a_stop_before_the_new_stream_speaks_releases_the_held_shape() {
+    const DEVICE_TICK_FRAMES: usize = 800;
+    let clock = Arc::new(FakeMonotonicClock::default());
+    let engine = AndroidVisualEngine::with_clock(clock.clone());
+    engine.set_playback_intended(true);
+    engine.set_playing(true);
+    for chunk in 0..200 {
+        let pcm = stereo_sine_pcm16(200.0, 48_000, chunk, DEVICE_TICK_FRAMES);
+        ingest_one_live_block(&engine, &clock, &pcm, 48_000);
+    }
+    let before = engine.current_bands();
+    engine.reset_audio_stream();
+
+    engine.set_playing(false);
+    for _ in 0..120 {
+        clock.advance(Duration::from_millis(16));
+        engine.tick();
+    }
+    let after_stop = engine.current_bands();
+    assert_ne!(after_stop, before, "a stop must release the held picture");
+
+    engine.set_playing(true);
+    for _ in 0..5 {
+        clock.advance(Duration::from_millis(16));
+        engine.tick();
+    }
+    assert_ne!(
+        engine.current_bands(),
+        before,
+        "resuming without a new stream brought the released picture back"
+    );
+}
+
+#[test]
 // Regression test for a bug found while building the test above:
 // `reset_live_presentation` is shared by genuine stream-generation
 // boundaries (`reset_audio_stream`, `note_track_changed`) and by ordinary

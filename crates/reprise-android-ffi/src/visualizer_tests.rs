@@ -9,7 +9,8 @@ use reprise_core::playback::SPECTRUM_BAND_COUNT;
 use reprise_core::visuals::{Fill, Geom, Rgba, Scene, Shape};
 
 use crate::visualizer::{
-    encode_scene, AndroidVisualEngine, MonotonicClock, LIVE_AUDIO_STALE_AFTER,
+    encode_scene, AndroidVisualEngine, MonotonicClock, ADOPTABLE_SHAPE_MAX_AGE,
+    LIVE_AUDIO_STALE_AFTER,
 };
 
 #[test]
@@ -149,6 +150,9 @@ mod shape_adoption_tests;
 
 #[path = "visualizer_shape_continuity_tests.rs"]
 mod shape_continuity_tests;
+
+#[path = "visualizer_swipe_hold_tests.rs"]
+mod swipe_hold_tests;
 
 #[derive(Default)]
 struct FakeMonotonicClock {
