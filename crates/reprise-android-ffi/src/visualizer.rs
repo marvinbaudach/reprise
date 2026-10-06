@@ -102,6 +102,14 @@ struct VisualState {
     // the last picture on screen, which reads better than decaying it away
     // for a gap of unknown length.
     awaiting_stream_after_reset: bool,
+    // The bars live PCM last drew while playback ran, kept for
+    // `adoptable_bands`. A swipe's new panel reads it instead of the
+    // displayed bars, which a stop or a transport blip has already decayed
+    // toward the resting shape by the time that panel composes. Deliberately
+    // outlives `note_track_changed`, which clears the display but not this;
+    // only a stored-analysis frame (`ingest_bands`) replaces it, because that
+    // is then what the viewer sees of the new song.
+    last_live_bands: Option<[f32; SPECTRUM_BAND_COUNT]>,
     last_live_audio_at: Option<Duration>,
     live_pressure: BassPressure,
     playing: bool,
@@ -250,8 +258,11 @@ impl AndroidVisualEngine {
         state.engine.ingest(&frame);
         state.has_ingested = true;
         state.has_analysis = has_analysis;
+        // The new stream has spoken, even when all it said was "nothing": an
+        // empty frame must not leave the post-reset hold pinning the old picture.
+        state.awaiting_stream_after_reset = false;
         if has_analysis {
-            state.awaiting_stream_after_reset = false;
+            state.last_live_bands = None;
         }
     }
 
@@ -266,6 +277,24 @@ impl AndroidVisualEngine {
     /// popping in energy the screen had already decayed away.
     pub fn current_bands(&self) -> Vec<f32> {
         self.lock().engine.current_bands().to_vec()
+    }
+
+    /// The bar shape a panel taking over the live slot should adopt: the last
+    /// shape live PCM drew while playing, or [`Self::current_bands`] when no
+    /// live audio has drawn since the last stored-analysis frame.
+    ///
+    /// The displayed bars are the wrong source once the old stream has
+    /// stopped or `set_playing(false)` has blipped through the item change:
+    /// they have already decayed toward the resting shape, and adopting that
+    /// seeds the new song with a shape the viewer never saw at full height,
+    /// so its first PCM block pops. This survives `note_track_changed` and a
+    /// stop.
+    pub fn adoptable_bands(&self) -> Vec<f32> {
+        let state = self.lock();
+        state
+            .last_live_bands
+            .unwrap_or(*state.engine.current_bands())
+            .to_vec()
     }
 
     /// Seeds a freshly created engine with another engine's bar shape.
@@ -470,7 +499,11 @@ impl AndroidVisualEngine {
             false
         };
 
-        state.engine.advance_by(elapsed) || ingested_live_frame
+        let advanced = state.engine.advance_by(elapsed);
+        if ingested_live_frame {
+            state.last_live_bands = Some(*state.engine.current_bands());
+        }
+        advanced || ingested_live_frame
     }
 
     /// Returns the scene in the flat format documented by this module.
@@ -534,7 +567,10 @@ fn reset_live_presentation(
     state.last_live_audio_at = None;
     state.live_pressure = silent_pressure();
     state.engine.set_retain_paused_live_shape(false);
-    state.awaiting_stream_after_reset = holds_display;
+    // Only a stream that is playing has a picture worth holding: a boundary
+    // that lands while paused or stopped must let the resting projection show,
+    // or a later resume would snap the old picture back on screen.
+    state.awaiting_stream_after_reset = holds_display && state.playing;
     let has_audio =
         state.has_analysis || state.has_adopted_shape || state.awaiting_stream_after_reset;
     state.set_engine_playing(state.playing && has_audio, now);
@@ -579,6 +615,7 @@ impl AndroidVisualEngine {
                 has_adopted_shape: false,
                 has_live_audio: false,
                 awaiting_stream_after_reset: false,
+                last_live_bands: None,
                 last_live_audio_at: None,
                 live_pressure: silent_pressure(),
                 playing: false,
