@@ -630,8 +630,8 @@ when the network comes back.
 - **C2 / mini-player:** a cover downloaded while the mini-player is showing does not
   repaint the mini-player until the next visit.
 - **A4, activity removal:** closed by the follow-up below, which passed.
-- The fix for the C4 and C2 items is planned in
-  `docs/plans/android-cover-retry-and-repaint.md`.
+- The C4 and C2 items shipped through
+  `docs/plans/android-cover-retry-and-repaint.md` (#1061).
 
 ### A4 follow-up — recents swipe on hardware (same day)
 
