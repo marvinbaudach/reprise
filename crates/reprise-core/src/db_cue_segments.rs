@@ -62,6 +62,7 @@ CREATE TABLE tracks_v90 (
   segment_end_ms       INTEGER,
   cue_path             TEXT,
   cue_mtime            INTEGER,
+  cue_size             INTEGER,
   UNIQUE (path, segment_index)
 )";
 

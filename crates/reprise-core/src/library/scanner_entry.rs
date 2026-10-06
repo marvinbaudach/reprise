@@ -131,8 +131,12 @@ enum KnownSheet {
     /// No row names a sheet: a plain file, or tracks from a sheet embedded in it.
     #[default]
     None,
-    /// Every row was written under this sheet at this mtime.
-    Applied { path: String, mtime: i64 },
+    /// Every row was written under this sheet at this mtime and size.
+    Applied {
+        path: String,
+        mtime: i64,
+        size: Option<i64>,
+    },
     /// The rows disagree, or hold a whole-file track beside tracks.
     Mixed,
 }
@@ -143,8 +147,8 @@ impl KnownRow {
     fn matches_sheet(&self, governing: Option<&SheetRef>) -> bool {
         match (&self.sheet, governing) {
             (KnownSheet::None, None) => true,
-            (KnownSheet::Applied { path, mtime }, Some(sheet)) => {
-                *path == sheet.path_text() && *mtime == sheet.mtime
+            (KnownSheet::Applied { path, mtime, size }, Some(sheet)) => {
+                *path == sheet.path_text() && *mtime == sheet.mtime && *size == Some(sheet.size)
             }
             _ => false,
         }
@@ -166,6 +170,8 @@ type KnownRowColumns = (
     Option<String>,
     Option<i64>,
     Option<i64>,
+    Option<i64>,
+    Option<i64>,
 );
 
 fn known_row(tx: &rusqlite::Transaction, path_str: &str) -> KnownRow {
@@ -178,7 +184,8 @@ fn known_row(tx: &rusqlite::Transaction, path_str: &str) -> KnownRow {
                     count(removed_at), max(untagged), min(tag_scan_version),
                     count(CASE WHEN segment_index = 0 THEN 1 END),
                     count(CASE WHEN segment_index > 0 THEN 1 END), count(cue_path),
-                    min(cue_path), max(cue_path), min(cue_mtime), max(cue_mtime)
+                    min(cue_path), max(cue_path), min(cue_mtime), max(cue_mtime),
+                    min(cue_size), max(cue_size)
              FROM tracks WHERE path = ?1",
         )
         .ok()
@@ -200,6 +207,8 @@ fn known_row(tx: &rusqlite::Transaction, path_str: &str) -> KnownRow {
                         row.get(11)?,
                         row.get(12)?,
                         row.get(13)?,
+                        row.get(14)?,
+                        row.get(15)?,
                     ))
                 })
                 .ok()
@@ -220,6 +229,8 @@ fn known_row(tx: &rusqlite::Transaction, path_str: &str) -> KnownRow {
         max_sheet,
         min_sheet_mtime,
         max_sheet_mtime,
+        min_sheet_size,
+        max_sheet_size,
     )) = known
     else {
         return KnownRow::default();
@@ -228,9 +239,17 @@ fn known_row(tx: &rusqlite::Transaction, path_str: &str) -> KnownRow {
         KnownSheet::Mixed
     } else if sheet_rows == 0 {
         KnownSheet::None
-    } else if sheet_rows == rows && min_sheet == max_sheet && min_sheet_mtime == max_sheet_mtime {
+    } else if sheet_rows == rows
+        && min_sheet == max_sheet
+        && min_sheet_mtime == max_sheet_mtime
+        && min_sheet_size == max_sheet_size
+    {
         match (min_sheet, min_sheet_mtime) {
-            (Some(path), Some(mtime)) => KnownSheet::Applied { path, mtime },
+            (Some(path), Some(mtime)) => KnownSheet::Applied {
+                path,
+                mtime,
+                size: min_sheet_size,
+            },
             _ => KnownSheet::Mixed,
         }
     } else {
@@ -496,9 +515,9 @@ const UPSERT_TRACK_SQL: &str =
                            file_mtime, file_size, device, inode, mount_point, untagged,
                            rg_track_gain, rg_track_peak, rg_album_gain, rg_album_peak,
                            tag_scan_version, segment_index, segment_start_ms, segment_end_ms,
-                           cue_path, cue_mtime)
+                           cue_path, cue_mtime, cue_size)
                          VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11,?12,?13,?14,?15,?16,?17,?18,?19,?20,?21,?22,?23,?24,
-                                 ?25,?26,?27,?28,?29)
+                                 ?25,?26,?27,?28,?29,?30)
                          ON CONFLICT(path, segment_index) DO UPDATE SET
                            title=?2, artist=?3, album=?4, album_artist=?5,
                            artist_mbid=COALESCE(?6, artist_mbid),
@@ -510,7 +529,7 @@ const UPSERT_TRACK_SQL: &str =
                            untagged=?19, rg_track_gain=?20, rg_track_peak=?21,
                            rg_album_gain=?22, rg_album_peak=?23, tag_scan_version=?24,
                            segment_start_ms=?26, segment_end_ms=?27,
-                           cue_path=?28, cue_mtime=?29";
+                           cue_path=?28, cue_mtime=?29, cue_size=?30";
 
 // `ON CONFLICT(path, segment_index)` fires whenever this path already
 // has a row for that track — including one still carrying `removed_at`
@@ -548,6 +567,7 @@ pub(super) fn upsert_track(
     ) = params;
     let cue_path = placement.sheet.map(SheetRef::path_text);
     let cue_mtime = placement.sheet.map(|sheet| sheet.mtime);
+    let cue_size = placement.sheet.map(|sheet| sheet.size);
     scan.tx
         .prepare_cached(UPSERT_TRACK_SQL)?
         .execute(rusqlite::params![
@@ -580,6 +600,7 @@ pub(super) fn upsert_track(
             placement.end_ms,
             cue_path,
             cue_mtime,
+            cue_size,
         ])?;
     Ok(())
 }

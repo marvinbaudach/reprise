@@ -12,7 +12,7 @@
 //! follows only looks things up.
 //!
 //! A sheet an earlier scan already applied, and that has not changed since, is
-//! recognised from the catalog (`cue_path` + `cue_mtime` on its tracks, loaded
+//! recognised from the catalog (`cue_path`, `cue_mtime` and `cue_size` on its tracks, loaded
 //! once when the scan starts) and not read again. Only a new, changed or broken
 //! sheet is read and parsed up front.
 
@@ -101,11 +101,18 @@ struct DirectoryCues {
     sheets: Vec<DirectorySheet>,
 }
 
+/// What the catalog says an earlier scan applied: the sheet's mtime and size
+/// then, and the files it cut.
+struct AppliedSheet {
+    version: Option<(i64, i64)>,
+    files: HashSet<PathBuf>,
+}
+
 /// The sheets of every directory this scan has met, listed once each.
 #[derive(Default)]
 pub(super) struct CueDirectories {
-    /// Sheet path to the mtime it was last applied at and the files it was applied to.
-    applied: HashMap<String, (i64, HashSet<PathBuf>)>,
+    /// Sheet path to the version it was last applied at and the files it was applied to.
+    applied: HashMap<String, AppliedSheet>,
     directories: HashMap<PathBuf, DirectoryCues>,
 }
 
@@ -121,26 +128,30 @@ impl CueDirectories {
             crate::library::playlists::escape_like(root.to_string_lossy().trim_end_matches('/'))
         );
         let mut statement = conn.prepare(
-            "SELECT DISTINCT cue_path, cue_mtime, path FROM tracks \
-             WHERE cue_path IS NOT NULL AND cue_mtime IS NOT NULL AND path LIKE ?1 ESCAPE '\\'",
+            "SELECT DISTINCT cue_path, cue_mtime, cue_size, path FROM tracks \
+             WHERE cue_path IS NOT NULL AND cue_mtime IS NOT NULL AND cue_size IS NOT NULL \
+               AND path LIKE ?1 ESCAPE '\\'",
         )?;
         let rows = statement.query_map([pattern], |row| {
             Ok((
                 row.get::<_, String>(0)?,
-                row.get::<_, i64>(1)?,
-                row.get::<_, String>(2)?,
+                (row.get::<_, i64>(1)?, row.get::<_, i64>(2)?),
+                row.get::<_, String>(3)?,
             ))
         })?;
         self.applied.clear();
         for row in rows {
-            let (sheet, mtime, path) = row?;
-            let entry = self.applied.entry(sheet).or_insert((mtime, HashSet::new()));
-            // Rows of one sheet that disagree on its mtime were not all applied
+            let (sheet, version, path) = row?;
+            let entry = self.applied.entry(sheet).or_insert(AppliedSheet {
+                version: Some(version),
+                files: HashSet::new(),
+            });
+            // Rows of one sheet that disagree on its version were not all applied
             // under the current text; none of them settles it.
-            if entry.0 == mtime {
-                entry.1.insert(PathBuf::from(path));
+            if entry.version == Some(version) {
+                entry.files.insert(PathBuf::from(path));
             } else {
-                entry.0 = i64::MIN;
+                entry.version = None;
             }
         }
         Ok(())
@@ -245,7 +256,7 @@ fn sheet_covers(sheet: &DirectorySheet, audio: &Path) -> bool {
 
 fn list_directory(
     source: &dyn LibrarySource,
-    applied: &HashMap<String, (i64, HashSet<PathBuf>)>,
+    applied: &HashMap<String, AppliedSheet>,
     directory: &Path,
 ) -> DirectoryCues {
     let Some(entries) = source.read_directory(directory) else {
@@ -280,7 +291,7 @@ fn is_sheet_file(entry: &LibraryDirectoryEntry) -> bool {
 
 fn directory_sheet(
     source: &dyn LibrarySource,
-    applied: &HashMap<String, (i64, HashSet<PathBuf>)>,
+    applied: &HashMap<String, AppliedSheet>,
     audio: &[PathBuf],
     entry: &LibraryDirectoryEntry,
 ) -> Option<DirectorySheet> {
@@ -297,8 +308,11 @@ fn directory_sheet(
         size: stat.map_or(0, |(size, _)| size as i64),
     };
     let state = match applied.get(&reference.path_text()) {
-        Some((applied_mtime, files)) if *applied_mtime == mtime && !files.is_empty() => {
-            SheetState::Settled(files.clone())
+        Some(applied)
+            if applied.version == Some((reference.mtime, reference.size))
+                && !applied.files.is_empty() =>
+        {
+            SheetState::Settled(applied.files.clone())
         }
         _ => read_state(source, &reference, audio),
     };

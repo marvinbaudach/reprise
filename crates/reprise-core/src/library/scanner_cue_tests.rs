@@ -588,3 +588,6 @@ fn cue_2_a_dismissed_rejection_stays_quiet_when_the_audio_is_cut_again() {
     );
     assert_eq!(times_seen(&album), before);
 }
+
+#[path = "scanner_cue_identity_tests.rs"]
+mod identity;

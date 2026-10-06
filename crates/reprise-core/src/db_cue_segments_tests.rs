@@ -149,6 +149,7 @@ fn the_rebuild_keeps_every_row_reference_index_and_trigger() {
         "segment_end_ms|INTEGER|0||0",
         "cue_path|TEXT|0||0",
         "cue_mtime|INTEGER|0||0",
+        "cue_size|INTEGER|0||0",
     ]
     .map(String::from)
     .into();
@@ -330,6 +331,7 @@ fn a_fresh_database_reaches_the_new_schema() {
         "segment_end_ms",
         "cue_path",
         "cue_mtime",
+        "cue_size",
     ] {
         assert!(columns.contains(column), "{column}");
     }
