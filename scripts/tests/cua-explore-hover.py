@@ -38,6 +38,7 @@ from hover_oracle import analyze_hover  # noqa: E402
 from pngdiff import UnsupportedImage, UnmeasurableImage, read_rgb, rect_change_ratio  # noqa: E402
 from protocol import ActionGateway, ContractError, load_mission  # noqa: E402
 from runner import prepare_hover, write_gtk_animation_settings  # noqa: E402
+from section_handles import section_handle  # noqa: E402
 from workload_audit import ActionTrace, audit_action_workload  # noqa: E402
 
 
@@ -664,14 +665,15 @@ class HoverSweepExplorerTests(unittest.TestCase):
         actions = self._drive(
             [self._element("First"), self._element("Second", x=40)]
         )
-        sections = self.mission.workloads[0]["sections"]
+        workload = self.mission.workloads[0]
 
-        for section in sections:
+        for section in workload["sections"]:
+            handle = section_handle(workload, self.mission.fixture_tokens, section)
             activate = next(
                 index
                 for index, action in enumerate(actions)
                 if action["kind"] == "activate"
-                and action["target"]["label"] == section
+                and action["target"]["label"] == handle
             )
             hovers = [
                 index
@@ -809,20 +811,27 @@ class HoverSweepExplorerTests(unittest.TestCase):
         Calling the private workload method directly used to hide the warm-up
         gate and let these tests pass while a real run never reached a hover.
         """
-        sections = list(self.mission.workloads[0]["sections"])
+        workload = self.mission.workloads[0]
+        sections = list(workload["sections"])
+        # The accessible name that opens each section: its own, except where the
+        # mission maps it to a fixture token (Playlists opens through a playlist).
+        handles = {
+            section_handle(workload, self.mission.fixture_tokens, section): section
+            for section in sections
+        }
         actions = []
         current_section = None
         observation = {
             "state_id": "s-0",
             "state_signature": "sig-0",
             "elements": elements,
-            "actionable_labels": [item["label"] for item in elements] + sections,
+            "actionable_labels": [item["label"] for item in elements] + list(handles),
         }
         for index in range(self.mission.budgets.actions):
             action = self.explorer.propose(observation)
             self.assertIsNotNone(action)
-            if action["kind"] == "activate" and action["target"]["label"] in sections:
-                current_section = action["target"]["label"]
+            if action["kind"] == "activate" and action["target"]["label"] in handles:
+                current_section = handles[action["target"]["label"]]
             if action["kind"] == "hover":
                 action = {**action, "section_for_test": current_section}
             actions.append(action)

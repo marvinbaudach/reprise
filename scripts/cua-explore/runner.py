@@ -34,7 +34,8 @@ from protocol import (
 )
 from report import RunReport
 from oracles import Finding
-from ui_vocabulary import BUSY_ROLES, BUSY_WORDS, is_row
+from search_results import result_elements
+from ui_vocabulary import BUSY_ROLES, BUSY_WORDS
 from workload_audit import ActionTrace, audit_action_workload
 from launch import (
     AppLifecycle,
@@ -226,10 +227,10 @@ def _trace_from_observations(
         return [item for item in raw if isinstance(item, dict)] if isinstance(raw, list) else []
 
     def rows(observation: Mapping[str, Any]) -> tuple[tuple[str, float], ...]:
+        # The result items of the page, not every row the tree has: the sidebar
+        # entries and the column header are rows to the driver too.
         projected = []
-        for item in elements(observation):
-            if not is_row(str(item.get("role", ""))) or not item.get("label"):
-                continue
+        for item in result_elements(observation):
             frame = item.get("frame", {})
             y = frame.get("y", 0.0) if isinstance(frame, dict) else 0.0
             projected.append((str(item["label"]), float(y)))
