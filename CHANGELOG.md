@@ -44,7 +44,8 @@ messages.
   and a cold start swelled the whole frame and then dropped. The visualizer now
   measures the new song's level instead of carrying the old one. On the desktop,
   a track change or a seek lets the bars fall from their old heights instead of
-  collapsing.
+  collapsing. A song that opens with a long quiet intro or a fade-in can still
+  pin the bars after a track change (#1141).
 
 ### Session
 
