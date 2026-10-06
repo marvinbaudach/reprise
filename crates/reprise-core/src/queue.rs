@@ -190,6 +190,14 @@ impl Queue {
         self.current()
     }
 
+    /// Whether [`Self::next_manual`] would land on a track. Unlike it, asking
+    /// leaves the playhead where it is, so a caller can refuse a move that
+    /// would run off the end with Repeat::Off instead of clearing the cursor.
+    pub fn has_manual_next(&self) -> bool {
+        self.forward_matching_position(false, &mut |_| true)
+            .is_some()
+    }
+
     fn forward_matching_position(
         &self,
         automatic: bool,

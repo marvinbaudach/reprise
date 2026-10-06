@@ -32,6 +32,10 @@ mod settings_reload_tests;
 mod history_tests;
 
 #[cfg(test)]
+#[path = "playback_next_at_end_tests.rs"]
+mod next_at_end_tests;
+
+#[cfg(test)]
 #[path = "playback_terminal_event_tests.rs"]
 mod terminal_event_tests;
 

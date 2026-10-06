@@ -18,6 +18,7 @@ use crate::queue_persister::QueuePersister;
 
 mod gain;
 mod history;
+mod next_at_end;
 mod queue_boundary;
 pub(crate) mod queue_persistence;
 mod stream_events;
