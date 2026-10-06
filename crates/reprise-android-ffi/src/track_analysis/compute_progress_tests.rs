@@ -297,6 +297,13 @@ fn nav_15d_an_absurd_duration_has_no_expected_length() {
 }
 
 #[test]
+fn nav_15d_the_expected_length_ends_at_one_week() {
+    const ONE_WEEK_MS: i64 = 7 * 24 * 60 * 60 * 1_000;
+    assert_eq!(expected_frame_count(ONE_WEEK_MS), Some(12_096_000));
+    assert_eq!(expected_frame_count(ONE_WEEK_MS + 1), None);
+}
+
+#[test]
 fn nav_15d_progress_for_zero_bars_is_none() {
     let (_directory, library, track_id, _music) = library_with_one_track();
     let library = Arc::new(library);

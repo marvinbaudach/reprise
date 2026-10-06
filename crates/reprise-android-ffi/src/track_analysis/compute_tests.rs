@@ -129,6 +129,10 @@ pub(super) fn set_flag(state: &Arc<(Mutex<bool>, Condvar)>) {
     condvar.notify_all();
 }
 
+/// Waits until a second caller holds its own clone of `track_id`'s cell: the
+/// map, the owner and the waiter. The waiter clones the cell and reads its
+/// supersede baseline in one critical section of the map lock this reads
+/// under, so once the count shows it, a supersede is one it waits through.
 pub(super) fn wait_for_in_flight_waiter(library: &MusicLibrary, track_id: i64) {
     let deadline = std::time::Instant::now() + Duration::from_secs(10);
     loop {

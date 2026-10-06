@@ -313,9 +313,13 @@ fn run_worker(control: &Control, handles: &Handles, listener: &Arc<ProgressListe
                 | AndroidAnalysisOutcome::PhoneSourceChanged,
             ) => {
                 // Not a failure and not progress: `Cancelled` stored
-                // nothing because the sink was told to stop, `Superseded`
-                // is the same for a foreground decode this worker waited on
-                // when its track stopped playing, and
+                // nothing because the sink was told to stop (or this worker
+                // joined a foreground decode superseded before it arrived),
+                // `Superseded` is the outcome of a foreground decode this
+                // worker waited on that stopped short when its track stopped
+                // playing — a background waiter is never let go early, and a
+                // decode that reached the end of the stream is stored and
+                // reports `Computed` instead — and
                 // `PhoneSourceChanged` stored nothing because
                 // `set_track_render_data` found the file's fingerprint had
                 // changed mid-decode (`SpectrogramStoreOutcome::SourceChanged`).

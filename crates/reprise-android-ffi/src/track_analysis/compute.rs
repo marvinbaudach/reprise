@@ -64,7 +64,9 @@ const SINK_SUPERSEDED: u8 = 2;
 /// request preempting the backfill's current item, or by a track change
 /// superseding a foreground decode — so the decoder can be told to stop
 /// without a second channel back into Kotlin. The first reason wins; it
-/// decides whether waiters retry (`Cancelled`) or settle (`Superseded`).
+/// decides whether waiters retry (`Cancelled`) or stop asking (`Superseded`).
+/// A supersede that arrives after the whole stream was pushed discards
+/// nothing: the decode is stored as if it had not come (`decode_one`).
 #[derive(uniffi::Object)]
 pub struct AnalysisPcmSink {
     session: Mutex<Option<RenderDataSession>>,
@@ -199,9 +201,13 @@ pub enum AndroidAnalysisOutcome {
     DecodeFailed,
     NoDecoder,
     Cancelled,
-    /// The track stopped being the playing one and its foreground decode was
-    /// stopped. Final for every waiter (no retry); nothing was stored and the
-    /// track stays pending for the backfill.
+    /// The track stopped being the playing one. Final for the caller that
+    /// receives it (no retry). The decode it was waiting on either stopped
+    /// before the end of the stream, storing nothing and leaving the track
+    /// pending for the backfill, or carries on: a backfill decode, or one that
+    /// had already decoded the whole stream, is still stored, and its owner
+    /// returns `Computed` while the foreground waiters it let go get this.
+    /// A caller that joined after the supersede is not given it (it retries).
     Superseded,
 }
 
@@ -243,9 +249,11 @@ impl AnalysisCell {
     /// reaches the decode, even a backfill decode that carries on and
     /// stores: the waiter's track is no longer playing, and it must not hold
     /// the foreground import lane until a decode it no longer needs ends.
-    fn wait(&self, background: bool) -> Claim {
+    ///
+    /// `joined_at` is the supersede count read when the caller joined, while
+    /// the in-flight map was still locked (`AnalysisInFlight::join`).
+    fn wait(&self, joined_at: u64, background: bool) -> Claim {
         let mut state = self.state();
-        let joined_at = state.supersedes;
         loop {
             if let Some(outcome) = state.outcome {
                 let superseded_before_joining =
@@ -297,6 +305,24 @@ pub struct AnalysisInFlight {
     decodes: DecodeRegistry,
 }
 
+/// A caller that found the track already being decoded, with the number of
+/// supersedes that had reached the decode before it joined.
+pub(crate) struct Waiter {
+    cell: SharedAnalysisCell,
+    joined_at: u64,
+}
+
+impl Waiter {
+    pub(crate) fn wait(&self, background: bool) -> Claim {
+        self.cell.wait(self.joined_at, background)
+    }
+}
+
+pub(crate) enum Join {
+    Waiting(Waiter),
+    Mine(SharedAnalysisCell),
+}
+
 pub(crate) enum Claim {
     /// Another caller already finished (or finishes while this one waits).
     Done(AndroidAnalysisOutcome),
@@ -323,14 +349,29 @@ impl AnalysisInFlight {
     }
 
     fn join_or_claim(&self, track_id: i64, background: bool) -> Claim {
+        match self.join(track_id) {
+            Join::Waiting(waiter) => waiter.wait(background),
+            Join::Mine(cell) => Claim::Mine(cell),
+        }
+    }
+
+    /// Joins the decode of `track_id` already running, or claims it.
+    ///
+    /// A joiner reads the decode's supersede count before the map lock is
+    /// released. `supersede_except` counts under that same lock (map, then
+    /// cell, the order used here too), so every supersede is either one this
+    /// caller joined after or one it waits through — never one that slipped in
+    /// between and is miscounted as older than the caller.
+    pub(crate) fn join(&self, track_id: i64) -> Join {
         let mut entries = self.entries.lock().unwrap_or_else(PoisonError::into_inner);
         if let Some(cell) = entries.get(&track_id).cloned() {
+            let joined_at = cell.state().supersedes;
             drop(entries);
-            return cell.wait(background);
+            return Join::Waiting(Waiter { cell, joined_at });
         }
         let cell = AnalysisCell::new();
         entries.insert(track_id, Arc::clone(&cell));
-        Claim::Mine(cell)
+        Join::Mine(cell)
     }
 
     fn finish(&self, track_id: i64, cell: &AnalysisCell, outcome: AndroidAnalysisOutcome) {
@@ -390,9 +431,12 @@ pub(crate) struct AnalysisContext<'a> {
 
 impl AnalysisContext<'_> {
     /// Computes and stores one track's analysis, deduplicating concurrent
-    /// callers for the same id. A foreground caller retries an inherited
-    /// background cancellation for at most three rounds; background callers
-    /// make one attempt. `preempt` is the backfill to cancel if its current
+    /// callers for the same id. A foreground caller retries for at most three
+    /// rounds when the decode it joined was cancelled (a backfill preemption)
+    /// or superseded before it joined (`Claim::Stale`: the supersede was meant
+    /// for an earlier caller); background callers make one attempt. A `Stale`
+    /// on the last round ends as `Cancelled`, retryable, because this caller
+    /// was never superseded. `preempt` is the backfill to cancel if its current
     /// item is a different track (a foreground request only; the backfill's
     /// own worker passes `None` for its own items).
     pub(crate) fn compute(
@@ -417,7 +461,9 @@ impl AnalysisContext<'_> {
                 {
                     continue;
                 }
-                Claim::Stale => return Ok(AndroidAnalysisOutcome::Superseded),
+                // Out of rounds on supersedes meant for earlier callers: nobody
+                // superseded this one, so it ends retryable, never final.
+                Claim::Stale => return Ok(AndroidAnalysisOutcome::Cancelled),
                 Claim::Done(outcome) => return Ok(outcome),
                 Claim::Mine(cell) => {
                     if let Some(backfill) = preempt {
