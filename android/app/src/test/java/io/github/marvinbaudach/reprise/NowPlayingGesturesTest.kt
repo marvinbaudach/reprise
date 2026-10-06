@@ -236,6 +236,23 @@ class NowPlayingGesturesTest {
 
     @Test
     fun a_committed_swipe_holds_the_next_card_while_the_transport_is_still_answering() {
+        // Press, move and release in one input block, as a quick flick is. Whether
+        // a frame lands inside the block is up to the harness; the hold must be
+        // right either way.
+        committedSwipeWithoutAnswerHoldsThenReturns(framesBeforeRelease = 0)
+    }
+
+    @Test
+    fun a_committed_swipe_whose_drag_a_frame_already_saw_does_not_take_that_for_an_answer() {
+        // A frame between press and release leaves the drag flag mirrored as true
+        // when the settle starts to wait. Before #993 that leading true ended the
+        // wait at once: the card was never taken back, and whether a frame happened
+        // to land there is exactly what made the test above flaky. Pinning the frame
+        // makes that leak fail every time instead of sometimes.
+        committedSwipeWithoutAnswerHoldsThenReturns(framesBeforeRelease = 2)
+    }
+
+    private fun committedSwipeWithoutAnswerHoldsThenReturns(framesBeforeRelease: Int) {
         // The transport answers a `next()` asynchronously and, on a loaded phone,
         // later than the 480 ms settle. The settled card used to snap back to
         // the old track the moment the slide ended without an answer, and slide
@@ -254,10 +271,20 @@ class NowPlayingGesturesTest {
         compose.mainClock.advanceTimeBy(DISPLAY_FRAME_MS * 4)
         val restLeft = compose.onNodeWithText("Song 830").fetchSemanticsNode().boundsInRoot.left
 
-        compose.onNodeWithTag("now-playing-gestures").performTouchInput {
-            down(Offset(width * 0.75f, height * 0.3f))
-            moveTo(Offset(width * 0.35f, height * 0.3f))
-            up()
+        val gestures = compose.onNodeWithTag("now-playing-gestures")
+        if (framesBeforeRelease == 0) {
+            gestures.performTouchInput {
+                down(Offset(width * 0.75f, height * 0.3f))
+                moveTo(Offset(width * 0.35f, height * 0.3f))
+                up()
+            }
+        } else {
+            gestures.performTouchInput {
+                down(Offset(width * 0.75f, height * 0.3f))
+                moveTo(Offset(width * 0.35f, height * 0.3f))
+            }
+            repeat(framesBeforeRelease) { compose.mainClock.advanceTimeByFrame() }
+            gestures.performTouchInput { up() }
         }
         assertEquals(1, controls.nextCalls)
         compose.mainClock.advanceTimeBy(NOW_PLAYING_SETTLE_MS + DISPLAY_FRAME_MS * 8)
