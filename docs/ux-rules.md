@@ -263,7 +263,8 @@ result.
   The Now Playing scene adopts the growing spectrum without restarting:
   only the playing panel asks for it, it keeps the decoded frames until the
   final ones arrive, and frames decoded behind a playhead that ran ahead
-  play on instead of snapping. The decoded part is asked for about once a
+  play on instead of snapping, unless live audio drove the scene in the
+  meantime. The decoded part is asked for about once a
   second, only while the app is visible with the screen on and the final
   analysis is missing, and never while an earlier answer is still
   outstanding. After half a minute of empty answers it is asked only every
@@ -299,7 +300,9 @@ result.
   `nav_15d_the_scene_keeps_the_decoded_frames_until_the_final_ones_arrive`,
   `nav_15d_only_the_live_panel_asks_for_the_decoded_part`,
   `nav_15d_adopting_shorter_frames_keeps_the_playhead_instead_of_seeking`,
-  `nav_15d_frames_growing_under_a_playhead_past_the_decode_edge_continue_instead_of_snapping`.
+  `nav_15d_frames_growing_under_a_playhead_past_the_decode_edge_continue_instead_of_snapping`,
+  `nav_15d_the_decode_edge_allowance_lasts_while_the_playhead_stands_on_the_edge`,
+  `nav_15d_live_audio_ends_the_decode_edge_allowance`.
   <!-- REVIEW: rule proposal -->
 - **NAV-15e** [active] [android] — **Leaving a track stops its analysis.**
   Switching to another track stops the outgoing track's foreground analysis

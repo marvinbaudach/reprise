@@ -24,8 +24,12 @@ class SceneState(
     private val projectedMotion = FloatArray(frames.bandCount)
     private var lastFrameIndex: Int? = null
 
-    /** Set when frames grew past a playhead held at the old decode edge; see [adoptFrames]. */
-    private var resumeFromDecodeEdge = false
+    /**
+     * The frame a playhead was held on when frames grew past it; see [adoptFrames]. Its
+     * long catch-up applies only while the scene still stands there, and live audio
+     * driving the scene in between ends it.
+     */
+    private var decodeEdge: Int? = null
 
     /**
      * The live follower array, handed out by reference on purpose.
@@ -86,11 +90,11 @@ class SceneState(
      */
     fun advanceTo(frameIndex: Int, afterMissedFrames: Boolean = false) {
         if (frames.frameCount == 0) return
-        val resumingFromDecodeEdge = resumeFromDecodeEdge
-        resumeFromDecodeEdge = false
         val targetIndex = frames.clampFrameIndex(frameIndex)
         val previous = lastFrameIndex
         if (previous == targetIndex) return
+        val resumingFromDecodeEdge = previous != null && previous == decodeEdge
+        decodeEdge = null
         if (previous == null && targetIndex > SEEK_FRAMES) {
             resetTo(targetIndex)
             return
@@ -123,16 +127,17 @@ class SceneState(
             // A shorter analysis: stand on its last frame rather than read the step back
             // as a seek and snap.
             lastFrameIndex = nextLastFrame
+            decodeEdge = null
         } else if (last == previousLastFrame && nextLastFrame > last) {
             // The playhead ran past the decoded part and was held at its edge. The frames
             // decoded since are music that played, not a seek: replay them in order.
-            resumeFromDecodeEdge = true
+            decodeEdge = last
         }
     }
 
     fun resetTo(frameIndex: Int) {
         if (frames.frameCount == 0) return
-        resumeFromDecodeEdge = false
+        decodeEdge = null
         val targetIndex = frames.clampFrameIndex(frameIndex)
         readRaw(targetIndex)
         val fogChanged = fogEnvelopes.adopt(rawBands)
@@ -233,6 +238,9 @@ class SceneState(
 
     /** Applies the detector's real kick and held pressure without a second envelope. */
     internal fun adoptLiveBassPressure(reading: VisualBassPressure, elapsedSeconds: Float) {
+        // The analysis is not what plays the music now: no frame held at the decode edge
+        // is replayed from it once the live audio stops.
+        decodeEdge = null
         val kick = reading.kick.finiteUnit()
         val pressure = reading.pressure.finiteUnit()
         val energy = maxOf(kick, pressure)

@@ -423,6 +423,41 @@ class SceneStateTest {
     }
 
     @Test
+    fun nav_15d_the_decode_edge_allowance_lasts_while_the_playhead_stands_on_the_edge() {
+        val whole = edgeThenQuietFrames()
+        val growing = heldAtTheDecodeEdge()
+        val stepped = heldAtTheDecodeEdge()
+
+        growing.adoptFrames(whole)
+        // A tick whose position still reads the edge frame moves nothing.
+        growing.advanceTo(DECODE_EDGE)
+        growing.advanceTo(PLAYHEAD)
+        stepped.adoptFrames(whole)
+        (DECODE_EDGE + 1..PLAYHEAD).forEach(stepped::advanceTo)
+
+        assertArrayEquals("a tick standing on the edge used up the allowance", stepped.fogBands, growing.fogBands, 0f)
+    }
+
+    @Test
+    fun nav_15d_live_audio_ends_the_decode_edge_allowance() {
+        val whole = edgeThenQuietFrames()
+        val growing = heldAtTheDecodeEdge()
+        val snapped = SceneState(whole).also { it.resetTo(PLAYHEAD) }
+
+        growing.adoptFrames(whole)
+        // Live audio drove the scene for a while; the analysis did not.
+        growing.adoptLiveBassPressure(VisualBassPressure.SILENT, elapsedSeconds = 0f)
+        growing.advanceTo(PLAYHEAD)
+
+        assertArrayEquals(
+            "frames the live audio already played were replayed from the analysis",
+            snapped.fogBands,
+            growing.fogBands,
+            0f,
+        )
+    }
+
+    @Test
     fun nav_15d_adopting_frames_of_another_shape_is_refused() {
         val state = SceneState(SpectrogramFrames(24, 20, ByteArray(0)))
 
@@ -430,6 +465,22 @@ class SceneStateTest {
             state.adoptFrames(SpectrogramFrames(12, 20, ByteArray(0)))
         }
     }
+}
+
+private const val DECODE_EDGE = 19
+private const val PLAYHEAD = 100
+
+/** Loud over the first 20 decoded frames, quiet over the 180 decoded after them. */
+private fun edgeThenQuietFrames() = SpectrogramFrames(
+    bandCount = 24,
+    frameRateHz = 20,
+    cells = ByteArray(200 * 24) { index -> if (index / 24 <= DECODE_EDGE) 200.toByte() else 60.toByte() },
+)
+
+/** A scene on 20 decoded frames whose playhead ran on to [PLAYHEAD] and was held at the edge. */
+private fun heldAtTheDecodeEdge() = SceneState(levelFrames(frameCount = DECODE_EDGE + 1, level = 200)).also { state ->
+    (0..DECODE_EDGE).forEach(state::advanceTo)
+    state.advanceTo(PLAYHEAD)
 }
 
 /** Silent for four frames, then steady: a snap to frame 8 differs from an envelope still attacking. */

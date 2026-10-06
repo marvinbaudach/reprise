@@ -313,6 +313,10 @@ class NowPlayingSceneEngineTest {
         val handle = LiveSceneHandle()
         val analysis = GrowingSpectrogramAnalysis(frameCount = 4)
         showGrowingScene(handle, analysis)
+        // Deterministic despite the wait: the waits only let composition and the fog's
+        // first resume land. The driver never ticks here — the unbound controller is not
+        // resumed, so `sceneFramesAllowed` is false — and the only stepping of the state
+        // is the test's own, so nothing moves the values compared below in the meantime.
         compose.waitUntil(timeoutMillis = 5_000) { handle.fog != null && handle.state != null }
         val first = checkNotNull(handle.state)
         assertEquals(4, first.frames.frameCount)
@@ -361,6 +365,7 @@ class NowPlayingSceneEngineTest {
         compose.waitUntil(timeoutMillis = 5_000) { handle.state?.frames?.frameCount == 4 }
         compose.waitForIdle()
 
+        assertTrue("the neighbour panel was never composed", neighbour.id in analysis.spectrogramTrackIds)
         assertTrue("the live panel never asked", live.id in analysis.polledTrackIds)
         assertFalse("a neighbour panel polled", neighbour.id in analysis.polledTrackIds)
     }
@@ -470,6 +475,7 @@ private class GrowingSpectrogramAnalysis(frameCount: Int) : TrackAnalysisPort {
     private var frameCount by mutableIntStateOf(frameCount)
     private var decoding = true
     val polledTrackIds = mutableSetOf<Long>()
+    val spectrogramTrackIds = mutableSetOf<Long>()
     override var revision by mutableLongStateOf(0L)
         private set
 
@@ -487,6 +493,11 @@ private class GrowingSpectrogramAnalysis(frameCount: Int) : TrackAnalysisPort {
 
     override fun loadBars(trackId: Long, count: Int, deliver: (List<SpectralBar>?) -> Unit) =
         deliver(null)
+
+    override fun loadSpectrogram(trackId: Long, deliver: (SpectrogramFrames?) -> Unit) {
+        spectrogramTrackIds += trackId
+        deliver(null)
+    }
 
     override fun loadProgress(
         trackId: Long,
