@@ -2,7 +2,7 @@
 slug: cue-sheets-core
 worktree: ../reprise-cue-sheets-core
 branch: feature/cue-sheets-core
-phase: coded
+phase: refactored
 codex_session:
 created: 2026-10-04
 ---
@@ -65,8 +65,8 @@ takes `segment_index`; never "the first row by accident". Test per site.
 
 ## As built (deviations from the tasks above)
 
-- **C1** — v90 also adds `cue_mtime` (the sheet's mtime; without it a changed sheet cannot be
-  noticed) and `library_exclusions.segment_index` with both unique indexes widened. The rebuild
+- **C1** — v90 also adds `cue_mtime` and `cue_size` (the sheet's mtime and size; without them a
+  changed sheet cannot be noticed) and `library_exclusions.segment_index` with both unique indexes widened. The rebuild
   renames with `legacy_alter_table` because `listen_events_fill_snapshot` reads `tracks`; ten
   referencing tables was nine foreign keys on eight tables. `Track`/`TrackSummary` carry one
   `segment: Option<TrackSegment>`. A second trigger drops a track's analysis when its cut changes.
@@ -77,7 +77,9 @@ takes `segment_index`; never "the first row by accident". Test per site.
   Sheets an earlier scan applied are recognised from `cue_path` + `cue_mtime` and not re-read.
   A sheet that parses but does not fit leaves a whole-file row that remembers it. A broken sheet
   is `ImportErrorKind::InvalidCueSheet`, keyed by the sheet. `report.added/updated` count tracks.
-- **C3** — `track_ids_for_path` is new; `track_id_for_path` is the first track. Tag editing,
+- **C3** — `track_ids_for_path` is new; `track_id_for_path` is the first track in play order. An
+  M3U import uses `playlist_tracks_for_path`: a line naming a CUE file adds its tracks still in
+  the library, and a run of lines naming the same file adds them once. Tag editing,
   Rhythmbox ratings, sidecars, mobile metadata and instrumental promotion address whole-file
   rows. `(id, path)` sites are unchanged: they already name one row.
 - **C4** — `SegmentedRenderDataSession` wraps one `RenderDataSession` per track instead of
@@ -89,7 +91,37 @@ takes `segment_index`; never "the first row by accident". Test per site.
   track. `PlaybackItem.segment` is filled where a summary is at hand and ignored by every backend
   until wave 3.
 
+## Review fixes (wave 2 review)
+
+- A sheet the scan cannot see (unlisted directory, probe `Unknown`, unreadable sheet) is
+  `Cover::Unknown`: rows a sheet cut stay untouched; other files are read as if no sheet were
+  there. Only a sheet that was read and does not parse or fit is broken.
+- An edited sheet keeps each song on its row: start and title, then a unique title, then the
+  start, then the position (`scanner_segment_match.rs`).
+- The parser caps a sheet at 1 MiB and 999 tracks, sidecar or embedded. The v90 migration fails
+  only on dangling references it made itself.
+- A dismissed issue on an audio file no longer blocks a sheet that arrived beside it; a broken
+  embedded sheet honours its dismissal; a dismissed rejection survives a re-read. A directory
+  with a file no sheet claims has its applied sheets read again.
+- Move detection matches a CUE file by size, its tracks' album and its length.
+- Relink counts every track of a CUE file and leaves a removed sibling removed. A phone listen or
+  rating of a CUE file is unresolved. A CUE track reads and writes no lyrics beside its file.
+- Analysis of a CUE track is stored only for the cut it was measured from; a stretch past the
+  decoded end stays pending; the on-play decode measures the file's other pending tracks too
+  and is cancelled when the listener moves on.
+- Not changed: the phone's foreground analysis of a CUE track (C7). Its refusal costs one query
+  and no decode, Kotlin treats `DecodeFailed` as final, and the backfill never lists CUE tracks,
+  so `mark_failed` would change nothing observable.
+
 ## Left for wave 3
+
+- Deferred review findings: a sidecar that parses but does not fit does not fall back to a valid
+  embedded sheet (A10); a fully excluded CUE file is re-read every scan (A11); phone ratings and
+  play counts for CUE files are dropped without a count (B8); an exclusion is keyed by position,
+  so a sheet edit hides another track (B9); the last track ends at the metadata duration, not
+  at EOF (C5); segment cutting counts frames instead of using PTS (C6); a file whose rate or
+  channels change mid-stream, and one truncated before a track, is decoded again on every
+  backfill run (C8).
 
 - Desktop and Android playback ignore `PlaybackItem.segment`: a CUE track plays its file from 0:00.
 - Delete, trash and device sync still treat a path as one track; sync sees several track ids
