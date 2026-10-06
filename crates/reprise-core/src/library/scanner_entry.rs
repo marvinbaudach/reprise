@@ -142,6 +142,11 @@ enum KnownSheet {
 }
 
 impl KnownRow {
+    /// Whether a sheet beside the file wrote any of its rows.
+    fn was_cut_by_a_sheet(&self) -> bool {
+        !matches!(self.sheet, KnownSheet::None)
+    }
+
     /// Whether the rows were written under exactly the sheet that governs the
     /// file now, or under none when none does.
     fn matches_sheet(&self, governing: Option<&SheetRef>) -> bool {
@@ -352,10 +357,14 @@ pub(super) fn classify_entry(
     let governing = match scan.cues.covering(scan.source, scan.tx, path)? {
         Cover::Sheet(sheet) => Some(sheet),
         Cover::Plain => None,
-        // Whether a sheet cuts this file cannot be told this scan. Its rows stay
-        // exactly as they are; a file the catalog does not know yet is read as
-        // if no sheet were there, which loses nothing.
-        Cover::Unknown if known.exists => return Ok(EntryPlan::Skip(EntryOutcome::Unchanged)),
+        // Whether a sheet beside it cuts this file cannot be told this scan.
+        // Rows a sheet cut stay exactly as they are. Any other file is read as
+        // if no sheet were there, which is how its rows came about, so that
+        // loses nothing either; a sheet that is new beside it waits for a scan
+        // that can see it.
+        Cover::Unknown if known.was_cut_by_a_sheet() => {
+            return Ok(EntryPlan::Skip(EntryOutcome::Unchanged));
+        }
         Cover::Unknown => None,
     };
     if known.mtime == Some(facts.mtime)

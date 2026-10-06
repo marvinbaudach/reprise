@@ -139,3 +139,28 @@ fn cue_1b_a_sheet_that_cannot_be_read_when_its_audio_changed_leaves_its_tracks_a
 
     assert_untouched(&album, &ids, "audio changed, sheet unreadable");
 }
+
+#[test]
+fn a_plain_file_in_a_directory_that_cannot_be_listed_is_still_read_again() {
+    let dir = tempfile::tempdir().unwrap();
+    let audio = dir.path().join("plain.wav");
+    write_wav(&audio, 10);
+    let db = crate::db::Db::open_in_memory().unwrap();
+    completed(scan_folder_with_source(&UnixLibrarySource, &db, dir.path()).unwrap());
+
+    write_wav(&audio, 20);
+    bump_mtime(&audio);
+    let report =
+        completed(scan_folder_with_source(&FlakySource(Fault::Listing), &db, dir.path()).unwrap());
+
+    assert_eq!(report.updated, 1);
+    assert_eq!(
+        segments_of(db.conn(), &audio),
+        [(0, None, None, "plain".to_string())]
+    );
+    let duration: i64 = db
+        .conn()
+        .query_row("SELECT duration_ms FROM tracks", [], |row| row.get(0))
+        .unwrap();
+    assert_eq!(duration, 20_000);
+}
