@@ -62,7 +62,7 @@ impl MusicLibrary {
         let bars = shaped_render_bars(
             &partial.waveform_peaks,
             &partial.spectrogram,
-            wanted.clamp(1, bar_count as usize),
+            wanted.max(1).min(bar_count as usize),
             f64::from(partial.covered_fraction) * duration_ms as f64 / 1_000.0,
         );
         if bars.is_empty() {

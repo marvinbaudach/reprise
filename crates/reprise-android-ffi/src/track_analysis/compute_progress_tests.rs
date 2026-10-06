@@ -287,3 +287,24 @@ fn nav_15d_a_track_without_duration_has_no_expected_length() {
     assert_eq!(expected_frame_count(51), Some(2));
     assert_eq!(expected_frame_count(240_000), Some(4_800));
 }
+
+#[test]
+fn nav_15d_progress_for_zero_bars_is_none() {
+    let (_directory, library, track_id, _music) = library_with_one_track();
+    let library = Arc::new(library);
+    let total = expected_frames(&library, track_id);
+    let (pushed, release) = (gate(), gate());
+    library.register_track_pcm_decoder(Box::new(blocking_decoder(
+        total / 2,
+        total - total / 2,
+        Arc::clone(&pushed),
+        Arc::clone(&release),
+    )));
+    let import = foreground_import(&library, track_id);
+    wait_flag(&pushed);
+
+    assert_eq!(library.track_analysis_progress(track_id, 0).unwrap(), None);
+
+    set_flag(&release);
+    import.join().unwrap().unwrap();
+}
