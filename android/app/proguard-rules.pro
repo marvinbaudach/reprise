@@ -14,3 +14,9 @@
 # through its no-arg constructor. R8 keeps the class but strips that
 # constructor, and the release build then crashes at start (#1128).
 -keep class * extends androidx.room.RoomDatabase { <init>(); }
+
+# WorkManager instantiates its input merger by reflection for every job, so the
+# same stripping leaves Glance's widget updates failing with "has no zero
+# argument constructor" and both home-screen widgets stuck on their loading
+# layout.
+-keep class * extends androidx.work.InputMerger { <init>(); }
