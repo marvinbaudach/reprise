@@ -17,6 +17,9 @@ use super::cue_sheets::{self, SheetFit, SheetRef};
 use super::entry::{EntryScan, FileFacts, ImportedTrack};
 use super::{now_unix, track_meta::TrackMeta, ScanError};
 
+#[path = "scanner_segment_match.rs"]
+mod segment_match;
+
 /// How a file is to be written.
 pub(super) enum Layout {
     /// One ordinary track. `rejected_by` is the sheet that was found beside the
@@ -189,12 +192,16 @@ pub(super) fn write_layout(
                 "DELETE FROM tracks WHERE path = ?1 AND segment_index = 0",
                 [path_str],
             )?;
-            remove_other_segments(scan, path_str, &kept)?;
-            Ok(u32::try_from(kept.len()).unwrap_or(u32::MAX))
+            remove_unkept_segments(scan, path_str)?;
+            Ok(u32::try_from(kept).unwrap_or(u32::MAX))
         }
     }
 }
 
+/// Writes the tracks of `segments` that are not excluded, each on the row of the
+/// same song where the file already has one (see [`segment_match`]), and
+/// returns how many it wrote. The rows no track kept are left parked at a
+/// negative position for [`remove_unkept_segments`].
 fn write_segments(
     scan: &EntryScan<'_, '_, '_>,
     path: &Path,
@@ -203,8 +210,8 @@ fn write_segments(
     imported: &ImportedTrack<'_>,
     segments: &[CueSegment],
     sheet: &Option<SheetRef>,
-) -> Result<Vec<i64>, ScanError> {
-    let mut kept = Vec::with_capacity(segments.len());
+) -> Result<usize, ScanError> {
+    let mut included = Vec::with_capacity(segments.len());
     for segment in segments {
         let excluded = exclusions::matches_segment(
             scan.tx,
@@ -213,13 +220,40 @@ fn write_segments(
             facts.inode,
             segment.segment_index,
         )?;
-        if excluded {
-            continue;
+        if !excluded {
+            included.push(segment);
+        }
+    }
+    let titles: Vec<String> = included
+        .iter()
+        .map(|segment| segment_title(segment))
+        .collect();
+    let wanted: Vec<segment_match::WantedSegment<'_>> = included
+        .iter()
+        .zip(&titles)
+        .map(|(segment, title)| segment_match::WantedSegment {
+            index: segment.segment_index,
+            start_ms: segment.start_ms,
+            title,
+        })
+        .collect();
+    let keeps = segment_match::match_rows(&known_segments(scan, path_str)?, &wanted);
+    // Every row of the file steps aside to a position no track has, so each
+    // track can take its row whatever position that row held before.
+    scan.tx.execute(
+        "UPDATE tracks SET segment_index = -id WHERE path = ?1 AND segment_index > 0",
+        [path_str],
+    )?;
+    for ((segment, title), keep) in included.iter().zip(&titles).zip(keeps) {
+        if let Some(id) = keep {
+            scan.tx.execute(
+                "UPDATE tracks SET segment_index = ?2 WHERE id = ?1",
+                rusqlite::params![id, segment.segment_index],
+            )?;
         }
         let meta = segment_meta(imported.meta, segment);
-        let title = segment_title(segment);
         let track = ImportedTrack {
-            title: &title,
+            title,
             meta: &meta,
             untagged: imported.untagged,
             mount_point: imported.mount_point.clone(),
@@ -231,29 +265,40 @@ fn write_segments(
             sheet: sheet.as_ref(),
         };
         super::entry::upsert_track(scan, path_str, facts, &track, &placement)?;
-        kept.push(segment.segment_index);
     }
-    Ok(kept)
+    Ok(included.len())
 }
 
-/// Drops the rows of tracks the sheet no longer has, or that were excluded.
-fn remove_other_segments(
+/// The tracks the file holds now.
+fn known_segments(
     scan: &EntryScan<'_, '_, '_>,
     path_str: &str,
-    kept: &[i64],
-) -> Result<(), ScanError> {
-    let mut statement = scan
-        .tx
-        .prepare_cached("SELECT segment_index FROM tracks WHERE path = ?1 AND segment_index > 0")?;
-    let present: Vec<i64> = statement
-        .query_map([path_str], |row| row.get(0))?
+) -> Result<Vec<segment_match::KnownSegment>, ScanError> {
+    let mut statement = scan.tx.prepare_cached(
+        "SELECT id, segment_index, segment_start_ms, title FROM tracks \
+         WHERE path = ?1 AND segment_index > 0 ORDER BY segment_index",
+    )?;
+    let rows = statement
+        .query_map([path_str], |row| {
+            Ok(segment_match::KnownSegment {
+                id: row.get(0)?,
+                index: row.get(1)?,
+                start_ms: row.get(2)?,
+                title: row.get(3)?,
+            })
+        })?
         .collect::<Result<_, _>>()?;
-    for index in present.into_iter().filter(|index| !kept.contains(index)) {
-        scan.tx.execute(
-            "DELETE FROM tracks WHERE path = ?1 AND segment_index = ?2",
-            rusqlite::params![path_str, index],
-        )?;
-    }
+    Ok(rows)
+}
+
+/// Drops the rows no track kept: tracks the sheet no longer has, or that were
+/// excluded. They go only after the tracks are written, so a new track never
+/// gets the id of a row that history may still name.
+fn remove_unkept_segments(scan: &EntryScan<'_, '_, '_>, path_str: &str) -> Result<(), ScanError> {
+    scan.tx.execute(
+        "DELETE FROM tracks WHERE path = ?1 AND segment_index < 0",
+        [path_str],
+    )?;
     Ok(())
 }
 
