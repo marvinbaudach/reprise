@@ -232,3 +232,34 @@ fn a_uri_resolves_to_its_present_row_and_a_stale_uri_to_none() {
         None
     );
 }
+
+#[test]
+fn cue_6_a_uri_of_a_file_cut_into_tracks_resolves_to_its_first_track_still_present() {
+    let fixture = Fixture::new(&["live"]);
+    let music = fixture.directory.path().join("music");
+    std::fs::write(
+        music.join("live.cue"),
+        "FILE \"live.flac\" WAVE\n  TRACK 01 AUDIO\n    INDEX 01 00:00:00\n  \
+         TRACK 02 AUDIO\n    INDEX 01 00:00:40\n",
+    )
+    .unwrap();
+    reprise_core::library::scanner::scan_folder(&fixture.database(), &music).unwrap();
+    let uri = music.join("live.flac").to_string_lossy().into_owned();
+    let tracks = queries::track_ids_for_path(&fixture.database(), &uri).unwrap();
+    assert_eq!(tracks.len(), 2, "the sheet cut the file in two");
+
+    assert_eq!(
+        fixture
+            .library
+            .track_by_uri(uri.clone())
+            .unwrap()
+            .map(|row| row.id),
+        Some(tracks[0])
+    );
+    queries::tombstone_tracks(&fixture.database(), &[tracks[0]], 10).unwrap();
+    assert_eq!(
+        fixture.library.track_by_uri(uri).unwrap().map(|row| row.id),
+        Some(tracks[1]),
+        "a track removed from the library does not hide its siblings"
+    );
+}

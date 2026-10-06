@@ -13,10 +13,13 @@ use gstreamer::prelude::*;
 use gstreamer_app as gst_app;
 #[cfg(test)]
 use lofty::prelude::AudioFile;
+use reprise_core::render_data_segments::{SegmentBounds, SegmentedRenderDataSession};
 use reprise_core::render_data_session::{RenderDataSession, RenderDataSessionError};
 #[cfg(test)]
 use reprise_core::spectrogram::{TrackSpectrogram, SPECTROGRAM_SAMPLE_RATE_HZ};
-use reprise_core::waveform::{RenderDataBackend, TrackRenderData, WaveformBackend, WaveformError};
+use reprise_core::waveform::{
+    RenderDataBackend, SegmentRenderData, TrackRenderData, WaveformBackend, WaveformError,
+};
 
 #[cfg(test)]
 const SAMPLE_RATE: u32 = SPECTROGRAM_SAMPLE_RATE_HZ;
@@ -61,6 +64,16 @@ impl RenderDataBackend for GstreamerWaveformBackend {
     ) -> Result<TrackRenderData, WaveformError> {
         extract(path, buckets, cancelled, RenderRequest::PeaksAndBands)
     }
+
+    fn extract_segment_render_data_cancellable(
+        &self,
+        path: &Path,
+        segments: &[SegmentBounds],
+        buckets: usize,
+        cancelled: &AtomicBool,
+    ) -> Result<Vec<SegmentRenderData>, WaveformError> {
+        extract_segments(path, segments, buckets, cancelled)
+    }
 }
 
 impl WaveformBackend for GstreamerWaveformBackend {
@@ -100,6 +113,38 @@ fn extract(
     result
 }
 
+/// One decode of `path`, cut into the stretches of `segments`. A stretch the
+/// stream never reaches comes back as [`WaveformError::EmptyStream`].
+fn extract_segments(
+    path: &Path,
+    segments: &[SegmentBounds],
+    buckets: usize,
+    cancelled: &AtomicBool,
+) -> Result<Vec<SegmentRenderData>, WaveformError> {
+    if !path.is_file() {
+        return Err(WaveformError::FileNotFound(path.to_path_buf()));
+    }
+    if cancelled.load(Ordering::Acquire) {
+        return Err(WaveformError::Cancelled);
+    }
+    gst::init().map_err(|error| WaveformError::DecodeFailed(error.to_string()))?;
+    let (pipeline, sink) = build_pipeline(path)?;
+    let mut session = SegmentedRenderDataSession::new(segments, buckets);
+    let decoded = decode(&pipeline, &sink, cancelled, |sample| {
+        let (samples, rate, channels) = pcm_of(sample)?;
+        session
+            .push_pcm_f32(&samples, rate, channels)
+            .map_err(map_session_error)
+    });
+    let _ = pipeline.set_state(gst::State::Null);
+    decoded?;
+    Ok(session
+        .finish()
+        .into_iter()
+        .map(|data| data.map_err(map_session_error))
+        .collect())
+}
+
 fn build_pipeline(path: &Path) -> Result<(gst::Pipeline, gst_app::AppSink), WaveformError> {
     let uri = gst::glib::filename_to_uri(path, None)
         .map_err(|_| WaveformError::DecodeFailed("path cannot be converted to URI".into()))?;
@@ -129,6 +174,26 @@ fn run_pipeline(
     buckets: usize,
     request: RenderRequest,
 ) -> Result<TrackRenderData, WaveformError> {
+    let mut session = match request {
+        RenderRequest::PeaksOnly => RenderDataSession::peaks_only(buckets),
+        RenderRequest::PeaksAndBands => RenderDataSession::with_peak_count(buckets),
+    };
+    decode(pipeline, sink, cancelled, |sample| {
+        let (samples, rate, channels) = pcm_of(sample)?;
+        session
+            .push_pcm_f32(&samples, rate, channels)
+            .map_err(map_session_error)
+    })?;
+    session.finish().map_err(map_session_error)
+}
+
+/// Runs the pipeline to its end, handing every decoded sample to `on_sample`.
+fn decode(
+    pipeline: &gst::Pipeline,
+    sink: &gst_app::AppSink,
+    cancelled: &AtomicBool,
+    mut on_sample: impl FnMut(&gst::Sample) -> Result<(), WaveformError>,
+) -> Result<(), WaveformError> {
     pipeline
         .set_state(gst::State::Paused)
         .map_err(|error| WaveformError::DecodeFailed(error.to_string()))?;
@@ -137,10 +202,6 @@ fn run_pipeline(
     pipeline
         .set_state(gst::State::Playing)
         .map_err(|error| WaveformError::DecodeFailed(error.to_string()))?;
-    let mut session = match request {
-        RenderRequest::PeaksOnly => RenderDataSession::peaks_only(buckets),
-        RenderRequest::PeaksAndBands => RenderDataSession::with_peak_count(buckets),
-    };
     let bus = pipeline
         .bus()
         .ok_or_else(|| WaveformError::DecodeFailed("pipeline has no bus".into()))?;
@@ -149,7 +210,7 @@ fn run_pipeline(
             return Err(WaveformError::Cancelled);
         }
         if let Some(sample) = sink.try_pull_sample(PULL_TIMEOUT) {
-            push_sample(&mut session, &sample)?;
+            on_sample(&sample)?;
             continue;
         }
         if let Some(message) = bus.timed_pop_filtered(
@@ -172,7 +233,7 @@ fn run_pipeline(
             break;
         }
     }
-    session.finish().map_err(map_session_error)
+    Ok(())
 }
 
 #[cfg(test)]
@@ -182,7 +243,9 @@ fn metadata_duration(path: &Path) -> Option<gst::ClockTime> {
     (nanoseconds > 0).then(|| gst::ClockTime::from_nseconds(nanoseconds))
 }
 
-fn push_sample(session: &mut RenderDataSession, sample: &gst::Sample) -> Result<(), WaveformError> {
+/// The interleaved samples of a decoded buffer with the rate and channel count it
+/// was decoded at.
+fn pcm_of(sample: &gst::Sample) -> Result<(Vec<f32>, u32, u32), WaveformError> {
     let buffer = sample
         .buffer()
         .ok_or_else(|| WaveformError::DecodeFailed("sample has no buffer".into()))?;
@@ -215,9 +278,7 @@ fn push_sample(session: &mut RenderDataSession, sample: &gst::Sample) -> Result<
         .ok()
         .and_then(|value| u32::try_from(value).ok())
         .ok_or_else(|| WaveformError::DecodeFailed("sample has no valid channel count".into()))?;
-    session
-        .push_pcm_f32(&samples, rate, channels)
-        .map_err(map_session_error)
+    Ok((samples, rate, channels))
 }
 
 fn map_session_error(error: RenderDataSessionError) -> WaveformError {
@@ -444,6 +505,87 @@ mod tests {
             Some(14)
         );
         assert!((216..=222).contains(&final_frame[14]));
+    }
+
+    #[test]
+    fn one_decode_of_a_two_track_file_gives_each_track_its_own_data() {
+        let directory = tempfile::tempdir().unwrap();
+        let path = directory.path().join("two-tracks.wav");
+        let tone = |frequency_hz: f64, amplitude: f64| {
+            (0..SAMPLE_RATE * 2).map(move |index| {
+                let phase = std::f64::consts::TAU * frequency_hz * f64::from(index)
+                    / f64::from(SAMPLE_RATE);
+                (phase.sin() * amplitude * f64::from(i16::MAX)) as i16
+            })
+        };
+        let samples = tone(1_000.0, 0.1)
+            .chain(tone(4_000.0, 0.5))
+            .collect::<Vec<_>>();
+        write_wav(&path, &samples);
+        let segments = [
+            SegmentBounds {
+                start_ms: 0,
+                end_ms: 2_000,
+            },
+            SegmentBounds {
+                start_ms: 2_000,
+                end_ms: 4_000,
+            },
+        ];
+
+        let data: Vec<TrackRenderData> = GstreamerWaveformBackend
+            .extract_segment_render_data_cancellable(&path, &segments, 100, &AtomicBool::new(false))
+            .unwrap()
+            .into_iter()
+            .map(Result::unwrap)
+            .collect();
+
+        let peak_band = |track: &TrackRenderData| {
+            let frame = track
+                .spectrogram
+                .frame(track.spectrogram.frame_count() - 1)
+                .unwrap();
+            frame
+                .iter()
+                .enumerate()
+                .max_by_key(|(_, level)| *level)
+                .map(|(index, _)| index)
+                .unwrap()
+        };
+        assert_eq!(data.len(), 2);
+        assert_eq!(data[0].spectrogram.frame_count(), 40);
+        assert_eq!(data[1].spectrogram.frame_count(), 40);
+        assert_eq!(peak_band(&data[0]), 14, "1 kHz");
+        assert!(peak_band(&data[1]) > 14, "4 kHz sits above it");
+        let loudness = |track: &TrackRenderData| track.loudness.unwrap().integrated_lufs;
+        assert!(loudness(&data[1]) > loudness(&data[0]) + 10.0);
+    }
+
+    #[test]
+    fn a_track_past_the_end_of_the_decoded_file_is_not_measured() {
+        let directory = tempfile::tempdir().unwrap();
+        let path = directory.path().join("short.wav");
+        write_wav(&path, &vec![8_000; SAMPLE_RATE as usize]);
+        let segments = [
+            SegmentBounds {
+                start_ms: 0,
+                end_ms: 1_000,
+            },
+            SegmentBounds {
+                start_ms: 5_000,
+                end_ms: 6_000,
+            },
+        ];
+
+        let data = GstreamerWaveformBackend
+            .extract_segment_render_data_cancellable(&path, &segments, 100, &AtomicBool::new(false))
+            .unwrap();
+
+        assert!(data[0].as_ref().unwrap().spectrogram.frame_count() > 0);
+        assert!(
+            matches!(data[1], Err(WaveformError::EmptyStream)),
+            "a stretch the file never reaches is no empty measurement"
+        );
     }
 
     #[test]

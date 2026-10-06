@@ -42,7 +42,9 @@ fn query_stats_album_target_for_path_in(
                      ELSE TRIM(artist)
                 END
          FROM tracks
-         WHERE path = ?1",
+         WHERE path = ?1
+         ORDER BY segment_index
+         LIMIT 1",
         [path],
         |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)),
     )

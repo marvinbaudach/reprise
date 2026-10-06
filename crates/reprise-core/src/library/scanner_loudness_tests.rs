@@ -129,7 +129,10 @@ fn scanner_persists_replaygain_tags_and_current_scan_version() {
             },
         )
         .unwrap();
-    assert_eq!(stored, (Some(-4.5), None, None, None, 1));
+    assert_eq!(
+        stored,
+        (Some(-4.5), None, None, None, super::TAG_SCAN_VERSION)
+    );
 }
 
 #[test]
@@ -149,7 +152,7 @@ fn scanner_rereads_a_version_zero_row_exactly_once() {
         .conn()
         .query_row("SELECT tag_scan_version FROM tracks", [], |row| row.get(0))
         .unwrap();
-    assert_eq!(version, 1);
+    assert_eq!(version, super::TAG_SCAN_VERSION);
 
     track_meta::READ_META_CALLS.with(|calls| calls.set(0));
     super::tests::completed(scan_folder(&database, temp.path()).unwrap());

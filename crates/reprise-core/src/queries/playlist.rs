@@ -21,7 +21,7 @@ use rusqlite::Connection;
 /// position. Playback obtains its separately filtered ids below; the window
 /// is the membership view and must not silently rewrite that membership.
 ///
-/// The trailing `pt.position` column (index 22, read by `row_to_playlist_
+/// The trailing `pt.position` column (read by `row_to_playlist_
 /// track`) is the durable fix for the "remove from playlist deletes the
 /// wrong row" bug: it surfaces each row's *true* `playlist_tracks.position`
 /// regardless of what `ORDER BY` this query used, so `ui::track_actions::

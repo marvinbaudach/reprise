@@ -1,7 +1,7 @@
 use std::collections::HashSet;
 
 use super::text::decode;
-use super::{CueError, CueFile, CueSheet, CueTrack, Frames};
+use super::{CueError, CueFile, CueSheet, CueTrack, Frames, MAX_SHEET_BYTES, MAX_TRACKS};
 
 #[derive(Default)]
 struct TrackBuilder {
@@ -41,7 +41,12 @@ struct FileBuilder {
 }
 
 /// Parses the bytes of a CUE sheet, decoding UTF-8, UTF-16 or Windows-1252 text.
+/// A sheet larger than [`MAX_SHEET_BYTES`] or with more than [`MAX_TRACKS`]
+/// tracks is refused.
 pub fn parse(bytes: &[u8]) -> Result<CueSheet, CueError> {
+    if bytes.len() > MAX_SHEET_BYTES {
+        return Err(CueError::TooLarge);
+    }
     let text = decode(bytes).map_err(|()| CueError::InvalidTextEncoding)?;
     let mut sheet = CueSheet {
         title: String::new(),
@@ -86,6 +91,9 @@ pub fn parse(bytes: &[u8]) -> Result<CueSheet, CueError> {
                     .eq_ignore_ascii_case("AUDIO");
                 if !track_numbers.insert(number) {
                     return Err(CueError::DuplicateTrackNumber { track: number });
+                }
+                if track_numbers.len() > MAX_TRACKS {
+                    return Err(CueError::TooManyTracks { limit: MAX_TRACKS });
                 }
                 current_file(&mut files, line_number, line)?
                     .tracks

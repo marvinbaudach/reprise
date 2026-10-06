@@ -100,6 +100,7 @@ mod maintenance;
 mod maintenance_delete;
 mod maintenance_missing;
 mod playlist;
+mod playlist_paths;
 mod queue;
 mod smart;
 mod stats;
@@ -188,9 +189,11 @@ pub use maintenance::{
     query_random_live_track_ids, query_sync_tracks, query_sync_tracks_with_source,
     query_track_album_artist, query_track_ids_by_title_desc, query_track_ids_by_titles,
     query_track_summaries_added_since, query_track_summary, remove_missing_tracks,
-    remove_tracks_matching_paths, tombstone_tracks, track_id_for_path, undo_tombstone,
+    remove_tracks_matching_paths, tombstone_tracks, track_id_for_path, track_ids_for_path,
+    undo_tombstone,
 };
 pub use maintenance_missing::mark_track_missing_if_current;
+pub use playlist_paths::{playlist_ids, playlist_tracks_for_path, PathTracks};
 pub use track_gain::effective_gain_db;
 pub use track_summary::TrackSummary;
 // `remove_tracks_impl`/`RemoveGuard` are the internal shared deletion path
@@ -268,6 +271,8 @@ mod tests_playlist;
 mod tests_queue;
 #[cfg(test)]
 mod tests_search_fields;
+#[cfg(test)]
+mod tests_segments;
 #[cfg(test)]
 mod tests_smart;
 #[cfg(test)]

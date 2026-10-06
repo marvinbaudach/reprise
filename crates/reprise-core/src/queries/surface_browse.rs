@@ -220,7 +220,7 @@ pub fn query_library_metadata_text_search(
 /// from the windowed queries' would not fail, it would quietly hand `path` to
 /// `title`. No surface on this path renders the AI badge, so the `is_ai` column
 /// is the cheap literal `0` — projected all the same, because `row_to_track`
-/// reads index 22 either way.
+/// reads that column either way.
 pub fn query_present_track_by_id(db: &Db, track_id: i64) -> Result<Option<Track>, rusqlite::Error> {
     let projection = track_projection("", false);
     db.conn()

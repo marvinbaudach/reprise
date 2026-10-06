@@ -7563,6 +7563,67 @@ committee published on 2026-05-29.
   are `Upcoming`, `Missing` and `Incomplete`. Sidebar row labels and the seeded
   smart lists are header case.
 
+## AK. CUE sheets
+
+<!-- REVIEW: rule proposal -->
+
+An album ripped as one audio file plus a `.cue` sheet, or a FLAC that carries
+the sheet in its `CUESHEET` comment, is listed as the tracks the sheet names.
+Reprise only reads sheets: it never writes one, and a track cut from a file has
+no tags of its own to write.
+
+- **CUE-1a** [active] [core] — A sheet beside an audio file, or embedded in a
+  FLAC, lists the file as the sheet's tracks, in sheet order, each with the
+  sheet's title, artist and its own start, end and duration. What the sheet
+  leaves out comes from the file's own tags. The file is never also listed as
+  one track, however the walk happens to order the sheet and the audio.
+- **CUE-1b** [active] [core] — A rescan follows the sheet. When the sheet
+  changes, a track it still has keeps its place in the library, with its rating
+  and play count; when the sheet is removed, the file is one track again; when a
+  sheet appears beside a file already in the library, the file's single track is
+  replaced by the sheet's tracks.
+- **CUE-2** [active] [core] — A sheet that cannot be applied to its audio, because
+  it does not parse, names a file that is not there, has no audio track, names
+  one file twice or places a track past the end of its file, leaves the audio as
+  one ordinary track and raises an issue that names the sheet. Mending the sheet
+  clears the issue, and dismissing it keeps it quiet until the sheet changes.
+- **CUE-3** [active] [core] — A CUE file that moves keeps every one of its
+  tracks, with their ratings and play counts.
+- **CUE-4** [active] [core] — Removing one track of a CUE file from the library
+  hides that track and keeps its siblings; removing the file hides them all.
+- **CUE-5** [active] [core] — A track cut from a sheet is read-only. It has no
+  tag-editing seed and no tag write passes validation for it, because its tags
+  live in the sheet and writing the file would change every track in it.
+- **CUE-6** [active] [core] — A path stands for the whole file wherever a lookup
+  takes one. Opening a CUE file queues all its tracks in play order; an M3U line
+  that names it adds all its tracks still in the library, in play order, and a
+  run of consecutive lines naming it adds them once, so an exported album comes
+  back as the album; a Rhythmbox playlist that names it resolves to its first
+  track, and so does the phone's player handing the file back, to the first
+  track still in the library; a rating or play-count import, the phone's
+  listens and ratings included, a sync sidecar and an instrumental promotion
+  address whole-file tracks only, and a sync device path reaches each of the
+  tracks.
+- **CUE-7** [active] [core] — Locating a missing CUE track moves the file with
+  all of its tracks and leaves their tags alone; the file is compared with the
+  sheet by its length, not by a track's title.
+- **CUE-8** [active] [core] — A CUE file that disappears marks every one of its
+  tracks missing, and one that returns restores them all.
+- **CUE-9** [active] [core] — Each track of a CUE file has its own waveform,
+  spectrogram and loudness, measured from its own stretch of the file with a
+  single decode of the file for all of its tracks. A track played before the
+  backfill reaches it is measured from its own stretch too, never from the whole
+  file, and that decode measures the file's other unmeasured tracks with it;
+  moving on to another track stops a decode nobody waits for any more. Where no
+  backend can cut the file, a track simply has no analysis, and a track the
+  decode never reaches stays unmeasured. A track whose cut changes loses its
+  analysis and is measured again, never from its old cut; its siblings keep
+  theirs.
+- **CUE-10** [active] [core] — A track cut from a file gets no sync analysis
+  sidecar, because one file's tracks would all write the same sidecar name. For
+  the same reason its lyrics are never read from or written to a sidecar beside
+  the file or the file's tags; they come from the online sources and the cache.
+
 ## AJ. Showroom (public site)
 
 Rules in this section govern `showroom/`, the public site. Their level is

@@ -385,6 +385,7 @@ impl SessionInner {
             (track_id, uri, next, history_entry)
         };
         if let Err(error) = backend.play(PlaybackItem {
+            segment: None,
             path: &uri,
             gain_db: self.gain_db_for(track_id),
         }) {

@@ -259,6 +259,7 @@ mod tests {
 
     fn track(id: i64, album: &str, album_artist: &str, path: &str, missing: bool) -> Track {
         Track {
+            segment: None,
             id,
             path: path.into(),
             title: format!("Track {id}"),

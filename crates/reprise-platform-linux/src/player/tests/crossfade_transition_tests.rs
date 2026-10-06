@@ -23,6 +23,7 @@ fn play_20b_crossfade_promotion_carries_the_next_gain_from_the_first_sample() {
     let second = concat!(env!("CARGO_MANIFEST_DIR"), "/tests/fixtures/blip.flac");
     player.play(item(first)).unwrap();
     player.set_next(Some(PlaybackItem {
+        segment: None,
         path: second,
         gain_db: 6.0,
     }));

@@ -20,6 +20,7 @@ use crate::{
 
 fn item(path: &str) -> PlaybackItem<'_> {
     PlaybackItem {
+        segment: None,
         path,
         gain_db: -4.5,
     }

@@ -3,6 +3,7 @@
 
 use std::path::{Path, PathBuf};
 
+use super::cue_sheets::CueDirectories;
 use super::entry::{self, EntryOutcome, EntryPlan, ImportPlan};
 use super::source::{
     self, LibraryEntry, LibrarySource, LibraryWalkControl, LibraryWalkError, LibraryWalkItem,
@@ -24,7 +25,7 @@ enum PreparedAction {
     Error(LibraryWalkError),
     Skip(EntryOutcome),
     Import {
-        plan: ImportPlan,
+        plan: Box<ImportPlan>,
         meta: Box<Option<Result<super::track_meta::MetaOutcome, ScanError>>>,
     },
 }
@@ -41,6 +42,7 @@ pub(super) fn walk_root_in_batches<'source>(
     state: &mut WalkState,
     mobile_sync: &mut mobile_sync::MobileSyncDiscovery,
     mount_cache: &mut mount::MountPointCache<'source>,
+    cues: &mut CueDirectories,
     progress: &mut BatchProgress<'_>,
     leases: &mut LeaseMetrics,
 ) -> Result<(), ScanError> {
@@ -59,6 +61,7 @@ pub(super) fn walk_root_in_batches<'source>(
             state,
             mobile_sync,
             mount_cache,
+            cues,
             progress,
             leases,
         ) {
@@ -81,6 +84,7 @@ pub(super) fn walk_root_in_batches<'source>(
             state,
             mobile_sync,
             mount_cache,
+            cues,
             progress,
             leases,
         )?;
@@ -101,9 +105,22 @@ fn process_batch<'source>(
     state: &mut WalkState,
     mobile_sync: &mut mobile_sync::MobileSyncDiscovery,
     mount_cache: &mut mount::MountPointCache<'source>,
+    cues: &mut CueDirectories,
     progress: &mut BatchProgress<'_>,
     leases: &mut LeaseMetrics,
 ) -> Result<(), ScanError> {
+    // The directories of this batch's audio are listed, and their CUE sheets
+    // read, before the writer is leased: that is source I/O, and a slow source
+    // must not own the writer while it answers.
+    for item in &items {
+        if let LibraryWalkItem::Entry(entry) = item {
+            if entry.is_file && super::is_audio_file(&entry.path) {
+                if let Some(directory) = source.parent_of(&entry.path) {
+                    cues.discover(source, &directory);
+                }
+            }
+        }
+    }
     let mut prepared = Vec::with_capacity(items.len());
     leases.run(writer, &mut |conn| {
         let tx = conn.unchecked_transaction()?;
@@ -111,6 +128,7 @@ fn process_batch<'source>(
             source,
             tx: &tx,
             mount_cache,
+            cues: &mut *cues,
         };
         for item in items.drain(..) {
             prepared.push(match item {
@@ -150,6 +168,9 @@ fn process_batch<'source>(
     for item in &mut prepared {
         if let PreparedAction::Import { plan, meta } = &mut item.action {
             let path = plan.path();
+            if let Some(sheet) = plan.governing() {
+                cues.ensure_parsed(source, sheet, path);
+            }
             **meta = Some(super::track_meta::read_meta_with_fallback(source, path));
         }
     }
@@ -161,6 +182,7 @@ fn process_batch<'source>(
             source,
             tx: &tx,
             mount_cache,
+            cues: &mut *cues,
         };
         for item in prepared.drain(..) {
             if let Some((path, is_directory)) = &item.observed {
@@ -182,7 +204,7 @@ fn process_batch<'source>(
                     let path = item.observed.as_ref().map(|(path, _)| path.as_path());
                     let outcome = entry::apply_entry(
                         &mut scan,
-                        plan,
+                        &plan,
                         (*meta).expect("metadata is read before the second lease"),
                     )?;
                     (path, outcome)

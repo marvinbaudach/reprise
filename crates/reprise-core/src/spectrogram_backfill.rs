@@ -3,9 +3,13 @@
 use std::sync::atomic::{AtomicBool, Ordering};
 
 use crate::db::{
-    pending_render_data_tracks, set_track_render_data, Db, DbError, SpectrogramStoreOutcome,
+    pending_render_data_tracks, pending_segment_render_data_files, set_segment_render_data,
+    set_track_render_data, Db, DbError, PendingSegmentFile, SpectrogramStoreOutcome,
 };
-use crate::waveform::{RenderDataBackend, TrackRenderData, WaveformError, STORED_PEAK_COUNT};
+use crate::render_data_segments::SegmentBounds;
+use crate::waveform::{
+    RenderDataBackend, SegmentRenderData, TrackRenderData, WaveformError, STORED_PEAK_COUNT,
+};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum BackfillStatus {
@@ -35,18 +39,24 @@ pub fn run_render_data_backfill(
     mut on_progress: impl FnMut(BackfillProgress),
 ) -> Result<BackfillSummary, DbError> {
     let pending = pending_render_data_tracks(db)?;
-    let total = pending.len();
+    let segment_files = pending_segment_render_data_files(db)?;
+    let total = pending.len()
+        + segment_files
+            .iter()
+            .map(|file| file.tracks.len())
+            .sum::<usize>();
     let mut summary = BackfillSummary {
         status: BackfillStatus::Completed,
         stored: 0,
         failed: 0,
         source_changed: 0,
     };
+    let mut completed = 0;
 
-    for (index, track) in pending.into_iter().enumerate() {
+    for track in pending {
         if cancelled.load(Ordering::Acquire) {
             summary.status = BackfillStatus::Cancelled;
-            break;
+            return Ok(summary);
         }
         let data = match backend.extract_render_data_cancellable(
             std::path::Path::new(&track.path),
@@ -57,7 +67,7 @@ pub fn run_render_data_backfill(
             Err(WaveformError::EmptyStream) => TrackRenderData::empty(),
             Err(WaveformError::Cancelled) => {
                 summary.status = BackfillStatus::Cancelled;
-                break;
+                return Ok(summary);
             }
             Err(error) => {
                 tracing::warn!(
@@ -66,30 +76,137 @@ pub fn run_render_data_backfill(
                     "spectrogram backfill left a track pending after decode failure"
                 );
                 summary.failed += 1;
+                completed += 1;
                 on_progress(BackfillProgress {
-                    completed: index + 1,
+                    completed,
                     total,
                     track_id: track.track_id,
                 });
                 continue;
             }
         };
-        match set_track_render_data(db, track.track_id, track.source, &data)? {
-            SpectrogramStoreOutcome::Stored => summary.stored += 1,
-            SpectrogramStoreOutcome::SourceChanged => summary.source_changed += 1,
-        }
+        let outcome = set_track_render_data(db, track.track_id, track.source, &data)?;
+        count_store(outcome, &mut summary);
+        completed += 1;
         on_progress(BackfillProgress {
-            completed: index + 1,
+            completed,
             total,
             track_id: track.track_id,
         });
         if cancelled.load(Ordering::Acquire) {
             summary.status = BackfillStatus::Cancelled;
-            break;
+            return Ok(summary);
+        }
+    }
+
+    for file in segment_files {
+        if cancelled.load(Ordering::Acquire) {
+            summary.status = BackfillStatus::Cancelled;
+            return Ok(summary);
+        }
+        let Some(datas) = extract_file(backend, &file, cancelled, &mut summary) else {
+            if summary.status == BackfillStatus::Cancelled {
+                return Ok(summary);
+            }
+            for track in &file.tracks {
+                completed += 1;
+                on_progress(BackfillProgress {
+                    completed,
+                    total,
+                    track_id: track.track_id,
+                });
+            }
+            continue;
+        };
+        for (track, data) in file.tracks.iter().zip(&datas) {
+            match data {
+                Ok(data) => {
+                    let bounds = SegmentBounds {
+                        start_ms: track.start_ms,
+                        end_ms: track.end_ms,
+                    };
+                    let outcome =
+                        set_segment_render_data(db, track.track_id, file.source, bounds, data)?;
+                    count_store(outcome, &mut summary);
+                }
+                Err(error) => {
+                    tracing::warn!(
+                        track_id = track.track_id,
+                        error = %error,
+                        "spectrogram backfill left a CUE track pending: its stretch was not decoded"
+                    );
+                    summary.failed += 1;
+                }
+            }
+            completed += 1;
+            on_progress(BackfillProgress {
+                completed,
+                total,
+                track_id: track.track_id,
+            });
+        }
+        if cancelled.load(Ordering::Acquire) {
+            summary.status = BackfillStatus::Cancelled;
+            return Ok(summary);
         }
     }
 
     Ok(summary)
+}
+
+/// Decodes one CUE file once for all of its pending tracks. `None` when nothing
+/// was produced: the scan was cancelled (the summary says so) or the decode
+/// failed (every track of the file counts as failed and stays pending). A track
+/// whose stretch the decode never reached has its own error and stays pending.
+fn extract_file(
+    backend: &dyn RenderDataBackend,
+    file: &PendingSegmentFile,
+    cancelled: &AtomicBool,
+    summary: &mut BackfillSummary,
+) -> Option<Vec<SegmentRenderData>> {
+    let bounds: Vec<SegmentBounds> = file
+        .tracks
+        .iter()
+        .map(|track| SegmentBounds {
+            start_ms: track.start_ms,
+            end_ms: track.end_ms,
+        })
+        .collect();
+    match backend.extract_segment_render_data_cancellable(
+        std::path::Path::new(&file.path),
+        &bounds,
+        STORED_PEAK_COUNT,
+        cancelled,
+    ) {
+        Ok(datas) if datas.len() == file.tracks.len() => Some(datas),
+        Ok(_) => {
+            tracing::warn!(path = %file.path, "backend returned the wrong number of tracks");
+            summary.failed += file.tracks.len();
+            None
+        }
+        Err(WaveformError::Cancelled) => {
+            summary.status = BackfillStatus::Cancelled;
+            None
+        }
+        Err(error) => {
+            tracing::warn!(
+                path = %file.path,
+                error = %error,
+                "spectrogram backfill left a CUE file pending after decode failure"
+            );
+            summary.failed += file.tracks.len();
+            None
+        }
+    }
+}
+
+/// Counts a store. A track whose file or cut changed during the decode stays
+/// pending, and the next run measures it as it is then.
+fn count_store(outcome: SpectrogramStoreOutcome, summary: &mut BackfillSummary) {
+    match outcome {
+        SpectrogramStoreOutcome::Stored => summary.stored += 1,
+        SpectrogramStoreOutcome::SourceChanged => summary.source_changed += 1,
+    }
 }
 
 #[cfg(test)]
@@ -240,5 +357,263 @@ mod tests {
             crate::db::get_waveform_peaks(&db, 1).unwrap(),
             Some(vec![1; STORED_PEAK_COUNT])
         );
+    }
+
+    /// Hands each of a file's tracks data that says which track it is.
+    struct CuePerTrackBackend {
+        file_calls: AtomicUsize,
+        whole_calls: AtomicUsize,
+        bounds_seen: std::sync::Mutex<Vec<Vec<SegmentBounds>>>,
+        /// Where the decoded stream ends.
+        file_ends_ms: i64,
+    }
+
+    impl WaveformBackend for CuePerTrackBackend {
+        fn extract_peaks(&self, _path: &Path, buckets: usize) -> Result<Vec<u8>, WaveformError> {
+            Ok(vec![1; buckets])
+        }
+    }
+
+    impl RenderDataBackend for CuePerTrackBackend {
+        fn extract_render_data_cancellable(
+            &self,
+            _path: &Path,
+            buckets: usize,
+            _cancelled: &AtomicBool,
+        ) -> Result<TrackRenderData, WaveformError> {
+            self.whole_calls.fetch_add(1, Ordering::Relaxed);
+            Ok(TrackRenderData {
+                waveform_peaks: vec![200; buckets],
+                spectrogram: TrackSpectrogram::from_cells(vec![9; 24]).unwrap(),
+                loudness: None,
+            })
+        }
+
+        fn extract_segment_render_data_cancellable(
+            &self,
+            _path: &Path,
+            segments: &[SegmentBounds],
+            buckets: usize,
+            _cancelled: &AtomicBool,
+        ) -> Result<Vec<SegmentRenderData>, WaveformError> {
+            self.file_calls.fetch_add(1, Ordering::Relaxed);
+            self.bounds_seen.lock().unwrap().push(segments.to_vec());
+            Ok(segments
+                .iter()
+                .map(|segment| {
+                    // A file of ten seconds: a stretch past it is never reached.
+                    if segment.start_ms >= self.file_ends_ms {
+                        return Err(WaveformError::EmptyStream);
+                    }
+                    Ok(TrackRenderData {
+                        waveform_peaks: vec![(segment.start_ms / 1_000) as u8; buckets],
+                        spectrogram: TrackSpectrogram::from_cells(vec![1; 24]).unwrap(),
+                        loudness: None,
+                    })
+                })
+                .collect())
+        }
+    }
+
+    fn database_with_a_cue_file() -> Db {
+        let db = database();
+        db.conn()
+            .execute_batch(
+                "INSERT INTO tracks (id, path, title, added_at, file_mtime, file_size, device, inode,
+                                     segment_index, segment_start_ms, segment_end_ms)
+                 VALUES (10, '/live.flac', 'One', 0, 11, 22, 33, 90, 1, 0, 3000),
+                        (11, '/live.flac', 'Two', 0, 11, 22, 33, 90, 2, 3000, 8000),
+                        (12, '/live.flac', 'Three', 0, 11, 22, 33, 90, 3, 8000, 9000);",
+            )
+            .unwrap();
+        db
+    }
+
+    fn cue_backend() -> CuePerTrackBackend {
+        CuePerTrackBackend {
+            file_calls: AtomicUsize::new(0),
+            whole_calls: AtomicUsize::new(0),
+            bounds_seen: std::sync::Mutex::new(Vec::new()),
+            file_ends_ms: i64::MAX,
+        }
+    }
+
+    #[test]
+    fn cue_9_a_cue_file_is_decoded_once_and_each_of_its_tracks_gets_its_own_data() {
+        let db = database_with_a_cue_file();
+        let backend = cue_backend();
+        let mut progress = Vec::new();
+
+        let summary = run_render_data_backfill(&db, &backend, &AtomicBool::new(false), |step| {
+            progress.push((step.completed, step.total));
+        })
+        .unwrap();
+
+        assert_eq!(backend.whole_calls.load(Ordering::Relaxed), 3);
+        assert_eq!(
+            backend.file_calls.load(Ordering::Relaxed),
+            1,
+            "one decode for the file"
+        );
+        assert_eq!(
+            backend.bounds_seen.lock().unwrap()[0],
+            [
+                SegmentBounds {
+                    start_ms: 0,
+                    end_ms: 3_000
+                },
+                SegmentBounds {
+                    start_ms: 3_000,
+                    end_ms: 8_000
+                },
+                SegmentBounds {
+                    start_ms: 8_000,
+                    end_ms: 9_000
+                },
+            ]
+        );
+        assert_eq!(summary.stored, 6);
+        assert_eq!(progress.last(), Some(&(6, 6)));
+        assert!(pending_render_data_tracks(&db).unwrap().is_empty());
+        assert!(crate::db::pending_segment_render_data_files(&db)
+            .unwrap()
+            .is_empty());
+        for (track_id, first_peak) in [(10, 0), (11, 3), (12, 8)] {
+            let peaks = crate::db::get_waveform_peaks(&db, track_id)
+                .unwrap()
+                .unwrap();
+            assert_eq!(peaks[0], first_peak, "track {track_id}");
+        }
+    }
+
+    #[test]
+    fn cue_9_a_cue_file_that_cannot_be_decoded_leaves_every_track_pending() {
+        let db = database_with_a_cue_file();
+
+        let summary = run_render_data_backfill(
+            &db,
+            &FakeBackend {
+                calls: AtomicUsize::new(0),
+                cancel_after_first: false,
+            },
+            &AtomicBool::new(false),
+            |_| {},
+        )
+        .unwrap();
+
+        assert_eq!(summary.stored, 3, "the plain tracks");
+        assert_eq!(summary.failed, 3, "the cue tracks");
+        let pending = crate::db::pending_segment_render_data_files(&db).unwrap();
+        assert_eq!(pending.len(), 1);
+        assert_eq!(pending[0].tracks.len(), 3);
+    }
+
+    #[test]
+    fn cue_9_only_the_tracks_that_still_need_data_are_cut_out_again() {
+        let db = database_with_a_cue_file();
+        run_render_data_backfill(&db, &cue_backend(), &AtomicBool::new(false), |_| {}).unwrap();
+        db.conn()
+            .execute("UPDATE tracks SET segment_end_ms = 8500 WHERE id = 11", [])
+            .unwrap();
+        let backend = cue_backend();
+
+        let summary =
+            run_render_data_backfill(&db, &backend, &AtomicBool::new(false), |_| {}).unwrap();
+
+        assert_eq!(summary.stored, 1);
+        assert_eq!(
+            backend.bounds_seen.lock().unwrap().as_slice(),
+            [vec![SegmentBounds {
+                start_ms: 3_000,
+                end_ms: 8_500
+            }]]
+        );
+    }
+
+    /// Re-cuts track 11 through its own connection while the file decodes, as a
+    /// rescan that applies an edited sheet does.
+    struct RecuttingBackend {
+        rescanner: std::sync::Mutex<Db>,
+        inner: CuePerTrackBackend,
+    }
+
+    impl WaveformBackend for RecuttingBackend {
+        fn extract_peaks(&self, path: &Path, buckets: usize) -> Result<Vec<u8>, WaveformError> {
+            self.inner.extract_peaks(path, buckets)
+        }
+    }
+
+    impl RenderDataBackend for RecuttingBackend {
+        fn extract_render_data_cancellable(
+            &self,
+            path: &Path,
+            buckets: usize,
+            cancelled: &AtomicBool,
+        ) -> Result<TrackRenderData, WaveformError> {
+            self.inner
+                .extract_render_data_cancellable(path, buckets, cancelled)
+        }
+
+        fn extract_segment_render_data_cancellable(
+            &self,
+            path: &Path,
+            segments: &[SegmentBounds],
+            buckets: usize,
+            cancelled: &AtomicBool,
+        ) -> Result<Vec<SegmentRenderData>, WaveformError> {
+            self.rescanner
+                .lock()
+                .unwrap()
+                .conn()
+                .execute("UPDATE tracks SET segment_end_ms = 8500 WHERE id = 11", [])
+                .unwrap();
+            self.inner
+                .extract_segment_render_data_cancellable(path, segments, buckets, cancelled)
+        }
+    }
+
+    #[test]
+    fn cue_9_a_track_re_cut_while_its_file_decodes_keeps_nothing_from_the_old_cut() {
+        let directory = tempfile::tempdir().unwrap();
+        let path = directory.path().join("recut.db");
+        let db = Db::open_migrated(Some(&path)).unwrap();
+        db.conn()
+            .execute_batch(
+                "INSERT INTO tracks (id, path, title, added_at, file_mtime, file_size, device, inode,
+                                     segment_index, segment_start_ms, segment_end_ms)
+                 VALUES (10, '/live.flac', 'One', 0, 11, 22, 33, 90, 1, 0, 3000),
+                        (11, '/live.flac', 'Two', 0, 11, 22, 33, 90, 2, 3000, 8000);",
+            )
+            .unwrap();
+        let backend = RecuttingBackend {
+            rescanner: std::sync::Mutex::new(Db::open_migrated(Some(&path)).unwrap()),
+            inner: cue_backend(),
+        };
+
+        let summary =
+            run_render_data_backfill(&db, &backend, &AtomicBool::new(false), |_| {}).unwrap();
+
+        assert_eq!((summary.stored, summary.source_changed), (1, 1));
+        assert_eq!(crate::db::get_waveform_peaks(&db, 11).unwrap(), None);
+        let pending = crate::db::pending_segment_render_data_files(&db).unwrap();
+        assert_eq!(pending[0].tracks[0].track_id, 11, "measured again later");
+    }
+
+    #[test]
+    fn cue_9_a_track_past_the_end_of_its_decoded_file_stays_pending() {
+        let db = database_with_a_cue_file();
+        let backend = CuePerTrackBackend {
+            file_ends_ms: 8_000,
+            ..cue_backend()
+        };
+
+        let summary =
+            run_render_data_backfill(&db, &backend, &AtomicBool::new(false), |_| {}).unwrap();
+
+        assert_eq!((summary.stored, summary.failed), (5, 1));
+        assert_eq!(crate::db::get_waveform_peaks(&db, 12).unwrap(), None);
+        let pending = crate::db::pending_segment_render_data_files(&db).unwrap();
+        assert_eq!(pending[0].tracks.len(), 1);
+        assert_eq!(pending[0].tracks[0].track_id, 12, "measured again later");
     }
 }

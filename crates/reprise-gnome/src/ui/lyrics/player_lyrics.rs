@@ -347,6 +347,10 @@ impl PlayerLyrics {
 /// Builds the lyrics lookup key for `summary` without touching playback. Used
 /// on the gapless hand-off path, where the audio is already rolling and only
 /// the UI/lyrics need to catch up (no `play()` call).
+///
+/// A track cut from a file by a CUE sheet has no path here: the file's lyrics
+/// sidecar and tags belong to every track in it, so they are neither read nor
+/// written for one of them.
 pub(in crate::ui) fn lyrics_query_for(summary: &TrackSummary) -> LyricsTrack {
     LyricsTrack {
         query: LyricsQuery {
@@ -355,7 +359,10 @@ pub(in crate::ui) fn lyrics_query_for(summary: &TrackSummary) -> LyricsTrack {
             album: summary.album.clone(),
             duration_ms: summary.duration_ms,
         },
-        track_path: Some(summary.path.clone().into()),
+        track_path: summary
+            .segment
+            .is_none()
+            .then(|| summary.path.clone().into()),
     }
 }
 
@@ -369,6 +376,7 @@ pub(in crate::ui) fn start_track_for_lyrics(
     player.play(reprise_core::playback::PlaybackItem {
         path: &summary.path,
         gain_db: reprise_core::queries::effective_gain_db(db, track_id, mode),
+        segment: summary.playback_segment(),
     })?;
     Ok(lyrics_query_for(summary))
 }

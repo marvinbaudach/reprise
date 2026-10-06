@@ -320,16 +320,9 @@ fn register_and_record(
         }
         Err(error) => return Err(PromotionError::Registration(error.to_string())),
     }
-    let result_track_id: i64 = conn
-        .query_row(
-            "SELECT id FROM tracks WHERE path = ?1",
-            [destination.to_string_lossy()],
-            |row| row.get(0),
-        )
-        .optional()?
-        .ok_or_else(|| {
-            PromotionError::Registration("registered track vanished before provenance".to_string())
-        })?;
+    let result_track_id = registered_whole_file_track(conn, destination)?.ok_or_else(|| {
+        PromotionError::Registration("registered track vanished before provenance".to_string())
+    })?;
 
     let source_text = format!("{} — {}", source.artist, source.title);
     // Provenance + the staged->saved job transition land in one transaction.
@@ -511,6 +504,20 @@ fn destination_reserved_by_other_job(
         )
         .optional()?;
     Ok(taken.is_some())
+}
+
+/// The track a freshly written instrumental registered as. A render is one
+/// ordinary file, so only a whole-file row counts, whatever else shares the path.
+pub(crate) fn registered_whole_file_track(
+    conn: &Connection,
+    destination: &Path,
+) -> Result<Option<i64>, rusqlite::Error> {
+    conn.query_row(
+        "SELECT id FROM tracks WHERE path = ?1 AND segment_index = 0",
+        [destination.to_string_lossy()],
+        |row| row.get(0),
+    )
+    .optional()
 }
 
 /// Makes one tag value safe as a single path component: strips separators and

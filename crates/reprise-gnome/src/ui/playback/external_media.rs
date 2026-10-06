@@ -327,6 +327,7 @@ impl PlayerController {
         }
         let result = match source {
             EpisodeSource::File(path) => self.player.play(reprise_core::playback::PlaybackItem {
+                segment: None,
                 path: &path,
                 gain_db: 0.0,
             }),

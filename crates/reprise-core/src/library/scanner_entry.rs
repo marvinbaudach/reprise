@@ -12,12 +12,15 @@ use crate::library::source::{
 };
 use crate::library::{exclusions, import_errors};
 
+use super::cue_sheets::{Cover, CueDirectories, SheetRef};
+use super::segments::{self, Placement, SheetIssue};
 use super::{move_detect, repair, track_meta, ScanError};
 
 pub(super) struct EntryScan<'a, 'conn, 'source> {
     pub(super) source: &'source dyn LibrarySource,
     pub(super) tx: &'a rusqlite::Transaction<'conn>,
     pub(super) mount_cache: &'a mut super::mount::MountPointCache<'source>,
+    pub(super) cues: &'a mut CueDirectories,
 }
 
 /// What one walk entry turned out to be, and what the scan did about it.
@@ -42,8 +45,13 @@ pub(super) enum EntryOutcome {
     Dismissed,
     /// An audio file recognised as a relocation of a row the catalog knows.
     Moved { healed: u32 },
-    /// An audio file written to the catalog.
-    Imported { is_update: bool, healed: u32 },
+    /// An audio file written to the catalog, as one track or, for a CUE sheet,
+    /// as the `tracks` it holds.
+    Imported {
+        is_update: bool,
+        healed: u32,
+        tracks: u32,
+    },
     /// An audio file neither tag pass could read.
     ImportFailed,
 }
@@ -63,11 +71,11 @@ impl EntryOutcome {
 /// `has_file_stat` is false only when the metadata query itself failed, which
 /// is what disqualifies the entry from move detection.
 pub(super) struct FileFacts {
-    mtime: i64,
-    file_size: i64,
+    pub(super) mtime: i64,
+    pub(super) file_size: i64,
     identity: Option<(i64, i64)>,
-    device: Option<i64>,
-    inode: Option<i64>,
+    pub(super) device: Option<i64>,
+    pub(super) inode: Option<i64>,
     has_file_stat: bool,
 }
 
@@ -103,8 +111,10 @@ fn file_facts(
     }
 }
 
-/// What the catalog already records for this exact path.
-#[derive(Clone, Copy, Default, PartialEq, Eq)]
+/// What the catalog already records for this exact path: one row for an
+/// ordinary file, several for the tracks of a CUE sheet. The facts are read
+/// across all of them, and anything the rows disagree on reads as "changed".
+#[derive(Clone, Default, PartialEq, Eq)]
 pub(super) struct KnownRow {
     exists: bool,
     mtime: Option<i64>,
@@ -112,9 +122,62 @@ pub(super) struct KnownRow {
     removed: bool,
     untagged: bool,
     tag_scan_version: i64,
+    sheet: KnownSheet,
 }
 
-type KnownRowColumns = (i64, Option<i64>, Option<i64>, i64, i64);
+/// The sheet beside the file that its rows were written under.
+#[derive(Clone, Default, PartialEq, Eq)]
+enum KnownSheet {
+    /// No row names a sheet: a plain file, or tracks from a sheet embedded in it.
+    #[default]
+    None,
+    /// Every row was written under this sheet at this mtime and size.
+    Applied {
+        path: String,
+        mtime: i64,
+        size: Option<i64>,
+    },
+    /// The rows disagree, or hold a whole-file track beside tracks.
+    Mixed,
+}
+
+impl KnownRow {
+    /// Whether a sheet beside the file wrote any of its rows.
+    fn was_cut_by_a_sheet(&self) -> bool {
+        !matches!(self.sheet, KnownSheet::None)
+    }
+
+    /// Whether the rows were written under exactly the sheet that governs the
+    /// file now, or under none when none does.
+    fn matches_sheet(&self, governing: Option<&SheetRef>) -> bool {
+        match (&self.sheet, governing) {
+            (KnownSheet::None, None) => true,
+            (KnownSheet::Applied { path, mtime, size }, Some(sheet)) => {
+                *path == sheet.path_text() && *mtime == sheet.mtime && *size == Some(sheet.size)
+            }
+            _ => false,
+        }
+    }
+}
+
+type KnownRowColumns = (
+    i64,
+    Option<i64>,
+    Option<i64>,
+    i64,
+    i64,
+    i64,
+    Option<i64>,
+    i64,
+    i64,
+    i64,
+    Option<String>,
+    Option<String>,
+    Option<i64>,
+    Option<i64>,
+    Option<i64>,
+    Option<i64>,
+);
 
 fn known_row(tx: &rusqlite::Transaction, path_str: &str) -> KnownRow {
     // Query failure is deliberately indistinguishable from an absent row:
@@ -122,7 +185,12 @@ fn known_row(tx: &rusqlite::Transaction, path_str: &str) -> KnownRow {
     // default `KnownRow`. Do not replace this `.ok()` with error propagation.
     let known: Option<KnownRowColumns> = tx
         .prepare_cached(
-            "SELECT file_mtime, missing_since, removed_at, untagged, tag_scan_version
+            "SELECT count(*), min(file_mtime), max(file_mtime), count(missing_since),
+                    count(removed_at), max(untagged), min(tag_scan_version),
+                    count(CASE WHEN segment_index = 0 THEN 1 END),
+                    count(CASE WHEN segment_index > 0 THEN 1 END), count(cue_path),
+                    min(cue_path), max(cue_path), min(cue_mtime), max(cue_mtime),
+                    min(cue_size), max(cue_size)
              FROM tracks WHERE path = ?1",
         )
         .ok()
@@ -135,27 +203,81 @@ fn known_row(tx: &rusqlite::Transaction, path_str: &str) -> KnownRow {
                         row.get(2)?,
                         row.get(3)?,
                         row.get(4)?,
+                        row.get(5)?,
+                        row.get(6)?,
+                        row.get(7)?,
+                        row.get(8)?,
+                        row.get(9)?,
+                        row.get(10)?,
+                        row.get(11)?,
+                        row.get(12)?,
+                        row.get(13)?,
+                        row.get(14)?,
+                        row.get(15)?,
                     ))
                 })
                 .ok()
-        });
+        })
+        .filter(|columns| columns.0 > 0);
+    let Some((
+        rows,
+        min_mtime,
+        max_mtime,
+        missing_rows,
+        removed_rows,
+        untagged,
+        tag_scan_version,
+        whole_rows,
+        segment_rows,
+        sheet_rows,
+        min_sheet,
+        max_sheet,
+        min_sheet_mtime,
+        max_sheet_mtime,
+        min_sheet_size,
+        max_sheet_size,
+    )) = known
+    else {
+        return KnownRow::default();
+    };
+    let sheet = if whole_rows > 0 && segment_rows > 0 {
+        KnownSheet::Mixed
+    } else if sheet_rows == 0 {
+        KnownSheet::None
+    } else if sheet_rows == rows
+        && min_sheet == max_sheet
+        && min_sheet_mtime == max_sheet_mtime
+        && min_sheet_size == max_sheet_size
+    {
+        match (min_sheet, min_sheet_mtime) {
+            (Some(path), Some(mtime)) => KnownSheet::Applied {
+                path,
+                mtime,
+                size: min_sheet_size,
+            },
+            _ => KnownSheet::Mixed,
+        }
+    } else {
+        KnownSheet::Mixed
+    };
     KnownRow {
-        exists: known.is_some(),
-        mtime: known.map(|(file_mtime, ..)| file_mtime),
-        missing: known.is_some_and(|(_, missing_since, ..)| missing_since.is_some()),
+        exists: true,
+        mtime: (min_mtime == max_mtime).then_some(min_mtime).flatten(),
+        missing: missing_rows > 0,
         // Task 1.9: a row can be tombstoned (`removed_at` set, via a future
         // "Remove from library") independently of ever having been marked
         // missing — evidence that the file is still sitting at its exact
         // recorded path outranks that removal (evidence rule, Beschluss
         // 7/12), so this reappearance check must fire for a tombstoned row
         // too, not only a missing one.
-        removed: known.is_some_and(|(_, _, removed_at, ..)| removed_at.is_some()),
+        removed: removed_rows > 0,
         // A present row still flagged `untagged` (an earlier scan couldn't parse
         // its container) must NOT take the unchanged-mtime fast path: excluding
         // it here drops it through to re-read + `repair_damaged_tags`, so a
         // library imported before auto-repair existed stops staying untagged.
-        untagged: known.is_some_and(|(_, _, _, untagged, _)| untagged != 0),
-        tag_scan_version: known.map_or(0, |(_, _, _, _, version)| version),
+        untagged: untagged != 0,
+        tag_scan_version: tag_scan_version.unwrap_or(0),
+        sheet,
     }
 }
 
@@ -163,7 +285,7 @@ fn restore_present_row(
     scan: &mut EntryScan<'_, '_, '_>,
     path: &Path,
     path_str: &str,
-    known: KnownRow,
+    known: &KnownRow,
 ) -> Result<EntryOutcome, ScanError> {
     // The file reappeared at its exact recorded path with an
     // unchanged mtime (NAS remount, restore-from-trash, or a
@@ -195,7 +317,7 @@ fn restore_present_row(
 
 pub(super) enum EntryPlan {
     Skip(EntryOutcome),
-    Import(ImportPlan),
+    Import(Box<ImportPlan>),
 }
 
 pub(super) struct ImportPlan {
@@ -203,11 +325,18 @@ pub(super) struct ImportPlan {
     path_str: String,
     facts: FileFacts,
     known: KnownRow,
+    /// The sheet beside the file that describes it, if there is one.
+    governing: Option<SheetRef>,
 }
 
 impl ImportPlan {
     pub(super) fn path(&self) -> &Path {
         &self.path
+    }
+
+    /// The sheet beside the file that describes it, if there is one.
+    pub(super) fn governing(&self) -> Option<&SheetRef> {
+        self.governing.as_ref()
     }
 }
 
@@ -225,12 +354,26 @@ pub(super) fn classify_entry(
         return Ok(EntryPlan::Skip(EntryOutcome::Excluded));
     }
     let known = known_row(scan.tx, &path_str);
+    let governing = match scan.cues.covering(scan.source, scan.tx, path)? {
+        Cover::Sheet(sheet) => Some(sheet),
+        Cover::Plain => None,
+        // Whether a sheet beside it cuts this file cannot be told this scan.
+        // Rows a sheet cut stay exactly as they are. Any other file is read as
+        // if no sheet were there, which is how its rows came about, so that
+        // loses nothing either; a sheet that is new beside it waits for a scan
+        // that can see it.
+        Cover::Unknown if known.was_cut_by_a_sheet() => {
+            return Ok(EntryPlan::Skip(EntryOutcome::Unchanged));
+        }
+        Cover::Unknown => None,
+    };
     if known.mtime == Some(facts.mtime)
         && known.tag_scan_version >= super::TAG_SCAN_VERSION
         && !known.untagged
+        && known.matches_sheet(governing.as_ref())
     {
         if known.missing || known.removed {
-            return restore_present_row(scan, path, &path_str, known).map(EntryPlan::Skip);
+            return restore_present_row(scan, path, &path_str, &known).map(EntryPlan::Skip);
         }
         return Ok(EntryPlan::Skip(EntryOutcome::Unchanged));
     }
@@ -238,8 +381,11 @@ pub(super) fn classify_entry(
     // `read_meta` — see `check_dismissed`'s doc comment. An `untagged` row
     // is exempt: a dismissal only silences the notification and predates
     // auto-repair, so skipping here would strand a now-repairable file
-    // forever (its mtime never changes, so it is never re-read).
+    // forever (its mtime never changes, so it is never re-read). Neither is a
+    // file whose sheet changed: a dismissal is about the file as it was read,
+    // and a sheet that arrived since may well apply.
     if !known.untagged
+        && known.matches_sheet(governing.as_ref())
         && import_errors::check_dismissed(
             scan.tx,
             &path_str,
@@ -250,12 +396,13 @@ pub(super) fn classify_entry(
     {
         return Ok(EntryPlan::Skip(EntryOutcome::Dismissed));
     }
-    Ok(EntryPlan::Import(ImportPlan {
+    Ok(EntryPlan::Import(Box::new(ImportPlan {
         path: path.to_path_buf(),
         path_str,
         facts,
         known,
-    }))
+        governing,
+    })))
 }
 
 fn read_import_meta(
@@ -311,6 +458,7 @@ fn find_move(
     facts: &FileFacts,
     title: &str,
     meta: &track_meta::TrackMeta,
+    layout: &segments::Layout,
     is_update: bool,
 ) -> Result<Option<move_detect::MoveCandidate>, ScanError> {
     // Move detection (Stage 2 Task 8) only ever applies to a path
@@ -334,15 +482,16 @@ fn find_move(
             album: &meta.album,
             duration_ms: meta.duration_ms,
             file_size: facts.file_size,
+            tracks_album: segments::tracks_album(layout, meta),
         },
     )
 }
 
-struct ImportedTrack<'a> {
-    title: &'a str,
-    meta: &'a track_meta::TrackMeta,
-    untagged: bool,
-    mount_point: Option<String>,
+pub(super) struct ImportedTrack<'a> {
+    pub(super) title: &'a str,
+    pub(super) meta: &'a track_meta::TrackMeta,
+    pub(super) untagged: bool,
+    pub(super) mount_point: Option<String>,
 }
 
 fn apply_move(
@@ -387,9 +536,11 @@ const UPSERT_TRACK_SQL: &str =
                            year, track_no, disc_no, genre, duration_ms, bitrate_kbps, added_at,
                            file_mtime, file_size, device, inode, mount_point, untagged,
                            rg_track_gain, rg_track_peak, rg_album_gain, rg_album_peak,
-                           tag_scan_version)
-                         VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11,?12,?13,?14,?15,?16,?17,?18,?19,?20,?21,?22,?23,?24)
-                         ON CONFLICT(path) DO UPDATE SET
+                           tag_scan_version, segment_index, segment_start_ms, segment_end_ms,
+                           cue_path, cue_mtime, cue_size)
+                         VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11,?12,?13,?14,?15,?16,?17,?18,?19,?20,?21,?22,?23,?24,
+                                 ?25,?26,?27,?28,?29,?30)
+                         ON CONFLICT(path, segment_index) DO UPDATE SET
                            title=?2, artist=?3, album=?4, album_artist=?5,
                            artist_mbid=COALESCE(?6, artist_mbid),
                            artist_mbid_negative=CASE WHEN ?6 IS NOT NULL THEN 0 ELSE artist_mbid_negative END,
@@ -398,20 +549,23 @@ const UPSERT_TRACK_SQL: &str =
                            missing_since=NULL, missing_reason=NULL, removed_at=NULL,
                            file_size=?15, device=?16, inode=?17, mount_point=?18,
                            untagged=?19, rg_track_gain=?20, rg_track_peak=?21,
-                           rg_album_gain=?22, rg_album_peak=?23, tag_scan_version=?24";
+                           rg_album_gain=?22, rg_album_peak=?23, tag_scan_version=?24,
+                           segment_start_ms=?26, segment_end_ms=?27,
+                           cue_path=?28, cue_mtime=?29, cue_size=?30";
 
-// `ON CONFLICT(path)` fires whenever this path already
-// has a row — including one still carrying `removed_at`
+// `ON CONFLICT(path, segment_index)` fires whenever this path already
+// has a row for that track — including one still carrying `removed_at`
 // from a prior tombstone: the walk just proved the file
 // is there, so `removed_at=NULL` in the `DO UPDATE SET`
 // below resurrects it here too (evidence rule, Beschluss
 // 7/12), same as the fast-path-restore branch and
 // `apply_file_identity`'s move arm above.
-fn upsert_track(
+pub(super) fn upsert_track(
     scan: &EntryScan<'_, '_, '_>,
     path_str: &str,
     facts: &FileFacts,
     imported: &ImportedTrack<'_>,
+    placement: &Placement<'_>,
 ) -> Result<(), ScanError> {
     let params = super::tag_param_values(imported.title, imported.meta, imported.untagged);
     let (
@@ -433,6 +587,9 @@ fn upsert_track(
         rg_album_peak,
         tag_scan_version,
     ) = params;
+    let cue_path = placement.sheet.map(SheetRef::path_text);
+    let cue_mtime = placement.sheet.map(|sheet| sheet.mtime);
+    let cue_size = placement.sheet.map(|sheet| sheet.size);
     scan.tx
         .prepare_cached(UPSERT_TRACK_SQL)?
         .execute(rusqlite::params![
@@ -460,18 +617,29 @@ fn upsert_track(
             rg_album_gain,
             rg_album_peak,
             tag_scan_version,
+            placement.segment_index,
+            placement.start_ms,
+            placement.end_ms,
+            cue_path,
+            cue_mtime,
+            cue_size,
         ])?;
     Ok(())
 }
 
 fn import_readable_entry(
     scan: &mut EntryScan<'_, '_, '_>,
-    path: &Path,
-    path_str: &str,
-    facts: &FileFacts,
+    plan: &ImportPlan,
     is_update: bool,
     outcome: track_meta::MetaOutcome,
 ) -> Result<EntryOutcome, ScanError> {
+    let ImportPlan {
+        path,
+        path_str,
+        facts,
+        governing,
+        ..
+    } = plan;
     let (meta, hint) = read_import_meta(path, outcome);
     let untagged = hint.is_some();
     let title = if meta.title.is_empty() {
@@ -479,47 +647,77 @@ fn import_readable_entry(
     } else {
         meta.title.clone()
     };
+    // The sheets are consulted before anything is written: a sheet that could
+    // not be read leaves the file's rows, and its issue, as they are.
+    let Some(plan) = segments::plan_layout(scan, path, governing.as_ref(), &meta)? else {
+        return Ok(EntryOutcome::Unchanged);
+    };
+    let layout = plan.layout;
     // Task 1.6: recorded now, while still reachable, and
     // memoized per parent dir — see `scanner_mount.rs`.
     let mount_point = scan.mount_cache.resolve(path);
-    let healed = record_hint_or_healing(scan.tx, path_str, hint)?;
-    let candidate = find_move(scan, facts, &title, &meta, is_update)?;
+    // A broken embedded sheet is the file's issue: it replaces the clearing a
+    // clean read would do, so its dismissal survives the read.
+    let healed = match (&hint, &plan.issue) {
+        (None, Some(SheetIssue::Embedded(_))) => 0,
+        _ => record_hint_or_healing(scan.tx, path_str, hint)?,
+    };
+    if let Some(issue) = &plan.issue {
+        segments::report_issue(scan, path_str, facts, issue)?;
+    }
+    let candidate = find_move(scan, facts, &title, &meta, &layout, is_update)?;
     let imported = ImportedTrack {
         title: &title,
         meta: &meta,
         untagged,
         mount_point,
     };
-    if let Some(candidate) = candidate {
-        return apply_move(scan, path, facts, &imported, &candidate, healed);
+    let Some(candidate) = candidate else {
+        let tracks = segments::write_layout(scan, path, path_str, facts, &imported, &layout)?;
+        return Ok(EntryOutcome::Imported {
+            is_update,
+            healed,
+            tracks,
+        });
+    };
+    if candidate.segmented {
+        segments::move_segments(
+            scan,
+            &candidate.path,
+            path,
+            facts,
+            imported.mount_point.as_deref(),
+        )?;
+        let healed = healed + u32::from(import_errors::clear_error(scan.tx, &candidate.path)?);
+        segments::write_layout(scan, path, path_str, facts, &imported, &layout)?;
+        return Ok(EntryOutcome::Moved { healed });
     }
-    upsert_track(scan, path_str, facts, &imported)?;
-    Ok(EntryOutcome::Imported { is_update, healed })
+    let moved = apply_move(scan, path, facts, &imported, &candidate, healed)?;
+    if !layout.is_plain_whole() {
+        // A file that moved and gained a sheet on the way: its row is already
+        // at the new path, and now becomes the sheet's tracks.
+        segments::write_layout(scan, path, path_str, facts, &imported, &layout)?;
+    }
+    Ok(moved)
 }
 
 pub(super) fn apply_entry(
     scan: &mut EntryScan<'_, '_, '_>,
-    plan: ImportPlan,
+    plan: &ImportPlan,
     meta_result: Result<track_meta::MetaOutcome, ScanError>,
 ) -> Result<EntryOutcome, ScanError> {
-    let ImportPlan {
-        path,
-        path_str,
-        facts,
-        known,
-    } = plan;
-    if known_row(scan.tx, &path_str) != known {
+    if known_row(scan.tx, &plan.path_str) != plan.known {
         return Ok(EntryOutcome::Unchanged);
     }
-    let is_update = known.exists;
+    let is_update = plan.known.exists;
     match meta_result {
-        Ok(outcome) => import_readable_entry(scan, &path, &path_str, &facts, is_update, outcome),
+        Ok(outcome) => import_readable_entry(scan, plan, is_update, outcome),
         Err(ScanError::Import { kind, detail }) => {
             // Both passes failed: `kind`/`detail` are pass 2's
             // classification (see `read_meta_with_fallback`'s doc
             // comment). Episode upsert — see `record_error`'s doc
             // comment.
-            import_errors::record_error(scan.tx, &path_str, kind, &detail, super::now_unix())?;
+            import_errors::record_error(scan.tx, &plan.path_str, kind, &detail, super::now_unix())?;
             Ok(EntryOutcome::ImportFailed)
         }
         // `read_meta_with_fallback` only ever produces `Import`;

@@ -8,6 +8,8 @@
 
 use std::path::Path;
 
+use rusqlite::OptionalExtension;
+
 use crate::library::loudness::MeasuredLoudness;
 use crate::spectrogram::{TrackSourceFingerprint, TrackSpectrogram};
 
@@ -129,6 +131,20 @@ impl AnalysisSidecar {
         db: &crate::db::Db,
         track_id: i64,
     ) -> Result<Option<Self>, crate::db::DbError> {
+        // A track cut from a CUE file has no sidecar of its own: the sidecar's
+        // name follows the audio file's, so the tracks of one file would write
+        // the same one. The phone analyses such tracks itself.
+        let segment_index: Option<i64> = db
+            .conn()
+            .query_row(
+                "SELECT segment_index FROM tracks WHERE id = ?1",
+                [track_id],
+                |row| row.get(0),
+            )
+            .optional()?;
+        if segment_index.is_none_or(|index| index > 0) {
+            return Ok(None);
+        }
         let Some(source) = crate::db_spectrogram::track_source_fingerprint(db, track_id)? else {
             return Ok(None);
         };

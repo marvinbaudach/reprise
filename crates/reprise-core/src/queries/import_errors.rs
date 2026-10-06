@@ -53,7 +53,7 @@
 //!
 //! [`query_import_errors_grouped`] groups by [`ImportErrorKind`] in the
 //! order the enum itself declares its variants (`UnreadableTags`,
-//! `PermissionDenied`, `UnsupportedFormat`, `Io`, `Unknown`) — a fixed,
+//! `PermissionDenied`, `UnsupportedFormat`, `Io`, `InvalidCueSheet`, `Unknown`) — a fixed,
 //! deterministic order chosen so the UI's card order never reshuffles
 //! between refreshes just because scan timing changed which kind happened
 //! to accumulate rows first. `UnreadableTags` leads because it's the
@@ -157,7 +157,7 @@ pub fn query_import_errors_grouped(
     let sql = format!(
         "{} WHERE {NOT_DISMISSED} \
          ORDER BY CASE reason_kind \
-           WHEN ?1 THEN 0 WHEN ?2 THEN 1 WHEN ?3 THEN 2 WHEN ?4 THEN 3 ELSE 4 END, \
+           WHEN ?1 THEN 0 WHEN ?2 THEN 1 WHEN ?3 THEN 2 WHEN ?4 THEN 3 WHEN ?5 THEN 4 ELSE 5 END, \
          last_seen DESC, path COLLATE NOCASE ASC",
         entry_select()
     );
@@ -168,6 +168,7 @@ pub fn query_import_errors_grouped(
             ImportErrorKind::PermissionDenied.as_str(),
             ImportErrorKind::UnsupportedFormat.as_str(),
             ImportErrorKind::Io.as_str(),
+            ImportErrorKind::InvalidCueSheet.as_str(),
         ],
         row_to_entry,
     )?;

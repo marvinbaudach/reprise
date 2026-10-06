@@ -7,6 +7,7 @@ use super::*;
 
 fn track_metadata(id: i64, title: &str, album: &str, album_artist: &str) -> QueueItemMetadata {
     QueueItemMetadata::Track(Track {
+        segment: None,
         id,
         path: format!("/music/{id}.flac"),
         title: title.into(),

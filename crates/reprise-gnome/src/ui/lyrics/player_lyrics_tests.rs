@@ -13,7 +13,7 @@ use reprise_core::queries::TrackSummary;
 use super::lyrics_state::LyricsTrack;
 use super::lyrics_view::{LyricsView, ACTIVE_LINE_CLASS};
 use super::lyrics_worker::LyricsRuntime;
-use super::player_lyrics::{start_track_for_lyrics, PlayerLyrics};
+use super::player_lyrics::{lyrics_query_for, start_track_for_lyrics, PlayerLyrics};
 
 struct FakePlayback {
     result: RefCell<Option<Result<(), PlaybackError>>>,
@@ -80,6 +80,7 @@ impl PlaybackBackend for FakePlayback {
 
 fn summary() -> TrackSummary {
     TrackSummary {
+        segment: None,
         path: "/synthetic/song.flac".into(),
         title: "Exact title".into(),
         artist: "Exact artist".into(),
@@ -542,4 +543,28 @@ fn paused_synced_lyrics_do_not_advance_at_a_scheduled_line_boundary() {
     }
     assert!(labels[0].has_css_class(ACTIVE_LINE_CLASS));
     assert!(!labels[1].has_css_class(ACTIVE_LINE_CLASS));
+}
+
+#[test]
+fn cue_10_a_track_cut_from_a_file_reads_and_writes_no_lyrics_beside_the_file() {
+    let whole = summary();
+    let cut = TrackSummary {
+        segment: Some(reprise_core::models::TrackSegment {
+            index: 2,
+            start_ms: 10_000,
+            end_ms: 20_000,
+            cue_path: Some("/synthetic/song.cue".into()),
+        }),
+        ..summary()
+    };
+
+    assert_eq!(
+        lyrics_query_for(&whole).track_path,
+        Some("/synthetic/song.flac".into())
+    );
+    assert_eq!(
+        lyrics_query_for(&cut).track_path,
+        None,
+        "every track of the file would share one sidecar and one set of tags"
+    );
 }

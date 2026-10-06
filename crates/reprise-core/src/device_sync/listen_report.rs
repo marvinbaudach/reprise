@@ -226,6 +226,10 @@ pub fn apply_listen_report(
     })
 }
 
+/// The track a phone's device path stands for. A file cut into tracks by a CUE
+/// sheet syncs as one file, so a listen or rating of it is no one track's: like
+/// every other play-count and rating import, it reaches whole-file tracks only,
+/// and such a path counts as unresolved.
 fn resolve_track(
     conn: &Connection,
     device_serial: &str,
@@ -237,7 +241,7 @@ fn resolve_track(
            FROM device_files AS files
            JOIN tracks AS t ON t.id = files.track_id
           WHERE files.device_serial = ?1 AND files.device_path = ?2
-            AND t.removed_at IS NULL",
+            AND t.removed_at IS NULL AND t.segment_index = 0",
         rusqlite::params![device_serial, device_path],
         |row| {
             Ok((

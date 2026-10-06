@@ -16,6 +16,7 @@ fn quiet_player() -> Player {
 
 fn next_item(gain_db: f64) -> PlaybackItem<'static> {
     PlaybackItem {
+        segment: None,
         path: NEXT_PATH,
         gain_db,
     }

@@ -159,6 +159,7 @@
 
 use std::cell::{Cell, RefCell};
 use std::rc::Rc;
+use std::sync::atomic::AtomicBool;
 use std::sync::Arc;
 
 use gtk4::gio;
@@ -372,6 +373,11 @@ pub struct PlayerController {
     /// Generation token for the seek waveform's off-main peak load, so a
     /// rapid track change can't paint a stale waveform.
     pub(in crate::ui) waveform_generation: Rc<Cell<u64>>,
+    /// The track whose off-main waveform decodes are running, and the flag that
+    /// stops them. A different track sets it, so skipping through tracks no
+    /// analysis has reached runs one decode, not one per track skipped; the
+    /// same track again leaves its decode running.
+    pub(in crate::ui) waveform_cancel: RefCell<(Option<i64>, Arc<AtomicBool>)>,
     pub(in crate::ui) waveform_backend: Arc<dyn RenderDataBackend>,
     /// The owning `gio::Application`, for `play_track_id`'s track-change
     /// notification (Task 9: `app.send_notification`). Passed into `new` from

@@ -40,12 +40,15 @@ fn track(title: &str) -> BatchTrack {
             album: "Synthetic Album".into(),
             duration_ms: 10_000,
         },
-        path: PathBuf::from(format!("/music/{title}.flac")),
+        path: Some(PathBuf::from(format!("/music/{title}.flac"))),
     }
 }
 
 fn services(
-    online: impl Fn(&LyricsQuery, &Path) -> Result<LyricsHit, LyricsError> + Send + Sync + 'static,
+    online: impl Fn(&LyricsQuery, Option<&Path>) -> Result<LyricsHit, LyricsError>
+        + Send
+        + Sync
+        + 'static,
 ) -> BatchServices<'static> {
     BatchServices {
         local: Arc::new(|_| false),
@@ -284,7 +287,7 @@ fn lyr_6_a_plain_sidecar_reaches_the_online_lookup() {
     std::fs::write(path.with_extension("lrc"), "plain sidecar text").unwrap();
     let track = BatchTrack {
         query: track("Plain").query,
-        path,
+        path: Some(path),
     };
     let calls = Arc::new(Mutex::new(0));
     let mut services = BatchServices::production(&crate::library::source::UnixLibrarySource);
@@ -315,7 +318,7 @@ fn lyr_6_a_synced_sidecar_still_skips_the_online_lookup() {
     std::fs::write(path.with_extension("lrc"), "[00:01.00]synced line").unwrap();
     let track = BatchTrack {
         query: track("Synced").query,
-        path,
+        path: Some(path),
     };
     let calls = Arc::new(Mutex::new(0));
     let mut services = BatchServices::production(&crate::library::source::UnixLibrarySource);
@@ -369,7 +372,7 @@ fn lyr_6_a_stamped_plain_sidecar_is_skipped_on_the_second_batch_run() {
     std::fs::write(path.with_extension("lrc"), "plain sidecar text").unwrap();
     let track = BatchTrack {
         query: track("Stamped").query,
-        path,
+        path: Some(path),
     };
     let source = &crate::library::source::UnixLibrarySource;
     let answered = Arc::new(ThreadSafeProvider::new(
@@ -395,7 +398,7 @@ fn lyr_6_a_stamped_plain_sidecar_is_skipped_on_the_second_batch_run() {
                 &cache_dir,
                 100,
                 query,
-                Some(path),
+                path,
                 LookupOptions::default(),
                 Some(decision),
                 crate::lyrics::LookupProviders {
@@ -430,13 +433,13 @@ fn lyr_7_the_batch_runs_the_sidecar_writing_lookup_for_the_whole_library() {
                     album: "Synthetic Album".into(),
                     duration_ms: 10_000,
                 },
-                path,
+                path: Some(path),
             }
         })
         .collect::<Vec<_>>();
     let services = services(|query, path| {
         std::fs::write(
-            path.with_extension("lrc"),
+            path.unwrap().with_extension("lrc"),
             format!("[00:01.00]{} lyrics\n", query.title),
         )
         .unwrap();
@@ -461,4 +464,38 @@ fn lyr_7_the_batch_runs_the_sidecar_writing_lookup_for_the_whole_library() {
     assert_eq!(progress.state, BatchState::Complete);
     assert_eq!(progress.checked, 2);
     assert_eq!(progress.downloaded, 2);
+}
+
+#[test]
+fn cue_10_a_track_cut_from_a_file_reads_and_writes_no_lyrics_beside_the_file() {
+    let cut = BatchTrack::from(TrackSummary {
+        segment: Some(crate::models::TrackSegment {
+            index: 2,
+            start_ms: 10_000,
+            end_ms: 20_000,
+            cue_path: Some("/music/live.cue".into()),
+        }),
+        path: "/music/live.flac".into(),
+        title: "Second".into(),
+        artist: "Synthetic Artist".into(),
+        album: "Synthetic Album".into(),
+        album_artist: String::new(),
+        genre: String::new(),
+        artist_mbid: None,
+        year: None,
+        duration_ms: 10_000,
+    });
+    let seen = Arc::new(Mutex::new(Vec::new()));
+    let mut services = services({
+        let seen = seen.clone();
+        move |_, path| {
+            seen.lock().unwrap().push(path.map(Path::to_path_buf));
+            Err(LyricsError::NotFound)
+        }
+    });
+    services.local = Arc::new(|path| panic!("{path:?} belongs to every track in it"));
+
+    let _ = run(&[cut], &services, || false, || true);
+
+    assert_eq!(*seen.lock().unwrap(), [None]);
 }

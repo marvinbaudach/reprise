@@ -118,6 +118,10 @@ impl PlayerController {
             compact_cover_generation: Rc::new(Cell::new(0)),
             lyrics,
             waveform_generation: Rc::new(Cell::new(0)),
+            waveform_cancel: RefCell::new((
+                None,
+                std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false)),
+            )),
             waveform_backend: waveform,
             application: {
                 let weak = glib::WeakRef::new();
