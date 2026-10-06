@@ -21,7 +21,6 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.CornerRadius
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
-import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.graphics.drawscope.drawIntoCanvas
 import androidx.compose.ui.graphics.nativeCanvas
@@ -32,7 +31,7 @@ import kotlin.math.floor
 import kotlin.math.min
 
 private const val SEEK_TRACK_HEIGHT_DP = 32
-private const val SEEK_TRACK_THICKNESS_DP = 3
+internal const val SEEK_TRACK_THICKNESS_DP = 3
 private const val SPECTRAL_BAR_WIDTH_DP = 3
 private const val SPECTRAL_CELL_WIDTH_DP = 5
 private const val MAXIMUM_SPECTRAL_BAR_COUNT = 160
@@ -73,9 +72,24 @@ internal fun SpectralSeekTrack(
         }
 
         val ready = bars
+        val partial = rememberAnalysisProgress(
+            analysis, trackId, count, revision, active = ready.isNullOrEmpty(),
+        )
         if (ready.isNullOrEmpty()) {
             LaunchedEffect(trackId) { buildElapsed.snapTo(WAVEFORM_BUILD_MS.toFloat()) }
-            PlainSeekTrack(positionMs, durationMs)
+            if (partial == null || partial.bars.isEmpty()) {
+                PlainSeekTrack(positionMs, durationMs)
+            } else {
+                // No build animation for a partial picture: it snaps in and grows.
+                SpectralBars(
+                    partial.bars,
+                    positionMs,
+                    durationMs,
+                    buildElapsedMs = WAVEFORM_BUILD_MS +
+                        MAXIMUM_SPECTRAL_BAR_COUNT * WAVEFORM_STAGGER_MS.toFloat(),
+                    coveredFraction = partial.coveredFraction,
+                )
+            }
         } else {
             val buildDuration = WAVEFORM_BUILD_MS +
                 (ready.size - 1).coerceAtLeast(0) * WAVEFORM_STAGGER_MS
@@ -101,15 +115,18 @@ private fun SpectralBars(
     positionMs: Long,
     durationMs: Long,
     buildElapsedMs: Float,
+    coveredFraction: Float = 1f,
 ) {
     val seekMarkerPaint = rememberSeekMarkerPaint()
+    val plainElapsed = MaterialTheme.colorScheme.primary
+    val plainRemaining = MaterialTheme.colorScheme.outline
     val fraction = if (durationMs > 0) {
         (positionMs.toFloat() / durationMs.toFloat()).coerceIn(0f, 1f)
     } else {
         0f
     }
     val colours = bars.mapIndexed { index, bar ->
-        val centreFraction = (index + 0.5f) / bars.size
+        val centreFraction = (index + 0.5f) / bars.size * coveredFraction
         spectralColour(
             red = bar.red,
             green = bar.green,
@@ -123,7 +140,8 @@ private fun SpectralBars(
             .height(SEEK_TRACK_HEIGHT_DP.dp)
             .testTag("now-playing-seek-track"),
     ) {
-        val stride = size.width / bars.size
+        val coveredWidth = size.width * coveredFraction
+        val stride = coveredWidth / bars.size
         val barWidth = min(SPECTRAL_BAR_WIDTH_DP.dp.toPx(), stride * 0.72f)
         val maximumHeight = min(MAXIMUM_SPECTRAL_HEIGHT_DP.dp.toPx(), size.height)
         val minimumAudibleHeight = maximumHeight * MINIMUM_AUDIBLE_HEIGHT_FRACTION
@@ -148,6 +166,9 @@ private fun SpectralBars(
                 cornerRadius = CornerRadius(barWidth / 2f),
             )
         }
+        if (coveredFraction < 1f) {
+            drawPlainSeekLine(coveredWidth, fraction, plainElapsed, plainRemaining)
+        }
         drawSeekMarker(fraction, seekMarkerPaint)
     }
 }
@@ -169,25 +190,7 @@ internal fun PlainSeekTrack(positionMs: Long, durationMs: Long) {
             .height(SEEK_TRACK_HEIGHT_DP.dp)
             .testTag("now-playing-seek-track"),
     ) {
-        val centre = size.height / 2f
-        val thickness = SEEK_TRACK_THICKNESS_DP.dp.toPx()
-        val head = size.width * fraction
-        drawLine(
-            color = remaining,
-            start = Offset(head, centre),
-            end = Offset(size.width, centre),
-            strokeWidth = thickness,
-            cap = StrokeCap.Round,
-        )
-        if (head > 0f) {
-            drawLine(
-                color = elapsed,
-                start = Offset(0f, centre),
-                end = Offset(head, centre),
-                strokeWidth = thickness,
-                cap = StrokeCap.Round,
-            )
-        }
+        drawPlainSeekLine(coveredWidth = 0f, fraction, elapsed, remaining)
         drawSeekMarker(fraction, seekMarkerPaint)
     }
 }

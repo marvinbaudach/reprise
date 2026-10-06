@@ -18,6 +18,7 @@ import androidx.compose.ui.graphics.PixelMap
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.graphics.toPixelMap
 import androidx.compose.ui.test.junit4.v2.createAndroidComposeRule
+import io.github.marvinbaudach.reprise.scene.SpectrogramFrames
 import io.github.marvinbaudach.reprise.ui.theme.RepriseTheme
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
@@ -63,6 +64,57 @@ class SpectralSeekTrackPixelsTest {
         }
         assertTrue("the short Rust-owned red bar was not painted", redInk > 0)
         assertTrue("the tall Rust-owned green bar was not painted", greenInk > redInk * 2)
+    }
+
+    @Test
+    fun nav_15d_partial_bars_cover_only_the_decoded_part() {
+        showTrack(positionMs = 0)
+        val plain = render()
+
+        analysis.partial(
+            PartialTrackAnalysis(
+                coveredFraction = 0.5f,
+                bars = List(40) { SpectralBar(false, 0.9f, 1.0, 0.0, 0.0) },
+                frames = SpectrogramFrames(bandCount = 2, frameRateHz = 20, cells = byteArrayOf()),
+            ),
+        )
+        compose.waitForIdle()
+        val partial = render()
+
+        val half = partial.width / 2
+        assertTrue(
+            "the decoded left half painted no bars",
+            partial.redInk(0, half) > 40 && plain.redInk(0, half) == 0,
+        )
+        assertEquals(
+            "the undecoded right half must stay the plain line",
+            0,
+            plain.differenceCount(partial, fromX = half + 1, untilX = partial.width),
+        )
+    }
+
+    @Test
+    fun nav_15d_final_bars_replace_the_partial() {
+        showTrack(positionMs = 0)
+        analysis.partial(
+            PartialTrackAnalysis(
+                coveredFraction = 0.5f,
+                bars = List(40) { SpectralBar(false, 0.9f, 1.0, 0.0, 0.0) },
+                frames = SpectrogramFrames(bandCount = 2, frameRateHz = 20, cells = byteArrayOf()),
+            ),
+        )
+        compose.waitForIdle()
+        assertTrue("the partial never painted", render().redInk(0, 250) > 40)
+
+        analysis.answer(List(80) { SpectralBar(false, 0.9f, 0.0, 1.0, 0.0) })
+        compose.waitForIdle()
+        val final = render()
+
+        assertEquals("the partial bars were still painted", 0, final.redInk(0, final.width))
+        assertTrue(
+            "the final bars did not span the right half",
+            final.greenInk(final.width / 2, final.width) > 40,
+        )
     }
 
     @Test
@@ -135,9 +187,27 @@ class SpectralSeekTrackPixelsTest {
         return bitmap.asImageBitmap().toPixelMap()
     }
 
-    private fun PixelMap.differenceCount(other: PixelMap): Int =
+    private fun PixelMap.differenceCount(
+        other: PixelMap,
+        fromX: Int = 0,
+        untilX: Int = width,
+    ): Int =
         (0 until height).sumOf { y ->
-            (0 until width).count { x -> this[x, y] != other[x, y] }
+            (fromX until untilX).count { x -> this[x, y] != other[x, y] }
+        }
+
+    private fun PixelMap.redInk(fromX: Int, untilX: Int): Int =
+        (0 until height).sumOf { y ->
+            (fromX until untilX).count { x ->
+                this[x, y].red > this[x, y].green * 1.5f && this[x, y].red > this[x, y].blue * 1.5f
+            }
+        }
+
+    private fun PixelMap.greenInk(fromX: Int, untilX: Int): Int =
+        (0 until height).sumOf { y ->
+            (fromX until untilX).count { x ->
+                this[x, y].green > this[x, y].red * 1.5f && this[x, y].green > this[x, y].blue * 1.5f
+            }
         }
 
     private fun PixelMap.colouredPixels(predicate: (Color) -> Boolean): Int =
@@ -151,6 +221,7 @@ class SpectralSeekTrackPixelsTest {
 
 private class PixelAnalysis : TrackAnalysisPort {
     private var bars: List<SpectralBar>? = null
+    private var progress: PartialTrackAnalysis? = null
     override var revision by mutableLongStateOf(0L)
         private set
 
@@ -159,7 +230,18 @@ private class PixelAnalysis : TrackAnalysisPort {
         revision += 1L
     }
 
+    fun partial(answer: PartialTrackAnalysis?) {
+        progress = answer
+        revision += 1L
+    }
+
     override fun prepare(trackId: Long) = Unit
+    override fun loadProgress(
+        trackId: Long,
+        count: Int,
+        deliver: (PartialTrackAnalysis?) -> Unit,
+    ) = deliver(progress)
+
     override fun loadBars(trackId: Long, count: Int, deliver: (List<SpectralBar>?) -> Unit) {
         deliver(bars)
     }
