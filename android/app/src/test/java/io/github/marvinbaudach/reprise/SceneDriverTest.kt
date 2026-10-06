@@ -27,7 +27,6 @@ class SceneDriverTest {
             }
         }
         val driver = SceneDriver(
-            frames = frames,
             state = state,
             clock = FakeSceneClock(),
             positionSource = FakeScenePositionSource(
@@ -44,6 +43,22 @@ class SceneDriverTest {
             "a track with no stored spectrogram must not hand out an empty snapshot",
             receivedBands,
         )
+    }
+
+    @Test
+    fun nav_15d_the_driver_reads_adopted_frames() {
+        val fixture = driverFixture(
+            sample = ScenePositionSample(positionMs = 500, observedAtNanos = 0, playing = true),
+            frames = SpectrogramFrames(24, 20, ByteArray(0)),
+        )
+        fixture.driver.tick()
+        assertEquals("no frames are decoded yet", 0f, fixture.state.fogLevel, 0f)
+
+        fixture.state.adoptFrames(constantFrames(cell = 255, frameCount = 24))
+        fixture.driver.tick()
+
+        assertEquals(10, fixture.driver.lastDrivenFrameIndex)
+        assertTrue("the adopted frames never reached the fog", fixture.state.fogLevel > 0f)
     }
 
     @Test
@@ -276,7 +291,6 @@ class SceneDriverTest {
             override fun onFrame(bands: FloatArray?) = Unit
         }
         val driver = SceneDriver(
-            frames = frames,
             state = state,
             clock = SceneClock { 0L },
             positionSource = ScenePositionSource {
@@ -337,7 +351,7 @@ private fun driverFixture(
         clock = clock,
         source = source,
         power = power,
-        driver = SceneDriver(frames, state, clock, source) { power.framesAllowed },
+        driver = SceneDriver(state, clock, source) { power.framesAllowed },
     )
 }
 

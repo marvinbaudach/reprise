@@ -1,15 +1,16 @@
 use rusqlite::{Connection, OptionalExtension};
 
 use super::{AiJob, BatchProgress, JobState};
+use crate::CoreError;
 
 const JOB_SELECT: &str = "SELECT id, kind, batch_id, source_track_id, params_fingerprint, \
      status, progress_permille, cancel_requested, error_kind, result_track_id, \
      created_at, finished_at FROM ai_jobs";
 
 /// Reads one job in surface shape, or `None` if it does not exist.
-pub fn get_job(db: &crate::db::Db, job_id: i64) -> Result<Option<AiJob>, rusqlite::Error> {
+pub fn get_job(db: &crate::db::Db, job_id: i64) -> Result<Option<AiJob>, CoreError> {
     let conn = db.conn();
-    get_job_in(conn, job_id)
+    Ok(get_job_in(conn, job_id)?)
 }
 
 pub(crate) fn get_job_in(conn: &Connection, job_id: i64) -> Result<Option<AiJob>, rusqlite::Error> {
@@ -22,10 +23,7 @@ pub(crate) fn get_job_in(conn: &Connection, job_id: i64) -> Result<Option<AiJob>
 }
 
 /// Lists every job in a batch, in id order.
-pub fn list_jobs_in_batch(
-    db: &crate::db::Db,
-    batch_id: &str,
-) -> Result<Vec<AiJob>, rusqlite::Error> {
+pub fn list_jobs_in_batch(db: &crate::db::Db, batch_id: &str) -> Result<Vec<AiJob>, CoreError> {
     let conn = db.conn();
     let mut statement = conn.prepare(&format!("{JOB_SELECT} WHERE batch_id = ?1 ORDER BY id"))?;
     let jobs = statement
@@ -36,7 +34,7 @@ pub fn list_jobs_in_batch(
 
 /// Lists every non-cancelled job in id order — the conversion view's rows
 /// (queued/processing/done-unsaved/saved/failed; Beschluss 15/18).
-pub fn list_active_jobs(db: &crate::db::Db) -> Result<Vec<AiJob>, rusqlite::Error> {
+pub fn list_active_jobs(db: &crate::db::Db) -> Result<Vec<AiJob>, CoreError> {
     let conn = db.conn();
     let mut statement = conn.prepare(&format!(
         "{JOB_SELECT} WHERE status != 'cancelled' ORDER BY id"
@@ -63,12 +61,9 @@ pub fn count_saved(db: &crate::db::Db) -> Result<i64, rusqlite::Error> {
 }
 
 /// Aggregate progress for a batch's single bar (plan 2.4/7).
-pub fn batch_progress(
-    db: &crate::db::Db,
-    batch_id: &str,
-) -> Result<BatchProgress, rusqlite::Error> {
+pub fn batch_progress(db: &crate::db::Db, batch_id: &str) -> Result<BatchProgress, CoreError> {
     let conn = db.conn();
-    conn.query_row(
+    Ok(conn.query_row(
         "SELECT COUNT(*), \
                 COALESCE(SUM(status = 'done'), 0), \
                 COALESCE(SUM(status = 'failed'), 0), \
@@ -90,7 +85,7 @@ pub fn batch_progress(
                 permille: permille.round() as u16,
             })
         },
-    )
+    )?)
 }
 
 fn map_job_row(row: &rusqlite::Row<'_>) -> rusqlite::Result<AiJob> {

@@ -52,7 +52,7 @@ impl SortKey<EpisodeRow> for PodcastSortKey {
 /// saved view; persisting it would resurrect a search the user never typed
 /// again on the next launch.
 ///
-/// (`SRC-10` addendum, Block B2: `downloaded_only` is the "Downloaded" chip —
+/// (`SRC-10a` addendum, Block B2: `downloaded_only` is the "Downloaded" chip —
 /// it matches only episodes with a file on disk right now, not a queued or
 /// downloading one.)
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
@@ -86,6 +86,7 @@ impl PodcastFilter {
         }
     }
 
+    #[cfg(test)]
     pub(super) fn with_query(&self, query: &str) -> Self {
         Self {
             query: query.trim().to_owned(),
@@ -310,6 +311,7 @@ pub(super) fn author_line<'a>(title: &str, author: Option<&'a str>) -> Option<&'
     Some(author)
 }
 
+#[cfg(test)]
 pub(super) fn source_pill(kind: PodcastKind) -> Pill {
     match kind {
         PodcastKind::Rss => Pill {

@@ -2,7 +2,7 @@
 
 use rusqlite::{params, Connection, OptionalExtension};
 
-use crate::db::Db;
+use crate::{db::Db, CoreError};
 
 use super::{EpisodeRow, PodcastKind, SourceGroup};
 
@@ -16,9 +16,9 @@ pub(crate) const EPISODE_COLUMNS: &str =
      e.downloaded_path, e.downloaded_bytes, e.played_at, e.position_ms,
      e.first_seen_at, e.first_seen_at > s.added_at";
 
-pub fn list_episodes(db: &Db) -> Result<Vec<EpisodeRow>, rusqlite::Error> {
+pub fn list_episodes(db: &Db) -> Result<Vec<EpisodeRow>, CoreError> {
     let conn = db.conn();
-    list_episodes_in(conn)
+    Ok(list_episodes_in(conn)?)
 }
 
 pub(crate) fn list_episodes_in(conn: &Connection) -> Result<Vec<EpisodeRow>, rusqlite::Error> {
@@ -37,9 +37,9 @@ pub(crate) fn list_episodes_in(conn: &Connection) -> Result<Vec<EpisodeRow>, rus
 pub fn episodes_for_subscription(
     db: &Db,
     subscription_id: i64,
-) -> Result<Vec<EpisodeRow>, rusqlite::Error> {
+) -> Result<Vec<EpisodeRow>, CoreError> {
     let conn = db.conn();
-    episodes_for_subscription_in(conn, subscription_id)
+    Ok(episodes_for_subscription_in(conn, subscription_id)?)
 }
 
 pub(crate) fn episodes_for_subscription_in(

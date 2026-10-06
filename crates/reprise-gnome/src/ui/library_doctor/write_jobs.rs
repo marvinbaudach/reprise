@@ -190,7 +190,7 @@ impl LibraryDoctorCoordinator {
                     reprise_core::library_doctor::DoctorReviewFilter::NeedsReview,
                 );
                 (
-                    reprise_core::library_doctor::group_review_rows(&scan, &session).len(),
+                    reprise_core::library_doctor::count_review_groups(&scan, &session),
                     scan.unresolved_groups.len(),
                 )
             });

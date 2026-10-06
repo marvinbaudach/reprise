@@ -9,6 +9,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
+import uniffi.reprise_android_ffi.AndroidReplayGainMode
 
 @Composable
 internal fun LibraryScreen(
@@ -40,11 +41,12 @@ internal fun LibraryScreen(
     setEqualizerEnabled: (Boolean) -> PlaybackSettingsUiState,
     replaceEqualizerCurve: (List<EqualizerCurvePoint>) -> PlaybackSettingsUiState,
     setGaplessEnabled: (Boolean) -> PlaybackSettingsUiState,
-    onlineSourcesEnabled: Boolean,
-    setOnlineSourcesEnabled: (Boolean) -> Unit,
-    artistPhotoOffer: ArtistPhotoOfferState,
     themeSelection: MobileThemeSelection,
     selectTheme: (MobileTheme) -> Unit,
+    setVolumeKeySkipGestureEnabled: (Boolean) -> PlaybackSettingsUiState,
+    setReplayGainMode: (AndroidReplayGainMode) -> PlaybackSettingsUiState = {
+        loadPlaybackSettings()
+    },
 ) {
     var state by remember { mutableStateOf(initialState) }
     DisposableEffect(surfaceState) {
@@ -94,13 +96,8 @@ internal fun LibraryScreen(
             setEqualizerEnabled = setEqualizerEnabled,
             replaceEqualizerCurve = replaceEqualizerCurve,
             setGaplessEnabled = setGaplessEnabled,
-            onlineSourcesEnabled = onlineSourcesEnabled,
-            setOnlineSourcesEnabled = setOnlineSourcesEnabled,
-            artistPhotoOfferSettled = artistPhotoOffer.settled,
-            downloadArtistPhotos = {
-                artistPhotoOffer.downloadArtistPhotos { setOnlineSourcesEnabled(true) }
-            },
-            declineArtistPhotos = artistPhotoOffer::notNow,
+            setVolumeKeySkipGestureEnabled = setVolumeKeySkipGestureEnabled,
+            setReplayGainMode = setReplayGainMode,
             themeSelection = themeSelection,
             selectTheme = selectTheme,
         )

@@ -7,7 +7,7 @@ use reprise_core::connectivity::Connectivity;
 use reprise_core::podcasts::pipeline::SyncAbort;
 use reprise_core::podcasts::{PodcastKind, SourceGroup};
 
-use super::podcasts_groups::replace_with_sync;
+use super::podcasts_groups::{replace_with_sync, GroupRenderInputs};
 use super::podcasts_presentation::{RenderedSourceGroup, SourceSummary};
 use super::podcasts_selection::PodcastSelection;
 use super::podcasts_sync_state::{SyncRowState, SyncStep};
@@ -68,16 +68,18 @@ fn pod_26_each_loading_row_names_three_stable_steps_and_owns_its_failure() {
     let widgets = replace_with_sync(
         &container,
         &groups,
-        None,
-        &Rc::new(RefCell::new(BTreeSet::new())),
-        &Rc::new(RefCell::new(BTreeSet::new())),
-        &BTreeMap::new(),
-        false,
-        &Rc::new(crate::test_db::open().unwrap()),
-        Connectivity::Online,
-        None,
-        &Rc::new(RefCell::new(PodcastSelection::default())),
-        "",
+        GroupRenderInputs {
+            playing_episode: None,
+            expanded_sources: &Rc::new(RefCell::new(BTreeSet::new())),
+            expanded_episode_sources: &Rc::new(RefCell::new(BTreeSet::new())),
+            download_states: &BTreeMap::new(),
+            images_allowed: false,
+            conn: &Rc::new(crate::test_db::open().unwrap()),
+            connectivity: Connectivity::Online,
+            unavailable_episode: None,
+            selection: &Rc::new(RefCell::new(PodcastSelection::default())),
+            query: "",
+        },
         &syncing,
     );
     let window = gtk4::Window::builder()
@@ -141,16 +143,18 @@ fn pod_26_completion_crossfades_before_the_row_shrinks_to_the_shared_height() {
     let widgets = replace_with_sync(
         &container,
         &[rendered_group(1)],
-        None,
-        &Rc::new(RefCell::new(BTreeSet::new())),
-        &Rc::new(RefCell::new(BTreeSet::new())),
-        &BTreeMap::new(),
-        false,
-        &Rc::new(crate::test_db::open().unwrap()),
-        Connectivity::Online,
-        None,
-        &Rc::new(RefCell::new(PodcastSelection::default())),
-        "",
+        GroupRenderInputs {
+            playing_episode: None,
+            expanded_sources: &Rc::new(RefCell::new(BTreeSet::new())),
+            expanded_episode_sources: &Rc::new(RefCell::new(BTreeSet::new())),
+            download_states: &BTreeMap::new(),
+            images_allowed: false,
+            conn: &Rc::new(crate::test_db::open().unwrap()),
+            connectivity: Connectivity::Online,
+            unavailable_episode: None,
+            selection: &Rc::new(RefCell::new(PodcastSelection::default())),
+            query: "",
+        },
         &syncing,
     );
     let sync = widgets.syncs[&1].clone();
@@ -210,16 +214,18 @@ fn pod_26_reduced_motion_uses_a_static_indicator_and_no_cover_motion() {
     let widgets = replace_with_sync(
         &container,
         &[rendered_group(1)],
-        None,
-        &Rc::new(RefCell::new(BTreeSet::new())),
-        &Rc::new(RefCell::new(BTreeSet::new())),
-        &BTreeMap::new(),
-        false,
-        &Rc::new(crate::test_db::open().unwrap()),
-        Connectivity::Online,
-        None,
-        &Rc::new(RefCell::new(PodcastSelection::default())),
-        "",
+        GroupRenderInputs {
+            playing_episode: None,
+            expanded_sources: &Rc::new(RefCell::new(BTreeSet::new())),
+            expanded_episode_sources: &Rc::new(RefCell::new(BTreeSet::new())),
+            download_states: &BTreeMap::new(),
+            images_allowed: false,
+            conn: &Rc::new(crate::test_db::open().unwrap()),
+            connectivity: Connectivity::Online,
+            unavailable_episode: None,
+            selection: &Rc::new(RefCell::new(PodcastSelection::default())),
+            query: "",
+        },
         &syncing,
     );
     let sync = &widgets.syncs[&1];

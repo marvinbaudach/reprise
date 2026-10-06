@@ -1,5 +1,3 @@
-#![allow(dead_code)]
-
 macro_rules! N_ {
     ($message:literal) => {
         $message
@@ -9,8 +7,6 @@ macro_rules! N_ {
 use super::{formatted, plural};
 
 pub const RADIO: &str = N_!("Radio");
-pub const RADIO_DESCRIPTION: &str =
-    N_!("Contacts radio-browser.info for search; each favorite play reports its etiquette click");
 pub const RADIO_STATION: &str = N_!("Station");
 pub const JUMP_TO_PLAYING_STATION: &str = N_!("Go to the playing station");
 pub const STATION_NOT_IN_FAVORITES: &str = N_!("This station is no longer in your favorites");
@@ -24,7 +20,7 @@ pub const RADIO_ADD_FILTER: &str = N_!("Add filter");
 pub const RADIO_FILTER_GENRE: &str = N_!("Genre");
 pub const RADIO_FILTER_COUNTRY: &str = N_!("Country");
 pub const RADIO_CLEAR_ALL: &str = N_!("Clear all");
-/// `SRC-10`: the shared empty-state grammar's copy for Radio — title, one
+/// `SRC-10a`: the shared empty-state grammar's copy for Radio — title, one
 /// paragraph of what lands here and where it comes from, the primary
 /// button. Radio has no secondary line: the body already names the URL
 /// path (a stream URL), so a second line repeating it would be redundant.
@@ -32,12 +28,13 @@ pub const RADIO_NO_STATIONS: &str = N_!("No stations yet");
 pub const RADIO_NO_STATIONS_DESCRIPTION: &str = N_!(
     "Find stations in the open radio-browser directory, or paste a stream URL. Nothing is fetched until you search."
 );
+pub const RADIO_SOURCE_OFF_DESCRIPTION: &str = N_!(
+    "Turn it back on in Online sources to search, add, and play stations again. Existing stations are kept."
+);
 pub const RADIO_DIALOG_TITLE: &str = N_!("Add Station");
 pub const RADIO_DIALOG_HINT: &str = N_!("Search or paste a stream / M3U / PLS URL");
 pub const RADIO_SEARCHING: &str = N_!("Searching…");
 pub const RADIO_RESULTS_HEADER: &str = N_!("RADIO-BROWSER.INFO");
-pub const RADIO_MATCHES_BY_VOTES: &str = N_!("matches · by votes");
-pub const RADIO_ADD_RESULT: &str = N_!("Add");
 pub const RADIO_CANCEL: &str = N_!("Cancel");
 pub const RADIO_FETCH_METADATA: &str = N_!("Fetch logo & tags from radio-browser");
 pub const RADIO_COMMUNITY_FOOTNOTE: &str =
@@ -63,7 +60,6 @@ pub const RADIO_EDIT: &str = N_!("Edit station…");
 pub const RADIO_REMOVE_FAVORITE: &str = N_!("Remove favorite");
 pub const RADIO_UNDO: &str = N_!("Undo");
 pub const RADIO_RETRY: &str = N_!("Retry");
-pub const RADIO_RECONNECTING: &str = N_!("Reconnecting live…");
 pub const RADIO_RECONNECT_FAILED: &str = N_!("This station isn't broadcasting right now");
 pub const RADIO_SEARCH_ORDER: &str = N_!("Search order");
 pub const RADIO_ORDER_VOTES: &str = N_!("Votes");
@@ -96,10 +92,6 @@ pub fn radio_station_count(count: usize) -> String {
     )
 }
 
-pub fn radio_filtered_count(visible: usize, total: usize) -> String {
-    filtered_station_count(&visible.to_string(), total)
-}
-
 /// FIL-2: the same line with the shown number accented. The bold goes in as
 /// the *argument*, not as a substring search over the rendered sentence — a
 /// translation that puts the total first would otherwise bold the wrong
@@ -127,13 +119,6 @@ pub fn radio_results_count(count: usize) -> String {
 
 pub fn radio_remove_named(name: &str) -> String {
     formatted(N_!("Remove “{name}”"), &[("name", name)])
-}
-
-pub fn radio_playlist_detected(kind: &str, host: &str) -> String {
-    formatted(
-        N_!("Playlist file detected ({kind}) — resolved to {host}"),
-        &[("kind", kind), ("host", host)],
-    )
 }
 
 #[cfg(test)]

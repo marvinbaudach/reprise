@@ -13,7 +13,7 @@ use reprise_core::db::Db;
 use reprise_core::spectrogram_backfill::{BackfillProgress, BackfillSummary};
 use reprise_platform_linux::spectrogram_backfill::SpectrogramBackfillHandle;
 
-use super::spectrogram_batch::{BackfillRun, SpectrogramBatch};
+use crate::ui::spectrogram::spectrogram_batch::{BackfillRun, SpectrogramBatch};
 
 struct PlatformRun(SpectrogramBackfillHandle);
 

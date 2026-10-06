@@ -99,6 +99,7 @@ class NowPlayingTitleWidthTest {
                     playback = PlaybackUiState(state = AndroidPlaybackState.PLAYING),
                     surfaceState = surfaceState,
                     visualizerOpacity = 0f,
+                    visualizerLight = 0f,
                 )
             }
         }

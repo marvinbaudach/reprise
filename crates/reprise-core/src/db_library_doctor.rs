@@ -185,6 +185,91 @@ pub(crate) fn migrate_v67(conn: &Connection) -> Result<(), rusqlite::Error> {
     transaction.commit()
 }
 
+pub(crate) fn migrate_v86(conn: &Connection) -> Result<(), rusqlite::Error> {
+    let version: i64 = conn.query_row("PRAGMA user_version", [], |row| row.get(0))?;
+    if version >= 86 {
+        return Ok(());
+    }
+    let transaction = conn.unchecked_transaction()?;
+    transaction.execute(
+        &format!(
+            "UPDATE library_doctor_scan_tracks AS s
+             SET title = CASE WHEN EXISTS (
+                   SELECT 1 FROM tag_write_journal v
+                   JOIN tag_write_job_files f ON f.id=v.file_id
+                   JOIN tag_write_jobs j ON j.id=f.job_id
+                   WHERE f.track_id=s.track_id AND j.kind='doctor_apply'
+                     AND v.field='title' AND v.outcome='applied' AND v.after_value=''
+                 ) THEN '' WHEN EXISTS (
+                   SELECT 1 FROM tag_write_journal v
+                   JOIN tag_write_job_files f ON f.id=v.file_id
+                   JOIN tag_write_jobs j ON j.id=f.job_id
+                   WHERE f.track_id=s.track_id AND j.kind='doctor_apply'
+                     AND v.field='title' AND v.outcome='applied'
+                 ) THEN (SELECT t.title FROM tracks t WHERE t.id=s.track_id) ELSE s.title END,
+                 artist = CASE WHEN EXISTS (
+                   SELECT 1 FROM tag_write_journal v
+                   JOIN tag_write_job_files f ON f.id=v.file_id
+                   JOIN tag_write_jobs j ON j.id=f.job_id
+                   WHERE f.track_id=s.track_id AND j.kind='doctor_apply'
+                     AND v.field='artist' AND v.outcome='applied'
+                 ) THEN (SELECT t.artist FROM tracks t WHERE t.id=s.track_id) ELSE s.artist END,
+                 album = CASE WHEN EXISTS (
+                   SELECT 1 FROM tag_write_journal v
+                   JOIN tag_write_job_files f ON f.id=v.file_id
+                   JOIN tag_write_jobs j ON j.id=f.job_id
+                   WHERE f.track_id=s.track_id AND j.kind='doctor_apply'
+                     AND v.field='album' AND v.outcome='applied'
+                 ) THEN (SELECT t.album FROM tracks t WHERE t.id=s.track_id) ELSE s.album END,
+                 album_artist = CASE WHEN EXISTS (
+                   SELECT 1 FROM tag_write_journal v
+                   JOIN tag_write_job_files f ON f.id=v.file_id
+                   JOIN tag_write_jobs j ON j.id=f.job_id
+                   WHERE f.track_id=s.track_id AND j.kind='doctor_apply'
+                     AND v.field='album_artist' AND v.outcome='applied'
+                 ) THEN (SELECT t.album_artist FROM tracks t WHERE t.id=s.track_id)
+                   ELSE s.album_artist END,
+                 year = CASE WHEN EXISTS (
+                   SELECT 1 FROM tag_write_journal v
+                   JOIN tag_write_job_files f ON f.id=v.file_id
+                   JOIN tag_write_jobs j ON j.id=f.job_id
+                   WHERE f.track_id=s.track_id AND j.kind='doctor_apply'
+                     AND v.field='year' AND v.outcome='applied'
+                 ) THEN (SELECT t.year FROM tracks t WHERE t.id=s.track_id) ELSE s.year END,
+                 track_no = CASE WHEN EXISTS (
+                   SELECT 1 FROM tag_write_journal v
+                   JOIN tag_write_job_files f ON f.id=v.file_id
+                   JOIN tag_write_jobs j ON j.id=f.job_id
+                   WHERE f.track_id=s.track_id AND j.kind='doctor_apply'
+                     AND v.field='track_no' AND v.outcome='applied'
+                 ) THEN (SELECT t.track_no FROM tracks t WHERE t.id=s.track_id) ELSE s.track_no END,
+                 genre = CASE WHEN EXISTS (
+                   SELECT 1 FROM tag_write_journal v
+                   JOIN tag_write_job_files f ON f.id=v.file_id
+                   JOIN tag_write_jobs j ON j.id=f.job_id
+                   WHERE f.track_id=s.track_id AND j.kind='doctor_apply'
+                     AND v.field='genre' AND v.outcome='applied'
+                 ) THEN (SELECT t.genre FROM tracks t WHERE t.id=s.track_id) ELSE s.genre END
+             WHERE s.scan_id=(
+                     SELECT last_complete_scan_id FROM library_doctor_state WHERE singleton=1
+                   )
+               AND s.read_ok=1
+               AND EXISTS (SELECT 1 FROM tracks t WHERE t.id=s.track_id AND {})
+               AND EXISTS (
+                 SELECT 1 FROM tag_write_journal v
+                 JOIN tag_write_job_files f ON f.id=v.file_id
+                 JOIN tag_write_jobs j ON j.id=f.job_id
+                 WHERE f.track_id=s.track_id AND j.kind='doctor_apply'
+                   AND v.outcome='applied'
+               )",
+            crate::queries::PRESENT
+        ),
+        [],
+    )?;
+    transaction.pragma_update(None, "user_version", 86)?;
+    transaction.commit()
+}
+
 #[cfg(test)]
 mod tests {
     use rusqlite::Connection;
@@ -465,5 +550,189 @@ mod tests {
         assert_eq!(column_type, "TEXT");
         assert_eq!(cache_rows, 0);
         assert_eq!(pointers, (None, None));
+    }
+
+    #[test]
+    fn migration_v85_to_v86_repairs_written_snapshot_rows_and_is_idempotent() {
+        let db = crate::db::Db::open_in_memory().unwrap();
+        let conn = db.conn();
+        conn.execute_batch(
+            "INSERT INTO tracks
+               (id, path, title, artist, album, album_artist, year, track_no, genre,
+                added_at, file_mtime, file_size)
+             VALUES
+               (1, 'written.flac', 'Current title', 'Reformist', 'Current album',
+                'Current album artist', 2026, 1, 'Current genre', 0, 10, 100),
+               (2, 'untouched.flac', 'Other current title', 'Other current artist',
+                'Other current album', 'Other current album artist', 2025, 2,
+                'Other current genre', 0, 20, 200),
+               (3, 'empty-title.flac', 'empty-title', 'Current 3', '', '', NULL, NULL,
+                '', 0, 30, 300),
+               (4, 'tag-editor.flac', '', 'Current 4', '', '', NULL, NULL, '', 0, 40, 400),
+               (5, 'not-applied.flac', '', 'Current 5', '', '', NULL, NULL, '', 0, 50, 500),
+               (6, 'read-failed.flac', '', 'Current 6', '', '', NULL, NULL, '', 0, 60, 600),
+               (7, 'missing.flac', '', 'Current 7', '', '', NULL, NULL, '', 0, 70, 700);
+             UPDATE tracks SET missing_since=1 WHERE id=7;
+             INSERT INTO library_doctor_scans
+               (id, scope_kind, created_at, remote_enabled, checked_tracks, skipped_tracks)
+             VALUES
+               (10, 'whole_library', 1, 1, 7, 0),
+               (20, 'whole_library', 2, 1, 7, 0);
+             INSERT INTO library_doctor_scan_tracks
+               (scan_id, position, track_id, path, file_mtime, file_size, device, inode,
+                read_ok, title, artist, album, album_artist, year, track_no, genre)
+             VALUES
+               (20, 0, 1, 'written.flac', 10, 100, NULL, NULL, 1,
+                'Snapshot title', 'REFORMIST', 'Snapshot album',
+                'Snapshot album artist', 2000, 7, 'Snapshot genre'),
+               (20, 1, 2, 'untouched.flac', 20, 200, NULL, NULL, 1,
+                'Untouched title', 'Untouched artist', 'Untouched album',
+                'Untouched album artist', 1999, 8, 'Untouched genre'),
+               (20, 2, 3, 'empty-title.flac', 30, 300, NULL, NULL, 1,
+                '   ', 'Snapshot 3', '', '', NULL, NULL, ''),
+               (20, 3, 4, 'tag-editor.flac', 40, 400, NULL, NULL, 1,
+                '', 'Snapshot 4', '', '', NULL, NULL, ''),
+               (20, 4, 5, 'not-applied.flac', 50, 500, NULL, NULL, 1,
+                '', 'Snapshot 5', '', '', NULL, NULL, ''),
+               (20, 5, 6, 'read-failed.flac', 60, 600, NULL, NULL, 0,
+                '', 'Snapshot 6', '', '', NULL, NULL, ''),
+               (20, 6, 7, 'missing.flac', 70, 700, NULL, NULL, 1,
+                '', 'Snapshot 7', '', '', NULL, NULL, '');
+             UPDATE library_doctor_state
+             SET last_complete_scan_id=20 WHERE singleton=1;
+             INSERT INTO tag_write_jobs
+               (id, kind, source_job_id, scan_id, state, created_at, finished_at, total_tracks)
+             VALUES
+               (30, 'doctor_apply', NULL, 10, 'completed', 1, 2, 5),
+               (31, 'tag_editor', NULL, NULL, 'completed', 1, 2, 1);
+             INSERT INTO tag_write_job_files
+               (id, job_id, position, track_id, path, state, file_written)
+             VALUES
+               (40, 30, 0, 1, 'written.flac', 'complete', 1),
+               (41, 30, 1, 3, 'empty-title.flac', 'complete', 1),
+               (42, 31, 0, 4, 'tag-editor.flac', 'complete', 1),
+               (43, 30, 2, 5, 'not-applied.flac', 'complete', 1),
+               (44, 30, 3, 6, 'read-failed.flac', 'complete', 1),
+               (45, 30, 4, 7, 'missing.flac', 'complete', 1);
+             INSERT INTO tag_write_journal
+               (file_id, position, review_row_id, field, guard_is_set, expected_value,
+                expected_is_null, before_value, before_is_null, after_value,
+                after_is_null, outcome)
+             VALUES
+               (40, 0, NULL, 'artist', 1, 'REFORMIST', 0, 'REFORMIST', 0,
+                'Reformist', 0, 'applied'),
+               (41, 0, NULL, 'title', 1, '   ', 0, '   ', 0, '', 0, 'applied'),
+               (42, 0, NULL, 'artist', 0, NULL, 1, 'Snapshot 4', 0,
+                'Current 4', 0, 'applied'),
+               (43, 0, NULL, 'artist', 1, 'Snapshot 5', 0, 'Snapshot 5', 0,
+                'Current 5', 0, 'conflict'),
+               (44, 0, NULL, 'artist', 1, 'Snapshot 6', 0, 'Snapshot 6', 0,
+                'Current 6', 0, 'applied'),
+               (45, 0, NULL, 'artist', 1, 'Snapshot 7', 0, 'Snapshot 7', 0,
+                'Current 7', 0, 'applied');
+             PRAGMA user_version=85;",
+        )
+        .unwrap();
+
+        super::migrate_v86(conn).unwrap();
+        let repaired = conn
+            .query_row(
+                "SELECT title, artist, album, album_artist, year, track_no, genre
+                 FROM library_doctor_scan_tracks WHERE scan_id=20 AND track_id=1",
+                [],
+                |row| {
+                    Ok((
+                        row.get::<_, String>(0)?,
+                        row.get::<_, String>(1)?,
+                        row.get::<_, String>(2)?,
+                        row.get::<_, String>(3)?,
+                        row.get::<_, Option<u32>>(4)?,
+                        row.get::<_, Option<u32>>(5)?,
+                        row.get::<_, String>(6)?,
+                    ))
+                },
+            )
+            .unwrap();
+        let untouched = conn
+            .query_row(
+                "SELECT title, artist, album, album_artist, year, track_no, genre
+                 FROM library_doctor_scan_tracks WHERE scan_id=20 AND track_id=2",
+                [],
+                |row| {
+                    Ok((
+                        row.get::<_, String>(0)?,
+                        row.get::<_, String>(1)?,
+                        row.get::<_, String>(2)?,
+                        row.get::<_, String>(3)?,
+                        row.get::<_, Option<u32>>(4)?,
+                        row.get::<_, Option<u32>>(5)?,
+                        row.get::<_, String>(6)?,
+                    ))
+                },
+            )
+            .unwrap();
+        assert_eq!(
+            repaired,
+            (
+                "Snapshot title".into(),
+                "Reformist".into(),
+                "Snapshot album".into(),
+                "Snapshot album artist".into(),
+                Some(2000),
+                Some(7),
+                "Snapshot genre".into(),
+            )
+        );
+        assert_eq!(
+            untouched,
+            (
+                "Untouched title".into(),
+                "Untouched artist".into(),
+                "Untouched album".into(),
+                "Untouched album artist".into(),
+                Some(1999),
+                Some(8),
+                "Untouched genre".into(),
+            )
+        );
+        let empty_title: String = conn
+            .query_row(
+                "SELECT title FROM library_doctor_scan_tracks WHERE scan_id=20 AND track_id=3",
+                [],
+                |row| row.get(0),
+            )
+            .unwrap();
+        assert_eq!(empty_title, "");
+        let excluded_artists = conn
+            .prepare(
+                "SELECT artist FROM library_doctor_scan_tracks
+                 WHERE scan_id=20 AND track_id BETWEEN 4 AND 7 ORDER BY track_id",
+            )
+            .unwrap()
+            .query_map([], |row| row.get::<_, String>(0))
+            .unwrap()
+            .collect::<Result<Vec<_>, _>>()
+            .unwrap();
+        assert_eq!(
+            excluded_artists,
+            ["Snapshot 4", "Snapshot 5", "Snapshot 6", "Snapshot 7"]
+        );
+
+        conn.execute("UPDATE tracks SET artist='Later' WHERE id=1", [])
+            .unwrap();
+        super::migrate_v86(conn).unwrap();
+        let after_second_run: String = conn
+            .query_row(
+                "SELECT artist FROM library_doctor_scan_tracks
+                 WHERE scan_id=20 AND track_id=1",
+                [],
+                |row| row.get(0),
+            )
+            .unwrap();
+        let version: i64 = conn
+            .query_row("PRAGMA user_version", [], |row| row.get(0))
+            .unwrap();
+        assert_eq!(after_second_run, "Reformist");
+        assert_eq!(version, 86);
     }
 }

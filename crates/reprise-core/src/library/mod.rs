@@ -6,6 +6,8 @@ pub(crate) mod import_errors;
 pub mod lastfm_stats;
 pub mod library_doctor;
 pub mod listenbrainz;
+pub mod loudness;
+pub mod loudness_store;
 pub mod m3u;
 pub(crate) mod mounts;
 pub mod path_guard;
@@ -24,6 +26,8 @@ pub mod source;
 pub(crate) mod source_test_support;
 mod source_unix;
 pub mod startup_tasks;
+#[cfg(test)]
+mod startup_tasks_loudness_tests;
 pub mod stats;
 pub mod stats_period;
 pub mod stats_screen;
@@ -32,6 +36,8 @@ pub mod tag_edit;
 pub mod taste;
 // The single seam that opens library content for a lofty parser — see its
 // module doc for why all four tag readers go through one place.
+#[cfg(test)]
+mod cue_tag_edit_tests;
 mod tag_edit_seed;
 pub mod tag_edit_session;
 mod tag_edit_write;

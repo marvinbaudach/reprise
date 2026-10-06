@@ -1,13 +1,48 @@
+use reprise_core::device_sync::mobile_import::AnalysisImportOutcome;
+
+use crate::track_analysis::AndroidAnalysisOutcome;
 use crate::{LibraryError, MusicLibrary};
 
 #[uniffi::export]
 impl MusicLibrary {
-    /// Lazily imports desktop rendering data for the track being presented.
-    /// Missing and malformed sidecars are ordinary no-data outcomes.
-    pub fn import_track_analysis(&self, track_id: i64) -> Result<(), LibraryError> {
+    /// Imports desktop rendering data for the track being presented, or —
+    /// when no usable sidecar exists — computes it from the file itself
+    /// (decision 5 of the mother plan). A tree that is not registered yet,
+    /// missing sidecars, and malformed sidecars are ordinary no-data
+    /// outcomes, not errors; they trigger the compute path rather than
+    /// ending the call.
+    pub fn import_track_analysis(
+        &self,
+        track_id: i64,
+    ) -> Result<AndroidAnalysisOutcome, LibraryError> {
+        match self.import_via_sidecar(track_id)? {
+            AnalysisImportOutcome::Imported => Ok(AndroidAnalysisOutcome::Imported),
+            AnalysisImportOutcome::AlreadyImported => Ok(AndroidAnalysisOutcome::AlreadyImported),
+            AnalysisImportOutcome::PhoneSourceChanged => {
+                Ok(AndroidAnalysisOutcome::PhoneSourceChanged)
+            }
+            AnalysisImportOutcome::Missing | AnalysisImportOutcome::Invalid => self
+                .analysis_context()
+                .compute(track_id, false, Some(&self.analysis_backfill), None),
+        }
+    }
+}
+
+impl MusicLibrary {
+    /// The sidecar half of [`import_track_analysis`]: reads and imports the
+    /// SAF sidecar registered for this track, if any. A tree that has not
+    /// been registered yet is equivalent to a missing sidecar because the
+    /// phone-side compute path does not need the tree.
+    fn import_via_sidecar(&self, track_id: i64) -> Result<AnalysisImportOutcome, LibraryError> {
         let (source, sidecar_path) = {
             let writer = self.writer()?;
-            let (_, source) = self.configured_tree()?;
+            let source = match self.configured_tree() {
+                Ok((_, source)) => source,
+                Err(LibraryError::TreeNotConfigured) => {
+                    return Ok(AnalysisImportOutcome::Missing);
+                }
+                Err(error) => return Err(error),
+            };
             let sidecar_path =
                 reprise_core::device_sync::mobile_import::analysis_sidecar_path_for_track(
                     &writer, track_id,
@@ -16,14 +51,14 @@ impl MusicLibrary {
             (source, sidecar_path)
         };
         let Some(sidecar_path) = sidecar_path else {
-            return Ok(());
+            return Ok(AnalysisImportOutcome::Missing);
         };
         let Some(bytes) = reprise_core::device_sync::mobile_import::read_analysis_sidecar(
             source.as_ref(),
             track_id,
             &sidecar_path,
         ) else {
-            return Ok(());
+            return Ok(AnalysisImportOutcome::Missing);
         };
         let writer = self.writer()?;
         reprise_core::device_sync::mobile_import::import_analysis_bytes_for_track(
@@ -32,7 +67,6 @@ impl MusicLibrary {
             &sidecar_path,
             &bytes,
         )
-        .map(|_| ())
         .map_err(database_error)
     }
 }
@@ -157,6 +191,7 @@ mod tests {
             },
             TrackSpectrogram::from_cells(vec![17; 48]).unwrap(),
             vec![19, 23],
+            None,
         )
         .encode()
         .unwrap();

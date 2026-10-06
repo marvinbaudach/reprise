@@ -157,7 +157,7 @@ impl SessionInner {
             self.adopt_target(&mut state, target);
             state.queue.clone()
         };
-        self.persist_queue(&queue_to_save)?;
+        self.persist_queue(queue_to_save)?;
         self.start_navigation()
     }
 
@@ -170,7 +170,7 @@ impl SessionInner {
             self.adopt_target(&mut state, target);
             state.queue.clone()
         };
-        self.persist_queue(&queue_to_save)?;
+        self.persist_queue(queue_to_save)?;
         self.start_navigation()?;
         Ok(true)
     }

@@ -4,6 +4,7 @@ internal data class LibraryFrameMetrics(
     val filterChipHeightDp: Int,
     val trackRowHeightDp: Int,
     val trackCoverSizeDp: Int,
+    /** Fixed at normal font scale; a floor when larger text needs more room. */
     val miniPlayerHeightDp: Int,
     val navigationBarHeightDp: Int,
     val navigationRailWidthDp: Int = 80,

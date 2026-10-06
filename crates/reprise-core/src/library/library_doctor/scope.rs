@@ -67,31 +67,31 @@ fn current_view_in_transaction(
         .copied()
         .map(QueueItem::Track)
         .collect::<Vec<_>>();
+    let view = crate::queries::TrackViewQuery::new(&snapshot.source)
+        .with_filter(&snapshot.filter)
+        .with_browse(&snapshot.browse)
+        .with_queue_items(&queue_items);
     let total = if snapshot.source == crate::view_source::ViewSource::Queue {
         i64::try_from(snapshot.queue_ids.len()).unwrap_or(i64::MAX)
     } else {
-        crate::queries::query_track_count_browsed(
-            db,
-            &snapshot.source,
-            &snapshot.filter,
-            &snapshot.browse,
-            &queue_items,
-        )?
+        crate::queries::query_track_count(db, &view)?
     };
-    let mut offset = 0;
+    let mut offset = 0i64;
     let mut seen = HashSet::new();
     let mut tracks = Vec::with_capacity(usize::try_from(total).unwrap_or_default());
     while offset < total {
-        let page = crate::queries::query_track_window_browsed(
+        let page = crate::queries::query_track_window(
             db,
-            &snapshot.source,
-            &snapshot.sort_field,
-            &snapshot.sort_dir,
-            &snapshot.filter,
-            &snapshot.browse,
-            offset,
-            PAGE_SIZE,
-            &queue_items,
+            &view,
+            crate::queries::TrackSort {
+                field: &snapshot.sort_field,
+                dir: &snapshot.sort_dir,
+            },
+            crate::queries::RowWindow {
+                offset,
+                limit: PAGE_SIZE,
+            },
+            crate::queries::AiColumn::Project,
         )?;
         offset = offset.saturating_add(PAGE_SIZE);
         for track in page {

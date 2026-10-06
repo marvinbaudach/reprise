@@ -23,7 +23,6 @@ impl DeviceSyncRuntime {
     /// Design 7d: the current, persisted playlists target — the folder
     /// browser's starting point and the value its "Reset to default" and
     /// playlist-conflict warning compare against.
-    #[cfg_attr(not(test), allow(dead_code))]
     pub fn current_target(&self, device_id: &str) -> Option<SyncTarget> {
         self.device_states
             .borrow()
@@ -34,7 +33,6 @@ impl DeviceSyncRuntime {
 
     /// Design 7d's storage selection: every browsable storage volume on
     /// this device, listed fresh (`MTP-31`).
-    #[cfg_attr(not(test), allow(dead_code))]
     pub fn browse_storages(self: &Rc<Self>, device_id: &str) -> BackendFuture<Vec<StorageOption>> {
         let backend = self.backend.clone();
         let root_uri = self.root_uri(device_id);
@@ -46,7 +44,6 @@ impl DeviceSyncRuntime {
 
     /// Design 7d's folder tree: the immediate child folders of `path` on
     /// `storage`.
-    #[cfg_attr(not(test), allow(dead_code))]
     pub fn browse_folders(
         self: &Rc<Self>,
         device_id: &str,
@@ -62,7 +59,6 @@ impl DeviceSyncRuntime {
     }
 
     /// Design 7d's "New folder".
-    #[cfg_attr(not(test), allow(dead_code))]
     pub fn create_target_folder(
         self: &Rc<Self>,
         device_id: &str,
@@ -85,7 +81,6 @@ impl DeviceSyncRuntime {
     /// best-effort: a relocation failure never blocks the save or is shown
     /// to the user, because the next sync simply copies fresh into the new
     /// folder instead of finding it already there.
-    #[cfg_attr(not(test), allow(dead_code))]
     pub fn set_target_folder(
         self: &Rc<Self>,
         device_id: &str,

@@ -252,20 +252,13 @@ impl YtDlp {
             .stdout(Stdio::piped())
             .stderr(Stdio::piped());
         configure_process_group(&mut command);
-        let mut busy_retries = EXECUTABLE_BUSY_RETRIES;
-        let mut child = loop {
-            match command.spawn() {
-                Ok(child) => break child,
-                Err(error)
-                    if error.kind() == std::io::ErrorKind::ExecutableFileBusy
-                        && busy_retries > 0 =>
-                {
-                    busy_retries -= 1;
-                    thread::sleep(EXECUTABLE_BUSY_RETRY_DELAY);
-                }
-                Err(error) => return Err(logged_spawn_error(operation, &error)),
-            }
-        };
+        let mut child = spawn_retrying_busy(
+            &mut command,
+            EXECUTABLE_BUSY_RETRIES,
+            EXECUTABLE_BUSY_RETRY_DELAY,
+            || {},
+        )
+        .map_err(|error| logged_spawn_error(operation, &error))?;
 
         let process_group = child.id();
         let stdout = read_in_background(child.stdout.take().expect("piped stdout"));
@@ -696,6 +689,27 @@ fn canonical_parent(path: &Path) -> Result<PathBuf, PodcastError> {
         })
 }
 
+/// Spawns `command`, retrying while the executable is still open for writing
+/// elsewhere (`ETXTBSY`). A freshly installed or updated binary can be busy for
+/// a moment; `on_busy` runs before each wait so a caller can observe the retry.
+fn spawn_retrying_busy(
+    command: &mut Command,
+    mut retries: usize,
+    delay: Duration,
+    mut on_busy: impl FnMut(),
+) -> std::io::Result<Child> {
+    loop {
+        match command.spawn() {
+            Err(error) if error.kind() == std::io::ErrorKind::ExecutableFileBusy && retries > 0 => {
+                retries -= 1;
+                on_busy();
+                thread::sleep(delay);
+            }
+            result => return result,
+        }
+    }
+}
+
 #[path = "ytdlp_resolved.rs"]
 pub(super) mod resolved;
 
@@ -709,7 +723,7 @@ mod listing_tests;
 
 #[cfg(all(test, unix))]
 #[path = "ytdlp_test_support.rs"]
-mod test_support;
+pub(super) mod test_support;
 
 #[cfg(all(test, unix))]
 #[path = "ytdlp_download_tests.rs"]

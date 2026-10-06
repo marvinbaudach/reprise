@@ -190,6 +190,18 @@ impl MusicLibrary {
             }
         })
     }
+
+    /// Returns every present track by one artist: each album in the artist
+    /// page's order, then the tracks without an album.
+    pub fn artist_track_ids(&self, artist: String) -> Result<Vec<i64>, LibraryError> {
+        let artist = artist.into_boxed_str();
+        let reader = self.reader()?;
+        queries::query_artist_canonical_track_ids(&reader, &artist).map_err(|error| {
+            LibraryError::Query {
+                detail: error.to_string(),
+            }
+        })
+    }
 }
 
 #[cfg(test)]
@@ -311,6 +323,14 @@ mod tests {
             library
                 .album_track_ids("Unknown".into(), "Nobody".into())
                 .unwrap(),
+            Vec::<i64>::new()
+        );
+        assert_eq!(
+            library.artist_track_ids("window artist".into()).unwrap(),
+            expected
+        );
+        assert_eq!(
+            library.artist_track_ids("   ".into()).unwrap(),
             Vec::<i64>::new()
         );
     }

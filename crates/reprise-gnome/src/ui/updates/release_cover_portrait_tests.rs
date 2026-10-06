@@ -10,8 +10,8 @@ use reprise_core::cover_download::{CoverState, ReleaseGroupCover};
 
 use super::release_cover::{override_cover_fetch, override_cover_state, LazyReleaseCover};
 use crate::ui::artist_portrait_tiles::ArtistPortraitTiles;
-use crate::ui::artist_portrait_worker::ArtistPortraitRuntime;
 use crate::ui::cover_loader::CoverLoader;
+use crate::ui::now_playing::artist_portrait_worker::ArtistPortraitRuntime;
 
 const FIRST_MBID: &str = "11111111-1111-1111-1111-111111111111";
 const SECOND_MBID: &str = "22222222-2222-2222-2222-222222222222";

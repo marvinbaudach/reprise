@@ -19,19 +19,21 @@ pub fn add_unique_tracks(
     }
 
     let tx = conn.unchecked_transaction()?;
+    let existing = {
+        let mut statement =
+            tx.prepare_cached("SELECT track_id FROM playlist_tracks WHERE playlist_id=?1")?;
+        let ids = statement
+            .query_map([playlist_id], |row| row.get::<_, i64>(0))?
+            .collect::<Result<HashSet<_>, _>>()?;
+        ids
+    };
     let mut seen = HashSet::new();
     let mut unique = Vec::new();
     for &track_id in track_ids {
         if !seen.insert(track_id) {
             continue;
         }
-        let exists = tx.query_row(
-            "SELECT EXISTS(SELECT 1 FROM playlist_tracks \
-             WHERE playlist_id=?1 AND track_id=?2)",
-            params![playlist_id, track_id],
-            |row| row.get::<_, bool>(0),
-        )?;
-        if !exists {
+        if !existing.contains(&track_id) {
             unique.push(track_id);
         }
     }
@@ -46,11 +48,17 @@ pub fn add_unique_tracks(
         [playlist_id],
         |row| row.get::<_, i64>(0),
     )?;
-    for (offset, track_id) in unique.iter().enumerate() {
-        tx.execute(
+    {
+        let mut statement = tx.prepare_cached(
             "INSERT INTO playlist_tracks (playlist_id, track_id, position) VALUES (?1, ?2, ?3)",
-            params![playlist_id, track_id, max_position + 1 + offset as i64],
         )?;
+        for (offset, track_id) in unique.iter().enumerate() {
+            statement.execute(params![
+                playlist_id,
+                track_id,
+                max_position + 1 + offset as i64
+            ])?;
+        }
     }
     let inserted = unique.len() as u32;
     tx.commit()?;
@@ -61,6 +69,22 @@ pub fn add_unique_tracks(
 mod tests {
     use crate::db::Db;
     use rusqlite::params;
+    use rusqlite::trace::{TraceEvent, TraceEventCodes};
+    use std::sync::atomic::{AtomicUsize, Ordering};
+
+    static MEMBERSHIP_SELECTS: AtomicUsize = AtomicUsize::new(0);
+
+    fn count_membership_selects(event: TraceEvent<'_>) {
+        let TraceEvent::Stmt(statement, _expanded) = event else {
+            return;
+        };
+        let sql = statement.sql();
+        if sql.contains("SELECT EXISTS(SELECT 1 FROM playlist_tracks")
+            || sql.contains("SELECT track_id FROM playlist_tracks WHERE playlist_id")
+        {
+            MEMBERSHIP_SELECTS.fetch_add(1, Ordering::SeqCst);
+        }
+    }
 
     fn seeded_db() -> Db {
         let db = Db::open_in_memory().unwrap();
@@ -82,8 +106,15 @@ mod tests {
         let playlist_id = crate::library::playlists::create(&db, "P").unwrap();
         crate::library::playlists::add_tracks(&db, playlist_id, &[1, 2]).unwrap();
 
+        MEMBERSHIP_SELECTS.store(0, Ordering::SeqCst);
+        db.conn().trace_v2(
+            TraceEventCodes::SQLITE_TRACE_STMT,
+            Some(count_membership_selects),
+        );
         let inserted = super::add_unique_tracks(&db, playlist_id, &[2, 3, 3, 4]).unwrap();
+        db.conn().trace_v2(TraceEventCodes::empty(), None);
         assert_eq!(inserted, 2);
+        assert_eq!(MEMBERSHIP_SELECTS.load(Ordering::SeqCst), 1);
 
         let ids = db
             .conn()

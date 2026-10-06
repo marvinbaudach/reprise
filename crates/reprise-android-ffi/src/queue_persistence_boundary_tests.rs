@@ -49,7 +49,7 @@ fn a_fresh_session_restores_the_saved_order_and_position_paused() {
             .lock()
             .unwrap()
             .iter()
-            .any(|call| matches!(call, PortCall::PlayUri(_))),
+            .any(|call| matches!(call, PortCall::PlayPath(_, _))),
         "restoring must not start Media3",
     );
 
@@ -62,7 +62,7 @@ fn a_fresh_session_restores_the_saved_order_and_position_paused() {
         .lock()
         .unwrap()
         .iter()
-        .any(|call| matches!(call, PortCall::PlayUri(uri) if uri == &track("Third").path)));
+        .any(|call| matches!(call, PortCall::PlayPath(uri, _) if uri == &track("Third").path)));
 }
 
 #[test]
@@ -210,6 +210,7 @@ fn queue_saves_leave_unrelated_desktop_session_fields_untouched() {
     session
         .play_tracks(vec![tracks[0].id], vec![tracks[0].path.clone()], 0)
         .unwrap();
+    session.flush_queue_persistence();
     drop(session);
 
     let database = reprise_core::db::Db::open_ready(&database_path).unwrap();

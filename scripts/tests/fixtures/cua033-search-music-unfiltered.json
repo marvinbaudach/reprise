@@ -1,0 +1,2789 @@
+{
+ "_note": "recorded: Music view with the search open but unfiltered; trimmed to its first 5 of 20 listed data rows (subtrees dropped whole)",
+ "_source": "cua-driver 0.33.3 get_window_state, section-search-isolation seed 11, Reprise e844af8d9c, mixed-sources-128 profile, evidence dir section-search-final, step-0006-before.json",
+ "app_name": "reprise",
+ "coordinate_frame": "window",
+ "element_count": 110,
+ "elements": [
+  {
+   "actions": [
+    "win.open-primary-menu",
+    "win.about",
+    "win.library-doctor-findings",
+    "win.toggle-play-pause",
+    "win.import-playlist",
+    "win.nav-forward",
+    "win.jump-to-now-playing",
+    "win.close",
+    "window.close",
+    "win.library-doctor",
+    "win.edit-column-layout",
+    "win.focus-search",
+    "win.keyboard-shortcuts",
+    "win.preferences",
+    "win.clear-all-filters",
+    "window.minimize",
+    "win.show-folded-columns",
+    "window.toggle-maximized",
+    "win.stop-playback",
+    "default.activate",
+    "win.quick-open",
+    "win.toggle-minimal-view",
+    "win.nav-back",
+    "win.help"
+   ],
+   "depth": 0,
+   "element_index": 0,
+   "element_token": "s0000001d:0",
+   "enabled": true,
+   "frame": {
+    "h": 1000.0,
+    "w": 1600.0,
+    "x": 240.0,
+    "y": 150.0
+   },
+   "geometry_trusted": true,
+   "label": "Reprise",
+   "role": "window",
+   "screenshot_frame": {
+    "h": 848,
+    "w": 1356,
+    "x": 0,
+    "y": 0
+   }
+  },
+  {
+   "actions": [
+    "navigation.pop"
+   ],
+   "depth": 10,
+   "element_index": 1,
+   "element_token": "s0000001d:1",
+   "enabled": true,
+   "frame": {
+    "h": 856,
+    "w": 1350,
+    "x": 240,
+    "y": 150
+   },
+   "geometry_trusted": false,
+   "parent_index": 0,
+   "role": "group",
+   "screenshot_frame": {
+    "h": 725,
+    "w": 1144,
+    "x": 0,
+    "y": 0
+   }
+  },
+  {
+   "actions": [],
+   "depth": 23,
+   "element_index": 2,
+   "element_token": "s0000001d:2",
+   "enabled": true,
+   "frame": {
+    "h": 38.0,
+    "w": 100.0,
+    "x": 492.0,
+    "y": 203.0
+   },
+   "geometry_trusted": true,
+   "label": "Add filter",
+   "parent_index": 1,
+   "role": "button",
+   "screenshot_frame": {
+    "h": 32,
+    "w": 85,
+    "x": 0,
+    "y": 0
+   }
+  },
+  {
+   "actions": [
+    "click"
+   ],
+   "depth": 24,
+   "element_index": 3,
+   "element_token": "s0000001d:3",
+   "enabled": true,
+   "frame": {
+    "h": 38.0,
+    "w": 100.0,
+    "x": 492.0,
+    "y": 203.0
+   },
+   "geometry_trusted": true,
+   "label": "Add filter",
+   "parent_index": 2,
+   "role": "toggle button",
+   "screenshot_frame": {
+    "h": 32,
+    "w": 85,
+    "x": 0,
+    "y": 0
+   }
+  },
+  {
+   "actions": [
+    "tracklist.move-to-top",
+    "tracklist.move-down",
+    "tracklist.add-to-queue",
+    "tracklist.new-playlist",
+    "tracklist.remove-selected-from-library",
+    "tracklist.play-next",
+    "tracklist.edit-tags",
+    "tracklist.remove-from-queue",
+    "tracklist.move-up",
+    "tracklist.remove-from-library",
+    "tracklist.play",
+    "tracklist.trash-selected-tracks",
+    "tracklist.show-in-missing-files",
+    "tracklist.go-to-album",
+    "tracklist.remove-from-playlist",
+    "tracklist.show-in-files",
+    "tracklist.go-to-artist"
+   ],
+   "depth": 25,
+   "element_index": 4,
+   "element_token": "s0000001d:4",
+   "enabled": true,
+   "frame": {
+    "h": 794,
+    "w": 1350,
+    "x": 240,
+    "y": 150
+   },
+   "geometry_trusted": false,
+   "parent_index": 1,
+   "role": "tree grid",
+   "screenshot_frame": {
+    "h": 673,
+    "w": 1144,
+    "x": 0,
+    "y": 0
+   }
+  },
+  {
+   "actions": [
+    "listitem.scroll-to"
+   ],
+   "depth": 26,
+   "element_index": 5,
+   "element_token": "s0000001d:5",
+   "enabled": true,
+   "frame": {
+    "h": 31.0,
+    "w": 1350.0,
+    "x": 480.0,
+    "y": 259.0
+   },
+   "geometry_trusted": true,
+   "label": "Title Artist Album Year Length Rating",
+   "parent_index": 4,
+   "role": "row",
+   "screenshot_frame": {
+    "h": 26,
+    "w": 1144,
+    "x": 0,
+    "y": 0
+   }
+  },
+  {
+   "actions": [
+    "list.unselect-all",
+    "list.select-all"
+   ],
+   "depth": 26,
+   "element_index": 6,
+   "element_token": "s0000001d:6",
+   "enabled": true,
+   "frame": {
+    "h": 763.0,
+    "w": 1350.0,
+    "x": 480.0,
+    "y": 290.0
+   },
+   "geometry_trusted": true,
+   "parent_index": 4,
+   "role": "list",
+   "screenshot_frame": {
+    "h": 647,
+    "w": 1144,
+    "x": 0,
+    "y": 0
+   }
+  },
+  {
+   "actions": [
+    "listitem.scroll-to"
+   ],
+   "depth": 27,
+   "element_index": 7,
+   "element_token": "s0000001d:7",
+   "enabled": true,
+   "frame": {
+    "h": 45.0,
+    "w": 1350.0,
+    "x": 480.0,
+    "y": 245.0
+   },
+   "geometry_trusted": true,
+   "label": "Go to album Fixture Album 10 Writable Batch 0011 Fixture Artist 10 Fixture Album 10 1990 3:00 Rate 1 star Rate 2 stars Rate 3 stars Rate 4 stars Rate 5 stars",
+   "parent_index": 6,
+   "role": "row",
+   "screenshot_frame": {
+    "h": 38,
+    "w": 1144,
+    "x": 0,
+    "y": 0
+   }
+  },
+  {
+   "actions": [
+    "listitem.scroll-to"
+   ],
+   "depth": 28,
+   "element_index": 8,
+   "element_token": "s0000001d:8",
+   "enabled": true,
+   "frame": {
+    "h": 45.0,
+    "w": 40.0,
+    "x": 480.0,
+    "y": 245.0
+   },
+   "geometry_trusted": true,
+   "label": "Go to album Fixture Album 10",
+   "parent_index": 7,
+   "role": "grid cell",
+   "screenshot_frame": {
+    "h": 38,
+    "w": 34,
+    "x": 0,
+    "y": 0
+   }
+  },
+  {
+   "actions": [
+    "listitem.scroll-to"
+   ],
+   "depth": 28,
+   "element_index": 9,
+   "element_token": "s0000001d:9",
+   "enabled": true,
+   "frame": {
+    "h": 45.0,
+    "w": 472.0,
+    "x": 520.0,
+    "y": 245.0
+   },
+   "geometry_trusted": true,
+   "label": "Writable Batch 0011",
+   "parent_index": 7,
+   "role": "grid cell",
+   "screenshot_frame": {
+    "h": 38,
+    "w": 400,
+    "x": 0,
+    "y": 0
+   }
+  },
+  {
+   "actions": [
+    "listitem.scroll-to"
+   ],
+   "depth": 28,
+   "element_index": 10,
+   "element_token": "s0000001d:10",
+   "enabled": true,
+   "frame": {
+    "h": 45.0,
+    "w": 260.0,
+    "x": 992.0,
+    "y": 245.0
+   },
+   "geometry_trusted": true,
+   "label": "Fixture Artist 10",
+   "parent_index": 7,
+   "role": "grid cell",
+   "screenshot_frame": {
+    "h": 38,
+    "w": 220,
+    "x": 0,
+    "y": 0
+   }
+  },
+  {
+   "actions": [
+    "listitem.scroll-to"
+   ],
+   "depth": 28,
+   "element_index": 11,
+   "element_token": "s0000001d:11",
+   "enabled": true,
+   "frame": {
+    "h": 45.0,
+    "w": 300.0,
+    "x": 1252.0,
+    "y": 245.0
+   },
+   "geometry_trusted": true,
+   "label": "Fixture Album 10",
+   "parent_index": 7,
+   "role": "grid cell",
+   "screenshot_frame": {
+    "h": 38,
+    "w": 254,
+    "x": 0,
+    "y": 0
+   }
+  },
+  {
+   "actions": [
+    "listitem.scroll-to"
+   ],
+   "depth": 28,
+   "element_index": 12,
+   "element_token": "s0000001d:12",
+   "enabled": true,
+   "frame": {
+    "h": 45.0,
+    "w": 90.0,
+    "x": 1552.0,
+    "y": 245.0
+   },
+   "geometry_trusted": true,
+   "label": "1990",
+   "parent_index": 7,
+   "role": "grid cell",
+   "screenshot_frame": {
+    "h": 38,
+    "w": 76,
+    "x": 0,
+    "y": 0
+   }
+  },
+  {
+   "actions": [
+    "listitem.scroll-to"
+   ],
+   "depth": 28,
+   "element_index": 13,
+   "element_token": "s0000001d:13",
+   "enabled": true,
+   "frame": {
+    "h": 45.0,
+    "w": 100.0,
+    "x": 1642.0,
+    "y": 245.0
+   },
+   "geometry_trusted": true,
+   "label": "3:00",
+   "parent_index": 7,
+   "role": "grid cell",
+   "screenshot_frame": {
+    "h": 38,
+    "w": 85,
+    "x": 0,
+    "y": 0
+   }
+  },
+  {
+   "actions": [
+    "listitem.scroll-to"
+   ],
+   "depth": 28,
+   "element_index": 14,
+   "element_token": "s0000001d:14",
+   "enabled": true,
+   "frame": {
+    "h": 45.0,
+    "w": 88.0,
+    "x": 1742.0,
+    "y": 245.0
+   },
+   "geometry_trusted": true,
+   "label": "Rate 1 star Rate 2 stars Rate 3 stars Rate 4 stars Rate 5 stars",
+   "parent_index": 7,
+   "role": "grid cell",
+   "screenshot_frame": {
+    "h": 38,
+    "w": 75,
+    "x": 0,
+    "y": 0
+   }
+  },
+  {
+   "actions": [
+    "click"
+   ],
+   "depth": 31,
+   "element_index": 15,
+   "element_token": "s0000001d:15",
+   "enabled": true,
+   "frame": {
+    "h": 24.0,
+    "w": 16.0,
+    "x": 1742.0,
+    "y": 247.0
+   },
+   "geometry_trusted": true,
+   "label": "Rate 1 star",
+   "parent_index": 14,
+   "role": "button",
+   "screenshot_frame": {
+    "h": 20,
+    "w": 14,
+    "x": 0,
+    "y": 0
+   }
+  },
+  {
+   "actions": [
+    "click"
+   ],
+   "depth": 31,
+   "element_index": 16,
+   "element_token": "s0000001d:16",
+   "enabled": true,
+   "frame": {
+    "h": 24.0,
+    "w": 16.0,
+    "x": 1758.0,
+    "y": 247.0
+   },
+   "geometry_trusted": true,
+   "label": "Rate 2 stars",
+   "parent_index": 14,
+   "role": "button",
+   "screenshot_frame": {
+    "h": 20,
+    "w": 14,
+    "x": 0,
+    "y": 0
+   }
+  },
+  {
+   "actions": [
+    "click"
+   ],
+   "depth": 31,
+   "element_index": 17,
+   "element_token": "s0000001d:17",
+   "enabled": true,
+   "frame": {
+    "h": 24.0,
+    "w": 16.0,
+    "x": 1774.0,
+    "y": 247.0
+   },
+   "geometry_trusted": true,
+   "label": "Rate 3 stars",
+   "parent_index": 14,
+   "role": "button",
+   "screenshot_frame": {
+    "h": 20,
+    "w": 14,
+    "x": 0,
+    "y": 0
+   }
+  },
+  {
+   "actions": [
+    "click"
+   ],
+   "depth": 31,
+   "element_index": 18,
+   "element_token": "s0000001d:18",
+   "enabled": true,
+   "frame": {
+    "h": 24.0,
+    "w": 16.0,
+    "x": 1790.0,
+    "y": 247.0
+   },
+   "geometry_trusted": true,
+   "label": "Rate 4 stars",
+   "parent_index": 14,
+   "role": "button",
+   "screenshot_frame": {
+    "h": 20,
+    "w": 14,
+    "x": 0,
+    "y": 0
+   }
+  },
+  {
+   "actions": [
+    "click"
+   ],
+   "depth": 31,
+   "element_index": 19,
+   "element_token": "s0000001d:19",
+   "enabled": true,
+   "frame": {
+    "h": 24.0,
+    "w": 16.0,
+    "x": 1806.0,
+    "y": 247.0
+   },
+   "geometry_trusted": true,
+   "label": "Rate 5 stars",
+   "parent_index": 14,
+   "role": "button",
+   "screenshot_frame": {
+    "h": 20,
+    "w": 14,
+    "x": 0,
+    "y": 0
+   }
+  },
+  {
+   "actions": [
+    "listitem.scroll-to"
+   ],
+   "depth": 27,
+   "element_index": 20,
+   "element_token": "s0000001d:20",
+   "enabled": true,
+   "frame": {
+    "h": 45.0,
+    "w": 1350.0,
+    "x": 480.0,
+    "y": 290.0
+   },
+   "geometry_trusted": true,
+   "label": "Go to album Fixture Album 42 Writable Batch 0107 Fixture Artist 10 Fixture Album 42 1996 3:00 Rate 1 star Rate 2 stars Rate 3 stars Rate 4 stars Rate 5 stars",
+   "parent_index": 6,
+   "role": "row",
+   "screenshot_frame": {
+    "h": 38,
+    "w": 1144,
+    "x": 0,
+    "y": 0
+   }
+  },
+  {
+   "actions": [
+    "listitem.scroll-to"
+   ],
+   "depth": 28,
+   "element_index": 21,
+   "element_token": "s0000001d:21",
+   "enabled": true,
+   "frame": {
+    "h": 45.0,
+    "w": 40.0,
+    "x": 480.0,
+    "y": 290.0
+   },
+   "geometry_trusted": true,
+   "label": "Go to album Fixture Album 42",
+   "parent_index": 20,
+   "role": "grid cell",
+   "screenshot_frame": {
+    "h": 38,
+    "w": 34,
+    "x": 0,
+    "y": 0
+   }
+  },
+  {
+   "actions": [
+    "listitem.scroll-to"
+   ],
+   "depth": 28,
+   "element_index": 22,
+   "element_token": "s0000001d:22",
+   "enabled": true,
+   "frame": {
+    "h": 45.0,
+    "w": 472.0,
+    "x": 520.0,
+    "y": 290.0
+   },
+   "geometry_trusted": true,
+   "label": "Writable Batch 0107",
+   "parent_index": 20,
+   "role": "grid cell",
+   "screenshot_frame": {
+    "h": 38,
+    "w": 400,
+    "x": 0,
+    "y": 0
+   }
+  },
+  {
+   "actions": [
+    "listitem.scroll-to"
+   ],
+   "depth": 28,
+   "element_index": 23,
+   "element_token": "s0000001d:23",
+   "enabled": true,
+   "frame": {
+    "h": 45.0,
+    "w": 260.0,
+    "x": 992.0,
+    "y": 290.0
+   },
+   "geometry_trusted": true,
+   "label": "Fixture Artist 10",
+   "parent_index": 20,
+   "role": "grid cell",
+   "screenshot_frame": {
+    "h": 38,
+    "w": 220,
+    "x": 0,
+    "y": 0
+   }
+  },
+  {
+   "actions": [
+    "listitem.scroll-to"
+   ],
+   "depth": 28,
+   "element_index": 24,
+   "element_token": "s0000001d:24",
+   "enabled": true,
+   "frame": {
+    "h": 45.0,
+    "w": 300.0,
+    "x": 1252.0,
+    "y": 290.0
+   },
+   "geometry_trusted": true,
+   "label": "Fixture Album 42",
+   "parent_index": 20,
+   "role": "grid cell",
+   "screenshot_frame": {
+    "h": 38,
+    "w": 254,
+    "x": 0,
+    "y": 0
+   }
+  },
+  {
+   "actions": [
+    "listitem.scroll-to"
+   ],
+   "depth": 28,
+   "element_index": 25,
+   "element_token": "s0000001d:25",
+   "enabled": true,
+   "frame": {
+    "h": 45.0,
+    "w": 90.0,
+    "x": 1552.0,
+    "y": 290.0
+   },
+   "geometry_trusted": true,
+   "label": "1996",
+   "parent_index": 20,
+   "role": "grid cell",
+   "screenshot_frame": {
+    "h": 38,
+    "w": 76,
+    "x": 0,
+    "y": 0
+   }
+  },
+  {
+   "actions": [
+    "listitem.scroll-to"
+   ],
+   "depth": 28,
+   "element_index": 26,
+   "element_token": "s0000001d:26",
+   "enabled": true,
+   "frame": {
+    "h": 45.0,
+    "w": 100.0,
+    "x": 1642.0,
+    "y": 290.0
+   },
+   "geometry_trusted": true,
+   "label": "3:00",
+   "parent_index": 20,
+   "role": "grid cell",
+   "screenshot_frame": {
+    "h": 38,
+    "w": 85,
+    "x": 0,
+    "y": 0
+   }
+  },
+  {
+   "actions": [
+    "listitem.scroll-to"
+   ],
+   "depth": 28,
+   "element_index": 27,
+   "element_token": "s0000001d:27",
+   "enabled": true,
+   "frame": {
+    "h": 45.0,
+    "w": 88.0,
+    "x": 1742.0,
+    "y": 290.0
+   },
+   "geometry_trusted": true,
+   "label": "Rate 1 star Rate 2 stars Rate 3 stars Rate 4 stars Rate 5 stars",
+   "parent_index": 20,
+   "role": "grid cell",
+   "screenshot_frame": {
+    "h": 38,
+    "w": 75,
+    "x": 0,
+    "y": 0
+   }
+  },
+  {
+   "actions": [
+    "click"
+   ],
+   "depth": 31,
+   "element_index": 28,
+   "element_token": "s0000001d:28",
+   "enabled": true,
+   "frame": {
+    "h": 24.0,
+    "w": 16.0,
+    "x": 1742.0,
+    "y": 292.0
+   },
+   "geometry_trusted": true,
+   "label": "Rate 1 star",
+   "parent_index": 27,
+   "role": "button",
+   "screenshot_frame": {
+    "h": 20,
+    "w": 14,
+    "x": 0,
+    "y": 0
+   }
+  },
+  {
+   "actions": [
+    "click"
+   ],
+   "depth": 31,
+   "element_index": 29,
+   "element_token": "s0000001d:29",
+   "enabled": true,
+   "frame": {
+    "h": 24.0,
+    "w": 16.0,
+    "x": 1758.0,
+    "y": 292.0
+   },
+   "geometry_trusted": true,
+   "label": "Rate 2 stars",
+   "parent_index": 27,
+   "role": "button",
+   "screenshot_frame": {
+    "h": 20,
+    "w": 14,
+    "x": 0,
+    "y": 0
+   }
+  },
+  {
+   "actions": [
+    "click"
+   ],
+   "depth": 31,
+   "element_index": 30,
+   "element_token": "s0000001d:30",
+   "enabled": true,
+   "frame": {
+    "h": 24.0,
+    "w": 16.0,
+    "x": 1774.0,
+    "y": 292.0
+   },
+   "geometry_trusted": true,
+   "label": "Rate 3 stars",
+   "parent_index": 27,
+   "role": "button",
+   "screenshot_frame": {
+    "h": 20,
+    "w": 14,
+    "x": 0,
+    "y": 0
+   }
+  },
+  {
+   "actions": [
+    "click"
+   ],
+   "depth": 31,
+   "element_index": 31,
+   "element_token": "s0000001d:31",
+   "enabled": true,
+   "frame": {
+    "h": 24.0,
+    "w": 16.0,
+    "x": 1790.0,
+    "y": 292.0
+   },
+   "geometry_trusted": true,
+   "label": "Rate 4 stars",
+   "parent_index": 27,
+   "role": "button",
+   "screenshot_frame": {
+    "h": 20,
+    "w": 14,
+    "x": 0,
+    "y": 0
+   }
+  },
+  {
+   "actions": [
+    "click"
+   ],
+   "depth": 31,
+   "element_index": 32,
+   "element_token": "s0000001d:32",
+   "enabled": true,
+   "frame": {
+    "h": 24.0,
+    "w": 16.0,
+    "x": 1806.0,
+    "y": 292.0
+   },
+   "geometry_trusted": true,
+   "label": "Rate 5 stars",
+   "parent_index": 27,
+   "role": "button",
+   "screenshot_frame": {
+    "h": 20,
+    "w": 14,
+    "x": 0,
+    "y": 0
+   }
+  },
+  {
+   "actions": [
+    "listitem.scroll-to"
+   ],
+   "depth": 27,
+   "element_index": 33,
+   "element_token": "s0000001d:33",
+   "enabled": true,
+   "frame": {
+    "h": 45.0,
+    "w": 1350.0,
+    "x": 480.0,
+    "y": 335.0
+   },
+   "geometry_trusted": true,
+   "label": "Go to album Fixture Album 10 Writable Batch 0075 Fixture Artist 10 Fixture Album 10 2009 3:00 Rate 1 star Rate 2 stars Rate 3 stars Rate 4 stars Rate 5 stars",
+   "parent_index": 6,
+   "role": "row",
+   "screenshot_frame": {
+    "h": 38,
+    "w": 1144,
+    "x": 0,
+    "y": 0
+   }
+  },
+  {
+   "actions": [
+    "listitem.scroll-to"
+   ],
+   "depth": 28,
+   "element_index": 34,
+   "element_token": "s0000001d:34",
+   "enabled": true,
+   "frame": {
+    "h": 45.0,
+    "w": 40.0,
+    "x": 480.0,
+    "y": 335.0
+   },
+   "geometry_trusted": true,
+   "label": "Go to album Fixture Album 10",
+   "parent_index": 33,
+   "role": "grid cell",
+   "screenshot_frame": {
+    "h": 38,
+    "w": 34,
+    "x": 0,
+    "y": 0
+   }
+  },
+  {
+   "actions": [
+    "listitem.scroll-to"
+   ],
+   "depth": 28,
+   "element_index": 35,
+   "element_token": "s0000001d:35",
+   "enabled": true,
+   "frame": {
+    "h": 45.0,
+    "w": 472.0,
+    "x": 520.0,
+    "y": 335.0
+   },
+   "geometry_trusted": true,
+   "label": "Writable Batch 0075",
+   "parent_index": 33,
+   "role": "grid cell",
+   "screenshot_frame": {
+    "h": 38,
+    "w": 400,
+    "x": 0,
+    "y": 0
+   }
+  },
+  {
+   "actions": [
+    "listitem.scroll-to"
+   ],
+   "depth": 28,
+   "element_index": 36,
+   "element_token": "s0000001d:36",
+   "enabled": true,
+   "frame": {
+    "h": 45.0,
+    "w": 260.0,
+    "x": 992.0,
+    "y": 335.0
+   },
+   "geometry_trusted": true,
+   "label": "Fixture Artist 10",
+   "parent_index": 33,
+   "role": "grid cell",
+   "screenshot_frame": {
+    "h": 38,
+    "w": 220,
+    "x": 0,
+    "y": 0
+   }
+  },
+  {
+   "actions": [
+    "listitem.scroll-to"
+   ],
+   "depth": 28,
+   "element_index": 37,
+   "element_token": "s0000001d:37",
+   "enabled": true,
+   "frame": {
+    "h": 45.0,
+    "w": 300.0,
+    "x": 1252.0,
+    "y": 335.0
+   },
+   "geometry_trusted": true,
+   "label": "Fixture Album 10",
+   "parent_index": 33,
+   "role": "grid cell",
+   "screenshot_frame": {
+    "h": 38,
+    "w": 254,
+    "x": 0,
+    "y": 0
+   }
+  },
+  {
+   "actions": [
+    "listitem.scroll-to"
+   ],
+   "depth": 28,
+   "element_index": 38,
+   "element_token": "s0000001d:38",
+   "enabled": true,
+   "frame": {
+    "h": 45.0,
+    "w": 90.0,
+    "x": 1552.0,
+    "y": 335.0
+   },
+   "geometry_trusted": true,
+   "label": "2009",
+   "parent_index": 33,
+   "role": "grid cell",
+   "screenshot_frame": {
+    "h": 38,
+    "w": 76,
+    "x": 0,
+    "y": 0
+   }
+  },
+  {
+   "actions": [
+    "listitem.scroll-to"
+   ],
+   "depth": 28,
+   "element_index": 39,
+   "element_token": "s0000001d:39",
+   "enabled": true,
+   "frame": {
+    "h": 45.0,
+    "w": 100.0,
+    "x": 1642.0,
+    "y": 335.0
+   },
+   "geometry_trusted": true,
+   "label": "3:00",
+   "parent_index": 33,
+   "role": "grid cell",
+   "screenshot_frame": {
+    "h": 38,
+    "w": 85,
+    "x": 0,
+    "y": 0
+   }
+  },
+  {
+   "actions": [
+    "listitem.scroll-to"
+   ],
+   "depth": 28,
+   "element_index": 40,
+   "element_token": "s0000001d:40",
+   "enabled": true,
+   "frame": {
+    "h": 45.0,
+    "w": 88.0,
+    "x": 1742.0,
+    "y": 335.0
+   },
+   "geometry_trusted": true,
+   "label": "Rate 1 star Rate 2 stars Rate 3 stars Rate 4 stars Rate 5 stars",
+   "parent_index": 33,
+   "role": "grid cell",
+   "screenshot_frame": {
+    "h": 38,
+    "w": 75,
+    "x": 0,
+    "y": 0
+   }
+  },
+  {
+   "actions": [
+    "click"
+   ],
+   "depth": 31,
+   "element_index": 41,
+   "element_token": "s0000001d:41",
+   "enabled": true,
+   "frame": {
+    "h": 24.0,
+    "w": 16.0,
+    "x": 1742.0,
+    "y": 337.0
+   },
+   "geometry_trusted": true,
+   "label": "Rate 1 star",
+   "parent_index": 40,
+   "role": "button",
+   "screenshot_frame": {
+    "h": 20,
+    "w": 14,
+    "x": 0,
+    "y": 0
+   }
+  },
+  {
+   "actions": [
+    "click"
+   ],
+   "depth": 31,
+   "element_index": 42,
+   "element_token": "s0000001d:42",
+   "enabled": true,
+   "frame": {
+    "h": 24.0,
+    "w": 16.0,
+    "x": 1758.0,
+    "y": 337.0
+   },
+   "geometry_trusted": true,
+   "label": "Rate 2 stars",
+   "parent_index": 40,
+   "role": "button",
+   "screenshot_frame": {
+    "h": 20,
+    "w": 14,
+    "x": 0,
+    "y": 0
+   }
+  },
+  {
+   "actions": [
+    "click"
+   ],
+   "depth": 31,
+   "element_index": 43,
+   "element_token": "s0000001d:43",
+   "enabled": true,
+   "frame": {
+    "h": 24.0,
+    "w": 16.0,
+    "x": 1774.0,
+    "y": 337.0
+   },
+   "geometry_trusted": true,
+   "label": "Rate 3 stars",
+   "parent_index": 40,
+   "role": "button",
+   "screenshot_frame": {
+    "h": 20,
+    "w": 14,
+    "x": 0,
+    "y": 0
+   }
+  },
+  {
+   "actions": [
+    "click"
+   ],
+   "depth": 31,
+   "element_index": 44,
+   "element_token": "s0000001d:44",
+   "enabled": true,
+   "frame": {
+    "h": 24.0,
+    "w": 16.0,
+    "x": 1790.0,
+    "y": 337.0
+   },
+   "geometry_trusted": true,
+   "label": "Rate 4 stars",
+   "parent_index": 40,
+   "role": "button",
+   "screenshot_frame": {
+    "h": 20,
+    "w": 14,
+    "x": 0,
+    "y": 0
+   }
+  },
+  {
+   "actions": [
+    "click"
+   ],
+   "depth": 31,
+   "element_index": 45,
+   "element_token": "s0000001d:45",
+   "enabled": true,
+   "frame": {
+    "h": 24.0,
+    "w": 16.0,
+    "x": 1806.0,
+    "y": 337.0
+   },
+   "geometry_trusted": true,
+   "label": "Rate 5 stars",
+   "parent_index": 40,
+   "role": "button",
+   "screenshot_frame": {
+    "h": 20,
+    "w": 14,
+    "x": 0,
+    "y": 0
+   }
+  },
+  {
+   "actions": [
+    "listitem.scroll-to"
+   ],
+   "depth": 27,
+   "element_index": 46,
+   "element_token": "s0000001d:46",
+   "enabled": true,
+   "frame": {
+    "h": 45.0,
+    "w": 1350.0,
+    "x": 480.0,
+    "y": 380.0
+   },
+   "geometry_trusted": true,
+   "label": "Go to album Fixture Album 42 Writable Batch 0043 Fixture Artist 10 Fixture Album 42 2022 3:00 \u2014",
+   "parent_index": 6,
+   "role": "row",
+   "screenshot_frame": {
+    "h": 38,
+    "w": 1144,
+    "x": 0,
+    "y": 0
+   }
+  },
+  {
+   "actions": [
+    "listitem.scroll-to"
+   ],
+   "depth": 28,
+   "element_index": 47,
+   "element_token": "s0000001d:47",
+   "enabled": true,
+   "frame": {
+    "h": 45.0,
+    "w": 40.0,
+    "x": 480.0,
+    "y": 380.0
+   },
+   "geometry_trusted": true,
+   "label": "Go to album Fixture Album 42",
+   "parent_index": 46,
+   "role": "grid cell",
+   "screenshot_frame": {
+    "h": 38,
+    "w": 34,
+    "x": 0,
+    "y": 0
+   }
+  },
+  {
+   "actions": [
+    "listitem.scroll-to"
+   ],
+   "depth": 28,
+   "element_index": 48,
+   "element_token": "s0000001d:48",
+   "enabled": true,
+   "frame": {
+    "h": 45.0,
+    "w": 472.0,
+    "x": 520.0,
+    "y": 380.0
+   },
+   "geometry_trusted": true,
+   "label": "Writable Batch 0043",
+   "parent_index": 46,
+   "role": "grid cell",
+   "screenshot_frame": {
+    "h": 38,
+    "w": 400,
+    "x": 0,
+    "y": 0
+   }
+  },
+  {
+   "actions": [
+    "listitem.scroll-to"
+   ],
+   "depth": 28,
+   "element_index": 49,
+   "element_token": "s0000001d:49",
+   "enabled": true,
+   "frame": {
+    "h": 45.0,
+    "w": 260.0,
+    "x": 992.0,
+    "y": 380.0
+   },
+   "geometry_trusted": true,
+   "label": "Fixture Artist 10",
+   "parent_index": 46,
+   "role": "grid cell",
+   "screenshot_frame": {
+    "h": 38,
+    "w": 220,
+    "x": 0,
+    "y": 0
+   }
+  },
+  {
+   "actions": [
+    "listitem.scroll-to"
+   ],
+   "depth": 28,
+   "element_index": 50,
+   "element_token": "s0000001d:50",
+   "enabled": true,
+   "frame": {
+    "h": 45.0,
+    "w": 300.0,
+    "x": 1252.0,
+    "y": 380.0
+   },
+   "geometry_trusted": true,
+   "label": "Fixture Album 42",
+   "parent_index": 46,
+   "role": "grid cell",
+   "screenshot_frame": {
+    "h": 38,
+    "w": 254,
+    "x": 0,
+    "y": 0
+   }
+  },
+  {
+   "actions": [
+    "listitem.scroll-to"
+   ],
+   "depth": 28,
+   "element_index": 51,
+   "element_token": "s0000001d:51",
+   "enabled": true,
+   "frame": {
+    "h": 45.0,
+    "w": 90.0,
+    "x": 1552.0,
+    "y": 380.0
+   },
+   "geometry_trusted": true,
+   "label": "2022",
+   "parent_index": 46,
+   "role": "grid cell",
+   "screenshot_frame": {
+    "h": 38,
+    "w": 76,
+    "x": 0,
+    "y": 0
+   }
+  },
+  {
+   "actions": [
+    "listitem.scroll-to"
+   ],
+   "depth": 28,
+   "element_index": 52,
+   "element_token": "s0000001d:52",
+   "enabled": true,
+   "frame": {
+    "h": 45.0,
+    "w": 100.0,
+    "x": 1642.0,
+    "y": 380.0
+   },
+   "geometry_trusted": true,
+   "label": "3:00",
+   "parent_index": 46,
+   "role": "grid cell",
+   "screenshot_frame": {
+    "h": 38,
+    "w": 85,
+    "x": 0,
+    "y": 0
+   }
+  },
+  {
+   "actions": [
+    "listitem.scroll-to"
+   ],
+   "depth": 28,
+   "element_index": 53,
+   "element_token": "s0000001d:53",
+   "enabled": true,
+   "frame": {
+    "h": 45.0,
+    "w": 88.0,
+    "x": 1742.0,
+    "y": 380.0
+   },
+   "geometry_trusted": true,
+   "label": "\u2014",
+   "parent_index": 46,
+   "role": "grid cell",
+   "screenshot_frame": {
+    "h": 38,
+    "w": 75,
+    "x": 0,
+    "y": 0
+   }
+  },
+  {
+   "actions": [
+    "listitem.scroll-to"
+   ],
+   "depth": 27,
+   "element_index": 54,
+   "element_token": "s0000001d:54",
+   "enabled": true,
+   "frame": {
+    "h": 45.0,
+    "w": 1350.0,
+    "x": 480.0,
+    "y": 425.0
+   },
+   "geometry_trusted": true,
+   "label": "Go to album Fixture Album 11 Writable Batch 0012 Fixture Artist 11 Fixture Album 11 1991 3:00 Rate 1 star Rate 2 stars Rate 3 stars Rate 4 stars Rate 5 stars",
+   "parent_index": 6,
+   "role": "row",
+   "screenshot_frame": {
+    "h": 38,
+    "w": 1144,
+    "x": 0,
+    "y": 0
+   }
+  },
+  {
+   "actions": [
+    "listitem.scroll-to"
+   ],
+   "depth": 28,
+   "element_index": 55,
+   "element_token": "s0000001d:55",
+   "enabled": true,
+   "frame": {
+    "h": 45.0,
+    "w": 40.0,
+    "x": 480.0,
+    "y": 425.0
+   },
+   "geometry_trusted": true,
+   "label": "Go to album Fixture Album 11",
+   "parent_index": 54,
+   "role": "grid cell",
+   "screenshot_frame": {
+    "h": 38,
+    "w": 34,
+    "x": 0,
+    "y": 0
+   }
+  },
+  {
+   "actions": [
+    "listitem.scroll-to"
+   ],
+   "depth": 28,
+   "element_index": 56,
+   "element_token": "s0000001d:56",
+   "enabled": true,
+   "frame": {
+    "h": 45.0,
+    "w": 472.0,
+    "x": 520.0,
+    "y": 425.0
+   },
+   "geometry_trusted": true,
+   "label": "Writable Batch 0012",
+   "parent_index": 54,
+   "role": "grid cell",
+   "screenshot_frame": {
+    "h": 38,
+    "w": 400,
+    "x": 0,
+    "y": 0
+   }
+  },
+  {
+   "actions": [
+    "listitem.scroll-to"
+   ],
+   "depth": 28,
+   "element_index": 57,
+   "element_token": "s0000001d:57",
+   "enabled": true,
+   "frame": {
+    "h": 45.0,
+    "w": 260.0,
+    "x": 992.0,
+    "y": 425.0
+   },
+   "geometry_trusted": true,
+   "label": "Fixture Artist 11",
+   "parent_index": 54,
+   "role": "grid cell",
+   "screenshot_frame": {
+    "h": 38,
+    "w": 220,
+    "x": 0,
+    "y": 0
+   }
+  },
+  {
+   "actions": [
+    "listitem.scroll-to"
+   ],
+   "depth": 28,
+   "element_index": 58,
+   "element_token": "s0000001d:58",
+   "enabled": true,
+   "frame": {
+    "h": 45.0,
+    "w": 300.0,
+    "x": 1252.0,
+    "y": 425.0
+   },
+   "geometry_trusted": true,
+   "label": "Fixture Album 11",
+   "parent_index": 54,
+   "role": "grid cell",
+   "screenshot_frame": {
+    "h": 38,
+    "w": 254,
+    "x": 0,
+    "y": 0
+   }
+  },
+  {
+   "actions": [
+    "listitem.scroll-to"
+   ],
+   "depth": 28,
+   "element_index": 59,
+   "element_token": "s0000001d:59",
+   "enabled": true,
+   "frame": {
+    "h": 45.0,
+    "w": 90.0,
+    "x": 1552.0,
+    "y": 425.0
+   },
+   "geometry_trusted": true,
+   "label": "1991",
+   "parent_index": 54,
+   "role": "grid cell",
+   "screenshot_frame": {
+    "h": 38,
+    "w": 76,
+    "x": 0,
+    "y": 0
+   }
+  },
+  {
+   "actions": [
+    "listitem.scroll-to"
+   ],
+   "depth": 28,
+   "element_index": 60,
+   "element_token": "s0000001d:60",
+   "enabled": true,
+   "frame": {
+    "h": 45.0,
+    "w": 100.0,
+    "x": 1642.0,
+    "y": 425.0
+   },
+   "geometry_trusted": true,
+   "label": "3:00",
+   "parent_index": 54,
+   "role": "grid cell",
+   "screenshot_frame": {
+    "h": 38,
+    "w": 85,
+    "x": 0,
+    "y": 0
+   }
+  },
+  {
+   "actions": [
+    "listitem.scroll-to"
+   ],
+   "depth": 28,
+   "element_index": 61,
+   "element_token": "s0000001d:61",
+   "enabled": true,
+   "frame": {
+    "h": 45.0,
+    "w": 88.0,
+    "x": 1742.0,
+    "y": 425.0
+   },
+   "geometry_trusted": true,
+   "label": "Rate 1 star Rate 2 stars Rate 3 stars Rate 4 stars Rate 5 stars",
+   "parent_index": 54,
+   "role": "grid cell",
+   "screenshot_frame": {
+    "h": 38,
+    "w": 75,
+    "x": 0,
+    "y": 0
+   }
+  },
+  {
+   "actions": [
+    "click"
+   ],
+   "depth": 31,
+   "element_index": 62,
+   "element_token": "s0000001d:62",
+   "enabled": true,
+   "frame": {
+    "h": 24.0,
+    "w": 16.0,
+    "x": 1742.0,
+    "y": 427.0
+   },
+   "geometry_trusted": true,
+   "label": "Rate 1 star",
+   "parent_index": 61,
+   "role": "button",
+   "screenshot_frame": {
+    "h": 20,
+    "w": 14,
+    "x": 0,
+    "y": 0
+   }
+  },
+  {
+   "actions": [
+    "click"
+   ],
+   "depth": 31,
+   "element_index": 63,
+   "element_token": "s0000001d:63",
+   "enabled": true,
+   "frame": {
+    "h": 24.0,
+    "w": 16.0,
+    "x": 1758.0,
+    "y": 427.0
+   },
+   "geometry_trusted": true,
+   "label": "Rate 2 stars",
+   "parent_index": 61,
+   "role": "button",
+   "screenshot_frame": {
+    "h": 20,
+    "w": 14,
+    "x": 0,
+    "y": 0
+   }
+  },
+  {
+   "actions": [
+    "click"
+   ],
+   "depth": 31,
+   "element_index": 64,
+   "element_token": "s0000001d:64",
+   "enabled": true,
+   "frame": {
+    "h": 24.0,
+    "w": 16.0,
+    "x": 1774.0,
+    "y": 427.0
+   },
+   "geometry_trusted": true,
+   "label": "Rate 3 stars",
+   "parent_index": 61,
+   "role": "button",
+   "screenshot_frame": {
+    "h": 20,
+    "w": 14,
+    "x": 0,
+    "y": 0
+   }
+  },
+  {
+   "actions": [
+    "click"
+   ],
+   "depth": 31,
+   "element_index": 65,
+   "element_token": "s0000001d:65",
+   "enabled": true,
+   "frame": {
+    "h": 24.0,
+    "w": 16.0,
+    "x": 1790.0,
+    "y": 427.0
+   },
+   "geometry_trusted": true,
+   "label": "Rate 4 stars",
+   "parent_index": 61,
+   "role": "button",
+   "screenshot_frame": {
+    "h": 20,
+    "w": 14,
+    "x": 0,
+    "y": 0
+   }
+  },
+  {
+   "actions": [
+    "click"
+   ],
+   "depth": 31,
+   "element_index": 66,
+   "element_token": "s0000001d:66",
+   "enabled": true,
+   "frame": {
+    "h": 24.0,
+    "w": 16.0,
+    "x": 1806.0,
+    "y": 427.0
+   },
+   "geometry_trusted": true,
+   "label": "Rate 5 stars",
+   "parent_index": 61,
+   "role": "button",
+   "screenshot_frame": {
+    "h": 20,
+    "w": 14,
+    "x": 0,
+    "y": 0
+   }
+  },
+  {
+   "actions": [],
+   "depth": 25,
+   "description": "unlabelled scroll bar; 1st of 1 scroll bar in this window",
+   "element_index": 239,
+   "element_token": "s0000001d:239",
+   "enabled": true,
+   "frame": {
+    "h": 763.0,
+    "w": 11.0,
+    "x": 1819.0,
+    "y": 290.0
+   },
+   "geometry_trusted": true,
+   "parent_index": 1,
+   "role": "scroll bar",
+   "screenshot_frame": {
+    "h": 647,
+    "w": 9,
+    "x": 0,
+    "y": 0
+   },
+   "unlabelled": true,
+   "value": "1845.0"
+  },
+  {
+   "depth": 26,
+   "element_index": 240,
+   "element_token": "s0000001d:240",
+   "enabled": true,
+   "frame": {
+    "h": 763,
+    "w": 11,
+    "x": 240,
+    "y": 150
+   },
+   "geometry_trusted": false,
+   "parent_index": 239,
+   "role": "generic",
+   "screenshot_frame": {
+    "h": 647,
+    "w": 9,
+    "x": 0,
+    "y": 0
+   },
+   "value": "1845.0"
+  },
+  {
+   "actions": [],
+   "depth": 16,
+   "element_index": 241,
+   "element_token": "s0000001d:241",
+   "enabled": true,
+   "frame": {
+    "h": 36.0,
+    "w": 227.0,
+    "x": 246.0,
+    "y": 235.0
+   },
+   "geometry_trusted": true,
+   "label": "Music",
+   "parent_index": 0,
+   "role": "list item",
+   "screenshot_frame": {
+    "h": 31,
+    "w": 192,
+    "x": 0,
+    "y": 0
+   },
+   "selected": true
+  },
+  {
+   "actions": [
+    "click"
+   ],
+   "depth": 17,
+   "element_index": 242,
+   "element_token": "s0000001d:242",
+   "enabled": true,
+   "frame": {
+    "h": 36.0,
+    "w": 211.0,
+    "x": 246.0,
+    "y": 235.0
+   },
+   "geometry_trusted": true,
+   "label": "Music",
+   "parent_index": 241,
+   "role": "button",
+   "screenshot_frame": {
+    "h": 31,
+    "w": 179,
+    "x": 0,
+    "y": 0
+   }
+  },
+  {
+   "actions": [],
+   "depth": 16,
+   "element_index": 243,
+   "element_token": "s0000001d:243",
+   "enabled": true,
+   "frame": {
+    "h": 36.0,
+    "w": 227.0,
+    "x": 246.0,
+    "y": 273.0
+   },
+   "geometry_trusted": true,
+   "label": "Podcasts",
+   "parent_index": 0,
+   "role": "list item",
+   "screenshot_frame": {
+    "h": 31,
+    "w": 192,
+    "x": 0,
+    "y": 0
+   },
+   "selected": false
+  },
+  {
+   "actions": [
+    "click"
+   ],
+   "depth": 17,
+   "element_index": 244,
+   "element_token": "s0000001d:244",
+   "enabled": true,
+   "frame": {
+    "h": 36.0,
+    "w": 211.0,
+    "x": 246.0,
+    "y": 273.0
+   },
+   "geometry_trusted": true,
+   "label": "Podcasts",
+   "parent_index": 243,
+   "role": "button",
+   "screenshot_frame": {
+    "h": 31,
+    "w": 179,
+    "x": 0,
+    "y": 0
+   }
+  },
+  {
+   "actions": [],
+   "depth": 16,
+   "element_index": 245,
+   "element_token": "s0000001d:245",
+   "enabled": true,
+   "frame": {
+    "h": 36.0,
+    "w": 227.0,
+    "x": 246.0,
+    "y": 311.0
+   },
+   "geometry_trusted": true,
+   "label": "YouTube",
+   "parent_index": 0,
+   "role": "list item",
+   "screenshot_frame": {
+    "h": 31,
+    "w": 192,
+    "x": 0,
+    "y": 0
+   },
+   "selected": false
+  },
+  {
+   "actions": [
+    "click"
+   ],
+   "depth": 17,
+   "element_index": 246,
+   "element_token": "s0000001d:246",
+   "enabled": true,
+   "frame": {
+    "h": 36.0,
+    "w": 211.0,
+    "x": 246.0,
+    "y": 311.0
+   },
+   "geometry_trusted": true,
+   "label": "YouTube",
+   "parent_index": 245,
+   "role": "button",
+   "screenshot_frame": {
+    "h": 31,
+    "w": 179,
+    "x": 0,
+    "y": 0
+   }
+  },
+  {
+   "actions": [],
+   "depth": 16,
+   "element_index": 247,
+   "element_token": "s0000001d:247",
+   "enabled": true,
+   "frame": {
+    "h": 36.0,
+    "w": 227.0,
+    "x": 246.0,
+    "y": 349.0
+   },
+   "geometry_trusted": true,
+   "label": "Radio",
+   "parent_index": 0,
+   "role": "list item",
+   "screenshot_frame": {
+    "h": 31,
+    "w": 192,
+    "x": 0,
+    "y": 0
+   },
+   "selected": false
+  },
+  {
+   "actions": [
+    "click"
+   ],
+   "depth": 17,
+   "element_index": 248,
+   "element_token": "s0000001d:248",
+   "enabled": true,
+   "frame": {
+    "h": 36.0,
+    "w": 211.0,
+    "x": 246.0,
+    "y": 349.0
+   },
+   "geometry_trusted": true,
+   "label": "Radio",
+   "parent_index": 247,
+   "role": "button",
+   "screenshot_frame": {
+    "h": 31,
+    "w": 179,
+    "x": 0,
+    "y": 0
+   }
+  },
+  {
+   "actions": [],
+   "depth": 16,
+   "element_index": 249,
+   "element_token": "s0000001d:249",
+   "enabled": true,
+   "frame": {
+    "h": 36.0,
+    "w": 227.0,
+    "x": 246.0,
+    "y": 387.0
+   },
+   "geometry_trusted": true,
+   "label": "Queue",
+   "parent_index": 0,
+   "role": "list item",
+   "screenshot_frame": {
+    "h": 31,
+    "w": 192,
+    "x": 0,
+    "y": 0
+   },
+   "selected": false
+  },
+  {
+   "actions": [
+    "click"
+   ],
+   "depth": 17,
+   "element_index": 250,
+   "element_token": "s0000001d:250",
+   "enabled": true,
+   "frame": {
+    "h": 36.0,
+    "w": 211.0,
+    "x": 246.0,
+    "y": 387.0
+   },
+   "geometry_trusted": true,
+   "label": "Queue",
+   "parent_index": 249,
+   "role": "button",
+   "screenshot_frame": {
+    "h": 31,
+    "w": 179,
+    "x": 0,
+    "y": 0
+   }
+  },
+  {
+   "actions": [],
+   "depth": 16,
+   "element_index": 251,
+   "element_token": "s0000001d:251",
+   "enabled": true,
+   "frame": {
+    "h": 36.0,
+    "w": 227.0,
+    "x": 246.0,
+    "y": 501.0
+   },
+   "geometry_trusted": true,
+   "label": "Recently Played",
+   "parent_index": 0,
+   "role": "list item",
+   "screenshot_frame": {
+    "h": 31,
+    "w": 192,
+    "x": 0,
+    "y": 0
+   },
+   "selected": false
+  },
+  {
+   "actions": [
+    "click"
+   ],
+   "depth": 17,
+   "element_index": 252,
+   "element_token": "s0000001d:252",
+   "enabled": true,
+   "frame": {
+    "h": 36.0,
+    "w": 211.0,
+    "x": 246.0,
+    "y": 501.0
+   },
+   "geometry_trusted": true,
+   "label": "Recently Played",
+   "parent_index": 251,
+   "role": "button",
+   "screenshot_frame": {
+    "h": 31,
+    "w": 179,
+    "x": 0,
+    "y": 0
+   }
+  },
+  {
+   "actions": [],
+   "depth": 16,
+   "element_index": 253,
+   "element_token": "s0000001d:253",
+   "enabled": true,
+   "frame": {
+    "h": 36.0,
+    "w": 227.0,
+    "x": 246.0,
+    "y": 539.0
+   },
+   "geometry_trusted": true,
+   "label": "Top Rated",
+   "parent_index": 0,
+   "role": "list item",
+   "screenshot_frame": {
+    "h": 31,
+    "w": 192,
+    "x": 0,
+    "y": 0
+   },
+   "selected": false
+  },
+  {
+   "actions": [
+    "click"
+   ],
+   "depth": 17,
+   "element_index": 254,
+   "element_token": "s0000001d:254",
+   "enabled": true,
+   "frame": {
+    "h": 36.0,
+    "w": 211.0,
+    "x": 246.0,
+    "y": 539.0
+   },
+   "geometry_trusted": true,
+   "label": "Top Rated",
+   "parent_index": 253,
+   "role": "button",
+   "screenshot_frame": {
+    "h": 31,
+    "w": 179,
+    "x": 0,
+    "y": 0
+   }
+  },
+  {
+   "actions": [],
+   "depth": 16,
+   "element_index": 255,
+   "element_token": "s0000001d:255",
+   "enabled": true,
+   "frame": {
+    "h": 36.0,
+    "w": 227.0,
+    "x": 246.0,
+    "y": 577.0
+   },
+   "geometry_trusted": true,
+   "label": "Recently Added",
+   "parent_index": 0,
+   "role": "list item",
+   "screenshot_frame": {
+    "h": 31,
+    "w": 192,
+    "x": 0,
+    "y": 0
+   },
+   "selected": false
+  },
+  {
+   "actions": [
+    "click"
+   ],
+   "depth": 17,
+   "element_index": 256,
+   "element_token": "s0000001d:256",
+   "enabled": true,
+   "frame": {
+    "h": 36.0,
+    "w": 211.0,
+    "x": 246.0,
+    "y": 577.0
+   },
+   "geometry_trusted": true,
+   "label": "Recently Added",
+   "parent_index": 255,
+   "role": "button",
+   "screenshot_frame": {
+    "h": 31,
+    "w": 179,
+    "x": 0,
+    "y": 0
+   }
+  },
+  {
+   "actions": [],
+   "depth": 16,
+   "element_index": 257,
+   "element_token": "s0000001d:257",
+   "enabled": true,
+   "frame": {
+    "h": 36.0,
+    "w": 227.0,
+    "x": 246.0,
+    "y": 615.0
+   },
+   "geometry_trusted": true,
+   "label": "My Stats",
+   "parent_index": 0,
+   "role": "list item",
+   "screenshot_frame": {
+    "h": 31,
+    "w": 192,
+    "x": 0,
+    "y": 0
+   },
+   "selected": false
+  },
+  {
+   "actions": [
+    "click"
+   ],
+   "depth": 17,
+   "element_index": 258,
+   "element_token": "s0000001d:258",
+   "enabled": true,
+   "frame": {
+    "h": 36.0,
+    "w": 211.0,
+    "x": 246.0,
+    "y": 615.0
+   },
+   "geometry_trusted": true,
+   "label": "My Stats",
+   "parent_index": 257,
+   "role": "button",
+   "screenshot_frame": {
+    "h": 31,
+    "w": 179,
+    "x": 0,
+    "y": 0
+   }
+  },
+  {
+   "actions": [
+    "click"
+   ],
+   "depth": 14,
+   "element_index": 259,
+   "element_token": "s0000001d:259",
+   "enabled": true,
+   "frame": {
+    "h": 66.0,
+    "w": 66.0,
+    "x": 247.0,
+    "y": 1063.0
+   },
+   "geometry_trusted": true,
+   "label": "Reveal playing album",
+   "parent_index": 0,
+   "role": "button",
+   "screenshot_frame": {
+    "h": 56,
+    "w": 56,
+    "x": 0,
+    "y": 0
+   }
+  },
+  {
+   "actions": [
+    "click"
+   ],
+   "depth": 15,
+   "element_index": 260,
+   "element_token": "s0000001d:260",
+   "enabled": true,
+   "frame": {
+    "h": 34.0,
+    "w": 220.0,
+    "x": 318.0,
+    "y": 1061.0
+   },
+   "geometry_trusted": true,
+   "label": "Jump to now playing",
+   "parent_index": 0,
+   "role": "button",
+   "screenshot_frame": {
+    "h": 29,
+    "w": 186,
+    "x": 0,
+    "y": 0
+   }
+  },
+  {
+   "actions": [
+    "click"
+   ],
+   "depth": 15,
+   "element_index": 261,
+   "element_token": "s0000001d:261",
+   "enabled": true,
+   "frame": {
+    "h": 34.0,
+    "w": 220.0,
+    "x": 318.0,
+    "y": 1097.0
+   },
+   "geometry_trusted": true,
+   "label": "Go to playing artist",
+   "parent_index": 0,
+   "role": "button",
+   "screenshot_frame": {
+    "h": 29,
+    "w": 186,
+    "x": 0,
+    "y": 0
+   }
+  },
+  {
+   "actions": [
+    "click"
+   ],
+   "depth": 15,
+   "element_index": 262,
+   "element_token": "s0000001d:262",
+   "enabled": true,
+   "frame": {
+    "h": 34.0,
+    "w": 34.0,
+    "x": 929.0,
+    "y": 1063.0
+   },
+   "geometry_trusted": true,
+   "label": "Shuffle",
+   "parent_index": 0,
+   "role": "toggle button",
+   "screenshot_frame": {
+    "h": 29,
+    "w": 29,
+    "x": 0,
+    "y": 0
+   }
+  },
+  {
+   "actions": [
+    "click"
+   ],
+   "depth": 15,
+   "element_index": 263,
+   "element_token": "s0000001d:263",
+   "enabled": true,
+   "frame": {
+    "h": 34.0,
+    "w": 34.0,
+    "x": 971.0,
+    "y": 1063.0
+   },
+   "geometry_trusted": true,
+   "label": "Play previous track",
+   "parent_index": 0,
+   "role": "button",
+   "screenshot_frame": {
+    "h": 29,
+    "w": 29,
+    "x": 0,
+    "y": 0
+   }
+  },
+  {
+   "actions": [
+    "click"
+   ],
+   "depth": 15,
+   "element_index": 264,
+   "element_token": "s0000001d:264",
+   "enabled": true,
+   "frame": {
+    "h": 44.0,
+    "w": 44.0,
+    "x": 1013.0,
+    "y": 1058.0
+   },
+   "geometry_trusted": true,
+   "label": "Play (Space)",
+   "parent_index": 0,
+   "role": "button",
+   "screenshot_frame": {
+    "h": 37,
+    "w": 37,
+    "x": 0,
+    "y": 0
+   }
+  },
+  {
+   "actions": [
+    "click"
+   ],
+   "depth": 15,
+   "element_index": 265,
+   "element_token": "s0000001d:265",
+   "enabled": true,
+   "frame": {
+    "h": 34.0,
+    "w": 34.0,
+    "x": 1065.0,
+    "y": 1063.0
+   },
+   "geometry_trusted": true,
+   "label": "Play next track",
+   "parent_index": 0,
+   "role": "button",
+   "screenshot_frame": {
+    "h": 29,
+    "w": 29,
+    "x": 0,
+    "y": 0
+   }
+  },
+  {
+   "actions": [
+    "click"
+   ],
+   "depth": 15,
+   "element_index": 266,
+   "element_token": "s0000001d:266",
+   "enabled": true,
+   "frame": {
+    "h": 34.0,
+    "w": 34.0,
+    "x": 1107.0,
+    "y": 1063.0
+   },
+   "geometry_trusted": true,
+   "label": "Repeat off \u2014 playback stops after the queue",
+   "parent_index": 0,
+   "role": "toggle button",
+   "screenshot_frame": {
+    "h": 29,
+    "w": 29,
+    "x": 0,
+    "y": 0
+   }
+  },
+  {
+   "actions": [
+    "seek.explain-color-scale"
+   ],
+   "depth": 16,
+   "element_index": 267,
+   "element_token": "s0000001d:267",
+   "enabled": true,
+   "frame": {
+    "h": 28.0,
+    "w": 899.0,
+    "x": 581.0,
+    "y": 1104.0
+   },
+   "geometry_trusted": true,
+   "label": "Playback position",
+   "parent_index": 0,
+   "role": "slider",
+   "screenshot_frame": {
+    "h": 24,
+    "w": 762,
+    "x": 0,
+    "y": 0
+   }
+  },
+  {
+   "actions": [
+    "click"
+   ],
+   "depth": 13,
+   "element_index": 268,
+   "element_token": "s0000001d:268",
+   "enabled": true,
+   "frame": {
+    "h": 34.0,
+    "w": 36.0,
+    "x": 1580.0,
+    "y": 1079.0
+   },
+   "geometry_trusted": true,
+   "label": "Sleep Timer",
+   "parent_index": 0,
+   "role": "toggle button",
+   "screenshot_frame": {
+    "h": 29,
+    "w": 31,
+    "x": 0,
+    "y": 0
+   }
+  },
+  {
+   "actions": [
+    "click"
+   ],
+   "depth": 13,
+   "element_index": 269,
+   "element_token": "s0000001d:269",
+   "enabled": true,
+   "frame": {
+    "h": 34.0,
+    "w": 34.0,
+    "x": 1624.0,
+    "y": 1079.0
+   },
+   "geometry_trusted": true,
+   "label": "Volume",
+   "parent_index": 0,
+   "role": "button",
+   "screenshot_frame": {
+    "h": 29,
+    "w": 29,
+    "x": 0,
+    "y": 0
+   }
+  },
+  {
+   "actions": [],
+   "depth": 13,
+   "element_index": 270,
+   "element_token": "s0000001d:270",
+   "enabled": true,
+   "frame": {
+    "h": 34.0,
+    "w": 80.0,
+    "x": 1666.0,
+    "y": 1079.0
+   },
+   "geometry_trusted": true,
+   "label": "Volume",
+   "parent_index": 0,
+   "role": "slider",
+   "screenshot_frame": {
+    "h": 29,
+    "w": 68,
+    "x": 0,
+    "y": 0
+   },
+   "value": "1.0"
+  },
+  {
+   "actions": [
+    "click"
+   ],
+   "depth": 14,
+   "element_index": 271,
+   "element_token": "s0000001d:271",
+   "enabled": true,
+   "frame": {
+    "h": 34.0,
+    "w": 36.0,
+    "x": 309.0,
+    "y": 150.0
+   },
+   "geometry_trusted": true,
+   "label": "Toggle sidebar",
+   "parent_index": 0,
+   "role": "toggle button",
+   "screenshot_frame": {
+    "h": 29,
+    "w": 31,
+    "x": 0,
+    "y": 0
+   }
+  },
+  {
+   "actions": [
+    "click"
+   ],
+   "depth": 14,
+   "element_index": 272,
+   "element_token": "s0000001d:272",
+   "enabled": true,
+   "frame": {
+    "h": 34.0,
+    "w": 36.0,
+    "x": 351.0,
+    "y": 150.0
+   },
+   "geometry_trusted": true,
+   "label": "Back to previous view",
+   "parent_index": 0,
+   "role": "button",
+   "screenshot_frame": {
+    "h": 29,
+    "w": 31,
+    "x": 0,
+    "y": 0
+   }
+  },
+  {
+   "actions": [],
+   "depth": 14,
+   "element_index": 273,
+   "element_token": "s0000001d:273",
+   "enabled": true,
+   "frame": {
+    "h": 34.0,
+    "w": 34.0,
+    "x": 1585.0,
+    "y": 150.0
+   },
+   "geometry_trusted": true,
+   "label": "Main menu (F10)",
+   "parent_index": 0,
+   "role": "button",
+   "screenshot_frame": {
+    "h": 29,
+    "w": 29,
+    "x": 0,
+    "y": 0
+   }
+  },
+  {
+   "actions": [
+    "click"
+   ],
+   "depth": 15,
+   "element_index": 274,
+   "element_token": "s0000001d:274",
+   "enabled": true,
+   "frame": {
+    "h": 34.0,
+    "w": 34.0,
+    "x": 1585.0,
+    "y": 150.0
+   },
+   "geometry_trusted": true,
+   "label": "Main menu (F10)",
+   "parent_index": 273,
+   "role": "toggle button",
+   "screenshot_frame": {
+    "h": 29,
+    "w": 29,
+    "x": 0,
+    "y": 0
+   }
+  },
+  {
+   "actions": [
+    "click"
+   ],
+   "depth": 14,
+   "description": "Search all fields (Ctrl+F)",
+   "element_index": 275,
+   "element_token": "s0000001d:275",
+   "enabled": true,
+   "frame": {
+    "h": 34.0,
+    "w": 36.0,
+    "x": 1625.0,
+    "y": 150.0
+   },
+   "geometry_trusted": true,
+   "label": "Search all fields",
+   "parent_index": 0,
+   "role": "toggle button",
+   "screenshot_frame": {
+    "h": 29,
+    "w": 31,
+    "x": 0,
+    "y": 0
+   }
+  },
+  {
+   "actions": [
+    "default.activate"
+   ],
+   "depth": 15,
+   "element_index": 276,
+   "element_token": "s0000001d:276",
+   "enabled": true,
+   "frame": {
+    "h": 111,
+    "w": 392,
+    "x": 240,
+    "y": 150
+   },
+   "geometry_trusted": false,
+   "parent_index": 275,
+   "role": "generic",
+   "screenshot_frame": {
+    "h": 94,
+    "w": 332,
+    "x": 0,
+    "y": 0
+   }
+  },
+  {
+   "actions": [
+    "activate"
+   ],
+   "depth": 18,
+   "element_index": 277,
+   "element_token": "s0000001d:277",
+   "enabled": true,
+   "frame": {
+    "h": 34,
+    "w": 336,
+    "x": 240,
+    "y": 150
+   },
+   "geometry_trusted": false,
+   "label": "Search all fields",
+   "parent_index": 276,
+   "role": "search box",
+   "screenshot_frame": {
+    "h": 29,
+    "w": 285,
+    "x": 0,
+    "y": 0
+   }
+  },
+  {
+   "actions": [
+    "click"
+   ],
+   "depth": 14,
+   "element_index": 278,
+   "element_token": "s0000001d:278",
+   "enabled": true,
+   "frame": {
+    "h": 34.0,
+    "w": 36.0,
+    "x": 1667.0,
+    "y": 150.0
+   },
+   "geometry_trusted": true,
+   "label": "Toggle info panel",
+   "parent_index": 0,
+   "role": "toggle button",
+   "screenshot_frame": {
+    "h": 29,
+    "w": 31,
+    "x": 0,
+    "y": 0
+   }
+  },
+  {
+   "actions": [
+    "click"
+   ],
+   "depth": 15,
+   "description": "Minimise the window",
+   "element_index": 279,
+   "element_token": "s0000001d:279",
+   "enabled": true,
+   "frame": {
+    "h": 34.0,
+    "w": 34.0,
+    "x": 1709.0,
+    "y": 150.0
+   },
+   "geometry_trusted": true,
+   "label": "Minimise",
+   "parent_index": 0,
+   "role": "button",
+   "screenshot_frame": {
+    "h": 29,
+    "w": 29,
+    "x": 0,
+    "y": 0
+   }
+  },
+  {
+   "actions": [
+    "click"
+   ],
+   "depth": 15,
+   "description": "Maximise the window",
+   "element_index": 280,
+   "element_token": "s0000001d:280",
+   "enabled": true,
+   "frame": {
+    "h": 34.0,
+    "w": 34.0,
+    "x": 1746.0,
+    "y": 150.0
+   },
+   "geometry_trusted": true,
+   "label": "Maximise",
+   "parent_index": 0,
+   "role": "button",
+   "screenshot_frame": {
+    "h": 29,
+    "w": 29,
+    "x": 0,
+    "y": 0
+   }
+  },
+  {
+   "actions": [
+    "click"
+   ],
+   "depth": 15,
+   "description": "Close the window",
+   "element_index": 281,
+   "element_token": "s0000001d:281",
+   "enabled": true,
+   "frame": {
+    "h": 34.0,
+    "w": 34.0,
+    "x": 1783.0,
+    "y": 150.0
+   },
+   "geometry_trusted": true,
+   "label": "Close",
+   "parent_index": 0,
+   "role": "button",
+   "screenshot_frame": {
+    "h": 29,
+    "w": 29,
+    "x": 0,
+    "y": 0
+   }
+  }
+ ],
+ "elements_complete": true,
+ "frame_scale": 0.8475,
+ "geometry_trusted": true,
+ "returned_element_count": 110,
+ "screenshot_height": 848,
+ "screenshot_width": 1356,
+ "total_element_count": 110,
+ "window_title": "Reprise"
+}

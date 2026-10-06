@@ -143,16 +143,38 @@ def assert_point_inside(
         )
 
 
-def window_pointer_point(
-    frame: Mapping[str, Any], origin: WindowGeometry
-) -> tuple[float, float]:
-    """The point to send with a window-scoped click, in window coordinates.
+def snapshot_frame_scale(snapshot: Mapping[str, Any]) -> float:
+    """How far the driver shrank the window screenshot, 1.0 when it did not.
 
-    cua-driver takes click x/y together with window_id in full-window space,
-    while move_cursor with scope=desktop takes desktop coordinates. Sending the
-    desktop point to a click put every pixel click one window origin off.
+    A snapshot of a window above about 1.15 megapixels carries `frame_scale < 1`
+    (0.8475 for the 1600x1000 mission windows), and click x/y are pixels of that
+    shrunken screenshot, not of the window.
+    """
+    structured = snapshot.get("structuredContent")
+    container = structured if isinstance(structured, Mapping) else snapshot
+    scale = container.get("frame_scale", snapshot.get("frame_scale", 1.0))
+    if (
+        isinstance(scale, bool)
+        or not isinstance(scale, (int, float))
+        or not 0 < scale <= 1
+    ):
+        raise DriverError(f"snapshot reports an unusable frame_scale: {scale!r}")
+    return float(scale)
+
+
+def window_pointer_point(
+    frame: Mapping[str, Any], origin: WindowGeometry, frame_scale: float = 1.0
+) -> tuple[float, float]:
+    """The point to send with a window-scoped click, in the driver's pixels.
+
+    cua-driver takes click x/y together with window_id in window-local pixels of
+    the screenshot it returned - shrunken by `frame_scale` when the window is
+    large - while move_cursor with scope=desktop takes desktop coordinates.
+    Sending the desktop point to a click put every pixel click one window origin
+    off, and sending unscaled window pixels put it 1/0.8475 too far out: on 0.33
+    a click aimed at the top-right search toggle landed outside the window.
     """
     rect = to_screenshot_rect(frame, origin)
     point = to_screenshot_point(element_center(frame), origin)
     assert_point_inside(point, rect)
-    return point
+    return point[0] * frame_scale, point[1] * frame_scale

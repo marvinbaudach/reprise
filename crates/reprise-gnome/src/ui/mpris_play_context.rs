@@ -41,15 +41,15 @@ pub(super) fn resolve_agent_playback_queue(
         crate::ui::track_list_sort::restored_sort(&persisted.sort_field, &persisted.sort_dir);
     let exclude_ai =
         reprise_core::library::settings::get_bool(db, EXCLUDE_AI_KEY, false).unwrap_or(false);
-    match reprise_core::queries::query_track_ids_browsed_ai(
+    let source = reprise_core::view_source::ViewSource::Library;
+    let view = reprise_core::queries::TrackViewQuery::new(&source).with_exclude_ai(exclude_ai);
+    match reprise_core::queries::query_track_ids(
         db,
-        &reprise_core::view_source::ViewSource::Library,
-        &sort.field,
-        &sort.dir,
-        "",
-        &reprise_core::queries::BrowseFilter::default(),
-        &[],
-        exclude_ai,
+        &view,
+        reprise_core::queries::TrackSort {
+            field: &sort.field,
+            dir: &sort.dir,
+        },
     ) {
         Ok(library_ids) => {
             if reprise_core::queries::is_queue_capped(library_ids.len()) {
@@ -84,7 +84,7 @@ mod tests {
     struct TestPlayback;
 
     impl PlaybackBackend for TestPlayback {
-        fn play(&self, _: &str) -> Result<(), PlaybackError> {
+        fn play(&self, _: reprise_core::playback::PlaybackItem<'_>) -> Result<(), PlaybackError> {
             Ok(())
         }
 
@@ -110,7 +110,7 @@ mod tests {
             Ok(())
         }
 
-        fn set_next(&self, _: Option<&str>) {}
+        fn set_next(&self, _: Option<reprise_core::playback::PlaybackItem<'_>>) {}
 
         fn set_transition(&self, _: reprise_core::library::settings::TrackTransition, _: u8) {}
     }

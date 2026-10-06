@@ -226,12 +226,12 @@ fn fetch_short_circuits_on_negative_marker_without_network() {
 }
 
 #[test]
-fn album_negative_marker_uses_the_one_shot_generation() {
+fn album_negative_marker_uses_the_current_generation() {
     let marker = negative_marker_path("album-key");
 
     assert_eq!(
         marker.file_name().and_then(|name| name.to_str()),
-        Some("album-key.notfound2")
+        Some("album-key.notfound3")
     );
 }
 
@@ -767,4 +767,18 @@ fn cover_1_album_write_failure_does_not_fail_the_cached_download() {
     assert_eq!(std::fs::read(&cached).unwrap(), *png.get_ref());
     assert!(!album.path().join("cover.png").exists());
     std::fs::remove_file(cached).ok();
+}
+
+#[test]
+fn cover_art_archive_agent_surfaces_statuses_as_errors() {
+    assert_eq!(
+        agent_policy(),
+        AgentPolicy {
+            timeout: Duration::from_secs(15),
+            status_as_error: true,
+            https_only: false,
+            max_redirects: None,
+            proxy_from_env: true,
+        }
+    );
 }

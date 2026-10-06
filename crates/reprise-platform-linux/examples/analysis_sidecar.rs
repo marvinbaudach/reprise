@@ -40,7 +40,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     )?;
 
     let frames = data.spectrogram.cells().len() / SPECTROGRAM_BAND_COUNT;
-    let sidecar = AnalysisSidecar::new(source, data.spectrogram, data.waveform_peaks);
+    let sidecar =
+        AnalysisSidecar::new(source, data.spectrogram, data.waveform_peaks, data.loudness);
     let bytes = sidecar.encode()?;
     // A sidecar that cannot be read back is a silent plain-seek-bar on the
     // phone, so the round trip is checked here rather than on the device.

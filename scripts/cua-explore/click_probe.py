@@ -21,6 +21,7 @@ from driver import DriverError, response_dispatched, snapshot_element_address
 from hover_geometry import (
     WindowGeometry,
     frame_values,
+    snapshot_frame_scale,
     to_screenshot_rect,
     window_pointer_point,
 )
@@ -171,7 +172,9 @@ def probe_click(
                 )
             # One bridge for both probes; the guard inside refuses a point
             # that is not inside its own target.
-            centre = window_pointer_point(frame, origin)
+            centre = window_pointer_point(
+                frame, origin, snapshot_frame_scale(before_raw)
+            )
             address = {"x": centre[0], "y": centre[1]}
 
         before_signature = _signature(before_raw)

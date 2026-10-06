@@ -73,44 +73,54 @@ impl MobileSyncDiscovery {
         Ok(())
     }
 
-    pub(super) fn apply_metadata(
+    pub(super) fn read_metadata(
         &self,
         source: &dyn LibrarySource,
-        conn: &Connection,
-    ) -> Result<u32, rusqlite::Error> {
+    ) -> Option<crate::device_sync::track_metadata_list::TrackMetadataList> {
         let Some(path) = &self.metadata_list else {
-            return Ok(0);
+            return None;
         };
         let mut reader = match source.open_read(path) {
             Ok(reader) => reader,
             Err(error) => {
                 tracing::warn!(path = %path.display(), %error, "could not read synced track metadata");
-                return Ok(0);
+                return None;
             }
         };
         let mut bytes = Vec::new();
         if let Err(error) = reader.read_to_end(&mut bytes) {
             tracing::warn!(path = %path.display(), %error, "could not read synced track metadata");
-            return Ok(0);
+            return None;
         }
-        let list = match crate::device_sync::track_metadata_list::TrackMetadataList::decode(&bytes)
-        {
+        match crate::device_sync::track_metadata_list::TrackMetadataList::decode(&bytes) {
             Ok(list) => list,
             Err(error) => {
                 tracing::warn!(path = %path.display(), %error, "could not decode synced track metadata");
-                return Ok(0);
+                return None;
             }
+        }
+        .into()
+    }
+
+    pub(super) fn apply_metadata(
+        &self,
+        list: Option<&crate::device_sync::track_metadata_list::TrackMetadataList>,
+        conn: &Connection,
+    ) -> Result<u32, rusqlite::Error> {
+        let Some(list) = list else {
+            return Ok(0);
         };
         let mut changed = 0_u32;
         let rated_at = crate::library::stats::now_unix();
-        for entry in list.entries {
+        for entry in &list.entries {
             let Some(track_path) = self.tracks_by_device_path.get(&entry.device_path) else {
                 continue;
             };
             let rows = conn.execute(
                 "UPDATE tracks SET rating = ?1, play_count = ?2, \
                                    rated_at = CASE WHEN rating IS NOT ?1 THEN ?3 ELSE rated_at END \
-                 WHERE path = ?4 AND (rating IS NOT ?1 OR play_count IS NOT ?2)",
+                 WHERE path = ?4 AND segment_index = 0 \
+                   AND (rating IS NOT ?1 OR play_count IS NOT ?2)",
                 rusqlite::params![entry.rating, entry.play_count, rated_at, track_path],
             )?;
             changed = changed.saturating_add(u32::try_from(rows).unwrap_or(u32::MAX));

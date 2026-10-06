@@ -7,7 +7,7 @@ use libadwaita as adw;
 use libadwaita::prelude::*;
 use reprise_core::db::Db;
 
-use crate::ui::artist_news_worker::ArtistNewsRuntime;
+use crate::ui::artist_news::artist_news_worker::ArtistNewsRuntime;
 
 use super::strings;
 

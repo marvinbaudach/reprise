@@ -43,7 +43,9 @@ pub struct CachedConcertEvent {
 
 /// Reads every durable concert-event field without applying the current UI
 /// date, radius, country, horizon, or similar-artist filters.
-pub fn query_cached_events(db: &crate::db::Db) -> Result<Vec<CachedConcertEvent>, rusqlite::Error> {
+pub fn query_cached_events(
+    db: &crate::db::Db,
+) -> Result<Vec<CachedConcertEvent>, crate::CoreError> {
     let conn = db.conn();
     let mut statement = conn.prepare(
         "SELECT id, artist_key, artist_name, starts_at, date_key, venue, city,
@@ -79,8 +81,8 @@ pub fn query_cached_events(db: &crate::db::Db) -> Result<Vec<CachedConcertEvent>
                 availability: TicketAvailability::from_str(&row.get::<_, String>(20)?).unwrap(),
             })
         })?
-        .collect();
-    events
+        .collect::<Result<_, _>>()?;
+    Ok(events)
 }
 
 pub fn query_events(
@@ -88,7 +90,7 @@ pub fn query_events(
     filter: &ConcertFilter,
     location: Option<&AppLocation>,
     today: NaiveDate,
-) -> Result<Vec<ConcertRow>, rusqlite::Error> {
+) -> Result<Vec<ConcertRow>, crate::CoreError> {
     let conn = db.conn();
     Ok(filtered_events(conn, filter, location, today)?
         .into_iter()
@@ -181,9 +183,9 @@ pub fn mark_event_seen(db: &crate::db::Db, id: i64, now: i64) -> Result<usize, r
     )
 }
 
-pub fn latest_fetch_at(db: &crate::db::Db) -> Result<Option<i64>, rusqlite::Error> {
+pub fn latest_fetch_at(db: &crate::db::Db) -> Result<Option<i64>, crate::CoreError> {
     let conn = db.conn();
-    super::refresh::latest_attempt(conn)
+    Ok(super::refresh::latest_attempt(conn)?)
 }
 
 fn filtered_events(

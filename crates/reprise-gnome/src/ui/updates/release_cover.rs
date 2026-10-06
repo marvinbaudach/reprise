@@ -1,10 +1,8 @@
 //! Lazy release-group covers with an immediate, spinner-free fallback tile.
 
-#![allow(dead_code)] // Shared by the Updates popover and recycled table cells.
-
 use gtk4::prelude::*;
 
-use crate::ui::{artist_avatar, one_shot_task};
+use crate::ui::{library_views::artist_avatar, one_shot_task};
 
 const INITIALS_CLASS: &str = "reprise-release-cover-initials";
 const TILE_CLASS: &str = "reprise-release-cover-tile";

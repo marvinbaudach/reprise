@@ -553,7 +553,10 @@ pub(crate) fn record_window_query(elapsed: Duration) {
     });
 }
 
-#[allow(clippy::too_many_arguments)]
+#[expect(
+    clippy::too_many_arguments,
+    reason = "eight scalar measurements of one reload's diagnostic line; a breakdown struct would do"
+)]
 pub(crate) fn finish_reload_breakdown(
     trail: &DiagnosticTrail,
     reload_id: u64,

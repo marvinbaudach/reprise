@@ -1,5 +1,8 @@
 package io.github.marvinbaudach.reprise
 
+import kotlinx.coroutines.flow.flowOf
+import kotlinx.coroutines.flow.toList
+import kotlinx.coroutines.runBlocking
 import org.junit.Assert.assertEquals
 import org.junit.Test
 
@@ -132,5 +135,35 @@ class NowPlayingPositionStateTest {
                 settlingTargetIndex = 1,
             ),
         )
+    }
+
+    @Test
+    fun a_drag_flag_already_true_at_the_first_observation_is_not_a_new_drag() = runBlocking {
+        // The trailing `true` is the gesture that just committed the settle --
+        // its release simply has not been observed yet. A committed swipe
+        // must not read that leftover as a transport-refusing "new drag".
+        val dragging = flowOf(true, true, true)
+
+        val answered = newDragAnswered(dragging).toList()
+
+        assertEquals(emptyList<Boolean>(), answered)
+    }
+
+    @Test
+    fun a_drag_that_starts_after_a_release_is_a_new_drag() = runBlocking {
+        val dragging = flowOf(true, false, true)
+
+        val answered = newDragAnswered(dragging).toList()
+
+        assertEquals(listOf(true), answered)
+    }
+
+    @Test
+    fun the_ordinary_case_a_drag_starting_from_not_dragging_is_a_new_drag() = runBlocking {
+        val dragging = flowOf(false, true)
+
+        val answered = newDragAnswered(dragging).toList()
+
+        assertEquals(listOf(true), answered)
     }
 }

@@ -6,6 +6,7 @@
 //! can branch on the exit status without scraping human text.
 
 use reprise_core::db::DbError;
+use reprise_core::CoreError;
 
 /// The exact user-facing message shown when the on-disk schema is newer than
 /// this binary understands: a stale binary must tell the user which direction
@@ -95,8 +96,8 @@ impl From<DbError> for CliError {
     }
 }
 
-impl From<rusqlite::Error> for CliError {
-    fn from(error: rusqlite::Error) -> Self {
+impl From<CoreError> for CliError {
+    fn from(error: CoreError) -> Self {
         Self::Database(error.to_string())
     }
 }

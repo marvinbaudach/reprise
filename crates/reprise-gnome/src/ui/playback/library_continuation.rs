@@ -179,12 +179,9 @@ impl PlayerController {
         };
         let visible = provider();
         if remaining != 0 {
-            let live_count = match queries::query_track_count(
-                &self.conn,
-                &reprise_core::view_source::ViewSource::Library,
-                "",
-                &[],
-            ) {
+            let source = reprise_core::view_source::ViewSource::Library;
+            let view = queries::TrackViewQuery::new(&source);
+            let live_count = match queries::query_track_count(&self.conn, &view) {
                 Ok(count) => count,
                 Err(error) => {
                     tracing::error!(%error, "failed to count live library before queue rebind");

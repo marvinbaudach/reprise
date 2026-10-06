@@ -5,6 +5,7 @@ import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.getUnclippedBoundsInRoot
 import androidx.compose.ui.test.junit4.v2.createAndroidComposeRule
 import androidx.compose.ui.test.onAllNodesWithContentDescription
+import androidx.compose.ui.test.onAllNodesWithTag
 import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onAllNodesWithText
 import androidx.compose.ui.test.onNodeWithTag
@@ -74,6 +75,11 @@ class MainActivityMusicPathsTest {
         application.service.republish()
         shadowOf(Looper.getMainLooper()).idle()
         compose.waitForIdle()
+        compose.waitUntil(timeoutMillis = 5_000) {
+            compose.onAllNodesWithContentDescription("Back").fetchSemanticsNodes().isNotEmpty() &&
+                compose.onAllNodesWithText("Artist One · First Album")
+                    .fetchSemanticsNodes().isNotEmpty()
+        }
 
         compose.onNodeWithContentDescription("Back").assertIsDisplayed()
         compose.onNodeWithText("Artist One · First Album").assertIsDisplayed()
@@ -112,12 +118,21 @@ class MainActivityMusicPathsTest {
         application.service.republish()
         shadowOf(Looper.getMainLooper()).idle()
         compose.waitForIdle()
+        compose.waitUntil(timeoutMillis = 5_000) {
+            compose.onAllNodesWithContentDescription("Back").fetchSemanticsNodes().isNotEmpty()
+        }
         compose.onNodeWithContentDescription("Back").assertIsDisplayed()
 
         application.service.publish(m9bSnapshot(1))
         shadowOf(Looper.getMainLooper()).idle()
         compose.waitForIdle()
+        compose.waitUntil(timeoutMillis = 5_000) {
+            compose.onAllNodesWithTag("library-mini-player").fetchSemanticsNodes().isNotEmpty()
+        }
         compose.onNodeWithTag("library-mini-player").performClick()
+        compose.waitUntil(timeoutMillis = 5_000) {
+            compose.onAllNodesWithTag("now-playing-transport").fetchSemanticsNodes().isNotEmpty()
+        }
         compose.onNodeWithTag("now-playing-transport").assertIsDisplayed()
 
         compose.activity.onBackPressedDispatcher.onBackPressed()
@@ -144,6 +159,10 @@ class MainActivityMusicPathsTest {
         application.service.republish()
         shadowOf(Looper.getMainLooper()).idle()
         compose.waitForIdle()
+        compose.waitUntil(timeoutMillis = 5_000) {
+            compose.onAllNodesWithContentDescription("Back to artists")
+                .fetchSemanticsNodes().isNotEmpty()
+        }
         compose.onNodeWithContentDescription("Back to artists").assertIsDisplayed()
 
         compose.activity.onBackPressedDispatcher.onBackPressed()

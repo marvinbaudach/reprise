@@ -6,6 +6,7 @@
 //! Windows get sibling crates implementing the same contracts (see the
 //! plan's "Repository & frontend strategy").
 
+mod cava_stage;
 mod crossfade;
 pub mod device_sync;
 pub mod device_transfer;
@@ -17,7 +18,9 @@ pub mod mpris;
 pub mod player;
 mod player_effects;
 pub(crate) mod player_pipeline;
+pub mod signals;
 pub mod spectrogram_backfill;
+pub mod termination;
 pub mod trash;
 pub mod waveform;
 

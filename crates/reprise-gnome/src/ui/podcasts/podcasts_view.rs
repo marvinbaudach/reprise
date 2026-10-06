@@ -24,7 +24,7 @@ use super::podcasts_download_presentation::refreshed_download_states;
 use super::podcasts_empty_state::{podcasts_empty_state_for, PodcastsEmptyState};
 use super::podcasts_filter_bar::PodcastsFilterBar;
 use super::podcasts_footer::PodcastsFooter;
-use super::podcasts_groups;
+use super::podcasts_groups::{self, GroupRenderInputs};
 use super::podcasts_playback::EpisodeMark;
 use super::podcasts_presentation::{
     active as filter_active, apply_filter, filter_without_hiding, filter_without_hiding_group,
@@ -86,10 +86,10 @@ mod shortcuts;
 #[path = "podcasts_view_tests.rs"]
 mod tests;
 
-/// `SRC-10`: the stack page holding the shared empty-state geometry, used
+/// `SRC-10a`: the stack page holding the shared empty-state geometry, used
 /// only for "nothing subscribed yet".
 const EMPTY_PAGE: &str = "empty";
-/// `SRC-10` addendum (Block B2): the module-off sibling of `EMPTY_PAGE` —
+/// `SRC-10a` addendum (Block B2): the module-off sibling of `EMPTY_PAGE` —
 /// same geometry, "Enable in Preferences" instead of Add.
 const MODULE_OFF_PAGE: &str = "module-off";
 const FAILURE_PAGE: &str = "fetch-failed";
@@ -106,13 +106,14 @@ pub(in crate::ui) struct PodcastsView {
     end_of_results: Rc<crate::ui::end_of_results::EndOfResults>,
     group_container: gtk4::Box,
     stack: gtk4::Stack,
+    #[cfg(test)]
     loading_row: gtk4::Box,
     waiting_for_model: Cell<bool>,
     youtube_detail: Rc<YoutubeChannelDetail>,
     status: adw::StatusPage,
     status_button: gtk4::Button,
     empty_state: SourceEmptyState,
-    /// `SRC-10` addendum (Block B2): the module-off sibling state's own
+    /// `SRC-10a` addendum (Block B2): the module-off sibling state's own
     /// page — a second `SourceEmptyState` rather than reusing `empty_state`
     /// with a swapped copy, since the two need different button actions
     /// (open the add dialog vs. open Preferences) and `SourceEmptyState`
@@ -126,6 +127,7 @@ pub(in crate::ui) struct PodcastsView {
     on_open_preferences: RefCell<Option<Rc<dyn Fn()>>>,
     on_open_youtube_preferences: RefCell<Option<Rc<dyn Fn()>>>,
     footer: gtk4::Box,
+    #[cfg(test)]
     footer_add: gtk4::Button,
     footer_status: gtk4::Label,
     footer_spinner: gtk4::Spinner,
@@ -214,10 +216,12 @@ impl PodcastsView {
             refresh_stack,
             refresh_spinner,
         } = super::podcasts_footer::build(kind);
+        #[cfg(not(test))]
+        let _ = &footer_add;
 
         let root = gtk4::Box::new(gtk4::Orientation::Vertical, 0);
         root.add_css_class("reprise-podcasts-source");
-        // `SRC-10` addendum (Block B2): the filter row lives at this level,
+        // `SRC-10a` addendum (Block B2): the filter row lives at this level,
         // not inside the "list" stack page, so its visibility can be
         // decided independently of which page is showing — visible for
         // `List`/`NoEpisodes`/`NoResults`/`NoDownloads`, hidden for the two
@@ -237,6 +241,7 @@ impl PodcastsView {
             end_of_results,
             group_container,
             stack,
+            #[cfg(test)]
             loading_row,
             waiting_for_model: Cell::new(false),
             youtube_detail,
@@ -250,6 +255,7 @@ impl PodcastsView {
             on_open_preferences: RefCell::new(None),
             on_open_youtube_preferences: RefCell::new(None),
             footer,
+            #[cfg(test)]
             footer_add,
             footer_status,
             footer_spinner,
@@ -295,7 +301,8 @@ impl PodcastsView {
         let weak = Rc::downgrade(&view);
         view.module_off_state.connect_add(move || {
             if let Some(view) = weak.upgrade() {
-                if let Some(callback) = view.on_open_preferences.borrow().clone() {
+                let callback = view.on_open_preferences.borrow().clone();
+                if let Some(callback) = callback {
                     callback();
                 }
             }
@@ -405,7 +412,7 @@ impl PodcastsView {
             let Some(view) = weak.upgrade() else {
                 return;
             };
-            // `SRC-10` moved the "nothing subscribed yet" empty state onto
+            // `SRC-10a` moved the "nothing subscribed yet" empty state onto
             // its own page with its own button (see `open_add_dialog` wiring
             // in `install`); this button is now reachable only for
             // `NoEpisodes`/`NoResults`, both subscribed states.
@@ -463,16 +470,18 @@ impl PodcastsView {
         let rendered_widgets = podcasts_groups::replace_with_sync(
             &self.group_container,
             &rendered_groups,
-            self.playing_episode.get(),
-            &self.expanded_sources,
-            &self.expanded_episode_sources,
-            &download_states,
-            images_allowed,
-            &self.conn,
-            self.connectivity.get(),
-            self.unavailable_episode.get(),
-            &self.selection,
-            &filter.query,
+            GroupRenderInputs {
+                playing_episode: self.playing_episode.get(),
+                expanded_sources: &self.expanded_sources,
+                expanded_episode_sources: &self.expanded_episode_sources,
+                download_states: &download_states,
+                images_allowed,
+                conn: &self.conn,
+                connectivity: self.connectivity.get(),
+                unavailable_episode: self.unavailable_episode.get(),
+                selection: &self.selection,
+                query: &filter.query,
+            },
             &syncing,
         );
         self.download_widgets.replace(rendered_widgets.downloads);
@@ -505,7 +514,7 @@ impl PodcastsView {
             module_enabled,
             self.fetch_failure.borrow().is_some(),
         );
-        // `SRC-10`: the two whole-page-replaced states (`Empty`/
+        // `SRC-10a`: the two whole-page-replaced states (`Empty`/
         // `ModuleOff`) hide the footer's refresh row too — refreshing zero
         // or switched-off subscriptions has nothing to do, and a live
         // control would make an intentionally unused view look broken

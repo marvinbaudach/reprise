@@ -5,7 +5,10 @@ pub struct AndroidFallbackCoverColours {
 }
 
 #[uniffi::export]
-#[allow(clippy::needless_pass_by_value)] // UniFFI free functions own Kotlin strings.
+#[expect(
+    clippy::needless_pass_by_value,
+    reason = "UniFFI hands owned strings across the FFI boundary"
+)]
 pub fn android_fallback_cover_colours(
     title: String,
     artist: String,

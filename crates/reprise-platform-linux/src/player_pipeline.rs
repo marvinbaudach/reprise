@@ -15,14 +15,18 @@ use std::sync::Arc;
 use std::time::{Duration, Instant};
 
 use reprise_core::playback::{
-    redact_local_stream_proxy_urls, AudioEffects, BassPressureDetector, CavaBarProcessor,
-    CavaConfig, PlaybackError, PlaybackFailure, PlaybackFailureKind, PlaybackSessionId,
-    PlayerEvent, SpectrumFrame, SPECTRUM_BAND_COUNT,
+    redact_local_stream_proxy_urls, AudioEffects, PlaybackError, PlaybackFailure,
+    PlaybackFailureKind, PlaybackSessionId, PlayerEvent,
 };
 
+use crate::cava_stage::CavaStage;
 use crate::crossfade::Transition;
-use crate::gapless::{connect_about_to_finish, note_stream_start, HandoffFlag, NextUri};
-use crate::player_effects::{apply_audio_filter, CAVA_SAMPLE_RATE_HZ, CAVA_SINK_NAME};
+use crate::gapless::{
+    connect_about_to_finish, note_stream_start, HandoffFlag, NextUri, PendingGain,
+};
+use crate::player_effects::{
+    apply_audio_filter, install_stream_start_gain_switch, CAVA_SAMPLE_RATE_HZ, CAVA_SINK_NAME,
+};
 
 pub fn path_to_uri(path: &str) -> Result<String, PlaybackError> {
     if !path.starts_with('/') {
@@ -238,11 +242,13 @@ pub(crate) fn build_playbin(
     handoff_pending: HandoffFlag,
     transition: Transition,
     stream_generation: Arc<AtomicU64>,
+    pending_gain: PendingGain,
 ) -> Result<gst::Element, PlaybackError> {
     let playbin = gst::ElementFactory::make("playbin3")
         .build()
         .map_err(|e| PlaybackError::Backend(format!("GStreamer: {e}")))?;
     apply_audio_filter(&playbin, effects)?;
+    install_stream_start_gain_switch(&playbin, pending_gain.clone())?;
 
     // Gapless handoff: consume any pre-fed URI on `about-to-finish` without a
     // pipeline restart (Gapless mode only — the handler no-ops in Crossfade/Off,
@@ -254,6 +260,7 @@ pub(crate) fn build_playbin(
         handoff_pending,
         transition,
         stream_generation,
+        pending_gain,
     );
 
     if let Ok(sink_name) = std::env::var(AUDIO_SINK_ENV_VAR) {
@@ -304,34 +311,21 @@ pub(crate) fn attach_cava_sink(
         .ok_or_else(|| PlaybackError::Backend("GStreamer: filter has no CAVA PCM sink".into()))?
         .downcast::<gst_app::AppSink>()
         .map_err(|_| PlaybackError::Backend("GStreamer: CAVA sink is not an AppSink".into()))?;
-    let config = CavaConfig::new(CAVA_SAMPLE_RATE_HZ as u32, SPECTRUM_BAND_COUNT);
-    let mut processor = CavaBarProcessor::new(config)
-        .map_err(|error| PlaybackError::Backend(format!("CAVA: {error}")))?;
-    // Measured from the same PCM, but deliberately outside CAVA: the bars are
-    // auto-sensitivity-normalized and cannot say how loud the bass really is.
-    let mut pressure_detector = BassPressureDetector::new(CAVA_SAMPLE_RATE_HZ as u32);
-    let mut was_enabled = false;
-    let mut seen_stream_generation = stream_generation.load(Ordering::Acquire);
+    let mut stage = CavaStage::new(
+        CAVA_SAMPLE_RATE_HZ as u32,
+        stream_generation.load(Ordering::Acquire),
+    )
+    .map_err(|error| PlaybackError::Backend(format!("CAVA: {error}")))?;
     sink.set_callbacks(
         gst_app::AppSinkCallbacks::builder()
             .new_sample(move |sink| {
                 let sample = sink.pull_sample().map_err(|_| gst::FlowError::Eos)?;
                 if !enabled.load(Ordering::Relaxed) {
-                    was_enabled = false;
+                    stage.disable();
                     return Ok(gst::FlowSuccess::Ok);
                 }
-                let current_stream_generation = stream_generation.load(Ordering::Acquire);
-                if !was_enabled || current_stream_generation != seen_stream_generation {
-                    processor.reset();
-                    pressure_detector.reset();
-                    was_enabled = true;
-                    seen_stream_generation = current_stream_generation;
-                }
                 let buffer = sample.buffer().ok_or(gst::FlowError::Error)?;
-                if buffer.flags().contains(gst::BufferFlags::DISCONT) {
-                    processor.reset();
-                    pressure_detector.reset();
-                }
+                let discontinuity = buffer.flags().contains(gst::BufferFlags::DISCONT);
                 let map = buffer.map_readable().map_err(|_| gst::FlowError::Error)?;
                 let pcm = map
                     .as_slice()
@@ -340,14 +334,12 @@ pub(crate) fn attach_cava_sink(
                     .iter()
                     .map(|bytes| f32::from_le_bytes(*bytes))
                     .collect::<Vec<_>>();
-                let bands: [f32; SPECTRUM_BAND_COUNT] = processor
-                    .process(&pcm)
-                    .try_into()
-                    .expect("the CAVA processor returns its configured bar count");
-                let pressure = pressure_detector.observe(&pcm);
-                (*on_event)(PlayerEvent::Spectrum(
-                    SpectrumFrame::from_cava_bars(bands).with_bass_pressure(pressure),
-                ));
+                let frame = stage.analyze(
+                    stream_generation.load(Ordering::Acquire),
+                    discontinuity,
+                    &pcm,
+                );
+                (*on_event)(PlayerEvent::Spectrum(frame));
                 Ok(gst::FlowSuccess::Ok)
             })
             .build(),

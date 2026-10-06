@@ -29,8 +29,8 @@ thread_local! {
     static ARTWORK_REFRESH_REQUESTS: Cell<u64> = const { Cell::new(0) };
 }
 use super::stats_view_widgets::card;
-use crate::ui::artist_portrait_worker::ArtistPortraitRuntime;
 use crate::ui::cover_loader::CoverLoader;
+use crate::ui::now_playing::artist_portrait_worker::ArtistPortraitRuntime;
 use crate::ui::strings;
 
 const CONTENT_MAX_WIDTH: i32 = 1120;
@@ -75,12 +75,29 @@ pub(in crate::ui) struct StatsView {
     wired: Cell<bool>,
     entrance_pending: Rc<Cell<bool>>,
     connection: Rc<RefCell<Option<Rc<Db>>>>,
-    #[cfg_attr(not(test), allow(dead_code))]
+    #[cfg_attr(
+        not(test),
+        allow(
+            dead_code,
+            reason = "only tests inspect this value; production code never reads it"
+        )
+    )]
     page: glib::WeakRef<gtk4::Box>,
-    #[cfg_attr(not(test), allow(dead_code))]
-    #[cfg_attr(not(test), allow(dead_code))]
+    #[cfg_attr(
+        not(test),
+        allow(
+            dead_code,
+            reason = "only tests inspect this value; production code never reads it"
+        )
+    )]
     hero_row: glib::WeakRef<adw::WrapBox>,
-    #[cfg_attr(not(test), allow(dead_code))]
+    #[cfg_attr(
+        not(test),
+        allow(
+            dead_code,
+            reason = "only tests inspect this value; production code never reads it"
+        )
+    )]
     hero_time_row: glib::WeakRef<gtk4::Box>,
     current_snapshot: Rc<RefCell<Option<StatsSnapshot>>>,
     /// Built once and shared: the period dropdown's handler holds it weakly,

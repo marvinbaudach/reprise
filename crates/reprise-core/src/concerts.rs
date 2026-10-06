@@ -122,6 +122,12 @@ pub enum ConcertError {
     MissingCredentials,
 }
 
+impl From<crate::CoreError> for ConcertError {
+    fn from(error: crate::CoreError) -> Self {
+        Self::Database(error.into())
+    }
+}
+
 impl ConcertError {
     #[must_use]
     pub fn into_source_failure(self) -> ConcertFailure {

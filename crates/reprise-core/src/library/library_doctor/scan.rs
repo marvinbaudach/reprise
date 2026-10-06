@@ -755,14 +755,14 @@ fn take_local_fallback(
     });
     let mut manual_fallback = None;
     for group in groups.iter_mut().filter(|group| group.field == field) {
-        let original_members = group.members.clone();
         let current = group
             .members
             .iter()
             .find(|member| member.track_id == track_id)
             .map(|member| member.current.clone());
-        group.members.retain(|member| member.track_id != track_id);
         if let Some(current) = current {
+            let original_members = group.members.clone();
+            group.members.retain(|member| member.track_id != track_id);
             manual_fallback = Some(super::DoctorLocalFallback::Manual {
                 group_key: group.group_key.clone(),
                 candidates: group.candidates.clone(),

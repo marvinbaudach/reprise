@@ -4,7 +4,6 @@ use std::rc::Rc;
 use reprise_core::concerts::config;
 use reprise_core::concerts::{ConcertFilter, DateHorizon};
 use reprise_core::db::Db;
-use reprise_view::search_scope::SearchScope;
 
 use super::concerts_filter_bar::{
     horizon_label, persist_filter, radius_off_label, source_facet_visible,
@@ -237,10 +236,6 @@ impl FilterModel for ConcertsModel {
             ));
         }
         selections
-    }
-
-    fn search_scope(&self) -> SearchScope {
-        SearchScope::Concerts
     }
 
     fn add_filter_label(&self) -> String {

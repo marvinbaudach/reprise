@@ -225,7 +225,7 @@ impl CoverLoader {
             let thumbnail_path = match known_path {
                 Some(path) => Some(path),
                 None => gio::spawn_blocking(move || {
-                    thumbnail(&reprise_core::cover::CoverSource::FolderImage(source), size).ok()
+                    thumbnail(&reprise_core::cover::CoverSource::CacheImage(source), size).ok()
                 })
                 .await
                 .ok()
@@ -421,7 +421,7 @@ impl CoverLoader {
                 };
                 cache_path = gio::spawn_blocking(move || {
                     thumbnail(
-                        &reprise_core::cover::CoverSource::FolderImage(downloaded_path),
+                        &reprise_core::cover::CoverSource::CacheImage(downloaded_path),
                         size,
                     )
                     .ok()

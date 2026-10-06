@@ -8,6 +8,7 @@
 use rusqlite::Connection;
 
 use crate::library::settings;
+use crate::CoreError;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord)]
 pub enum ProvisionKind {
@@ -199,9 +200,9 @@ pub(crate) fn enabled_key(module: &ModuleDescriptor) -> String {
     format!("module.{}.enabled", module.id)
 }
 
-pub fn is_enabled(db: &crate::db::Db, module: &ModuleDescriptor) -> Result<bool, rusqlite::Error> {
+pub fn is_enabled(db: &crate::db::Db, module: &ModuleDescriptor) -> Result<bool, CoreError> {
     let conn = db.conn();
-    is_enabled_in(conn, module)
+    Ok(is_enabled_in(conn, module)?)
 }
 
 pub(crate) fn is_enabled_in(
@@ -215,9 +216,9 @@ pub fn set_enabled(
     db: &crate::db::Db,
     module: &ModuleDescriptor,
     value: bool,
-) -> Result<(), rusqlite::Error> {
+) -> Result<(), CoreError> {
     let conn = db.conn();
-    settings::set_bool_in(conn, &enabled_key(module), value)
+    Ok(settings::set_bool_in(conn, &enabled_key(module), value)?)
 }
 
 #[cfg(test)]
@@ -432,7 +433,7 @@ mod tests {
     }
 
     #[test]
-    fn ac_23_song_visuals_are_a_live_default_on_module_with_an_off_switch() {
+    fn ac_29_song_visuals_are_a_live_default_on_module_with_an_off_switch() {
         let db = migrated_db();
         let descriptor = ALL_MODULES
             .iter()

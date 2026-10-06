@@ -1,6 +1,7 @@
 use super::super::add_dialog_rows::{candidate_row, title_markup};
 use super::*;
 use crate::ui::search_highlight::HighlightPalette;
+use crate::ui::source_add_dialog::test_support::find_scroller;
 
 impl RadioAddDialog {
     pub(in crate::ui::radio) fn open_near_you_location_preferences_for_test(
@@ -416,21 +417,6 @@ fn rad_6_radio_results_highlight_only_the_station_name() {
         title.layout().attributes().is_some(),
         "the matching station-name fragment must carry accent-bold attributes"
     );
-}
-
-/// Walk a widget's descendants and return the first `ScrolledWindow`.
-fn find_scroller(widget: &gtk4::Widget) -> Option<gtk4::ScrolledWindow> {
-    if let Ok(scroller) = widget.clone().downcast::<gtk4::ScrolledWindow>() {
-        return Some(scroller);
-    }
-    let mut child = widget.first_child();
-    while let Some(current) = child {
-        if let Some(found) = find_scroller(&current) {
-            return Some(found);
-        }
-        child = current.next_sibling();
-    }
-    None
 }
 
 #[test]

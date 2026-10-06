@@ -2,9 +2,10 @@ package io.github.marvinbaudach.reprise
 
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.ColumnScope
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -25,7 +26,12 @@ import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.key
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.focus.FocusRequester
@@ -33,6 +39,7 @@ import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.unit.dp
+import kotlinx.coroutines.launch
 import uniffi.reprise_android_ffi.AndroidArtworkSize
 import uniffi.reprise_android_ffi.AndroidPlaybackState
 
@@ -134,14 +141,18 @@ internal fun AlbumDetailPage(
     loadMoreAlbumTracks: suspend (LibraryWindowRange) -> Unit,
 ) {
     Column(modifier = Modifier.fillMaxSize()) {
-        AlbumDetailHeader(selectedAlbum.album, closeAlbum)
-        if (selectedAlbum.tracks.rows.isEmpty()) {
-            Text("No tracks in this album.", modifier = Modifier.padding(16.dp))
-        } else {
-            ListPlayButton(
-                description = "Play ${selectedAlbum.album.title}",
-                onClick = { play(0) },
-            )
+        AlbumDetailHeader(selectedAlbum.album, closeAlbum) {
+            if (selectedAlbum.tracks.rows.isEmpty()) {
+                Text("No tracks in this album.", modifier = Modifier.padding(16.dp))
+            } else {
+                ListPlayButton(
+                    description = "Play ${selectedAlbum.album.title}",
+                    modifier = Modifier.testTag("album-detail-play"),
+                    onClick = { play(0) },
+                )
+            }
+        }
+        if (selectedAlbum.tracks.rows.isNotEmpty()) {
             TrackRows(
                 surfaceLayout = surfaceLayout,
                 surfaceState = surfaceState,
@@ -166,44 +177,111 @@ private fun AlbumLoadingPage(album: LibraryAlbum, closeAlbum: () -> Unit) {
 }
 
 @Composable
-private fun AlbumDetailHeader(album: LibraryAlbum, closeAlbum: () -> Unit) {
-    Row(
-        modifier = Modifier
-            .fillMaxWidth()
-            .clickable(onClick = closeAlbum)
-            .padding(horizontal = 16.dp, vertical = 8.dp),
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
-        MaterialSymbol("arrow_back", "Back")
-        Text(album.title, style = MaterialTheme.typography.titleLarge)
-    }
-    Text(
+private fun AlbumDetailHeader(
+    album: LibraryAlbum,
+    closeAlbum: () -> Unit,
+    below: @Composable ColumnScope.() -> Unit = {},
+) {
+    // ARTIST_DETAIL, not LIST, despite the 40 dp slot below: `TrackArtwork`
+    // picks the coroutine lane from `size` before `allowFetch` is even
+    // read (`TrackCover.kt`'s `loadVisual`/`prefetch`), and only
+    // ARTIST_DETAIL/NOW_PLAYING route to the full-size lane a fetch is
+    // allowed to occupy (decision 9: "never on the list lane").
+    val artwork = rememberTrackArtworkVisual(
+        album.representativeUri,
+        AndroidArtworkSize.ARTIST_DETAIL,
+        album.title,
         album.artist,
-        color = MaterialTheme.colorScheme.onSurfaceVariant,
-        modifier = Modifier.padding(horizontal = 16.dp),
+        allowFetch = true,
     )
+    Column(modifier = Modifier.reportLibraryStatusTopInset("album-detail-header")) {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .clickable(onClick = closeAlbum)
+                .padding(horizontal = 16.dp, vertical = 8.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            MaterialSymbol("arrow_back", "Back")
+            ArtworkCover(
+                artwork,
+                size = 40,
+                modifier = Modifier.padding(horizontal = 8.dp),
+                decorative = true,
+            )
+            Text(album.title, style = MaterialTheme.typography.titleLarge)
+        }
+        Text(
+            album.artist,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            modifier = Modifier.padding(horizontal = 16.dp),
+        )
+        below()
+    }
 }
 
 @Composable
 private fun ArtistLoadingPage(artist: LibraryArtist, closeArtist: () -> Unit) {
     Column(modifier = Modifier.fillMaxSize()) {
-        ArtistDetailHeader(artist, closeArtist)
+        ArtistDetailHeader(artist, closeArtist, withMenu = false)
         LoadingWindowRow()
     }
 }
 
+/**
+ * The artist page's title row. Its overflow opens the same menu a long press
+ * on the artist in the list does, so the whole artist can be played, queued or
+ * deleted from the page too. The loading page shows the row without it: the
+ * artist is not open yet.
+ */
 @Composable
-private fun ArtistDetailHeader(artist: LibraryArtist, closeArtist: () -> Unit) {
-    Row(
-        modifier = Modifier
-            .fillMaxWidth()
-            .clickable(onClick = closeArtist)
-            .padding(horizontal = 16.dp, vertical = 8.dp),
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
-        MaterialSymbol("arrow_back", "Back to artists")
-        Text(artist.name, style = MaterialTheme.typography.titleLarge)
+private fun ArtistDetailHeader(
+    artist: LibraryArtist,
+    closeArtist: () -> Unit,
+    withMenu: Boolean = true,
+    below: @Composable ColumnScope.() -> Unit = {},
+) {
+    val contextMenu = rememberTrackContextMenuAnchorState()
+    Column(modifier = Modifier.reportLibraryStatusTopInset("artist-detail-header")) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Row(
+                modifier = Modifier
+                    .weight(1f)
+                    .clickable(onClick = closeArtist)
+                    .padding(horizontal = 16.dp, vertical = 8.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                MaterialSymbol("arrow_back", "Back to artists")
+                Text(artist.name, style = MaterialTheme.typography.titleLarge)
+            }
+            if (withMenu) {
+                Box {
+                    IconButton(
+                        onClick = { contextMenu.expanded = true },
+                        modifier = Modifier.testTag("artist-detail-overflow"),
+                    ) {
+                        MaterialSymbol("more_vert", "More actions")
+                    }
+                    TrackContextMenu(anchor = contextMenu, target = artistMenuTarget(artist))
+                }
+            }
+        }
+        TrackContextMenuMessage(contextMenu)
+        below()
     }
+}
+
+/** Every track by [artist], resolved unwindowed when a menu item needs it. */
+@Composable
+private fun artistMenuTarget(artist: LibraryArtist): LibraryTrackMenuTarget {
+    val artistTrackIds = LocalArtistTrackIds.current
+    val controls = LocalPlaybackControls.current
+    return LibraryTrackMenuTarget(
+        label = artist.name,
+        trackCount = artist.trackCount,
+        resolveTrackIds = { artistTrackIds(artist) },
+        play = { ids -> controls.playTrackIds(ids, 0) },
+    )
 }
 
 @Composable
@@ -255,26 +333,14 @@ internal fun ArtistsTab(
     }
     if (selectedArtist != null) {
         Column(modifier = Modifier.fillMaxSize()) {
-            ArtistDetailHeader(selectedArtist.artist, closeArtist)
             val hasAlbums = selectedArtist.albums.rows.isNotEmpty()
             val hasOtherTitles = selectedArtist.untaggedTracks.rows.isNotEmpty()
-            if (!hasAlbums && !hasOtherTitles) {
-                Text("No tracks by this artist.", modifier = Modifier.padding(16.dp))
-            } else {
-                val albumTrackIds = LocalAlbumTrackIds.current
-                val controls = LocalPlaybackControls.current
-                ListPlayButton(
-                    description = "Play ${selectedArtist.artist.name}",
-                    onClick = {
-                        val trackIds = buildList {
-                            selectedArtist.albums.rows.forEach { album ->
-                                addAll(albumTrackIds(album))
-                            }
-                            addAll(selectedArtist.untaggedTracks.rows.map(LibraryTrack::id))
-                        }
-                        controls.playTrackIds(trackIds, 0)
-                    },
-                )
+            ArtistDetailHeader(selectedArtist.artist, closeArtist) {
+                if (!hasAlbums && !hasOtherTitles) {
+                    Text("No tracks by this artist.", modifier = Modifier.padding(16.dp))
+                } else {
+                    ArtistPlayButton(selectedArtist.artist)
+                }
             }
             if (hasAlbums) {
                 ArtistDetailSections(
@@ -377,13 +443,13 @@ private fun ArtistDetailSections(
             state = listState,
             modifier = Modifier.fillMaxSize().testTag(key.testTag()),
         ) {
-            item(key = "artist-portrait-head") { ArtistPortraitHeader(head, artist) }
+            item(key = "artist-portrait-head") { ArtistPortraitHeader(head) }
             if (albums.rows.isNotEmpty()) {
                 item(key = "artist-albums-heading") { SectionHeading("Albums") }
                 items(
                     albums.rows,
                     key = { album -> "artist-album-${album.identity()}" },
-                ) { album -> AlbumRow(album, openAlbum) }
+                ) { album -> AlbumRow(album, surfaceLayout, openAlbum) }
                 albumContinuation?.let { request ->
                     item(key = "artist-albums-load-${request.offset}") {
                         LaunchedEffect(request.offset) { loadMoreAlbums(request) }
@@ -430,11 +496,58 @@ private fun SectionHeading(text: String) {
     )
 }
 
+/**
+ * Plays every track the artist has, however few of them the page has loaded.
+ * The ids come off the main thread; until they arrive the button is off, so a
+ * second tap cannot queue the same question twice.
+ */
 @Composable
-private fun ListPlayButton(description: String, onClick: () -> Unit) {
+private fun ArtistPlayButton(artist: LibraryArtist) = key(artist.name) {
+    val artistTrackIds = LocalArtistTrackIds.current
+    val controls = LocalPlaybackControls.current
+    // The key ties the scope to the artist: a play still resolving when the
+    // page moves to another artist is cancelled, as it is when the page closes.
+    // It is the name, not the row, because the ids are looked up by name and a
+    // refresh after a delete rebuilds the row with new counts mid-resolution.
+    val scope = rememberCoroutineScope()
+    var resolving by remember { mutableStateOf(false) }
+    var message by remember { mutableStateOf<TransientMessage?>(null) }
+    ListPlayButton(
+        description = "Play ${artist.name}",
+        enabled = !resolving,
+        modifier = Modifier.testTag("artist-detail-play"),
+        onClick = {
+            resolving = true
+            scope.launch {
+                try {
+                    resolveOffMain { artistTrackIds(artist) }.fold(
+                        onSuccess = { ids -> controls.playTrackIds(ids, 0) },
+                        onFailure = { error ->
+                            message = TransientMessage(couldNotLoadTracks(error)).after(message)
+                        },
+                    )
+                } finally {
+                    resolving = false
+                }
+            }
+        },
+    )
+    TransientMessageText(message) { message = null }
+}
+
+@Composable
+private fun ListPlayButton(
+    description: String,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier,
+    enabled: Boolean = true,
+) {
     Button(
         onClick = onClick,
-        modifier = Modifier.padding(horizontal = 16.dp, vertical = 4.dp),
+        enabled = enabled,
+        modifier = Modifier
+            .padding(horizontal = 16.dp, vertical = 4.dp)
+            .then(modifier),
     ) {
         MaterialSymbol("play_arrow", description)
         Text("Play")
@@ -467,7 +580,7 @@ private fun AlbumRows(
             gridItems(
                 items = albums.rows,
                 key = { album -> "${album.artist}\u0000${album.title}" },
-            ) { album -> AlbumRow(album, openAlbum) }
+            ) { album -> AlbumRow(album, surfaceLayout, openAlbum) }
             albums.nextRequest(requestedOffset)?.let { request ->
                 item(key = "load-window-${request.offset}", span = { GridItemSpan(maxLineSpan) }) {
                     LaunchedEffect(request.offset) { loadMore(request) }
@@ -484,17 +597,22 @@ private fun AlbumRows(
         modifier = Modifier.fillMaxSize().testTag(key.testTag()),
     ) {
         items(albums.rows, key = { album -> "${album.artist}\u0000${album.title}" }) { album ->
-            AlbumRow(album, openAlbum)
+            AlbumRow(album, surfaceLayout, openAlbum)
         }
         windowContinuation(albums, requestedOffset, loadMore)
     }
 }
 
 @Composable
-private fun AlbumRow(album: LibraryAlbum, openAlbum: (LibraryAlbum) -> Unit) {
+private fun AlbumRow(
+    album: LibraryAlbum,
+    surfaceLayout: SurfaceLayout,
+    openAlbum: (LibraryAlbum) -> Unit,
+) {
     val contextMenu = rememberTrackContextMenuAnchorState()
     val albumTrackIds = LocalAlbumTrackIds.current
     val controls = LocalPlaybackControls.current
+    val coverSizeDp = libraryFrameMetrics(surfaceLayout).trackCoverSizeDp
     // The acknowledgement sits below the row, not inside the Box it would
     // otherwise cover — see TrackContextMenuMessage.
     Column {
@@ -502,6 +620,17 @@ private fun AlbumRow(album: LibraryAlbum, openAlbum: (LibraryAlbum) -> Unit) {
             ListItem(
                 headlineContent = { Text(album.title) },
                 supportingContent = { Text(album.details()) },
+                leadingContent = {
+                    TrackCover(
+                        trackUri = album.representativeUri,
+                        title = album.title,
+                        artist = album.artist,
+                        size = coverSizeDp,
+                        modifier = Modifier.testTag("library-album-row-cover"),
+                        artworkSize = AndroidArtworkSize.LIST,
+                        decorative = true,
+                    )
+                },
                 trailingContent = { Text(formatDuration(album.totalDurationMs)) },
                 modifier = Modifier
                     .fillMaxWidth()
@@ -578,14 +707,23 @@ private fun ArtistRow(artist: LibraryArtist, openArtist: (LibraryArtist) -> Unit
         artworkSize = AndroidArtworkSize.LIST,
         allowFetch = false,
     )
-    ListItem(
-        headlineContent = { Text(artist.name) },
-        supportingContent = { Text(artist.details()) },
-        leadingContent = { ArtistAvatar(visual, sizeDp = 40) },
-        modifier = Modifier
-            .fillMaxWidth()
-            .clickable { openArtist(artist) },
-    )
+    val contextMenu = rememberTrackContextMenuAnchorState()
+    // The acknowledgement sits below the row, as in AlbumRow — see
+    // TrackContextMenuMessage.
+    Column {
+        Box {
+            ListItem(
+                headlineContent = { Text(artist.name) },
+                supportingContent = { Text(artist.details()) },
+                leadingContent = { ArtistAvatar(visual, sizeDp = 40) },
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .trackContextMenuAnchor(contextMenu) { openArtist(artist) },
+            )
+            TrackContextMenu(anchor = contextMenu, target = artistMenuTarget(artist))
+        }
+        TrackContextMenuMessage(contextMenu)
+    }
     HorizontalDivider()
 }
 

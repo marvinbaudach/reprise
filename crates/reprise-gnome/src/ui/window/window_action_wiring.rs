@@ -15,10 +15,10 @@ use reprise_core::view_source::ViewSource;
 use super::player_controller::PlayerController;
 use super::scan_flow::ScanControls;
 use super::sidebar::Sidebar;
-use super::stats_view::StatsView;
 use super::track_list::TrackList;
 use crate::ui::playback::play_origin;
 use crate::ui::stats::stats_metadata_links::StatsMetadataTarget;
+use crate::ui::stats::stats_view::StatsView;
 use reprise_core::db::Db;
 
 #[derive(Clone, Copy)]
@@ -152,7 +152,7 @@ pub(in crate::ui) fn wire(context: ActionWiring<'_>) {
             }
         });
     }
-    super::tag_edit_flow::wire_refresh(track_list, sidebar, player);
+    crate::ui::tag_edit::tag_edit_flow::wire_refresh(track_list, sidebar, player);
 
     stats_view.on_materialized({
         let conn = conn.clone();
@@ -271,7 +271,7 @@ pub(in crate::ui) fn wire(context: ActionWiring<'_>) {
                 return;
             };
             if let Some(track_list) = track_list_weak.upgrade() {
-                crate::ui::sidebar_session::sync_current_source(
+                crate::ui::sidebar::sidebar_session::sync_current_source(
                     &sidebar.shared,
                     &track_list.current_source(),
                 );

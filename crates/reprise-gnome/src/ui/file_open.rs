@@ -13,7 +13,7 @@ use reprise_core::db::Db;
 use reprise_core::queries;
 
 use super::player_controller::PlayerController;
-use super::playlist_io;
+use super::playlists::playlist_io;
 use super::sidebar::Sidebar;
 use super::{strings, toasts};
 
@@ -81,33 +81,35 @@ fn classify_path(path: &Path) -> OpenFileKind {
     }
 }
 
-fn track_id_for_open_path(db: &Db, path: &Path) -> Option<i64> {
+/// The tracks a file opens: its one track, or, for a file cut by a CUE sheet,
+/// all of them in the order they play. Empty when the library does not know it.
+fn track_ids_for_open_path(db: &Db, path: &Path) -> Vec<i64> {
     let path_text = path.to_string_lossy();
-    match queries::track_id_for_path(db, &path_text) {
-        Ok(Some(id)) => return Some(id),
-        Ok(None) => {}
+    match queries::track_ids_for_path(db, &path_text) {
+        Ok(ids) if !ids.is_empty() => return ids,
+        Ok(_) => {}
         Err(error) => {
             tracing::error!(%error, path = %path.display(), "file-open track lookup failed");
-            return None;
+            return Vec::new();
         }
     }
 
     let Ok(canonical) = path.canonicalize() else {
-        return None;
+        return Vec::new();
     };
     if canonical == path {
-        return None;
+        return Vec::new();
     }
     let canonical_text = canonical.to_string_lossy();
-    match queries::track_id_for_path(db, &canonical_text) {
-        Ok(id) => id,
+    match queries::track_ids_for_path(db, &canonical_text) {
+        Ok(ids) => ids,
         Err(error) => {
             tracing::error!(
                 %error,
                 path = %canonical.display(),
                 "canonical file-open track lookup failed"
             );
-            None
+            Vec::new()
         }
     }
 }
@@ -116,9 +118,11 @@ fn resolve_audio_ids(db: &Db, paths: &[PathBuf]) -> AudioResolution {
     let mut ids = Vec::with_capacity(paths.len());
     let mut unresolved = Vec::new();
     for path in paths {
-        match track_id_for_open_path(db, path) {
-            Some(id) => ids.push(id),
-            None => unresolved.push(path.clone()),
+        let found = track_ids_for_open_path(db, path);
+        if found.is_empty() {
+            unresolved.push(path.clone());
+        } else {
+            ids.extend(found);
         }
     }
     AudioResolution { ids, unresolved }
@@ -283,6 +287,30 @@ mod tests {
 
     fn open_file(path: &Path) -> gio::File {
         gio::File::for_path(path)
+    }
+
+    #[test]
+    fn cue_6_opening_a_cue_file_queues_all_its_tracks_in_play_order() {
+        let db = crate::test_db::open().unwrap();
+        crate::test_db::connection(&db)
+            .execute_batch(
+                "INSERT INTO tracks (id, path, title, added_at, segment_index)
+                 VALUES (30, '/m/live.flac', 'One', 1, 1),
+                        (20, '/m/live.flac', 'Two', 1, 2),
+                        (40, '/m/plain.flac', 'Plain', 1, 0);",
+            )
+            .unwrap();
+
+        let resolution = resolve_audio_ids(
+            &db,
+            &[
+                PathBuf::from("/m/plain.flac"),
+                PathBuf::from("/m/live.flac"),
+            ],
+        );
+
+        assert_eq!(resolution.ids, [40, 30, 20]);
+        assert!(resolution.unresolved.is_empty());
     }
 
     #[test]

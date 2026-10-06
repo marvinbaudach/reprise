@@ -84,7 +84,7 @@ pub(crate) fn register_sidecar(
 ) -> Result<(), rusqlite::Error> {
     conn.execute(
         "INSERT INTO track_analysis_sidecars (track_id, sidecar_path) \
-         SELECT id, ?2 FROM tracks WHERE path = ?1 \
+         SELECT id, ?2 FROM tracks WHERE path = ?1 AND segment_index = 0 \
          ON CONFLICT(track_id) DO UPDATE SET sidecar_path = excluded.sidecar_path",
         rusqlite::params![track_path, sidecar_path.to_string_lossy()],
     )?;
@@ -96,7 +96,7 @@ pub(crate) fn unregister_sidecar(
     track_path: &str,
 ) -> Result<(), rusqlite::Error> {
     conn.execute(
-        "DELETE FROM track_analysis_sidecars WHERE track_id = \
+        "DELETE FROM track_analysis_sidecars WHERE track_id IN \
          (SELECT id FROM tracks WHERE path = ?1)",
         [track_path],
     )?;

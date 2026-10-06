@@ -1,4 +1,4 @@
-use crate::db::Db;
+use crate::{db::Db, CoreError};
 
 use super::{
     get_auto_clean_armed_at_in, get_bool_in, get_browse_visible_in, get_color_scheme_in,
@@ -10,18 +10,19 @@ use super::{
     get_new_releases_last_completed_at_in, get_onboarding_completed_in, get_player_bar_position_in,
     get_replay_gain_mode_in, get_seek_colouring_in, get_seek_legend_seen_in, get_setting_in,
     get_sidebar_collapsed_in, get_sidebar_visible_in, get_status_visible_in,
-    get_track_transition_in, get_window_decoration_mode_in, get_window_view_mode_in,
-    set_auto_clean_armed_at_in, set_bool_in, set_browse_visible_in, set_color_scheme_in,
-    set_compact_always_on_top_in, set_compact_layout_in, set_crossfade_seconds_in,
-    set_equalizer_bands_in, set_equalizer_curve_in, set_equalizer_enabled_in,
-    set_gapless_enabled_in, set_info_panel_visible_in, set_last_viewed_import_errors_in,
-    set_last_viewed_missing_in, set_library_root_in, set_missing_auto_clean_in,
-    set_new_releases_fetch_completed_in, set_new_releases_last_completed_at_in,
-    set_onboarding_completed_in, set_player_bar_position_in, set_replay_gain_mode_in,
-    set_seek_colouring_in, set_seek_legend_seen_in, set_setting_in, set_sidebar_collapsed_in,
-    set_sidebar_visible_in, set_status_visible_in, set_window_decoration_mode_in,
-    set_window_view_mode_in, AutoCleanSetting, CompactLayout, PlayerBarPosition, ReplayGainMode,
-    SeekColouring, TrackTransition, WindowDecorationMode, WindowViewMode,
+    get_track_transition_in, get_volume_key_skip_gesture_enabled_in, get_window_decoration_mode_in,
+    get_window_view_mode_in, set_auto_clean_armed_at_in, set_bool_in, set_browse_visible_in,
+    set_color_scheme_in, set_compact_always_on_top_in, set_compact_layout_in,
+    set_crossfade_seconds_in, set_equalizer_bands_in, set_equalizer_curve_in,
+    set_equalizer_enabled_in, set_gapless_enabled_in, set_info_panel_visible_in,
+    set_last_viewed_import_errors_in, set_last_viewed_missing_in, set_library_root_in,
+    set_missing_auto_clean_in, set_new_releases_fetch_completed_in,
+    set_new_releases_last_completed_at_in, set_onboarding_completed_in, set_player_bar_position_in,
+    set_replay_gain_mode_in, set_seek_colouring_in, set_seek_legend_seen_in, set_setting_in,
+    set_sidebar_collapsed_in, set_sidebar_visible_in, set_status_visible_in,
+    set_volume_key_skip_gesture_enabled_in, set_window_decoration_mode_in, set_window_view_mode_in,
+    AutoCleanSetting, CompactLayout, PlayerBarPosition, ReplayGainMode, SeekColouring,
+    TrackTransition, WindowDecorationMode, WindowViewMode,
 };
 
 pub fn get_setting(db: &Db, key: &str) -> Result<Option<String>, rusqlite::Error> {
@@ -29,29 +30,29 @@ pub fn get_setting(db: &Db, key: &str) -> Result<Option<String>, rusqlite::Error
     get_setting_in(conn, key)
 }
 
-pub fn set_setting(db: &Db, key: &str, value: &str) -> Result<(), rusqlite::Error> {
+pub fn set_setting(db: &Db, key: &str, value: &str) -> Result<(), CoreError> {
     let conn = db.conn();
-    set_setting_in(conn, key, value)
+    Ok(set_setting_in(conn, key, value)?)
 }
 
-pub fn get_bool(db: &Db, key: &str, default: bool) -> Result<bool, rusqlite::Error> {
+pub fn get_bool(db: &Db, key: &str, default: bool) -> Result<bool, CoreError> {
     let conn = db.conn();
-    get_bool_in(conn, key, default)
+    Ok(get_bool_in(conn, key, default)?)
 }
 
-pub fn set_bool(db: &Db, key: &str, value: bool) -> Result<(), rusqlite::Error> {
+pub fn set_bool(db: &Db, key: &str, value: bool) -> Result<(), CoreError> {
     let conn = db.conn();
-    set_bool_in(conn, key, value)
+    Ok(set_bool_in(conn, key, value)?)
 }
 
-pub fn get_library_root(db: &Db) -> Result<Option<String>, rusqlite::Error> {
+pub fn get_library_root(db: &Db) -> Result<Option<String>, CoreError> {
     let conn = db.conn();
-    get_library_root_in(conn)
+    Ok(get_library_root_in(conn)?)
 }
 
-pub fn set_library_root(db: &Db, root: &str) -> Result<(), rusqlite::Error> {
+pub fn set_library_root(db: &Db, root: &str) -> Result<(), CoreError> {
     let conn = db.conn();
-    set_library_root_in(conn, root)
+    Ok(set_library_root_in(conn, root)?)
 }
 
 pub fn get_last_scan_relinked(db: &Db) -> Result<Option<u32>, rusqlite::Error> {
@@ -269,6 +270,16 @@ pub fn get_gapless_enabled(db: &Db) -> bool {
 pub fn set_gapless_enabled(db: &Db, enabled: bool) -> Result<(), rusqlite::Error> {
     let conn = db.conn();
     set_gapless_enabled_in(conn, enabled)
+}
+
+pub fn get_volume_key_skip_gesture_enabled(db: &Db) -> bool {
+    let conn = db.conn();
+    get_volume_key_skip_gesture_enabled_in(conn)
+}
+
+pub fn set_volume_key_skip_gesture_enabled(db: &Db, enabled: bool) -> Result<(), rusqlite::Error> {
+    let conn = db.conn();
+    set_volume_key_skip_gesture_enabled_in(conn, enabled)
 }
 
 pub fn get_track_transition(db: &Db) -> TrackTransition {

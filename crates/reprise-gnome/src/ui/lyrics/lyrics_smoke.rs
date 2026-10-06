@@ -5,11 +5,43 @@ use std::time::Duration;
 
 use gtk4::glib;
 use reprise_core::db::Db;
+use reprise_core::library::startup_tasks::{begin_lyrics_pass, LyricsScope};
 
 use super::now_playing::NowPlayingPanel;
 use super::player_controller::PlayerController;
 
 const SMOKE_ENV: &str = "REPRISE_SMOKE_LYRICS";
+const GATE_ATTEMPTS: u32 = 5;
+const GATE_RETRY_PAUSE: Duration = Duration::from_millis(50);
+
+/// Opens the global online-sources gate and then the Online Lyrics module. A fresh isolated
+/// database leaves the gate off, and the lyrics view only asks the network while both are on.
+fn open_isolated_lyrics_gate(conn: &Db) -> Result<(), reprise_core::CoreError> {
+    reprise_core::online_sources::set_enabled(conn, true)?;
+    reprise_core::modules::set_enabled(conn, &reprise_core::modules::ONLINE_LYRICS_MODULE, true)
+}
+
+/// Runs `attempt` until it succeeds or `GATE_ATTEMPTS` is spent. The library watcher scans on its
+/// own connection while the smoke arms, and a settings write that loses that race fails at once
+/// with "database is locked" instead of waiting; the next try sees a fresh snapshot.
+fn retry_while_locked<E>(mut attempt: impl FnMut() -> Result<(), E>) -> Result<(), E> {
+    let mut result = attempt();
+    for _ in 1..GATE_ATTEMPTS {
+        if result.is_ok() {
+            break;
+        }
+        std::thread::sleep(GATE_RETRY_PAUSE);
+        result = attempt();
+    }
+    result
+}
+
+/// Records a completed full lyrics pass, so the automatic startup sweep only looks at tracks added
+/// after now. Without it the isolated library has no sweep history, the sweep covers every track
+/// as soon as the gate opens, and its fixture requests race the smoke's own lookups.
+fn settle_startup_lyrics_sweep(conn: &Db) {
+    begin_lyrics_pass(conn, LyricsScope::Everything).record_completed_or_warn(conn);
+}
 
 pub(in crate::ui) fn arm(
     player: Option<&Rc<PlayerController>>,
@@ -23,10 +55,6 @@ pub(in crate::ui) fn arm(
         tracing::error!("lyrics smoke failed: playback is unavailable");
         return;
     };
-    if let Err(error) = player.set_online_lyrics_enabled(true) {
-        tracing::error!(%error, "lyrics smoke failed: could not enable the isolated lyrics module");
-        return;
-    }
     let ids = match smoke_track_ids(conn) {
         Ok(ids) => ids,
         Err(error) => {
@@ -46,6 +74,13 @@ pub(in crate::ui) fn arm(
         tracing::error!("lyrics smoke failed: fast synthetic track is absent");
         return;
     };
+    // Settings change only once the three synthetic tracks prove this is the smoke library.
+    settle_startup_lyrics_sweep(conn);
+    if let Err(error) = retry_while_locked(|| open_isolated_lyrics_gate(conn)) {
+        tracing::error!(%error, "lyrics smoke failed: could not open the isolated lyrics gate");
+        return;
+    }
+    player.recompute_lyrics_enabled();
 
     tracing::info!("{SMOKE_ENV} set: arming synchronized lyrics exercise");
     panel.show_lyrics();
@@ -122,3 +157,7 @@ fn log_snapshot(
         "lyrics smoke state"
     );
 }
+
+#[cfg(test)]
+#[path = "lyrics_smoke_tests.rs"]
+mod tests;

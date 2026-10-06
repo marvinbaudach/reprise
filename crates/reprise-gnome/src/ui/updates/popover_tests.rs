@@ -146,7 +146,6 @@ fn nr_35_the_concerts_section_header_carries_the_unseen_count() {
     });
     section.render(
         true,
-        true,
         415,
         true,
         &[],
@@ -381,7 +380,10 @@ fn nr_37_the_popover_footer_shows_determinate_progress_from_both_feeds() {
 /// A no-op stand-in for the window-supplied navigation callback: these
 /// tests exercise fetch/render/badge behavior, not "Show in library"
 /// navigation (that lives in `release_row.rs`'s own tests).
-fn noop_show_album() -> release_row::OnShowAlbum {
+///
+/// `pub(super)`: `popover_loading_tests.rs` reuses this fixture rather than
+/// redefining it.
+pub(super) fn noop_show_album() -> release_row::OnShowAlbum {
     Rc::new(|_, _| {})
 }
 
@@ -408,7 +410,9 @@ fn concert_row(id: i64, artist: &str) -> reprise_core::concerts::ConcertRow {
     }
 }
 
-fn test_popover(conn: Rc<Db>, database_path: PathBuf) -> Rc<NewReleasesPopover> {
+/// `pub(super)`: `popover_loading_tests.rs` reuses this fixture rather than
+/// redefining it.
+pub(super) fn test_popover(conn: Rc<Db>, database_path: PathBuf) -> Rc<NewReleasesPopover> {
     let concerts_runtime = ConcertsRuntime::setup(&conn);
     NewReleasesPopover::new(
         conn,

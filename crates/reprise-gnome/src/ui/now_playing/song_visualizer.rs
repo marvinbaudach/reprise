@@ -44,7 +44,7 @@ pub(in crate::ui) struct SongVisualizer {
     area: gtk4::Widget,
     areas: Rc<RefCell<Vec<gtk4::glib::WeakRef<gtk4::Widget>>>>,
     engine: Rc<RefCell<VisualEngine>>,
-    /// Shows what the glow layer is currently reacting to (AC-23).
+    /// Shows what the glow layer is currently reacting to (AC-29).
     readout: AnalysisReadout,
     /// Mirrored outside the engine (which has no getter) so `set_spectrum`
     /// can gate on "are we actually playing" without borrowing it.
@@ -256,7 +256,7 @@ fn analysis_values(pressure: BassPressure, swell: f64) -> [String; 6] {
         decibels(pressure.level_dbfs),
         decibels(pressure.baseline_dbfs),
         // `impact` is deliberately absent: since the glow became a stage light
-        // driven by `kick`, nothing reads it any more, and AC-23 asks this
+        // driven by `kick`, nothing reads it any more, and AC-29 asks this
         // strip to name the analysis the visual *reacts to*. It stays a
         // produced reading, just not a displayed one.
         format!("{:.2}", pressure.aura),

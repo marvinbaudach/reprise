@@ -72,6 +72,7 @@ pub(super) fn split_repeated_suffix(titles: &[&str], title: &str) -> TitleParts 
     }
 }
 
+#[cfg(test)]
 pub(super) fn markup(parts: &TitleParts) -> String {
     markup_matching(parts, "", None)
 }

@@ -2,11 +2,15 @@ package io.github.marvinbaudach.reprise
 
 import android.graphics.Bitmap
 import android.graphics.Color
+import androidx.compose.ui.graphics.asAndroidBitmap
 import androidx.compose.ui.graphics.asImageBitmap
+import kotlinx.coroutines.Dispatchers
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotEquals
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertSame
+import org.junit.Assert.assertTrue
 import org.junit.Test
 import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
@@ -100,6 +104,37 @@ class ArtworkCacheTest {
     }
 
     @Test
+    fun invalidating_album_artwork_drops_track_fallbacks_on_every_shelf_only() {
+        val cache = ArtworkCache()
+        val listFallback = request("list-fallback", AndroidArtworkSize.LIST)
+        val nowPlayingFallback = request("now-playing-fallback")
+        val realTrack = request("real", AndroidArtworkSize.LIST)
+        val artist = ArtworkRequest(
+            trackUri = "artist://Artist",
+            size = AndroidArtworkSize.LIST,
+            title = "Artist",
+            artist = "Artist",
+            kind = ArtworkKind.ARTIST,
+            artistName = "Artist",
+        )
+        val listVisual = visual(Color.RED)
+        val nowPlayingVisual = visual(Color.GREEN)
+        val realVisual = visual(Color.BLUE)
+        val artistVisual = visual(Color.YELLOW)
+        cache.putGenerated(listFallback, listVisual, resolved = true)
+        cache.putGenerated(nowPlayingFallback, nowPlayingVisual, resolved = true)
+        cache.putArtwork(realTrack, realVisual)
+        cache.putGenerated(artist, artistVisual, resolved = true)
+
+        cache.invalidateAlbumArtwork()
+
+        assertNull(cache.artwork(listFallback))
+        assertNull(cache.artwork(nowPlayingFallback))
+        assertSame(realVisual, cache.artwork(realTrack))
+        assertSame(artistVisual, cache.artwork(artist))
+    }
+
+    @Test
     fun artwork_size_lru_evicts_the_oldest_entry_after_its_budget() {
         val cache = ArtworkCache(nowPlayingArtworkCapacity = 2, fogCapacity = 1)
         val first = request("first")
@@ -137,6 +172,63 @@ class ArtworkCacheTest {
         assertEquals(255, Color.alpha(top))
     }
 
+    @Test
+    fun generated_visuals_are_distinguished_from_resolved_visuals() {
+        val resolvedBitmap = Bitmap.createBitmap(4, 4, Bitmap.Config.ARGB_8888)
+        val artwork = TrackArtwork(
+            resolve = { trackUri, _ -> if (trackUri.endsWith("resolved")) REAL_PATH else null },
+            decode = { path -> if (path == REAL_PATH) resolvedBitmap else null },
+            fallback = { _, _, _ -> Bitmap.createBitmap(4, 4, Bitmap.Config.ARGB_8888) },
+            cache = ArtworkCache(),
+            dispatcher = Dispatchers.Unconfined,
+            onMainThread = { work -> work() },
+        )
+        val generatedRequest = request("generated", AndroidArtworkSize.LIST)
+        val resolvedRequest = request("resolved", AndroidArtworkSize.LIST)
+        val gate = ArtworkRequestGate()
+        val admitted = gate.begin(
+            resolvedRequest.trackUri,
+            resolvedRequest.size,
+            resolvedRequest.title,
+            resolvedRequest.artist,
+        )
+        var resolved: ArtworkVisual? = null
+
+        try {
+            artwork.loadVisual(admitted, gate) { resolved = it }
+
+            assertTrue(artwork.seedVisual(generatedRequest).generated)
+            assertFalse(requireNotNull(resolved).generated)
+            assertSame(resolvedBitmap, resolved?.image?.asAndroidBitmap())
+        } finally {
+            artwork.shutdown()
+        }
+    }
+
+    @Test
+    fun an_invalidated_in_flight_miss_does_not_restore_a_resolved_fallback() {
+        val cache = ArtworkCache()
+        val request = request("in-flight", AndroidArtworkSize.LIST)
+        lateinit var artwork: TrackArtwork
+        artwork = TrackArtwork(
+            resolve = { _, _ -> artwork.albumCoversChanged(); null },
+            fallback = { _, _, _ -> Bitmap.createBitmap(4, 4, Bitmap.Config.ARGB_8888) },
+            cache = cache,
+            dispatcher = Dispatchers.Unconfined,
+            onMainThread = { work -> work() },
+        )
+        val gate = ArtworkRequestGate()
+        val admitted = gate.begin(request.trackUri, request.size, request.title, request.artist)
+
+        try {
+            artwork.loadVisual(admitted, gate) {}
+
+            assertNull(cache.artwork(request))
+        } finally {
+            artwork.shutdown()
+        }
+    }
+
     private fun request(
         name: String,
         size: AndroidArtworkSize = AndroidArtworkSize.NOW_PLAYING,
@@ -154,5 +246,9 @@ class ArtworkCacheTest {
     private fun visual(colour: Int): ArtworkVisual {
         val bitmap = Bitmap.createBitmap(4, 4, Bitmap.Config.ARGB_8888).apply { eraseColor(colour) }
         return ArtworkVisual(bitmap.asImageBitmap(), ambientColors = null)
+    }
+
+    private companion object {
+        const val REAL_PATH = "/covers/resolved.jpg"
     }
 }

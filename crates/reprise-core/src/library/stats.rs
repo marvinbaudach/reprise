@@ -225,14 +225,7 @@ pub fn record_journaled_play(
 /// wraps a whole folder walk in one transaction, so `SQLITE_BUSY` there is an
 /// ordinary occurrence rather than a defect.
 pub fn is_database_busy(error: &rusqlite::Error) -> bool {
-    matches!(
-        error,
-        rusqlite::Error::SqliteFailure(failure, _)
-            if matches!(
-                failure.code,
-                rusqlite::ErrorCode::DatabaseBusy | rusqlite::ErrorCode::DatabaseLocked
-            )
-    )
+    crate::error::sqlite_error_is_busy(error)
 }
 
 /// Pure "was this track listened to enough to count as a play" predicate:

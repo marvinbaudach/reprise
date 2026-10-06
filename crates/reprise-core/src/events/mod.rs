@@ -5,6 +5,8 @@ use std::time::{SystemTime, UNIX_EPOCH};
 
 use rusqlite::{params, Connection, Transaction, TransactionBehavior};
 
+use crate::CoreError;
+
 pub mod notifier;
 pub use notifier::{Handle, Notifier};
 
@@ -126,7 +128,7 @@ pub fn read_since(
     db: &crate::db::Db,
     last_seen_id: i64,
     excluded_writer: Option<WriterToken>,
-) -> Result<Vec<Change>, rusqlite::Error> {
+) -> Result<Vec<Change>, CoreError> {
     let conn = db.conn();
     let sql = if excluded_writer.is_some() {
         "SELECT id, entity, entity_id, op, writer, at FROM change_log \
@@ -146,13 +148,16 @@ pub fn read_since(
             at: row.get(5)?,
         })
     };
-    if let Some(writer) = excluded_writer {
+    let changes = if let Some(writer) = excluded_writer {
         statement
             .query_map(params![last_seen_id, writer.0], map_row)?
-            .collect()
+            .collect::<Result<_, _>>()?
     } else {
-        statement.query_map([last_seen_id], map_row)?.collect()
-    }
+        statement
+            .query_map([last_seen_id], map_row)?
+            .collect::<Result<_, _>>()?
+    };
+    Ok(changes)
 }
 
 /// The highest `change_log` id, or `0` when the log is empty. A single indexed

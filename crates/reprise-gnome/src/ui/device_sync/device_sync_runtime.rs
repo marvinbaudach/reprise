@@ -25,7 +25,7 @@ use reprise_core::device_sync::{
 use reprise_platform_linux::device_sync::{CopyOutcome, DeviceDescriptor, DeviceMonitor};
 use reprise_platform_linux::device_transfer::{TranscodeProfile, TranscodeRequest, TranscodedFile};
 
-use crate::ui::device_sync_strings;
+use crate::ui::device_sync::device_sync_strings;
 
 use super::device_sync_remembered;
 

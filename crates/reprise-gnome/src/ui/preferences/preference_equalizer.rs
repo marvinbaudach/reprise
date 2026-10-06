@@ -61,6 +61,7 @@ pub(super) fn build_equalizer_controls(
         .build();
     preset_row.add_suffix(&preset_button);
     preset_row.set_activatable_widget(Some(&preset_button));
+    preset_row.set_sensitive(enabled);
     group.add(&preset_row);
 
     let updating = Rc::new(Cell::new(false));
@@ -84,7 +85,9 @@ pub(super) fn build_equalizer_controls(
     group.add(&bands);
 
     let bands_for_enabled = bands.clone();
+    let preset_for_enabled = preset_row.clone();
     enabled_row.connect_active_notify(move |row| {
+        preset_for_enabled.set_sensitive(row.is_active());
         bands_for_enabled.set_sensitive(row.is_active());
         on_enabled(row.is_active());
     });

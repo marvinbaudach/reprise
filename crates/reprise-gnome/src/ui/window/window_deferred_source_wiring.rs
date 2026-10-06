@@ -6,12 +6,15 @@ use libadwaita as adw;
 
 use super::super::content_stack::DeferredPage;
 
-#[allow(clippy::too_many_arguments)]
+#[expect(
+    clippy::too_many_arguments,
+    reason = "one handle per deferred page it wires; should take a parameter object"
+)]
 pub(super) fn install(
     preferences: &Rc<crate::ui::preferences::PreferencesContext>,
     cover_batch: &Rc<crate::ui::cover_download_batch::CoverDownloadBatch>,
     toast_overlay: &adw::ToastOverlay,
-    stats: &DeferredPage<crate::ui::stats_view::StatsView>,
+    stats: &DeferredPage<crate::ui::stats::stats_view::StatsView>,
     concerts: &DeferredPage<crate::ui::concerts::ConcertsView>,
     releases: &Rc<crate::ui::releases::ReleasesView>,
     podcasts: &DeferredPage<crate::ui::podcasts::PodcastsView>,
@@ -25,6 +28,7 @@ pub(super) fn install(
         youtube,
         radio,
         preferences,
+        cover_batch,
     );
     releases.set_toast_overlay(toast_overlay);
     super::super::startup_report::mark("source_connectivity::wire");
@@ -37,12 +41,33 @@ pub(super) fn install(
         radio,
     );
 
+    {
+        let podcasts = podcasts.clone();
+        let youtube = youtube.clone();
+        let radio = radio.clone();
+        preferences.set_on_online_module_state_changed(move || {
+            podcasts.if_materialized(|view| view.refresh());
+            youtube.if_materialized(|view| view.refresh());
+            radio.if_materialized(|view| view.refresh());
+        });
+    }
+
     // These callbacks used to be installed immediately after eager
     // construction. Register them with the page so they are present before a
     // synchronous navigation call returns with the page visible.
     for page in [podcasts, youtube] {
         let preferences = Rc::downgrade(preferences);
         page.on_materialized(move |view| {
+            view.set_on_open_preferences(move || {
+                if let Some(preferences) = preferences.upgrade() {
+                    preferences.present_online_sources();
+                }
+            });
+        });
+    }
+    {
+        let preferences = Rc::downgrade(preferences);
+        radio.on_materialized(move |view| {
             view.set_on_open_preferences(move || {
                 if let Some(preferences) = preferences.upgrade() {
                     preferences.present_online_sources();

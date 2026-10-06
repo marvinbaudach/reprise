@@ -7,6 +7,7 @@ import hashlib
 from typing import Any, Mapping
 
 from protocol import Mission, SCHEMA_VERSION
+from section_handles import section_handle
 from ui_vocabulary import canonical_role, hover_strictness, invocable_actions
 
 
@@ -365,7 +366,7 @@ class DeterministicExplorer:
             # only those get a share of the budget.
             offered = {str(label) for label in observation.get("actionable_labels", [])}
             self._hover_planned_sections = 1 + sum(
-                1 for section in sections if section in offered
+                1 for section in sections if self._handle(workload, section) in offered
             )
             self._hover_pending_section = CURRENT_VIEW_SECTION
             return self._next_hover_sweep_action(state_id, observation, workload)
@@ -375,9 +376,10 @@ class DeterministicExplorer:
         while self._hover_section_index < len(sections):
             section = sections[self._hover_section_index]
             self._hover_section_index += 1
-            if section in reachable:
+            handle = self._handle(workload, section)
+            if handle in reachable:
                 self._hover_pending_section = section
-                return self._activate(state_id, section)
+                return self._activate(state_id, handle)
             # Not a harness failure: the section simply has no accessible
             # handle, which is itself worth reporting.
             self.hover_coverage.append(
@@ -392,6 +394,9 @@ class DeterministicExplorer:
                 }
             )
         return None
+
+    def _handle(self, workload: Mapping[str, Any], section: str) -> str:
+        return section_handle(workload, self.mission.fixture_tokens, section)
 
     def _activate(self, state_id: str, label: str) -> dict[str, Any]:
         if any(word in label.casefold() for word in ASYNC_WORDS):

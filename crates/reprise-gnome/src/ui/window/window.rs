@@ -12,7 +12,7 @@
 //! column into an overlay. The persistent header toggle owns `show-sidebar`,
 //! so the sidebar only ever appears or disappears because the user said so.
 
-use std::cell::{Cell, RefCell};
+use std::cell::RefCell;
 use std::path::Path;
 use std::rc::Rc;
 
@@ -349,7 +349,12 @@ pub fn build(
         &split_view,
     );
     sidebar.bind_device_sync(&device_sync, open_device.clone());
-    super::device_sync_feedback::install(&header, &split_view, &toast_overlay, &device_sync);
+    crate::ui::device_sync::device_sync_feedback::install(
+        &header,
+        &split_view,
+        &toast_overlay,
+        &device_sync,
+    );
     info_panel.retain_for_window(&window);
     if let Some(player) = &player {
         super::window_now_playing_wiring::install(player, &info_panel, &queue_model);
@@ -358,7 +363,7 @@ pub fn build(
         .as_ref()
         .map(|player| player.bar_widget().upcast_ref::<gtk4::Widget>());
     header.pack_end(&info_panel.toggle_button());
-    let library_player_bar = super::library_player_bar::LibraryPlayerBarShell::new(
+    let library_player_bar = crate::ui::player_bar::library_player_bar::LibraryPlayerBarShell::new(
         &split_view,
         player_bar_widget,
         bar_position,
@@ -451,7 +456,9 @@ pub fn build(
         let preferences = Rc::downgrade(&preferences);
         info_panel.lyrics_view().set_on_settings(move || {
             if let Some(preferences) = preferences.upgrade() {
-                preferences.present_plugins(crate::ui::preference_plugins::ONLINE_LYRICS_TARGETS);
+                preferences.present_plugins(
+                    crate::ui::preferences::preference_plugins::ONLINE_LYRICS_TARGETS,
+                );
             }
         });
     }
@@ -511,60 +518,24 @@ pub fn build(
         &youtube_view,
         &radio_view,
     );
-    let startup_report_armed = super::startup_report::mark("window_runtime_wiring::wire");
-    super::responsive_side_panels::install(&window, &toast_overlay, &split_view, &info_panel);
-    tracing::info!("main window built");
-    let startup_window = minimal_view.active_window();
-    let startup_completion = if startup_report_armed {
-        let mapped = Rc::new(Cell::new(false));
-        startup_window.connect_map(move |_| {
-            if !mapped.replace(true) {
-                super::startup_report::mark("window mapped");
-            }
-        });
-
-        let first_frame_drawn = Rc::new(Cell::new(false));
-        let first_idle_seen = Rc::new(Cell::new(false));
-        let first_frame_for_tick = first_frame_drawn.clone();
-        let first_idle_for_tick = first_idle_seen.clone();
-        startup_window.add_tick_callback(move |_, frame_clock| {
-            // A tick supplies the mapped window's frame clock. The report itself
-            // waits until after paint and the first low-priority idle so
-            // serialization cannot delay either milestone.
-            let handler = Rc::new(RefCell::new(None));
-            let handler_for_callback = handler.clone();
-            let first_frame_drawn = first_frame_for_tick.clone();
-            let first_idle_seen = first_idle_for_tick.clone();
-            let id = frame_clock.connect_after_paint(move |frame_clock| {
-                super::startup_report::mark("first frame drawn");
-                first_frame_drawn.set(true);
-                if first_idle_seen.get() {
-                    super::startup_report::write_if_armed();
-                }
-                let id = handler_for_callback.borrow_mut().take();
-                if let Some(id) = id {
-                    frame_clock.disconnect(id);
-                }
-            });
-            *handler.borrow_mut() = Some(id);
-            gtk4::glib::ControlFlow::Break
-        });
-        Some((first_frame_drawn, first_idle_seen))
-    } else {
-        None
-    };
-    startup_window.present();
-    super::startup_report::mark("window.present()");
-    if let Some((first_frame_drawn, first_idle_seen)) = startup_completion {
-        gtk4::glib::idle_add_local_full(gtk4::glib::Priority::LOW, move || {
-            super::startup_report::mark("main loop first idle");
-            first_idle_seen.set(true);
-            if first_frame_drawn.get() {
-                super::startup_report::write_if_armed();
-            }
-            gtk4::glib::ControlFlow::Break
-        });
-    }
+    #[cfg(test)]
+    super::window_layout_test_hook::publish(
+        &window,
+        &split_view,
+        &sidebar_page,
+        &sidebar,
+        &library_player_bar,
+        player_bar_widget,
+        &content_nav,
+        &track_list,
+    );
+    super::window_first_paint::install_and_present(
+        &window,
+        &toast_overlay,
+        &split_view,
+        &info_panel,
+        &minimal_view,
+    );
     super::runtime_performance::arm(&window, &track_list);
     FileOpenHandler::new(&window, conn.clone(), player, &toast_overlay, sidebar)
 }

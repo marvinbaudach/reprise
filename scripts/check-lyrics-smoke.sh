@@ -23,7 +23,7 @@ request_log="$tmp_root/requests.jsonl"
 timeout 15s dbus-run-session -- xvfb-run -a env \
   XDG_DATA_HOME="$tmp_root/data" XDG_CACHE_HOME="$tmp_root/cache" \
   GDK_BACKEND=x11 WAYLAND_DISPLAY= REPRISE_AUDIO_SINK=fakesink \
-  NO_AT_BRIDGE=1 GTK_A11Y=none \
+  NO_AT_BRIDGE=1 GTK_A11Y=none NO_COLOR=1 GSK_RENDERER=cairo \
   REPRISE_SCAN_DIR="$music" \
   REPRISE_LRCLIB_FIXTURE_DIR="$repo_root/crates/reprise-core/tests/fixtures/lyrics-smoke" \
   REPRISE_LRCLIB_FIXTURE_LOG="$request_log" \

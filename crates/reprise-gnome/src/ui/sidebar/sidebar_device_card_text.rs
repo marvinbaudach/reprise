@@ -15,8 +15,8 @@ use chrono::{DateTime, Utc};
 use reprise_core::device_sync::device_view::DeviceContentsState;
 use reprise_core::device_sync::{DeviceSessionState, SyncBalance};
 
-use crate::ui::device_sync_runtime::{DeviceView, PlannedSyncPhase, SyncStep};
-use crate::ui::device_sync_strings;
+use crate::ui::device_sync::device_sync_runtime::{DeviceView, PlannedSyncPhase, SyncStep};
+use crate::ui::device_sync::device_sync_strings;
 
 /// `MTP-63`: which contrast step a device card carries. The step decides
 /// ground, edge, and how far the status line falls off against the name —
@@ -286,7 +286,7 @@ fn waiting_or_playlists_sentence(balance: &SyncBalance) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::ui::device_sync_runtime::PlannedSyncPhase;
+    use crate::ui::device_sync::device_sync_runtime::PlannedSyncPhase;
     use crate::ui::sidebar::sidebar_device_card::tests::view;
     use chrono::TimeZone;
 
@@ -433,7 +433,7 @@ mod tests {
     #[test]
     fn mtp_63_the_card_states_monotonic_run_progress_across_sync_phases() {
         let mut device = view(PlannedSyncPhase::Syncing {
-            step: crate::ui::device_sync_runtime::SyncStep::Copying,
+            step: crate::ui::device_sync::device_sync_runtime::SyncStep::Copying,
             done: 1_046,
             total: 1_062,
             current_track: "Last transfer".into(),
@@ -450,7 +450,7 @@ mod tests {
         );
 
         device.sync_phase = PlannedSyncPhase::Syncing {
-            step: crate::ui::device_sync_runtime::SyncStep::WritingPlaylists,
+            step: crate::ui::device_sync::device_sync_runtime::SyncStep::WritingPlaylists,
             done: 1_047,
             total: 1_062,
             current_track: "Road".into(),
@@ -463,7 +463,7 @@ mod tests {
         );
 
         device.sync_phase = PlannedSyncPhase::Syncing {
-            step: crate::ui::device_sync_runtime::SyncStep::Removing,
+            step: crate::ui::device_sync::device_sync_runtime::SyncStep::Removing,
             done: 1_061,
             total: 1_062,
             current_track: "old.mp3".into(),
@@ -485,7 +485,7 @@ mod tests {
     #[test]
     fn syncing_file_count_clamps_inconsistent_progress_and_never_states_zero_of_zero() {
         let mut device = view(PlannedSyncPhase::Syncing {
-            step: crate::ui::device_sync_runtime::SyncStep::Removing,
+            step: crate::ui::device_sync::device_sync_runtime::SyncStep::Removing,
             done: 9,
             total: 3,
             current_track: "old.mp3".into(),
@@ -499,7 +499,7 @@ mod tests {
         );
 
         device.sync_phase = PlannedSyncPhase::Syncing {
-            step: crate::ui::device_sync_runtime::SyncStep::Removing,
+            step: crate::ui::device_sync::device_sync_runtime::SyncStep::Removing,
             done: 0,
             total: 0,
             current_track: String::new(),
@@ -512,7 +512,7 @@ mod tests {
     #[test]
     fn disconnected_syncing_state_keeps_remembered_presentation() {
         let mut remembered = view(PlannedSyncPhase::Syncing {
-            step: crate::ui::device_sync_runtime::SyncStep::Copying,
+            step: crate::ui::device_sync::device_sync_runtime::SyncStep::Copying,
             done: 0,
             total: 1,
             current_track: "Track".into(),

@@ -39,7 +39,7 @@ mod tests {
         let row: (Option<String>, Option<i64>) = conn
             .query_row(
                 "SELECT role, limit_count FROM smart_playlists
-                 WHERE name = 'Recently added'",
+                 WHERE name = 'Recently Added'",
                 [],
                 |row| Ok((row.get(0)?, row.get(1)?)),
             )

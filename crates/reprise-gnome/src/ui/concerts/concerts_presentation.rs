@@ -1,11 +1,10 @@
-#![allow(dead_code)]
-
 use chrono::NaiveDate;
 use reprise_core::concerts::ConcertRow;
 use reprise_core::format::DatePattern;
 use reprise_view::columns::{ColumnKey, ConcertColumn};
 use std::cmp::Ordering;
 
+#[cfg(test)]
 use crate::ui::strings;
 pub(super) use crate::ui::table_columns::sort::SortDirection;
 use crate::ui::table_columns::sort::{self, SortKey, SortSpec};
@@ -50,7 +49,8 @@ pub(super) fn format_distance_km(distance: Option<f64>) -> String {
     )
 }
 
-pub(super) fn row_distance(location: Option<(f64, f64)>, event: &ConcertRow) -> Option<f64> {
+#[cfg(test)]
+fn row_distance(location: Option<(f64, f64)>, event: &ConcertRow) -> Option<f64> {
     let (latitude, longitude) = location?;
     let event_latitude = event.latitude?;
     let event_longitude = event.longitude?;
@@ -127,7 +127,8 @@ fn date_tiebreak(left: &ConcertRow, right: &ConcertRow) -> Ordering {
     )
 }
 
-pub(super) fn count_line(shown: usize, total: usize) -> String {
+#[cfg(test)]
+fn count_line(shown: usize, total: usize) -> String {
     strings::concert_count_line(shown, total)
 }
 

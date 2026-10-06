@@ -3,7 +3,10 @@
 // The keyring error this module forwards is `oo7::Error`, which is 128 bytes
 // wide on its own — the size is not ours to shrink, and the alternative is
 // boxing an error type these callers match on directly.
-#![allow(clippy::result_large_err)]
+#![allow(
+    clippy::result_large_err,
+    reason = "oo7::Error is 128 bytes and not ours to shrink; clippy 1.99+ flags it, 1.97 does not"
+)]
 
 pub(in crate::ui) const ATTRIBUTES: [(&str, &str); 2] =
     [("application", crate::APP_ID), ("service", "listenbrainz")];

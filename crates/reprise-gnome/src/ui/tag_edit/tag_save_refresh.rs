@@ -1,7 +1,8 @@
 //! Chooses whether a successful Tag Editor save can refresh realised rating
 //! cells in place or must re-run the current track query.
 
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
+use std::path::PathBuf;
 
 use reprise_core::library::tag_edit::TrackWrite;
 use reprise_core::queries::BrowseFilter;
@@ -103,11 +104,27 @@ pub(super) fn first_view_mismatch(before: &[i64], after: &[i64]) -> i64 {
         .map_or(-1, |index| i64::try_from(index).unwrap_or(i64::MAX))
 }
 
-pub(super) fn tag_changed_ids(writes: &[TrackWrite], updated_ids: &[i64]) -> Vec<i64> {
+/// The writes that changed file tags and were reported updated, in `writes`
+/// order. `updated_ids` is indexed once, so the cost stays linear.
+fn tag_changed_writes<'a>(
+    writes: &'a [TrackWrite],
+    updated_ids: &[i64],
+) -> impl Iterator<Item = &'a TrackWrite> {
+    let updated_ids = updated_ids.iter().copied().collect::<HashSet<_>>();
     writes
         .iter()
-        .filter(|write| !write.patch.tags.is_empty() && updated_ids.contains(&write.id))
+        .filter(move |write| !write.patch.tags.is_empty() && updated_ids.contains(&write.id))
+}
+
+pub(super) fn tag_changed_ids(writes: &[TrackWrite], updated_ids: &[i64]) -> Vec<i64> {
+    tag_changed_writes(writes, updated_ids)
         .map(|write| write.id)
+        .collect()
+}
+
+pub(super) fn tag_changed_paths(writes: &[TrackWrite], updated_ids: &[i64]) -> Vec<PathBuf> {
+    tag_changed_writes(writes, updated_ids)
+        .map(|write| write.path.clone())
         .collect()
 }
 
@@ -122,12 +139,17 @@ pub(super) fn plan(
         return TagSaveRefresh::Reload;
     }
 
+    // The first write per id wins, exactly as a linear `find` would pick it.
+    let mut first_write_by_id: HashMap<i64, &TrackWrite> = HashMap::with_capacity(writes.len());
+    for write in writes {
+        first_write_by_id.entry(write.id).or_insert(write);
+    }
     let ratings = updated_ids
         .iter()
         .map(|updated_id| {
-            writes
-                .iter()
-                .find(|write| write.id == *updated_id)
+            first_write_by_id
+                .get(updated_id)
+                .copied()
                 .filter(|write| write.patch.tags.is_empty())
                 .and_then(|write| write.patch.rating.map(|rating| (write.id, rating)))
         })
@@ -286,6 +308,30 @@ mod tests {
     }
 
     #[test]
+    fn tag_changed_ids_and_paths_follow_write_order_and_skip_rating_only_writes() {
+        let writes = [
+            tag_write(5),
+            rating_write(4, 2),
+            tag_write(2),
+            tag_write(9),
+            tag_write(5),
+        ];
+
+        let ids = tag_changed_ids(&writes, &[2, 4, 5, 7]);
+        let paths = tag_changed_paths(&writes, &[2, 4, 5, 7]);
+
+        assert_eq!(ids, vec![5, 2, 5]);
+        assert_eq!(
+            paths,
+            vec![
+                PathBuf::from("/synthetic/5.flac"),
+                PathBuf::from("/synthetic/2.flac"),
+                PathBuf::from("/synthetic/5.flac"),
+            ]
+        );
+    }
+
+    #[test]
     #[ignore = "uses the global GLib main context; run alone"]
     fn batch_telemetry_runs_after_an_already_scheduled_reload() {
         use std::cell::RefCell;
@@ -347,5 +393,54 @@ mod tests {
         ] {
             assert_eq!(refresh, TagSaveRefresh::Reload);
         }
+    }
+
+    #[test]
+    fn plan_takes_the_first_write_for_a_duplicated_id() {
+        let rating_first = [rating_write(7, 3), tag_write(7)];
+        let tag_first = [tag_write(7), rating_write(7, 3)];
+        let source = ViewSource::Library;
+        let browse = BrowseFilter::default();
+
+        assert_eq!(
+            plan(&rating_first, &[7], &source, "artist", &browse),
+            TagSaveRefresh::InPlaceRatings(vec![(7, 3)])
+        );
+        assert_eq!(
+            plan(&tag_first, &[7], &source, "artist", &browse),
+            TagSaveRefresh::Reload
+        );
+    }
+
+    #[test]
+    fn plan_lists_ratings_in_updated_id_order() {
+        let writes = [rating_write(1, 1), rating_write(2, 2), rating_write(3, 3)];
+
+        assert_eq!(
+            plan(
+                &writes,
+                &[3, 1, 2, 1],
+                &ViewSource::Library,
+                "artist",
+                &BrowseFilter::default(),
+            ),
+            TagSaveRefresh::InPlaceRatings(vec![(3, 3), (1, 1), (2, 2), (1, 1)])
+        );
+    }
+
+    #[test]
+    fn plan_reloads_when_an_updated_id_has_no_write() {
+        let writes = [rating_write(1, 1)];
+
+        assert_eq!(
+            plan(
+                &writes,
+                &[1, 9],
+                &ViewSource::Library,
+                "artist",
+                &BrowseFilter::default(),
+            ),
+            TagSaveRefresh::Reload
+        );
     }
 }

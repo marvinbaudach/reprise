@@ -1,24 +1,7 @@
-#![allow(dead_code)]
-
 use std::cell::{Cell, RefCell};
-use std::path::PathBuf;
 use std::rc::Rc;
 
-use reprise_core::artist_news::{ArtistNews, NewsError};
 use reprise_core::db::Db;
-
-pub(in crate::ui) struct ArtistNewsRequest {
-    pub generation: u64,
-    pub artist: String,
-    pub force: bool,
-    pub response: async_channel::Sender<ArtistNewsResponse>,
-}
-
-#[derive(Debug)]
-pub(in crate::ui) struct ArtistNewsResponse {
-    pub generation: u64,
-    pub result: Result<ArtistNews, NewsError>,
-}
 
 type IsAlive = Rc<dyn Fn() -> bool>;
 type OnEnabled = Rc<dyn Fn(bool)>;
@@ -95,7 +78,6 @@ impl EnabledSubscribers {
 
 pub(in crate::ui) struct ArtistNewsRuntime {
     pub enabled: Rc<Cell<bool>>,
-    worker: async_channel::Sender<ArtistNewsRequest>,
     subscribers: EnabledSubscribers,
 }
 
@@ -108,7 +90,6 @@ impl ArtistNewsRuntime {
                     &reprise_core::modules::NEW_RELEASES_MODULE,
                 ),
             )),
-            worker: spawn(conn.path()),
             subscribers: EnabledSubscribers::default(),
         })
     }
@@ -147,69 +128,10 @@ impl ArtistNewsRuntime {
             .subscribe(self.enabled.get(), is_alive, callback);
     }
 
-    pub(in crate::ui) fn request(&self, request: ArtistNewsRequest) {
-        if !self.enabled.get() || request.artist.trim().is_empty() {
-            return;
-        }
-        if let Err(error) = self.worker.try_send(request) {
-            tracing::warn!(%error, "could not queue Artist News request");
-        }
-    }
-
     #[cfg(test)]
     fn subscriber_count(&self) -> usize {
         self.subscribers.len()
     }
-}
-
-fn spawn(database_path: Option<PathBuf>) -> async_channel::Sender<ArtistNewsRequest> {
-    let (sender, receiver) = async_channel::unbounded::<ArtistNewsRequest>();
-    let result = std::thread::Builder::new()
-        .name("reprise-artist-news".into())
-        .spawn(move || {
-            let connection = database_path
-                .as_deref()
-                .map(|path| reprise_core::db::Db::open_migrated(Some(path)));
-            while let Ok(request) = receiver.recv_blocking() {
-                let today = chrono::Local::now().date_naive();
-                let result = match connection.as_ref() {
-                    Some(Ok(db)) => {
-                        let conn = &db;
-                        reprise_core::artist_news::configured_fetch_scope(conn)
-                            .map_err(|error| NewsError::Database(error.to_string()))
-                            .and_then(|scope| {
-                                reprise_core::artist_news::refresh(
-                                    conn,
-                                    today,
-                                    scope,
-                                    request.force,
-                                )
-                            })
-                            .and_then(|_| {
-                                reprise_core::artist_news::query_artist_news_by_name(
-                                    conn,
-                                    &request.artist,
-                                    today,
-                                )
-                                .map_err(|error| NewsError::Database(error.to_string()))?
-                                .ok_or(NewsError::Unmatched)
-                            })
-                    }
-                    Some(Err(error)) => Err(NewsError::Database(error.to_string())),
-                    None => Err(NewsError::Database(
-                        "the active database has no persistent path".into(),
-                    )),
-                };
-                let _ = request.response.try_send(ArtistNewsResponse {
-                    generation: request.generation,
-                    result,
-                });
-            }
-        });
-    if let Err(error) = result {
-        tracing::warn!(%error, "could not start Artist News worker");
-    }
-    sender
 }
 
 #[cfg(test)]

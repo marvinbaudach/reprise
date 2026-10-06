@@ -1,3 +1,4 @@
+mod active_content_focus;
 pub(in crate::ui) mod content_stack;
 pub(in crate::ui) mod focus_evidence;
 pub(in crate::ui) mod library_chrome;
@@ -6,6 +7,8 @@ pub(in crate::ui) mod library_shell;
 pub(in crate::ui) mod metadata_navigation;
 mod player_backends;
 pub(in crate::ui) mod podcast_refresh_scheduler;
+#[cfg(test)]
+mod real_window_tests;
 pub(in crate::ui) mod responsive_side_panels;
 pub(in crate::ui) mod search_popover;
 pub(in crate::ui) mod section_search;
@@ -25,9 +28,10 @@ mod window_build_badge;
 mod window_content_pages;
 pub(in crate::ui) mod window_decoration_strings;
 pub(in crate::ui) mod window_decorations;
+mod window_first_paint;
 mod window_header;
 #[cfg(test)]
-mod window_layout_tests;
+mod window_layout_test_hook;
 pub(in crate::ui) mod window_navigation;
 pub(in crate::ui) mod window_now_playing_wiring;
 #[cfg(test)]
@@ -39,6 +43,9 @@ mod window_runtime_setup;
 pub(in crate::ui) mod window_runtime_wiring;
 pub(in crate::ui) mod window_smoke;
 
-#[allow(unused_imports)]
+#[allow(
+    unused_imports,
+    reason = "child modules share the parent UI vocabulary through this import"
+)]
 use super::*;
 pub(crate) use surface::build;

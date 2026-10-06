@@ -22,7 +22,7 @@ FIXTURE = (
 )
 sys.path.insert(0, str(EXPLORE_ROOT))
 
-from actions import ActivateAction, PressAction, ScrollAction, TypeAction  # noqa: E402
+from actions import ActivateAction, ScrollAction, TypeAction  # noqa: E402
 from driver import CliTransport, CuaExecutor, DriverError  # noqa: E402
 from driver_transport import SUCCESS_CONTRACT, response_dispatched  # noqa: E402
 from hover_geometry import WindowGeometry  # noqa: E402
@@ -91,6 +91,19 @@ MEASURED_ERROR_SHELLS = {
     '"escalation_reason": null, "session": "contract-probe-69086"}',
 }
 BACKGROUND_UNAVAILABLE = MEASURED_ERROR_SHELLS["code_object"]
+
+
+def entry_fixture() -> dict:
+    """The recorded snapshot with its star targets reading as text entries.
+
+    A type action aimed at anything but an entry is focused by a click first, so
+    the tests of the AT-SPI typing route need a target that is an entry.
+    """
+    raw = json.loads(FIXTURE.read_text(encoding="utf-8"))
+    for item in raw["elements"]:
+        if item.get("label") == "☆":
+            item["role"] = "search box"
+    return raw
 
 
 def completed(stdout: str, *, returncode: int = 0, stderr: str = ""):
@@ -199,7 +212,7 @@ class DriverRefusalContractTests(unittest.TestCase):
     def test_background_unavailable_retries_foreground_and_retains_step_evidence(
         self,
     ) -> None:
-        raw = json.loads(FIXTURE.read_text(encoding="utf-8"))
+        raw = entry_fixture()
         foreground = {
             "delivery": {"mode": "foreground"},
             "effect": "unverifiable",
@@ -261,7 +274,7 @@ class DriverRefusalContractTests(unittest.TestCase):
             self.assertEqual(fault["response"], json.loads(BACKGROUND_UNAVAILABLE))
 
     def test_unknown_error_envelope_still_aborts_without_foreground_retry(self) -> None:
-        raw = json.loads(FIXTURE.read_text(encoding="utf-8"))
+        raw = entry_fixture()
         unknown = '{"code":"future_driver_error","detail":"not delivered"}'
         with tempfile.TemporaryDirectory() as directory:
             evidence_dir = pathlib.Path(directory)
@@ -293,8 +306,10 @@ class DriverRefusalContractTests(unittest.TestCase):
     ) -> None:
         foreground = '{"effect":"unverifiable","route":"synthetic_events"}'
         for tool, payload in (
-            ("press_key", {"key": "enter"}),
-            ("hotkey", {"keys": ["CTRL", "F"]}),
+            # Raw input asks for foreground up front; an explicit background
+            # request is what still reaches the response-driven escape.
+            ("press_key", {"key": "enter", "delivery_mode": "background"}),
+            ("hotkey", {"keys": ["CTRL", "F"], "delivery_mode": "background"}),
             # `describe` lists delivery_mode for these two as well, and a
             # pointer action meets the same missing background backend.
             ("click", {"element_token": "fixture-token"}),
@@ -345,7 +360,10 @@ class DriverRefusalContractTests(unittest.TestCase):
                 evidence_dir=pathlib.Path(directory),
             )
 
-            response = transport.call("type_text", {"text": "fixture text"})
+            response = transport.call(
+                "type_text",
+                {"text": "fixture text", "element_token": "fixture-token"},
+            )
 
             self.assertEqual(len(transport.commands), 2)
             self.assertEqual(transport.transport_faults, 2)
@@ -636,7 +654,6 @@ class ElementAddressContractTests(unittest.TestCase):
                 TypeAction("state-1", "☆", "ax", "trusted"),
                 {"trusted": "fixture text"},
             ),
-            ("press_key", PressAction("state-1", "enter", "☆"), {}),
             (
                 "scroll",
                 ScrollAction("state-1", "down", 3, "line", "☆"),
@@ -645,11 +662,12 @@ class ElementAddressContractTests(unittest.TestCase):
         )
         for tool, action, fixture_tokens in cases:
             with self.subTest(tool=tool):
+                raw = entry_fixture() if tool == "type_text" else self.raw
                 transport = self.transport(
                     [
-                        completed(json.dumps(self.raw)),
+                        completed(json.dumps(raw)),
                         completed('{"effect":"unverifiable"}'),
-                        completed(json.dumps(self.raw)),
+                        completed(json.dumps(raw)),
                     ]
                 )
                 executor = CuaExecutor(

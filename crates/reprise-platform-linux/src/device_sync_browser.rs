@@ -236,7 +236,10 @@ pub(super) fn map_create_folder_result(
 pub(super) fn derive_storage_id(name: &str) -> StorageId {
     let mut hasher = DefaultHasher::new();
     name.hash(&mut hasher);
-    #[allow(clippy::cast_possible_truncation)]
+    #[expect(
+        clippy::cast_possible_truncation,
+        reason = "synthetic storage IDs deliberately use the low hash bits"
+    )]
     StorageId(hasher.finish() as u32)
 }
 

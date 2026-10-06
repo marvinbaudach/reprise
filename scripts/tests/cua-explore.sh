@@ -18,12 +18,16 @@ python3 scripts/tests/cua-explore-click-probe.py
 python3 scripts/tests/cua-explore-fixture-integrity.py
 python3 scripts/tests/cua-explore-target-resolution.py
 python3 scripts/tests/cua-explore-driver-contract.py
+python3 scripts/tests/cua-explore-raw-input.py
+python3 scripts/tests/cua-explore-input-routing.py
 python3 scripts/tests/cua-explore-capture-degradation.py
 python3 scripts/tests/cua-explore-stall-attribution.py
 python3 scripts/tests/cua-explore-timing-feedback.py
 python3 scripts/tests/cua-explore-window.py
 python3 scripts/tests/cua-explore-outcome.py
 python3 scripts/tests/cua-explore-aggregate.py
+python3 scripts/tests/cua-explore-search-results.py
+python3 scripts/tests/cua-explore-section-handles.py
 python3 scripts/cua-explore/protocol.py validate-mission \
   scripts/cua-explore/missions/first-time-exploration.json >/dev/null
 

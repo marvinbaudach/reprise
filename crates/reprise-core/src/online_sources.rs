@@ -11,9 +11,9 @@
 //! Turning this off does not delete anything: subscriptions, favorites, and
 //! already-cached files are untouched. It only stops new requests.
 
-use crate::db::Db;
 use crate::library::settings;
 use crate::modules::{self, ModuleDescriptor};
+use crate::{db::Db, CoreError};
 
 /// The owner of a network request checked by [`network_allowed`].
 #[derive(Clone, Copy)]
@@ -37,14 +37,14 @@ pub const ENABLED_KEY: &str = "online-sources-enabled";
 /// Whether the global gate is on. A missing or unreadable value defaults off:
 /// network access needs an affirmative persisted opt-in. Schema v49 writes the
 /// value for every database while preserving explicit choices (`NET-2a`).
-pub fn is_enabled(db: &Db) -> Result<bool, rusqlite::Error> {
+pub fn is_enabled(db: &Db) -> Result<bool, CoreError> {
     let conn = db.conn();
-    settings::get_bool_in(conn, ENABLED_KEY, false)
+    Ok(settings::get_bool_in(conn, ENABLED_KEY, false)?)
 }
 
-pub fn set_enabled(db: &crate::db::Db, value: bool) -> Result<(), rusqlite::Error> {
+pub fn set_enabled(db: &crate::db::Db, value: bool) -> Result<(), CoreError> {
     let conn = db.conn();
-    crate::events::in_txn_immediate(conn, |conn| {
+    Ok(crate::events::in_txn_immediate(conn, |conn| {
         let current = settings::get_bool_in(conn, ENABLED_KEY, false)?;
         let first_enable_completed = settings::get_bool_in(
             conn,
@@ -82,7 +82,7 @@ pub fn set_enabled(db: &crate::db::Db, value: bool) -> Result<(), rusqlite::Erro
             }
         }
         settings::set_bool_in(conn, ENABLED_KEY, value)
-    })
+    })?)
 }
 
 fn first_enable_source_defaults() -> [(&'static ModuleDescriptor, bool); 7] {
@@ -166,10 +166,10 @@ pub fn apply_wizard_selection(
 pub fn network_allowed<'a>(
     db: &crate::db::Db,
     scope: impl Into<NetworkScope<'a>>,
-) -> Result<bool, rusqlite::Error> {
+) -> Result<bool, CoreError> {
     match scope.into() {
         NetworkScope::AppWide => is_enabled(db),
-        NetworkScope::Module(module) => network_allowed_in(db.conn(), module),
+        NetworkScope::Module(module) => Ok(network_allowed_in(db.conn(), module)?),
     }
 }
 

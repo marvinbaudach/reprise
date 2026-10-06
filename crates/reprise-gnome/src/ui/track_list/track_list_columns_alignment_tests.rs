@@ -1,5 +1,3 @@
-use gtk4::prelude::*;
-
 use super::*;
 
 #[test]

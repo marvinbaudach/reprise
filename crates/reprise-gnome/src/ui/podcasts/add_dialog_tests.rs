@@ -1,19 +1,5 @@
 use super::*;
-
-/// Walk a widget's descendants and return the first `ScrolledWindow`.
-fn find_scroller(widget: &gtk4::Widget) -> Option<gtk4::ScrolledWindow> {
-    if let Ok(scroller) = widget.clone().downcast::<gtk4::ScrolledWindow>() {
-        return Some(scroller);
-    }
-    let mut child = widget.first_child();
-    while let Some(current) = child {
-        if let Some(found) = find_scroller(&current) {
-            return Some(found);
-        }
-        child = current.next_sibling();
-    }
-    None
-}
+use crate::ui::source_add_dialog::test_support::find_scroller;
 
 #[test]
 #[ignore = "requires a display; run via xvfb-run"]

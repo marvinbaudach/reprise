@@ -10,7 +10,7 @@ use reprise_core::device_sync::{
 };
 
 use super::*;
-use crate::ui::device_sync_runtime::{DeviceView, PlannedSyncPhase, SyncFailure};
+use crate::ui::device_sync::device_sync_runtime::{DeviceView, PlannedSyncPhase, SyncFailure};
 
 #[test]
 fn connected_status_label_is_looked_up_through_gettext() {
@@ -97,8 +97,8 @@ fn device() -> DeviceView {
         units_total: 0,
         estimated_remaining: None,
         contents_state: reprise_core::device_sync::device_view::DeviceContentsState::Verified,
-        content_row: crate::ui::device_sync_runtime::empty_content_row(),
-        target_reading: crate::ui::device_sync_runtime::empty_target_reading(),
+        content_row: crate::ui::device_sync::device_sync_runtime::empty_content_row(),
+        target_reading: crate::ui::device_sync::device_sync_runtime::empty_target_reading(),
         keep_smart_playlists_updated: true,
         page: SyncPageState {
             profile_options: TransferProfile::ALL.to_vec(),
@@ -152,7 +152,7 @@ fn mtp_60_the_dock_reads_in_every_state() {
 
     let mut running_device = device();
     running_device.sync_phase = PlannedSyncPhase::Syncing {
-        step: crate::ui::device_sync_runtime::SyncStep::Copying,
+        step: crate::ui::device_sync::device_sync_runtime::SyncStep::Copying,
         done: 214,
         total: 1_047,
         current_track: "Immortal — Lorna Shore".into(),
@@ -213,7 +213,7 @@ fn mtp_60_copy_progress_separates_the_live_mtp_rate_from_track_text() {
 
     let mut copying = device();
     copying.sync_phase = PlannedSyncPhase::Syncing {
-        step: crate::ui::device_sync_runtime::SyncStep::Copying,
+        step: crate::ui::device_sync::device_sync_runtime::SyncStep::Copying,
         done: 1,
         total: 2,
         current_track: "Immortal — Lorna Shore".into(),
@@ -241,7 +241,7 @@ fn mtp_60_copy_progress_separates_the_live_mtp_rate_from_track_text() {
 fn the_dock_detail_distinguishes_removing_from_copying() {
     use crate::ui::device_sync::device_sync_dock::DockReading;
 
-    fn detail_for(step: crate::ui::device_sync_runtime::SyncStep) -> String {
+    fn detail_for(step: crate::ui::device_sync::device_sync_runtime::SyncStep) -> String {
         let mut running = device();
         running.sync_phase = PlannedSyncPhase::Syncing {
             step,
@@ -266,11 +266,11 @@ fn the_dock_detail_distinguishes_removing_from_copying() {
     }
 
     assert_eq!(
-        detail_for(crate::ui::device_sync_runtime::SyncStep::Removing),
+        detail_for(crate::ui::device_sync::device_sync_runtime::SyncStep::Removing),
         "− removing · Immortal — Lorna Shore"
     );
     assert_eq!(
-        detail_for(crate::ui::device_sync_runtime::SyncStep::Copying),
+        detail_for(crate::ui::device_sync::device_sync_runtime::SyncStep::Copying),
         "↑ Immortal — Lorna Shore"
     );
 }
@@ -615,7 +615,7 @@ fn mtp_4_eject_is_available_only_for_an_idle_connected_device() {
     assert!(eject_sensitive(&device));
 
     device.sync_phase = PlannedSyncPhase::Syncing {
-        step: crate::ui::device_sync_runtime::SyncStep::Copying,
+        step: crate::ui::device_sync::device_sync_runtime::SyncStep::Copying,
         done: 0,
         total: 1,
         current_track: "Track".into(),

@@ -57,8 +57,20 @@ impl TrackSpectrogram {
             .get(start..start.checked_add(SPECTROGRAM_BAND_COUNT)?)
     }
 
+    /// Keeps the first `frame_count` frames (all of them if there are fewer).
+    #[must_use]
+    pub fn truncated(mut self, frame_count: usize) -> Self {
+        self.cells
+            .truncate(frame_count.saturating_mul(SPECTROGRAM_BAND_COUNT));
+        self
+    }
+
     pub fn cells(&self) -> &[u8] {
         &self.cells
+    }
+
+    pub fn into_cells(self) -> Vec<u8> {
+        self.cells
     }
 
     /// Upper edge of the highest stored band with energy above the absolute
@@ -264,6 +276,15 @@ impl SpectrogramAccumulator {
                 self.close_frame();
                 self.samples_since_frame = 0;
             }
+        }
+    }
+
+    /// The frames closed so far, whole frames only. Every cell is final once
+    /// pushed (absolute dBFS bytes, no global scale), so this is always a
+    /// prefix of what [`finish`](Self::finish) later returns.
+    pub fn snapshot(&self) -> TrackSpectrogram {
+        TrackSpectrogram {
+            cells: self.cells.clone(),
         }
     }
 

@@ -1,15 +1,25 @@
 use super::*;
-use crate::player_effects::{build_audio_filter, requested_state, same_filter_topology};
+use crate::player_effects::{build_audio_filter, update_existing_audio_filter};
 use crate::player_pipeline::{
     buffered_percent_to_ms, download_buffering_flags, is_remote_playback_uri, merge_stream_tags,
     playback_failure_from_bus, BufferingThrottle, AUDIO_SINK_ENV_VAR,
 };
-use reprise_core::library::settings::TrackTransition;
-use reprise_core::playback::{PlaybackFailureKind, PlaybackSessionId};
+use reprise_core::playback::{PlaybackFailureKind, PlaybackItem, PlaybackSessionId};
 
 mod cava_tests;
+mod crossfade_transition_tests;
+mod gain_alignment_tests;
+mod gain_refresh_tests;
 mod handoff_duration_tests;
 mod stream_generation_tests;
+
+fn item(path: &str) -> PlaybackItem<'_> {
+    PlaybackItem {
+        segment: None,
+        path,
+        gain_db: 0.0,
+    }
+}
 
 #[test]
 fn steady_playback_reports_the_queried_duration() {
@@ -200,7 +210,7 @@ fn percent_buffering_ranges_convert_to_duration_milliseconds() {
 }
 
 #[test]
-fn audio_filter_contains_configured_equalizer_and_replaygain() {
+fn audio_filter_contains_configured_equalizer_and_track_gain() {
     let _guard = AUDIO_SINK_TEST_LOCK
         .lock()
         .unwrap_or_else(std::sync::PoisonError::into_inner);
@@ -213,19 +223,31 @@ fn audio_filter_contains_configured_equalizer_and_replaygain() {
     let filter = build_audio_filter(&effects).unwrap().unwrap();
     let bin = filter.clone().downcast::<gst::Bin>().unwrap();
     assert!(bin.by_name("reprise-equalizer").is_some());
-    let replaygain = bin.by_name("reprise-replaygain").unwrap();
-    assert!(replaygain.property::<bool>("album-mode"));
+    let track_gain = bin.by_name("reprise-track-gain").unwrap();
+    assert_eq!(track_gain.property::<f64>("volume"), 1.0);
+}
+
+/// The state a pipeline was last asked to be in, pending transitions included.
+fn requested_state(element: &gst::Element) -> gst::State {
+    let (_, current, pending) = element.state(gst::ClockTime::ZERO);
+    if pending == gst::State::VoidPending {
+        current
+    } else {
+        pending
+    }
 }
 
 #[test]
-fn enabling_equalizer_keeps_filter_topology_stable() {
-    let disabled = AudioEffects::default();
-    let enabled = AudioEffects {
-        equalizer_enabled: true,
-        ..AudioEffects::default()
-    };
+fn a_playbin_without_the_filter_elements_reports_instead_of_rebuilding() {
+    let _guard = AUDIO_SINK_TEST_LOCK
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner);
+    gst::init().unwrap();
+    let bare = gst::ElementFactory::make("playbin3").build().unwrap();
 
-    assert!(same_filter_topology(&disabled, &enabled));
+    let result = update_existing_audio_filter(&bare, &AudioEffects::default());
+
+    assert!(matches!(result, Err(PlaybackError::Backend(_))));
 }
 
 #[test]
@@ -289,7 +311,7 @@ fn play_and_stop_emit_state_changed_events() {
     .unwrap();
 
     let path = concat!(env!("CARGO_MANIFEST_DIR"), "/tests/fixtures/sine.flac");
-    player.play(path).unwrap();
+    player.play(item(path)).unwrap();
 
     let playing_timeout = Duration::from_secs(5);
     let event = rx
@@ -320,7 +342,7 @@ fn enabling_equalizer_does_not_replace_or_rewind_pipeline() {
     std::env::set_var(AUDIO_SINK_ENV_VAR, "fakesink");
     let player = Player::new(Box::new(|_| {})).unwrap();
     let path = concat!(env!("CARGO_MANIFEST_DIR"), "/tests/fixtures/sine.flac");
-    player.play(path).unwrap();
+    player.play(item(path)).unwrap();
     {
         let playbin = player
             .playbin
@@ -377,7 +399,7 @@ fn live_audio_effect_change_preserves_a_playable_pipeline() {
     std::env::set_var(AUDIO_SINK_ENV_VAR, "fakesink");
     let player = Player::new(Box::new(|_| {})).unwrap();
     let path = concat!(env!("CARGO_MANIFEST_DIR"), "/tests/fixtures/sine.flac");
-    player.play(path).unwrap();
+    player.play(item(path)).unwrap();
     let effects = AudioEffects {
         equalizer_enabled: true,
         equalizer_bands: [2.0; 10],
@@ -420,35 +442,7 @@ fn live_audio_effect_change_preserves_a_playable_pipeline() {
             .property::<f64>("band0"),
         5.0
     );
-    assert!(bin
-        .by_name("reprise-replaygain")
-        .unwrap()
-        .property::<bool>("album-mode"));
-    drop(playbin);
-    player.stop().unwrap();
-    std::env::remove_var(AUDIO_SINK_ENV_VAR);
-}
-
-#[test]
-fn failed_filter_replacement_restores_requested_playback_state() {
-    let _guard = AUDIO_SINK_TEST_LOCK
-        .lock()
-        .unwrap_or_else(std::sync::PoisonError::into_inner);
-    std::env::set_var(AUDIO_SINK_ENV_VAR, "fakesink");
-    let player = Player::new(Box::new(|_| {})).unwrap();
-    let path = concat!(env!("CARGO_MANIFEST_DIR"), "/tests/fixtures/sine.flac");
-    player.play(path).unwrap();
-    let playbin = player
-        .playbin
-        .lock()
-        .unwrap_or_else(std::sync::PoisonError::into_inner);
-
-    let result = replace_audio_filter(&playbin, &AudioEffects::default(), |_, _| {
-        Err(PlaybackError::Backend("injected filter failure".into()))
-    });
-
-    assert!(result.is_err());
-    assert_eq!(requested_state(&playbin), gst::State::Playing);
+    assert!(bin.by_name("reprise-track-gain").is_some());
     drop(playbin);
     player.stop().unwrap();
     std::env::remove_var(AUDIO_SINK_ENV_VAR);
@@ -477,13 +471,13 @@ fn play_recovers_after_a_failed_attempt() {
         "/tests/fixtures/does-not-exist.flac"
     );
     assert!(
-        player.play(missing_path).is_err(),
+        player.play(item(missing_path)).is_err(),
         "playing a nonexistent file must fail, not panic"
     );
 
     let valid_path = concat!(env!("CARGO_MANIFEST_DIR"), "/tests/fixtures/sine.flac");
     assert!(
-        player.play(valid_path).is_ok(),
+        player.play(item(valid_path)).is_ok(),
         "a valid file must still play successfully after a prior failure \
              on the same Player — this is the wedged-pipeline recovery this \
              test guards against regressing"
@@ -520,7 +514,7 @@ fn playback_backend_trait_object_drives_play_and_stop() {
     let backend: Box<dyn PlaybackBackend> = Box::new(player);
 
     let path = concat!(env!("CARGO_MANIFEST_DIR"), "/tests/fixtures/sine.flac");
-    backend.play(path).unwrap();
+    backend.play(item(path)).unwrap();
 
     let playing_timeout = Duration::from_secs(5);
     let event = rx
@@ -557,7 +551,7 @@ fn playback_backend_trait_object_drives_play_and_stop() {
 ///
 /// Holds `AUDIO_SINK_TEST_LOCK` for its full duration — see that lock.
 #[test]
-fn gapless_handoff_advances_without_pipeline_restart() {
+fn play_20a_gapless_handoff_applies_the_next_gain_at_the_second_stream_start() {
     let _guard = AUDIO_SINK_TEST_LOCK
         .lock()
         .unwrap_or_else(std::sync::PoisonError::into_inner);
@@ -569,10 +563,54 @@ fn gapless_handoff_advances_without_pipeline_restart() {
     }))
     .unwrap();
 
-    let first = concat!(env!("CARGO_MANIFEST_DIR"), "/tests/fixtures/sine.flac");
-    let second = concat!(env!("CARGO_MANIFEST_DIR"), "/tests/fixtures/blip.flac");
-    player.play(first).unwrap();
-    player.set_next(Some(second));
+    let directory = tempfile::tempdir().unwrap();
+    let first = directory.path().join("first.wav");
+    let second = directory.path().join("second.wav");
+    handoff_duration_tests::write_sine_wav(&first, 3);
+    handoff_duration_tests::write_sine_wav(&second, 1);
+    let stream_start_gains = Arc::new(Mutex::new(Vec::new()));
+    let observed = stream_start_gains.clone();
+    let playbin = player
+        .playbin
+        .lock()
+        .unwrap_or_else(PoisonError::into_inner)
+        .clone();
+    let filter = playbin
+        .property::<Option<gst::Element>>("audio-filter")
+        .unwrap();
+    let gain = filter
+        .clone()
+        .downcast::<gst::Bin>()
+        .unwrap()
+        .by_name("reprise-track-gain")
+        .unwrap();
+    gain.static_pad("src").unwrap().add_probe(
+        gst::PadProbeType::EVENT_DOWNSTREAM,
+        move |_, info| {
+            if info
+                .event()
+                .is_some_and(|event| event.type_() == gst::EventType::StreamStart)
+            {
+                observed
+                    .lock()
+                    .unwrap_or_else(PoisonError::into_inner)
+                    .push(gain.property::<f64>("volume"));
+            }
+            gst::PadProbeReturn::Ok
+        },
+    );
+    player
+        .play(PlaybackItem {
+            segment: None,
+            path: first.to_str().unwrap(),
+            gain_db: -6.0,
+        })
+        .unwrap();
+    player.set_next(Some(PlaybackItem {
+        segment: None,
+        path: second.to_str().unwrap(),
+        gain_db: 6.0,
+    }));
 
     // The bus watch (source of AdvancedToNext / TrackFinished) is dispatched
     // by the GLib main context; nothing iterates it in a headless test, so
@@ -605,6 +643,12 @@ fn gapless_handoff_advances_without_pipeline_restart() {
         finished, 0,
         "a seamless handoff must not EOS the first track (no TrackFinished)"
     );
+    let observed = stream_start_gains
+        .lock()
+        .unwrap_or_else(PoisonError::into_inner);
+    assert!(observed.len() >= 2, "expected both stream-start events");
+    assert!((observed[0] - 10_f64.powf(-6.0 / 20.0)).abs() < 1e-6);
+    assert!((observed[1] - 10_f64.powf(6.0 / 20.0)).abs() < 1e-6);
 
     // (a): the about-to-finish handler took() the pre-fed URI.
     assert!(
@@ -626,149 +670,11 @@ fn gapless_handoff_advances_without_pipeline_restart() {
     assert!(
         current_uri
             .as_deref()
-            .is_some_and(|uri| uri.ends_with("blip.flac")),
+            .is_some_and(|uri| uri.ends_with("second.wav")),
         "playbin should be playing the handed-off second track, got {current_uri:?}"
     );
     assert_eq!(requested_state(&playbin), gst::State::Playing);
     drop(playbin);
-
-    player.stop().unwrap();
-    std::env::remove_var(AUDIO_SINK_ENV_VAR);
-}
-
-/// Crossfade Phase B backend proof (headless, fakesink): with `Crossfade`
-/// selected, the position ticker must, in the last `crossfade_seconds` of the
-/// current track, spin up a *second* playbin for the pre-fed successor, ramp
-/// the two inversely, and promote the successor to the primary pipeline —
-/// emitting exactly one `AdvancedToNext`, just like the gapless handoff, and
-/// WITHOUT ever dropping the primary to Null/Stopped mid-fade.
-///
-/// A 1-second fade over the ~1.16 s `sine.flac` keeps the run fast. Asserts:
-///   (a) a second pipeline was started — the `crossfading` guard was observed
-///       set (the crossfade trigger fired),
-///   (b) exactly one `AdvancedToNext` and no `StateChanged(Stopped)` across the
-///       transition,
-///   (c) the outgoing pipeline's natural EOS mid-fade did not surface as a
-///       `TrackFinished` (the promotion is the authoritative advance),
-///   (d) after promotion the primary pipeline is playing the handed-off
-///       `blip.flac` (`current-uri`).
-///
-/// What this does NOT prove: the *audible* equal-power blend itself — that the
-/// two streams overlap and their gains actually cross — is not observable
-/// headless with `fakesink` and is left to a manual listening test. The
-/// deterministic gain math is covered by `crossfade::tests`.
-///
-/// Holds `AUDIO_SINK_TEST_LOCK` for its full duration — see that lock.
-#[test]
-fn crossfade_promotes_second_pipeline_and_advances_once() {
-    let _guard = AUDIO_SINK_TEST_LOCK
-        .lock()
-        .unwrap_or_else(std::sync::PoisonError::into_inner);
-    std::env::set_var(AUDIO_SINK_ENV_VAR, "fakesink");
-
-    let (tx, rx) = std::sync::mpsc::channel::<PlayerEvent>();
-    let player = Player::new(Box::new(move |event| {
-        let _ = tx.send(event);
-    }))
-    .unwrap();
-
-    // Short fade (1 s) so the test finishes quickly.
-    player.set_transition(TrackTransition::Crossfade, 1);
-
-    let first = concat!(env!("CARGO_MANIFEST_DIR"), "/tests/fixtures/sine.flac");
-    let second = concat!(env!("CARGO_MANIFEST_DIR"), "/tests/fixtures/blip.flac");
-    player.play(first).unwrap();
-    player.set_next(Some(second));
-
-    // The bus watch (source of TrackFinished / spurious Stopped) is dispatched
-    // by the GLib main context; pump it while we wait for the crossfade to
-    // promote. `AdvancedToNext` is emitted directly from the ramp thread, so it
-    // arrives on the channel without the pump — but we still pump so any
-    // (suppressed) EOS is actually delivered and we would notice a leak.
-    let main_context = gst::glib::MainContext::default();
-    let deadline = std::time::Instant::now() + Duration::from_secs(15);
-    let mut advanced = 0usize;
-    let mut finished = 0usize;
-    let mut stopped = 0usize;
-    let mut saw_crossfading = false;
-    while std::time::Instant::now() < deadline {
-        main_context.iteration(false);
-        if player.crossfading.load(Ordering::SeqCst) {
-            saw_crossfading = true;
-        }
-        while let Ok(event) = rx.try_recv() {
-            match event {
-                PlayerEvent::AdvancedToNext => advanced += 1,
-                PlayerEvent::TrackFinished => finished += 1,
-                PlayerEvent::StateChanged(PlaybackState::Stopped) => stopped += 1,
-                _ => {}
-            }
-        }
-        if advanced > 0 {
-            break;
-        }
-        std::thread::sleep(Duration::from_millis(10));
-    }
-    // Drain any events that landed right after the promotion (e.g. an EOS the
-    // very short blip.flac posts once it too ends), so late arrivals are still
-    // counted before we assert.
-    main_context.iteration(false);
-    while let Ok(event) = rx.try_recv() {
-        match event {
-            PlayerEvent::AdvancedToNext => advanced += 1,
-            PlayerEvent::TrackFinished => finished += 1,
-            PlayerEvent::StateChanged(PlaybackState::Stopped) => stopped += 1,
-            _ => {}
-        }
-    }
-
-    // (a): the crossfade trigger fired — a second pipeline was spun up.
-    assert!(
-        saw_crossfading,
-        "expected the crossfading guard to be observed set (second pipeline started)"
-    );
-    // (b): exactly one advance, and the outgoing pipeline never reported Stopped.
-    assert_eq!(
-        advanced, 1,
-        "expected exactly one AdvancedToNext from the crossfade promotion, got {advanced}"
-    );
-    assert_eq!(
-        stopped, 0,
-        "the primary pipeline must not drop to Stopped during a crossfade"
-    );
-    // (c): the outgoing track's mid-fade EOS must not surface as TrackFinished.
-    assert_eq!(
-        finished, 0,
-        "a crossfade must not EOS the outgoing track into a spurious TrackFinished"
-    );
-
-    // (d): the promoted primary is playing the handed-off second track.
-    let playbin = player
-        .playbin
-        .lock()
-        .unwrap_or_else(std::sync::PoisonError::into_inner);
-    let current_uri = playbin.property::<Option<String>>("current-uri");
-    assert!(
-        current_uri
-            .as_deref()
-            .is_some_and(|uri| uri.ends_with("blip.flac")),
-        "after the crossfade the primary should be the promoted second track, got {current_uri:?}"
-    );
-    drop(playbin);
-
-    // The crossfade slot is cleared after promotion.
-    assert!(
-        !player.crossfading.load(Ordering::SeqCst),
-        "crossfading guard must be cleared once the fade completes"
-    );
-    assert!(
-        player
-            .incoming
-            .lock()
-            .unwrap_or_else(std::sync::PoisonError::into_inner)
-            .is_none(),
-        "the incoming-pipeline slot must be empty after promotion"
-    );
 
     player.stop().unwrap();
     std::env::remove_var(AUDIO_SINK_ENV_VAR);

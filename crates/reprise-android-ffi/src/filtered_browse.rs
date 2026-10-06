@@ -8,7 +8,10 @@ use crate::{AlbumWindow, LibraryError, MusicLibrary, TrackWindow, WindowRange};
 #[uniffi::export]
 impl MusicLibrary {
     /// Returns one artist's albums in newest-first order.
-    #[allow(clippy::needless_pass_by_value)] // UniFFI owns exported strings.
+    #[expect(
+        clippy::needless_pass_by_value,
+        reason = "UniFFI hands owned strings across the FFI boundary"
+    )]
     pub fn list_artist_albums(
         &self,
         artist: String,
@@ -23,7 +26,10 @@ impl MusicLibrary {
     }
 
     /// Returns one artist's present tracks with no album tag.
-    #[allow(clippy::needless_pass_by_value)] // UniFFI owns exported strings.
+    #[expect(
+        clippy::needless_pass_by_value,
+        reason = "UniFFI hands owned strings across the FFI boundary"
+    )]
     pub fn list_artist_untagged_tracks(
         &self,
         artist: String,

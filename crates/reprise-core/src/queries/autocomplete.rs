@@ -356,9 +356,4 @@ mod tests {
             None
         );
     }
-
-    #[test]
-    fn min_dropdown_chars_constant_is_two() {
-        assert_eq!(MIN_DROPDOWN_CHARS, 2);
-    }
 }

@@ -348,4 +348,150 @@ class SceneStateTest {
     private companion object {
         const val FLOAT_TOLERANCE = 0.000_01f
     }
+
+    @Test
+    fun nav_15d_adopting_longer_frames_continues_the_scene_instead_of_resetting() {
+        val whole = risingFrames(frameCount = 16)
+        val prefix = SpectrogramFrames(24, 20, whole.cellsPrefix(frameCount = 8))
+        val reference = SceneState(whole).also { state -> (0..15).forEach(state::advanceTo) }
+
+        val growing = SceneState(prefix)
+        (0..7).forEach(growing::advanceTo)
+        growing.advanceTo(12)
+        val atTheEnd = SceneState(prefix).also { state -> (0..7).forEach(state::advanceTo) }
+        assertArrayEquals(
+            "a position past the decoded part clamps to its last frame",
+            atTheEnd.fogBands,
+            growing.fogBands,
+            0f,
+        )
+        growing.adoptFrames(whole)
+        (8..15).forEach(growing::advanceTo)
+
+        assertEquals(whole.frameCount, growing.frames.frameCount)
+        assertArrayEquals(reference.fogBands, growing.fogBands, 0f)
+        assertArrayEquals(reference.motionBands, growing.motionBands, 0f)
+        assertEquals(reference.fogAngleA, growing.fogAngleA, 0f)
+        assertEquals(reference.fogAngleB, growing.fogAngleB, 0f)
+        assertEquals(reference.bassPressure, growing.bassPressure, 0f)
+    }
+
+    @Test
+    fun nav_15d_adopting_frames_keeps_the_oil_film_clock() {
+        val state = SceneState(SpectrogramFrames(24, 20, ByteArray(0)))
+        state.advanceOilFilmBy(5f)
+        val film = state.oilFilmSeconds
+
+        state.adoptFrames(risingFrames(frameCount = 4))
+
+        assertEquals(film, state.oilFilmSeconds, 0f)
+    }
+
+    @Test
+    fun nav_15d_adopting_shorter_frames_keeps_the_playhead_instead_of_seeking() {
+        val state = SceneState(levelFrames(frameCount = 60, level = 200))
+        (0..50).forEach(state::advanceTo)
+        val fog = state.fogBands.copyOf()
+
+        state.adoptFrames(levelFrames(frameCount = 40, level = 0))
+        state.advanceTo(45)
+
+        assertArrayEquals("a shorter analysis snapped the scene as if it was a seek", fog, state.fogBands, 0f)
+    }
+
+    @Test
+    fun nav_15d_frames_growing_under_a_playhead_past_the_decode_edge_continue_instead_of_snapping() {
+        val prefix = levelFrames(frameCount = 20, level = 200)
+        val whole = SpectrogramFrames(
+            bandCount = 24,
+            frameRateHz = 20,
+            cells = ByteArray(200 * 24) { index -> if (index / 24 < 20) 200.toByte() else 60.toByte() },
+        )
+        // The playhead ran to frame 100 while only 20 frames were decoded.
+        val growing = SceneState(prefix).also { state -> (0..19).forEach(state::advanceTo) }
+        growing.advanceTo(100)
+        val stepped = SceneState(prefix).also { state -> (0..19).forEach(state::advanceTo) }
+
+        growing.adoptFrames(whole)
+        growing.advanceTo(100)
+        stepped.adoptFrames(whole)
+        (20..100).forEach(stepped::advanceTo)
+
+        assertArrayEquals("the newly decoded frames were skipped by a snap", stepped.fogBands, growing.fogBands, 0f)
+        assertArrayEquals(stepped.motionBands, growing.motionBands, 0f)
+        assertEquals(stepped.fogLevel, growing.fogLevel, 0f)
+    }
+
+    @Test
+    fun nav_15d_the_decode_edge_allowance_lasts_while_the_playhead_stands_on_the_edge() {
+        val whole = edgeThenQuietFrames()
+        val growing = heldAtTheDecodeEdge()
+        val stepped = heldAtTheDecodeEdge()
+
+        growing.adoptFrames(whole)
+        // A tick whose position still reads the edge frame moves nothing.
+        growing.advanceTo(DECODE_EDGE)
+        growing.advanceTo(PLAYHEAD)
+        stepped.adoptFrames(whole)
+        (DECODE_EDGE + 1..PLAYHEAD).forEach(stepped::advanceTo)
+
+        assertArrayEquals("a tick standing on the edge used up the allowance", stepped.fogBands, growing.fogBands, 0f)
+    }
+
+    @Test
+    fun nav_15d_live_audio_ends_the_decode_edge_allowance() {
+        val whole = edgeThenQuietFrames()
+        val growing = heldAtTheDecodeEdge()
+        val snapped = SceneState(whole).also { it.resetTo(PLAYHEAD) }
+
+        growing.adoptFrames(whole)
+        // Live audio drove the scene for a while; the analysis did not.
+        growing.adoptLiveBassPressure(VisualBassPressure.SILENT, elapsedSeconds = 0f)
+        growing.advanceTo(PLAYHEAD)
+
+        assertArrayEquals(
+            "frames the live audio already played were replayed from the analysis",
+            snapped.fogBands,
+            growing.fogBands,
+            0f,
+        )
+    }
+
+    @Test
+    fun nav_15d_adopting_frames_of_another_shape_is_refused() {
+        val state = SceneState(SpectrogramFrames(24, 20, ByteArray(0)))
+
+        assertThrows(IllegalArgumentException::class.java) {
+            state.adoptFrames(SpectrogramFrames(12, 20, ByteArray(0)))
+        }
+    }
 }
+
+private const val DECODE_EDGE = 19
+private const val PLAYHEAD = 100
+
+/** Loud over the first 20 decoded frames, quiet over the 180 decoded after them. */
+private fun edgeThenQuietFrames() = SpectrogramFrames(
+    bandCount = 24,
+    frameRateHz = 20,
+    cells = ByteArray(200 * 24) { index -> if (index / 24 <= DECODE_EDGE) 200.toByte() else 60.toByte() },
+)
+
+/** A scene on 20 decoded frames whose playhead ran on to [PLAYHEAD] and was held at the edge. */
+private fun heldAtTheDecodeEdge() = SceneState(levelFrames(frameCount = DECODE_EDGE + 1, level = 200)).also { state ->
+    (0..DECODE_EDGE).forEach(state::advanceTo)
+    state.advanceTo(PLAYHEAD)
+}
+
+/** Silent for four frames, then steady: a snap to frame 8 differs from an envelope still attacking. */
+private fun risingFrames(frameCount: Int): SpectrogramFrames = SpectrogramFrames(
+    bandCount = 24,
+    frameRateHz = 20,
+    cells = ByteArray(frameCount * 24) { index -> if (index / 24 < 4) 0 else 200.toByte() },
+)
+
+private fun levelFrames(frameCount: Int, level: Int): SpectrogramFrames =
+    SpectrogramFrames(bandCount = 24, frameRateHz = 20, cells = ByteArray(frameCount * 24) { level.toByte() })
+
+private fun SpectrogramFrames.cellsPrefix(frameCount: Int): ByteArray =
+    ByteArray(frameCount * bandCount) { index -> band(index / bandCount, index % bandCount).toByte() }

@@ -141,44 +141,16 @@ fn musicbrainz_lookup_uses_trimmed_allowlisted_text_without_changing_raw_metadat
 }
 
 #[test]
-fn source_rate_limits_match_service_contracts() {
-    let now = Instant::now();
+fn doctor_agent_reads_statuses_itself_with_the_provider_timeout() {
     assert_eq!(
-        request_delay(
-            Some(now - Duration::from_millis(250)),
-            now,
-            MUSICBRAINZ_INTERVAL
-        ),
-        Duration::from_millis(750)
-    );
-    assert_eq!(
-        request_delay(
-            Some(now - Duration::from_millis(100)),
-            now,
-            ACOUSTID_INTERVAL
-        ),
-        Duration::from_millis(234)
-    );
-}
-
-#[test]
-fn rate_limiter_reserves_three_concurrent_slots_monotonically() {
-    let now = Instant::now();
-    let mut reserved = None;
-    let delays = (0..3)
-        .map(|_| {
-            let delay = request_delay(reserved, now, ACOUSTID_INTERVAL);
-            reserved = Some(now + delay);
-            delay
-        })
-        .collect::<Vec<_>>();
-    assert_eq!(
-        delays,
-        [
-            Duration::ZERO,
-            Duration::from_millis(334),
-            Duration::from_millis(668)
-        ]
+        agent_policy(),
+        AgentPolicy {
+            timeout: Duration::from_secs(15),
+            status_as_error: false,
+            https_only: false,
+            max_redirects: None,
+            proxy_from_env: true,
+        }
     );
 }
 
@@ -209,50 +181,38 @@ fn official_acoustid_shape_maps_recording_artists_groups_duration_and_releases()
 
 #[test]
 fn bounded_retry_uses_three_attempts_and_honors_retry_after() {
-    let limiter = Mutex::new(None);
     let mut calls = 0;
-    let body = request_with_retry(
-        &limiter,
-        Duration::ZERO,
-        &mut || ScanControl::Continue,
-        |_| {
-            calls += 1;
-            Ok(if calls < 3 {
-                HttpReply {
-                    status: 429,
-                    retry_after: Some(Duration::ZERO),
-                    body: String::new(),
-                }
-            } else {
-                HttpReply {
-                    status: 200,
-                    retry_after: None,
-                    body: "ok".into(),
-                }
-            })
-        },
-    )
+    let body = request_with_retry(None, &mut || ScanControl::Continue, |_| {
+        calls += 1;
+        Ok(if calls < 3 {
+            HttpReply {
+                status: 429,
+                retry_after: Some(Duration::ZERO),
+                body: String::new(),
+            }
+        } else {
+            HttpReply {
+                status: 200,
+                retry_after: None,
+                body: "ok".into(),
+            }
+        })
+    })
     .unwrap();
     assert_eq!((calls, body), (3, "ok".into()));
 }
 
 #[test]
 fn auth_failure_opens_source_without_retry() {
-    let limiter = Mutex::new(None);
     let mut calls = 0;
-    let error = request_with_retry(
-        &limiter,
-        Duration::ZERO,
-        &mut || ScanControl::Continue,
-        |_| {
-            calls += 1;
-            Ok(HttpReply {
-                status: 401,
-                retry_after: None,
-                body: "private response".into(),
-            })
-        },
-    )
+    let error = request_with_retry(None, &mut || ScanControl::Continue, |_| {
+        calls += 1;
+        Ok(HttpReply {
+            status: 401,
+            retry_after: None,
+            body: "private response".into(),
+        })
+    })
     .unwrap_err();
     assert_eq!(calls, 1);
     assert_eq!(error, RemoteProviderError::Unavailable);

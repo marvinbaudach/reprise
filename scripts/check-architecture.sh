@@ -239,27 +239,23 @@ done
 
 echo "== Engine HTTP boundaries =="
 
-# One shared HTTP boundary is the plan (docs/plans/architecture-consolidation.md
-# §4.4, docs/plans/consolidation-plan.md package 2.1). Until it exists, this
-# budget stops the problem from growing while the waves run: every
-# `ureq::Agent::config_builder()` in the engine is a separate agent, and
-# therefore a separate timeout, user agent, rate limiter and error fold.
+# The engine's one HTTP boundary lives in crates/reprise-core/src/net/client.rs: every metadata
+# provider describes its agent as an `AgentPolicy` and builds it there, so a timeout, user agent
+# or redirect rule is decided once. The four remaining matches are the scrobbling family, which
+# keeps its own identity and auth rhythm outside the boundary.
 #
 # The number is a CEILING and a FLOOR, exactly like the frontend-thinness
 # budgets. Adding a boundary fails here; removing one fails here too until the
 # budget comes down in the same commit. A budget nobody lowers is a budget
 # nobody believes.
-#
-# This is not theoretical: the count went from 13 to 16 in two commits when the
-# lyrics path grew its own lrclib and netease agents, and nothing said a word.
-http_boundary_budget=12
+http_boundary_budget=5
 http_boundaries=$(rg --count-matches 'ureq::Agent::config_builder' \
   crates/reprise-core/src --glob '*.rs' 2>/dev/null \
   | awk -F: '{ total += $2 } END { print total + 0 }')
 if (( http_boundaries > http_boundary_budget )); then
   echo "engine HTTP boundaries grew from $http_boundary_budget to $http_boundaries" >&2
   echo "  route the new fetch through the shared boundary instead of building a second agent" >&2
-  echo "  (docs/plans/consolidation-plan.md, package 2.1)" >&2
+  echo "  (route it through crates/reprise-core/src/net/client.rs)" >&2
   exit 1
 elif (( http_boundaries < http_boundary_budget )); then
   echo "engine HTTP boundaries are down to $http_boundaries (budget still says $http_boundary_budget)" >&2
@@ -267,6 +263,69 @@ elif (( http_boundaries < http_boundary_budget )); then
   exit 1
 else
   echo "  ureq agents in reprise-core: $http_boundaries (at budget)"
+fi
+
+# Only the boundary and the files that deliberately sit outside it may construct an agent:
+# the scrobbling family (own identity, own auth rhythm) and the stream proxy, which relays
+# bytes under ureq's default identity.
+check_core_agent_allowlist() {
+  local file allowed_file is_allowed
+  while IFS= read -r file; do
+    [[ -z "$file" ]] && continue
+    is_allowed=0
+    for allowed_file in "$@"; do
+      if [[ "$file" == "$allowed_file" ]]; then
+        is_allowed=1
+        break
+      fi
+    done
+    if (( is_allowed == 0 )); then
+      echo "$file constructs a ureq agent outside the net boundary" >&2
+      return 1
+    fi
+  done < <(rg -l 'ureq::Agent::(config_builder|new_with_defaults|new_with_config|with_parts)' \
+    crates/reprise-core/src --glob '*.rs' || true)
+}
+
+check_core_agent_allowlist \
+  crates/reprise-core/src/net/client.rs \
+  crates/reprise-core/src/scrobbling.rs \
+  crates/reprise-core/src/scrobbling/lastfm.rs \
+  crates/reprise-core/src/library/lastfm_stats.rs \
+  crates/reprise-core/src/library/listenbrainz.rs \
+  crates/reprise-core/src/podcasts/stream_proxy.rs
+
+echo "== Fixture seams stay out of release builds =="
+
+# A provider's fixture-directory variable is a test seam. Its constant is declared behind
+# cfg(any(test, feature = "test-fixtures")), so the compiler keeps every read behind the same gate.
+ungated_fixture_consts=$(rg -n -U --pcre2 \
+  '(?<!#\[cfg\(any\(test, feature = "test-fixtures"\)\)\]\n)^(?:pub(?:\([a-z]+\))? )?const [A-Z_]*FIXTURE[A-Z_]*: &str' \
+  crates/reprise-core/src --glob '*.rs' --glob '!*_tests.rs' || true)
+if [[ -n $ungated_fixture_consts ]]; then
+  echo "fixture-directory constants must be declared behind cfg(any(test, feature = \"test-fixtures\")):" >&2
+  printf '%s\n' "$ungated_fixture_consts" >&2
+  exit 1
+fi
+echo "  fixture seams: every fixture constant is test-gated"
+
+# Positional APIs become harder to call correctly as their argument lists grow.
+# Keep the remaining explicit suppressions from multiplying, and require this
+# ceiling to fall in the same change whenever a suppression is removed.
+too_many_arguments_budget=19
+too_many_arguments=$(rg -U --count-matches '(allow|expect)\(\s*clippy::too_many_arguments' \
+  crates --glob '*.rs' 2>/dev/null \
+  | awk -F: '{ total += $2 } END { print total + 0 }')
+if (( too_many_arguments > too_many_arguments_budget )); then
+  echo "too-many-arguments suppressions grew from $too_many_arguments_budget to $too_many_arguments" >&2
+  echo "  replace positional parameters with a cohesive parameter object" >&2
+  exit 1
+elif (( too_many_arguments < too_many_arguments_budget )); then
+  echo "too-many-arguments suppressions are down to $too_many_arguments (budget still says $too_many_arguments_budget)" >&2
+  echo "  lower too_many_arguments_budget in scripts/check-architecture.sh to $too_many_arguments" >&2
+  exit 1
+else
+  echo "  too-many-arguments suppressions: $too_many_arguments (at budget)"
 fi
 
 echo "== Documentation references from code =="
@@ -369,11 +428,12 @@ for frontend_sql in \
 done
 
 # The headless surfaces route every database operation through named core
-# facades too. They hold a rusqlite Connection only to open the migrated
-# database and to read busy/lock error codes — never to assemble SQL. This is
-# the "no SQL outside core" gate extended to reprise-cli/reprise-mcp (plan
-# §2.5). Uppercase statement keywords match real queries, not prose; test
-# fixtures (under tests/) may still use SQL to arrange and inspect their data.
+# facades too. They no longer name rusqlite at all: core's CoreError is what
+# the facades hand out, and busy/conflict classification happens in core —
+# they never assemble SQL. This is the "no SQL outside core" gate extended to
+# reprise-cli/reprise-mcp (plan §2.5). Uppercase statement keywords match real
+# queries, not prose; test fixtures (under tests/) may still use SQL and
+# rusqlite directly to arrange and inspect their data.
 # `rg -U` (multiline) plus `\s+`/`[\s\S]` gaps catch keywords split across a
 # line break — e.g. `UPDATE` on one line and `foo SET …` on the next — which a
 # line-anchored pattern would miss.
@@ -381,6 +441,23 @@ for headless_src in crates/reprise-cli/src crates/reprise-mcp/src; do
   if rg --quiet -U '\b(SELECT|INSERT\s+INTO|UPDATE\b[\s\S]{0,200}?\bSET\b|DELETE\s+FROM|CREATE\s+TABLE|CREATE\s+INDEX|DROP\s+TABLE|ALTER\s+TABLE)\b' \
     "$headless_src" --glob '*.rs'; then
     echo "productive SQL is not allowed outside reprise-core: $headless_src" >&2
+    exit 1
+  fi
+done
+
+# The headless surfaces never name rusqlite: reprise_core::CoreError is the error type the facades
+# hand out, and busy/conflict classification happens in core. `rusqlite` stays a dev-dependency only,
+# because the integration tests under tests/ arrange their fixtures in SQL.
+for surface in reprise-cli reprise-mcp; do
+  direct_deps=$(run_dependency_probe "$surface direct dependencies" \
+    -p "$surface" --all-features -e normal --depth 1 --prefix none --target all) || exit 1
+  if printf '%s\n' "$direct_deps" | rg --quiet '^rusqlite '; then
+    echo "$surface must not depend on rusqlite; return reprise_core::CoreError from the core facade instead" >&2
+    exit 1
+  fi
+  if rg --quiet -w 'rusqlite' "crates/$surface/src" --glob '*.rs'; then
+    echo "$surface sources must not name rusqlite; the core facades return CoreError" >&2
+    rg -n -w 'rusqlite' "crates/$surface/src" --glob '*.rs' >&2
     exit 1
   fi
 done

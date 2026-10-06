@@ -50,6 +50,20 @@ impl MissingReason {
     }
 }
 
+/// Where a CUE track sits inside the audio file it was cut from. A track with
+/// no segment is an ordinary whole-file track.
+///
+/// `index` is the one-based position of the track among the segments of its
+/// file, so it identifies the row together with the path. `cue_path` names the
+/// sheet beside the audio file and is `None` for a sheet embedded in the file.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct TrackSegment {
+    pub index: i64,
+    pub start_ms: i64,
+    pub end_ms: i64,
+    pub cue_path: Option<String>,
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Track {
     pub id: i64,
@@ -116,6 +130,10 @@ pub struct Track {
     /// queries (it is only consulted where the AI badge renders). The DB flag is
     /// the truth, never the on-disk folder (Beschluss 13/17).
     pub is_ai: bool,
+    /// Schema v90: the slice of the file this track plays, `None` for a
+    /// whole-file track. A CUE track is read-only: Reprise never writes its
+    /// tags back, because they live in the sheet and not in the file.
+    pub segment: Option<TrackSegment>,
 }
 
 impl Track {
@@ -157,6 +175,11 @@ pub enum ImportErrorKind {
     /// a `tracing::warn!` when this happens), or a `walkdir` symlink-loop
     /// error with no underlying `io::Error` to inspect.
     Unknown,
+    /// A CUE sheet that cannot be applied to the audio it describes: it does
+    /// not parse, names a file that is not there, or places a track past the
+    /// end of its file. The audio stays in the library as one ordinary track,
+    /// and this issue — keyed by the sheet — says why it was not split.
+    InvalidCueSheet,
 }
 
 impl ImportErrorKind {
@@ -171,6 +194,7 @@ impl ImportErrorKind {
             Self::UnsupportedFormat => "unsupported_format",
             Self::Io => "io",
             Self::Unknown => "unknown",
+            Self::InvalidCueSheet => "invalid_cue_sheet",
         }
     }
 
@@ -187,6 +211,7 @@ impl ImportErrorKind {
             "permission_denied" => Self::PermissionDenied,
             "unsupported_format" => Self::UnsupportedFormat,
             "io" => Self::Io,
+            "invalid_cue_sheet" => Self::InvalidCueSheet,
             _ => Self::Unknown,
         }
     }
@@ -205,6 +230,7 @@ mod tests {
             ImportErrorKind::UnsupportedFormat,
             ImportErrorKind::Io,
             ImportErrorKind::Unknown,
+            ImportErrorKind::InvalidCueSheet,
         ];
         for original in kinds {
             let s = original.as_str();

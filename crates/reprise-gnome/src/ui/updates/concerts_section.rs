@@ -176,11 +176,9 @@ impl ConcertsSection {
         *self.on_open_view.borrow_mut() = on_open_view;
     }
 
-    #[allow(clippy::too_many_arguments)]
     pub(super) fn render(
         &self,
         enabled: bool,
-        _has_credentials: bool,
         total: usize,
         unseen: bool,
         rows: &[ConcertRow],

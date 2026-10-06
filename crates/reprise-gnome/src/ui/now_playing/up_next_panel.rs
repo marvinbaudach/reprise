@@ -19,6 +19,7 @@ use crate::ui::track_list::queue_sections::{
 use crate::ui::track_list::track_list_model::TrackListModel;
 
 const SECTION_HEADER_MAX_WIDTH_CHARS: i32 = 32;
+const FOOTER_DURATION_WINDOW: usize = 2000;
 
 #[cfg(test)]
 fn queue_rows(model: &QueueViewModel) -> Vec<QueueRow> {
@@ -217,8 +218,11 @@ impl UpNextPanel {
                 "tracks"
             });
         let mut total_duration_ms = 0_i64;
-        for offset in (0..upcoming.total_len()).step_by(200) {
-            let items = upcoming.items_window(offset, 200, context_window.as_ref());
+        // Each window binds at most this many ids per `IN (...)` statement, well under the
+        // bundled SQLite's 32766 host-parameter limit.
+        for offset in (0..upcoming.total_len()).step_by(FOOTER_DURATION_WINDOW) {
+            let items =
+                upcoming.items_window(offset, FOOTER_DURATION_WINDOW, context_window.as_ref());
             let duration = match reprise_core::queries::query_queue_duration_ms(&self.conn, &items)
             {
                 Ok(duration) => duration,
@@ -672,7 +676,10 @@ fn install_drag_autoscroll(scrolled: &gtk4::ScrolledWindow) {
     scrolled.add_controller(motion);
 }
 
-#[allow(clippy::too_many_arguments)]
+#[expect(
+    clippy::too_many_arguments,
+    reason = "eight scalar geometry inputs of one easing step"
+)]
 fn autoscroll_value(
     current: f64,
     lower: f64,

@@ -13,8 +13,8 @@ use super::sidebar_device_card::{
     menu, CancelCallback, CardRegistry, DeviceCard, OpenCallback, CARD_HORIZONTAL_MARGIN,
 };
 use super::Shared;
-use crate::ui::device_sync_runtime::{DeviceSyncRuntime, DeviceSyncState, DeviceView};
-use crate::ui::sidebar_presentation::{SIDEBAR_SURFACE_INSET, SIDEBAR_TEXT_INSET};
+use crate::ui::device_sync::device_sync_runtime::{DeviceSyncRuntime, DeviceSyncState, DeviceView};
+use crate::ui::sidebar::sidebar_presentation::{SIDEBAR_SURFACE_INSET, SIDEBAR_TEXT_INSET};
 
 const ARROW_CLOSED: &str = "pan-end-symbolic";
 const ARROW_OPEN: &str = "pan-down-symbolic";
@@ -337,7 +337,7 @@ fn find_status_label(root: &gtk4::Widget) -> Option<gtk4::Label> {
 #[cfg(test)]
 mod tests {
     use super::{present_and_remembered, DeviceSection};
-    use crate::ui::device_sync_runtime::PlannedSyncPhase;
+    use crate::ui::device_sync::device_sync_runtime::PlannedSyncPhase;
     use crate::ui::sidebar::sidebar_device_card::tests::view;
     use gtk4::prelude::*;
 
@@ -362,12 +362,9 @@ mod tests {
             .child(&viewport)
             .build();
         window.present();
-        let main_loop = gtk4::glib::MainLoop::new(None, false);
-        let quit = main_loop.clone();
-        gtk4::glib::timeout_add_local_once(std::time::Duration::from_millis(80), move || {
-            quit.quit();
+        crate::ui::test_settle::settle_until(crate::ui::test_settle::DISPLAY_TEST_TIMEOUT, || {
+            find_detail(section.upcast_ref()).is_some_and(|detail| detail.text() == "Up to date")
         });
-        main_loop.run();
         let detail = find_detail(section.upcast_ref()).expect("device status label");
         assert_eq!(detail.text(), "Up to date");
         window.close();

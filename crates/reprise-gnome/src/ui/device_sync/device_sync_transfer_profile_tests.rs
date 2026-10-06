@@ -29,8 +29,8 @@ fn save_profile(
 fn save_smoke_profile(conn: &Rc<Db>, playlist_id: i64, profile: TransferProfile) {
     save_profile(
         conn,
-        crate::ui::device_sync_smoke::DEVICE_ID,
-        crate::ui::device_sync_smoke::DEVICE_NAME,
+        crate::ui::device_sync::device_sync_smoke::DEVICE_ID,
+        crate::ui::device_sync::device_sync_smoke::DEVICE_NAME,
         playlist_id,
         profile,
     );
@@ -66,8 +66,10 @@ async fn wait_for_storage(runtime: &Rc<DeviceSyncRuntime>, expected_devices: usi
 async fn smoke_runtime(conn: &Rc<Db>) -> (tempfile::TempDir, Rc<DeviceSyncRuntime>) {
     let device_root = tempfile::tempdir().unwrap();
     let backend = Rc::new(
-        crate::ui::device_sync_smoke::SimulatedMtpDeviceBackend::for_root(device_root.path())
-            .unwrap(),
+        crate::ui::device_sync::device_sync_smoke::SimulatedMtpDeviceBackend::for_root(
+            device_root.path(),
+        )
+        .unwrap(),
     );
     let runtime = DeviceSyncRuntime::with_backend(conn, backend);
     wait_for_storage(&runtime, 1).await;
@@ -93,9 +95,13 @@ async fn wait_for_completion(runtime: &Rc<DeviceSyncRuntime>, device_id: &str) -
 
 async fn run_to_completion(runtime: &Rc<DeviceSyncRuntime>) -> DeviceView {
     runtime
-        .sync_now(crate::ui::device_sync_smoke::DEVICE_ID)
+        .sync_now(crate::ui::device_sync::device_sync_smoke::DEVICE_ID)
         .unwrap();
-    wait_for_completion(runtime, crate::ui::device_sync_smoke::DEVICE_ID).await
+    wait_for_completion(
+        runtime,
+        crate::ui::device_sync::device_sync_smoke::DEVICE_ID,
+    )
+    .await
 }
 
 #[test]
@@ -121,15 +127,14 @@ fn simulated_mtp_phone_transcodes_lossless_selection_to_opus_160() {
         let (device_root, runtime) = smoke_runtime(&conn).await;
         let observed = Rc::new(RefCell::new(Vec::new()));
         let phases = observed.clone();
-        let _subscription = runtime.subscribe(Rc::new(move |state| {
-            if let Some(device) = state
-                .devices
-                .iter()
-                .find(|device| device.id == crate::ui::device_sync_smoke::DEVICE_ID)
-            {
-                phases.borrow_mut().push(device.sync_phase.clone());
-            }
-        }));
+        let _subscription =
+            runtime.subscribe(Rc::new(move |state| {
+                if let Some(device) = state.devices.iter().find(|device| {
+                    device.id == crate::ui::device_sync::device_sync_smoke::DEVICE_ID
+                }) {
+                    phases.borrow_mut().push(device.sync_phase.clone());
+                }
+            }));
 
         let device = run_to_completion(&runtime).await;
         let output = device_root
@@ -254,18 +259,20 @@ fn mtp_48_simulated_mtp_backend_writes_only_the_active_device() {
         let first_root = tempfile::tempdir().unwrap();
         let second_root = tempfile::tempdir().unwrap();
         let backend = Rc::new(
-            crate::ui::device_sync_smoke::SimulatedMtpDeviceBackend::for_devices(vec![
-                (
-                    FIRST_ID.into(),
-                    "Simulated Phone A".into(),
-                    first_root.path().to_path_buf(),
-                ),
-                (
-                    SECOND_ID.into(),
-                    "Simulated Phone B".into(),
-                    second_root.path().to_path_buf(),
-                ),
-            ])
+            crate::ui::device_sync::device_sync_smoke::SimulatedMtpDeviceBackend::for_devices(
+                vec![
+                    (
+                        FIRST_ID.into(),
+                        "Simulated Phone A".into(),
+                        first_root.path().to_path_buf(),
+                    ),
+                    (
+                        SECOND_ID.into(),
+                        "Simulated Phone B".into(),
+                        second_root.path().to_path_buf(),
+                    ),
+                ],
+            )
             .unwrap(),
         );
         let runtime = DeviceSyncRuntime::with_backend(&conn, backend);
@@ -314,8 +321,10 @@ fn mtp_17_simulated_mtp_phone_removes_every_untracked_file_from_managed_storage(
         std::fs::write(&foreign_playlist, b"#EXTM3U\nForeign/Existing.aiff\n").unwrap();
         std::fs::write(&foreign_note, b"not part of the mirror").unwrap();
         let backend = Rc::new(
-            crate::ui::device_sync_smoke::SimulatedMtpDeviceBackend::for_root(device_root.path())
-                .unwrap(),
+            crate::ui::device_sync::device_sync_smoke::SimulatedMtpDeviceBackend::for_root(
+                device_root.path(),
+            )
+            .unwrap(),
         );
         let runtime = DeviceSyncRuntime::with_backend(&conn, backend);
         wait_for_storage(&runtime, 1).await;

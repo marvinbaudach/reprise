@@ -159,7 +159,6 @@ impl DeviceBackend for RaceBackend {
         Box::pin(async { Ok(DeviceStorageInspection::default()) })
     }
 
-    #[allow(clippy::too_many_arguments)]
     fn replace_track(
         &self,
         _device_id: String,

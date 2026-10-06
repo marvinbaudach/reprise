@@ -26,7 +26,7 @@ struct SpectrumRecordingPlayback {
 }
 
 impl PlaybackBackend for SpectrumRecordingPlayback {
-    fn play(&self, _: &str) -> Result<(), PlaybackError> {
+    fn play(&self, _: reprise_core::playback::PlaybackItem<'_>) -> Result<(), PlaybackError> {
         Ok(())
     }
 
@@ -57,7 +57,7 @@ impl PlaybackBackend for SpectrumRecordingPlayback {
         Ok(())
     }
 
-    fn set_next(&self, _: Option<&str>) {}
+    fn set_next(&self, _: Option<reprise_core::playback::PlaybackItem<'_>>) {}
 
     fn set_transition(&self, _: reprise_core::library::settings::TrackTransition, _: u8) {}
 }

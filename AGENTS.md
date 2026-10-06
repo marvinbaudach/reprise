@@ -143,9 +143,11 @@ frontend and to the packaging metadata. Its gates are
 and `check-ai-hygiene.sh`. They warn while a rule is `[planned]` and block
 once it is `[active]`.
 
-## Active file ownership — Flathub readiness
+## Completed file ownership — Flathub readiness
 
-Four strands run in parallel. Do not edit files owned by another strand.
+No corresponding branch remains (checked 2026-10-04). No plan file was named for this work;
+the findings remain in `docs/plans/gnome-conformance.findings.md`. The table remains as the
+historical strand boundary.
 
 | Strand | Owns |
 |---|---|
@@ -318,10 +320,10 @@ lock or coordination board exists in this checkout.
 | episodes-as-queue-citizens | Append-only package-5 rule, plan, and completion records in `docs/ux-rules.md`, `docs/plans/podcasts-radio.md`, and `.superpowers/sdd/progress.md` |
 | sibling branches — excluded | `crates/reprise-core/src/podcasts/store.rs`, `crates/reprise-core/src/podcasts/youtube.rs`, and unrelated source UI or packaging work |
 
-## Active file ownership — list geometry service
+## Completed file ownership — list geometry service
 
-Plans: `docs/plans/list-geometry-service.md`, `docs/plans/queue-section-preseed.md`
-Two tracks run in parallel from the same base commit; they share no file.
+The plans were deleted on landing, and no corresponding branch remains (checked 2026-10-04).
+The track lists remain as the historical file boundaries.
 
 **Track 1 · mechanics** — branch `feat/list-geometry-service`
 - `crates/reprise-gnome/src/ui/list_geometry.rs` (new)
@@ -344,16 +346,13 @@ Two tracks run in parallel from the same base commit; they share no file.
 - `crates/reprise-gnome/src/ui/track_list/current_track_selection/delete_follow_display_tests.rs`
 - new display-test files for the large-delete and queue-sections cases
 
-This ownership is ACTIVE. A sibling branch that edits an owned path must
-rebase onto the owning branch first, not merge past it.
+## Completed file ownership — multi-surface frontends
 
-## Active file ownership — multi-surface frontends
-
-Spec: `docs/superpowers/specs/2026-08-01-multi-surface-frontends-design.md`
-Branch: `feature/multi-surface-frontends`
-
-This ownership is ACTIVE. A sibling branch that edits an owned path must
-rebase onto this branch first, not merge past it.
+No corresponding branch remains (checked 2026-10-04). The design spec
+`docs/superpowers/specs/2026-08-01-multi-surface-frontends-design.md` and P0 plan
+`docs/superpowers/plans/2026-08-01-multi-surface-p0-s1.md` remain. The historical
+"P0 — groundwork" and "P1a — the mobile slice of reprise-view" subsections later in this file
+remain as the package boundaries.
 
 ## Completed file ownership — Android Now Playing scene
 
@@ -427,15 +426,19 @@ a sibling module because `tests.rs` was already too close to the 800-line cap.
 | GUARD-3 | library-doctor-guard-rails | `crates/reprise-core/src/{db_library_doctor,db}.rs`, `crates/reprise-core/src/library/library_doctor/store.rs` |
 | GUARD-4 | library-doctor-guard-rails | `crates/reprise-core/src/library/library_doctor/{tests,guard_rail_scan_tests}.rs` |
 
-## Active file ownership — Library Doctor fix round 3
+## Completed file ownership — Library Doctor fix round 3
 
 Branch: `feature/library-doctor-fix-round-3`
 
-This ownership is ACTIVE until the stage is complete. Packages run in the wave
-order recorded here. `MATCH-3`, `PERF-1`, and `PERF-3` are the only writers of
-`scan.rs` and run strictly in that sequence. The string catalog and UX rules
-reach their final stage shape in Wave 0 and are read-only for every later
-package.
+This ownership is COMPLETE and released. Every package below is on `dev`, and
+no branch, pull request or worktree named `feature/library-doctor-fix-round-3`
+exists any more. The table stays as the historical package boundary and as the
+record of the write order the stage ran in: `MATCH-3`, `PERF-1` and `PERF-3`
+were the only writers of `scan.rs` and ran strictly in that sequence, and the
+string catalog and UX rules reached their final stage shape in Wave 0.
+
+Checked 2026-09-23, the same way the "Plans checked before P1a" entry above was
+checked: the field was stale, not the work.
 
 | Wave | Package | Owned files |
 | --- | --- | --- |

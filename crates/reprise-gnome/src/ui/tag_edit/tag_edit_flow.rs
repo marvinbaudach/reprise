@@ -38,13 +38,13 @@ use crate::ui::one_shot_task;
 use crate::ui::player_controller::PlayerController;
 use crate::ui::sidebar::Sidebar;
 use crate::ui::strings;
+use crate::ui::tag_edit::tag_editor;
+use crate::ui::tag_edit::tag_editor_failures;
 use crate::ui::tag_edit::tag_reload_anchor::{
     post_save_reload_anchor, save_patches_sort_key, OpenedReloadState,
 };
 use crate::ui::tag_edit::tag_save_refresh::{self, TagSaveRefresh};
 use crate::ui::tag_edit::tag_write_admission;
-use crate::ui::tag_editor;
-use crate::ui::tag_editor_failures;
 use crate::ui::track_list::tag_mutation_refresh::{
     refresh_after_tag_mutation_with_save_anchor, refresh_after_tag_mutation_with_save_change,
 };
@@ -90,7 +90,7 @@ enum ApplyOrigin {
 // `strings::track_edit_result_toast` it wraps — kept for its
 // `ApplyOrigin::ImportHint` suppression rule, which `finish_apply` still
 // applies inline, and pinned by its own unit test.
-#[allow(dead_code)]
+#[cfg(test)]
 fn completion_toast(origin: ApplyOrigin, updated: usize, failed: usize) -> Option<String> {
     if origin == ApplyOrigin::ImportHint && updated > 0 && failed == 0 {
         None
@@ -255,16 +255,22 @@ fn browsable_snapshot(shared: &Rc<Shared>, ids: &[i64]) -> Option<tag_editor::Br
     };
     let rows = {
         let conn = &shared.conn;
-        reprise_core::queries::query_track_window_browsed(
+        let view = reprise_core::queries::TrackViewQuery::new(&source)
+            .with_filter(&filter)
+            .with_browse(&browse_filter)
+            .with_queue_items(&queue_items);
+        reprise_core::queries::query_track_window(
             conn,
-            &source,
-            &sort.field,
-            &sort.dir,
-            &filter,
-            &browse_filter,
-            0,
-            total,
-            &queue_items,
+            &view,
+            reprise_core::queries::TrackSort {
+                field: &sort.field,
+                dir: &sort.dir,
+            },
+            reprise_core::queries::RowWindow {
+                offset: 0,
+                limit: total,
+            },
+            reprise_core::queries::AiColumn::Project,
         )
     };
     let by_id: std::collections::HashMap<i64, reprise_core::models::Track> = match rows {
@@ -549,11 +555,7 @@ fn finish_apply(
             tag_save_refresh::first_view_mismatch(&state.view_ids, after)
         });
     if updated > 0 {
-        let tag_changed_paths: Vec<PathBuf> = writes
-            .iter()
-            .filter(|write| !write.patch.tags.is_empty() && report.updated_ids.contains(&write.id))
-            .map(|write| write.path.clone())
-            .collect();
+        let tag_changed_paths = tag_save_refresh::tag_changed_paths(writes, &report.updated_ids);
         let live_reload = opened_reload.unwrap_or_else(|| OpenedReloadState {
             anchor: capture_reload_anchor(shared),
             view_ids: shared.current_view_ids(),

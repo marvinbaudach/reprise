@@ -242,12 +242,12 @@ fn ac_24_the_public_cover_change_keeps_then_drops_the_outgoing_pair() {
     let cloud = CoverCloud::new();
     cloud.set_pinned(false);
     let texture = swatch_cover(false);
-    cloud.set_cover(Some(&texture), 1);
+    cloud.set_cover(Some(&texture), 1, ArtworkStage::Primary);
     cloud.set_frame_time(1_000_000);
     cloud.set_frame_time(2_000_000);
 
-    cloud.set_cover(None, 2);
-    cloud.set_cover(Some(&texture), 2);
+    cloud.set_cover(None, 2, ArtworkStage::Primary);
+    cloud.set_cover(Some(&texture), 2, ArtworkStage::Primary);
     assert!(cloud.has_leaving_pair_for_test());
 
     cloud.set_frame_time(3_000_001);

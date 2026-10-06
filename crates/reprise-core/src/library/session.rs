@@ -21,6 +21,8 @@ mod normalization;
 use normalization::{empty_queue, normalize, resolve_persisted_places};
 
 pub const SESSION_KEY: &str = "ui.session.v1";
+pub const MIN_WINDOW_WIDTH: i32 = 600;
+pub const MIN_WINDOW_HEIGHT: i32 = 550;
 const VERSION: u8 = 1;
 // Kept above the width at which the GNOME frontend closes both side panels
 // (`responsive_side_panels::CONSTRAINED_WIDTH`, 1400). A fresh profile that
@@ -416,7 +418,7 @@ mod tests {
         let conn = conn();
         let mut state = full_state();
         state.window_width = 1;
-        state.window_height = 99_999;
+        state.window_height = 1;
         state.search = "é".repeat(800);
         state.source = SessionSource::Playlist(0);
         state.sort_field = "drop table".into();
@@ -424,10 +426,14 @@ mod tests {
         save(&conn, &state).unwrap();
         let loaded = load(&conn);
         assert_eq!(loaded.window_width, 600);
-        assert_eq!(loaded.window_height, 8192);
+        assert_eq!(loaded.window_height, 550);
         assert!(loaded.search.len() <= 1024);
         assert_eq!(loaded.source, SessionSource::Library);
         assert_eq!(loaded.sort_field, "title");
+
+        state.window_height = 99_999;
+        save(&conn, &state).unwrap();
+        assert_eq!(load(&conn).window_height, 8192);
         assert_eq!(loaded.sort_dir, "asc");
     }
 

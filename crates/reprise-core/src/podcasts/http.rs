@@ -7,8 +7,7 @@
 use std::path::Path;
 #[cfg(any(test, feature = "test-fixtures"))]
 use std::path::{Path, PathBuf};
-use std::sync::Mutex;
-use std::time::{Duration, Instant};
+use std::time::Duration;
 
 #[cfg(any(test, feature = "test-fixtures"))]
 use url::Url;
@@ -16,16 +15,13 @@ use url::Url;
 use super::download_state::DownloadProgress;
 use super::PodcastError;
 use crate::http_body::{self, BoundedReadError};
+use crate::net::client::{build_agent, AgentPolicy};
+use crate::net::rate::{wait_for_slot, RateLimitKey};
 use crate::source_error::{parse_retry_after, SOURCE_REQUEST_TIMEOUT};
-pub(crate) use crate::sources_http::user_agent;
-use crate::sources_http::{build_agent, lock_unpoisoned};
 
 const DOWNLOAD_TIMEOUT: Duration = Duration::from_secs(15);
-const MIN_REQUEST_INTERVAL: Duration = Duration::from_secs(1);
 #[cfg(any(test, feature = "test-fixtures"))]
 const FIXTURE_DIR_ENV: &str = "REPRISE_PODCASTS_FIXTURE_DIR";
-
-static LAST_REQUEST: Mutex<Option<Instant>> = Mutex::new(None);
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Response {
@@ -82,7 +78,7 @@ fn get_with_budget(
         return fixture_get(url, etag, last_modified, &directory, max_bytes);
     }
 
-    let agent = build_agent(SOURCE_REQUEST_TIMEOUT);
+    let agent = build_agent(agent_policy(SOURCE_REQUEST_TIMEOUT));
     let mut request = agent.get(url);
     if let Some(value) = etag {
         request = request.header("If-None-Match", value);
@@ -122,7 +118,7 @@ pub fn download_with_progress(
     if let Some(directory) = fixture_directory() {
         return fixture_download(url, destination, &directory, on_progress);
     }
-    let response = build_agent(DOWNLOAD_TIMEOUT)
+    let response = build_agent(agent_policy(DOWNLOAD_TIMEOUT))
         .get(url)
         .call()
         .map_err(classify_transport)?;
@@ -220,7 +216,7 @@ fn download_status_error(status: u16, retry_after: Option<&str>) -> Option<Podca
 /// Resolves a scoped podcast fixture directory before the environment fallback.
 /// The fallback keeps feature-enabled fixture consumers independent of tests.
 fn fixture_directory() -> Option<PathBuf> {
-    crate::sources_http::fixture_directory(FIXTURE_DIR_ENV)
+    crate::net::fixtures::fixture_directory(FIXTURE_DIR_ENV)
 }
 
 #[cfg(test)]
@@ -230,7 +226,12 @@ fn fixture_directory() -> Option<PathBuf> {
 pub(crate) fn with_fixture_dir<T>(directory: &Path, operation: impl FnOnce() -> T) -> T {
     fn reset_source_state() {}
 
-    crate::sources_http::with_fixture_dir(FIXTURE_DIR_ENV, directory, reset_source_state, operation)
+    crate::net::fixtures::with_fixture_dir(
+        FIXTURE_DIR_ENV,
+        directory,
+        reset_source_state,
+        operation,
+    )
 }
 
 #[cfg(any(test, feature = "test-fixtures"))]
@@ -315,14 +316,12 @@ fn classify_transport(error: ureq::Error) -> PodcastError {
 }
 
 fn respect_rate_limit() {
-    let mut previous = lock_unpoisoned(&LAST_REQUEST);
-    let delay = previous.map_or(Duration::ZERO, |instant| {
-        MIN_REQUEST_INTERVAL.saturating_sub(instant.elapsed())
-    });
-    if !delay.is_zero() {
-        std::thread::sleep(delay);
-    }
-    *previous = Some(Instant::now());
+    let _ = wait_for_slot(RateLimitKey::Podcasts, &mut || false);
+}
+
+/// Feeds, search and downloads read the status themselves, so ureq's status errors stay off.
+pub(crate) const fn agent_policy(timeout: Duration) -> AgentPolicy {
+    AgentPolicy::source(timeout)
 }
 
 #[cfg(any(test, feature = "test-fixtures"))]
@@ -355,9 +354,27 @@ mod tests {
 
     #[test]
     fn user_agent_identifies_reprise_and_contact() {
-        let value = user_agent();
+        let value = crate::net::client::user_agent();
         assert!(value.contains(env!("CARGO_PKG_VERSION")));
-        assert!(value.contains(crate::musicbrainz::CONTACT_URL));
+        assert!(value.contains(crate::net::client::CONTACT_URL));
+    }
+
+    #[test]
+    fn agent_policy_reads_statuses_itself_for_feeds_and_downloads() {
+        for timeout in [SOURCE_REQUEST_TIMEOUT, DOWNLOAD_TIMEOUT] {
+            assert_eq!(
+                agent_policy(timeout),
+                AgentPolicy {
+                    timeout,
+                    status_as_error: false,
+                    https_only: false,
+                    max_redirects: None,
+                    proxy_from_env: true,
+                }
+            );
+        }
+        assert_eq!(SOURCE_REQUEST_TIMEOUT, Duration::from_secs(10));
+        assert_eq!(DOWNLOAD_TIMEOUT, Duration::from_secs(15));
     }
 
     #[test]

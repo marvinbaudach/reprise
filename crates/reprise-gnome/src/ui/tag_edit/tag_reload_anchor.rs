@@ -1,5 +1,7 @@
 //! Sort-aware TAG-1 anchor choice after a Tag Editor save.
 
+use std::collections::HashSet;
+
 use reprise_core::library::tag_edit::TrackWrite;
 
 use crate::ui::list_geometry_layout::ListLayout;
@@ -52,11 +54,15 @@ fn first_sort_key_write(
     sort_field: &str,
 ) -> Option<i64> {
     let sort_columns = reprise_core::queries::sort_key_columns(sort_field);
-    updated_ids.iter().copied().find(|updated_id| {
-        writes
-            .iter()
-            .any(|write| write.id == *updated_id && write_patches_sort_key(write, sort_columns))
-    })
+    let patching_ids: HashSet<i64> = writes
+        .iter()
+        .filter(|write| write_patches_sort_key(write, sort_columns))
+        .map(|write| write.id)
+        .collect();
+    updated_ids
+        .iter()
+        .copied()
+        .find(|updated_id| patching_ids.contains(updated_id))
 }
 
 pub(in crate::ui) fn post_save_reload_anchor(
@@ -197,5 +203,53 @@ mod tests {
             Some(50),
             "the anchor must follow the row whose sort key changed"
         );
+    }
+
+    fn year_write(id: i64) -> TrackWrite {
+        tag_write(
+            id,
+            TagPatch {
+                year: Some(Some(2099)),
+                ..Default::default()
+            },
+        )
+    }
+
+    fn title_write(id: i64) -> TrackWrite {
+        tag_write(
+            id,
+            TagPatch {
+                title: Some("Renamed".into()),
+                ..Default::default()
+            },
+        )
+    }
+
+    #[test]
+    fn first_sort_key_write_follows_updated_id_order() {
+        let writes = [year_write(40), year_write(50)];
+
+        assert_eq!(first_sort_key_write(&[50, 40], &writes, "artist"), Some(50));
+        assert_eq!(first_sort_key_write(&[40, 50], &writes, "artist"), Some(40));
+    }
+
+    #[test]
+    fn first_sort_key_write_accepts_any_write_of_a_duplicated_id() {
+        // The first write for 40 cannot move the row; the second one can.
+        let writes = [title_write(40), year_write(40)];
+
+        assert_eq!(first_sort_key_write(&[40], &writes, "artist"), Some(40));
+    }
+
+    #[test]
+    fn first_sort_key_write_skips_ids_that_cannot_move() {
+        let writes = [title_write(40), year_write(60)];
+
+        assert_eq!(
+            first_sort_key_write(&[40, 70, 60], &writes, "artist"),
+            Some(60)
+        );
+        assert_eq!(first_sort_key_write(&[40, 70], &writes, "artist"), None);
+        assert_eq!(first_sort_key_write(&[], &writes, "artist"), None);
     }
 }

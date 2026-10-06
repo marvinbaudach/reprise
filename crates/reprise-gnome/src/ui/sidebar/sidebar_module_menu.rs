@@ -40,12 +40,12 @@ impl ModuleMenuHighlight {
     fn begin(&self, row: &gtk4::ListBoxRow) -> u64 {
         let previous = self.target.borrow().upgrade();
         if let Some(previous) = previous {
-            previous.remove_css_class(crate::ui::preference_plugins::TARGET_CLASS);
+            previous.remove_css_class(crate::ui::preferences::preference_plugins::TARGET_CLASS);
         }
         let generation = self.generation.get().wrapping_add(1);
         self.generation.set(generation);
         self.target.borrow_mut().set(Some(row));
-        row.add_css_class(crate::ui::preference_plugins::TARGET_CLASS);
+        row.add_css_class(crate::ui::preferences::preference_plugins::TARGET_CLASS);
         generation
     }
 
@@ -56,7 +56,7 @@ impl ModuleMenuHighlight {
         let target = self.target.borrow().upgrade();
         self.target.borrow_mut().set(None::<&gtk4::ListBoxRow>);
         if let Some(target) = target {
-            target.remove_css_class(crate::ui::preference_plugins::TARGET_CLASS);
+            target.remove_css_class(crate::ui::preferences::preference_plugins::TARGET_CLASS);
         }
     }
 }

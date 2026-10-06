@@ -195,7 +195,13 @@ pub(in crate::ui) struct StatsBandsCard {
     state: RankingState,
     pub(super) revealer: gtk4::Revealer,
     pub(super) reveal_button: gtk4::Button,
-    #[cfg_attr(not(test), allow(dead_code))]
+    #[cfg_attr(
+        not(test),
+        allow(
+            dead_code,
+            reason = "only tests inspect this value; production code never reads it"
+        )
+    )]
     pub(super) sort_toggle: adw::ToggleGroup,
 }
 

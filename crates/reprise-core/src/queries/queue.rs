@@ -1,6 +1,7 @@
 //! `ViewSource::Queue` queries over the caller-owned manual queue order.
 
 use std::collections::{HashMap, HashSet};
+use std::path::PathBuf;
 
 use rusqlite::Connection;
 
@@ -10,10 +11,15 @@ use crate::podcasts::EpisodeRow;
 use crate::up_next::QueueItem;
 
 use super::clauses::{row_to_track, track_projection};
-use super::MAX_WINDOW_LIMIT;
+use super::{AiColumn, RowWindow, TrackViewQuery, MAX_WINDOW_LIMIT};
 
 /// Hard cap for playback snapshots and the manual queue.
 pub const QUEUE_LIMIT: i64 = 10_000;
+
+/// Ids bound per `IN (...)` statement in [`track_source_paths`], kept well
+/// under the bundled SQLite's bound-variable limit of 32766, and under the 999
+/// of builds before 3.32.
+pub(super) const SOURCE_PATH_CHUNK: usize = 500;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum QueueItemMetadata {
@@ -53,20 +59,24 @@ pub fn query_queue_item_window(
 
 pub(super) fn query_track_window_queue(
     conn: &Connection,
-    items: &[QueueItem],
-    offset: i64,
-    limit: i64,
-    project_ai: bool,
+    view: &TrackViewQuery<'_>,
+    rows: RowWindow,
+    ai: AiColumn,
 ) -> Result<Vec<Track>, rusqlite::Error> {
-    Ok(
-        query_queue_item_window_with_observer(conn, items, offset, limit, project_ai, || {})?
-            .into_iter()
-            .filter_map(|metadata| match metadata {
-                QueueItemMetadata::Track(track) => Some(track),
-                QueueItemMetadata::Episode(_) => None,
-            })
-            .collect(),
-    )
+    Ok(query_queue_item_window_with_observer(
+        conn,
+        view.queue_items,
+        rows.offset,
+        rows.limit,
+        ai == AiColumn::Project,
+        || {},
+    )?
+    .into_iter()
+    .filter_map(|metadata| match metadata {
+        QueueItemMetadata::Track(track) => Some(track),
+        QueueItemMetadata::Episode(_) => None,
+    })
+    .collect())
 }
 
 #[cfg(test)]
@@ -174,6 +184,31 @@ fn query_episodes(conn: &Connection, ids: &[i64]) -> Result<Vec<EpisodeRow>, rus
     rows
 }
 
+/// The absolute on-disk paths of many tracks in one pass, keyed by id.
+/// Missing rows have no entry; duplicate ids resolve once. Same lookup as
+/// [`super::track_source_path`], one statement per `SOURCE_PATH_CHUNK` ids
+/// instead of one per id.
+pub fn track_source_paths(db: &Db, ids: &[i64]) -> Result<HashMap<i64, PathBuf>, rusqlite::Error> {
+    let conn = db.conn();
+    let distinct = distinct_ids(ids.iter().copied());
+    let mut paths = HashMap::with_capacity(distinct.len());
+    for chunk in distinct.chunks(SOURCE_PATH_CHUNK) {
+        let sql = format!(
+            "SELECT id, path FROM tracks WHERE id IN ({})",
+            placeholders(chunk.len())
+        );
+        let mut statement = conn.prepare(&sql)?;
+        let rows = statement.query_map(rusqlite::params_from_iter(chunk), |row| {
+            Ok((row.get::<_, i64>(0)?, row.get::<_, String>(1)?))
+        })?;
+        for row in rows {
+            let (id, path) = row?;
+            paths.insert(id, PathBuf::from(path));
+        }
+    }
+    Ok(paths)
+}
+
 /// Sums durations in queue order. Missing duration contributes zero.
 pub fn query_queue_duration_ms(db: &Db, items: &[QueueItem]) -> Result<i64, rusqlite::Error> {
     if items.is_empty() {
@@ -230,9 +265,9 @@ pub(super) fn query_queue_item_count(
 
 pub(super) fn query_track_count_queue(
     conn: &Connection,
-    items: &[QueueItem],
+    view: &TrackViewQuery<'_>,
 ) -> Result<i64, rusqlite::Error> {
-    query_queue_item_count(conn, items)
+    query_queue_item_count(conn, view.queue_items)
 }
 
 fn query_existing_ids(
@@ -256,7 +291,6 @@ fn query_existing_ids(
     rows
 }
 
-#[allow(clippy::too_many_arguments)]
 fn query_durations(
     conn: &Connection,
     source: &str,

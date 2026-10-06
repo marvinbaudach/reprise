@@ -8,14 +8,14 @@ use libadwaita as adw;
 use reprise_core::db::Db;
 use reprise_core::waveform::RenderDataBackend;
 
-use super::super::artist_news_worker::ArtistNewsRuntime;
-use super::super::artist_portrait_worker::ArtistPortraitRuntime;
 use super::super::concerts::ConcertsRuntime;
 use super::super::cover_download_worker::{self, CoverDownloadRuntime};
-use super::super::device_sync_runtime::DeviceSyncRuntime;
 use super::super::player_controller::PlayerController;
 use super::super::podcasts::PodcastsRuntime;
 use super::super::scrobble_runtime::ScrobbleRuntime;
+use crate::ui::artist_news::artist_news_worker::ArtistNewsRuntime;
+use crate::ui::device_sync::device_sync_runtime::DeviceSyncRuntime;
+use crate::ui::now_playing::artist_portrait_worker::ArtistPortraitRuntime;
 
 pub(super) struct WindowRuntimes {
     pub cover_download: CoverDownloadRuntime,
@@ -47,8 +47,8 @@ pub(super) fn setup(
         reprise_core::scrobbling::ScrobbleProvider::LastFm,
         "Last.fm",
     );
-    super::super::preference_lastfm::bootstrap(conn, &lastfm);
-    super::super::preference_listenbrainz::bootstrap(conn, &listenbrainz);
+    crate::ui::preferences::preference_lastfm::bootstrap(conn, &lastfm);
+    crate::ui::preferences::preference_listenbrainz::bootstrap(conn, &listenbrainz);
     super::window_smoke::arm_listenbrainz(conn, &listenbrainz);
     super::window_smoke::arm_lastfm(conn, &lastfm);
     let artist_news = ArtistNewsRuntime::setup(conn);
@@ -65,8 +65,8 @@ pub(super) fn setup(
     );
     super::super::startup_report::mark("MPRIS");
 
-    let device_sync =
-        super::super::device_sync_smoke::runtime_from_env(conn).unwrap_or_else(|| {
+    let device_sync = crate::ui::device_sync::device_sync_smoke::runtime_from_env(conn)
+        .unwrap_or_else(|| {
             DeviceSyncRuntime::new(
                 conn,
                 reprise_platform_linux::device_sync::DeviceMonitor::new(),
@@ -74,7 +74,7 @@ pub(super) fn setup(
         });
     device_sync
         .bind_agent_device_sync(&media.device_sync_state, media.device_sync_commands.clone());
-    super::super::device_sync_smoke::arm(&device_sync);
+    crate::ui::device_sync::device_sync_smoke::arm(&device_sync);
     super::super::startup_report::mark("device sync");
 
     let player = match super::player_backends::build(waveform_backend, media) {

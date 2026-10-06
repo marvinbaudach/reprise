@@ -21,6 +21,7 @@ from protocol import (
     DESTRUCTIVE_TARGET_WORDS,
     EXTERNAL_TARGET_PHRASES,
 )
+from search_results import result_elements, source_cards
 from ui_vocabulary import BUSY_ROLES, BUSY_WORDS, is_row
 from workload_audit import ActionTrace, audit_action_workload
 
@@ -122,9 +123,7 @@ def observation_to_trace(
 
     def rows(observation: Mapping[str, Any]) -> tuple[tuple[str, float], ...]:
         result = []
-        for item in elements(observation):
-            if not item.get("label") or not is_row(str(item.get("role", ""))):
-                continue
+        for item in result_elements(observation):
             frame = item.get("frame", {})
             result.append((str(item["label"]), float(frame.get("y", 0))))
         return tuple(sorted(result, key=lambda item: (item[1], item[0])))
@@ -612,13 +611,7 @@ class AgentSession:
             token = workload.get("source_tokens", {}).get(source)
             if not token:
                 continue
-            rows = [
-                str(item.get("label"))
-                for item in observation.get("elements", [])
-                if isinstance(item, dict)
-                and item.get("label")
-                and is_row(str(item.get("role", "")))
-            ]
+            rows = [str(item.get("label")) for item in result_elements(observation)]
             if len(rows) == 1:
                 self.learner.values[str(token)] = rows[0]
 
@@ -709,8 +702,14 @@ class AgentSession:
             "YouTube",
             "Radio",
         }:
+            # Rows and source cards, not every label: a sidebar entry and its
+            # button, or a menu button and its toggle, share one name by design.
+            shown = [
+                str(item["label"])
+                for item in (*result_elements(after), *source_cards(after))
+            ]
             duplicates = sorted(
-                {label for label in after_labels if after_labels.count(label) > 1}
+                {label for label in shown if shown.count(label) > 1}
             )
             if duplicates:
                 self.add_note(

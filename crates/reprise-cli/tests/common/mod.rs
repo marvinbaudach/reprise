@@ -7,7 +7,10 @@
 //! real library at `~/.local/share/reprise/reprise.db` is never touched —
 //! `--db` always points at the temp file.
 
-#![allow(dead_code)]
+#![allow(
+    dead_code,
+    reason = "each integration-test target uses a different harness subset"
+)]
 
 use std::path::PathBuf;
 use std::process::{Command, Output};
@@ -85,6 +88,19 @@ impl Harness {
             .args(args)
             .stdout(std::process::Stdio::null())
             .stderr(std::process::Stdio::null())
+            .spawn()
+            .expect("spawn reprise-cli")
+    }
+
+    /// Spawns the CLI (with `--db` prepended) with both output streams piped,
+    /// for tests that watch stderr while the process is still running.
+    pub fn spawn_captured(&self, args: &[&str]) -> std::process::Child {
+        Command::new(env!("CARGO_BIN_EXE_reprise-cli"))
+            .arg("--db")
+            .arg(&self.db)
+            .args(args)
+            .stdout(std::process::Stdio::piped())
+            .stderr(std::process::Stdio::piped())
             .spawn()
             .expect("spawn reprise-cli")
     }

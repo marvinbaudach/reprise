@@ -3,19 +3,52 @@ package io.github.marvinbaudach.reprise
 import android.content.Intent
 import android.net.Uri
 import android.os.Binder
+import android.os.Build
 import android.os.IBinder
 import android.os.Handler
 import android.os.Looper
+import android.os.PowerManager
+import android.os.VibrationEffect
+import android.os.Vibrator
+import android.os.VibratorManager
+import android.util.Log
 import androidx.media3.common.AudioAttributes
 import androidx.media3.common.C
 import androidx.media3.common.Player
 import androidx.media3.exoplayer.ExoPlayer
 import androidx.media3.exoplayer.audio.TeeAudioProcessor
+import androidx.media3.session.MediaLibraryService
 import androidx.media3.session.MediaSession
-import androidx.media3.session.MediaSessionService
+import io.github.marvinbaudach.reprise.library.AndroidMediaBrowseLibrary
+import io.github.marvinbaudach.reprise.library.BrowseCallback
+import io.github.marvinbaudach.reprise.library.BrowseLabels
+import io.github.marvinbaudach.reprise.library.BrowserAccess
+import io.github.marvinbaudach.reprise.library.PackageBrowserAccess
+import io.github.marvinbaudach.reprise.library.BrowsePlayer
+import io.github.marvinbaudach.reprise.library.BrowseQueue
+import io.github.marvinbaudach.reprise.library.CurrentTrackArtwork
+import io.github.marvinbaudach.reprise.library.MediaBrowseLibrary
+import io.github.marvinbaudach.reprise.library.MediaBrowseTree
+import io.github.marvinbaudach.reprise.library.TrackMetadata
+import io.github.marvinbaudach.reprise.library.TrackMetadataResolver
+import io.github.marvinbaudach.reprise.widget.RepriseWidget
+import io.github.marvinbaudach.reprise.widget.WidgetPublisher
+import io.github.marvinbaudach.reprise.widget.WidgetStateStore
+import androidx.glance.appwidget.updateAll
+import java.io.File
+import java.util.concurrent.Executors
+import java.util.concurrent.atomic.AtomicReference
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.ExperimentalCoroutinesApi
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.cancel
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.launch
+import uniffi.reprise_android_ffi.AndroidAnalysisOutcome
+import uniffi.reprise_android_ffi.AndroidArtworkSize
 import uniffi.reprise_android_ffi.AndroidEqualizerSnapshot
 import uniffi.reprise_android_ffi.AndroidPlaybackListener
 import uniffi.reprise_android_ffi.AndroidPlaybackSession
@@ -24,11 +57,21 @@ import uniffi.reprise_android_ffi.AndroidPlaybackState
 import uniffi.reprise_android_ffi.AndroidRepeatMode
 import uniffi.reprise_android_ffi.AndroidTrashReport
 import uniffi.reprise_android_ffi.AndroidVisualEngine
+import uniffi.reprise_android_ffi.TrackAnalysisProgress
+import uniffi.reprise_android_ffi.TrackAnalysisProgressListener
 import uniffi.reprise_android_ffi.TrashAction
 
-/** Owns Media3 for background playback, notifications and external controls. */
-open class ReprisePlaybackService : MediaSessionService() {
-    private var mediaSession: MediaSession? = null
+private const val TAG_ANALYSIS = "RepriseAnalysis"
+private const val TAG_MEDIA = "RepriseMedia"
+
+/**
+ * Owns Media3 for background playback, notifications and external controls,
+ * and serves the library as a browse tree for Android Auto.
+ */
+open class ReprisePlaybackService : MediaLibraryService() {
+    private var mediaSession: MediaLibrarySession? = null
+    private var browseCallback: BrowseCallback? = null
+    private var controlledPlayer: CoreControlledPlayer? = null
     private var playbackPort: Media3PlaybackPort? = null
     private var coreSession: AndroidPlaybackSession? = null
     private val mutablePlaybackSnapshots = MutableStateFlow<AndroidPlaybackSnapshot?>(null)
@@ -43,6 +86,85 @@ open class ReprisePlaybackService : MediaSessionService() {
     private val localBinder = LocalBinder()
     private val livePcmSink = LivePcmBufferSink()
     private var liveVisualEngine: NativeVisualSceneEngine? = null
+    private val analysisScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
+
+    // A single-thread dispatcher, not the bare elastic `Dispatchers.IO`
+    // pool `analysisScope` above uses: `startAnalysisBackfill` and
+    // `cancelAnalysisBackfill` each launched independently, and a rapid
+    // transition (e.g. play -> power-save-on -> play) could issue a start
+    // immediately followed by a cancel with no relative ordering guarantee
+    // between the two coroutines, leaving the backfill durably wrong
+    // (running during power-save, or cancelled while it should be running)
+    // until the next real transition. A dedicated scope for just these two
+    // calls — not shared with `trackAnalysisRequest`, whose compute path can
+    // block for seconds and would otherwise queue a cancel behind it — keeps
+    // start/cancel in the order `handleTrackAnalysis`/`onDestroy` issued
+    // them, the same way `TrackAnalysisLoader` serializes its own lanes.
+    @OptIn(ExperimentalCoroutinesApi::class)
+    private val analysisBackfillScope =
+        CoroutineScope(SupervisorJob() + Dispatchers.IO.limitedParallelism(1))
+
+    // Serial for the same reason: a quick skip A -> B -> C posts supersede(B) then
+    // supersede(C), and on the elastic pool supersede(B) could run last and cancel
+    // C, the track now playing.
+    @OptIn(ExperimentalCoroutinesApi::class)
+    private val analysisSupersedeScope =
+        CoroutineScope(SupervisorJob() + Dispatchers.IO.limitedParallelism(1))
+    private val artworkExecutor = Executors.newSingleThreadExecutor { task ->
+        Thread(task, "reprise-artwork")
+    }
+
+    /**
+     * The browse queue the Core was last asked to play, so the item that plays
+     * carries the id the browse tree listed it under and a browser can mark the
+     * playing row. Cleared when the app starts something of its own.
+     */
+    private val browsePlayContext = AtomicReference<BrowseQueue?>(null)
+    private val currentTrackArtwork = CurrentTrackArtwork(
+        executor = artworkExecutor,
+        resolve = ::resolveArtwork,
+        attach = ::attachArtwork,
+    )
+    private val widgetPublisher by lazy {
+        WidgetPublisher(
+            executor = artworkExecutor,
+            store = WidgetStateStore(this),
+            metadata = ::resolveTrackMetadata,
+            artworkPath = ::resolveArtworkPath,
+            refresh = {
+                analysisScope.launch {
+                    // Outside the publisher's own guard, and an uncaught failure
+                    // here would take the whole process down.
+                    try {
+                        RepriseWidget().updateAll(this@ReprisePlaybackService)
+                    } catch (error: Exception) {
+                        Log.w(TAG_MEDIA, "Could not redraw the widget", error)
+                    }
+                }
+            },
+        )
+    }
+    private val analysisTrack = AnalysisTrackGate()
+    private val analysisTrackId: Long?
+        get() = analysisTrack.current
+    private var analysisAttempts = 0
+    private var analysisRequestInFlight = false
+    private var analysisFinal = false
+    private var analysisRequestGeneration = 0L
+    private var analysisBackfillRunning = false
+    private val analysisBackfillListener = object : TrackAnalysisProgressListener {
+        override fun onProgress(progress: TrackAnalysisProgress) {
+            Log.i(
+                TAG_ANALYSIS,
+                "Track analysis backfill: ${progress.done}/${progress.total} " +
+                    "(${progress.failed} failed)",
+            )
+        }
+    }
+    @Volatile
+    private var activityInForeground = false
+    @Volatile
+    private var volumeKeySkipGestureEnabled = true
 
     /**
      * The core's own callback, and the one place that learns playback has run
@@ -53,7 +175,14 @@ open class ReprisePlaybackService : MediaSessionService() {
     internal val coreListener = object : AndroidPlaybackListener {
         override fun onPlaybackChanged(snapshot: AndroidPlaybackSnapshot) {
             mutablePlaybackSnapshots.value = snapshot
+            currentTrackArtwork.onCurrentTrack(snapshot.currentTrackUri)
+            widgetPublisher.onSnapshot(snapshot)
             if (::sleepTimer.isInitialized) sleepTimer.onPlaybackSnapshot(snapshot)
+            if (Looper.myLooper() == Looper.getMainLooper()) {
+                handleTrackAnalysis(snapshot)
+            } else {
+                Handler(Looper.getMainLooper()).post { handleTrackAnalysis(snapshot) }
+            }
             if (snapshot.hasRunOut()) {
                 // The queue is empty, so this service has nothing left to keep
                 // alive. `stopSelf` only ends a service nobody is bound to, so
@@ -74,13 +203,21 @@ open class ReprisePlaybackService : MediaSessionService() {
         override fun next() = this@ReprisePlaybackService.next()
 
         override fun previousInQueueOrder() = this@ReprisePlaybackService.previousInQueueOrder()
+
+        override fun isActivityInForeground(): Boolean = activityInForeground
+
+        override fun volumeKeySkipGestureEnabled(): Boolean = volumeKeySkipGestureEnabled
+
+        override fun hapticTick() = this@ReprisePlaybackService.hapticTick()
     }
 
     override fun onCreate() {
         super.onCreate()
+        volumeKeySkipGestureEnabled = readVolumeKeySkipGestureEnabled()
+        val renderersFactory = LivePcmRenderersFactory(this, TeeAudioProcessor(livePcmSink))
         val player = ExoPlayer.Builder(
             this,
-            LivePcmRenderersFactory(this, TeeAudioProcessor(livePcmSink)),
+            renderersFactory,
         )
             // Media3 defaults both of these off, and the device confirms it:
             // while a track was playing, the system's audio focus stack was
@@ -105,7 +242,13 @@ open class ReprisePlaybackService : MediaSessionService() {
                 .buildUpon()
                 .setAudioOffloadPreferences(livePcmAudioOffloadPreferences())
                 .build()
-            Media3PlaybackPort(player) { mutableSettingsRevisions.value += 1L }
+            Media3PlaybackPort(
+                player,
+                trackGainSink = renderersFactory.trackGainSink,
+                equalizerChanged = { mutableSettingsRevisions.value += 1L },
+                metadata = TrackMetadataResolver(::resolveTrackMetadata),
+                mediaIdOf = { trackId -> browsePlayContext.get()?.mediaIdOf(trackId) },
+            )
         }
         playbackPort = port
         sleepTimer = SleepTimerController(
@@ -115,9 +258,14 @@ open class ReprisePlaybackService : MediaSessionService() {
             publish = { state -> mutableSleepTimerStates.value = state },
         )
         mutableSleepTimerStates.value = sleepTimer.state()
-        val session = MediaSession.Builder(
+        val sessionPlayer = CoreControlledPlayer(player, mediaSessionCommands, this)
+        controlledPlayer = sessionPlayer
+        val callback = BrowseCallback(tree = ::browseTree, access = browserAccess())
+        browseCallback = callback
+        val session = MediaLibrarySession.Builder(
             this,
-            CoreControlledPlayer(player, mediaSessionCommands),
+            BrowsePlayer(sessionPlayer, ::playBrowseQueue),
+            callback,
         ).build()
         mediaSession = session
         // Handing the session to the service is what puts Media3 in charge of
@@ -152,17 +300,92 @@ open class ReprisePlaybackService : MediaSessionService() {
             coreListener,
         )
 
-    override fun onBind(intent: Intent): IBinder? =
-        if (intent.action == LOCAL_BIND_ACTION) localBinder else super.onBind(intent)
+    override fun onBind(intent: Intent?): IBinder? =
+        if (intent?.action == LOCAL_BIND_ACTION) localBinder else super.onBind(intent)
 
     override fun onGetSession(
         controllerInfo: MediaSession.ControllerInfo,
-    ): MediaSession? = mediaSession
+    ): MediaLibrarySession? = mediaSession
+
+    /** The session media browsers and controllers connect to; tests connect through it. */
+    internal val librarySession: MediaLibrarySession? get() = mediaSession
+
+    private var browseTreeCache: MediaBrowseTree? = null
+
+    /** Built on the browse thread, the first time a browser asks. */
+    @Synchronized
+    internal fun browseTree(): MediaBrowseTree = browseTreeCache
+        ?: MediaBrowseTree(
+            browseLibrary(),
+            BrowseLabels(
+                root = getString(R.string.media_browse_root),
+                recentlyPlayed = getString(R.string.media_browse_recently_played),
+                playlists = getString(R.string.media_browse_playlists),
+                albums = getString(R.string.media_browse_albums),
+                artists = getString(R.string.media_browse_artists),
+            ),
+        ).also { browseTreeCache = it }
+
+    /** Who may browse; overridden in tests to stand in for another app. */
+    internal open fun browserAccess(): BrowserAccess = PackageBrowserAccess(this)
+
+    /** Overridden in tests, where the native library cannot load. */
+    internal open fun browseLibrary(): MediaBrowseLibrary =
+        AndroidMediaBrowseLibrary(sharedMusicLibrary())
+
+    /** What the notification, lock screen, Auto and the widget show for [uri]. */
+    internal open fun resolveTrackMetadata(uri: String): TrackMetadata? =
+        sharedMusicLibrary().trackByUri(uri)?.let { row ->
+            TrackMetadata(row.id, row.title, row.artist, row.album, row.durationMs)
+        }
+
+    internal open fun resolveArtworkPath(trackUri: String): String? =
+        sharedMusicLibrary().trackArtwork(trackUri, AndroidArtworkSize.NOW_PLAYING)
+
+    private fun resolveArtwork(trackUri: String): Uri? =
+        resolveArtworkPath(trackUri)?.let { path -> Uri.fromFile(File(path)) }
+
+    private fun attachArtwork(trackUri: String, artwork: Uri) {
+        val port = playbackPort ?: return
+        try {
+            port.attachArtwork(trackUri, artwork)
+            widgetPublisher.onArtworkAvailable()
+        } catch (error: Exception) {
+            // The player may have been released while the cover was loading.
+            Log.w(TAG_MEDIA, "Could not attach the cover to the playing track", error)
+        }
+    }
+
+    /** A song tapped in a media browser plays as its container, through the Core. */
+    private fun playBrowseQueue(queue: BrowseQueue) {
+        try {
+            browsePlayContext.set(queue)
+            playTrackIds(queue.trackIds, queue.startIndex)
+        } catch (error: Exception) {
+            Log.w(TAG_MEDIA, "Could not play a song chosen in a media browser", error)
+        }
+    }
 
     override fun onDestroy() {
         if (::sleepTimer.isInitialized) sleepTimer.close()
+        browseCallback?.close()
+        browseCallback = null
+        // Synchronous and direct rather than through the overridable,
+        // scope-launched `cancelAnalysisBackfill`: the scope is cancelled
+        // right below, which would race an async call and drop it.
+        try {
+            sharedMusicLibrary().cancelTrackAnalysisBackfill()
+        } catch (error: Exception) {
+            Log.w(TAG_ANALYSIS, "Could not cancel the track analysis backfill", error)
+        }
+        analysisScope.cancel()
+        analysisBackfillScope.cancel()
+        analysisSupersedeScope.cancel()
         coreSession?.close()
         coreSession = null
+        // After the Core session: closing it can still report a last snapshot,
+        // and that reaches the artwork and widget work queued on this executor.
+        artworkExecutor.shutdownNow()
         mediaSession?.let { session ->
             // Unsubscribe Media3 before releasing: it holds this session in its
             // own map and would otherwise be left with a released one.
@@ -170,6 +393,7 @@ open class ReprisePlaybackService : MediaSessionService() {
             session.release()
         }
         mediaSession = null
+        controlledPlayer = null
         playbackPort?.release()
         playbackPort = null
         livePcmSink.detachAll()
@@ -177,6 +401,133 @@ open class ReprisePlaybackService : MediaSessionService() {
         liveVisualEngine = null
         super.onDestroy()
     }
+
+    /**
+     * Requests analysis for the current track on every track change — never
+     * on a mere position tick — and starts or cancels the library-wide
+     * backfill on a playing/power-save transition (decision 5 of
+     * `docs/plans/the-phone-analyses-its-own-music.md`). This runs even when
+     * no activity is attached, which is the point: the current track is
+     * analysed regardless of whether anything is looking at it.
+     */
+    private fun handleTrackAnalysis(snapshot: AndroidPlaybackSnapshot) {
+        val currentTrackId = snapshot.currentTrackId
+        if (currentTrackId != analysisTrackId) {
+            analysisTrack.moveTo(currentTrackId)
+            analysisAttempts = 0
+            analysisRequestInFlight = false
+            analysisFinal = false
+            // Only a switch to another track cancels: a stop or the end of the
+            // queue leaves the running analysis to finish and be stored.
+            if (currentTrackId != null) supersedeForegroundAnalysis(currentTrackId)
+        }
+        if (
+            currentTrackId != null &&
+            !analysisFinal &&
+            !analysisRequestInFlight &&
+            analysisAttempts < MAX_ANALYSIS_ATTEMPTS
+        ) {
+            analysisAttempts += 1
+            analysisRequestInFlight = true
+            analysisRequestGeneration += 1L
+            trackAnalysisRequest(currentTrackId, analysisRequestGeneration)
+        }
+        val shouldRun = analysisBackfillShouldRun(
+            playing = snapshot.state == AndroidPlaybackState.PLAYING,
+            powerSaveMode = isPowerSaveModeOn(),
+        )
+        if (shouldRun != analysisBackfillRunning) {
+            analysisBackfillRunning = shouldRun
+            if (shouldRun) startAnalysisBackfill() else cancelAnalysisBackfill()
+        }
+    }
+
+    /** Stops every foreground analysis except `keepTrackId`'s; the backfill is untouched. */
+    internal open fun supersedeForegroundAnalysis(keepTrackId: Long) {
+        analysisSupersedeScope.launch {
+            try {
+                // Resolved before the gate: opening the library may touch the database,
+                // and a track change on the main thread waits for the gate.
+                val supersede = foregroundAnalysisSuperseder()
+                // A newer track change already queued its own call: this one would
+                // cancel the track that is playing now, so the gate skips it.
+                analysisTrack.supersedeOthers(keepTrackId) { keep ->
+                    Log.d(TAG_ANALYSIS, "Superseding foreground analyses other than track $keep")
+                    supersede(keep)
+                }
+            } catch (error: Exception) {
+                Log.w(TAG_ANALYSIS, "Could not supersede the outgoing track analysis", error)
+            }
+        }
+    }
+
+    /** The library's supersede call, bound to the library outside the gate. */
+    internal open fun foregroundAnalysisSuperseder(): (Long) -> Unit {
+        val library = sharedMusicLibrary()
+        return { keep -> library.supersedeForegroundTrackAnalysis(keep) }
+    }
+
+    /** Overridden in tests with a fake that counts calls instead of decoding. */
+    internal open fun trackAnalysisRequest(trackId: Long, requestGeneration: Long) {
+        analysisScope.launch {
+            requireOffMainThread("Track analysis import")
+            // The track changed before this request started: its supersede may
+            // already have run and found nothing to stop — a supersede that comes
+            // before the decode claims its track never reaches Rust, so only this
+            // check covers it. A stop alone leaves the request to run (G6).
+            if (!analysisTrack.stillWanted(trackId)) {
+                Log.d(TAG_ANALYSIS, "Skipping the analysis request for track $trackId: it lost its place")
+                return@launch
+            }
+            var outcome: AndroidAnalysisOutcome? = null
+            var failure: Throwable? = null
+            try {
+                outcome = importTrackAnalysis(trackId)
+                if (outcome == AndroidAnalysisOutcome.COMPUTED) {
+                    Log.i(TAG_ANALYSIS, "Computed analysis for track $trackId")
+                } else {
+                    Log.d(TAG_ANALYSIS, "Analysis for track $trackId settled as $outcome")
+                }
+            } catch (error: Exception) {
+                failure = error
+                Log.w(TAG_ANALYSIS, "Could not import analysis for track $trackId", error)
+            }
+            Handler(Looper.getMainLooper()).post {
+                settleTrackAnalysis(trackId, requestGeneration, outcome, failure)
+            }
+        }
+    }
+
+    internal open fun importTrackAnalysis(trackId: Long): AndroidAnalysisOutcome =
+        sharedMusicLibrary().importTrackAnalysis(trackId)
+
+    internal open fun settleTrackAnalysis(
+        trackId: Long,
+        requestGeneration: Long,
+        outcome: AndroidAnalysisOutcome?,
+        error: Throwable?,
+    ) {
+        if (trackId != analysisTrackId || requestGeneration != analysisRequestGeneration) return
+        analysisRequestInFlight = false
+        // Past the guard above, this is the track that is playing: a supersede
+        // that reached it was stale, so it is retried like a cancel.
+        analysisFinal = !trackAnalysisShouldRetry(outcome, error, stillPlaying = true)
+    }
+
+    internal open fun startAnalysisBackfill() {
+        analysisBackfillScope.launch {
+            sharedMusicLibrary().startTrackAnalysisBackfill(analysisBackfillListener)
+        }
+    }
+
+    internal open fun cancelAnalysisBackfill() {
+        analysisBackfillScope.launch {
+            sharedMusicLibrary().cancelTrackAnalysisBackfill()
+        }
+    }
+
+    private fun isPowerSaveModeOn(): Boolean =
+        (getSystemService(POWER_SERVICE) as? PowerManager)?.isPowerSaveMode == true
 
     internal fun visualSceneEngineFactory(): VisualSceneEngineFactory =
         VisualSceneEngineFactory {
@@ -210,6 +561,7 @@ open class ReprisePlaybackService : MediaSessionService() {
         playbackSnapshots.value?.positionMs ?: 0L
 
     internal fun playTracks(tracks: List<LibraryTrack>, startIndex: Int) {
+        browsePlayContext.set(null)
         coreSession().playTracks(
             tracks.map(LibraryTrack::id),
             tracks.map(LibraryTrack::uri),
@@ -250,7 +602,37 @@ open class ReprisePlaybackService : MediaSessionService() {
     }
 
     internal fun reloadPlaybackSettings() {
+        volumeKeySkipGestureEnabled = readVolumeKeySkipGestureEnabled()
+        controlledPlayer?.refreshDeviceInfo()
         coreSession().reloadPlaybackSettings()
+    }
+
+    internal fun setActivityInForeground(foreground: Boolean) {
+        activityInForeground = foreground
+    }
+
+    internal open fun readVolumeKeySkipGestureEnabled(): Boolean =
+        sharedMusicLibrary().playbackSettings().volumeKeySkipGestureEnabled
+
+    internal open fun hapticTick() {
+        val vibrator = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+            getSystemService(VibratorManager::class.java)?.defaultVibrator
+        } else {
+            @Suppress("DEPRECATION")
+            getSystemService(Vibrator::class.java)
+        } ?: return
+        // EFFECT_TICK is delivered but not felt: measured 2026-09-20 on a Pixel
+        // 10 Pro XL, `dumpsys vibrator_manager` showed the vibration finishing
+        // right after a skip, yet nobody could feel it. A side-by-side of
+        // TICK/CLICK/HEAVY_CLICK/DOUBLE_CLICK on that device picked DOUBLE_CLICK
+        // as the one that is actually perceptible. The pre-Q fallback mirrors
+        // its two-pulse shape instead of a single short buzz.
+        val effect = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+            VibrationEffect.createPredefined(VibrationEffect.EFFECT_DOUBLE_CLICK)
+        } else {
+            VibrationEffect.createWaveform(longArrayOf(0, 20, 60, 20), -1)
+        }
+        vibrator.vibrate(effect)
     }
 
     internal fun equalizerSnapshot(): AndroidEqualizerSnapshot? =

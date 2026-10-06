@@ -8,8 +8,8 @@ use super::*;
 use reprise_core::db::Db;
 
 /// Seeds playlist `10` with `ids` selected for device `"a"` and sets
-/// `sync_automatically` explicitly, unlike `select_road_playlist` (which
-/// always turns it on) — needed here to exercise the switch being off.
+/// `sync_automatically` explicitly so each pre-existing-device scenario owns
+/// the switch state it exercises.
 fn seed_playlist_with_auto_start(conn: &Rc<Db>, ids: &[i64], sync_automatically: bool) {
     crate::test_db::connection(conn.as_ref())
         .execute(
@@ -38,6 +38,69 @@ fn seed_playlist_with_auto_start(conn: &Rc<Db>, ids: &[i64], sync_automatically:
         },
     )
     .unwrap();
+}
+
+#[test]
+fn mtp_30_a_new_phone_with_pending_work_does_not_auto_start() {
+    run(async {
+        let (_temp, conn) = fixture();
+        let raw_conn = crate::test_db::connection(conn.as_ref());
+        raw_conn
+            .execute(
+                "INSERT INTO playlists (id, name, position) VALUES (10, 'Road', 0)",
+                [],
+            )
+            .unwrap();
+        raw_conn
+            .execute(
+                "INSERT INTO playlist_tracks (playlist_id, track_id, position) \
+                 VALUES (10, 1, 0)",
+                [],
+            )
+            .unwrap();
+        let settings_before_connect: i64 = raw_conn
+            .query_row(
+                "SELECT COUNT(*) FROM device_settings WHERE device_serial = 'a'",
+                [],
+                |row| row.get(0),
+            )
+            .unwrap();
+        assert_eq!(settings_before_connect, 0);
+
+        let backend = Rc::new(FakeBackend::new(vec![descriptor("a", true)], 1));
+        let (inspection_started, release_inspection) = backend.gate_next_inspection();
+        let runtime = DeviceSyncRuntime::with_backend(&conn, backend.clone());
+        inspection_started.recv().await.unwrap();
+
+        let settings_after_connect: i64 = raw_conn
+            .query_row(
+                "SELECT COUNT(*) FROM device_settings WHERE device_serial = 'a'",
+                [],
+                |row| row.get(0),
+            )
+            .unwrap();
+        assert_eq!(
+            settings_after_connect, 1,
+            "the runtime must remember the never-seen phone on first contact"
+        );
+        assert!(!runtime.devices()[0].settings.sync_automatically);
+        runtime
+            .set_playlist_selected("a", SelectionSource::Playlist(10), true)
+            .unwrap();
+        release_inspection.send(()).await.unwrap();
+        settle().await;
+
+        assert!(
+            backend.state.copy_order.borrow().is_empty(),
+            "a newly remembered phone must wait for an explicit Sync action"
+        );
+        let device = runtime.devices().remove(0);
+        assert!(device.last_sync.is_none());
+        assert_eq!(
+            device.page.changes.additions, 1,
+            "the selected playlist must leave real work pending so the switch is the only blocker"
+        );
+    });
 }
 
 #[test]

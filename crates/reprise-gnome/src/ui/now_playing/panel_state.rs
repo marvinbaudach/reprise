@@ -169,7 +169,7 @@ pub(super) fn panel_presentation_with_external(
     playback_state: PlaybackState,
 ) -> PanelPresentation {
     if let Some(external) = external {
-        let display = crate::ui::player_bar_state::external_bar_display(external);
+        let display = crate::ui::player_bar::player_bar_state::external_bar_display(external);
         return PanelPresentation {
             title: display.title,
             subtitle: display.subtitle,

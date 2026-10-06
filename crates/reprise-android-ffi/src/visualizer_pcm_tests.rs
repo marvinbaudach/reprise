@@ -72,7 +72,8 @@ fn pcm_ingest_rejects_samples_from_a_replaced_stream_generation() {
         .pcm_buffer
         .append(&[0.25, 0.5]);
 
-    let current = live_processor_for_stream(&mut live_audio, 4, 48_000)
+    let mut pending_shape_seed = None;
+    let current = live_processor_for_stream(&mut live_audio, 4, 48_000, &mut pending_shape_seed)
         .expect("same sample rate keeps a processor");
 
     assert_eq!(current.stream_generation, 4);

@@ -66,7 +66,10 @@ pub trait DeviceBackend {
     /// "prefer internal" default used before a target was ever repointed),
     /// always replacing any existing file even when its byte count happens
     /// to be unchanged.
-    #[allow(clippy::too_many_arguments)]
+    #[expect(
+        clippy::too_many_arguments,
+        reason = "mirrors one MTP copy request field by field; should take a copy-request struct"
+    )]
     fn replace_track(
         &self,
         device_id: String,

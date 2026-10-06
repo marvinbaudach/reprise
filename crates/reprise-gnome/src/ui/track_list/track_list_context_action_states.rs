@@ -12,7 +12,7 @@ use super::track_list_context_menu::{
 use super::track_list_queue_menu::{self, ACTION_REMOVE_FROM_QUEUE};
 use super::track_menu::{action_states, MenuContext, SelectionSummary};
 use super::Shared;
-use crate::ui::tag_edit_flow;
+use crate::ui::tag_edit::tag_edit_flow;
 
 /// Greys out the menu actions the current selection cannot support.
 pub(super) fn update(

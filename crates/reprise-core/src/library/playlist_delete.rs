@@ -2,7 +2,7 @@
 
 use rusqlite::{params, OptionalExtension};
 
-use crate::db::Db;
+use crate::{db::Db, CoreError};
 
 /// Deletes a playlist only while its `(id, name)` identity still matches,
 /// cascades its track memberships, and closes the removed playlist's
@@ -11,7 +11,7 @@ use crate::db::Db;
 /// request whose target was concurrently renamed or removed. That is a
 /// successful no-op, but the caller must not report it as a deletion (the
 /// UI would otherwise claim "Playlist deleted" when nothing was).
-pub fn delete(db: &Db, id: i64, expected_name: &str) -> Result<bool, rusqlite::Error> {
+pub fn delete(db: &Db, id: i64, expected_name: &str) -> Result<bool, CoreError> {
     let conn = db.conn();
     let tx = conn.unchecked_transaction()?;
     let position = tx

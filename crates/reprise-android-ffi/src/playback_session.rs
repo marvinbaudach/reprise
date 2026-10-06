@@ -3,7 +3,10 @@
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex, MutexGuard, OnceLock};
 
-use reprise_core::playback::{PlaybackBackend, StreamGeneration};
+use gain::QueuedTrack;
+#[cfg(test)]
+use reprise_core::db::Db;
+use reprise_core::playback::{PlaybackBackend, PlaybackItem, StreamGeneration};
 use reprise_core::queue::{Queue, Repeat};
 
 use crate::listen_export_recorder::ListenExportRecorder;
@@ -11,10 +14,12 @@ use crate::play_recorder::PlayRecorder;
 use crate::playback::{
     AndroidPlaybackBackend, AndroidPlaybackError, AndroidPlaybackPort, AndroidPlaybackState,
 };
+use crate::queue_persister::QueuePersister;
 
+mod gain;
 mod history;
 mod queue_boundary;
-mod queue_persistence;
+pub(crate) mod queue_persistence;
 mod stream_events;
 mod trash_boundary;
 
@@ -168,11 +173,11 @@ impl SessionState {
             .and_then(|index| self.uris.get(index).cloned())
     }
 
-    fn next_uri(&self) -> Option<String> {
-        self.queue
-            .peek_auto()
-            .and_then(|track_id| self.track_index(track_id))
-            .and_then(|index| self.uris.get(index).cloned())
+    fn next_track(&self) -> Option<QueuedTrack> {
+        let track_id = self.queue.peek_auto()?;
+        let index = self.track_index(track_id)?;
+        let uri = self.uris.get(index)?.clone();
+        Some(QueuedTrack { track_id, uri })
     }
 
     fn track_index(&self, track_id: i64) -> Option<usize> {
@@ -295,6 +300,12 @@ fn index_tracks(track_ids: &[i64]) -> HashMap<i64, usize> {
     indices
 }
 
+fn extend_track_index(indices: &mut HashMap<i64, usize>, old_len: usize, appended_ids: &[i64]) {
+    for (offset, track_id) in appended_ids.iter().copied().enumerate() {
+        indices.entry(track_id).or_insert(old_len + offset);
+    }
+}
+
 /// # The two mutexes, and why their order differs between operations
 ///
 /// `state` and `database` are never held at the same time. Every caller takes
@@ -317,6 +328,7 @@ struct SessionInner {
     library: Arc<crate::MusicLibrary>,
     backend: OnceLock<AndroidPlaybackBackend>,
     listener: Arc<dyn AndroidPlaybackListener>,
+    queue: QueuePersister,
     plays: PlayRecorder,
     listen_exports: ListenExportRecorder,
 }
@@ -336,16 +348,12 @@ impl SessionInner {
         })
     }
 
-    fn persist_queue(&self, queue: &Queue) -> Result<(), AndroidPlaybackError> {
-        let database = self
-            .library
-            .writer()
+    fn persist_queue(&self, queue: Queue) -> Result<(), AndroidPlaybackError> {
+        self.queue
+            .persist(queue)
             .map_err(|error| AndroidPlaybackError::Backend {
-                detail: error.to_string(),
-            })?;
-        queue_persistence::save(&database, queue).map_err(|error| AndroidPlaybackError::Backend {
-            detail: format!("could not save the playback queue: {error}"),
-        })
+                detail: format!("could not save the playback queue: {error}"),
+            })
     }
 
     fn notify(&self) {
@@ -357,7 +365,7 @@ impl SessionInner {
 
     fn start_current(&self) -> Result<(), AndroidPlaybackError> {
         let backend = self.backend()?;
-        let (uri, next_uri, history_entry) = {
+        let (track_id, uri, next, history_entry) = {
             let mut state = self.lock()?;
             let track_id =
                 state
@@ -370,13 +378,17 @@ impl SessionInner {
                 .ok_or(AndroidPlaybackError::InvalidRequest {
                     detail: "the Core queue has no current track".to_owned(),
                 })?;
-            let next_uri = state.next_uri();
+            let next = state.next_track();
             let history_entry = state.history_entry_for_started(track_id, uri.clone());
             // `play_uri` may synchronously publish this stream's first event.
             state.current_loaded = true;
-            (uri, next_uri, history_entry)
+            (track_id, uri, next, history_entry)
         };
-        if let Err(error) = backend.play_uri(&uri) {
+        if let Err(error) = backend.play(PlaybackItem {
+            segment: None,
+            path: &uri,
+            gain_db: self.gain_db_for(track_id),
+        }) {
             let detail = error.to_string();
             if let Ok(mut state) = self.state.lock() {
                 state.snapshot.state = AndroidPlaybackState::Stopped;
@@ -391,7 +403,7 @@ impl SessionInner {
             state.note_playback_started(history_entry);
             state.stream = backend.current_generation();
         }
-        backend.set_next(next_uri.as_deref());
+        self.feed_next(next)?;
         self.notify();
         Ok(())
     }
@@ -417,7 +429,10 @@ pub struct AndroidPlaybackSession {
 #[uniffi::export]
 impl AndroidPlaybackSession {
     #[uniffi::constructor]
-    #[allow(clippy::needless_pass_by_value)]
+    #[expect(
+        clippy::needless_pass_by_value,
+        reason = "UniFFI hands owned interface objects across the FFI boundary"
+    )]
     pub fn new(
         library: Arc<crate::MusicLibrary>,
         port: Box<dyn AndroidPlaybackPort>,
@@ -428,11 +443,14 @@ impl AndroidPlaybackSession {
             .map_err(|error| AndroidPlaybackError::Backend {
                 detail: format!("could not read the playback database: {error}"),
             })?;
-        let restored = queue_persistence::restore(&database).map_err(|error| {
-            AndroidPlaybackError::Backend {
-                detail: format!("could not restore the playback queue: {error}"),
-            }
-        })?;
+        let restored =
+            queue_persistence::restore(&database, &library.database_path).map_err(|error| {
+                AndroidPlaybackError::Backend {
+                    detail: format!("could not restore the playback queue: {error}"),
+                }
+            })?;
+        let restored_queue = restored.queue.clone();
+        let restored_snapshot_sequence = restored.snapshot_sequence;
         let playback_settings = crate::AndroidPlaybackSettings::load(&database);
         let transition = reprise_core::library::settings::get_track_transition(&database);
         let crossfade_seconds = reprise_core::library::settings::get_crossfade_seconds(&database);
@@ -445,11 +463,26 @@ impl AndroidPlaybackSession {
         drop(database);
         let listener: Arc<dyn AndroidPlaybackListener> = Arc::from(listener);
         let report_listener = Arc::clone(&listener);
+        let queue = QueuePersister::spawn(
+            &library.database_path,
+            library.writer_handle(),
+            restored_snapshot_sequence,
+        )
+        .map_err(|error| AndroidPlaybackError::Backend {
+            detail: format!("could not start playback queue persistence: {error}"),
+        })?;
+        if let Err(error) = queue.persist(restored_queue) {
+            tracing::warn!(
+                %error,
+                "could not preserve the restored Android playback queue; playback will continue",
+            );
+        }
         let inner = Arc::new(SessionInner {
             state: Mutex::new(SessionState::from_restored(restored)),
             library: Arc::clone(&library),
             backend: OnceLock::new(),
             listener,
+            queue,
             plays: PlayRecorder::spawn(
                 library.database_path.clone(),
                 library.writer_handle(),
@@ -518,7 +551,7 @@ impl AndroidPlaybackSession {
             state.set_tracks(track_ids, uris, start_index);
             state.queue.clone()
         };
-        self.inner.persist_queue(&queue_to_save)?;
+        self.inner.persist_queue(queue_to_save)?;
         self.inner.start_current()
     }
 
@@ -579,7 +612,7 @@ impl AndroidPlaybackSession {
             state.adopt_current_for_play_intent();
             state.queue.clone()
         };
-        self.inner.persist_queue(&queue_to_save)?;
+        self.inner.persist_queue(queue_to_save)?;
         self.inner.start_current()
     }
 
@@ -593,7 +626,10 @@ impl AndroidPlaybackSession {
     }
 
     // UniFFI transfers optional byte buffers by value across the ABI.
-    #[allow(clippy::needless_pass_by_value)]
+    #[expect(
+        clippy::needless_pass_by_value,
+        reason = "UniFFI hands owned byte buffers across the FFI boundary"
+    )]
     pub fn prepare_listen_report(
         &self,
         acknowledgement: Option<Vec<u8>>,
@@ -608,7 +644,7 @@ impl AndroidPlaybackSession {
     }
 
     pub fn set_shuffle(&self, enabled: bool) -> Result<(), AndroidPlaybackError> {
-        let (next_uri, queue_to_save) = {
+        let (next, queue_to_save) = {
             let mut state = self.inner.lock()?;
             state.queue.set_shuffle(enabled);
             state.snapshot.shuffled = state.queue.is_shuffled();
@@ -616,23 +652,23 @@ impl AndroidPlaybackSession {
                 .queue
                 .current_order_position()
                 .and_then(|index| u64::try_from(index).ok());
-            (state.next_uri(), state.queue.clone())
+            (state.next_track(), state.queue.clone())
         };
-        self.inner.persist_queue(&queue_to_save)?;
-        self.inner.backend()?.set_next(next_uri.as_deref());
+        self.inner.persist_queue(queue_to_save)?;
+        self.inner.feed_next(next)?;
         self.inner.notify();
         Ok(())
     }
 
     pub fn set_repeat(&self, mode: AndroidRepeatMode) -> Result<(), AndroidPlaybackError> {
-        let (next_uri, queue_to_save) = {
+        let (next, queue_to_save) = {
             let mut state = self.inner.lock()?;
             state.queue.set_repeat(mode.into());
             state.snapshot.repeat = mode;
-            (state.next_uri(), state.queue.clone())
+            (state.next_track(), state.queue.clone())
         };
-        self.inner.persist_queue(&queue_to_save)?;
-        self.inner.backend()?.set_next(next_uri.as_deref());
+        self.inner.persist_queue(queue_to_save)?;
+        self.inner.feed_next(next)?;
         self.inner.notify();
         Ok(())
     }
@@ -669,7 +705,27 @@ impl AndroidPlaybackSession {
             playback_settings.equalizer_curve,
         )?;
         backend.set_transition(transition, crossfade_seconds);
-        Ok(())
+        self.inner.refresh_gains()
+    }
+}
+
+#[cfg(test)]
+impl AndroidPlaybackSession {
+    pub(crate) fn flush_queue_persistence(&self) {
+        self.inner.queue.flush();
+    }
+
+    /// The one writing connection every session writer shares — the queue
+    /// persister and the play recorder both hold this exact handle.
+    ///
+    /// A test that mutates the library while this session is live must write
+    /// through it, never through a `Db::open_ready` of its own: a second writing
+    /// connection contends with those background writers for the SQLite write
+    /// lock, and losing that race past `DEFAULT_BUSY_TIMEOUT_MS` is a
+    /// `DatabaseBusy` panic rather than a wait. Every Android library write goes
+    /// through this handle; other write-capable connections only read by convention.
+    pub(crate) fn library_writer(&self) -> Arc<Mutex<Db>> {
+        self.inner.library.writer_handle()
     }
 }
 
@@ -686,7 +742,7 @@ impl AndroidPlaybackSession {
             }
             (has_current, state.queue.clone())
         };
-        self.inner.persist_queue(&queue_to_save)?;
+        self.inner.persist_queue(queue_to_save)?;
         if has_current {
             self.inner.start_current()
         } else {

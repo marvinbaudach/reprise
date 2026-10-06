@@ -34,6 +34,7 @@ import androidx.compose.ui.unit.dp
 import io.github.marvinbaudach.reprise.settings.SettingsSwitchRow
 import java.util.Locale
 import kotlin.math.roundToInt
+import uniffi.reprise_android_ffi.AndroidReplayGainMode
 
 internal data class EqualizerBandUi(
     val frequencyHz: Double,
@@ -68,6 +69,8 @@ internal data class PlaybackSettingsUiState(
     val error: String? = null,
     val equalizerCurve: List<EqualizerCurvePoint> = emptyList(),
     val equalizerPresets: List<EqualizerPresetUi> = emptyList(),
+    val volumeKeySkipGestureEnabled: Boolean = true,
+    val replayGainMode: AndroidReplayGainMode = AndroidReplayGainMode.TRACK,
 )
 
 /**
@@ -101,8 +104,10 @@ internal fun PlaybackSettingsScreen(
     replaceEqualizerCurve: (List<EqualizerCurvePoint>) -> Unit,
     setGaplessEnabled: (Boolean) -> Unit,
     selectTheme: (MobileTheme) -> Unit,
+    setVolumeKeySkipGestureEnabled: (Boolean) -> Unit = {},
     pageTitle: String = "Audio",
     backContentDescription: String = "Back to Library",
+    setReplayGainMode: (AndroidReplayGainMode) -> Unit = {},
 ) {
     var confirmEdit by rememberSaveable { mutableStateOf(false) }
     var editing by rememberSaveable { mutableStateOf(false) }
@@ -129,6 +134,19 @@ internal fun PlaybackSettingsScreen(
                     supporting = "Move between supported tracks without an added pause.",
                     checked = state.gaplessEnabled,
                     onCheckedChange = setGaplessEnabled,
+                )
+            }
+            item {
+                ReplayGainModePicker(state.replayGainMode, setReplayGainMode)
+            }
+            item {
+                SettingsSwitchRow(
+                    title = "Skip tracks with the volume keys",
+                    supporting = "Tap up then down for the next track, down then up for the " +
+                        "previous one. Works with the screen off or another app in front, " +
+                        "while playing.",
+                    checked = state.volumeKeySkipGestureEnabled,
+                    onCheckedChange = setVolumeKeySkipGestureEnabled,
                 )
             }
             item { HorizontalDivider() }
@@ -248,6 +266,47 @@ internal fun PlaybackSettingsScreen(
             },
         )
     }
+}
+
+@Composable
+private fun ReplayGainModePicker(
+    selected: AndroidReplayGainMode,
+    select: (AndroidReplayGainMode) -> Unit,
+) {
+    var expanded by remember { mutableStateOf(false) }
+    Row(
+        modifier = Modifier.fillMaxWidth(),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Column(modifier = Modifier.weight(1f)) {
+            Text("Volume Normalization", style = MaterialTheme.typography.bodyLarge)
+            Text(
+                "Match loudness between tracks during playback.",
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                style = MaterialTheme.typography.bodyMedium,
+            )
+        }
+        TextButton(onClick = { expanded = true }) {
+            Text(replayGainModeLabel(selected))
+        }
+        DropdownMenu(expanded = expanded, onDismissRequest = { expanded = false }) {
+            AndroidReplayGainMode.entries.forEach { mode ->
+                DropdownMenuItem(
+                    text = { Text(replayGainModeLabel(mode)) },
+                    onClick = {
+                        expanded = false
+                        select(mode)
+                    },
+                )
+            }
+        }
+    }
+}
+
+private fun replayGainModeLabel(mode: AndroidReplayGainMode): String = when (mode) {
+    AndroidReplayGainMode.OFF -> "Off"
+    AndroidReplayGainMode.TRACK -> "Per Track"
+    AndroidReplayGainMode.ALBUM -> "Per Album"
 }
 
 @Composable

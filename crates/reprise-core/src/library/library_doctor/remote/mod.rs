@@ -8,8 +8,6 @@ mod acoustid;
 mod album_match;
 mod arbitration;
 mod cache;
-#[cfg(test)]
-mod diagnostics;
 pub(crate) mod guard_rails;
 mod metadata;
 mod network;
@@ -22,7 +20,6 @@ mod cache_tests;
 #[cfg(test)]
 mod guard_rails_tests;
 
-#[allow(unused_imports)] // MATCH-3 consumes these staged exports.
 pub(crate) use album_match::{best_release, AlbumMatch, AlbumQuery};
 pub(crate) use cache::CachedRemoteProvider;
 pub(crate) use metadata::read_remote_metadata;

@@ -123,8 +123,13 @@ impl<'a> ArtworkRequest<'a> {
     }
 }
 
+/// Which artwork the chain published: the show/channel fallback or the
+/// episode's own primary image. A second surface observing the same load —
+/// the Now Playing bloom and clouds — must key its per-generation cache on
+/// this too: one generation legitimately publishes a fallback and then a
+/// primary, and a generation-only key would treat the second as a no-op.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-enum ArtworkStage {
+pub(crate) enum ArtworkStage {
     Fallback,
     Primary,
 }
@@ -242,7 +247,7 @@ impl SourceImage {
     pub(crate) fn new_observed(
         request: ArtworkRequest<'_>,
         fallback_icon: &str,
-        on_texture: impl Fn(&gtk4::gdk::Texture) + 'static,
+        on_texture: impl Fn(&gtk4::gdk::Texture, ArtworkStage) + 'static,
     ) -> SourceImage {
         let (width, height) = request.dimensions;
         let image = Self::build(
@@ -266,7 +271,7 @@ impl SourceImage {
             height,
         );
         if matches!(load_policy, ArtworkLoadPolicy::Load) {
-            image.set_urls(request, |_| {});
+            image.set_urls(request, |_, _| {});
         }
         image
     }
@@ -326,7 +331,7 @@ impl SourceImage {
     fn set_urls(
         &self,
         request: ArtworkRequest<'_>,
-        on_texture: impl Fn(&gtk4::gdk::Texture) + 'static,
+        on_texture: impl Fn(&gtk4::gdk::Texture, ArtworkStage) + 'static,
     ) {
         let generation = self.generation.get().wrapping_add(1);
         self.generation.set(generation);
@@ -340,11 +345,11 @@ impl SourceImage {
             generation,
             &self.generation,
             measurement.as_ref(),
-            move |texture| {
+            move |texture, stage| {
                 // The observer runs even if the widget itself is already gone:
                 // it feeds a different surface, whose own generation check
                 // decides whether the texture is still wanted.
-                on_texture(&texture);
+                on_texture(&texture, stage);
                 let Some(root) = weak_root.upgrade() else {
                     return;
                 };
@@ -363,10 +368,10 @@ fn load_texture_chain(
     generation: u64,
     current: &Rc<Cell<u64>>,
     measurement: Option<&MeasurementTarget>,
-    on_ready: impl Fn(gtk4::gdk::Texture) + 'static,
+    on_ready: impl Fn(gtk4::gdk::Texture, ArtworkStage) + 'static,
 ) {
     let primary_visible = Rc::new(Cell::new(false));
-    let on_ready: Rc<dyn Fn(gtk4::gdk::Texture)> = Rc::new(on_ready);
+    let on_ready: Rc<dyn Fn(gtk4::gdk::Texture, ArtworkStage)> = Rc::new(on_ready);
     for (stage, url) in artwork_chain(request.primary_url, request.fallback_url) {
         let primary_visible = primary_visible.clone();
         let current_for_callback = current.clone();
@@ -375,7 +380,7 @@ fn load_texture_chain(
         if stage == ArtworkStage::Fallback {
             if let Some(texture) = cached_texture_at_any_size(&url, request.cache_scope) {
                 if may_publish_artwork(stage, generation, &current_for_callback, &primary_visible) {
-                    on_ready(texture);
+                    on_ready(texture, stage);
                 }
             }
         }
@@ -387,7 +392,7 @@ fn load_texture_chain(
             measurement,
             move |texture| {
                 if may_publish_artwork(stage, generation, &current_for_callback, &primary_visible) {
-                    on_ready(texture);
+                    on_ready(texture, stage);
                 }
             },
         );
@@ -491,7 +496,7 @@ pub(crate) fn load_into_image(
         generation,
         current,
         measurement.as_ref(),
-        move |texture| {
+        move |texture, _stage| {
             let Some(image) = weak_image.upgrade() else {
                 return;
             };

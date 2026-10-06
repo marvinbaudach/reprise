@@ -104,7 +104,9 @@ impl SidebarActivitySlot {
     /// natural height, so the sidebar would reserve room for cards nobody can
     /// see. Keep both the child and its container in step with the reveal state;
     /// that is all this tracking has to do now that the Issues block above it no
-    /// longer moves out of the way (FB-8, amended).
+    /// longer moves out of the way (FB-8, amended). The initial sync must read
+    /// each widget's own `visible` flag: ancestor-aware `is_visible` made it a
+    /// no-op for cards docked behind the still-hidden pinned block.
     fn track_progress_visibility(card: &gtk4::Widget) {
         if let Some(revealer) = card.downcast_ref::<gtk4::Revealer>() {
             revealer.add_css_class("sidebar-job-card-dock");
@@ -118,30 +120,56 @@ impl SidebarActivitySlot {
 fn sync_revealer_visibility(revealer: &gtk4::Revealer) {
     let should_be_visible = revealer.reveals_child() || revealer.is_child_revealed();
     if let Some(child) = revealer.child() {
-        if child.is_visible() != should_be_visible {
+        if child.get_visible() != should_be_visible {
             child.set_visible(should_be_visible);
         }
     }
-    if revealer.is_visible() != should_be_visible {
+    if revealer.get_visible() != should_be_visible {
         revealer.set_visible(should_be_visible);
     }
 }
 
 impl super::Sidebar {
+    fn wire_pinned_card_visibility(&self, card: &impl IsA<gtk4::Widget>) {
+        let sync = {
+            let scrolled = self.pinned_scroller.downgrade();
+            let issues = self.shared.issues_listbox.downgrade();
+            let progress = self.activity_slot.progress_widget().downgrade();
+            move || {
+                if let (Some(scrolled), Some(issues), Some(progress)) =
+                    (scrolled.upgrade(), issues.upgrade(), progress.upgrade())
+                {
+                    scrolled.set_visible(
+                        issues.property::<bool>("visible")
+                            || super::sidebar_issues_section::progress_has_visible_card(&progress),
+                    );
+                }
+            }
+        };
+        card.connect_visible_notify({
+            let sync = sync.clone();
+            move |_| sync()
+        });
+        sync();
+    }
+
     /// Places the scan-progress card in the shared bottom activity slot.
     /// Called once at window build time (after sidebar and scan controls exist).
     pub fn append_scan_card(&self, widget: &impl IsA<gtk4::Widget>) {
         self.activity_slot.set_scan_card(widget);
+        self.wire_pinned_card_visibility(widget);
     }
 
     /// Places Locate's relink-search card in the same bottom activity slot.
     pub fn append_relink_card(&self, widget: &impl IsA<gtk4::Widget>) {
         self.activity_slot.set_relink_card(widget);
+        self.wire_pinned_card_visibility(widget);
     }
 
     /// Places the one Library Doctor job card in the shared activity slot.
     pub fn append_doctor_card(&self, widget: &impl IsA<gtk4::Widget>) {
         self.activity_slot.set_doctor_card(widget);
+        self.wire_pinned_card_visibility(widget);
     }
 }
 

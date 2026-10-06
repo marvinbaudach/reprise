@@ -11,7 +11,7 @@ pub const SIDEBAR_SECTION_SMART: &str = N_!("SMART");
 pub const SIDEBAR_SECTION_ISSUES: &str = N_!("ISSUES");
 
 pub const SIDEBAR_MUSIC: &str = N_!("Music");
-pub const SIDEBAR_RECENTLY_ADDED: &str = N_!("Recently added");
+pub const SIDEBAR_RECENTLY_ADDED: &str = N_!("Recently Added");
 pub const SIDEBAR_QUEUE: &str = N_!("Queue");
 pub const JUMP_TO_NOW_PLAYING: &str = N_!("Jump to now playing");
 pub const GO_TO_PLAYING_ARTIST: &str = N_!("Go to playing artist");
@@ -27,8 +27,8 @@ pub const QUEUE_CLEAR_PLAY_NEXT: &str = N_!("Clear");
 pub const EMPTY_QUEUE_TITLE: &str = N_!("Nothing queued");
 pub const EMPTY_QUEUE_DESCRIPTION: &str = N_!("Play something");
 pub const SIDEBAR_NEW_PLAYLIST: &str = N_!("New playlist");
-pub const SIDEBAR_IMPORT_ERRORS: &str = N_!("Import errors");
-pub const SIDEBAR_MISSING_FILES: &str = N_!("Missing files");
+pub const SIDEBAR_IMPORT_ERRORS: &str = N_!("Import Errors");
+pub const SIDEBAR_MISSING_FILES: &str = N_!("Missing Files");
 pub const SIDEBAR_MY_STATS: &str = N_!("My Stats");
 
 /// Tooltip/accessible name for the headerbar's persistent sidebar-visibility

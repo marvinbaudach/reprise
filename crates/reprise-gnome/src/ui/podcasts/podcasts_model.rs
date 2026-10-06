@@ -49,18 +49,13 @@ impl PodcastEpisodeObject {
 pub(super) struct PodcastsModel {
     store: gio::ListStore,
     selection: gtk4::SingleSelection,
-    sort: RefCell<Option<gtk4::SortListModel>>,
 }
 
 impl PodcastsModel {
     pub(super) fn new() -> Self {
         let store = gio::ListStore::new::<PodcastEpisodeObject>();
         let selection = gtk4::SingleSelection::new(Some(store.clone()));
-        Self {
-            store,
-            selection,
-            sort: RefCell::new(None),
-        }
+        Self { store, selection }
     }
 
     pub(super) fn replace(&self, rows: Vec<EpisodeRow>) {
@@ -85,12 +80,6 @@ impl PodcastsModel {
 
     pub(super) fn selection(&self) -> &gtk4::SingleSelection {
         &self.selection
-    }
-
-    pub(super) fn enable_sorting(&self, sorter: Option<gtk4::Sorter>) {
-        let sort = gtk4::SortListModel::new(Some(self.store.clone()), sorter);
-        self.selection.set_model(Some(&sort));
-        self.sort.replace(Some(sort));
     }
 }
 

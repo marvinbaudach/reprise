@@ -34,18 +34,37 @@ fn take_automatic_completion_target(
     target
 }
 
+fn take_completion_target(
+    external: &mut ExternalPlaybackState,
+    advance: bool,
+) -> Option<NeighbourContext> {
+    if advance {
+        return take_automatic_completion_target(external);
+    }
+    external.clear_session();
+    None
+}
+
 impl PlayerController {
     pub(in crate::ui) fn finish_external(self: &Rc<Self>) {
+        self.finish_external_with_advance(true);
+    }
+
+    pub(in crate::ui) fn finish_external_for_sleep_timer(self: &Rc<Self>) {
+        self.finish_external_with_advance(false);
+    }
+
+    fn finish_external_with_advance(self: &Rc<Self>, advance: bool) {
         match self.playback_mode() {
-            PlaybackMode::Podcast => self.finish_podcast(),
-            PlaybackMode::QueuedEpisode => self.finish_queued_episode(),
+            PlaybackMode::Podcast => self.finish_podcast(advance),
+            PlaybackMode::QueuedEpisode => self.finish_queued_episode(advance),
             PlaybackMode::Radio => self.handle_external_error("Radio stream ended".into()),
             PlaybackMode::Preview => self.end_preview(),
             PlaybackMode::Queue => {}
         }
     }
 
-    fn finish_podcast(self: &Rc<Self>) {
+    fn finish_podcast(self: &Rc<Self>, advance: bool) {
         let (episode_id, subscription_id, published_at) = {
             let external = self.external.borrow();
             let Some(ExternalSession::Podcast(session)) = external.session.as_ref() else {
@@ -68,7 +87,7 @@ impl PlayerController {
         }
         let automatic_target = {
             let mut external = self.external.borrow_mut();
-            take_automatic_completion_target(&mut external)
+            take_completion_target(&mut external, advance)
         };
         if let Some(target) = automatic_target {
             self.play_item_from_neighbour(
@@ -103,7 +122,7 @@ impl PlayerController {
         self.notify_external_changed();
     }
 
-    fn finish_queued_episode(self: &Rc<Self>) {
+    fn finish_queued_episode(self: &Rc<Self>, advance: bool) {
         let episode_id = {
             let external = self.external.borrow();
             let Some(ExternalSession::Podcast(session)) = external.session.as_ref() else {
@@ -122,7 +141,13 @@ impl PlayerController {
         }
         self.external.borrow_mut().clear_session();
         self.notify_external_changed();
-        self.advance_playback(super::up_next_transport::AdvanceReason::Automatic);
+        if advance {
+            self.advance_playback(super::up_next_transport::AdvanceReason::Automatic);
+        } else {
+            self.update_mpris_mirror(MprisPlaybackStatus::Stopped);
+            self.sync_state(PlaybackState::Stopped);
+            self.sync_clear_track();
+        }
     }
 }
 
@@ -190,6 +215,19 @@ mod tests {
         let mut final_youtube = direct_session(PodcastKind::Youtube);
         final_youtube.neighbours = NeighbourContext::for_episode(&[7], 7);
         assert!(super::automatic_completion_target(&final_youtube).is_none());
+    }
+
+    #[test]
+    fn play_18_sleep_timer_completion_clears_the_episode_without_advancing() {
+        let mut youtube = ExternalPlaybackState {
+            session: Some(ExternalSession::Podcast(direct_session(
+                PodcastKind::Youtube,
+            ))),
+            ..ExternalPlaybackState::default()
+        };
+
+        assert!(super::take_completion_target(&mut youtube, false).is_none());
+        assert!(youtube.snapshot().is_none());
     }
 
     /// Marking an episode played is the only thing that repaints its row in

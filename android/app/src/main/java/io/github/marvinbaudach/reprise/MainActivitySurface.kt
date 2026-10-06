@@ -4,6 +4,7 @@ import android.net.Uri
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import uniffi.reprise_android_ffi.AndroidStoredLibraryDestination
+import uniffi.reprise_android_ffi.AndroidReplayGainMode
 
 /** A JVM-replaceable library edge; activity, service, ViewModel and UI stay real. */
 internal interface MainActivitySurfaceProvider {
@@ -46,11 +47,15 @@ internal data class MainActivitySurfaceDependencies(
     val replaceEqualizerCurve: (List<EqualizerCurvePoint>) -> PlaybackSettingsUiState,
     val setGaplessEnabled: (Boolean) -> PlaybackSettingsUiState,
     val selectTheme: (MobileThemeSelection, MobileTheme) -> MobileThemeSelection,
-    val onlineSourcesEnabled: () -> Boolean = { false },
-    val setOnlineSourcesEnabled: (Boolean) -> Result<Unit> = { Result.success(Unit) },
     val animationsEnabled: () -> Boolean,
     val observeAmbientScheduling: (Boolean) -> Unit,
     val libraryPerformanceObserver: LibraryPerformanceObserver = NoOpLibraryPerformanceObserver,
+    val setVolumeKeySkipGestureEnabled: (Boolean) -> PlaybackSettingsUiState = {
+        loadPlaybackSettings()
+    },
+    val setReplayGainMode: (AndroidReplayGainMode) -> PlaybackSettingsUiState = {
+        loadPlaybackSettings()
+    },
 )
 
 internal fun <A, R> offMainLibraryRead(
@@ -61,6 +66,10 @@ internal fun <A, R> offMainLibraryRead(
         query(argument)
     }
 }
+
+/** A read with no argument, for callers that already hold everything it needs. */
+internal suspend fun <R> readOffMainThread(read: () -> R): R =
+    offMainLibraryRead<Unit, R> { read() }(Unit)
 
 internal fun <A, B, R> offMainLibraryRead(
     query: suspend (A, B) -> R,

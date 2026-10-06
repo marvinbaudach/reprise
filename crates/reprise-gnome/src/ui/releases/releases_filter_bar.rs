@@ -51,7 +51,11 @@ pub(super) fn persist_filter(db: &Db, filter: &ReleasesFilter) -> Result<(), rus
         RELEASES_FILTER_WINDOW_KEY,
         filter.window.setting_value(),
     )?;
-    reprise_core::library::settings::set_bool(db, RELEASES_FILTER_HIDDEN_KEY, filter.hidden)
+    Ok(reprise_core::library::settings::set_bool(
+        db,
+        RELEASES_FILTER_HIDDEN_KEY,
+        filter.hidden,
+    )?)
 }
 
 pub(super) struct ReleasesFilterBar {

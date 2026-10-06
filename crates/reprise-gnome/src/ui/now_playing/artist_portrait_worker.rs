@@ -98,7 +98,7 @@ impl ArtistPortraitRuntime {
     /// Both the request and the result are gated: disabling online artwork
     /// while a job is queued prevents the resolver from running, and disabling
     /// it while a request is in flight prevents the image from being shown.
-    #[cfg_attr(not(test), allow(dead_code))]
+    #[cfg(test)]
     pub(in crate::ui) fn request(
         self: &Rc<Self>,
         name: String,

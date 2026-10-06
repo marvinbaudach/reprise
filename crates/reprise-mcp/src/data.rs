@@ -11,6 +11,7 @@ use reprise_core::db::DbError;
 use reprise_core::library::playlists;
 use reprise_core::queries;
 use reprise_core::view_source::ViewSource;
+use reprise_core::CoreError;
 
 use crate::capability;
 pub(crate) use crate::data_concerts::list_concerts;
@@ -25,7 +26,6 @@ pub const DEFAULT_SEARCH_LIMIT: i64 = 50;
 pub const MAX_SEARCH_LIMIT: i64 = 200;
 /// Maximum explicit track ids accepted by a write tool (spec limit).
 pub const MAX_TRACK_IDS: usize = 500;
-const SUMMARY_WINDOW_SIZE: i64 = 500;
 
 /// A failure while serving a request. The `error`/`server`-facing variants are
 /// logged and mapped to opaque protocol errors (never leaked); the
@@ -33,7 +33,7 @@ const SUMMARY_WINDOW_SIZE: i64 = 500;
 #[derive(Debug)]
 pub enum DataError {
     /// A query failed.
-    Db(rusqlite::Error),
+    Db(CoreError),
     /// The database could not be opened.
     Open(DbError),
     /// The required capability is not granted.
@@ -113,56 +113,6 @@ pub fn search_tracks(
     })
 }
 
-fn all_artist_summaries(db: &Db) -> Result<Vec<queries::ArtistSummary>, DataError> {
-    let mut offset = 0;
-    let mut rows = Vec::new();
-    loop {
-        let window = queries::query_artists(
-            db,
-            "",
-            queries::WindowRange {
-                offset,
-                limit: SUMMARY_WINDOW_SIZE,
-            },
-        )
-        .map_err(DataError::Db)?;
-        let returned = i64::try_from(window.rows.len()).unwrap_or(i64::MAX);
-        if returned == 0 && window.has_more {
-            return Err(DataError::Db(rusqlite::Error::InvalidQuery));
-        }
-        rows.extend(window.rows);
-        if !window.has_more {
-            return Ok(rows);
-        }
-        offset = offset.saturating_add(returned);
-    }
-}
-
-fn all_album_summaries(db: &Db) -> Result<Vec<queries::AlbumSummary>, DataError> {
-    let mut offset = 0;
-    let mut rows = Vec::new();
-    loop {
-        let window = queries::query_albums(
-            db,
-            "",
-            queries::WindowRange {
-                offset,
-                limit: SUMMARY_WINDOW_SIZE,
-            },
-        )
-        .map_err(DataError::Db)?;
-        let returned = i64::try_from(window.rows.len()).unwrap_or(i64::MAX);
-        if returned == 0 && window.has_more {
-            return Err(DataError::Db(rusqlite::Error::InvalidQuery));
-        }
-        rows.extend(window.rows);
-        if !window.has_more {
-            return Ok(rows);
-        }
-        offset = offset.saturating_add(returned);
-    }
-}
-
 /// Paginated artist discovery using the same effective-album-artist grouping
 /// as the native Artists view.
 pub fn search_artists(
@@ -175,7 +125,8 @@ pub fn search_artists(
     require_read(&db)?;
 
     let needle = query.trim().to_lowercase();
-    let matching: Vec<_> = all_artist_summaries(&db)?
+    let matching: Vec<_> = queries::query_all_artists(&db)
+        .map_err(DataError::Db)?
         .into_iter()
         .filter(|artist| artist.artist.to_lowercase().contains(&needle))
         .collect();
@@ -213,7 +164,8 @@ pub fn search_albums(
     require_read(&db)?;
 
     let needle = query.trim().to_lowercase();
-    let matching: Vec<_> = all_album_summaries(&db)?
+    let matching: Vec<_> = queries::query_all_albums(&db)
+        .map_err(DataError::Db)?
         .into_iter()
         .filter(|album| {
             album.album.to_lowercase().contains(&needle)
@@ -285,18 +237,19 @@ pub fn playlist_contents(
         .map_err(DataError::Db)?
         .ok_or_else(|| DataError::InvalidInput("playlist does not exist".to_owned()))?;
     let source = ViewSource::Playlist(playlist_id);
-    let total = queries::query_track_count(&db, &source, "", &[]).map_err(DataError::Db)?;
+    let view = queries::TrackViewQuery::new(&source);
+    let total = queries::query_track_count(&db, &view).map_err(DataError::Db)?;
     let limit = resolve_limit(limit);
     let offset = i64::from(offset.unwrap_or(0));
     let tracks = queries::query_track_window(
         &db,
-        &source,
-        "playlist_order",
-        "asc",
-        "",
-        offset,
-        limit,
-        &[],
+        &view,
+        queries::TrackSort {
+            field: "playlist_order",
+            dir: "asc",
+        },
+        queries::RowWindow { offset, limit },
+        queries::AiColumn::Project,
     )
     .map_err(DataError::Db)?;
     let tracks: Vec<TrackDto> = tracks.iter().map(TrackDto::from).collect();
@@ -454,20 +407,12 @@ pub fn resolve_play_ids(
 // track_id` foreign-key violation here is therefore only a rare race (a track
 // hard-deleted between the check and the insert); surface it as caller-fixable
 // input rather than an opaque internal error.
-fn map_create_error(error: rusqlite::Error) -> DataError {
-    if is_constraint_violation(&error) {
+fn map_create_error(error: CoreError) -> DataError {
+    if error.is_conflict() {
         DataError::InvalidInput("one or more track ids do not exist in the library".to_string())
     } else {
         DataError::Db(error)
     }
-}
-
-fn is_constraint_violation(error: &rusqlite::Error) -> bool {
-    matches!(
-        error,
-        rusqlite::Error::SqliteFailure(failure, _)
-            if failure.code == rusqlite::ErrorCode::ConstraintViolation
-    )
 }
 
 #[cfg(all(test, feature = "mpris"))]

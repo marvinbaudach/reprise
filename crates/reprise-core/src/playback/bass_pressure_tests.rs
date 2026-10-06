@@ -37,7 +37,7 @@ fn a_full_scale_bass_sine_reads_its_true_level() {
 }
 
 #[test]
-fn ac_23_quiet_passages_never_ignite_the_glow() {
+fn ac_29_quiet_passages_never_ignite_the_glow() {
     let mut detector = BassPressureDetector::new(RATE);
 
     // A quiet sung passage: the bass band sits around -45 dBFS the whole time.
@@ -51,7 +51,7 @@ fn ac_23_quiet_passages_never_ignite_the_glow() {
 }
 
 #[test]
-fn ac_23_high_frequency_energy_alone_leaves_the_glow_dark() {
+fn ac_29_high_frequency_energy_alone_leaves_the_glow_dark() {
     let mut detector = BassPressureDetector::new(RATE);
 
     // Full-scale vocals/cymbals well above the bass band.
@@ -65,7 +65,7 @@ fn ac_23_high_frequency_energy_alone_leaves_the_glow_dark() {
 }
 
 #[test]
-fn ac_23_steady_loud_bass_keeps_only_the_low_rhythmic_glow() {
+fn ac_29_steady_loud_bass_keeps_only_the_low_rhythmic_glow() {
     let mut detector = BassPressureDetector::new(RATE);
 
     // A wall-of-sound track: loud, but without a swell above its own baseline.
@@ -83,7 +83,7 @@ fn ac_23_steady_loud_bass_keeps_only_the_low_rhythmic_glow() {
 }
 
 #[test]
-fn ac_23_a_bass_drop_over_the_running_baseline_ignites_the_glow() {
+fn ac_29_a_bass_drop_over_the_running_baseline_ignites_the_glow() {
     let mut detector = BassPressureDetector::new(RATE);
 
     // Three seconds of restrained bass establish the baseline, then the drop.
@@ -98,7 +98,7 @@ fn ac_23_a_bass_drop_over_the_running_baseline_ignites_the_glow() {
 }
 
 #[test]
-fn ac_23_sustained_breakdown_pressure_escalates_beyond_the_kick_glow() {
+fn ac_29_sustained_breakdown_pressure_escalates_beyond_the_kick_glow() {
     let mut detector = BassPressureDetector::new(RATE);
     observe_all(&mut detector, &sine(60.0, -30.0, 3.0));
 
@@ -115,7 +115,7 @@ fn ac_23_sustained_breakdown_pressure_escalates_beyond_the_kick_glow() {
 }
 
 #[test]
-fn ac_23_the_glow_releases_after_the_impulse_instead_of_flickering() {
+fn ac_29_the_glow_releases_after_the_impulse_instead_of_flickering() {
     let mut detector = BassPressureDetector::new(RATE);
     observe_all(&mut detector, &sine(60.0, -30.0, 3.0));
     observe_all(&mut detector, &sine(60.0, -10.0, 0.1));
@@ -160,55 +160,6 @@ fn reset_clears_the_running_baseline() {
         "a reset detector must not carry the previous track's pressure, got {:.3}",
         reading.impact
     );
-}
-
-/// Diagnostic probe against real decoded audio (not a contract).
-/// `REPRISE_PCM=/path/a.raw:Name,/path/b.raw:Name` — mono f32le at 44.1 kHz.
-#[test]
-#[ignore = "diagnostic probe; needs REPRISE_PCM, run with --ignored --nocapture"]
-fn probe_real_tracks() {
-    let Ok(spec) = std::env::var("REPRISE_PCM") else {
-        return;
-    };
-    for entry in spec.split(',') {
-        let (path, name) = entry.split_once(':').unwrap_or((entry, entry));
-        let Ok(bytes) = std::fs::read(path) else {
-            println!("{name}: nicht lesbar");
-            continue;
-        };
-        let samples: Vec<f32> = bytes
-            .as_chunks::<4>()
-            .0
-            .iter()
-            .map(|b| f32::from_le_bytes(*b))
-            .collect();
-        let mut detector = BassPressureDetector::new(RATE);
-        let (mut ks, mut ps, mut is, mut au) = (vec![], vec![], vec![], vec![]);
-        for chunk in samples.chunks(1024) {
-            let r = detector.observe(chunk);
-            ks.push(r.kick);
-            ps.push(r.pressure);
-            is.push(r.impact);
-            au.push(r.aura);
-        }
-        let skip = ks.len() / 20;
-        let f = |v: &[f32]| {
-            let s = &v[skip..];
-            let mn = s.iter().cloned().fold(1.0f32, f32::min);
-            let mx = s.iter().cloned().fold(0.0f32, f32::max);
-            let me = s.iter().sum::<f32>() / s.len() as f32;
-            let hi = s.iter().filter(|x| **x > 0.6).count() as f32 / s.len() as f32 * 100.0;
-            (mn, mx, me, hi)
-        };
-        let (kmn, kmx, kme, khi) = f(&ks);
-        let (pmn, pmx, pme, _) = f(&ps);
-        let (imn, imx, ime, ihi) = f(&is);
-        let (_, amx, _, _) = f(&au);
-        println!("{name}  ({:.0} s)", samples.len() as f32 / RATE as f32);
-        println!("   kick     {kmn:.2}..{kmx:.2}  Mittel {kme:.2}   >0.6 in {khi:.0}% der Zeit");
-        println!("   pressure {pmn:.2}..{pmx:.2}  Mittel {pme:.2}");
-        println!("   impact   {imn:.2}..{imx:.2}  Mittel {ime:.2}   >0.6 in {ihi:.0}%   aura max {amx:.2}");
-    }
 }
 
 // --- kick / pressure ------------------------------------------------------

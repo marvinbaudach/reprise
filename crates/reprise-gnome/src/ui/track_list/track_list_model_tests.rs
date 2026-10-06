@@ -111,13 +111,9 @@ fn tag_save_query_swap_emits_only_the_requested_changed_range() {
     });
 
     model.set_query_browsed_ai_changed(
-        &ViewSource::Library,
+        reprise_core::queries::TrackViewQuery::new(&ViewSource::Library),
         "title",
         "asc",
-        "",
-        &BrowseFilter::default(),
-        &[],
-        false,
         super::super::track_list_model_change::ModelChange {
             kind: super::super::track_list_model_change::ModelChangeKind::Span,
             position: 1,
@@ -173,13 +169,9 @@ fn tag_save_block_move_emits_remove_then_insert_over_a_consistent_model() {
     });
 
     model.set_query_browsed_ai_changed(
-        &ViewSource::Library,
+        reprise_core::queries::TrackViewQuery::new(&ViewSource::Library),
         "artist",
         "asc",
-        "",
-        &BrowseFilter::default(),
-        &[],
-        false,
         super::super::track_list_model_change::ModelChange {
             kind: super::super::track_list_model_change::ModelChangeKind::BlockMove {
                 from: 2,
@@ -248,13 +240,9 @@ fn downward_tag_save_block_move_keeps_the_intermediate_model_consistent() {
     });
 
     model.set_query_browsed_ai_changed(
-        &ViewSource::Library,
+        reprise_core::queries::TrackViewQuery::new(&ViewSource::Library),
         "artist",
         "asc",
-        "",
-        &BrowseFilter::default(),
-        &[],
-        false,
         super::super::track_list_model_change::ModelChange {
             kind: super::super::track_list_model_change::ModelChangeKind::BlockMove {
                 from: 1,
@@ -303,13 +291,9 @@ fn tag_save_query_swap_ignores_a_change_range_from_an_older_model_generation() {
     });
 
     model.set_query_browsed_ai_changed(
-        &ViewSource::Library,
+        reprise_core::queries::TrackViewQuery::new(&ViewSource::Library),
         "title",
         "asc",
-        "",
-        &BrowseFilter::default(),
-        &[],
-        false,
         super::super::track_list_model_change::ModelChange {
             kind: super::super::track_list_model_change::ModelChangeKind::Span,
             position: 1,

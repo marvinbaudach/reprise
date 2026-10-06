@@ -4,7 +4,7 @@ use std::rc::Rc;
 
 use reprise_core::db::Db;
 use reprise_core::radio::StationRow;
-use reprise_view::search_scope::{self, SearchScope};
+use reprise_view::search_scope;
 
 use crate::ui::browse::filter_bar::{
     CountText, FacetDescriptor, FilterModel, SelectionDescriptor, ValueDescriptor,
@@ -145,7 +145,11 @@ fn setting(db: &Db, key: &str) -> Result<Option<String>, rusqlite::Error> {
 }
 
 fn persist_value(db: &Db, key: &str, value: Option<&str>) -> Result<(), rusqlite::Error> {
-    reprise_core::library::settings::set_setting(db, key, value.unwrap_or_default())
+    Ok(reprise_core::library::settings::set_setting(
+        db,
+        key,
+        value.unwrap_or_default(),
+    )?)
 }
 
 pub(super) struct RadioModel {
@@ -217,9 +221,6 @@ impl FilterModel for RadioModel {
             value.map(|value| SelectionDescriptor::new(facet, value, value))
         })
         .collect()
-    }
-    fn search_scope(&self) -> SearchScope {
-        SearchScope::Radio
     }
     fn add_filter_label(&self) -> String {
         format!("+ {}", strings::text(strings::RADIO_ADD_FILTER))

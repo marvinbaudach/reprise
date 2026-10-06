@@ -11,9 +11,10 @@ const REORDER_TARGET_CSS_CLASS: &str = "reprise-reorder-target";
 /// later without any runtime walk.
 ///
 /// The `.now-playing*` class names are literals here to match the pattern
-/// this file already follows for `.reprise-track-cell` (see `expand_to_cell`)
-/// — they are set on cells by `track_list_columns.rs`'s `apply_now_playing`.
-/// The marker uses the effective `@accent_color`, shared with
+/// this file already follows for `.reprise-track-cell` (see `expand_to_cell`).
+/// Cells carry the state, the enclosing row paints one continuous tint, and
+/// the leading cell keeps the accent line. The marker uses the effective
+/// `@accent_color`, shared with
 /// `@reprise_player_accent` across the equaliser, play button, and waveform.
 pub(in crate::ui) fn css() -> String {
     use super::style::tokens::{DROP_INDICATOR_THICKNESS, ROW_MIN_HEIGHT};
@@ -21,7 +22,7 @@ pub(in crate::ui) fn css() -> String {
         ".reprise-track-cell {{ min-height: {ROW_MIN_HEIGHT}px; }}\n\
          .{REORDER_TARGET_CSS_CLASS}:drop(active) {{ \
          box-shadow: inset 0 {DROP_INDICATOR_THICKNESS} @accent_color; }}\n\
-         .reprise-track-cell.now-playing {{ \
+         row.now-playing-row {{ \
            background-color: @reprise_now_playing_tint; }}\n\
          .now-playing-leading {{ box-shadow: inset 2px 0 0 @accent_color; }}\n\
          .now-playing-title {{ color: @reprise_accent_text_color; font-weight: bold; }}\n\

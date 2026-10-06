@@ -65,6 +65,7 @@ mod tests {
 
     fn sample_track() -> Track {
         Track {
+            segment: None,
             id: 1,
             path: "/x/a.flac".to_owned(),
             title: String::new(),

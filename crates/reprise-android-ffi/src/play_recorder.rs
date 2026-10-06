@@ -62,21 +62,32 @@
 //! Applying a later entry would move the applied mark past this one and make
 //! the play it describes unrecognisable as pending, so stopping is the only way
 //! to keep it replayable. A user would see a play count that stops rising while
-//! the log carries `kept an Android play count in its journal` for the same
-//! track over and over.
+//! each next play prompts another `kept an Android play count in its journal`
+//! warning for the same blocked track.
 
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, Ordering};
-use std::sync::mpsc::{self, Receiver, Sender};
+use std::sync::mpsc::{self, Receiver, RecvTimeoutError, Sender};
 use std::sync::{Arc, Mutex};
 use std::thread::JoinHandle;
-use std::time::{SystemTime, UNIX_EPOCH};
+use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 use reprise_core::db::Db;
 
 use crate::play_journal::{JournalEntry, PlayJournal};
-use crate::play_recorder_retry::{with_busy_retries, GaveUp};
-use crate::play_recorder_writer::{with_shared_writer_retries, SharedWriteError};
+use crate::play_recorder_retry::GaveUp;
+use crate::play_recorder_writer::{
+    record_unjournaled_play, with_shared_writer_retries, SharedWriteError,
+};
+
+const RETRY_WAKEUP: Duration = Duration::from_secs(1);
+
+#[derive(Clone, Copy)]
+enum DrainOutcome {
+    Drained,
+    WriterBusy,
+    NonRetryable,
+}
 
 /// One counted play, timestamped where it happened rather than where it lands,
 /// so a queued write cannot back-date `last_played_at` to the drain.
@@ -188,6 +199,7 @@ impl Drop for PlayRecorder {
         self.shutting_down.store(true, Ordering::Relaxed);
         self.plays = None;
         if let Some(worker) = self.worker.take() {
+            worker.thread().unpark();
             if worker.join().is_err() {
                 tracing::warn!("the Android play-count writer thread panicked");
             }
@@ -214,27 +226,41 @@ fn write_queued_plays(
     };
     let Some(mut journal) = journal else {
         for play in queued {
-            let Ok(database) = writer.lock() else {
-                tracing::warn!(
-                    track_id = play.track_id,
-                    "dropped an Android play count: the shared writer was poisoned",
-                );
-                continue;
-            };
-            record_unjournaled_play(&database, play, shutting_down);
+            record_unjournaled_play(writer, play, shutting_down);
         }
         return;
     };
-    drain_shared_journal(writer, &mut journal, shutting_down);
-    for play in queued {
-        if append_or_warn(&mut journal, play) {
-            drain_shared_journal(writer, &mut journal, shutting_down);
+    let mut drain_outcome = drain_shared_journal(writer, &mut journal, shutting_down);
+    loop {
+        if matches!(drain_outcome, DrainOutcome::WriterBusy) {
+            match queued.recv_timeout(RETRY_WAKEUP) {
+                Ok(play) => {
+                    if append_or_warn(&mut journal, play) {
+                        drain_outcome = drain_shared_journal(writer, &mut journal, shutting_down);
+                    }
+                }
+                Err(RecvTimeoutError::Timeout) => {
+                    drain_outcome = drain_shared_journal(writer, &mut journal, shutting_down);
+                }
+                Err(RecvTimeoutError::Disconnected) => return,
+            }
+        } else {
+            let Ok(play) = queued.recv() else {
+                return;
+            };
+            if append_or_warn(&mut journal, play) {
+                drain_outcome = drain_shared_journal(writer, &mut journal, shutting_down);
+            }
         }
     }
 }
 
-fn drain_shared_journal(writer: &Mutex<Db>, journal: &mut PlayJournal, shutting_down: &AtomicBool) {
-    drain_journal(writer, journal, shutting_down);
+fn drain_shared_journal(
+    writer: &Mutex<Db>,
+    journal: &mut PlayJournal,
+    shutting_down: &AtomicBool,
+) -> DrainOutcome {
+    drain_journal(writer, journal, shutting_down)
 }
 
 fn append_or_warn(journal: &mut PlayJournal, play: RecordedPlay) -> bool {
@@ -251,10 +277,15 @@ fn append_or_warn(journal: &mut PlayJournal, play: RecordedPlay) -> bool {
     }
 }
 
-fn drain_journal(writer: &Mutex<Db>, journal: &mut PlayJournal, shutting_down: &AtomicBool) {
+fn drain_journal(
+    writer: &Mutex<Db>,
+    journal: &mut PlayJournal,
+    shutting_down: &AtomicBool,
+) -> DrainOutcome {
     while let Some(entry) = journal.front() {
-        if !record_play_with_retries(writer, entry, shutting_down) {
-            return;
+        match record_play_with_retries(writer, entry, shutting_down) {
+            DrainOutcome::Drained => {}
+            stopped => return stopped,
         }
         if let Err(error) = journal.remove_front() {
             // Not a reason to stop. The entry is counted and its sequence is at
@@ -270,6 +301,7 @@ fn drain_journal(writer: &Mutex<Db>, journal: &mut PlayJournal, shutting_down: &
             );
         }
     }
+    DrainOutcome::Drained
 }
 
 /// Writes one journal entry, offering it again while the only thing in the way
@@ -279,7 +311,7 @@ fn record_play_with_retries(
     writer: &Mutex<Db>,
     entry: JournalEntry,
     shutting_down: &AtomicBool,
-) -> bool {
+) -> DrainOutcome {
     let written = with_shared_writer_retries(
         writer,
         shutting_down,
@@ -296,7 +328,7 @@ fn record_play_with_retries(
         },
     );
     match written {
-        Ok(()) => true,
+        Ok(()) => DrainOutcome::Drained,
         Err(GaveUp {
             attempts,
             error: SharedWriteError::Database(error),
@@ -308,7 +340,19 @@ fn record_play_with_retries(
                 attempts,
                 "kept an Android play count in its journal after a write failure",
             );
-            false
+            DrainOutcome::NonRetryable
+        }
+        Err(GaveUp {
+            attempts,
+            error: SharedWriteError::WriterBusy,
+        }) => {
+            tracing::warn!(
+                track_id = entry.play.track_id,
+                sequence = entry.sequence,
+                attempts,
+                "kept an Android play count in its journal: the shared writer was busy",
+            );
+            DrainOutcome::WriterBusy
         }
         Err(GaveUp {
             attempts,
@@ -320,38 +364,8 @@ fn record_play_with_retries(
                 attempts,
                 "kept an Android play count in its journal: the shared writer was poisoned",
             );
-            false
+            DrainOutcome::NonRetryable
         }
-    }
-}
-
-/// Counts one play with no journal behind it, because there is no journal to
-/// have.
-///
-/// This is what the writer did before M8, and it is deliberately what it falls
-/// back to: a play written straight to the library is lost only if the process
-/// dies in the seconds before SQLite commits, while a play held back because
-/// the durability mechanism is broken is lost every single time. The weaker
-/// promise is named in the log so nobody reads a rising count as the strong
-/// one.
-fn record_unjournaled_play(db: &Db, play: RecordedPlay, shutting_down: &AtomicBool) {
-    let written = with_busy_retries(
-        shutting_down,
-        play.track_id,
-        reprise_core::library::stats::is_database_busy,
-        || reprise_core::library::stats::record_play(db, play.track_id, play.at_unix),
-    );
-    match written {
-        Ok(()) => tracing::debug!(
-            track_id = play.track_id,
-            "counted an Android play without a journal: it would not survive a kill",
-        ),
-        Err(GaveUp { attempts, error }) => tracing::warn!(
-            %error,
-            track_id = play.track_id,
-            attempts,
-            "dropped an Android play count: no journal was open to keep it",
-        ),
     }
 }
 
@@ -772,3 +786,7 @@ mod tests {
         );
     }
 }
+
+#[cfg(test)]
+#[path = "play_recorder_shutdown_tests.rs"]
+mod shutdown_tests;

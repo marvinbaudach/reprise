@@ -7,6 +7,7 @@
 //! threading, or FFTW integration is included.
 
 mod bands;
+mod boundary;
 mod smoothing;
 
 use thiserror::Error;
@@ -20,7 +21,6 @@ pub const MAX_CAVA_BAR_COUNT: usize = 256;
 const DEFAULT_LOW_CUTOFF_HZ: u32 = 50;
 const DEFAULT_HIGH_CUTOFF_HZ: u32 = 10_000;
 const DEFAULT_NOISE_REDUCTION: f32 = 0.77;
-const DEFAULT_NOISE_FLOOR: f32 = 0.04;
 const DEFAULT_AUTOSENSITIVITY: u32 = 1;
 /// PCM below this magnitude is silence for the renderer's gain search. CAVA
 /// ages its autosensitivity on individual samples, not on a windowed level.
@@ -28,6 +28,16 @@ const PCM_SILENCE_EPSILON: f32 = 1.0e-6;
 /// `cavacore` works in 16-bit fixed point; the compensation curve is scaled to
 /// that domain, so the magnitude sum is lifted into it before smoothing.
 const CAVA_FIXED_POINT_SCALE: f32 = 65_535.0;
+
+/// Seconds after a stream's first sample at which boundary braking has ended at
+/// `sample_rate_hz`: the window that fills first, then the braking span, each
+/// measured in input windows of `fft_size * 2` samples. The acceptance tests
+/// settle a reference engine past it.
+#[cfg(debug_assertions)]
+pub(super) fn braking_span_seconds(sample_rate_hz: u32) -> f32 {
+    let window_samples = fft_size_for_rate(sample_rate_hz) * 2;
+    ((boundary::BRAKING_WINDOWS + 1) * window_samples) as f32 / sample_rate_hz as f32
+}
 
 /// Configuration for [`CavaBarProcessor`].
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -37,7 +47,6 @@ pub struct CavaConfig {
     pub low_cutoff_hz: u32,
     pub high_cutoff_hz: u32,
     pub noise_reduction: f32,
-    pub noise_floor: f32,
     pub autosensitivity: u32,
 }
 
@@ -49,7 +58,6 @@ impl CavaConfig {
             low_cutoff_hz: DEFAULT_LOW_CUTOFF_HZ,
             high_cutoff_hz: DEFAULT_HIGH_CUTOFF_HZ.min(sample_rate_hz / 2),
             noise_reduction: DEFAULT_NOISE_REDUCTION,
-            noise_floor: DEFAULT_NOISE_FLOOR,
             autosensitivity: DEFAULT_AUTOSENSITIVITY,
         }
     }
@@ -68,8 +76,6 @@ pub enum CavaError {
     HighCutoffAboveNyquist,
     #[error("noise reduction must be finite and between 0 and 1")]
     InvalidNoiseReduction,
-    #[error("noise floor must be finite and between 0 and 1")]
-    InvalidNoiseFloor,
 }
 
 /// Converts successive mono PCM chunks into bounded visualizer bars.
@@ -103,9 +109,6 @@ impl CavaBarProcessor {
         if !config.noise_reduction.is_finite() || !(0.0..=1.0).contains(&config.noise_reduction) {
             return Err(CavaError::InvalidNoiseReduction);
         }
-        if !config.noise_floor.is_finite() || !(0.0..=1.0).contains(&config.noise_floor) {
-            return Err(CavaError::InvalidNoiseFloor);
-        }
         let band_plan = band_plan(config)?;
         let equalizer = equalizer_curve(config, &band_plan);
         let fft_size = fft_size_for_rate(config.sample_rate_hz);
@@ -119,8 +122,8 @@ impl CavaBarProcessor {
             smoother: Smoother::new(
                 config.bar_count,
                 config.noise_reduction,
-                config.noise_floor,
                 config.autosensitivity,
+                fft_size * 2,
             ),
         })
     }
@@ -190,10 +193,70 @@ impl CavaBarProcessor {
         );
     }
 
-    /// Clears all buffered audio, smoothing history, and dynamic gain state.
+    /// Clears buffered audio and the whole smoothing history: a hard restart
+    /// whose bars begin at zero and whose sensitivity is measured from the new
+    /// audio alone, as for a freshly constructed processor.
     pub fn reset(&mut self) {
         self.input_buffer.fill(0.0);
         self.smoother.reset();
+    }
+
+    /// A decoder-stream boundary: a different track or a seek.
+    ///
+    /// Clears the FFT input buffer, so another stream's samples never mix into
+    /// the window, and keeps the smoother's bar shape (`previous`/`peaks`/
+    /// `fall`/`memory`), so the next frames fall through the normal gravity
+    /// from their old heights instead of dropping to zero.
+    ///
+    /// The sensitivity is measured again, with the one that drew the shape kept
+    /// as a prior: a full FFT window of the new audio decides whether it is off
+    /// by more than a factor of two (it is replaced) or not (it stays), and a
+    /// frame drawn at twice full height or more (1.3 times in the first half
+    /// second) brakes it for about fourteen seconds. `cavacore`'s own creep runs
+    /// throughout. A freshly constructed processor measures from nothing
+    /// instead of `cavacore`'s cold climb. The measure is in `boundary`'s
+    /// module docs.
+    pub fn reset_stream(&mut self) {
+        self.input_buffer.fill(0.0);
+        self.smoother.rearm_boundary();
+    }
+
+    /// Clears only the FFT input buffer, for a gap in the audio that is not a
+    /// boundary: the same stream resumes after a pause or a buffering stall. The
+    /// sensitivity, the bar shape and every pending measurement stay as they
+    /// are, because nothing about the music changed; only the window must not
+    /// bridge the gap.
+    pub fn reset_window(&mut self) {
+        self.input_buffer.fill(0.0);
+    }
+
+    /// Seeds the smoother with a shape already on screen — another
+    /// processor's last output — so the next frame continues it, without
+    /// touching the FFT input buffer or the pending sensitivity estimate. Used
+    /// to hand a freshly constructed processor a starting shape before its
+    /// first real audio block arrives, so its first frames fall from that
+    /// shape instead of climbing from zero.
+    ///
+    /// "Continues" has one exception: while the boundary estimate is pending,
+    /// a frame the held gain would draw as a wall is scaled down. A seed alone
+    /// never is. See `Smoother::seed_shape`.
+    pub fn seed_shape(&mut self, bars: &[f32]) {
+        self.smoother.seed_shape(bars);
+    }
+
+    /// The smoother's gain, for tests that compare it with `cavacore`'s or watch
+    /// it move across a boundary. Debug builds only, like the other test seams.
+    #[cfg(debug_assertions)]
+    #[doc(hidden)]
+    pub fn sensitivity(&self) -> f32 {
+        self.smoother.sensitivity()
+    }
+
+    /// Starts the smoother from a gain `cavacore` itself reached, without its
+    /// own estimate. Lets the golden test compare steady state frame for frame.
+    #[cfg(test)]
+    pub(crate) fn adopt_sensitivity(&mut self, sensitivity: f32) {
+        self.smoother.adopt_sensitivity(sensitivity);
     }
 
     fn push_samples(&mut self, mono_samples: &[f32]) -> bool {

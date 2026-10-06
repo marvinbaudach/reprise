@@ -522,7 +522,7 @@ fn scope_request(params: &ScanTagsParams) -> Result<DoctorScopeRequest, DataErro
 
 pub(crate) fn map_doctor_error(error: DoctorError) -> DataError {
     match error {
-        DoctorError::Database(error) => DataError::Db(error),
+        DoctorError::Database(error) => DataError::Db(error.into()),
         DoctorError::TagWriteBusy(_) => DataError::TagWriteBusy,
         DoctorError::InvalidStoredData(message) => DataError::Internal(message),
         DoctorError::CleanupPartiallyCompleted { source, .. } => map_doctor_error(*source),

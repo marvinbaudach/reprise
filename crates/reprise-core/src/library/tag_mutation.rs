@@ -54,7 +54,9 @@ impl WriteErrorKind {
             ImportErrorKind::PermissionDenied => Self::PermissionDenied,
             ImportErrorKind::UnsupportedFormat => Self::UnsupportedFormat,
             ImportErrorKind::UnreadableTags => Self::UnreadableTags,
-            ImportErrorKind::Io | ImportErrorKind::Unknown => Self::Io,
+            ImportErrorKind::Io | ImportErrorKind::Unknown | ImportErrorKind::InvalidCueSheet => {
+                Self::Io
+            }
         }
     }
 }
@@ -145,16 +147,21 @@ pub(crate) fn validate_registered_track(
     id: i64,
     path: &Path,
 ) -> Result<(), String> {
-    let registered_path = conn
+    let registered = conn
         .query_row(
-            "SELECT path FROM tracks WHERE id=?1 AND removed_at IS NULL",
+            "SELECT path, segment_index FROM tracks WHERE id=?1 AND removed_at IS NULL",
             [id],
-            |row| row.get::<_, String>(0),
+            |row| Ok((row.get::<_, String>(0)?, row.get::<_, i64>(1)?)),
         )
         .optional()
         .map_err(|error| format!("could not validate track path before edit: {error}"))?;
-    match registered_path {
-        Some(registered) if registered == path.to_string_lossy() => Ok(()),
+    match registered {
+        // A CUE track's tags live in the sheet, not in the file it is cut from:
+        // writing the file would change every track in it.
+        Some((_, segment_index)) if segment_index > 0 => {
+            Err("this track is part of a CUE sheet and cannot be edited".into())
+        }
+        Some((registered, _)) if registered == path.to_string_lossy() => Ok(()),
         _ => Err("track path changed before edit; refusing stale request".into()),
     }
 }
@@ -470,11 +477,8 @@ pub(super) fn reconcile_after_write(conn: &Connection, id: i64, path: &Path) -> 
     let carried = crate::db_spectrogram::snapshot_render_data(conn, id)
         .map_err(|error| format!("could not preserve rendering data: {error}"))?;
     prepare_reconciliation(conn, id, path)?;
-    match crate::library::scanner::scan_folder_in(conn, path) {
-        Ok(ScanOutcome::Completed(scan)) if scan.errors == 0 => {
-            crate::db_spectrogram::restore_render_data(conn, id, &carried)
-                .map_err(|error| format!("could not restore rendering data: {error}"))
-        }
+    let scan_result = match crate::library::scanner::scan_folder_in(conn, path) {
+        Ok(ScanOutcome::Completed(scan)) if scan.errors == 0 => Ok(()),
         Ok(ScanOutcome::Completed(scan)) => Err(format!(
             "tag reconciliation reported {} error(s)",
             scan.errors
@@ -484,6 +488,14 @@ pub(super) fn reconcile_after_write(conn: &Connection, id: i64, path: &Path) -> 
             root.display()
         )),
         Err(error) => Err(format!("tag reconciliation failed: {error}")),
+    };
+    let restore_result = crate::db_spectrogram::restore_render_data(conn, id, &carried)
+        .map_err(|error| format!("could not restore rendering data: {error}"));
+    match (scan_result, restore_result) {
+        (Ok(()), Ok(())) => Ok(()),
+        (Err(scan), Ok(())) => Err(scan),
+        (Ok(()), Err(restore)) => Err(restore),
+        (Err(scan), Err(restore)) => Err(format!("{scan}; {restore}")),
     }
 }
 

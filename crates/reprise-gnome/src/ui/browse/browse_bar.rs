@@ -65,7 +65,13 @@ pub struct BrowseBar {
     clear_all: gtk4::Button,
     /// FIL-1c: the left zone holding the place pill; empty at sidebar places.
     place_zone: gtk4::Box,
-    #[cfg_attr(not(test), allow(dead_code))]
+    #[cfg_attr(
+        not(test),
+        allow(
+            dead_code,
+            reason = "only tests inspect this value; production code never reads it"
+        )
+    )]
     scope_button: RefCell<Option<gtk4::Button>>,
     pub(super) chooser_facets: RefCell<Vec<BrowseFacet>>,
     pub(super) chooser_facet: Cell<Option<BrowseFacet>>,
@@ -617,14 +623,17 @@ fn schedule_smoke_step(
         let filter = shared.filter.borrow().clone();
         let ids = {
             let conn = &shared.conn;
-            queries::query_track_ids_browsed(
+            let source = reprise_core::view_source::ViewSource::Library;
+            let view = queries::TrackViewQuery::new(&source)
+                .with_filter(&filter)
+                .with_browse(&browse);
+            queries::query_track_ids(
                 conn,
-                &reprise_core::view_source::ViewSource::Library,
-                &sort.field,
-                &sort.dir,
-                &filter,
-                &browse,
-                &[],
+                &view,
+                queries::TrackSort {
+                    field: &sort.field,
+                    dir: &sort.dir,
+                },
             )
         };
         let chips: Vec<_> = filter_chips(&browse)

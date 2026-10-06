@@ -99,8 +99,10 @@ use reprise_core::library::tag_edit::TrackWrite;
 use reprise_core::library::tag_edit_session::{SessionMode, TagEditSession};
 
 use crate::ui::strings;
-use crate::ui::tag_editor_dirty::{commit_number_field_on_save, parse_number_field, session_scope};
-use crate::ui::tag_editor_state::*;
+use crate::ui::tag_edit::tag_editor_dirty::{
+    commit_number_field_on_save, parse_number_field, session_scope,
+};
+use crate::ui::tag_edit::tag_editor_state::*;
 use reprise_core::library::tag_edit_session::TagField;
 
 #[derive(Clone, Copy)]

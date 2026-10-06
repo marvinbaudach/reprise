@@ -1,6 +1,7 @@
 package io.github.marvinbaudach.reprise
 
 import androidx.activity.ComponentActivity
+import androidx.compose.foundation.layout.Box
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.ui.semantics.SemanticsActions
@@ -18,6 +19,7 @@ import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performTouchInput
+import androidx.compose.ui.unit.dp
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
 import org.junit.Rule
@@ -35,6 +37,8 @@ import uniffi.reprise_android_ffi.AndroidTrashReport
 class TrackContextMenuTest {
     @get:Rule
     val compose = createAndroidComposeRule<ComponentActivity>()
+
+    private val harness = DeletionHarness()
 
     @Test
     fun longPressingATitleRowCanEnqueueItWithoutStartingPlayback() {
@@ -61,28 +65,37 @@ class TrackContextMenuTest {
 
         compose.onNodeWithTag("library-track-row-41").performTouchInput { longClick() }
         compose.onNodeWithText("Play next").performClick()
+        compose.waitUntil(AWAIT_TIMEOUT_MS) { controls.queuedNext.isNotEmpty() }
 
         assertEquals(listOf(listOf(41L)), controls.queuedNext)
         assertEquals(0, playCount)
     }
 
     @Test
-    fun deletingAlwaysConfirmsAndCancelLeavesTheTrackUntouched() {
+    fun deletingHidesTheRowAtOnceAndUndoLeavesTheTrackUntouched() {
         val controls = RecordingContextMenuControls()
         val track = configurationTestTrack(41, "Menu Song")
         composeTitleRow(track, controls)
 
         openTitleMenu(track.id)
         compose.onNodeWithText("Delete from device…").performClick()
-        compose.onNodeWithText("Delete Menu Song?").assertIsDisplayed()
-        compose.onNodeWithText("This cannot be undone.", substring = true).assertIsDisplayed()
-        compose.onNodeWithText("Cancel").performClick()
-        compose.onNodeWithText("Delete Menu Song?").assertDoesNotExist()
+        compose.awaitText("1 track will be deleted")
+        compose.onNodeWithText("Undo").assertIsDisplayed()
+        compose.onNodeWithTag("library-track-row-41").assertDoesNotExist()
+        assertEquals(emptyList<List<Long>>(), controls.deleted)
+
+        compose.onNodeWithText("Undo").performClick()
+        compose.waitUntil(AWAIT_TIMEOUT_MS) {
+            compose.onAllNodesWithTag("library-track-row-41").fetchSemanticsNodes().isNotEmpty()
+        }
+        compose.runOnIdle { harness.passTheWindow() }
         assertEquals(emptyList<List<Long>>(), controls.deleted)
 
         openTitleMenu(track.id)
         compose.onNodeWithText("Delete from device…").performClick()
-        compose.onNodeWithText("Delete", useUnmergedTree = true).performClick()
+        compose.awaitText("1 track will be deleted")
+        compose.runOnIdle { harness.passTheWindow() }
+        compose.waitUntil(AWAIT_TIMEOUT_MS) { controls.deleted.isNotEmpty() }
         assertEquals(listOf(listOf(41L)), controls.deleted)
     }
 
@@ -136,6 +149,7 @@ class TrackContextMenuTest {
         compose.onNode(
             hasText("Play") and hasAnyAncestor(hasTestTag("library-track-context-menu")),
         ).performClick()
+        compose.waitUntil(AWAIT_TIMEOUT_MS) { controls.playedIds != null }
 
         assertEquals(listOf(9L, 7L, 5L), controls.playedIds)
         assertEquals(0, controls.playedStartIndex)
@@ -242,6 +256,7 @@ class TrackContextMenuTest {
 
         openTitleMenu(track.id)
         compose.onNodeWithText("Play next").performClick()
+        compose.awaitText("1 track queued")
 
         // The row is a clipped 72 dp Surface: a message dropped beside its
         // content lands on the cover and the title instead of below the row.
@@ -273,7 +288,7 @@ class TrackContextMenuTest {
 
         compose.onNodeWithTag("now-playing-overflow").performClick()
         compose.onNodeWithText("Delete from device…").performClick()
-        compose.onNodeWithText("Delete", useUnmergedTree = true).performClick()
+        passTheUndoWindow()
 
         // As a bare sibling the message becomes another cell of the actions
         // Row and squeezes the controls sideways; FavouriteHeartButton next
@@ -309,7 +324,7 @@ class TrackContextMenuTest {
 
         openTitleMenu(track.id)
         compose.onNodeWithText("Delete from device…").performClick()
-        compose.onNodeWithText("Delete", useUnmergedTree = true).performClick()
+        passTheUndoWindow()
 
         compose.onNodeWithText("1 of 1 could not be deleted").assertIsDisplayed()
         compose.onNodeWithText("PermissionDenied", substring = true).assertDoesNotExist()
@@ -333,6 +348,14 @@ class TrackContextMenuTest {
         compose.onNodeWithText("Delete from device…").assertIsDisplayed()
     }
 
+    private fun passTheUndoWindow() {
+        compose.waitUntil(AWAIT_TIMEOUT_MS) {
+            harness.surface.pendingDeletions.offers.current != null
+        }
+        compose.runOnIdle { harness.passTheWindow() }
+        compose.waitForIdle()
+    }
+
     private fun composeNowPlayingMenu(
         layout: SurfaceLayout,
         controls: RecordingContextMenuControls = RecordingContextMenuControls(),
@@ -342,6 +365,7 @@ class TrackContextMenuTest {
             MaterialTheme {
                 CompositionLocalProvider(
                     LocalPlaybackControls provides controls,
+                    LocalDeletionMessages provides harness.surface,
                 ) {
                     NowPlayingSheet(
                         track = track,
@@ -361,17 +385,24 @@ class TrackContextMenuTest {
     ) {
         compose.setContent {
             MaterialTheme {
-                CompositionLocalProvider(LocalPlaybackControls provides controls) {
-                    TrackRows(
-                        surfaceLayout = SurfaceLayout.STACKED,
-                        surfaceState = MobileSurfaceViewModel(),
-                        listKey = LibraryListKey.TITLES,
-                        tracks = LibraryWindow(total = 1, rows = listOf(track), hasMore = false),
-                        playback = PlaybackUiState().libraryPlayback(),
-                        lastRequestedOffset = null,
-                        play = {},
-                        loadMore = {},
-                    )
+                CompositionLocalProvider(
+                    LocalPlaybackControls provides controls,
+                    LocalDeletionMessages provides harness.surface,
+                ) {
+                    Box {
+                        TrackRows(
+                            surfaceLayout = SurfaceLayout.STACKED,
+                            surfaceState = harness.surface,
+                            listKey = LibraryListKey.TITLES,
+                            tracks = LibraryWindow(total = 1, rows = listOf(track), hasMore = false),
+                            playback = PlaybackUiState().libraryPlayback(),
+                            lastRequestedOffset = null,
+                            play = {},
+                            loadMore = {},
+                        )
+                        DeletionMessageLine(harness.surface)
+                        UndoSnackbarHost(harness.surface.pendingDeletions) { 0.dp }
+                    }
                 }
             }
         }
@@ -394,13 +425,14 @@ class TrackContextMenuTest {
         .getOrElse(SemanticsActions.CustomActions) { emptyList() }
 }
 
-private class RecordingContextMenuControls(
+internal class RecordingContextMenuControls(
     private val upcoming: List<LibraryTrack> = emptyList(),
     private val deletionOutcome: Result<AndroidTrashReport>? = null,
 ) : PlaybackControls {
     var playedIds: List<Long>? = null
     var playedStartIndex: Int? = null
     val queuedNext = mutableListOf<List<Long>>()
+    val queuedLast = mutableListOf<List<Long>>()
     val deleted = mutableListOf<List<Long>>()
     val moved = mutableListOf<Triple<Int, Long, Int>>()
 
@@ -448,6 +480,11 @@ private class RecordingContextMenuControls(
 
     override fun queueTracksNext(trackIds: List<Long>, report: (Result<UInt>) -> Unit) {
         queuedNext += trackIds
+        report(Result.success(trackIds.size.toUInt()))
+    }
+
+    override fun queueTracksLast(trackIds: List<Long>, report: (Result<UInt>) -> Unit) {
+        queuedLast += trackIds
         report(Result.success(trackIds.size.toUInt()))
     }
 

@@ -28,14 +28,32 @@ fn smoothstep(value: f32) -> f32 {
     value * value * (3.0 - 2.0 * value)
 }
 
-fn neon(bar: usize, alpha: f32) -> Fill {
+fn neon_rgb(bar: usize) -> Rgba {
     let across = bar as f32 / (BAR_COUNT - 1) as f32;
     let hue = HUE_START + (HUE_END - HUE_START) * across;
     let (r, g, b) = hsla_to_rgb(hue, 0.88, 0.60);
-    Fill::Solid(Rgba { r, g, b, a: alpha })
+    Rgba { r, g, b, a: 1.0 }
+}
+
+#[cfg(test)]
+fn neon(bar: usize, alpha: f32) -> Fill {
+    Fill::Solid(Rgba {
+        a: alpha,
+        ..neon_rgb(bar)
+    })
 }
 
 pub(crate) fn scene(ctx: &ModeCtx) -> Vec<Shape> {
+    let colours: [Rgba; BAR_COUNT] = std::array::from_fn(neon_rgb);
+    scene_with_color(ctx, |bar, alpha| {
+        Fill::Solid(Rgba {
+            a: alpha,
+            ..colours[bar]
+        })
+    })
+}
+
+fn scene_with_color(ctx: &ModeCtx, colour: impl Fn(usize, f32) -> Fill) -> Vec<Shape> {
     let margin = ctx.width * HORIZONTAL_MARGIN;
     let gap = ctx.width * BAR_GAP;
     let bar_width = (ctx.width - margin * 2.0 - gap * (BAR_COUNT - 1) as f32) / BAR_COUNT as f32;
@@ -56,7 +74,7 @@ pub(crate) fn scene(ctx: &ModeCtx) -> Vec<Shape> {
                     cy: ctx.height * 0.68,
                     r: radius,
                 },
-                fill: neon(bar, BASS_GLOW_ALPHA * ctx.bass_impact),
+                fill: colour(bar, BASS_GLOW_ALPHA * ctx.bass_impact),
                 width: 0.0,
                 glow: 0.0,
                 dash: None,
@@ -76,7 +94,7 @@ pub(crate) fn scene(ctx: &ModeCtx) -> Vec<Shape> {
                     cy: ctx.height * 0.66,
                     r: radius,
                 },
-                fill: neon(bar, BREAKDOWN_GLOW_ALPHA * ctx.bass_aura),
+                fill: colour(bar, BREAKDOWN_GLOW_ALPHA * ctx.bass_aura),
                 width: 0.0,
                 glow: 0.0,
                 dash: None,
@@ -98,7 +116,7 @@ pub(crate) fn scene(ctx: &ModeCtx) -> Vec<Shape> {
                     cy: top + segment_height,
                     r: bar_width * (1.25 + value * 0.55),
                 },
-                fill: neon(bar, 0.08 + value * 0.13),
+                fill: colour(bar, 0.08 + value * 0.13),
                 width: 0.0,
                 glow: 0.0,
                 dash: None,
@@ -115,7 +133,7 @@ pub(crate) fn scene(ctx: &ModeCtx) -> Vec<Shape> {
                     w: bar_width,
                     h: segment_height,
                 },
-                fill: neon(bar, 0.96 * transition),
+                fill: colour(bar, 0.96 * transition),
                 width: 0.0,
                 glow: 0.0,
                 dash: None,
@@ -130,7 +148,7 @@ pub(crate) fn scene(ctx: &ModeCtx) -> Vec<Shape> {
                         w: bar_width,
                         h: reflection_height,
                     },
-                    fill: neon(bar, (0.13 - segment as f32 * 0.02) * transition),
+                    fill: colour(bar, (0.13 - segment as f32 * 0.02) * transition),
                     width: 0.0,
                     glow: 0.0,
                     dash: None,
@@ -196,7 +214,18 @@ mod tests {
     }
 
     #[test]
-    fn ac_23_draws_sixty_four_one_to_one_cava_columns() {
+    fn cached_bar_colours_render_the_same_fixed_frame() {
+        let engine = lively_engine();
+        let ctx = test_ctx(&engine, WIDTH, HEIGHT);
+
+        let before = scene_with_color(&ctx, neon);
+        let after = scene(&ctx);
+
+        assert_eq!(format!("{before:?}"), format!("{after:?}"));
+    }
+
+    #[test]
+    fn ac_29_draws_sixty_four_one_to_one_cava_columns() {
         let engine = lively_engine();
         let shapes = scene(&test_ctx(&engine, WIDTH, HEIGHT));
         let mut x_positions: Vec<f32> = main_segments(&shapes)

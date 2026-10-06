@@ -5,11 +5,39 @@ use reprise_core::connectivity::Connectivity;
 use super::PreferencesContext;
 
 pub(super) type ArtworkPermissionCallback = Rc<dyn Fn(bool)>;
+pub(super) type OnlineModuleStateCallback = Rc<dyn Fn()>;
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(super) struct OnlineSourceState {
+    podcasts: bool,
+    youtube: bool,
+    radio: bool,
+}
+
+impl OnlineSourceState {
+    pub(super) fn read(conn: &reprise_core::db::Db) -> Self {
+        Self {
+            podcasts: reprise_core::online_sources::network_allowed_or_off(
+                conn,
+                &reprise_core::modules::PODCASTS_MODULE,
+            ),
+            youtube: reprise_core::online_sources::network_allowed_or_off(
+                conn,
+                &reprise_core::modules::YOUTUBE_MODULE,
+            ),
+            radio: reprise_core::online_sources::network_allowed_or_off(
+                conn,
+                &reprise_core::modules::RADIO_MODULE,
+            ),
+        }
+    }
+}
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 enum PermissionEffect {
     None,
     Start,
+    WaitForNetwork,
     Stop,
 }
 
@@ -27,7 +55,7 @@ fn artwork_effect_for_transition(
     connectivity: Connectivity,
 ) -> PermissionEffect {
     match (effect_for_transition(was_allowed, is_allowed), connectivity) {
-        (PermissionEffect::Start, Connectivity::Offline) => PermissionEffect::None,
+        (PermissionEffect::Start, Connectivity::Offline) => PermissionEffect::WaitForNetwork,
         (effect, _) => effect,
     }
 }
@@ -42,6 +70,11 @@ impl PreferencesContext {
         callback: impl Fn(bool) + 'static,
     ) {
         self.on_artwork_permission_changed
+            .replace(Some(Rc::new(callback)));
+    }
+
+    pub(in crate::ui) fn set_on_online_module_state_changed(&self, callback: impl Fn() + 'static) {
+        self.on_online_module_state_changed
             .replace(Some(Rc::new(callback)));
     }
 
@@ -71,6 +104,17 @@ impl PreferencesContext {
             PermissionEffect::Start => self.lyrics_batch.start(),
             PermissionEffect::Stop => self.lyrics_batch.cancel(),
             PermissionEffect::None => {}
+            PermissionEffect::WaitForNetwork => {
+                tracing::warn!("ignored an unsupported wait-for-network lyrics transition");
+            }
+        }
+        let source_state = OnlineSourceState::read(&self.conn);
+        let source_state_changed = self.online_source_state.replace(source_state) != source_state;
+        if source_state_changed {
+            let refresh_sources = self.on_online_module_state_changed.borrow().clone();
+            if let Some(refresh_sources) = refresh_sources {
+                refresh_sources();
+            }
         }
         self.refresh_background_bar_gate();
         self.sidebar.refresh(reason);
@@ -80,6 +124,10 @@ impl PreferencesContext {
         let enabled = match effect {
             PermissionEffect::Start => true,
             PermissionEffect::Stop => false,
+            PermissionEffect::WaitForNetwork => {
+                self.cover_batch.wait_for_network_return();
+                return;
+            }
             PermissionEffect::None => return,
         };
         let callback = self.on_artwork_permission_changed.borrow().clone();
@@ -111,7 +159,7 @@ mod tests {
     fn an_offline_off_to_on_transition_waits_without_failure() {
         assert_eq!(
             artwork_effect_for_transition(false, true, Connectivity::Offline),
-            PermissionEffect::None
+            PermissionEffect::WaitForNetwork
         );
     }
 

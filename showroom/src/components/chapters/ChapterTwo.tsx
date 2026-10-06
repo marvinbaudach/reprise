@@ -17,7 +17,7 @@ import './chapters.css';
  * record. GitHub derives that fragment from the heading text, so a renamed
  * heading breaks the link rather than silently pointing at the wrong section.
  */
-const QUOTE_LINK = `${permalink(STYLE_SOURCE)}#L41-L45`;
+const QUOTE_LINK = `${permalink(STYLE_SOURCE)}#L42-L46`;
 const RULE_LINK = `${permalink(INCIDENT_RECORD)}#c-gate-the-444-claim-on-mutations-not-on-a-green-test`;
 const GATE_LINK = permalink(MERGE_GATE_SOURCE);
 

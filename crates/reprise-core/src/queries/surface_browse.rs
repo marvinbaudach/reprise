@@ -3,15 +3,18 @@
 //! alignment, caching, and prefetch remain with their existing owners.
 
 use crate::browser::SortDirection;
-use crate::db::Db;
 use crate::models::Track;
 use crate::view_source::ViewSource;
+use crate::{db::Db, CoreError};
 use rusqlite::{types::Value, OptionalExtension};
 
 use super::clauses::{
     like_pattern, metadata_filter_clause, row_to_track, track_projection, PRESENT,
 };
-use super::{query_track_count, query_track_window, MAX_WINDOW_LIMIT};
+use super::{
+    query_track_count, query_track_window, AiColumn, RowWindow, TrackSort, TrackViewQuery,
+    MAX_WINDOW_LIMIT,
+};
 
 /// The library subset a surface wants to read through a bounded window.
 ///
@@ -100,16 +103,21 @@ pub fn query_library_tracks(
         ),
         LibraryTrackOrder::CanonicalAlbum => ("album_canonical", "asc"),
     };
-    let total = query_track_count(db, &source, &request.search, &[])?;
+    let view = TrackViewQuery::new(&source).with_filter(&request.search);
+    let sort = TrackSort {
+        field: sort_field,
+        dir: sort_dir,
+    };
+    let total = query_track_count(db, &view)?;
     let rows = query_track_window(
         db,
-        &source,
-        sort_field,
-        sort_dir,
-        &request.search,
-        request.window.offset,
-        request.window.limit,
-        &[],
+        &view,
+        sort,
+        RowWindow {
+            offset: request.window.offset,
+            limit: request.window.limit,
+        },
+        AiColumn::Project,
     )?;
     Ok(TrackWindow {
         total,
@@ -168,7 +176,7 @@ pub fn query_library_metadata_text_search(
     db: &Db,
     text: &str,
     window: WindowRange,
-) -> Result<TrackWindow, rusqlite::Error> {
+) -> Result<TrackWindow, CoreError> {
     let has_filter = !text.trim().is_empty();
     let pattern = like_pattern(text.trim());
     let count_sql = format!(
@@ -212,7 +220,7 @@ pub fn query_library_metadata_text_search(
 /// from the windowed queries' would not fail, it would quietly hand `path` to
 /// `title`. No surface on this path renders the AI badge, so the `is_ai` column
 /// is the cheap literal `0` — projected all the same, because `row_to_track`
-/// reads index 22 either way.
+/// reads that column either way.
 pub fn query_present_track_by_id(db: &Db, track_id: i64) -> Result<Option<Track>, rusqlite::Error> {
     let projection = track_projection("", false);
     db.conn()

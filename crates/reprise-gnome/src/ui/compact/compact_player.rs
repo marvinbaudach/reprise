@@ -233,11 +233,12 @@ impl CompactPlayer {
             self.0.menu.set_queue_navigation_enabled(true);
             return;
         };
-        let display = crate::ui::player_bar_state::external_bar_display(snapshot);
+        let display = crate::ui::player_bar::player_bar_state::external_bar_display(snapshot);
         self.set_track(&display.title, &display.subtitle);
         self.set_state(display.playback);
         self.0.widgets.waveform.set_peaks(Vec::new());
-        let live = display.progress_mode == crate::ui::player_bar_state::BarProgressMode::Live;
+        let live =
+            display.progress_mode == crate::ui::player_bar::player_bar_state::BarProgressMode::Live;
         self.0.seek_enabled.set(!live);
         self.0.widgets.waveform.widget().set_sensitive(!live);
         self.0

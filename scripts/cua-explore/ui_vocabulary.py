@@ -101,8 +101,8 @@ KNOWN_SECTION_LABELS = (
     "Releases",
     "Concerts",
     "My Stats",
-    "Import errors",
-    "Missing files",
+    "Import Errors",
+    "Missing Files",
     "Library Doctor",
 )
 

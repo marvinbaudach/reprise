@@ -12,7 +12,9 @@ internal fun Context.sharedMusicLibrary(): MusicLibrary {
     val app = applicationContext as Application
     return synchronized(processLibraries) {
         processLibraries.getOrPut(app) {
-            MusicLibrary.open(app.filesDir.absolutePath, app.cacheDir.absolutePath)
+            MusicLibrary.open(app.filesDir.absolutePath, app.cacheDir.absolutePath).also { library ->
+                library.registerTrackPcmDecoder(MediaCodecTrackDecoder(app.contentResolver))
+            }
         }
     }
 }

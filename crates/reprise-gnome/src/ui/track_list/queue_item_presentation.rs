@@ -69,6 +69,36 @@ pub(in crate::ui) fn source_icon(item: &QueueItemMetadata) -> Option<&'static st
     })
 }
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(in crate::ui) enum NowPlayingKey {
+    Track(i64),
+    Episode(i64),
+}
+
+impl From<&QueueItemMetadata> for NowPlayingKey {
+    fn from(item: &QueueItemMetadata) -> Self {
+        match item {
+            QueueItemMetadata::Track(track) => Self::Track(track.id),
+            QueueItemMetadata::Episode(episode) => Self::Episode(episode.id),
+        }
+    }
+}
+
+pub(in crate::ui) fn is_now_playing_key(
+    item: NowPlayingKey,
+    playing_track_id: Option<i64>,
+    playing_episode: Option<crate::ui::podcasts::EpisodeMark>,
+) -> bool {
+    match item {
+        NowPlayingKey::Track(track_id) => {
+            playing_episode.is_none() && playing_track_id == Some(track_id)
+        }
+        NowPlayingKey::Episode(episode_id) => {
+            playing_episode.map(|mark| mark.id) == Some(episode_id)
+        }
+    }
+}
+
 /// Whether this row is the one currently playing.
 ///
 /// A track id and an episode id are separate primary keys and can be the same
@@ -81,14 +111,7 @@ pub(in crate::ui) fn is_now_playing(
     playing_track_id: Option<i64>,
     playing_episode: Option<crate::ui::podcasts::EpisodeMark>,
 ) -> bool {
-    match item {
-        QueueItemMetadata::Track(track) => {
-            playing_episode.is_none() && playing_track_id == Some(track.id)
-        }
-        QueueItemMetadata::Episode(episode) => {
-            playing_episode.map(|mark| mark.id) == Some(episode.id)
-        }
-    }
+    is_now_playing_key(NowPlayingKey::from(item), playing_track_id, playing_episode)
 }
 
 pub(in crate::ui) fn rating_track_id(item: &QueueItemMetadata) -> Option<i64> {
@@ -108,7 +131,8 @@ mod tests {
     use reprise_core::models::Track;
 
     use super::{
-        cell_text, is_now_playing, rating_track_id, rating_write_target, source_icon, title,
+        cell_text, is_now_playing, is_now_playing_key, rating_track_id, rating_write_target,
+        source_icon, title, NowPlayingKey,
     };
 
     fn episode(kind: PodcastKind) -> QueueItemMetadata {
@@ -172,6 +196,7 @@ mod tests {
     /// shared id, so it must be a real one.
     fn track_with_colliding_id() -> QueueItemMetadata {
         QueueItemMetadata::Track(Track {
+            segment: None,
             id: 7,
             path: "/music/seven.flac".into(),
             title: "Track Seven".into(),
@@ -221,5 +246,27 @@ mod tests {
         // Nothing playing marks nothing.
         assert!(!is_now_playing(&track, None, None));
         assert!(!is_now_playing(&episode, None, None));
+    }
+
+    #[test]
+    fn key_comparison_distinguishes_tracks_and_episodes_with_the_same_id() {
+        let episode = crate::ui::podcasts::EpisodeMark::new(7, false);
+
+        assert!(!is_now_playing_key(
+            NowPlayingKey::Track(7),
+            Some(7),
+            Some(episode)
+        ));
+        assert!(is_now_playing_key(
+            NowPlayingKey::Episode(7),
+            Some(7),
+            Some(episode)
+        ));
+        assert!(is_now_playing_key(NowPlayingKey::Track(7), Some(7), None));
+        assert!(!is_now_playing_key(
+            NowPlayingKey::Episode(7),
+            Some(7),
+            None
+        ));
     }
 }

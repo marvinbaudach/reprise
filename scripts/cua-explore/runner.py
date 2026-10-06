@@ -34,7 +34,8 @@ from protocol import (
 )
 from report import RunReport
 from oracles import Finding
-from ui_vocabulary import BUSY_ROLES, BUSY_WORDS, is_row
+from search_results import result_elements
+from ui_vocabulary import BUSY_ROLES, BUSY_WORDS
 from workload_audit import ActionTrace, audit_action_workload
 from launch import (
     AppLifecycle,
@@ -226,10 +227,10 @@ def _trace_from_observations(
         return [item for item in raw if isinstance(item, dict)] if isinstance(raw, list) else []
 
     def rows(observation: Mapping[str, Any]) -> tuple[tuple[str, float], ...]:
+        # The result items of the page, not every row the tree has: the sidebar
+        # entries and the column header are rows to the driver too.
         projected = []
-        for item in elements(observation):
-            if not is_row(str(item.get("role", ""))) or not item.get("label"):
-                continue
+        for item in result_elements(observation):
             frame = item.get("frame", {})
             y = frame.get("y", 0.0) if isinstance(frame, dict) else 0.0
             projected.append((str(item["label"]), float(y)))
@@ -243,11 +244,18 @@ def _trace_from_observations(
         )
 
     def values(observation: Mapping[str, Any]) -> tuple[tuple[str, str], ...]:
-        return tuple(
-            (str(item["label"]), str(item.get("value", "")))
-            for item in elements(observation)
-            if item.get("label")
-        )
+        # The audits read this as a dict, so a label that appears twice keeps
+        # only its last value. "Search all fields" names both the toggle that
+        # opens the search and the search box itself; the toggle has no value
+        # and, listed after the box, used to erase the typed text.
+        by_label: dict[str, str] = {}
+        for item in elements(observation):
+            if not item.get("label"):
+                continue
+            label, value = str(item["label"]), str(item.get("value", ""))
+            if value or label not in by_label:
+                by_label[label] = value
+        return tuple(by_label.items())
 
     after_elements = elements(after)
     return ActionTrace(

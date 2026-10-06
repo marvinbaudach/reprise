@@ -108,6 +108,9 @@ fn session_with_library(
         }),
     )
     .unwrap();
+    // The session persists its restored queue on a background worker that takes
+    // the writer. Let it finish, so a writer probe sees only the trash run.
+    session.flush_queue_persistence();
     (session, calls)
 }
 
@@ -275,7 +278,7 @@ fn trashing_the_playing_track_advances_plays_and_removes_it_from_upcoming() {
         .lock()
         .unwrap()
         .iter()
-        .any(|call| matches!(call, PortCall::PlayUri(uri) if uri == &track("Next").path)));
+        .any(|call| matches!(call, PortCall::PlayPath(uri, _) if uri == &track("Next").path)));
     let visible_ids = session
         .upcoming_tracks(WindowRange {
             offset: 0,

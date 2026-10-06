@@ -1,11 +1,12 @@
 //! radio-browser server discovery and rotation.
 
 use std::collections::HashSet;
-use std::sync::{Mutex, MutexGuard};
+use std::sync::Mutex;
 
 use serde::Deserialize;
 
 use super::RadioError;
+use crate::net::lock_unpoisoned;
 
 const DISCOVERY_URL: &str = "https://all.api.radio-browser.info/json/servers";
 const MAX_ATTEMPTS: usize = 3;
@@ -56,7 +57,8 @@ pub fn parse_servers(json: &str) -> Result<Vec<String>, RadioError> {
 }
 
 pub fn discover() -> Result<ServerPool, RadioError> {
-    if let Some(cached) = lock_unpoisoned(&CACHED_SERVERS).clone() {
+    let cached = lock_unpoisoned(&CACHED_SERVERS).clone();
+    if let Some(cached) = cached {
         return Ok(cached);
     }
     let servers = parse_servers(&super::http::get(DISCOVERY_URL)?)?;
@@ -107,12 +109,6 @@ fn normalize_server(value: &str) -> Option<String> {
     } else {
         Some(format!("https://{value}"))
     }
-}
-
-fn lock_unpoisoned<T>(mutex: &Mutex<T>) -> MutexGuard<'_, T> {
-    mutex
-        .lock()
-        .unwrap_or_else(std::sync::PoisonError::into_inner)
 }
 
 #[cfg(test)]

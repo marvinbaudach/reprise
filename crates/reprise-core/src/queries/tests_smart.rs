@@ -52,19 +52,16 @@ fn smart_window_applies_rules_and_own_sort() {
 
     let rows = query_track_window(
         &db,
-        &ViewSource::Smart(smart_id),
-        "ignored",
-        "ignored",
-        "",
-        0,
-        10,
-        &[],
+        &TrackViewQuery::new(&ViewSource::Smart(smart_id)),
+        test_sort("ignored", "ignored"),
+        test_rows(0, 10),
+        AiColumn::Project,
     )
     .unwrap();
     let ids: Vec<i64> = rows.iter().map(|t| t.id).collect();
     assert_eq!(ids, vec![2, 4]);
     assert_eq!(
-        query_track_count(&db, &ViewSource::Smart(smart_id), "", &[]).unwrap(),
+        query_track_count(&db, &TrackViewQuery::new(&ViewSource::Smart(smart_id))).unwrap(),
         2
     );
 }
@@ -83,13 +80,10 @@ fn smart_window_keeps_membership_but_honors_the_requested_column_sort() {
 
     let rows = query_track_window(
         &db,
-        &ViewSource::Smart(smart_id),
-        "artist",
-        "asc",
-        "",
-        0,
-        10,
-        &[],
+        &TrackViewQuery::new(&ViewSource::Smart(smart_id)),
+        test_sort("artist", "asc"),
+        test_rows(0, 10),
+        AiColumn::Project,
     )
     .unwrap();
     let ids: Vec<i64> = rows.iter().map(|track| track.id).collect();
@@ -100,7 +94,12 @@ fn smart_window_keeps_membership_but_honors_the_requested_column_sort() {
         "the smart definition chooses members 1 and 2, then the clicked Artist column sorts them"
     );
     assert_eq!(
-        query_track_ids(&db, &ViewSource::Smart(smart_id), "artist", "asc", "", &[],).unwrap(),
+        query_track_ids(
+            &db,
+            &TrackViewQuery::new(&ViewSource::Smart(smart_id)),
+            test_sort("artist", "asc")
+        )
+        .unwrap(),
         vec![2, 1],
         "playback snapshots must follow the same visible smart-playlist order"
     );
@@ -120,13 +119,10 @@ fn smart_window_sorts_the_primary_artist_term_descending() {
 
     let rows = query_track_window(
         &db,
-        &ViewSource::Smart(smart_id),
-        "artist",
-        "desc",
-        "",
-        0,
-        10,
-        &[],
+        &TrackViewQuery::new(&ViewSource::Smart(smart_id)),
+        test_sort("artist", "desc"),
+        test_rows(0, 10),
+        AiColumn::Project,
     )
     .unwrap();
 
@@ -152,13 +148,10 @@ fn smart_window_applies_live_search_filter_too() {
 
     let rows = query_track_window(
         &db,
-        &ViewSource::Smart(smart_id),
-        "ignored",
-        "ignored",
-        "Track 3",
-        0,
-        10,
-        &[],
+        &TrackViewQuery::new(&ViewSource::Smart(smart_id)).with_filter("Track 3"),
+        test_sort("ignored", "ignored"),
+        test_rows(0, 10),
+        AiColumn::Project,
     )
     .unwrap();
     assert_eq!(rows.len(), 1);
@@ -177,13 +170,10 @@ fn smart_window_offset_within_limit_returns_the_edge_case_slice() {
 
     let rows = query_track_window(
         &db,
-        &ViewSource::Smart(smart_id),
-        "ignored",
-        "ignored",
-        "",
-        40,
-        20,
-        &[],
+        &TrackViewQuery::new(&ViewSource::Smart(smart_id)),
+        test_sort("ignored", "ignored"),
+        test_rows(40, 20),
+        AiColumn::Project,
     )
     .unwrap();
     assert_eq!(rows.len(), 10);
@@ -210,7 +200,7 @@ fn smart_count_is_capped_by_limit_count() {
     let smart_id = insert_smart_playlist(conn, "[]", "title", "asc", Some(50));
 
     assert_eq!(
-        query_track_count(&db, &ViewSource::Smart(smart_id), "", &[]).unwrap(),
+        query_track_count(&db, &TrackViewQuery::new(&ViewSource::Smart(smart_id))).unwrap(),
         50
     );
 }
@@ -223,11 +213,8 @@ fn smart_ids_are_capped_by_limit_count() {
 
     let ids = query_track_ids(
         &db,
-        &ViewSource::Smart(smart_id),
-        "ignored",
-        "ignored",
-        "",
-        &[],
+        &TrackViewQuery::new(&ViewSource::Smart(smart_id)),
+        test_sort("ignored", "ignored"),
     )
     .unwrap();
     assert_eq!(ids.len(), 50);
@@ -245,13 +232,10 @@ fn smart_window_falls_back_to_title_on_tampered_sort_field() {
 
     let rows = query_track_window(
         &db,
-        &ViewSource::Smart(smart_id),
-        "ignored",
-        "ignored",
-        "",
-        0,
-        10,
-        &[],
+        &TrackViewQuery::new(&ViewSource::Smart(smart_id)),
+        test_sort("ignored", "ignored"),
+        test_rows(0, 10),
+        AiColumn::Project,
     )
     .unwrap();
     let titles: Vec<&str> = rows.iter().map(|t| t.title.as_str()).collect();
@@ -261,20 +245,26 @@ fn smart_window_falls_back_to_title_on_tampered_sort_field() {
 #[test]
 fn smart_source_not_found_degrades_to_empty() {
     let db = seeded_conn_with_tracks(3);
-    assert!(
-        query_track_window(&db, &ViewSource::Smart(999), "x", "x", "", 0, 10, &[])
-            .unwrap()
-            .is_empty()
-    );
+    assert!(query_track_window(
+        &db,
+        &TrackViewQuery::new(&ViewSource::Smart(999)),
+        test_sort("x", "x"),
+        test_rows(0, 10),
+        AiColumn::Project
+    )
+    .unwrap()
+    .is_empty());
     assert_eq!(
-        query_track_count(&db, &ViewSource::Smart(999), "", &[]).unwrap(),
+        query_track_count(&db, &TrackViewQuery::new(&ViewSource::Smart(999))).unwrap(),
         0
     );
-    assert!(
-        query_track_ids(&db, &ViewSource::Smart(999), "x", "x", "", &[])
-            .unwrap()
-            .is_empty()
-    );
+    assert!(query_track_ids(
+        &db,
+        &TrackViewQuery::new(&ViewSource::Smart(999)),
+        test_sort("x", "x")
+    )
+    .unwrap()
+    .is_empty());
 }
 
 #[test]
@@ -306,11 +296,15 @@ fn fil_8_recently_added_includes_every_track_from_the_last_seven_days_without_a_
     .unwrap();
 
     assert_eq!(
-        query_track_count(&db, &ViewSource::RecentlyAdded, "", &[]).unwrap(),
+        query_track_count(&db, &TrackViewQuery::new(&ViewSource::RecentlyAdded)).unwrap(),
         60
     );
-    let ids =
-        query_track_ids(&db, &ViewSource::RecentlyAdded, "added_at", "desc", "", &[]).unwrap();
+    let ids = query_track_ids(
+        &db,
+        &TrackViewQuery::new(&ViewSource::RecentlyAdded),
+        test_sort("added_at", "desc"),
+    )
+    .unwrap();
     assert_eq!(ids.len(), 60);
     assert_eq!(ids[0], 1);
     assert!(!ids.contains(&61));
@@ -323,7 +317,7 @@ fn fil_8_recently_added_includes_every_track_from_the_last_seven_days_without_a_
         )
         .unwrap();
     assert_eq!(
-        query_track_count(&db, &ViewSource::Smart(smart_id), "", &[]).unwrap(),
+        query_track_count(&db, &TrackViewQuery::new(&ViewSource::Smart(smart_id))).unwrap(),
         60,
         "legacy sessions and non-GTK consumers must resolve the built-in smart id identically"
     );

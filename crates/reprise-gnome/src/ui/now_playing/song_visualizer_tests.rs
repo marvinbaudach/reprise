@@ -1,7 +1,7 @@
 use super::*;
 
 #[test]
-fn ac_23_visual_chrome_is_a_bars_only_canvas() {
+fn ac_29_visual_chrome_is_a_bars_only_canvas() {
     let css = css();
     assert!(css.contains("color: @reprise_player_accent"));
     assert!(css.contains(".reprise-song-visual-canvas"));
@@ -17,7 +17,7 @@ fn visualizer_has_no_cover_color_input() {
 
 #[test]
 #[ignore = "requires a display; run via xvfb-run"]
-fn ac_23_visual_widget_exposes_only_a_labeled_bars_canvas() {
+fn ac_29_visual_widget_exposes_only_a_labeled_bars_canvas() {
     gtk4::init().unwrap();
     let visualizer = SongVisualizer::new();
 
@@ -31,7 +31,7 @@ fn ac_23_visual_widget_exposes_only_a_labeled_bars_canvas() {
 }
 
 #[test]
-fn ac_23_the_analysis_readout_reports_the_values_the_glow_uses() {
+fn ac_29_the_analysis_readout_reports_the_values_the_glow_uses() {
     let values = analysis_values(
         BassPressure {
             level_dbfs: -14.2,
@@ -58,7 +58,7 @@ fn ac_23_the_analysis_readout_reports_the_values_the_glow_uses() {
 }
 
 #[test]
-fn ac_23_a_silent_analysis_reads_as_a_dash_instead_of_a_bottomed_out_level() {
+fn ac_29_a_silent_analysis_reads_as_a_dash_instead_of_a_bottomed_out_level() {
     let values = analysis_values(
         BassPressure {
             level_dbfs: -140.0,
@@ -81,7 +81,7 @@ fn ac_23_a_silent_analysis_reads_as_a_dash_instead_of_a_bottomed_out_level() {
 
 #[test]
 #[ignore = "requires a display; run via xvfb-run"]
-fn ac_23_the_readout_fits_in_the_strip_left_under_the_canvas() {
+fn ac_29_the_readout_fits_in_the_strip_left_under_the_canvas() {
     // The panel is a fixed 300 px wide and the canvas takes everything above,
     // leaving roughly one strip. A readout taller than that is silently
     // clipped — the live session showed Impact and Breakdown cut off. The
@@ -106,7 +106,7 @@ fn ac_23_the_readout_fits_in_the_strip_left_under_the_canvas() {
 
 #[test]
 #[ignore = "requires a display; run via xvfb-run"]
-fn ac_23_the_readout_names_stay_readable_at_the_panel_width() {
+fn ac_29_the_readout_names_stay_readable_at_the_panel_width() {
     // Caption and value share one line, so the captions are the first thing
     // to be ellipsized when they don't fit — the live session showed "BA…"
     // and "BASELI…". What counts is not the 300 px panel but what is left
@@ -141,7 +141,7 @@ fn ac_23_the_readout_names_stay_readable_at_the_panel_width() {
 
 #[test]
 #[ignore = "requires a display; run via xvfb-run"]
-fn ac_23_the_readout_follows_the_measurement_the_player_delivers() {
+fn ac_29_the_readout_follows_the_measurement_the_player_delivers() {
     use reprise_core::playback::{SpectrumFrame, SPECTRUM_BAND_COUNT};
 
     gtk4::init().unwrap();
@@ -176,7 +176,7 @@ fn ac_23_the_readout_follows_the_measurement_the_player_delivers() {
     assert_eq!(shown[5], "0.45"); // Swell
 
     // `impact` is produced but no longer displayed: since the glow became a
-    // stage light driven by `kick`, nothing reads it, and AC-23 asks this strip
+    // stage light driven by `kick`, nothing reads it, and AC-29 asks this strip
     // to name the analysis the visual actually reacts to.
     assert!(!shown.contains(&"0.87".to_owned()));
 }
@@ -244,7 +244,7 @@ fn resting_engine(ticks: usize) -> VisualEngine {
 /// bass-pressure detector — and writes the scene at named moments, to confirm
 /// on screen what the calibration says in numbers.
 #[test]
-#[ignore = "visual verification: needs REPRISE_VIS_PCM (raw mono f32 44.1 kHz)"]
+#[ignore = "measurement: replays a decoded track and writes PPM frames; needs REPRISE_VIS_PCM (raw mono f32 44.1 kHz), optional REPRISE_VIS_OUT and REPRISE_VIS_MOMENTS"]
 fn render_bass_pressure_moments_ppm() {
     use reprise_core::playback::{
         BassPressureDetector, CavaBarProcessor, CavaConfig, SpectrumFrame, SPECTRUM_BAND_COUNT,
@@ -460,7 +460,7 @@ fn write_ppm(surface: &mut gtk4::cairo::ImageSurface, width: usize, height: usiz
 }
 
 #[test]
-#[ignore = "visual gallery: renders the Bars scene to REPRISE_VIS_OUT for eyeballing"]
+#[ignore = "measurement: renders the Bars scene to PPM files for eyeballing; optional REPRISE_VIS_OUT"]
 fn render_bars_gallery_ppm() {
     let out = std::env::var("REPRISE_VIS_OUT").unwrap_or_else(|_| "/tmp".to_owned());
     let (w, h) = (548.0_f32, 300.0_f32);
@@ -486,7 +486,7 @@ fn render_bars_gallery_ppm() {
 }
 
 #[test]
-#[ignore = "diagnostic: measures the complete scene-build and Cairo-render frame budget"]
+#[ignore = "measurement: wall-clock p95 of the scene-build and Cairo-render frame budget; meaningful only on an idle machine"]
 fn bars_fullscreen_render_budget_diagnostic() {
     use reprise_core::playback::{SpectrumFrame, SPECTRUM_BAND_COUNT};
     use std::time::Instant;

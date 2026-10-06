@@ -320,30 +320,6 @@ fn pod_7_failed_worker_download_emits_failed_and_removes_partial() {
     assert!(walk_files(directory.path()).is_empty());
 }
 
-/// A `FeedFetcher` whose provider error carries exactly what `POD-13`
-/// forbids: a signed URL with a query string, a credential-looking token,
-/// and an absolute local filesystem path.
-struct LeakingFeed;
-
-const LEAKING_PROVIDER_MESSAGE: &str = "GET https://cdn.example.test/ep.mp3\
-    ?sig=abc123&token=SECRET-TOKEN failed while writing \
-    /home/user/.local/share/reprise/podcasts/leak.mp3";
-
-impl FeedFetcher for LeakingFeed {
-    fn fetch(
-        &self,
-        _: &podcasts::SubscriptionRow,
-    ) -> Result<podcasts::http::Response, podcasts::PodcastError> {
-        unreachable!()
-    }
-
-    fn download(&self, _: &str, _: &std::path::Path) -> Result<(), podcasts::PodcastError> {
-        Err(podcasts::PodcastError::Transport(
-            LEAKING_PROVIDER_MESSAGE.to_owned(),
-        ))
-    }
-}
-
 #[test]
 fn pod_7_response_channel_coalesces_progress_but_never_drops_terminal_state() {
     let (response, receiver) = podcasts_response_channel();

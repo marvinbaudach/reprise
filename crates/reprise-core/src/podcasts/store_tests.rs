@@ -442,3 +442,134 @@ fn pod_6_episode_removal_undo_and_commit_block_rss_and_youtube_reimport() {
         );
     }
 }
+
+#[test]
+fn pod_6_removing_an_episode_waits_for_a_concurrent_writer() {
+    use std::sync::atomic::{AtomicUsize, Ordering};
+    use std::sync::{mpsc, Mutex};
+    use std::time::Duration;
+
+    const SETUP_DEADLINE: Duration = Duration::from_secs(10);
+    /// Pause between the removal's lock retries inside the busy handler.
+    const BUSY_POLL: Duration = Duration::from_millis(1);
+
+    // `Connection::busy_handler` takes a plain `fn`, so the handler reports
+    // through statics. Only this test installs it.
+    static BUSY_ENTRIES: AtomicUsize = AtomicUsize::new(0);
+    static BUSY_SIGNAL: Mutex<Option<mpsc::Sender<()>>> = Mutex::new(None);
+
+    fn count_and_signal_busy(_attempts: i32) -> bool {
+        BUSY_ENTRIES.fetch_add(1, Ordering::SeqCst);
+        if let Some(signal) = BUSY_SIGNAL.lock().unwrap().as_ref() {
+            let _ = signal.send(());
+        }
+        std::thread::sleep(BUSY_POLL);
+        true
+    }
+
+    let directory = tempfile::tempdir().unwrap();
+    let database_path = directory.path().join("library.db");
+    let db = Db::open_migrated(Some(&database_path)).unwrap();
+    assert_eq!(
+        db.conn()
+            .query_row("PRAGMA busy_timeout", [], |row| row.get::<_, i64>(0))
+            .unwrap(),
+        crate::db::DEFAULT_BUSY_TIMEOUT_MS
+    );
+    let subscription_id = add_or_restore(&db, &subscription_draft(), 10).unwrap();
+    let episode_id = upsert_episode(&db, subscription_id, &parsed_episode("Episode"), 20)
+        .unwrap()
+        .expect("episode should be imported")
+        .episode_id;
+    assert!(tombstone_episode(&db, episode_id, 30).unwrap());
+
+    // The writer commits only once the removal has been seen waiting: the busy
+    // handler signals it, so no clock decides who is first.
+    let (busy_seen, wait_busy) = mpsc::channel();
+    *BUSY_SIGNAL.lock().unwrap() = Some(busy_seen);
+    let (locked, lock_observed) = mpsc::sync_channel::<Result<(), String>>(1);
+    let writer = std::thread::spawn(move || -> Result<(), String> {
+        let writer_db = match Db::open_ready(&database_path) {
+            Ok(db) => db,
+            Err(error) => {
+                let message = format!("could not open concurrent writer: {error}");
+                let _ = locked.send(Err(message.clone()));
+                return Err(message);
+            }
+        };
+        let transaction = match rusqlite::Transaction::new_unchecked(
+            writer_db.conn(),
+            rusqlite::TransactionBehavior::Immediate,
+        ) {
+            Ok(transaction) => transaction,
+            Err(error) => {
+                let message = format!("could not begin concurrent write: {error}");
+                let _ = locked.send(Err(message.clone()));
+                return Err(message);
+            }
+        };
+        // SQLite's writer lock is database-wide, so the table written here is irrelevant.
+        if let Err(error) = transaction.execute(
+            "UPDATE podcast_subscriptions SET title = ?2 WHERE id = ?1",
+            params![subscription_id, "Writer held the lock"],
+        ) {
+            let message = format!("could not establish concurrent write: {error}");
+            let _ = locked.send(Err(message.clone()));
+            return Err(message);
+        }
+        locked
+            .send(Ok(()))
+            .map_err(|error| format!("could not report concurrent writer lock: {error}"))?;
+        wait_busy
+            .recv_timeout(SETUP_DEADLINE)
+            .map_err(|error| format!("the removal never waited for the lock: {error}"))?;
+        transaction
+            .commit()
+            .map_err(|error| format!("could not commit concurrent write: {error}"))
+    });
+    match lock_observed.recv_timeout(SETUP_DEADLINE) {
+        Ok(Ok(())) => {}
+        Ok(Err(error)) => {
+            let writer_result = writer
+                .join()
+                .unwrap_or_else(|panic| std::panic::resume_unwind(panic));
+            panic!("concurrent writer setup failed: {error}; writer result: {writer_result:?}");
+        }
+        Err(error) => {
+            let writer_result = writer
+                .join()
+                .unwrap_or_else(|panic| std::panic::resume_unwind(panic));
+            panic!(
+                "concurrent writer did not report setup before the deadline: {error}; writer result: {writer_result:?}"
+            );
+        }
+    }
+
+    db.conn().busy_handler(Some(count_and_signal_busy)).unwrap();
+    let removed = commit_remove_episode(&db, episode_id);
+    BUSY_SIGNAL.lock().unwrap().take();
+    writer
+        .join()
+        .unwrap_or_else(|panic| std::panic::resume_unwind(panic))
+        .expect("concurrent writer should finish successfully");
+
+    assert!(
+        BUSY_ENTRIES.load(Ordering::SeqCst) >= 1,
+        "episode removal never had to wait, so it proved nothing about the lock"
+    );
+    assert!(
+        removed.is_ok(),
+        "episode removal should wait for the concurrent writer: {removed:?}"
+    );
+    assert!(episode(&db, episode_id).unwrap().is_none());
+    assert_eq!(
+        db.conn()
+            .query_row(
+                "SELECT COUNT(*) FROM podcast_episode_dismissals WHERE guid = ?1",
+                ["stable-guid"],
+                |row| row.get::<_, i64>(0),
+            )
+            .unwrap(),
+        1
+    );
+}

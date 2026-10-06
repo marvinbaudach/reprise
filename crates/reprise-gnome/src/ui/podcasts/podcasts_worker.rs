@@ -1,11 +1,16 @@
 //! Long-lived podcast refresh and download worker.
 
 use std::cell::{Cell, RefCell};
-use std::path::PathBuf;
 use std::rc::Rc;
+use std::sync::Arc;
+use std::time::Instant;
 
 use reprise_core::db::Db;
 use reprise_core::podcasts;
+
+#[path = "podcasts_lanes.rs"]
+mod lanes;
+use lanes::{lane_for, spawn_lane, LaneExecutor, PodcastsLane};
 
 #[derive(Clone, Debug)]
 pub(in crate::ui) enum PodcastsOperation {
@@ -49,6 +54,14 @@ pub(in crate::ui) struct PodcastsRequest {
     pub generation: u64,
     pub operation: PodcastsOperation,
     pub response: PodcastsResponseChannel,
+}
+
+/// A request together with the instant it entered the worker's channel.
+/// Logged when its lane dequeues it so a slow refresh can be told apart from
+/// a refresh that queued behind other feed work.
+pub(super) struct QueuedRequest {
+    request: PodcastsRequest,
+    queued_at: Instant,
 }
 
 #[derive(Debug)]
@@ -138,7 +151,8 @@ impl FillRequestState {
 /// `podcasts::pipeline`, which is the one authority for that gate.
 pub(in crate::ui) struct PodcastsRuntime {
     pub enabled: Rc<Cell<bool>>,
-    worker: async_channel::Sender<PodcastsRequest>,
+    feeds: async_channel::Sender<QueuedRequest>,
+    downloads: async_channel::Sender<QueuedRequest>,
     subscribers: RefCell<Vec<OnEnabled>>,
     fill_request: Cell<FillRequestState>,
 }
@@ -158,10 +172,27 @@ fn any_source_dispatchable(conn: &Db) -> bool {
 
 impl PodcastsRuntime {
     pub(in crate::ui) fn setup(conn: &Db) -> Rc<Self> {
-        let worker = spawn(conn.path());
+        let executor: LaneExecutor = Arc::new(process_request);
+        let database_path = conn.path();
         Rc::new(Self {
             enabled: Rc::new(Cell::new(any_source_dispatchable(conn))),
-            worker,
+            feeds: spawn_lane(
+                PodcastsLane::Feeds,
+                database_path.clone(),
+                Arc::clone(&executor),
+            ),
+            downloads: spawn_lane(PodcastsLane::Downloads, database_path, executor),
+            subscribers: RefCell::new(Vec::new()),
+            fill_request: Cell::new(FillRequestState::default()),
+        })
+    }
+
+    #[cfg(test)]
+    pub(super) fn new_for_test(enabled: bool, executor: LaneExecutor) -> Rc<Self> {
+        Rc::new(Self {
+            enabled: Rc::new(Cell::new(enabled)),
+            feeds: spawn_lane(PodcastsLane::Feeds, None, Arc::clone(&executor)),
+            downloads: spawn_lane(PodcastsLane::Downloads, None, executor),
             subscribers: RefCell::new(Vec::new()),
             fill_request: Cell::new(FillRequestState::default()),
         })
@@ -207,6 +238,7 @@ impl PodcastsRuntime {
         }
     }
 
+    #[cfg(test)]
     pub(in crate::ui) fn subscribe_enabled(&self, callback: impl Fn(bool) + 'static) {
         let callback: OnEnabled = Rc::new(callback);
         callback(self.enabled.get());
@@ -217,7 +249,15 @@ impl PodcastsRuntime {
         if !self.enabled.get() {
             return false;
         }
-        match self.worker.try_send(request) {
+        let queued = QueuedRequest {
+            request,
+            queued_at: Instant::now(),
+        };
+        let sender = match lane_for(&queued.request.operation) {
+            PodcastsLane::Feeds => &self.feeds,
+            PodcastsLane::Downloads => &self.downloads,
+        };
+        match sender.try_send(queued) {
             Ok(()) => true,
             Err(error) => {
                 tracing::warn!(%error, "could not queue podcast work");
@@ -265,28 +305,92 @@ pub(in crate::ui) fn automatic_refresh_allowed(
     enabled && subscription_count > 0 && !metered && due
 }
 
-fn spawn(database_path: Option<PathBuf>) -> async_channel::Sender<PodcastsRequest> {
-    let (sender, receiver) = async_channel::unbounded::<PodcastsRequest>();
-    let result = std::thread::Builder::new()
-        .name("reprise-podcasts".into())
-        .spawn(move || {
-            let connection = database_path
-                .as_deref()
-                .map(|path| reprise_core::db::Db::open_migrated(Some(path)));
-            while let Ok(request) = receiver.recv_blocking() {
-                process_request(connection.as_ref(), &request);
-            }
-        });
-    if let Err(error) = result {
-        tracing::warn!(%error, "could not start podcast worker");
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+struct DownloadJobCounts {
+    downloaded: usize,
+    failed: usize,
+}
+
+impl DownloadJobCounts {
+    const fn episodes(self) -> usize {
+        self.downloaded + self.failed
     }
-    sender
+
+    fn record(&mut self, state: &podcasts::download_state::DownloadState) {
+        let next = count_download_state(state);
+        self.downloaded += next.downloaded;
+        self.failed += next.failed;
+    }
+}
+
+fn count_download_state(state: &podcasts::download_state::DownloadState) -> DownloadJobCounts {
+    match state {
+        podcasts::download_state::DownloadState::Downloaded { .. } => DownloadJobCounts {
+            downloaded: 1,
+            failed: 0,
+        },
+        podcasts::download_state::DownloadState::Failed { .. } => DownloadJobCounts {
+            downloaded: 0,
+            failed: 1,
+        },
+        podcasts::download_state::DownloadState::NotDownloaded
+        | podcasts::download_state::DownloadState::Queued
+        | podcasts::download_state::DownloadState::Downloading { .. }
+        | podcasts::download_state::DownloadState::Missing => DownloadJobCounts::default(),
+    }
+}
+
+#[cfg(test)]
+fn count_download_states(states: &[podcasts::download_state::DownloadState]) -> DownloadJobCounts {
+    let mut counts = DownloadJobCounts::default();
+    for state in states {
+        counts.record(state);
+    }
+    counts
+}
+
+#[derive(Clone, Copy)]
+enum DownloadJobOutcome {
+    Ok,
+    Error,
+    AlreadyRunning,
+}
+
+impl DownloadJobOutcome {
+    const fn name(self) -> &'static str {
+        match self {
+            Self::Ok => "ok",
+            Self::Error => "error",
+            Self::AlreadyRunning => "already_running",
+        }
+    }
+}
+
+fn log_download_job(
+    request: &PodcastsRequest,
+    started_at: Instant,
+    counts: DownloadJobCounts,
+    outcome: DownloadJobOutcome,
+) {
+    tracing::info!(
+        lane = PodcastsLane::Downloads.name(),
+        operation = ?request.operation,
+        elapsed_ms = started_at.elapsed().as_millis() as u64,
+        episodes = counts.episodes(),
+        downloaded = counts.downloaded,
+        failed = counts.failed,
+        outcome = outcome.name(),
+        "podcast download job finished"
+    );
 }
 
 fn process_request(
     connection: Option<&Result<Db, reprise_core::db::DbError>>,
-    request: &PodcastsRequest,
+    queued: &QueuedRequest,
 ) {
+    let request = &queued.request;
+    let started_at = Instant::now();
+    // Each request runs on its lane's thread and uses that thread's connection.
     let Some(Ok(conn)) = connection else {
         let error = connection
             .and_then(|result| result.as_ref().err())
@@ -295,6 +399,14 @@ fn process_request(
                 ToString::to_string,
             );
         send_response(request, Err(error));
+        if lane_for(&request.operation) == PodcastsLane::Downloads {
+            log_download_job(
+                request,
+                started_at,
+                DownloadJobCounts::default(),
+                DownloadJobOutcome::Error,
+            );
+        }
         return;
     };
     match &request.operation {
@@ -344,7 +456,8 @@ fn process_request(
             send_response(request, result);
         }
         PodcastsOperation::Download { episode_id } => {
-            download_episode(conn, request, *episode_id);
+            let (counts, outcome) = download_episode(conn, request, *episode_id);
+            log_download_job(request, started_at, counts, outcome);
         }
         PodcastsOperation::SyncSubscription {
             subscription_id,
@@ -382,7 +495,8 @@ fn process_request(
             }
         }
         PodcastsOperation::FillDownloads => {
-            let result = podcasts::config::load(conn)
+            let mut counts = DownloadJobCounts::default();
+            let fill_summary = podcasts::config::load(conn)
                 .map_err(|error| error.to_string())
                 .and_then(|config| {
                     let ytdlp = podcasts::ytdlp::YtDlp::discover_with_browser(
@@ -395,16 +509,30 @@ fn process_request(
                         &ytdlp,
                         &podcasts::downloads::default_download_root(),
                         &mut |episode_id, state| {
+                            counts.record(&state);
                             send_response(
                                 request,
                                 Ok(PodcastsWorkerResult::DownloadState { episode_id, state }),
                             );
                         },
                     )
-                    .map(PodcastsWorkerResult::Filled)
                     .map_err(|error| error.to_string())
                 });
+            let (result, outcome) = match fill_summary {
+                Ok(summary) => {
+                    counts = DownloadJobCounts {
+                        downloaded: summary.downloaded,
+                        failed: summary.failed,
+                    };
+                    (
+                        Ok(PodcastsWorkerResult::Filled(summary)),
+                        DownloadJobOutcome::Ok,
+                    )
+                }
+                Err(error) => (Err(error), DownloadJobOutcome::Error),
+            };
             send_response(request, result);
+            log_download_job(request, started_at, counts, outcome);
         }
     }
 }
@@ -445,12 +573,16 @@ fn worker_result_is_terminal(result: &PodcastsWorkerResult) -> bool {
 /// episode lookup, `NET-1a` check, `.part` handling, or progress emission
 /// here; this just wires up the fetchers and forwards progress/terminal states
 /// onto the response channel.
-fn download_episode(conn: &Db, request: &PodcastsRequest, episode_id: i64) {
+fn download_episode(
+    conn: &Db,
+    request: &PodcastsRequest,
+    episode_id: i64,
+) -> (DownloadJobCounts, DownloadJobOutcome) {
     let config = match podcasts::config::load(conn) {
         Ok(config) => config,
         Err(error) => {
             send_response(request, Err(error.to_string()));
-            return;
+            return (DownloadJobCounts::default(), DownloadJobOutcome::Error);
         }
     };
     let ytdlp = podcasts::ytdlp::YtDlp::discover_with_browser(
@@ -458,6 +590,7 @@ fn download_episode(conn: &Db, request: &PodcastsRequest, episode_id: i64) {
         config.youtube_browser,
     );
     let download_root = podcasts::downloads::default_download_root();
+    let mut counts = DownloadJobCounts::default();
     let result = podcasts::pipeline::download_episode(
         conn,
         &podcasts::pipeline::HttpFeedFetcher,
@@ -465,6 +598,7 @@ fn download_episode(conn: &Db, request: &PodcastsRequest, episode_id: i64) {
         &download_root,
         episode_id,
         &mut |state| {
+            counts.record(&state);
             send_response(
                 request,
                 Ok(PodcastsWorkerResult::DownloadState { episode_id, state }),
@@ -473,14 +607,19 @@ fn download_episode(conn: &Db, request: &PodcastsRequest, episode_id: i64) {
     );
     // Losing the download claim is normal: another caller owns an active
     // download, so keep the row in progress. Other errors remain terminal.
-    if let Err(error) = result {
-        if let Some(state) = download_error_state(&error) {
-            send_response(
-                request,
-                Ok(PodcastsWorkerResult::DownloadState { episode_id, state }),
-            );
-        } else {
-            send_response(request, Err(error.to_string()));
+    match result {
+        Ok(_) => (counts, DownloadJobOutcome::Ok),
+        Err(error) => {
+            if let Some(state) = download_error_state(&error) {
+                send_response(
+                    request,
+                    Ok(PodcastsWorkerResult::DownloadState { episode_id, state }),
+                );
+                (counts, DownloadJobOutcome::AlreadyRunning)
+            } else {
+                send_response(request, Err(error.to_string()));
+                (counts, DownloadJobOutcome::Error)
+            }
         }
     }
 }
@@ -501,3 +640,7 @@ fn download_error_state(
 #[cfg(test)]
 #[path = "podcasts_worker_tests.rs"]
 mod tests;
+
+#[cfg(test)]
+#[path = "podcasts_worker_lane_tests.rs"]
+mod lane_tests;

@@ -20,6 +20,10 @@ SOURCE_FIXTURE = REPO_ROOT / "crates" / "reprise-core" / "tests" / "fixtures" / 
 SCRATCH_PREFIX = "reprise-cua-explore-"
 CACHE_SCRATCH_BASE = pathlib.Path.home() / ".cache" / "reprise-scratch"
 WORKTREE_SCRATCH_BASE = REPO_ROOT / ".worktrees" / "cua-explore-scratch"
+# The playlist the mixed-sources profile carries, named by the hover mission's
+# PLAYLIST_NAME fixture token. Four tracks: one more than the three the sweep needs.
+FIXTURE_PLAYLIST_NAME = "Fixture Playlist"
+FIXTURE_PLAYLIST_TRACKS = 4
 
 
 class FixtureError(ValueError):
@@ -37,6 +41,8 @@ class FixturePlan:
     podcast_episode_count: int = 0
     youtube_episode_count: int = 0
     radio_station_count: int = 0
+    # Tracks of the one playlist that gives the sidebar a Playlists entry.
+    playlist_track_count: int = 0
 
 
 PLANS = {
@@ -51,6 +57,7 @@ PLANS = {
         podcast_episode_count=1,
         youtube_episode_count=1,
         radio_station_count=1,
+        playlist_track_count=FIXTURE_PLAYLIST_TRACKS,
     ),
     "writable-512": FixturePlan(
         "writable-512", 512, 512, True, True,
@@ -104,7 +111,13 @@ def validate_scratch_root(path: pathlib.Path | str) -> pathlib.Path:
     root = pathlib.Path(path).expanduser().resolve(strict=False)
     if root.exists():
         raise FixtureError(f"scratch root already exists: {root}")
-    if not any(root != base and _is_within(root, base) for base in approved_scratch_bases()):
+    bases = approved_scratch_bases()
+    worktree_base = WORKTREE_SCRATCH_BASE.expanduser().resolve(strict=False)
+    # A checkout may itself live under the cache scratch base, so being inside
+    # an approved base is not enough: inside the checkout only its own scratch
+    # parent is allowed.
+    in_checkout = _is_within(root, REPO_ROOT.resolve()) and not _is_within(root, worktree_base)
+    if in_checkout or not any(root != base and _is_within(root, base) for base in bases):
         raise FixtureError(
             "scratch root is protected; use an approved disk-backed Reprise scratch parent"
         )
@@ -251,6 +264,23 @@ def _seed_source_rows(conn: sqlite3.Connection) -> None:
     )
 
 
+def _seed_playlist(conn: sqlite3.Connection, track_count: int) -> None:
+    """One playlist over the first tracks, so the sidebar has a Playlists entry.
+
+    The sidebar shows a Playlists heading and a new-playlist button even when no
+    playlist exists, but neither is an accessible target, so the section can only
+    be visited through the playlist that lives under it.
+    """
+    conn.execute(
+        "INSERT INTO playlists (id, name, position) VALUES (1, ?, 0)",
+        (FIXTURE_PLAYLIST_NAME,),
+    )
+    conn.executemany(
+        "INSERT INTO playlist_tracks (playlist_id, track_id, position) VALUES (1, ?, ?)",
+        [(track_id, track_id - 1) for track_id in range(1, track_count + 1)],
+    )
+
+
 def audit_batch_edit(
     profile_root: pathlib.Path,
     workload: dict | object,
@@ -335,6 +365,8 @@ def prepare_profile(
                 or plan.radio_station_count
             ):
                 _seed_source_rows(conn)
+            if plan.playlist_track_count:
+                _seed_playlist(conn, plan.playlist_track_count)
             conn.commit()
 
     manifest = {
