@@ -264,11 +264,11 @@ result.
   only the playing panel asks for it, it keeps the decoded frames until the
   final ones arrive, and frames decoded behind a playhead that ran ahead
   play on instead of snapping, unless live audio drove the scene in the
-  meantime. The decoded part is asked for about once a
-  second, only while the app is visible with the screen on and the final
-  analysis is missing, and never while an earlier answer is still
-  outstanding. After half a minute of empty answers it is asked only every
-  five seconds, until an answer comes or the next analysis attempt ends.
+  meantime. The decoded part is asked for about once a second, only while
+  the app is visible with the screen on and the final analysis is missing,
+  and never while an earlier answer is still outstanding. After half a
+  minute of empty answers it is asked only every five seconds, until an
+  answer comes or the next analysis attempt ends.
   When the final bars replace a partial picture they appear at full height,
   even if a cue asked for a build at that moment; final bars that follow a
   partial picture which ended without a result build in as a first analysis
