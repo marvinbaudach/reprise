@@ -249,8 +249,11 @@ pub(crate) struct FileIdentity {
 /// the file at its new place, and returns how many moved. This is how a CUE
 /// file moves: its rows are tracks cut from the file, so their tags stay, since
 /// they belong to the tracks and not to the file. The sheet read next at the new
-/// place refreshes them. Like [`apply_file_identity`], it clears the missing and
-/// removed marks: the caller just proved the file is there.
+/// place refreshes them. Like [`apply_file_identity`], it clears the missing
+/// marks: the caller just proved the file is there. Unlike it, it leaves a
+/// removal alone. One track of a file removed from the library while its
+/// siblings stay was removed for itself, not because its file went missing, and
+/// finding the file again says nothing about that track.
 pub(crate) fn move_segment_rows(
     tx: &rusqlite::Transaction,
     old_path: &str,
@@ -260,7 +263,7 @@ pub(crate) fn move_segment_rows(
     tx.execute(
         "UPDATE tracks SET path = ?2, file_mtime = ?3, file_size = ?4, device = ?5, \
                            inode = ?6, mount_point = ?7, missing_since = NULL, \
-                           missing_reason = NULL, removed_at = NULL \
+                           missing_reason = NULL \
          WHERE path = ?1",
         rusqlite::params![
             old_path,

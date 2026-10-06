@@ -205,3 +205,74 @@ fn cue_7_locating_one_missing_track_moves_the_file_with_all_of_its_tracks() {
         "every track came along and none took the file's tags"
     );
 }
+
+/// `seeded`'s CUE file gone from its place and found again at `new_path`, with
+/// the identity of the file there.
+fn seeded_and_moved_to(new_path: &Path) -> Db {
+    use std::os::unix::fs::MetadataExt;
+    std::fs::copy(
+        Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/sine.flac"),
+        new_path,
+    )
+    .unwrap();
+    let metadata = std::fs::metadata(new_path).unwrap();
+    let db = seeded();
+    db.conn()
+        .execute(
+            "UPDATE tracks SET missing_since = 5, missing_reason = 'deleted', device = ?1, inode = ?2 \
+             WHERE path = '/m/live.flac'",
+            rusqlite::params![metadata.dev() as i64, metadata.ino() as i64],
+        )
+        .unwrap();
+    db
+}
+
+fn targets(ids: &[i64]) -> Vec<crate::library::relink::RelinkTarget> {
+    ids.iter()
+        .map(|id| crate::library::relink::RelinkTarget {
+            track_id: *id,
+            old_path: "/m/live.flac".into(),
+        })
+        .collect()
+}
+
+#[test]
+fn cue_7_locating_a_folder_counts_every_track_the_file_brought_back() {
+    let dir = tempfile::tempdir().unwrap();
+    let db = seeded_and_moved_to(&dir.path().join("moved.flac"));
+
+    let report = crate::library::relink::relink_from_folder(
+        &db,
+        dir.path(),
+        &targets(&[30, 20, 10]),
+        &std::sync::atomic::AtomicBool::new(false),
+        |_, _| {},
+    )
+    .unwrap();
+
+    assert_eq!((report.relinked, report.group_size), (3, 3));
+}
+
+#[test]
+fn cue_7_locating_a_cue_track_leaves_a_sibling_removed_from_the_library_removed() {
+    let dir = tempfile::tempdir().unwrap();
+    let new_path = dir.path().join("moved.flac");
+    let db = seeded_and_moved_to(&new_path);
+    db.conn()
+        .execute("UPDATE tracks SET removed_at = 7 WHERE id = 10", [])
+        .unwrap();
+
+    crate::library::relink::relink_track(&db, &targets(&[20])[0], &new_path).unwrap();
+
+    let removed: (String, Option<i64>) = db
+        .conn()
+        .query_row("SELECT path, removed_at FROM tracks WHERE id = 10", [], |row| {
+            Ok((row.get(0)?, row.get(1)?))
+        })
+        .unwrap();
+    assert_eq!(
+        removed,
+        (new_path.to_string_lossy().into_owned(), Some(7)),
+        "it moves with its file and stays removed"
+    );
+}

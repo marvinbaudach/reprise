@@ -330,9 +330,9 @@ fn relink_from_folder_with_source(
                             &file_identity,
                         )?;
                     }
-                    relinked = relinked.saturating_add(1);
                 }
-                // A CUE file stands for all of its tracks at once.
+                // A CUE file stands for all of its tracks at once, and each of
+                // them counts as relinked, as `group_size` counts them.
                 let settled: Vec<i64> = expected_paths
                     .iter()
                     .filter(|(id, old)| {
@@ -341,6 +341,10 @@ fn relink_from_folder_with_source(
                     })
                     .map(|(id, _)| *id)
                     .collect();
+                if still_missing {
+                    relinked = relinked
+                        .saturating_add(u32::try_from(settled.len()).unwrap_or(u32::MAX));
+                }
                 for id in settled {
                     remaining.remove(&id);
                     expected_paths.remove(&id);
