@@ -429,7 +429,7 @@ fn tag_1_year_save_keeps_the_edited_album_inside_the_viewport_after_resort() {
             .unwrap();
     }
     let new_ids = fixture.track_list.shared.current_view_ids();
-    refresh_after_tag_mutation_with_view_ids(
+    let receipt = refresh_after_tag_mutation_with_view_ids(
         &fixture.track_list.shared,
         &edited_ids,
         &[],
@@ -437,13 +437,10 @@ fn tag_1_year_save_keeps_the_edited_album_inside_the_viewport_after_resort() {
         &old_ids,
         new_ids,
     );
-    crate::ui::test_settle::settle_for(SETTLE);
-
-    assert!(
-        viewport_labels(&fixture)
-            .iter()
-            .any(|label| label == RESORTED_TITLE),
-        "the edited album moved out of the viewport after its year changed"
+    assert_stays_in_viewport(
+        &fixture,
+        &receipt,
+        "the edited album moved out of the viewport after its year changed",
     );
     fixture.window.close();
 }
@@ -546,22 +543,48 @@ fn tag_1_artist_save_beyond_the_browse_window_keeps_the_first_edited_row_visible
         )
         .unwrap();
     }
-    refresh_after_tag_mutation_with_save_anchor(
+    let receipt = refresh_after_tag_mutation_with_save_anchor(
         &fixture.track_list.shared,
         &edited_ids,
         &[],
         anchor,
         true,
     );
-    crate::ui::test_settle::settle_for(SETTLE);
-
-    assert!(
-        viewport_labels(&fixture)
-            .iter()
-            .any(|label| label == RESORTED_TITLE),
-        "the first edited row moved out of the viewport after its artist changed"
+    assert_stays_in_viewport(
+        &fixture,
+        &receipt,
+        "the first edited row moved out of the viewport after its artist changed",
     );
     fixture.window.close();
+}
+
+/// Asserts `RESORTED_TITLE` is on screen once the save reload has run and its
+/// rows are painted, and still is `SETTLE` later. Timing from the reload's own
+/// receipt, not from the save, keeps a slow reload under load from failing the
+/// test while still catching a late scroll away from the row.
+fn assert_stays_in_viewport(fixture: &Fixture, receipt: &super::ReloadReceipt, what: &str) {
+    let column_view = &fixture.track_list.shared.column_view;
+    let settled = crate::ui::test_settle::settle_until_painted_after(column_view, || {
+        receipt.get().is_some()
+            && fixture
+                .track_list
+                .shared
+                .scroll_glide
+                .destination()
+                .is_none()
+    });
+    assert!(
+        settled,
+        "precondition: the save reload must run, leave no glide, and paint a frame"
+    );
+    let on_screen = || {
+        viewport_labels(fixture)
+            .iter()
+            .any(|label| label == RESORTED_TITLE)
+    };
+    assert!(on_screen(), "{what} (once the reload painted)");
+    crate::ui::test_settle::settle_for(SETTLE);
+    assert!(on_screen(), "{what} (after it settled)");
 }
 
 fn assert_no_visible_jump(samples: &Rc<RefCell<Vec<f64>>>, reference: f64, what: &str) {
