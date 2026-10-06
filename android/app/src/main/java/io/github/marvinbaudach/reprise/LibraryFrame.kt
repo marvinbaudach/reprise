@@ -24,6 +24,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
+import androidx.compose.foundation.layout.windowInsetsBottomHeight
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
@@ -188,6 +189,12 @@ internal fun LibraryBottomFrame(
             )
         }
         if (surfaceLayout == SurfaceLayout.WIDE_SHORT) {
+            // The rail on the left edge spends the side insets, but nothing in
+            // this layout spends the bottom one, and the root leaves it alone:
+            // without this the gesture handle is drawn over the mini-player.
+            // Reserving it here, inside the frame, also moves the list's
+            // bottom padding and the undo snackbar, which both read the frame.
+            Spacer(Modifier.windowInsetsBottomHeight(NavigationBarDefaults.windowInsets))
             return@Column
         }
         // Material 3 pads the item row *inside* this component by the system
