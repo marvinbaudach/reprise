@@ -15,6 +15,7 @@ import org.robolectric.RobolectricTestRunner
 import org.robolectric.Shadows.shadowOf
 import org.robolectric.annotation.Config
 import uniffi.reprise_android_ffi.AndroidAnalysisOutcome
+import uniffi.reprise_android_ffi.AndroidPlaybackState
 
 /**
  * The service's own request-on-change: `import_track_analysis` runs for the
@@ -140,6 +141,30 @@ class ReprisePlaybackServiceAnalysisTest {
     }
 
     @Test
+    fun nav_15e_a_track_change_supersedes_the_outgoing_analysis() {
+        val service = Robolectric.buildService(RecordingAnalysisService::class.java).get()
+
+        service.coreListener.onPlaybackChanged(m9bSnapshot(trackId = 41))
+        service.coreListener.onPlaybackChanged(m9bSnapshot(trackId = 41))
+        service.coreListener.onPlaybackChanged(m9bSnapshot(trackId = 7))
+        service.coreListener.onPlaybackChanged(m9bSnapshot(trackId = 7))
+
+        assertEquals(listOf(41L, 7L), service.supersedeKeeps)
+    }
+
+    @Test
+    fun nav_15e_stopping_playback_supersedes_nothing() {
+        val service = Robolectric.buildService(RecordingAnalysisService::class.java).get()
+
+        service.coreListener.onPlaybackChanged(m9bSnapshot(trackId = 41))
+        service.coreListener.onPlaybackChanged(
+            m9bSnapshot(trackId = 41).copy(state = AndroidPlaybackState.STOPPED, currentTrackId = null),
+        )
+
+        assertEquals(listOf(41L), service.supersedeKeeps)
+    }
+
+    @Test
     fun nav_15c_a_real_failed_request_posts_its_retry_state_to_main() {
         val service = Robolectric.buildService(ImportingAnalysisService::class.java).get()
 
@@ -183,6 +208,8 @@ private class ImportingAnalysisService : ReprisePlaybackService() {
         firstSettlement.countDown()
     }
 
+    override fun supersedeForegroundAnalysis(keepTrackId: Long) = Unit
+
     fun awaitImport(attempt: Int): Boolean = imported[attempt - 1].await(2, TimeUnit.SECONDS)
 
     fun firstSettlementDelivered(): Boolean = firstSettlement.count == 0L
@@ -197,6 +224,11 @@ private class RecordingAnalysisService : ReprisePlaybackService() {
     val requestedTrackIds: List<Long>
         get() = requests.map(Pair<Long, Long>::first)
     val requestThreads = mutableListOf<Thread>()
+    val supersedeKeeps = mutableListOf<Long>()
+
+    override fun supersedeForegroundAnalysis(keepTrackId: Long) {
+        supersedeKeeps += keepTrackId
+    }
 
     override fun trackAnalysisRequest(trackId: Long, requestGeneration: Long) {
         requestThreads += Thread.currentThread()

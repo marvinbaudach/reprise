@@ -145,6 +145,9 @@ class MainActivity : ComponentActivity() {
                 library.trackRenderBars(trackId, count.toUInt())?.map { it.toSpectralBar() }
             },
             readSpectrogram = { trackId -> library.trackSpectrogram(trackId) },
+            readProgress = { trackId, count ->
+                library.trackAnalysisProgress(trackId, count.toUInt())?.toPartialTrackAnalysis()
+            },
             onMainThread = { work -> runOnUiThread { work() } },
         )
     }

@@ -26,6 +26,7 @@ import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.selects.select
 import kotlinx.coroutines.withTimeoutOrNull
 import uniffi.reprise_android_ffi.AndroidAnalysisOutcome
+import uniffi.reprise_android_ffi.AndroidTrackAnalysisProgress
 import uniffi.reprise_android_ffi.AndroidTrackRenderBar
 import uniffi.reprise_android_ffi.AndroidTrackSpectrogram
 
@@ -64,6 +65,23 @@ internal fun AndroidTrackSpectrogram.toSpectrogramFrames() = SpectrogramFrames(
     cells = cells,
 )
 
+/**
+ * The part of a track the phone has decoded so far, read from the running
+ * decode's memory. Never stored, never cached: [bars] span exactly the first
+ * [coveredFraction] of the track.
+ */
+internal data class PartialTrackAnalysis(
+    val coveredFraction: Float,
+    val bars: List<SpectralBar>,
+    val frames: SpectrogramFrames,
+)
+
+internal fun AndroidTrackAnalysisProgress.toPartialTrackAnalysis() = PartialTrackAnalysis(
+    coveredFraction = coveredFraction,
+    bars = bars.map { it.toSpectralBar() },
+    frames = spectrogram.toSpectrogramFrames(),
+)
+
 /** The analysis edge used by the playing-track lifecycle and seek surface. */
 internal interface TrackAnalysisPort {
     /** Changes on the main thread after a sidecar import attempt completes. */
@@ -74,6 +92,14 @@ internal interface TrackAnalysisPort {
     fun loadBars(trackId: Long, count: Int, deliver: (List<SpectralBar>?) -> Unit)
 
     fun loadSpectrogram(trackId: Long, deliver: (SpectrogramFrames?) -> Unit) = deliver(null)
+
+    /**
+     * The decoded part of a track whose analysis is still running, or `null`.
+     * Answered on the main thread and never cached: the next call reads the
+     * decode again.
+     */
+    fun loadProgress(trackId: Long, count: Int, deliver: (PartialTrackAnalysis?) -> Unit) =
+        deliver(null)
 
     fun prefetch(trackIds: List<Long>) = Unit
 
@@ -101,6 +127,7 @@ internal class TrackAnalysisLoader(
     private val importAnalysis: (Long) -> AndroidAnalysisOutcome,
     private val readBars: (Long, Int) -> List<SpectralBar>?,
     private val readSpectrogram: (Long) -> AndroidTrackSpectrogram? = { null },
+    private val readProgress: (Long, Int) -> PartialTrackAnalysis? = { _, _ -> null },
     private val onMainThread: (() -> Unit) -> Unit,
     private val importDispatcher: CoroutineDispatcher = analysisImportLane(),
     private val readDispatcher: CoroutineDispatcher = analysisReadLane(),
@@ -121,6 +148,10 @@ internal class TrackAnalysisLoader(
     private var retainedTrackIds: Set<Long>? = null
     private var preferredBarCount: Int? = null
 
+    /** The track the latest [prepare] asked for; an import for any other id is stale. */
+    @Volatile
+    private var latestPreparedTrackId: Long? = null
+
     init {
         registerActive(this)
     }
@@ -129,6 +160,7 @@ internal class TrackAnalysisLoader(
         private set
 
     override fun prepare(trackId: Long) {
+        latestPreparedTrackId = trackId
         submitImport("import analysis for track $trackId") {
             // This lane deliberately does not log import outcomes or errors.
             // `TrackAnalysisLoaderTest` is plain JUnit, where android.util.Log
@@ -137,6 +169,9 @@ internal class TrackAnalysisLoader(
             // misses and bumps the revision on the main thread.
             for (attempt in 1..MAX_ANALYSIS_ATTEMPTS) {
                 if (attempt > 1 && !accepting.get()) break
+                // A newer prepare means nobody plays this track any more: start no
+                // decode for it. The backfill picks it up later.
+                if (latestPreparedTrackId != trackId) break
                 var outcome: AndroidAnalysisOutcome? = null
                 var failure: Throwable? = null
                 try {
@@ -246,6 +281,25 @@ internal class TrackAnalysisLoader(
         if (!submitted) {
             finishSpectrogramLoad(trackId, frames = null, cache = false, submittedRevision)
         }
+    }
+
+    override fun loadProgress(
+        trackId: Long,
+        count: Int,
+        deliver: (PartialTrackAnalysis?) -> Unit,
+    ) {
+        val submitted = submitRead("load analysis progress for track $trackId") {
+            val progress = try {
+                readProgress(trackId, count)
+            } catch (cancelled: CancellationException) {
+                throw cancelled
+            } catch (error: Throwable) {
+                Log.w(TAG, "Could not load analysis progress for track $trackId", error)
+                null
+            }
+            onMainThread { deliver(progress) }
+        }
+        if (!submitted) deliver(null)
     }
 
     override fun prefetch(trackIds: List<Long>) {

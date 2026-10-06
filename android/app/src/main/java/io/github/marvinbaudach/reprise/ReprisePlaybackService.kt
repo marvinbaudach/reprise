@@ -407,6 +407,9 @@ open class ReprisePlaybackService : MediaLibraryService() {
             analysisAttempts = 0
             analysisRequestInFlight = false
             analysisFinal = false
+            // Only a switch to another track cancels: a stop or the end of the
+            // queue leaves the running analysis to finish and be stored.
+            if (currentTrackId != null) supersedeForegroundAnalysis(currentTrackId)
         }
         if (
             currentTrackId != null &&
@@ -426,6 +429,18 @@ open class ReprisePlaybackService : MediaLibraryService() {
         if (shouldRun != analysisBackfillRunning) {
             analysisBackfillRunning = shouldRun
             if (shouldRun) startAnalysisBackfill() else cancelAnalysisBackfill()
+        }
+    }
+
+    /** Stops every foreground analysis except `keepTrackId`'s; the backfill is untouched. */
+    internal open fun supersedeForegroundAnalysis(keepTrackId: Long) {
+        analysisScope.launch {
+            Log.d(TAG_ANALYSIS, "Superseding foreground analyses other than track $keepTrackId")
+            try {
+                sharedMusicLibrary().supersedeForegroundTrackAnalysis(keepTrackId)
+            } catch (error: Exception) {
+                Log.w(TAG_ANALYSIS, "Could not supersede the outgoing track analysis", error)
+            }
         }
     }
 
