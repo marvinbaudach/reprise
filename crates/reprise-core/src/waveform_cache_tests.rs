@@ -243,14 +243,16 @@ impl RenderDataBackend for CuttingBackend {
         segments: &[SegmentBounds],
         buckets: usize,
         _cancelled: &AtomicBool,
-    ) -> Result<Vec<TrackRenderData>, WaveformError> {
+    ) -> Result<Vec<crate::waveform::SegmentRenderData>, WaveformError> {
         self.cuts.lock().unwrap().extend_from_slice(segments);
         Ok(segments
             .iter()
-            .map(|_| TrackRenderData {
-                waveform_peaks: vec![5; buckets],
-                spectrogram: TrackSpectrogram::from_cells(vec![9; 48]).unwrap(),
-                loudness: None,
+            .map(|_| {
+                Ok(TrackRenderData {
+                    waveform_peaks: vec![5; buckets],
+                    spectrogram: TrackSpectrogram::from_cells(vec![9; 48]).unwrap(),
+                    loudness: None,
+                })
             })
             .collect())
     }
@@ -356,7 +358,7 @@ impl RenderDataBackend for RecuttingBackend {
         segments: &[SegmentBounds],
         buckets: usize,
         cancelled: &AtomicBool,
-    ) -> Result<Vec<TrackRenderData>, WaveformError> {
+    ) -> Result<Vec<crate::waveform::SegmentRenderData>, WaveformError> {
         self.rescanner
             .lock()
             .unwrap()

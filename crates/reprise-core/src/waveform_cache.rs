@@ -44,7 +44,7 @@ fn extract_for_track(
             &AtomicBool::new(false),
         )?
         .pop()
-        .ok_or_else(|| WaveformError::DecodeFailed("the backend returned no track".into()))?;
+        .ok_or_else(|| WaveformError::DecodeFailed("the backend returned no track".into()))??;
     Ok(Measured {
         data,
         bounds: Some(bounds),

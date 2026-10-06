@@ -17,7 +17,9 @@ use reprise_core::render_data_segments::{SegmentBounds, SegmentedRenderDataSessi
 use reprise_core::render_data_session::{RenderDataSession, RenderDataSessionError};
 #[cfg(test)]
 use reprise_core::spectrogram::{TrackSpectrogram, SPECTROGRAM_SAMPLE_RATE_HZ};
-use reprise_core::waveform::{RenderDataBackend, TrackRenderData, WaveformBackend, WaveformError};
+use reprise_core::waveform::{
+    RenderDataBackend, SegmentRenderData, TrackRenderData, WaveformBackend, WaveformError,
+};
 
 #[cfg(test)]
 const SAMPLE_RATE: u32 = SPECTROGRAM_SAMPLE_RATE_HZ;
@@ -69,7 +71,7 @@ impl RenderDataBackend for GstreamerWaveformBackend {
         segments: &[SegmentBounds],
         buckets: usize,
         cancelled: &AtomicBool,
-    ) -> Result<Vec<TrackRenderData>, WaveformError> {
+    ) -> Result<Vec<SegmentRenderData>, WaveformError> {
         extract_segments(path, segments, buckets, cancelled)
     }
 }
@@ -112,13 +114,13 @@ fn extract(
 }
 
 /// One decode of `path`, cut into the stretches of `segments`. A stretch the
-/// stream never reaches comes back as [`TrackRenderData::empty`].
+/// stream never reaches comes back as [`WaveformError::EmptyStream`].
 fn extract_segments(
     path: &Path,
     segments: &[SegmentBounds],
     buckets: usize,
     cancelled: &AtomicBool,
-) -> Result<Vec<TrackRenderData>, WaveformError> {
+) -> Result<Vec<SegmentRenderData>, WaveformError> {
     if !path.is_file() {
         return Err(WaveformError::FileNotFound(path.to_path_buf()));
     }
@@ -136,15 +138,11 @@ fn extract_segments(
     });
     let _ = pipeline.set_state(gst::State::Null);
     decoded?;
-    session
+    Ok(session
         .finish()
         .into_iter()
-        .map(|data| match data {
-            Ok(data) => Ok(data),
-            Err(RenderDataSessionError::EmptyStream) => Ok(TrackRenderData::empty()),
-            Err(error) => Err(map_session_error(error)),
-        })
-        .collect()
+        .map(|data| data.map_err(map_session_error))
+        .collect())
 }
 
 fn build_pipeline(path: &Path) -> Result<(gst::Pipeline, gst_app::AppSink), WaveformError> {
@@ -535,9 +533,12 @@ mod tests {
             },
         ];
 
-        let data = GstreamerWaveformBackend
+        let data: Vec<TrackRenderData> = GstreamerWaveformBackend
             .extract_segment_render_data_cancellable(&path, &segments, 100, &AtomicBool::new(false))
-            .unwrap();
+            .unwrap()
+            .into_iter()
+            .map(Result::unwrap)
+            .collect();
 
         let peak_band = |track: &TrackRenderData| {
             let frame = track
@@ -561,7 +562,7 @@ mod tests {
     }
 
     #[test]
-    fn a_track_past_the_end_of_the_decoded_file_is_empty() {
+    fn a_track_past_the_end_of_the_decoded_file_is_not_measured() {
         let directory = tempfile::tempdir().unwrap();
         let path = directory.path().join("short.wav");
         write_wav(&path, &vec![8_000; SAMPLE_RATE as usize]);
@@ -580,8 +581,11 @@ mod tests {
             .extract_segment_render_data_cancellable(&path, &segments, 100, &AtomicBool::new(false))
             .unwrap();
 
-        assert!(data[0].spectrogram.frame_count() > 0);
-        assert_eq!(data[1], TrackRenderData::empty());
+        assert!(data[0].as_ref().unwrap().spectrogram.frame_count() > 0);
+        assert!(
+            matches!(data[1], Err(WaveformError::EmptyStream)),
+            "a stretch the file never reaches is no empty measurement"
+        );
     }
 
     #[test]

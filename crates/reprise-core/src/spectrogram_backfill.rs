@@ -7,7 +7,9 @@ use crate::db::{
     set_track_render_data, Db, DbError, PendingSegmentFile, SpectrogramStoreOutcome,
 };
 use crate::render_data_segments::SegmentBounds;
-use crate::waveform::{RenderDataBackend, TrackRenderData, WaveformError, STORED_PEAK_COUNT};
+use crate::waveform::{
+    RenderDataBackend, SegmentRenderData, TrackRenderData, WaveformError, STORED_PEAK_COUNT,
+};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum BackfillStatus {
@@ -117,12 +119,25 @@ pub fn run_render_data_backfill(
             continue;
         };
         for (track, data) in file.tracks.iter().zip(&datas) {
-            let bounds = SegmentBounds {
-                start_ms: track.start_ms,
-                end_ms: track.end_ms,
-            };
-            let outcome = set_segment_render_data(db, track.track_id, file.source, bounds, data)?;
-            count_store(outcome, &mut summary);
+            match data {
+                Ok(data) => {
+                    let bounds = SegmentBounds {
+                        start_ms: track.start_ms,
+                        end_ms: track.end_ms,
+                    };
+                    let outcome =
+                        set_segment_render_data(db, track.track_id, file.source, bounds, data)?;
+                    count_store(outcome, &mut summary);
+                }
+                Err(error) => {
+                    tracing::warn!(
+                        track_id = track.track_id,
+                        error = %error,
+                        "spectrogram backfill left a CUE track pending: its stretch was not decoded"
+                    );
+                    summary.failed += 1;
+                }
+            }
             completed += 1;
             on_progress(BackfillProgress {
                 completed,
@@ -141,13 +156,14 @@ pub fn run_render_data_backfill(
 
 /// Decodes one CUE file once for all of its pending tracks. `None` when nothing
 /// was produced: the scan was cancelled (the summary says so) or the decode
-/// failed (every track of the file counts as failed and stays pending).
+/// failed (every track of the file counts as failed and stays pending). A track
+/// whose stretch the decode never reached has its own error and stays pending.
 fn extract_file(
     backend: &dyn RenderDataBackend,
     file: &PendingSegmentFile,
     cancelled: &AtomicBool,
     summary: &mut BackfillSummary,
-) -> Option<Vec<TrackRenderData>> {
+) -> Option<Vec<SegmentRenderData>> {
     let bounds: Vec<SegmentBounds> = file
         .tracks
         .iter()
@@ -168,12 +184,6 @@ fn extract_file(
             summary.failed += file.tracks.len();
             None
         }
-        Err(WaveformError::EmptyStream) => Some(
-            file.tracks
-                .iter()
-                .map(|_| TrackRenderData::empty())
-                .collect(),
-        ),
         Err(WaveformError::Cancelled) => {
             summary.status = BackfillStatus::Cancelled;
             None
@@ -354,6 +364,8 @@ mod tests {
         file_calls: AtomicUsize,
         whole_calls: AtomicUsize,
         bounds_seen: std::sync::Mutex<Vec<Vec<SegmentBounds>>>,
+        /// Where the decoded stream ends.
+        file_ends_ms: i64,
     }
 
     impl WaveformBackend for CuePerTrackBackend {
@@ -383,15 +395,21 @@ mod tests {
             segments: &[SegmentBounds],
             buckets: usize,
             _cancelled: &AtomicBool,
-        ) -> Result<Vec<TrackRenderData>, WaveformError> {
+        ) -> Result<Vec<SegmentRenderData>, WaveformError> {
             self.file_calls.fetch_add(1, Ordering::Relaxed);
             self.bounds_seen.lock().unwrap().push(segments.to_vec());
             Ok(segments
                 .iter()
-                .map(|segment| TrackRenderData {
-                    waveform_peaks: vec![(segment.start_ms / 1_000) as u8; buckets],
-                    spectrogram: TrackSpectrogram::from_cells(vec![1; 24]).unwrap(),
-                    loudness: None,
+                .map(|segment| {
+                    // A file of ten seconds: a stretch past it is never reached.
+                    if segment.start_ms >= self.file_ends_ms {
+                        return Err(WaveformError::EmptyStream);
+                    }
+                    Ok(TrackRenderData {
+                        waveform_peaks: vec![(segment.start_ms / 1_000) as u8; buckets],
+                        spectrogram: TrackSpectrogram::from_cells(vec![1; 24]).unwrap(),
+                        loudness: None,
+                    })
                 })
                 .collect())
         }
@@ -416,6 +434,7 @@ mod tests {
             file_calls: AtomicUsize::new(0),
             whole_calls: AtomicUsize::new(0),
             bounds_seen: std::sync::Mutex::new(Vec::new()),
+            file_ends_ms: i64::MAX,
         }
     }
 
@@ -541,7 +560,7 @@ mod tests {
             segments: &[SegmentBounds],
             buckets: usize,
             cancelled: &AtomicBool,
-        ) -> Result<Vec<TrackRenderData>, WaveformError> {
+        ) -> Result<Vec<SegmentRenderData>, WaveformError> {
             self.rescanner
                 .lock()
                 .unwrap()
@@ -578,5 +597,23 @@ mod tests {
         assert_eq!(crate::db::get_waveform_peaks(&db, 11).unwrap(), None);
         let pending = crate::db::pending_segment_render_data_files(&db).unwrap();
         assert_eq!(pending[0].tracks[0].track_id, 11, "measured again later");
+    }
+
+    #[test]
+    fn cue_9_a_track_past_the_end_of_its_decoded_file_stays_pending() {
+        let db = database_with_a_cue_file();
+        let backend = CuePerTrackBackend {
+            file_ends_ms: 8_000,
+            ..cue_backend()
+        };
+
+        let summary =
+            run_render_data_backfill(&db, &backend, &AtomicBool::new(false), |_| {}).unwrap();
+
+        assert_eq!((summary.stored, summary.failed), (5, 1));
+        assert_eq!(crate::db::get_waveform_peaks(&db, 12).unwrap(), None);
+        let pending = crate::db::pending_segment_render_data_files(&db).unwrap();
+        assert_eq!(pending[0].tracks.len(), 1);
+        assert_eq!(pending[0].tracks[0].track_id, 12, "measured again later");
     }
 }

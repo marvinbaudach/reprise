@@ -60,6 +60,10 @@ impl TrackRenderData {
     }
 }
 
+/// What one track of a file cut into tracks came to: its data, or why it has
+/// none.
+pub type SegmentRenderData = Result<TrackRenderData, WaveformError>;
+
 /// Optional platform capability for producing peaks and frequency bands in
 /// one decode pass.
 pub trait RenderDataBackend: WaveformBackend {
@@ -91,15 +95,18 @@ pub trait RenderDataBackend: WaveformBackend {
     }
 
     /// Decodes `path` once and returns the render data of each of `segments`, in
-    /// the order given: the tracks a CUE sheet cuts out of one file. A segment
-    /// the stream never reaches comes back as [`TrackRenderData::empty`].
+    /// the order given: the tracks a CUE sheet cuts out of one file. The outer
+    /// error fails the whole decode. A segment the stream never reaches comes
+    /// back as [`WaveformError::EmptyStream`]: the file is shorter than its
+    /// sheet says, and that track has nothing to measure, which is not the
+    /// same as measuring nothing.
     fn extract_segment_render_data_cancellable(
         &self,
         _path: &Path,
         _segments: &[SegmentBounds],
         _buckets: usize,
         _cancelled: &AtomicBool,
-    ) -> Result<Vec<TrackRenderData>, WaveformError> {
+    ) -> Result<Vec<SegmentRenderData>, WaveformError> {
         Err(WaveformError::DecodeFailed(
             "platform backend does not cut a file into tracks".into(),
         ))
