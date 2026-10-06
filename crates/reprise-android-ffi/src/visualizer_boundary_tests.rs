@@ -172,6 +172,16 @@ impl Phone {
         }
     }
 
+    /// The live processor's gain.
+    fn gain(&self) -> f32 {
+        self.engine
+            .lock_live_audio()
+            .as_ref()
+            .expect("the engine has a live processor")
+            .processor
+            .sensitivity()
+    }
+
     fn frame(&self) -> Frame {
         self.engine
             .current_bands()
@@ -357,13 +367,21 @@ fn ac_29_a_swipe_to_the_same_song_does_not_shrink_the_frame_it_continues() {
 #[test]
 fn ac_29_a_seeded_shape_survives_a_gain_that_moves_more_than_threefold() {
     const SEED_STAYS_WITHIN: (f32, f32) = (0.3, 2.2);
+    const MOVES_MORE_THAN: f32 = 3.0;
     for (previous, next) in [(quiet(), loud()), (loud(), quiet())] {
         let mut phone = Phone::new();
         phone.play(&previous, 0.0, WARM_SECONDS);
         let seed_level = frame_mean(&phone.frame());
+        let gain_before = phone.gain();
 
         phone.change_track();
         let frames = phone.play(&next, BOUNDARY_SECONDS, RECORDED_SECONDS);
+
+        let moved = (phone.gain() / gain_before).max(gain_before / phone.gain());
+        assert!(
+            moved > MOVES_MORE_THAN,
+            "the fixture moved the gain only {moved:.1}-fold, so it proved nothing"
+        );
 
         for (index, frame) in frames.iter().take(SETTLE_FRAMES).enumerate() {
             let ratio = frame_mean(frame) / seed_level;

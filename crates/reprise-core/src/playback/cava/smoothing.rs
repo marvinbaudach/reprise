@@ -217,7 +217,7 @@ impl Smoother {
         self.boundary.arm(false);
     }
 
-    #[cfg(test)]
+    #[cfg(debug_assertions)]
     pub(super) fn sensitivity(&self) -> f32 {
         self.sensitivity
     }

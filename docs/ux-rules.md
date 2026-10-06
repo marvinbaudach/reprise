@@ -4686,9 +4686,9 @@ STYLE-1).
   boundary is the first audio a CAVA processor sees (app start, the plugin
   switched on, Android's first PCM or a sample-rate change, a pipeline rebuilt
   after a playback failure or promoted from a crossfade), another track, and a
-  seek or other discontinuity. A pause or a buffering stall that resumes the
-  same stream is not a boundary: only the FFT window clears, and the
-  sensitivity, the shape and every pending measurement stay. A new song's
+  seek or other discontinuity. On Android a pause or a buffering stall that
+  resumes the same stream is not a boundary: only the FFT window clears, and
+  the sensitivity, the shape and every pending measurement stay. A new song's
   loudness says nothing about the last one's: a carried sensitivity draws a
   louder song as a wall of pinned bars and a quieter one as a dim line for
   seconds, and `cavacore`'s cold climb swells the whole frame up and back down.
@@ -4700,17 +4700,20 @@ STYLE-1).
   every bar is computed from), and digital silence restarts it. *With a shape
   on screen* (a track change, a seek) the sensitivity that drew the shape is
   kept, because the song before is usually about as loud and a changed
-  sensitivity redraws the whole frame; the new stream's full window is the
-  evidence. If it says the kept sensitivity would draw the new stream more
-  than twice too tall, the measurement takes over at once; if more than twice
-  too dim, the sensitivity moves up to it within a few frames; within a factor
-  of two it stays. For the next seven seconds of audio (silence counts) a
-  frame the sensitivity would draw at twice full height or more, a quiet intro
+  sensitivity redraws the whole frame. The loudest bar of the new stream so
+  far is the evidence: as soon as it says the kept sensitivity would draw the
+  new stream more than twice too tall, the measurement takes over, before the
+  window is full; once a full window is in and it says more than twice too
+  dim, the sensitivity moves up to the measurement within a few frames; within
+  a factor of two it stays. The sensitivity is held, not creeping, while a
+  measurement or such a move is under way. After that, for the next seven
+  seconds of audio (silence counts), a frame the sensitivity would draw at
+  twice full height or more, 1.3 times in the first half second, a quiet intro
   followed by the song itself, pulls the sensitivity down at once to land at
-  0.85 of full height; nothing else changes. Everything else is
-  `cavacore`'s auto-sensitivity, which creeps in both directions throughout, so
-  the sensitivity settles where it would have settled without the boundary and
-  neither sits dim nor swells back. A track change and a seek keep the bar
+  0.85 of full height. Throughout this span and after it `cavacore`'s
+  auto-sensitivity creeps in both directions, so the sensitivity settles where
+  it would have settled without the boundary and neither sits dim nor swells
+  back. A track change and a seek keep the bar
   shape on screen, so the bars fall through gravity from their old heights
   instead of collapsing to zero; only a first start and the plugin switched
   back on begin from nothing. In steady state the output stays frame for frame

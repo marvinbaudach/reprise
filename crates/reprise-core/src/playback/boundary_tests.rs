@@ -284,3 +284,46 @@ fn ac_29_a_loud_body_after_a_quiet_intro_does_not_pin_the_bars() {
         }
     }
 }
+
+// A song whose first window under-reads it: the level rises by a third of a
+// second in, as a quiet song's first hit does. The gain was measured from the
+// first window, so the rise lands above full height unless braking is tighter
+// while the evidence is thin. Control arm: a processor that has already settled
+// on the song and is surprised by the same rise, which is all cavacore would do.
+#[test]
+fn ac_29_a_first_window_that_under_reads_the_song_does_not_pin_the_bars() {
+    const RISE_AT_FRAME: usize = 18;
+    const RISE: f32 = 1.6;
+    const PINNED_SLACK: usize = 8;
+
+    let with_a_rise = |processor: &mut CavaBarProcessor, first: usize| -> Vec<Frame> {
+        (0..FRAMES_PER_SECOND)
+            .map(|frame| {
+                let gain = if frame < RISE_AT_FRAME { 1.0 } else { RISE };
+                let pcm: Vec<f32> = loud()
+                    .mono(first + frame * HOP, HOP)
+                    .into_iter()
+                    .map(|sample| (sample * gain).clamp(-1.0, 1.0))
+                    .collect();
+                processor.process(&pcm).try_into().unwrap()
+            })
+            .collect()
+    };
+
+    for offset in BOUNDARY_OFFSETS_SECONDS {
+        let first = boundary_sample(offset);
+        let measured = Measure::of(&with_a_rise(&mut processor(), first));
+        let mut settled = processor();
+        warm(&mut settled, &loud(), offset);
+        let control = Measure::of(&with_a_rise(&mut settled, first));
+
+        assert!(
+            measured.pinned_frames <= control.pinned_frames + PINNED_SLACK,
+            "a rise at +{offset} pinned {} frames in the first second against the settled \
+             processor's {}",
+            measured.pinned_frames,
+            control.pinned_frames
+        );
+        assert_eq!(measured.wall_frames, 0);
+    }
+}

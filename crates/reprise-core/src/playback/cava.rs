@@ -233,9 +233,11 @@ impl CavaBarProcessor {
         self.smoother.seed_shape(bars);
     }
 
-    /// The smoother's gain, for the golden test's comparison with `cavacore`'s.
-    #[cfg(test)]
-    pub(crate) fn sensitivity(&self) -> f32 {
+    /// The smoother's gain, for tests that compare it with `cavacore`'s or watch
+    /// it move across a boundary. Debug builds only, like the other test seams.
+    #[cfg(debug_assertions)]
+    #[doc(hidden)]
+    pub fn sensitivity(&self) -> f32 {
         self.smoother.sensitivity()
     }
 

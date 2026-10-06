@@ -22,20 +22,24 @@
 //!
 //! *A shape on screen* (a track change or a seek). The gain that drew it is
 //! kept as a prior, because the song just before is usually about as loud as
-//! this one and swapping the gain draws the whole frame at another height. A
-//! full window of the new stream is the evidence. If the gain would draw the
-//! new stream as a wall (the measurement says it is more than [`CARRY_BAND`]
-//! too high) the measurement takes over at once, as above. If it would draw it
-//! dim (more than [`CARRY_BAND`] too low) the gain moves up to the measurement
-//! over a few frames once the window is in. Within the band the gain stays.
+//! this one and swapping the gain draws the whole frame at another height. The
+//! loudest bar of the new stream so far is the evidence. While the window
+//! fills the gain is held, not creeping. If the gain would draw the new stream
+//! as a wall (the measurement says it is more than [`CARRY_BAND`] too high) the
+//! measurement takes over at once, as above, without waiting for the window. If
+//! it would draw it dim (more than [`CARRY_BAND`] too low) the gain moves up to
+//! the measurement over a few frames once the window is in. Within the band the
+//! gain stays.
 //!
 //! *Braking* then lasts about seven seconds on either path. A frame the gain
 //! would draw at [`BRAKE_LEVEL`] times full height or more (a song that opened
 //! quietly and now drops in) pulls the gain down to land at the target height
-//! at once; the creep alone would pin the bars for seconds. Nothing else
-//! changes: `cavacore`'s creep runs in both directions, so the gain settles
-//! where it would have without a boundary, and silence neither restarts nor
-//! prolongs the span.
+//! at once; the creep alone would pin the bars for seconds. For the first half
+//! second the threshold is [`EARLY_BRAKE_LEVEL`], because a first window that
+//! fell between two hits is most often wrong by a little, early. Nothing else
+//! changes: once the measurement, or the move up to it, is over, `cavacore`'s
+//! creep runs in both directions, so the gain settles where it would have
+//! without a boundary, and silence neither restarts nor prolongs the span.
 
 /// Height the loudest bar seen while measuring is aimed at, as the integral
 /// stage settles it. Below full height because the first window can fall
@@ -50,6 +54,14 @@ pub(super) const BRAKE_LEVEL: f32 = 2.0;
 /// A carried gain is kept while the new stream's measurement stays within this
 /// factor of it, either way.
 pub(super) const CARRY_BAND: f32 = 2.0;
+/// For the first stretch after the window the evidence is thin: a first window
+/// that fell between two hits gave a gain the next hit overshoots, and a hit
+/// drawn at 1.3 times full height is already a pinned bar and a visible swell.
+/// Braking is tighter then.
+pub(super) const EARLY_BRAKE_LEVEL: f32 = 1.3;
+/// The early stretch lasts this many windows of audio after the first, about
+/// half a second at 44.1 or 48 kHz.
+pub(super) const EARLY_BRAKING_WINDOWS: usize = 3;
 /// Braking lasts this many windows of audio, about seven seconds at 44.1 or
 /// 48 kHz, counted on every sample, silent or not.
 pub(super) const BRAKING_WINDOWS: usize = 40;
@@ -215,8 +227,13 @@ impl BoundaryEstimator {
             };
         }
         let lands_at_full = (1.0 - integral_feedback) / raw_peak;
+        let level = if self.elapsed_samples < self.window_samples * EARLY_BRAKING_WINDOWS {
+            EARLY_BRAKE_LEVEL
+        } else {
+            BRAKE_LEVEL
+        };
         Step::Brake {
-            trigger: lands_at_full * BRAKE_LEVEL,
+            trigger: lands_at_full * level,
             target: lands_at_full * TARGET_HEIGHT,
         }
     }

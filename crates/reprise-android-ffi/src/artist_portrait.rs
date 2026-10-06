@@ -417,6 +417,8 @@ impl MusicLibrary {
     }
 }
 
-#[cfg(test)]
+// The tests store their fixtures through `reprise_core::artist_portrait::
+// store_fixture_image`, which exists in debug builds only.
+#[cfg(all(test, debug_assertions))]
 #[path = "artist_portrait_tests.rs"]
 mod tests;
