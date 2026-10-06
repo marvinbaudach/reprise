@@ -471,16 +471,17 @@ class NoAccessibleActionFindingTests(unittest.TestCase):
         self.assertIn("no-accessible-action", codes)
         self.assertNotIn("suspected-no-handler", codes)
 
-    def test_an_undelivered_click_on_such_a_target_still_names_the_missing_action(
+    def test_an_undelivered_click_on_such_a_target_draws_no_app_verdict(
         self,
     ) -> None:
-        # cua-driver 0.33 refuses to click a row or header with no AT-SPI click.
-        # Delivery is unproven, but the missing action is a fact of the tree.
+        # cua-driver 0.33 refuses to click a row or header with no AT-SPI
+        # click. That is a harness delivery limit, not a defect in Reprise.
         codes = self._codes(
             target_has_action=False, dispatched=False, effect="none"
         )
 
-        self.assertIn("no-accessible-action", codes)
+        self.assertNotIn("no-accessible-action", codes)
+        self.assertNotIn("suspected-no-handler", codes)
 
     def test_an_undelivered_click_on_a_target_with_an_action_draws_no_verdict(
         self,

@@ -24,6 +24,11 @@ from actions import (
     TypeAction,
     WaitAction,
 )
+from click_routing import (
+    label_carries_action,
+    route_actionless_click,
+    undelivered_finding,
+)
 from driver_transport import (
     RAW_INPUT_DELIVERY_MODE,
     CliTransport,
@@ -277,8 +282,13 @@ class CuaExecutor:
         # observation window, so measure it from the same starting line.
         self._snapshot_durations_ms = []
         self._snapshot_activity = []
+        requested = evidence
+        evidence = self._route_click(requested, before_raw)
+        rerouted = evidence is not requested
         response = self._dispatch(accepted, evidence, before_raw)
-        dispatched = self._confirm_dispatch(evidence, response)
+        if rerouted:
+            response = {**response, "dispatch_rerouted": {"from": "ax", "to": "px"}}
+        dispatched = self._confirm_dispatch(evidence, response, before_raw)
         action_elapsed_ms = round((time.monotonic() - started) * 1000)
         after_raw, after = self._snapshot(f"step-{self._step_counter:04}-after")
         first_change_ms = action_elapsed_ms if before.state_signature != after.state_signature else None
@@ -289,6 +299,7 @@ class CuaExecutor:
         ax_probe_changed = False
         if (
             dispatched
+            and not rerouted
             and evidence.kind == "activate"
             and evidence.dispatch == "px"
             and evidence.expect_effect == "required"
@@ -360,7 +371,10 @@ class CuaExecutor:
         return result
 
     def _confirm_dispatch(
-        self, evidence: ActionEvidence, response: Mapping[str, Any]
+        self,
+        evidence: ActionEvidence,
+        response: Mapping[str, Any],
+        before_raw: Mapping[str, Any],
     ) -> bool:
         """Return whether the driver's answer proves the action was delivered.
 
@@ -372,22 +386,8 @@ class CuaExecutor:
 
         if response_dispatched(response):
             return True
-        self._pending_findings.append(
-            Finding(
-                "driver-action-undelivered",
-                "warning",
-                0.9,
-                "The driver accepted the action but its answer does not prove "
-                "the input reached the app; no product verdict was drawn.",
-                {
-                    "kind": evidence.kind,
-                    "target": evidence.target_label,
-                    "dispatch": evidence.dispatch,
-                    "response": dict(response),
-                },
-                blocks_gate=False,
-            )
-        )
+        has_action = self.target_carries_action(before_raw, evidence.target_label)
+        self._pending_findings.append(undelivered_finding(evidence, response, has_action))
         return False
 
     def _dispatch(
@@ -709,15 +709,7 @@ class CuaExecutor:
         ]
         return actionable[0] if actionable else matches[0]
 
-    def target_carries_action(self, raw: Mapping[str, Any], label: str | None) -> bool | None:
-        """Does any node with this label offer an invocable action?"""
-        structured = raw.get("structuredContent")
-        container = structured if isinstance(structured, dict) else raw
-        elements = container.get("elements", [])
-        matches = [item for item in elements if isinstance(item, dict) and item.get("label") == label]
-        if not any("actions" in item for item in matches):
-            return None
-        return any(invocable_actions(item.get("actions", ())) for item in matches)
+    target_carries_action = staticmethod(label_carries_action)
 
     def _take_harness_findings(self) -> list[Finding]:
         findings, self._pending_findings = self._pending_findings, []
@@ -725,6 +717,19 @@ class CuaExecutor:
         if callable(take_transport):
             findings.extend(take_transport())
         return findings
+
+    def _route_click(
+        self, evidence: ActionEvidence, raw: Mapping[str, Any]
+    ) -> ActionEvidence:
+        has_action = self.target_carries_action(raw, evidence.target_label)
+        if evidence.kind != "activate" or has_action is not False:
+            return evidence
+        return route_actionless_click(
+            evidence,
+            self._target(raw, evidence.target_label),
+            has_action,
+            can_aim_pixels=(self.window_origin or self.hover_geometry) is not None,
+        )
 
     def _focus_click(
         self,

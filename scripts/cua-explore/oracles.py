@@ -471,13 +471,7 @@ class OracleEngine:
         if not action.dispatched:
             # The driver never confirmed delivery, so "no visible effect" says
             # nothing about the product. The transport already reported the
-            # undelivered action as a harness finding. The one fact that does
-            # not depend on delivery is read from the snapshot: a target with
-            # nothing to invoke over accessibility. cua-driver 0.33 refuses
-            # such a click outright (element_bounds_unavailable), so without
-            # this the finding would vanish exactly where it is true.
-            if not changed and self._offers_no_action(action):
-                return [self._no_accessible_action(action)]
+            # undelivered action as a harness finding.
             return []
         if changed or action.expect_effect in {"idempotent", "none"}:
             return self._misroute_findings(action, before, after)

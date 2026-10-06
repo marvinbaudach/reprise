@@ -471,11 +471,15 @@ still expect the tree of an older driver:
   rows, so `len(after_rows) == 1` fails even where the screenshot shows the single correct
   result. Podcast and YouTube results are buttons, not rows.
 - The bundled agent's plans address rows and the column-header row with `dispatch: ax`.
-  Neither offers an AT-SPI click, so the driver refuses the click and `sort-cycle`,
-  `combined-filter` and `batch-edit` in `large-library-stress` never get their actions.
-  The oracle reports each such click as `no-accessible-action` (the element offers nothing
-  to invoke) next to `driver-action-undelivered`; the harness does not reroute it to the
-  pointer on its own.
+  Neither offers an AT-SPI click, and the driver refuses to aim at them by element. The
+  executor therefore sends such a click by pixel (`dispatch: px`, with the
+  `frame_scale`-corrected point, no accessibility probe afterwards) and records the
+  reroute as `dispatch_rerouted` in the step response, so `sort-cycle`,
+  `combined-filter` and `batch-edit` in `large-library-stress` get their actions. Only
+  when there is no window origin or frame to aim at does the click stay undelivered; it
+  is then a `driver-action-undelivered` note at confidence 0.3 with
+  `blocks_gate: false`, never an app finding. `no-accessible-action` is reserved for a
+  click that was delivered and did nothing.
 
 ## Semantic dispatch fallback
 

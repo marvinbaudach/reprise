@@ -163,6 +163,86 @@ class InputRoutingTests(unittest.TestCase):
                 self.assertEqual(payload.get("delivery_mode"), expected)
                 self.assertIn("element_token", payload)
 
+    def test_an_ax_click_on_a_target_with_no_action_is_aimed_at_the_pointer(
+        self,
+    ) -> None:
+        # A list row or column header offers no AT-SPI click, and cua-driver
+        # 0.33 refuses to aim at it by element. A user clicks it, so the
+        # executor does the same: by pixel, once, with no accessibility probe.
+        raw = json.loads(json.dumps(self.raw))
+        for item in raw["elements"]:
+            if item.get("label") == "\u2606":
+                item["actions"] = ["listitem.scroll-to"]
+        transport = self.transport(
+            [
+                completed(json.dumps(raw)),
+                completed('{"effect":"unverifiable","route":"global_input"}'),
+                completed(json.dumps(raw)),
+            ]
+        )
+        executor = CuaExecutor(
+            transport,
+            pid=44,
+            window_id=77,
+            session="contract",
+            window_origin=WindowGeometry(0, 0, 1600, 1000),
+            settle_delays=(),
+        )
+
+        result = executor.execute_evidence(
+            ActionEvidence.activate("\u2606", dispatch="ax", expect_effect="required")
+        )
+
+        payloads = self.click_payloads(transport)
+        self.assertEqual(len(payloads), 1)
+        self.assertEqual((payloads[0]["x"], payloads[0]["y"]), (1374.0, 348.0))
+        self.assertEqual(payloads[0]["delivery_mode"], "foreground")
+        self.assertNotIn("element_token", payloads[0])
+        self.assertEqual(result.evidence.dispatch, "px")
+        self.assertEqual(result.action_response["dispatch_rerouted"]["to"], "px")
+        self.assertNotIn(
+            "no-accessible-action", {finding.code for finding in result.findings}
+        )
+
+    def test_an_undelivered_click_on_a_target_with_no_action_blocks_nothing(
+        self,
+    ) -> None:
+        # Without a window origin the click cannot be aimed by pixel. The
+        # driver refuses it by element; that is a harness delivery limit, so
+        # it is a low-confidence harness note and never an app error.
+        refusal = json.dumps(
+            {
+                "code": "element_bounds_unavailable",
+                "effect": "none",
+                "reason": "point_owned_by_another_element",
+            }
+        )
+        raw = json.loads(json.dumps(self.raw))
+        for item in raw["elements"]:
+            if item.get("label") == "\u2606":
+                item["actions"] = ["listitem.scroll-to"]
+        transport = self.transport(
+            [
+                completed(json.dumps(raw)),
+                completed(refusal, returncode=1),
+                completed(json.dumps(raw)),
+            ]
+        )
+        executor = CuaExecutor(
+            transport, pid=44, window_id=77, session="contract", settle_delays=()
+        )
+
+        result = executor.execute_evidence(
+            ActionEvidence.activate("\u2606", dispatch="ax", expect_effect="required")
+        )
+
+        by_code = {finding.code: finding for finding in result.findings}
+        self.assertNotIn("no-accessible-action", by_code)
+        note = by_code["driver-action-undelivered"]
+        self.assertFalse(note.blocks_gate)
+        self.assertLessEqual(note.confidence, 0.3)
+        self.assertFalse(any(finding.blocks_gate for finding in result.findings))
+
     def test_typing_into_a_non_entry_focuses_by_click_instead_of_grab_focus(
         self,
     ) -> None:
