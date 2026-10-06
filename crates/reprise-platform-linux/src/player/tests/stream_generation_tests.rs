@@ -21,6 +21,12 @@
 use super::*;
 use crate::player_pipeline::AUDIO_SINK_ENV_VAR;
 
+/// How long the gapless hand-off test waits for an event it is *sure* will
+/// come. The test waits for the event itself; this bound exists only so a
+/// genuine hang ends the run, and it sits far above any plausible host load —
+/// a stalled but healthy run is not a failure, a short budget would make it one.
+const HANG_GUARD: Duration = Duration::from_secs(120);
+
 /// Starts the real crossfade engine at a deterministic in-window position.
 ///
 /// The separate `play_20b_crossfade_promotion_carries_the_next_gain_from_the_first_sample` test
@@ -176,17 +182,22 @@ fn gapless_handoff_carries_a_newer_generation_than_the_track_it_replaced() {
     let first = concat!(env!("CARGO_MANIFEST_DIR"), "/tests/fixtures/sine.flac");
     let second = concat!(env!("CARGO_MANIFEST_DIR"), "/tests/fixtures/blip.flac");
     player.play(item(first)).unwrap();
+    // Queued before anything is awaited, like `handoff_duration_tests` does:
+    // `sine.flac` lasts about a second, so a host stalled between `play()` and
+    // a later `set_next()` would let the first track end with nothing queued
+    // and the hand-off this test waits for would never happen.
+    player.set_next(Some(item(second)));
     let first_generation = rx
-        .recv_timeout(Duration::from_secs(5))
+        .recv_timeout(HANG_GUARD)
         .expect("expected a tagged StateChanged(Playing) for the first stream")
         .generation;
-    player.set_next(Some(item(second)));
 
     // Same pump-until-resolved pattern as `gapless_handoff_advances_without_
     // pipeline_restart`: the bus watch driving `AdvancedToNext` is dispatched
     // by the GLib main context, which nothing iterates in a headless test.
+    // The hand-off is awaited as a condition; `HANG_GUARD` only ends a hang.
     let main_context = gst::glib::MainContext::default();
-    let deadline = std::time::Instant::now() + Duration::from_secs(10);
+    let deadline = std::time::Instant::now() + HANG_GUARD;
     let advanced_generation = 'wait: loop {
         main_context.iteration(false);
         while let Ok(tagged) = rx.try_recv() {
