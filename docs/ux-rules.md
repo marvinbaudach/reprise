@@ -4797,11 +4797,18 @@ STYLE-1).
   window is full; once a full window is in and it says more than twice too
   dim, the sensitivity moves up to the measurement within a few frames; within
   a factor of two it stays. The sensitivity is held, not creeping, while a
-  measurement or such a move is under way. After that, for the next seven
+  measurement or such a move is under way. After that, for the next fourteen
   seconds of audio (silence counts), a frame the sensitivity would draw at
   twice full height or more, 1.3 times in the first half second, a quiet intro
   followed by the song itself, pulls the sensitivity down at once to land at
-  0.85 of full height. Throughout this span and after it `cavacore`'s
+  0.85 of full height. The span outlasts the longest quiet intro it covers,
+  because an intro is indistinguishable from a quiet song until its body
+  arrives. A pull also says the rise may not be over (the FFT window fills with
+  the body over the frames that follow, and a fade-in rises for seconds, each
+  frame only a little over the last): for the next 1.1 seconds of audio, a
+  frame louder than anything the stream has shown since the boundary is pulled
+  down as soon as the sensitivity would draw it at full height, and each such
+  frame extends that; only a pull starts it. Throughout this span and after it `cavacore`'s
   auto-sensitivity creeps in both directions, so the sensitivity settles where
   it would have settled without the boundary and neither sits dim nor swells
   back. A track change and a seek keep the bar
@@ -4824,10 +4831,20 @@ STYLE-1).
   level three to ten seconds on equals that of a run that never had the
   boundary; silent chunks inside a song do not keep a boundary measuring; a
   resume keeps a quiet passage quiet; silence never raises the sensitivity,
-  whether the boundary is settled or still braking; and a loud body after an
-  intro of up to six seconds and up to 30 dB quieter does not wall. A quiet
-  intro or fade-in that outlasts the seven seconds of braking is a known gap
-  that no test covers.
+  whether the boundary is settled or still braking; and a loud body after a
+  quiet intro and a fade-in draw no wall (no frame with half the bars pinned,
+  no run of more than 25 frames with eight or more) and no more frames with a
+  pinned bar than an engine that has played the same audio long enough to
+  have settled, plus a few, from a first start and after another song. The
+  core processor is judged on intros of 2.5, 6, 8 and 10 seconds, 14 to 30 dB
+  below the body, and on fades of three and five seconds, linear in amplitude
+  and from 60 dB down linear in decibels; the Android engine and the desktop
+  stage on an 8 second intro 30 dB down, a 10 second intro 14 dB down, a three
+  second linear fade and a five second fade in decibels. A quiet opening that
+  outlasts the fourteen seconds of braking is a known gap that no test covers.
+  *Amended 2026-10-06: braking lasts fourteen seconds, not seven, and a rise
+  that follows a pull is followed; the acceptance covers quiet intros of up to
+  ten seconds and fade-ins, which were a known gap.*
 
 - **AC-24** [active] [gtk] — The reactive light lives on the panel's blurred
   cover bloom, the cover in the player bar and the playhead, nowhere else; the

@@ -17,10 +17,10 @@ const BRAKING_FRAMES: usize = BRAKING_WINDOWS * WINDOW_SAMPLES / SAMPLES;
 /// The cadence in frames a second, written out so the span below is pinned by
 /// seconds and not by the constant that sets it.
 const FRAMES_PER_SECOND: usize = 60;
-/// The span after the window is full lasts about seven seconds: a surge this
+/// The span after the window is full lasts about fourteen seconds: a surge this
 /// long after it is still braked, one this long after it is the creep's.
-const SECONDS_STILL_BRAKING: usize = 6;
-const SECONDS_PAST_BRAKING: usize = 8;
+const SECONDS_STILL_BRAKING: usize = 12;
+const SECONDS_PAST_BRAKING: usize = 16;
 
 fn smoother() -> Smoother {
     Smoother::new(64, 0.77, 1, WINDOW_SAMPLES)
@@ -334,22 +334,93 @@ fn surge_after(seconds: usize) -> (f32, f32) {
 }
 
 #[test]
-fn a_surge_six_seconds_after_the_window_is_still_braked() {
+fn a_surge_twelve_seconds_after_the_window_is_still_braked() {
     let (before, after) = surge_after(SECONDS_STILL_BRAKING);
 
     assert!(
         after <= before / BRAKE_LEVEL / 4.0 * 1.05,
-        "six seconds in, a surge was left to the creep: {after} from {before}"
+        "twelve seconds in, a surge was left to the creep: {after} from {before}"
     );
 }
 
 #[test]
-fn a_surge_eight_seconds_after_the_window_is_the_creeps_to_handle() {
+fn a_surge_sixteen_seconds_after_the_window_is_the_creeps_to_handle() {
     let (before, after) = surge_after(SECONDS_PAST_BRAKING);
 
     assert!(
         after >= before * 0.97,
-        "eight seconds in, braking was still armed: {after} from {before}"
+        "sixteen seconds in, braking was still armed: {after} from {before}"
+    );
+}
+
+/// Frames of `raw` rising by `step` a frame from `from`, as a fade-in or a body
+/// filling the FFT window does. Returns how many of them drew a pinned bar.
+fn pinned_frames_of_a_rise(smoother: &mut Smoother, from: f32, step: f32, frames: usize) -> usize {
+    let mut raw = from;
+    (0..frames)
+        .filter(|_| {
+            raw *= step;
+            frame_max(&frame(smoother, raw)) >= 0.99
+        })
+        .count()
+}
+
+/// A rise of 3 % a frame: more than the creep's 2 % step takes back, and far
+/// under a gross overshoot, so only a rule that follows the rise sees it.
+const RISE_PER_FRAME: f32 = 1.03;
+
+#[test]
+fn a_rise_that_follows_a_brake_is_followed_frame_by_frame() {
+    const RISING_FRAMES: usize = 90;
+    const PINNED_ALLOWED: usize = 2;
+    let mut smoother = measured();
+    frame(&mut smoother, SURGE);
+
+    let pinned = pinned_frames_of_a_rise(&mut smoother, SURGE, RISE_PER_FRAME, RISING_FRAMES);
+
+    assert!(
+        pinned <= PINNED_ALLOWED,
+        "{pinned} of {RISING_FRAMES} frames of a rise after a brake drew a pinned bar"
+    );
+}
+
+#[test]
+fn a_rise_that_nothing_braked_is_the_creeps_to_handle() {
+    const STEADY_SECONDS: usize = 4;
+    let mut smoother = measured();
+    gain_after(
+        &mut smoother,
+        STEADY_RAW,
+        STEADY_SECONDS * FRAMES_PER_SECOND,
+    );
+    let before = smoother.sensitivity;
+
+    // 1.4 times the level the gain was measured on lands above full height, but
+    // under the 2x the brake waits for; ordinary music with a louder hit is
+    // not a stream outgrowing its measurement.
+    frame(&mut smoother, STEADY_RAW * 1.4);
+
+    assert!(
+        smoother.sensitivity >= before * 0.97,
+        "a louder hit alone braked the gain: {} from {before}",
+        smoother.sensitivity
+    );
+}
+
+#[test]
+fn a_rise_is_the_creeps_again_once_the_stream_stops_setting_highs() {
+    const QUIET_SECONDS: usize = 3;
+    let mut smoother = measured();
+    frame(&mut smoother, SURGE);
+    gain_after(&mut smoother, SURGE, QUIET_SECONDS * FRAMES_PER_SECOND);
+    let before = smoother.sensitivity;
+
+    frame(&mut smoother, SURGE * 1.4);
+
+    assert!(
+        smoother.sensitivity >= before * 0.97,
+        "a new high three seconds after the last one was still braked: {} from {before}",
+        smoother.sensitivity
     );
 }
 
@@ -382,8 +453,8 @@ fn the_gain_never_jumps_across_the_end_of_the_braking_span() {
 
     // Frame by frame through the real transition, with a modest surge now and
     // then that no brake takes, so a hand-over that re-measured or braked would
-    // show as a step. Seven seconds is inside the run: the window fills in the
-    // first eleven frames, the span lasts 410 after it.
+    // show as a step. The end of the span is inside the run: the window fills in
+    // the first eleven frames, the span lasts 819 after it.
     let mut gain = smoother.sensitivity;
     for index in 0..(SECONDS_PAST_BRAKING + 1) * FRAMES_PER_SECOND {
         let surging = index >= FIRST_SURGE_FRAME && index % SURGE_EVERY_FRAMES == 0;
