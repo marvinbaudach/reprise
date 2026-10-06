@@ -103,6 +103,7 @@ const MIGRATIONS: &[Migration] = &[
     migration!(88, crate::db_playlist_track_index::migrate_v88),
     migration!(89, crate::library::loudness_store::migrate_v89),
     migration!(90, crate::db_cue_segments::migrate_v90),
+    migration!(91, crate::db_cue_wave3::migrate_v91),
 ];
 
 pub const SUPPORTED_SCHEMA_VERSION: i64 = MIGRATIONS[MIGRATIONS.len() - 1].version;
