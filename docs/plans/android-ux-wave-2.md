@@ -2,7 +2,7 @@
 slug: android-ux-wave-2
 worktree:
 branch:
-phase: reviewed
+phase: shipped
 codex_session:
 created: 2026-10-05
 strands: a,b
