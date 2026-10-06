@@ -193,11 +193,13 @@ pub fn query_live_track_paths(db: &Db) -> Result<Vec<String>, rusqlite::Error> {
 }
 
 /// Returns the metadata and paths needed by background lyrics scheduling for
-/// every present library track in stable path order.
+/// every present library track in stable path order, the tracks of one file
+/// in the order they play.
 pub fn query_live_track_summaries(db: &Db) -> Result<Vec<TrackSummary>, rusqlite::Error> {
     let conn = db.conn();
     let mut statement = conn.prepare(&format!(
-        "SELECT {TRACK_SUMMARY_COLUMNS} FROM tracks WHERE {PRESENT} ORDER BY path"
+        "SELECT {TRACK_SUMMARY_COLUMNS} FROM tracks WHERE {PRESENT} \
+         ORDER BY path, segment_index, id"
     ))?;
     let summaries = statement.query_map([], row_to_summary)?.collect();
     summaries
@@ -212,7 +214,8 @@ pub fn query_track_summaries_added_since(
     let conn = db.conn();
     let mut statement = conn.prepare(&format!(
         "SELECT {TRACK_SUMMARY_COLUMNS} FROM tracks \
-         WHERE {PRESENT} AND (added_at > ?1 OR file_mtime > ?1) ORDER BY path"
+         WHERE {PRESENT} AND (added_at > ?1 OR file_mtime > ?1) \
+         ORDER BY path, segment_index, id"
     ))?;
     let summaries = statement
         .query_map([since], row_to_summary)?

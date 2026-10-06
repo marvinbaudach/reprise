@@ -266,13 +266,32 @@ fn cue_7_locating_a_cue_track_leaves_a_sibling_removed_from_the_library_removed(
 
     let removed: (String, Option<i64>) = db
         .conn()
-        .query_row("SELECT path, removed_at FROM tracks WHERE id = 10", [], |row| {
-            Ok((row.get(0)?, row.get(1)?))
-        })
+        .query_row(
+            "SELECT path, removed_at FROM tracks WHERE id = 10",
+            [],
+            |row| Ok((row.get(0)?, row.get(1)?)),
+        )
         .unwrap();
     assert_eq!(
         removed,
         (new_path.to_string_lossy().into_owned(), Some(7)),
         "it moves with its file and stays removed"
+    );
+}
+
+#[test]
+fn cue_6_summaries_list_the_tracks_of_a_file_in_play_order() {
+    let db = seeded();
+    let titles = |summaries: Vec<crate::queries::TrackSummary>| -> Vec<String> {
+        summaries.into_iter().map(|summary| summary.title).collect()
+    };
+
+    assert_eq!(
+        titles(crate::queries::query_live_track_summaries(&db).unwrap()),
+        ["One", "Two", "Three", "Plain"]
+    );
+    assert_eq!(
+        titles(crate::queries::query_track_summaries_added_since(&db, 0).unwrap()),
+        ["One", "Two", "Three", "Plain"]
     );
 }
