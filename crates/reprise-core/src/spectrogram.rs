@@ -271,6 +271,15 @@ impl SpectrogramAccumulator {
         }
     }
 
+    /// The frames closed so far, whole frames only. Every cell is final once
+    /// pushed (absolute dBFS bytes, no global scale), so this is always a
+    /// prefix of what [`finish`](Self::finish) later returns.
+    pub fn snapshot(&self) -> TrackSpectrogram {
+        TrackSpectrogram {
+            cells: self.cells.clone(),
+        }
+    }
+
     pub fn finish(mut self) -> TrackSpectrogram {
         if self.samples_since_frame > 0 {
             self.close_frame();
