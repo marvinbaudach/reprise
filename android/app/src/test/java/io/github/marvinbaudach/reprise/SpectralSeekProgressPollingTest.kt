@@ -79,18 +79,93 @@ class SpectralSeekProgressPollingTest {
     }
 
     @Test
-    fun nav_15d_a_track_that_never_reports_progress_stops_polling_until_the_next_revision() {
-        show()
-        compose.mainClock.advanceTimeBy((MAX_EMPTY_PROGRESS_POLLS + INTERVALS) * ANALYSIS_PROGRESS_POLL_MS)
-        val stopped = analysis.polls
-        assertTrue("$stopped polls for a track that never decodes", stopped <= MAX_EMPTY_PROGRESS_POLLS + 1)
+    fun nav_15d_no_polls_while_the_screen_is_off() {
+        analysis.answer = { decoded(0.3f) }
+        val controller = AmbientMotionController()
+        compose.runOnUiThread { controller.screen(on = false) }
+        show(TestLifecycle(Lifecycle.State.STARTED), controller)
         compose.mainClock.advanceTimeBy(INTERVALS * ANALYSIS_PROGRESS_POLL_MS)
-        assertEquals(stopped, analysis.polls)
+        assertEquals("a started screen that is off polled", 0, analysis.polls)
+
+        Snapshot.withMutableSnapshot { controller.screen(on = true) }
+        compose.mainClock.advanceTimeBy(INTERVALS * ANALYSIS_PROGRESS_POLL_MS)
+
+        assertTrue("the screen came back on and never polled", analysis.polls > 0)
+    }
+
+    @Test
+    fun nav_15d_a_track_that_never_reports_progress_is_asked_less_often() {
+        show()
+        compose.mainClock.advanceTimeBy(EMPTY_PROGRESS_POLLS_BEFORE_IDLE * ANALYSIS_PROGRESS_POLL_MS)
+        val slowed = analysis.polls
+        assertTrue("$slowed polls in the first half minute", slowed <= EMPTY_PROGRESS_POLLS_BEFORE_IDLE + 1)
+
+        compose.mainClock.advanceTimeBy(INTERVALS * ANALYSIS_PROGRESS_IDLE_POLL_MS)
+        val idle = analysis.polls - slowed
+        assertTrue("$idle polls in $INTERVALS idle intervals", idle in INTERVALS - 1..INTERVALS + 1)
+
+        // A decode that starts late, with no import attempt ending before it.
+        analysis.answer = { decoded(0.3f) }
+        compose.mainClock.advanceTimeBy(ANALYSIS_PROGRESS_IDLE_POLL_MS)
+        settle()
+        assertNotNull("a decode that started late never showed its partial", shown)
+        val found = analysis.polls
+        compose.mainClock.advanceTimeBy(INTERVALS * ANALYSIS_PROGRESS_POLL_MS)
+        val fast = analysis.polls - found
+        assertTrue("$fast polls once the decode answered", fast in INTERVALS - 1..INTERVALS + 1)
+    }
+
+    @Test
+    fun nav_15d_a_new_revision_asks_at_the_full_rate_again() {
+        show()
+        compose.mainClock.advanceTimeBy((EMPTY_PROGRESS_POLLS_BEFORE_IDLE + INTERVALS) * ANALYSIS_PROGRESS_POLL_MS)
+        val slowed = analysis.polls
 
         analysis.bump()
         compose.mainClock.advanceTimeBy(INTERVALS * ANALYSIS_PROGRESS_POLL_MS)
 
-        assertTrue("a new revision did not restart polling", analysis.polls > stopped)
+        val polls = analysis.polls - slowed
+        assertTrue("$polls polls after a new revision", polls in INTERVALS - 1..INTERVALS + 1)
+    }
+
+    @Test
+    fun nav_15d_an_answer_in_flight_when_the_screen_stops_is_not_applied() {
+        analysis.answer = { decoded(0.3f) }
+        val lifecycle = TestLifecycle(Lifecycle.State.STARTED)
+        show(lifecycle)
+        analysis.holding = true
+        compose.mainClock.advanceTimeBy(ANALYSIS_PROGRESS_POLL_MS)
+        val late = analysis.held.single()
+
+        compose.runOnUiThread { lifecycle.registry.currentState = Lifecycle.State.CREATED }
+        settle()
+        Snapshot.withMutableSnapshot { late(decoded(0.4f)) }
+        settle()
+        val polls = analysis.polls
+        compose.mainClock.advanceTimeBy(INTERVALS * ANALYSIS_PROGRESS_POLL_MS)
+
+        assertEquals("the answer asked for before the screen stopped was applied", 0.3f, shown?.coveredFraction)
+        assertEquals("a stopped screen kept polling", polls, analysis.polls)
+    }
+
+    @Test
+    fun nav_15d_empty_answers_count_again_after_the_screen_returns() {
+        val lifecycle = TestLifecycle(Lifecycle.State.STARTED)
+        show(lifecycle)
+        compose.mainClock.advanceTimeBy((EMPTY_PROGRESS_POLLS_BEFORE_IDLE - INTERVALS) * ANALYSIS_PROGRESS_POLL_MS)
+        compose.runOnUiThread { lifecycle.registry.currentState = Lifecycle.State.CREATED }
+        settle()
+        compose.runOnUiThread { lifecycle.registry.currentState = Lifecycle.State.STARTED }
+        settle()
+        val returned = analysis.polls
+
+        compose.mainClock.advanceTimeBy(2 * INTERVALS * ANALYSIS_PROGRESS_POLL_MS)
+
+        val polls = analysis.polls - returned
+        assertTrue(
+            "$polls polls in ${2 * INTERVALS} intervals: the empty answers before the screen stopped still counted",
+            polls in 2 * INTERVALS - 1..2 * INTERVALS + 1,
+        )
     }
 
     @Test
@@ -151,11 +226,14 @@ class SpectralSeekProgressPollingTest {
         assertEquals("an identical picture recomposed the seek bar", settled, compositions)
     }
 
-    private fun show(lifecycle: LifecycleOwner? = null) {
+    private fun show(lifecycle: LifecycleOwner? = null, controller: AmbientMotionController? = null) {
         compose.mainClock.autoAdvance = false
         compose.setContent {
             val owner = lifecycle ?: LocalLifecycleOwner.current
-            CompositionLocalProvider(LocalLifecycleOwner provides owner) {
+            CompositionLocalProvider(
+                LocalLifecycleOwner provides owner,
+                LocalAmbientMotionController provides (controller ?: LocalAmbientMotionController.current),
+            ) {
                 val progress = rememberAnalysisProgress(
                     analysis,
                     trackId.value,
@@ -181,6 +259,10 @@ class SpectralSeekProgressPollingTest {
         const val SETTLE_FRAMES = 3
     }
 }
+
+/** What `BindAmbientRuntime` reports for a started window that is not resumed. */
+private fun AmbientMotionController.screen(on: Boolean) =
+    runtimeChanged(resumed = false, screenInteractive = on, animationsEnabled = true)
 
 /** A new instance each time, as every real poll delivers. */
 private fun decoded(fraction: Float) = PartialTrackAnalysis(

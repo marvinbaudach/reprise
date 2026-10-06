@@ -263,13 +263,15 @@ result.
   The Now Playing scene adopts the growing spectrum without restarting:
   only the playing panel asks for it, it keeps the decoded frames until the
   final ones arrive, and frames decoded behind a playhead that ran ahead
-  play on instead of snapping. The decoded part is asked for about once a second, only while the screen
-  is visible and the final analysis is missing, never while an earlier
-  answer is still outstanding, and no more after half a minute of empty
-  answers until the next analysis attempt ends. When the final bars replace
-  a partial picture they appear at full height, even if a cue asked for a
-  build at that moment; final bars that follow a partial picture which
-  ended without a result build in as a first analysis does.
+  play on instead of snapping. The decoded part is asked for about once a
+  second, only while the app is visible with the screen on and the final
+  analysis is missing, and never while an earlier answer is still
+  outstanding. After half a minute of empty answers it is asked only every
+  five seconds, until an answer comes or the next analysis attempt ends.
+  When the final bars replace a partial picture they appear at full height,
+  even if a cue asked for a build at that moment; final bars that follow a
+  partial picture which ended without a result build in as a first analysis
+  does.
   *Tests:* `nav_15d_partial_bars_cover_only_the_decoded_part`,
   `nav_15d_final_bars_replace_the_partial`,
   `nav_15d_progress_reads_are_never_cached`,
@@ -284,7 +286,11 @@ result.
   `nav_15d_polls_about_once_per_interval_while_decoding`,
   `nav_15d_no_polls_once_the_final_data_arrived`,
   `nav_15d_no_polls_while_the_screen_is_not_started`,
-  `nav_15d_a_track_that_never_reports_progress_stops_polling_until_the_next_revision`,
+  `nav_15d_no_polls_while_the_screen_is_off`,
+  `nav_15d_a_track_that_never_reports_progress_is_asked_less_often`,
+  `nav_15d_a_new_revision_asks_at_the_full_rate_again`,
+  `nav_15d_an_answer_in_flight_when_the_screen_stops_is_not_applied`,
+  `nav_15d_empty_answers_count_again_after_the_screen_returns`,
   `nav_15d_a_poll_waits_for_the_previous_answer`,
   `nav_15d_a_late_answer_from_an_earlier_revision_is_not_shown`,
   `nav_15d_an_unchanged_answer_does_not_recompose`,

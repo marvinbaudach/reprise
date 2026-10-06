@@ -22,19 +22,26 @@ import kotlinx.coroutines.suspendCancellableCoroutine
 internal const val ANALYSIS_PROGRESS_POLL_MS = 1_000L
 
 /**
- * How many empty answers in a row end the polling until the next revision: half
- * a minute in which no decode of the track ran. A decode that starts later ends
- * with an import attempt, and the revision it bumps restarts the polling.
+ * How many empty answers in a row slow the polling down: half a minute in which
+ * no decode of the track ran. A new revision brings back the full rate.
  */
-internal const val MAX_EMPTY_PROGRESS_POLLS = 30
+internal const val EMPTY_PROGRESS_POLLS_BEFORE_IDLE = 30
+
+/**
+ * How often a track that keeps answering nothing is still asked. Not never: a
+ * decode may start much later (the backfill reaching the track) with no import
+ * attempt ending, and so no revision, in between.
+ */
+internal const val ANALYSIS_PROGRESS_IDLE_POLL_MS = 5_000L
 
 /**
  * The decoded part of the track's analysis while the phone is still computing
- * it. Polls while [active] and the screen is started, and answers `null` the
- * moment [active] turns false, so final data replaces the partial picture at
- * once. One read is outstanding at a time, an answer is applied only by the
- * loop that asked for it, and a track that keeps answering nothing stops being
- * asked until the next [revision].
+ * it. Polls while [active], the activity is started and the screen is on, and
+ * answers `null` the moment [active] turns false, so final data replaces the
+ * partial picture at once. Started rather than resumed: a window beside another
+ * one in multi-window is visible without the focus. One read is outstanding at
+ * a time, an answer is applied only by the loop that asked for it, and a track
+ * that keeps answering nothing is asked less often until the next [revision].
  */
 @Composable
 internal fun rememberAnalysisProgress(
@@ -46,12 +53,13 @@ internal fun rememberAnalysisProgress(
 ): PartialTrackAnalysis? {
     var progress by remember(trackId, count) { mutableStateOf<PartialTrackAnalysis?>(null) }
     val lifecycleState by LocalLifecycleOwner.current.lifecycle.currentStateAsState()
-    val polling = active && lifecycleState.isAtLeast(Lifecycle.State.STARTED)
+    val screenOn = LocalAmbientMotionController.current.screenOn
+    val polling = active && screenOn && lifecycleState.isAtLeast(Lifecycle.State.STARTED)
     LaunchedEffect(analysis, trackId, count, revision, polling) {
         if (!polling) return@LaunchedEffect
         var seenThisRevision = false
         var emptyAnswers = 0
-        while (emptyAnswers < MAX_EMPTY_PROGRESS_POLLS) {
+        while (true) {
             val answer = analysis.awaitProgress(trackId, count)
             if (answer != null) {
                 seenThisRevision = true
@@ -64,7 +72,8 @@ internal fun rememberAnalysisProgress(
                 // decode's store and the revision bump that delivers the final data.
                 if (!seenThisRevision) progress = null
             }
-            delay(ANALYSIS_PROGRESS_POLL_MS)
+            val idle = emptyAnswers >= EMPTY_PROGRESS_POLLS_BEFORE_IDLE
+            delay(if (idle) ANALYSIS_PROGRESS_IDLE_POLL_MS else ANALYSIS_PROGRESS_POLL_MS)
         }
     }
     return if (active) progress else null
@@ -75,6 +84,12 @@ internal fun rememberAnalysisProgress(
  * answered, so slow reads never pile up on the read lane, and an answer that
  * arrives after the asking loop ended (a new revision, another track) is
  * dropped with its cancelled continuation.
+ *
+ * No timeout, on purpose. A read still queued or running when the loader's read
+ * lane is cancelled never delivers, and this suspends until the composition
+ * leaves; the lane is cancelled only when the loader closes with the activity,
+ * which takes the composition with it. A timeout would ask again while the
+ * first read still sits on the lane, which is the pile-up this wait prevents.
  */
 private suspend fun TrackAnalysisPort.awaitProgress(trackId: Long, count: Int) =
     suspendCancellableCoroutine { continuation ->
