@@ -146,3 +146,26 @@ fn ac_29_a_reset_while_paused_arms_no_hold() {
         "a reset that arrived while paused snapped the old live shape back on screen"
     );
 }
+
+#[test]
+fn ac_29_a_swipe_after_a_user_pause_adopts_the_paused_display() {
+    let clock = Arc::new(FakeMonotonicClock::default());
+    let engine = AndroidVisualEngine::with_clock(clock.clone());
+    play_live_tone(&engine, &clock);
+    let live_shape = engine.current_bands();
+
+    // The user pauses: Media3's playWhenReady drops with the snapshot state.
+    engine.set_playback_intended(false);
+    engine.set_playing(false);
+    run_display_ticks(&engine, &clock, 120);
+
+    assert!(
+        largest_difference(&engine.current_bands(), &live_shape) > 0.05,
+        "setup: the paused display should differ from the live shape"
+    );
+    assert_eq!(
+        engine.adoptable_bands(),
+        engine.current_bands(),
+        "a swipe from a paused song must not pop the minutes-old live shape back on screen"
+    );
+}

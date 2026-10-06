@@ -212,6 +212,12 @@ impl AndroidVisualEngine {
         if resumed && state.has_live_audio {
             state.last_live_audio_at = Some(now);
         }
+        if !playback_intended {
+            // A user pause, unlike a transport blip, is a real stop: the shape
+            // drawn before it is no longer what the viewer sees, and handing
+            // it to a swipe's new panel would pop it back at full height.
+            state.last_live_bands = None;
+        }
         expire_stale_live_audio(&mut state, now);
     }
 
@@ -270,11 +276,9 @@ impl AndroidVisualEngine {
     /// screen, decayed and idle-blended where applicable, not the raw
     /// last-ingested bands (see [`VisualEngine::current_bands`]).
     ///
-    /// A panel taking over the live slot during a swipe reads this off the
-    /// engine it replaces and hands it to [`Self::adopt_shape`] on its own,
-    /// freshly created engine, so the new engine's first frames continue from
-    /// the shape the viewer actually saw instead of climbing from zero or
-    /// popping in energy the screen had already decayed away.
+    /// A panel taking over the live slot during a swipe adopts
+    /// [`Self::adoptable_bands`] rather than this: once the old stream has
+    /// stopped, what is displayed has already decayed toward the resting shape.
     pub fn current_bands(&self) -> Vec<f32> {
         self.lock().engine.current_bands().to_vec()
     }
@@ -288,7 +292,8 @@ impl AndroidVisualEngine {
     /// they have already decayed toward the resting shape, and adopting that
     /// seeds the new song with a shape the viewer never saw at full height,
     /// so its first PCM block pops. This survives `note_track_changed` and a
-    /// stop.
+    /// `set_playing(false)`; a user pause (`set_playback_intended(false)`)
+    /// clears it, because the viewer then sees the resting display.
     pub fn adoptable_bands(&self) -> Vec<f32> {
         let state = self.lock();
         state

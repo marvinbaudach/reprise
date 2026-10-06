@@ -1,6 +1,7 @@
 package io.github.marvinbaudach.reprise
 
 import android.util.Log
+import java.util.Locale
 
 internal const val VISUALIZER_LOG_TAG = "RepriseVisualizer"
 
@@ -20,7 +21,7 @@ internal object VisualizerEdgeLog {
         Log.d(
             VISUALIZER_LOG_TAG,
             "adoptShape energy=${energy(adoptable)} displayedEnergy=${energy(displayed)} " +
-                "fromLastLiveShape=${!adoptable.contentEquals(displayed)}",
+                "differsFromDisplay=${!adoptable.contentEquals(displayed)}",
         )
     }
 
@@ -32,7 +33,7 @@ internal object VisualizerEdgeLog {
         Log.d(VISUALIZER_LOG_TAG, "swipeCommit decision=$decision from=$fromIndex to=$toIndex")
     }
 
-    private fun energy(bands: FloatArray): String = "%.2f".format(bands.sum())
+    private fun energy(bands: FloatArray): String = "%.2f".format(Locale.ROOT, bands.sum())
 }
 
 /** Logs a live panel's `setPlaying` value when it changes, with the snapshot state behind it. */
