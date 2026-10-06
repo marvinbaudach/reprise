@@ -13,9 +13,11 @@ use std::sync::atomic::AtomicBool;
 use rusqlite::OptionalExtension;
 
 use crate::db::{
-    get_track_spectrogram, get_waveform_peaks, set_track_render_data, track_source_fingerprint, Db,
+    get_track_spectrogram, get_waveform_peaks, set_segment_render_data, set_track_render_data,
+    track_source_fingerprint, Db, DbError, SpectrogramStoreOutcome,
 };
 use crate::render_data_segments::SegmentBounds;
+use crate::spectrogram::TrackSourceFingerprint;
 use crate::waveform::{RenderDataBackend, TrackRenderData, WaveformError, STORED_PEAK_COUNT};
 
 /// Decodes the audio of `track_id`: the whole file for an ordinary track, and
@@ -29,13 +31,12 @@ fn extract_for_track(
     track_id: i64,
     path: &Path,
     backend: &dyn RenderDataBackend,
-) -> Result<TrackRenderData, WaveformError> {
-    let bounds = segment_bounds(db, track_id)
-        .map_err(|error| WaveformError::DecodeFailed(error.to_string()))?;
-    let Some(bounds) = bounds else {
-        return backend.extract_render_data(path, STORED_PEAK_COUNT);
+) -> Result<Measured, WaveformError> {
+    let Some(bounds) = segment_bounds(db, track_id)? else {
+        let data = backend.extract_render_data(path, STORED_PEAK_COUNT)?;
+        return Ok(Measured { data, bounds: None });
     };
-    backend
+    let data = backend
         .extract_segment_render_data_cancellable(
             path,
             &[bounds],
@@ -43,23 +44,56 @@ fn extract_for_track(
             &AtomicBool::new(false),
         )?
         .pop()
-        .ok_or_else(|| WaveformError::DecodeFailed("the backend returned no track".into()))
+        .ok_or_else(|| WaveformError::DecodeFailed("the backend returned no track".into()))?;
+    Ok(Measured {
+        data,
+        bounds: Some(bounds),
+    })
 }
 
-fn segment_bounds(db: &Db, track_id: i64) -> Result<Option<SegmentBounds>, rusqlite::Error> {
-    db.conn()
+/// Data from one decode, and the stretch of the file it was measured from for
+/// a track cut from one.
+struct Measured {
+    data: TrackRenderData,
+    bounds: Option<SegmentBounds>,
+}
+
+impl Measured {
+    /// Stores the data unless the file, or for a CUE track its cut, changed
+    /// while it decoded.
+    fn store(
+        &self,
+        db: &Db,
+        track_id: i64,
+        source: TrackSourceFingerprint,
+    ) -> Result<SpectrogramStoreOutcome, DbError> {
+        match self.bounds {
+            Some(bounds) => set_segment_render_data(db, track_id, source, bounds, &self.data),
+            None => set_track_render_data(db, track_id, source, &self.data),
+        }
+    }
+}
+
+/// The stretch of its file a CUE track covers; `None` for a whole-file track.
+/// A CUE track without its stretch recorded cannot be measured at all.
+fn segment_bounds(db: &Db, track_id: i64) -> Result<Option<SegmentBounds>, WaveformError> {
+    let row: Option<(Option<i64>, Option<i64>)> = db
+        .conn()
         .query_row(
             "SELECT segment_start_ms, segment_end_ms FROM tracks \
              WHERE id = ?1 AND segment_index > 0",
             [track_id],
-            |row| {
-                Ok(SegmentBounds {
-                    start_ms: row.get::<_, Option<i64>>(0)?.unwrap_or(0),
-                    end_ms: row.get::<_, Option<i64>>(1)?.unwrap_or(0),
-                })
-            },
+            |row| Ok((row.get(0)?, row.get(1)?)),
         )
         .optional()
+        .map_err(|error| WaveformError::DecodeFailed(error.to_string()))?;
+    match row {
+        None => Ok(None),
+        Some((Some(start_ms), Some(end_ms))) => Ok(Some(SegmentBounds { start_ms, end_ms })),
+        Some(_) => Err(WaveformError::DecodeFailed(
+            "the track's stretch of its file is not recorded".into(),
+        )),
+    }
 }
 
 /// Returns the track's waveform peaks, decoding once if nothing is stored yet.
@@ -89,20 +123,20 @@ pub fn peaks_for_playback(
             return None;
         }
     };
-    let data = match extract_for_track(db, track_id, path, backend) {
-        Ok(data) => data,
+    let measured = match extract_for_track(db, track_id, path, backend) {
+        Ok(measured) => measured,
         Err(error) => {
             tracing::warn!(track_id, %error, "on-demand waveform extraction failed");
             return None;
         }
     };
-    // A `SourceChanged` outcome means the file moved under us mid-decode. The
-    // peaks still describe what is playing, so they go to the player either
-    // way; only storing them would be wrong.
-    if let Err(error) = set_track_render_data(db, track_id, source, &data) {
+    // A `SourceChanged` outcome means the file moved, or the track was re-cut,
+    // under us mid-decode. The peaks still describe what is playing, so they go
+    // to the player either way; only storing them would be wrong.
+    if let Err(error) = measured.store(db, track_id, source) {
         tracing::warn!(track_id, %error, "could not store on-demand rendering data");
     }
-    Some(data.waveform_peaks)
+    Some(measured.data.waveform_peaks)
 }
 
 /// The seek bar's colour curve for a track, with one value per stored peak.
@@ -157,341 +191,20 @@ pub fn ensure_centroid_for_playback(
             return None;
         }
     };
-    let data = match extract_for_track(db, track_id, path, backend) {
-        Ok(data) => data,
+    let measured = match extract_for_track(db, track_id, path, backend) {
+        Ok(measured) => measured,
         Err(error) => {
             tracing::warn!(track_id, %error, "on-demand spectrogram extraction failed");
             return None;
         }
     };
-    if let Err(error) = set_track_render_data(db, track_id, source, &data) {
+    if let Err(error) = measured.store(db, track_id, source) {
         tracing::warn!(track_id, %error, "could not store the on-demand spectrogram");
         return None;
     }
-    Some(data.spectrogram.centroid_curve(buckets))
+    Some(measured.data.spectrogram.centroid_curve(buckets))
 }
 
 #[cfg(test)]
-mod tests {
-    use std::path::Path;
-    use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
-
-    use crate::render_data_segments::SegmentBounds;
-
-    use super::*;
-    use crate::db::pending_render_data_tracks;
-    use crate::spectrogram::TrackSpectrogram;
-    use crate::waveform::{TrackRenderData, WaveformBackend, WaveformError};
-
-    #[derive(Default)]
-    struct CountingBackend {
-        decodes: AtomicUsize,
-    }
-
-    impl WaveformBackend for CountingBackend {
-        fn extract_peaks(&self, _path: &Path, _buckets: usize) -> Result<Vec<u8>, WaveformError> {
-            panic!("the on-play path must not ask for peaks alone and drop the bands");
-        }
-    }
-
-    impl RenderDataBackend for CountingBackend {
-        fn extract_render_data(
-            &self,
-            _path: &Path,
-            buckets: usize,
-        ) -> Result<TrackRenderData, WaveformError> {
-            self.decodes.fetch_add(1, Ordering::Relaxed);
-            Ok(TrackRenderData {
-                waveform_peaks: vec![7; buckets],
-                spectrogram: TrackSpectrogram::from_cells(vec![9; 48]).unwrap(),
-                loudness: None,
-            })
-        }
-    }
-
-    struct FailingBackend;
-
-    impl WaveformBackend for FailingBackend {
-        fn extract_peaks(&self, _path: &Path, _buckets: usize) -> Result<Vec<u8>, WaveformError> {
-            Err(WaveformError::EmptyStream)
-        }
-    }
-
-    impl RenderDataBackend for FailingBackend {
-        fn extract_render_data(
-            &self,
-            _path: &Path,
-            _buckets: usize,
-        ) -> Result<TrackRenderData, WaveformError> {
-            Err(WaveformError::DecodeFailed("no decoder".into()))
-        }
-    }
-
-    fn database() -> Db {
-        let db = Db::open_in_memory().unwrap();
-        db.conn()
-            .execute(
-                "INSERT INTO tracks \
-                 (id, path, title, added_at, file_mtime, file_size, device, inode) \
-                 VALUES (1, '/played.flac', '', 0, 11, 22, 33, 44)",
-                [],
-            )
-            .unwrap();
-        db
-    }
-
-    #[test]
-    fn the_first_play_decodes_once_and_nothing_decodes_it_again() {
-        let db = database();
-        let backend = CountingBackend::default();
-
-        let first = peaks_for_playback(&db, 1, Path::new("/played.flac"), &backend);
-        let second = peaks_for_playback(&db, 1, Path::new("/played.flac"), &backend);
-
-        assert_eq!(first, Some(vec![7; STORED_PEAK_COUNT]));
-        assert_eq!(second, first);
-        assert_eq!(
-            backend.decodes.load(Ordering::Relaxed),
-            1,
-            "a second play must read the stored peaks, not decode again"
-        );
-        assert!(
-            pending_render_data_tracks(&db).unwrap().is_empty(),
-            "the decode the listener paid for must leave nothing for the backfill to redo"
-        );
-    }
-
-    #[test]
-    fn a_track_whose_source_moved_mid_decode_still_plays_without_storing() {
-        // Two handles onto one file database: the backend can move the file's
-        // identity while the "decode" is in flight, which is what a rescan
-        // does to a track someone just started playing.
-        let directory = tempfile::tempdir().unwrap();
-        let path = directory.path().join("moved.db");
-        let db = Db::open_migrated(Some(&path)).unwrap();
-        db.conn()
-            .execute(
-                "INSERT INTO tracks \
-                 (id, path, title, added_at, file_mtime, file_size, device, inode) \
-                 VALUES (1, '/played.flac', '', 0, 11, 22, 33, 44)",
-                [],
-            )
-            .unwrap();
-        struct MovingBackend {
-            rescanner: std::sync::Mutex<Db>,
-            inner: CountingBackend,
-        }
-        impl WaveformBackend for MovingBackend {
-            fn extract_peaks(
-                &self,
-                _path: &Path,
-                _buckets: usize,
-            ) -> Result<Vec<u8>, WaveformError> {
-                unreachable!("the on-play path asks for render data")
-            }
-        }
-        impl RenderDataBackend for MovingBackend {
-            fn extract_render_data(
-                &self,
-                path: &Path,
-                buckets: usize,
-            ) -> Result<TrackRenderData, WaveformError> {
-                self.rescanner
-                    .lock()
-                    .unwrap()
-                    .conn()
-                    .execute("UPDATE tracks SET file_size = 999 WHERE id = 1", [])
-                    .unwrap();
-                self.inner.extract_render_data(path, buckets)
-            }
-        }
-        let moving = MovingBackend {
-            rescanner: std::sync::Mutex::new(Db::open_migrated(Some(&path)).unwrap()),
-            inner: CountingBackend::default(),
-        };
-
-        let peaks = peaks_for_playback(&db, 1, Path::new("/played.flac"), &moving);
-
-        assert_eq!(peaks, Some(vec![7; STORED_PEAK_COUNT]));
-        assert_eq!(
-            get_waveform_peaks(&db, 1).unwrap(),
-            None,
-            "peaks measured from a file that has since changed must not be stored"
-        );
-    }
-
-    #[test]
-    fn an_undecodable_track_yields_no_peaks_and_stores_nothing() {
-        let db = database();
-
-        let peaks = peaks_for_playback(&db, 1, Path::new("/played.flac"), &FailingBackend);
-
-        assert_eq!(peaks, None);
-        assert_eq!(get_waveform_peaks(&db, 1).unwrap(), None);
-        assert_eq!(pending_render_data_tracks(&db).unwrap().len(), 1);
-    }
-
-    #[test]
-    fn an_unknown_track_is_never_decoded() {
-        let db = database();
-        let backend = CountingBackend::default();
-
-        let peaks = peaks_for_playback(&db, 404, Path::new("/missing.flac"), &backend);
-
-        assert_eq!(peaks, None);
-        assert_eq!(backend.decodes.load(Ordering::Relaxed), 0);
-    }
-
-    /// The gap this closes: peaks stored before the spectrogram column existed
-    /// make `peaks_for_playback` return early forever, so those tracks never
-    /// gain a colour curve from the on-play path alone.
-    #[test]
-    fn a_track_with_only_cached_peaks_gains_its_curve_on_play() {
-        let db = database();
-        let backend = CountingBackend::default();
-        crate::db::set_waveform_peaks(&db, 1, &vec![3; STORED_PEAK_COUNT]).unwrap();
-        assert_eq!(centroid_for_playback(&db, 1, STORED_PEAK_COUNT), None);
-
-        let curve =
-            ensure_centroid_for_playback(&db, 1, Path::new("/played.flac"), 16, &backend).unwrap();
-
-        assert_eq!(curve.len(), 16);
-        assert_eq!(backend.decodes.load(Ordering::Relaxed), 1);
-        assert!(centroid_for_playback(&db, 1, STORED_PEAK_COUNT).is_some());
-    }
-
-    #[test]
-    fn a_track_that_already_has_a_curve_is_never_decoded_again() {
-        let db = database();
-        let backend = CountingBackend::default();
-        peaks_for_playback(&db, 1, Path::new("/played.flac"), &backend);
-        let decodes_after_first_play = backend.decodes.load(Ordering::Relaxed);
-
-        let curve = ensure_centroid_for_playback(&db, 1, Path::new("/played.flac"), 16, &backend);
-
-        assert_eq!(curve, None, "nothing to redo, so nothing is handed back");
-        assert_eq!(
-            backend.decodes.load(Ordering::Relaxed),
-            decodes_after_first_play
-        );
-    }
-
-    #[test]
-    fn an_undecodable_track_gains_no_curve_and_stores_nothing() {
-        let db = database();
-        crate::db::set_waveform_peaks(&db, 1, &vec![3; STORED_PEAK_COUNT]).unwrap();
-
-        let curve =
-            ensure_centroid_for_playback(&db, 1, Path::new("/played.flac"), 16, &FailingBackend);
-
-        assert_eq!(curve, None);
-        assert_eq!(centroid_for_playback(&db, 1, STORED_PEAK_COUNT), None);
-    }
-
-    /// Cuts the data it hands back from the stretch it was asked for, and refuses
-    /// to decode a whole file for a track that is only part of one.
-    #[derive(Default)]
-    struct CuttingBackend {
-        whole_file_decodes: AtomicUsize,
-        cuts: std::sync::Mutex<Vec<SegmentBounds>>,
-    }
-
-    impl WaveformBackend for CuttingBackend {
-        fn extract_peaks(&self, _path: &Path, _buckets: usize) -> Result<Vec<u8>, WaveformError> {
-            panic!("the on-play path must not ask for peaks alone");
-        }
-    }
-
-    impl RenderDataBackend for CuttingBackend {
-        fn extract_render_data(
-            &self,
-            _path: &Path,
-            buckets: usize,
-        ) -> Result<TrackRenderData, WaveformError> {
-            self.whole_file_decodes.fetch_add(1, Ordering::Relaxed);
-            Ok(TrackRenderData {
-                waveform_peaks: vec![255; buckets],
-                spectrogram: TrackSpectrogram::from_cells(vec![9; 48]).unwrap(),
-                loudness: None,
-            })
-        }
-
-        fn extract_segment_render_data_cancellable(
-            &self,
-            _path: &Path,
-            segments: &[SegmentBounds],
-            buckets: usize,
-            _cancelled: &AtomicBool,
-        ) -> Result<Vec<TrackRenderData>, WaveformError> {
-            self.cuts.lock().unwrap().extend_from_slice(segments);
-            Ok(segments
-                .iter()
-                .map(|_| TrackRenderData {
-                    waveform_peaks: vec![5; buckets],
-                    spectrogram: TrackSpectrogram::from_cells(vec![9; 48]).unwrap(),
-                    loudness: None,
-                })
-                .collect())
-        }
-    }
-
-    fn database_with_a_cue_track() -> Db {
-        let db = Db::open_in_memory().unwrap();
-        db.conn()
-            .execute(
-                "INSERT INTO tracks \
-                 (id, path, title, added_at, file_mtime, file_size, device, inode, \
-                  segment_index, segment_start_ms, segment_end_ms) \
-                 VALUES (2, '/live.flac', '', 0, 11, 22, 33, 44, 2, 3000, 8000)",
-                [],
-            )
-            .unwrap();
-        db
-    }
-
-    #[test]
-    fn cue_9_playing_a_cue_track_stores_its_own_stretch_and_never_the_whole_file() {
-        let db = database_with_a_cue_track();
-        let backend = CuttingBackend::default();
-
-        let peaks = peaks_for_playback(&db, 2, Path::new("/live.flac"), &backend).unwrap();
-
-        assert_eq!(backend.whole_file_decodes.load(Ordering::Relaxed), 0);
-        assert_eq!(
-            backend.cuts.lock().unwrap().as_slice(),
-            [SegmentBounds {
-                start_ms: 3_000,
-                end_ms: 8_000
-            }]
-        );
-        assert_eq!(peaks[0], 5);
-        assert_eq!(get_waveform_peaks(&db, 2).unwrap().unwrap()[0], 5);
-    }
-
-    #[test]
-    fn cue_9_a_backend_that_cannot_cut_a_file_leaves_a_cue_track_without_data() {
-        let db = database_with_a_cue_track();
-
-        let peaks =
-            peaks_for_playback(&db, 2, Path::new("/live.flac"), &CountingBackend::default());
-        let curve = ensure_centroid_for_playback(
-            &db,
-            2,
-            Path::new("/live.flac"),
-            16,
-            &CountingBackend::default(),
-        );
-
-        assert_eq!(peaks, None);
-        assert_eq!(curve, None);
-        assert_eq!(get_waveform_peaks(&db, 2).unwrap(), None);
-        assert_eq!(get_track_spectrogram(&db, 2).unwrap(), None);
-        assert_eq!(
-            crate::db::pending_segment_render_data_files(&db)
-                .unwrap()
-                .len(),
-            1,
-            "the backfill still owes it a measurement"
-        );
-    }
-}
+#[path = "waveform_cache_tests.rs"]
+mod tests;

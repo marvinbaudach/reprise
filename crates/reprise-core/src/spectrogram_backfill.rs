@@ -3,8 +3,8 @@
 use std::sync::atomic::{AtomicBool, Ordering};
 
 use crate::db::{
-    pending_render_data_tracks, pending_segment_render_data_files, set_track_render_data, Db,
-    DbError, PendingSegmentFile, SpectrogramStoreOutcome,
+    pending_render_data_tracks, pending_segment_render_data_files, set_segment_render_data,
+    set_track_render_data, Db, DbError, PendingSegmentFile, SpectrogramStoreOutcome,
 };
 use crate::render_data_segments::SegmentBounds;
 use crate::waveform::{RenderDataBackend, TrackRenderData, WaveformError, STORED_PEAK_COUNT};
@@ -83,7 +83,8 @@ pub fn run_render_data_backfill(
                 continue;
             }
         };
-        store(db, track.track_id, track.source, &data, &mut summary)?;
+        let outcome = set_track_render_data(db, track.track_id, track.source, &data)?;
+        count_store(outcome, &mut summary);
         completed += 1;
         on_progress(BackfillProgress {
             completed,
@@ -116,7 +117,12 @@ pub fn run_render_data_backfill(
             continue;
         };
         for (track, data) in file.tracks.iter().zip(&datas) {
-            store(db, track.track_id, file.source, data, &mut summary)?;
+            let bounds = SegmentBounds {
+                start_ms: track.start_ms,
+                end_ms: track.end_ms,
+            };
+            let outcome = set_segment_render_data(db, track.track_id, file.source, bounds, data)?;
+            count_store(outcome, &mut summary);
             completed += 1;
             on_progress(BackfillProgress {
                 completed,
@@ -184,18 +190,13 @@ fn extract_file(
     }
 }
 
-fn store(
-    db: &Db,
-    track_id: i64,
-    source: crate::spectrogram::TrackSourceFingerprint,
-    data: &TrackRenderData,
-    summary: &mut BackfillSummary,
-) -> Result<(), DbError> {
-    match set_track_render_data(db, track_id, source, data)? {
+/// Counts a store. A track whose file or cut changed during the decode stays
+/// pending, and the next run measures it as it is then.
+fn count_store(outcome: SpectrogramStoreOutcome, summary: &mut BackfillSummary) {
+    match outcome {
         SpectrogramStoreOutcome::Stored => summary.stored += 1,
         SpectrogramStoreOutcome::SourceChanged => summary.source_changed += 1,
     }
-    Ok(())
 }
 
 #[cfg(test)]
@@ -508,5 +509,74 @@ mod tests {
                 end_ms: 8_500
             }]]
         );
+    }
+
+    /// Re-cuts track 11 through its own connection while the file decodes, as a
+    /// rescan that applies an edited sheet does.
+    struct RecuttingBackend {
+        rescanner: std::sync::Mutex<Db>,
+        inner: CuePerTrackBackend,
+    }
+
+    impl WaveformBackend for RecuttingBackend {
+        fn extract_peaks(&self, path: &Path, buckets: usize) -> Result<Vec<u8>, WaveformError> {
+            self.inner.extract_peaks(path, buckets)
+        }
+    }
+
+    impl RenderDataBackend for RecuttingBackend {
+        fn extract_render_data_cancellable(
+            &self,
+            path: &Path,
+            buckets: usize,
+            cancelled: &AtomicBool,
+        ) -> Result<TrackRenderData, WaveformError> {
+            self.inner
+                .extract_render_data_cancellable(path, buckets, cancelled)
+        }
+
+        fn extract_segment_render_data_cancellable(
+            &self,
+            path: &Path,
+            segments: &[SegmentBounds],
+            buckets: usize,
+            cancelled: &AtomicBool,
+        ) -> Result<Vec<TrackRenderData>, WaveformError> {
+            self.rescanner
+                .lock()
+                .unwrap()
+                .conn()
+                .execute("UPDATE tracks SET segment_end_ms = 8500 WHERE id = 11", [])
+                .unwrap();
+            self.inner
+                .extract_segment_render_data_cancellable(path, segments, buckets, cancelled)
+        }
+    }
+
+    #[test]
+    fn cue_9_a_track_re_cut_while_its_file_decodes_keeps_nothing_from_the_old_cut() {
+        let directory = tempfile::tempdir().unwrap();
+        let path = directory.path().join("recut.db");
+        let db = Db::open_migrated(Some(&path)).unwrap();
+        db.conn()
+            .execute_batch(
+                "INSERT INTO tracks (id, path, title, added_at, file_mtime, file_size, device, inode,
+                                     segment_index, segment_start_ms, segment_end_ms)
+                 VALUES (10, '/live.flac', 'One', 0, 11, 22, 33, 90, 1, 0, 3000),
+                        (11, '/live.flac', 'Two', 0, 11, 22, 33, 90, 2, 3000, 8000);",
+            )
+            .unwrap();
+        let backend = RecuttingBackend {
+            rescanner: std::sync::Mutex::new(Db::open_migrated(Some(&path)).unwrap()),
+            inner: cue_backend(),
+        };
+
+        let summary =
+            run_render_data_backfill(&db, &backend, &AtomicBool::new(false), |_| {}).unwrap();
+
+        assert_eq!((summary.stored, summary.source_changed), (1, 1));
+        assert_eq!(crate::db::get_waveform_peaks(&db, 11).unwrap(), None);
+        let pending = crate::db::pending_segment_render_data_files(&db).unwrap();
+        assert_eq!(pending[0].tracks[0].track_id, 11, "measured again later");
     }
 }

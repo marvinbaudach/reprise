@@ -8,6 +8,7 @@ use crate::db::{Db, DbError};
 #[cfg(test)]
 use crate::library::loudness::MeasuredLoudness;
 use crate::library::loudness_store::{write_track_loudness, LOUDNESS_FORMAT_VERSION};
+use crate::render_data_segments::SegmentBounds;
 use crate::spectrogram::{TrackSourceFingerprint, TrackSpectrogram, SPECTROGRAM_FORMAT_VERSION};
 use crate::waveform::TrackRenderData;
 const SCHEMA_V55: &str = r#"
@@ -80,9 +81,36 @@ pub fn set_track_render_data(
     source: TrackSourceFingerprint,
     data: &TrackRenderData,
 ) -> Result<SpectrogramStoreOutcome, DbError> {
+    store_render_data(db, track_id, source, None, data)
+}
+
+/// Stores the rendering data of a track cut from a file by a CUE sheet,
+/// measured from the stretch `bounds` of the file as `source` identified it.
+/// Stores nothing when either changed in the meantime: a rescan that replaced
+/// the file, or one that re-cut the track because its sheet was edited.
+pub fn set_segment_render_data(
+    db: &Db,
+    track_id: i64,
+    source: TrackSourceFingerprint,
+    bounds: SegmentBounds,
+    data: &TrackRenderData,
+) -> Result<SpectrogramStoreOutcome, DbError> {
+    store_render_data(db, track_id, source, Some(bounds), data)
+}
+
+fn store_render_data(
+    db: &Db,
+    track_id: i64,
+    source: TrackSourceFingerprint,
+    bounds: Option<SegmentBounds>,
+    data: &TrackRenderData,
+) -> Result<SpectrogramStoreOutcome, DbError> {
     let transaction = db.conn().unchecked_transaction()?;
     let current = source_fingerprint(&transaction, track_id)?;
     if current != Some(source) {
+        return Ok(SpectrogramStoreOutcome::SourceChanged);
+    }
+    if bounds.is_some() && segment_bounds(&transaction, track_id)? != bounds {
         return Ok(SpectrogramStoreOutcome::SourceChanged);
     }
     transaction.execute(
@@ -93,6 +121,24 @@ pub fn set_track_render_data(
     write_track_loudness(&transaction, track_id, source, data.loudness)?;
     transaction.commit()?;
     Ok(SpectrogramStoreOutcome::Stored)
+}
+
+/// The stretch of its file a track covers, as the catalog records it now.
+fn segment_bounds(
+    conn: &Connection,
+    track_id: i64,
+) -> Result<Option<SegmentBounds>, rusqlite::Error> {
+    let row: Option<(Option<i64>, Option<i64>)> = conn
+        .query_row(
+            "SELECT segment_start_ms, segment_end_ms FROM tracks WHERE id = ?1",
+            [track_id],
+            |row| Ok((row.get(0)?, row.get(1)?)),
+        )
+        .optional()?;
+    Ok(match row {
+        Some((Some(start_ms), Some(end_ms))) => Some(SegmentBounds { start_ms, end_ms }),
+        _ => None,
+    })
 }
 
 fn write_spectrogram(
