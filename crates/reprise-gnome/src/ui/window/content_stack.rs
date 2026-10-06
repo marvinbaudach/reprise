@@ -6,6 +6,10 @@ use std::rc::Rc;
 use gtk4::prelude::*;
 use libadwaita as adw;
 
+/// Content-stack page names that more than one module has to recognise.
+pub(in crate::ui) const LIBRARY_DOCTOR_PAGE: &str = "library-doctor";
+pub(in crate::ui) const DEVICE_SYNC_PAGE: &str = "device-sync";
+
 type PageFactory<T> = Box<dyn FnOnce() -> (Rc<T>, gtk4::Widget)>;
 type PageWiring<T> = Box<dyn FnOnce(&Rc<T>)>;
 

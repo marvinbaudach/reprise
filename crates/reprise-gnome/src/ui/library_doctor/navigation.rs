@@ -146,4 +146,122 @@ mod tests {
             Some(ROOT_TAG)
         );
     }
+
+    /// BROWSE-4a through the production entry path: the Doctor is opened with
+    /// `show_root` and `show_review`, which never tell the router. A jump out
+    /// of it, then Back, must show the Doctor with its review page still
+    /// pushed (DOC-7c), not the library the track list last held.
+    #[test]
+    #[ignore = "requires a display; run via xvfb-run"]
+    fn browse_4a_back_after_a_jump_from_the_doctor_returns_to_its_review_page() {
+        use crate::ui::nav_history::NavHistory;
+        use crate::ui::window::library_shell::{self, ActiveContentFocus};
+        use crate::ui::window::metadata_navigation::MetadataNavigator;
+        use reprise_core::browser::navigation::NavigationIntent;
+        use reprise_core::browser::{ArtistKey, BrowserPlace};
+        use reprise_core::view_source::ViewSource;
+
+        let _main_context = crate::ui::test_main_context::lock_main_context();
+        gtk4::init().unwrap();
+        let conn = std::rc::Rc::new(crate::test_db::open().unwrap());
+        let app = adw::Application::builder()
+            .application_id("io.github.marvinbaudach.Reprise.DoctorBackReviewTest")
+            .build();
+        app.register(None::<&gtk4::gio::Cancellable>).unwrap();
+        let window = adw::ApplicationWindow::new(&app);
+        let sidebar = std::rc::Rc::new(crate::ui::sidebar::Sidebar::new(
+            conn.clone(),
+            &window,
+            || 0,
+        ));
+        let track_list = std::rc::Rc::new(crate::ui::track_list::TrackList::new(
+            conn,
+            Box::new(|_, _, _, _| {}),
+            |_, _, _, _| {},
+            crate::ui::track_list::queue_sections::QueueViewModel::default,
+            crate::ui::cover_download_worker::setup_for_test(),
+        ));
+        let content_stack = gtk4::Stack::new();
+        content_stack.add_named(&gtk4::Box::default(), Some("library"));
+        let doctor_navigation = adw::NavigationView::new();
+        content_stack.add_named(&doctor_navigation, Some(ROOT_TAG));
+        let content_root = adw::NavigationPage::builder()
+            .title("Library")
+            .tag(crate::ui::now_playing_wiring::LIBRARY_CONTENT_TAG)
+            .child(&content_stack)
+            .build();
+        let content_navigation = adw::NavigationView::new();
+        content_navigation.add(&content_root);
+        let doctor = DoctorNavigation::new(&content_navigation, &content_stack, &doctor_navigation);
+        doctor.add_root(
+            &adw::NavigationPage::builder()
+                .title("Library Doctor")
+                .tag(ROOT_TAG)
+                .child(&gtk4::Label::new(Some("Doctor")))
+                .build(),
+        );
+        let review = adw::NavigationPage::builder()
+            .title("Review")
+            .tag(REVIEW_TAG)
+            .child(&gtk4::Label::new(Some("Review")))
+            .build();
+        let history = std::rc::Rc::new(NavHistory::default());
+        let library = BrowserPlace::from(ViewSource::Library);
+        history.restore(library.clone(), library);
+        let source_title = adw::WindowTitle::new("Music", "");
+        let focus = ActiveContentFocus::new(&content_stack, &track_list);
+        let navigator = MetadataNavigator::new(
+            history.clone(),
+            &sidebar,
+            &track_list,
+            content_navigation.clone(),
+            content_stack.clone(),
+            source_title.clone(),
+            focus.clone(),
+        );
+
+        doctor.show_root();
+        doctor.show_review(&review);
+        assert_eq!(doctor_navigation.visible_page().as_ref(), Some(&review));
+
+        navigator.navigate(
+            NavigationIntent::OpenArtist {
+                artist: ArtistKey::new("Lorna Shore"),
+                anchor_track_id: None,
+            },
+            "test jump from the doctor",
+        );
+        assert_eq!(
+            content_stack.visible_child_name().as_deref(),
+            Some("library"),
+            "the jump leaves the Doctor"
+        );
+
+        let back = history
+            .go_back_from(crate::ui::window::visible_place::origin(
+                &content_stack,
+                &track_list,
+            ))
+            .expect("the Doctor must be in Back history");
+        assert_eq!(back.browser_place(), &BrowserPlace::LibraryDoctor);
+        library_shell::route_to_place(
+            &back,
+            &sidebar,
+            &track_list,
+            library_shell::ContentPages::new(&content_navigation, &content_stack),
+            &source_title,
+            &focus,
+            "test back",
+        );
+
+        assert_eq!(
+            content_stack.visible_child_name().as_deref(),
+            Some(ROOT_TAG)
+        );
+        assert_eq!(
+            doctor_navigation.visible_page().as_ref(),
+            Some(&review),
+            "the Doctor returns as it was left"
+        );
+    }
 }

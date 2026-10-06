@@ -437,7 +437,8 @@ fn same_destination(left: &BrowserPlace, right: &BrowserPlace) -> bool {
         | (BrowserPlace::Podcasts, BrowserPlace::Podcasts)
         | (BrowserPlace::Youtube, BrowserPlace::Youtube)
         | (BrowserPlace::Radio, BrowserPlace::Radio)
-        | (BrowserPlace::Conversions, BrowserPlace::Conversions) => true,
+        | (BrowserPlace::Conversions, BrowserPlace::Conversions)
+        | (BrowserPlace::LibraryDoctor, BrowserPlace::LibraryDoctor) => true,
         _ => false,
     }
 }
@@ -456,6 +457,13 @@ mod source_tests;
 #[cfg(test)]
 #[path = "navigation_reveal_tests.rs"]
 mod reveal_tests;
+
+#[path = "navigation_origin.rs"]
+mod origin;
+
+#[cfg(test)]
+#[path = "navigation_visible_tests.rs"]
+mod visible_tests;
 
 #[cfg(test)]
 mod tests {
