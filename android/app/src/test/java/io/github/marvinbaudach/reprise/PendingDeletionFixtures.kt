@@ -49,9 +49,14 @@ internal class FakeQueueControls(
     val deleted = mutableListOf<List<Long>>()
     val heldRemovals = mutableListOf<() -> Unit>()
     var skips = 0
+    var nexts = 0
 
     override fun togglePause() = Unit
     override fun next() {
+        nexts += 1
+    }
+
+    override fun skipCurrentOrStop() {
         skips += 1
     }
 

@@ -438,6 +438,7 @@ internal class RecordingContextMenuControls(
 
     override fun togglePause() = Unit
     override fun next() = Unit
+    override fun skipCurrentOrStop() = Unit
     override fun previous() = Unit
     override fun seekTo(positionMs: Long) = Unit
     override fun setShuffle(enabled: Boolean) = Unit

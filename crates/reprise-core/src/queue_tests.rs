@@ -275,6 +275,27 @@ fn test_next_manual_end_repeat_all() {
     assert_eq!(q.current(), Some(10));
 }
 
+#[test]
+fn has_manual_next_is_false_only_at_the_end_with_repeat_off() {
+    let mut q = Queue::new();
+    assert!(
+        !q.has_manual_next(),
+        "an empty queue has nothing to move to"
+    );
+    q.set_tracks(vec![10, 20, 30], 1);
+    assert!(q.has_manual_next());
+    q.set_tracks(vec![10, 20, 30], 2);
+    assert!(!q.has_manual_next());
+    assert_eq!(q.current(), Some(30), "asking must not move the playhead");
+    q.set_repeat(Repeat::All);
+    assert!(q.has_manual_next(), "Repeat::All wraps to the start");
+    q.set_repeat(Repeat::One);
+    assert!(
+        !q.has_manual_next(),
+        "Repeat::One repeats only on an automatic end, so a manual move has nowhere to go"
+    );
+}
+
 // Test 9: set_tracks with out-of-range start_index
 #[test]
 fn test_set_tracks_out_of_range() {

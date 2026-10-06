@@ -19,7 +19,14 @@ import uniffi.reprise_android_ffi.AndroidTrashReport
 internal interface PlaybackControls {
     fun togglePause()
 
+    /** The Next gesture. On the last track with Repeat off it does nothing. */
     fun next()
+
+    /**
+     * Leaves the playing track because it is going away, not because the user
+     * asked for the next one: it advances, or stops when nothing follows.
+     */
+    fun skipCurrentOrStop()
 
     fun previous()
 
@@ -99,6 +106,8 @@ internal object DisconnectedPlaybackControls : PlaybackControls {
     override fun togglePause() = Unit
 
     override fun next() = Unit
+
+    override fun skipCurrentOrStop() = Unit
 
     override fun previous() = Unit
 

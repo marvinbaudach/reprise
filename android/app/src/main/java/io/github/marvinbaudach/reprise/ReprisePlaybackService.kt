@@ -623,6 +623,10 @@ open class ReprisePlaybackService : MediaLibraryService() {
         coreSession().previousInQueueOrder()
     }
 
+    internal fun skipCurrentOrStop() {
+        coreSession().skipCurrentOrStop()
+    }
+
     internal fun seekTo(positionMs: Long) {
         coreSession().seekTo(positionMs)
     }

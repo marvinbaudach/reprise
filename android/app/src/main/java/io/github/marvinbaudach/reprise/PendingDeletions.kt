@@ -157,8 +157,10 @@ internal class PendingDeletions(
             if (!skipsCurrent) return@async removal
             // The queue's positions are relative to the playing track, so
             // skipping on has to wait until they were used; and a queue that
-            // has moved on has no positions to put the rows back to.
-            playback.next()
+            // has moved on has no positions to put the rows back to. The Next
+            // gesture would do nothing on the last track (PLAY-8b), yet a
+            // track that is going away has to be left.
+            playback.skipCurrentOrStop()
             removal.copy(totalAfter = null)
         }
         offers.show(
