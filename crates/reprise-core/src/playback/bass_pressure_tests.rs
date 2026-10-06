@@ -37,7 +37,7 @@ fn a_full_scale_bass_sine_reads_its_true_level() {
 }
 
 #[test]
-fn ac_28_quiet_passages_never_ignite_the_glow() {
+fn ac_29_quiet_passages_never_ignite_the_glow() {
     let mut detector = BassPressureDetector::new(RATE);
 
     // A quiet sung passage: the bass band sits around -45 dBFS the whole time.
@@ -51,7 +51,7 @@ fn ac_28_quiet_passages_never_ignite_the_glow() {
 }
 
 #[test]
-fn ac_28_high_frequency_energy_alone_leaves_the_glow_dark() {
+fn ac_29_high_frequency_energy_alone_leaves_the_glow_dark() {
     let mut detector = BassPressureDetector::new(RATE);
 
     // Full-scale vocals/cymbals well above the bass band.
@@ -65,7 +65,7 @@ fn ac_28_high_frequency_energy_alone_leaves_the_glow_dark() {
 }
 
 #[test]
-fn ac_28_steady_loud_bass_keeps_only_the_low_rhythmic_glow() {
+fn ac_29_steady_loud_bass_keeps_only_the_low_rhythmic_glow() {
     let mut detector = BassPressureDetector::new(RATE);
 
     // A wall-of-sound track: loud, but without a swell above its own baseline.
@@ -83,7 +83,7 @@ fn ac_28_steady_loud_bass_keeps_only_the_low_rhythmic_glow() {
 }
 
 #[test]
-fn ac_28_a_bass_drop_over_the_running_baseline_ignites_the_glow() {
+fn ac_29_a_bass_drop_over_the_running_baseline_ignites_the_glow() {
     let mut detector = BassPressureDetector::new(RATE);
 
     // Three seconds of restrained bass establish the baseline, then the drop.
@@ -98,7 +98,7 @@ fn ac_28_a_bass_drop_over_the_running_baseline_ignites_the_glow() {
 }
 
 #[test]
-fn ac_28_sustained_breakdown_pressure_escalates_beyond_the_kick_glow() {
+fn ac_29_sustained_breakdown_pressure_escalates_beyond_the_kick_glow() {
     let mut detector = BassPressureDetector::new(RATE);
     observe_all(&mut detector, &sine(60.0, -30.0, 3.0));
 
@@ -115,7 +115,7 @@ fn ac_28_sustained_breakdown_pressure_escalates_beyond_the_kick_glow() {
 }
 
 #[test]
-fn ac_28_the_glow_releases_after_the_impulse_instead_of_flickering() {
+fn ac_29_the_glow_releases_after_the_impulse_instead_of_flickering() {
     let mut detector = BassPressureDetector::new(RATE);
     observe_all(&mut detector, &sine(60.0, -30.0, 3.0));
     observe_all(&mut detector, &sine(60.0, -10.0, 0.1));

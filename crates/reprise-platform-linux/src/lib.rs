@@ -6,6 +6,7 @@
 //! Windows get sibling crates implementing the same contracts (see the
 //! plan's "Repository & frontend strategy").
 
+mod cava_stage;
 mod crossfade;
 pub mod device_sync;
 pub mod device_transfer;

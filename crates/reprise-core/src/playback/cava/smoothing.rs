@@ -5,36 +5,50 @@ const MAX_SENSITIVITY: f32 = 1_000_000.0;
 const MIN_SENSITIVITY: f32 = 1.0e-6;
 const MAX_INTERNAL_BAR_VALUE: f32 = 64.0;
 const MAX_INTEGRAL_FEEDBACK: f32 = 0.98;
-const INITIAL_SENSITIVITY_HEADROOM: f32 = 0.85;
+/// The most a measured gain may rise in one frame on its way up to its goal.
+const GOAL_RISE_PER_FRAME: f32 = 1.6;
+
+use super::boundary::{BoundaryEstimator, Step};
 
 pub(super) struct Smoother {
     noise_reduction: f32,
     autosensitivity: u32,
     sensitivity: f32,
-    sensitivity_initializing: bool,
-    sensitivity_settling: bool,
+    boundary: BoundaryEstimator,
     framerate: f32,
     frame_skip: u32,
     previous: Vec<f32>,
     peaks: Vec<f32>,
     fall: Vec<f32>,
     memory: Vec<f32>,
+    /// A gain the measurement found and the smoother is still moving up to.
+    goal: Option<f32>,
+    /// Bars the new stream has written since the boundary.
+    driven: Vec<bool>,
 }
 
 impl Smoother {
-    pub(super) fn new(bar_count: usize, noise_reduction: f32, autosensitivity: u32) -> Self {
+    /// `window_samples` is the audio a boundary estimate waits for: the FFT
+    /// input buffer, which is what every bar is computed from.
+    pub(super) fn new(
+        bar_count: usize,
+        noise_reduction: f32,
+        autosensitivity: u32,
+        window_samples: usize,
+    ) -> Self {
         Self {
             noise_reduction,
             autosensitivity,
             sensitivity: 1.0,
-            sensitivity_initializing: true,
-            sensitivity_settling: false,
+            boundary: BoundaryEstimator::new(window_samples),
             framerate: INITIAL_FRAMERATE,
             frame_skip: 1,
             previous: vec![0.0; bar_count],
             peaks: vec![0.0; bar_count],
             fall: vec![0.0; bar_count],
             memory: vec![0.0; bar_count],
+            goal: None,
+            driven: vec![false; bar_count],
         }
     }
 
@@ -50,14 +64,54 @@ impl Smoother {
         let integral_feedback = self.integral_feedback(framerate_mod);
         let gravity_mod = (self.noise_reduction > 0.1)
             .then(|| framerate_mod.powf(2.5) * 2.0 / self.noise_reduction);
-        // Preserve CAVA's gain search exactly, but do not expose its clipped
-        // calibration frames. A cold analyzer can otherwise draw every band
-        // at 1.0 while autosensitivity backs down from its first overshoot.
-        let protect_initial_output = self.autosensitivity > 0
-            && (self.sensitivity_initializing || self.sensitivity_settling);
+        let mut measuring = false;
+        if self.autosensitivity > 0 {
+            let raw_peak = bars
+                .iter()
+                .copied()
+                .filter(|bar| bar.is_finite())
+                .fold(0.0, f32::max);
+            let step = self.boundary.advance(
+                new_samples,
+                signal_present,
+                raw_peak,
+                integral_feedback,
+                self.sensitivity,
+            );
+            match step {
+                Step::Hold => measuring = true,
+                Step::Measure(sensitivity) => {
+                    measuring = true;
+                    self.sensitivity = sensitivity.clamp(MIN_SENSITIVITY, MAX_SENSITIVITY);
+                }
+                Step::Goal(sensitivity) => {
+                    self.goal = Some(sensitivity.clamp(MIN_SENSITIVITY, MAX_SENSITIVITY));
+                }
+                Step::Brake { trigger, target } => {
+                    if self.sensitivity > trigger {
+                        self.brake_to(target);
+                    }
+                }
+                Step::Done => {}
+            }
+        }
+
+        if let Some(goal) = self.goal {
+            measuring = true;
+            if goal <= self.sensitivity {
+                self.brake_to(goal);
+                self.goal = None;
+            } else {
+                let risen = (self.sensitivity * GOAL_RISE_PER_FRAME).min(goal);
+                self.rescale_driven(risen / self.sensitivity);
+                self.sensitivity = risen;
+                if self.sensitivity >= goal {
+                    self.goal = None;
+                }
+            }
+        }
 
         let mut overshoot = false;
-        let mut max_internal = 0.0_f32;
         for (bar, (((previous, peak), fall), memory)) in bars.iter_mut().zip(
             self.previous
                 .iter_mut()
@@ -94,63 +148,101 @@ impl Smoother {
             } else {
                 *memory = bar.clamp(0.0, MAX_INTERNAL_BAR_VALUE);
                 overshoot |= *bar > 1.0;
-                max_internal = max_internal.max(*bar);
             }
         }
 
-        if self.autosensitivity > 0 {
+        if self.boundary.is_collecting() || self.goal.is_some() {
+            // A bar that rose this frame (`fall` restarted) was written by the
+            // new stream; one falling by gravity still carries the old one.
+            for (driven, fall) in self.driven.iter_mut().zip(&self.fall) {
+                *driven |= *fall == 0.0;
+            }
+        } else {
+            self.driven.fill(true);
+        }
+
+        // While the gain is being set from the new stream, creeping on a stale
+        // overshoot or climbing from a cold start is the pumping that
+        // replaces.
+        if self.autosensitivity > 0 && !measuring {
             if overshoot {
                 let reduction = (1.0 - 0.02 * framerate_mod).max(0.01);
                 self.sensitivity *= reduction;
-                if self.sensitivity_initializing {
-                    self.sensitivity_initializing = false;
-                    self.sensitivity_settling = true;
-                }
             } else if signal_present {
-                self.sensitivity_settling = false;
                 self.sensitivity *= 1.0 + 0.001 * framerate_mod * self.autosensitivity as f32;
-                if self.sensitivity_initializing {
-                    self.sensitivity *= 1.0 + 0.1 * framerate_mod;
-                }
             }
             self.sensitivity = self.sensitivity.clamp(MIN_SENSITIVITY, MAX_SENSITIVITY);
         }
 
-        let output_scale = if self.autosensitivity > 0
-            && protect_initial_output
-            && max_internal > INITIAL_SENSITIVITY_HEADROOM
-        {
-            INITIAL_SENSITIVITY_HEADROOM / max_internal
-        } else {
-            1.0
-        };
         for bar in bars {
-            *bar = (*bar * output_scale).clamp(0.0, 1.0);
+            *bar = bar.clamp(0.0, 1.0);
         }
     }
 
-    // A track change clears the bar history (`previous`/`peaks`/`fall`/
-    // `memory`) but keeps the settled autosensitivity gain
-    // (`sensitivity`/`sensitivity_initializing`/`sensitivity_settling`).
-    // Consecutive tracks are usually mastered to a similar loudness, so
-    // re-running the cold-start calibration on every change would force a
-    // visible recalibration (the `output_scale` headroom clamp, then an
-    // overshoot correction once `sensitivity_settling` releases) even
-    // though the previous gain was already a good estimate. `framerate`
-    // and `frame_skip` are also kept: the device's output frame rate does
-    // not change across a track boundary, so there is nothing to
-    // recalibrate there either.
+    /// Lowers the gain at once. A frame that needs braking is louder than what
+    /// a pending goal was measured from, so the goal is stale.
+    fn brake_to(&mut self, sensitivity: f32) {
+        let sensitivity = sensitivity.clamp(MIN_SENSITIVITY, MAX_SENSITIVITY);
+        self.goal = None;
+        self.rescale_driven(sensitivity / self.sensitivity);
+        self.sensitivity = sensitivity;
+    }
+
+    /// The bar history is in units of the gain that produced it. A bar the new
+    /// stream has written since the boundary holds its integral and gravity
+    /// state at the old gain, so it is converted to the new one; otherwise the
+    /// next frame would add the old gain's memory, or hold a gravity peak, on
+    /// top of its own. A bar still falling from the previous stream is already
+    /// in screen units and keeps its value.
+    fn rescale_driven(&mut self, ratio: f32) {
+        for (index, driven) in self.driven.iter().enumerate() {
+            if *driven {
+                self.previous[index] *= ratio;
+                self.peaks[index] *= ratio;
+                self.memory[index] *= ratio;
+            }
+        }
+    }
+
+    /// Clears the bar history (`previous`/`peaks`/`fall`/`memory`) and owes a
+    /// new boundary estimate. `framerate` and `frame_skip` are kept: the
+    /// device's output frame rate does not change across a boundary.
     pub(super) fn reset(&mut self) {
         self.previous.fill(0.0);
         self.peaks.fill(0.0);
         self.fall.fill(0.0);
         self.memory.fill(0.0);
+        self.goal = None;
+        self.driven.fill(false);
+        self.boundary.arm(false);
+    }
+
+    #[cfg(debug_assertions)]
+    pub(super) fn sensitivity(&self) -> f32 {
+        self.sensitivity
+    }
+
+    /// Replaces the gain and ends any pending estimate, so a test can start the
+    /// smoother from a gain `cavacore` itself reached.
+    #[cfg(test)]
+    pub(super) fn adopt_sensitivity(&mut self, sensitivity: f32) {
+        self.sensitivity = sensitivity;
+        self.goal = None;
+        self.boundary.settle();
+    }
+
+    /// Owes a new boundary estimate and keeps the bar history, so the next
+    /// frames fall from the shape already on screen.
+    pub(super) fn rearm_boundary(&mut self) {
+        self.goal = None;
+        self.driven.fill(false);
+        self.boundary.arm(true);
     }
 
     /// Seeds the smoother with a shape a viewer has already seen, so the next
-    /// frame continues it. Leaves the autosensitivity gain and `framerate`
-    /// untouched. Shorter input than `bar_count` seeds only its own bars;
-    /// longer input is truncated by `zip`.
+    /// frame continues it. Leaves the autosensitivity gain, the pending
+    /// boundary estimate and `framerate` untouched. Shorter input than
+    /// `bar_count` seeds only its own bars; longer input is truncated by `zip`.
     ///
     /// `bars` is the displayed shape, approximately the smoother's own
     /// output: on Android it is the visual engine's `current_bands()`, which
@@ -166,12 +258,9 @@ impl Smoother {
     /// autosensitivity gain down.
     ///
     /// Two limits on "continues":
-    /// - The headroom duck is not bypassed. A pending seed on a fresh
-    ///   smoother that is still in cold-start calibration
-    ///   (`sensitivity_initializing`), with any bar above 0.85, gets its first
-    ///   live frame scaled by `0.85 / max_internal`, so the spectrum shrinks by
-    ///   up to 15 % until calibration settles. A follow-up change replaces the
-    ///   cold calibration, so this is documented rather than fixed here.
+    /// - A seed on a fresh smoother is continued by the new stream's own
+    ///   level, not by a gain: the first frames are normalized to the audio
+    ///   that has arrived, so the seed's memory feeds a ramp, not a held shape.
     /// - `integral_feedback` is evaluated with the framerate from before the
     ///   next `apply` runs `update_framerate`. Normally the difference is about
     ///   1e-3; a tiny first chunk can push the real feedback toward the 0.98
@@ -214,371 +303,6 @@ impl Smoother {
 }
 
 #[cfg(test)]
-mod tests {
-    use super::*;
-
-    const SEED_FRAME_SAMPLES: usize = 800;
-    const SEED_SAMPLE_RATE_HZ: u32 = 48_000;
-    const SEED_TOLERANCE: f32 = 0.02;
-
-    #[test]
-    fn cold_rising_signal_does_not_expose_autosensitivity_clipping() {
-        let mut smoother = Smoother::new(64, 0.77, 1);
-        let mut max_mean = 0.0_f32;
-        let mut max_near_full = 0;
-
-        for raw_level in [
-            0.01, 0.02, 0.04, 0.08, 0.12, 0.16, 0.18, 0.18, 0.18, 0.18, 0.18, 0.18,
-        ] {
-            let mut bars = [raw_level; 64];
-            smoother.apply(&mut bars, 4_096, 44_100, true);
-            max_mean = max_mean.max(bars.iter().sum::<f32>() / bars.len() as f32);
-            max_near_full = max_near_full.max(bars.iter().filter(|bar| **bar >= 0.95).count());
-        }
-
-        assert!(
-            max_mean <= INITIAL_SENSITIVITY_HEADROOM && max_near_full == 0,
-            "cold rising signal saturated: max_mean={max_mean:.3}, \
-             max_near_full={max_near_full}"
-        );
-    }
-
-    #[test]
-    // A track change tears down and rebuilds the visualizer engine, which
-    // calls `reset()`. If autosensitivity's cold-start headroom cap (the
-    // `output_scale` branch above) inflated a quiet track's bars up to the
-    // same 0.85 ceiling a loud track reaches, the bars would visibly slam
-    // out on every track change regardless of how quiet the new track is.
-    // Control arm: the same constant quiet signal fed until autosensitivity
-    // has settled (`sensitivity_initializing` and `sensitivity_settling`
-    // both false — reached at frame 32 for this fixture, confirmed by
-    // instrumented run). Fix arm: `reset()`, then the first frame of the
-    // identical signal again.
-    fn cold_start_does_not_inflate_a_quiet_signal_to_full_scale() {
-        let quiet_level = 0.10_f32;
-        let mut smoother = Smoother::new(64, 0.77, 1);
-
-        let mut settled_max = 0.0_f32;
-        loop {
-            let mut bars = [quiet_level; 64];
-            smoother.apply(&mut bars, 4_096, 44_100, true);
-            if !smoother.sensitivity_initializing && !smoother.sensitivity_settling {
-                settled_max = settled_max.max(bars.iter().cloned().fold(0.0_f32, f32::max));
-                break;
-            }
-        }
-        for _ in 0..10 {
-            let mut bars = [quiet_level; 64];
-            smoother.apply(&mut bars, 4_096, 44_100, true);
-            settled_max = settled_max.max(bars.iter().cloned().fold(0.0_f32, f32::max));
-        }
-
-        smoother.reset();
-        let mut cold_bars = [quiet_level; 64];
-        smoother.apply(&mut cold_bars, 4_096, 44_100, true);
-        let cold_max = cold_bars.iter().cloned().fold(0.0_f32, f32::max);
-
-        assert!(
-            cold_max <= settled_max * 1.5,
-            "cold-start frame drew a quiet signal far above its settled level: \
-             cold_max={cold_max:.3}, settled_max={settled_max:.3}"
-        );
-    }
-
-    #[test]
-    // Regression test for the bug this fix addresses: `reset()` used to zero
-    // `sensitivity`/`sensitivity_initializing`/`sensitivity_settling` too,
-    // forcing every track change through the cold-start calibration again.
-    // For a quiet track that meant the `output_scale` headroom clamp held
-    // the visible maximum flat at `INITIAL_SENSITIVITY_HEADROOM` (0.85) for
-    // ~25 frames, then jumped past the real plateau once
-    // `sensitivity_settling` released — a visible slam on every track
-    // change. With the settled gain kept across `reset()`, the same quiet
-    // signal should stay near its already-known plateau the whole time.
-    fn keeps_its_calibration_across_a_track_change() {
-        // Real device cadence, not an arbitrary fixture: `tick()` runs in
-        // `withFrameNanos`, i.e. once per display frame, and feeds
-        // `apply()` with the samples it read since the last tick. On the
-        // device this is 800 samples at 48_000 Hz, ~16.7 ms/frame (60 fps).
-        // `update_framerate()` derives `framerate` (and thus
-        // `framerate_mod`, which scales both the sensitivity ramp step and
-        // the gravity term) directly from these two numbers, so a fixture
-        // using a different (samples, sample_rate) pair exercises a
-        // different regime than the one the bug was measured in. At 60 fps
-        // vs. the old fixture's ~10.77 fps (4_096 samples @ 44_100 Hz), the
-        // same elapsed time takes ~5.57x as many frames
-        // (= 60 / (44_100 / 4_096)), so frame counts below are the old
-        // counts scaled by that factor.
-        const SAMPLES: usize = 800;
-        const SAMPLE_RATE_HZ: u32 = 48_000;
-
-        let quiet_level = 0.10_f32;
-        let mut smoother = Smoother::new(64, 0.77, 1);
-
-        // Run past the initial cold-start transient (which legitimately
-        // overshoots while autosensitivity searches, per
-        // `cold_rising_signal_does_not_expose_autosensitivity_clipping`)
-        // before measuring the settled plateau.
-        loop {
-            let mut bars = [quiet_level; 64];
-            smoother.apply(&mut bars, SAMPLES, SAMPLE_RATE_HZ, true);
-            if !smoother.sensitivity_initializing && !smoother.sensitivity_settling {
-                break;
-            }
-        }
-        let mut plateau_max = 0.0_f32;
-        for _ in 0..223 {
-            let mut bars = [quiet_level; 64];
-            smoother.apply(&mut bars, SAMPLES, SAMPLE_RATE_HZ, true);
-            plateau_max = plateau_max.max(bars.iter().cloned().fold(0.0_f32, f32::max));
-        }
-
-        smoother.reset();
-
-        // The `max_consecutive_at_headroom` check below is the only assertion
-        // in this test that actually discriminates the bug at this cadence:
-        // `plateau_max` settles at ~0.999 here, so `plateau_max * 1.05`
-        // exceeds the output's hard `.clamp(0.0, 1.0)` ceiling and the two
-        // `<= plateau_max * 1.05` asserts below can never fail on their own.
-        //
-        // The cold-start headroom scale is the only whole-frame duck left, so
-        // a correctly-fixed `reset()` never pins a frame there. The bug this
-        // test guards against is a sustained run: with the old `reset()`
-        // behaviour (re-zeroing
-        // `sensitivity`/`sensitivity_initializing`/`sensitivity_settling`)
-        // temporarily reinstated, the same fixture produced a run of 21
-        // consecutive frames flat at the headroom immediately after reset,
-        // while the fixed `reset()` produces none (measured with
-        // `cargo test ... -- --nocapture`). The threshold below sits between
-        // the two measurements.
-        let mut post_reset_max = 0.0_f32;
-        let mut consecutive_at_headroom = 0;
-        let mut max_consecutive_at_headroom = 0;
-        for _ in 0..446 {
-            let mut bars = [quiet_level; 64];
-            smoother.apply(&mut bars, SAMPLES, SAMPLE_RATE_HZ, true);
-            let frame_max = bars.iter().cloned().fold(0.0_f32, f32::max);
-            post_reset_max = post_reset_max.max(frame_max);
-            assert!(
-                frame_max <= plateau_max * 1.05,
-                "frame after reset overshot the already-known plateau: \
-                 frame_max={frame_max:.3}, plateau_max={plateau_max:.3}"
-            );
-            if (frame_max - INITIAL_SENSITIVITY_HEADROOM).abs() < 0.001
-                && (plateau_max - INITIAL_SENSITIVITY_HEADROOM).abs() > 0.01
-            {
-                consecutive_at_headroom += 1;
-                max_consecutive_at_headroom =
-                    max_consecutive_at_headroom.max(consecutive_at_headroom);
-            } else {
-                consecutive_at_headroom = 0;
-            }
-        }
-
-        assert!(
-            max_consecutive_at_headroom <= 10,
-            "bars clamped flat at the cold-start headroom for {max_consecutive_at_headroom} \
-             consecutive frames instead of tracking the known plateau \
-             (plateau_max={plateau_max:.3})"
-        );
-        assert!(
-            post_reset_max <= plateau_max * 1.05,
-            "post-reset maximum exceeded the known plateau: \
-             post_reset_max={post_reset_max:.3}, plateau_max={plateau_max:.3}"
-        );
-    }
-
-    #[test]
-    // Control arm for the fix above: a loud-to-quiet track change is a case
-    // where keeping the old sensitivity is genuinely wrong for a while, and
-    // that is expected. This test documents that the autosensitivity still
-    // recovers and converges on the quiet signal's correct plateau within a
-    // bounded number of frames, rather than sticking at the loud track's
-    // gain or oscillating.
-    fn recovers_after_a_loud_to_quiet_track_change() {
-        // Same real device cadence and scaling rationale as
-        // `keeps_its_calibration_across_a_track_change` above: 800 samples
-        // @ 48_000 Hz (~60 fps, the `withFrameNanos` tick rate), frame
-        // counts scaled from the old 4_096 @ 44_100 Hz fixture (~10.77 fps)
-        // by ~5.57x (= 60 / (44_100 / 4_096)) to cover the same elapsed
-        // time.
-        const SAMPLES: usize = 800;
-        const SAMPLE_RATE_HZ: u32 = 48_000;
-
-        let loud_level = 0.80_f32;
-        let quiet_level = 0.10_f32;
-
-        // Reference: the plateau a fresh smoother settles at for the quiet
-        // signal alone, with no prior loud-signal history. Measured only
-        // after the cold-start transient has passed, same as the
-        // regression test above.
-        let mut reference = Smoother::new(64, 0.77, 1);
-        loop {
-            let mut bars = [quiet_level; 64];
-            reference.apply(&mut bars, SAMPLES, SAMPLE_RATE_HZ, true);
-            if !reference.sensitivity_initializing && !reference.sensitivity_settling {
-                break;
-            }
-        }
-        let mut reference_plateau = 0.0_f32;
-        for _ in 0..223 {
-            let mut bars = [quiet_level; 64];
-            reference.apply(&mut bars, SAMPLES, SAMPLE_RATE_HZ, true);
-            reference_plateau = reference_plateau.max(bars.iter().cloned().fold(0.0_f32, f32::max));
-        }
-
-        let mut smoother = Smoother::new(64, 0.77, 1);
-        for _ in 0..446 {
-            let mut bars = [loud_level; 64];
-            smoother.apply(&mut bars, SAMPLES, SAMPLE_RATE_HZ, true);
-        }
-
-        smoother.reset();
-
-        // Feed the quiet signal long enough for the gain to climb back up
-        // (a loud-to-quiet change needs sensitivity to grow, which happens
-        // in small multiplicative steps), then measure its own plateau the
-        // same way as the reference.
-        for _ in 0..11_147 {
-            let mut bars = [quiet_level; 64];
-            smoother.apply(&mut bars, SAMPLES, SAMPLE_RATE_HZ, true);
-        }
-        let mut converged_max = 0.0_f32;
-        for _ in 0..223 {
-            let mut bars = [quiet_level; 64];
-            smoother.apply(&mut bars, SAMPLES, SAMPLE_RATE_HZ, true);
-            converged_max = converged_max.max(bars.iter().cloned().fold(0.0_f32, f32::max));
-        }
-
-        assert!(
-            (converged_max - reference_plateau).abs() <= reference_plateau * 0.15 + 0.02,
-            "autosensitivity failed to converge on the quiet plateau after a \
-             loud-to-quiet track change: converged_max={converged_max:.3}, \
-             reference_plateau={reference_plateau:.3}"
-        );
-    }
-
-    // `seed_shape` takes the bars a viewer saw, which are the smoother's
-    // post-integral output (`bar + memory * integral_feedback`), while
-    // `previous`/`peaks` hold the pre-integral bar. Seeding the displayed
-    // shape straight into them made the next frame come out at about
-    // 1 / (1 - noise_reduction) times the seed: the whole spectrum jumped,
-    // clipped, and knocked autosensitivity down.
-    fn displayed_shape() -> [f32; 8] {
-        [0.05, 0.2, 0.35, 0.5, 0.65, 0.8, 0.9, 0.3]
-    }
-
-    fn assert_continues(shape: &[f32], frame: &[f32]) {
-        for (index, (seed, drawn)) in shape.iter().zip(frame).enumerate() {
-            assert!(
-                (drawn - seed).abs() <= seed * SEED_TOLERANCE + 1.0e-4,
-                "band {index} did not continue the seeded shape: seed={seed:.4}, \
-                 drawn={drawn:.4}"
-            );
-        }
-    }
-
-    #[test]
-    fn a_seeded_shape_continues_on_the_next_frame_of_steady_input() {
-        let shape = displayed_shape();
-        let mut smoother = Smoother::new(shape.len(), 0.77, 0);
-        // A smoother that has been running holds integral memory from its
-        // old shape, as the live processor does across a track change.
-        for _ in 0..30 {
-            let mut earlier = [0.1; 8];
-            smoother.apply(&mut earlier, SEED_FRAME_SAMPLES, SEED_SAMPLE_RATE_HZ, true);
-        }
-        // The raw input that reproduces `shape` at steady state is the
-        // pre-integral bar: `shape * (1 - integral_feedback)`.
-        let feedback = smoother.integral_feedback(CAVA_REFERENCE_FRAMERATE / smoother.framerate);
-        let mut frame = shape.map(|bar| bar * (1.0 - feedback));
-
-        smoother.seed_shape(&shape);
-        smoother.apply(&mut frame, SEED_FRAME_SAMPLES, SEED_SAMPLE_RATE_HZ, true);
-
-        assert_continues(&shape, &frame);
-    }
-
-    #[test]
-    fn a_seeded_shape_falls_from_where_it_stood_when_the_input_drops_away() {
-        let shape = displayed_shape();
-        let mut smoother = Smoother::new(shape.len(), 0.77, 0);
-        // Leave `fall` mid-gravity: a seed must restart the fall, or the
-        // first frame would already be below the shape the viewer saw.
-        for _ in 0..10 {
-            let mut loud = [0.8; 8];
-            smoother.apply(&mut loud, SEED_FRAME_SAMPLES, SEED_SAMPLE_RATE_HZ, true);
-            let mut silent = [0.0; 8];
-            smoother.apply(&mut silent, SEED_FRAME_SAMPLES, SEED_SAMPLE_RATE_HZ, true);
-        }
-        let mut frame = [0.0; 8];
-
-        smoother.seed_shape(&shape);
-        smoother.apply(&mut frame, SEED_FRAME_SAMPLES, SEED_SAMPLE_RATE_HZ, false);
-
-        assert_continues(&shape, &frame);
-    }
-
-    #[test]
-    fn a_hostile_seed_is_clamped_into_the_unit_range() {
-        // Autosensitivity must be on: with it off the gain never moves, and
-        // `apply`'s own final clamp and non-finite handling would hide a
-        // missing seed clamp. An unclamped 7.0 comes out of `apply` far above
-        // 1.0, which reads as an overshoot and lowers the gain.
-        let mut smoother = Smoother::new(4, 0.77, 1);
-        let mut frame = [0.0; 4];
-
-        smoother.seed_shape(&[f32::NAN, 7.0, -3.0, f32::INFINITY]);
-        smoother.apply(&mut frame, SEED_FRAME_SAMPLES, SEED_SAMPLE_RATE_HZ, false);
-
-        assert!(
-            frame.iter().all(|bar| (0.0..=1.0).contains(bar)),
-            "{frame:?}"
-        );
-        assert_eq!(frame[0], 0.0);
-        assert_eq!(frame[2], 0.0);
-        assert_eq!(
-            smoother.sensitivity, 1.0,
-            "a hostile seed reached the autosensitivity gain"
-        );
-        assert!(smoother.sensitivity_initializing);
-        assert!(!smoother.sensitivity_settling);
-    }
-
-    #[test]
-    fn disabled_autosensitivity_does_not_apply_initial_headroom() {
-        let mut smoother = Smoother::new(1, 0.0, 0);
-        let mut bars = [1.2];
-
-        smoother.apply(&mut bars, 735, 44_100, true);
-
-        assert_eq!(bars, [1.0]);
-    }
-
-    #[test]
-    fn ac_28_steady_state_overshoot_clips_only_the_overshooting_band() {
-        let mut smoother = Smoother::new(2, 0.0, 1);
-
-        let mut cold_overshoot = [1.2, 0.2];
-        smoother.apply(&mut cold_overshoot, 735, 44_100, true);
-        let mut settling_frame = [0.2 / smoother.sensitivity, 0.3 / smoother.sensitivity];
-        smoother.apply(&mut settling_frame, 735, 44_100, true);
-        assert!(!smoother.sensitivity_initializing);
-        assert!(!smoother.sensitivity_settling);
-
-        let steady_sensitivity = smoother.sensitivity;
-        let mut steady_overshoot = [1.2 / steady_sensitivity, 0.4 / steady_sensitivity];
-        let expected_unscaled_band = steady_overshoot[1] * steady_sensitivity;
-        smoother.apply(&mut steady_overshoot, 735, 44_100, true);
-
-        assert_eq!(steady_overshoot[0], 1.0);
-        assert_eq!(steady_overshoot[1], expected_unscaled_band);
-
-        let following_sensitivity = smoother.sensitivity;
-        let mut following_frame = [0.9 / following_sensitivity, 0.4 / following_sensitivity];
-        let expected_following = following_frame.map(|bar| bar * following_sensitivity);
-        smoother.apply(&mut following_frame, 735, 44_100, true);
-
-        assert_eq!(following_frame, expected_following);
-    }
-}
+mod boundary_tests;
+#[cfg(test)]
+mod tests;

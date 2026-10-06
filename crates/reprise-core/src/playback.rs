@@ -5,6 +5,12 @@
 //! per-OS platform crates (Linux: GStreamer `playbin3` in `player.rs`).
 
 mod bass_pressure;
+/// Seeded synthetic music and the stream-boundary yardstick the visualizer
+/// surfaces are tested against. Debug builds only, like the other cross-crate
+/// test seams.
+#[cfg(debug_assertions)]
+#[doc(hidden)]
+pub mod boundary_fixture;
 mod cava;
 mod fault_policy;
 pub(crate) mod spectral;
@@ -79,7 +85,7 @@ impl SpectrumFrame {
 
     /// Attaches the absolute bass measurement taken from the same PCM. Kept
     /// separate from the bars because CAVA's auto-sensitivity makes those
-    /// relative, and the glow layer needs an honest level (AC-28).
+    /// relative, and the glow layer needs an honest level (AC-29).
     #[must_use]
     pub fn with_bass_pressure(self, pressure: BassPressure) -> Self {
         Self {
@@ -364,6 +370,11 @@ mod song_visual_tests;
 #[cfg(test)]
 #[path = "playback/cava_tests.rs"]
 mod cava_tests;
+
+// The yardstick is compiled in debug builds only (see `boundary_fixture`).
+#[cfg(all(test, debug_assertions))]
+#[path = "playback/boundary_tests.rs"]
+mod boundary_tests;
 
 #[cfg(test)]
 #[path = "playback/bass_pressure_tests.rs"]

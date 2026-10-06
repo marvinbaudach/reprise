@@ -22,7 +22,10 @@ const MAX_JUMP_OVER_CONTROL: f32 = 0.15;
 /// (the new track's own audio legitimately starts to move the bars after that).
 const PENDING_SEED_TICKS: usize = 3;
 const MIN_PENDING_SEED_RATIO: f32 = 0.75;
-const MAX_PENDING_SEED_RATIO: f32 = 1.15;
+// A fresh processor normalizes its first frames to the audio that has arrived
+// (AC-29), so the shape drifts toward the new stream's own level as the
+// integral warms up: about four percent a tick here, never a jump.
+const MAX_PENDING_SEED_RATIO: f32 = 1.3;
 const ENVELOPE_STEP_FRAMES: usize = 4_800;
 const KICK_PERIOD_FRAMES: usize = 24_000;
 const PARTIAL_HZ: [f32; 9] = [
@@ -166,7 +169,8 @@ fn an_adopted_shape_is_not_followed_by_a_sag_either() {
 
 /// A bass-heavy shape of the kind a phone shows during a quiet passage: the
 /// lowest bands stand tallest, the highs trail off, and nothing comes near the
-/// top of the range, so the cold-start headroom clamp cannot hide the seed.
+/// top of the range, so the ceiling a pending boundary estimate applies cannot
+/// hide the seed.
 fn quiet_shape() -> Vec<f32> {
     (0..SPECTRUM_BAND_COUNT)
         .map(|index| {

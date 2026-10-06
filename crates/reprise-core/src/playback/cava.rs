@@ -7,6 +7,7 @@
 //! threading, or FFTW integration is included.
 
 mod bands;
+mod boundary;
 mod smoothing;
 
 use thiserror::Error;
@@ -112,6 +113,7 @@ impl CavaBarProcessor {
                 config.bar_count,
                 config.noise_reduction,
                 config.autosensitivity,
+                fft_size * 2,
             ),
         })
     }
@@ -181,38 +183,70 @@ impl CavaBarProcessor {
         );
     }
 
-    /// Clears buffered audio and smoothing history while retaining the settled gain.
+    /// Clears buffered audio and the whole smoothing history: a hard restart
+    /// whose bars begin at zero and whose sensitivity is measured from the new
+    /// audio alone, as for a freshly constructed processor.
     pub fn reset(&mut self) {
         self.input_buffer.fill(0.0);
         self.smoother.reset();
     }
 
-    /// Clears only the FFT input buffer at a decoder-stream boundary.
+    /// A decoder-stream boundary: a different track or a seek.
     ///
-    /// A different track's samples must not mix into the FFT window, but
-    /// unlike [`Self::reset`] the smoother's bar shape (`previous`/`peaks`/
-    /// `fall`/`memory`) also survives. Both reset paths retain the settled
-    /// autosensitivity gain. The next frames therefore fall through the
-    /// smoother's normal gravity from their old heights instead of dropping
-    /// to zero for one frame.
+    /// Clears the FFT input buffer, so another stream's samples never mix into
+    /// the window, and keeps the smoother's bar shape (`previous`/`peaks`/
+    /// `fall`/`memory`), so the next frames fall through the normal gravity
+    /// from their old heights instead of dropping to zero.
+    ///
+    /// The sensitivity is measured again, with the one that drew the shape kept
+    /// as a prior: a full FFT window of the new audio decides whether it is off
+    /// by more than a factor of two (it is replaced) or not (it stays), and a
+    /// frame drawn at twice full height or more (1.3 times in the first half
+    /// second) brakes it for about seven seconds. `cavacore`'s own creep runs
+    /// throughout. A freshly constructed processor measures from nothing
+    /// instead of `cavacore`'s cold climb. The measure is in `boundary`'s
+    /// module docs.
     pub fn reset_stream(&mut self) {
+        self.input_buffer.fill(0.0);
+        self.smoother.rearm_boundary();
+    }
+
+    /// Clears only the FFT input buffer, for a gap in the audio that is not a
+    /// boundary: the same stream resumes after a pause or a buffering stall. The
+    /// sensitivity, the bar shape and every pending measurement stay as they
+    /// are, because nothing about the music changed; only the window must not
+    /// bridge the gap.
+    pub fn reset_window(&mut self) {
         self.input_buffer.fill(0.0);
     }
 
     /// Seeds the smoother with a shape already on screen — another
     /// processor's last output — so the next frame continues it, without
-    /// touching the FFT input buffer or the settled autosensitivity gain. Used
+    /// touching the FFT input buffer or the pending sensitivity estimate. Used
     /// to hand a freshly constructed processor a starting shape before its
     /// first real audio block arrives, so its first frames fall from that
     /// shape instead of climbing from zero.
     ///
-    /// "Continues" has one exception: on a fresh processor still in cold-start
-    /// calibration, a seed with any bar above 0.85 has its first live frame
-    /// scaled by the headroom duck (`0.85 / max_internal`), shrinking the
-    /// spectrum by up to 15 % until calibration settles. See
-    /// `Smoother::seed_shape` for this and the framerate approximation.
+    /// "Continues" has one exception: while the boundary estimate is pending,
+    /// a frame the held gain would draw as a wall is scaled down. A seed alone
+    /// never is. See `Smoother::seed_shape`.
     pub fn seed_shape(&mut self, bars: &[f32]) {
         self.smoother.seed_shape(bars);
+    }
+
+    /// The smoother's gain, for tests that compare it with `cavacore`'s or watch
+    /// it move across a boundary. Debug builds only, like the other test seams.
+    #[cfg(debug_assertions)]
+    #[doc(hidden)]
+    pub fn sensitivity(&self) -> f32 {
+        self.smoother.sensitivity()
+    }
+
+    /// Starts the smoother from a gain `cavacore` itself reached, without its
+    /// own estimate. Lets the golden test compare steady state frame for frame.
+    #[cfg(test)]
+    pub(crate) fn adopt_sensitivity(&mut self, sensitivity: f32) {
+        self.smoother.adopt_sensitivity(sensitivity);
     }
 
     fn push_samples(&mut self, mono_samples: &[f32]) -> bool {
