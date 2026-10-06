@@ -2,7 +2,7 @@
 slug: cue-sheets-schema
 worktree: /home/marvin/Projects/reprise-cue-sheets-schema
 branch: feature/cue-sheets-schema
-phase: refactored
+phase: shipped
 codex_session:
 created: 2026-10-06
 ---
