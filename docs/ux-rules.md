@@ -1703,10 +1703,13 @@ result.
   "Removed from queue" with Undo for the same window as FB-16, and only when
   the queue really lost that one row. Undo puts the row back at its old
   position if the queue still has the size the removal left; otherwise it
-  comes back as next. A queue offer that arrives while a delete's window runs
+  comes back as next. Known limitation: only the size is compared, so a queue
+  that was reordered but kept its size gets the row back by its old index,
+  possibly between different neighbours. A queue offer that arrives while a delete's window runs
   waits for it instead of ending it. *Tests:*
   `fb_17_removing_a_queue_row_offers_an_undo_that_puts_it_back_where_it_was`,
-  `fb_17_a_queue_undo_after_the_queue_changed_shape_appends_the_row_next`.
+  `fb_17_a_queue_undo_after_the_queue_changed_shape_appends_the_row_next`,
+  `fb_17_a_queue_that_kept_its_size_but_was_reshuffled_still_gets_the_row_back_by_its_old_index`.
 - **FB-18** [active] [android] — Neither the Undo snackbar nor the
   "Deleting N tracks…" line moves the list: both are overlays without layout
   height. The snackbar floats above the bottom navigation; while the Now
@@ -1775,7 +1778,9 @@ result.
   Everyone else connects with no commands, sees no current item, and gets a
   permission error from every browse and play entry point. *Tests:*
   `os_9_android_auto_is_trusted_only_with_its_pinned_certificate`,
-  `os_9_an_untrusted_controller_gets_no_browse_data_from_any_read_entry_point`.
+  `os_9_an_untrusted_controller_gets_no_browse_data_from_any_read_entry_point`,
+  `os_9_a_package_the_callers_uid_does_not_own_has_no_signers`,
+  `os_9_a_controller_the_platform_vouches_for_is_let_in_through_media3s_trust_flag`.
 - **OS-10** [active] [android] — The home-screen widget comes in two
   placements. The wide one (4×1) shows cover, title, artist and
   previous / play-pause / next; the square one (2×2) is the cover with one
@@ -1785,7 +1790,8 @@ result.
   opens the app instead of doing nothing. *Tests:*
   `os_10_the_wide_widgets_buttons_send_media_commands_to_the_service`,
   `os_10_the_square_widget_is_a_cover_with_one_play_pause_button`,
-  `os_10_before_anything_was_played_the_widget_shows_the_app_name_and_opens_the_app`.
+  `os_10_before_anything_was_played_the_widget_shows_the_app_name_and_opens_the_app`,
+  `os_10_before_anything_was_played_the_square_widget_shows_the_app_name_and_opens_the_app`.
 - **OS-11** [active] [android] — Every item the player plays carries the
   track's title, artist, album and duration, and its cover once it is known,
   so the notification, the lock screen, Android Auto and the widget all name

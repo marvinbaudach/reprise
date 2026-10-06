@@ -249,6 +249,32 @@ class PendingDeletionsTest {
         assertEquals(listOf(12L, 11L), queue.upcoming)
     }
 
+    /**
+     * Pins a known limitation (FB-17): "shape" is the queue's size, nothing more.
+     * With the same size the row is restored by its old index even if the
+     * neighbours changed, because an undo cannot tell a queue that was reordered,
+     * or that lost one row and gained another, from the one the removal left.
+     */
+    @Test
+    fun fb_17_a_queue_that_kept_its_size_but_was_reshuffled_still_gets_the_row_back_by_its_old_index() {
+        val queue = FakeQueueControls(listOf(10, 11, 12, 13))
+
+        deletions.removeFromQueueWithUndo(
+            position = 1,
+            trackId = 11,
+            playback = queue,
+            remove = { queue.removeUpcomingTrack(1, 11) {} },
+            refresh = {},
+        )
+        assertEquals(listOf(10L, 12L, 13L), queue.upcoming)
+        // Same size as the removal left it, other order: 13 now leads.
+        queue.upcoming.clear()
+        queue.upcoming.addAll(listOf(13L, 10L, 12L))
+        deletions.offers.undo(checkNotNull(deletions.offers.current).token)
+
+        assertEquals(listOf(13L, 11L, 10L, 12L), queue.upcoming)
+    }
+
     @Test
     fun aQueueRemovalWaitsForAPendingDeletesWindowInsteadOfEndingIt() {
         val queue = FakeQueueControls(listOf(10, 11, 12))
