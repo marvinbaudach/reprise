@@ -81,6 +81,9 @@ internal fun SpectralSeekTrack(
         if (ready.isNullOrEmpty()) {
             LaunchedEffect(trackId) { buildElapsed.snapTo(WAVEFORM_BUILD_MS.toFloat()) }
             if (partial == null || partial.bars.isEmpty()) {
+                // A partial that ended without a result is not replaced by anything: the
+                // final bars a later decode stores are a first build, not a swap.
+                SideEffect { partialSeen.set(false) }
                 PlainSeekTrack(positionMs, durationMs)
             } else {
                 // No build animation for a partial picture: it snaps in and grows, and the

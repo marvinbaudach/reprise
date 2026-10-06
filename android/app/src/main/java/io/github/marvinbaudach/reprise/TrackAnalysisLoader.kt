@@ -81,11 +81,19 @@ internal data class PartialTrackAnalysis(
     val frames: SpectrogramFrames,
 )
 
-internal fun AndroidTrackAnalysisProgress.toPartialTrackAnalysis() = PartialTrackAnalysis(
-    coveredFraction = coveredFraction,
-    bars = bars.map { it.toSpectralBar() },
-    frames = spectrogram.toSpectrogramFrames(),
-)
+/**
+ * Checked where it crosses from Rust: a fraction that is not a number, or
+ * covers nothing, is no partial picture, and one past the end is the whole
+ * track.
+ */
+internal fun AndroidTrackAnalysisProgress.toPartialTrackAnalysis(): PartialTrackAnalysis? {
+    val fraction = coveredFraction.takeIf { it.isFinite() && it > 0f } ?: return null
+    return PartialTrackAnalysis(
+        coveredFraction = fraction.coerceAtMost(1f),
+        bars = bars.map { it.toSpectralBar() },
+        frames = spectrogram.toSpectrogramFrames(),
+    )
+}
 
 /** The analysis edge used by the playing-track lifecycle and seek surface. */
 internal interface TrackAnalysisPort {

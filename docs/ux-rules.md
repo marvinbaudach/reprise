@@ -261,6 +261,13 @@ result.
   stays the plain line. The partial picture is held only in memory: it is
   never stored and never counts as analysed for sync, sidecar or backfill.
   The Now Playing scene adopts the growing spectrum without restarting.
+  The decoded part is asked for about once a second, only while the screen
+  is visible and the final analysis is missing, never while an earlier
+  answer is still outstanding, and no more after half a minute of empty
+  answers until the next analysis attempt ends. When the final bars replace
+  a partial picture they appear at full height, even if a cue asked for a
+  build at that moment; final bars that follow a partial picture which
+  ended without a result build in as a first analysis does.
   *Tests:* `nav_15d_partial_bars_cover_only_the_decoded_part`,
   `nav_15d_final_bars_replace_the_partial`,
   `nav_15d_progress_reads_are_never_cached`,
@@ -270,7 +277,16 @@ result.
   `nav_15d_a_running_decode_reports_progress_for_its_track`,
   `nav_15d_progress_is_none_without_a_decode_and_after_the_store`,
   `nav_15d_a_cancelled_decode_leaves_no_render_data`,
-  `nav_15d_the_backfill_decode_reports_progress_too`.
+  `nav_15d_the_backfill_decode_reports_progress_too`,
+  `nav_15d_polls_about_once_per_interval_while_decoding`,
+  `nav_15d_no_polls_once_the_final_data_arrived`,
+  `nav_15d_no_polls_while_the_screen_is_not_started`,
+  `nav_15d_a_track_that_never_reports_progress_stops_polling_until_the_next_revision`,
+  `nav_15d_a_poll_waits_for_the_previous_answer`,
+  `nav_15d_a_late_answer_from_an_earlier_revision_is_not_shown`,
+  `nav_15d_an_unchanged_answer_does_not_recompose`,
+  `nav_15d_final_bars_after_a_partial_that_ended_without_a_result_build_in`,
+  `nav_15d_an_empty_or_broken_covered_fraction_is_no_partial`.
   <!-- REVIEW: rule proposal -->
 - **NAV-15e** [active] [android] — **Leaving a track stops its analysis.**
   Switching to another track stops the outgoing track's foreground analysis

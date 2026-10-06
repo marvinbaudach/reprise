@@ -11,19 +11,30 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.drawscope.DrawScope
 import androidx.compose.ui.unit.dp
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.compose.LocalLifecycleOwner
+import androidx.lifecycle.compose.currentStateAsState
+import kotlin.coroutines.resume
 import kotlinx.coroutines.delay
-import kotlinx.coroutines.isActive
-
-private const val NEVER_SEEN = -1L
+import kotlinx.coroutines.suspendCancellableCoroutine
 
 /** How often a surface without final analysis asks the running decode for more. */
 internal const val ANALYSIS_PROGRESS_POLL_MS = 1_000L
 
 /**
+ * How many empty answers in a row end the polling until the next revision: half
+ * a minute in which no decode of the track ran. A decode that starts later ends
+ * with an import attempt, and the revision it bumps restarts the polling.
+ */
+internal const val MAX_EMPTY_PROGRESS_POLLS = 30
+
+/**
  * The decoded part of the track's analysis while the phone is still computing
- * it. Polls while [active] and answers `null` the moment it is not, so final
- * data replaces the partial picture at once. The loop ends when the composable
- * leaves composition or [active] turns false.
+ * it. Polls while [active] and the screen is started, and answers `null` the
+ * moment [active] turns false, so final data replaces the partial picture at
+ * once. One read is outstanding at a time, an answer is applied only by the
+ * loop that asked for it, and a track that keeps answering nothing stops being
+ * asked until the next [revision].
  */
 @Composable
 internal fun rememberAnalysisProgress(
@@ -34,26 +45,50 @@ internal fun rememberAnalysisProgress(
     active: Boolean,
 ): PartialTrackAnalysis? {
     var progress by remember(trackId, count) { mutableStateOf<PartialTrackAnalysis?>(null) }
-    val lastSeenAtRevision = remember(trackId, count) { longArrayOf(NEVER_SEEN) }
-    LaunchedEffect(analysis, trackId, count, revision, active) {
-        if (!active) return@LaunchedEffect
-        while (isActive) {
-            analysis.loadProgress(trackId, count) { answer ->
-                if (answer != null) {
-                    lastSeenAtRevision[0] = revision
-                    progress = answer
-                } else if (lastSeenAtRevision[0] != revision) {
-                    // Nothing new since the last import attempt ended: the decode is gone
-                    // without a result. A null before that is the moment between the
-                    // decode's store and the revision bump that delivers the final data.
-                    progress = null
-                }
+    val lifecycleState by LocalLifecycleOwner.current.lifecycle.currentStateAsState()
+    val polling = active && lifecycleState.isAtLeast(Lifecycle.State.STARTED)
+    LaunchedEffect(analysis, trackId, count, revision, polling) {
+        if (!polling) return@LaunchedEffect
+        var seenThisRevision = false
+        var emptyAnswers = 0
+        while (emptyAnswers < MAX_EMPTY_PROGRESS_POLLS) {
+            val answer = analysis.awaitProgress(trackId, count)
+            if (answer != null) {
+                seenThisRevision = true
+                emptyAnswers = 0
+                if (!answer.drawsLike(progress)) progress = answer
+            } else {
+                emptyAnswers += 1
+                // Nothing in this revision: the decode is gone without a result. A null
+                // after a partial in this same revision is the moment between the
+                // decode's store and the revision bump that delivers the final data.
+                if (!seenThisRevision) progress = null
             }
             delay(ANALYSIS_PROGRESS_POLL_MS)
         }
     }
     return if (active) progress else null
 }
+
+/**
+ * One progress read, awaited: the next poll is not asked until this one is
+ * answered, so slow reads never pile up on the read lane, and an answer that
+ * arrives after the asking loop ended (a new revision, another track) is
+ * dropped with its cancelled continuation.
+ */
+private suspend fun TrackAnalysisPort.awaitProgress(trackId: Long, count: Int) =
+    suspendCancellableCoroutine { continuation ->
+        loadProgress(trackId, count) { answer ->
+            if (continuation.isActive) continuation.resume(answer)
+        }
+    }
+
+/** Every poll delivers a new instance; one covering the same decoded part draws the same. */
+private fun PartialTrackAnalysis.drawsLike(other: PartialTrackAnalysis?) =
+    other != null &&
+        coveredFraction == other.coveredFraction &&
+        bars.size == other.bars.size &&
+        frames.frameCount == other.frames.frameCount
 
 /**
  * The plain seek line for everything right of [coveredWidth]: the undecoded

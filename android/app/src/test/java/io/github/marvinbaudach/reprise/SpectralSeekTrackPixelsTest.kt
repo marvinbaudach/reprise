@@ -12,6 +12,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
+import androidx.compose.runtime.snapshots.Snapshot
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.PixelMap
@@ -31,6 +32,7 @@ import org.robolectric.annotation.GraphicsMode
 import uniffi.reprise_android_ffi.AndroidColorScheme
 
 private const val MAX_FRAMES_TO_SWAP = 12
+private const val FRAMES_INTO_THE_BUILD = 10
 
 /** The analysis claim is pixels: bars and plain fallback must really paint differently. */
 @RunWith(RobolectricTestRunner::class)
@@ -149,8 +151,10 @@ class SpectralSeekTrackPixelsTest {
         // The decode stored its result: the poll sees nothing, the revision has not moved yet.
         compose.mainClock.autoAdvance = false
         analysis.dropProgressWithoutRevision()
+        val pollsBefore = analysis.progressPolls
         compose.mainClock.advanceTimeBy(2 * ANALYSIS_PROGRESS_POLL_MS)
 
+        assertTrue("no poll saw the empty answer", analysis.progressPolls > pollsBefore)
         assertTrue("the partial flashed away", render().redInk(0, 250) > 40)
     }
 
@@ -165,6 +169,35 @@ class SpectralSeekTrackPixelsTest {
         compose.waitForIdle()
 
         assertEquals(0, render().redInk(0, 500))
+    }
+
+    @Test
+    fun nav_15d_final_bars_after_a_partial_that_ended_without_a_result_build_in() {
+        showTrack(positionMs = 0, cueRevision = 1)
+        analysis.partial(halfDecoded())
+        compose.waitForIdle()
+        assertTrue("the partial never painted", render().redInk(0, 250) > 40)
+        analysis.partial(null)
+        compose.waitForIdle()
+        assertEquals("the ended partial stayed", 0, render().redInk(0, 500))
+
+        // A later decode (the backfill's) stores the analysis: a first build, not a swap.
+        compose.mainClock.autoAdvance = false
+        Snapshot.withMutableSnapshot {
+            analysis.answer(List(80) { SpectralBar(false, 0.9f, 0.0, 1.0, 0.0) })
+        }
+        // Well past the frames a snapped swap needs, well inside the build.
+        repeat(FRAMES_INTO_THE_BUILD) { compose.mainClock.advanceTimeByFrame() }
+        val building = render().greenInk(0, 500)
+        compose.mainClock.autoAdvance = true
+        compose.waitForIdle()
+        val built = render().greenInk(0, 500)
+
+        assertTrue("the final bars never started to draw", building > 0)
+        assertTrue(
+            "the final bars snapped in as if they replaced a partial ($building of $built)",
+            building < built * 9 / 10,
+        )
     }
 
     @Test
@@ -278,6 +311,8 @@ class SpectralSeekTrackPixelsTest {
 private class PixelAnalysis : TrackAnalysisPort {
     private var bars: List<SpectralBar>? = null
     private var progress: PartialTrackAnalysis? = null
+    var progressPolls = 0
+        private set
     override var revision by mutableLongStateOf(0L)
         private set
 
@@ -300,7 +335,10 @@ private class PixelAnalysis : TrackAnalysisPort {
         trackId: Long,
         count: Int,
         deliver: (PartialTrackAnalysis?) -> Unit,
-    ) = deliver(progress)
+    ) {
+        progressPolls += 1
+        deliver(progress)
+    }
 
     override fun loadBars(trackId: Long, count: Int, deliver: (List<SpectralBar>?) -> Unit) {
         deliver(bars)
