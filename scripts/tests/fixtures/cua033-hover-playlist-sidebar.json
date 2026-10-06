@@ -1,0 +1,7214 @@
+{
+ "_note": "recorded: the Music view on entry with the sidebar listing Fixture Playlist; no heading and no new-playlist button appear in the tree",
+ "_source": "cua-driver 0.33.3 get_window_state, hover-affordance-sweep seed 11, mixed-sources-128 profile with the Fixture Playlist, evidence dir hover-fix1, observe.json",
+ "app_name": "reprise",
+ "coordinate_frame": "window",
+ "element_count": 287,
+ "elements": [
+  {
+   "actions": [
+    "win.open-primary-menu",
+    "win.about",
+    "win.library-doctor-findings",
+    "win.toggle-play-pause",
+    "win.import-playlist",
+    "win.nav-forward",
+    "win.jump-to-now-playing",
+    "win.close",
+    "window.close",
+    "win.library-doctor",
+    "win.edit-column-layout",
+    "win.focus-search",
+    "win.keyboard-shortcuts",
+    "win.preferences",
+    "win.clear-all-filters",
+    "window.minimize",
+    "win.show-folded-columns",
+    "window.toggle-maximized",
+    "win.stop-playback",
+    "default.activate",
+    "win.quick-open",
+    "win.toggle-minimal-view",
+    "win.nav-back",
+    "win.help"
+   ],
+   "depth": 0,
+   "element_index": 0,
+   "element_token": "s00000003:0",
+   "enabled": true,
+   "frame": {
+    "h": 1000.0,
+    "w": 1600.0,
+    "x": 240.0,
+    "y": 150.0
+   },
+   "geometry_trusted": true,
+   "label": "Reprise",
+   "role": "window",
+   "screenshot_frame": {
+    "h": 848,
+    "w": 1356,
+    "x": 0,
+    "y": 0
+   }
+  },
+  {
+   "actions": [
+    "navigation.pop"
+   ],
+   "depth": 10,
+   "element_index": 1,
+   "element_token": "s00000003:1",
+   "enabled": true,
+   "frame": {
+    "h": 852,
+    "w": 1350,
+    "x": 240,
+    "y": 150
+   },
+   "geometry_trusted": false,
+   "parent_index": 0,
+   "role": "group",
+   "screenshot_frame": {
+    "h": 722,
+    "w": 1144,
+    "x": 0,
+    "y": 0
+   }
+  },
+  {
+   "actions": [],
+   "depth": 23,
+   "element_index": 2,
+   "element_token": "s00000003:2",
+   "enabled": true,
+   "frame": {
+    "h": 38.0,
+    "w": 100.0,
+    "x": 492.0,
+    "y": 203.0
+   },
+   "geometry_trusted": true,
+   "label": "Add filter",
+   "parent_index": 1,
+   "role": "button",
+   "screenshot_frame": {
+    "h": 32,
+    "w": 85,
+    "x": 0,
+    "y": 0
+   }
+  },
+  {
+   "actions": [
+    "click"
+   ],
+   "depth": 24,
+   "element_index": 3,
+   "element_token": "s00000003:3",
+   "enabled": true,
+   "frame": {
+    "h": 38.0,
+    "w": 100.0,
+    "x": 492.0,
+    "y": 203.0
+   },
+   "geometry_trusted": true,
+   "label": "Add filter",
+   "parent_index": 2,
+   "role": "toggle button",
+   "screenshot_frame": {
+    "h": 32,
+    "w": 85,
+    "x": 0,
+    "y": 0
+   }
+  },
+  {
+   "actions": [
+    "tracklist.move-to-top",
+    "tracklist.move-down",
+    "tracklist.add-to-queue",
+    "tracklist.new-playlist",
+    "tracklist.remove-selected-from-library",
+    "tracklist.play-next",
+    "tracklist.edit-tags",
+    "tracklist.remove-from-queue",
+    "tracklist.move-up",
+    "tracklist.remove-from-library",
+    "tracklist.play",
+    "tracklist.trash-selected-tracks",
+    "tracklist.show-in-missing-files",
+    "tracklist.go-to-album",
+    "tracklist.remove-from-playlist",
+    "tracklist.show-in-files",
+    "tracklist.go-to-artist"
+   ],
+   "depth": 25,
+   "element_index": 4,
+   "element_token": "s00000003:4",
+   "enabled": true,
+   "frame": {
+    "h": 790,
+    "w": 1350,
+    "x": 240,
+    "y": 150
+   },
+   "geometry_trusted": false,
+   "parent_index": 1,
+   "role": "tree grid",
+   "screenshot_frame": {
+    "h": 670,
+    "w": 1144,
+    "x": 0,
+    "y": 0
+   }
+  },
+  {
+   "actions": [
+    "listitem.scroll-to"
+   ],
+   "depth": 26,
+   "element_index": 5,
+   "element_token": "s00000003:5",
+   "enabled": true,
+   "frame": {
+    "h": 31.0,
+    "w": 1350.0,
+    "x": 480.0,
+    "y": 259.0
+   },
+   "geometry_trusted": true,
+   "label": "Title Artist Album Year Length Rating",
+   "parent_index": 4,
+   "role": "row",
+   "screenshot_frame": {
+    "h": 26,
+    "w": 1144,
+    "x": 0,
+    "y": 0
+   }
+  },
+  {
+   "actions": [
+    "list.unselect-all",
+    "list.select-all"
+   ],
+   "depth": 26,
+   "element_index": 6,
+   "element_token": "s00000003:6",
+   "enabled": true,
+   "frame": {
+    "h": 759.0,
+    "w": 1350.0,
+    "x": 480.0,
+    "y": 290.0
+   },
+   "geometry_trusted": true,
+   "parent_index": 4,
+   "role": "list",
+   "screenshot_frame": {
+    "h": 643,
+    "w": 1144,
+    "x": 0,
+    "y": 0
+   }
+  },
+  {
+   "actions": [
+    "listitem.scroll-to"
+   ],
+   "depth": 27,
+   "element_index": 7,
+   "element_token": "s00000003:7",
+   "enabled": true,
+   "frame": {
+    "h": 45.0,
+    "w": 1350.0,
+    "x": 480.0,
+    "y": 245.0
+   },
+   "geometry_trusted": true,
+   "label": "Go to album Fixture Album 57 Writable Batch 0058 Fixture Artist 25 Fixture Album 57 1992 3:00 Rate 1 star Rate 2 stars Rate 3 stars Rate 4 stars Rate 5 stars",
+   "parent_index": 6,
+   "role": "row",
+   "screenshot_frame": {
+    "h": 38,
+    "w": 1144,
+    "x": 0,
+    "y": 0
+   }
+  },
+  {
+   "actions": [
+    "listitem.scroll-to"
+   ],
+   "depth": 28,
+   "element_index": 8,
+   "element_token": "s00000003:8",
+   "enabled": true,
+   "frame": {
+    "h": 45.0,
+    "w": 40.0,
+    "x": 480.0,
+    "y": 245.0
+   },
+   "geometry_trusted": true,
+   "label": "Go to album Fixture Album 57",
+   "parent_index": 7,
+   "role": "grid cell",
+   "screenshot_frame": {
+    "h": 38,
+    "w": 34,
+    "x": 0,
+    "y": 0
+   }
+  },
+  {
+   "actions": [
+    "listitem.scroll-to"
+   ],
+   "depth": 28,
+   "element_index": 9,
+   "element_token": "s00000003:9",
+   "enabled": true,
+   "frame": {
+    "h": 45.0,
+    "w": 472.0,
+    "x": 520.0,
+    "y": 245.0
+   },
+   "geometry_trusted": true,
+   "label": "Writable Batch 0058",
+   "parent_index": 7,
+   "role": "grid cell",
+   "screenshot_frame": {
+    "h": 38,
+    "w": 400,
+    "x": 0,
+    "y": 0
+   }
+  },
+  {
+   "actions": [
+    "listitem.scroll-to"
+   ],
+   "depth": 28,
+   "element_index": 10,
+   "element_token": "s00000003:10",
+   "enabled": true,
+   "frame": {
+    "h": 45.0,
+    "w": 260.0,
+    "x": 992.0,
+    "y": 245.0
+   },
+   "geometry_trusted": true,
+   "label": "Fixture Artist 25",
+   "parent_index": 7,
+   "role": "grid cell",
+   "screenshot_frame": {
+    "h": 38,
+    "w": 220,
+    "x": 0,
+    "y": 0
+   }
+  },
+  {
+   "actions": [
+    "listitem.scroll-to"
+   ],
+   "depth": 28,
+   "element_index": 11,
+   "element_token": "s00000003:11",
+   "enabled": true,
+   "frame": {
+    "h": 45.0,
+    "w": 300.0,
+    "x": 1252.0,
+    "y": 245.0
+   },
+   "geometry_trusted": true,
+   "label": "Fixture Album 57",
+   "parent_index": 7,
+   "role": "grid cell",
+   "screenshot_frame": {
+    "h": 38,
+    "w": 254,
+    "x": 0,
+    "y": 0
+   }
+  },
+  {
+   "actions": [
+    "listitem.scroll-to"
+   ],
+   "depth": 28,
+   "element_index": 12,
+   "element_token": "s00000003:12",
+   "enabled": true,
+   "frame": {
+    "h": 45.0,
+    "w": 90.0,
+    "x": 1552.0,
+    "y": 245.0
+   },
+   "geometry_trusted": true,
+   "label": "1992",
+   "parent_index": 7,
+   "role": "grid cell",
+   "screenshot_frame": {
+    "h": 38,
+    "w": 76,
+    "x": 0,
+    "y": 0
+   }
+  },
+  {
+   "actions": [
+    "listitem.scroll-to"
+   ],
+   "depth": 28,
+   "element_index": 13,
+   "element_token": "s00000003:13",
+   "enabled": true,
+   "frame": {
+    "h": 45.0,
+    "w": 100.0,
+    "x": 1642.0,
+    "y": 245.0
+   },
+   "geometry_trusted": true,
+   "label": "3:00",
+   "parent_index": 7,
+   "role": "grid cell",
+   "screenshot_frame": {
+    "h": 38,
+    "w": 85,
+    "x": 0,
+    "y": 0
+   }
+  },
+  {
+   "actions": [
+    "listitem.scroll-to"
+   ],
+   "depth": 28,
+   "element_index": 14,
+   "element_token": "s00000003:14",
+   "enabled": true,
+   "frame": {
+    "h": 45.0,
+    "w": 88.0,
+    "x": 1742.0,
+    "y": 245.0
+   },
+   "geometry_trusted": true,
+   "label": "Rate 1 star Rate 2 stars Rate 3 stars Rate 4 stars Rate 5 stars",
+   "parent_index": 7,
+   "role": "grid cell",
+   "screenshot_frame": {
+    "h": 38,
+    "w": 75,
+    "x": 0,
+    "y": 0
+   }
+  },
+  {
+   "actions": [
+    "click"
+   ],
+   "depth": 31,
+   "element_index": 15,
+   "element_token": "s00000003:15",
+   "enabled": true,
+   "frame": {
+    "h": 24.0,
+    "w": 16.0,
+    "x": 1742.0,
+    "y": 247.0
+   },
+   "geometry_trusted": true,
+   "label": "Rate 1 star",
+   "parent_index": 14,
+   "role": "button",
+   "screenshot_frame": {
+    "h": 20,
+    "w": 14,
+    "x": 0,
+    "y": 0
+   }
+  },
+  {
+   "actions": [
+    "click"
+   ],
+   "depth": 31,
+   "element_index": 16,
+   "element_token": "s00000003:16",
+   "enabled": true,
+   "frame": {
+    "h": 24.0,
+    "w": 16.0,
+    "x": 1758.0,
+    "y": 247.0
+   },
+   "geometry_trusted": true,
+   "label": "Rate 2 stars",
+   "parent_index": 14,
+   "role": "button",
+   "screenshot_frame": {
+    "h": 20,
+    "w": 14,
+    "x": 0,
+    "y": 0
+   }
+  },
+  {
+   "actions": [
+    "click"
+   ],
+   "depth": 31,
+   "element_index": 17,
+   "element_token": "s00000003:17",
+   "enabled": true,
+   "frame": {
+    "h": 24.0,
+    "w": 16.0,
+    "x": 1774.0,
+    "y": 247.0
+   },
+   "geometry_trusted": true,
+   "label": "Rate 3 stars",
+   "parent_index": 14,
+   "role": "button",
+   "screenshot_frame": {
+    "h": 20,
+    "w": 14,
+    "x": 0,
+    "y": 0
+   }
+  },
+  {
+   "actions": [
+    "click"
+   ],
+   "depth": 31,
+   "element_index": 18,
+   "element_token": "s00000003:18",
+   "enabled": true,
+   "frame": {
+    "h": 24.0,
+    "w": 16.0,
+    "x": 1790.0,
+    "y": 247.0
+   },
+   "geometry_trusted": true,
+   "label": "Rate 4 stars",
+   "parent_index": 14,
+   "role": "button",
+   "screenshot_frame": {
+    "h": 20,
+    "w": 14,
+    "x": 0,
+    "y": 0
+   }
+  },
+  {
+   "actions": [
+    "click"
+   ],
+   "depth": 31,
+   "element_index": 19,
+   "element_token": "s00000003:19",
+   "enabled": true,
+   "frame": {
+    "h": 24.0,
+    "w": 16.0,
+    "x": 1806.0,
+    "y": 247.0
+   },
+   "geometry_trusted": true,
+   "label": "Rate 5 stars",
+   "parent_index": 14,
+   "role": "button",
+   "screenshot_frame": {
+    "h": 20,
+    "w": 14,
+    "x": 0,
+    "y": 0
+   }
+  },
+  {
+   "actions": [
+    "listitem.scroll-to"
+   ],
+   "depth": 27,
+   "element_index": 20,
+   "element_token": "s00000003:20",
+   "enabled": true,
+   "frame": {
+    "h": 45.0,
+    "w": 1350.0,
+    "x": 480.0,
+    "y": 290.0
+   },
+   "geometry_trusted": true,
+   "label": "Go to album Fixture Album 25 Writable Batch 0026 Fixture Artist 25 Fixture Album 25 2005 3:00 Rate 1 star Rate 2 stars Rate 3 stars Rate 4 stars Rate 5 stars",
+   "parent_index": 6,
+   "role": "row",
+   "screenshot_frame": {
+    "h": 38,
+    "w": 1144,
+    "x": 0,
+    "y": 0
+   }
+  },
+  {
+   "actions": [
+    "listitem.scroll-to"
+   ],
+   "depth": 28,
+   "element_index": 21,
+   "element_token": "s00000003:21",
+   "enabled": true,
+   "frame": {
+    "h": 45.0,
+    "w": 40.0,
+    "x": 480.0,
+    "y": 290.0
+   },
+   "geometry_trusted": true,
+   "label": "Go to album Fixture Album 25",
+   "parent_index": 20,
+   "role": "grid cell",
+   "screenshot_frame": {
+    "h": 38,
+    "w": 34,
+    "x": 0,
+    "y": 0
+   }
+  },
+  {
+   "actions": [
+    "listitem.scroll-to"
+   ],
+   "depth": 28,
+   "element_index": 22,
+   "element_token": "s00000003:22",
+   "enabled": true,
+   "frame": {
+    "h": 45.0,
+    "w": 472.0,
+    "x": 520.0,
+    "y": 290.0
+   },
+   "geometry_trusted": true,
+   "label": "Writable Batch 0026",
+   "parent_index": 20,
+   "role": "grid cell",
+   "screenshot_frame": {
+    "h": 38,
+    "w": 400,
+    "x": 0,
+    "y": 0
+   }
+  },
+  {
+   "actions": [
+    "listitem.scroll-to"
+   ],
+   "depth": 28,
+   "element_index": 23,
+   "element_token": "s00000003:23",
+   "enabled": true,
+   "frame": {
+    "h": 45.0,
+    "w": 260.0,
+    "x": 992.0,
+    "y": 290.0
+   },
+   "geometry_trusted": true,
+   "label": "Fixture Artist 25",
+   "parent_index": 20,
+   "role": "grid cell",
+   "screenshot_frame": {
+    "h": 38,
+    "w": 220,
+    "x": 0,
+    "y": 0
+   }
+  },
+  {
+   "actions": [
+    "listitem.scroll-to"
+   ],
+   "depth": 28,
+   "element_index": 24,
+   "element_token": "s00000003:24",
+   "enabled": true,
+   "frame": {
+    "h": 45.0,
+    "w": 300.0,
+    "x": 1252.0,
+    "y": 290.0
+   },
+   "geometry_trusted": true,
+   "label": "Fixture Album 25",
+   "parent_index": 20,
+   "role": "grid cell",
+   "screenshot_frame": {
+    "h": 38,
+    "w": 254,
+    "x": 0,
+    "y": 0
+   }
+  },
+  {
+   "actions": [
+    "listitem.scroll-to"
+   ],
+   "depth": 28,
+   "element_index": 25,
+   "element_token": "s00000003:25",
+   "enabled": true,
+   "frame": {
+    "h": 45.0,
+    "w": 90.0,
+    "x": 1552.0,
+    "y": 290.0
+   },
+   "geometry_trusted": true,
+   "label": "2005",
+   "parent_index": 20,
+   "role": "grid cell",
+   "screenshot_frame": {
+    "h": 38,
+    "w": 76,
+    "x": 0,
+    "y": 0
+   }
+  },
+  {
+   "actions": [
+    "listitem.scroll-to"
+   ],
+   "depth": 28,
+   "element_index": 26,
+   "element_token": "s00000003:26",
+   "enabled": true,
+   "frame": {
+    "h": 45.0,
+    "w": 100.0,
+    "x": 1642.0,
+    "y": 290.0
+   },
+   "geometry_trusted": true,
+   "label": "3:00",
+   "parent_index": 20,
+   "role": "grid cell",
+   "screenshot_frame": {
+    "h": 38,
+    "w": 85,
+    "x": 0,
+    "y": 0
+   }
+  },
+  {
+   "actions": [
+    "listitem.scroll-to"
+   ],
+   "depth": 28,
+   "element_index": 27,
+   "element_token": "s00000003:27",
+   "enabled": true,
+   "frame": {
+    "h": 45.0,
+    "w": 88.0,
+    "x": 1742.0,
+    "y": 290.0
+   },
+   "geometry_trusted": true,
+   "label": "Rate 1 star Rate 2 stars Rate 3 stars Rate 4 stars Rate 5 stars",
+   "parent_index": 20,
+   "role": "grid cell",
+   "screenshot_frame": {
+    "h": 38,
+    "w": 75,
+    "x": 0,
+    "y": 0
+   }
+  },
+  {
+   "actions": [
+    "click"
+   ],
+   "depth": 31,
+   "element_index": 28,
+   "element_token": "s00000003:28",
+   "enabled": true,
+   "frame": {
+    "h": 24.0,
+    "w": 16.0,
+    "x": 1742.0,
+    "y": 292.0
+   },
+   "geometry_trusted": true,
+   "label": "Rate 1 star",
+   "parent_index": 27,
+   "role": "button",
+   "screenshot_frame": {
+    "h": 20,
+    "w": 14,
+    "x": 0,
+    "y": 0
+   }
+  },
+  {
+   "actions": [
+    "click"
+   ],
+   "depth": 31,
+   "element_index": 29,
+   "element_token": "s00000003:29",
+   "enabled": true,
+   "frame": {
+    "h": 24.0,
+    "w": 16.0,
+    "x": 1758.0,
+    "y": 292.0
+   },
+   "geometry_trusted": true,
+   "label": "Rate 2 stars",
+   "parent_index": 27,
+   "role": "button",
+   "screenshot_frame": {
+    "h": 20,
+    "w": 14,
+    "x": 0,
+    "y": 0
+   }
+  },
+  {
+   "actions": [
+    "click"
+   ],
+   "depth": 31,
+   "element_index": 30,
+   "element_token": "s00000003:30",
+   "enabled": true,
+   "frame": {
+    "h": 24.0,
+    "w": 16.0,
+    "x": 1774.0,
+    "y": 292.0
+   },
+   "geometry_trusted": true,
+   "label": "Rate 3 stars",
+   "parent_index": 27,
+   "role": "button",
+   "screenshot_frame": {
+    "h": 20,
+    "w": 14,
+    "x": 0,
+    "y": 0
+   }
+  },
+  {
+   "actions": [
+    "click"
+   ],
+   "depth": 31,
+   "element_index": 31,
+   "element_token": "s00000003:31",
+   "enabled": true,
+   "frame": {
+    "h": 24.0,
+    "w": 16.0,
+    "x": 1790.0,
+    "y": 292.0
+   },
+   "geometry_trusted": true,
+   "label": "Rate 4 stars",
+   "parent_index": 27,
+   "role": "button",
+   "screenshot_frame": {
+    "h": 20,
+    "w": 14,
+    "x": 0,
+    "y": 0
+   }
+  },
+  {
+   "actions": [
+    "click"
+   ],
+   "depth": 31,
+   "element_index": 32,
+   "element_token": "s00000003:32",
+   "enabled": true,
+   "frame": {
+    "h": 24.0,
+    "w": 16.0,
+    "x": 1806.0,
+    "y": 292.0
+   },
+   "geometry_trusted": true,
+   "label": "Rate 5 stars",
+   "parent_index": 27,
+   "role": "button",
+   "screenshot_frame": {
+    "h": 20,
+    "w": 14,
+    "x": 0,
+    "y": 0
+   }
+  },
+  {
+   "actions": [
+    "listitem.scroll-to"
+   ],
+   "depth": 27,
+   "element_index": 33,
+   "element_token": "s00000003:33",
+   "enabled": true,
+   "frame": {
+    "h": 45.0,
+    "w": 1350.0,
+    "x": 480.0,
+    "y": 335.0
+   },
+   "geometry_trusted": true,
+   "label": "Go to album Fixture Album 57 Writable Batch 0122 Fixture Artist 25 Fixture Album 57 2011 3:00 Rate 1 star Rate 2 stars Rate 3 stars Rate 4 stars Rate 5 stars",
+   "parent_index": 6,
+   "role": "row",
+   "screenshot_frame": {
+    "h": 38,
+    "w": 1144,
+    "x": 0,
+    "y": 0
+   }
+  },
+  {
+   "actions": [
+    "listitem.scroll-to"
+   ],
+   "depth": 28,
+   "element_index": 34,
+   "element_token": "s00000003:34",
+   "enabled": true,
+   "frame": {
+    "h": 45.0,
+    "w": 40.0,
+    "x": 480.0,
+    "y": 335.0
+   },
+   "geometry_trusted": true,
+   "label": "Go to album Fixture Album 57",
+   "parent_index": 33,
+   "role": "grid cell",
+   "screenshot_frame": {
+    "h": 38,
+    "w": 34,
+    "x": 0,
+    "y": 0
+   }
+  },
+  {
+   "actions": [
+    "listitem.scroll-to"
+   ],
+   "depth": 28,
+   "element_index": 35,
+   "element_token": "s00000003:35",
+   "enabled": true,
+   "frame": {
+    "h": 45.0,
+    "w": 472.0,
+    "x": 520.0,
+    "y": 335.0
+   },
+   "geometry_trusted": true,
+   "label": "Writable Batch 0122",
+   "parent_index": 33,
+   "role": "grid cell",
+   "screenshot_frame": {
+    "h": 38,
+    "w": 400,
+    "x": 0,
+    "y": 0
+   }
+  },
+  {
+   "actions": [
+    "listitem.scroll-to"
+   ],
+   "depth": 28,
+   "element_index": 36,
+   "element_token": "s00000003:36",
+   "enabled": true,
+   "frame": {
+    "h": 45.0,
+    "w": 260.0,
+    "x": 992.0,
+    "y": 335.0
+   },
+   "geometry_trusted": true,
+   "label": "Fixture Artist 25",
+   "parent_index": 33,
+   "role": "grid cell",
+   "screenshot_frame": {
+    "h": 38,
+    "w": 220,
+    "x": 0,
+    "y": 0
+   }
+  },
+  {
+   "actions": [
+    "listitem.scroll-to"
+   ],
+   "depth": 28,
+   "element_index": 37,
+   "element_token": "s00000003:37",
+   "enabled": true,
+   "frame": {
+    "h": 45.0,
+    "w": 300.0,
+    "x": 1252.0,
+    "y": 335.0
+   },
+   "geometry_trusted": true,
+   "label": "Fixture Album 57",
+   "parent_index": 33,
+   "role": "grid cell",
+   "screenshot_frame": {
+    "h": 38,
+    "w": 254,
+    "x": 0,
+    "y": 0
+   }
+  },
+  {
+   "actions": [
+    "listitem.scroll-to"
+   ],
+   "depth": 28,
+   "element_index": 38,
+   "element_token": "s00000003:38",
+   "enabled": true,
+   "frame": {
+    "h": 45.0,
+    "w": 90.0,
+    "x": 1552.0,
+    "y": 335.0
+   },
+   "geometry_trusted": true,
+   "label": "2011",
+   "parent_index": 33,
+   "role": "grid cell",
+   "screenshot_frame": {
+    "h": 38,
+    "w": 76,
+    "x": 0,
+    "y": 0
+   }
+  },
+  {
+   "actions": [
+    "listitem.scroll-to"
+   ],
+   "depth": 28,
+   "element_index": 39,
+   "element_token": "s00000003:39",
+   "enabled": true,
+   "frame": {
+    "h": 45.0,
+    "w": 100.0,
+    "x": 1642.0,
+    "y": 335.0
+   },
+   "geometry_trusted": true,
+   "label": "3:00",
+   "parent_index": 33,
+   "role": "grid cell",
+   "screenshot_frame": {
+    "h": 38,
+    "w": 85,
+    "x": 0,
+    "y": 0
+   }
+  },
+  {
+   "actions": [
+    "listitem.scroll-to"
+   ],
+   "depth": 28,
+   "element_index": 40,
+   "element_token": "s00000003:40",
+   "enabled": true,
+   "frame": {
+    "h": 45.0,
+    "w": 88.0,
+    "x": 1742.0,
+    "y": 335.0
+   },
+   "geometry_trusted": true,
+   "label": "Rate 1 star Rate 2 stars Rate 3 stars Rate 4 stars Rate 5 stars",
+   "parent_index": 33,
+   "role": "grid cell",
+   "screenshot_frame": {
+    "h": 38,
+    "w": 75,
+    "x": 0,
+    "y": 0
+   }
+  },
+  {
+   "actions": [
+    "click"
+   ],
+   "depth": 31,
+   "element_index": 41,
+   "element_token": "s00000003:41",
+   "enabled": true,
+   "frame": {
+    "h": 24.0,
+    "w": 16.0,
+    "x": 1742.0,
+    "y": 337.0
+   },
+   "geometry_trusted": true,
+   "label": "Rate 1 star",
+   "parent_index": 40,
+   "role": "button",
+   "screenshot_frame": {
+    "h": 20,
+    "w": 14,
+    "x": 0,
+    "y": 0
+   }
+  },
+  {
+   "actions": [
+    "click"
+   ],
+   "depth": 31,
+   "element_index": 42,
+   "element_token": "s00000003:42",
+   "enabled": true,
+   "frame": {
+    "h": 24.0,
+    "w": 16.0,
+    "x": 1758.0,
+    "y": 337.0
+   },
+   "geometry_trusted": true,
+   "label": "Rate 2 stars",
+   "parent_index": 40,
+   "role": "button",
+   "screenshot_frame": {
+    "h": 20,
+    "w": 14,
+    "x": 0,
+    "y": 0
+   }
+  },
+  {
+   "actions": [
+    "click"
+   ],
+   "depth": 31,
+   "element_index": 43,
+   "element_token": "s00000003:43",
+   "enabled": true,
+   "frame": {
+    "h": 24.0,
+    "w": 16.0,
+    "x": 1774.0,
+    "y": 337.0
+   },
+   "geometry_trusted": true,
+   "label": "Rate 3 stars",
+   "parent_index": 40,
+   "role": "button",
+   "screenshot_frame": {
+    "h": 20,
+    "w": 14,
+    "x": 0,
+    "y": 0
+   }
+  },
+  {
+   "actions": [
+    "click"
+   ],
+   "depth": 31,
+   "element_index": 44,
+   "element_token": "s00000003:44",
+   "enabled": true,
+   "frame": {
+    "h": 24.0,
+    "w": 16.0,
+    "x": 1790.0,
+    "y": 337.0
+   },
+   "geometry_trusted": true,
+   "label": "Rate 4 stars",
+   "parent_index": 40,
+   "role": "button",
+   "screenshot_frame": {
+    "h": 20,
+    "w": 14,
+    "x": 0,
+    "y": 0
+   }
+  },
+  {
+   "actions": [
+    "click"
+   ],
+   "depth": 31,
+   "element_index": 45,
+   "element_token": "s00000003:45",
+   "enabled": true,
+   "frame": {
+    "h": 24.0,
+    "w": 16.0,
+    "x": 1806.0,
+    "y": 337.0
+   },
+   "geometry_trusted": true,
+   "label": "Rate 5 stars",
+   "parent_index": 40,
+   "role": "button",
+   "screenshot_frame": {
+    "h": 20,
+    "w": 14,
+    "x": 0,
+    "y": 0
+   }
+  },
+  {
+   "actions": [
+    "listitem.scroll-to"
+   ],
+   "depth": 27,
+   "element_index": 46,
+   "element_token": "s00000003:46",
+   "enabled": true,
+   "frame": {
+    "h": 45.0,
+    "w": 1350.0,
+    "x": 480.0,
+    "y": 380.0
+   },
+   "geometry_trusted": true,
+   "label": "Go to album Fixture Album 25 Writable Batch 0090 Fixture Artist 25 Fixture Album 25 2024 3:00 Rate 1 star Rate 2 stars Rate 3 stars Rate 4 stars Rate 5 stars",
+   "parent_index": 6,
+   "role": "row",
+   "screenshot_frame": {
+    "h": 38,
+    "w": 1144,
+    "x": 0,
+    "y": 0
+   }
+  },
+  {
+   "actions": [
+    "listitem.scroll-to"
+   ],
+   "depth": 28,
+   "element_index": 47,
+   "element_token": "s00000003:47",
+   "enabled": true,
+   "frame": {
+    "h": 45.0,
+    "w": 40.0,
+    "x": 480.0,
+    "y": 380.0
+   },
+   "geometry_trusted": true,
+   "label": "Go to album Fixture Album 25",
+   "parent_index": 46,
+   "role": "grid cell",
+   "screenshot_frame": {
+    "h": 38,
+    "w": 34,
+    "x": 0,
+    "y": 0
+   }
+  },
+  {
+   "actions": [
+    "listitem.scroll-to"
+   ],
+   "depth": 28,
+   "element_index": 48,
+   "element_token": "s00000003:48",
+   "enabled": true,
+   "frame": {
+    "h": 45.0,
+    "w": 472.0,
+    "x": 520.0,
+    "y": 380.0
+   },
+   "geometry_trusted": true,
+   "label": "Writable Batch 0090",
+   "parent_index": 46,
+   "role": "grid cell",
+   "screenshot_frame": {
+    "h": 38,
+    "w": 400,
+    "x": 0,
+    "y": 0
+   }
+  },
+  {
+   "actions": [
+    "listitem.scroll-to"
+   ],
+   "depth": 28,
+   "element_index": 49,
+   "element_token": "s00000003:49",
+   "enabled": true,
+   "frame": {
+    "h": 45.0,
+    "w": 260.0,
+    "x": 992.0,
+    "y": 380.0
+   },
+   "geometry_trusted": true,
+   "label": "Fixture Artist 25",
+   "parent_index": 46,
+   "role": "grid cell",
+   "screenshot_frame": {
+    "h": 38,
+    "w": 220,
+    "x": 0,
+    "y": 0
+   }
+  },
+  {
+   "actions": [
+    "listitem.scroll-to"
+   ],
+   "depth": 28,
+   "element_index": 50,
+   "element_token": "s00000003:50",
+   "enabled": true,
+   "frame": {
+    "h": 45.0,
+    "w": 300.0,
+    "x": 1252.0,
+    "y": 380.0
+   },
+   "geometry_trusted": true,
+   "label": "Fixture Album 25",
+   "parent_index": 46,
+   "role": "grid cell",
+   "screenshot_frame": {
+    "h": 38,
+    "w": 254,
+    "x": 0,
+    "y": 0
+   }
+  },
+  {
+   "actions": [
+    "listitem.scroll-to"
+   ],
+   "depth": 28,
+   "element_index": 51,
+   "element_token": "s00000003:51",
+   "enabled": true,
+   "frame": {
+    "h": 45.0,
+    "w": 90.0,
+    "x": 1552.0,
+    "y": 380.0
+   },
+   "geometry_trusted": true,
+   "label": "2024",
+   "parent_index": 46,
+   "role": "grid cell",
+   "screenshot_frame": {
+    "h": 38,
+    "w": 76,
+    "x": 0,
+    "y": 0
+   }
+  },
+  {
+   "actions": [
+    "listitem.scroll-to"
+   ],
+   "depth": 28,
+   "element_index": 52,
+   "element_token": "s00000003:52",
+   "enabled": true,
+   "frame": {
+    "h": 45.0,
+    "w": 100.0,
+    "x": 1642.0,
+    "y": 380.0
+   },
+   "geometry_trusted": true,
+   "label": "3:00",
+   "parent_index": 46,
+   "role": "grid cell",
+   "screenshot_frame": {
+    "h": 38,
+    "w": 85,
+    "x": 0,
+    "y": 0
+   }
+  },
+  {
+   "actions": [
+    "listitem.scroll-to"
+   ],
+   "depth": 28,
+   "element_index": 53,
+   "element_token": "s00000003:53",
+   "enabled": true,
+   "frame": {
+    "h": 45.0,
+    "w": 88.0,
+    "x": 1742.0,
+    "y": 380.0
+   },
+   "geometry_trusted": true,
+   "label": "Rate 1 star Rate 2 stars Rate 3 stars Rate 4 stars Rate 5 stars",
+   "parent_index": 46,
+   "role": "grid cell",
+   "screenshot_frame": {
+    "h": 38,
+    "w": 75,
+    "x": 0,
+    "y": 0
+   }
+  },
+  {
+   "actions": [
+    "click"
+   ],
+   "depth": 31,
+   "element_index": 54,
+   "element_token": "s00000003:54",
+   "enabled": true,
+   "frame": {
+    "h": 24.0,
+    "w": 16.0,
+    "x": 1742.0,
+    "y": 382.0
+   },
+   "geometry_trusted": true,
+   "label": "Rate 1 star",
+   "parent_index": 53,
+   "role": "button",
+   "screenshot_frame": {
+    "h": 20,
+    "w": 14,
+    "x": 0,
+    "y": 0
+   }
+  },
+  {
+   "actions": [
+    "click"
+   ],
+   "depth": 31,
+   "element_index": 55,
+   "element_token": "s00000003:55",
+   "enabled": true,
+   "frame": {
+    "h": 24.0,
+    "w": 16.0,
+    "x": 1758.0,
+    "y": 382.0
+   },
+   "geometry_trusted": true,
+   "label": "Rate 2 stars",
+   "parent_index": 53,
+   "role": "button",
+   "screenshot_frame": {
+    "h": 20,
+    "w": 14,
+    "x": 0,
+    "y": 0
+   }
+  },
+  {
+   "actions": [
+    "click"
+   ],
+   "depth": 31,
+   "element_index": 56,
+   "element_token": "s00000003:56",
+   "enabled": true,
+   "frame": {
+    "h": 24.0,
+    "w": 16.0,
+    "x": 1774.0,
+    "y": 382.0
+   },
+   "geometry_trusted": true,
+   "label": "Rate 3 stars",
+   "parent_index": 53,
+   "role": "button",
+   "screenshot_frame": {
+    "h": 20,
+    "w": 14,
+    "x": 0,
+    "y": 0
+   }
+  },
+  {
+   "actions": [
+    "click"
+   ],
+   "depth": 31,
+   "element_index": 57,
+   "element_token": "s00000003:57",
+   "enabled": true,
+   "frame": {
+    "h": 24.0,
+    "w": 16.0,
+    "x": 1790.0,
+    "y": 382.0
+   },
+   "geometry_trusted": true,
+   "label": "Rate 4 stars",
+   "parent_index": 53,
+   "role": "button",
+   "screenshot_frame": {
+    "h": 20,
+    "w": 14,
+    "x": 0,
+    "y": 0
+   }
+  },
+  {
+   "actions": [
+    "click"
+   ],
+   "depth": 31,
+   "element_index": 58,
+   "element_token": "s00000003:58",
+   "enabled": true,
+   "frame": {
+    "h": 24.0,
+    "w": 16.0,
+    "x": 1806.0,
+    "y": 382.0
+   },
+   "geometry_trusted": true,
+   "label": "Rate 5 stars",
+   "parent_index": 53,
+   "role": "button",
+   "screenshot_frame": {
+    "h": 20,
+    "w": 14,
+    "x": 0,
+    "y": 0
+   }
+  },
+  {
+   "actions": [
+    "listitem.scroll-to"
+   ],
+   "depth": 27,
+   "element_index": 59,
+   "element_token": "s00000003:59",
+   "enabled": true,
+   "frame": {
+    "h": 45.0,
+    "w": 1350.0,
+    "x": 480.0,
+    "y": 425.0
+   },
+   "geometry_trusted": true,
+   "label": "Go to album Fixture Album 26 Writable Batch 0091 Fixture Artist 26 Fixture Album 26 1980 3:00 \u2014",
+   "parent_index": 6,
+   "role": "row",
+   "screenshot_frame": {
+    "h": 38,
+    "w": 1144,
+    "x": 0,
+    "y": 0
+   }
+  },
+  {
+   "actions": [
+    "listitem.scroll-to"
+   ],
+   "depth": 28,
+   "element_index": 60,
+   "element_token": "s00000003:60",
+   "enabled": true,
+   "frame": {
+    "h": 45.0,
+    "w": 40.0,
+    "x": 480.0,
+    "y": 425.0
+   },
+   "geometry_trusted": true,
+   "label": "Go to album Fixture Album 26",
+   "parent_index": 59,
+   "role": "grid cell",
+   "screenshot_frame": {
+    "h": 38,
+    "w": 34,
+    "x": 0,
+    "y": 0
+   }
+  },
+  {
+   "actions": [
+    "listitem.scroll-to"
+   ],
+   "depth": 28,
+   "element_index": 61,
+   "element_token": "s00000003:61",
+   "enabled": true,
+   "frame": {
+    "h": 45.0,
+    "w": 472.0,
+    "x": 520.0,
+    "y": 425.0
+   },
+   "geometry_trusted": true,
+   "label": "Writable Batch 0091",
+   "parent_index": 59,
+   "role": "grid cell",
+   "screenshot_frame": {
+    "h": 38,
+    "w": 400,
+    "x": 0,
+    "y": 0
+   }
+  },
+  {
+   "actions": [
+    "listitem.scroll-to"
+   ],
+   "depth": 28,
+   "element_index": 62,
+   "element_token": "s00000003:62",
+   "enabled": true,
+   "frame": {
+    "h": 45.0,
+    "w": 260.0,
+    "x": 992.0,
+    "y": 425.0
+   },
+   "geometry_trusted": true,
+   "label": "Fixture Artist 26",
+   "parent_index": 59,
+   "role": "grid cell",
+   "screenshot_frame": {
+    "h": 38,
+    "w": 220,
+    "x": 0,
+    "y": 0
+   }
+  },
+  {
+   "actions": [
+    "listitem.scroll-to"
+   ],
+   "depth": 28,
+   "element_index": 63,
+   "element_token": "s00000003:63",
+   "enabled": true,
+   "frame": {
+    "h": 45.0,
+    "w": 300.0,
+    "x": 1252.0,
+    "y": 425.0
+   },
+   "geometry_trusted": true,
+   "label": "Fixture Album 26",
+   "parent_index": 59,
+   "role": "grid cell",
+   "screenshot_frame": {
+    "h": 38,
+    "w": 254,
+    "x": 0,
+    "y": 0
+   }
+  },
+  {
+   "actions": [
+    "listitem.scroll-to"
+   ],
+   "depth": 28,
+   "element_index": 64,
+   "element_token": "s00000003:64",
+   "enabled": true,
+   "frame": {
+    "h": 45.0,
+    "w": 90.0,
+    "x": 1552.0,
+    "y": 425.0
+   },
+   "geometry_trusted": true,
+   "label": "1980",
+   "parent_index": 59,
+   "role": "grid cell",
+   "screenshot_frame": {
+    "h": 38,
+    "w": 76,
+    "x": 0,
+    "y": 0
+   }
+  },
+  {
+   "actions": [
+    "listitem.scroll-to"
+   ],
+   "depth": 28,
+   "element_index": 65,
+   "element_token": "s00000003:65",
+   "enabled": true,
+   "frame": {
+    "h": 45.0,
+    "w": 100.0,
+    "x": 1642.0,
+    "y": 425.0
+   },
+   "geometry_trusted": true,
+   "label": "3:00",
+   "parent_index": 59,
+   "role": "grid cell",
+   "screenshot_frame": {
+    "h": 38,
+    "w": 85,
+    "x": 0,
+    "y": 0
+   }
+  },
+  {
+   "actions": [
+    "listitem.scroll-to"
+   ],
+   "depth": 28,
+   "element_index": 66,
+   "element_token": "s00000003:66",
+   "enabled": true,
+   "frame": {
+    "h": 45.0,
+    "w": 88.0,
+    "x": 1742.0,
+    "y": 425.0
+   },
+   "geometry_trusted": true,
+   "label": "\u2014",
+   "parent_index": 59,
+   "role": "grid cell",
+   "screenshot_frame": {
+    "h": 38,
+    "w": 75,
+    "x": 0,
+    "y": 0
+   }
+  },
+  {
+   "actions": [
+    "listitem.scroll-to"
+   ],
+   "depth": 27,
+   "element_index": 67,
+   "element_token": "s00000003:67",
+   "enabled": true,
+   "frame": {
+    "h": 45.0,
+    "w": 1350.0,
+    "x": 480.0,
+    "y": 470.0
+   },
+   "geometry_trusted": true,
+   "label": "Go to album Fixture Album 58 Writable Batch 0059 Fixture Artist 26 Fixture Album 58 1993 3:00 Rate 1 star Rate 2 stars Rate 3 stars Rate 4 stars Rate 5 stars",
+   "parent_index": 6,
+   "role": "row",
+   "screenshot_frame": {
+    "h": 38,
+    "w": 1144,
+    "x": 0,
+    "y": 0
+   }
+  },
+  {
+   "actions": [
+    "listitem.scroll-to"
+   ],
+   "depth": 28,
+   "element_index": 68,
+   "element_token": "s00000003:68",
+   "enabled": true,
+   "frame": {
+    "h": 45.0,
+    "w": 40.0,
+    "x": 480.0,
+    "y": 470.0
+   },
+   "geometry_trusted": true,
+   "label": "Go to album Fixture Album 58",
+   "parent_index": 67,
+   "role": "grid cell",
+   "screenshot_frame": {
+    "h": 38,
+    "w": 34,
+    "x": 0,
+    "y": 0
+   }
+  },
+  {
+   "actions": [
+    "listitem.scroll-to"
+   ],
+   "depth": 28,
+   "element_index": 69,
+   "element_token": "s00000003:69",
+   "enabled": true,
+   "frame": {
+    "h": 45.0,
+    "w": 472.0,
+    "x": 520.0,
+    "y": 470.0
+   },
+   "geometry_trusted": true,
+   "label": "Writable Batch 0059",
+   "parent_index": 67,
+   "role": "grid cell",
+   "screenshot_frame": {
+    "h": 38,
+    "w": 400,
+    "x": 0,
+    "y": 0
+   }
+  },
+  {
+   "actions": [
+    "listitem.scroll-to"
+   ],
+   "depth": 28,
+   "element_index": 70,
+   "element_token": "s00000003:70",
+   "enabled": true,
+   "frame": {
+    "h": 45.0,
+    "w": 260.0,
+    "x": 992.0,
+    "y": 470.0
+   },
+   "geometry_trusted": true,
+   "label": "Fixture Artist 26",
+   "parent_index": 67,
+   "role": "grid cell",
+   "screenshot_frame": {
+    "h": 38,
+    "w": 220,
+    "x": 0,
+    "y": 0
+   }
+  },
+  {
+   "actions": [
+    "listitem.scroll-to"
+   ],
+   "depth": 28,
+   "element_index": 71,
+   "element_token": "s00000003:71",
+   "enabled": true,
+   "frame": {
+    "h": 45.0,
+    "w": 300.0,
+    "x": 1252.0,
+    "y": 470.0
+   },
+   "geometry_trusted": true,
+   "label": "Fixture Album 58",
+   "parent_index": 67,
+   "role": "grid cell",
+   "screenshot_frame": {
+    "h": 38,
+    "w": 254,
+    "x": 0,
+    "y": 0
+   }
+  },
+  {
+   "actions": [
+    "listitem.scroll-to"
+   ],
+   "depth": 28,
+   "element_index": 72,
+   "element_token": "s00000003:72",
+   "enabled": true,
+   "frame": {
+    "h": 45.0,
+    "w": 90.0,
+    "x": 1552.0,
+    "y": 470.0
+   },
+   "geometry_trusted": true,
+   "label": "1993",
+   "parent_index": 67,
+   "role": "grid cell",
+   "screenshot_frame": {
+    "h": 38,
+    "w": 76,
+    "x": 0,
+    "y": 0
+   }
+  },
+  {
+   "actions": [
+    "listitem.scroll-to"
+   ],
+   "depth": 28,
+   "element_index": 73,
+   "element_token": "s00000003:73",
+   "enabled": true,
+   "frame": {
+    "h": 45.0,
+    "w": 100.0,
+    "x": 1642.0,
+    "y": 470.0
+   },
+   "geometry_trusted": true,
+   "label": "3:00",
+   "parent_index": 67,
+   "role": "grid cell",
+   "screenshot_frame": {
+    "h": 38,
+    "w": 85,
+    "x": 0,
+    "y": 0
+   }
+  },
+  {
+   "actions": [
+    "listitem.scroll-to"
+   ],
+   "depth": 28,
+   "element_index": 74,
+   "element_token": "s00000003:74",
+   "enabled": true,
+   "frame": {
+    "h": 45.0,
+    "w": 88.0,
+    "x": 1742.0,
+    "y": 470.0
+   },
+   "geometry_trusted": true,
+   "label": "Rate 1 star Rate 2 stars Rate 3 stars Rate 4 stars Rate 5 stars",
+   "parent_index": 67,
+   "role": "grid cell",
+   "screenshot_frame": {
+    "h": 38,
+    "w": 75,
+    "x": 0,
+    "y": 0
+   }
+  },
+  {
+   "actions": [
+    "click"
+   ],
+   "depth": 31,
+   "element_index": 75,
+   "element_token": "s00000003:75",
+   "enabled": true,
+   "frame": {
+    "h": 24.0,
+    "w": 16.0,
+    "x": 1742.0,
+    "y": 472.0
+   },
+   "geometry_trusted": true,
+   "label": "Rate 1 star",
+   "parent_index": 74,
+   "role": "button",
+   "screenshot_frame": {
+    "h": 20,
+    "w": 14,
+    "x": 0,
+    "y": 0
+   }
+  },
+  {
+   "actions": [
+    "click"
+   ],
+   "depth": 31,
+   "element_index": 76,
+   "element_token": "s00000003:76",
+   "enabled": true,
+   "frame": {
+    "h": 24.0,
+    "w": 16.0,
+    "x": 1758.0,
+    "y": 472.0
+   },
+   "geometry_trusted": true,
+   "label": "Rate 2 stars",
+   "parent_index": 74,
+   "role": "button",
+   "screenshot_frame": {
+    "h": 20,
+    "w": 14,
+    "x": 0,
+    "y": 0
+   }
+  },
+  {
+   "actions": [
+    "click"
+   ],
+   "depth": 31,
+   "element_index": 77,
+   "element_token": "s00000003:77",
+   "enabled": true,
+   "frame": {
+    "h": 24.0,
+    "w": 16.0,
+    "x": 1774.0,
+    "y": 472.0
+   },
+   "geometry_trusted": true,
+   "label": "Rate 3 stars",
+   "parent_index": 74,
+   "role": "button",
+   "screenshot_frame": {
+    "h": 20,
+    "w": 14,
+    "x": 0,
+    "y": 0
+   }
+  },
+  {
+   "actions": [
+    "click"
+   ],
+   "depth": 31,
+   "element_index": 78,
+   "element_token": "s00000003:78",
+   "enabled": true,
+   "frame": {
+    "h": 24.0,
+    "w": 16.0,
+    "x": 1790.0,
+    "y": 472.0
+   },
+   "geometry_trusted": true,
+   "label": "Rate 4 stars",
+   "parent_index": 74,
+   "role": "button",
+   "screenshot_frame": {
+    "h": 20,
+    "w": 14,
+    "x": 0,
+    "y": 0
+   }
+  },
+  {
+   "actions": [
+    "click"
+   ],
+   "depth": 31,
+   "element_index": 79,
+   "element_token": "s00000003:79",
+   "enabled": true,
+   "frame": {
+    "h": 24.0,
+    "w": 16.0,
+    "x": 1806.0,
+    "y": 472.0
+   },
+   "geometry_trusted": true,
+   "label": "Rate 5 stars",
+   "parent_index": 74,
+   "role": "button",
+   "screenshot_frame": {
+    "h": 20,
+    "w": 14,
+    "x": 0,
+    "y": 0
+   }
+  },
+  {
+   "actions": [
+    "listitem.scroll-to"
+   ],
+   "depth": 27,
+   "element_index": 80,
+   "element_token": "s00000003:80",
+   "enabled": true,
+   "frame": {
+    "h": 45.0,
+    "w": 1350.0,
+    "x": 480.0,
+    "y": 515.0
+   },
+   "geometry_trusted": true,
+   "label": "Go to album Fixture Album 26 Writable Batch 0027 Fixture Artist 26 Fixture Album 26 2006 3:00 Rate 1 star Rate 2 stars Rate 3 stars Rate 4 stars Rate 5 stars",
+   "parent_index": 6,
+   "role": "row",
+   "screenshot_frame": {
+    "h": 38,
+    "w": 1144,
+    "x": 0,
+    "y": 0
+   }
+  },
+  {
+   "actions": [
+    "listitem.scroll-to"
+   ],
+   "depth": 28,
+   "element_index": 81,
+   "element_token": "s00000003:81",
+   "enabled": true,
+   "frame": {
+    "h": 45.0,
+    "w": 40.0,
+    "x": 480.0,
+    "y": 515.0
+   },
+   "geometry_trusted": true,
+   "label": "Go to album Fixture Album 26",
+   "parent_index": 80,
+   "role": "grid cell",
+   "screenshot_frame": {
+    "h": 38,
+    "w": 34,
+    "x": 0,
+    "y": 0
+   }
+  },
+  {
+   "actions": [
+    "listitem.scroll-to"
+   ],
+   "depth": 28,
+   "element_index": 82,
+   "element_token": "s00000003:82",
+   "enabled": true,
+   "frame": {
+    "h": 45.0,
+    "w": 472.0,
+    "x": 520.0,
+    "y": 515.0
+   },
+   "geometry_trusted": true,
+   "label": "Writable Batch 0027",
+   "parent_index": 80,
+   "role": "grid cell",
+   "screenshot_frame": {
+    "h": 38,
+    "w": 400,
+    "x": 0,
+    "y": 0
+   }
+  },
+  {
+   "actions": [
+    "listitem.scroll-to"
+   ],
+   "depth": 28,
+   "element_index": 83,
+   "element_token": "s00000003:83",
+   "enabled": true,
+   "frame": {
+    "h": 45.0,
+    "w": 260.0,
+    "x": 992.0,
+    "y": 515.0
+   },
+   "geometry_trusted": true,
+   "label": "Fixture Artist 26",
+   "parent_index": 80,
+   "role": "grid cell",
+   "screenshot_frame": {
+    "h": 38,
+    "w": 220,
+    "x": 0,
+    "y": 0
+   }
+  },
+  {
+   "actions": [
+    "listitem.scroll-to"
+   ],
+   "depth": 28,
+   "element_index": 84,
+   "element_token": "s00000003:84",
+   "enabled": true,
+   "frame": {
+    "h": 45.0,
+    "w": 300.0,
+    "x": 1252.0,
+    "y": 515.0
+   },
+   "geometry_trusted": true,
+   "label": "Fixture Album 26",
+   "parent_index": 80,
+   "role": "grid cell",
+   "screenshot_frame": {
+    "h": 38,
+    "w": 254,
+    "x": 0,
+    "y": 0
+   }
+  },
+  {
+   "actions": [
+    "listitem.scroll-to"
+   ],
+   "depth": 28,
+   "element_index": 85,
+   "element_token": "s00000003:85",
+   "enabled": true,
+   "frame": {
+    "h": 45.0,
+    "w": 90.0,
+    "x": 1552.0,
+    "y": 515.0
+   },
+   "geometry_trusted": true,
+   "label": "2006",
+   "parent_index": 80,
+   "role": "grid cell",
+   "screenshot_frame": {
+    "h": 38,
+    "w": 76,
+    "x": 0,
+    "y": 0
+   }
+  },
+  {
+   "actions": [
+    "listitem.scroll-to"
+   ],
+   "depth": 28,
+   "element_index": 86,
+   "element_token": "s00000003:86",
+   "enabled": true,
+   "frame": {
+    "h": 45.0,
+    "w": 100.0,
+    "x": 1642.0,
+    "y": 515.0
+   },
+   "geometry_trusted": true,
+   "label": "3:00",
+   "parent_index": 80,
+   "role": "grid cell",
+   "screenshot_frame": {
+    "h": 38,
+    "w": 85,
+    "x": 0,
+    "y": 0
+   }
+  },
+  {
+   "actions": [
+    "listitem.scroll-to"
+   ],
+   "depth": 28,
+   "element_index": 87,
+   "element_token": "s00000003:87",
+   "enabled": true,
+   "frame": {
+    "h": 45.0,
+    "w": 88.0,
+    "x": 1742.0,
+    "y": 515.0
+   },
+   "geometry_trusted": true,
+   "label": "Rate 1 star Rate 2 stars Rate 3 stars Rate 4 stars Rate 5 stars",
+   "parent_index": 80,
+   "role": "grid cell",
+   "screenshot_frame": {
+    "h": 38,
+    "w": 75,
+    "x": 0,
+    "y": 0
+   }
+  },
+  {
+   "actions": [
+    "click"
+   ],
+   "depth": 31,
+   "element_index": 88,
+   "element_token": "s00000003:88",
+   "enabled": true,
+   "frame": {
+    "h": 24.0,
+    "w": 16.0,
+    "x": 1742.0,
+    "y": 517.0
+   },
+   "geometry_trusted": true,
+   "label": "Rate 1 star",
+   "parent_index": 87,
+   "role": "button",
+   "screenshot_frame": {
+    "h": 20,
+    "w": 14,
+    "x": 0,
+    "y": 0
+   }
+  },
+  {
+   "actions": [
+    "click"
+   ],
+   "depth": 31,
+   "element_index": 89,
+   "element_token": "s00000003:89",
+   "enabled": true,
+   "frame": {
+    "h": 24.0,
+    "w": 16.0,
+    "x": 1758.0,
+    "y": 517.0
+   },
+   "geometry_trusted": true,
+   "label": "Rate 2 stars",
+   "parent_index": 87,
+   "role": "button",
+   "screenshot_frame": {
+    "h": 20,
+    "w": 14,
+    "x": 0,
+    "y": 0
+   }
+  },
+  {
+   "actions": [
+    "click"
+   ],
+   "depth": 31,
+   "element_index": 90,
+   "element_token": "s00000003:90",
+   "enabled": true,
+   "frame": {
+    "h": 24.0,
+    "w": 16.0,
+    "x": 1774.0,
+    "y": 517.0
+   },
+   "geometry_trusted": true,
+   "label": "Rate 3 stars",
+   "parent_index": 87,
+   "role": "button",
+   "screenshot_frame": {
+    "h": 20,
+    "w": 14,
+    "x": 0,
+    "y": 0
+   }
+  },
+  {
+   "actions": [
+    "click"
+   ],
+   "depth": 31,
+   "element_index": 91,
+   "element_token": "s00000003:91",
+   "enabled": true,
+   "frame": {
+    "h": 24.0,
+    "w": 16.0,
+    "x": 1790.0,
+    "y": 517.0
+   },
+   "geometry_trusted": true,
+   "label": "Rate 4 stars",
+   "parent_index": 87,
+   "role": "button",
+   "screenshot_frame": {
+    "h": 20,
+    "w": 14,
+    "x": 0,
+    "y": 0
+   }
+  },
+  {
+   "actions": [
+    "click"
+   ],
+   "depth": 31,
+   "element_index": 92,
+   "element_token": "s00000003:92",
+   "enabled": true,
+   "frame": {
+    "h": 24.0,
+    "w": 16.0,
+    "x": 1806.0,
+    "y": 517.0
+   },
+   "geometry_trusted": true,
+   "label": "Rate 5 stars",
+   "parent_index": 87,
+   "role": "button",
+   "screenshot_frame": {
+    "h": 20,
+    "w": 14,
+    "x": 0,
+    "y": 0
+   }
+  },
+  {
+   "actions": [
+    "listitem.scroll-to"
+   ],
+   "depth": 27,
+   "element_index": 93,
+   "element_token": "s00000003:93",
+   "enabled": true,
+   "frame": {
+    "h": 45.0,
+    "w": 1350.0,
+    "x": 480.0,
+    "y": 560.0
+   },
+   "geometry_trusted": true,
+   "label": "Go to album Fixture Album 58 Writable Batch 0123 Fixture Artist 26 Fixture Album 58 2012 3:00 Rate 1 star Rate 2 stars Rate 3 stars Rate 4 stars Rate 5 stars",
+   "parent_index": 6,
+   "role": "row",
+   "screenshot_frame": {
+    "h": 38,
+    "w": 1144,
+    "x": 0,
+    "y": 0
+   }
+  },
+  {
+   "actions": [
+    "listitem.scroll-to"
+   ],
+   "depth": 28,
+   "element_index": 94,
+   "element_token": "s00000003:94",
+   "enabled": true,
+   "frame": {
+    "h": 45.0,
+    "w": 40.0,
+    "x": 480.0,
+    "y": 560.0
+   },
+   "geometry_trusted": true,
+   "label": "Go to album Fixture Album 58",
+   "parent_index": 93,
+   "role": "grid cell",
+   "screenshot_frame": {
+    "h": 38,
+    "w": 34,
+    "x": 0,
+    "y": 0
+   }
+  },
+  {
+   "actions": [
+    "listitem.scroll-to"
+   ],
+   "depth": 28,
+   "element_index": 95,
+   "element_token": "s00000003:95",
+   "enabled": true,
+   "frame": {
+    "h": 45.0,
+    "w": 472.0,
+    "x": 520.0,
+    "y": 560.0
+   },
+   "geometry_trusted": true,
+   "label": "Writable Batch 0123",
+   "parent_index": 93,
+   "role": "grid cell",
+   "screenshot_frame": {
+    "h": 38,
+    "w": 400,
+    "x": 0,
+    "y": 0
+   }
+  },
+  {
+   "actions": [
+    "listitem.scroll-to"
+   ],
+   "depth": 28,
+   "element_index": 96,
+   "element_token": "s00000003:96",
+   "enabled": true,
+   "frame": {
+    "h": 45.0,
+    "w": 260.0,
+    "x": 992.0,
+    "y": 560.0
+   },
+   "geometry_trusted": true,
+   "label": "Fixture Artist 26",
+   "parent_index": 93,
+   "role": "grid cell",
+   "screenshot_frame": {
+    "h": 38,
+    "w": 220,
+    "x": 0,
+    "y": 0
+   }
+  },
+  {
+   "actions": [
+    "listitem.scroll-to"
+   ],
+   "depth": 28,
+   "element_index": 97,
+   "element_token": "s00000003:97",
+   "enabled": true,
+   "frame": {
+    "h": 45.0,
+    "w": 300.0,
+    "x": 1252.0,
+    "y": 560.0
+   },
+   "geometry_trusted": true,
+   "label": "Fixture Album 58",
+   "parent_index": 93,
+   "role": "grid cell",
+   "screenshot_frame": {
+    "h": 38,
+    "w": 254,
+    "x": 0,
+    "y": 0
+   }
+  },
+  {
+   "actions": [
+    "listitem.scroll-to"
+   ],
+   "depth": 28,
+   "element_index": 98,
+   "element_token": "s00000003:98",
+   "enabled": true,
+   "frame": {
+    "h": 45.0,
+    "w": 90.0,
+    "x": 1552.0,
+    "y": 560.0
+   },
+   "geometry_trusted": true,
+   "label": "2012",
+   "parent_index": 93,
+   "role": "grid cell",
+   "screenshot_frame": {
+    "h": 38,
+    "w": 76,
+    "x": 0,
+    "y": 0
+   }
+  },
+  {
+   "actions": [
+    "listitem.scroll-to"
+   ],
+   "depth": 28,
+   "element_index": 99,
+   "element_token": "s00000003:99",
+   "enabled": true,
+   "frame": {
+    "h": 45.0,
+    "w": 100.0,
+    "x": 1642.0,
+    "y": 560.0
+   },
+   "geometry_trusted": true,
+   "label": "3:00",
+   "parent_index": 93,
+   "role": "grid cell",
+   "screenshot_frame": {
+    "h": 38,
+    "w": 85,
+    "x": 0,
+    "y": 0
+   }
+  },
+  {
+   "actions": [
+    "listitem.scroll-to"
+   ],
+   "depth": 28,
+   "element_index": 100,
+   "element_token": "s00000003:100",
+   "enabled": true,
+   "frame": {
+    "h": 45.0,
+    "w": 88.0,
+    "x": 1742.0,
+    "y": 560.0
+   },
+   "geometry_trusted": true,
+   "label": "Rate 1 star Rate 2 stars Rate 3 stars Rate 4 stars Rate 5 stars",
+   "parent_index": 93,
+   "role": "grid cell",
+   "screenshot_frame": {
+    "h": 38,
+    "w": 75,
+    "x": 0,
+    "y": 0
+   }
+  },
+  {
+   "actions": [
+    "click"
+   ],
+   "depth": 31,
+   "element_index": 101,
+   "element_token": "s00000003:101",
+   "enabled": true,
+   "frame": {
+    "h": 24.0,
+    "w": 16.0,
+    "x": 1742.0,
+    "y": 562.0
+   },
+   "geometry_trusted": true,
+   "label": "Rate 1 star",
+   "parent_index": 100,
+   "role": "button",
+   "screenshot_frame": {
+    "h": 20,
+    "w": 14,
+    "x": 0,
+    "y": 0
+   }
+  },
+  {
+   "actions": [
+    "click"
+   ],
+   "depth": 31,
+   "element_index": 102,
+   "element_token": "s00000003:102",
+   "enabled": true,
+   "frame": {
+    "h": 24.0,
+    "w": 16.0,
+    "x": 1758.0,
+    "y": 562.0
+   },
+   "geometry_trusted": true,
+   "label": "Rate 2 stars",
+   "parent_index": 100,
+   "role": "button",
+   "screenshot_frame": {
+    "h": 20,
+    "w": 14,
+    "x": 0,
+    "y": 0
+   }
+  },
+  {
+   "actions": [
+    "click"
+   ],
+   "depth": 31,
+   "element_index": 103,
+   "element_token": "s00000003:103",
+   "enabled": true,
+   "frame": {
+    "h": 24.0,
+    "w": 16.0,
+    "x": 1774.0,
+    "y": 562.0
+   },
+   "geometry_trusted": true,
+   "label": "Rate 3 stars",
+   "parent_index": 100,
+   "role": "button",
+   "screenshot_frame": {
+    "h": 20,
+    "w": 14,
+    "x": 0,
+    "y": 0
+   }
+  },
+  {
+   "actions": [
+    "click"
+   ],
+   "depth": 31,
+   "element_index": 104,
+   "element_token": "s00000003:104",
+   "enabled": true,
+   "frame": {
+    "h": 24.0,
+    "w": 16.0,
+    "x": 1790.0,
+    "y": 562.0
+   },
+   "geometry_trusted": true,
+   "label": "Rate 4 stars",
+   "parent_index": 100,
+   "role": "button",
+   "screenshot_frame": {
+    "h": 20,
+    "w": 14,
+    "x": 0,
+    "y": 0
+   }
+  },
+  {
+   "actions": [
+    "click"
+   ],
+   "depth": 31,
+   "element_index": 105,
+   "element_token": "s00000003:105",
+   "enabled": true,
+   "frame": {
+    "h": 24.0,
+    "w": 16.0,
+    "x": 1806.0,
+    "y": 562.0
+   },
+   "geometry_trusted": true,
+   "label": "Rate 5 stars",
+   "parent_index": 100,
+   "role": "button",
+   "screenshot_frame": {
+    "h": 20,
+    "w": 14,
+    "x": 0,
+    "y": 0
+   }
+  },
+  {
+   "actions": [
+    "listitem.scroll-to"
+   ],
+   "depth": 27,
+   "element_index": 106,
+   "element_token": "s00000003:106",
+   "enabled": true,
+   "frame": {
+    "h": 45.0,
+    "w": 1350.0,
+    "x": 480.0,
+    "y": 605.0
+   },
+   "geometry_trusted": true,
+   "label": "Go to album Fixture Album 27 Writable Batch 0092 Fixture Artist 27 Fixture Album 27 1981 3:00 Rate 1 star Rate 2 stars Rate 3 stars Rate 4 stars Rate 5 stars",
+   "parent_index": 6,
+   "role": "row",
+   "screenshot_frame": {
+    "h": 38,
+    "w": 1144,
+    "x": 0,
+    "y": 0
+   }
+  },
+  {
+   "actions": [
+    "listitem.scroll-to"
+   ],
+   "depth": 28,
+   "element_index": 107,
+   "element_token": "s00000003:107",
+   "enabled": true,
+   "frame": {
+    "h": 45.0,
+    "w": 40.0,
+    "x": 480.0,
+    "y": 605.0
+   },
+   "geometry_trusted": true,
+   "label": "Go to album Fixture Album 27",
+   "parent_index": 106,
+   "role": "grid cell",
+   "screenshot_frame": {
+    "h": 38,
+    "w": 34,
+    "x": 0,
+    "y": 0
+   }
+  },
+  {
+   "actions": [
+    "listitem.scroll-to"
+   ],
+   "depth": 28,
+   "element_index": 108,
+   "element_token": "s00000003:108",
+   "enabled": true,
+   "frame": {
+    "h": 45.0,
+    "w": 472.0,
+    "x": 520.0,
+    "y": 605.0
+   },
+   "geometry_trusted": true,
+   "label": "Writable Batch 0092",
+   "parent_index": 106,
+   "role": "grid cell",
+   "screenshot_frame": {
+    "h": 38,
+    "w": 400,
+    "x": 0,
+    "y": 0
+   }
+  },
+  {
+   "actions": [
+    "listitem.scroll-to"
+   ],
+   "depth": 28,
+   "element_index": 109,
+   "element_token": "s00000003:109",
+   "enabled": true,
+   "frame": {
+    "h": 45.0,
+    "w": 260.0,
+    "x": 992.0,
+    "y": 605.0
+   },
+   "geometry_trusted": true,
+   "label": "Fixture Artist 27",
+   "parent_index": 106,
+   "role": "grid cell",
+   "screenshot_frame": {
+    "h": 38,
+    "w": 220,
+    "x": 0,
+    "y": 0
+   }
+  },
+  {
+   "actions": [
+    "listitem.scroll-to"
+   ],
+   "depth": 28,
+   "element_index": 110,
+   "element_token": "s00000003:110",
+   "enabled": true,
+   "frame": {
+    "h": 45.0,
+    "w": 300.0,
+    "x": 1252.0,
+    "y": 605.0
+   },
+   "geometry_trusted": true,
+   "label": "Fixture Album 27",
+   "parent_index": 106,
+   "role": "grid cell",
+   "screenshot_frame": {
+    "h": 38,
+    "w": 254,
+    "x": 0,
+    "y": 0
+   }
+  },
+  {
+   "actions": [
+    "listitem.scroll-to"
+   ],
+   "depth": 28,
+   "element_index": 111,
+   "element_token": "s00000003:111",
+   "enabled": true,
+   "frame": {
+    "h": 45.0,
+    "w": 90.0,
+    "x": 1552.0,
+    "y": 605.0
+   },
+   "geometry_trusted": true,
+   "label": "1981",
+   "parent_index": 106,
+   "role": "grid cell",
+   "screenshot_frame": {
+    "h": 38,
+    "w": 76,
+    "x": 0,
+    "y": 0
+   }
+  },
+  {
+   "actions": [
+    "listitem.scroll-to"
+   ],
+   "depth": 28,
+   "element_index": 112,
+   "element_token": "s00000003:112",
+   "enabled": true,
+   "frame": {
+    "h": 45.0,
+    "w": 100.0,
+    "x": 1642.0,
+    "y": 605.0
+   },
+   "geometry_trusted": true,
+   "label": "3:00",
+   "parent_index": 106,
+   "role": "grid cell",
+   "screenshot_frame": {
+    "h": 38,
+    "w": 85,
+    "x": 0,
+    "y": 0
+   }
+  },
+  {
+   "actions": [
+    "listitem.scroll-to"
+   ],
+   "depth": 28,
+   "element_index": 113,
+   "element_token": "s00000003:113",
+   "enabled": true,
+   "frame": {
+    "h": 45.0,
+    "w": 88.0,
+    "x": 1742.0,
+    "y": 605.0
+   },
+   "geometry_trusted": true,
+   "label": "Rate 1 star Rate 2 stars Rate 3 stars Rate 4 stars Rate 5 stars",
+   "parent_index": 106,
+   "role": "grid cell",
+   "screenshot_frame": {
+    "h": 38,
+    "w": 75,
+    "x": 0,
+    "y": 0
+   }
+  },
+  {
+   "actions": [
+    "click"
+   ],
+   "depth": 31,
+   "element_index": 114,
+   "element_token": "s00000003:114",
+   "enabled": true,
+   "frame": {
+    "h": 24.0,
+    "w": 16.0,
+    "x": 1742.0,
+    "y": 607.0
+   },
+   "geometry_trusted": true,
+   "label": "Rate 1 star",
+   "parent_index": 113,
+   "role": "button",
+   "screenshot_frame": {
+    "h": 20,
+    "w": 14,
+    "x": 0,
+    "y": 0
+   }
+  },
+  {
+   "actions": [
+    "click"
+   ],
+   "depth": 31,
+   "element_index": 115,
+   "element_token": "s00000003:115",
+   "enabled": true,
+   "frame": {
+    "h": 24.0,
+    "w": 16.0,
+    "x": 1758.0,
+    "y": 607.0
+   },
+   "geometry_trusted": true,
+   "label": "Rate 2 stars",
+   "parent_index": 113,
+   "role": "button",
+   "screenshot_frame": {
+    "h": 20,
+    "w": 14,
+    "x": 0,
+    "y": 0
+   }
+  },
+  {
+   "actions": [
+    "click"
+   ],
+   "depth": 31,
+   "element_index": 116,
+   "element_token": "s00000003:116",
+   "enabled": true,
+   "frame": {
+    "h": 24.0,
+    "w": 16.0,
+    "x": 1774.0,
+    "y": 607.0
+   },
+   "geometry_trusted": true,
+   "label": "Rate 3 stars",
+   "parent_index": 113,
+   "role": "button",
+   "screenshot_frame": {
+    "h": 20,
+    "w": 14,
+    "x": 0,
+    "y": 0
+   }
+  },
+  {
+   "actions": [
+    "click"
+   ],
+   "depth": 31,
+   "element_index": 117,
+   "element_token": "s00000003:117",
+   "enabled": true,
+   "frame": {
+    "h": 24.0,
+    "w": 16.0,
+    "x": 1790.0,
+    "y": 607.0
+   },
+   "geometry_trusted": true,
+   "label": "Rate 4 stars",
+   "parent_index": 113,
+   "role": "button",
+   "screenshot_frame": {
+    "h": 20,
+    "w": 14,
+    "x": 0,
+    "y": 0
+   }
+  },
+  {
+   "actions": [
+    "click"
+   ],
+   "depth": 31,
+   "element_index": 118,
+   "element_token": "s00000003:118",
+   "enabled": true,
+   "frame": {
+    "h": 24.0,
+    "w": 16.0,
+    "x": 1806.0,
+    "y": 607.0
+   },
+   "geometry_trusted": true,
+   "label": "Rate 5 stars",
+   "parent_index": 113,
+   "role": "button",
+   "screenshot_frame": {
+    "h": 20,
+    "w": 14,
+    "x": 0,
+    "y": 0
+   }
+  },
+  {
+   "actions": [
+    "listitem.scroll-to"
+   ],
+   "depth": 27,
+   "element_index": 119,
+   "element_token": "s00000003:119",
+   "enabled": true,
+   "frame": {
+    "h": 45.0,
+    "w": 1350.0,
+    "x": 480.0,
+    "y": 650.0
+   },
+   "geometry_trusted": true,
+   "label": "Go to album Fixture Album 59 Writable Batch 0060 Fixture Artist 27 Fixture Album 59 1994 3:00 Rate 1 star Rate 2 stars Rate 3 stars Rate 4 stars Rate 5 stars",
+   "parent_index": 6,
+   "role": "row",
+   "screenshot_frame": {
+    "h": 38,
+    "w": 1144,
+    "x": 0,
+    "y": 0
+   }
+  },
+  {
+   "actions": [
+    "listitem.scroll-to"
+   ],
+   "depth": 28,
+   "element_index": 120,
+   "element_token": "s00000003:120",
+   "enabled": true,
+   "frame": {
+    "h": 45.0,
+    "w": 40.0,
+    "x": 480.0,
+    "y": 650.0
+   },
+   "geometry_trusted": true,
+   "label": "Go to album Fixture Album 59",
+   "parent_index": 119,
+   "role": "grid cell",
+   "screenshot_frame": {
+    "h": 38,
+    "w": 34,
+    "x": 0,
+    "y": 0
+   }
+  },
+  {
+   "actions": [
+    "listitem.scroll-to"
+   ],
+   "depth": 28,
+   "element_index": 121,
+   "element_token": "s00000003:121",
+   "enabled": true,
+   "frame": {
+    "h": 45.0,
+    "w": 472.0,
+    "x": 520.0,
+    "y": 650.0
+   },
+   "geometry_trusted": true,
+   "label": "Writable Batch 0060",
+   "parent_index": 119,
+   "role": "grid cell",
+   "screenshot_frame": {
+    "h": 38,
+    "w": 400,
+    "x": 0,
+    "y": 0
+   }
+  },
+  {
+   "actions": [
+    "listitem.scroll-to"
+   ],
+   "depth": 28,
+   "element_index": 122,
+   "element_token": "s00000003:122",
+   "enabled": true,
+   "frame": {
+    "h": 45.0,
+    "w": 260.0,
+    "x": 992.0,
+    "y": 650.0
+   },
+   "geometry_trusted": true,
+   "label": "Fixture Artist 27",
+   "parent_index": 119,
+   "role": "grid cell",
+   "screenshot_frame": {
+    "h": 38,
+    "w": 220,
+    "x": 0,
+    "y": 0
+   }
+  },
+  {
+   "actions": [
+    "listitem.scroll-to"
+   ],
+   "depth": 28,
+   "element_index": 123,
+   "element_token": "s00000003:123",
+   "enabled": true,
+   "frame": {
+    "h": 45.0,
+    "w": 300.0,
+    "x": 1252.0,
+    "y": 650.0
+   },
+   "geometry_trusted": true,
+   "label": "Fixture Album 59",
+   "parent_index": 119,
+   "role": "grid cell",
+   "screenshot_frame": {
+    "h": 38,
+    "w": 254,
+    "x": 0,
+    "y": 0
+   }
+  },
+  {
+   "actions": [
+    "listitem.scroll-to"
+   ],
+   "depth": 28,
+   "element_index": 124,
+   "element_token": "s00000003:124",
+   "enabled": true,
+   "frame": {
+    "h": 45.0,
+    "w": 90.0,
+    "x": 1552.0,
+    "y": 650.0
+   },
+   "geometry_trusted": true,
+   "label": "1994",
+   "parent_index": 119,
+   "role": "grid cell",
+   "screenshot_frame": {
+    "h": 38,
+    "w": 76,
+    "x": 0,
+    "y": 0
+   }
+  },
+  {
+   "actions": [
+    "listitem.scroll-to"
+   ],
+   "depth": 28,
+   "element_index": 125,
+   "element_token": "s00000003:125",
+   "enabled": true,
+   "frame": {
+    "h": 45.0,
+    "w": 100.0,
+    "x": 1642.0,
+    "y": 650.0
+   },
+   "geometry_trusted": true,
+   "label": "3:00",
+   "parent_index": 119,
+   "role": "grid cell",
+   "screenshot_frame": {
+    "h": 38,
+    "w": 85,
+    "x": 0,
+    "y": 0
+   }
+  },
+  {
+   "actions": [
+    "listitem.scroll-to"
+   ],
+   "depth": 28,
+   "element_index": 126,
+   "element_token": "s00000003:126",
+   "enabled": true,
+   "frame": {
+    "h": 45.0,
+    "w": 88.0,
+    "x": 1742.0,
+    "y": 650.0
+   },
+   "geometry_trusted": true,
+   "label": "Rate 1 star Rate 2 stars Rate 3 stars Rate 4 stars Rate 5 stars",
+   "parent_index": 119,
+   "role": "grid cell",
+   "screenshot_frame": {
+    "h": 38,
+    "w": 75,
+    "x": 0,
+    "y": 0
+   }
+  },
+  {
+   "actions": [
+    "click"
+   ],
+   "depth": 31,
+   "element_index": 127,
+   "element_token": "s00000003:127",
+   "enabled": true,
+   "frame": {
+    "h": 24.0,
+    "w": 16.0,
+    "x": 1742.0,
+    "y": 652.0
+   },
+   "geometry_trusted": true,
+   "label": "Rate 1 star",
+   "parent_index": 126,
+   "role": "button",
+   "screenshot_frame": {
+    "h": 20,
+    "w": 14,
+    "x": 0,
+    "y": 0
+   }
+  },
+  {
+   "actions": [
+    "click"
+   ],
+   "depth": 31,
+   "element_index": 128,
+   "element_token": "s00000003:128",
+   "enabled": true,
+   "frame": {
+    "h": 24.0,
+    "w": 16.0,
+    "x": 1758.0,
+    "y": 652.0
+   },
+   "geometry_trusted": true,
+   "label": "Rate 2 stars",
+   "parent_index": 126,
+   "role": "button",
+   "screenshot_frame": {
+    "h": 20,
+    "w": 14,
+    "x": 0,
+    "y": 0
+   }
+  },
+  {
+   "actions": [
+    "click"
+   ],
+   "depth": 31,
+   "element_index": 129,
+   "element_token": "s00000003:129",
+   "enabled": true,
+   "frame": {
+    "h": 24.0,
+    "w": 16.0,
+    "x": 1774.0,
+    "y": 652.0
+   },
+   "geometry_trusted": true,
+   "label": "Rate 3 stars",
+   "parent_index": 126,
+   "role": "button",
+   "screenshot_frame": {
+    "h": 20,
+    "w": 14,
+    "x": 0,
+    "y": 0
+   }
+  },
+  {
+   "actions": [
+    "click"
+   ],
+   "depth": 31,
+   "element_index": 130,
+   "element_token": "s00000003:130",
+   "enabled": true,
+   "frame": {
+    "h": 24.0,
+    "w": 16.0,
+    "x": 1790.0,
+    "y": 652.0
+   },
+   "geometry_trusted": true,
+   "label": "Rate 4 stars",
+   "parent_index": 126,
+   "role": "button",
+   "screenshot_frame": {
+    "h": 20,
+    "w": 14,
+    "x": 0,
+    "y": 0
+   }
+  },
+  {
+   "actions": [
+    "click"
+   ],
+   "depth": 31,
+   "element_index": 131,
+   "element_token": "s00000003:131",
+   "enabled": true,
+   "frame": {
+    "h": 24.0,
+    "w": 16.0,
+    "x": 1806.0,
+    "y": 652.0
+   },
+   "geometry_trusted": true,
+   "label": "Rate 5 stars",
+   "parent_index": 126,
+   "role": "button",
+   "screenshot_frame": {
+    "h": 20,
+    "w": 14,
+    "x": 0,
+    "y": 0
+   }
+  },
+  {
+   "actions": [
+    "listitem.scroll-to"
+   ],
+   "depth": 27,
+   "element_index": 132,
+   "element_token": "s00000003:132",
+   "enabled": true,
+   "frame": {
+    "h": 45.0,
+    "w": 1350.0,
+    "x": 480.0,
+    "y": 695.0
+   },
+   "geometry_trusted": true,
+   "label": "Go to album Fixture Album 27 Writable Batch 0028 Fixture Artist 27 Fixture Album 27 2007 3:00 Rate 1 star Rate 2 stars Rate 3 stars Rate 4 stars Rate 5 stars",
+   "parent_index": 6,
+   "role": "row",
+   "screenshot_frame": {
+    "h": 38,
+    "w": 1144,
+    "x": 0,
+    "y": 0
+   }
+  },
+  {
+   "actions": [
+    "listitem.scroll-to"
+   ],
+   "depth": 28,
+   "element_index": 133,
+   "element_token": "s00000003:133",
+   "enabled": true,
+   "frame": {
+    "h": 45.0,
+    "w": 40.0,
+    "x": 480.0,
+    "y": 695.0
+   },
+   "geometry_trusted": true,
+   "label": "Go to album Fixture Album 27",
+   "parent_index": 132,
+   "role": "grid cell",
+   "screenshot_frame": {
+    "h": 38,
+    "w": 34,
+    "x": 0,
+    "y": 0
+   }
+  },
+  {
+   "actions": [
+    "listitem.scroll-to"
+   ],
+   "depth": 28,
+   "element_index": 134,
+   "element_token": "s00000003:134",
+   "enabled": true,
+   "frame": {
+    "h": 45.0,
+    "w": 472.0,
+    "x": 520.0,
+    "y": 695.0
+   },
+   "geometry_trusted": true,
+   "label": "Writable Batch 0028",
+   "parent_index": 132,
+   "role": "grid cell",
+   "screenshot_frame": {
+    "h": 38,
+    "w": 400,
+    "x": 0,
+    "y": 0
+   }
+  },
+  {
+   "actions": [
+    "listitem.scroll-to"
+   ],
+   "depth": 28,
+   "element_index": 135,
+   "element_token": "s00000003:135",
+   "enabled": true,
+   "frame": {
+    "h": 45.0,
+    "w": 260.0,
+    "x": 992.0,
+    "y": 695.0
+   },
+   "geometry_trusted": true,
+   "label": "Fixture Artist 27",
+   "parent_index": 132,
+   "role": "grid cell",
+   "screenshot_frame": {
+    "h": 38,
+    "w": 220,
+    "x": 0,
+    "y": 0
+   }
+  },
+  {
+   "actions": [
+    "listitem.scroll-to"
+   ],
+   "depth": 28,
+   "element_index": 136,
+   "element_token": "s00000003:136",
+   "enabled": true,
+   "frame": {
+    "h": 45.0,
+    "w": 300.0,
+    "x": 1252.0,
+    "y": 695.0
+   },
+   "geometry_trusted": true,
+   "label": "Fixture Album 27",
+   "parent_index": 132,
+   "role": "grid cell",
+   "screenshot_frame": {
+    "h": 38,
+    "w": 254,
+    "x": 0,
+    "y": 0
+   }
+  },
+  {
+   "actions": [
+    "listitem.scroll-to"
+   ],
+   "depth": 28,
+   "element_index": 137,
+   "element_token": "s00000003:137",
+   "enabled": true,
+   "frame": {
+    "h": 45.0,
+    "w": 90.0,
+    "x": 1552.0,
+    "y": 695.0
+   },
+   "geometry_trusted": true,
+   "label": "2007",
+   "parent_index": 132,
+   "role": "grid cell",
+   "screenshot_frame": {
+    "h": 38,
+    "w": 76,
+    "x": 0,
+    "y": 0
+   }
+  },
+  {
+   "actions": [
+    "listitem.scroll-to"
+   ],
+   "depth": 28,
+   "element_index": 138,
+   "element_token": "s00000003:138",
+   "enabled": true,
+   "frame": {
+    "h": 45.0,
+    "w": 100.0,
+    "x": 1642.0,
+    "y": 695.0
+   },
+   "geometry_trusted": true,
+   "label": "3:00",
+   "parent_index": 132,
+   "role": "grid cell",
+   "screenshot_frame": {
+    "h": 38,
+    "w": 85,
+    "x": 0,
+    "y": 0
+   }
+  },
+  {
+   "actions": [
+    "listitem.scroll-to"
+   ],
+   "depth": 28,
+   "element_index": 139,
+   "element_token": "s00000003:139",
+   "enabled": true,
+   "frame": {
+    "h": 45.0,
+    "w": 88.0,
+    "x": 1742.0,
+    "y": 695.0
+   },
+   "geometry_trusted": true,
+   "label": "Rate 1 star Rate 2 stars Rate 3 stars Rate 4 stars Rate 5 stars",
+   "parent_index": 132,
+   "role": "grid cell",
+   "screenshot_frame": {
+    "h": 38,
+    "w": 75,
+    "x": 0,
+    "y": 0
+   }
+  },
+  {
+   "actions": [
+    "click"
+   ],
+   "depth": 31,
+   "element_index": 140,
+   "element_token": "s00000003:140",
+   "enabled": true,
+   "frame": {
+    "h": 24.0,
+    "w": 16.0,
+    "x": 1742.0,
+    "y": 697.0
+   },
+   "geometry_trusted": true,
+   "label": "Rate 1 star",
+   "parent_index": 139,
+   "role": "button",
+   "screenshot_frame": {
+    "h": 20,
+    "w": 14,
+    "x": 0,
+    "y": 0
+   }
+  },
+  {
+   "actions": [
+    "click"
+   ],
+   "depth": 31,
+   "element_index": 141,
+   "element_token": "s00000003:141",
+   "enabled": true,
+   "frame": {
+    "h": 24.0,
+    "w": 16.0,
+    "x": 1758.0,
+    "y": 697.0
+   },
+   "geometry_trusted": true,
+   "label": "Rate 2 stars",
+   "parent_index": 139,
+   "role": "button",
+   "screenshot_frame": {
+    "h": 20,
+    "w": 14,
+    "x": 0,
+    "y": 0
+   }
+  },
+  {
+   "actions": [
+    "click"
+   ],
+   "depth": 31,
+   "element_index": 142,
+   "element_token": "s00000003:142",
+   "enabled": true,
+   "frame": {
+    "h": 24.0,
+    "w": 16.0,
+    "x": 1774.0,
+    "y": 697.0
+   },
+   "geometry_trusted": true,
+   "label": "Rate 3 stars",
+   "parent_index": 139,
+   "role": "button",
+   "screenshot_frame": {
+    "h": 20,
+    "w": 14,
+    "x": 0,
+    "y": 0
+   }
+  },
+  {
+   "actions": [
+    "click"
+   ],
+   "depth": 31,
+   "element_index": 143,
+   "element_token": "s00000003:143",
+   "enabled": true,
+   "frame": {
+    "h": 24.0,
+    "w": 16.0,
+    "x": 1790.0,
+    "y": 697.0
+   },
+   "geometry_trusted": true,
+   "label": "Rate 4 stars",
+   "parent_index": 139,
+   "role": "button",
+   "screenshot_frame": {
+    "h": 20,
+    "w": 14,
+    "x": 0,
+    "y": 0
+   }
+  },
+  {
+   "actions": [
+    "click"
+   ],
+   "depth": 31,
+   "element_index": 144,
+   "element_token": "s00000003:144",
+   "enabled": true,
+   "frame": {
+    "h": 24.0,
+    "w": 16.0,
+    "x": 1806.0,
+    "y": 697.0
+   },
+   "geometry_trusted": true,
+   "label": "Rate 5 stars",
+   "parent_index": 139,
+   "role": "button",
+   "screenshot_frame": {
+    "h": 20,
+    "w": 14,
+    "x": 0,
+    "y": 0
+   }
+  },
+  {
+   "actions": [
+    "listitem.scroll-to"
+   ],
+   "depth": 27,
+   "element_index": 145,
+   "element_token": "s00000003:145",
+   "enabled": true,
+   "frame": {
+    "h": 45.0,
+    "w": 1350.0,
+    "x": 480.0,
+    "y": 740.0
+   },
+   "geometry_trusted": true,
+   "label": "Go to album Fixture Album 59 Writable Batch 0124 Fixture Artist 27 Fixture Album 59 2013 3:00 Rate 1 star Rate 2 stars Rate 3 stars Rate 4 stars Rate 5 stars",
+   "parent_index": 6,
+   "role": "row",
+   "screenshot_frame": {
+    "h": 38,
+    "w": 1144,
+    "x": 0,
+    "y": 0
+   }
+  },
+  {
+   "actions": [
+    "listitem.scroll-to"
+   ],
+   "depth": 28,
+   "element_index": 146,
+   "element_token": "s00000003:146",
+   "enabled": true,
+   "frame": {
+    "h": 45.0,
+    "w": 40.0,
+    "x": 480.0,
+    "y": 740.0
+   },
+   "geometry_trusted": true,
+   "label": "Go to album Fixture Album 59",
+   "parent_index": 145,
+   "role": "grid cell",
+   "screenshot_frame": {
+    "h": 38,
+    "w": 34,
+    "x": 0,
+    "y": 0
+   }
+  },
+  {
+   "actions": [
+    "listitem.scroll-to"
+   ],
+   "depth": 28,
+   "element_index": 147,
+   "element_token": "s00000003:147",
+   "enabled": true,
+   "frame": {
+    "h": 45.0,
+    "w": 472.0,
+    "x": 520.0,
+    "y": 740.0
+   },
+   "geometry_trusted": true,
+   "label": "Writable Batch 0124",
+   "parent_index": 145,
+   "role": "grid cell",
+   "screenshot_frame": {
+    "h": 38,
+    "w": 400,
+    "x": 0,
+    "y": 0
+   }
+  },
+  {
+   "actions": [
+    "listitem.scroll-to"
+   ],
+   "depth": 28,
+   "element_index": 148,
+   "element_token": "s00000003:148",
+   "enabled": true,
+   "frame": {
+    "h": 45.0,
+    "w": 260.0,
+    "x": 992.0,
+    "y": 740.0
+   },
+   "geometry_trusted": true,
+   "label": "Fixture Artist 27",
+   "parent_index": 145,
+   "role": "grid cell",
+   "screenshot_frame": {
+    "h": 38,
+    "w": 220,
+    "x": 0,
+    "y": 0
+   }
+  },
+  {
+   "actions": [
+    "listitem.scroll-to"
+   ],
+   "depth": 28,
+   "element_index": 149,
+   "element_token": "s00000003:149",
+   "enabled": true,
+   "frame": {
+    "h": 45.0,
+    "w": 300.0,
+    "x": 1252.0,
+    "y": 740.0
+   },
+   "geometry_trusted": true,
+   "label": "Fixture Album 59",
+   "parent_index": 145,
+   "role": "grid cell",
+   "screenshot_frame": {
+    "h": 38,
+    "w": 254,
+    "x": 0,
+    "y": 0
+   }
+  },
+  {
+   "actions": [
+    "listitem.scroll-to"
+   ],
+   "depth": 28,
+   "element_index": 150,
+   "element_token": "s00000003:150",
+   "enabled": true,
+   "frame": {
+    "h": 45.0,
+    "w": 90.0,
+    "x": 1552.0,
+    "y": 740.0
+   },
+   "geometry_trusted": true,
+   "label": "2013",
+   "parent_index": 145,
+   "role": "grid cell",
+   "screenshot_frame": {
+    "h": 38,
+    "w": 76,
+    "x": 0,
+    "y": 0
+   }
+  },
+  {
+   "actions": [
+    "listitem.scroll-to"
+   ],
+   "depth": 28,
+   "element_index": 151,
+   "element_token": "s00000003:151",
+   "enabled": true,
+   "frame": {
+    "h": 45.0,
+    "w": 100.0,
+    "x": 1642.0,
+    "y": 740.0
+   },
+   "geometry_trusted": true,
+   "label": "3:00",
+   "parent_index": 145,
+   "role": "grid cell",
+   "screenshot_frame": {
+    "h": 38,
+    "w": 85,
+    "x": 0,
+    "y": 0
+   }
+  },
+  {
+   "actions": [
+    "listitem.scroll-to"
+   ],
+   "depth": 28,
+   "element_index": 152,
+   "element_token": "s00000003:152",
+   "enabled": true,
+   "frame": {
+    "h": 45.0,
+    "w": 88.0,
+    "x": 1742.0,
+    "y": 740.0
+   },
+   "geometry_trusted": true,
+   "label": "Rate 1 star Rate 2 stars Rate 3 stars Rate 4 stars Rate 5 stars",
+   "parent_index": 145,
+   "role": "grid cell",
+   "screenshot_frame": {
+    "h": 38,
+    "w": 75,
+    "x": 0,
+    "y": 0
+   }
+  },
+  {
+   "actions": [
+    "click"
+   ],
+   "depth": 31,
+   "element_index": 153,
+   "element_token": "s00000003:153",
+   "enabled": true,
+   "frame": {
+    "h": 24.0,
+    "w": 16.0,
+    "x": 1742.0,
+    "y": 742.0
+   },
+   "geometry_trusted": true,
+   "label": "Rate 1 star",
+   "parent_index": 152,
+   "role": "button",
+   "screenshot_frame": {
+    "h": 20,
+    "w": 14,
+    "x": 0,
+    "y": 0
+   }
+  },
+  {
+   "actions": [
+    "click"
+   ],
+   "depth": 31,
+   "element_index": 154,
+   "element_token": "s00000003:154",
+   "enabled": true,
+   "frame": {
+    "h": 24.0,
+    "w": 16.0,
+    "x": 1758.0,
+    "y": 742.0
+   },
+   "geometry_trusted": true,
+   "label": "Rate 2 stars",
+   "parent_index": 152,
+   "role": "button",
+   "screenshot_frame": {
+    "h": 20,
+    "w": 14,
+    "x": 0,
+    "y": 0
+   }
+  },
+  {
+   "actions": [
+    "click"
+   ],
+   "depth": 31,
+   "element_index": 155,
+   "element_token": "s00000003:155",
+   "enabled": true,
+   "frame": {
+    "h": 24.0,
+    "w": 16.0,
+    "x": 1774.0,
+    "y": 742.0
+   },
+   "geometry_trusted": true,
+   "label": "Rate 3 stars",
+   "parent_index": 152,
+   "role": "button",
+   "screenshot_frame": {
+    "h": 20,
+    "w": 14,
+    "x": 0,
+    "y": 0
+   }
+  },
+  {
+   "actions": [
+    "click"
+   ],
+   "depth": 31,
+   "element_index": 156,
+   "element_token": "s00000003:156",
+   "enabled": true,
+   "frame": {
+    "h": 24.0,
+    "w": 16.0,
+    "x": 1790.0,
+    "y": 742.0
+   },
+   "geometry_trusted": true,
+   "label": "Rate 4 stars",
+   "parent_index": 152,
+   "role": "button",
+   "screenshot_frame": {
+    "h": 20,
+    "w": 14,
+    "x": 0,
+    "y": 0
+   }
+  },
+  {
+   "actions": [
+    "click"
+   ],
+   "depth": 31,
+   "element_index": 157,
+   "element_token": "s00000003:157",
+   "enabled": true,
+   "frame": {
+    "h": 24.0,
+    "w": 16.0,
+    "x": 1806.0,
+    "y": 742.0
+   },
+   "geometry_trusted": true,
+   "label": "Rate 5 stars",
+   "parent_index": 152,
+   "role": "button",
+   "screenshot_frame": {
+    "h": 20,
+    "w": 14,
+    "x": 0,
+    "y": 0
+   }
+  },
+  {
+   "actions": [
+    "listitem.scroll-to"
+   ],
+   "depth": 27,
+   "element_index": 158,
+   "element_token": "s00000003:158",
+   "enabled": true,
+   "frame": {
+    "h": 45.0,
+    "w": 1350.0,
+    "x": 480.0,
+    "y": 785.0
+   },
+   "geometry_trusted": true,
+   "label": "Go to album Fixture Album 28 Writable Batch 0093 Fixture Artist 28 Fixture Album 28 1982 3:00 Rate 1 star Rate 2 stars Rate 3 stars Rate 4 stars Rate 5 stars",
+   "parent_index": 6,
+   "role": "row",
+   "screenshot_frame": {
+    "h": 38,
+    "w": 1144,
+    "x": 0,
+    "y": 0
+   }
+  },
+  {
+   "actions": [
+    "listitem.scroll-to"
+   ],
+   "depth": 28,
+   "element_index": 159,
+   "element_token": "s00000003:159",
+   "enabled": true,
+   "frame": {
+    "h": 45.0,
+    "w": 40.0,
+    "x": 480.0,
+    "y": 785.0
+   },
+   "geometry_trusted": true,
+   "label": "Go to album Fixture Album 28",
+   "parent_index": 158,
+   "role": "grid cell",
+   "screenshot_frame": {
+    "h": 38,
+    "w": 34,
+    "x": 0,
+    "y": 0
+   }
+  },
+  {
+   "actions": [
+    "listitem.scroll-to"
+   ],
+   "depth": 28,
+   "element_index": 160,
+   "element_token": "s00000003:160",
+   "enabled": true,
+   "frame": {
+    "h": 45.0,
+    "w": 472.0,
+    "x": 520.0,
+    "y": 785.0
+   },
+   "geometry_trusted": true,
+   "label": "Writable Batch 0093",
+   "parent_index": 158,
+   "role": "grid cell",
+   "screenshot_frame": {
+    "h": 38,
+    "w": 400,
+    "x": 0,
+    "y": 0
+   }
+  },
+  {
+   "actions": [
+    "listitem.scroll-to"
+   ],
+   "depth": 28,
+   "element_index": 161,
+   "element_token": "s00000003:161",
+   "enabled": true,
+   "frame": {
+    "h": 45.0,
+    "w": 260.0,
+    "x": 992.0,
+    "y": 785.0
+   },
+   "geometry_trusted": true,
+   "label": "Fixture Artist 28",
+   "parent_index": 158,
+   "role": "grid cell",
+   "screenshot_frame": {
+    "h": 38,
+    "w": 220,
+    "x": 0,
+    "y": 0
+   }
+  },
+  {
+   "actions": [
+    "listitem.scroll-to"
+   ],
+   "depth": 28,
+   "element_index": 162,
+   "element_token": "s00000003:162",
+   "enabled": true,
+   "frame": {
+    "h": 45.0,
+    "w": 300.0,
+    "x": 1252.0,
+    "y": 785.0
+   },
+   "geometry_trusted": true,
+   "label": "Fixture Album 28",
+   "parent_index": 158,
+   "role": "grid cell",
+   "screenshot_frame": {
+    "h": 38,
+    "w": 254,
+    "x": 0,
+    "y": 0
+   }
+  },
+  {
+   "actions": [
+    "listitem.scroll-to"
+   ],
+   "depth": 28,
+   "element_index": 163,
+   "element_token": "s00000003:163",
+   "enabled": true,
+   "frame": {
+    "h": 45.0,
+    "w": 90.0,
+    "x": 1552.0,
+    "y": 785.0
+   },
+   "geometry_trusted": true,
+   "label": "1982",
+   "parent_index": 158,
+   "role": "grid cell",
+   "screenshot_frame": {
+    "h": 38,
+    "w": 76,
+    "x": 0,
+    "y": 0
+   }
+  },
+  {
+   "actions": [
+    "listitem.scroll-to"
+   ],
+   "depth": 28,
+   "element_index": 164,
+   "element_token": "s00000003:164",
+   "enabled": true,
+   "frame": {
+    "h": 45.0,
+    "w": 100.0,
+    "x": 1642.0,
+    "y": 785.0
+   },
+   "geometry_trusted": true,
+   "label": "3:00",
+   "parent_index": 158,
+   "role": "grid cell",
+   "screenshot_frame": {
+    "h": 38,
+    "w": 85,
+    "x": 0,
+    "y": 0
+   }
+  },
+  {
+   "actions": [
+    "listitem.scroll-to"
+   ],
+   "depth": 28,
+   "element_index": 165,
+   "element_token": "s00000003:165",
+   "enabled": true,
+   "frame": {
+    "h": 45.0,
+    "w": 88.0,
+    "x": 1742.0,
+    "y": 785.0
+   },
+   "geometry_trusted": true,
+   "label": "Rate 1 star Rate 2 stars Rate 3 stars Rate 4 stars Rate 5 stars",
+   "parent_index": 158,
+   "role": "grid cell",
+   "screenshot_frame": {
+    "h": 38,
+    "w": 75,
+    "x": 0,
+    "y": 0
+   }
+  },
+  {
+   "actions": [
+    "click"
+   ],
+   "depth": 31,
+   "element_index": 166,
+   "element_token": "s00000003:166",
+   "enabled": true,
+   "frame": {
+    "h": 24.0,
+    "w": 16.0,
+    "x": 1742.0,
+    "y": 787.0
+   },
+   "geometry_trusted": true,
+   "label": "Rate 1 star",
+   "parent_index": 165,
+   "role": "button",
+   "screenshot_frame": {
+    "h": 20,
+    "w": 14,
+    "x": 0,
+    "y": 0
+   }
+  },
+  {
+   "actions": [
+    "click"
+   ],
+   "depth": 31,
+   "element_index": 167,
+   "element_token": "s00000003:167",
+   "enabled": true,
+   "frame": {
+    "h": 24.0,
+    "w": 16.0,
+    "x": 1758.0,
+    "y": 787.0
+   },
+   "geometry_trusted": true,
+   "label": "Rate 2 stars",
+   "parent_index": 165,
+   "role": "button",
+   "screenshot_frame": {
+    "h": 20,
+    "w": 14,
+    "x": 0,
+    "y": 0
+   }
+  },
+  {
+   "actions": [
+    "click"
+   ],
+   "depth": 31,
+   "element_index": 168,
+   "element_token": "s00000003:168",
+   "enabled": true,
+   "frame": {
+    "h": 24.0,
+    "w": 16.0,
+    "x": 1774.0,
+    "y": 787.0
+   },
+   "geometry_trusted": true,
+   "label": "Rate 3 stars",
+   "parent_index": 165,
+   "role": "button",
+   "screenshot_frame": {
+    "h": 20,
+    "w": 14,
+    "x": 0,
+    "y": 0
+   }
+  },
+  {
+   "actions": [
+    "click"
+   ],
+   "depth": 31,
+   "element_index": 169,
+   "element_token": "s00000003:169",
+   "enabled": true,
+   "frame": {
+    "h": 24.0,
+    "w": 16.0,
+    "x": 1790.0,
+    "y": 787.0
+   },
+   "geometry_trusted": true,
+   "label": "Rate 4 stars",
+   "parent_index": 165,
+   "role": "button",
+   "screenshot_frame": {
+    "h": 20,
+    "w": 14,
+    "x": 0,
+    "y": 0
+   }
+  },
+  {
+   "actions": [
+    "click"
+   ],
+   "depth": 31,
+   "element_index": 170,
+   "element_token": "s00000003:170",
+   "enabled": true,
+   "frame": {
+    "h": 24.0,
+    "w": 16.0,
+    "x": 1806.0,
+    "y": 787.0
+   },
+   "geometry_trusted": true,
+   "label": "Rate 5 stars",
+   "parent_index": 165,
+   "role": "button",
+   "screenshot_frame": {
+    "h": 20,
+    "w": 14,
+    "x": 0,
+    "y": 0
+   }
+  },
+  {
+   "actions": [
+    "listitem.scroll-to"
+   ],
+   "depth": 27,
+   "element_index": 171,
+   "element_token": "s00000003:171",
+   "enabled": true,
+   "frame": {
+    "h": 45.0,
+    "w": 1350.0,
+    "x": 480.0,
+    "y": 830.0
+   },
+   "geometry_trusted": true,
+   "label": "Go to album Fixture Album 60 Writable Batch 0061 Fixture Artist 28 Fixture Album 60 1995 3:00 \u2014",
+   "parent_index": 6,
+   "role": "row",
+   "screenshot_frame": {
+    "h": 38,
+    "w": 1144,
+    "x": 0,
+    "y": 0
+   }
+  },
+  {
+   "actions": [
+    "listitem.scroll-to"
+   ],
+   "depth": 28,
+   "element_index": 172,
+   "element_token": "s00000003:172",
+   "enabled": true,
+   "frame": {
+    "h": 45.0,
+    "w": 40.0,
+    "x": 480.0,
+    "y": 830.0
+   },
+   "geometry_trusted": true,
+   "label": "Go to album Fixture Album 60",
+   "parent_index": 171,
+   "role": "grid cell",
+   "screenshot_frame": {
+    "h": 38,
+    "w": 34,
+    "x": 0,
+    "y": 0
+   }
+  },
+  {
+   "actions": [
+    "listitem.scroll-to"
+   ],
+   "depth": 28,
+   "element_index": 173,
+   "element_token": "s00000003:173",
+   "enabled": true,
+   "frame": {
+    "h": 45.0,
+    "w": 472.0,
+    "x": 520.0,
+    "y": 830.0
+   },
+   "geometry_trusted": true,
+   "label": "Writable Batch 0061",
+   "parent_index": 171,
+   "role": "grid cell",
+   "screenshot_frame": {
+    "h": 38,
+    "w": 400,
+    "x": 0,
+    "y": 0
+   }
+  },
+  {
+   "actions": [
+    "listitem.scroll-to"
+   ],
+   "depth": 28,
+   "element_index": 174,
+   "element_token": "s00000003:174",
+   "enabled": true,
+   "frame": {
+    "h": 45.0,
+    "w": 260.0,
+    "x": 992.0,
+    "y": 830.0
+   },
+   "geometry_trusted": true,
+   "label": "Fixture Artist 28",
+   "parent_index": 171,
+   "role": "grid cell",
+   "screenshot_frame": {
+    "h": 38,
+    "w": 220,
+    "x": 0,
+    "y": 0
+   }
+  },
+  {
+   "actions": [
+    "listitem.scroll-to"
+   ],
+   "depth": 28,
+   "element_index": 175,
+   "element_token": "s00000003:175",
+   "enabled": true,
+   "frame": {
+    "h": 45.0,
+    "w": 300.0,
+    "x": 1252.0,
+    "y": 830.0
+   },
+   "geometry_trusted": true,
+   "label": "Fixture Album 60",
+   "parent_index": 171,
+   "role": "grid cell",
+   "screenshot_frame": {
+    "h": 38,
+    "w": 254,
+    "x": 0,
+    "y": 0
+   }
+  },
+  {
+   "actions": [
+    "listitem.scroll-to"
+   ],
+   "depth": 28,
+   "element_index": 176,
+   "element_token": "s00000003:176",
+   "enabled": true,
+   "frame": {
+    "h": 45.0,
+    "w": 90.0,
+    "x": 1552.0,
+    "y": 830.0
+   },
+   "geometry_trusted": true,
+   "label": "1995",
+   "parent_index": 171,
+   "role": "grid cell",
+   "screenshot_frame": {
+    "h": 38,
+    "w": 76,
+    "x": 0,
+    "y": 0
+   }
+  },
+  {
+   "actions": [
+    "listitem.scroll-to"
+   ],
+   "depth": 28,
+   "element_index": 177,
+   "element_token": "s00000003:177",
+   "enabled": true,
+   "frame": {
+    "h": 45.0,
+    "w": 100.0,
+    "x": 1642.0,
+    "y": 830.0
+   },
+   "geometry_trusted": true,
+   "label": "3:00",
+   "parent_index": 171,
+   "role": "grid cell",
+   "screenshot_frame": {
+    "h": 38,
+    "w": 85,
+    "x": 0,
+    "y": 0
+   }
+  },
+  {
+   "actions": [
+    "listitem.scroll-to"
+   ],
+   "depth": 28,
+   "element_index": 178,
+   "element_token": "s00000003:178",
+   "enabled": true,
+   "frame": {
+    "h": 45.0,
+    "w": 88.0,
+    "x": 1742.0,
+    "y": 830.0
+   },
+   "geometry_trusted": true,
+   "label": "\u2014",
+   "parent_index": 171,
+   "role": "grid cell",
+   "screenshot_frame": {
+    "h": 38,
+    "w": 75,
+    "x": 0,
+    "y": 0
+   }
+  },
+  {
+   "actions": [
+    "listitem.scroll-to"
+   ],
+   "depth": 27,
+   "element_index": 179,
+   "element_token": "s00000003:179",
+   "enabled": true,
+   "frame": {
+    "h": 45.0,
+    "w": 1350.0,
+    "x": 480.0,
+    "y": 875.0
+   },
+   "geometry_trusted": true,
+   "label": "Go to album Fixture Album 28 Writable Batch 0029 Fixture Artist 28 Fixture Album 28 2008 3:00 Rate 1 star Rate 2 stars Rate 3 stars Rate 4 stars Rate 5 stars",
+   "parent_index": 6,
+   "role": "row",
+   "screenshot_frame": {
+    "h": 38,
+    "w": 1144,
+    "x": 0,
+    "y": 0
+   }
+  },
+  {
+   "actions": [
+    "listitem.scroll-to"
+   ],
+   "depth": 28,
+   "element_index": 180,
+   "element_token": "s00000003:180",
+   "enabled": true,
+   "frame": {
+    "h": 45.0,
+    "w": 40.0,
+    "x": 480.0,
+    "y": 875.0
+   },
+   "geometry_trusted": true,
+   "label": "Go to album Fixture Album 28",
+   "parent_index": 179,
+   "role": "grid cell",
+   "screenshot_frame": {
+    "h": 38,
+    "w": 34,
+    "x": 0,
+    "y": 0
+   }
+  },
+  {
+   "actions": [
+    "listitem.scroll-to"
+   ],
+   "depth": 28,
+   "element_index": 181,
+   "element_token": "s00000003:181",
+   "enabled": true,
+   "frame": {
+    "h": 45.0,
+    "w": 472.0,
+    "x": 520.0,
+    "y": 875.0
+   },
+   "geometry_trusted": true,
+   "label": "Writable Batch 0029",
+   "parent_index": 179,
+   "role": "grid cell",
+   "screenshot_frame": {
+    "h": 38,
+    "w": 400,
+    "x": 0,
+    "y": 0
+   }
+  },
+  {
+   "actions": [
+    "listitem.scroll-to"
+   ],
+   "depth": 28,
+   "element_index": 182,
+   "element_token": "s00000003:182",
+   "enabled": true,
+   "frame": {
+    "h": 45.0,
+    "w": 260.0,
+    "x": 992.0,
+    "y": 875.0
+   },
+   "geometry_trusted": true,
+   "label": "Fixture Artist 28",
+   "parent_index": 179,
+   "role": "grid cell",
+   "screenshot_frame": {
+    "h": 38,
+    "w": 220,
+    "x": 0,
+    "y": 0
+   }
+  },
+  {
+   "actions": [
+    "listitem.scroll-to"
+   ],
+   "depth": 28,
+   "element_index": 183,
+   "element_token": "s00000003:183",
+   "enabled": true,
+   "frame": {
+    "h": 45.0,
+    "w": 300.0,
+    "x": 1252.0,
+    "y": 875.0
+   },
+   "geometry_trusted": true,
+   "label": "Fixture Album 28",
+   "parent_index": 179,
+   "role": "grid cell",
+   "screenshot_frame": {
+    "h": 38,
+    "w": 254,
+    "x": 0,
+    "y": 0
+   }
+  },
+  {
+   "actions": [
+    "listitem.scroll-to"
+   ],
+   "depth": 28,
+   "element_index": 184,
+   "element_token": "s00000003:184",
+   "enabled": true,
+   "frame": {
+    "h": 45.0,
+    "w": 90.0,
+    "x": 1552.0,
+    "y": 875.0
+   },
+   "geometry_trusted": true,
+   "label": "2008",
+   "parent_index": 179,
+   "role": "grid cell",
+   "screenshot_frame": {
+    "h": 38,
+    "w": 76,
+    "x": 0,
+    "y": 0
+   }
+  },
+  {
+   "actions": [
+    "listitem.scroll-to"
+   ],
+   "depth": 28,
+   "element_index": 185,
+   "element_token": "s00000003:185",
+   "enabled": true,
+   "frame": {
+    "h": 45.0,
+    "w": 100.0,
+    "x": 1642.0,
+    "y": 875.0
+   },
+   "geometry_trusted": true,
+   "label": "3:00",
+   "parent_index": 179,
+   "role": "grid cell",
+   "screenshot_frame": {
+    "h": 38,
+    "w": 85,
+    "x": 0,
+    "y": 0
+   }
+  },
+  {
+   "actions": [
+    "listitem.scroll-to"
+   ],
+   "depth": 28,
+   "element_index": 186,
+   "element_token": "s00000003:186",
+   "enabled": true,
+   "frame": {
+    "h": 45.0,
+    "w": 88.0,
+    "x": 1742.0,
+    "y": 875.0
+   },
+   "geometry_trusted": true,
+   "label": "Rate 1 star Rate 2 stars Rate 3 stars Rate 4 stars Rate 5 stars",
+   "parent_index": 179,
+   "role": "grid cell",
+   "screenshot_frame": {
+    "h": 38,
+    "w": 75,
+    "x": 0,
+    "y": 0
+   }
+  },
+  {
+   "actions": [
+    "click"
+   ],
+   "depth": 31,
+   "element_index": 187,
+   "element_token": "s00000003:187",
+   "enabled": true,
+   "frame": {
+    "h": 24.0,
+    "w": 16.0,
+    "x": 1742.0,
+    "y": 877.0
+   },
+   "geometry_trusted": true,
+   "label": "Rate 1 star",
+   "parent_index": 186,
+   "role": "button",
+   "screenshot_frame": {
+    "h": 20,
+    "w": 14,
+    "x": 0,
+    "y": 0
+   }
+  },
+  {
+   "actions": [
+    "click"
+   ],
+   "depth": 31,
+   "element_index": 188,
+   "element_token": "s00000003:188",
+   "enabled": true,
+   "frame": {
+    "h": 24.0,
+    "w": 16.0,
+    "x": 1758.0,
+    "y": 877.0
+   },
+   "geometry_trusted": true,
+   "label": "Rate 2 stars",
+   "parent_index": 186,
+   "role": "button",
+   "screenshot_frame": {
+    "h": 20,
+    "w": 14,
+    "x": 0,
+    "y": 0
+   }
+  },
+  {
+   "actions": [
+    "click"
+   ],
+   "depth": 31,
+   "element_index": 189,
+   "element_token": "s00000003:189",
+   "enabled": true,
+   "frame": {
+    "h": 24.0,
+    "w": 16.0,
+    "x": 1774.0,
+    "y": 877.0
+   },
+   "geometry_trusted": true,
+   "label": "Rate 3 stars",
+   "parent_index": 186,
+   "role": "button",
+   "screenshot_frame": {
+    "h": 20,
+    "w": 14,
+    "x": 0,
+    "y": 0
+   }
+  },
+  {
+   "actions": [
+    "click"
+   ],
+   "depth": 31,
+   "element_index": 190,
+   "element_token": "s00000003:190",
+   "enabled": true,
+   "frame": {
+    "h": 24.0,
+    "w": 16.0,
+    "x": 1790.0,
+    "y": 877.0
+   },
+   "geometry_trusted": true,
+   "label": "Rate 4 stars",
+   "parent_index": 186,
+   "role": "button",
+   "screenshot_frame": {
+    "h": 20,
+    "w": 14,
+    "x": 0,
+    "y": 0
+   }
+  },
+  {
+   "actions": [
+    "click"
+   ],
+   "depth": 31,
+   "element_index": 191,
+   "element_token": "s00000003:191",
+   "enabled": true,
+   "frame": {
+    "h": 24.0,
+    "w": 16.0,
+    "x": 1806.0,
+    "y": 877.0
+   },
+   "geometry_trusted": true,
+   "label": "Rate 5 stars",
+   "parent_index": 186,
+   "role": "button",
+   "screenshot_frame": {
+    "h": 20,
+    "w": 14,
+    "x": 0,
+    "y": 0
+   }
+  },
+  {
+   "actions": [
+    "listitem.scroll-to"
+   ],
+   "depth": 27,
+   "element_index": 192,
+   "element_token": "s00000003:192",
+   "enabled": true,
+   "frame": {
+    "h": 45.0,
+    "w": 1350.0,
+    "x": 480.0,
+    "y": 920.0
+   },
+   "geometry_trusted": true,
+   "label": "Go to album Fixture Album 60 Writable Batch 0125 Fixture Artist 28 Fixture Album 60 2014 3:00 Rate 1 star Rate 2 stars Rate 3 stars Rate 4 stars Rate 5 stars",
+   "parent_index": 6,
+   "role": "row",
+   "screenshot_frame": {
+    "h": 38,
+    "w": 1144,
+    "x": 0,
+    "y": 0
+   }
+  },
+  {
+   "actions": [
+    "listitem.scroll-to"
+   ],
+   "depth": 28,
+   "element_index": 193,
+   "element_token": "s00000003:193",
+   "enabled": true,
+   "frame": {
+    "h": 45.0,
+    "w": 40.0,
+    "x": 480.0,
+    "y": 920.0
+   },
+   "geometry_trusted": true,
+   "label": "Go to album Fixture Album 60",
+   "parent_index": 192,
+   "role": "grid cell",
+   "screenshot_frame": {
+    "h": 38,
+    "w": 34,
+    "x": 0,
+    "y": 0
+   }
+  },
+  {
+   "actions": [
+    "listitem.scroll-to"
+   ],
+   "depth": 28,
+   "element_index": 194,
+   "element_token": "s00000003:194",
+   "enabled": true,
+   "frame": {
+    "h": 45.0,
+    "w": 472.0,
+    "x": 520.0,
+    "y": 920.0
+   },
+   "geometry_trusted": true,
+   "label": "Writable Batch 0125",
+   "parent_index": 192,
+   "role": "grid cell",
+   "screenshot_frame": {
+    "h": 38,
+    "w": 400,
+    "x": 0,
+    "y": 0
+   }
+  },
+  {
+   "actions": [
+    "listitem.scroll-to"
+   ],
+   "depth": 28,
+   "element_index": 195,
+   "element_token": "s00000003:195",
+   "enabled": true,
+   "frame": {
+    "h": 45.0,
+    "w": 260.0,
+    "x": 992.0,
+    "y": 920.0
+   },
+   "geometry_trusted": true,
+   "label": "Fixture Artist 28",
+   "parent_index": 192,
+   "role": "grid cell",
+   "screenshot_frame": {
+    "h": 38,
+    "w": 220,
+    "x": 0,
+    "y": 0
+   }
+  },
+  {
+   "actions": [
+    "listitem.scroll-to"
+   ],
+   "depth": 28,
+   "element_index": 196,
+   "element_token": "s00000003:196",
+   "enabled": true,
+   "frame": {
+    "h": 45.0,
+    "w": 300.0,
+    "x": 1252.0,
+    "y": 920.0
+   },
+   "geometry_trusted": true,
+   "label": "Fixture Album 60",
+   "parent_index": 192,
+   "role": "grid cell",
+   "screenshot_frame": {
+    "h": 38,
+    "w": 254,
+    "x": 0,
+    "y": 0
+   }
+  },
+  {
+   "actions": [
+    "listitem.scroll-to"
+   ],
+   "depth": 28,
+   "element_index": 197,
+   "element_token": "s00000003:197",
+   "enabled": true,
+   "frame": {
+    "h": 45.0,
+    "w": 90.0,
+    "x": 1552.0,
+    "y": 920.0
+   },
+   "geometry_trusted": true,
+   "label": "2014",
+   "parent_index": 192,
+   "role": "grid cell",
+   "screenshot_frame": {
+    "h": 38,
+    "w": 76,
+    "x": 0,
+    "y": 0
+   }
+  },
+  {
+   "actions": [
+    "listitem.scroll-to"
+   ],
+   "depth": 28,
+   "element_index": 198,
+   "element_token": "s00000003:198",
+   "enabled": true,
+   "frame": {
+    "h": 45.0,
+    "w": 100.0,
+    "x": 1642.0,
+    "y": 920.0
+   },
+   "geometry_trusted": true,
+   "label": "3:00",
+   "parent_index": 192,
+   "role": "grid cell",
+   "screenshot_frame": {
+    "h": 38,
+    "w": 85,
+    "x": 0,
+    "y": 0
+   }
+  },
+  {
+   "actions": [
+    "listitem.scroll-to"
+   ],
+   "depth": 28,
+   "element_index": 199,
+   "element_token": "s00000003:199",
+   "enabled": true,
+   "frame": {
+    "h": 45.0,
+    "w": 88.0,
+    "x": 1742.0,
+    "y": 920.0
+   },
+   "geometry_trusted": true,
+   "label": "Rate 1 star Rate 2 stars Rate 3 stars Rate 4 stars Rate 5 stars",
+   "parent_index": 192,
+   "role": "grid cell",
+   "screenshot_frame": {
+    "h": 38,
+    "w": 75,
+    "x": 0,
+    "y": 0
+   }
+  },
+  {
+   "actions": [
+    "click"
+   ],
+   "depth": 31,
+   "element_index": 200,
+   "element_token": "s00000003:200",
+   "enabled": true,
+   "frame": {
+    "h": 24.0,
+    "w": 16.0,
+    "x": 1742.0,
+    "y": 922.0
+   },
+   "geometry_trusted": true,
+   "label": "Rate 1 star",
+   "parent_index": 199,
+   "role": "button",
+   "screenshot_frame": {
+    "h": 20,
+    "w": 14,
+    "x": 0,
+    "y": 0
+   }
+  },
+  {
+   "actions": [
+    "click"
+   ],
+   "depth": 31,
+   "element_index": 201,
+   "element_token": "s00000003:201",
+   "enabled": true,
+   "frame": {
+    "h": 24.0,
+    "w": 16.0,
+    "x": 1758.0,
+    "y": 922.0
+   },
+   "geometry_trusted": true,
+   "label": "Rate 2 stars",
+   "parent_index": 199,
+   "role": "button",
+   "screenshot_frame": {
+    "h": 20,
+    "w": 14,
+    "x": 0,
+    "y": 0
+   }
+  },
+  {
+   "actions": [
+    "click"
+   ],
+   "depth": 31,
+   "element_index": 202,
+   "element_token": "s00000003:202",
+   "enabled": true,
+   "frame": {
+    "h": 24.0,
+    "w": 16.0,
+    "x": 1774.0,
+    "y": 922.0
+   },
+   "geometry_trusted": true,
+   "label": "Rate 3 stars",
+   "parent_index": 199,
+   "role": "button",
+   "screenshot_frame": {
+    "h": 20,
+    "w": 14,
+    "x": 0,
+    "y": 0
+   }
+  },
+  {
+   "actions": [
+    "click"
+   ],
+   "depth": 31,
+   "element_index": 203,
+   "element_token": "s00000003:203",
+   "enabled": true,
+   "frame": {
+    "h": 24.0,
+    "w": 16.0,
+    "x": 1790.0,
+    "y": 922.0
+   },
+   "geometry_trusted": true,
+   "label": "Rate 4 stars",
+   "parent_index": 199,
+   "role": "button",
+   "screenshot_frame": {
+    "h": 20,
+    "w": 14,
+    "x": 0,
+    "y": 0
+   }
+  },
+  {
+   "actions": [
+    "click"
+   ],
+   "depth": 31,
+   "element_index": 204,
+   "element_token": "s00000003:204",
+   "enabled": true,
+   "frame": {
+    "h": 24.0,
+    "w": 16.0,
+    "x": 1806.0,
+    "y": 922.0
+   },
+   "geometry_trusted": true,
+   "label": "Rate 5 stars",
+   "parent_index": 199,
+   "role": "button",
+   "screenshot_frame": {
+    "h": 20,
+    "w": 14,
+    "x": 0,
+    "y": 0
+   }
+  },
+  {
+   "actions": [
+    "listitem.scroll-to"
+   ],
+   "depth": 27,
+   "element_index": 205,
+   "element_token": "s00000003:205",
+   "enabled": true,
+   "frame": {
+    "h": 45.0,
+    "w": 1350.0,
+    "x": 480.0,
+    "y": 965.0
+   },
+   "geometry_trusted": true,
+   "label": "Go to album Fixture Album 29 Writable Batch 0094 Fixture Artist 29 Fixture Album 29 1983 3:00 Rate 1 star Rate 2 stars Rate 3 stars Rate 4 stars Rate 5 stars",
+   "parent_index": 6,
+   "role": "row",
+   "screenshot_frame": {
+    "h": 38,
+    "w": 1144,
+    "x": 0,
+    "y": 0
+   }
+  },
+  {
+   "actions": [
+    "listitem.scroll-to"
+   ],
+   "depth": 28,
+   "element_index": 206,
+   "element_token": "s00000003:206",
+   "enabled": true,
+   "frame": {
+    "h": 45.0,
+    "w": 40.0,
+    "x": 480.0,
+    "y": 965.0
+   },
+   "geometry_trusted": true,
+   "label": "Go to album Fixture Album 29",
+   "parent_index": 205,
+   "role": "grid cell",
+   "screenshot_frame": {
+    "h": 38,
+    "w": 34,
+    "x": 0,
+    "y": 0
+   }
+  },
+  {
+   "actions": [
+    "listitem.scroll-to"
+   ],
+   "depth": 28,
+   "element_index": 207,
+   "element_token": "s00000003:207",
+   "enabled": true,
+   "frame": {
+    "h": 45.0,
+    "w": 472.0,
+    "x": 520.0,
+    "y": 965.0
+   },
+   "geometry_trusted": true,
+   "label": "Writable Batch 0094",
+   "parent_index": 205,
+   "role": "grid cell",
+   "screenshot_frame": {
+    "h": 38,
+    "w": 400,
+    "x": 0,
+    "y": 0
+   }
+  },
+  {
+   "actions": [
+    "listitem.scroll-to"
+   ],
+   "depth": 28,
+   "element_index": 208,
+   "element_token": "s00000003:208",
+   "enabled": true,
+   "frame": {
+    "h": 45.0,
+    "w": 260.0,
+    "x": 992.0,
+    "y": 965.0
+   },
+   "geometry_trusted": true,
+   "label": "Fixture Artist 29",
+   "parent_index": 205,
+   "role": "grid cell",
+   "screenshot_frame": {
+    "h": 38,
+    "w": 220,
+    "x": 0,
+    "y": 0
+   }
+  },
+  {
+   "actions": [
+    "listitem.scroll-to"
+   ],
+   "depth": 28,
+   "element_index": 209,
+   "element_token": "s00000003:209",
+   "enabled": true,
+   "frame": {
+    "h": 45.0,
+    "w": 300.0,
+    "x": 1252.0,
+    "y": 965.0
+   },
+   "geometry_trusted": true,
+   "label": "Fixture Album 29",
+   "parent_index": 205,
+   "role": "grid cell",
+   "screenshot_frame": {
+    "h": 38,
+    "w": 254,
+    "x": 0,
+    "y": 0
+   }
+  },
+  {
+   "actions": [
+    "listitem.scroll-to"
+   ],
+   "depth": 28,
+   "element_index": 210,
+   "element_token": "s00000003:210",
+   "enabled": true,
+   "frame": {
+    "h": 45.0,
+    "w": 90.0,
+    "x": 1552.0,
+    "y": 965.0
+   },
+   "geometry_trusted": true,
+   "label": "1983",
+   "parent_index": 205,
+   "role": "grid cell",
+   "screenshot_frame": {
+    "h": 38,
+    "w": 76,
+    "x": 0,
+    "y": 0
+   }
+  },
+  {
+   "actions": [
+    "listitem.scroll-to"
+   ],
+   "depth": 28,
+   "element_index": 211,
+   "element_token": "s00000003:211",
+   "enabled": true,
+   "frame": {
+    "h": 45.0,
+    "w": 100.0,
+    "x": 1642.0,
+    "y": 965.0
+   },
+   "geometry_trusted": true,
+   "label": "3:00",
+   "parent_index": 205,
+   "role": "grid cell",
+   "screenshot_frame": {
+    "h": 38,
+    "w": 85,
+    "x": 0,
+    "y": 0
+   }
+  },
+  {
+   "actions": [
+    "listitem.scroll-to"
+   ],
+   "depth": 28,
+   "element_index": 212,
+   "element_token": "s00000003:212",
+   "enabled": true,
+   "frame": {
+    "h": 45.0,
+    "w": 88.0,
+    "x": 1742.0,
+    "y": 965.0
+   },
+   "geometry_trusted": true,
+   "label": "Rate 1 star Rate 2 stars Rate 3 stars Rate 4 stars Rate 5 stars",
+   "parent_index": 205,
+   "role": "grid cell",
+   "screenshot_frame": {
+    "h": 38,
+    "w": 75,
+    "x": 0,
+    "y": 0
+   }
+  },
+  {
+   "actions": [
+    "click"
+   ],
+   "depth": 31,
+   "element_index": 213,
+   "element_token": "s00000003:213",
+   "enabled": true,
+   "frame": {
+    "h": 24.0,
+    "w": 16.0,
+    "x": 1742.0,
+    "y": 967.0
+   },
+   "geometry_trusted": true,
+   "label": "Rate 1 star",
+   "parent_index": 212,
+   "role": "button",
+   "screenshot_frame": {
+    "h": 20,
+    "w": 14,
+    "x": 0,
+    "y": 0
+   }
+  },
+  {
+   "actions": [
+    "click"
+   ],
+   "depth": 31,
+   "element_index": 214,
+   "element_token": "s00000003:214",
+   "enabled": true,
+   "frame": {
+    "h": 24.0,
+    "w": 16.0,
+    "x": 1758.0,
+    "y": 967.0
+   },
+   "geometry_trusted": true,
+   "label": "Rate 2 stars",
+   "parent_index": 212,
+   "role": "button",
+   "screenshot_frame": {
+    "h": 20,
+    "w": 14,
+    "x": 0,
+    "y": 0
+   }
+  },
+  {
+   "actions": [
+    "click"
+   ],
+   "depth": 31,
+   "element_index": 215,
+   "element_token": "s00000003:215",
+   "enabled": true,
+   "frame": {
+    "h": 24.0,
+    "w": 16.0,
+    "x": 1774.0,
+    "y": 967.0
+   },
+   "geometry_trusted": true,
+   "label": "Rate 3 stars",
+   "parent_index": 212,
+   "role": "button",
+   "screenshot_frame": {
+    "h": 20,
+    "w": 14,
+    "x": 0,
+    "y": 0
+   }
+  },
+  {
+   "actions": [
+    "click"
+   ],
+   "depth": 31,
+   "element_index": 216,
+   "element_token": "s00000003:216",
+   "enabled": true,
+   "frame": {
+    "h": 24.0,
+    "w": 16.0,
+    "x": 1790.0,
+    "y": 967.0
+   },
+   "geometry_trusted": true,
+   "label": "Rate 4 stars",
+   "parent_index": 212,
+   "role": "button",
+   "screenshot_frame": {
+    "h": 20,
+    "w": 14,
+    "x": 0,
+    "y": 0
+   }
+  },
+  {
+   "actions": [
+    "click"
+   ],
+   "depth": 31,
+   "element_index": 217,
+   "element_token": "s00000003:217",
+   "enabled": true,
+   "frame": {
+    "h": 24.0,
+    "w": 16.0,
+    "x": 1806.0,
+    "y": 967.0
+   },
+   "geometry_trusted": true,
+   "label": "Rate 5 stars",
+   "parent_index": 212,
+   "role": "button",
+   "screenshot_frame": {
+    "h": 20,
+    "w": 14,
+    "x": 0,
+    "y": 0
+   }
+  },
+  {
+   "actions": [
+    "listitem.scroll-to"
+   ],
+   "depth": 27,
+   "element_index": 218,
+   "element_token": "s00000003:218",
+   "enabled": true,
+   "frame": {
+    "h": 45.0,
+    "w": 1350.0,
+    "x": 480.0,
+    "y": 1010.0
+   },
+   "geometry_trusted": true,
+   "label": "Go to album Fixture Album 61 Writable Batch 0062 Fixture Artist 29 Fixture Album 61 1996 3:00 Rate 1 star Rate 2 stars Rate 3 stars Rate 4 stars Rate 5 stars",
+   "parent_index": 6,
+   "role": "row",
+   "screenshot_frame": {
+    "h": 38,
+    "w": 1144,
+    "x": 0,
+    "y": 0
+   }
+  },
+  {
+   "actions": [
+    "listitem.scroll-to"
+   ],
+   "depth": 28,
+   "element_index": 219,
+   "element_token": "s00000003:219",
+   "enabled": true,
+   "frame": {
+    "h": 45.0,
+    "w": 40.0,
+    "x": 480.0,
+    "y": 1010.0
+   },
+   "geometry_trusted": true,
+   "label": "Go to album Fixture Album 61",
+   "parent_index": 218,
+   "role": "grid cell",
+   "screenshot_frame": {
+    "h": 38,
+    "w": 34,
+    "x": 0,
+    "y": 0
+   }
+  },
+  {
+   "actions": [
+    "listitem.scroll-to"
+   ],
+   "depth": 28,
+   "element_index": 220,
+   "element_token": "s00000003:220",
+   "enabled": true,
+   "frame": {
+    "h": 45.0,
+    "w": 472.0,
+    "x": 520.0,
+    "y": 1010.0
+   },
+   "geometry_trusted": true,
+   "label": "Writable Batch 0062",
+   "parent_index": 218,
+   "role": "grid cell",
+   "screenshot_frame": {
+    "h": 38,
+    "w": 400,
+    "x": 0,
+    "y": 0
+   }
+  },
+  {
+   "actions": [
+    "listitem.scroll-to"
+   ],
+   "depth": 28,
+   "element_index": 221,
+   "element_token": "s00000003:221",
+   "enabled": true,
+   "frame": {
+    "h": 45.0,
+    "w": 260.0,
+    "x": 992.0,
+    "y": 1010.0
+   },
+   "geometry_trusted": true,
+   "label": "Fixture Artist 29",
+   "parent_index": 218,
+   "role": "grid cell",
+   "screenshot_frame": {
+    "h": 38,
+    "w": 220,
+    "x": 0,
+    "y": 0
+   }
+  },
+  {
+   "actions": [
+    "listitem.scroll-to"
+   ],
+   "depth": 28,
+   "element_index": 222,
+   "element_token": "s00000003:222",
+   "enabled": true,
+   "frame": {
+    "h": 45.0,
+    "w": 300.0,
+    "x": 1252.0,
+    "y": 1010.0
+   },
+   "geometry_trusted": true,
+   "label": "Fixture Album 61",
+   "parent_index": 218,
+   "role": "grid cell",
+   "screenshot_frame": {
+    "h": 38,
+    "w": 254,
+    "x": 0,
+    "y": 0
+   }
+  },
+  {
+   "actions": [
+    "listitem.scroll-to"
+   ],
+   "depth": 28,
+   "element_index": 223,
+   "element_token": "s00000003:223",
+   "enabled": true,
+   "frame": {
+    "h": 45.0,
+    "w": 90.0,
+    "x": 1552.0,
+    "y": 1010.0
+   },
+   "geometry_trusted": true,
+   "label": "1996",
+   "parent_index": 218,
+   "role": "grid cell",
+   "screenshot_frame": {
+    "h": 38,
+    "w": 76,
+    "x": 0,
+    "y": 0
+   }
+  },
+  {
+   "actions": [
+    "listitem.scroll-to"
+   ],
+   "depth": 28,
+   "element_index": 224,
+   "element_token": "s00000003:224",
+   "enabled": true,
+   "frame": {
+    "h": 45.0,
+    "w": 100.0,
+    "x": 1642.0,
+    "y": 1010.0
+   },
+   "geometry_trusted": true,
+   "label": "3:00",
+   "parent_index": 218,
+   "role": "grid cell",
+   "screenshot_frame": {
+    "h": 38,
+    "w": 85,
+    "x": 0,
+    "y": 0
+   }
+  },
+  {
+   "actions": [
+    "listitem.scroll-to"
+   ],
+   "depth": 28,
+   "element_index": 225,
+   "element_token": "s00000003:225",
+   "enabled": true,
+   "frame": {
+    "h": 45.0,
+    "w": 88.0,
+    "x": 1742.0,
+    "y": 1010.0
+   },
+   "geometry_trusted": true,
+   "label": "Rate 1 star Rate 2 stars Rate 3 stars Rate 4 stars Rate 5 stars",
+   "parent_index": 218,
+   "role": "grid cell",
+   "screenshot_frame": {
+    "h": 38,
+    "w": 75,
+    "x": 0,
+    "y": 0
+   }
+  },
+  {
+   "actions": [
+    "click"
+   ],
+   "depth": 31,
+   "element_index": 226,
+   "element_token": "s00000003:226",
+   "enabled": true,
+   "frame": {
+    "h": 24.0,
+    "w": 16.0,
+    "x": 1742.0,
+    "y": 1012.0
+   },
+   "geometry_trusted": true,
+   "label": "Rate 1 star",
+   "parent_index": 225,
+   "role": "button",
+   "screenshot_frame": {
+    "h": 20,
+    "w": 14,
+    "x": 0,
+    "y": 0
+   }
+  },
+  {
+   "actions": [
+    "click"
+   ],
+   "depth": 31,
+   "element_index": 227,
+   "element_token": "s00000003:227",
+   "enabled": true,
+   "frame": {
+    "h": 24.0,
+    "w": 16.0,
+    "x": 1758.0,
+    "y": 1012.0
+   },
+   "geometry_trusted": true,
+   "label": "Rate 2 stars",
+   "parent_index": 225,
+   "role": "button",
+   "screenshot_frame": {
+    "h": 20,
+    "w": 14,
+    "x": 0,
+    "y": 0
+   }
+  },
+  {
+   "actions": [
+    "click"
+   ],
+   "depth": 31,
+   "element_index": 228,
+   "element_token": "s00000003:228",
+   "enabled": true,
+   "frame": {
+    "h": 24.0,
+    "w": 16.0,
+    "x": 1774.0,
+    "y": 1012.0
+   },
+   "geometry_trusted": true,
+   "label": "Rate 3 stars",
+   "parent_index": 225,
+   "role": "button",
+   "screenshot_frame": {
+    "h": 20,
+    "w": 14,
+    "x": 0,
+    "y": 0
+   }
+  },
+  {
+   "actions": [
+    "click"
+   ],
+   "depth": 31,
+   "element_index": 229,
+   "element_token": "s00000003:229",
+   "enabled": true,
+   "frame": {
+    "h": 24.0,
+    "w": 16.0,
+    "x": 1790.0,
+    "y": 1012.0
+   },
+   "geometry_trusted": true,
+   "label": "Rate 4 stars",
+   "parent_index": 225,
+   "role": "button",
+   "screenshot_frame": {
+    "h": 20,
+    "w": 14,
+    "x": 0,
+    "y": 0
+   }
+  },
+  {
+   "actions": [
+    "click"
+   ],
+   "depth": 31,
+   "element_index": 230,
+   "element_token": "s00000003:230",
+   "enabled": true,
+   "frame": {
+    "h": 24.0,
+    "w": 16.0,
+    "x": 1806.0,
+    "y": 1012.0
+   },
+   "geometry_trusted": true,
+   "label": "Rate 5 stars",
+   "parent_index": 225,
+   "role": "button",
+   "screenshot_frame": {
+    "h": 20,
+    "w": 14,
+    "x": 0,
+    "y": 0
+   }
+  },
+  {
+   "actions": [
+    "listitem.scroll-to"
+   ],
+   "depth": 27,
+   "element_index": 231,
+   "element_token": "s00000003:231",
+   "enabled": true,
+   "frame": {
+    "h": 45.0,
+    "w": 1350.0,
+    "x": 480.0,
+    "y": 1055.0
+   },
+   "geometry_trusted": true,
+   "label": "Go to album Fixture Album 29 Writable Batch 0030 Fixture Artist 29 Fixture Album 29 2009 3:00 Rate 1 star Rate 2 stars Rate 3 stars Rate 4 stars Rate 5 stars",
+   "parent_index": 6,
+   "role": "row",
+   "screenshot_frame": {
+    "h": 38,
+    "w": 1144,
+    "x": 0,
+    "y": 0
+   }
+  },
+  {
+   "actions": [
+    "listitem.scroll-to"
+   ],
+   "depth": 28,
+   "element_index": 232,
+   "element_token": "s00000003:232",
+   "enabled": true,
+   "frame": {
+    "h": 45.0,
+    "w": 40.0,
+    "x": 480.0,
+    "y": 1055.0
+   },
+   "geometry_trusted": true,
+   "label": "Go to album Fixture Album 29",
+   "parent_index": 231,
+   "role": "grid cell",
+   "screenshot_frame": {
+    "h": 38,
+    "w": 34,
+    "x": 0,
+    "y": 0
+   }
+  },
+  {
+   "actions": [
+    "listitem.scroll-to"
+   ],
+   "depth": 28,
+   "element_index": 233,
+   "element_token": "s00000003:233",
+   "enabled": true,
+   "frame": {
+    "h": 45.0,
+    "w": 472.0,
+    "x": 520.0,
+    "y": 1055.0
+   },
+   "geometry_trusted": true,
+   "label": "Writable Batch 0030",
+   "parent_index": 231,
+   "role": "grid cell",
+   "screenshot_frame": {
+    "h": 38,
+    "w": 400,
+    "x": 0,
+    "y": 0
+   }
+  },
+  {
+   "actions": [
+    "listitem.scroll-to"
+   ],
+   "depth": 28,
+   "element_index": 234,
+   "element_token": "s00000003:234",
+   "enabled": true,
+   "frame": {
+    "h": 45.0,
+    "w": 260.0,
+    "x": 992.0,
+    "y": 1055.0
+   },
+   "geometry_trusted": true,
+   "label": "Fixture Artist 29",
+   "parent_index": 231,
+   "role": "grid cell",
+   "screenshot_frame": {
+    "h": 38,
+    "w": 220,
+    "x": 0,
+    "y": 0
+   }
+  },
+  {
+   "actions": [
+    "listitem.scroll-to"
+   ],
+   "depth": 28,
+   "element_index": 235,
+   "element_token": "s00000003:235",
+   "enabled": true,
+   "frame": {
+    "h": 45.0,
+    "w": 300.0,
+    "x": 1252.0,
+    "y": 1055.0
+   },
+   "geometry_trusted": true,
+   "label": "Fixture Album 29",
+   "parent_index": 231,
+   "role": "grid cell",
+   "screenshot_frame": {
+    "h": 38,
+    "w": 254,
+    "x": 0,
+    "y": 0
+   }
+  },
+  {
+   "actions": [
+    "listitem.scroll-to"
+   ],
+   "depth": 28,
+   "element_index": 236,
+   "element_token": "s00000003:236",
+   "enabled": true,
+   "frame": {
+    "h": 45.0,
+    "w": 90.0,
+    "x": 1552.0,
+    "y": 1055.0
+   },
+   "geometry_trusted": true,
+   "label": "2009",
+   "parent_index": 231,
+   "role": "grid cell",
+   "screenshot_frame": {
+    "h": 38,
+    "w": 76,
+    "x": 0,
+    "y": 0
+   }
+  },
+  {
+   "actions": [
+    "listitem.scroll-to"
+   ],
+   "depth": 28,
+   "element_index": 237,
+   "element_token": "s00000003:237",
+   "enabled": true,
+   "frame": {
+    "h": 45.0,
+    "w": 100.0,
+    "x": 1642.0,
+    "y": 1055.0
+   },
+   "geometry_trusted": true,
+   "label": "3:00",
+   "parent_index": 231,
+   "role": "grid cell",
+   "screenshot_frame": {
+    "h": 38,
+    "w": 85,
+    "x": 0,
+    "y": 0
+   }
+  },
+  {
+   "actions": [
+    "listitem.scroll-to"
+   ],
+   "depth": 28,
+   "element_index": 238,
+   "element_token": "s00000003:238",
+   "enabled": true,
+   "frame": {
+    "h": 45.0,
+    "w": 88.0,
+    "x": 1742.0,
+    "y": 1055.0
+   },
+   "geometry_trusted": true,
+   "label": "Rate 1 star Rate 2 stars Rate 3 stars Rate 4 stars Rate 5 stars",
+   "parent_index": 231,
+   "role": "grid cell",
+   "screenshot_frame": {
+    "h": 38,
+    "w": 75,
+    "x": 0,
+    "y": 0
+   }
+  },
+  {
+   "actions": [
+    "click"
+   ],
+   "depth": 31,
+   "element_index": 239,
+   "element_token": "s00000003:239",
+   "enabled": true,
+   "frame": {
+    "h": 24.0,
+    "w": 16.0,
+    "x": 1742.0,
+    "y": 1057.0
+   },
+   "geometry_trusted": true,
+   "label": "Rate 1 star",
+   "parent_index": 238,
+   "role": "button",
+   "screenshot_frame": {
+    "h": 20,
+    "w": 14,
+    "x": 0,
+    "y": 0
+   }
+  },
+  {
+   "actions": [
+    "click"
+   ],
+   "depth": 31,
+   "element_index": 240,
+   "element_token": "s00000003:240",
+   "enabled": true,
+   "frame": {
+    "h": 24.0,
+    "w": 16.0,
+    "x": 1758.0,
+    "y": 1057.0
+   },
+   "geometry_trusted": true,
+   "label": "Rate 2 stars",
+   "parent_index": 238,
+   "role": "button",
+   "screenshot_frame": {
+    "h": 20,
+    "w": 14,
+    "x": 0,
+    "y": 0
+   }
+  },
+  {
+   "actions": [
+    "click"
+   ],
+   "depth": 31,
+   "element_index": 241,
+   "element_token": "s00000003:241",
+   "enabled": true,
+   "frame": {
+    "h": 24.0,
+    "w": 16.0,
+    "x": 1774.0,
+    "y": 1057.0
+   },
+   "geometry_trusted": true,
+   "label": "Rate 3 stars",
+   "parent_index": 238,
+   "role": "button",
+   "screenshot_frame": {
+    "h": 20,
+    "w": 14,
+    "x": 0,
+    "y": 0
+   }
+  },
+  {
+   "actions": [
+    "click"
+   ],
+   "depth": 31,
+   "element_index": 242,
+   "element_token": "s00000003:242",
+   "enabled": true,
+   "frame": {
+    "h": 24.0,
+    "w": 16.0,
+    "x": 1790.0,
+    "y": 1057.0
+   },
+   "geometry_trusted": true,
+   "label": "Rate 4 stars",
+   "parent_index": 238,
+   "role": "button",
+   "screenshot_frame": {
+    "h": 20,
+    "w": 14,
+    "x": 0,
+    "y": 0
+   }
+  },
+  {
+   "actions": [
+    "click"
+   ],
+   "depth": 31,
+   "element_index": 243,
+   "element_token": "s00000003:243",
+   "enabled": true,
+   "frame": {
+    "h": 24.0,
+    "w": 16.0,
+    "x": 1806.0,
+    "y": 1057.0
+   },
+   "geometry_trusted": true,
+   "label": "Rate 5 stars",
+   "parent_index": 238,
+   "role": "button",
+   "screenshot_frame": {
+    "h": 20,
+    "w": 14,
+    "x": 0,
+    "y": 0
+   }
+  },
+  {
+   "actions": [],
+   "depth": 25,
+   "description": "unlabelled scroll bar; 1st of 1 scroll bar in this window",
+   "element_index": 244,
+   "element_token": "s00000003:244",
+   "enabled": true,
+   "frame": {
+    "h": 759.0,
+    "w": 11.0,
+    "x": 1819.0,
+    "y": 290.0
+   },
+   "geometry_trusted": true,
+   "parent_index": 1,
+   "role": "scroll bar",
+   "screenshot_frame": {
+    "h": 643,
+    "w": 9,
+    "x": 0,
+    "y": 0
+   },
+   "unlabelled": true,
+   "value": "4545.0"
+  },
+  {
+   "depth": 26,
+   "element_index": 245,
+   "element_token": "s00000003:245",
+   "enabled": true,
+   "frame": {
+    "h": 759,
+    "w": 11,
+    "x": 240,
+    "y": 150
+   },
+   "geometry_trusted": false,
+   "parent_index": 244,
+   "role": "generic",
+   "screenshot_frame": {
+    "h": 643,
+    "w": 9,
+    "x": 0,
+    "y": 0
+   },
+   "value": "4545.0"
+  },
+  {
+   "actions": [],
+   "depth": 16,
+   "element_index": 246,
+   "element_token": "s00000003:246",
+   "enabled": true,
+   "frame": {
+    "h": 36.0,
+    "w": 227.0,
+    "x": 246.0,
+    "y": 235.0
+   },
+   "geometry_trusted": true,
+   "label": "Music",
+   "parent_index": 0,
+   "role": "list item",
+   "screenshot_frame": {
+    "h": 31,
+    "w": 192,
+    "x": 0,
+    "y": 0
+   },
+   "selected": true
+  },
+  {
+   "actions": [
+    "click"
+   ],
+   "depth": 17,
+   "element_index": 247,
+   "element_token": "s00000003:247",
+   "enabled": true,
+   "frame": {
+    "h": 36.0,
+    "w": 211.0,
+    "x": 246.0,
+    "y": 235.0
+   },
+   "geometry_trusted": true,
+   "label": "Music",
+   "parent_index": 246,
+   "role": "button",
+   "screenshot_frame": {
+    "h": 31,
+    "w": 179,
+    "x": 0,
+    "y": 0
+   }
+  },
+  {
+   "actions": [],
+   "depth": 16,
+   "element_index": 248,
+   "element_token": "s00000003:248",
+   "enabled": true,
+   "frame": {
+    "h": 36.0,
+    "w": 227.0,
+    "x": 246.0,
+    "y": 273.0
+   },
+   "geometry_trusted": true,
+   "label": "Podcasts",
+   "parent_index": 0,
+   "role": "list item",
+   "screenshot_frame": {
+    "h": 31,
+    "w": 192,
+    "x": 0,
+    "y": 0
+   },
+   "selected": false
+  },
+  {
+   "actions": [
+    "click"
+   ],
+   "depth": 17,
+   "element_index": 249,
+   "element_token": "s00000003:249",
+   "enabled": true,
+   "frame": {
+    "h": 36.0,
+    "w": 211.0,
+    "x": 246.0,
+    "y": 273.0
+   },
+   "geometry_trusted": true,
+   "label": "Podcasts",
+   "parent_index": 248,
+   "role": "button",
+   "screenshot_frame": {
+    "h": 31,
+    "w": 179,
+    "x": 0,
+    "y": 0
+   }
+  },
+  {
+   "actions": [],
+   "depth": 16,
+   "element_index": 250,
+   "element_token": "s00000003:250",
+   "enabled": true,
+   "frame": {
+    "h": 36.0,
+    "w": 227.0,
+    "x": 246.0,
+    "y": 311.0
+   },
+   "geometry_trusted": true,
+   "label": "YouTube",
+   "parent_index": 0,
+   "role": "list item",
+   "screenshot_frame": {
+    "h": 31,
+    "w": 192,
+    "x": 0,
+    "y": 0
+   },
+   "selected": false
+  },
+  {
+   "actions": [
+    "click"
+   ],
+   "depth": 17,
+   "element_index": 251,
+   "element_token": "s00000003:251",
+   "enabled": true,
+   "frame": {
+    "h": 36.0,
+    "w": 211.0,
+    "x": 246.0,
+    "y": 311.0
+   },
+   "geometry_trusted": true,
+   "label": "YouTube",
+   "parent_index": 250,
+   "role": "button",
+   "screenshot_frame": {
+    "h": 31,
+    "w": 179,
+    "x": 0,
+    "y": 0
+   }
+  },
+  {
+   "actions": [],
+   "depth": 16,
+   "element_index": 252,
+   "element_token": "s00000003:252",
+   "enabled": true,
+   "frame": {
+    "h": 36.0,
+    "w": 227.0,
+    "x": 246.0,
+    "y": 349.0
+   },
+   "geometry_trusted": true,
+   "label": "Radio",
+   "parent_index": 0,
+   "role": "list item",
+   "screenshot_frame": {
+    "h": 31,
+    "w": 192,
+    "x": 0,
+    "y": 0
+   },
+   "selected": false
+  },
+  {
+   "actions": [
+    "click"
+   ],
+   "depth": 17,
+   "element_index": 253,
+   "element_token": "s00000003:253",
+   "enabled": true,
+   "frame": {
+    "h": 36.0,
+    "w": 211.0,
+    "x": 246.0,
+    "y": 349.0
+   },
+   "geometry_trusted": true,
+   "label": "Radio",
+   "parent_index": 252,
+   "role": "button",
+   "screenshot_frame": {
+    "h": 31,
+    "w": 179,
+    "x": 0,
+    "y": 0
+   }
+  },
+  {
+   "actions": [],
+   "depth": 16,
+   "element_index": 254,
+   "element_token": "s00000003:254",
+   "enabled": true,
+   "frame": {
+    "h": 36.0,
+    "w": 227.0,
+    "x": 246.0,
+    "y": 387.0
+   },
+   "geometry_trusted": true,
+   "label": "Queue",
+   "parent_index": 0,
+   "role": "list item",
+   "screenshot_frame": {
+    "h": 31,
+    "w": 192,
+    "x": 0,
+    "y": 0
+   },
+   "selected": false
+  },
+  {
+   "actions": [
+    "click"
+   ],
+   "depth": 17,
+   "element_index": 255,
+   "element_token": "s00000003:255",
+   "enabled": true,
+   "frame": {
+    "h": 36.0,
+    "w": 211.0,
+    "x": 246.0,
+    "y": 387.0
+   },
+   "geometry_trusted": true,
+   "label": "Queue",
+   "parent_index": 254,
+   "role": "button",
+   "screenshot_frame": {
+    "h": 31,
+    "w": 179,
+    "x": 0,
+    "y": 0
+   }
+  },
+  {
+   "actions": [],
+   "depth": 16,
+   "element_index": 256,
+   "element_token": "s00000003:256",
+   "enabled": true,
+   "frame": {
+    "h": 36.0,
+    "w": 227.0,
+    "x": 246.0,
+    "y": 463.0
+   },
+   "geometry_trusted": true,
+   "label": "Fixture Playlist",
+   "parent_index": 0,
+   "role": "list item",
+   "screenshot_frame": {
+    "h": 31,
+    "w": 192,
+    "x": 0,
+    "y": 0
+   },
+   "selected": false
+  },
+  {
+   "actions": [
+    "click"
+   ],
+   "depth": 17,
+   "element_index": 257,
+   "element_token": "s00000003:257",
+   "enabled": true,
+   "frame": {
+    "h": 36.0,
+    "w": 211.0,
+    "x": 246.0,
+    "y": 463.0
+   },
+   "geometry_trusted": true,
+   "label": "Fixture Playlist",
+   "parent_index": 256,
+   "role": "button",
+   "screenshot_frame": {
+    "h": 31,
+    "w": 179,
+    "x": 0,
+    "y": 0
+   }
+  },
+  {
+   "actions": [],
+   "depth": 16,
+   "element_index": 258,
+   "element_token": "s00000003:258",
+   "enabled": true,
+   "frame": {
+    "h": 36.0,
+    "w": 227.0,
+    "x": 246.0,
+    "y": 539.0
+   },
+   "geometry_trusted": true,
+   "label": "Recently Played",
+   "parent_index": 0,
+   "role": "list item",
+   "screenshot_frame": {
+    "h": 31,
+    "w": 192,
+    "x": 0,
+    "y": 0
+   },
+   "selected": false
+  },
+  {
+   "actions": [
+    "click"
+   ],
+   "depth": 17,
+   "element_index": 259,
+   "element_token": "s00000003:259",
+   "enabled": true,
+   "frame": {
+    "h": 36.0,
+    "w": 211.0,
+    "x": 246.0,
+    "y": 539.0
+   },
+   "geometry_trusted": true,
+   "label": "Recently Played",
+   "parent_index": 258,
+   "role": "button",
+   "screenshot_frame": {
+    "h": 31,
+    "w": 179,
+    "x": 0,
+    "y": 0
+   }
+  },
+  {
+   "actions": [],
+   "depth": 16,
+   "element_index": 260,
+   "element_token": "s00000003:260",
+   "enabled": true,
+   "frame": {
+    "h": 36.0,
+    "w": 227.0,
+    "x": 246.0,
+    "y": 577.0
+   },
+   "geometry_trusted": true,
+   "label": "Top Rated",
+   "parent_index": 0,
+   "role": "list item",
+   "screenshot_frame": {
+    "h": 31,
+    "w": 192,
+    "x": 0,
+    "y": 0
+   },
+   "selected": false
+  },
+  {
+   "actions": [
+    "click"
+   ],
+   "depth": 17,
+   "element_index": 261,
+   "element_token": "s00000003:261",
+   "enabled": true,
+   "frame": {
+    "h": 36.0,
+    "w": 211.0,
+    "x": 246.0,
+    "y": 577.0
+   },
+   "geometry_trusted": true,
+   "label": "Top Rated",
+   "parent_index": 260,
+   "role": "button",
+   "screenshot_frame": {
+    "h": 31,
+    "w": 179,
+    "x": 0,
+    "y": 0
+   }
+  },
+  {
+   "actions": [],
+   "depth": 16,
+   "element_index": 262,
+   "element_token": "s00000003:262",
+   "enabled": true,
+   "frame": {
+    "h": 36.0,
+    "w": 227.0,
+    "x": 246.0,
+    "y": 615.0
+   },
+   "geometry_trusted": true,
+   "label": "Recently Added",
+   "parent_index": 0,
+   "role": "list item",
+   "screenshot_frame": {
+    "h": 31,
+    "w": 192,
+    "x": 0,
+    "y": 0
+   },
+   "selected": false
+  },
+  {
+   "actions": [
+    "click"
+   ],
+   "depth": 17,
+   "element_index": 263,
+   "element_token": "s00000003:263",
+   "enabled": true,
+   "frame": {
+    "h": 36.0,
+    "w": 211.0,
+    "x": 246.0,
+    "y": 615.0
+   },
+   "geometry_trusted": true,
+   "label": "Recently Added",
+   "parent_index": 262,
+   "role": "button",
+   "screenshot_frame": {
+    "h": 31,
+    "w": 179,
+    "x": 0,
+    "y": 0
+   }
+  },
+  {
+   "actions": [],
+   "depth": 16,
+   "element_index": 264,
+   "element_token": "s00000003:264",
+   "enabled": true,
+   "frame": {
+    "h": 36.0,
+    "w": 227.0,
+    "x": 246.0,
+    "y": 653.0
+   },
+   "geometry_trusted": true,
+   "label": "My Stats",
+   "parent_index": 0,
+   "role": "list item",
+   "screenshot_frame": {
+    "h": 31,
+    "w": 192,
+    "x": 0,
+    "y": 0
+   },
+   "selected": false
+  },
+  {
+   "actions": [
+    "click"
+   ],
+   "depth": 17,
+   "element_index": 265,
+   "element_token": "s00000003:265",
+   "enabled": true,
+   "frame": {
+    "h": 36.0,
+    "w": 211.0,
+    "x": 246.0,
+    "y": 653.0
+   },
+   "geometry_trusted": true,
+   "label": "My Stats",
+   "parent_index": 264,
+   "role": "button",
+   "screenshot_frame": {
+    "h": 31,
+    "w": 179,
+    "x": 0,
+    "y": 0
+   }
+  },
+  {
+   "actions": [
+    "click"
+   ],
+   "depth": 14,
+   "element_index": 266,
+   "element_token": "s00000003:266",
+   "enabled": true,
+   "frame": {
+    "h": 66.0,
+    "w": 66.0,
+    "x": 247.0,
+    "y": 1061.0
+   },
+   "geometry_trusted": true,
+   "label": "Reveal playing album",
+   "parent_index": 0,
+   "role": "button",
+   "screenshot_frame": {
+    "h": 56,
+    "w": 56,
+    "x": 0,
+    "y": 0
+   }
+  },
+  {
+   "actions": [
+    "click"
+   ],
+   "depth": 15,
+   "element_index": 267,
+   "element_token": "s00000003:267",
+   "enabled": true,
+   "frame": {
+    "h": 34.0,
+    "w": 220.0,
+    "x": 318.0,
+    "y": 1059.0
+   },
+   "geometry_trusted": true,
+   "label": "Jump to now playing",
+   "parent_index": 0,
+   "role": "button",
+   "screenshot_frame": {
+    "h": 29,
+    "w": 186,
+    "x": 0,
+    "y": 0
+   }
+  },
+  {
+   "actions": [
+    "click"
+   ],
+   "depth": 15,
+   "element_index": 268,
+   "element_token": "s00000003:268",
+   "enabled": true,
+   "frame": {
+    "h": 34.0,
+    "w": 220.0,
+    "x": 318.0,
+    "y": 1095.0
+   },
+   "geometry_trusted": true,
+   "label": "Go to playing artist",
+   "parent_index": 0,
+   "role": "button",
+   "screenshot_frame": {
+    "h": 29,
+    "w": 186,
+    "x": 0,
+    "y": 0
+   }
+  },
+  {
+   "actions": [
+    "click"
+   ],
+   "depth": 15,
+   "element_index": 269,
+   "element_token": "s00000003:269",
+   "enabled": true,
+   "frame": {
+    "h": 34.0,
+    "w": 34.0,
+    "x": 929.0,
+    "y": 1054.0
+   },
+   "geometry_trusted": true,
+   "label": "Shuffle",
+   "parent_index": 0,
+   "role": "toggle button",
+   "screenshot_frame": {
+    "h": 29,
+    "w": 29,
+    "x": 0,
+    "y": 0
+   }
+  },
+  {
+   "actions": [
+    "click"
+   ],
+   "depth": 15,
+   "element_index": 270,
+   "element_token": "s00000003:270",
+   "enabled": true,
+   "frame": {
+    "h": 34.0,
+    "w": 34.0,
+    "x": 971.0,
+    "y": 1054.0
+   },
+   "geometry_trusted": true,
+   "label": "Play previous track",
+   "parent_index": 0,
+   "role": "button",
+   "screenshot_frame": {
+    "h": 29,
+    "w": 29,
+    "x": 0,
+    "y": 0
+   }
+  },
+  {
+   "actions": [
+    "click"
+   ],
+   "depth": 15,
+   "element_index": 271,
+   "element_token": "s00000003:271",
+   "enabled": true,
+   "frame": {
+    "h": 44.0,
+    "w": 44.0,
+    "x": 1013.0,
+    "y": 1049.0
+   },
+   "geometry_trusted": true,
+   "label": "Play (Space)",
+   "parent_index": 0,
+   "role": "button",
+   "screenshot_frame": {
+    "h": 37,
+    "w": 37,
+    "x": 0,
+    "y": 0
+   }
+  },
+  {
+   "actions": [
+    "click"
+   ],
+   "depth": 15,
+   "element_index": 272,
+   "element_token": "s00000003:272",
+   "enabled": true,
+   "frame": {
+    "h": 34.0,
+    "w": 34.0,
+    "x": 1065.0,
+    "y": 1054.0
+   },
+   "geometry_trusted": true,
+   "label": "Play next track",
+   "parent_index": 0,
+   "role": "button",
+   "screenshot_frame": {
+    "h": 29,
+    "w": 29,
+    "x": 0,
+    "y": 0
+   }
+  },
+  {
+   "actions": [
+    "click"
+   ],
+   "depth": 15,
+   "element_index": 273,
+   "element_token": "s00000003:273",
+   "enabled": true,
+   "frame": {
+    "h": 34.0,
+    "w": 34.0,
+    "x": 1107.0,
+    "y": 1054.0
+   },
+   "geometry_trusted": true,
+   "label": "Repeat off \u2014 playback stops after the queue",
+   "parent_index": 0,
+   "role": "toggle button",
+   "screenshot_frame": {
+    "h": 29,
+    "w": 29,
+    "x": 0,
+    "y": 0
+   }
+  },
+  {
+   "actions": [
+    "seek.explain-color-scale"
+   ],
+   "depth": 16,
+   "element_index": 274,
+   "element_token": "s00000003:274",
+   "enabled": true,
+   "frame": {
+    "h": 28.0,
+    "w": 899.0,
+    "x": 581.0,
+    "y": 1095.0
+   },
+   "geometry_trusted": true,
+   "label": "Playback position",
+   "parent_index": 0,
+   "role": "slider",
+   "screenshot_frame": {
+    "h": 24,
+    "w": 762,
+    "x": 0,
+    "y": 0
+   }
+  },
+  {
+   "actions": [
+    "click"
+   ],
+   "depth": 13,
+   "element_index": 275,
+   "element_token": "s00000003:275",
+   "enabled": true,
+   "frame": {
+    "h": 34.0,
+    "w": 36.0,
+    "x": 1580.0,
+    "y": 1077.0
+   },
+   "geometry_trusted": true,
+   "label": "Sleep Timer",
+   "parent_index": 0,
+   "role": "toggle button",
+   "screenshot_frame": {
+    "h": 29,
+    "w": 31,
+    "x": 0,
+    "y": 0
+   }
+  },
+  {
+   "actions": [
+    "click"
+   ],
+   "depth": 13,
+   "element_index": 276,
+   "element_token": "s00000003:276",
+   "enabled": true,
+   "frame": {
+    "h": 34.0,
+    "w": 34.0,
+    "x": 1624.0,
+    "y": 1077.0
+   },
+   "geometry_trusted": true,
+   "label": "Volume",
+   "parent_index": 0,
+   "role": "button",
+   "screenshot_frame": {
+    "h": 29,
+    "w": 29,
+    "x": 0,
+    "y": 0
+   }
+  },
+  {
+   "actions": [],
+   "depth": 13,
+   "element_index": 277,
+   "element_token": "s00000003:277",
+   "enabled": true,
+   "frame": {
+    "h": 34.0,
+    "w": 80.0,
+    "x": 1666.0,
+    "y": 1077.0
+   },
+   "geometry_trusted": true,
+   "label": "Volume",
+   "parent_index": 0,
+   "role": "slider",
+   "screenshot_frame": {
+    "h": 29,
+    "w": 68,
+    "x": 0,
+    "y": 0
+   },
+   "value": "1.0"
+  },
+  {
+   "actions": [
+    "click"
+   ],
+   "depth": 14,
+   "element_index": 278,
+   "element_token": "s00000003:278",
+   "enabled": true,
+   "frame": {
+    "h": 34.0,
+    "w": 36.0,
+    "x": 309.0,
+    "y": 150.0
+   },
+   "geometry_trusted": true,
+   "label": "Analyzing library\u2026",
+   "parent_index": 0,
+   "role": "toggle button",
+   "screenshot_frame": {
+    "h": 29,
+    "w": 31,
+    "x": 0,
+    "y": 0
+   }
+  },
+  {
+   "actions": [
+    "click"
+   ],
+   "depth": 14,
+   "element_index": 279,
+   "element_token": "s00000003:279",
+   "enabled": true,
+   "frame": {
+    "h": 34.0,
+    "w": 36.0,
+    "x": 351.0,
+    "y": 150.0
+   },
+   "geometry_trusted": true,
+   "label": "Back to previous view",
+   "parent_index": 0,
+   "role": "button",
+   "screenshot_frame": {
+    "h": 29,
+    "w": 31,
+    "x": 0,
+    "y": 0
+   }
+  },
+  {
+   "actions": [],
+   "depth": 14,
+   "element_index": 280,
+   "element_token": "s00000003:280",
+   "enabled": true,
+   "frame": {
+    "h": 34.0,
+    "w": 34.0,
+    "x": 1585.0,
+    "y": 150.0
+   },
+   "geometry_trusted": true,
+   "label": "Main menu (F10)",
+   "parent_index": 0,
+   "role": "button",
+   "screenshot_frame": {
+    "h": 29,
+    "w": 29,
+    "x": 0,
+    "y": 0
+   }
+  },
+  {
+   "actions": [
+    "click"
+   ],
+   "depth": 15,
+   "element_index": 281,
+   "element_token": "s00000003:281",
+   "enabled": true,
+   "frame": {
+    "h": 34.0,
+    "w": 34.0,
+    "x": 1585.0,
+    "y": 150.0
+   },
+   "geometry_trusted": true,
+   "label": "Main menu (F10)",
+   "parent_index": 280,
+   "role": "toggle button",
+   "screenshot_frame": {
+    "h": 29,
+    "w": 29,
+    "x": 0,
+    "y": 0
+   }
+  },
+  {
+   "actions": [
+    "click"
+   ],
+   "depth": 14,
+   "description": "Search all fields (Ctrl+F)",
+   "element_index": 282,
+   "element_token": "s00000003:282",
+   "enabled": true,
+   "frame": {
+    "h": 34.0,
+    "w": 36.0,
+    "x": 1625.0,
+    "y": 150.0
+   },
+   "geometry_trusted": true,
+   "label": "Search all fields",
+   "parent_index": 0,
+   "role": "toggle button",
+   "screenshot_frame": {
+    "h": 29,
+    "w": 31,
+    "x": 0,
+    "y": 0
+   }
+  },
+  {
+   "actions": [
+    "click"
+   ],
+   "depth": 14,
+   "element_index": 283,
+   "element_token": "s00000003:283",
+   "enabled": true,
+   "frame": {
+    "h": 34.0,
+    "w": 36.0,
+    "x": 1667.0,
+    "y": 150.0
+   },
+   "geometry_trusted": true,
+   "label": "Toggle info panel",
+   "parent_index": 0,
+   "role": "toggle button",
+   "screenshot_frame": {
+    "h": 29,
+    "w": 31,
+    "x": 0,
+    "y": 0
+   }
+  },
+  {
+   "actions": [
+    "click"
+   ],
+   "depth": 15,
+   "description": "Minimise the window",
+   "element_index": 284,
+   "element_token": "s00000003:284",
+   "enabled": true,
+   "frame": {
+    "h": 34.0,
+    "w": 34.0,
+    "x": 1709.0,
+    "y": 150.0
+   },
+   "geometry_trusted": true,
+   "label": "Minimise",
+   "parent_index": 0,
+   "role": "button",
+   "screenshot_frame": {
+    "h": 29,
+    "w": 29,
+    "x": 0,
+    "y": 0
+   }
+  },
+  {
+   "actions": [
+    "click"
+   ],
+   "depth": 15,
+   "description": "Maximise the window",
+   "element_index": 285,
+   "element_token": "s00000003:285",
+   "enabled": true,
+   "frame": {
+    "h": 34.0,
+    "w": 34.0,
+    "x": 1746.0,
+    "y": 150.0
+   },
+   "geometry_trusted": true,
+   "label": "Maximise",
+   "parent_index": 0,
+   "role": "button",
+   "screenshot_frame": {
+    "h": 29,
+    "w": 29,
+    "x": 0,
+    "y": 0
+   }
+  },
+  {
+   "actions": [
+    "click"
+   ],
+   "depth": 15,
+   "description": "Close the window",
+   "element_index": 286,
+   "element_token": "s00000003:286",
+   "enabled": true,
+   "frame": {
+    "h": 34.0,
+    "w": 34.0,
+    "x": 1783.0,
+    "y": 150.0
+   },
+   "geometry_trusted": true,
+   "label": "Close",
+   "parent_index": 0,
+   "role": "button",
+   "screenshot_frame": {
+    "h": 29,
+    "w": 29,
+    "x": 0,
+    "y": 0
+   }
+  }
+ ],
+ "elements_complete": true,
+ "frame_scale": 0.8475,
+ "geometry_trusted": true,
+ "returned_element_count": 287,
+ "screenshot_height": 848,
+ "screenshot_width": 1356,
+ "total_element_count": 287,
+ "window_title": "Reprise"
+}

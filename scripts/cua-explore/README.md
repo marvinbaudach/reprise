@@ -123,10 +123,14 @@ green while the real run did nothing. Role spellings live in exactly one place,
 fails where it is used.
 
 On cua-driver 0.28 the sidebar sections were not exposed to accessibility at all; with
-complete walks on 0.33 they appear as list items without actions (`Playlists` is a
-heading with no row while the profile has no playlist). The sweep measures the view it
-starts in first and records any section it cannot reach as `reachable: false` instead of
-aborting the run.
+complete walks on 0.33 they appear as list items without actions. `Playlists` is the
+exception: it is a heading, and the heading is not in the tree - neither is the
+new-playlist button beside it. The section is reached through a playlist row, so the
+generated `mixed-sources-128` profile carries one playlist (`Fixture Playlist`, four
+tracks) and the mission maps the section to it with `section_handles`, a fixture-token
+name that both the explorer and the audit resolve through `section_handles.py`. The sweep
+measures the view it starts in first and records any section it cannot reach as
+`reachable: false` instead of aborting the run.
 
 The hover sweep points at every visible, enabled, actionable element whose role
 has a hover contract - buttons and links strictly, rows, cells, tabs, chips and
@@ -285,6 +289,22 @@ to the disposable `HOME` as `agent-notes.jsonl`; the runner retains that file un
 `evidence/agent/`. The vocabulary-only `agents/probe_agent.py` records up to 15 normalized
 observations for the maintainer calibration run without attempting workload coverage.
 
+## What counts as a search result
+
+`search_results.py` decides which elements of a snapshot are results, because the driver
+gives a sidebar entry, the column-header row, a table row and a source card nearly the
+same shape (`ui_vocabulary` folds a list item onto `row`). The snapshot names every
+element's parent, and the window's one `group` child is the page; inside it a result is a
+data row (a `row` whose parent is a `list`, so the column-header row is not one) or a
+text-only button (a `button` with no action and no toggle child, such as an episode
+inside a source card - controls are buttons that carry a click or wrap a menu toggle).
+The driver marks each element `result` in the observation; a snapshot without parent
+links marks none and every consumer falls back to its rows. The trace projection, the
+`section-search` and `combined-filter` audits and the agent's own scope and
+duplicate-row checks all read the same list. The mission file lists routes in one order
+and the agent, which reads it with sorted keys, walks them in another, so the
+`section-search` audit looks each route up on its own.
+
 ## Evidence
 
 Each retained run contains:
@@ -308,8 +328,8 @@ sweeps use `--gtk-animations off`; compare an optional `on` run with `hover_comp
 find affordances that disappear when GTK animations are disabled. Icon buttons without an
 accessible name remain outside the sweep and are reported by the accessibility oracle.
 
-The agent-free `hover-affordance-sweep` mission visits Music, Queue, Playlists, Podcasts,
-YouTube, Radio, and My Stats in that order. In each section it hovers at most 28 named,
+The agent-free `hover-affordance-sweep` mission visits Music, Queue, Playlists (through the
+fixture playlist), Podcasts, YouTube, Radio, and My Stats in that order. In each section it hovers at most 28 named,
 actionable, enabled, visible button-like elements, sorted by geometry and label. Its
 workload is complete when every section was reached, the configured minimum target count
 was hovered, and at least one hover per section produced measurable screenshots. Hover
@@ -460,26 +480,44 @@ when the host is busy.
 
 ## Known gaps on cua-driver 0.33
 
-The deck now runs every mission to a finish instead of aborting, and
-`first-time-exploration` reaches `mission_complete`. The workload audits of the others
-still expect the tree of an older driver:
+The deck runs every mission to a finish instead of aborting. On the generated profiles
+`first-time-exploration`, `hover-affordance-sweep` and `section-search-isolation` reach
+`mission_complete`. `large-library-stress` does not, and what stops it is not the harness:
 
-- `hover-affordance-sweep` cannot complete on the generated profiles: `Playlists` has no
-  accessible handle while no playlist exists, and the audit requires every listed section
-  to be visited.
-- `section-search-isolation` counts the sidebar list items (`Music`, `Queue`, ...) as result
-  rows, so `len(after_rows) == 1` fails even where the screenshot shows the single correct
-  result. Podcast and YouTube results are buttons, not rows.
+- `sort-cycle` needs a column header that sorts when clicked. Pixel clicks do reach the
+  header (it takes the hover wash), yet neither the order nor the sort arrow changes. A
+  plain `xdotool` click (press and release, with and without a pointer move, one and
+  two clicks) on a bare Xvfb and openbox session with no cua-driver involved behaves the
+  same on every header, while a pixel click through the driver opens the Add filter
+  popover. That makes it a candidate Reprise defect rather than a harness limit, but it
+  was seen only under Xvfb: confirm it on a real desktop before filing.
+- `combined-filter` and `batch-edit` have to choose from popover lists (the Add filter
+  facets, the row context menu). cua-driver 0.33 lists a popover row as a `list item`
+  with an empty name and no action, and its text only as an unindexed `label =` child in
+  `tree_markdown`, so no label can address it. The harness does not invent a name from
+  that text: the missing name is the finding (GP-10).
+- The agent also presses Ctrl+A and Shift+F10 while the search popover it opened for the
+  `combined-filter` search still holds the keyboard focus, so the selection never reaches
+  the list. That is a plan defect of its own, but fixing it alone cannot finish the
+  workload, because the menu it opens has nothing to address.
+
+Other gaps that are still open:
+
+- The sidebar headings (LIBRARY, PLAYLISTS, SMART) and the new-playlist button are not in
+  the accessibility tree at all - not in cua-driver's walk and not in a plain `Atspi`
+  walk of the same session - although the screenshot draws them. The hover sweep
+  therefore reaches the Playlists section through the playlist the generated profile
+  carries (`section_handles`), and the missing heading and button are recorded as a
+  candidate NAV-11 defect rather than skipped by the audit.
 - The bundled agent's plans address rows and the column-header row with `dispatch: ax`.
   Neither offers an AT-SPI click, and the driver refuses to aim at them by element. The
   executor therefore sends such a click by pixel (`dispatch: px`, with the
   `frame_scale`-corrected point, no accessibility probe afterwards) and records the
-  reroute as `dispatch_rerouted` in the step response, so `sort-cycle`,
-  `combined-filter` and `batch-edit` in `large-library-stress` get their actions. Only
-  when there is no window origin or frame to aim at does the click stay undelivered; it
-  is then a `driver-action-undelivered` note at confidence 0.3 with
-  `blocks_gate: false`, never an app finding. `no-accessible-action` is reserved for a
-  click that was delivered and did nothing.
+  reroute as `dispatch_rerouted` in the step response. Only when there is no window
+  origin or frame to aim at does the click stay undelivered; it is then a
+  `driver-action-undelivered` note at confidence 0.3 with `blocks_gate: false`, never an
+  app finding. `no-accessible-action` is reserved for a click that was delivered and did
+  nothing.
 
 ## Semantic dispatch fallback
 

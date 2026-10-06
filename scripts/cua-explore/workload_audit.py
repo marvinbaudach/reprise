@@ -7,6 +7,8 @@ import re
 from dataclasses import dataclass
 from typing import Any, Mapping, Sequence
 
+from section_handles import section_handle
+
 
 # A selection marker is the count standing next to a selection noun, as in the
 # tag dialog title "Edit 512 Tracks" or a status line "512 selected". The count
@@ -224,6 +226,10 @@ def _audit_section_search(
     traces: Sequence[ActionTrace],
     fixture_tokens: Mapping[str, str],
 ) -> dict[str, Any]:
+    # The mission file lists the routes in one order and a reasoning agent, which
+    # reads the mission with sorted keys, may walk them in another. Each route is
+    # therefore looked up on its own; only the unsupported sections must come
+    # after every typed route.
     cursor = 0
     section_names = {
         *(_folded(item) for item in workload.get("route_tokens", {})),
@@ -234,7 +240,7 @@ def _audit_section_search(
         source_index = next(
             (
                 index
-                for index in range(cursor, len(traces))
+                for index in range(len(traces))
                 if traces[index].action.get("kind") == "activate"
                 and traces[index].action.get("target_label") == source
                 and traces[index].state_changed
@@ -272,7 +278,7 @@ def _audit_section_search(
         )
         route_results[str(source)] = passed
         if typed_index is not None:
-            cursor = typed_index + 1
+            cursor = max(cursor, typed_index + 1)
     unsupported_results: dict[str, bool] = {}
     for source in workload.get("unsupported", []):
         trace = next(
@@ -597,9 +603,15 @@ def _audit_batch(
 
 
 def _audit_hover_sweep(
-    workload: Mapping[str, Any], traces: Sequence[ActionTrace]
+    workload: Mapping[str, Any],
+    traces: Sequence[ActionTrace],
+    fixture_tokens: Mapping[str, str],
 ) -> dict[str, Any]:
     sections = tuple(str(item) for item in workload.get("sections", []))
+    section_of = {
+        section_handle(workload, fixture_tokens, section): section
+        for section in sections
+    }
     minimum = int(workload.get("min_targets_per_section", 0))
     visited = {section: False for section in sections}
     hovered = {section: 0 for section in sections}
@@ -609,8 +621,8 @@ def _audit_hover_sweep(
     unmeasured_codes = {"hover-unmeasurable", "hover-skipped"}
     for trace in traces:
         action = trace.action
-        if action.get("kind") == "activate" and action.get("target_label") in visited:
-            current_section = str(action.get("target_label"))
+        if action.get("kind") == "activate" and action.get("target_label") in section_of:
+            current_section = section_of[str(action.get("target_label"))]
             if trace.state_changed:
                 visited[current_section] = True
             continue
@@ -668,7 +680,7 @@ def audit_action_workload(
     elif kind == "restart":
         details = _audit_restart(workload, traces, fixture_tokens or {})
     elif kind == "hover-sweep":
-        details = _audit_hover_sweep(workload, traces)
+        details = _audit_hover_sweep(workload, traces, fixture_tokens or {})
     else:
         details = {"complete": False, "error": "unsupported workload kind"}
     return {"workload_index": workload_index, "kind": kind, **details}

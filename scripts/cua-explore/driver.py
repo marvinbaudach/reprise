@@ -652,6 +652,8 @@ class CuaExecutor:
                     "actionable": element.actionable,
                     "geometry_trusted": element.geometry_trusted,
                     "frame": dataclasses.asdict(element.frame),
+                    # Only when the snapshot could tell; absent means unknown.
+                    **({} if element.result is None else {"result": element.result}),
                 }
                 for element in state.elements
                 if element.label
