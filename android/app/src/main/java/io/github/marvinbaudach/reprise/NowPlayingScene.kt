@@ -246,7 +246,12 @@ private fun NowPlayingPanelLayer(
     )
     val fog = rememberCoverFogBitmap(artwork?.image, AmbientTrueBlack)
     val frames = rememberSpectrogram(panel.track.id)
-    val state = remember(frames) { SceneState(frames) }
+    // One state per track: the frames grow while the phone decodes the track, and the
+    // scene must keep its envelopes, shimmer and fog while they do.
+    val state = remember(panel.track.id, frames.bandCount, frames.frameRateHz) {
+        SceneState(frames)
+    }
+    SideEffect { state.adoptFrames(frames) }
     val accent = artwork?.ambientColors?.first?.toComposeColor()
         ?: MaterialTheme.colorScheme.primary
     val isLivePanel = panel.index == currentIndex
@@ -277,7 +282,7 @@ private fun NowPlayingPanelLayer(
         }
     }
     val frameSink = remember(visualEngine) { visualEngine?.let(::visualSceneFrameSink) }
-    val drawRevision = DriveScene(frames, state, playback, motion, frameSink)
+    val drawRevision = DriveScene(state, playback, motion, frameSink)
     if (isLivePanel) {
         // The revision write is what invalidates NowPlayingFogLayer's canvas:
         // it is the one field here that changes every scene frame, and the
@@ -538,7 +543,13 @@ private fun rememberSpectrogram(trackId: Long): SpectrogramFrames {
         }
         onDispose { active = false }
     }
-    return frames ?: remember(trackId) { SpectrogramFrames(24, 20, ByteArray(0)) }
+    // While the phone still decodes the track, the decoded prefix stands in for the final
+    // spectrogram; the scene adopts it without a restart, and again when the final one lands.
+    val partial = rememberAnalysisProgress(
+        analysis, trackId, count = 1, revision, active = frames == null,
+    )
+    val none = remember(trackId) { SpectrogramFrames(24, 20, ByteArray(0)) }
+    return frames ?: partial?.frames ?: none
 }
 
 @Composable

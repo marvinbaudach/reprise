@@ -2,10 +2,18 @@ package io.github.marvinbaudach.reprise.scene
 
 import io.github.marvinbaudach.reprise.VisualBassPressure
 
-/** Signal state stepped by spectrogram frames, with wall-time base drift applied separately. */
+/**
+ * Signal state stepped by spectrogram frames, with wall-time base drift applied separately.
+ *
+ * One state serves one track and outlives its frames: [adoptFrames] swaps in a longer
+ * analysis of the same track without touching the envelopes, shimmer or fog.
+ */
 class SceneState(
-    private val frames: SpectrogramFrames,
+    frames: SpectrogramFrames,
 ) {
+    /** The analysis the scene is currently stepped on; read it, never hold it across frames. */
+    var frames: SpectrogramFrames = frames
+        private set
     private val filmEnvelope = OilFilmEnvelope()
     private var filmSeconds = 0.0
     private val fogEnvelopes = BandEnvelopes.fog(frames.bandCount, frames.frameRateHz)
@@ -90,6 +98,18 @@ class SceneState(
         val first = previous?.plus(1) ?: 0
         for (index in first..targetIndex) step(index)
         lastFrameIndex = targetIndex
+    }
+
+    /**
+     * Continues on a longer analysis of the same track, for example the final one replacing
+     * the part decoded so far. Nothing restarts: the envelopes, the film, the shimmer and the
+     * fog angles keep their values, and the playhead keeps its place in the frame sequence.
+     */
+    fun adoptFrames(next: SpectrogramFrames) {
+        require(next.bandCount == frames.bandCount && next.frameRateHz == frames.frameRateHz) {
+            "an adopted analysis must keep its ${frames.bandCount} bands at ${frames.frameRateHz} Hz"
+        }
+        frames = next
     }
 
     fun resetTo(frameIndex: Int) {

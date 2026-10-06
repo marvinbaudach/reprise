@@ -4,6 +4,7 @@ import androidx.activity.ComponentActivity
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
@@ -307,6 +308,47 @@ class NowPlayingSceneEngineTest {
         assertNull("the handle clears once the live panel leaves", handle.state)
     }
 
+    @Test
+    fun nav_15d_growing_frames_do_not_reset_the_scene() {
+        val handle = LiveSceneHandle()
+        val analysis = GrowingSpectrogramAnalysis(frameCount = 4)
+        val surfaceState = MobileSurfaceViewModel()
+
+        compose.setContent {
+            val theme = MobileThemeSelection(
+                palette = MobileTheme.NOCTURNE,
+                colorScheme = AndroidColorScheme.SYSTEM,
+                dynamicAvailable = false,
+            )
+            RepriseTheme(theme, darkPalette = true) {
+                CompositionLocalProvider(
+                    LocalAmbientMotionController provides AmbientMotionController(),
+                    LocalVisualSceneEngineFactory provides RecordingSceneEngineFactory(),
+                    LocalTrackAnalysis provides analysis,
+                ) {
+                    val track = sceneEngineTrack()
+                    NowPlayingScene(
+                        track = track,
+                        playback = PlaybackUiState(state = AndroidPlaybackState.PLAYING),
+                        surfaceState = surfaceState,
+                        panels = listOf(PlayPanel(0, track)),
+                        visualizerOpacity = 0f,
+                        visualizerLight = 0f,
+                        liveScene = handle,
+                    )
+                }
+            }
+        }
+        compose.waitUntil(timeoutMillis = 5_000) { handle.fog != null && handle.state != null }
+        val first = handle.state
+        assertEquals(4, first?.frames?.frameCount)
+
+        analysis.grow(frameCount = 12)
+        compose.waitUntil(timeoutMillis = 5_000) { handle.state?.frames?.frameCount == 12 }
+
+        assertTrue("the scene state was replaced instead of adopting the frames", handle.state === first)
+    }
+
     @Composable
     private fun CoverScene(
         factory: RecordingSceneEngineFactory,
@@ -373,6 +415,35 @@ class NowPlayingSceneEngineTest {
             }
         }
     }
+}
+
+/** A track the phone is still decoding: only [loadProgress] answers, and the answer grows. */
+private class GrowingSpectrogramAnalysis(frameCount: Int) : TrackAnalysisPort {
+    private var frameCount by mutableIntStateOf(frameCount)
+    override var revision by mutableLongStateOf(0L)
+        private set
+
+    fun grow(frameCount: Int) {
+        this.frameCount = frameCount
+        revision += 1L
+    }
+
+    override fun prepare(trackId: Long) = Unit
+
+    override fun loadBars(trackId: Long, count: Int, deliver: (List<SpectralBar>?) -> Unit) =
+        deliver(null)
+
+    override fun loadProgress(
+        trackId: Long,
+        count: Int,
+        deliver: (PartialTrackAnalysis?) -> Unit,
+    ) = deliver(
+        PartialTrackAnalysis(
+            coveredFraction = frameCount / 20f,
+            bars = emptyList(),
+            frames = SpectrogramFrames(24, 20, ByteArray(24 * frameCount) { 128.toByte() }),
+        ),
+    )
 }
 
 private class ReadySpectrogramAnalysis : TrackAnalysisPort {

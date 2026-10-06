@@ -36,7 +36,6 @@ class DriveSceneComposeTest {
         compose.mainClock.autoAdvance = false
         compose.setContent {
             DriveScene(
-                frames = frames,
                 state = scene,
                 playback = playback,
                 controller = controller,
@@ -150,7 +149,6 @@ class DriveSceneComposeTest {
         compose.mainClock.autoAdvance = false
         compose.setContent {
             DriveScene(
-                frames = frames,
                 state = state,
                 playback = playback,
                 controller = controller,
@@ -190,7 +188,6 @@ class DriveSceneComposeTest {
         compose.mainClock.autoAdvance = false
         compose.setContent {
             DriveScene(
-                frames = frames,
                 state = state,
                 playback = playback,
                 controller = controller,

@@ -348,4 +348,61 @@ class SceneStateTest {
     private companion object {
         const val FLOAT_TOLERANCE = 0.000_01f
     }
+
+    @Test
+    fun nav_15d_adopting_longer_frames_continues_the_scene_instead_of_resetting() {
+        val whole = risingFrames(frameCount = 16)
+        val prefix = SpectrogramFrames(24, 20, whole.cellsPrefix(frameCount = 8))
+        val reference = SceneState(whole).also { state -> (0..15).forEach(state::advanceTo) }
+
+        val growing = SceneState(prefix)
+        (0..7).forEach(growing::advanceTo)
+        growing.advanceTo(12)
+        val atTheEnd = SceneState(prefix).also { state -> (0..7).forEach(state::advanceTo) }
+        assertArrayEquals(
+            "a position past the decoded part clamps to its last frame",
+            atTheEnd.fogBands,
+            growing.fogBands,
+            0f,
+        )
+        growing.adoptFrames(whole)
+        (8..15).forEach(growing::advanceTo)
+
+        assertEquals(whole.frameCount, growing.frames.frameCount)
+        assertArrayEquals(reference.fogBands, growing.fogBands, 0f)
+        assertArrayEquals(reference.motionBands, growing.motionBands, 0f)
+        assertEquals(reference.fogAngleA, growing.fogAngleA, 0f)
+        assertEquals(reference.fogAngleB, growing.fogAngleB, 0f)
+        assertEquals(reference.bassPressure, growing.bassPressure, 0f)
+    }
+
+    @Test
+    fun nav_15d_adopting_frames_keeps_the_oil_film_clock() {
+        val state = SceneState(SpectrogramFrames(24, 20, ByteArray(0)))
+        state.advanceOilFilmBy(5f)
+        val film = state.oilFilmSeconds
+
+        state.adoptFrames(risingFrames(frameCount = 4))
+
+        assertEquals(film, state.oilFilmSeconds, 0f)
+    }
+
+    @Test
+    fun nav_15d_adopting_frames_of_another_shape_is_refused() {
+        val state = SceneState(SpectrogramFrames(24, 20, ByteArray(0)))
+
+        assertThrows(IllegalArgumentException::class.java) {
+            state.adoptFrames(SpectrogramFrames(12, 20, ByteArray(0)))
+        }
+    }
 }
+
+/** Silent for four frames, then steady: a snap to frame 8 differs from an envelope still attacking. */
+private fun risingFrames(frameCount: Int): SpectrogramFrames = SpectrogramFrames(
+    bandCount = 24,
+    frameRateHz = 20,
+    cells = ByteArray(frameCount * 24) { index -> if (index / 24 < 4) 0 else 200.toByte() },
+)
+
+private fun SpectrogramFrames.cellsPrefix(frameCount: Int): ByteArray =
+    ByteArray(frameCount * bandCount) { index -> band(index / bandCount, index % bandCount).toByte() }
