@@ -25,7 +25,11 @@ use crate::player_pipeline::AUDIO_SINK_ENV_VAR;
 /// come. The test waits for the event itself; this bound exists only so a
 /// genuine hang ends the run, and it sits far above any plausible host load —
 /// a stalled but healthy run is not a failure, a short budget would make it one.
-const HANG_GUARD: Duration = Duration::from_secs(120);
+const HANG_GUARD: Duration = Duration::from_secs(60);
+
+/// Length of the first track of the gapless hand-off test; see the comment at
+/// its use for why it is generated and this long.
+const FIRST_TRACK_SECONDS: u32 = 6;
 
 /// Starts the real crossfade engine at a deterministic in-window position.
 ///
@@ -179,30 +183,39 @@ fn gapless_handoff_carries_a_newer_generation_than_the_track_it_replaced() {
     }))
     .unwrap();
 
-    let first = concat!(env!("CARGO_MANIFEST_DIR"), "/tests/fixtures/sine.flac");
+    // A generated first track, as `handoff_duration_tests` uses: `play()` emits
+    // Playing synchronously, so nothing but the length of this track bounds how
+    // long `set_next` may take to arrive. `playbin3` asks for the successor
+    // about 1.7 s before the end, which leaves several seconds of slack here;
+    // the ~1 s `sine.flac` fixture would leave almost none under load.
+    let directory = tempfile::tempdir().unwrap();
+    let first = directory.path().join("first.wav");
+    handoff_duration_tests::write_sine_wav(&first, FIRST_TRACK_SECONDS);
     let second = concat!(env!("CARGO_MANIFEST_DIR"), "/tests/fixtures/blip.flac");
-    player.play(item(first)).unwrap();
-    // Queued before anything is awaited, like `handoff_duration_tests` does:
-    // `sine.flac` lasts about a second, so a host stalled between `play()` and
-    // a later `set_next()` would let the first track end with nothing queued
-    // and the hand-off this test waits for would never happen.
-    player.set_next(Some(item(second)));
+    player.play(item(first.to_str().unwrap())).unwrap();
     let first_generation = rx
         .recv_timeout(HANG_GUARD)
         .expect("expected a tagged StateChanged(Playing) for the first stream")
         .generation;
+    player.set_next(Some(item(second)));
 
     // Same pump-until-resolved pattern as `gapless_handoff_advances_without_
     // pipeline_restart`: the bus watch driving `AdvancedToNext` is dispatched
     // by the GLib main context, which nothing iterates in a headless test.
-    // The hand-off is awaited as a condition; `HANG_GUARD` only ends a hang.
+    // The hand-off is awaited as a condition. A first track that finishes
+    // without it means the successor was queued too late, which fails at once;
+    // `HANG_GUARD` only ends a run in which nothing happens at all.
     let main_context = gst::glib::MainContext::default();
     let deadline = std::time::Instant::now() + HANG_GUARD;
     let advanced_generation = 'wait: loop {
         main_context.iteration(false);
         while let Ok(tagged) = rx.try_recv() {
-            if matches!(tagged.event, PlayerEvent::AdvancedToNext) {
-                break 'wait tagged.generation;
+            match tagged.event {
+                PlayerEvent::AdvancedToNext => break 'wait tagged.generation,
+                PlayerEvent::TrackFinished => {
+                    panic!("the first track finished without a gapless AdvancedToNext")
+                }
+                _ => {}
             }
         }
         assert!(
