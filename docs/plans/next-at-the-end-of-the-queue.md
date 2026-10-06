@@ -2,7 +2,7 @@
 slug: next-at-the-end-of-the-queue
 worktree: /home/marvin/Projects/reprise-next-at-the-end-of-the-queue
 branch: feature/next-at-the-end-of-the-queue
-phase: planned
+phase: refactored
 codex_session:
 created: 2026-10-06
 ---
