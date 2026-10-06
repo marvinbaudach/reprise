@@ -255,6 +255,37 @@ result.
   `nav_15c_a_stale_settle_cannot_clear_the_current_request`,
   `nav_15c_cancelled_import_retries_and_refreshes_after_each_attempt`,
   `nav_15c_shutdown_cancels_a_pending_retry_without_another_import`.
+- **NAV-15d** [active] [android] — **The seek bar fills while the phone
+  decodes.** While the phone computes the playing track's analysis, the seek
+  bar shows the part already decoded, filling from the left, and the rest
+  stays the plain line. The partial picture is held only in memory: it is
+  never stored and never counts as analysed for sync, sidecar or backfill.
+  The Now Playing scene adopts the growing spectrum without restarting.
+  *Tests:* `nav_15d_partial_bars_cover_only_the_decoded_part`,
+  `nav_15d_final_bars_replace_the_partial`,
+  `nav_15d_progress_reads_are_never_cached`,
+  `nav_15d_growing_frames_do_not_reset_the_scene`,
+  `nav_15d_the_driver_reads_adopted_frames`,
+  `nav_15d_adopting_longer_frames_continues_the_scene_instead_of_resetting`,
+  `nav_15d_a_running_decode_reports_progress_for_its_track`,
+  `nav_15d_progress_is_none_without_a_decode_and_after_the_store`,
+  `nav_15d_a_cancelled_decode_leaves_no_render_data`,
+  `nav_15d_the_backfill_decode_reports_progress_too`.
+  <!-- REVIEW: rule proposal -->
+- **NAV-15e** [active] [android] — **Leaving a track stops its analysis.**
+  Switching to another track stops the outgoing track's foreground analysis
+  (a stop or a pause does not), and the abandoned track is not retried until
+  it plays again. The backfill picks it up later. A queued analysis for a
+  track that is no longer playing is skipped. *Tests:*
+  `nav_15e_superseded_is_final`,
+  `nav_15e_a_queued_prepare_for_a_track_no_longer_playing_is_skipped`,
+  `nav_15e_a_retry_pause_that_ends_for_a_superseded_track_ends_the_loop`,
+  `nav_15e_a_track_change_supersedes_the_outgoing_analysis`,
+  `nav_15e_stopping_playback_supersedes_nothing`,
+  `nav_15e_superseding_keeps_the_playing_track`,
+  `nav_15e_a_superseded_decode_is_final_for_its_waiter`,
+  `nav_15e_superseding_never_cancels_the_backfill`.
+  <!-- REVIEW: rule proposal -->
 - **NAV-16** [active] [gtk] — **Optional sidebar places carry their own off
   switch and way back.** A secondary click, Menu, or Shift+F10 on Podcasts,
   YouTube, Radio, Releases, or Concerts opens an arrowed menu anchored to the
