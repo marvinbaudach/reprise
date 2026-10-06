@@ -7,7 +7,8 @@
 //! the stretch where the body (or the end of the fade) lands.
 
 use super::boundary_fixture::{
-    pinning_complaints, Frame, Measure, Opening, SyntheticMusic, FRAMES_PER_SECOND,
+    dimming_complaints, pinning_complaints, settled_seconds, Frame, Measure, Opening,
+    SyntheticMusic, FADE_LEVEL_FLOOR, FRAMES_PER_SECOND, INTRO_LEVEL_FLOOR,
 };
 use super::{CavaBarProcessor, CavaConfig, SPECTRUM_BAND_COUNT};
 
@@ -15,10 +16,13 @@ const RATE_HZ: u32 = 44_100;
 const HOP: usize = 735;
 const LOUD_GAIN: f32 = 0.9;
 /// Seconds the previous song plays before a track change, and the reference
-/// plays before it is compared.
-const WARM_SECONDS: usize = 16;
+/// plays before it is compared: long enough for the braking span of its own
+/// first boundary to be over.
+fn warm_seconds() -> usize {
+    settled_seconds(RATE_HZ)
+}
 /// Seconds of the body judged after a quiet intro ends.
-const JUDGED_BODY_SECONDS: usize = 2;
+const JUDGED_BODY_SECONDS: usize = 3;
 /// Seconds judged from the start of a fade-in.
 const JUDGED_FADE_SECONDS: usize = 10;
 /// How many frames more than a settled engine may touch full height.
@@ -69,7 +73,7 @@ fn feed(processor: &mut CavaBarProcessor, opening: Opening, frames: usize) -> Ve
 /// up to the moment `opening` starts.
 fn settled_on_the_body() -> CavaBarProcessor {
     let mut processor = processor();
-    let warm_frames = WARM_SECONDS * FRAMES_PER_SECOND;
+    let warm_frames = warm_seconds() * FRAMES_PER_SECOND;
     for frame in 0..warm_frames {
         processor.process(&loud().mono((SONG_START_FRAME - warm_frames + frame) * HOP, HOP));
     }
@@ -106,7 +110,8 @@ fn ac_29_a_loud_body_after_a_long_quiet_intro_does_not_pin_the_bars() {
             let reference: Vec<Frame> = (first..first + judged)
                 .map(|frame| settled.process(&hop(BODY, frame)).try_into().unwrap())
                 .collect();
-            let allowed = Measure::of(&reference).pinned_frames + INTRO_PINNED_SLACK;
+            let reference = Measure::of(&reference);
+            let allowed = reference.pinned_frames + INTRO_PINNED_SLACK;
             for start in [Start::Fresh, Start::TrackChange] {
                 let label = format!("a {seconds} s intro {db} dB down, {start:?}");
                 let frames = run(start, opening, first + judged);
@@ -119,6 +124,12 @@ fn ac_29_a_loud_body_after_a_long_quiet_intro_does_not_pin_the_bars() {
                     &format!("{label}, {JUDGED_BODY_SECONDS} s after the drop"),
                     Measure::of(&frames[first..]),
                     allowed,
+                ));
+                complaints.extend(dimming_complaints(
+                    &format!("{label}, {JUDGED_BODY_SECONDS} s after the drop"),
+                    Measure::of(&frames[first..]),
+                    reference,
+                    INTRO_LEVEL_FLOOR,
                 ));
             }
         }
@@ -138,10 +149,13 @@ fn ac_29_a_fade_in_does_not_pin_the_bars() {
             let allowed = reference.pinned_frames + FADE_PINNED_SLACK;
             for start in [Start::Fresh, Start::TrackChange] {
                 let label = format!("a {seconds} s fade ({opening:?}), {start:?}");
-                complaints.extend(pinning_complaints(
+                let frames = Measure::of(&run(start, opening, judged));
+                complaints.extend(pinning_complaints(&label, frames, allowed));
+                complaints.extend(dimming_complaints(
                     &label,
-                    Measure::of(&run(start, opening, judged)),
-                    allowed,
+                    frames,
+                    reference,
+                    FADE_LEVEL_FLOOR,
                 ));
             }
         }

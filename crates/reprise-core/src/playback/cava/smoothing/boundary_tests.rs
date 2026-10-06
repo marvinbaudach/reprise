@@ -408,7 +408,7 @@ fn a_rise_that_nothing_braked_is_the_creeps_to_handle() {
 }
 
 #[test]
-fn a_rise_is_the_creeps_again_once_the_stream_stops_setting_highs() {
+fn a_rise_is_the_creeps_again_once_the_chain_has_lapsed() {
     const QUIET_SECONDS: usize = 3;
     let mut smoother = measured();
     frame(&mut smoother, SURGE);
@@ -419,8 +419,82 @@ fn a_rise_is_the_creeps_again_once_the_stream_stops_setting_highs() {
 
     assert!(
         smoother.sensitivity >= before * 0.97,
-        "a new high three seconds after the last one was still braked: {} from {before}",
+        "a rise three seconds after the last brake was still braked: {} from {before}",
         smoother.sensitivity
+    );
+}
+
+/// The gain, right before and right after one frame louder than `SURGE` that
+/// the gain a brake on `SURGE` left draws at `drawn` times full height.
+fn gain_around_a_new_high(smoother: &mut Smoother, drawn: f32) -> (f32, f32) {
+    let before = smoother.sensitivity;
+    frame(smoother, SURGE * drawn / TARGET_HEIGHT);
+    (before, smoother.sensitivity)
+}
+
+#[test]
+fn a_chain_leaves_a_frame_under_full_height_to_the_creep() {
+    // Between where a chain brake lands (0.92) and full height: a brake would
+    // move the gain, the creep would not, so a chain that braked here would be
+    // over-braking a rise the gain draws without a pinned bar. Written out, not
+    // derived from the constants, so that a changed constant cannot move it
+    // out of that gap.
+    const DRAWN: f32 = 0.96;
+    let mut smoother = measured();
+    frame(&mut smoother, SURGE);
+
+    let (before, after) = gain_around_a_new_high(&mut smoother, DRAWN);
+
+    assert!(
+        (before * 0.99..=before * 1.01).contains(&after),
+        "a frame drawn at {DRAWN} of full height moved the gain: {after} from {before}"
+    );
+}
+
+#[test]
+fn a_chain_lands_a_frame_above_the_shared_target() {
+    // 0.92 is written out: it is a rule of AC-29 that the chain lands higher
+    // than the first brake, not a tunable.
+    const CHAIN_LANDS_AT: f32 = 0.92;
+    const DRAWN: f32 = 1.1;
+    let mut smoother = measured();
+    frame(&mut smoother, SURGE);
+
+    let (before, after) = gain_around_a_new_high(&mut smoother, DRAWN);
+
+    let expected = before * CHAIN_LANDS_AT / DRAWN;
+    assert!(
+        (expected * 0.98..=expected * 1.02).contains(&after),
+        "a chain brake left the gain at {after}, not {expected} (landing at {CHAIN_LANDS_AT})"
+    );
+}
+
+#[test]
+fn a_new_boundary_does_not_inherit_the_chain_of_the_one_before() {
+    // Between the chain's full height and the first half second's tighter
+    // threshold (1.3): only a chain left over from before the boundary brakes
+    // it. Written out, like the gap above.
+    const DRAWN: f32 = 1.15;
+    let after_a_new_boundary = |reset: bool| {
+        let mut smoother = measured();
+        frame(&mut smoother, SURGE);
+        if reset {
+            smoother.reset();
+        }
+        gain_after(&mut smoother, SURGE, FRAMES_BEFORE_THE_WINDOW_IS_FULL + 3);
+        let before = smoother.sensitivity;
+        frame(&mut smoother, SURGE * DRAWN / TARGET_HEIGHT);
+        smoother.sensitivity / before
+    };
+
+    assert!(
+        after_a_new_boundary(false) < 0.9,
+        "the control arm did not brake: the chain this test is about never started"
+    );
+    let ratio = after_a_new_boundary(true);
+    assert!(
+        ratio >= 0.97,
+        "a frame after a new boundary was braked by the chain of the one before: x{ratio:.2}"
     );
 }
 

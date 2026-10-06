@@ -4,14 +4,19 @@
 
 use super::*;
 use reprise_core::playback::boundary_fixture::{
-    assert_no_dip, judge_boundary, pinning_complaints, Boundary, Frame, Measure, Opening,
-    SyntheticMusic, BOUNDARY_OFFSETS_SECONDS, FRAMES_PER_SECOND, JUDGED_FRAMES, SETTLE_FRAMES,
+    assert_no_dip, dimming_complaints, judge_boundary, pinning_complaints, settled_seconds,
+    Boundary, Frame, Measure, Opening, SyntheticMusic, BOUNDARY_OFFSETS_SECONDS, FADE_LEVEL_FLOOR,
+    FRAMES_PER_SECOND, INTRO_LEVEL_FLOOR, JUDGED_FRAMES, SETTLE_FRAMES,
 };
 
 const RATE_HZ: u32 = 44_100;
 const HOP: usize = 735;
 const LEVEL_STEP_DB: f32 = 14.0;
-const WARM_SECONDS: usize = 16;
+/// Seconds a stage plays a song before it counts as settled on it: past the
+/// braking span of its own first boundary.
+fn warm_seconds() -> usize {
+    settled_seconds(RATE_HZ)
+}
 const BOUNDARY_SECONDS: usize = 30;
 const RECORDED_FRAMES: usize = SETTLE_FRAMES + JUDGED_FRAMES + FRAMES_PER_SECOND;
 const FIRST_STREAM: u64 = 1;
@@ -56,8 +61,8 @@ fn warmed(music: &SyntheticMusic, offset_seconds: f32) -> CavaStage {
         &mut stage,
         music,
         FIRST_STREAM,
-        boundary_sample(offset_seconds) - WARM_SECONDS * RATE_HZ as usize,
-        WARM_SECONDS * FRAMES_PER_SECOND,
+        boundary_sample(offset_seconds) - warm_seconds() * RATE_HZ as usize,
+        warm_seconds() * FRAMES_PER_SECOND,
         false,
     );
     stage
@@ -166,7 +171,7 @@ fn opened(opening: Opening) -> SyntheticMusic {
 // caught however late it comes, on a first start and on a new stream.
 #[test]
 fn ac_29_a_loud_body_after_a_long_quiet_intro_does_not_pin_the_new_streams_bars() {
-    const BODY_FRAMES: usize = 2 * FRAMES_PER_SECOND;
+    const BODY_FRAMES: usize = 3 * FRAMES_PER_SECOND;
     let mut complaints = Vec::new();
     for (seconds, db) in [(8, 30.0), (10, 14.0)] {
         let song = opened(Opening::Intro { seconds, db });
@@ -179,7 +184,8 @@ fn ac_29_a_loud_body_after_a_long_quiet_intro_does_not_pin_the_new_streams_bars(
             BODY_FRAMES,
             false,
         );
-        let allowed = Measure::of(&reference).pinned_frames + PINNED_SLACK;
+        let reference = Measure::of(&reference);
+        let allowed = reference.pinned_frames + PINNED_SLACK;
         for new_stream in [false, true] {
             let (mut stage, generation) = if new_stream {
                 (warmed(&loud(), 0.0), FIRST_STREAM + 1)
@@ -194,10 +200,14 @@ fn ac_29_a_loud_body_after_a_long_quiet_intro_does_not_pin_the_new_streams_bars(
                 first + BODY_FRAMES,
                 new_stream,
             );
-            complaints.extend(pinning_complaints(
-                &format!("a {seconds} s intro {db} dB down, new stream {new_stream}"),
-                Measure::of(&frames[first..]),
-                allowed,
+            let label = format!("a {seconds} s intro {db} dB down, new stream {new_stream}");
+            let body = Measure::of(&frames[first..]);
+            complaints.extend(pinning_complaints(&label, body, allowed));
+            complaints.extend(dimming_complaints(
+                &label,
+                body,
+                reference,
+                INTRO_LEVEL_FLOOR,
             ));
         }
     }
@@ -223,7 +233,8 @@ fn ac_29_a_fade_in_does_not_pin_the_new_streams_bars() {
             FADE_FRAMES,
             false,
         );
-        let allowed = Measure::of(&reference).pinned_frames + PINNED_SLACK;
+        let reference = Measure::of(&reference);
+        let allowed = reference.pinned_frames + PINNED_SLACK;
         for new_stream in [false, true] {
             let (mut stage, generation) = if new_stream {
                 (warmed(&loud(), 0.0), FIRST_STREAM + 1)
@@ -238,10 +249,14 @@ fn ac_29_a_fade_in_does_not_pin_the_new_streams_bars() {
                 FADE_FRAMES,
                 new_stream,
             );
-            complaints.extend(pinning_complaints(
-                &format!("a {opening:?}, new stream {new_stream}"),
-                Measure::of(&frames),
-                allowed,
+            let label = format!("a {opening:?}, new stream {new_stream}");
+            let measured = Measure::of(&frames);
+            complaints.extend(pinning_complaints(&label, measured, allowed));
+            complaints.extend(dimming_complaints(
+                &label,
+                measured,
+                reference,
+                FADE_LEVEL_FLOOR,
             ));
         }
     }

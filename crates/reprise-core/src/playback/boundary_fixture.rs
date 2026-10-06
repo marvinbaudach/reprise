@@ -30,6 +30,17 @@ pub const JUDGED_FRAMES: usize = FRAMES_PER_SECOND;
 /// second always opens on a kick; these offsets open on the tail of one, on
 /// nothing, and just before the next.
 pub const BOUNDARY_OFFSETS_SECONDS: [f32; 4] = [0.0, 0.13, 0.29, 0.41];
+/// Whole seconds a reference engine has to play a song, from a new processor,
+/// before the braking span of a boundary is behind it.
+const SETTLE_MARGIN_SECONDS: usize = 1;
+
+/// How long an engine at `rate_hz` has to play a song to be settled on it: the
+/// braking span of its first boundary, rounded up to whole seconds, and a
+/// margin.
+pub fn settled_seconds(rate_hz: u32) -> usize {
+    super::cava::braking_span_seconds(rate_hz).ceil() as usize + SETTLE_MARGIN_SECONDS
+}
+
 /// A bar at or above this is pinned.
 const PINNED_LEVEL: f32 = 0.99;
 /// A frame with this many pinned bars is a wall.
@@ -123,7 +134,9 @@ impl SyntheticMusic {
         let hat = hat_envelope * (self.noise(n as u64 + 1_000_003) * 2.0 - 1.0);
         let mix = 0.42 * kick + 0.16 * bass + 0.14 * lead + 0.10 * hat;
         let opening = self.opening.map_or(1.0, |(opening, start)| {
-            opening.gain(n.saturating_sub(start) as f32 / self.rate_hz as f32)
+            n.checked_sub(start).map_or(1.0, |since| {
+                opening.gain(since as f32 / self.rate_hz as f32)
+            })
         });
         (f64::from(self.gain) * mix) as f32 * opening
     }
@@ -204,6 +217,36 @@ pub fn pinning_complaints(label: &str, measured: Measure, allowed: usize) -> Vec
         ));
     }
     complaints
+}
+
+/// The least a quiet intro's body may be drawn at, as a share of the settled
+/// level, averaged over the three seconds after the body arrives. The brakes
+/// that catch the body leave it a little dim while the creep climbs back; the
+/// three surfaces measure 0.88 to 1.01 on synthetic music, so a gain braked
+/// further than a rise needs would show.
+pub const INTRO_LEVEL_FLOOR: f32 = 0.85;
+/// The same for a fade-in, averaged over its first ten seconds. A fade is
+/// followed by a gain that adapts upward, so it reads at or above the settled
+/// engine's level (1.04 to 1.56 measured), which draws it small until it ends.
+pub const FADE_LEVEL_FLOOR: f32 = 0.95;
+
+/// What a stretch drew too dim, if anything: its mean level against the level
+/// the same audio draws on an engine settled on the song, which is what the
+/// viewer would have seen without the boundary. Braking a quiet start's gain
+/// down must not leave the rest of the song under `floor` times that.
+pub fn dimming_complaints(
+    label: &str,
+    measured: Measure,
+    reference: Measure,
+    floor: f32,
+) -> Vec<String> {
+    let ratio = measured.level / reference.level;
+    if ratio >= floor {
+        return Vec::new();
+    }
+    vec![format!(
+        "{label}: drawn at {ratio:.2} times the settled level, at least {floor} wanted"
+    )]
 }
 
 /// What a run of frames looks like to a viewer.

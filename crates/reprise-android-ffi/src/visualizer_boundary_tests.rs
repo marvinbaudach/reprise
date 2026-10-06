@@ -8,7 +8,7 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use reprise_core::playback::boundary_fixture::{
-    assert_no_dip, frame_mean, judge_boundary, pinning_complaints, Boundary, Frame, Measure,
+    assert_no_dip, dimming_complaints, FADE_LEVEL_FLOOR, INTRO_LEVEL_FLOOR, frame_mean, judge_boundary, pinning_complaints, settled_seconds, Boundary, Frame, Measure,
     Opening, SyntheticMusic, BOUNDARY_OFFSETS_SECONDS, FRAMES_PER_SECOND, JUDGED_FRAMES,
     SETTLE_FRAMES,
 };
@@ -21,8 +21,10 @@ const SAMPLE_RATE_HZ: u32 = 48_000;
 const PREVIOUS_RATE_HZ: u32 = 44_100;
 const WARM_SECONDS: f32 = 12.0;
 /// How long the engine an opening is judged against has played: past the span
-/// in which a boundary brakes.
-const SETTLED_SECONDS: f32 = 16.0;
+/// in which a boundary brakes, at the rate it is fed.
+fn settled_for() -> f32 {
+    settled_seconds(SAMPLE_RATE_HZ) as f32
+}
 const BOUNDARY_SECONDS: f32 = 30.0;
 /// Seconds recorded after the boundary: enough for every judged frame at 60 Hz
 /// even when vsyncs are missed.
@@ -484,8 +486,8 @@ fn ac_29_a_resume_inside_a_loud_song_does_not_dim_or_swell_it() {
     );
 }
 
-/// Frames judged after a quiet intro ends, two seconds of them.
-const BODY_FRAMES: usize = 2 * FRAMES_PER_SECOND;
+/// Frames judged after a quiet intro ends, three seconds of them.
+const BODY_FRAMES: usize = 3 * FRAMES_PER_SECOND;
 /// Frames judged from the start of a fade-in, ten seconds of them.
 const FADE_FRAMES: usize = 10 * FRAMES_PER_SECOND;
 /// Frames more than the settled engine that may touch full height.
@@ -499,7 +501,7 @@ fn opened_run(opening: Opening, track_change: bool, seconds: f32) -> Vec<Frame> 
     let song = loud().opened_by(opening, (boundary_at(0.0) * SAMPLE_RATE_HZ as f32) as usize);
     let mut phone = Phone::new();
     if track_change {
-        phone.play(&loud(), boundary_at(0.0) - SETTLED_SECONDS, SETTLED_SECONDS);
+        phone.play(&loud(), boundary_at(0.0) - settled_for(), settled_for());
         phone.change_track();
     }
     phone.play(&song, boundary_at(0.0), seconds)
@@ -509,7 +511,7 @@ fn opened_run(opening: Opening, track_change: bool, seconds: f32) -> Vec<Frame> 
 /// goes on playing without a boundary.
 fn settled_on_the_loud_song(song: &SyntheticMusic, from_seconds: f32, seconds: f32) -> Vec<Frame> {
     let mut phone = Phone::new();
-    phone.play(&loud(), boundary_at(0.0) - SETTLED_SECONDS, SETTLED_SECONDS);
+    phone.play(&loud(), boundary_at(0.0) - settled_for(), settled_for());
     phone.play(song, from_seconds, seconds)
 }
 
@@ -526,14 +528,24 @@ fn ac_29_a_loud_body_after_a_long_quiet_intro_does_not_pin_the_swiped_to_songs_b
             boundary_at(0.0) + seconds as f32,
             BODY_FRAMES as f32 / FRAMES_PER_SECOND as f32 + 0.5,
         );
-        let allowed = Measure::of(&reference[..BODY_FRAMES]).pinned_frames + PINNED_SLACK;
+        let reference = Measure::of(&reference[..BODY_FRAMES]);
+        let allowed = reference.pinned_frames + PINNED_SLACK;
         for track_change in [false, true] {
-            let frames = opened_run(opening, track_change, seconds as f32 + 3.0);
+            let frames = opened_run(opening, track_change, seconds as f32 + 3.6);
             let label = format!("a {seconds} s intro {db} dB down, track change {track_change}");
             complaints.extend(pinning_complaints(
                 &label,
                 Measure::of(&frames[first..first + BODY_FRAMES]),
                 allowed,
+            ));
+            // The level is judged from the frame the drop has surely reached, so
+            // a few frames of the intro are not counted as dim.
+            let body = first + MISSED_VSYNC_MARGIN;
+            complaints.extend(dimming_complaints(
+                &label,
+                Measure::of(&frames[body..body + BODY_FRAMES]),
+                reference,
+                INTRO_LEVEL_FLOOR,
             ));
         }
     }
@@ -551,15 +563,14 @@ fn ac_29_a_fade_in_does_not_pin_the_swiped_to_songs_bars() {
     ] {
         let song = loud().opened_by(opening, (boundary_at(0.0) * SAMPLE_RATE_HZ as f32) as usize);
         let reference = settled_on_the_loud_song(&song, boundary_at(0.0), 10.5);
-        let allowed = Measure::of(&reference[..FADE_FRAMES]).pinned_frames + PINNED_SLACK;
+        let reference = Measure::of(&reference[..FADE_FRAMES]);
+        let allowed = reference.pinned_frames + PINNED_SLACK;
         for track_change in [false, true] {
             let frames = opened_run(opening, track_change, 10.5);
             let label = format!("a {opening:?}, track change {track_change}");
-            complaints.extend(pinning_complaints(
-                &label,
-                Measure::of(&frames[..FADE_FRAMES]),
-                allowed,
-            ));
+            let measured = Measure::of(&frames[..FADE_FRAMES]);
+            complaints.extend(pinning_complaints(&label, measured, allowed));
+            complaints.extend(dimming_complaints(&label, measured, reference, FADE_LEVEL_FLOOR));
         }
     }
     assert!(complaints.is_empty(), "{complaints:#?}");
