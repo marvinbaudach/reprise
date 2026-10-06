@@ -244,7 +244,7 @@ Tests:
 - **One shared new core.** Both goals rest on the same new decode registry (`track_analysis/decodes.rs`) and on `decode_one`/`compute` in `compute.rs`:
   - progress reads it (T2);
   - supersede cancels through it and changes `compute`'s retry rule (T3).
-  
+
   Splitting T2 and T3 would give two strands writing `compute.rs` and the registry.
 - **The UniFFI boundary couples Rust and Kotlin.** `Superseded` extends `AndroidAnalysisOutcome`, and `trackAnalysisIsNonFinal` must handle it. The new progress record and the supersede export exist for Kotlin only. A Rust-only strand would leave the generated bindings ahead of their Kotlin consumers. That is the cross-strand compile dependency a disjointness check cannot see, measured on `equalizer-profiles-lead-the-surface`.
 - **`TrackAnalysisLoader.kt` carries both D6 (cancel) and D7 (progress).**
