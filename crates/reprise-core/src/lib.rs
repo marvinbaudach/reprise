@@ -108,6 +108,7 @@ pub mod playback;
 pub mod playback_history;
 pub mod podcasts;
 pub mod provenance;
+mod punctuation_fold;
 pub mod queries;
 pub mod queue;
 pub mod radio;

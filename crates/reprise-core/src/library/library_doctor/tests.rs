@@ -15,6 +15,8 @@ mod guard_rail_scan_tests;
 mod phase_scan_tests;
 #[path = "reuse_scan_tests.rs"]
 mod reuse_scan_tests;
+#[path = "typographic_scan_tests.rs"]
+mod typographic_scan_tests;
 
 fn migrated_connection() -> crate::db::Db {
     crate::db::Db::open_in_memory().unwrap()

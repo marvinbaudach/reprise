@@ -141,4 +141,20 @@ mod tests {
             album_group_key("Artist", "Second Album")
         );
     }
+
+    #[test]
+    fn doc_1g_the_group_key_ignores_the_typographic_style_of_dashes_and_apostrophes() {
+        assert_eq!(
+            album_group_key("Artist", "Rock \u{2013} Live (Disc 1)"),
+            album_group_key("Artist", "Rock - Live [CD2]")
+        );
+        assert_eq!(
+            album_group_key("Guns N\u{2019} Roses", "Album"),
+            album_group_key("Guns N' Roses", "Album")
+        );
+        assert_ne!(
+            album_group_key("Artist", "Rock - Live"),
+            album_group_key("Artist", "Rock Live")
+        );
+    }
 }
