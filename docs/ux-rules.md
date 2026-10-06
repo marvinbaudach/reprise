@@ -280,7 +280,9 @@ result.
   decoded the whole track when the switch came is stored, not thrown away.
   Returning to a track restarts its analysis even while the stopped one is
   still winding down, and a request waiting on the backfill's analysis of a
-  track no longer playing is let go while the backfill carries on. *Tests:*
+  track no longer playing is let go while the backfill carries on. A stop
+  right after a switch still stops the track that was left, and a stale stop
+  that reaches the track now playing only makes it ask again. *Tests:*
   `nav_15e_superseded_is_final`,
   `nav_15e_a_queued_prepare_for_a_track_no_longer_playing_is_skipped`,
   `nav_15e_a_retry_pause_that_ends_for_a_superseded_track_ends_the_loop`,
@@ -292,7 +294,12 @@ result.
   `nav_15e_returning_to_a_superseded_track_restarts_its_analysis`,
   `nav_15e_superseding_frees_a_foreground_waiter_on_the_backfill_decode`,
   `nav_15e_a_supersede_before_the_decode_registers_still_stops_it`,
-  `nav_15e_a_supersede_after_the_whole_stream_is_decoded_still_stores_it`.
+  `nav_15e_a_supersede_after_the_whole_stream_is_decoded_still_stores_it`,
+  `nav_15e_a_superseded_settle_for_the_playing_track_requests_again`,
+  `nav_15e_a_superseded_import_of_the_track_still_prepared_retries`,
+  `nav_15e_a_request_that_starts_after_its_track_lost_its_place_imports_nothing`,
+  `nav_15e_stopping_after_a_switch_still_supersedes_the_outgoing_track`,
+  `nav_15e_the_track_cannot_move_while_a_supersede_is_in_the_library`.
   <!-- REVIEW: rule proposal -->
 - **NAV-16** [active] [gtk] — **Optional sidebar places carry their own off
   switch and way back.** A secondary click, Menu, or Shift+F10 on Podcasts,

@@ -7,6 +7,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.runtime.staticCompositionLocalOf
 import java.util.concurrent.RejectedExecutionException
 import java.util.concurrent.atomic.AtomicBoolean
+import java.util.concurrent.atomic.AtomicReference
 import io.github.marvinbaudach.reprise.scene.SpectrogramFrames
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CompletableDeferred
@@ -33,6 +34,10 @@ import uniffi.reprise_android_ffi.AndroidTrackSpectrogram
 private const val TAG = "RepriseAnalysis"
 private const val SHUTDOWN_TIMEOUT_MS = 2_000L
 private const val ANALYSIS_RETRY_DELAY_MS = 2_000L
+private const val NANOS_PER_MILLI = 1_000_000L
+
+/** A progress read that keeps failing is logged at most this often, not once per poll. */
+internal const val PROGRESS_WARNING_INTERVAL_MS = 60_000L
 
 private data class BarCacheKey(val trackId: Long, val count: Int)
 
@@ -132,6 +137,7 @@ internal class TrackAnalysisLoader(
     private val importDispatcher: CoroutineDispatcher = analysisImportLane(),
     private val readDispatcher: CoroutineDispatcher = analysisReadLane(),
     private val pauseBetweenAttempts: suspend () -> Unit = { delay(ANALYSIS_RETRY_DELAY_MS) },
+    private val clockMs: () -> Long = { System.nanoTime() / NANOS_PER_MILLI },
 ) : TrackAnalysisPort {
     private val accepting = AtomicBoolean(true)
     private val closing = CompletableDeferred<Unit>()
@@ -147,6 +153,8 @@ internal class TrackAnalysisLoader(
     private val spectrogramWaiters = mutableMapOf<Long, MutableList<(SpectrogramFrames?) -> Unit>>()
     private var retainedTrackIds: Set<Long>? = null
     private var preferredBarCount: Int? = null
+
+    private val lastProgressWarningAt = AtomicReference<Long?>(null)
 
     /** The track the latest [prepare] asked for; an import for any other id is stale. */
     @Volatile
@@ -185,7 +193,8 @@ internal class TrackAnalysisLoader(
                     invalidate(trackId)
                     revision += 1L
                 }
-                if (!trackAnalysisIsNonFinal(outcome, failure)) break
+                val stillPlaying = latestPreparedTrackId == trackId
+                if (!trackAnalysisShouldRetry(outcome, failure, stillPlaying)) break
                 if (attempt < MAX_ANALYSIS_ATTEMPTS && !pauseForRetry()) break
             }
         }
@@ -294,12 +303,22 @@ internal class TrackAnalysisLoader(
             } catch (cancelled: CancellationException) {
                 throw cancelled
             } catch (error: Throwable) {
-                Log.w(TAG, "Could not load analysis progress for track $trackId", error)
+                warnAboutProgress(trackId, error)
                 null
             }
             onMainThread { deliver(progress) }
         }
         if (!submitted) deliver(null)
+    }
+
+    /** Polled every second, so a read that keeps failing is logged once per interval. */
+    private fun warnAboutProgress(trackId: Long, error: Throwable) {
+        val now = clockMs()
+        val last = lastProgressWarningAt.get()
+        val due = last == null || now - last >= PROGRESS_WARNING_INTERVAL_MS
+        if (due && lastProgressWarningAt.compareAndSet(last, now)) {
+            Log.w(TAG, "Could not load analysis progress for track $trackId", error)
+        }
     }
 
     override fun prefetch(trackIds: List<Long>) {

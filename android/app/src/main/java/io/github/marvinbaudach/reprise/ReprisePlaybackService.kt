@@ -144,8 +144,9 @@ open class ReprisePlaybackService : MediaLibraryService() {
             },
         )
     }
-    @Volatile
-    private var analysisTrackId: Long? = null
+    private val analysisTrack = AnalysisTrackGate()
+    private val analysisTrackId: Long?
+        get() = analysisTrack.current
     private var analysisAttempts = 0
     private var analysisRequestInFlight = false
     private var analysisFinal = false
@@ -412,7 +413,7 @@ open class ReprisePlaybackService : MediaLibraryService() {
     private fun handleTrackAnalysis(snapshot: AndroidPlaybackSnapshot) {
         val currentTrackId = snapshot.currentTrackId
         if (currentTrackId != analysisTrackId) {
-            analysisTrackId = currentTrackId
+            analysisTrack.moveTo(currentTrackId)
             analysisAttempts = 0
             analysisRequestInFlight = false
             analysisFinal = false
@@ -445,13 +446,14 @@ open class ReprisePlaybackService : MediaLibraryService() {
     internal open fun supersedeForegroundAnalysis(keepTrackId: Long) {
         analysisSupersedeScope.launch {
             // A newer track change already queued its own call: this one would
-            // cancel the track that is playing now.
-            if (keepTrackId != analysisTrackId) return@launch
-            Log.d(TAG_ANALYSIS, "Superseding foreground analyses other than track $keepTrackId")
-            try {
-                supersedeForegroundTrackAnalysisInLibrary(keepTrackId)
-            } catch (error: Exception) {
-                Log.w(TAG_ANALYSIS, "Could not supersede the outgoing track analysis", error)
+            // cancel the track that is playing now, so the gate skips it.
+            analysisTrack.supersedeOthers(keepTrackId) { keep ->
+                Log.d(TAG_ANALYSIS, "Superseding foreground analyses other than track $keep")
+                try {
+                    supersedeForegroundTrackAnalysisInLibrary(keep)
+                } catch (error: Exception) {
+                    Log.w(TAG_ANALYSIS, "Could not supersede the outgoing track analysis", error)
+                }
             }
         }
     }
@@ -463,6 +465,9 @@ open class ReprisePlaybackService : MediaLibraryService() {
     internal open fun trackAnalysisRequest(trackId: Long, requestGeneration: Long) {
         analysisScope.launch {
             requireOffMainThread("Track analysis import")
+            // The track changed before this request started: its supersede may
+            // already have run and found nothing to stop, so decode nothing.
+            if (trackId != analysisTrackId) return@launch
             var outcome: AndroidAnalysisOutcome? = null
             var failure: Throwable? = null
             try {
@@ -493,7 +498,9 @@ open class ReprisePlaybackService : MediaLibraryService() {
     ) {
         if (trackId != analysisTrackId || requestGeneration != analysisRequestGeneration) return
         analysisRequestInFlight = false
-        analysisFinal = !trackAnalysisIsNonFinal(outcome, error)
+        // Past the guard above, this is the track that is playing: a supersede
+        // that reached it was stale, so it is retried like a cancel.
+        analysisFinal = !trackAnalysisShouldRetry(outcome, error, stillPlaying = true)
     }
 
     internal open fun startAnalysisBackfill() {

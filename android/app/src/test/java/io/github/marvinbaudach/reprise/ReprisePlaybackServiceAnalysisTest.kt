@@ -165,20 +165,45 @@ class ReprisePlaybackServiceAnalysisTest {
     }
 
     @Test
-    fun nav_15e_a_stale_supersede_never_reaches_the_library() {
+    fun nav_15e_a_switch_then_a_stop_still_supersedes_the_outgoing_track() {
         val service = Robolectric.buildService(SupersedingAnalysisService::class.java).get()
 
         service.coreListener.onPlaybackChanged(m9bSnapshot(trackId = 1))
-        assertTrue("the first supersede never started", service.firstStarted.await(2, TimeUnit.SECONDS))
         service.coreListener.onPlaybackChanged(m9bSnapshot(trackId = 2))
-        service.coreListener.onPlaybackChanged(m9bSnapshot(trackId = 3))
-        service.releaseFirst.countDown()
+        service.coreListener.onPlaybackChanged(
+            m9bSnapshot(trackId = 2).copy(state = AndroidPlaybackState.STOPPED, currentTrackId = null),
+        )
 
-        assertTrue("the last supersede never ran", service.awaitSupersede(keep = 3))
-        assertEquals(
-            "a call for a track that already lost its place would cancel the playing one",
-            listOf(1L, 3L),
-            service.supersedes.toList(),
+        assertTrue(
+            "the stop after the switch left track 1's decode running",
+            service.awaitSupersede(keep = 2),
+        )
+    }
+
+    @Test
+    fun nav_15e_a_superseded_settle_for_the_playing_track_requests_again() {
+        val service = Robolectric.buildService(RecordingAnalysisService::class.java).get()
+
+        service.coreListener.onPlaybackChanged(m9bSnapshot(trackId = 41))
+        // A stale supersede reached the track that is playing now.
+        service.settle(41, AndroidAnalysisOutcome.SUPERSEDED)
+        service.coreListener.onPlaybackChanged(m9bSnapshot(trackId = 41))
+
+        assertEquals(listOf(41L, 41L), service.requestedTrackIds)
+    }
+
+    @Test
+    fun nav_15e_a_request_that_starts_after_its_track_lost_its_place_imports_nothing() {
+        val service = Robolectric.buildService(ImportRecordingService::class.java).get()
+        service.coreListener.onPlaybackChanged(m9bSnapshot(trackId = 7))
+        assertTrue("the playing track was never imported", service.awaitImport(7))
+
+        // The request for 41 was posted before the switch to 7 and starts only now.
+        service.trackAnalysisRequest(trackId = 41, requestGeneration = 0L)
+
+        assertFalse(
+            "a track nobody plays any more started a decode",
+            service.awaitImport(41, STALE_IMPORT_PROOF_MS),
         )
     }
 
@@ -202,24 +227,45 @@ class ReprisePlaybackServiceAnalysisTest {
     }
 }
 
+private const val STALE_IMPORT_PROOF_MS = 300L
+
+private class ImportRecordingService : ReprisePlaybackService() {
+    private val imports = java.util.concurrent.ConcurrentHashMap<Long, CountDownLatch>()
+
+    private fun importOf(trackId: Long) = imports.getOrPut(trackId) { CountDownLatch(1) }
+
+    override fun importTrackAnalysis(trackId: Long): AndroidAnalysisOutcome {
+        importOf(trackId).countDown()
+        return AndroidAnalysisOutcome.COMPUTED
+    }
+
+    fun awaitImport(trackId: Long, timeoutMs: Long = 2_000L): Boolean =
+        importOf(trackId).await(timeoutMs, TimeUnit.MILLISECONDS)
+
+    override fun settleTrackAnalysis(
+        trackId: Long,
+        requestGeneration: Long,
+        outcome: AndroidAnalysisOutcome?,
+        error: Throwable?,
+    ) = Unit
+
+    override fun supersedeForegroundAnalysis(keepTrackId: Long) = Unit
+
+    override fun startAnalysisBackfill() = Unit
+
+    override fun cancelAnalysisBackfill() = Unit
+}
+
 private class SupersedingAnalysisService : ReprisePlaybackService() {
-    val supersedes: MutableList<Long> = java.util.Collections.synchronizedList(mutableListOf())
-    val firstStarted = CountDownLatch(1)
-    val releaseFirst = CountDownLatch(1)
+    private val reached = java.util.concurrent.ConcurrentHashMap<Long, CountDownLatch>()
+
+    private fun reachedFor(keep: Long) = reached.getOrPut(keep) { CountDownLatch(1) }
 
     override fun supersedeForegroundTrackAnalysisInLibrary(keepTrackId: Long) {
-        supersedes += keepTrackId
-        if (keepTrackId == 1L) {
-            firstStarted.countDown()
-            releaseFirst.await()
-        }
+        reachedFor(keepTrackId).countDown()
     }
 
-    fun awaitSupersede(keep: Long): Boolean {
-        val deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(2)
-        while (keep !in supersedes && System.nanoTime() < deadline) Thread.sleep(10)
-        return keep in supersedes
-    }
+    fun awaitSupersede(keep: Long): Boolean = reachedFor(keep).await(2, TimeUnit.SECONDS)
 
     override fun trackAnalysisRequest(trackId: Long, requestGeneration: Long) = Unit
 

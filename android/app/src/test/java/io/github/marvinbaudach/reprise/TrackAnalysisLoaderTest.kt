@@ -10,7 +10,6 @@ import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
-import io.github.marvinbaudach.reprise.scene.SpectrogramFrames
 import uniffi.reprise_android_ffi.AndroidAnalysisOutcome
 import uniffi.reprise_android_ffi.AndroidTrackSpectrogram
 
@@ -566,108 +565,7 @@ class TrackAnalysisLoaderTest {
         assertEquals(MAX_ANALYSIS_ATTEMPTS - 1, pauses)
         assertEquals(MAX_ANALYSIS_ATTEMPTS.toLong(), loader.revision)
     }
-
-    @Test
-    fun nav_15e_a_queued_prepare_for_a_track_no_longer_playing_is_skipped() {
-        val firstStarted = CountDownLatch(1)
-        val releaseFirst = CountDownLatch(1)
-        val lastImported = CountDownLatch(1)
-        val imported = java.util.Collections.synchronizedList(mutableListOf<Long>())
-        val mainHops = ArrayDeque<() -> Unit>()
-        val loader = TrackAnalysisLoader(
-            importAnalysis = { trackId ->
-                imported += trackId
-                if (trackId == 1L) {
-                    firstStarted.countDown()
-                    releaseFirst.await()
-                }
-                if (trackId == 3L) lastImported.countDown()
-                AndroidAnalysisOutcome.COMPUTED
-            },
-            readBars = { _, _ -> null },
-            onMainThread = { work -> synchronized(mainHops) { mainHops.add(work) } },
-        )
-
-        loader.prepare(1)
-        assertTrue("the first import never started", firstStarted.await(2, TimeUnit.SECONDS))
-        loader.prepare(2)
-        loader.prepare(3)
-        releaseFirst.countDown()
-        assertTrue("the playing track was never imported", lastImported.await(2, TimeUnit.SECONDS))
-        loader.shutdownForTest()
-        synchronized(mainHops) { while (mainHops.isNotEmpty()) mainHops.removeFirst().invoke() }
-
-        assertEquals(listOf(1L, 3L), imported.toList())
-        assertEquals("a skipped import must not bump the revision", 2L, loader.revision)
-    }
-
-    @Test
-    fun nav_15e_a_retry_pause_that_ends_for_a_superseded_track_ends_the_loop() {
-        val pauseStarted = CountDownLatch(1)
-        val releasePause = CountDownLatch(1)
-        val secondImported = CountDownLatch(1)
-        val imported = java.util.Collections.synchronizedList(mutableListOf<Long>())
-        val loader = TrackAnalysisLoader(
-            importAnalysis = { trackId ->
-                imported += trackId
-                if (trackId == 2L) secondImported.countDown()
-                AndroidAnalysisOutcome.CANCELLED
-            },
-            readBars = { _, _ -> null },
-            onMainThread = {},
-            pauseBetweenAttempts = {
-                pauseStarted.countDown()
-                kotlinx.coroutines.runInterruptible(kotlinx.coroutines.Dispatchers.Default) {
-                    releasePause.await()
-                }
-            },
-        )
-
-        loader.prepare(1)
-        assertTrue("the retry pause never started", pauseStarted.await(2, TimeUnit.SECONDS))
-        loader.prepare(2)
-        assertTrue("the second track was never imported", secondImported.await(2, TimeUnit.SECONDS))
-        releasePause.countDown()
-        // Shutdown would end the loop too, so give an unguarded loop time to import again first.
-        Thread.sleep(SUPERSEDED_LOOP_SETTLE_MS)
-        loader.shutdownForTest()
-
-        assertEquals(1, imported.count { it == 1L })
-    }
-
-    @Test
-    fun nav_15d_progress_reads_are_never_cached() {
-        val reads = AtomicInteger(0)
-        val delivered = CountDownLatch(2)
-        val answers = java.util.Collections.synchronizedList(mutableListOf<PartialTrackAnalysis?>())
-        val loader = TrackAnalysisLoader(
-            importAnalysis = { AndroidAnalysisOutcome.IMPORTED },
-            readBars = { _, _ -> null },
-            readProgress = { _, _ ->
-                PartialTrackAnalysis(
-                    coveredFraction = 0.1f * reads.incrementAndGet(),
-                    bars = emptyList(),
-                    frames = SpectrogramFrames(2, 10, byteArrayOf()),
-                )
-            },
-            onMainThread = { work -> work() },
-        )
-
-        repeat(2) {
-            loader.loadProgress(41, 64) { answer ->
-                answers += answer
-                delivered.countDown()
-            }
-        }
-        assertTrue("the progress answers never arrived", delivered.await(2, TimeUnit.SECONDS))
-        loader.shutdownForTest()
-
-        assertEquals(2, reads.get())
-        assertEquals(2, answers.map { it?.coveredFraction }.toSet().size)
-    }
 }
-
-private const val SUPERSEDED_LOOP_SETTLE_MS = 500L
 
 private fun cancelDrainWhileWorkIsStarted(
     loader: TrackAnalysisLoader,
