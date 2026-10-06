@@ -2,7 +2,7 @@
 slug: the-spectrum-fills-while-decoding
 worktree: /home/marvin/Projects/reprise-the-spectrum-fills-while-decoding
 branch: feature/the-spectrum-fills-while-decoding
-phase: reviewed
+phase: refactored
 codex_session:
 created: 2026-10-05
 ---
