@@ -302,7 +302,8 @@ result.
   `nav_15d_adopting_shorter_frames_keeps_the_playhead_instead_of_seeking`,
   `nav_15d_frames_growing_under_a_playhead_past_the_decode_edge_continue_instead_of_snapping`,
   `nav_15d_the_decode_edge_allowance_lasts_while_the_playhead_stands_on_the_edge`,
-  `nav_15d_live_audio_ends_the_decode_edge_allowance`.
+  `nav_15d_live_audio_ends_the_decode_edge_allowance`,
+  `nav_15d_the_scene_stand_in_has_the_spectrogram_shape`.
   <!-- REVIEW: rule proposal -->
 - **NAV-15e** [active] [android] — **Leaving a track stops its analysis.**
   Switching to another track stops the outgoing track's foreground analysis

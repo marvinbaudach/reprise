@@ -59,7 +59,9 @@ class SpectrogramFrames(
         /**
          * The shape every analysis arrives in, Rust's `SPECTROGRAM_BAND_COUNT` and
          * `SPECTROGRAM_FRAME_RATE_HZ`. Kept here once so the empty stand-in cannot drift
-         * from the real frames: a scene keyed on a different shape would restart.
+         * from the real frames: a scene keyed on a different shape would restart. The
+         * Rust test `nav_15d_the_scene_stand_in_has_the_spectrogram_shape` reads these
+         * two lines and fails when they no longer match.
          */
         const val BAND_COUNT = 24
         const val FRAME_RATE_HZ = 20

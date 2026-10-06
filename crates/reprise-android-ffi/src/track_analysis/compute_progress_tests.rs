@@ -5,7 +5,9 @@ use std::sync::atomic::AtomicUsize;
 use std::sync::{Arc, Condvar, Mutex};
 use std::thread::JoinHandle;
 
-use reprise_core::spectrogram::{SPECTROGRAM_BAND_COUNT, SPECTROGRAM_SAMPLE_RATE_HZ};
+use reprise_core::spectrogram::{
+    SPECTROGRAM_BAND_COUNT, SPECTROGRAM_FRAME_RATE_HZ, SPECTROGRAM_SAMPLE_RATE_HZ,
+};
 
 use crate::track_analysis::decodes::expected_frame_count;
 use crate::track_analysis::{AndroidAnalysisOutcome, TrackPcmDecoder};
@@ -322,4 +324,25 @@ fn nav_15d_progress_for_zero_bars_is_none() {
 
     set_flag(&release);
     import.join().unwrap().unwrap();
+}
+
+/// The Android scene keeps the spectrogram's shape as two constants for its
+/// empty stand-in; a shape that drifted from the real frames would restart
+/// the scene the moment the first decoded frames arrive.
+#[test]
+fn nav_15d_the_scene_stand_in_has_the_spectrogram_shape() {
+    let path = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR")).join(
+        "../../android/app/src/main/java/io/github/marvinbaudach/reprise/scene/SpectrogramFrames.kt",
+    );
+    let source = std::fs::read_to_string(&path).unwrap();
+    for constant in [
+        format!("const val BAND_COUNT = {SPECTROGRAM_BAND_COUNT}\n"),
+        format!("const val FRAME_RATE_HZ = {SPECTROGRAM_FRAME_RATE_HZ}\n"),
+    ] {
+        assert!(
+            source.contains(&constant),
+            "SpectrogramFrames.kt no longer declares `{}`",
+            constant.trim_end()
+        );
+    }
 }
