@@ -307,9 +307,15 @@ fn run_worker(control: &Control, handles: &Handles, listener: &Arc<ProgressListe
             .compute(track.track_id, true, None, Some(&control.current));
 
         match outcome {
-            Ok(AndroidAnalysisOutcome::Cancelled | AndroidAnalysisOutcome::PhoneSourceChanged) => {
+            Ok(
+                AndroidAnalysisOutcome::Cancelled
+                | AndroidAnalysisOutcome::Superseded
+                | AndroidAnalysisOutcome::PhoneSourceChanged,
+            ) => {
                 // Not a failure and not progress: `Cancelled` stored
-                // nothing because the sink was told to stop, and
+                // nothing because the sink was told to stop, `Superseded`
+                // is the same for a foreground decode this worker waited on
+                // when its track stopped playing, and
                 // `PhoneSourceChanged` stored nothing because
                 // `set_track_render_data` found the file's fingerprint had
                 // changed mid-decode (`SpectrogramStoreOutcome::SourceChanged`).

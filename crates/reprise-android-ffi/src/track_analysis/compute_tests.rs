@@ -96,7 +96,7 @@ fn library_with_one_track_and_tree(
 
 /// One channel of 16-bit PCM long enough for `RenderDataSession::finish` to
 /// succeed, as little-endian bytes ready for `push_pcm_i16`.
-fn valid_pcm_bytes() -> Vec<u8> {
+pub(super) fn valid_pcm_bytes() -> Vec<u8> {
     let sample_rate_hz = 32_000_u32;
     let mut bytes = Vec::new();
     for index in 0..sample_rate_hz {
@@ -107,14 +107,14 @@ fn valid_pcm_bytes() -> Vec<u8> {
     bytes
 }
 
-fn push_valid_pcm(sink: &Arc<AnalysisPcmSink>) {
+pub(super) fn push_valid_pcm(sink: &Arc<AnalysisPcmSink>) {
     assert!(sink.push_pcm_i16(valid_pcm_bytes(), 32_000, 1));
 }
 
 /// Waits for a test-controlled gate to open. Bounded: an un-timed-out wait on
 /// a background decode is a hang waiting to happen the day the decoder never
 /// reaches the gate — a bug here must fail this test, not the whole suite.
-fn wait_flag(state: &Arc<(Mutex<bool>, Condvar)>) {
+pub(super) fn wait_flag(state: &Arc<(Mutex<bool>, Condvar)>) {
     let (lock, condvar) = &**state;
     let guard = lock.lock().unwrap();
     let (_guard, timed_out) = condvar
@@ -123,7 +123,7 @@ fn wait_flag(state: &Arc<(Mutex<bool>, Condvar)>) {
     assert!(!timed_out.timed_out(), "the gate was never opened");
 }
 
-fn set_flag(state: &Arc<(Mutex<bool>, Condvar)>) {
+pub(super) fn set_flag(state: &Arc<(Mutex<bool>, Condvar)>) {
     let (lock, condvar) = &**state;
     *lock.lock().unwrap() = true;
     condvar.notify_all();
@@ -152,7 +152,7 @@ fn wait_for_in_flight_waiter(library: &MusicLibrary, track_id: i64) {
 }
 
 /// A [`TrackPcmDecoder`] whose body is an arbitrary closure, counting calls.
-struct ClosureDecoder<F> {
+pub(super) struct ClosureDecoder<F> {
     calls: Arc<AtomicUsize>,
     run: F,
 }
@@ -161,7 +161,7 @@ impl<F> ClosureDecoder<F>
 where
     F: Fn(&str, &Arc<AnalysisPcmSink>) -> Result<(), AnalysisDecodeError> + Send + Sync,
 {
-    fn new(calls: Arc<AtomicUsize>, run: F) -> Self {
+    pub(super) fn new(calls: Arc<AtomicUsize>, run: F) -> Self {
         Self { calls, run }
     }
 }
@@ -181,7 +181,7 @@ where
     }
 }
 
-fn succeeding_decoder(
+pub(super) fn succeeding_decoder(
     calls: Arc<AtomicUsize>,
 ) -> ClosureDecoder<
     impl Fn(&str, &Arc<AnalysisPcmSink>) -> Result<(), AnalysisDecodeError> + Send + Sync,

@@ -4,12 +4,13 @@
 //! mother plan).
 
 use std::collections::{HashMap, HashSet};
-use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::atomic::{AtomicU8, Ordering};
 use std::sync::{Arc, Condvar, Mutex, PoisonError};
 
 use reprise_core::db::Db;
-use reprise_core::render_data_session::RenderDataSession;
+use reprise_core::render_data_session::{PartialRenderData, RenderDataSession};
 
+use crate::track_analysis::decodes::{expected_frame_count, DecodeRegistry};
 use crate::track_analysis::TrackAnalysisBackfill;
 use crate::{LibraryError, MusicLibrary};
 
@@ -51,14 +52,23 @@ pub trait TrackPcmDecoder: Send + Sync {
     ) -> Result<(), AnalysisDecodeError>;
 }
 
+/// The sink still takes PCM.
+const SINK_RUNNING: u8 = 0;
+/// Told to stop by a foreground request preempting the backfill's item.
+const SINK_CANCELLED: u8 = 1;
+/// Told to stop because the track is no longer playing.
+const SINK_SUPERSEDED: u8 = 2;
+
 /// Owns one track's [`RenderDataSession`] for the duration of one decode
-/// call. `cancelled` is flipped from outside the decode call — by a
-/// foreground request preempting the backfill's current item — so the
-/// decoder can be told to stop without a second channel back into Kotlin.
+/// call. `stop_reason` is set from outside the decode call — by a foreground
+/// request preempting the backfill's current item, or by a track change
+/// superseding a foreground decode — so the decoder can be told to stop
+/// without a second channel back into Kotlin. The first reason wins; it
+/// decides whether waiters retry (`Cancelled`) or settle (`Superseded`).
 #[derive(uniffi::Object)]
 pub struct AnalysisPcmSink {
     session: Mutex<Option<RenderDataSession>>,
-    cancelled: AtomicBool,
+    stop_reason: AtomicU8,
     /// Set when the session itself refused a chunk (a rate or channel
     /// change mid-stream): a data problem, distinct from the decoder giving
     /// up and distinct from being told to stop.
@@ -69,17 +79,45 @@ impl AnalysisPcmSink {
     fn new() -> Arc<Self> {
         Arc::new(Self {
             session: Mutex::new(Some(RenderDataSession::new())),
-            cancelled: AtomicBool::new(false),
+            stop_reason: AtomicU8::new(SINK_RUNNING),
             refused: Mutex::new(None),
         })
     }
 
+    fn stop(&self, reason: u8) {
+        let _ = self.stop_reason.compare_exchange(
+            SINK_RUNNING,
+            reason,
+            Ordering::AcqRel,
+            Ordering::Acquire,
+        );
+    }
+
     pub(crate) fn cancel(&self) {
-        self.cancelled.store(true, Ordering::Release);
+        self.stop(SINK_CANCELLED);
+    }
+
+    pub(super) fn supersede(&self) {
+        self.stop(SINK_SUPERSEDED);
     }
 
     fn is_cancelled(&self) -> bool {
-        self.cancelled.load(Ordering::Acquire)
+        self.stop_reason.load(Ordering::Acquire) != SINK_RUNNING
+    }
+
+    fn is_superseded(&self) -> bool {
+        self.stop_reason.load(Ordering::Acquire) == SINK_SUPERSEDED
+    }
+
+    /// What has been decoded so far, read under the session lock the decoder
+    /// pushes through. `None` before one peak bucket is complete and once the
+    /// session has been taken to finish.
+    pub(super) fn partial(&self, expected_frames: usize) -> Option<PartialRenderData> {
+        self.session
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .as_ref()?
+            .partial(expected_frames)
     }
 
     fn refused_reason(&self) -> Option<String> {
@@ -149,6 +187,10 @@ pub enum AndroidAnalysisOutcome {
     DecodeFailed,
     NoDecoder,
     Cancelled,
+    /// The track stopped being the playing one and its foreground decode was
+    /// stopped. Final for every waiter (no retry); nothing was stored and the
+    /// track stays pending for the backfill.
+    Superseded,
 }
 
 /// One pending or finished decode, shared between every caller waiting on
@@ -167,6 +209,7 @@ pub(crate) type CurrentDecodeSlot = Mutex<Option<(i64, Arc<AnalysisPcmSink>)>>;
 /// starting a second one.
 pub struct AnalysisInFlight {
     entries: Mutex<HashMap<i64, AnalysisCell>>,
+    decodes: DecodeRegistry,
 }
 
 pub(crate) enum Claim {
@@ -182,7 +225,13 @@ impl AnalysisInFlight {
     pub fn new() -> Self {
         Self {
             entries: Mutex::new(HashMap::new()),
+            decodes: DecodeRegistry::default(),
         }
+    }
+
+    /// The decodes running right now, with their live sinks.
+    pub(crate) fn decodes(&self) -> &DecodeRegistry {
+        &self.decodes
     }
 
     fn join_or_claim(&self, track_id: i64) -> Claim {
@@ -315,7 +364,7 @@ impl AnalysisContext<'_> {
         // released before the decode call, per decision 6 of the mother
         // plan: the decoder callback never runs while `reader` or `writer`
         // is held.
-        let (track_uri, fingerprint) = {
+        let (track_uri, fingerprint, expected_frames) = {
             let reader = self.reader.lock().map_err(poisoned)?;
             let track = reprise_core::queries::query_present_track_by_id(&reader, track_id)
                 .map_err(query_error)?
@@ -331,10 +380,20 @@ impl AnalysisContext<'_> {
             let fingerprint = reprise_core::db::track_source_fingerprint(&reader, track_id)
                 .map_err(database_error)?
                 .ok_or(LibraryError::TrackNotFound { track_id })?;
-            (track.path, fingerprint)
+            (
+                track.path,
+                fingerprint,
+                expected_frame_count(track.duration_ms),
+            )
         };
 
         let sink = AnalysisPcmSink::new();
+        // Registered for the whole call, store included, and dropped on every
+        // way out of this function.
+        let _registration =
+            self.in_flight
+                .decodes()
+                .register(track_id, &sink, expected_frames, background);
         // `current_slot` gets the track id and the sink together, in one
         // write, right before the decode call starts: this is the only
         // point that publishes "this track is now decoding" to a foreground
@@ -353,7 +412,11 @@ impl AnalysisContext<'_> {
         // this session never intended to finish must not be stored as if it
         // had (decision in A3 of the strand file).
         if sink.is_cancelled() {
-            return Ok(AndroidAnalysisOutcome::Cancelled);
+            return Ok(if sink.is_superseded() {
+                AndroidAnalysisOutcome::Superseded
+            } else {
+                AndroidAnalysisOutcome::Cancelled
+            });
         }
         if let Err(error) = decode_result {
             tracing::debug!(track_id, %error, "track analysis decode failed");
@@ -431,3 +494,7 @@ mod tests;
 #[cfg(test)]
 #[path = "compute_retry_tests.rs"]
 mod retry_tests;
+
+#[cfg(test)]
+#[path = "compute_progress_tests.rs"]
+mod progress_tests;
