@@ -223,6 +223,7 @@ internal fun NowPlayingSheet(
         }
         val targetIndex = requestedIndex.coerceIn(panelWindow.firstIndex, panelWindow.lastIndex)
         val changesTrack = targetIndex != currentIndex
+        if (changesTrack) VisualizerEdgeLog.swipeCommit(decision, currentIndex, targetIndex)
         // One settle at a time: a newer swipe or button press supersedes the
         // wait of the previous one, so no stale snap-back can fire under it.
         settleJob?.cancel()
@@ -488,7 +489,7 @@ internal const val VISUALIZER_CROSSFADE_MS = 220
 internal const val NOW_PLAYING_SETTLE_MS = 480
 internal const val NOW_PLAYING_ANSWER_GRACE_MS = 1_500
 internal val NOW_PLAYING_SETTLE_EASING = CubicBezierEasing(0.22f, 1.06f, 0.32f, 1f)
-private const val NOW_PLAYING_VISUALIZER_TAG = "RepriseVisualizer"
+private const val NOW_PLAYING_VISUALIZER_TAG = VISUALIZER_LOG_TAG
 
 @Composable
 private fun WideShortNowPlayingContent(

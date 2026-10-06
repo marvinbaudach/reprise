@@ -40,7 +40,14 @@ internal interface VisualSceneEngine : AutoCloseable {
      */
     fun currentBands(): FloatArray = FloatArray(0)
 
-    /** Seeds a freshly created engine with another engine's [currentBands]. */
+    /**
+     * The shape a panel taking over the live slot should adopt: the last bars live audio drew,
+     * which survives a stop or a transport blip that has already decayed [currentBands] by the
+     * time the new panel composes. Falls back to [currentBands] when no live audio has drawn.
+     */
+    fun adoptableBands(): FloatArray = currentBands()
+
+    /** Seeds a freshly created engine with another engine's [adoptableBands]. */
     fun adoptShape(bands: FloatArray) = Unit
     fun hasLiveAudio(): Boolean = false
     fun bassPressure(): VisualBassPressure = VisualBassPressure.SILENT
@@ -114,6 +121,8 @@ internal class NativeVisualSceneEngine(
 
     override fun currentBands(): FloatArray = native.currentBands().toFloatArray()
 
+    override fun adoptableBands(): FloatArray = native.adoptableBands().toFloatArray()
+
     override fun adoptShape(bands: FloatArray) = native.adoptShape(bands.asList())
 
     override fun setPlaybackIntent(playbackIntended: Boolean) =
@@ -133,7 +142,10 @@ internal class NativeVisualSceneEngine(
         )
     }
 
-    override fun resetAudioStream() = native.resetAudioStream()
+    override fun resetAudioStream() {
+        VisualizerEdgeLog.resetAudioStream()
+        native.resetAudioStream()
+    }
 
     override fun resetAudioHistory() = native.resetAudioHistory()
 

@@ -425,7 +425,9 @@ private fun rememberVisualSceneEngine(
     val adoptedBands = remember(factory) {
         val created = engine
         if (created != null && shouldAdoptLiveShape(live, previousLiveEngine, created)) {
-            previousLiveEngine!!.currentBands()
+            val adoptable = previousLiveEngine!!.adoptableBands()
+            VisualizerEdgeLog.adoptShape(adoptable, previousLiveEngine.currentBands())
+            adoptable
         } else {
             null
         }
@@ -435,6 +437,7 @@ private fun rememberVisualSceneEngine(
     }
     DisposableEffect(engine, trackId) {
         engine?.noteTrackChanged()
+        if (live) VisualizerEdgeLog.noteTrackChanged(trackId)
         onDispose { }
     }
     // Declared after the `noteTrackChanged` effect above: that call clears
@@ -444,8 +447,12 @@ private fun rememberVisualSceneEngine(
         adoptedBands?.let { engine?.adoptShape(it) }
         onDispose { }
     }
+    val playingEdge = remember(engine) { VisualizerPlayingEdgeLog() }
     SideEffect {
-        engine?.let { updateVisualSceneEngine(it, playback, accent) }
+        engine?.let {
+            updateVisualSceneEngine(it, playback, accent)
+            if (live) playingEdge.observe(playback.visualizerActive, playback)
+        }
     }
     return engine
 }
