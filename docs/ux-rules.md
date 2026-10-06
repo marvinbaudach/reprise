@@ -7613,8 +7613,11 @@ no tags of its own to write.
   spectrogram and loudness, measured from its own stretch of the file with a
   single decode of the file for all of its tracks. A track played before the
   backfill reaches it is measured from its own stretch too, never from the whole
-  file; where no backend can cut the file, it simply has no analysis. A track
-  whose cut changes loses its analysis and is measured again; its siblings keep
+  file, and that decode measures the file's other unmeasured tracks with it;
+  moving on to another track stops a decode nobody waits for any more. Where no
+  backend can cut the file, a track simply has no analysis, and a track the
+  decode never reaches stays unmeasured. A track whose cut changes loses its
+  analysis and is measured again, never from its old cut; its siblings keep
   theirs.
 - **CUE-10** [active] [core] — A track cut from a file gets no sync analysis
   sidecar, because one file's tracks would all write the same sidecar name. For

@@ -451,6 +451,19 @@ pub fn pending_render_data_tracks(db: &Db) -> Result<Vec<PendingRenderDataTrack>
 /// Returns the CUE files with live tracks whose rendering data is absent or
 /// stale, each with just those tracks in play order, in stable path order.
 pub fn pending_segment_render_data_files(db: &Db) -> Result<Vec<PendingSegmentFile>, DbError> {
+    pending_segment_files(db, None)
+}
+
+/// The live tracks of the CUE file at `path` whose rendering data is absent or
+/// stale, in play order.
+pub fn pending_segment_tracks_of(db: &Db, path: &str) -> Result<Vec<PendingSegmentTrack>, DbError> {
+    Ok(pending_segment_files(db, Some(path))?
+        .into_iter()
+        .flat_map(|file| file.tracks)
+        .collect())
+}
+
+fn pending_segment_files(db: &Db, path: Option<&str>) -> Result<Vec<PendingSegmentFile>, DbError> {
     let mut statement = db.conn().prepare(&format!(
         "SELECT t.id, t.path, t.file_mtime, t.file_size, t.device, t.inode, \
                 t.segment_start_ms, t.segment_end_ms \
@@ -466,11 +479,12 @@ pub fn pending_segment_render_data_files(db: &Db) -> Result<Vec<PendingSegmentFi
          WHERE {} AND t.segment_index > 0 \
            AND t.segment_start_ms IS NOT NULL AND t.segment_end_ms IS NOT NULL \
            AND (t.waveform_peaks IS NULL OR s.track_id IS NULL OR l.track_id IS NULL) \
+           AND (?3 IS NULL OR t.path = ?3) \
          ORDER BY t.path, t.segment_index",
         crate::queries::PRESENT
     ))?;
     let rows = statement.query_map(
-        rusqlite::params![SPECTROGRAM_FORMAT_VERSION, LOUDNESS_FORMAT_VERSION],
+        rusqlite::params![SPECTROGRAM_FORMAT_VERSION, LOUDNESS_FORMAT_VERSION, path],
         |row| {
             Ok((
                 row.get::<_, String>(1)?,

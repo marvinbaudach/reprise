@@ -316,6 +316,12 @@ impl PlayerController {
         self.offer_colour_legend(track_id);
         let generation = self.waveform_generation.get().wrapping_add(1);
         self.waveform_generation.set(generation);
+        let cancelled = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false));
+        let previous = self
+            .waveform_cancel
+            .replace(std::sync::Arc::clone(&cancelled));
+        previous.store(true, std::sync::atomic::Ordering::Release);
+        let colour_cancelled = std::sync::Arc::clone(&cancelled);
         let waveform_generation = self.waveform_generation.clone();
         let waveform_backend = self.waveform_backend.clone();
         let waveform = self.bar.waveform_handle();
@@ -331,6 +337,7 @@ impl PlayerController {
                         track_id,
                         &track_path,
                         waveform_backend.as_ref(),
+                        &cancelled,
                     )?;
                     // Only a track whose peaks had to be decoded just now also
                     // got a spectrogram stored; one with cached peaks returns
@@ -376,6 +383,7 @@ impl PlayerController {
                                 &colour_path,
                                 buckets,
                                 colour_backend.as_ref(),
+                                &colour_cancelled,
                             )
                         })
                 }) else {

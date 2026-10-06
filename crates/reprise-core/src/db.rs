@@ -16,9 +16,10 @@ mod connection;
 mod handle;
 pub use crate::db_spectrogram::{
     complete_render_data_track_ids, get_track_spectrogram, get_waveform_peaks,
-    pending_render_data_tracks, pending_segment_render_data_files, set_segment_render_data,
-    set_track_render_data, set_track_spectrogram, set_waveform_peaks, track_source_fingerprint,
-    PendingRenderDataTrack, PendingSegmentFile, PendingSegmentTrack, SpectrogramStoreOutcome,
+    pending_render_data_tracks, pending_segment_render_data_files, pending_segment_tracks_of,
+    set_segment_render_data, set_track_render_data, set_track_spectrogram, set_waveform_peaks,
+    track_source_fingerprint, PendingRenderDataTrack, PendingSegmentFile, PendingSegmentTrack,
+    SpectrogramStoreOutcome,
 };
 #[cfg(test)]
 pub(crate) use connection::open_with_options;

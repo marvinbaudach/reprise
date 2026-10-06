@@ -70,8 +70,20 @@ fn the_first_play_decodes_once_and_nothing_decodes_it_again() {
     let db = database();
     let backend = CountingBackend::default();
 
-    let first = peaks_for_playback(&db, 1, Path::new("/played.flac"), &backend);
-    let second = peaks_for_playback(&db, 1, Path::new("/played.flac"), &backend);
+    let first = peaks_for_playback(
+        &db,
+        1,
+        Path::new("/played.flac"),
+        &backend,
+        &AtomicBool::new(false),
+    );
+    let second = peaks_for_playback(
+        &db,
+        1,
+        Path::new("/played.flac"),
+        &backend,
+        &AtomicBool::new(false),
+    );
 
     assert_eq!(first, Some(vec![7; STORED_PEAK_COUNT]));
     assert_eq!(second, first);
@@ -131,7 +143,13 @@ fn a_track_whose_source_moved_mid_decode_still_plays_without_storing() {
         inner: CountingBackend::default(),
     };
 
-    let peaks = peaks_for_playback(&db, 1, Path::new("/played.flac"), &moving);
+    let peaks = peaks_for_playback(
+        &db,
+        1,
+        Path::new("/played.flac"),
+        &moving,
+        &AtomicBool::new(false),
+    );
 
     assert_eq!(peaks, Some(vec![7; STORED_PEAK_COUNT]));
     assert_eq!(
@@ -145,7 +163,13 @@ fn a_track_whose_source_moved_mid_decode_still_plays_without_storing() {
 fn an_undecodable_track_yields_no_peaks_and_stores_nothing() {
     let db = database();
 
-    let peaks = peaks_for_playback(&db, 1, Path::new("/played.flac"), &FailingBackend);
+    let peaks = peaks_for_playback(
+        &db,
+        1,
+        Path::new("/played.flac"),
+        &FailingBackend,
+        &AtomicBool::new(false),
+    );
 
     assert_eq!(peaks, None);
     assert_eq!(get_waveform_peaks(&db, 1).unwrap(), None);
@@ -157,7 +181,13 @@ fn an_unknown_track_is_never_decoded() {
     let db = database();
     let backend = CountingBackend::default();
 
-    let peaks = peaks_for_playback(&db, 404, Path::new("/missing.flac"), &backend);
+    let peaks = peaks_for_playback(
+        &db,
+        404,
+        Path::new("/missing.flac"),
+        &backend,
+        &AtomicBool::new(false),
+    );
 
     assert_eq!(peaks, None);
     assert_eq!(backend.decodes.load(Ordering::Relaxed), 0);
@@ -173,8 +203,15 @@ fn a_track_with_only_cached_peaks_gains_its_curve_on_play() {
     crate::db::set_waveform_peaks(&db, 1, &vec![3; STORED_PEAK_COUNT]).unwrap();
     assert_eq!(centroid_for_playback(&db, 1, STORED_PEAK_COUNT), None);
 
-    let curve =
-        ensure_centroid_for_playback(&db, 1, Path::new("/played.flac"), 16, &backend).unwrap();
+    let curve = ensure_centroid_for_playback(
+        &db,
+        1,
+        Path::new("/played.flac"),
+        16,
+        &backend,
+        &AtomicBool::new(false),
+    )
+    .unwrap();
 
     assert_eq!(curve.len(), 16);
     assert_eq!(backend.decodes.load(Ordering::Relaxed), 1);
@@ -185,10 +222,23 @@ fn a_track_with_only_cached_peaks_gains_its_curve_on_play() {
 fn a_track_that_already_has_a_curve_is_never_decoded_again() {
     let db = database();
     let backend = CountingBackend::default();
-    peaks_for_playback(&db, 1, Path::new("/played.flac"), &backend);
+    peaks_for_playback(
+        &db,
+        1,
+        Path::new("/played.flac"),
+        &backend,
+        &AtomicBool::new(false),
+    );
     let decodes_after_first_play = backend.decodes.load(Ordering::Relaxed);
 
-    let curve = ensure_centroid_for_playback(&db, 1, Path::new("/played.flac"), 16, &backend);
+    let curve = ensure_centroid_for_playback(
+        &db,
+        1,
+        Path::new("/played.flac"),
+        16,
+        &backend,
+        &AtomicBool::new(false),
+    );
 
     assert_eq!(curve, None, "nothing to redo, so nothing is handed back");
     assert_eq!(
@@ -202,8 +252,14 @@ fn an_undecodable_track_gains_no_curve_and_stores_nothing() {
     let db = database();
     crate::db::set_waveform_peaks(&db, 1, &vec![3; STORED_PEAK_COUNT]).unwrap();
 
-    let curve =
-        ensure_centroid_for_playback(&db, 1, Path::new("/played.flac"), 16, &FailingBackend);
+    let curve = ensure_centroid_for_playback(
+        &db,
+        1,
+        Path::new("/played.flac"),
+        16,
+        &FailingBackend,
+        &AtomicBool::new(false),
+    );
 
     assert_eq!(curve, None);
     assert_eq!(centroid_for_playback(&db, 1, STORED_PEAK_COUNT), None);
@@ -214,6 +270,7 @@ fn an_undecodable_track_gains_no_curve_and_stores_nothing() {
 #[derive(Default)]
 struct CuttingBackend {
     whole_file_decodes: AtomicUsize,
+    file_decodes: AtomicUsize,
     cuts: std::sync::Mutex<Vec<SegmentBounds>>,
 }
 
@@ -242,8 +299,12 @@ impl RenderDataBackend for CuttingBackend {
         _path: &Path,
         segments: &[SegmentBounds],
         buckets: usize,
-        _cancelled: &AtomicBool,
+        cancelled: &AtomicBool,
     ) -> Result<Vec<crate::waveform::SegmentRenderData>, WaveformError> {
+        if cancelled.load(Ordering::Acquire) {
+            return Err(WaveformError::Cancelled);
+        }
+        self.file_decodes.fetch_add(1, Ordering::Relaxed);
         self.cuts.lock().unwrap().extend_from_slice(segments);
         Ok(segments
             .iter()
@@ -277,7 +338,14 @@ fn cue_9_playing_a_cue_track_stores_its_own_stretch_and_never_the_whole_file() {
     let db = database_with_a_cue_track();
     let backend = CuttingBackend::default();
 
-    let peaks = peaks_for_playback(&db, 2, Path::new("/live.flac"), &backend).unwrap();
+    let peaks = peaks_for_playback(
+        &db,
+        2,
+        Path::new("/live.flac"),
+        &backend,
+        &AtomicBool::new(false),
+    )
+    .unwrap();
 
     assert_eq!(backend.whole_file_decodes.load(Ordering::Relaxed), 0);
     assert_eq!(
@@ -295,13 +363,20 @@ fn cue_9_playing_a_cue_track_stores_its_own_stretch_and_never_the_whole_file() {
 fn cue_9_a_backend_that_cannot_cut_a_file_leaves_a_cue_track_without_data() {
     let db = database_with_a_cue_track();
 
-    let peaks = peaks_for_playback(&db, 2, Path::new("/live.flac"), &CountingBackend::default());
+    let peaks = peaks_for_playback(
+        &db,
+        2,
+        Path::new("/live.flac"),
+        &CountingBackend::default(),
+        &AtomicBool::new(false),
+    );
     let curve = ensure_centroid_for_playback(
         &db,
         2,
         Path::new("/live.flac"),
         16,
         &CountingBackend::default(),
+        &AtomicBool::new(false),
     );
 
     assert_eq!(peaks, None);
@@ -330,7 +405,13 @@ fn cue_9_a_cue_track_without_its_stretch_recorded_is_not_measured() {
         .unwrap();
     let backend = CuttingBackend::default();
 
-    let peaks = peaks_for_playback(&db, 3, Path::new("/live.flac"), &backend);
+    let peaks = peaks_for_playback(
+        &db,
+        3,
+        Path::new("/live.flac"),
+        &backend,
+        &AtomicBool::new(false),
+    );
 
     assert_eq!(peaks, None);
     assert!(backend.cuts.lock().unwrap().is_empty(), "nothing to cut");
@@ -389,7 +470,13 @@ fn cue_9_a_track_re_cut_while_it_decodes_keeps_nothing_from_the_old_cut() {
         inner: CuttingBackend::default(),
     };
 
-    let peaks = peaks_for_playback(&db, 2, Path::new("/live.flac"), &backend);
+    let peaks = peaks_for_playback(
+        &db,
+        2,
+        Path::new("/live.flac"),
+        &backend,
+        &AtomicBool::new(false),
+    );
 
     assert!(peaks.is_some(), "what plays still gets a shape");
     assert_eq!(
@@ -397,4 +484,80 @@ fn cue_9_a_track_re_cut_while_it_decodes_keeps_nothing_from_the_old_cut() {
         None,
         "data measured from the old cut must not be stored under the new one"
     );
+}
+
+/// Three tracks cut from one file, none of them measured yet.
+fn database_with_a_cue_album() -> Db {
+    let db = Db::open_in_memory().unwrap();
+    db.conn()
+        .execute_batch(
+            "INSERT INTO tracks (id, path, title, added_at, file_mtime, file_size, device, inode,
+                                 segment_index, segment_start_ms, segment_end_ms)
+             VALUES (1, '/album.flac', 'One', 0, 11, 22, 33, 44, 1, 0, 3000),
+                    (2, '/album.flac', 'Two', 0, 11, 22, 33, 44, 2, 3000, 8000),
+                    (3, '/album.flac', 'Three', 0, 11, 22, 33, 44, 3, 8000, 9000);",
+        )
+        .unwrap();
+    db
+}
+
+#[test]
+fn cue_9_playing_one_track_measures_the_rest_of_its_file_in_the_same_decode() {
+    let db = database_with_a_cue_album();
+    let backend = CuttingBackend::default();
+    let never = AtomicBool::new(false);
+
+    peaks_for_playback(&db, 2, Path::new("/album.flac"), &backend, &never).unwrap();
+
+    assert_eq!(backend.file_decodes.load(Ordering::Relaxed), 1);
+    assert_eq!(
+        backend.cuts.lock().unwrap().as_slice(),
+        [
+            SegmentBounds {
+                start_ms: 3_000,
+                end_ms: 8_000
+            },
+            SegmentBounds {
+                start_ms: 0,
+                end_ms: 3_000
+            },
+            SegmentBounds {
+                start_ms: 8_000,
+                end_ms: 9_000
+            },
+        ],
+        "the track that plays first, then its siblings in play order"
+    );
+    for track_id in [1, 2, 3] {
+        assert!(
+            get_waveform_peaks(&db, track_id).unwrap().is_some(),
+            "{track_id}"
+        );
+    }
+
+    peaks_for_playback(&db, 3, Path::new("/album.flac"), &backend, &never).unwrap();
+    assert_eq!(
+        backend.file_decodes.load(Ordering::Relaxed),
+        1,
+        "skipping to the next track decodes nothing"
+    );
+}
+
+#[test]
+fn cue_9_a_decode_cancelled_by_the_next_track_stores_nothing() {
+    let db = database_with_a_cue_album();
+    let backend = CuttingBackend::default();
+
+    let peaks = peaks_for_playback(
+        &db,
+        2,
+        Path::new("/album.flac"),
+        &backend,
+        &AtomicBool::new(true),
+    );
+
+    assert_eq!(peaks, None);
+    for track_id in [1, 2, 3] {
+        assert_eq!(get_waveform_peaks(&db, track_id).unwrap(), None);
+    }
 }
