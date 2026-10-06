@@ -485,30 +485,36 @@ The deck runs every mission to a finish instead of aborting. On the generated pr
 `mission_complete`. `large-library-stress` does not, and what stops it is not the harness:
 
 - `sort-cycle` needs a column header that sorts when clicked. Pixel clicks do reach the
-  header (it takes the hover wash), yet neither the order nor the sort arrow changes. A
-  plain `xdotool` click (press and release, with and without a pointer move, one and
-  two clicks) on a bare Xvfb and openbox session with no cua-driver involved behaves the
-  same on every header, while a pixel click through the driver opens the Add filter
-  popover. That makes it a candidate Reprise defect rather than a harness limit, but it
-  was seen only under Xvfb: confirm it on a real desktop before filing.
-- `combined-filter` and `batch-edit` have to choose from popover lists (the Add filter
-  facets, the row context menu). cua-driver 0.33 lists a popover row as a `list item`
-  with an empty name and no action, and its text only as an unindexed `label =` child in
-  `tree_markdown`, so no label can address it. The harness does not invent a name from
-  that text: the missing name is the finding (GP-10).
-- The agent also presses Ctrl+A and Shift+F10 while the search popover it opened for the
-  `combined-filter` search still holds the keyboard focus, so the selection never reaches
-  the list. That is a plan defect of its own, but fixing it alone cannot finish the
-  workload, because the menu it opens has nothing to address.
-
+  header (it takes the hover wash), yet neither the order nor the sort arrow changes, and
+  the app log shows no query with a different sort across 24 clicks. A plain `xdotool`
+  click (press and release, with and without a pointer move, one and two clicks) on a
+  bare Xvfb and openbox session with no cua-driver involved behaves the same on every
+  header, while a pixel click through the driver opens the Add filter popover. That makes
+  it a candidate Reprise defect rather than a harness limit, but it was seen only under
+  Xvfb: confirm it on a real desktop before filing.
+- `combined-filter` and `batch-edit` have to choose from popover lists, and a plain
+  `Atspi` walk of the same session (no driver) shows what the driver shows: the rows of
+  the Add filter popover are `list item`s with an empty name whose text sits in an
+  unindexed label child, and the nine items of the row context menu are `menu item`s with
+  an empty name and no label child at all, although the menu draws "Edit tags...". No label
+  can address either. The harness does not invent a name from a child's text: the missing
+  name is the finding (candidate GP-10 defect, a rule that is still `[planned]`).
+- The agent presses Ctrl+A and Shift+F10 while the search popover it opened for its
+  search still holds the keyboard focus, so the selection never reaches the list. That is
+  a plan defect of its own and stays open: fixing it alone cannot finish the workload,
+  because the menu it would open has nothing to address.
 Other gaps that are still open:
 
+- `offline-recovery` ends incomplete (`source_rows_single_and_retained` false for
+  Podcasts and YouTube, `refresh_before_loss` and `retry_while_offline` false). It ends
+  the same way, with the same audit, on the commit before this change; it is not
+  diagnosed.
 - The sidebar headings (LIBRARY, PLAYLISTS, SMART) and the new-playlist button are not in
   the accessibility tree at all - not in cua-driver's walk and not in a plain `Atspi`
   walk of the same session - although the screenshot draws them. The hover sweep
   therefore reaches the Playlists section through the playlist the generated profile
-  carries (`section_handles`), and the missing heading and button are recorded as a
-  candidate NAV-11 defect rather than skipped by the audit.
+  carries (`section_handles`) instead of the audit skipping the section; the missing
+  heading and button are a candidate NAV-11 defect.
 - The bundled agent's plans address rows and the column-header row with `dispatch: ax`.
   Neither offers an AT-SPI click, and the driver refuses to aim at them by element. The
   executor therefore sends such a click by pixel (`dispatch: px`, with the

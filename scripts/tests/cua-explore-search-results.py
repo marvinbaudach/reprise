@@ -209,6 +209,34 @@ class SectionSearchAuditTests(unittest.TestCase):
         self.assertFalse(result["route_results"]["Podcasts"])
 
 
+class CombinedFilterSearchTests(unittest.TestCase):
+    """The combined-filter audit counts the search result the same way."""
+
+    WORKLOAD = {
+        "kind": "combined-filter",
+        "facets": [],
+        "active_labels": {},
+        "include_search": True,
+        "search_token": "MUSIC_ONLY_NEEDLE",
+    }
+
+    def search_complete(self, after: dict) -> bool:
+        trace = type_trace(
+            "Music",
+            "MUSIC_ONLY_NEEDLE",
+            before=raw("search-music-unfiltered"),
+            after=after,
+        )
+        result = audit_action_workload(0, self.WORKLOAD, [trace], TOKENS)
+        return result["search_complete"]
+
+    def test_one_correct_result_completes_the_search(self) -> None:
+        self.assertTrue(self.search_complete(raw("search-music-settled")))
+
+    def test_an_unfiltered_list_does_not(self) -> None:
+        self.assertFalse(self.search_complete(raw("search-music-unfiltered")))
+
+
 class AgentSideCountTests(unittest.TestCase):
     """The agent keeps its own copies of the same two decisions."""
 
