@@ -115,6 +115,11 @@ android {
                 languageVersion.set(JavaLanguageVersion.of(21))
             })
             it.systemProperty("user.home", gradle.gradleUserHomeDir.absolutePath)
+            // Robolectric 4.17 reaches jdk.internal.access.SharedSecrets from its
+            // FileDescriptor interceptor on SDK 37; without this opening every
+            // Robolectric test dies with IllegalAccessException
+            // (robolectric/robolectric#11434).
+            it.jvmArgs("--add-opens=java.base/jdk.internal.access=ALL-UNNAMED")
         }
     }
 }
@@ -149,6 +154,6 @@ dependencies {
     testImplementation("net.java.dev.jna:jna:5.19.1")
     testImplementation(platform("androidx.compose:compose-bom:2026.09.00"))
     testImplementation("androidx.compose.ui:ui-test-junit4")
-    testImplementation("org.robolectric:robolectric:4.16.1")
+    testImplementation("org.robolectric:robolectric:4.17")
     debugImplementation("androidx.compose.ui:ui-test-manifest")
 }
