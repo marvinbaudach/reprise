@@ -7612,7 +7612,9 @@ no tags of its own to write.
   whose cut changes loses its analysis and is measured again; its siblings keep
   theirs.
 - **CUE-10** [active] [core] — A track cut from a file gets no sync analysis
-  sidecar, because one file's tracks would all write the same sidecar name.
+  sidecar, because one file's tracks would all write the same sidecar name. For
+  the same reason its lyrics are never read from or written to a sidecar beside
+  the file or the file's tags; they come from the online sources and the cache.
 
 ## AJ. Showroom (public site)
 

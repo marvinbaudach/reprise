@@ -83,7 +83,10 @@ impl BatchProgress {
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct BatchTrack {
     pub query: LyricsQuery,
-    pub path: PathBuf,
+    /// The audio file, whose sidecar and tags are read and whose sidecar may be
+    /// written. `None` for a track cut from a file by a CUE sheet: that file's
+    /// sidecar and tags belong to every track in it.
+    pub path: Option<PathBuf>,
 }
 
 impl From<TrackSummary> for BatchTrack {
@@ -95,7 +98,7 @@ impl From<TrackSummary> for BatchTrack {
                 album: summary.album,
                 duration_ms: summary.duration_ms,
             },
-            path: summary.path.into(),
+            path: summary.segment.is_none().then(|| summary.path.into()),
         }
     }
 }
@@ -117,7 +120,7 @@ enum BatchItemOutcome {
 type LocalLookup<'a> = Arc<dyn Fn(&Path) -> bool + Send + Sync + 'a>;
 type NeedsLookup<'a> = Arc<dyn Fn(&LyricsQuery) -> CacheDecision + Send + Sync + 'a>;
 type OnlineLookup<'a> = Arc<
-    dyn Fn(&LyricsQuery, &Path, &CacheDecision) -> Result<LyricsHit, LyricsError>
+    dyn Fn(&LyricsQuery, Option<&Path>, &CacheDecision) -> Result<LyricsHit, LyricsError>
         + Send
         + Sync
         + 'a,
@@ -141,7 +144,7 @@ impl<'a> BatchServices<'a> {
             }),
             needs: Arc::new(super::cache::decision),
             online: Arc::new(move |query, path, decision| {
-                super::load_or_fetch_with_cache_decision(source, query, Some(path), decision)
+                super::load_or_fetch_with_cache_decision(source, query, path, decision)
             }),
             all_breakers_open: Arc::new(super::all_network_breakers_open),
         }
@@ -201,7 +204,11 @@ fn run_batch_with_services(
         if is_cancelled() {
             return BatchRunStatus::Cancelled;
         }
-        let decision = (!(services.local)(&track.path)).then(|| (services.needs)(&track.query));
+        let local = track
+            .path
+            .as_deref()
+            .is_some_and(|path| (services.local)(path));
+        let decision = (!local).then(|| (services.needs)(&track.query));
         let needs = decision
             .as_ref()
             .map_or(NeedsFetch::Skip, CacheDecision::classification);
@@ -217,7 +224,7 @@ fn run_batch_with_services(
                 needs,
                 &(services.online)(
                     &track.query,
-                    &track.path,
+                    track.path.as_deref(),
                     decision
                         .as_ref()
                         .expect("a non-skipped cache decision should exist"),
