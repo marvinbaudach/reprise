@@ -304,8 +304,11 @@ result.
   Returning to a track restarts its analysis even while the stopped one is
   still winding down, and a request waiting on the backfill's analysis of a
   track no longer playing is let go while the backfill carries on. A stop
-  right after a switch still stops the track that was left, and a stale stop
-  that reaches the track now playing only makes it ask again. *Tests:*
+  right after a switch still stops the track that was left, but a stop after
+  several quick switches leaves the last track's analysis running, and a
+  request for the stopped track that starts only after the stop still runs.
+  A stale stop that reaches the track now playing only makes it ask again.
+  *Tests:*
   `nav_15e_superseded_is_final`,
   `nav_15e_a_queued_prepare_for_a_track_no_longer_playing_is_skipped`,
   `nav_15e_a_retry_pause_that_ends_for_a_superseded_track_ends_the_loop`,
@@ -326,7 +329,12 @@ result.
   `nav_15e_a_superseded_import_of_a_track_the_service_left_ends`,
   `nav_15e_a_request_that_starts_after_its_track_lost_its_place_imports_nothing`,
   `nav_15e_stopping_after_a_switch_still_supersedes_the_outgoing_track`,
-  `nav_15e_the_track_cannot_move_while_a_supersede_is_in_the_library`.
+  `nav_15e_the_track_cannot_move_while_a_supersede_is_in_the_library`,
+  `nav_15e_a_stop_after_quick_switches_never_supersedes_the_last_track`,
+  `nav_15e_a_request_belongs_to_the_last_track_even_after_a_stop`,
+  `nav_15e_quick_switches_supersede_through_the_gate_and_a_stop_spares_the_last_track`,
+  `nav_15e_a_request_for_a_track_left_before_a_stop_imports_nothing`,
+  `nav_15e_a_request_for_the_track_a_stop_left_still_imports`.
   <!-- REVIEW: rule proposal -->
 - **NAV-16** [active] [gtk] — **Optional sidebar places carry their own off
   switch and way back.** A secondary click, Menu, or Shift+F10 on Podcasts,

@@ -445,29 +445,40 @@ open class ReprisePlaybackService : MediaLibraryService() {
     /** Stops every foreground analysis except `keepTrackId`'s; the backfill is untouched. */
     internal open fun supersedeForegroundAnalysis(keepTrackId: Long) {
         analysisSupersedeScope.launch {
-            // A newer track change already queued its own call: this one would
-            // cancel the track that is playing now, so the gate skips it.
-            analysisTrack.supersedeOthers(keepTrackId) { keep ->
-                Log.d(TAG_ANALYSIS, "Superseding foreground analyses other than track $keep")
-                try {
-                    supersedeForegroundTrackAnalysisInLibrary(keep)
-                } catch (error: Exception) {
-                    Log.w(TAG_ANALYSIS, "Could not supersede the outgoing track analysis", error)
+            try {
+                // Resolved before the gate: opening the library may touch the database,
+                // and a track change on the main thread waits for the gate.
+                val supersede = foregroundAnalysisSuperseder()
+                // A newer track change already queued its own call: this one would
+                // cancel the track that is playing now, so the gate skips it.
+                analysisTrack.supersedeOthers(keepTrackId) { keep ->
+                    Log.d(TAG_ANALYSIS, "Superseding foreground analyses other than track $keep")
+                    supersede(keep)
                 }
+            } catch (error: Exception) {
+                Log.w(TAG_ANALYSIS, "Could not supersede the outgoing track analysis", error)
             }
         }
     }
 
-    internal open fun supersedeForegroundTrackAnalysisInLibrary(keepTrackId: Long) =
-        sharedMusicLibrary().supersedeForegroundTrackAnalysis(keepTrackId)
+    /** The library's supersede call, bound to the library outside the gate. */
+    internal open fun foregroundAnalysisSuperseder(): (Long) -> Unit {
+        val library = sharedMusicLibrary()
+        return { keep -> library.supersedeForegroundTrackAnalysis(keep) }
+    }
 
     /** Overridden in tests with a fake that counts calls instead of decoding. */
     internal open fun trackAnalysisRequest(trackId: Long, requestGeneration: Long) {
         analysisScope.launch {
             requireOffMainThread("Track analysis import")
             // The track changed before this request started: its supersede may
-            // already have run and found nothing to stop, so decode nothing.
-            if (trackId != analysisTrackId) return@launch
+            // already have run and found nothing to stop — a supersede that comes
+            // before the decode claims its track never reaches Rust, so only this
+            // check covers it. A stop alone leaves the request to run (G6).
+            if (!analysisTrack.stillWanted(trackId)) {
+                Log.d(TAG_ANALYSIS, "Skipping the analysis request for track $trackId: it lost its place")
+                return@launch
+            }
             var outcome: AndroidAnalysisOutcome? = null
             var failure: Throwable? = null
             try {
