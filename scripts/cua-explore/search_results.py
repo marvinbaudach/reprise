@@ -32,6 +32,11 @@ PAGE_ROLE = "group"
 DATA_ROW_PARENT_ROLE = "list"
 TEXT_ITEM_ROLE = "button"
 MENU_BUTTON_CHILD_ROLE = "toggle button"
+CARD_ACTION = "activate"
+
+
+def _action_tokens(item: Mapping[str, Any]) -> tuple[str, ...]:
+    return tuple(str(name).strip().casefold() for name in item.get("actions") or ())
 
 
 def _index(item: Mapping[str, Any]) -> int | None:
@@ -39,8 +44,15 @@ def _index(item: Mapping[str, Any]) -> int | None:
     return value if isinstance(value, int) and not isinstance(value, bool) else None
 
 
-def result_indices(raw_elements: Sequence[Mapping[str, Any]]) -> frozenset[int] | None:
-    """Indices of the result elements, or None when the snapshot has no parent links."""
+def page_items(
+    raw_elements: Sequence[Mapping[str, Any]],
+) -> tuple[frozenset[int], frozenset[int]] | None:
+    """The indices of the results and of the source cards on the page.
+
+    None when the snapshot has no parent links. A source card is the other kind of
+    button the page can hold twice: it carries an `activate` action, which makes it
+    no result (an episode inside it is) but still a source that must be listed once.
+    """
     by_index = {
         index: item for item in raw_elements if (index := _index(item)) is not None
     }
@@ -69,6 +81,7 @@ def result_indices(raw_elements: Sequence[Mapping[str, Any]]) -> frozenset[int] 
         if canonical_role(str(item.get("role", ""))) == MENU_BUTTON_CHILD_ROLE
     }
     results = set()
+    cards = set()
     for index, item in by_index.items():
         top = branch(item)
         if top is None or canonical_role(str(top.get("role", ""))) != PAGE_ROLE:
@@ -84,7 +97,21 @@ def result_indices(raw_elements: Sequence[Mapping[str, Any]]) -> frozenset[int] 
             and index not in toggled
         ):
             results.add(index)
-    return frozenset(results)
+        elif role == TEXT_ITEM_ROLE and CARD_ACTION in _action_tokens(item):
+            cards.add(index)
+    return frozenset(results), frozenset(cards)
+
+
+def result_indices(raw_elements: Sequence[Mapping[str, Any]]) -> frozenset[int] | None:
+    """Indices of the result elements, or None when the snapshot has no parent links."""
+    found = page_items(raw_elements)
+    return None if found is None else found[0]
+
+
+def source_card_indices(raw_elements: Sequence[Mapping[str, Any]]) -> frozenset[int] | None:
+    """Indices of the source cards, or None when the snapshot has no parent links."""
+    found = page_items(raw_elements)
+    return None if found is None else found[1]
 
 
 def result_elements(observation: Mapping[str, Any]) -> list[Mapping[str, Any]]:
@@ -97,3 +124,12 @@ def result_elements(observation: Mapping[str, Any]) -> list[Mapping[str, Any]]:
     if any("result" in item for item in elements):
         return [item for item in elements if item.get("result")]
     return [item for item in elements if is_row(str(item.get("role", "")))]
+
+
+def source_cards(observation: Mapping[str, Any]) -> list[Mapping[str, Any]]:
+    """The labelled source cards of an observation; none when the page is unknown."""
+    return [
+        item
+        for item in observation.get("elements", [])
+        if isinstance(item, Mapping) and item.get("label") and item.get("source_card")
+    ]

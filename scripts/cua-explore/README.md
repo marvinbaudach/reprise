@@ -503,12 +503,18 @@ The deck runs every mission to a finish instead of aborting. On the generated pr
   search still holds the keyboard focus, so the selection never reaches the list. That is
   a plan defect of its own and stays open: fixing it alone cannot finish the workload,
   because the menu it would open has nothing to address.
+
 Other gaps that are still open:
 
 - `offline-recovery` ends incomplete (`source_rows_single_and_retained` false for
   Podcasts and YouTube, `refresh_before_loss` and `retry_while_offline` false). It ends
   the same way, with the same audit, on the commit before this change; it is not
   diagnosed.
+- A result shaped as a button that carries a click or an action is not counted as a result
+  (`search_results.py`): the audit would read a list made of such buttons as empty. A source
+  card, whose action is `activate`, is no result either, and is only checked for being
+  listed once (`agent-duplicate-cached-row`). Every result seen on 0.33 is a data row or a
+  text-only button.
 - The sidebar headings (LIBRARY, PLAYLISTS, SMART) and the new-playlist button are not in
   the accessibility tree at all - not in cua-driver's walk and not in a plain `Atspi`
   walk of the same session - although the screenshot draws them. The hover sweep

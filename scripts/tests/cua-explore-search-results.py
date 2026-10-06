@@ -110,6 +110,22 @@ class ResultScopeTests(unittest.TestCase):
 
         self.assertEqual(len(result_elements(observe(snapshot))), 2)
 
+    def test_a_data_row_outside_the_page_is_not_a_result(self) -> None:
+        # A list of rows hanging off the window itself - the sidebar's shape -
+        # is chrome, however much it looks like a table body.
+        snapshot = raw("search-music-settled")
+        root = snapshot["elements"][0]["element_index"]
+        base = {"enabled": True, "visible": True, "frame": {"x": 1, "y": 80, "w": 200, "h": 30}}
+        snapshot["elements"] += [
+            dict(base, element_index=910, parent_index=root, role="list", label="Outside"),
+            dict(base, element_index=911, parent_index=910, role="row", label="Outside row"),
+        ]
+
+        found = labels(result_elements(observe(snapshot)))
+
+        self.assertNotIn("Outside row", found)
+        self.assertEqual(len(found), 1, found)
+
     def test_a_snapshot_without_hierarchy_falls_back_to_rows(self) -> None:
         observation = {
             "elements": [
@@ -201,8 +217,10 @@ class SectionSearchAuditTests(unittest.TestCase):
             for item in snapshot["elements"]
             if item.get("label") == TOKENS["PODCAST_ONLY_NEEDLE"]
         )
+        # Same frame as the needle and a label that sorts after it, so the
+        # first result still holds the needle and only the count can object.
         snapshot["elements"].append(
-            dict(copy.deepcopy(episode), element_index=901, label="Fixture Music Leak")
+            dict(copy.deepcopy(episode), element_index=901, label="Zz Leak")
         )
         result = audit(agent_run({"Podcasts": snapshot}))
 
@@ -273,6 +291,48 @@ class AgentSideCountTests(unittest.TestCase):
         self.assertNotIn("agent-search-scope-leak", codes)
 
 
+class ZeroResultTests(unittest.TestCase):
+    def codes_for(self, snapshot: dict) -> set[str]:
+        action = {
+            "kind": "type",
+            "target": {"label": "Search all fields"},
+            "fixture_token": "MUSIC_ONLY_NEEDLE",
+        }
+        observation = observe(snapshot)
+        for item in observation["elements"]:
+            if item["role"] == "search box":
+                item["value"] = MUSIC_NEEDLE
+        return {
+            code
+            for code, _summary, _evidence in assertion_codes(
+                action,
+                observation,
+                "search-Music",
+                section_changed=True,
+                known_token_values={"MUSIC_ONLY_NEEDLE": MUSIC_NEEDLE},
+            )
+        }
+
+    def test_a_search_that_leaves_no_result_is_a_scope_leak(self) -> None:
+        snapshot = raw("search-music-settled")
+        by_index = {item["element_index"]: item for item in snapshot["elements"]}
+        snapshot["elements"] = [
+            item
+            for item in snapshot["elements"]
+            if not (
+                item["role"] == "row"
+                and by_index[item["parent_index"]]["role"] == "list"
+            )
+        ]
+
+        self.assertIn("agent-search-scope-leak", self.codes_for(snapshot))
+
+    def test_the_recorded_single_result_is_not(self) -> None:
+        self.assertNotIn(
+            "agent-search-scope-leak", self.codes_for(raw("search-music-settled"))
+        )
+
+
 class DuplicateRowNoteTests(unittest.TestCase):
     """`agent-duplicate-cached-row` is about rows, not about every shared name."""
 
@@ -302,6 +362,22 @@ class DuplicateRowNoteTests(unittest.TestCase):
 
         self.assertIn(
             "agent-duplicate-cached-row", self.notes_after_opening(snapshot)
+        )
+
+    def test_a_source_card_listed_twice_is_noted_though_it_is_no_result(self) -> None:
+        snapshot = raw("search-podcasts-settled")
+        card = next(
+            item for item in snapshot["elements"] if item.get("label") == "Fixture Podcast"
+        )
+        self.assertEqual(card["actions"], ["activate"])
+        snapshot["elements"].append(dict(copy.deepcopy(card), element_index=903))
+
+        self.assertIn("agent-duplicate-cached-row", self.notes_after_opening(snapshot))
+
+    def test_one_source_card_is_not_noted(self) -> None:
+        self.assertNotIn(
+            "agent-duplicate-cached-row",
+            self.notes_after_opening(raw("search-podcasts-settled")),
         )
 
 

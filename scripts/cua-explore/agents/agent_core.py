@@ -21,7 +21,7 @@ from protocol import (
     DESTRUCTIVE_TARGET_WORDS,
     EXTERNAL_TARGET_PHRASES,
 )
-from search_results import result_elements
+from search_results import result_elements, source_cards
 from ui_vocabulary import BUSY_ROLES, BUSY_WORDS, is_row
 from workload_audit import ActionTrace, audit_action_workload
 
@@ -702,9 +702,12 @@ class AgentSession:
             "YouTube",
             "Radio",
         }:
-            # Rows of the source, not every label: a sidebar entry and its
+            # Rows and source cards, not every label: a sidebar entry and its
             # button, or a menu button and its toggle, share one name by design.
-            shown = [str(item["label"]) for item in result_elements(after)]
+            shown = [
+                str(item["label"])
+                for item in (*result_elements(after), *source_cards(after))
+            ]
             duplicates = sorted(
                 {label for label in shown if shown.count(label) > 1}
             )

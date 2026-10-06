@@ -21,7 +21,7 @@ SCRATCH_PREFIX = "reprise-cua-explore-"
 CACHE_SCRATCH_BASE = pathlib.Path.home() / ".cache" / "reprise-scratch"
 WORKTREE_SCRATCH_BASE = REPO_ROOT / ".worktrees" / "cua-explore-scratch"
 # The playlist the mixed-sources profile carries, named by the hover mission's
-# PLAYLIST_NAME fixture token. Three tracks is what its sweep needs per section.
+# PLAYLIST_NAME fixture token. Four tracks: one more than the three the sweep needs.
 FIXTURE_PLAYLIST_NAME = "Fixture Playlist"
 FIXTURE_PLAYLIST_TRACKS = 4
 

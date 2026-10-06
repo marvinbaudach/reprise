@@ -20,7 +20,7 @@ from ui_vocabulary import (
     invocable_actions as classify_invocable_actions,
     unknown_action_names as classify_unknown_action_names,
 )
-from search_results import result_indices
+from search_results import page_items
 from stall_attribution import response_gap_findings
 
 
@@ -104,6 +104,8 @@ class Element:
     # Whether a search left this element on screen as a result; None when the
     # snapshot carries no parent links to decide it (see search_results).
     result: bool | None = None
+    # Whether it is a source card the page lists; None under the same condition.
+    source_card: bool | None = None
 
     @property
     def invocable_actions(self) -> tuple[str, ...]:
@@ -292,7 +294,7 @@ def normalize_snapshot(
         sortable.append((label, role, frame.x, frame.y, raw_element, frame))
         root_candidates.append((raw_element, role, frame))
     sortable.sort(key=lambda item: item[:4])
-    results = result_indices([item[4] for item in sortable])
+    page = page_items([item[4] for item in sortable])
     occurrences: dict[tuple[str, str], int] = {}
     elements = []
     for label, role, _x, _y, raw_element, frame in sortable:
@@ -316,9 +318,10 @@ def normalize_snapshot(
                 geometry_trusted=element_flag(raw_element, "geometry_trusted", True),
                 value="" if value_raw is None else str(value_raw),
                 result=(
-                    None
-                    if results is None
-                    else raw_element.get("element_index") in results
+                    None if page is None else raw_element.get("element_index") in page[0]
+                ),
+                source_card=(
+                    None if page is None else raw_element.get("element_index") in page[1]
                 ),
             )
         )
