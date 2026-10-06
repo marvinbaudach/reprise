@@ -323,8 +323,8 @@ fn reload_cause_distinguishes_search_clear_sort_and_source_transitions() {
 }
 
 /// The file whose presence in a data root says "this directory is a throwaway
-/// made for the reload measurement". The isolated recipe creates it in the
-/// fresh `XDG_DATA_HOME` it makes; nothing else in the repo does.
+/// made for the reload measurement". The operator creates it in a fresh
+/// `mktemp -d` root for this measurement only; nothing in the repo does.
 const THROWAWAY_MARKER: &str = ".reprise-throwaway-data-root";
 
 /// Why `data_root` may not host the reload measurement, or `None` when it may.
@@ -336,11 +336,11 @@ const THROWAWAY_MARKER: &str = ".reprise-throwaway-data-root";
 /// exported from a shell profile) passes every check on the path alone, and
 /// nothing in the environment says which root is the real one. So the guard
 /// also demands positive proof: the root must contain [`THROWAWAY_MARKER`],
-/// which only the isolated recipe creates, and every root without it is
-/// refused. The path checks stay as the first line: the root must be one the
-/// caller set explicitly (a relative `XDG_DATA_HOME` counts as unset, `dirs`
-/// ignores it) and must not lie under the default `$HOME/.local/share`, marker
-/// or no marker.
+/// which the operator creates in a fresh throwaway root, and every root
+/// without it is refused. The path checks stay as the first line: the root
+/// must be one the caller set explicitly (a relative `XDG_DATA_HOME` counts as
+/// unset, `dirs` ignores it) and must not lie under the default
+/// `$HOME/.local/share`, marker or no marker.
 fn unisolated_data_root_reason(
     xdg_data_home: Option<&std::path::Path>,
     home: Option<&std::path::Path>,
@@ -378,11 +378,22 @@ fn resolved(path: &std::path::Path) -> std::path::PathBuf {
     }
 }
 
-/// A throwaway-looking data root that carries the marker, as the recipe makes it.
+/// A throwaway-looking data root that carries the marker, as the operator makes it.
 fn marked_data_root() -> tempfile::TempDir {
     let root = tempfile::tempdir().expect("temp data directory");
     std::fs::write(root.path().join(THROWAWAY_MARKER), b"").expect("write the marker");
     root
+}
+
+/// Asserts that `reason` names the check that fired. The roots below do not
+/// exist, so the marker check would refuse every one of them; matching on the
+/// reason is what makes each case prove its own branch.
+fn assert_refused_because(reason: Option<&str>, expected: &str) {
+    let reason = reason.expect("the data root must be refused");
+    assert!(
+        reason.contains(expected),
+        "{reason:?} does not say {expected:?}"
+    );
 }
 
 #[test]
@@ -390,19 +401,30 @@ fn the_reload_measurement_refuses_the_real_or_an_unset_data_root() {
     use std::path::Path;
 
     let home = Some(Path::new("/home/owner"));
-    assert!(unisolated_data_root_reason(None, home).is_some());
-    assert!(unisolated_data_root_reason(Some(Path::new("")), home).is_some());
-    assert!(unisolated_data_root_reason(Some(Path::new("share")), home).is_some());
-    assert!(
-        unisolated_data_root_reason(Some(Path::new("/home/owner/.local/share")), home).is_some()
+    assert_refused_because(
+        unisolated_data_root_reason(None, home),
+        "XDG_DATA_HOME is not set",
     );
-    assert!(
-        unisolated_data_root_reason(Some(Path::new("/home/owner/.local/share/x")), home).is_some()
+    assert_refused_because(
+        unisolated_data_root_reason(Some(Path::new("")), home),
+        "XDG_DATA_HOME is not set",
+    );
+    assert_refused_because(
+        unisolated_data_root_reason(Some(Path::new("share")), home),
+        "XDG_DATA_HOME is relative",
+    );
+    assert_refused_because(
+        unisolated_data_root_reason(Some(Path::new("/home/owner/.local/share")), home),
+        "under $HOME/.local/share",
+    );
+    assert_refused_because(
+        unisolated_data_root_reason(Some(Path::new("/home/owner/.local/share/x")), home),
+        "under $HOME/.local/share",
     );
     let marked = marked_data_root();
-    assert!(
-        unisolated_data_root_reason(Some(marked.path()), None).is_some(),
-        "an unset HOME refuses even a marked root"
+    assert_refused_because(
+        unisolated_data_root_reason(Some(marked.path()), None),
+        "HOME is not set",
     );
 }
 
@@ -484,7 +506,8 @@ fn the_reload_measurement_does_not_take_a_directory_for_the_marker() {
 
 /// Prints reload latency samples against whatever library sits in
 /// `XDG_DATA_HOME`. Run it only through the isolated recipe in `AGENTS.md`,
-/// with a fresh throwaway data directory that also holds the marker:
+/// with a fresh `mktemp -d` data directory. The marker is this measurement's
+/// own extra step, which the general recipe does not take:
 ///
 /// ```text
 /// data=$(mktemp -d); touch "$data/.reprise-throwaway-data-root"
