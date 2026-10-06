@@ -29,8 +29,9 @@ if ! git rev-parse --verify --quiet "$base_ref^{commit}" >/dev/null; then
 fi
 
 # The core-suite container has neither Java nor an Android UniFFI bindgen step.
-# base-contracts covers --project --showroom; android-unit-suite covers --android.
-MERGE_READINESS_SKIP_GATES=$'Shell\nProject quality\nWorktree GC\nWorktree GC schedule\nScript self-tests\nArchitecture\nRule-owned display tests' \
+# base-contracts covers --project --showroom and the release metadata gate;
+# android-unit-suite covers --android.
+MERGE_READINESS_SKIP_GATES=$'Shell\nProject quality\nWorktree GC\nWorktree GC schedule\nScript self-tests\nArchitecture\nRelease metadata\nRule-owned display tests' \
   MERGE_READINESS_BASE_REF=$base_ref \
   MERGE_READINESS_SKIP_ANDROID_QUALITY=1 \
   scripts/check-merge-readiness.sh --no-fetch

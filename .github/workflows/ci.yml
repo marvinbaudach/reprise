@@ -6,7 +6,8 @@ on:
     branches:
       - main
       - dev
-  # Run every suite nightly so rolling-toolchain lints surface before promotion.
+  # Run the full suite selection nightly so rolling-toolchain lints surface
+  # before promotion.
   schedule:
     - cron: '17 3 * * *'
   workflow_dispatch:
@@ -28,6 +29,7 @@ jobs:
       core: ${{ steps.routes.outputs.core }}
       display: ${{ steps.routes.outputs.display }}
       suite_skip: ${{ steps.routes.outputs.suite_skip }}
+      contained: ${{ steps.routes.outputs.contained }}
     steps:
       - name: Check out the tested revision
         uses: actions/checkout@v7
@@ -39,7 +41,10 @@ jobs:
         env:
           EVENT_NAME: ${{ github.event_name }}
           REF_NAME: ${{ github.ref }}
-          ACTOR: ${{ github.actor }}
+          # The pull request's author, not its latest pusher: the Flatpak sources
+          # workflow pushes onto a Dependabot branch as the token's owner, and
+          # that must not turn the bump into a PR whose suites are skipped.
+          ACTOR: ${{ github.event.pull_request.user.login || github.actor }}
           BASE_SHA: ${{ github.event.pull_request.base.sha || github.event.before }}
           HEAD_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
           REPOSITORY_OWNER: ${{ github.repository_owner }}
@@ -53,7 +58,19 @@ jobs:
               "$HEAD_SHA" "$dev_sha"
           )
           echo "suite_skip=$suite_skip" >> "$GITHUB_OUTPUT"
-          if [[ $suite_skip == true ]]; then
+          # A pull request with stale Flatpak sources is red anyway, whoever wrote
+          # it, so this runs for every pull request: a Dependabot bump loses its
+          # suites but keeps base-contracts, and a human pull request, which skips
+          # base-contracts as suite reuse, would otherwise never run the check.
+          # The Quality gate stays red for both. This is not suite reuse, which
+          # would turn the gate green.
+          sources_status=0
+          if [[ $EVENT_NAME == pull_request ]]; then
+            scripts/check-flatpak-cargo-sources.sh || sources_status=$?
+          fi
+          contained=$(.github/scripts/ci-paths.sh --contain "$EVENT_NAME" "$sources_status")
+          echo "contained=$contained" >> "$GITHUB_OUTPUT"
+          if [[ $suite_skip == true || $contained == true ]]; then
             printf 'android=false\ngnome=false\ncore=false\ndisplay=false\n' >> "$GITHUB_OUTPUT"
           else
             .github/scripts/ci-paths.sh --diff \
@@ -90,10 +107,12 @@ jobs:
             quality/package-lock.json
             showroom/package-lock.json
 
+      # setup-uv caches on every ref by default and saves on a miss; only dev may.
       - name: Set up uv
         uses: astral-sh/setup-uv@v10.0.1
         with:
           version: "0.12.3"
+          save-cache: ${{ github.ref == 'refs/heads/dev' }}
 
       - name: Verify worktree hygiene
         run: |
@@ -107,8 +126,9 @@ jobs:
         run: |
           scripts/check-architecture.sh
           scripts/check-shell.sh
-          scripts/tests/github-flow.sh
           for contract in .github/tests/*.sh; do
+            # The self-test run above already ran this one, through the tail of qa-linters.sh.
+            [[ $contract == .github/tests/flatpak-cargo-sources.sh ]] && continue
             GITHUB_ACTIONS=false "$contract"
           done
 
@@ -125,6 +145,8 @@ jobs:
     timeout-minutes: 60
     env:
       CARGO_INCREMENTAL: 0
+      CARGO_PROFILE_DEV_DEBUG: 0
+      CARGO_PROFILE_TEST_DEBUG: 0
       CARGO_TERM_COLOR: always
       # Android runs no GTK display tests; keep the project-wide fallback
       # explicit while the display-tests matrix job overrides it below.
@@ -143,7 +165,8 @@ jobs:
           cache: gradle
 
       - name: Cache Cargo downloads
-        uses: actions/cache@v6
+        id: cargo_downloads
+        uses: actions/cache/restore@v6
         with:
           path: |
             ~/.cargo/registry
@@ -151,6 +174,27 @@ jobs:
           key: android-cargo-${{ runner.os }}-${{ hashFiles('Cargo.lock') }}
           restore-keys: |
             android-cargo-${{ runner.os }}-
+
+      # Only dev writes caches: a pull request's entries are scoped to its own
+      # ref, so dev could never read them back. The save sits right behind the
+      # fetch that fills the path and hangs on that step's outcome: a failed
+      # download is never frozen under the exact key, and a later red step or a
+      # cancelled run changes nothing about what is saved.
+      - name: Fetch Cargo dependencies
+        id: cargo_fetch
+        run: cargo fetch --locked
+
+      - name: Save Cargo downloads
+        if: >-
+          github.ref == 'refs/heads/dev' &&
+          steps.cargo_downloads.outputs.cache-hit != 'true' &&
+          steps.cargo_fetch.outcome == 'success'
+        uses: actions/cache/save@v6
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+          key: android-cargo-${{ runner.os }}-${{ hashFiles('Cargo.lock') }}
 
       - name: Test the shared Android Rust crates
         run: cargo test --locked -p reprise-view -p reprise-android-ffi
@@ -196,7 +240,8 @@ jobs:
           fetch-depth: 0
 
       - name: Cache Cargo downloads
-        uses: actions/cache@v6
+        id: cargo_downloads
+        uses: actions/cache/restore@v6
         with:
           path: |
             ~/.cargo/registry
@@ -204,6 +249,24 @@ jobs:
           key: cargo-${{ runner.os }}-${{ hashFiles('Cargo.lock') }}
           restore-keys: |
             cargo-${{ runner.os }}-
+
+      # Only dev writes caches, and only after this fetch succeeded: see the
+      # Android job for why the save sits right behind it.
+      - name: Fetch Cargo dependencies
+        id: cargo_fetch
+        run: cargo fetch --locked --target x86_64-unknown-linux-gnu
+
+      - name: Save Cargo downloads
+        if: >-
+          github.ref == 'refs/heads/dev' &&
+          steps.cargo_downloads.outputs.cache-hit != 'true' &&
+          steps.cargo_fetch.outcome == 'success'
+        uses: actions/cache/save@v6
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+          key: cargo-${{ runner.os }}-${{ hashFiles('Cargo.lock') }}
 
       - name: Run the targeted GNOME gate
         run: .github/scripts/check-gnome-ci.sh
@@ -249,13 +312,18 @@ jobs:
             quality/package-lock.json
             showroom/package-lock.json
 
+      # setup-uv caches on every ref by default and saves on a miss; only dev may.
       - name: Set up uv
         uses: astral-sh/setup-uv@v10.0.1
         with:
           version: "0.12.3"
+          save-cache: ${{ github.ref == 'refs/heads/dev' }}
 
       - name: Cache Rust dependencies
         uses: Swatinem/rust-cache@v2
+        with:
+          cache-on-failure: true
+          save-if: ${{ github.ref == 'refs/heads/dev' }}
 
       - name: Run the complete workspace gate
         run: scripts/ci-quality.sh
@@ -269,7 +337,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        shard: [1, 2, 3, 4]
+        shard: [1, 2]
     runs-on: ubuntu-24.04
     timeout-minutes: 45
     container:
@@ -302,7 +370,8 @@ jobs:
           fetch-depth: 0
 
       - name: Cache Cargo downloads
-        uses: actions/cache@v6
+        id: cargo_downloads
+        uses: actions/cache/restore@v6
         with:
           path: |
             ~/.cargo/registry
@@ -310,6 +379,24 @@ jobs:
           key: cargo-${{ runner.os }}-${{ hashFiles('Cargo.lock') }}
           restore-keys: |
             cargo-${{ runner.os }}-
+
+      # Only dev writes caches, and only after this fetch succeeded: see the
+      # Android job for why the save sits right behind it.
+      - name: Fetch Cargo dependencies
+        id: cargo_fetch
+        run: cargo fetch --locked --target x86_64-unknown-linux-gnu
+
+      - name: Save Cargo downloads
+        if: >-
+          github.ref == 'refs/heads/dev' &&
+          steps.cargo_downloads.outputs.cache-hit != 'true' &&
+          steps.cargo_fetch.outcome == 'success'
+        uses: actions/cache/save@v6
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+          key: cargo-${{ runner.os }}-${{ hashFiles('Cargo.lock') }}
 
       - name: Verify display-test shard partition
         if: matrix.shard == 1
@@ -371,6 +458,7 @@ jobs:
           CORE_RESULT: ${{ needs['core-suite'].result }}
           DISPLAY_ROUTE: ${{ needs.changes.outputs.display }}
           DISPLAY_RESULT: ${{ needs['display-tests'].result }}
+          CONTAINED: ${{ needs.changes.outputs.contained }}
         run: >-
           .github/scripts/require-ci-results.sh
           "$CHANGES_RESULT" "$BASE_RESULT"
@@ -379,3 +467,4 @@ jobs:
           "$GNOME_ROUTE" "$GNOME_RESULT"
           "$CORE_ROUTE" "$CORE_RESULT"
           "$DISPLAY_ROUTE" "$DISPLAY_RESULT"
+          "$CONTAINED"

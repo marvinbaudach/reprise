@@ -105,8 +105,8 @@ gate "Gettext catalogues" -- scripts/tests/gettext-catalogs.sh
 # scripts/check-release.sh — which neither this gate nor CI ever calls. So the
 # self-tests of the scripts that guard the repository were themselves unguarded,
 # and two of their assertions had gone stale without anyone hearing about it.
-# 84s measured; the three lines above it stay because check-release.sh reaches
-# them by a different road.
+# 84s measured. The three lines above it run once: the self-tests no longer
+# repeat them, and check-release.sh calls all three on its own.
 gate "Script self-tests" -- scripts/tests/qa-linters.sh
 gate "Architecture" -- scripts/check-architecture.sh
 gate "Device-sync GStreamer" -- scripts/check-device-sync-gstreamer.sh

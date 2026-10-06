@@ -1,0 +1,273 @@
+name: Dependabot Flatpak sources
+
+# A Dependabot Cargo bump changes Cargo.lock without touching
+# flatpak/cargo-sources.json, so the sources are stale on arrival and "Verify
+# Flatpak Cargo sources" fails on it. This regenerates the file and pushes it onto the bump's
+# own branch.
+#
+# The push has to use REPRISE_AUTOMERGE_TOKEN: a push made with the Actions
+# token starts no new workflow run, so CI would never see the fixed sources.
+# That token is a Dependabot secret, which is exactly what a pull_request run
+# triggered by Dependabot can read.
+#
+# The work is split in two jobs because a job is the isolation boundary:
+# everything in one job shares a workspace, a .git directory and the
+# GITHUB_PATH/GITHUB_ENV files, so code that runs before a token is used could
+# plant a git hook or a PATH entry that takes the token.
+#
+# - `regenerate` holds no secret. It runs the generator, with the Python
+#   dependencies from a hashed lock, from outside the checkout and with uv's
+#   config discovery off, and hands over one file as an artifact.
+# - `push` holds the token, runs no uv and uses no action at all. It checks
+#   the artifact's content against Cargo.lock, copies the one validated
+#   artifact over the sources file, insists that nothing else changed, and
+#   pushes.
+#
+# The `push` job runs no code from the pull request: the validator comes from
+# the base commit, and it reads the pull request's Cargo.lock as data only.
+#
+# Residual risk, accepted: under `pull_request` this workflow file is
+# controlled by the pull request, so a grouped bump that edits the file itself
+# runs its edited version. Only Dependabot authors those branches.
+#
+# After the bot's commit Dependabot treats the pull request as edited and stops
+# rebasing it. A conflicting or stale bump is recovered with
+# `@dependabot recreate`, which rebuilds the branch and re-triggers this
+# regeneration.
+on:
+  pull_request:
+    branches:
+      - dev
+    types:
+      - opened
+      - reopened
+      - synchronize
+    paths:
+      - Cargo.lock
+
+permissions:
+  contents: read
+
+concurrency:
+  group: dependabot-flatpak-sources-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+jobs:
+  regenerate:
+    name: Regenerate Flatpak Cargo sources
+    # The pull request's author, not github.actor: after the first push the
+    # event's actor is the token's owner, and the run must still do its work.
+    if: >-
+      github.repository == 'marvinbaudach/reprise' &&
+      github.event.pull_request.user.login == 'dependabot[bot]' &&
+      github.event.pull_request.base.ref == 'dev' &&
+      github.event.pull_request.head.repo.full_name == github.repository &&
+      startsWith(github.event.pull_request.head.ref, 'dependabot/')
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    outputs:
+      changed: ${{ steps.regenerate.outputs.changed }}
+      sha: ${{ steps.revision.outputs.sha }}
+    steps:
+      # By commit, not by branch name: a branch that moves between the event
+      # and this checkout must not change what the sources are built from. Every
+      # action in this job is pinned by commit, not tag: the job runs code from
+      # PyPI, and a tag could move to code that reads what that code leaves behind.
+      - name: Check out the bump's commit
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          persist-credentials: false
+
+      # The push job checks out exactly this commit. If Dependabot moves the
+      # branch in between, the push is rejected instead of grafting sources
+      # built from the old lock file onto the new tip.
+      - name: Record the commit the sources are built from
+        id: revision
+        run: echo "sha=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
+
+      # By commit: this job installs and runs code from outside the repository,
+      # and a mutable tag would let that code change without a reviewed edit.
+      - name: Set up uv
+        uses: astral-sh/setup-uv@20cfd1bf945f4377ade1205e4dbc17946fc9a30d  # v10.0.1
+        with:
+          version: "0.12.3"
+          enable-cache: false
+
+      # flatpak/flatpak-builder-tools master as of 2026-10-05.
+      - name: Fetch the pinned generator
+        env:
+          GENERATOR_COMMIT: 74697c75b630d7330e77250fc13cb5ea688d9479
+          GENERATOR_SHA256: 0a2db6be87d75910facef28ab46d4d6460802e8419ab850d0caa6a364d26b380
+        run: |
+          generator="$RUNNER_TEMP/flatpak-cargo-generator.py"
+          curl --fail --silent --show-error --location \
+            --output "$generator" \
+            "https://raw.githubusercontent.com/flatpak/flatpak-builder-tools/$GENERATOR_COMMIT/cargo/flatpak-cargo-generator.py"
+          echo "$GENERATOR_SHA256  $generator" | sha256sum --check --strict
+
+      # Run from the temp directory with config discovery off, so no uv.toml or
+      # pyproject.toml from the pull request steers uv. The generator's own
+      # dependencies are unpinned ranges, so they are locked with hashes in
+      # .github/flatpak-cargo-generator.lock, which uv reads beside the script
+      # and --locked insists on: nothing is resolved at run time, a file whose
+      # hash differs is refused, and a lock that does not match the generator is
+      # an error. The lock was cut at 2026-09-28, more than a week before this
+      # change, so a release published in that week is not in it. To move it, run
+      # `uv lock --no-config --script <generator> --exclude-newer <date>` on the
+      # pinned generator and copy the .lock file over; the contract test pins the
+      # date in both places. Moving it is a reviewed change to this file.
+      - name: Regenerate flatpak/cargo-sources.json
+        id: regenerate
+        run: |
+          mkdir "$RUNNER_TEMP/regenerated"
+          cp "$GITHUB_WORKSPACE/.github/flatpak-cargo-generator.lock" \
+            "$RUNNER_TEMP/flatpak-cargo-generator.py.lock"
+          cd "$RUNNER_TEMP" || exit 1
+          uv run --no-config --locked --exclude-newer 2026-09-28T00:00:00Z \
+            --script "$RUNNER_TEMP/flatpak-cargo-generator.py" \
+            "$GITHUB_WORKSPACE/Cargo.lock" \
+            -o "$RUNNER_TEMP/regenerated/cargo-sources.json"
+          if cmp --silent "$RUNNER_TEMP/regenerated/cargo-sources.json" \
+            "$GITHUB_WORKSPACE/flatpak/cargo-sources.json"; then
+            echo "flatpak/cargo-sources.json already matches Cargo.lock"
+            echo "changed=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "changed=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Hand over the regenerated sources
+        if: steps.regenerate.outputs.changed == 'true'
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a  # v7.0.1
+        with:
+          name: cargo-sources
+          path: ${{ runner.temp }}/regenerated/cargo-sources.json
+          if-no-files-found: error
+          retention-days: 1
+
+  push:
+    name: Push the regenerated sources
+    needs: regenerate
+    if: needs.regenerate.outputs.changed == 'true'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    # Least privilege for the one step that reads the artifact; everything else
+    # in the job needs only the contents the top level grants.
+    permissions:
+      actions: read
+      contents: read
+    # The bot's identity is defined once. The commit step writes it and the loop
+    # guard reads it back, so the guard recognises exactly what the commit makes.
+    env:
+      BOT_EMAIL: 41898282+github-actions[bot]@users.noreply.github.com
+      COMMIT_SUBJECT: The Flatpak Cargo sources follow Cargo.lock
+    steps:
+      # No `uses:` in this job. A grouped Dependabot pull request can bump the
+      # action tags in this very file, and a bumped action would run here
+      # before the token step. The code comes from plain git, the artifact from
+      # the preinstalled gh.
+      - name: Check out the commit the sources were built from
+        env:
+          SHA: ${{ needs.regenerate.outputs.sha }}
+        run: |
+          git init --quiet .
+          git fetch --quiet --depth=1 "https://github.com/${GITHUB_REPOSITORY}" "$SHA"
+          git checkout --quiet --detach FETCH_HEAD
+          if [[ $(git rev-parse HEAD) != "$SHA" ]]; then
+            echo "checked out $(git rev-parse HEAD), not the recorded $SHA" >&2
+            exit 1
+          fi
+
+      # The bot's own commit is already the tip and the regeneration still
+      # differs: the generator is not deterministic, and pushing again would
+      # start a new run of this workflow that does the same, forever.
+      - name: Refuse to chase a regeneration that does not settle
+        run: |
+          if [[ $(git log -1 --format='%ae %s' HEAD) == "$BOT_EMAIL $COMMIT_SUBJECT" ]]; then
+            echo "the tip is already the regeneration commit and the sources" \
+              "still differ; not pushing again" >&2
+            exit 1
+          fi
+
+      - name: Fetch the regenerated sources
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+        run: |
+          gh run download "$GITHUB_RUN_ID" --name cargo-sources \
+            --dir "$RUNNER_TEMP/regenerated"
+          # Exactly one regular file, not a symlink, with the expected name:
+          # %y reports a symlink as `l` instead of following it.
+          listing=$(find "$RUNNER_TEMP/regenerated" -mindepth 1 -printf '%y %P\n')
+          if [[ $listing != 'f cargo-sources.json' ]]; then
+            printf 'expected the artifact to hold only cargo-sources.json, got:\n%s\n' \
+              "$listing" >&2
+            exit 1
+          fi
+
+      # The validator is fetched from the base commit, not taken from the
+      # bump's branch: this job holds the token, and a script from the branch
+      # could write GITHUB_ENV or GITHUB_PATH before the token step runs.
+      - name: Fetch the validator from the base commit
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+        run: |
+          git init --quiet "$RUNNER_TEMP/base"
+          git -C "$RUNNER_TEMP/base" fetch --quiet --depth=1 \
+            "https://github.com/${GITHUB_REPOSITORY}" "$BASE_SHA"
+          git -C "$RUNNER_TEMP/base" checkout --quiet --detach FETCH_HEAD
+
+      # The artifact comes from a job that ran code from PyPI, so its content
+      # is checked against Cargo.lock before it is committed: a valid JSON file
+      # is not enough, because the Flatpak release build consumes it with
+      # secrets. This runs before, and apart from, the step that holds the token.
+      - name: Validate the regenerated sources against Cargo.lock
+        run: |
+          "$RUNNER_TEMP/base/scripts/check-flatpak-cargo-sources.sh" \
+            "$GITHUB_WORKSPACE/Cargo.lock" "$RUNNER_TEMP/regenerated/cargo-sources.json"
+
+      - name: Replace the sources and push them to the bump's branch
+        env:
+          PUSH_TOKEN: ${{ secrets.REPRISE_AUTOMERGE_TOKEN }}
+          BRANCH: ${{ github.event.pull_request.head.ref }}
+        run: |
+          if [[ -z $PUSH_TOKEN ]]; then
+            echo "REPRISE_AUTOMERGE_TOKEN is not available to this run" >&2
+            exit 1
+          fi
+          regenerated="$RUNNER_TEMP/regenerated/cargo-sources.json"
+          # The checkout is the bump's, so either path can be a symlink that leads
+          # the copy out of it, into a file of the runner.
+          if [[ -L flatpak ]]; then
+            echo "flatpak is a symlink; refusing to write through it" >&2
+            exit 1
+          fi
+          if [[ -L flatpak/cargo-sources.json ]]; then
+            echo "flatpak/cargo-sources.json is a symlink; refusing to write through it" >&2
+            exit 1
+          fi
+          cp --remove-destination "$regenerated" flatpak/cargo-sources.json
+          changes=$(git status --porcelain --untracked-files=all)
+          if [[ $changes != ' M flatpak/cargo-sources.json' ]]; then
+            printf 'expected only flatpak/cargo-sources.json to change, got:\n%s\n' \
+              "$changes" >&2
+            exit 1
+          fi
+          git config user.name 'github-actions[bot]'
+          git config user.email "$BOT_EMAIL"
+          git add flatpak/cargo-sources.json
+          git -c core.hooksPath=/dev/null commit --message "$COMMIT_SUBJECT"
+          # The token travels in the environment of the push alone, as an HTTP
+          # header: in the URL or on the command line it would show up in the
+          # process list. Actions masks the secret but not its base64 form, so
+          # the header is masked here before it is used, and tracing is off while
+          # it exists: a trace would print the unmasked value.
+          { set +x; } 2>/dev/null
+          header=$(printf 'x-access-token:%s' "$PUSH_TOKEN" | base64 --wrap=0)
+          echo "::add-mask::$header"
+          GIT_CONFIG_COUNT=1 \
+            GIT_CONFIG_KEY_0='http.https://github.com/.extraheader' \
+            GIT_CONFIG_VALUE_0="AUTHORIZATION: basic $header" \
+            git -c core.hooksPath=/dev/null push \
+            "https://github.com/${GITHUB_REPOSITORY}.git" \
+            "HEAD:refs/heads/$BRANCH"

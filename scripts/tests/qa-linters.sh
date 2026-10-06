@@ -155,6 +155,8 @@ require_executable scripts/tests/duration-format-parity.sh
 require_executable scripts/tests/msrv.sh
 require_executable scripts/tests/github-flow.sh
 require_executable .github/tests/flatpak-cargo-sources.sh
+require_executable .github/tests/dependabot-flatpak-sources.sh
+require_executable .github/tests/ci-cache-writes.sh
 require_executable scripts/tests/project-quality.sh
 require_executable scripts/tests/weekly-portfolio-sync.sh
 require_executable scripts/weekly-portfolio-sync.sh
@@ -204,6 +206,11 @@ require_pattern 'check-listen-report-parity.sh' scripts/check-merge-readiness.sh
 require_pattern 'scripts/tests/msrv.sh' scripts/check-release.sh
 require_pattern '^scripts/check-flatpak-cargo-sources\.sh$' scripts/check-release.sh
 require_pattern '^scripts/check-release-metadata\.sh$' scripts/check-release.sh
+# The release gate reaches these three by this road alone: the tail below no
+# longer runs them, because the CI base job and the merge gate already do.
+require_pattern '^scripts/tests/worktree-gc\.sh$' scripts/check-release.sh
+require_pattern '^scripts/tests/worktree-gc-schedule\.sh$' scripts/check-release.sh
+require_pattern '^scripts/check-architecture\.sh$' scripts/check-release.sh
 require_pattern 'scripts/check-release-metadata\.sh --gate' .github/workflows/ci.yml
 require_pattern 'scripts/check-flatpak-cargo-sources\.sh' .github/workflows/ci.yml
 require_pattern 'Verify worktree hygiene' .github/workflows/ci.yml
@@ -212,6 +219,7 @@ require_pattern 'scripts/tests/worktree-gc-schedule\.sh' .github/workflows/ci.ym
 require_pattern 'Run the script self-tests' .github/workflows/ci.yml
 require_pattern 'scripts/tests/qa-linters\.sh' .github/workflows/ci.yml
 require_pattern '^          scripts/check-shell\.sh$' .github/workflows/ci.yml
+require_pattern '^            \[\[ \$contract == \.github/tests/flatpak-cargo-sources\.sh \]\] && continue$' .github/workflows/ci.yml
 require_pattern '^        run: scripts/check-project-quality\.sh --project --showroom$' .github/workflows/ci.yml
 require_pattern '^          scripts/check-architecture\.sh$' .github/workflows/ci.yml
 require_pattern_order 'Verify worktree hygiene' 'Verify project source quality' .github/workflows/ci.yml
@@ -326,17 +334,16 @@ scripts/tests/input-parity.sh
 scripts/tests/android-theme.sh
 scripts/tests/shared-literal-comment-stripping.sh
 scripts/tests/duration-format-parity.sh
+# The merge gate has no other call for these two, and the CI base job skips them
+# on pull requests, so the tail is their only pre-merge run.
 scripts/tests/github-flow.sh
 .github/tests/flatpak-cargo-sources.sh
 scripts/tests/project-quality.sh
 scripts/tests/weekly-portfolio-sync.sh
-scripts/tests/worktree-gc.sh
-scripts/tests/worktree-gc-schedule.sh
 # These three had no caller at all — not here, not in CI, not in the merge gate.
 # They were written, they pass, and nothing ever ran them.
 scripts/tests/architecture-size-limits.sh
 scripts/tests/cua-explore.sh
 scripts/tests/check-android-suite.sh
-scripts/check-architecture.sh
 
 echo "QA linter policy checks passed"

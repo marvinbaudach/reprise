@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-if (( $# != 11 )); then
-    echo "usage: $0 CHANGES_RESULT BASE_RESULT SUITE_SKIP ANDROID_ROUTE ANDROID_RESULT GNOME_ROUTE GNOME_RESULT CORE_ROUTE CORE_RESULT DISPLAY_ROUTE DISPLAY_RESULT" >&2
+if (( $# != 12 )); then
+    echo "usage: $0 CHANGES_RESULT BASE_RESULT SUITE_SKIP ANDROID_ROUTE ANDROID_RESULT GNOME_ROUTE GNOME_RESULT CORE_ROUTE CORE_RESULT DISPLAY_ROUTE DISPLAY_RESULT CONTAINED" >&2
     exit 64
 fi
 
@@ -17,11 +17,28 @@ core_route=$8
 core_result=$9
 display_route=${10}
 display_result=${11}
+contained=${12}
 
 [[ $changes_result == success ]] || {
     echo "changed-path routing did not succeed: $changes_result" >&2
     exit 1
 }
+# A contained run found the Flatpak sources of its pull request stale, whoever
+# authored it. That is a failure to report, never a skip to wave through: a
+# Dependabot bump lost its suites for it, and a human pull request never ran
+# base-contracts. Whatever they say, the gate stays red until the sources are fixed.
+case "$contained" in
+    true)
+        echo "flatpak/cargo-sources.json does not match Cargo.lock; the gate stays red until" \
+            "it does (flatpak/README.md says how to regenerate it)" >&2
+        exit 1
+        ;;
+    false) ;;
+    *)
+        echo "containment produced an invalid value: $contained" >&2
+        exit 1
+        ;;
+esac
 case "$suite_skip" in
     true)
         [[ $base_result == skipped ]] || {
