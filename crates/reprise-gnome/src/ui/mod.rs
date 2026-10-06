@@ -104,6 +104,7 @@ mod scroll_glide;
 mod scroll_probe;
 mod search_highlight;
 pub mod session_restore;
+mod session_save;
 pub mod shortcuts;
 pub(in crate::ui) mod show_in_files;
 pub(crate) mod sidebar;
@@ -126,6 +127,7 @@ pub(crate) mod table_column_widths;
 mod table_columns;
 mod table_selection;
 mod tag_edit;
+pub(crate) mod termination;
 #[cfg(test)]
 pub(crate) mod test_log_capture;
 #[cfg(test)]

@@ -226,6 +226,14 @@ fn ensure_window(
 }
 
 fn main() -> glib::ExitCode {
+    // `run` owns the application, so everything it holds (the database among
+    // it) is dropped before the process may end by a handled termination signal.
+    let exit_code = run();
+    ui::termination::finish();
+    exit_code
+}
+
+fn run() -> glib::ExitCode {
     register_app_resources();
     ui::track_list::diagnostic_trail::mark_process_start();
     init_logging();
@@ -421,7 +429,11 @@ fn main() -> glib::ExitCode {
         handler.open_request(request);
     });
 
-    app.run()
+    let exit_code = app.run();
+    // Nothing is left to save: a signal during teardown ends the process as it
+    // did before START-5 instead of sitting unread in the listener's channel.
+    ui::termination::release();
+    exit_code
 }
 
 #[cfg(test)]
