@@ -458,6 +458,7 @@ fn find_move(
     facts: &FileFacts,
     title: &str,
     meta: &track_meta::TrackMeta,
+    layout: &segments::Layout,
     is_update: bool,
 ) -> Result<Option<move_detect::MoveCandidate>, ScanError> {
     // Move detection (Stage 2 Task 8) only ever applies to a path
@@ -481,6 +482,7 @@ fn find_move(
             album: &meta.album,
             duration_ms: meta.duration_ms,
             file_size: facts.file_size,
+            tracks_album: segments::tracks_album(layout, meta),
         },
     )
 }
@@ -663,7 +665,7 @@ fn import_readable_entry(
     if let Some(issue) = &plan.issue {
         segments::report_issue(scan, path_str, facts, issue)?;
     }
-    let candidate = find_move(scan, facts, &title, &meta, is_update)?;
+    let candidate = find_move(scan, facts, &title, &meta, &layout, is_update)?;
     let imported = ImportedTrack {
         title: &title,
         meta: &meta,

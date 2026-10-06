@@ -46,6 +46,9 @@ pub(crate) struct MoveLookup<'a> {
     pub(crate) album: &'a str,
     pub(crate) duration_ms: i64,
     pub(crate) file_size: i64,
+    /// The album the tracks of the file carry when a sheet cuts it, so a moved
+    /// CUE file can be recognised by its rows; `None` for a file kept whole.
+    pub(crate) tracks_album: Option<&'a str>,
 }
 
 /// Filters raw SQL matches down to *valid* move candidates: rows whose old
@@ -159,7 +162,7 @@ fn find_move_candidate_inner(
         }
     }
 
-    let rows: Vec<MatchedRow> = {
+    let mut rows: Vec<MatchedRow> = {
         let fingerprint_query = format!(
             "SELECT id, path, missing_since, segment_index FROM tracks \
              WHERE title = ?1 AND artist = ?2 \
@@ -181,6 +184,9 @@ fn find_move_candidate_inner(
             .collect::<Result<_, _>>()?;
         mapped
     };
+    if let Some(album) = lookup.tracks_album {
+        rows.extend(segment_fingerprint_rows(tx, lookup, album)?);
+    }
     let mut candidates = valid_candidates(source, rows, allowed_ids);
     match candidates.len() {
         1 => Ok(Some(candidates.remove(0))),
@@ -196,6 +202,33 @@ fn find_move_candidate_inner(
         }
         _ => Ok(None),
     }
+}
+
+/// The rows of a CUE file that looks like the one at hand: same size, same
+/// album on its tracks, and a length (where its last track ends) within the
+/// tolerance of the file's. A track's own title and duration say nothing about
+/// the whole file, so the fingerprint above never matches one.
+fn segment_fingerprint_rows(
+    tx: &rusqlite::Transaction,
+    lookup: &MoveLookup,
+    album: &str,
+) -> Result<Vec<MatchedRow>, ScanError> {
+    let query = format!(
+        "SELECT t.id, t.path, t.missing_since, t.segment_index FROM tracks t \
+         JOIN (SELECT path FROM tracks WHERE segment_index > 0 AND file_size = ?1 \
+               GROUP BY path \
+               HAVING ABS(max(segment_end_ms) - ?2) <= {MOVE_MATCH_TOLERANCE_MS}) file \
+           ON file.path = t.path \
+         WHERE t.segment_index > 0 AND t.album = ?3"
+    );
+    let mut statement = tx.prepare(&query)?;
+    let rows = statement
+        .query_map(
+            rusqlite::params![lookup.file_size, lookup.duration_ms, album],
+            |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?)),
+        )?
+        .collect::<Result<_, _>>()?;
+    Ok(rows)
 }
 
 /// The filesystem-identity fields `apply_file_identity` writes, bundled
@@ -377,6 +410,7 @@ mod tests {
                 album: "New Album",
                 duration_ms: 500,
                 file_size: 222,
+                tracks_album: None,
             },
         )
         .unwrap();
@@ -410,6 +444,7 @@ mod tests {
                 album: "Matching Album",
                 duration_ms: 1000,
                 file_size: 222,
+                tracks_album: None,
             },
         )
         .unwrap();
@@ -450,6 +485,7 @@ mod tests {
                 album: "Matching Album",
                 duration_ms: 1000,
                 file_size: 222,
+                tracks_album: None,
             },
         )
         .unwrap();

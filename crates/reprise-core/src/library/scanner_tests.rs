@@ -331,6 +331,7 @@ fn ambiguous_device_inode_candidates_are_not_guessed() {
         album: "Some Album",
         duration_ms: 1000,
         file_size: file_size as i64,
+        tracks_album: None,
     };
     let result = move_detect::find_move_candidate(&tx, &lookup).unwrap();
     assert_eq!(

@@ -145,6 +145,41 @@ fn cue_3_a_moved_cue_album_keeps_every_track() {
 }
 
 #[test]
+fn cue_3_a_cue_album_copied_to_another_place_keeps_every_track() {
+    let album = Album::new();
+    album.scan();
+    let ids = ids_of(album.db.conn(), &album.audio());
+    album
+        .db
+        .conn()
+        .execute("UPDATE tracks SET rating = 5 WHERE segment_index = 2", [])
+        .unwrap();
+    // A copy and a delete, as a move to another filesystem is: the file keeps
+    // its bytes but not its inode.
+    let moved = album.dir.path().join("moved");
+    std::fs::create_dir(&moved).unwrap();
+    std::fs::copy(album.audio(), moved.join("album.wav")).unwrap();
+    std::fs::copy(album.sheet(), moved.join("album.cue")).unwrap();
+    std::fs::remove_file(album.audio()).unwrap();
+    std::fs::remove_file(album.sheet()).unwrap();
+
+    let report = album.scan();
+
+    assert_eq!((report.moved, report.added), (1, 0));
+    assert_eq!(ids_of(album.db.conn(), &moved.join("album.wav")), ids);
+    let rating: i64 = album
+        .db
+        .conn()
+        .query_row(
+            "SELECT rating FROM tracks WHERE segment_index = 2",
+            [],
+            |row| row.get(0),
+        )
+        .unwrap();
+    assert_eq!(rating, 5);
+}
+
+#[test]
 fn cue_4_a_track_removed_on_its_own_stays_out_while_its_siblings_stay() {
     let album = Album::new();
     album.scan();

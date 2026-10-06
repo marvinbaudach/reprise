@@ -326,6 +326,17 @@ pub(super) fn move_segments(
     Ok(())
 }
 
+/// The album the tracks of `layout` carry, as [`segment_meta`] writes it; `None`
+/// for a file kept whole.
+pub(super) fn tracks_album<'a>(layout: &'a Layout, file: &'a TrackMeta) -> Option<&'a str> {
+    match layout {
+        Layout::Segments { segments, .. } => segments
+            .first()
+            .map(|segment| non_empty(&segment.album).unwrap_or(&file.album)),
+        Layout::Whole { .. } => None,
+    }
+}
+
 /// A track's metadata: what the sheet says, and for what it leaves out, what the
 /// audio file's own tags say. A track gain measured for the whole file says
 /// nothing about one track in it, so only the album values carry over.

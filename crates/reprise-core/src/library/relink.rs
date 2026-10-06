@@ -281,6 +281,7 @@ fn relink_from_folder_with_source(
                     album: &meta.album,
                     duration_ms: meta.duration_ms,
                     file_size: facts.size as i64,
+                    tracks_album: None,
                 },
                 &remaining,
             )?;
