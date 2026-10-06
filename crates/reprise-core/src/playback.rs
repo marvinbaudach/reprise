@@ -380,6 +380,10 @@ mod boundary_tests;
 #[path = "playback/boundary_intro_tests.rs"]
 mod boundary_intro_tests;
 
+#[cfg(all(test, debug_assertions))]
+#[path = "playback/boundary_gated_tests.rs"]
+mod boundary_gated_tests;
+
 #[cfg(test)]
 #[path = "playback/bass_pressure_tests.rs"]
 mod bass_pressure_tests;

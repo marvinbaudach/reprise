@@ -5,8 +5,9 @@
 use super::*;
 use reprise_core::playback::boundary_fixture::{
     assert_no_dip, dimming_complaints, judge_boundary, pinning_complaints, settled_seconds,
-    Boundary, Frame, Measure, Opening, SyntheticMusic, BOUNDARY_OFFSETS_SECONDS, FADE_LEVEL_FLOOR,
-    FRAMES_PER_SECOND, INTRO_LEVEL_FLOOR, JUDGED_FRAMES, SETTLE_FRAMES,
+    spread_complaints, Boundary, Frame, Measure, Opening, Spread, SyntheticMusic,
+    BOUNDARY_OFFSETS_SECONDS, FADE_LEVEL_FLOOR, FRAMES_PER_SECOND, INTRO_LEVEL_FLOOR,
+    JUDGED_FRAMES, SETTLE_FRAMES, SPREAD_FRAMES,
 };
 
 const RATE_HZ: u32 = 44_100;
@@ -257,6 +258,55 @@ fn ac_29_a_fade_in_does_not_pin_the_new_streams_bars() {
                 measured,
                 reference,
                 FADE_LEVEL_FLOOR,
+            ));
+        }
+    }
+    assert!(complaints.is_empty(), "{complaints:#?}");
+}
+
+// Music that falls to digital silence for a whole buffer again and again, as
+// hard-gated electronic music does. The measurement of a boundary restarts on
+// every such buffer, so a gap that recurs before a window of signal has
+// gathered keeps it restarting; the tallest bar, seconds 15 to 30 in, is then
+// a flat line, or never leaves the gain the last song left. It is judged against
+// the same music without the gaps.
+#[test]
+fn ac_29_a_gap_that_recurs_before_the_window_fills_does_not_flatten_the_tallest_bar() {
+    const RUN_FRAMES: usize = 30 * FRAMES_PER_SECOND;
+    // The window is 8192 samples, a little over eleven buffers: every gap here
+    // comes before a window of signal has gathered.
+    const BUFFERS_BETWEEN_GAPS: [usize; 2] = [5, 10];
+    // A previous song this many decibels louder than the one the run plays.
+    const PREVIOUS_DB: [f32; 2] = [-4.0, 4.0];
+    let first = boundary_sample(0.0);
+    let played = |previous_db: Option<f32>, song: &SyntheticMusic| {
+        let (mut stage, generation) = match previous_db {
+            Some(db) => (warmed(&loud().louder_by(db), 0.0), FIRST_STREAM + 1),
+            None => (CavaStage::new(RATE_HZ, FIRST_STREAM).unwrap(), FIRST_STREAM),
+        };
+        let frames = play(
+            &mut stage,
+            song,
+            generation,
+            first,
+            RUN_FRAMES,
+            previous_db.is_some(),
+        );
+        Spread::of_tallest_bars(&frames[SPREAD_FRAMES])
+    };
+    let mut complaints = Vec::new();
+    for previous_db in [None, Some(PREVIOUS_DB[0]), Some(PREVIOUS_DB[1])] {
+        let continuous = played(previous_db, &loud());
+        for buffers in BUFFERS_BETWEEN_GAPS {
+            // A gap is one whole buffer, and the song starts on a buffer.
+            let gated = loud().gated(buffers * HOP, HOP);
+            let after = previous_db.map_or("a first start".to_string(), |db| {
+                format!("a new stream after a song {db:+} dB against this one")
+            });
+            complaints.extend(spread_complaints(
+                &format!("a gap every {buffers} buffers, {after}"),
+                played(previous_db, &gated),
+                continuous,
             ));
         }
     }

@@ -4816,7 +4816,16 @@ STYLE-1).
   boundary, so the bars the first window produces rise to the song's level
   without overshooting it, and only fall if a louder bar turns up; the
   measurement ends once a full FFT window of signal is in (the 8192 samples
-  every bar is computed from), and digital silence restarts it. *With a shape
+  every bar is computed from), and digital silence restarts it, for the first
+  four windows of audio after its first signal (about 0.7 s; a lead-in of
+  digital silence is not counted); after that a silent chunk only pauses it,
+  so music that falls to digital silence every tenth of a second, and never
+  gathers a window of signal between two gaps, still finishes measuring (about
+  0.9 s in) instead of setting the sensitivity from each frame's own tallest
+  bar for as long as the pattern lasts. A silence a whole FFT window long is a
+  break at any time and restarts the measurement, without taking back what the
+  four windows have counted; audio whose stretches of signal are shorter than
+  a window between such silences is mostly silence and keeps measuring. *With a shape
   on screen* (a track change, a seek) the sensitivity that drew the shape is
   kept, because the song before is usually about as loud and a changed
   sensitivity redraws the whole frame. The loudest bar of the new stream so
@@ -4866,7 +4875,12 @@ STYLE-1).
   it; a boundary that continues the song on screen never shrinks the frame or
   steps it; the level three to ten seconds on equals that of a run that never
   had the boundary; silent chunks inside a song do not keep a boundary
-  measuring; a resume keeps a quiet passage quiet; silence never raises the
+  measuring, even when they recur faster than a window of signal fills
+  (whole chunks of digital silence, roughly 9 to 30 percent of the audio,
+  every 0.08 to 0.2 s): over seconds 15 to 30 the tallest bar of such music spreads
+  at least 0.85 times as much as the same music without the gaps and averages
+  within 0.06 of it, from a first start and after a song 4 dB louder or
+  quieter; a resume keeps a quiet passage quiet; silence never raises the
   sensitivity, whether the boundary is settled or still braking; and a loud
   body after a quiet intro and a fade-in draw no wall (no frame with half the
   bars pinned, no run of more than 25 frames with eight or more) and no more
@@ -4887,7 +4901,11 @@ STYLE-1).
   seconds, not seven, and a rise that follows a pull is followed and lands at
   0.92; the acceptance covers quiet intros of up to ten seconds and fade-ins,
   which were a known gap, and states the dimming a rise inside the span
-  leaves.*
+  leaves. Amended 2026-10-06, again: digital silence restarts the measurement
+  only until it has gathered four windows of audio from its first signal and
+  pauses it after that, except for a silence a whole window long, which still
+  restarts it; music with recurring gaps is judged against the same music
+  without them.*
 
   **Swipes on the phone.** On the phone, a swipe to another song hands the new
   song's bars the outgoing song's last live shape, never an already decayed

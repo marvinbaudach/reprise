@@ -18,7 +18,17 @@
 //! a gain it has not earned. The peak only grows, so the gain only falls: a
 //! louder bar after a quiet start is followed down on the spot. The
 //! measurement ends when a full window of signal is in. Silence restarts it,
-//! because a window that is mostly silence understates the level.
+//! because a window that is mostly silence understates the level, until the
+//! measurement has gathered [`MEASURING_CAP_WINDOWS`] windows of audio since its
+//! first signal, silent or not: from there on a silence only pauses it, unless
+//! it is a whole window long, which is a break and restarts it. Music that
+//! falls to digital silence every tenth of a second never gathers a window of
+//! signal between two gaps, and a measurement that restarts on each of them
+//! would set the gain from every frame's own tallest bar for as long as the
+//! pattern lasts (or, after a track change, hold the last song's gain for as
+//! long as the gating does). What can still keep a measurement from finishing
+//! is a stretch of signal shorter than a window between silences of a window
+//! or more: audio that is mostly silence, which the restart is for.
 //!
 //! *A shape on screen* (a track change or a seek). The gain that drew it is
 //! kept as a prior, because the song just before is usually about as loud as
@@ -60,7 +70,9 @@
 //! Nothing else changes: once the measurement, or the move up to it, is over,
 //! `cavacore`'s creep runs in both directions, so the gain settles where it
 //! would have without a boundary, and silence neither restarts nor prolongs
-//! the span.
+//! the span. The cap that ends the restarts counts from the first signal; the
+//! span counts from the end of the measurement, so the time spent collecting is
+//! not charged to it.
 
 /// Height the loudest bar seen while measuring is aimed at, as the integral
 /// stage settles it. Below full height because the first window can fall
@@ -111,6 +123,35 @@ pub(super) const CHAIN_BRAKE_LEVEL: f32 = 1.0;
 /// draws, against six fewer at 0.92), so 0.92 is the tie-break.
 pub(super) const CHAIN_TARGET_HEIGHT: f32 = 0.92;
 
+/// Audio, in windows, a measurement gathers from its first signal, silent or
+/// not, before silence stops restarting it and only pauses it: about 0.7 s at
+/// 44.1 or 48 kHz. A gap before it is a break in the music and the window starts
+/// again; one after it is part of the music's rhythm, and a measurement that
+/// restarted on it would never finish where the gaps recur faster than a window
+/// fills (hard-gated electronic music, chiptune). With one silent hop of 735
+/// samples in ten the measurement ends 0.9 s in. A silence of a whole window is
+/// a break whenever it comes: it restarts the measurement, without taking back
+/// what the cap has counted.
+///
+/// Four, because the cap has to outlast the first half second, in which a
+/// dropout is most likely a break (the early braking stretch is
+/// [`EARLY_BRAKING_WINDOWS`] windows) and the window of music behind it is still
+/// to fill, and because every window more is another 0.17 s in which gated music
+/// keeps the per-frame gain: the measurement of such music ends 0.7 s in at
+/// three windows, 0.9 s at four and 1.1 s at five. Real music from a first
+/// start or after a track change reads the same, seconds 15 to 30, at two to
+/// eight windows.
+///
+/// The count starts at the first signal of the boundary, so a lead-in of
+/// digital silence (47 % of the tracks of a real collection have one, up to
+/// 1.8 s) is not charged to it: nothing has been gathered that a restart would
+/// lose, and a cap used up by a lead-in would turn the first dropout of the
+/// music behind it into a pause.
+///
+/// It has a counter of its own: `elapsed_samples` counts from the end of the
+/// measurement, and both braking spans are set by it.
+pub(super) const MEASURING_CAP_WINDOWS: usize = 4;
+
 /// What the smoother does with this frame's gain.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub(super) enum Step {
@@ -142,6 +183,12 @@ enum Phase {
 pub(super) struct BoundaryEstimator {
     window_samples: usize,
     signal_samples: usize,
+    /// Audio since the first signal of the boundary, silent or not, while the
+    /// measurement collects. Unlike `elapsed_samples`, which counts the span of
+    /// braking that follows and is not charged for the time spent collecting.
+    gathered_samples: usize,
+    /// Silent samples in a row, since the last chunk with signal.
+    silent_run: usize,
     elapsed_samples: usize,
     /// Audio left in the span after a brake in which a frame is braked at
     /// [`CHAIN_BRAKE_LEVEL`].
@@ -157,6 +204,8 @@ impl BoundaryEstimator {
         let mut estimator = Self {
             window_samples,
             signal_samples: 0,
+            gathered_samples: 0,
+            silent_run: 0,
             elapsed_samples: 0,
             chain_samples: 0,
             peak: 0.0,
@@ -171,6 +220,8 @@ impl BoundaryEstimator {
     /// that drew it is a prior to keep unless the new stream disagrees.
     pub(super) fn arm(&mut self, keeps_shape: bool) {
         self.signal_samples = 0;
+        self.gathered_samples = 0;
+        self.silent_run = 0;
         self.elapsed_samples = 0;
         self.chain_samples = 0;
         self.peak = 0.0;
@@ -202,11 +253,10 @@ impl BoundaryEstimator {
         integral_feedback: f32,
         gain: f32,
     ) -> Step {
-        if new_samples == 0 {
-            return Step::Hold;
-        }
         match self.phase {
+            // Settled: an empty chunk is no reason to suspend the creep.
             Phase::Done => Step::Done,
+            _ if new_samples == 0 => Step::Hold,
             Phase::Measuring | Phase::Waiting => self.collect(
                 new_samples,
                 signal_present,
@@ -227,11 +277,29 @@ impl BoundaryEstimator {
         gain: f32,
     ) -> Step {
         let waiting = self.phase == Phase::Waiting;
+        // The cap counts from the first signal: a lead-in of silence has nothing
+        // gathered that a restart would lose, so it is not charged to it.
+        if signal_present || self.gathered_samples > 0 {
+            self.gathered_samples = self.gathered_samples.saturating_add(new_samples);
+        }
         if !signal_present {
-            self.signal_samples = 0;
-            self.peak = 0.0;
+            // Until the cap, a gap restarts the measurement; from it on, a gap
+            // only pauses it, so signal that keeps being cut short can still
+            // gather a window. A silence as long as a window is no gap in the
+            // music but a break: nothing of what was gathered is in the FFT
+            // window any more, so it restarts the measurement at any time. It
+            // leaves `gathered_samples` alone, or a pattern of breaks could
+            // keep the cap from ever being reached.
+            self.silent_run = self.silent_run.saturating_add(new_samples);
+            if self.gathered_samples < self.window_samples * MEASURING_CAP_WINDOWS
+                || self.silent_run >= self.window_samples
+            {
+                self.signal_samples = 0;
+                self.peak = 0.0;
+            }
             return Step::Hold;
         }
+        self.silent_run = 0;
         self.signal_samples = self.signal_samples.saturating_add(new_samples);
         if raw_peak.is_finite() {
             self.peak = self.peak.max(raw_peak);
