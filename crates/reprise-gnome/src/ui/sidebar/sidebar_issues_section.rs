@@ -11,7 +11,7 @@ use gtk4::prelude::*;
 use std::rc::Rc;
 
 use super::sidebar_activity_slot::SidebarActivitySlot;
-use super::sidebar_presentation;
+use super::sidebar_headers;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(super) struct BottomRegionPlacement {
@@ -31,7 +31,7 @@ pub(super) fn build_issues_section(
     issues_listbox: &gtk4::ListBox,
 ) -> gtk4::Box {
     let issues = gtk4::Box::new(gtk4::Orientation::Vertical, 0);
-    let heading = sidebar_presentation::problem_header();
+    let heading = sidebar_headers::problem_header();
     issues_listbox
         .bind_property("visible", &heading, "visible")
         .sync_create()

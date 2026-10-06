@@ -5,6 +5,7 @@ mod sidebar_device_card_text;
 mod sidebar_device_section;
 pub(crate) mod sidebar_dnd;
 pub(crate) mod sidebar_export;
+mod sidebar_headers;
 pub(in crate::ui) mod sidebar_issue_cleanup;
 pub(in crate::ui) mod sidebar_issue_strings;
 mod sidebar_issues_section;
