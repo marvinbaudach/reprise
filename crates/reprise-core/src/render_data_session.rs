@@ -13,6 +13,10 @@ use crate::spectrogram::{
 };
 use crate::waveform::{TrackRenderData, STORED_PEAK_COUNT};
 
+#[path = "render_data_partial.rs"]
+mod partial;
+pub use partial::{PartialRenderData, PartialSource};
+
 /// The channel counts of the two layouts whose order is conventional: 5.1 and
 /// 7.1 in WAVE order (FL FR FC LFE BL BR [SL SR]), where the LFE is the fourth
 /// channel. The decoders hand over no channel mask, so any other count (7, 9,
@@ -321,7 +325,8 @@ fn rebucket_peaks(frames: &[(f64, u64)], buckets: usize) -> Vec<u8> {
 
 /// Mirrors `waveform.rs`'s private `finish_waveform`: per-bucket RMS,
 /// max-normalized, sqrt-compressed into a `0..=255` byte. Duplicated rather
-/// than exposed from `waveform.rs`, which this strand does not own.
+/// than exposed from `waveform.rs`, which this strand does not own. The
+/// partial snapshot in `partial.rs` shares it.
 fn finish_waveform_peaks(sum_squares: &[f64], counts: &[u64]) -> Vec<u8> {
     let rms: Vec<f64> = sum_squares
         .iter()
@@ -569,3 +574,7 @@ mod downmix_tests;
 #[cfg(test)]
 #[path = "render_data_session_loudness_tests.rs"]
 mod loudness_tests;
+
+#[cfg(test)]
+#[path = "render_data_session_partial_tests.rs"]
+mod partial_tests;

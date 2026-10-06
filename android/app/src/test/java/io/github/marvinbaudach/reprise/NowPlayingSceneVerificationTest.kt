@@ -97,7 +97,7 @@ class NowPlayingSceneVerificationTest {
             observedAtNanos = 0,
             playing = false,
         )
-        val driver = SceneDriver(frames, state, clock, ScenePositionSource { paused }) { true }
+        val driver = SceneDriver(state, clock, ScenePositionSource { paused }) { true }
         driver.tick()
         val fog = prepareCoverFogBitmap(greyscaleArtwork(), Color.DKGRAY)
         val angleBefore = state.fogAngleA

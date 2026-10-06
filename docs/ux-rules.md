@@ -255,6 +255,97 @@ result.
   `nav_15c_a_stale_settle_cannot_clear_the_current_request`,
   `nav_15c_cancelled_import_retries_and_refreshes_after_each_attempt`,
   `nav_15c_shutdown_cancels_a_pending_retry_without_another_import`.
+- **NAV-15d** [active] [android] — **The seek bar fills while the phone
+  decodes.** While the phone computes the playing track's analysis, the seek
+  bar shows the part already decoded, filling from the left, and the rest
+  stays the plain line. The partial picture is held only in memory: it is
+  never stored and never counts as analysed for sync, sidecar or backfill.
+  The Now Playing scene adopts the growing spectrum without restarting:
+  only the playing panel asks for it, it keeps the decoded frames until the
+  final ones arrive, and frames decoded behind a playhead that ran ahead
+  play on instead of snapping, unless live audio drove the scene in the
+  meantime. The decoded part is asked for about once a second, only while
+  the app is visible with the screen on and the final analysis is missing,
+  and never while an earlier answer is still outstanding. After half a
+  minute of empty answers it is asked only every five seconds, until an
+  answer comes or the next analysis attempt ends.
+  When the final bars replace a partial picture they appear at full height,
+  even if a cue asked for a build at that moment; final bars that follow a
+  partial picture which ended without a result build in as a first analysis
+  does.
+  *Tests:* `nav_15d_partial_bars_cover_only_the_decoded_part`,
+  `nav_15d_final_bars_replace_the_partial`,
+  `nav_15d_progress_reads_are_never_cached`,
+  `nav_15d_growing_frames_do_not_reset_the_scene`,
+  `nav_15d_the_driver_reads_adopted_frames`,
+  `nav_15d_adopting_longer_frames_continues_the_scene_instead_of_resetting`,
+  `nav_15d_a_running_decode_reports_progress_for_its_track`,
+  `nav_15d_progress_is_none_without_a_decode_and_after_the_store`,
+  `nav_15d_a_cancelled_decode_leaves_no_render_data`,
+  `nav_15d_the_backfill_decode_reports_progress_too`,
+  `nav_15d_the_expected_length_ends_at_one_week`,
+  `nav_15d_polls_about_once_per_interval_while_decoding`,
+  `nav_15d_no_polls_once_the_final_data_arrived`,
+  `nav_15d_no_polls_while_the_screen_is_not_started`,
+  `nav_15d_no_polls_while_the_screen_is_off`,
+  `nav_15d_a_track_that_never_reports_progress_is_asked_less_often`,
+  `nav_15d_a_new_revision_asks_at_the_full_rate_again`,
+  `nav_15d_an_answer_in_flight_when_the_screen_stops_is_not_applied`,
+  `nav_15d_empty_answers_count_again_after_the_screen_returns`,
+  `nav_15d_a_poll_waits_for_the_previous_answer`,
+  `nav_15d_a_late_answer_from_an_earlier_revision_is_not_shown`,
+  `nav_15d_an_unchanged_answer_does_not_recompose`,
+  `nav_15d_final_bars_after_a_partial_that_ended_without_a_result_build_in`,
+  `nav_15d_an_empty_or_broken_covered_fraction_is_no_partial`,
+  `nav_15d_the_scene_keeps_the_decoded_frames_until_the_final_ones_arrive`,
+  `nav_15d_only_the_live_panel_asks_for_the_decoded_part`,
+  `nav_15d_adopting_shorter_frames_keeps_the_playhead_instead_of_seeking`,
+  `nav_15d_frames_growing_under_a_playhead_past_the_decode_edge_continue_instead_of_snapping`,
+  `nav_15d_the_decode_edge_allowance_lasts_while_the_playhead_stands_on_the_edge`,
+  `nav_15d_live_audio_ends_the_decode_edge_allowance`,
+  `nav_15d_the_scene_stand_in_has_the_spectrogram_shape`.
+  <!-- REVIEW: rule proposal -->
+- **NAV-15e** [active] [android] — **Leaving a track stops its analysis.**
+  Switching to another track stops the outgoing track's foreground analysis
+  (a stop or a pause does not), and the abandoned track is not retried until
+  it plays again. The backfill picks it up later. A queued analysis for a
+  track that is no longer playing is skipped. An analysis that had already
+  decoded the whole track when the switch came is stored, not thrown away.
+  Returning to a track restarts its analysis even while the stopped one is
+  still winding down, and a request waiting on the backfill's analysis of a
+  track no longer playing is let go while the backfill carries on. A stop
+  right after a switch still stops the track that was left, but a stop after
+  several quick switches leaves the last track's analysis running, and a
+  request for the stopped track that starts only after the stop still runs.
+  A stale stop that reaches the track now playing only makes it ask again.
+  *Tests:*
+  `nav_15e_superseded_is_final`,
+  `nav_15e_a_queued_prepare_for_a_track_no_longer_playing_is_skipped`,
+  `nav_15e_a_retry_pause_that_ends_for_a_superseded_track_ends_the_loop`,
+  `nav_15e_a_track_change_supersedes_the_outgoing_analysis`,
+  `nav_15e_stopping_playback_supersedes_nothing`,
+  `nav_15e_superseding_keeps_the_playing_track`,
+  `nav_15e_a_superseded_decode_is_final_for_its_waiter`,
+  `nav_15e_superseding_never_cancels_the_backfill`,
+  `nav_15e_returning_to_a_superseded_track_restarts_its_analysis`,
+  `nav_15e_superseding_frees_a_foreground_waiter_on_the_backfill_decode`,
+  `nav_15e_a_supersede_right_after_joining_the_backfill_decode_frees_the_waiter`,
+  `nav_15e_a_supersede_right_after_joining_is_final_for_the_waiter`,
+  `nav_15e_a_supersede_before_the_decode_registers_still_stops_it`,
+  `nav_15e_a_supersede_after_the_whole_stream_is_decoded_still_stores_it`,
+  `nav_15e_a_supersede_while_the_decode_is_stored_releases_the_waiter_and_keeps_the_data`,
+  `nav_15e_a_superseded_settle_for_the_playing_track_requests_again`,
+  `nav_15e_a_superseded_import_of_the_track_still_playing_retries`,
+  `nav_15e_a_superseded_import_of_a_track_the_service_left_ends`,
+  `nav_15e_a_request_that_starts_after_its_track_lost_its_place_imports_nothing`,
+  `nav_15e_stopping_after_a_switch_still_supersedes_the_outgoing_track`,
+  `nav_15e_the_track_cannot_move_while_a_supersede_is_in_the_library`,
+  `nav_15e_a_stop_after_quick_switches_never_supersedes_the_last_track`,
+  `nav_15e_a_request_belongs_to_the_last_track_even_after_a_stop`,
+  `nav_15e_quick_switches_supersede_through_the_gate_and_a_stop_spares_the_last_track`,
+  `nav_15e_a_request_for_a_track_left_before_a_stop_imports_nothing`,
+  `nav_15e_a_request_for_the_track_a_stop_left_still_imports`.
+  <!-- REVIEW: rule proposal -->
 - **NAV-16** [active] [gtk] — **Optional sidebar places carry their own off
   switch and way back.** A secondary click, Menu, or Shift+F10 on Podcasts,
   YouTube, Radio, Releases, or Concerts opens an arrowed menu anchored to the

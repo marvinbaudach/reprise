@@ -40,6 +40,15 @@ internal class AmbientMotionController(
     var scheduled by mutableStateOf(false)
         private set
 
+    /**
+     * Whether the screen is on, for work that may run while the activity is only
+     * started but never with the screen off. True until [runtimeChanged] reports
+     * otherwise, so a surface composed without [BindAmbientRuntime] still works;
+     * it plays no part in [scheduled] or [sceneFramesAllowed].
+     */
+    var screenOn by mutableStateOf(true)
+        private set
+
     internal val sceneFramesAllowed: Boolean
         get() = scheduled || attachedSurfaces > 0 && resumed && screenInteractive
 
@@ -59,6 +68,7 @@ internal class AmbientMotionController(
     fun runtimeChanged(resumed: Boolean, screenInteractive: Boolean, animationsEnabled: Boolean) {
         this.resumed = resumed
         this.screenInteractive = screenInteractive
+        screenOn = screenInteractive
         systemAnimationsEnabled = animationsEnabled
         update()
     }

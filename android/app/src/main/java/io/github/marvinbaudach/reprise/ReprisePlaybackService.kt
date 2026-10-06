@@ -103,6 +103,13 @@ open class ReprisePlaybackService : MediaLibraryService() {
     @OptIn(ExperimentalCoroutinesApi::class)
     private val analysisBackfillScope =
         CoroutineScope(SupervisorJob() + Dispatchers.IO.limitedParallelism(1))
+
+    // Serial for the same reason: a quick skip A -> B -> C posts supersede(B) then
+    // supersede(C), and on the elastic pool supersede(B) could run last and cancel
+    // C, the track now playing.
+    @OptIn(ExperimentalCoroutinesApi::class)
+    private val analysisSupersedeScope =
+        CoroutineScope(SupervisorJob() + Dispatchers.IO.limitedParallelism(1))
     private val artworkExecutor = Executors.newSingleThreadExecutor { task ->
         Thread(task, "reprise-artwork")
     }
@@ -137,7 +144,9 @@ open class ReprisePlaybackService : MediaLibraryService() {
             },
         )
     }
-    private var analysisTrackId: Long? = null
+    private val analysisTrack = AnalysisTrackGate()
+    private val analysisTrackId: Long?
+        get() = analysisTrack.current
     private var analysisAttempts = 0
     private var analysisRequestInFlight = false
     private var analysisFinal = false
@@ -371,6 +380,7 @@ open class ReprisePlaybackService : MediaLibraryService() {
         }
         analysisScope.cancel()
         analysisBackfillScope.cancel()
+        analysisSupersedeScope.cancel()
         coreSession?.close()
         coreSession = null
         // After the Core session: closing it can still report a last snapshot,
@@ -403,10 +413,13 @@ open class ReprisePlaybackService : MediaLibraryService() {
     private fun handleTrackAnalysis(snapshot: AndroidPlaybackSnapshot) {
         val currentTrackId = snapshot.currentTrackId
         if (currentTrackId != analysisTrackId) {
-            analysisTrackId = currentTrackId
+            analysisTrack.moveTo(currentTrackId)
             analysisAttempts = 0
             analysisRequestInFlight = false
             analysisFinal = false
+            // Only a switch to another track cancels: a stop or the end of the
+            // queue leaves the running analysis to finish and be stored.
+            if (currentTrackId != null) supersedeForegroundAnalysis(currentTrackId)
         }
         if (
             currentTrackId != null &&
@@ -429,10 +442,43 @@ open class ReprisePlaybackService : MediaLibraryService() {
         }
     }
 
+    /** Stops every foreground analysis except `keepTrackId`'s; the backfill is untouched. */
+    internal open fun supersedeForegroundAnalysis(keepTrackId: Long) {
+        analysisSupersedeScope.launch {
+            try {
+                // Resolved before the gate: opening the library may touch the database,
+                // and a track change on the main thread waits for the gate.
+                val supersede = foregroundAnalysisSuperseder()
+                // A newer track change already queued its own call: this one would
+                // cancel the track that is playing now, so the gate skips it.
+                analysisTrack.supersedeOthers(keepTrackId) { keep ->
+                    Log.d(TAG_ANALYSIS, "Superseding foreground analyses other than track $keep")
+                    supersede(keep)
+                }
+            } catch (error: Exception) {
+                Log.w(TAG_ANALYSIS, "Could not supersede the outgoing track analysis", error)
+            }
+        }
+    }
+
+    /** The library's supersede call, bound to the library outside the gate. */
+    internal open fun foregroundAnalysisSuperseder(): (Long) -> Unit {
+        val library = sharedMusicLibrary()
+        return { keep -> library.supersedeForegroundTrackAnalysis(keep) }
+    }
+
     /** Overridden in tests with a fake that counts calls instead of decoding. */
     internal open fun trackAnalysisRequest(trackId: Long, requestGeneration: Long) {
         analysisScope.launch {
             requireOffMainThread("Track analysis import")
+            // The track changed before this request started: its supersede may
+            // already have run and found nothing to stop — a supersede that comes
+            // before the decode claims its track never reaches Rust, so only this
+            // check covers it. A stop alone leaves the request to run (G6).
+            if (!analysisTrack.stillWanted(trackId)) {
+                Log.d(TAG_ANALYSIS, "Skipping the analysis request for track $trackId: it lost its place")
+                return@launch
+            }
             var outcome: AndroidAnalysisOutcome? = null
             var failure: Throwable? = null
             try {
@@ -463,7 +509,9 @@ open class ReprisePlaybackService : MediaLibraryService() {
     ) {
         if (trackId != analysisTrackId || requestGeneration != analysisRequestGeneration) return
         analysisRequestInFlight = false
-        analysisFinal = !trackAnalysisIsNonFinal(outcome, error)
+        // Past the guard above, this is the track that is playing: a supersede
+        // that reached it was stale, so it is retried like a cancel.
+        analysisFinal = !trackAnalysisShouldRetry(outcome, error, stillPlaying = true)
     }
 
     internal open fun startAnalysisBackfill() {

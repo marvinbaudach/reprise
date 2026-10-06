@@ -11,3 +11,16 @@ internal fun trackAnalysisIsNonFinal(
     error != null ||
         outcome == AndroidAnalysisOutcome.CANCELLED ||
         outcome == AndroidAnalysisOutcome.PHONE_SOURCE_CHANGED
+
+/**
+ * Whether an import attempt should be made again. `SUPERSEDED` is final for a
+ * track nobody plays any more, but the track that is still playing can only
+ * have been reached by a stale supersede, so it is retried like a cancel.
+ */
+internal fun trackAnalysisShouldRetry(
+    outcome: AndroidAnalysisOutcome?,
+    error: Throwable?,
+    stillPlaying: Boolean,
+): Boolean =
+    trackAnalysisIsNonFinal(outcome, error) ||
+        stillPlaying && outcome == AndroidAnalysisOutcome.SUPERSEDED

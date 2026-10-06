@@ -4,12 +4,13 @@
 //! mother plan).
 
 use std::collections::{HashMap, HashSet};
-use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU8, Ordering};
 use std::sync::{Arc, Condvar, Mutex, PoisonError};
 
 use reprise_core::db::Db;
-use reprise_core::render_data_session::RenderDataSession;
+use reprise_core::render_data_session::{PartialRenderData, RenderDataSession};
 
+use crate::track_analysis::decodes::{expected_frame_count, DecodeRegistry};
 use crate::track_analysis::TrackAnalysisBackfill;
 use crate::{LibraryError, MusicLibrary};
 
@@ -51,14 +52,28 @@ pub trait TrackPcmDecoder: Send + Sync {
     ) -> Result<(), AnalysisDecodeError>;
 }
 
+/// The sink still takes PCM.
+const SINK_RUNNING: u8 = 0;
+/// Told to stop by a foreground request preempting the backfill's item.
+const SINK_CANCELLED: u8 = 1;
+/// Told to stop because the track is no longer playing.
+const SINK_SUPERSEDED: u8 = 2;
+
 /// Owns one track's [`RenderDataSession`] for the duration of one decode
-/// call. `cancelled` is flipped from outside the decode call — by a
-/// foreground request preempting the backfill's current item — so the
-/// decoder can be told to stop without a second channel back into Kotlin.
+/// call. `stop_reason` is set from outside the decode call — by a foreground
+/// request preempting the backfill's current item, or by a track change
+/// superseding a foreground decode — so the decoder can be told to stop
+/// without a second channel back into Kotlin. The first reason wins; it
+/// decides whether waiters retry (`Cancelled`) or stop asking (`Superseded`).
+/// A supersede that arrives after the whole stream was pushed discards
+/// nothing: the decode is stored as if it had not come (`decode_one`).
 #[derive(uniffi::Object)]
 pub struct AnalysisPcmSink {
     session: Mutex<Option<RenderDataSession>>,
-    cancelled: AtomicBool,
+    stop_reason: AtomicU8,
+    /// Set when a chunk was turned away because the sink had been told to
+    /// stop: the decoder then returns with the stream cut short.
+    cut_short: AtomicBool,
     /// Set when the session itself refused a chunk (a rate or channel
     /// change mid-stream): a data problem, distinct from the decoder giving
     /// up and distinct from being told to stop.
@@ -69,17 +84,53 @@ impl AnalysisPcmSink {
     fn new() -> Arc<Self> {
         Arc::new(Self {
             session: Mutex::new(Some(RenderDataSession::new())),
-            cancelled: AtomicBool::new(false),
+            stop_reason: AtomicU8::new(SINK_RUNNING),
+            cut_short: AtomicBool::new(false),
             refused: Mutex::new(None),
         })
     }
 
+    fn stop(&self, reason: u8) {
+        let _ = self.stop_reason.compare_exchange(
+            SINK_RUNNING,
+            reason,
+            Ordering::AcqRel,
+            Ordering::Acquire,
+        );
+    }
+
     pub(crate) fn cancel(&self) {
-        self.cancelled.store(true, Ordering::Release);
+        self.stop(SINK_CANCELLED);
+    }
+
+    pub(super) fn supersede(&self) {
+        self.stop(SINK_SUPERSEDED);
     }
 
     fn is_cancelled(&self) -> bool {
-        self.cancelled.load(Ordering::Acquire)
+        self.stop_reason.load(Ordering::Acquire) != SINK_RUNNING
+    }
+
+    fn is_superseded(&self) -> bool {
+        self.stop_reason.load(Ordering::Acquire) == SINK_SUPERSEDED
+    }
+
+    fn was_cut_short(&self) -> bool {
+        self.cut_short.load(Ordering::Acquire)
+    }
+
+    /// What has been decoded so far. Only the copy of the decoded frames is
+    /// taken under the session lock the decoder pushes through; the picture is
+    /// built after it is released. `None` before one peak bucket is complete
+    /// and once the session has been taken to finish.
+    pub(super) fn partial(&self, expected_frames: usize) -> Option<PartialRenderData> {
+        let source = self
+            .session
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .as_ref()?
+            .partial_source();
+        source.render(expected_frames)
     }
 
     fn refused_reason(&self) -> Option<String> {
@@ -114,6 +165,7 @@ impl AnalysisPcmSink {
     )]
     pub fn push_pcm_i16(&self, bytes: Vec<u8>, sample_rate_hz: u32, channel_count: u32) -> bool {
         if self.is_cancelled() {
+            self.cut_short.store(true, Ordering::Release);
             return false;
         }
         let samples: Vec<i16> = bytes
@@ -149,11 +201,94 @@ pub enum AndroidAnalysisOutcome {
     DecodeFailed,
     NoDecoder,
     Cancelled,
+    /// The track stopped being the playing one. Final for the caller that
+    /// receives it (no retry). The decode it was waiting on either stopped
+    /// before the end of the stream, storing nothing and leaving the track
+    /// pending for the backfill, or carries on: a backfill decode, or one that
+    /// had already decoded the whole stream, is still stored, and its owner
+    /// returns `Computed` while the foreground waiters it let go get this.
+    /// A caller that joined after the supersede is not given it (it retries).
+    Superseded,
 }
 
 /// One pending or finished decode, shared between every caller waiting on
 /// the same track id.
-type AnalysisCell = Arc<(Mutex<Option<AndroidAnalysisOutcome>>, Condvar)>;
+pub(crate) struct AnalysisCell {
+    state: Mutex<CellState>,
+    changed: Condvar,
+}
+
+struct CellState {
+    outcome: Option<AndroidAnalysisOutcome>,
+    /// How many supersedes naming another track have reached this decode. A
+    /// caller compares it with the count it joined at: a supersede it was
+    /// already waiting through is meant for it, one that came before it is
+    /// not — that caller asked for the track again after it was left.
+    supersedes: u64,
+}
+
+type SharedAnalysisCell = Arc<AnalysisCell>;
+
+impl AnalysisCell {
+    fn new() -> SharedAnalysisCell {
+        Arc::new(Self {
+            state: Mutex::new(CellState {
+                outcome: None,
+                supersedes: 0,
+            }),
+            changed: Condvar::new(),
+        })
+    }
+
+    fn state(&self) -> std::sync::MutexGuard<'_, CellState> {
+        self.state.lock().unwrap_or_else(PoisonError::into_inner)
+    }
+
+    /// Waits for the decode's outcome as a caller that did not start it. A
+    /// foreground waiter is let go with `Superseded` as soon as a supersede
+    /// reaches the decode, even a backfill decode that carries on and
+    /// stores: the waiter's track is no longer playing, and it must not hold
+    /// the foreground import lane until a decode it no longer needs ends.
+    ///
+    /// `joined_at` is the supersede count read when the caller joined, while
+    /// the in-flight map was still locked (`AnalysisInFlight::join`).
+    fn wait(&self, joined_at: u64, background: bool) -> Claim {
+        let mut state = self.state();
+        loop {
+            if let Some(outcome) = state.outcome {
+                let superseded_before_joining =
+                    outcome == AndroidAnalysisOutcome::Superseded && state.supersedes == joined_at;
+                return if superseded_before_joining {
+                    Claim::Stale
+                } else {
+                    Claim::Done(outcome)
+                };
+            }
+            if !background && state.supersedes != joined_at {
+                return Claim::Done(AndroidAnalysisOutcome::Superseded);
+            }
+            state = self
+                .changed
+                .wait(state)
+                .unwrap_or_else(PoisonError::into_inner);
+        }
+    }
+
+    fn note_supersede(&self) {
+        self.state().supersedes += 1;
+        self.changed.notify_all();
+    }
+
+    /// True once any supersede naming another track has reached this decode.
+    fn was_superseded(&self) -> bool {
+        self.state().supersedes > 0
+    }
+
+    fn settle(&self, outcome: AndroidAnalysisOutcome) {
+        self.state().outcome = Some(outcome);
+        self.changed.notify_all();
+    }
+}
 
 /// The track id and sink of whichever item is currently decoding, published
 /// as a single atomic write right before the decode call starts (decision in
@@ -166,15 +301,37 @@ pub(crate) type CurrentDecodeSlot = Mutex<Option<(i64, Arc<AnalysisPcmSink>)>>;
 /// track already being decoded waits for that decode's result rather than
 /// starting a second one.
 pub struct AnalysisInFlight {
-    entries: Mutex<HashMap<i64, AnalysisCell>>,
+    entries: Mutex<HashMap<i64, SharedAnalysisCell>>,
+    decodes: DecodeRegistry,
+}
+
+/// A caller that found the track already being decoded, with the number of
+/// supersedes that had reached the decode before it joined.
+pub(crate) struct Waiter {
+    cell: SharedAnalysisCell,
+    joined_at: u64,
+}
+
+impl Waiter {
+    pub(crate) fn wait(&self, background: bool) -> Claim {
+        self.cell.wait(self.joined_at, background)
+    }
+}
+
+pub(crate) enum Join {
+    Waiting(Waiter),
+    Mine(SharedAnalysisCell),
 }
 
 pub(crate) enum Claim {
     /// Another caller already finished (or finishes while this one waits).
     Done(AndroidAnalysisOutcome),
+    /// The joined decode was superseded before this caller arrived, so its
+    /// `Superseded` is not this caller's answer: the track is wanted again.
+    Stale,
     /// This caller now owns the decode; it must call
     /// [`AnalysisInFlight::finish`] with `cell` when done.
-    Mine(AnalysisCell),
+    Mine(SharedAnalysisCell),
 }
 
 impl AnalysisInFlight {
@@ -182,23 +339,39 @@ impl AnalysisInFlight {
     pub fn new() -> Self {
         Self {
             entries: Mutex::new(HashMap::new()),
+            decodes: DecodeRegistry::default(),
         }
     }
 
-    fn join_or_claim(&self, track_id: i64) -> Claim {
+    /// The decodes running right now, with their live sinks.
+    pub(crate) fn decodes(&self) -> &DecodeRegistry {
+        &self.decodes
+    }
+
+    fn join_or_claim(&self, track_id: i64, background: bool) -> Claim {
+        match self.join(track_id) {
+            Join::Waiting(waiter) => waiter.wait(background),
+            Join::Mine(cell) => Claim::Mine(cell),
+        }
+    }
+
+    /// Joins the decode of `track_id` already running, or claims it.
+    ///
+    /// A joiner reads the decode's supersede count before the map lock is
+    /// released. `supersede_except` counts under that same lock (map, then
+    /// cell, the order used here too), so every supersede is either one this
+    /// caller joined after or one it waits through — never one that slipped in
+    /// between and is miscounted as older than the caller.
+    pub(crate) fn join(&self, track_id: i64) -> Join {
         let mut entries = self.entries.lock().unwrap_or_else(PoisonError::into_inner);
         if let Some(cell) = entries.get(&track_id).cloned() {
+            let joined_at = cell.state().supersedes;
             drop(entries);
-            let (lock, condvar) = &*cell;
-            let mut guard = lock.lock().unwrap_or_else(PoisonError::into_inner);
-            while guard.is_none() {
-                guard = condvar.wait(guard).unwrap_or_else(PoisonError::into_inner);
-            }
-            return Claim::Done(guard.expect("the wait loop only exits once a result is set"));
+            return Join::Waiting(Waiter { cell, joined_at });
         }
-        let cell: AnalysisCell = Arc::new((Mutex::new(None), Condvar::new()));
+        let cell = AnalysisCell::new();
         entries.insert(track_id, Arc::clone(&cell));
-        Claim::Mine(cell)
+        Join::Mine(cell)
     }
 
     fn finish(&self, track_id: i64, cell: &AnalysisCell, outcome: AndroidAnalysisOutcome) {
@@ -209,11 +382,24 @@ impl AnalysisInFlight {
             .lock()
             .unwrap_or_else(PoisonError::into_inner)
             .remove(&track_id);
+        cell.settle(outcome);
+    }
+
+    /// Stops the foreground decode of every track but `keep` and lets go of
+    /// every foreground caller waiting on any other track, the backfill's
+    /// decodes included (those carry on and store). Non-blocking: it only
+    /// flips flags. The cells are marked before the sinks, so a decode that
+    /// registers its sink in between still finds the mark (`decode_one`).
+    pub(crate) fn supersede_except(&self, keep: Option<i64>) {
         {
-            let (lock, condvar) = &**cell;
-            *lock.lock().unwrap_or_else(PoisonError::into_inner) = Some(outcome);
-            condvar.notify_all();
+            let entries = self.entries.lock().unwrap_or_else(PoisonError::into_inner);
+            for (track_id, cell) in entries.iter() {
+                if Some(*track_id) != keep {
+                    cell.note_supersede();
+                }
+            }
         }
+        self.decodes.supersede_foreground_except(keep);
     }
 
     /// True while `track_id` is claimed by an in-progress decode.
@@ -245,9 +431,12 @@ pub(crate) struct AnalysisContext<'a> {
 
 impl AnalysisContext<'_> {
     /// Computes and stores one track's analysis, deduplicating concurrent
-    /// callers for the same id. A foreground caller retries an inherited
-    /// background cancellation for at most three rounds; background callers
-    /// make one attempt. `preempt` is the backfill to cancel if its current
+    /// callers for the same id. A foreground caller retries for at most three
+    /// rounds when the decode it joined was cancelled (a backfill preemption)
+    /// or superseded before it joined (`Claim::Stale`: the supersede was meant
+    /// for an earlier caller); background callers make one attempt. A `Stale`
+    /// on the last round ends as `Cancelled`, retryable, because this caller
+    /// was never superseded. `preempt` is the backfill to cancel if its current
     /// item is a different track (a foreground request only; the backfill's
     /// own worker passes `None` for its own items).
     pub(crate) fn compute(
@@ -266,18 +455,21 @@ impl AnalysisContext<'_> {
             if self.render_data_already_valid(track_id)? {
                 return Ok(AndroidAnalysisOutcome::AlreadyImported);
             }
-            match self.in_flight.join_or_claim(track_id) {
-                Claim::Done(AndroidAnalysisOutcome::Cancelled)
+            match self.in_flight.join_or_claim(track_id, background) {
+                Claim::Done(AndroidAnalysisOutcome::Cancelled) | Claim::Stale
                     if !background && round + 1 < rounds =>
                 {
                     continue;
                 }
+                // Out of rounds on supersedes meant for earlier callers: nobody
+                // superseded this one, so it ends retryable, never final.
+                Claim::Stale => return Ok(AndroidAnalysisOutcome::Cancelled),
                 Claim::Done(outcome) => return Ok(outcome),
                 Claim::Mine(cell) => {
                     if let Some(backfill) = preempt {
                         backfill.preempt_current_unless(track_id);
                     }
-                    let result = self.decode_one(track_id, background, current_slot);
+                    let result = self.decode_one(track_id, background, current_slot, &cell);
                     let outcome_for_waiters = *result
                         .as_ref()
                         .unwrap_or(&AndroidAnalysisOutcome::DecodeFailed);
@@ -305,6 +497,7 @@ impl AnalysisContext<'_> {
         track_id: i64,
         background: bool,
         current_slot: Option<&CurrentDecodeSlot>,
+        cell: &AnalysisCell,
     ) -> Result<AndroidAnalysisOutcome, LibraryError> {
         let decoder = self.decoder.lock().map_err(poisoned)?.clone();
         let Some(decoder) = decoder else {
@@ -315,7 +508,7 @@ impl AnalysisContext<'_> {
         // released before the decode call, per decision 6 of the mother
         // plan: the decoder callback never runs while `reader` or `writer`
         // is held.
-        let (track_uri, fingerprint) = {
+        let (track_uri, fingerprint, expected_frames) = {
             let reader = self.reader.lock().map_err(poisoned)?;
             let track = reprise_core::queries::query_present_track_by_id(&reader, track_id)
                 .map_err(query_error)?
@@ -331,10 +524,25 @@ impl AnalysisContext<'_> {
             let fingerprint = reprise_core::db::track_source_fingerprint(&reader, track_id)
                 .map_err(database_error)?
                 .ok_or(LibraryError::TrackNotFound { track_id })?;
-            (track.path, fingerprint)
+            (
+                track.path,
+                fingerprint,
+                expected_frame_count(track.duration_ms),
+            )
         };
 
         let sink = AnalysisPcmSink::new();
+        // Registered for the whole call, store included, and dropped on every
+        // way out of this function.
+        let _registration =
+            self.in_flight
+                .decodes()
+                .register(track_id, &sink, expected_frames, background);
+        // A supersede that came after this caller's claim but before the sink
+        // was registered marked the cell and found no sink to stop.
+        if !background && cell.was_superseded() {
+            sink.supersede();
+        }
         // `current_slot` gets the track id and the sink together, in one
         // write, right before the decode call starts: this is the only
         // point that publishes "this track is now decoding" to a foreground
@@ -351,9 +559,18 @@ impl AnalysisContext<'_> {
         // Cancellation is decided before anything else: a cancelled decoder
         // may still return `Ok(())` with a truncated stream, and a stream
         // this session never intended to finish must not be stored as if it
-        // had (decision in A3 of the strand file).
-        if sink.is_cancelled() {
-            return Ok(AndroidAnalysisOutcome::Cancelled);
+        // had (decision in A3 of the strand file). The one exception is a
+        // supersede that came after the decoder reached the end of the
+        // stream: nothing was turned away, so the data is whole and its cost
+        // already paid, and it is stored like any finished decode.
+        let superseded_after_the_end =
+            sink.is_superseded() && decode_result.is_ok() && !sink.was_cut_short();
+        if sink.is_cancelled() && !superseded_after_the_end {
+            return Ok(if sink.is_superseded() {
+                AndroidAnalysisOutcome::Superseded
+            } else {
+                AndroidAnalysisOutcome::Cancelled
+            });
         }
         if let Err(error) = decode_result {
             tracing::debug!(track_id, %error, "track analysis decode failed");
@@ -431,3 +648,15 @@ mod tests;
 #[cfg(test)]
 #[path = "compute_retry_tests.rs"]
 mod retry_tests;
+
+#[cfg(test)]
+#[path = "compute_progress_tests.rs"]
+mod progress_tests;
+
+#[cfg(test)]
+#[path = "compute_supersede_tests.rs"]
+mod supersede_tests;
+
+#[cfg(test)]
+#[path = "compute_supersede_race_tests.rs"]
+mod supersede_race_tests;

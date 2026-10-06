@@ -17,4 +17,9 @@ class TrackAnalysisRetryTest {
         assertFalse(trackAnalysisIsNonFinal(null))
         assertTrue(MAX_ANALYSIS_ATTEMPTS == 3)
     }
+
+    @Test
+    fun nav_15e_superseded_is_final() {
+        assertFalse(trackAnalysisIsNonFinal(AndroidAnalysisOutcome.SUPERSEDED))
+    }
 }

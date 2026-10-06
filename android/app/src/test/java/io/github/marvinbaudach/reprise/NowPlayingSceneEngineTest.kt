@@ -4,6 +4,7 @@ import androidx.activity.ComponentActivity
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
@@ -307,6 +308,100 @@ class NowPlayingSceneEngineTest {
         assertNull("the handle clears once the live panel leaves", handle.state)
     }
 
+    @Test
+    fun nav_15d_growing_frames_do_not_reset_the_scene() {
+        val handle = LiveSceneHandle()
+        val analysis = GrowingSpectrogramAnalysis(frameCount = 4)
+        showGrowingScene(handle, analysis)
+        // Deterministic despite the wait: the waits only let composition and the fog's
+        // first resume land. The driver never ticks here — the unbound controller is not
+        // resumed, so `sceneFramesAllowed` is false — and the only stepping of the state
+        // is the test's own, so nothing moves the values compared below in the meantime.
+        compose.waitUntil(timeoutMillis = 5_000) { handle.fog != null && handle.state != null }
+        val first = checkNotNull(handle.state)
+        assertEquals(4, first.frames.frameCount)
+        val before = compose.runOnIdle {
+            first.advanceOilFilmBy(5f)
+            first.advanceTo(3)
+            Triple(first.oilFilmSeconds, first.fogBands.copyOf(), first.motionBands.copyOf())
+        }
+
+        analysis.grow(frameCount = 12)
+        compose.waitUntil(timeoutMillis = 5_000) { handle.state?.frames?.frameCount == 12 }
+
+        assertTrue("the scene state was replaced instead of adopting the frames", handle.state === first)
+        compose.runOnIdle {
+            assertEquals("the oil film restarted", before.first, first.oilFilmSeconds, 0f)
+            assertArrayEquals("the fog envelopes restarted", before.second, first.fogBands, 0f)
+            assertArrayEquals("the motion envelopes restarted", before.third, first.motionBands, 0f)
+        }
+    }
+
+    @Test
+    fun nav_15d_the_scene_keeps_the_decoded_frames_until_the_final_ones_arrive() {
+        val handle = LiveSceneHandle()
+        val analysis = GrowingSpectrogramAnalysis(frameCount = 4)
+        showGrowingScene(handle, analysis)
+        compose.waitUntil(timeoutMillis = 5_000) { handle.state?.frames?.frameCount == 4 }
+
+        // The decode ended and the final spectrogram is not delivered yet.
+        analysis.endWithoutResult()
+        compose.waitForIdle()
+
+        assertEquals(
+            "the scene fell back to no frames between the partial and the final analysis",
+            4,
+            handle.state?.frames?.frameCount,
+        )
+    }
+
+    @Test
+    fun nav_15d_only_the_live_panel_asks_for_the_decoded_part() {
+        val handle = LiveSceneHandle()
+        val analysis = GrowingSpectrogramAnalysis(frameCount = 4)
+        val live = sceneEngineTrack(id = 17)
+        val neighbour = sceneEngineTrack(id = 18)
+        showGrowingScene(handle, analysis, listOf(PlayPanel(0, live), PlayPanel(1, neighbour)))
+        compose.waitUntil(timeoutMillis = 5_000) { handle.state?.frames?.frameCount == 4 }
+        compose.waitForIdle()
+
+        assertTrue("the neighbour panel was never composed", neighbour.id in analysis.spectrogramTrackIds)
+        assertTrue("the live panel never asked", live.id in analysis.polledTrackIds)
+        assertFalse("a neighbour panel polled", neighbour.id in analysis.polledTrackIds)
+    }
+
+    private fun showGrowingScene(
+        handle: LiveSceneHandle,
+        analysis: GrowingSpectrogramAnalysis,
+        panels: List<PlayPanel> = listOf(PlayPanel(0, sceneEngineTrack())),
+    ) {
+        val surfaceState = MobileSurfaceViewModel()
+        compose.setContent {
+            val theme = MobileThemeSelection(
+                palette = MobileTheme.NOCTURNE,
+                colorScheme = AndroidColorScheme.SYSTEM,
+                dynamicAvailable = false,
+            )
+            RepriseTheme(theme, darkPalette = true) {
+                CompositionLocalProvider(
+                    LocalAmbientMotionController provides AmbientMotionController(),
+                    LocalVisualSceneEngineFactory provides RecordingSceneEngineFactory(),
+                    LocalTrackAnalysis provides analysis,
+                ) {
+                    NowPlayingScene(
+                        track = panels.first().track,
+                        playback = PlaybackUiState(state = AndroidPlaybackState.PLAYING),
+                        surfaceState = surfaceState,
+                        panels = panels,
+                        visualizerOpacity = 0f,
+                        visualizerLight = 0f,
+                        liveScene = handle,
+                    )
+                }
+            }
+        }
+    }
+
     @Composable
     private fun CoverScene(
         factory: RecordingSceneEngineFactory,
@@ -372,6 +467,51 @@ class NowPlayingSceneEngineTest {
                 )
             }
         }
+    }
+}
+
+/** A track the phone is still decoding: only [loadProgress] answers, and the answer grows. */
+private class GrowingSpectrogramAnalysis(frameCount: Int) : TrackAnalysisPort {
+    private var frameCount by mutableIntStateOf(frameCount)
+    private var decoding = true
+    val polledTrackIds = mutableSetOf<Long>()
+    val spectrogramTrackIds = mutableSetOf<Long>()
+    override var revision by mutableLongStateOf(0L)
+        private set
+
+    fun grow(frameCount: Int) {
+        this.frameCount = frameCount
+        revision += 1L
+    }
+
+    fun endWithoutResult() {
+        decoding = false
+        revision += 1L
+    }
+
+    override fun prepare(trackId: Long) = Unit
+
+    override fun loadBars(trackId: Long, count: Int, deliver: (List<SpectralBar>?) -> Unit) =
+        deliver(null)
+
+    override fun loadSpectrogram(trackId: Long, deliver: (SpectrogramFrames?) -> Unit) {
+        spectrogramTrackIds += trackId
+        deliver(null)
+    }
+
+    override fun loadProgress(
+        trackId: Long,
+        count: Int,
+        deliver: (PartialTrackAnalysis?) -> Unit,
+    ) {
+        polledTrackIds += trackId
+        deliver(
+            PartialTrackAnalysis(
+                coveredFraction = frameCount / 20f,
+                bars = emptyList(),
+                frames = SpectrogramFrames(24, 20, ByteArray(24 * frameCount) { 128.toByte() }),
+            ).takeIf { decoding },
+        )
     }
 }
 
