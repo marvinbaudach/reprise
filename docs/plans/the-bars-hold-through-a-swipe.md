@@ -2,7 +2,7 @@
 slug: the-bars-hold-through-a-swipe
 worktree: /home/marvin/Projects/reprise-the-bars-hold-through-a-swipe
 branch: feature/the-bars-hold-through-a-swipe
-phase: planned
+phase: refactored
 codex_session:
 created: 2026-10-06
 ---
