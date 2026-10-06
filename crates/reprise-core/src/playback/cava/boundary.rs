@@ -87,7 +87,7 @@ enum Phase {
     /// Nothing is on screen to continue: the gain is set every frame.
     Measuring,
     /// A shape is on screen and its gain is kept, as a prior, until a window of
-    /// the new stream says it is off by more than [`BRAKE_LEVEL`].
+    /// the new stream says it is off by more than [`CARRY_BAND`].
     Waiting,
     Braking,
     Done,

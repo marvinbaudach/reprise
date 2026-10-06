@@ -201,10 +201,11 @@ impl CavaBarProcessor {
     /// The sensitivity is measured again, with the one that drew the shape kept
     /// as a prior: a full FFT window of the new audio decides whether it is off
     /// by more than a factor of two (it is replaced) or not (it stays), and a
-    /// frame drawn at twice full height or more brakes it for a few seconds.
-    /// `cavacore`'s own creep runs throughout. A freshly constructed processor
-    /// measures from nothing instead of `cavacore`'s cold climb. The measure is
-    /// in `boundary`'s module docs.
+    /// frame drawn at twice full height or more (1.3 times in the first half
+    /// second) brakes it for about seven seconds. `cavacore`'s own creep runs
+    /// throughout. A freshly constructed processor measures from nothing
+    /// instead of `cavacore`'s cold climb. The measure is in `boundary`'s
+    /// module docs.
     pub fn reset_stream(&mut self) {
         self.input_buffer.fill(0.0);
         self.smoother.rearm_boundary();

@@ -239,48 +239,54 @@ fn ac_29_silent_gaps_inside_a_song_do_not_keep_the_boundary_measuring() {
 
 // A song that opens quietly and then drops in at full level: the gain is
 // measured on the intro, so the first loud bar has to pull it down at once
-// instead of pinning the bars for as long as 2 % steps take.
+// instead of pinning the bars for as long as 2 % steps take. The intros run up
+// to six seconds, inside the seven that braking lasts; a longer one is a known
+// gap that nothing here claims.
 #[test]
 fn ac_29_a_loud_body_after_a_quiet_intro_does_not_pin_the_bars() {
-    const INTRO_FRAMES: usize = 150;
+    const INTRO_SECONDS: [f32; 2] = [2.5, 6.0];
     const JUDGED_AFTER_THE_STEP: usize = 2 * FRAMES_PER_SECOND;
     const INTRO_STEPS_DB: [f32; 3] = [14.0, 20.0, 30.0];
     const PINNED_SLACK: usize = 40;
 
     let reference = Measure::of(&settled_reference(&loud(), 0.0)[..JUDGED_AFTER_THE_STEP]);
-    for step_db in INTRO_STEPS_DB {
-        for previous in [Some(loud()), None] {
-            let mut processor = processor();
-            if let Some(previous) = previous {
-                warm(&mut processor, &previous, 0.0);
-                processor.reset_stream();
+    for intro_seconds in INTRO_SECONDS {
+        let intro_frames = (intro_seconds * FRAMES_PER_SECOND as f32) as usize;
+        for step_db in INTRO_STEPS_DB {
+            for previous in [Some(loud()), None] {
+                let mut processor = processor();
+                if let Some(previous) = previous {
+                    warm(&mut processor, &previous, 0.0);
+                    processor.reset_stream();
+                }
+                let intro = loud().louder_by(-step_db);
+                let frames: Vec<Frame> = (0..intro_frames + JUDGED_AFTER_THE_STEP)
+                    .map(|frame| {
+                        let music = if frame < intro_frames {
+                            &intro
+                        } else {
+                            &loud()
+                        };
+                        let bars = processor.process(&music.mono(frame * HOP, HOP));
+                        bars.try_into().unwrap()
+                    })
+                    .collect();
+
+                let after_the_step = Measure::of(&frames[intro_frames..]);
+
+                assert_eq!(
+                    after_the_step.wall_frames, 0,
+                    "a {intro_seconds} s intro {step_db} dB down walled the drop: \
+                     {after_the_step:?}"
+                );
+                assert!(
+                    after_the_step.pinned_frames <= reference.pinned_frames + PINNED_SLACK,
+                    "a {intro_seconds} s intro {step_db} dB down pinned {} frames after the \
+                     drop against the reference's {}",
+                    after_the_step.pinned_frames,
+                    reference.pinned_frames
+                );
             }
-            let intro = loud().louder_by(-step_db);
-            let frames: Vec<Frame> = (0..INTRO_FRAMES + JUDGED_AFTER_THE_STEP)
-                .map(|frame| {
-                    let music = if frame < INTRO_FRAMES {
-                        &intro
-                    } else {
-                        &loud()
-                    };
-                    let bars = processor.process(&music.mono(frame * HOP, HOP));
-                    bars.try_into().unwrap()
-                })
-                .collect();
-
-            let after_the_step = Measure::of(&frames[INTRO_FRAMES..]);
-
-            assert_eq!(
-                after_the_step.wall_frames, 0,
-                "an intro {step_db} dB down walled the drop: {after_the_step:?}"
-            );
-            assert!(
-                after_the_step.pinned_frames <= reference.pinned_frames + PINNED_SLACK,
-                "an intro {step_db} dB down pinned {} frames after the drop against the \
-                 reference's {}",
-                after_the_step.pinned_frames,
-                reference.pinned_frames
-            );
         }
     }
 }
@@ -325,5 +331,84 @@ fn ac_29_a_first_window_that_under_reads_the_song_does_not_pin_the_bars() {
             control.pinned_frames
         );
         assert_eq!(measured.wall_frames, 0);
+    }
+}
+
+/// Plays `music` from the boundary for `seconds` and returns the gain after
+/// every frame.
+fn gains_while_playing(
+    processor: &mut CavaBarProcessor,
+    music: &SyntheticMusic,
+    seconds: usize,
+) -> Vec<f32> {
+    (0..seconds * FRAMES_PER_SECOND)
+        .map(|frame| {
+            processor.process(&music.mono(boundary_sample(0.0) + frame * HOP, HOP));
+            processor.sensitivity()
+        })
+        .collect()
+}
+
+// Silence is not evidence that the song is quiet: the gain a processor has
+// reached stays put through ten seconds of nothing, settled, still braking a
+// fresh start, and still braking after a track change.
+#[test]
+fn ac_29_silence_does_not_raise_the_sensitivity() {
+    const SILENT_FRAMES: usize = 10 * FRAMES_PER_SECOND;
+    const STILL_BRAKING_SECONDS: usize = 3;
+    let silence = vec![0.0; HOP];
+
+    let settled = || {
+        let mut processor = processor();
+        warm(&mut processor, &loud(), 0.0);
+        processor
+    };
+    let braking_a_fresh_start = || {
+        let mut processor = processor();
+        gains_while_playing(&mut processor, &loud(), STILL_BRAKING_SECONDS);
+        processor
+    };
+    let braking_a_track_change = || {
+        let mut processor = settled();
+        processor.reset_stream();
+        gains_while_playing(&mut processor, &quiet(), STILL_BRAKING_SECONDS);
+        processor
+    };
+    for (label, mut processor) in [
+        ("settled", settled()),
+        ("braking a fresh start", braking_a_fresh_start()),
+        ("braking a track change", braking_a_track_change()),
+    ] {
+        let before = processor.sensitivity();
+        for _ in 0..SILENT_FRAMES {
+            processor.process(&silence);
+        }
+        assert_eq!(
+            processor.sensitivity(),
+            before,
+            "{label}: ten seconds of silence moved the gain"
+        );
+    }
+}
+
+// The braking span ends about seven seconds in, by the clock of the audio. The
+// hand-over to the creep must not move the gain: the stretch around it steps no
+// further than the creep itself does.
+#[test]
+fn ac_29_the_gain_does_not_jump_when_the_braking_span_ends() {
+    const FROM_SECOND: usize = 6;
+    const TO_SECOND: usize = 8;
+    const LARGEST_STEP_DOWN: f32 = 0.97;
+    const LARGEST_STEP_UP: f32 = 1.002;
+
+    for music in [loud(), quiet()] {
+        let gains = gains_while_playing(&mut processor(), &music, TO_SECOND + 1);
+        for frame in FROM_SECOND * FRAMES_PER_SECOND..TO_SECOND * FRAMES_PER_SECOND {
+            let step = gains[frame] / gains[frame - 1];
+            assert!(
+                (LARGEST_STEP_DOWN..=LARGEST_STEP_UP).contains(&step),
+                "the gain stepped by {step:.4} at frame {frame}"
+            );
+        }
     }
 }

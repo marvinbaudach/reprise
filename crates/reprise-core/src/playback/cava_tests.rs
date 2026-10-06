@@ -63,7 +63,10 @@ fn ac_29_cava_bars_match_the_cavacore_reference_after_calibration() {
     // its own and not only through the bars it moves (`sens.txt` rows 201 and
     // 301 of the oracle's fourth output). Relative tolerance: both sides round
     // the same decisions, one in `f32`, one in `double`.
+    // `sensitivity()` is a debug-build seam, so a release build checks the bars alone.
+    #[cfg(debug_assertions)]
     const CAVACORE_GAINS: [(usize, f32); 2] = [(200, 0.774_628_73), (300, 0.806_024_94)];
+    #[cfg(debug_assertions)]
     const GAIN_TOLERANCE: f32 = 1.0e-4;
     const REFERENCE: [[f32; 64]; 4] = [
         [
@@ -131,6 +134,7 @@ fn ac_29_cava_bars_match_the_cavacore_reference_after_calibration() {
             .collect();
         processor.process_into(&chunk, &mut bars);
 
+        #[cfg(debug_assertions)]
         if let Some((_, expected)) = CAVACORE_GAINS.iter().find(|(at, _)| *at == frame) {
             let actual = processor.sensitivity();
             assert!(

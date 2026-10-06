@@ -4721,16 +4721,22 @@ STYLE-1).
   pipeline stage and the core processor, for a fresh start, a song 14 dB louder,
   one 14 dB quieter, one of the same loudness, an Android 44.1 to 48 kHz
   change, a desktop seek and a resume, with boundaries landing at several
-  points inside a beat: from 0.3 s after the boundary the drawn level is
-  within 0.7 to 1.4 times that of an engine that has played the same audio for
-  long enough to have settled; no frame is a wall of pinned bars; the frame's
+  points inside a beat: over the second that starts 0.3 s after the boundary
+  the drawn level averages within 0.7 to 1.4 times that of an engine that has
+  played the same audio for long enough to have settled, and no tenth of a
+  second of it strays further than 0.7 to 2.3 times for a fresh start, 0.55 to
+  2.0 times for a different song, or 0.85 to 1.2 times for a boundary that
+  continues the song; no frame is a wall of pinned bars; the frame's
   breathing depth and how often the whole spectrum moves together stay close
   to that reference over the first second and after it; a boundary that
   continues the song on screen never shrinks the frame or steps it; the
   level three to ten seconds on equals that of a run that never had the
   boundary; silent chunks inside a song do not keep a boundary measuring; a
-  resume keeps a quiet passage quiet; and a loud body after an intro up to
-  30 dB quieter does not wall.
+  resume keeps a quiet passage quiet; silence never raises the sensitivity,
+  whether the boundary is settled or still braking; and a loud body after an
+  intro of up to six seconds and up to 30 dB quieter does not wall. A quiet
+  intro or fade-in that outlasts the seven seconds of braking is a known gap
+  that no test covers.
 
 - **AC-24** [active] [gtk] — The reactive light lives on the panel's blurred
   cover bloom, the cover in the player bar and the playhead, nowhere else; the

@@ -14,6 +14,13 @@ const STEADY_RAW: f32 = 0.05;
 const ONE_CREEP_STEP: f32 = 1.002;
 /// Frames the braking span lasts at this cadence.
 const BRAKING_FRAMES: usize = BRAKING_WINDOWS * WINDOW_SAMPLES / SAMPLES;
+/// The cadence in frames a second, written out so the span below is pinned by
+/// seconds and not by the constant that sets it.
+const FRAMES_PER_SECOND: usize = 60;
+/// The span after the window is full lasts about seven seconds: a surge this
+/// long after it is still braked, one this long after it is the creep's.
+const SECONDS_STILL_BRAKING: usize = 6;
+const SECONDS_PAST_BRAKING: usize = 8;
 
 fn smoother() -> Smoother {
     Smoother::new(64, 0.77, 1, WINDOW_SAMPLES)
@@ -312,4 +319,119 @@ fn bars_still_falling_from_the_previous_song_keep_their_units_when_the_gain_jump
         smoother.sensitivity > old_gain * 2.0,
         "the fixture never raised the gain, so it proved nothing"
     );
+}
+
+/// A surge frame well above the 2x brake level, whatever the gain.
+const SURGE: f32 = STEADY_RAW * 4.0 * BRAKE_LEVEL;
+
+/// The gain, right before and right after one surge frame, `seconds` after a
+/// measurement that ended `FRAMES_BEFORE_THE_WINDOW_IS_FULL + 3` frames ago.
+fn surge_after(seconds: usize) -> (f32, f32) {
+    let mut smoother = measured();
+    let before = gain_after(&mut smoother, STEADY_RAW, seconds * FRAMES_PER_SECOND);
+    frame(&mut smoother, SURGE);
+    (before, smoother.sensitivity)
+}
+
+#[test]
+fn a_surge_six_seconds_after_the_window_is_still_braked() {
+    let (before, after) = surge_after(SECONDS_STILL_BRAKING);
+
+    assert!(
+        after <= before / BRAKE_LEVEL / 4.0 * 1.05,
+        "six seconds in, a surge was left to the creep: {after} from {before}"
+    );
+}
+
+#[test]
+fn a_surge_eight_seconds_after_the_window_is_the_creeps_to_handle() {
+    let (before, after) = surge_after(SECONDS_PAST_BRAKING);
+
+    assert!(
+        after >= before * 0.97,
+        "eight seconds in, braking was still armed: {after} from {before}"
+    );
+}
+
+#[test]
+fn a_braked_gain_lands_the_surge_at_the_target_height() {
+    // 0.85 is written out: the target is a rule of AC-29, not a tunable.
+    const LANDS_AT: f32 = 0.85;
+    const SETTLED_AFTER_FRAMES: usize = 15;
+    const TOLERANCE: f32 = 0.04;
+    let mut smoother = measured();
+
+    frame(&mut smoother, SURGE);
+    let mut height = 0.0;
+    for _ in 0..SETTLED_AFTER_FRAMES {
+        height = frame_max(&frame(&mut smoother, SURGE));
+    }
+
+    assert!(
+        (height - LANDS_AT).abs() <= TOLERANCE,
+        "the braked gain draws the surge at {height:.3}, not {LANDS_AT}"
+    );
+}
+
+#[test]
+fn the_gain_never_jumps_across_the_end_of_the_braking_span() {
+    const SURGE_EVERY_FRAMES: usize = 15;
+    const MODEST_SURGE: f32 = 1.5;
+    const FIRST_SURGE_FRAME: usize = 45;
+    let mut smoother = smoother();
+
+    // Frame by frame through the real transition, with a modest surge now and
+    // then that no brake takes, so a hand-over that re-measured or braked would
+    // show as a step. Seven seconds is inside the run: the window fills in the
+    // first eleven frames, the span lasts 410 after it.
+    let mut gain = smoother.sensitivity;
+    for index in 0..(SECONDS_PAST_BRAKING + 1) * FRAMES_PER_SECOND {
+        let surging = index >= FIRST_SURGE_FRAME && index % SURGE_EVERY_FRAMES == 0;
+        frame(
+            &mut smoother,
+            if surging {
+                STEADY_RAW * MODEST_SURGE
+            } else {
+                STEADY_RAW
+            },
+        );
+        if index > FRAMES_BEFORE_THE_WINDOW_IS_FULL {
+            let step = smoother.sensitivity / gain;
+            assert!(
+                (0.97..=ONE_CREEP_STEP).contains(&step),
+                "the gain stepped by {step} at frame {index}"
+            );
+        }
+        gain = smoother.sensitivity;
+    }
+}
+
+#[test]
+fn silence_does_not_raise_the_gain_once_the_span_is_over() {
+    const SILENT_FRAMES: usize = 10 * FRAMES_PER_SECOND;
+    let mut smoother = smoother();
+    let settled = gain_after(
+        &mut smoother,
+        STEADY_RAW,
+        SECONDS_PAST_BRAKING * FRAMES_PER_SECOND,
+    );
+
+    for _ in 0..SILENT_FRAMES {
+        silent_frame(&mut smoother);
+    }
+
+    assert_eq!(smoother.sensitivity, settled, "silence moved the gain");
+}
+
+#[test]
+fn silence_does_not_raise_the_gain_while_braking() {
+    const SILENT_FRAMES: usize = 5 * FRAMES_PER_SECOND;
+    let mut smoother = measured();
+    let before = smoother.sensitivity;
+
+    for _ in 0..SILENT_FRAMES {
+        silent_frame(&mut smoother);
+    }
+
+    assert_eq!(smoother.sensitivity, before, "silence moved the gain");
 }
