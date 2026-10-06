@@ -135,3 +135,20 @@ step 3 landed as #1118, step 2 (the phone pass) is still open.
    Android Auto via the Desktop Head Unit if available (otherwise record as manual).
 3. UX rules in `docs/ux-rules.md` for deferred delete / undo (section G or N), the widget and
    Auto browse tree (section H), written by Opus in a docs PR after both land.
+
+## Device pass (2026-10-06, Pixel 10 Pro XL, GrapheneOS, API 37, release build)
+
+- Deferred delete: "1 track will be deleted" with a separate Undo button; the row leaves without
+  moving the list; Undo restores it. Only the Undo path was exercised: the file was still on
+  disk after the window.
+- Queue Undo: "Removed from queue" restores the row at its old position, also with the
+  snackbar over the Now Playing sheet.
+- Notification: the media card carries the cover.
+- Widgets: both placements, set up on a temporary Launcher3 home (Niagara cannot host them
+  without Pro), stayed on their loading layout. R8 had stripped the constructor of WorkManager's
+  `OverwritingInputMerger`; #1151 keeps it. With that build both render, a cold tap plays
+  without opening the app, and the cover opens it. After a force-stop the first tap only starts
+  the process; after an ordinary process death it plays.
+- Not verified here: #998 (no track on the phone has a downloadable cover that is not cached
+  yet — it needs the emulator recipe in the issue), Android Auto (no DHU), Android ≤12 (no
+  device).
