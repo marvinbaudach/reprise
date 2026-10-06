@@ -11,6 +11,8 @@
 //! `library_exclusions` gains the same `segment_index`, so removing one track of
 //! a CUE file from the library hides that track and not its siblings.
 
+use std::collections::BTreeSet;
+
 use rusqlite::{Connection, Transaction};
 
 const VERSION: i64 = 90;
@@ -145,6 +147,7 @@ fn has_column(conn: &Connection, table: &str, column: &str) -> Result<bool, rusq
 
 fn rebuild(conn: &Connection) -> Result<(), rusqlite::Error> {
     let transaction = conn.unchecked_transaction()?;
+    let dangling_before = dangling_references(&transaction)?;
     let replay = schema_to_replay(&transaction)?;
     transaction.execute_batch(CREATE_TRACKS)?;
     transaction.execute_batch(&format!(
@@ -157,15 +160,25 @@ fn rebuild(conn: &Connection) -> Result<(), rusqlite::Error> {
     }
     transaction.execute_batch(REBUILD_EXCLUSIONS)?;
     transaction.execute_batch(INVALIDATE_SEGMENT_ANALYSIS)?;
-    let violations: i64 =
-        transaction.query_row("SELECT count(*) FROM pragma_foreign_key_check", [], |row| {
-            row.get(0)
-        })?;
-    if violations > 0 {
+    // A reference that already dangled before the rebuild, left by some older
+    // version with the keys off, is not the rebuild's doing and must not keep the
+    // database from opening. Only a reference the rebuild broke stops it.
+    if !dangling_references(&transaction)?.is_subset(&dangling_before) {
         return Err(misuse("the tracks rebuild left dangling references"));
     }
     transaction.pragma_update(None, "user_version", VERSION)?;
     transaction.commit()
+}
+
+/// Every row whose foreign key points at nothing, as its table, rowid and the
+/// number of the key it breaks.
+fn dangling_references(
+    transaction: &Transaction<'_>,
+) -> Result<BTreeSet<(String, Option<i64>, i64)>, rusqlite::Error> {
+    let mut statement =
+        transaction.prepare("SELECT \"table\", rowid, fkid FROM pragma_foreign_key_check")?;
+    let rows = statement.query_map([], |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)))?;
+    rows.collect()
 }
 
 /// A trigger on another table can read `tracks` (`listen_events_fill_snapshot`

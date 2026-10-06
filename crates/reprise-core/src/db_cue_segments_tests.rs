@@ -271,6 +271,33 @@ fn exclusions_are_per_segment_and_survive_the_rebuild() {
 }
 
 #[test]
+fn a_dangling_reference_the_rebuild_did_not_make_does_not_stop_it() {
+    let conn = at_v89();
+    conn.execute_batch(SEED).unwrap();
+    conn.pragma_update(None, "foreign_keys", "OFF").unwrap();
+    conn.execute(
+        "INSERT INTO playlist_tracks (playlist_id, track_id, position) VALUES (1, 404, 2)",
+        [],
+    )
+    .unwrap();
+    conn.pragma_update(None, "foreign_keys", "ON").unwrap();
+
+    super::migrate_v90(&conn).unwrap();
+
+    assert_eq!(
+        conn.query_row("PRAGMA user_version", [], |row| row.get::<_, i64>(0))
+            .unwrap(),
+        90
+    );
+    assert_eq!(count(&conn, "tracks"), 3);
+    assert_eq!(
+        count(&conn, "playlist_tracks"),
+        3,
+        "the orphan is left alone"
+    );
+}
+
+#[test]
 fn running_the_migration_again_changes_nothing() {
     let conn = at_v89();
     conn.execute_batch(SEED).unwrap();
