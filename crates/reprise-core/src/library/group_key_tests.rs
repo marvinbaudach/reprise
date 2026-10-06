@@ -232,12 +232,88 @@ fn normalize_group_key_is_idempotent() {
         "Bjo\u{308}rk",
         "\u{308}",
         "  ÉLAN   VITAL ",
+        "Jay\u{2010}Z",
+        "Guns N\u{b4} Roses",
+        "\u{2033}Live\u{2033}",
+        "\u{2034}",
+        "A \u{b4}",
     ];
 
     for fixture in fixtures {
         let once = normalize_group_key(fixture);
         assert_eq!(normalize_group_key(&once), once, "fixture: {fixture:?}");
     }
+}
+
+/// Every character the fold maps, against the ASCII form it must land on. The
+/// cover matcher folds the same table, so a change here is a change there.
+#[test]
+fn normalize_group_key_folds_typographic_dashes_apostrophes_and_quotes() {
+    let dashes = [
+        '\u{2010}', '\u{2011}', '\u{2012}', '\u{2013}', '\u{2014}', '\u{2015}', '\u{2212}',
+        '\u{fe58}', '\u{fe63}', '\u{ff0d}',
+    ];
+    for dash in dashes {
+        assert_eq!(
+            normalize_group_key(&format!("Jay{dash}Z")),
+            "jay-z",
+            "dash U+{:04X}",
+            u32::from(dash)
+        );
+    }
+    let apostrophes = [
+        '\u{2018}', '\u{2019}', '\u{201a}', '\u{201b}', '\u{2032}', '\u{2bc}', '`', '\u{b4}',
+    ];
+    for apostrophe in apostrophes {
+        assert_eq!(
+            normalize_group_key(&format!("Guns N{apostrophe} Roses")),
+            "guns n' roses",
+            "apostrophe U+{:04X}",
+            u32::from(apostrophe)
+        );
+    }
+    for quote in ['\u{201c}', '\u{201d}', '\u{201e}', '\u{201f}', '\u{2033}'] {
+        assert_eq!(
+            normalize_group_key(&format!("{quote}Live{quote}")),
+            "\"live\"",
+            "quote U+{:04X}",
+            u32::from(quote)
+        );
+    }
+}
+
+#[test]
+fn dedup_folds_typographic_punctuation() {
+    let groups = fold_groups(&[
+        input("Rock \u{2013} Live", 3),
+        input("Rock - Live", 2),
+        input("Guns N\u{2019} Roses", 2),
+        input("Guns N' Roses", 1),
+        input("\u{201c}Heroes\u{201d}", 2),
+        input("\"Heroes\"", 1),
+    ]);
+
+    assert_eq!(groups.len(), 3);
+    assert!(groups.iter().all(|group| group.variant_count == 2));
+}
+
+/// Folding is exactly the table: a dash is not a space, an apostrophe is not
+/// a double quote, and the digits around a dash still have to match.
+#[test]
+fn dedup_does_not_fold_what_is_merely_similar_to_typographic_punctuation() {
+    let groups = fold_groups(&[
+        input("Jay-Z", 1),
+        input("Jay Z", 1),
+        input("JayZ", 1),
+        input("Guns N' Roses", 1),
+        input("Guns N Roses", 1),
+        input("Say \"Hi\"", 1),
+        input("Say 'Hi'", 1),
+        input("Selected Ambient Works 85\u{2013}92", 1),
+        input("Selected Ambient Works 85\u{2013}93", 1),
+    ]);
+
+    assert_eq!(groups.len(), 9);
 }
 
 fn input(raw: &'static str, plays: i64) -> GroupInput<'static> {

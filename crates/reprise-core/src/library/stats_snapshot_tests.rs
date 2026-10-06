@@ -6,6 +6,9 @@ use crate::library::group_key::GroupKind;
 use crate::library::stats_period::{Bucket, Granularity, StatsPeriod};
 use crate::library::stats_screen::{group_track_ids, ListenRow};
 
+#[path = "stats_snapshot_punctuation_tests.rs"]
+mod punctuation_tests;
+
 const NOW_2026_07_19: i64 = 1_784_424_000;
 
 #[test]

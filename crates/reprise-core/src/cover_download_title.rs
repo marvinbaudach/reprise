@@ -1,28 +1,14 @@
 use unicode_normalization::UnicodeNormalization;
 
+use crate::punctuation_fold::{fold_typographic_punctuation, is_dash};
+
 pub(super) fn match_key(value: &str) -> String {
-    let mut folded = String::with_capacity(value.len());
-    for character in value.nfc() {
-        match character {
-            character if is_dash(character) => folded.push('-'),
-            '’' | '‘' | '‚' | '‛' | '′' | 'ʼ' | '`' | '´' => folded.push('\''),
-            '“' | '”' | '„' | '‟' | '″' => folded.push('"'),
-            '…' => folded.push_str("..."),
-            character => folded.push(character),
-        }
-    }
-    folded
+    let composed: String = value.nfc().collect();
+    fold_typographic_punctuation(&composed)
         .split_whitespace()
         .collect::<Vec<_>>()
         .join(" ")
         .to_lowercase()
-}
-
-fn is_dash(character: char) -> bool {
-    matches!(
-        character,
-        '-' | '‐' | '‑' | '‒' | '–' | '—' | '―' | '−' | '﹘' | '﹣' | '－'
-    )
 }
 
 pub(super) fn strip_release_decoration(album: &str) -> Option<String> {

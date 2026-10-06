@@ -4365,9 +4365,17 @@ property is set and yet nothing happens.
   use **one single** key resolution — never a second formula per caller.
   **The name first:** trim, Unicode lowercasing (`str::to_lowercase`, so
   beyond ASCII, but no full casefold — "Straße" stays separate from
-  "STRASSE"), whitespace collapse, and diacritics folding (NFKD without
-  combining marks). "Lorna Shore", "lorna shore", and "Lorna Shore " are
-  thus one entry with one sum. **Only then the MBID, and only within the
+  "STRASSE"), whitespace collapse, diacritics folding (NFKD without
+  combining marks), and typographic punctuation folding: these dashes
+  (hyphen U+2010–2015, minus U+2212 and the small and full-width forms)
+  count as `-`, these apostrophes and primes (`‘ ’ ‚ ‛ ′ ʼ`, the backtick,
+  `´`) as `'`, these double quotes (`“ ” „ ‟ ″`) as `"`. The same table
+  serves the cover lookup's title match. "Lorna Shore", "lorna shore",
+  and "Lorna Shore " are thus one entry with one sum, and so are "Rock –
+  Live" and "Rock - Live", or "Guns N’ Roses" and "Guns N' Roses". The
+  fold maps characters onto each other and never deletes one: "Jay-Z"
+  stays separate from "Jay Z" and "JayZ", and `'` stays separate from
+  `"`. **Only then the MBID, and only within the
   name group:** it is the stable identity of this group and merges further
   name groups with the same identity; but it must **never split** a name
   group, because MBIDs are sparsely populated and typically attach to
@@ -4392,6 +4400,11 @@ property is set and yet nothing happens.
   least two spellings, a subtle hint at the list entry points this out and
   leads into the multi-tag editor of the affected tracks; unifying remains
   an invitation, never an automatic write.
+  *Amended 2026-10-06 (#1065): the name stage also folds typographic
+  punctuation, so the Library Doctor's local grouping, which uses the same
+  key (DOC-1a), follows. Tests:
+  `stats_9_typographic_punctuation_folds_in_artists_and_genres`,
+  `stats_9_album_titles_fold_typographic_dashes`.*
 - **STATS-10** [active] [gtk] — My Stats tells its story in a fixed order
   from top to bottom: header row (title, optional "New this year" badge,
   period selection) · hero (total figure, subline, KPI row) · weekly chart

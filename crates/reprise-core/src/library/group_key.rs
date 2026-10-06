@@ -2,6 +2,8 @@ use std::collections::{BTreeMap, BTreeSet, HashMap};
 
 use unicode_normalization::{char::is_combining_mark, UnicodeNormalization};
 
+use crate::punctuation_fold::fold_typographic_punctuation;
+
 /// The metadata family being grouped by the stats screen.
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
 pub enum GroupKind {
@@ -18,13 +20,23 @@ pub enum GroupKind {
 /// of the same one. STATS-9 states this limit rather than implying a fold the
 /// code does not perform. Note that "STRAẞE" (U+1E9E) *does* fold, because
 /// `to_lowercase` maps capital sharp s to `ß`.
+///
+/// Typographic dashes, apostrophes and quotes fold to their ASCII form through
+/// the table the cover matcher shares. The fold runs before the NFKD step,
+/// because NFKD would turn `´` into a space plus a combining acute and the
+/// mark filter would then leave only the space. It runs once more after it,
+/// because NFKD also produces foldable characters: `‴` becomes three primes.
+/// That keeps the punctuation fold itself idempotent. It does not make the
+/// whole key idempotent: other code points still change under a second NFKD
+/// pass, which predates the punctuation fold.
 pub fn normalize_group_key(raw: &str) -> String {
-    let lowered = raw.trim().to_lowercase();
+    let lowered = fold_typographic_punctuation(raw.trim()).to_lowercase();
     let collapsed = lowered.split_whitespace().collect::<Vec<_>>().join(" ");
-    collapsed
+    let decomposed: String = collapsed
         .nfkd()
         .filter(|c| !is_combining_mark(*c))
-        .collect()
+        .collect();
+    fold_typographic_punctuation(&decomposed)
 }
 
 /// One raw observation feeding the grouping fold.
