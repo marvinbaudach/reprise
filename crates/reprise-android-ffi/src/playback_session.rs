@@ -580,8 +580,14 @@ impl AndroidPlaybackSession {
         Ok(())
     }
 
+    /// PLAY-8b: on the last track with Repeat off, Next does nothing, like
+    /// Previous on the first. [`Self::skip_current_or_stop`] is the variant
+    /// that still leaves the track.
     pub fn next(&self) -> Result<(), AndroidPlaybackError> {
         if self.inner.forward_from_history()? {
+            return Ok(());
+        }
+        if !self.inner.lock()?.queue.has_manual_next() {
             return Ok(());
         }
         self.move_playhead(Queue::next_manual)

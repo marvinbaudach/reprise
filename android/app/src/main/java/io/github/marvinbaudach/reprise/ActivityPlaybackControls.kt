@@ -53,6 +53,10 @@ internal class ActivityPlaybackControls(
 
     override fun next() = command("skip to the next track") { next() }
 
+    override fun skipCurrentOrStop() = command("move on from the deleted track") {
+        skipCurrentOrStop()
+    }
+
     override fun previous() = command("return to the previous track") { previous() }
 
     override fun previousInQueueOrder() = command("return to the previous queue track") {

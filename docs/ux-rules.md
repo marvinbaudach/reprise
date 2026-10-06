@@ -469,6 +469,20 @@ result.
   track, playback ends with Repeat off unless an explicit manual entry or
   PLAY-11's new full-library continuation follows; queue hygiene is governed
   by PLAY-5a/5b/5c.
+- **PLAY-8b** [active] [android] — **Next at the end of the queue does
+  nothing.** On the phone, Next on the last track of the play order with
+  Repeat off changes nothing, like Previous on the first: the song keeps
+  playing, and the position and the queue stay as they were. This holds for
+  every surface that sends Next — notification, headset, widget, volume-key
+  skip, dock mode and the mini player. After a back-step, Next still returns
+  to the item the step left (PLAY-14), and with Repeat All it wraps to the
+  start. The automatic end of the last track still ends playback (PLAY-8), and
+  deleting the playing last track still leaves it.
+  *Tests:* `play_8b_next_on_the_last_track_with_repeat_off_is_a_no_op`,
+  `play_8b_next_on_the_last_track_with_repeat_all_wraps`,
+  `play_8b_next_after_a_back_step_to_the_last_track_still_returns_through_history`,
+  `play_8b_deleting_the_playing_last_track_leaves_it_without_using_the_next_gesture`.
+  <!-- REVIEW: rule proposal -->
 - **PLAY-9** [active] [gtk] — Play/Pause, with playback stopped and no
   loaded title, queue snapshot, or "Play Next", immediately starts a
   randomly chosen existing library title. For this, an immutable

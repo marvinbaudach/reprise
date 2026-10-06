@@ -121,6 +121,21 @@ class PendingDeletionsTest {
     }
 
     @Test
+    fun play_8b_deleting_the_playing_last_track_leaves_it_without_using_the_next_gesture() {
+        val queue = FakeQueueControls(emptyList())
+        playing = 5
+
+        deletions.begin(listOf(5), queue)
+
+        assertEquals(1, queue.skips)
+        assertEquals(
+            "Next does nothing on the last track, so a deletion must not ask for it",
+            0,
+            queue.nexts,
+        )
+    }
+
+    @Test
     fun aQueueThatChangedShapeTakesUndoneRowsBackAsNext() {
         val queue = FakeQueueControls(listOf(10, 11, 12))
 
