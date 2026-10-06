@@ -4,6 +4,73 @@ Reprise release notes are curated from the changes that reached the stable
 branch. They describe user-visible changes rather than reproducing commit
 messages.
 
+## [0.1.265] - 2026-10-06
+
+### Library
+
+- An album ripped as one audio file plus a CUE sheet is listed as its tracks. A
+  `.cue` sheet beside the audio file, or a sheet embedded in a FLAC's
+  `CUESHEET` comment, splits the file into the tracks the sheet names, in sheet
+  order, each with the sheet's title and artist and its own start, end and
+  duration; what the sheet leaves out comes from the file's own tags. A rescan
+  follows the sheet: a track it still has keeps its rating and play count, and
+  removing the sheet makes the file one track again. A sheet that cannot be
+  applied, because it does not parse, names a missing file, or is larger than
+  1 MiB or 999 tracks, leaves the audio as one ordinary track and raises an
+  issue that names the sheet. Moving or relinking the file keeps all of its
+  tracks, removing one track from the library keeps its siblings, opening the
+  file or an M3U line that names it adds all of its tracks in play order, and
+  each track gets its own waveform, spectrogram and loudness measured from its
+  own stretch of the file. A track cut from a sheet is read-only in the tag
+  editor, and its lyrics come from the online sources and the cache, never
+  from a file beside the album. For now, playing such a track starts at the
+  beginning of its file, and deleting it or syncing it to a phone still acts on
+  the whole file.
+
+### Playback and presentation
+
+- Tracks play at an even loudness, with or without ReplayGain tags. Reprise
+  measures each track's integrated loudness (EBU R128) while it analyses the
+  library and aims at the ReplayGain 2.0 reference of -18 LUFS. A track that
+  carries ReplayGain tags is still normalised from them, and the tags win over
+  a measurement of the same track; Off disables both, and a boost never lets
+  the track's peak clip. The next track's own gain is applied at its first
+  sample, in a gapless hand-over and in a crossfade, and changing the mode
+  reaches the playing track at once. ReplayGain tags are now read from every
+  tag format, and the measurement travels with the analysis files to a phone.
+- The Song Visuals bars no longer pump when a new song starts. At a track change
+  or a fresh start the spectrum carried the previous song's sensitivity: a
+  louder song drew a wall of pinned bars, a quieter one stayed dim for seconds,
+  and a cold start swelled the whole frame and then dropped. The visualizer now
+  measures the new song's level instead of carrying the old one. On the desktop,
+  a track change or a seek lets the bars fall from their old heights instead of
+  collapsing.
+
+### Session
+
+- Reprise keeps its session when it is ended by a signal. A logout,
+  `systemctl --user stop`, `kill` or Ctrl+C used to lose everything since the
+  last save. Reprise now saves the window geometry, the place you were
+  browsing, the queue and Up Next, closes its window like a normal close, and
+  quits, even when a dialog such as the first-run wizard is open. A repeated
+  signal within three seconds does not cut the save short, and an application
+  that never answers is ended after ten seconds.
+
+### Android
+
+- Volume normalisation is offered in the playback settings. A "Volume
+  Normalization" row offers Off, Per Track and Per Album, as on the desktop,
+  and a choice applies at once to the playing track and the one queued after
+  it, without restarting either.
+- A swiped track change no longer makes the visualizer pump. The bars handed
+  to the next track were seeded far too high, so the whole spectrum jumped,
+  sagged and crept back over several seconds. The seed now continues the shape
+  on screen.
+- The phone's release build starts again. Since the home-screen widget landed,
+  every release build crashed at start, because the code shrinker stripped the
+  constructor of WorkManager's database. One keep rule restores it. Debug
+  builds were never affected.
+
 ## [0.1.248] - 2026-10-05
 
 ### Playback and presentation
