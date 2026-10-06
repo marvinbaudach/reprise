@@ -2,7 +2,7 @@
 slug: the-backfill-keeps-its-decode
 worktree: /home/marvin/Projects/reprise-the-backfill-keeps-its-decode
 branch: feature/the-backfill-keeps-its-decode
-phase: planned
+phase: refactored
 codex_session:
 created: 2026-10-06
 ---
