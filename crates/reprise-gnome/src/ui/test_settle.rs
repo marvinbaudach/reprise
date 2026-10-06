@@ -21,7 +21,7 @@
 //! competes with the thing it is waiting for.
 //!
 //! `iteration(true)` blocks until a source fires, so the test thread sleeps
-//! and GTK gets the CPU. Both helpers here use it.
+//! and GTK gets the CPU. Every helper here waits through it.
 
 use std::cell::Cell;
 use std::rc::Rc;
@@ -95,4 +95,35 @@ pub(in crate::ui) fn settle_until_mapped(widget: &impl IsA<gtk4::Widget>) -> boo
     settle_until(DISPLAY_TEST_TIMEOUT, move || {
         widget.is_mapped() && widget.height() > 0
     })
+}
+
+/// Waits until `ready` holds, then until `widget` has painted one frame after
+/// that moment.
+///
+/// For assertions on what is on screen after asynchronous work: the work's own
+/// completion signal says the model changed, but list views rebind their rows
+/// in the next frame's layout. Waiting on that frame's paint — not on the
+/// on-screen state the test is about to assert — keeps the assertion honest.
+/// It queues a draw so a frame comes even when nothing else asks for one.
+/// Returns whether both waits succeeded; an unmapped widget, which has no frame
+/// clock, counts as a failure.
+pub(in crate::ui) fn settle_until_painted_after(
+    widget: &impl IsA<gtk4::Widget>,
+    ready: impl FnMut() -> bool,
+) -> bool {
+    if !settle_until(DISPLAY_TEST_TIMEOUT, ready) {
+        return false;
+    }
+    let Some(frame_clock) = widget.as_ref().frame_clock() else {
+        return false;
+    };
+    let painted = Rc::new(Cell::new(false));
+    let handler = frame_clock.connect_after_paint({
+        let painted = painted.clone();
+        move |_| painted.set(true)
+    });
+    widget.as_ref().queue_draw();
+    let settled = settle_until(DISPLAY_TEST_TIMEOUT, || painted.get());
+    frame_clock.disconnect(handler);
+    settled
 }
