@@ -316,11 +316,17 @@ impl PlayerController {
         self.offer_colour_legend(track_id);
         let generation = self.waveform_generation.get().wrapping_add(1);
         self.waveform_generation.set(generation);
-        let cancelled = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false));
-        let previous = self
-            .waveform_cancel
-            .replace(std::sync::Arc::clone(&cancelled));
-        previous.store(true, std::sync::atomic::Ordering::Release);
+        let cancelled = {
+            let mut running = self.waveform_cancel.borrow_mut();
+            if running.0 != Some(track_id) {
+                running.1.store(true, std::sync::atomic::Ordering::Release);
+                *running = (
+                    Some(track_id),
+                    std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false)),
+                );
+            }
+            std::sync::Arc::clone(&running.1)
+        };
         let colour_cancelled = std::sync::Arc::clone(&cancelled);
         let waveform_generation = self.waveform_generation.clone();
         let waveform_backend = self.waveform_backend.clone();
