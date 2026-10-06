@@ -6,7 +6,6 @@ use std::time::Duration;
 
 use gtk4::gio;
 use gtk4::glib;
-use gtk4::prelude::*;
 use libadwaita as adw;
 use reprise_core::browser::BrowserPlace;
 use reprise_core::library::session;
