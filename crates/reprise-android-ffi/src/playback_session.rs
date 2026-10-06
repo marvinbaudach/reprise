@@ -4,6 +4,7 @@ use std::collections::HashMap;
 use std::sync::{Arc, Mutex, MutexGuard, OnceLock};
 
 use gain::QueuedTrack;
+use next_at_end::PlayheadMove;
 #[cfg(test)]
 use reprise_core::db::Db;
 use reprise_core::playback::{PlaybackBackend, PlaybackItem, StreamGeneration};
@@ -587,10 +588,7 @@ impl AndroidPlaybackSession {
         if self.inner.forward_from_history()? {
             return Ok(());
         }
-        if !self.inner.lock()?.queue.has_manual_next() {
-            return Ok(());
-        }
-        self.move_playhead(Queue::next_manual)
+        self.move_playhead(PlayheadMove::unless_at_the_end)
     }
 
     /// PLAY-14: Previous follows playback history, never the queue cursor.
@@ -733,28 +731,6 @@ impl AndroidPlaybackSession {
     /// through this handle; other write-capable connections only read by convention.
     pub(crate) fn library_writer(&self) -> Arc<Mutex<Db>> {
         self.inner.library.writer_handle()
-    }
-}
-
-impl AndroidPlaybackSession {
-    fn move_playhead(
-        &self,
-        move_queue: impl FnOnce(&mut Queue) -> Option<i64>,
-    ) -> Result<(), AndroidPlaybackError> {
-        let (has_current, queue_to_save) = {
-            let mut state = self.inner.lock()?;
-            let has_current = move_queue(&mut state.queue).is_some();
-            if has_current {
-                state.adopt_current_for_play_intent();
-            }
-            (has_current, state.queue.clone())
-        };
-        self.inner.persist_queue(queue_to_save)?;
-        if has_current {
-            self.inner.start_current()
-        } else {
-            self.inner.stop_backend()
-        }
     }
 }
 

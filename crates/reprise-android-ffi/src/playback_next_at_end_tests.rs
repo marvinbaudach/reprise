@@ -57,6 +57,26 @@ fn play_8b_next_on_the_last_track_with_repeat_all_wraps() {
 }
 
 #[test]
+fn play_8b_next_on_the_last_track_with_repeat_one_is_a_no_op() {
+    let fixture = play_three_tracks_from(2);
+    fixture.session.set_repeat(AndroidRepeatMode::One).unwrap();
+    fixture.calls.lock().unwrap().clear();
+    let before = fixture.session.snapshot().unwrap();
+
+    fixture.session.next().unwrap();
+
+    let after = fixture.session.snapshot().unwrap();
+    assert_eq!(after.state, before.state);
+    assert_eq!(after.current_index, Some(2));
+    assert_eq!(after.current_track_id, Some(30));
+    assert!(
+        fixture.calls.lock().unwrap().is_empty(),
+        "the backend must not be asked to stop or start: {:?}",
+        fixture.calls.lock().unwrap(),
+    );
+}
+
+#[test]
 fn play_8b_next_after_a_back_step_to_the_last_track_still_returns_through_history() {
     let fixture = play_three_tracks_from(1);
     fixture.session.next().unwrap();
