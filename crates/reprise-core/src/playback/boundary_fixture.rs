@@ -354,7 +354,7 @@ const DIP_FLOOR: f32 = 0.8;
 
 /// A boundary that continues what the viewer is watching (a seek, or a swipe to
 /// the same song) must not shrink the frame while the new window fills: every
-/// frame of the settle span keeps within [`DIP_FLOOR`] of the reference.
+/// frame of the settle span keeps within `DIP_FLOOR` of the reference.
 pub fn assert_no_dip(label: &str, run: &[Frame], reference: &[Frame]) {
     for (index, (frame, reference)) in run.iter().zip(reference).take(SETTLE_FRAMES).enumerate() {
         let ratio = frame_mean(frame) / frame_mean(reference).max(1.0e-6);
