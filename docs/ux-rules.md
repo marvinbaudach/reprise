@@ -4797,37 +4797,69 @@ STYLE-1).
   window is full; once a full window is in and it says more than twice too
   dim, the sensitivity moves up to the measurement within a few frames; within
   a factor of two it stays. The sensitivity is held, not creeping, while a
-  measurement or such a move is under way. After that, for the next seven
+  measurement or such a move is under way. After that, for the next fourteen
   seconds of audio (silence counts), a frame the sensitivity would draw at
   twice full height or more, 1.3 times in the first half second, a quiet intro
   followed by the song itself, pulls the sensitivity down at once to land at
-  0.85 of full height. Throughout this span and after it `cavacore`'s
-  auto-sensitivity creeps in both directions, so the sensitivity settles where
-  it would have settled without the boundary and neither sits dim nor swells
-  back. A track change and a seek keep the bar
-  shape on screen, so the bars fall through gravity from their old heights
-  instead of collapsing to zero; only a first start and the plugin switched
-  back on begin from nothing. In steady state the output stays frame for frame
-  what `cavacore` draws. Acceptance, at the Android engine, the desktop
-  pipeline stage and the core processor, for a fresh start, a song 14 dB louder,
-  one 14 dB quieter, one of the same loudness, an Android 44.1 to 48 kHz
-  change, a desktop seek and a resume, with boundaries landing at several
-  points inside a beat: over the second that starts 0.3 s after the boundary
-  the drawn level averages within 0.7 to 1.4 times that of an engine that has
-  played the same audio for long enough to have settled, and no tenth of a
-  second of it strays further than 0.7 to 2.3 times for a fresh start, 0.55 to
-  2.0 times for a different song, or 0.85 to 1.2 times for a boundary that
-  continues the song; no frame is a wall of pinned bars; the frame's
-  breathing depth and how often the whole spectrum moves together stay close
-  to that reference over the first second and after it; a boundary that
-  continues the song on screen never shrinks the frame or steps it; the
-  level three to ten seconds on equals that of a run that never had the
-  boundary; silent chunks inside a song do not keep a boundary measuring; a
-  resume keeps a quiet passage quiet; silence never raises the sensitivity,
-  whether the boundary is settled or still braking; and a loud body after an
-  intro of up to six seconds and up to 30 dB quieter does not wall. A quiet
-  intro or fade-in that outlasts the seven seconds of braking is a known gap
-  that no test covers.
+  0.85 of full height. The span outlasts the longest quiet intro it covers,
+  because an intro is indistinguishable from a quiet song until its body
+  arrives. A pull also says the rise may not be over (the FFT window fills
+  with the body over the frames that follow, and a fade-in rises for seconds,
+  each frame only a little over the last): for the next 1.1 seconds of audio,
+  a frame the sensitivity would draw at full height or more is pulled down to
+  land at 0.92 of full height, and each such pull extends that; only a pull
+  starts it. Throughout this span and after it `cavacore`'s auto-sensitivity
+  creeps in both directions, so the sensitivity settles where it would have
+  settled without the boundary. A rise inside the span does not pin the bars,
+  but it does draw them dim for a few seconds, because each pull lands under
+  full height and the creep climbs back at about 6 % a second. Measured on
+  real music against an engine settled on the same audio: a verse giving way
+  to a chorus 8 to 10 dB louder draws its first second at about 0.6 times that
+  engine's level and the next seconds, up to four of them, at 0.74 to 0.95
+  times (the earlier seven-second span read 0.66, 0.82 and 0.97 for the first
+  three seconds of an 8 dB step at six seconds; a rise after the span is the
+  creep's alone and reads like the settled engine); the body of a track that
+  opens quietly draws 0.84, 0.91 and 0.92 times in its first three seconds. A
+  track change and a seek keep the bar shape on screen, so the bars fall
+  through gravity from their old heights instead of collapsing to zero; only a
+  first start and the plugin switched back on begin from nothing. In steady
+  state the output stays frame for frame what `cavacore` draws. Acceptance, at
+  the Android engine, the desktop pipeline stage and the core processor, for a
+  fresh start, a song 14 dB louder, one 14 dB quieter, one of the same
+  loudness, an Android 44.1 to 48 kHz change, a desktop seek and a resume,
+  with boundaries landing at several points inside a beat: over the second
+  that starts 0.3 s after the boundary the drawn level averages within 0.7 to
+  1.4 times that of an engine that has played the same audio for long enough
+  to have settled, and no tenth of a second of it strays further than 0.7 to
+  2.3 times for a fresh start, 0.55 to 2.0 times for a different song, or 0.85
+  to 1.2 times for a boundary that continues the song; no frame is a wall of
+  pinned bars; the frame's breathing depth and how often the whole spectrum
+  moves together stay close to that reference over the first second and after
+  it; a boundary that continues the song on screen never shrinks the frame or
+  steps it; the level three to ten seconds on equals that of a run that never
+  had the boundary; silent chunks inside a song do not keep a boundary
+  measuring; a resume keeps a quiet passage quiet; silence never raises the
+  sensitivity, whether the boundary is settled or still braking; and a loud
+  body after a quiet intro and a fade-in draw no wall (no frame with half the
+  bars pinned, no run of more than 25 frames with eight or more) and no more
+  frames with a pinned bar than an engine that has played the same audio long
+  enough to have settled, plus a few, from a first start and after another
+  song; every intro named below is drawn at no less than 0.85 times that
+  engine's level, averaged over the three seconds after its body arrives, and
+  every fade-in at no less than 0.95 times over its first ten (the three
+  surfaces measure 0.88 to 1.01 and 1.04 to 1.56 on the synthetic music). Real
+  music dims more than that while the creep climbs back, as above, and no test
+  bounds it. The core processor is judged on intros of 2.5, 6, 8 and 10
+  seconds, 14 to 30 dB below the body, and on fades of three and five seconds,
+  linear in amplitude and from 60 dB down linear in decibels; the Android
+  engine and the desktop stage on an 8 second intro 30 dB down, a 10 second
+  intro 14 dB down, a three second linear fade and a five second fade in
+  decibels. A quiet opening that outlasts the fourteen seconds of braking is a
+  known gap that no test covers. *Amended 2026-10-06: braking lasts fourteen
+  seconds, not seven, and a rise that follows a pull is followed and lands at
+  0.92; the acceptance covers quiet intros of up to ten seconds and fade-ins,
+  which were a known gap, and states the dimming a rise inside the span
+  leaves.*
 
 - **AC-24** [active] [gtk] — The reactive light lives on the panel's blurred
   cover bloom, the cover in the player bar and the playhead, nowhere else; the

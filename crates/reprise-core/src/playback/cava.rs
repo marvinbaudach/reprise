@@ -29,6 +29,16 @@ const PCM_SILENCE_EPSILON: f32 = 1.0e-6;
 /// that domain, so the magnitude sum is lifted into it before smoothing.
 const CAVA_FIXED_POINT_SCALE: f32 = 65_535.0;
 
+/// Seconds after a stream's first sample at which boundary braking has ended at
+/// `sample_rate_hz`: the window that fills first, then the braking span, each
+/// measured in input windows of `fft_size * 2` samples. The acceptance tests
+/// settle a reference engine past it.
+#[cfg(debug_assertions)]
+pub(super) fn braking_span_seconds(sample_rate_hz: u32) -> f32 {
+    let window_samples = fft_size_for_rate(sample_rate_hz) * 2;
+    ((boundary::BRAKING_WINDOWS + 1) * window_samples) as f32 / sample_rate_hz as f32
+}
+
 /// Configuration for [`CavaBarProcessor`].
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct CavaConfig {
@@ -202,7 +212,7 @@ impl CavaBarProcessor {
     /// as a prior: a full FFT window of the new audio decides whether it is off
     /// by more than a factor of two (it is replaced) or not (it stays), and a
     /// frame drawn at twice full height or more (1.3 times in the first half
-    /// second) brakes it for about seven seconds. `cavacore`'s own creep runs
+    /// second) brakes it for about fourteen seconds. `cavacore`'s own creep runs
     /// throughout. A freshly constructed processor measures from nothing
     /// instead of `cavacore`'s cold climb. The measure is in `boundary`'s
     /// module docs.

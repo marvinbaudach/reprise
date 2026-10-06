@@ -30,10 +30,24 @@ pub const JUDGED_FRAMES: usize = FRAMES_PER_SECOND;
 /// second always opens on a kick; these offsets open on the tail of one, on
 /// nothing, and just before the next.
 pub const BOUNDARY_OFFSETS_SECONDS: [f32; 4] = [0.0, 0.13, 0.29, 0.41];
+/// Whole seconds a reference engine has to play a song, from a new processor,
+/// before the braking span of a boundary is behind it.
+const SETTLE_MARGIN_SECONDS: usize = 1;
+
+/// How long an engine at `rate_hz` has to play a song to be settled on it: the
+/// braking span of its first boundary, rounded up to whole seconds, and a
+/// margin.
+pub fn settled_seconds(rate_hz: u32) -> usize {
+    super::cava::braking_span_seconds(rate_hz).ceil() as usize + SETTLE_MARGIN_SECONDS
+}
+
 /// A bar at or above this is pinned.
 const PINNED_LEVEL: f32 = 0.99;
 /// A frame with this many pinned bars is a wall.
 const WALL_BARS: usize = SPECTRUM_BAND_COUNT / 2;
+/// A frame with this many pinned bars is crowded: a handful of bars at the top
+/// is a loud song, this many in a row is the frame stuck against the ceiling.
+const CROWDED_BARS: usize = 8;
 /// A frame whose tallest bar is below this is empty.
 const EMPTY_LEVEL: f32 = 0.05;
 /// A bar moving by more than this between frames moved.
@@ -50,6 +64,8 @@ pub struct SyntheticMusic {
     seed: u64,
     rate_hz: u32,
     gain: f32,
+    /// How the song opens, and the sample it opens at.
+    opening: Option<(Opening, usize)>,
 }
 
 impl SyntheticMusic {
@@ -58,6 +74,16 @@ impl SyntheticMusic {
             seed,
             rate_hz,
             gain,
+            opening: None,
+        }
+    }
+
+    /// The same music, opening at sample `start` as `opening` says: quieter or
+    /// rising, then at its own level. Before `start` it plays at its own level.
+    pub fn opened_by(self, opening: Opening, start: usize) -> Self {
+        Self {
+            opening: Some((opening, start)),
+            ..self
         }
     }
 
@@ -107,7 +133,12 @@ impl SyntheticMusic {
         let hat_envelope = (-((t + 0.125) % 0.25) / 0.02).exp();
         let hat = hat_envelope * (self.noise(n as u64 + 1_000_003) * 2.0 - 1.0);
         let mix = 0.42 * kick + 0.16 * bass + 0.14 * lead + 0.10 * hat;
-        (f64::from(self.gain) * mix) as f32
+        let opening = self.opening.map_or(1.0, |(opening, start)| {
+            n.checked_sub(start).map_or(1.0, |since| {
+                opening.gain(since as f32 / self.rate_hz as f32)
+            })
+        });
+        (f64::from(self.gain) * mix) as f32 * opening
     }
 
     /// Deterministic noise in `0..1` from an index and the seed.
@@ -122,6 +153,102 @@ impl SyntheticMusic {
     }
 }
 
+/// How far down a fade on a decibel ramp starts.
+const FADE_FLOOR_DB: f32 = 60.0;
+
+/// How a song opens, as the gain applied to it from its first sample.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub enum Opening {
+    /// This many seconds `db` below the song, then the song at once.
+    Intro { seconds: usize, db: f32 },
+    /// From digital silence to the song, linear in amplitude.
+    LinearFade { seconds: usize },
+    /// From 60 dB down to the song, linear in decibels.
+    DbFade { seconds: usize },
+}
+
+impl Opening {
+    pub fn seconds(self) -> usize {
+        match self {
+            Self::Intro { seconds, .. }
+            | Self::LinearFade { seconds }
+            | Self::DbFade { seconds } => seconds,
+        }
+    }
+
+    /// The gain `t` seconds into the song.
+    pub fn gain(self, t: f32) -> f32 {
+        let seconds = self.seconds() as f32;
+        match self {
+            Self::Intro { db, .. } if t < seconds => 10.0_f32.powf(-db / 20.0),
+            Self::LinearFade { .. } if t < seconds => t / seconds,
+            Self::DbFade { .. } if t < seconds => {
+                10.0_f32.powf(-FADE_FLOOR_DB * (1.0 - t / seconds) / 20.0)
+            }
+            _ => 1.0,
+        }
+    }
+}
+
+/// The most consecutive crowded frames a stretch may have.
+pub const LONGEST_CROWDED_RUN: usize = 25;
+
+/// What a stretch of frames got wrong about pinned bars, if anything: a wall,
+/// a long run of crowded frames, or more frames with a pinned bar than
+/// `allowed`.
+pub fn pinning_complaints(label: &str, measured: Measure, allowed: usize) -> Vec<String> {
+    let mut complaints = Vec::new();
+    if measured.wall_frames > 0 {
+        complaints.push(format!(
+            "{label}: {} frames with half the bars pinned",
+            measured.wall_frames
+        ));
+    }
+    if measured.longest_crowded_run > LONGEST_CROWDED_RUN {
+        complaints.push(format!(
+            "{label}: {} frames in a row with eight or more bars pinned",
+            measured.longest_crowded_run
+        ));
+    }
+    if measured.pinned_frames > allowed {
+        complaints.push(format!(
+            "{label}: {} frames pinned, at most {allowed} allowed",
+            measured.pinned_frames
+        ));
+    }
+    complaints
+}
+
+/// The least a quiet intro's body may be drawn at, as a share of the settled
+/// level, averaged over the three seconds after the body arrives. The brakes
+/// that catch the body leave it a little dim while the creep climbs back; the
+/// three surfaces measure 0.88 to 1.01 on synthetic music, so a gain braked
+/// further than a rise needs would show.
+pub const INTRO_LEVEL_FLOOR: f32 = 0.85;
+/// The same for a fade-in, averaged over its first ten seconds. A fade is
+/// followed by a gain that adapts upward, so it reads at or above the settled
+/// engine's level (1.04 to 1.56 measured), which draws it small until it ends.
+pub const FADE_LEVEL_FLOOR: f32 = 0.95;
+
+/// What a stretch drew too dim, if anything: its mean level against the level
+/// the same audio draws on an engine settled on the song, which is what the
+/// viewer would have seen without the boundary. Braking a quiet start's gain
+/// down must not leave the rest of the song under `floor` times that.
+pub fn dimming_complaints(
+    label: &str,
+    measured: Measure,
+    reference: Measure,
+    floor: f32,
+) -> Vec<String> {
+    let ratio = measured.level / reference.level;
+    if ratio >= floor {
+        return Vec::new();
+    }
+    vec![format!(
+        "{label}: drawn at {ratio:.2} times the settled level, at least {floor} wanted"
+    )]
+}
+
 /// What a run of frames looks like to a viewer.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct Measure {
@@ -134,6 +261,8 @@ pub struct Measure {
     pub pinned_frames: usize,
     /// Frames with a wall of pinned bars.
     pub wall_frames: usize,
+    /// The most consecutive crowded frames (at least eight pinned bars).
+    pub longest_crowded_run: usize,
     /// Frames with no visible bar.
     pub empty_frames: usize,
     /// Mean of the frame means.
@@ -177,11 +306,19 @@ impl Measure {
         let wall =
             |frame: &&Frame| frame.iter().filter(|bar| **bar >= PINNED_LEVEL).count() >= WALL_BARS;
         let empty = |frame: &&Frame| frame.iter().all(|bar| *bar < EMPTY_LEVEL);
+        let mut crowded_run = 0;
+        let mut longest_crowded_run = 0;
+        for frame in frames {
+            let crowded = frame.iter().filter(|bar| **bar >= PINNED_LEVEL).count() >= CROWDED_BARS;
+            crowded_run = if crowded { crowded_run + 1 } else { 0 };
+            longest_crowded_run = longest_crowded_run.max(crowded_run);
+        }
         Self {
             depth: (squares / means.len() as f32).sqrt() / level.max(1.0e-6),
             comove: comoving as f32 / (frames.len() - 1) as f32,
             pinned_frames: frames.iter().filter(pinned).count(),
             wall_frames: frames.iter().filter(wall).count(),
+            longest_crowded_run,
             empty_frames: frames.iter().filter(empty).count(),
             level,
         }

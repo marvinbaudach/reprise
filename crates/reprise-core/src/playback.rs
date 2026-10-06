@@ -376,6 +376,10 @@ mod cava_tests;
 #[path = "playback/boundary_tests.rs"]
 mod boundary_tests;
 
+#[cfg(all(test, debug_assertions))]
+#[path = "playback/boundary_intro_tests.rs"]
+mod boundary_intro_tests;
+
 #[cfg(test)]
 #[path = "playback/bass_pressure_tests.rs"]
 mod bass_pressure_tests;

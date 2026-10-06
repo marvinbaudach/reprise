@@ -31,15 +31,36 @@
 //! the measurement over a few frames once the window is in. Within the band the
 //! gain stays.
 //!
-//! *Braking* then lasts about seven seconds on either path. A frame the gain
+//! *Braking* then lasts about fourteen seconds on either path. A frame the gain
 //! would draw at [`BRAKE_LEVEL`] times full height or more (a song that opened
 //! quietly and now drops in) pulls the gain down to land at the target height
-//! at once; the creep alone would pin the bars for seconds. For the first half
-//! second the threshold is [`EARLY_BRAKE_LEVEL`], because a first window that
-//! fell between two hits is most often wrong by a little, early. Nothing else
-//! changes: once the measurement, or the move up to it, is over, `cavacore`'s
-//! creep runs in both directions, so the gain settles where it would have
-//! without a boundary, and silence neither restarts nor prolongs the span.
+//! at once; the creep alone would pin the bars for seconds. The span has to
+//! outlast the longest quiet opening it is meant to catch, because an intro
+//! looks like a quiet song until its body arrives: eight or ten seconds of it
+//! is still the gain's to answer for. For the first half second the threshold
+//! is [`EARLY_BRAKE_LEVEL`], because a first window that fell between two hits
+//! is most often wrong by a little, early.
+//!
+//! A brake also says the rise may not be over. The body fills the FFT window
+//! over the frames that follow, and a fade-in rises for seconds, each frame a
+//! little over the last, so no frame is ever a gross overshoot and the creep
+//! pins the bars while it catches up. For [`CHAIN_WINDOWS`] windows of audio
+//! after a brake, a frame is braked as soon as the gain would draw it at full
+//! height, and it lands at [`CHAIN_TARGET_HEIGHT`], above the shared target:
+//! the chain is following a rise, and a landing at the shared target leaves
+//! the rest of it dim. Each brake of the chain extends the span; a stream the
+//! gain draws under full height lets it lapse, and only a brake starts it.
+//!
+//! What is left is dimming, not pinning. A rise inside the span (a verse
+//! giving way to a chorus eight or ten decibels up, say) reads under the level
+//! a gain settled on the whole song would draw it at, for the seconds the creep
+//! needs to climb back at 6 % a second: about 0.6 times in the first second and
+//! 0.74 to 0.9 times in the next few, on real music. AC-29 states the figures.
+//!
+//! Nothing else changes: once the measurement, or the move up to it, is over,
+//! `cavacore`'s creep runs in both directions, so the gain settles where it
+//! would have without a boundary, and silence neither restarts nor prolongs
+//! the span.
 
 /// Height the loudest bar seen while measuring is aimed at, as the integral
 /// stage settles it. Below full height because the first window can fall
@@ -62,9 +83,33 @@ pub(super) const EARLY_BRAKE_LEVEL: f32 = 1.3;
 /// The early stretch lasts this many windows of audio after the first, about
 /// half a second at 44.1 or 48 kHz.
 pub(super) const EARLY_BRAKING_WINDOWS: usize = 3;
-/// Braking lasts this many windows of audio, about seven seconds at 44.1 or
-/// 48 kHz, counted on every sample, silent or not.
-pub(super) const BRAKING_WINDOWS: usize = 40;
+/// Braking lasts this many windows of audio, about fourteen seconds at 44.1 or
+/// 48 kHz, counted on every sample, silent or not. Longer than the quiet
+/// intros it is meant to catch, which are indistinguishable from a quiet song
+/// until the body arrives; the golden test of `cavacore`'s steady state leaves
+/// the span through `adopt_sensitivity`, so a span this long is not covered by
+/// it.
+pub(super) const BRAKING_WINDOWS: usize = 80;
+/// A brake means the gain was measured on something quieter than what is
+/// arriving, and the rise may not be over (see the module docs). For this many
+/// windows of audio, about 1.1 s, after the last brake, a frame is braked at
+/// [`CHAIN_BRAKE_LEVEL`]. It spans more than a beat of slow music: the loudest
+/// bar of a fade-in is set by the hits, and a hit is a half second or a second
+/// apart.
+pub(super) const CHAIN_WINDOWS: usize = 6;
+/// A frame in a chain is braked once the gain would draw it at full height.
+pub(super) const CHAIN_BRAKE_LEVEL: f32 = 1.0;
+/// Height a chain brake lands the frame at. Higher than [`TARGET_HEIGHT`]
+/// because a chain follows a rise that is still going: every brake that lands
+/// at the shared target leaves the gain a little low for the rise's next step,
+/// and the creep needs seconds to climb back. Under [`CHAIN_BRAKE_LEVEL`], or a
+/// brake would raise the gain it is there to lower. Real music after a rise of
+/// 8 to 10 dB reads about 0.05 closer to the level of a gain settled on the
+/// song at 0.92 than at 0.85. 0.95 reads about the same (better after a 10 dB
+/// step, worse after an 8 dB one) and also passes the fade-in bound, but with
+/// no pinned frame to spare after a track change (as many as the settled gain
+/// draws, against six fewer at 0.92), so 0.92 is the tie-break.
+pub(super) const CHAIN_TARGET_HEIGHT: f32 = 0.92;
 
 /// What the smoother does with this frame's gain.
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -98,6 +143,9 @@ pub(super) struct BoundaryEstimator {
     window_samples: usize,
     signal_samples: usize,
     elapsed_samples: usize,
+    /// Audio left in the span after a brake in which a frame is braked at
+    /// [`CHAIN_BRAKE_LEVEL`].
+    chain_samples: usize,
     peak: f32,
     phase: Phase,
 }
@@ -110,6 +158,7 @@ impl BoundaryEstimator {
             window_samples,
             signal_samples: 0,
             elapsed_samples: 0,
+            chain_samples: 0,
             peak: 0.0,
             phase: Phase::Measuring,
         };
@@ -123,6 +172,7 @@ impl BoundaryEstimator {
     pub(super) fn arm(&mut self, keeps_shape: bool) {
         self.signal_samples = 0;
         self.elapsed_samples = 0;
+        self.chain_samples = 0;
         self.peak = 0.0;
         self.phase = if keeps_shape {
             Phase::Waiting
@@ -164,7 +214,7 @@ impl BoundaryEstimator {
                 integral_feedback,
                 gain,
             ),
-            Phase::Braking => self.brake(new_samples, raw_peak, integral_feedback),
+            Phase::Braking => self.brake(new_samples, raw_peak, integral_feedback, gain),
         }
     }
 
@@ -206,20 +256,27 @@ impl BoundaryEstimator {
             (true, Some(sensitivity)) if full && sensitivity > gain * CARRY_BAND => {
                 Step::Goal(sensitivity)
             }
-            (true, Some(_)) if full => self.brake_step(raw_peak, integral_feedback),
+            (true, Some(_)) if full => self.brake_step(raw_peak, integral_feedback, gain),
             (true, Some(_)) => Step::Hold,
         }
     }
 
-    fn brake(&mut self, new_samples: usize, raw_peak: f32, integral_feedback: f32) -> Step {
+    fn brake(
+        &mut self,
+        new_samples: usize,
+        raw_peak: f32,
+        integral_feedback: f32,
+        gain: f32,
+    ) -> Step {
         self.elapsed_samples = self.elapsed_samples.saturating_add(new_samples);
+        self.chain_samples = self.chain_samples.saturating_sub(new_samples);
         if self.elapsed_samples >= self.window_samples * BRAKING_WINDOWS {
             self.phase = Phase::Done;
         }
-        self.brake_step(raw_peak, integral_feedback)
+        self.brake_step(raw_peak, integral_feedback, gain)
     }
 
-    fn brake_step(&self, raw_peak: f32, integral_feedback: f32) -> Step {
+    fn brake_step(&mut self, raw_peak: f32, integral_feedback: f32, gain: f32) -> Step {
         if !(raw_peak.is_finite() && raw_peak > 0.0) {
             return Step::Brake {
                 trigger: f32::INFINITY,
@@ -227,14 +284,26 @@ impl BoundaryEstimator {
             };
         }
         let lands_at_full = (1.0 - integral_feedback) / raw_peak;
-        let level = if self.elapsed_samples < self.window_samples * EARLY_BRAKING_WINDOWS {
+        let chaining = self.chain_samples > 0;
+        let level = if chaining {
+            CHAIN_BRAKE_LEVEL
+        } else if self.elapsed_samples < self.window_samples * EARLY_BRAKING_WINDOWS {
             EARLY_BRAKE_LEVEL
         } else {
             BRAKE_LEVEL
         };
+        let trigger = lands_at_full * level;
+        if gain > trigger {
+            self.chain_samples = self.window_samples * CHAIN_WINDOWS;
+        }
+        let height = if chaining {
+            CHAIN_TARGET_HEIGHT
+        } else {
+            TARGET_HEIGHT
+        };
         Step::Brake {
-            trigger: lands_at_full * level,
-            target: lands_at_full * TARGET_HEIGHT,
+            trigger,
+            target: lands_at_full * height,
         }
     }
 }

@@ -2,8 +2,9 @@
 //! (735 samples at 44.1 kHz) across a stream boundary.
 
 use super::boundary_fixture::{
-    assert_no_dip, assert_settles_where_a_continuing_run_does, judge_boundary, Boundary, Frame,
-    Measure, SyntheticMusic, BOUNDARY_OFFSETS_SECONDS, FRAMES_PER_SECOND, SETTLED_FRAMES,
+    assert_no_dip, assert_settles_where_a_continuing_run_does, dimming_complaints, judge_boundary,
+    settled_seconds, Boundary, Frame, Measure, SyntheticMusic, BOUNDARY_OFFSETS_SECONDS,
+    FRAMES_PER_SECOND, INTRO_LEVEL_FLOOR, SETTLED_FRAMES,
 };
 use super::{CavaBarProcessor, CavaConfig, SPECTRUM_BAND_COUNT};
 
@@ -12,8 +13,11 @@ const HOP: usize = 735;
 const LOUD_GAIN: f32 = 0.9;
 const LEVEL_STEP_DB: f32 = 14.0;
 /// Seconds the previous song plays before the boundary, and the reference
-/// has been running before the moment it is compared at.
-const WARM_SECONDS: usize = 12;
+/// has been running before the moment it is compared at: long enough for the
+/// braking span of its own first boundary to be over.
+fn warm_seconds() -> usize {
+    settled_seconds(RATE_HZ)
+}
 /// Where in the new song the boundary lands.
 const BOUNDARY_SECONDS: usize = 30;
 /// Frames recorded when the stretch three to ten seconds after the boundary is judged.
@@ -43,13 +47,13 @@ fn feed_from(
         .collect()
 }
 
-/// Feeds `music` up to the boundary, for `WARM_SECONDS`.
+/// Feeds `music` up to the boundary, for `warm_seconds()`.
 fn warm(processor: &mut CavaBarProcessor, music: &SyntheticMusic, offset_seconds: f32) {
     feed_from(
         processor,
         music,
-        boundary_sample(offset_seconds) - WARM_SECONDS * RATE_HZ as usize,
-        WARM_SECONDS * FRAMES_PER_SECOND,
+        boundary_sample(offset_seconds) - warm_seconds() * RATE_HZ as usize,
+        warm_seconds() * FRAMES_PER_SECOND,
     );
 }
 
@@ -185,15 +189,15 @@ fn ac_29_a_boundary_inside_a_song_settles_where_a_continuing_run_does() {
 }
 
 // A silent chunk is part of the music: it must neither restart the boundary's
-// measurement nor keep the tracking going once the seven seconds are over.
-// Control arm: the same audio without the gaps in the first seven seconds.
+// measurement nor keep the tracking going once the span of braking is over.
+// Control arm: the same audio without the gaps in the first sixteen seconds.
 #[test]
 fn ac_29_silent_gaps_inside_a_song_do_not_keep_the_boundary_measuring() {
     const GAP_EVERY_FRAMES: usize = FRAMES_PER_SECOND;
     const GAP_RECOVERY_FRAMES: usize = 12;
-    const MEASURED_FROM: usize = 12 * FRAMES_PER_SECOND;
+    const MEASURED_FROM: usize = 18 * FRAMES_PER_SECOND;
     const MEASURED_FRAMES: usize = 12 * FRAMES_PER_SECOND;
-    const GAPS_END_FRAME: usize = 7 * FRAMES_PER_SECOND;
+    const GAPS_END_FRAME: usize = 16 * FRAMES_PER_SECOND;
     let (low, high) = (0.97, 1.03);
 
     for music in [loud(), quiet()] {
@@ -239,17 +243,18 @@ fn ac_29_silent_gaps_inside_a_song_do_not_keep_the_boundary_measuring() {
 
 // A song that opens quietly and then drops in at full level: the gain is
 // measured on the intro, so the first loud bar has to pull it down at once
-// instead of pinning the bars for as long as 2 % steps take. The intros run up
-// to six seconds, inside the seven that braking lasts; a longer one is a known
-// gap that nothing here claims.
+// instead of pinning the bars for as long as 2 % steps take. The intros here
+// end inside the span braking lasts; the long ones, and the fades, are judged
+// in `boundary_intro_tests`.
 #[test]
 fn ac_29_a_loud_body_after_a_quiet_intro_does_not_pin_the_bars() {
     const INTRO_SECONDS: [f32; 2] = [2.5, 6.0];
-    const JUDGED_AFTER_THE_STEP: usize = 2 * FRAMES_PER_SECOND;
+    const JUDGED_AFTER_THE_STEP: usize = 3 * FRAMES_PER_SECOND;
     const INTRO_STEPS_DB: [f32; 3] = [14.0, 20.0, 30.0];
-    const PINNED_SLACK: usize = 40;
+    const PINNED_SLACK: usize = 4;
 
     let reference = Measure::of(&settled_reference(&loud(), 0.0)[..JUDGED_AFTER_THE_STEP]);
+    let mut dimming = Vec::new();
     for intro_seconds in INTRO_SECONDS {
         let intro_frames = (intro_seconds * FRAMES_PER_SECOND as f32) as usize;
         for step_db in INTRO_STEPS_DB {
@@ -286,9 +291,16 @@ fn ac_29_a_loud_body_after_a_quiet_intro_does_not_pin_the_bars() {
                     after_the_step.pinned_frames,
                     reference.pinned_frames
                 );
+                dimming.extend(dimming_complaints(
+                    &format!("a {intro_seconds} s intro {step_db} dB down"),
+                    after_the_step,
+                    reference,
+                    INTRO_LEVEL_FLOOR,
+                ));
             }
         }
     }
+    assert!(dimming.is_empty(), "{dimming:#?}");
 }
 
 // A song whose first window under-reads it: the level rises by a third of a
@@ -391,13 +403,13 @@ fn ac_29_silence_does_not_raise_the_sensitivity() {
     }
 }
 
-// The braking span ends about seven seconds in, by the clock of the audio. The
+// The braking span ends about fourteen seconds in, by the clock of the audio. The
 // hand-over to the creep must not move the gain: the stretch around it steps no
 // further than the creep itself does.
 #[test]
 fn ac_29_the_gain_does_not_jump_when_the_braking_span_ends() {
-    const FROM_SECOND: usize = 6;
-    const TO_SECOND: usize = 8;
+    const FROM_SECOND: usize = 13;
+    const TO_SECOND: usize = 17;
     const LARGEST_STEP_DOWN: f32 = 0.97;
     const LARGEST_STEP_UP: f32 = 1.002;
 
