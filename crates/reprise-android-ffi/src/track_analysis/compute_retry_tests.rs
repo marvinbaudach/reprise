@@ -1,5 +1,5 @@
 use std::sync::atomic::{AtomicUsize, Ordering};
-use std::sync::{mpsc, Arc, Condvar, Mutex, PoisonError};
+use std::sync::{mpsc, Arc, PoisonError};
 use std::time::Duration;
 
 use crate::track_analysis::{
@@ -8,18 +8,18 @@ use crate::track_analysis::{
 use crate::MusicLibrary;
 
 use super::tests::library_with_one_track;
-use super::AnalysisCell;
+use super::{AnalysisCell, SharedAnalysisCell};
 
 const TEST_TIMEOUT: Duration = Duration::from_secs(10);
 
-fn pending_cell() -> AnalysisCell {
-    Arc::new((Mutex::new(None), Condvar::new()))
+fn pending_cell() -> SharedAnalysisCell {
+    AnalysisCell::new()
 }
 
 fn replace_in_flight_cell(
     library: &MusicLibrary,
     track_id: i64,
-    replacement: Option<&AnalysisCell>,
+    replacement: Option<&SharedAnalysisCell>,
 ) {
     let mut entries = library
         .analysis_in_flight
@@ -59,10 +59,7 @@ fn wait_for_cell_waiter(library: &MusicLibrary, track_id: i64) {
 }
 
 fn finish_cancelled(cell: &AnalysisCell) {
-    let (outcome, condvar) = &**cell;
-    *outcome.lock().unwrap_or_else(PoisonError::into_inner) =
-        Some(AndroidAnalysisOutcome::Cancelled);
-    condvar.notify_all();
+    cell.settle(AndroidAnalysisOutcome::Cancelled);
 }
 
 #[test]

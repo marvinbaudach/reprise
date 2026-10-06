@@ -85,7 +85,7 @@ fn two_blocking_decoders(
     })
 }
 
-fn has_render_data(library: &MusicLibrary, track_id: i64) -> bool {
+pub(super) fn has_render_data(library: &MusicLibrary, track_id: i64) -> bool {
     let reader = library.reader().unwrap();
     reprise_core::db::get_waveform_peaks(&reader, track_id)
         .unwrap()

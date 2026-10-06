@@ -116,11 +116,12 @@ impl MusicLibrary {
     /// Stops the foreground analysis of every track except `keep_track_id`:
     /// the playing track changed, so the outgoing track's decode is no longer
     /// wanted. Its waiters get `Superseded` and nothing is stored, so the
-    /// track stays pending for the backfill. The library-wide backfill is
-    /// never touched, and the call returns at once.
+    /// track stays pending for the backfill; a decode that had already
+    /// reached the end of the stream is stored all the same. A foreground
+    /// caller waiting on the backfill's decode of another track is let go
+    /// with `Superseded`, while the backfill itself carries on. The call
+    /// returns at once.
     pub fn supersede_foreground_track_analysis(&self, keep_track_id: Option<i64>) {
-        self.analysis_in_flight
-            .decodes()
-            .supersede_foreground_except(keep_track_id);
+        self.analysis_in_flight.supersede_except(keep_track_id);
     }
 }

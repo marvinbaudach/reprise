@@ -276,7 +276,11 @@ result.
   Switching to another track stops the outgoing track's foreground analysis
   (a stop or a pause does not), and the abandoned track is not retried until
   it plays again. The backfill picks it up later. A queued analysis for a
-  track that is no longer playing is skipped. *Tests:*
+  track that is no longer playing is skipped. An analysis that had already
+  decoded the whole track when the switch came is stored, not thrown away.
+  Returning to a track restarts its analysis even while the stopped one is
+  still winding down, and a request waiting on the backfill's analysis of a
+  track no longer playing is let go while the backfill carries on. *Tests:*
   `nav_15e_superseded_is_final`,
   `nav_15e_a_queued_prepare_for_a_track_no_longer_playing_is_skipped`,
   `nav_15e_a_retry_pause_that_ends_for_a_superseded_track_ends_the_loop`,
@@ -284,7 +288,11 @@ result.
   `nav_15e_stopping_playback_supersedes_nothing`,
   `nav_15e_superseding_keeps_the_playing_track`,
   `nav_15e_a_superseded_decode_is_final_for_its_waiter`,
-  `nav_15e_superseding_never_cancels_the_backfill`.
+  `nav_15e_superseding_never_cancels_the_backfill`,
+  `nav_15e_returning_to_a_superseded_track_restarts_its_analysis`,
+  `nav_15e_superseding_frees_a_foreground_waiter_on_the_backfill_decode`,
+  `nav_15e_a_supersede_before_the_decode_registers_still_stops_it`,
+  `nav_15e_a_supersede_after_the_whole_stream_is_decoded_still_stores_it`.
   <!-- REVIEW: rule proposal -->
 - **NAV-16** [active] [gtk] — **Optional sidebar places carry their own off
   switch and way back.** A secondary click, Menu, or Shift+F10 on Podcasts,
