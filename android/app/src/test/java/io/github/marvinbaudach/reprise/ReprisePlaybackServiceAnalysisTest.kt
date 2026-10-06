@@ -165,6 +165,24 @@ class ReprisePlaybackServiceAnalysisTest {
     }
 
     @Test
+    fun nav_15e_a_stale_supersede_never_reaches_the_library() {
+        val service = Robolectric.buildService(SupersedingAnalysisService::class.java).get()
+
+        service.coreListener.onPlaybackChanged(m9bSnapshot(trackId = 1))
+        assertTrue("the first supersede never started", service.firstStarted.await(2, TimeUnit.SECONDS))
+        service.coreListener.onPlaybackChanged(m9bSnapshot(trackId = 2))
+        service.coreListener.onPlaybackChanged(m9bSnapshot(trackId = 3))
+        service.releaseFirst.countDown()
+
+        assertTrue("the last supersede never ran", service.awaitSupersede(keep = 3))
+        assertEquals(
+            "a call for a track that already lost its place would cancel the playing one",
+            listOf(1L, 3L),
+            service.supersedes.toList(),
+        )
+    }
+
+    @Test
     fun nav_15c_a_real_failed_request_posts_its_retry_state_to_main() {
         val service = Robolectric.buildService(ImportingAnalysisService::class.java).get()
 
@@ -182,6 +200,32 @@ class ReprisePlaybackServiceAnalysisTest {
         assertTrue("the posted failure did not permit a retry", service.awaitImport(2))
         assertEquals(2, service.imports.get())
     }
+}
+
+private class SupersedingAnalysisService : ReprisePlaybackService() {
+    val supersedes: MutableList<Long> = java.util.Collections.synchronizedList(mutableListOf())
+    val firstStarted = CountDownLatch(1)
+    val releaseFirst = CountDownLatch(1)
+
+    override fun supersedeForegroundTrackAnalysisInLibrary(keepTrackId: Long) {
+        supersedes += keepTrackId
+        if (keepTrackId == 1L) {
+            firstStarted.countDown()
+            releaseFirst.await()
+        }
+    }
+
+    fun awaitSupersede(keep: Long): Boolean {
+        val deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(2)
+        while (keep !in supersedes && System.nanoTime() < deadline) Thread.sleep(10)
+        return keep in supersedes
+    }
+
+    override fun trackAnalysisRequest(trackId: Long, requestGeneration: Long) = Unit
+
+    override fun startAnalysisBackfill() = Unit
+
+    override fun cancelAnalysisBackfill() = Unit
 }
 
 private class ImportingAnalysisService : ReprisePlaybackService() {

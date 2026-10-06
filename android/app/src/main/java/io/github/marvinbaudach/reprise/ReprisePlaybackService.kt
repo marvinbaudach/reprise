@@ -103,6 +103,13 @@ open class ReprisePlaybackService : MediaLibraryService() {
     @OptIn(ExperimentalCoroutinesApi::class)
     private val analysisBackfillScope =
         CoroutineScope(SupervisorJob() + Dispatchers.IO.limitedParallelism(1))
+
+    // Serial for the same reason: a quick skip A -> B -> C posts supersede(B) then
+    // supersede(C), and on the elastic pool supersede(B) could run last and cancel
+    // C, the track now playing.
+    @OptIn(ExperimentalCoroutinesApi::class)
+    private val analysisSupersedeScope =
+        CoroutineScope(SupervisorJob() + Dispatchers.IO.limitedParallelism(1))
     private val artworkExecutor = Executors.newSingleThreadExecutor { task ->
         Thread(task, "reprise-artwork")
     }
@@ -137,6 +144,7 @@ open class ReprisePlaybackService : MediaLibraryService() {
             },
         )
     }
+    @Volatile
     private var analysisTrackId: Long? = null
     private var analysisAttempts = 0
     private var analysisRequestInFlight = false
@@ -371,6 +379,7 @@ open class ReprisePlaybackService : MediaLibraryService() {
         }
         analysisScope.cancel()
         analysisBackfillScope.cancel()
+        analysisSupersedeScope.cancel()
         coreSession?.close()
         coreSession = null
         // After the Core session: closing it can still report a last snapshot,
@@ -434,15 +443,21 @@ open class ReprisePlaybackService : MediaLibraryService() {
 
     /** Stops every foreground analysis except `keepTrackId`'s; the backfill is untouched. */
     internal open fun supersedeForegroundAnalysis(keepTrackId: Long) {
-        analysisScope.launch {
+        analysisSupersedeScope.launch {
+            // A newer track change already queued its own call: this one would
+            // cancel the track that is playing now.
+            if (keepTrackId != analysisTrackId) return@launch
             Log.d(TAG_ANALYSIS, "Superseding foreground analyses other than track $keepTrackId")
             try {
-                sharedMusicLibrary().supersedeForegroundTrackAnalysis(keepTrackId)
+                supersedeForegroundTrackAnalysisInLibrary(keepTrackId)
             } catch (error: Exception) {
                 Log.w(TAG_ANALYSIS, "Could not supersede the outgoing track analysis", error)
             }
         }
     }
+
+    internal open fun supersedeForegroundTrackAnalysisInLibrary(keepTrackId: Long) =
+        sharedMusicLibrary().supersedeForegroundTrackAnalysis(keepTrackId)
 
     /** Overridden in tests with a fake that counts calls instead of decoding. */
     internal open fun trackAnalysisRequest(trackId: Long, requestGeneration: Long) {

@@ -628,6 +628,8 @@ class TrackAnalysisLoaderTest {
         loader.prepare(2)
         assertTrue("the second track was never imported", secondImported.await(2, TimeUnit.SECONDS))
         releasePause.countDown()
+        // Shutdown would end the loop too, so give an unguarded loop time to import again first.
+        Thread.sleep(SUPERSEDED_LOOP_SETTLE_MS)
         loader.shutdownForTest()
 
         assertEquals(1, imported.count { it == 1L })
@@ -664,6 +666,8 @@ class TrackAnalysisLoaderTest {
         assertEquals(2, answers.map { it?.coveredFraction }.toSet().size)
     }
 }
+
+private const val SUPERSEDED_LOOP_SETTLE_MS = 500L
 
 private fun cancelDrainWhileWorkIsStarted(
     loader: TrackAnalysisLoader,
