@@ -342,8 +342,8 @@ fn relink_from_folder_with_source(
                     .map(|(id, _)| *id)
                     .collect();
                 if still_missing {
-                    relinked = relinked
-                        .saturating_add(u32::try_from(settled.len()).unwrap_or(u32::MAX));
+                    relinked =
+                        relinked.saturating_add(u32::try_from(settled.len()).unwrap_or(u32::MAX));
                 }
                 for id in settled {
                     remaining.remove(&id);

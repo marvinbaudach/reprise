@@ -499,5 +499,8 @@ fn cue_6_a_phone_listen_of_a_file_cut_into_tracks_credits_none_of_them() {
             |row| row.get(0),
         )
         .unwrap();
-    assert_eq!(touched, 0, "a listen of the whole file is no track's listen");
+    assert_eq!(
+        touched, 0,
+        "a listen of the whole file is no track's listen"
+    );
 }
