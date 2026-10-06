@@ -20,7 +20,7 @@ async function sourceCss(file) {
   return readFile(join(showroomRoot, 'src', 'components', 'chapters', file), 'utf8');
 }
 
-test('chapter four presents the exact CLI commands and six MCP capability defaults', async () => {
+test('chapter four presents the exact CLI commands and seven MCP capability defaults', async () => {
   const html = await prerenderedPage();
   const css = await builtCss();
   const authoredCss = await sourceCss('ChapterFour.css');
@@ -48,6 +48,7 @@ test('chapter four presents the exact CLI commands and six MCP capability defaul
     ['playlist:create', 'off'],
     ['playlist:manage', 'off'],
     ['sources:manage', 'off'],
+    ['tags:write', 'off'],
     ['device:sync', 'off'],
   ]) {
     assert.match(
@@ -57,7 +58,7 @@ test('chapter four presents the exact CLI commands and six MCP capability defaul
       ),
     );
   }
-  assert.equal((chapter.match(/class="capability"/g) ?? []).length, 6);
+  assert.equal((chapter.match(/class="capability"/g) ?? []).length, 7);
   assert.match(
     css,
     /\.headless-grid\{[^}]*grid-template-columns:repeat\(auto-fit,minmax\(min\(100%,340px\),1fr\)/,

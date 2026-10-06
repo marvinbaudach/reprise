@@ -29,6 +29,7 @@ pub(super) const ACTION_DOWNLOAD_SELECTED: &str = "download-selected";
 pub(super) const ACTION_DELETE_DOWNLOADS_SELECTED: &str = "delete-downloads-selected";
 pub(super) const ACTION_REMOVE_SELECTED: &str = "remove-selected";
 pub(super) const ACTION_UNSUBSCRIBE: &str = "unsubscribe";
+#[cfg(test)]
 const ACTIONS: &[&str] = &[
     ACTION_PLAY,
     ACTION_COPY_URL,
@@ -89,6 +90,7 @@ fn multi_selection_destructive_entry() -> SelectionMenuEntry {
     entry(strings::YOUTUBE_REMOVE_SELECTED, ACTION_REMOVE_SELECTED)
 }
 
+#[cfg(test)]
 pub(super) fn build(row: &EpisodeRow) -> gio::Menu {
     let paths = EpisodePaths::from_rows(std::slice::from_ref(row));
     build_for_selection(row, &[row.id], None, &paths)
@@ -340,68 +342,6 @@ fn append_selected(menu: &gio::Menu, label: &str, action: &str, episode_ids: &[i
         Some(&episode_ids.to_variant()),
     );
     menu.append_item(&item);
-}
-
-pub(super) fn wire_gesture(widget: &impl IsA<gtk4::Widget>, item: &gtk4::ListItem) {
-    // input-parity: ACC-8 keyboard=menu-shift-f10
-    let gesture = crate::ui::source_context_surface::secondary_click();
-    let pointer_item = item.clone();
-    gesture.connect_pressed(move |gesture, _, x, y| {
-        let Some(parent) = gesture.widget() else {
-            return;
-        };
-        gesture.set_state(gtk4::EventSequenceState::Claimed);
-        popup(&pointer_item, &parent, x as i32, y as i32);
-    });
-    widget.upcast_ref::<gtk4::Widget>().add_controller(gesture);
-}
-
-pub(super) fn wire_keyboard(view: &gtk4::ColumnView, selection: &gtk4::SingleSelection) {
-    let keys = crate::ui::source_context_surface::context_keys();
-    let parent = view.clone();
-    let selection = selection.clone();
-    keys.connect_key_pressed(move |_, key, _, modifiers| {
-        if !crate::ui::source_context_surface::is_context_menu_shortcut(key, modifiers) {
-            return gtk4::glib::Propagation::Proceed;
-        }
-        let Some(object) = selection
-            .selected_item()
-            .and_downcast::<super::podcasts_model::PodcastEpisodeObject>()
-        else {
-            return gtk4::glib::Propagation::Proceed;
-        };
-        // No pointer position to anchor to, so the menu opens over the middle
-        // of the table — the same place the radio table uses.
-        popup_at(
-            &object.row(),
-            parent.upcast_ref(),
-            parent.width() / 2,
-            parent.height() / 2,
-        );
-        gtk4::glib::Propagation::Stop
-    });
-    view.add_controller(keys);
-}
-
-fn popup(item: &gtk4::ListItem, parent: &gtk4::Widget, x: i32, y: i32) {
-    let Some(object) = item
-        .item()
-        .and_downcast::<super::podcasts_model::PodcastEpisodeObject>()
-    else {
-        return;
-    };
-    popup_at(&object.row(), parent, x, y);
-}
-
-/// The one place a podcast row menu is built and shown, shared by the pointer
-/// and keyboard paths so they cannot drift apart (ACC-1).
-fn popup_at(row: &EpisodeRow, parent: &gtk4::Widget, x: i32, y: i32) {
-    let popover = gtk4::PopoverMenu::from_model(Some(&build(row)));
-    popover.set_has_arrow(false);
-    popover.set_parent(parent);
-    popover.set_pointing_to(Some(&gtk4::gdk::Rectangle::new(x, y, 1, 1)));
-    crate::ui::popover_lifecycle::unparent_after_actions(popover.upcast_ref());
-    popover.popup();
 }
 
 #[cfg(test)]

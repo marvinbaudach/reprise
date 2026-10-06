@@ -39,6 +39,48 @@ impl RemoteResolver for CountingResolver {
     }
 }
 
+#[derive(Default)]
+struct MajorityWriteResolver {
+    calls: usize,
+}
+
+impl RemoteResolver for MajorityWriteResolver {
+    fn resolve_track(
+        &mut self,
+        _: &RemoteTrackMetadata,
+        path: &Path,
+        _: Option<&dyn FingerprintBackend>,
+        _: Option<&super::super::remote::AlbumMatch>,
+        _: &mut dyn FnMut() -> ScanControl,
+    ) -> Result<RemoteResolution, RemoteProviderError> {
+        self.calls += 1;
+        let should_change = path
+            .file_stem()
+            .and_then(|stem| stem.to_str())
+            .is_some_and(|stem| stem == "split-1" || stem == "split-2");
+        Ok(RemoteResolution {
+            proposals: should_change
+                .then(|| DoctorProposal {
+                    track_id: 0,
+                    field: DoctorField::Artist,
+                    current: DoctorValue::Text("REFORMIST".into()),
+                    proposed: DoctorValue::Text("Reformist".into()),
+                    source: ProposalSource::MusicBrainz,
+                    confidence: 91,
+                    preselected: false,
+                    never_preselect: false,
+                    problem_class: ProblemClass::CasingWhitespace,
+                    resolved_release_mbid: None,
+                    evidence: Vec::new(),
+                    local_fallback: None,
+                })
+                .into_iter()
+                .collect(),
+            groups: Vec::new(),
+        })
+    }
+}
+
 fn scan(db: &crate::db::Db, resolver: &mut dyn RemoteResolver, remote_enabled: bool) -> DoctorScan {
     scan_selection(db, resolver, remote_enabled, vec![1])
 }
@@ -219,4 +261,60 @@ fn doc_1g_a_skipped_track_keeps_its_previous_proposals() {
     assert_eq!(second.proposals, first.proposals);
     assert_eq!(second.unresolved_groups, first.unresolved_groups);
     assert_eq!(resolver.calls, 0);
+}
+
+#[test]
+fn doc_1h_a_split_the_doctor_created_is_found_by_the_next_scan() {
+    let dir = tempfile::tempdir().unwrap();
+    let db = migrated_connection();
+    let paths = (1..=3)
+        .map(|id| {
+            let path = fixture_copy(dir.path(), &format!("split-{id}.flac"));
+            write_tags(&path, "Track", "REFORMIST", "Voyages", "REFORMIST", "Rock");
+            insert_track(&db, id, &path, "REFORMIST");
+            path
+        })
+        .collect::<Vec<_>>();
+    let mut resolver = MajorityWriteResolver::default();
+    let first = scan_selection(&db, &mut resolver, true, vec![1, 2, 3]);
+    let mut review = DoctorReviewSession::from_scan(first, DoctorReviewFilter::NeedsReview);
+    let choices = review
+        .rows()
+        .iter()
+        .map(|row| {
+            (
+                row.id,
+                row.field == DoctorField::Artist && matches!(row.track_id, 1 | 2),
+            )
+        })
+        .collect::<Vec<_>>();
+    for (row_id, selected) in choices {
+        review.set_selected(row_id, selected).unwrap();
+    }
+    assert_eq!(review.freeze_plan().tag_change_count(), 2);
+    LibraryDoctor::new(&db)
+        .apply_review_plan(&review.freeze_plan(), |_| DoctorWriteControl::Continue)
+        .unwrap();
+    for path in paths {
+        std::fs::remove_file(path).unwrap();
+    }
+    resolver.calls = 0;
+
+    let second = scan_selection(&db, &mut resolver, true, vec![1, 2, 3]);
+
+    assert_eq!(
+        second.skipped_tracks, 0,
+        "the second scan must read no file"
+    );
+    assert_eq!(
+        resolver.calls, 0,
+        "unchanged tracks reuse remote results too"
+    );
+    assert!(second.proposals.iter().any(|proposal| {
+        proposal.track_id == 3
+            && proposal.field == DoctorField::Artist
+            && proposal.current == DoctorValue::Text("REFORMIST".into())
+            && proposal.proposed == DoctorValue::Text("Reformist".into())
+            && proposal.source == ProposalSource::Local
+    }));
 }

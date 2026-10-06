@@ -64,16 +64,18 @@ fn render_single_group(kind: PodcastKind) -> RenderedEpisode {
     replace(
         &container,
         &[rendered],
-        None,
-        &Rc::new(RefCell::new(BTreeSet::from([1]))),
-        &Rc::new(RefCell::new(BTreeSet::new())),
-        &BTreeMap::new(),
-        false,
-        &Rc::new(crate::test_db::open().unwrap()),
-        Connectivity::Online,
-        None,
-        &Rc::new(RefCell::new(PodcastSelection::default())),
-        "",
+        GroupRenderInputs {
+            playing_episode: None,
+            expanded_sources: &Rc::new(RefCell::new(BTreeSet::from([1]))),
+            expanded_episode_sources: &Rc::new(RefCell::new(BTreeSet::new())),
+            download_states: &BTreeMap::new(),
+            images_allowed: false,
+            conn: &Rc::new(crate::test_db::open().unwrap()),
+            connectivity: Connectivity::Online,
+            unavailable_episode: None,
+            selection: &Rc::new(RefCell::new(PodcastSelection::default())),
+            query: "",
+        },
     );
     let window = gtk4::Window::builder()
         .default_width(1_200)

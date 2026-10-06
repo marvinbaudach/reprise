@@ -1,10 +1,13 @@
 use gstreamer as gst;
 use gstreamer::prelude::*;
 use gstreamer_app as gst_app;
+use std::sync::PoisonError;
 
+use reprise_core::library::loudness::{MAX_GAIN_DB, MIN_GAIN_DB};
 use reprise_core::playback::{AudioEffects, PlaybackError};
 
 pub(super) const CAVA_SINK_NAME: &str = "reprise-cava-sink";
+pub(super) const TRACK_GAIN_NAME: &str = "reprise-track-gain";
 pub(super) const CAVA_SAMPLE_RATE_HZ: i32 = 44_100;
 // Keep about 130 ms of 60 Hz analysis buffers for short scheduling stalls, but
 // stay bounded because this branch must never back-pressure audible playback.
@@ -13,7 +16,6 @@ const CAVA_SINK_MAX_QUEUED_BUFFERS: u32 = 8;
 pub(super) fn build_audio_filter(
     effects: &AudioEffects,
 ) -> Result<Option<gst::Element>, PlaybackError> {
-    use reprise_core::library::settings::ReplayGainMode;
     let bin = gst::Bin::new();
     let first = gst::ElementFactory::make("audioconvert")
         .build()
@@ -68,15 +70,11 @@ pub(super) fn build_audio_filter(
         .build();
     cava_sink.set_property("name", CAVA_SINK_NAME);
 
-    let mut playback_elements = vec![playback_queue];
-    if effects.replay_gain != ReplayGainMode::Off {
-        let replaygain = gst::ElementFactory::make("rgvolume")
-            .name("reprise-replaygain")
-            .build()
-            .map_err(|error| PlaybackError::Backend(format!("GStreamer: {error}")))?;
-        replaygain.set_property("album-mode", effects.replay_gain == ReplayGainMode::Album);
-        playback_elements.push(replaygain);
-    }
+    let track_gain = gst::ElementFactory::make("volume")
+        .name(TRACK_GAIN_NAME)
+        .build()
+        .map_err(|error| PlaybackError::Backend(format!("GStreamer: {error}")))?;
+    let mut playback_elements = vec![playback_queue, track_gain];
     playback_elements.push(
         gst::ElementFactory::make("audioconvert")
             .build()
@@ -184,87 +182,105 @@ pub(super) fn apply_audio_filter(
     Ok(())
 }
 
-pub(super) fn same_filter_topology(current: &AudioEffects, next: &AudioEffects) -> bool {
-    use reprise_core::library::settings::ReplayGainMode;
-    (current.replay_gain != ReplayGainMode::Off) == (next.replay_gain != ReplayGainMode::Off)
-}
-
-/// Updates properties on the existing filter bin when no elements need to be
-/// added or removed. The equalizer is always present with neutral bands while
-/// disabled, so enabling it never requires a pipeline state transition.
+/// Applies `effects` to the filter bin that is already installed. The filter
+/// has a fixed topology: the equalizer is always present with neutral bands
+/// while disabled, and the track gain is always present, so a live change never
+/// needs a pipeline state transition. A bin that lacks either element is a
+/// construction bug, reported rather than papered over by a rebuild.
 pub(super) fn update_existing_audio_filter(
     playbin: &gst::Element,
-    current: &AudioEffects,
     next: &AudioEffects,
-) -> bool {
-    use reprise_core::library::settings::ReplayGainMode;
-    if !same_filter_topology(current, next) {
-        return false;
-    }
-    let Some(filter) = playbin.property::<Option<gst::Element>>("audio-filter") else {
-        return false;
-    };
-    let Ok(bin) = filter.downcast::<gst::Bin>() else {
-        return false;
-    };
-    let Some(equalizer) = bin.by_name("reprise-equalizer") else {
-        return false;
-    };
-    set_equalizer_bands(&equalizer, next);
-    if next.replay_gain != ReplayGainMode::Off {
-        let Some(replaygain) = bin.by_name("reprise-replaygain") else {
-            return false;
-        };
-        replaygain.set_property("album-mode", next.replay_gain == ReplayGainMode::Album);
-    }
-    true
-}
-
-pub(super) fn requested_state(element: &gst::Element) -> gst::State {
-    let (_, current, pending) = element.state(gst::ClockTime::ZERO);
-    if pending == gst::State::VoidPending {
-        current
-    } else {
-        pending
-    }
-}
-
-fn restore_requested_state(
-    playbin: &gst::Element,
-    state: gst::State,
-    position: Option<gst::ClockTime>,
 ) -> Result<(), PlaybackError> {
-    if state == gst::State::Null {
-        return Ok(());
+    let bin = playbin
+        .property::<Option<gst::Element>>("audio-filter")
+        .ok_or_else(|| PlaybackError::Backend("GStreamer: playbin has no audio filter".into()))?
+        .downcast::<gst::Bin>()
+        .map_err(|_| PlaybackError::Backend("GStreamer: audio filter is not a bin".into()))?;
+    let equalizer = bin
+        .by_name("reprise-equalizer")
+        .ok_or_else(|| PlaybackError::Backend("GStreamer: audio filter has no equalizer".into()))?;
+    if bin.by_name(TRACK_GAIN_NAME).is_none() {
+        return Err(PlaybackError::Backend(
+            "GStreamer: audio filter has no track gain".into(),
+        ));
     }
-    playbin
-        .set_state(state)
-        .map_err(|error| PlaybackError::Backend(format!("GStreamer: {error}")))?;
-    if let Some(position) = position {
-        let _ = playbin.seek_simple(gst::SeekFlags::FLUSH | gst::SeekFlags::KEY_UNIT, position);
-    }
+    set_equalizer_bands(&equalizer, next);
     Ok(())
 }
 
-pub(super) fn replace_audio_filter(
+pub(super) fn set_playbin_track_gain(
     playbin: &gst::Element,
-    effects: &AudioEffects,
-    apply: impl FnOnce(&gst::Element, &AudioEffects) -> Result<(), PlaybackError>,
+    gain_db: f64,
 ) -> Result<(), PlaybackError> {
-    let state = requested_state(playbin);
-    let position = playbin.query_position::<gst::ClockTime>();
-    playbin
-        .set_state(gst::State::Null)
-        .map_err(|error| PlaybackError::Backend(format!("GStreamer: {error}")))?;
-    let apply_result = apply(playbin, effects);
-    let restore_result = restore_requested_state(playbin, state, position);
-    match (apply_result, restore_result) {
-        (Err(error), Err(restore_error)) => {
-            tracing::warn!(%restore_error, "could not restore playback after filter failure");
-            Err(error)
-        }
-        (Err(error), Ok(())) => Err(error),
-        (Ok(()), Err(error)) => Err(error),
-        (Ok(()), Ok(())) => Ok(()),
+    let filter = playbin
+        .property::<Option<gst::Element>>("audio-filter")
+        .ok_or_else(|| PlaybackError::Backend("GStreamer: playbin has no audio filter".into()))?;
+    let bin = filter
+        .downcast::<gst::Bin>()
+        .map_err(|_| PlaybackError::Backend("GStreamer: audio filter is not a bin".into()))?;
+    let gain = bin.by_name(TRACK_GAIN_NAME).ok_or_else(|| {
+        PlaybackError::Backend("GStreamer: audio filter has no track gain".into())
+    })?;
+    gain.set_property("volume", linear_gain(gain_db));
+    Ok(())
+}
+
+/// The `volume` factor for a gain in decibels. A non-finite gain plays at unity
+/// and the gain is clamped to the window Core resolves into (-24..+12 dB, well
+/// inside the element's `0..=10` range), so a bad value from any caller can
+/// neither mute the stream by accident nor blast it.
+pub(super) fn linear_gain(gain_db: f64) -> f64 {
+    if !gain_db.is_finite() {
+        return 1.0;
     }
+    10_f64.powf(gain_db.clamp(MIN_GAIN_DB, MAX_GAIN_DB) / 20.0)
+}
+
+pub(super) fn install_stream_start_gain_switch(
+    playbin: &gst::Element,
+    pending_gain: crate::gapless::PendingGain,
+) -> Result<(), PlaybackError> {
+    let filter = playbin
+        .property::<Option<gst::Element>>("audio-filter")
+        .ok_or_else(|| PlaybackError::Backend("GStreamer: playbin has no audio filter".into()))?;
+    install_filter_gain_switch(&filter, pending_gain)
+}
+
+/// Applies the pending gain when the next stream's `STREAM_START` reaches the
+/// gain element, in the streaming thread, before that stream's first buffer.
+/// The probe sits on the gain element's own sink pad, behind the playback
+/// queue: the queue holds up to a second of the old track's tail, and only
+/// there is the event serialised with that data. A probe on the filter bin's
+/// sink pad would switch the gain before the tail is played.
+pub(super) fn install_filter_gain_switch(
+    filter: &gst::Element,
+    pending_gain: crate::gapless::PendingGain,
+) -> Result<(), PlaybackError> {
+    let bin = filter
+        .clone()
+        .downcast::<gst::Bin>()
+        .map_err(|_| PlaybackError::Backend("GStreamer: audio filter is not a bin".into()))?;
+    let gain = bin.by_name(TRACK_GAIN_NAME).ok_or_else(|| {
+        PlaybackError::Backend("GStreamer: audio filter has no track gain".into())
+    })?;
+    let sink = gain
+        .static_pad("sink")
+        .ok_or_else(|| PlaybackError::Backend("GStreamer: track gain has no sink pad".into()))?;
+    let element = gain.clone();
+    sink.add_probe(gst::PadProbeType::EVENT_DOWNSTREAM, move |_, info| {
+        if info
+            .event()
+            .is_some_and(|event| event.type_() == gst::EventType::StreamStart)
+        {
+            let next = pending_gain
+                .lock()
+                .unwrap_or_else(PoisonError::into_inner)
+                .take();
+            if let Some(gain_db) = next {
+                element.set_property("volume", linear_gain(gain_db));
+            }
+        }
+        gst::PadProbeReturn::Ok
+    });
+    Ok(())
 }

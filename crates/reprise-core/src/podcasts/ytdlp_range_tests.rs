@@ -1,16 +1,13 @@
 use std::fs;
-use std::os::unix::fs::PermissionsExt;
 use std::path::{Path, PathBuf};
 use std::time::Duration;
 
+use super::test_support::write_executable;
 use super::{YtDlp, YtDlpTimeouts};
 
 fn fake_binary(directory: &Path, body: &str) -> PathBuf {
     let path = directory.join("fake-yt-dlp-range");
-    fs::write(&path, format!("#!/bin/sh\nset -eu\n{body}\n")).unwrap();
-    let mut permissions = fs::metadata(&path).unwrap().permissions();
-    permissions.set_mode(0o755);
-    fs::set_permissions(&path, permissions).unwrap();
+    write_executable(&path, &format!("#!/bin/sh\nset -eu\n{body}"));
     path
 }
 

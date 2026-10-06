@@ -113,7 +113,6 @@ class ArtistPortraitLiveRefreshTest {
                         },
                         themeSelection = theme,
                         selectTheme = {},
-                        onlineSourcesEnabled = true,
                     )
                 }
             }

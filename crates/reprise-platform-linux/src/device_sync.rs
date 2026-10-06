@@ -390,7 +390,10 @@ impl DeviceStorage {
 
     /// Copies (or overwrites) one file under a sync target's folder (`target_path`, `MTP-23`), always replacing any existing file at the
     /// destination even when its byte count happens to be unchanged.
-    #[allow(clippy::too_many_arguments)]
+    #[expect(
+        clippy::too_many_arguments,
+        reason = "the MTP operation keeps each transport parameter explicit"
+    )]
     pub async fn replace_managed<P>(
         &self,
         storage_id: Option<StorageId>,

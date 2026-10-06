@@ -37,6 +37,21 @@ class BrowseSurfaceTest {
     }
 
     @Test
+    fun aCancelledScrubShowsTheLastSnapshotNotTheAbandonedValue() {
+        val dragging = SeekPositionState.fromSnapshot(12_000)
+            .dragTo(48_000)
+            .acceptSnapshot(13_000)
+
+        val cancelled = dragging.cancel()
+        assertEquals(13_000, cancelled.positionMs)
+        assertFalse(cancelled.isDragging)
+
+        val released = dragging.release()
+        assertEquals(48_000, released.positionMs)
+        assertFalse(released.isDragging)
+    }
+
+    @Test
     fun fullArtworkHasItsOwnLazyCacheEntry() {
         val track = testBrowseTrack("title")
         val port = RecordingBrowsePort()
@@ -396,14 +411,16 @@ fun appendingAContinuationKeepsTheExactTotalAndOrder() {
 }
 
 @Test
-fun theVisibleCountDistinguishesALoadedWindowFromTheWholeLibrary() {
+fun theCountNamesTheWholeLibraryNotTheLoadedWindow() {
+    // How many rows the phone happens to hold is paging, not an answer: "500 of
+    // 1824" reads as a filter that left 500 behind.
     val window = LibraryWindow(
         total = 1_824,
         rows = (1..500).map { rank -> testBrowseTrack("title-$rank") },
         hasMore = true,
     )
 
-    assertEquals("500 of 1824 titles loaded", window.visibleCountLabel("title", "titles"))
+    assertEquals("1824 titles", window.totalCountLabel("title", "titles"))
 }
 
 @Test
@@ -624,6 +641,8 @@ private class RecordingBrowsePort(
 
     override fun albumTrackIds(album: String, albumArtist: String): List<Long> =
         albumTracks.rows.map(LibraryTrack::id)
+
+    override fun artistTrackIds(artist: String): List<Long> = emptyList()
 
     override fun trackById(trackId: Long): LibraryTrack? =
         titleResults.values.asSequence().flatMap { it.rows }.firstOrNull { it.id == trackId }

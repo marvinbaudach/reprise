@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from typing import Any, Mapping
 
+from search_results import result_elements
 from ui_vocabulary import ENTRY_ROLES, canonical_role
 from workload_audit import label_shows_selection_count
 
@@ -31,13 +32,7 @@ def assertion_codes(
         for item in observation.get("elements", [])
         if isinstance(item, dict) and item.get("label")
     ]
-    rows = [
-        str(item.get("label"))
-        for item in observation.get("elements", [])
-        if isinstance(item, dict)
-        and item.get("label")
-        and str(item.get("role", "")) == "row"
-    ]
+    rows = [str(item.get("label")) for item in result_elements(observation)]
     results = []
     if (
         kind == "type"

@@ -48,6 +48,7 @@ import kotlinx.coroutines.launch
 import uniffi.reprise_android_ffi.AndroidColorScheme
 import uniffi.reprise_android_ffi.AndroidEqualizerPoint
 import uniffi.reprise_android_ffi.AndroidEqualizerPreset
+import uniffi.reprise_android_ffi.AndroidReplayGainMode
 import uniffi.reprise_android_ffi.AndroidStoredLibraryDestination
 import uniffi.reprise_android_ffi.ScanProgressListener
 import uniffi.reprise_android_ffi.ScanProgressUpdate
@@ -57,6 +58,8 @@ import uniffi.reprise_android_ffi.standardEqualizerPresets
 private const val TAG = "RepriseScan"
 internal const val PLAYBACK_BIND_WATCHDOG_MS = 2_000L
 internal const val PLAYBACK_BIND_FAILURE_LOG = "Playback service bind did not connect"
+internal const val PREFERENCES_NAME = "reprise_android"
+internal const val NOTIFICATION_PERMISSION_ASKED = "notification_permission_asked"
 class MainActivity : ComponentActivity() {
     // The core is told where to cache covers instead of assuming an XDG
     // directory that does not exist here.
@@ -71,7 +74,7 @@ class MainActivity : ComponentActivity() {
             resolver = contentResolver,
             preferences = getSharedPreferences(PREFERENCES_NAME, MODE_PRIVATE),
             library = library,
-            afterScan = surfaceState::startArtistPhotoBackfill,
+            afterScan = surfaceState::scanCompletedRestartArtwork,
         )
     }
     private val artistPortraitPrefetchDelegate = lazy {
@@ -82,7 +85,21 @@ class MainActivity : ComponentActivity() {
         LibrarySession(
             port = sessionPort,
             startPortraitPrefetch = artistPortraitPrefetch::start,
+            afterRestoreConfigured = surfaceState::startArtistPhotoBackfillUnlessStopped,
             scanMonitor = surfaceState.libraryScanMonitor,
+        )
+    }
+    /**
+     * Re-reads the library after a deletion. Off the main thread like every
+     * other read of the catalog: the same shape as [onResume]'s silent scan.
+     */
+    private val removalRefresher by lazy {
+        LibraryRemovalRefresher(
+            session = session,
+            surface = surfaceState,
+            onWorker = { work -> Thread(work).start() },
+            onMain = { work -> runOnUiThread(work) },
+            logFailure = { message, error -> Log.w(TAG, message, error) },
         )
     }
     private val artworkDelegate = lazy {
@@ -90,6 +107,8 @@ class MainActivity : ComponentActivity() {
             resolve = session::artworkFor,
             resolveArtistPortraitCached = session::artistPortraitCached,
             resolveArtistPortraitFetched = session::artistPortraitFetched,
+            resolveAlbumCoverFetched = session::artworkFetched,
+            forgetAlbumArtworkMisses = session::forgetArtworkMisses,
         )
     }
     private val artwork by artworkDelegate
@@ -126,7 +145,11 @@ class MainActivity : ComponentActivity() {
                 library.trackRenderBars(trackId, count.toUInt())?.map { it.toSpectralBar() }
             },
             readSpectrogram = { trackId -> library.trackSpectrogram(trackId) },
+            readProgress = { trackId, count ->
+                library.trackAnalysisProgress(trackId, count.toUInt())?.toPartialTrackAnalysis()
+            },
             onMainThread = { work -> runOnUiThread { work() } },
+            playingTrackId = { boundService.value?.playbackSnapshots?.value?.currentTrackId },
         )
     }
     private val analysis by analysisDelegate
@@ -160,6 +183,7 @@ class MainActivity : ComponentActivity() {
         setFavouriteAction = ::setFavourite,
         trashAction = trashAction,
         playTrackIdsAction = ::playTrackIds,
+        onLibraryChanged = { removalRefresher.refresh() },
     )
     private val notificationPermission = registerForActivityResult(
         ActivityResultContracts.RequestPermission(),
@@ -186,6 +210,9 @@ class MainActivity : ComponentActivity() {
             playbackBindWatchdog?.cancel()
             playbackBindWatchdog = null
             boundService.value = service
+            service.setActivityInForeground(
+                lifecycle.currentState.isAtLeast(Lifecycle.State.RESUMED),
+            )
             visualSceneEngineFactory.value = service.visualSceneEngineFactory()
         }
 
@@ -205,19 +232,13 @@ class MainActivity : ComponentActivity() {
         val surface = surfaceProvider?.mainActivitySurface() ?: run {
             usesProductionSurface = true
             surfaceState.bindArtistPortraitRefresh(artwork::artistPortraitsChanged)
+            surfaceState.bindAlbumCoverRefresh(artwork::albumCoversChanged)
             surfaceState.connectArtistPhotoBackfill(library) { work -> runOnUiThread(work) }
-            productionSurface().also { surfaceState.startArtistPhotoBackfill() }
+            productionSurface().also { surfaceState.startArtistPhotoBackfillUnlessStopped() }
         }
         collectPlaybackServiceState()
         setContent {
             var themeSelection by remember { mutableStateOf(surface.initialTheme) }
-            var onlineSourcesEnabled by remember {
-                mutableStateOf(surface.onlineSourcesEnabled())
-            }
-            val artistPhotoOffer = rememberArtistPhotoOffer(
-                getSharedPreferences(PREFERENCES_NAME, MODE_PRIVATE),
-            )
-            val onlineSourcesIntent = remember { PendingToggleIntent() }
             val darkPalette = themeSelection.usesDarkPalette(isSystemInDarkTheme())
             val libraryPlayback by remember { derivedStateOf { playbackState.value.libraryPlayback() } }
             val playbackProgress = remember { { playbackState.value.progressFraction } }
@@ -256,6 +277,8 @@ class MainActivity : ComponentActivity() {
                             LocalTrackArtwork provides surface.artwork(),
                             LocalPlaybackControls provides surface.playbackControls,
                             LocalAlbumTrackIds provides { album -> session.albumTrackIds(album) },
+                            LocalArtistTrackIds provides { artist -> session.artistTrackIds(artist) },
+                            LocalDeletionMessages provides surfaceState,
                             LocalTrackAnalysis provides surface.trackAnalysis,
                             LocalAmbientMotionController provides ambientMotion,
                             LocalVisualizerPreference provides visualizerPreference,
@@ -287,33 +310,9 @@ class MainActivity : ComponentActivity() {
                                 setEqualizerEnabled = surface.setEqualizerEnabled,
                                 replaceEqualizerCurve = surface.replaceEqualizerCurve,
                                 setGaplessEnabled = surface.setGaplessEnabled,
-                                onlineSourcesEnabled = onlineSourcesEnabled,
-                                artistPhotoOffer = artistPhotoOffer,
-                                setOnlineSourcesEnabled = {
-                                    val enabled = onlineSourcesIntent.next(onlineSourcesEnabled)
-                                    libraryWrites.submitAnswered(
-                                        work = {
-                                            surface.setOnlineSourcesEnabled(enabled).getOrThrow()
-                                        },
-                                        report = { outcome ->
-                                            outcome.onSuccess {
-                                                onlineSourcesEnabled = enabled
-                                                if (enabled) {
-                                                    surfaceState.startArtistPhotoBackfill()
-                                                } else {
-                                                    surfaceState.cancelArtistPhotoBackfill()
-                                                }
-                                            }.onFailure { error ->
-                                                Log.e(
-                                                    TAG,
-                                                    "Could not change online source settings",
-                                                    error,
-                                                )
-                                            }
-                                            onlineSourcesIntent.answered(enabled)
-                                        },
-                                    )
-                                },
+                                setVolumeKeySkipGestureEnabled =
+                                    surface.setVolumeKeySkipGestureEnabled,
+                                setReplayGainMode = surface.setReplayGainMode,
                                 themeSelection = themeSelection,
                                 selectTheme = { palette ->
                                     val currentSelection = themeSelection
@@ -406,17 +405,9 @@ class MainActivity : ComponentActivity() {
             setEqualizerEnabled = ::setEqualizerEnabled,
             replaceEqualizerCurve = ::replaceEqualizerCurve,
             setGaplessEnabled = ::setGaplessEnabled,
+            setVolumeKeySkipGestureEnabled = ::setVolumeKeySkipGestureEnabled,
+            setReplayGainMode = ::setReplayGainMode,
             selectTheme = { current, palette -> themeController.select(current, palette) },
-            onlineSourcesEnabled = {
-                runCatching { library.onlineSourcesEnabled() }
-                    .onFailure { error ->
-                        Log.e(TAG, "Could not load online source settings", error)
-                    }
-                    .getOrDefault(false)
-            },
-            setOnlineSourcesEnabled = { enabled ->
-                runCatching { library.setOnlineSourcesEnabled(enabled) }
-            },
             animationsEnabled = ValueAnimator::areAnimatorsEnabled,
             observeAmbientScheduling = {},
         )
@@ -452,6 +443,7 @@ class MainActivity : ComponentActivity() {
 
     override fun onStart() {
         super.onStart()
+        if (usesProductionSurface) surfaceState.startNetworkReturnMonitor(this, artwork::networkReturned)
         playbackBindWatchdog?.cancel()
         val intent = Intent(this, ReprisePlaybackService::class.java).apply {
             action = ReprisePlaybackService.LOCAL_BIND_ACTION
@@ -478,6 +470,7 @@ class MainActivity : ComponentActivity() {
 
     override fun onResume() {
         super.onResume()
+        boundService.value?.setActivityInForeground(true)
         if (!usesProductionSurface) return
         Thread {
             runCatching { session.autoScan() }
@@ -490,9 +483,11 @@ class MainActivity : ComponentActivity() {
 
     override fun onPause() {
         super.onPause()
+        boundService.value?.setActivityInForeground(false)
     }
 
     override fun onStop() {
+        surfaceState.stopNetworkReturnMonitor(isChangingConfigurations)
         playbackState.value = playbackState.value.copy(faultNotice = null)
         playbackBindWatchdog?.cancel()
         playbackBindWatchdog = null
@@ -686,30 +681,7 @@ class MainActivity : ComponentActivity() {
     private fun loadPlaybackSettings(): PlaybackSettingsUiState {
         val stored = library.playbackSettings()
         val snapshot = boundService.value?.equalizerSnapshot()
-        val bands = snapshot?.bands.orEmpty().map { band ->
-            EqualizerBandUi(
-                frequencyHz = band.frequencyHz,
-                gainDb = band.gainDb,
-                minimumGainDb = band.minimumGainDb,
-                maximumGainDb = band.maximumGainDb,
-            )
-        }
-        return PlaybackSettingsUiState(
-            equalizerEnabled = stored.equalizerEnabled,
-            gaplessEnabled = stored.gaplessEnabled,
-            equalizerBands = bands,
-            equalizerCurve = stored.equalizerCurve.map { point ->
-                EqualizerCurvePoint(point.frequencyHz, point.gainDb)
-            },
-            equalizerPresets = equalizerPresets,
-            // A snapshot that reports no equalizer is a session we *have* asked:
-            // saying "start playback" there would be false while a track plays.
-            equalizerBandsAbsence = if (snapshot != null && !snapshot.available) {
-                EqualizerBandsAbsence.NO_EQUALIZER_ON_THIS_DEVICE
-            } else {
-                EqualizerBandsAbsence.NO_PLAYBACK_YET
-            },
-        )
+        return playbackSettingsUiState(stored, snapshot, equalizerPresets)
     }
 
     private fun setEqualizerEnabled(enabled: Boolean): PlaybackSettingsUiState {
@@ -730,6 +702,18 @@ class MainActivity : ComponentActivity() {
 
     private fun setGaplessEnabled(enabled: Boolean): PlaybackSettingsUiState {
         library.setGaplessEnabled(enabled)
+        boundService.value?.reloadPlaybackSettings()
+        return loadPlaybackSettings()
+    }
+
+    private fun setReplayGainMode(mode: AndroidReplayGainMode): PlaybackSettingsUiState {
+        library.setReplayGainMode(mode)
+        boundService.value?.reloadPlaybackSettings()
+        return loadPlaybackSettings()
+    }
+
+    private fun setVolumeKeySkipGestureEnabled(enabled: Boolean): PlaybackSettingsUiState {
+        library.setVolumeKeySkipGestureEnabled(enabled)
         boundService.value?.reloadPlaybackSettings()
         return loadPlaybackSettings()
     }

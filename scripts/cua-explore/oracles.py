@@ -20,6 +20,7 @@ from ui_vocabulary import (
     invocable_actions as classify_invocable_actions,
     unknown_action_names as classify_unknown_action_names,
 )
+from search_results import page_items
 from stall_attribution import response_gap_findings
 
 
@@ -100,6 +101,11 @@ class Element:
     value: str
     # False when the harness could not prove this element's position.
     geometry_trusted: bool = True
+    # Whether a search left this element on screen as a result; None when the
+    # snapshot carries no parent links to decide it (see search_results).
+    result: bool | None = None
+    # Whether it is a source card the page lists; None under the same condition.
+    source_card: bool | None = None
 
     @property
     def invocable_actions(self) -> tuple[str, ...]:
@@ -288,6 +294,7 @@ def normalize_snapshot(
         sortable.append((label, role, frame.x, frame.y, raw_element, frame))
         root_candidates.append((raw_element, role, frame))
     sortable.sort(key=lambda item: item[:4])
+    page = page_items([item[4] for item in sortable])
     occurrences: dict[tuple[str, str], int] = {}
     elements = []
     for label, role, _x, _y, raw_element, frame in sortable:
@@ -310,6 +317,12 @@ def normalize_snapshot(
                 selected=element_flag(raw_element, "selected"),
                 geometry_trusted=element_flag(raw_element, "geometry_trusted", True),
                 value="" if value_raw is None else str(value_raw),
+                result=(
+                    None if page is None else raw_element.get("element_index") in page[0]
+                ),
+                source_card=(
+                    None if page is None else raw_element.get("element_index") in page[1]
+                ),
             )
         )
     signature_payload = json.dumps(raw, sort_keys=True, default=str).encode("utf-8")
@@ -450,6 +463,21 @@ class OracleEngine:
             findings.extend(self._layout_findings((before, *settled)))
         return self._deduplicate(findings)
 
+    @staticmethod
+    def _offers_no_action(action: ActionEvidence) -> bool:
+        return action.dispatch == "ax" and action.target_has_action is False
+
+    @staticmethod
+    def _no_accessible_action(action: ActionEvidence) -> Finding:
+        return Finding(
+            "no-accessible-action",
+            "error",
+            0.9,
+            f"'{action.target_label}' offers assistive technology no action to invoke.",
+            {"target": action.target_label},
+            blocks_gate=True,
+        )
+
     def _click_findings(
         self, action: ActionEvidence, before: Snapshot, after: Snapshot, changed: bool
     ) -> list[Finding]:
@@ -471,20 +499,11 @@ class OracleEngine:
                     blocks_gate=True,
                 )
             ]
-        if action.dispatch == "ax" and action.target_has_action is False:
+        if self._offers_no_action(action):
             # Not a dead handler: no node with this label offers assistive
             # technology any action to invoke in the first place. Reporting it
             # as a no-handler blamed the app for a target the harness picked.
-            return [
-                Finding(
-                    "no-accessible-action",
-                    "error",
-                    0.9,
-                    f"'{action.target_label}' offers assistive technology no action to invoke.",
-                    {"target": action.target_label},
-                    blocks_gate=True,
-                )
-            ]
+            return [self._no_accessible_action(action)]
         if action.dispatch == "ax" and action.effect == "suspected_noop":
             return [
                 Finding(

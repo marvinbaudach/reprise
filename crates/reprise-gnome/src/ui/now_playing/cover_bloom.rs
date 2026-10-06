@@ -24,6 +24,7 @@ use gtk4::prelude::*;
 use reprise_core::playback::PlaybackState;
 
 use super::cover_bloom_area::BloomArea;
+use crate::ui::podcasts::source_image::ArtworkStage;
 use crate::ui::{cover_glow, style::tokens};
 
 type OnFrame = Rc<dyn Fn(i64)>;
@@ -137,9 +138,17 @@ pub(super) fn bloom_scale(swell: f64) -> f64 {
 }
 
 /// The blurred surface is cached against the panel's cover generation, which is
-/// bumped once per rendered track.
-pub(super) fn needs_rebuild(cached: Option<u64>, incoming: u64) -> bool {
-    cached != Some(incoming)
+/// bumped once per rendered track. The key also carries the artwork stage: the
+/// same generation legitimately publishes a fallback (show/channel) texture
+/// and then a primary (episode) texture, and a generation-only key would
+/// mistake the second publish for a repeat of the first and drop it — leaving
+/// the bloom stuck on the fallback image (SRC-11).
+pub(super) fn needs_rebuild(
+    cached: Option<(u64, ArtworkStage)>,
+    generation: u64,
+    stage: ArtworkStage,
+) -> bool {
+    cached != Some((generation, stage))
 }
 
 #[derive(Clone, Copy, PartialEq, Eq)]
@@ -153,7 +162,7 @@ enum Mode {
 }
 
 struct Inner {
-    generation: Cell<Option<u64>>,
+    generation: Cell<Option<(u64, ArtworkStage)>>,
     swell: Cell<f64>,
     pressure: Cell<f64>,
     mode: Cell<Mode>,
@@ -224,10 +233,19 @@ impl CoverBloom {
     /// or no track. Without a texture the bloom stays off — it never falls back
     /// to a substitute colour, because a colour that is not in the artwork is
     /// exactly the dishonesty this effect exists to avoid.
-    pub(super) fn set_cover(&self, texture: Option<&gtk4::gdk::Texture>, generation: u64) {
+    ///
+    /// `stage` distinguishes a show/channel fallback texture from the
+    /// episode's own primary texture within the same generation — see
+    /// [`needs_rebuild`].
+    pub(super) fn set_cover(
+        &self,
+        texture: Option<&gtk4::gdk::Texture>,
+        generation: u64,
+        stage: ArtworkStage,
+    ) {
         match texture {
             Some(texture) => {
-                if !needs_rebuild(self.inner.generation.get(), generation) {
+                if !needs_rebuild(self.inner.generation.get(), generation, stage) {
                     return;
                 }
                 let blurred = cover_glow::blurred_surface(texture, cover_glow::BLUR_EDGE)
@@ -235,7 +253,7 @@ impl CoverBloom {
                     .and_then(texture_from_surface);
                 self.area
                     .set_texture(blurred.as_ref().map(gtk4::prelude::Cast::upcast_ref));
-                self.inner.generation.set(Some(generation));
+                self.inner.generation.set(Some((generation, stage)));
             }
             None => {
                 self.area.set_texture(None);
@@ -248,6 +266,18 @@ impl CoverBloom {
     #[cfg(test)]
     pub(super) fn has_cover_for_test(&self) -> bool {
         self.area.has_texture()
+    }
+
+    /// The blurred texture currently painted, and the `(generation, stage)`
+    /// pair it was accepted for — lets a test tell an episode's artwork apart
+    /// from its show/channel fallback without depending on internal timing.
+    #[cfg(test)]
+    pub(super) fn accepted_cover_for_test(
+        &self,
+    ) -> Option<(gtk4::gdk::Texture, (u64, ArtworkStage))> {
+        let generation = self.inner.generation.get()?;
+        let texture = self.area.texture_for_test()?;
+        Some((texture, generation))
     }
 
     pub(super) fn set_light(&self, pressure: f64, swell: f64) {
@@ -464,10 +494,36 @@ mod tests {
         // The cache is keyed on the panel's cover generation, which the panel
         // bumps exactly once per rendered track. Same generation must never
         // pay for a second rasterization.
-        assert!(needs_rebuild(None, 7));
-        assert!(!needs_rebuild(Some(7), 7));
-        assert!(needs_rebuild(Some(7), 8));
+        assert!(needs_rebuild(None, 7, ArtworkStage::Primary));
+        assert!(!needs_rebuild(
+            Some((7, ArtworkStage::Primary)),
+            7,
+            ArtworkStage::Primary
+        ));
+        assert!(needs_rebuild(
+            Some((7, ArtworkStage::Primary)),
+            8,
+            ArtworkStage::Primary
+        ));
         // Generations wrap; a wrapped value is still a change.
-        assert!(needs_rebuild(Some(u64::MAX), 0));
+        assert!(needs_rebuild(
+            Some((u64::MAX, ArtworkStage::Primary)),
+            0,
+            ArtworkStage::Primary
+        ));
+        // The same generation may publish a fallback (show/channel) texture
+        // and then a primary (episode) texture — SRC-11. Only the identical
+        // `(generation, stage)` pair is a no-op; a stage change within the
+        // same generation must still rebuild.
+        assert!(needs_rebuild(
+            Some((7, ArtworkStage::Fallback)),
+            7,
+            ArtworkStage::Primary
+        ));
+        assert!(!needs_rebuild(
+            Some((7, ArtworkStage::Fallback)),
+            7,
+            ArtworkStage::Fallback
+        ));
     }
 }

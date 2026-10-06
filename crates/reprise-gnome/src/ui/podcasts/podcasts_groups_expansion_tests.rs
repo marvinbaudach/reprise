@@ -155,16 +155,18 @@ fn pod_25_a_query_expands_surviving_shows_without_overwriting_manual_state() {
         replace(
             &container,
             std::slice::from_ref(&rendered),
-            None,
-            &expanded_sources,
-            &Rc::new(RefCell::new(BTreeSet::new())),
-            &BTreeMap::new(),
-            false,
-            &Rc::new(crate::test_db::open().unwrap()),
-            Connectivity::Online,
-            None,
-            &Rc::new(RefCell::new(PodcastSelection::default())),
-            query,
+            GroupRenderInputs {
+                playing_episode: None,
+                expanded_sources: &expanded_sources,
+                expanded_episode_sources: &Rc::new(RefCell::new(BTreeSet::new())),
+                download_states: &BTreeMap::new(),
+                images_allowed: false,
+                conn: &Rc::new(crate::test_db::open().unwrap()),
+                connectivity: Connectivity::Online,
+                unavailable_episode: None,
+                selection: &Rc::new(RefCell::new(PodcastSelection::default())),
+                query,
+            },
         );
         container
             .first_child()

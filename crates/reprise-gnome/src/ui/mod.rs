@@ -104,10 +104,12 @@ mod scroll_glide;
 mod scroll_probe;
 mod search_highlight;
 pub mod session_restore;
+mod session_save;
 pub mod shortcuts;
 pub(in crate::ui) mod show_in_files;
 pub(crate) mod sidebar;
 mod source_add_action;
+mod source_add_dialog;
 mod source_context_surface;
 mod source_empty_state;
 mod source_error_banner;
@@ -125,6 +127,7 @@ pub(crate) mod table_column_widths;
 mod table_columns;
 mod table_selection;
 mod tag_edit;
+pub(crate) mod termination;
 #[cfg(test)]
 pub(crate) mod test_log_capture;
 #[cfg(test)]
@@ -145,99 +148,34 @@ pub(crate) mod window;
 // Compatibility surface for the existing frontend. The ownership of every
 // implementation module now lives with its feature directory; these explicit
 // imports keep call sites stable while preventing ui/mod.rs from becoming a
-// second, flattened module tree again.
-#[allow(unused_imports)]
-use artist_news::artist_news_worker;
-#[allow(unused_imports)]
+// second, flattened module tree again. Only the browse, compact, cover,
+// lyrics, playback, scan, scrobbling and track_list families still carry
+// aliases; each goes once its call sites are free of in-flight branches, and
+// every other family is reached by its real `crate::ui::<family>::<module>`
+// path.
 pub(crate) use browse::browse_bar;
-#[allow(unused_imports)]
 use browse::browse_filter_count;
-#[allow(unused_imports)]
 use compact::{
     compact_mode_controls, compact_mode_suggestion, compact_player, compact_player_layouts,
-    compact_player_menu, compact_player_scroll, minimal_view,
+    minimal_view,
 };
-#[allow(unused_imports)]
 use cover::{cover_download_batch, main_cover_download_progress};
-#[allow(unused_imports)]
 pub(crate) use cover::{cover_download_worker, cover_loader};
-#[allow(unused_imports)]
-use device_sync::{
-    device_sync_backend, device_sync_feedback, device_sync_launcher, device_sync_page,
-    device_sync_runtime, device_sync_smoke, device_sync_strings,
-};
-#[allow(unused_imports)]
-use library_views::artist_avatar;
-#[allow(unused_imports)]
 use lyrics::{
-    lyrics_batch, lyrics_batch_progress, lyrics_smoke, lyrics_state, lyrics_strings, lyrics_view,
-    lyrics_worker, player_lyrics,
+    lyrics_batch, lyrics_batch_progress, lyrics_smoke, lyrics_strings, lyrics_view, player_lyrics,
 };
-#[allow(unused_imports)]
-use now_playing::{artist_portrait_worker, now_playing_column};
-#[allow(unused_imports)]
-use playback::{audio_effects, play_tracking, player_event_handling, up_next_transport};
-#[allow(unused_imports)]
-pub(crate) use playback::{
-    now_playing_wiring, playback_faults, player_controller, player_controller_wiring,
-    queue_transport, session_player,
-};
-#[allow(unused_imports)]
-use player_bar::{
-    library_player_bar, player_bar_layout, player_bar_seek, player_bar_state, waveform_seek,
-};
-#[allow(unused_imports)]
-pub(crate) use playlists::playlist_io;
-#[allow(unused_imports)]
-use playlists::{playlist_import_navigation, playlist_io_names};
-#[allow(unused_imports)]
-use preferences::{
-    preference_appearance, preference_background_bar, preference_dependencies, preference_effects,
-    preference_lastfm, preference_layout, preference_library, preference_listenbrainz,
-    preference_playback, preference_plugins, preference_rhythmbox, preference_visual_strings,
-    preference_window_decorations, preferences_window,
-};
-#[allow(unused_imports)]
+use playback::{audio_effects, player_event_handling, up_next_transport};
+pub(crate) use playback::{now_playing_wiring, player_controller, player_controller_wiring};
 pub(crate) use scan::{scan_card_css, scan_flow};
-#[allow(unused_imports)]
-use scan::{scan_chrome, scan_controls, scan_progress, scan_watcher, scan_worker};
-#[allow(unused_imports)]
+use scan::{scan_chrome, scan_progress, scan_worker};
 use scrobbling::{lastfm_secret, listenbrainz_secret, scrobble_runtime, scrobble_session};
-#[allow(unused_imports)]
-use sidebar::{
-    sidebar_device_card, sidebar_issue_cleanup, sidebar_issue_strings, sidebar_playlist_creation,
-    sidebar_presentation, sidebar_rebuild,
-};
-#[allow(unused_imports)]
-pub(crate) use sidebar::{sidebar_dnd, sidebar_export, sidebar_session};
-#[allow(unused_imports)]
-use spectrogram::{spectrogram_batch, spectrogram_batch_progress};
-#[allow(unused_imports)]
-pub(crate) use stats::{stats_css, stats_view};
-#[allow(unused_imports)]
-use tag_edit::{
-    autocomplete_entry, tag_editor_dirty, tag_editor_failures, tag_editor_form, tag_editor_save,
-    tag_editor_state, tag_editor_style, tag_editor_widgets,
-};
-#[allow(unused_imports)]
-pub(crate) use tag_edit::{tag_edit_flow, tag_editor};
-#[allow(unused_imports)]
 use track_list::{
-    column_header_dnd, column_layout_editor, column_widths, current_track_selection, track_content,
-    track_cover, track_list_builder, track_list_context_keys, track_list_header_style,
-    track_list_layout, track_list_queue_menu, track_list_reload, track_list_rescan,
-    track_list_row_interaction,
+    column_header_dnd, column_layout_editor, current_track_selection, track_content, track_cover,
+    track_list_header_style, track_list_queue_menu, track_list_reload, track_list_row_interaction,
 };
-#[allow(unused_imports)]
 pub(crate) use track_list::{
     column_layout, rating, track_actions, track_list_activation, track_list_columns,
-    track_list_context_menu, track_list_dnd, track_list_dnd_smoke, track_list_model,
-    track_list_smoke, track_list_sort,
-};
-#[allow(unused_imports)]
-use window::{
-    library_chrome, library_shell, window_action_wiring, window_decoration_strings,
-    window_decorations, window_navigation, window_runtime_wiring, window_smoke,
+    track_list_context_menu, track_list_dnd, track_list_model, track_list_sort,
 };
 
 #[cfg(test)]

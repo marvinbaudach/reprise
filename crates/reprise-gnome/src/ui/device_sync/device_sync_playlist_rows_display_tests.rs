@@ -50,7 +50,7 @@ fn a_deleted_playlist_takes_its_row_widget_with_it() {
             false,
         ),
         named_row(SelectionSource::Playlist(2), "Lorna Shore & Similar", false),
-        named_row(SelectionSource::Smart(3), "Recently added", true),
+        named_row(SelectionSource::Smart(3), "Recently Added", true),
     ];
 
     let (surface, _root) = DeviceSyncPage::new(&before, page_actions(), &no_op_content_actions());
@@ -169,7 +169,7 @@ fn remembered_rows_verification_and_preview_render_without_live_measurement_clai
         reprise_core::device_sync::device_view::DeviceContentsState::VerifiedEarlier(verified_at);
     remembered.page.playlists = vec![
         named_row(SelectionSource::Playlist(2), "Road", false),
-        named_row(SelectionSource::Smart(2), "Recently added", true),
+        named_row(SelectionSource::Smart(2), "Recently Added", true),
     ];
     remembered.page.unique_track_count = 3;
     remembered.page.target_bytes = 32 * 1_024;
@@ -196,7 +196,7 @@ fn remembered_rows_verification_and_preview_render_without_live_measurement_clai
     assert!(rows.iter().all(|row| row.button.is_sensitive()));
     let text = surface.root_text();
     assert!(text.contains("Road"));
-    assert!(text.contains("Recently added"));
+    assert!(text.contains("Recently Added"));
     assert!(text.contains("3 unique tracks"));
     assert!(text.contains("2 files to copy"));
     assert!(text.contains("2 playlist writes"));

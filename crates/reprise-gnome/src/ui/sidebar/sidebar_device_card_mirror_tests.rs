@@ -281,7 +281,7 @@ fn css_parses_in_gtk_without_dropping_declarations() {
 }
 
 #[test]
-#[ignore = "visual fixture; run via the isolated Xvfb screenshot command"]
+#[ignore = "measurement: shows the device-card contrast ladder for a screenshot; needs a display (isolated Xvfb), optional REPRISE_SMOKE_DARK and REPRISE_SMOKE_HOLD_MS"]
 fn device_card_contrast_ladder_visual_fixture() {
     gtk4::init().unwrap();
     let is_dark = std::env::var("REPRISE_SMOKE_DARK").as_deref() == Ok("1");

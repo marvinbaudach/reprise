@@ -2,8 +2,6 @@
 //!
 //! Wave 2 source views consume this controller-facing API. Keep the complete
 //! E2 seam compilable while those callers are still landing.
-#![allow(dead_code)]
-
 use std::rc::Rc;
 
 use reprise_core::media_integration::MprisPlaybackStatus;
@@ -35,13 +33,6 @@ impl PlayerController {
 
     pub(in crate::ui) fn current_external_snapshot(&self) -> Option<ExternalPlaybackSnapshot> {
         self.external.borrow().snapshot()
-    }
-
-    pub(in crate::ui) fn add_on_stream_tags(&self, callback: impl Fn(StreamTags) + 'static) {
-        self.external
-            .borrow_mut()
-            .stream_tags_callbacks
-            .push(Rc::new(callback));
     }
 
     pub(in crate::ui) fn add_on_external_changed(
@@ -157,14 +148,6 @@ impl PlayerController {
             automatic_advance,
             PodcastOrigin::Direct,
         )
-    }
-
-    fn play_external_with_origin(
-        self: &Rc<Self>,
-        media: ExternalMedia,
-        origin: PodcastOrigin,
-    ) -> Result<(), PlaybackError> {
-        self.play_external_with_context_and_origin(media, None, None, origin)
     }
 
     pub(super) fn play_external_with_context_and_origin(
@@ -343,7 +326,11 @@ impl PlayerController {
             return Ok(());
         }
         let result = match source {
-            EpisodeSource::File(path) => self.player.play(&path),
+            EpisodeSource::File(path) => self.player.play(reprise_core::playback::PlaybackItem {
+                segment: None,
+                path: &path,
+                gain_db: 0.0,
+            }),
             EpisodeSource::Url(uri) => self.player.play_uri(&uri),
         };
         if let Err(error) = result {

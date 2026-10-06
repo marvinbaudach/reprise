@@ -10,6 +10,7 @@
 
 use reprise_core::db::Db;
 use reprise_core::library::settings;
+use reprise_core::CoreError;
 
 /// Settings key granting the read surface (search + resources).
 pub const CAP_LIBRARY_READ: &str = "agent.capability.library:read";
@@ -47,38 +48,38 @@ const DEVICE_SYNC_DEFAULT: bool = false;
 const PLAYBACK_CONTROL_DEFAULT: bool = true;
 
 /// Whether the read surface is currently granted.
-pub fn library_read_enabled(db: &Db) -> Result<bool, rusqlite::Error> {
+pub fn library_read_enabled(db: &Db) -> Result<bool, CoreError> {
     settings::get_bool(db, CAP_LIBRARY_READ, LIBRARY_READ_DEFAULT)
 }
 
 /// Whether `playlist:create` is currently granted (the live setting value).
-pub fn playlist_create_granted(db: &Db) -> Result<bool, rusqlite::Error> {
+pub fn playlist_create_granted(db: &Db) -> Result<bool, CoreError> {
     settings::get_bool(db, CAP_PLAYLIST_CREATE, PLAYLIST_CREATE_DEFAULT)
 }
 
 /// Whether `playlist:manage` is currently granted (the live setting value).
-pub fn playlist_manage_granted(db: &Db) -> Result<bool, rusqlite::Error> {
+pub fn playlist_manage_granted(db: &Db) -> Result<bool, CoreError> {
     settings::get_bool(db, CAP_PLAYLIST_MANAGE, PLAYLIST_MANAGE_DEFAULT)
 }
 
 /// Whether `sources:manage` is currently granted (the live setting value).
-pub fn sources_manage_granted(db: &Db) -> Result<bool, rusqlite::Error> {
+pub fn sources_manage_granted(db: &Db) -> Result<bool, CoreError> {
     settings::get_bool(db, CAP_SOURCES_MANAGE, SOURCES_MANAGE_DEFAULT)
 }
 
 /// Whether `tags:write` is currently granted (the live setting value).
-pub fn tags_write_granted(db: &Db) -> Result<bool, rusqlite::Error> {
+pub fn tags_write_granted(db: &Db) -> Result<bool, CoreError> {
     settings::get_bool(db, CAP_TAGS_WRITE, TAGS_WRITE_DEFAULT)
 }
 
 /// Whether playback control is currently granted (live setting value).
 #[cfg(feature = "mpris")]
-pub fn playback_control_enabled(db: &Db) -> Result<bool, rusqlite::Error> {
+pub fn playback_control_enabled(db: &Db) -> Result<bool, CoreError> {
     settings::get_bool(db, CAP_PLAYBACK_CONTROL, PLAYBACK_CONTROL_DEFAULT)
 }
 
 #[cfg(feature = "mpris")]
-pub fn device_sync_granted(db: &Db) -> Result<bool, rusqlite::Error> {
+pub fn device_sync_granted(db: &Db) -> Result<bool, CoreError> {
     settings::get_bool(db, CAP_DEVICE_SYNC, DEVICE_SYNC_DEFAULT)
 }
 
@@ -97,35 +98,29 @@ fn effective(granted_at_startup: bool, currently_granted: bool) -> bool {
 
 /// Whether a `playlist:create` write is permitted right now, given the startup
 /// snapshot.
-pub fn write_effective(db: &Db, granted_at_startup: bool) -> Result<bool, rusqlite::Error> {
+pub fn write_effective(db: &Db, granted_at_startup: bool) -> Result<bool, CoreError> {
     Ok(effective(granted_at_startup, playlist_create_granted(db)?))
 }
 
 /// Whether a `playlist:manage` write is permitted right now, given the startup
 /// snapshot.
-pub fn playlist_manage_effective(
-    db: &Db,
-    granted_at_startup: bool,
-) -> Result<bool, rusqlite::Error> {
+pub fn playlist_manage_effective(db: &Db, granted_at_startup: bool) -> Result<bool, CoreError> {
     Ok(effective(granted_at_startup, playlist_manage_granted(db)?))
 }
 
 /// Whether a podcast/YouTube/radio mutation is permitted right now, given the
 /// startup snapshot.
-pub fn sources_manage_effective(
-    db: &Db,
-    granted_at_startup: bool,
-) -> Result<bool, rusqlite::Error> {
+pub fn sources_manage_effective(db: &Db, granted_at_startup: bool) -> Result<bool, CoreError> {
     Ok(effective(granted_at_startup, sources_manage_granted(db)?))
 }
 
 /// Whether a Library Doctor tag mutation is permitted right now.
-pub fn tags_write_effective(db: &Db, granted_at_startup: bool) -> Result<bool, rusqlite::Error> {
+pub fn tags_write_effective(db: &Db, granted_at_startup: bool) -> Result<bool, CoreError> {
     Ok(effective(granted_at_startup, tags_write_granted(db)?))
 }
 
 #[cfg(feature = "mpris")]
-pub fn device_sync_effective(db: &Db, granted_at_startup: bool) -> Result<bool, rusqlite::Error> {
+pub fn device_sync_effective(db: &Db, granted_at_startup: bool) -> Result<bool, CoreError> {
     Ok(effective(granted_at_startup, device_sync_granted(db)?))
 }
 

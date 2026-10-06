@@ -2,7 +2,6 @@
 
 use std::collections::HashSet;
 
-use reprise_core::playback::PlaybackBackend;
 use reprise_core::queries::{self, QueueItemMetadata};
 use reprise_core::queue::QueuePlacement;
 use reprise_core::up_next::QueueItem;
@@ -120,17 +119,17 @@ impl AndroidPlaybackSession {
                 });
             }
 
-            let (next_uri, queue_to_save) = {
+            let (next, queue_to_save) = {
                 let mut state = self.inner.lock()?;
                 if state.current_loaded {
                     state.queue.remove_ids_except_current(&missing);
                 } else {
                     state.queue.remove_ids(&missing);
                 }
-                (state.next_uri(), state.queue.clone())
+                (state.next_track(), state.queue.clone())
             };
-            self.inner.persist_queue(&queue_to_save)?;
-            self.inner.backend()?.set_next(next_uri.as_deref());
+            self.inner.persist_queue(queue_to_save)?;
+            self.inner.feed_next(next)?;
         }
     }
 
@@ -162,7 +161,7 @@ impl AndroidPlaybackSession {
             state.adopt_current_for_play_intent();
             state.queue.clone()
         };
-        self.inner.persist_queue(&queue_to_save)?;
+        self.inner.persist_queue(queue_to_save)?;
         self.inner.start_current()?;
         Ok(true)
     }
@@ -175,7 +174,7 @@ impl AndroidPlaybackSession {
         expected_track_id: i64,
         to_position: u64,
     ) -> Result<bool, AndroidPlaybackError> {
-        let (next_uri, queue_to_save) = {
+        let (next, queue_to_save) = {
             let mut state = self.inner.lock()?;
             let Some(from) = upcoming_order_position(&state, from_position) else {
                 return Ok(false);
@@ -188,10 +187,10 @@ impl AndroidPlaybackSession {
             {
                 return Ok(false);
             }
-            (state.next_uri(), state.queue.clone())
+            (state.next_track(), state.queue.clone())
         };
-        self.inner.persist_queue(&queue_to_save)?;
-        self.inner.backend()?.set_next(next_uri.as_deref());
+        self.inner.persist_queue(queue_to_save)?;
+        self.inner.feed_next(next)?;
         self.inner.notify();
         Ok(true)
     }
@@ -203,7 +202,7 @@ impl AndroidPlaybackSession {
         position: u64,
         expected_track_id: i64,
     ) -> Result<bool, AndroidPlaybackError> {
-        let (next_uri, queue_to_save) = {
+        let (next, queue_to_save) = {
             let mut state = self.inner.lock()?;
             let Some(order_position) = upcoming_order_position(&state, position) else {
                 return Ok(false);
@@ -213,10 +212,10 @@ impl AndroidPlaybackSession {
             {
                 return Ok(false);
             }
-            (state.next_uri(), state.queue.clone())
+            (state.next_track(), state.queue.clone())
         };
-        self.inner.persist_queue(&queue_to_save)?;
-        self.inner.backend()?.set_next(next_uri.as_deref());
+        self.inner.persist_queue(queue_to_save)?;
+        self.inner.feed_next(next)?;
         self.inner.notify();
         Ok(true)
     }
@@ -238,16 +237,17 @@ impl AndroidPlaybackSession {
             .into_iter()
             .map(|(_, _, uri)| uri)
             .collect::<Vec<_>>();
-        let (taken, next_uri, queue_to_save) = {
+        let (taken, next, queue_to_save) = {
             let mut state = self.inner.lock()?;
+            let old_len = state.track_ids.len();
+            super::extend_track_index(&mut state.track_index_by_id, old_len, &track_ids);
             state.track_ids.extend_from_slice(&track_ids);
             state.uris.extend(uris);
-            state.track_index_by_id = super::index_tracks(&state.track_ids);
             let taken = state.queue.enqueue(&track_ids, placement);
-            (taken, state.next_uri(), state.queue.clone())
+            (taken, state.next_track(), state.queue.clone())
         };
-        self.inner.persist_queue(&queue_to_save)?;
-        self.inner.backend()?.set_next(next_uri.as_deref());
+        self.inner.persist_queue(queue_to_save)?;
+        self.inner.feed_next(next)?;
         self.inner.notify();
         Ok(u32::try_from(taken).unwrap_or(u32::MAX))
     }
@@ -264,20 +264,20 @@ impl AndroidPlaybackSession {
                 .map_err(|error| AndroidPlaybackError::Backend {
                     detail: error.to_string(),
                 })?;
-        requested_ids
+        let paths = queries::track_source_paths(&database, &requested_ids).map_err(|error| {
+            AndroidPlaybackError::Backend {
+                detail: format!("{error_context}: {error}"),
+            }
+        })?;
+        Ok(requested_ids
             .into_iter()
             .enumerate()
             .filter_map(|(index, track_id)| {
-                queries::track_source_path(&database, track_id)
-                    .map_err(|error| AndroidPlaybackError::Backend {
-                        detail: format!("{error_context}: {error}"),
-                    })
-                    .transpose()
-                    .map(|result| {
-                        result.map(|path| (index, track_id, path.to_string_lossy().into_owned()))
-                    })
+                paths
+                    .get(&track_id)
+                    .map(|path| (index, track_id, path.to_string_lossy().into_owned()))
             })
-            .collect()
+            .collect())
     }
 }
 

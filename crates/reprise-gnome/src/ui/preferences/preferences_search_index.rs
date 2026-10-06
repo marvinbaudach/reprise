@@ -2,7 +2,7 @@ use gtk4::prelude::*;
 use libadwaita as adw;
 use libadwaita::prelude::*;
 
-use crate::ui::preferences_window::{PageId, PAGE_ORDER};
+use crate::ui::preferences::preferences_window::{PageId, PAGE_ORDER};
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub(super) struct SearchDocument {

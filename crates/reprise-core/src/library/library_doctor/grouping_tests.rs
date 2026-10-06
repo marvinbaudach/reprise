@@ -86,6 +86,41 @@ fn doc_9b_rows_group_by_album_in_scope_order() {
     );
     assert_eq!(albums[0].track_count, 2);
     assert_eq!(albums[1].track_count, 1);
+    assert_eq!(
+        albums[0]
+            .rows
+            .iter()
+            .map(|row| match row {
+                DoctorReviewDisplayRow::Track { track_id, .. } => *track_id,
+                DoctorReviewDisplayRow::AllTracks { .. } => unreachable!(),
+            })
+            .collect::<Vec<_>>(),
+        vec![2, 3]
+    );
+}
+
+#[test]
+fn review_group_count_matches_materialized_interleaved_groups() {
+    let scan = scan(
+        vec![
+            track(1, "Album B", "Artist B"),
+            track(2, "Album A", "Artist A"),
+            track(3, "Album B", "Artist B"),
+            track(4, "", "Artist C"),
+        ],
+        vec![
+            proposal(1, DoctorField::Title),
+            proposal(2, DoctorField::Artist),
+            proposal(3, DoctorField::Year),
+            proposal(4, DoctorField::Genre),
+        ],
+    );
+    let session = DoctorReviewSession::from_scan(scan.clone(), DoctorReviewFilter::NeedsReview);
+
+    assert_eq!(
+        grouping::count_review_groups(&scan, &session),
+        grouping::group_review_rows(&scan, &session).len()
+    );
 }
 
 #[test]

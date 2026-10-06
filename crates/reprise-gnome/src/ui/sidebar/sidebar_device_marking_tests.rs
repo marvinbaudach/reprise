@@ -1,5 +1,5 @@
 use super::*;
-use crate::ui::device_sync_runtime::{PlannedSyncPhase, SyncStep};
+use crate::ui::device_sync::device_sync_runtime::{PlannedSyncPhase, SyncStep};
 use crate::ui::sidebar::sidebar_device_card::tests::view;
 use crate::ui::sidebar::sidebar_place::{apply_marking, find_row, SidebarPlace};
 use crate::ui::sidebar::sidebar_rebuild::rebuild;

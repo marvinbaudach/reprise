@@ -4,6 +4,406 @@ Reprise release notes are curated from the changes that reached the stable
 branch. They describe user-visible changes rather than reproducing commit
 messages.
 
+## [0.1.265] - 2026-10-06
+
+### Library
+
+- An album ripped as one audio file plus a CUE sheet is listed as its tracks. A
+  `.cue` sheet beside the audio file, or a sheet embedded in a FLAC's
+  `CUESHEET` comment, splits the file into the tracks the sheet names, in sheet
+  order, each with the sheet's title and artist and its own start, end and
+  duration; what the sheet leaves out comes from the file's own tags. A rescan
+  follows the sheet: a track it still has keeps its rating and play count, and
+  removing the sheet makes the file one track again. A sheet that cannot be
+  applied, because it does not parse, names a missing file, or is larger than
+  1 MiB or 999 tracks, leaves the audio as one ordinary track and raises an
+  issue that names the sheet. Moving or relinking the file keeps all of its
+  tracks, removing one track from the library keeps its siblings, opening the
+  file or an M3U line that names it adds all of its tracks in play order, and
+  each track gets its own waveform, spectrogram and loudness measured from its
+  own stretch of the file. A track cut from a sheet is read-only in the tag
+  editor, and its lyrics come from the online sources and the cache, never
+  from a file beside the album. For now, playing such a track starts at the
+  beginning of its file, and deleting it or syncing it to a phone still acts on
+  the whole file.
+
+### Playback and presentation
+
+- Tracks play at an even loudness, with or without ReplayGain tags. Reprise
+  measures each track's integrated loudness (EBU R128) while it analyses the
+  library and aims at the ReplayGain 2.0 reference of -18 LUFS. A track that
+  carries ReplayGain tags is still normalised from them, and the tags win over
+  a measurement of the same track; Off disables both, and a boost never lets
+  the track's peak clip. The next track's own gain is applied at its first
+  sample, in a gapless hand-over and in a crossfade, and changing the mode
+  reaches the playing track at once. ReplayGain tags are now read from every
+  tag format, and the measurement travels with the analysis files to a phone.
+- The Song Visuals bars no longer pump when a new song starts. At a track change
+  or a fresh start the spectrum carried the previous song's sensitivity: a
+  louder song drew a wall of pinned bars, a quieter one stayed dim for seconds,
+  and a cold start swelled the whole frame and then dropped. The visualizer now
+  measures the new song's level instead of carrying the old one. On the desktop,
+  a track change or a seek lets the bars fall from their old heights instead of
+  collapsing. A song that opens with a long quiet intro or a fade-in can still
+  pin the bars after a track change (#1141).
+
+### Session
+
+- Reprise keeps its session when it is ended by a signal. A logout,
+  `systemctl --user stop`, `kill` or Ctrl+C used to lose everything since the
+  last save. Reprise now saves the window geometry, the place you were
+  browsing, the queue and Up Next, closes its window like a normal close, and
+  quits, even when a dialog such as the first-run wizard is open. A repeated
+  signal within three seconds does not cut the save short, and an application
+  that never answers is ended after ten seconds.
+
+### Android
+
+- Volume normalisation is offered in the playback settings. A "Volume
+  Normalization" row offers Off, Per Track and Per Album, as on the desktop,
+  and a choice applies at once to the playing track and the one queued after
+  it, without restarting either.
+- A swiped track change no longer makes the visualizer pump. The bars handed
+  to the next track were seeded far too high, so the whole spectrum jumped,
+  sagged and crept back over several seconds. The seed now continues the shape
+  on screen.
+- The phone's release build starts again. Since the home-screen widget landed,
+  every release build crashed at start, because the code shrinker stripped the
+  constructor of WorkManager's database. One keep rule restores it. Debug
+  builds were never affected.
+
+## [0.1.248] - 2026-10-05
+
+### Playback and presentation
+
+- The player bar has a sleep timer. A moon button left of the volume control
+  stops playback after 15, 30, 45 or 60 minutes, or at the end of the current
+  track, and the same menu cancels it. When the time runs out, the volume fades
+  over four seconds, playback pauses, and the volume returns to where it was.
+- Ctrl+K opens Quick Open. It jumps to a track, album, artist, playlist,
+  podcast show or radio station by name, and radio stations appear only when
+  the Radio module is allowed online.
+- The Song Visuals bars move like CAVA's again. A kick drum pulled the whole
+  spectrum down for a moment, and quiet bands snapped to zero instead of
+  falling. The port now matches CAVA's own core: the frame-wide duck applies
+  only while the bars calibrate at the start, and quiet bands fall smoothly.
+  This holds on the desktop and on Android. A louder track that follows a quiet
+  one may touch the top for a moment, as it does in CAVA.
+
+### Android
+
+- Deleting tracks can be undone. Instead of a confirmation dialog, the deleted
+  tracks leave the list and the queue at once, and a snackbar offers Undo for
+  six seconds, or longer when accessibility settings ask for it. Only then are
+  the files moved to the trash. If the app is closed or killed in that window,
+  nothing is deleted, and Undo puts the rows and their queue positions back.
+  Tracks waiting to be deleted cannot be played from album or artist pages.
+- Removing a track from the queue can be undone. The row returns to its old
+  place.
+- Android Auto can browse the library. It offers Recently played, Playlists,
+  Albums, and Artists with their albums and songs, and a tapped song plays with
+  its list as the queue. Only Android Auto, Wear and the app itself may browse
+  or control playback this way.
+- A home-screen widget controls playback, in a 4×1 and a 2×2 size. Tapping the
+  cover opens the app, and with nothing to resume the buttons open the app as
+  well. The notification, the lock screen, Android Auto and the widget all show
+  the title, artist, album, duration and cover.
+- After an app update the phone shows the visualizer and fetches covers by
+  itself. Until the library folder was picked again or a scan ran, the track
+  restored after the update never got its waveform and spectrogram, so the
+  visualizer stayed blank, and album covers were not downloaded. The phone now
+  computes the analysis even before the folder is registered, retries one that
+  was cancelled or failed up to three times, and starts the cover pass as soon
+  as the restored folder is registered. A real network return also restarts
+  the background cover pass once, unless the artwork download was stopped by
+  hand.
+
+## [0.1.235] - 2026-10-05
+
+### Library
+
+- A cover is found when the title differs only by typographic punctuation. An
+  album tagged "Selected Ambient Works 85-92" never got a cover, because
+  MusicBrainz titles it with an en dash and the lookup compared titles and
+  artists strictly; the miss then wrote a not-found marker that blocked every
+  retry for seven days. Dashes, apostrophes, quotes and the ellipsis now match
+  their plain forms for album and artist alike, accents still count, and the
+  markers the old matching wrote stop blocking at once.
+- Stopping the artwork run no longer swallows the next cover pass. An idle stop
+  was remembered and cancelled the next, unrelated cover pass; a stop that came
+  between the artist portraits finishing and the cover pass starting was lost,
+  so the cover pass started anyway. A stop now cancels exactly the pass it was
+  meant for, and a failure in between no longer leaves the hand-over stuck.
+- Covers retry when the desktop comes back online. Artwork now starts at most
+  one cover pass when the network returns, if switching it on was waiting for a
+  connection or the previous pass left a temporary failure behind. A return
+  during a running pass is retried once that pass ends, and a drop back offline
+  cancels the pending retry.
+
+### Podcasts and online sources
+
+- The "Popular in <country>" chip in Add Podcast survives one flaky answer. It
+  failed on the first timeout or server error from Apple's chart service, which
+  answered badly in three of eight probes, and left nothing in the journal. Each
+  of its two requests, the chart and the lookup behind it, is now asked once
+  more after a timeout or a 5xx; rate limits, client errors and unreadable
+  answers still end it at once. Every failed attempt leaves one warning line in
+  the journal with the step, storefront, attempt and reason, and never the URL
+  or the provider's text. In the worst case the chip shows "Searching…" for
+  about 40 seconds instead of 20.
+- Radio says when it is turned off. With the Radio module off, the page showed
+  an empty list. It now shows a note with a button that opens Preferences, and
+  a Radio page that is already open recovers in place once Radio is switched
+  on. Other source pages refresh only when their own online state changes, so
+  an unrelated module toggle leaves them alone.
+
+### Android
+
+- A cover that failed offline arrives once the network is back. A cover that
+  could not be fetched while the phone was offline never appeared later; only a
+  relaunch brought it. The app now notices a validated network returning and
+  retries at once, then again after 3, 10 and 30 seconds for VPN tunnels that
+  come up late. Retries survive a rotation, a return that happens while the app
+  is stopped is delivered once on restart, and the now-playing cover, the
+  mini-player and the list row repaint when the cover lands.
+- Track rows grow with the font scale. At a font scale of 2.0 the Titles list
+  and the queue clipped the duration and the subtitle. Rows now take the height
+  of their content and stay at 72 and 64 dp at scale 1.0 and below. Dragging in
+  the queue follows the measured height, so a drag of one or two rows moves the
+  track by exactly one or two places.
+- The mini-player and the tab bar grow with the font scale. The mini-player cut
+  through the subtitle's descenders at a font scale of 2.0 because its height
+  was fixed, and the navigation bar had the same fixed height. Both keep their
+  usual height at scale 1.0 and grow with their content above it.
+
+## [0.1.225] - 2026-10-03
+
+### Device sync
+
+- A phone no longer syncs by itself unless asked to. The switch "Sync
+  automatically when this phone connects" defaulted to on, and a phone with any
+  selected playlist always counted as having work, so launching the desktop with
+  the phone attached started a sync nobody asked for, and its mirror pass
+  removed files from the phone's Reprise folder. A newly remembered phone now
+  starts with the switch off, and every phone already remembered is switched off
+  once; turning the switch on for a device works as before.
+
+### Podcasts and online sources
+
+- A podcast refresh no longer waits behind a download. Refreshing and
+  downloading shared one worker, so a refresh queued behind a long download
+  fill-up could take close to a minute instead of several seconds. Downloads now
+  run in their own lane and a refresh never queues behind one, and each finished
+  download job is logged with its duration and episode count.
+
+### Android
+
+- The library's status no longer pushes the list around. Errors and the
+  deletion status share one pill over the top edge of the list, one at a time;
+  an error carries a close button, and everything else lets taps through. On an
+  artist or album page the pill sits below the title and the Play button
+  instead of covering it. Artwork download progress is a thin bar on the top
+  edge of the list, with its phase and count in the summary line ("68 artists
+  · Artwork 0/2"), and the overflow menu offers to cancel the run.
+- A track that was never played shows no play-count badge. The row keeps the
+  badge's space, so durations stay on one line across played and unplayed rows,
+  and TalkBack no longer announces "0 plays".
+- Play counts fit their badge at every font scale. A count that did not fit
+  wrapped onto two lines and pushed the duration down; counts from 1,000 up are
+  shortened ("1.2k", "3M"), the column widens with the font scale, and TalkBack
+  announces the exact count once instead of reading it twice.
+
+## [0.1.222] - 2026-10-02
+
+### Library
+
+- A field that something other than the Library Doctor changed no longer stays
+  frozen behind a Doctor write. A write refreshed its stored scan reading even
+  when the library had already registered a newer change to that file, so the
+  next scan skipped a file it should have re-read. The reading is refreshed now
+  only while the library's own record of the file still matches it.
+- An artist or album whose tag ends in a no-break space opens its own tracks.
+  The desktop trimmed that character from the name before any query ran, while
+  the database keeps it, so such a row opened the content of the plainly spelled
+  artist or album instead.
+
+### Android
+
+- An artist can be deleted from the device together with all of its albums. A
+  long press in the artist list, or the new overflow menu on the artist page,
+  offers Play, Play next, Add to queue and Delete from device for the whole
+  artist, not only the rows the page has loaded. An artist whose tag ended in a
+  no-break space used to resolve to the plainly spelled artist's tracks, so
+  deleting it would have removed the other artist's files; the lookup now keeps
+  the spelling the row was listed with.
+- Deleting no longer freezes the screen while the tracks are counted, and the
+  library re-reads itself afterwards: an open artist or album page refreshes and
+  stays open while anything is left, an emptied page closes, and tab, search
+  and scroll position survive. The deletion status floats over the top of the
+  list as a small pill instead of pushing every row down while it runs.
+- The artist page's Play button plays the whole artist, not just the albums
+  loaded so far, and a play still resolving when the page switches to another
+  artist is dropped.
+- The now-playing background crossfades over one second on a track change
+  instead of cutting in a single frame.
+- Rocking the volume keys skips the track: up then down for the next one, down
+  then up for the previous one, while the screen is off or another app is in
+  front and Reprise is playing. A single press stays a volume step, a haptic
+  tick confirms the skip, and the gesture has its own setting.
+- Count lines name the real total ("727 titles") instead of the rows loaded so
+  far ("200 of 727"), and use the singular for one ("1 album • 1 track"). The
+  mini player centres its content on the card, and Now Playing shows the
+  remaining time before the player is ready instead of `--:--`.
+
+## [0.1.217] - 2026-09-23
+
+### Library
+
+- A tag the Library Doctor writes stays written. After a successful apply the
+  Doctor refreshed only the file identity of its own scan snapshot, so the next
+  scan compared an identity it had just refreshed, found the file unchanged,
+  and reused the reading taken before the write — scan after scan. On the real
+  library that had frozen 300 rows, among them an album where the Doctor itself
+  had renamed five of seven tracks and was then unable to see the two-spelling
+  split it had created. The fields a write applied are now refreshed alongside
+  the identity, and a schema migration repairs the rows that were already
+  frozen.
+- The track list stops snapping back after a fast search. A top-of-list restore
+  that a later reveal had already superseded used to run anyway and stomp it,
+  which read as an occasional jump right after a filter change.
+
+### Podcasts and online sources
+
+- The podcast list keeps its rows while it refreshes, and the updates popover
+  keeps its content while a new fetch is in flight, instead of both blanking
+  and filling again.
+- Durations arrive for a YouTube channel that has more than one tab. Asking a
+  channel root for a flat listing returns the tab list — Videos, Shorts, Live —
+  and no videos at all, so the duration fill silently closed no gap on any
+  refresh. It asks for the channel's videos tab now.
+
+### Android
+
+- Settings loses its "Online sources" page. Once artwork downloads became
+  permanently on, nothing was left on it to decide, and it had been reduced to
+  prose describing a switch that no longer exists.
+- The settings overlay slides in and out the way its own pages already do,
+  rather than crossfading into place.
+
+## [0.1.216] - 2026-09-20
+
+### Library
+
+- Reloading the track list stops fetching every row again. On a library of
+  100,000 tracks, clearing a search or changing the sort order took 271 ms, and
+  258.8 ms of that sat in a single `items_changed` emission during which GTK
+  asked for all 100,205 items and 201 synchronous window queries went to the
+  database. Switching into the same rows from a different source had always
+  cost 46 ms; a reload now takes that path too.
+- A turned-off place leaves no trace in the sidebar. A dimmed "{n} turned off"
+  row used to sit at the end of Library whenever an optional place — an online
+  source, say — was switched off, and opening it jumped to Plugins with the
+  disabled modules highlighted. That row is gone. A place that is off comes
+  back through Plugins in Preferences, and a stored session that pointed at one
+  opens Music instead.
+- Titles that contain `&`, `<` or `>` are visible again. libadwaita reads row
+  and banner titles and subtitles as Pango markup, so one bare ampersand in a
+  track, album, artist, episode, channel, station, file or error text rendered
+  the whole label empty — three strings in the German catalogue were affected
+  as well. It is fixed where rows and banners are built, the same place toasts
+  were fixed before, and the idiom checker now holds it there.
+- The sidebar no longer keeps an empty band under a dismissed notice. Once the
+  issues card was dismissed, the space it had occupied stayed blank: 162 px at
+  1280x720, 42 px at 1024x600. The defect lived in the production window
+  assembly, so the mock the layout tests use could never show it.
+
+### Appearance
+
+- Every view has been through a UX audit, and the corrections land together.
+  The Devices section scrolls with the rest of the navigation list now instead
+  of standing still while everything above it moved; only Issues and running
+  activity stay pinned. The separate 284-line status bar is removed outright —
+  it repeated counting the filter row already carried. Wording and
+  capitalisation were normalised against the rulebook across every view and
+  every shipped translation.
+- The window keeps its player bar at small sizes. A tour of the real window
+  measured its true minimum usable height at 635 px while the enforced minimum
+  still said 400, so at 1024x600 the player bar could be squeezed toward the
+  edge of the window and out of reach. The sidebar's library block now claims a
+  realistic minimum and the player bar no longer shrinks below a usable size.
+
+### Playback and presentation
+
+- The glow behind the Now Playing cover follows a podcast episode's own
+  artwork. Its cache was keyed on the cover's render generation alone, and one
+  generation may legitimately publish the show's fallback image first and the
+  episode's real artwork afterwards — so the second publish looked like a
+  repeat of the first and the glow stayed on the fallback's colours. The key
+  now carries the artwork stage as well.
+
+### Podcasts and online sources
+
+- Song Visuals reach a YouTube episode that was downloaded before Reprise
+  recorded categories. Such an episode kept an empty category forever, because
+  an already-downloaded episode is never fetched a second time. Playing one now
+  spends a single yt-dlp call to learn its category — only for a YouTube
+  episode whose stored category is empty, and only from the playback path,
+  never as a sweep across the library.
+
+### Discovery
+
+- New Releases stops after three artists in a row that a source could not
+  answer. A refresh used to keep asking for every remaining candidate even once
+  a source was plainly down or rate-limiting, spending the run's whole request
+  budget on answers it was not going to get. The untried candidates stay due
+  for the next run rather than being marked as checked.
+
+### Android
+
+- The phone downloads album covers by itself. Album art was fetched by the
+  desktop only, so a phone that never synced with one showed none at all.
+  Artwork downloads on Android — album covers and artist photos alike — are now
+  simply on: there is no question to answer and no switch to find, and the
+  progress the desktop already showed for artist photos now names artwork in
+  general. The desktop keeps its own consent flow unchanged.
+- The phone computes its own waveform and spectrogram. Both used to arrive only
+  through the `.reprise-analysis` sidecar the desktop writes, so without a sync
+  the seek-bar spectrum was a flat line and the visualizer fell back to plain
+  cover art after every automatic track change until its live engine produced a
+  first frame. Reprise now decodes the audio on the device and runs the same
+  accumulators the desktop uses.
+- A library scan no longer freezes the app. Two recorded input-dispatch
+  timeouts came from the same cause: the scan held the database writer for the
+  entire folder walk inside one transaction, so tapping a track, skipping,
+  shuffling, enqueuing or closing the app while the play journal flushed could
+  block on that writer for minutes. The scan leases the writer per batch now,
+  and queue persistence and the play journal try for it with a bounded backoff
+  instead of waiting without end.
+- The seek bar follows the finger. On the device it ignored nearly every drag
+  and most taps — a tap only registered if the finger held perfectly still, and
+  dragging the head moved nothing at all.
+- Media controls outside Reprise work again. A third-party launcher's media
+  widget showed the right track but its buttons did nothing: the session
+  advertised the actions and the tap arrived, and Reprise then dropped the
+  command as coming from a package that does not exist. media3 1.11.1 checks
+  controller visibility, and the controllers it trusts are now declared in the
+  manifest.
+- The song swipe keeps its panels and settles on the right track. Swiping to a
+  neighbouring song while the visualizer was showing could flash plain cover
+  art over a panel that has no spectrogram of its own; such a panel now mirrors
+  the live scene in its own accent. A swipe that had just changed track could
+  also fail to settle, because in a narrow window its own trailing drag flag
+  was read as a new swipe starting.
+- A settings page slides instead of fading through the overview. No settings
+  page paints its own background, so the navigation graph's default crossfade
+  let the incoming and outgoing pages show through each other for most of a
+  second. Pages now slide over 300 ms with the page behind moving a quarter as
+  far, which reads as one stack rather than two overlapping ones.
+- Long titles stay on the screen: a long track title in Now Playing is measured
+  against the real display width.
+- Opening an artist or album shows that it is loading, and a slow open that a
+  new navigation overtakes can no longer land on stale content.
+
 ## [0.1.191] - 2026-09-12
 
 ### Appearance

@@ -14,13 +14,14 @@ use reprise_core::ai_staging::StagingStore;
 use reprise_core::db::Db;
 use reprise_core::library::settings;
 use reprise_core::queries;
+use reprise_core::CoreError;
 use serde_json::{json, Value};
 
 use crate::clock::now_unix;
 use crate::error::CliError;
 use crate::json_models;
 use crate::output::print_json;
-use crate::retry::{rusqlite_is_busy, with_retry};
+use crate::retry::with_retry;
 use crate::staging;
 
 /// The canonical model identifier `instrumental create` records as each job's
@@ -163,7 +164,7 @@ fn enqueue(
                 now,
             )
         },
-        rusqlite_is_busy,
+        CoreError::is_busy,
     )?;
     Ok(CreateOutcome {
         // A lone job is not surfaced as a batch — only a multi-select create is.
@@ -299,7 +300,7 @@ pub fn discard(
     for &job_id in job_ids {
         let discarded = with_retry(
             || ai_jobs::discard_staged(db, &store, job_id, now),
-            rusqlite_is_busy,
+            CoreError::is_busy,
         );
         match discarded {
             Ok(true) => {
@@ -392,6 +393,6 @@ pub(crate) fn map_promotion_error(error: PromotionError, job_id: i64) -> CliErro
             CliError::Database(message)
         }
         PromotionError::Io(error) => CliError::Database(error.to_string()),
-        PromotionError::Db(error) => CliError::from(error),
+        PromotionError::Db(error) => CliError::from(CoreError::from(error)),
     }
 }

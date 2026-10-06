@@ -20,6 +20,7 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.CubicBezierEasing
+import androidx.compose.animation.core.LinearEasing
 import androidx.compose.animation.core.spring
 import androidx.compose.animation.core.tween
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -30,6 +31,7 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableIntStateOf
@@ -37,6 +39,7 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.rememberUpdatedState
+import androidx.compose.runtime.snapshotFlow
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -44,6 +47,8 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.RectangleShape
 import androidx.compose.ui.geometry.Rect
+import androidx.compose.ui.layout.boundsInRoot
+import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.semantics.semantics
@@ -52,15 +57,23 @@ import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.viewmodel.compose.viewModel
 import io.github.marvinbaudach.reprise.ui.theme.AmbientTrueBlack
 import io.github.marvinbaudach.reprise.ui.theme.NowPlayingOnBackdrop
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.collect
+import kotlinx.coroutines.flow.dropWhile
+import kotlinx.coroutines.flow.filter
+import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.flow.merge
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withTimeoutOrNull
 import uniffi.reprise_android_ffi.AndroidArtworkSize
 import uniffi.reprise_android_ffi.AndroidRepeatMode
 import uniffi.reprise_android_ffi.AndroidStoredVisualizer
@@ -80,28 +93,44 @@ internal fun NowPlayingSheet(
     surfaceLayout: SurfaceLayout = SurfaceLayout.STACKED,
     surfaceState: MobileSurfaceViewModel = viewModel(),
     close: () -> Unit,
+    // Production never sets this. visualizerLight lives on an Animatable, so it
+    // cannot be pinned the way FOG_CROSSFADE_MS is -- a compose-rule test reads
+    // it here instead of reaching into NowPlayingScene's own parameters.
+    onSceneLightObserved: (visualizerOpacity: Float, visualizerLight: Float) -> Unit = { _, _ -> },
 ) {
     val metrics = nowPlayingMetrics(surfaceLayout)
     val controls = LocalPlaybackControls.current
     val motion = LocalAmbientMotionController.current
     val visualizerPreference = LocalVisualizerPreference.current
     val currentIndex = playback.currentIndex ?: 0
-    val panelWindow = rememberPlayPanelWindow(track, currentIndex, controls)
+    val panelWindow = rememberPlayPanelWindow(
+        track,
+        currentIndex,
+        currentTrackId = playback.currentTrackId ?: track.id,
+        controls,
+    )
     val positionPx = remember { Animatable(0f) }
     val verticalOffset = remember { Animatable(0f) }
     val gestureScope = rememberCoroutineScope()
     var screenWidthPx by remember { mutableFloatStateOf(0f) }
     var draggingTrack by remember { mutableStateOf(false) }
     var settlingTargetIndex by remember { mutableStateOf<Int?>(null) }
+    var settleJob by remember { mutableStateOf<Job?>(null) }
     val positionReconciler = remember { NowPlayingPositionReconciler() }
     val cueGate = remember { TrackChangeCueGate() }
     var cueRevision by remember { mutableIntStateOf(0) }
     val haptics = rememberQueueHaptics()
     val latestCurrentIndex by rememberUpdatedState(currentIndex)
+    val latestDraggingTrack by rememberUpdatedState(draggingTrack)
     var seekMarker by remember { mutableStateOf<String?>(null) }
     var seekMarkerRevision by remember { mutableIntStateOf(0) }
     var backProgress by remember { mutableFloatStateOf(0f) }
     val coverBounds = remember { mutableStateOf(Rect.Zero) }
+    val gestureBoundsInRoot = remember { mutableStateOf(Rect.Zero) }
+    val seekBoundsInRoot = remember { mutableStateOf(Rect.Zero) }
+    val seekBounds = remember {
+        derivedStateOf { seekBoundsInRoot.value.relativeTo(gestureBoundsInRoot.value) }
+    }
     val visualizerVisible = remember(visualizerPreference) {
         mutableStateOf(
             runCatching(visualizerPreference::visualizerSetting)
@@ -116,13 +145,34 @@ internal fun NowPlayingSheet(
     val visualizerOpacity = remember(visualizerPreference) {
         Animatable(if (visualizerVisible.value) 1f else 0f)
     }
+    // The film palette rides its own, slower clock: the cover and the bars
+    // still cross-fade in VISUALIZER_CROSSFADE_MS, but a light that cuts in
+    // 220 ms while the fog underneath it takes a full second reads as the
+    // picture answering before the light does. FOG_CROSSFADE_MS is the same
+    // constant NowPlayingFogLayer's own crossfade runs on (see
+    // NowPlayingFogHandover.kt), so a cover-to-visualizer switch and a track
+    // change move at the same speed.
+    val visualizerLight = remember(visualizerPreference) {
+        Animatable(if (visualizerVisible.value) 1f else 0f)
+    }
     LaunchedEffect(visualizerVisible.value, motion.sceneAnimationsEnabled) {
         val target = if (visualizerVisible.value) 1f else 0f
         if (motion.sceneAnimationsEnabled) {
-            visualizerOpacity.animateTo(target, tween(VISUALIZER_CROSSFADE_MS))
+            launch { visualizerOpacity.animateTo(target, tween(VISUALIZER_CROSSFADE_MS)) }
+            launch { visualizerLight.animateTo(target, tween(FOG_CROSSFADE_MS, easing = LinearEasing)) }
         } else {
             visualizerOpacity.snapTo(target)
+            visualizerLight.snapTo(target)
         }
+    }
+    // Keep the test observation out of NowPlayingSheet's restart group. The
+    // reads that drive rendering stay deep inside Surface's content lambda;
+    // snapshotFlow observes the same clocks without recomposing the sheet on
+    // every animation frame.
+    val latestOnSceneLightObserved by rememberUpdatedState(onSceneLightObserved)
+    LaunchedEffect(visualizerOpacity, visualizerLight) {
+        snapshotFlow { visualizerOpacity.value to visualizerLight.value }
+            .collect { (opacity, light) -> latestOnSceneLightObserved(opacity, light) }
     }
     LaunchedEffect(seekMarkerRevision) {
         if (seekMarkerRevision == 0) return@LaunchedEffect
@@ -173,7 +223,10 @@ internal fun NowPlayingSheet(
         }
         val targetIndex = requestedIndex.coerceIn(panelWindow.firstIndex, panelWindow.lastIndex)
         val changesTrack = targetIndex != currentIndex
-        gestureScope.launch {
+        // One settle at a time: a newer swipe or button press supersedes the
+        // wait of the previous one, so no stale snap-back can fire under it.
+        settleJob?.cancel()
+        settleJob = gestureScope.launch {
             val target = targetIndex * screenWidthPx
             if (changesTrack && motion.sceneAnimationsEnabled) {
                 settlingTargetIndex = targetIndex
@@ -200,11 +253,35 @@ internal fun NowPlayingSheet(
                     },
                     snap = positionPx::snapTo,
                 )
-                if (
-                    changesTrack &&
-                    latestCurrentIndex == currentIndex
-                ) {
-                    positionPx.snapTo(currentIndex * screenWidthPx)
+                if (changesTrack) {
+                    // `draggingTrack` can still read true here even though
+                    // `awaitEachGesture` is one sequential coroutine that
+                    // always writes false in its `finally` right after calling
+                    // `onSettle` (NowPlayingGestures.kt:206/253/285), before
+                    // this settle's own animation has even started. The gap is
+                    // `latestDraggingTrack`: it is `draggingTrack` mirrored
+                    // through `rememberUpdatedState`, which only updates on
+                    // this composable's own recomposition -- if that release
+                    // write, and a further write, land inside the same
+                    // snapshot apply-notification window (no recomposition in
+                    // between), the intermediate value is never observed and
+                    // `latestDraggingTrack` can still read the leading true.
+                    // newDragAnswered only reports a true that follows an
+                    // observed false for exactly that reason. Accepted narrow
+                    // miss: a release and a genuine new swipe that land inside
+                    // that same window are swallowed the same way, so this
+                    // degrades to the pre-fix behaviour for that one case --
+                    // `withTimeoutOrNull(graceMs)` below still calls snapBack()
+                    // once the grace period runs out, so it settles late
+                    // rather than staying stuck forward.
+                    holdSettledPositionUntilTheTransportAnswers(
+                        answered = merge(
+                            snapshotFlow { latestCurrentIndex != currentIndex }.filter { it },
+                            newDragAnswered(snapshotFlow { latestDraggingTrack }),
+                        ),
+                        graceMs = NOW_PLAYING_ANSWER_GRACE_MS.toLong(),
+                        snapBack = { positionPx.snapTo(currentIndex * screenWidthPx) },
+                    )
                 }
             } finally {
                 if (settlingTargetIndex == targetIndex) settlingTargetIndex = null
@@ -215,6 +292,7 @@ internal fun NowPlayingSheet(
     Surface(
         modifier = Modifier
             .fillMaxSize()
+            .onGloballyPositioned { gestureBoundsInRoot.value = it.boundsInRoot() }
             .onSizeChanged { size ->
                 val width = size.width.toFloat()
                 if (screenWidthPx == width) return@onSizeChanged
@@ -224,6 +302,7 @@ internal fun NowPlayingSheet(
             .testTag("now-playing-gestures")
             .nowPlayingGestures(
                 animationsEnabled = motion.sceneAnimationsEnabled,
+                seekBounds = seekBounds,
                 currentIndex = currentIndex,
                 firstIndex = panelWindow.firstIndex,
                 lastIndex = panelWindow.lastIndex,
@@ -302,6 +381,7 @@ internal fun NowPlayingSheet(
                 playback = playback,
                 surfaceState = surfaceState,
                 metrics = metrics,
+                onSeekBounds = { seekBoundsInRoot.value = it },
                 onPrevious = { settleTrack(PlayGestureDecision.PREVIOUS) },
                 onNext = { settleTrack(PlayGestureDecision.NEXT) },
             )
@@ -315,8 +395,10 @@ internal fun NowPlayingSheet(
                     currentIndex = currentIndex,
                     panels = panelWindow.panels,
                     visualizerOpacity = visualizerOpacity.value,
+                    visualizerLight = visualizerLight.value,
                     cueRevision = cueRevision,
                     onCoverBounds = { coverBounds.value = it },
+                    onSeekBounds = { seekBoundsInRoot.value = it },
                     onPrevious = { settleTrack(PlayGestureDecision.PREVIOUS) },
                     onNext = { settleTrack(PlayGestureDecision.NEXT) },
                 )
@@ -363,6 +445,36 @@ internal fun NowPlayingSheet(
     }
 }
 
+/**
+ * Keeps a committed swipe on its target card until the transport has spoken.
+ *
+ * `next()` is fire-and-forget and its answer -- the new index in the playback
+ * snapshot -- can land later than the 480 ms settle on a loaded phone. Snapping
+ * back the moment the slide ended without an answer read a late transport as
+ * a refusing one: the card slid in, jumped back, and slid in again when the
+ * answer arrived. So the card now waits for [answered] to turn true -- the
+ * index moved, or a new drag took the position over -- and only a transport
+ * that stays silent for [graceMs] takes the old card back through [snapBack].
+ */
+internal suspend fun holdSettledPositionUntilTheTransportAnswers(
+    answered: Flow<Boolean>,
+    graceMs: Long,
+    snapBack: suspend () -> Unit,
+) {
+    val answer = withTimeoutOrNull(graceMs) { answered.first { it } }
+    if (answer == null) snapBack()
+}
+
+/**
+ * A `dragging` flag that reads true from its very first observation is the
+ * trailing state of the gesture that just committed this settle -- its
+ * release simply has not been observed yet, this is not a new drag taking
+ * the position over. Drops that leading run of `true` values and reports
+ * only a `true` that follows an observed `false`.
+ */
+internal fun newDragAnswered(dragging: Flow<Boolean>): Flow<Boolean> =
+    dragging.dropWhile { it }.filter { it }
+
 internal suspend fun settleNowPlayingPosition(
     target: Float,
     animationsEnabled: Boolean,
@@ -374,6 +486,7 @@ internal suspend fun settleNowPlayingPosition(
 
 internal const val VISUALIZER_CROSSFADE_MS = 220
 internal const val NOW_PLAYING_SETTLE_MS = 480
+internal const val NOW_PLAYING_ANSWER_GRACE_MS = 1_500
 internal val NOW_PLAYING_SETTLE_EASING = CubicBezierEasing(0.22f, 1.06f, 0.32f, 1f)
 private const val NOW_PLAYING_VISUALIZER_TAG = "RepriseVisualizer"
 
@@ -383,6 +496,7 @@ private fun WideShortNowPlayingContent(
     playback: PlaybackUiState,
     surfaceState: MobileSurfaceViewModel,
     metrics: NowPlayingMetrics,
+    onSeekBounds: (Rect) -> Unit,
     onPrevious: () -> Unit,
     onNext: () -> Unit,
 ) {
@@ -455,7 +569,13 @@ private fun WideShortNowPlayingContent(
                 // menu now uses.
                 NowPlayingTrackContextMenu(track)
             }
-            SpectralSeekSlider(trackId = track.id, playback = playback, surfaceState = surfaceState)
+            SpectralSeekSlider(
+                trackId = track.id,
+                trackDurationMs = track.durationMs,
+                playback = playback,
+                surfaceState = surfaceState,
+                onSeekBounds = onSeekBounds,
+            )
             playback.error?.let { message ->
                 Text(
                     text = message,
@@ -490,18 +610,21 @@ private fun WideShortNowPlayingContent(
 @OptIn(ExperimentalMaterial3Api::class)
 internal fun SpectralSeekSlider(
     trackId: Long,
+    trackDurationMs: Long,
     playback: PlaybackUiState,
     surfaceState: MobileSurfaceViewModel,
     interactionSource: MutableInteractionSource? = null,
     cueRevision: Int = 0,
     animationsEnabled: Boolean = true,
+    onSeekBounds: (Rect) -> Unit = {},
+    onSeekSize: (IntSize) -> Unit = {},
 ) {
     val seekTo = LocalPlaybackControls.current::seekTo
     val sliderInteractionSource = interactionSource ?: remember { MutableInteractionSource() }
     LaunchedEffect(sliderInteractionSource, trackId) {
         sliderInteractionSource.interactions.collect { interaction ->
             if (interaction is DragInteraction.Cancel) {
-                surfaceState.releaseScrub(trackId)
+                surfaceState.cancelScrub(trackId)
             }
         }
     }
@@ -516,7 +639,12 @@ internal fun SpectralSeekSlider(
         modifier = Modifier.fillMaxWidth().semantics { testTagsAsResourceId = true },
     ) {
         Slider(
-            modifier = Modifier.testTag("now-playing-seek"),
+            modifier = Modifier
+                .onGloballyPositioned {
+                    onSeekBounds(it.boundsInRoot())
+                    onSeekSize(it.size)
+                }
+                .testTag("now-playing-seek"),
             value = displayed.toFloat(),
             onValueChange = { value -> surfaceState.dragTo(trackId, value.toLong()) },
             onValueChangeFinished = {
@@ -549,13 +677,20 @@ internal fun SpectralSeekSlider(
                 color = MaterialTheme.colorScheme.primary,
             )
             Text(
-                text = formatRemaining(displayed, durationMs),
+                text = remainingLabel(displayed, durationMs, trackDurationMs),
                 style = MaterialTheme.typography.labelMedium,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
         }
     }
 }
+
+private fun Rect.relativeTo(parent: Rect): Rect = Rect(
+    left = left - parent.left,
+    top = top - parent.top,
+    right = right - parent.left,
+    bottom = bottom - parent.top,
+)
 
 @Composable
 private fun PlaybackActions(

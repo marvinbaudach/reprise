@@ -23,7 +23,7 @@ use crate::player_pipeline::AUDIO_SINK_ENV_VAR;
 
 /// Starts the real crossfade engine at a deterministic in-window position.
 ///
-/// The separate `crossfade_promotes_second_pipeline_and_advances_once` test
+/// The separate `play_20b_crossfade_promotion_carries_the_next_gain_from_the_first_sample` test
 /// owns the 500 ms position-ticker integration. Generation tests must not
 /// duplicate that scheduler dependency: under host load the ticker can miss
 /// their fixed deadline even though promotion and event tagging are correct.
@@ -34,6 +34,7 @@ fn start_crossfade_for_generation_test(player: &Player) {
         on_event: player.on_event.clone(),
         effects: player.effects.clone(),
         next_uri: player.next_uri.clone(),
+        pending_gain: player.pending_gain.clone(),
         handoff_pending: player.handoff_pending.clone(),
         transition: player.transition.clone(),
         crossfading: player.crossfading.clone(),
@@ -65,7 +66,7 @@ fn consecutive_starts_produce_strictly_increasing_generations() {
     );
 
     let first = concat!(env!("CARGO_MANIFEST_DIR"), "/tests/fixtures/sine.flac");
-    player.play(first).unwrap();
+    player.play(item(first)).unwrap();
     let after_first = player.current_generation();
     assert!(
         after_first > StreamGeneration::INITIAL,
@@ -73,7 +74,7 @@ fn consecutive_starts_produce_strictly_increasing_generations() {
     );
 
     let second = concat!(env!("CARGO_MANIFEST_DIR"), "/tests/fixtures/blip.flac");
-    player.play(second).unwrap();
+    player.play(item(second)).unwrap();
     let after_second = player.current_generation();
     assert!(
         after_second > after_first,
@@ -112,7 +113,7 @@ fn tagged_event_carries_the_generation_current_when_its_stream_started() {
     .unwrap();
 
     let first = concat!(env!("CARGO_MANIFEST_DIR"), "/tests/fixtures/sine.flac");
-    player.play(first).unwrap();
+    player.play(item(first)).unwrap();
     let playing_timeout = Duration::from_secs(5);
     let first_tagged = rx
         .recv_timeout(playing_timeout)
@@ -130,7 +131,7 @@ fn tagged_event_carries_the_generation_current_when_its_stream_started() {
     );
 
     let second = concat!(env!("CARGO_MANIFEST_DIR"), "/tests/fixtures/blip.flac");
-    player.play(second).unwrap();
+    player.play(item(second)).unwrap();
     let second_tagged = loop {
         let tagged = rx
             .recv_timeout(playing_timeout)
@@ -158,7 +159,7 @@ fn tagged_event_carries_the_generation_current_when_its_stream_started() {
 /// a pipeline restart) is a new stream even though no `play`/`play_uri` call
 /// drove it — see `gapless.rs::connect_about_to_finish`'s doc comment for why
 /// the bump sits at the URI swap. Mirrors the deterministic, bus-driven
-/// `gapless_handoff_advances_without_pipeline_restart` test above, tagged.
+/// `play_20a_gapless_handoff_applies_the_next_gain_at_the_second_stream_start` test above, tagged.
 #[test]
 fn gapless_handoff_carries_a_newer_generation_than_the_track_it_replaced() {
     let _guard = AUDIO_SINK_TEST_LOCK
@@ -174,12 +175,12 @@ fn gapless_handoff_carries_a_newer_generation_than_the_track_it_replaced() {
 
     let first = concat!(env!("CARGO_MANIFEST_DIR"), "/tests/fixtures/sine.flac");
     let second = concat!(env!("CARGO_MANIFEST_DIR"), "/tests/fixtures/blip.flac");
-    player.play(first).unwrap();
+    player.play(item(first)).unwrap();
     let first_generation = rx
         .recv_timeout(Duration::from_secs(5))
         .expect("expected a tagged StateChanged(Playing) for the first stream")
         .generation;
-    player.set_next(Some(second));
+    player.set_next(Some(item(second)));
 
     // Same pump-until-resolved pattern as `gapless_handoff_advances_without_
     // pipeline_restart`: the bus watch driving `AdvancedToNext` is dispatched
@@ -215,7 +216,7 @@ fn gapless_handoff_carries_a_newer_generation_than_the_track_it_replaced() {
 /// sits at promotion rather than when the silent secondary pipeline first
 /// starts (position ticks read through `self.playbin` still describe the
 /// *outgoing* track for the whole ramp; bumping earlier would mislabel
-/// them). Mirrors `crossfade_promotes_second_pipeline_and_advances_once`.
+/// them). Mirrors `play_20b_crossfade_promotion_carries_the_next_gain_from_the_first_sample`.
 #[test]
 fn crossfade_promotion_carries_a_newer_generation_than_the_track_it_replaced() {
     let _guard = AUDIO_SINK_TEST_LOCK
@@ -234,12 +235,12 @@ fn crossfade_promotion_carries_a_newer_generation_than_the_track_it_replaced() {
 
     let first = concat!(env!("CARGO_MANIFEST_DIR"), "/tests/fixtures/sine.flac");
     let second = concat!(env!("CARGO_MANIFEST_DIR"), "/tests/fixtures/blip.flac");
-    player.play(first).unwrap();
+    player.play(item(first)).unwrap();
     let first_generation = rx
         .recv_timeout(Duration::from_secs(5))
         .expect("expected a tagged StateChanged(Playing) for the first stream")
         .generation;
-    player.set_next(Some(second));
+    player.set_next(Some(item(second)));
     start_crossfade_for_generation_test(&player);
 
     let main_context = gst::glib::MainContext::default();

@@ -3,12 +3,12 @@ use rusqlite::Connection;
 use crate::db::Db;
 use std::collections::HashSet;
 use std::path::{Path, PathBuf};
+use std::time::{Duration, Instant};
 
 use super::import_errors;
 use super::source::{
-    self, LibraryEntry, LibraryLinkMode, LibraryPathMetadata, LibraryPathPresence, LibrarySource,
-    LibraryWalkControl, LibraryWalkError, LibraryWalkErrorKind, LibraryWalkItem, LibraryWalkOrder,
-    UnixLibrarySource,
+    self, LibraryLinkMode, LibraryPathMetadata, LibraryPathPresence, LibrarySource,
+    LibraryWalkError, LibraryWalkErrorKind, UnixLibrarySource,
 };
 use crate::models::ImportErrorKind;
 
@@ -20,7 +20,14 @@ pub use scanner_types::{
     finalize_completed_scan, ScanError, ScanOutcome, ScanProgress, ScanReport, ScanResult,
 };
 
+#[path = "scan_writer.rs"]
+mod scan_writer;
+pub use scan_writer::ScanWriter;
+
 const AUDIO_EXTENSIONS: [&str; 7] = ["mp3", "flac", "ogg", "opus", "m4a", "aac", "wav"];
+/// Bumped when a scan learns to read something new from the tags, so files
+/// scanned before are read once more. Version 2: the `CUESHEET` of a FLAC.
+const TAG_SCAN_VERSION: i64 = 2;
 
 type FileStat = (u64, Option<(u64, u64)>);
 type FileMetadata = (i64, Option<FileStat>);
@@ -78,6 +85,11 @@ type TagParams<'a> = (
     i64,
     Option<i32>,
     i64,
+    Option<f64>,
+    Option<f64>,
+    Option<f64>,
+    Option<f64>,
+    i64,
 );
 
 fn now_unix() -> i64 {
@@ -112,12 +124,16 @@ fn tag_param_values<'a>(
         meta.duration_ms,
         meta.bitrate_kbps,
         i64::from(untagged),
+        meta.replay_gain.track_gain_db,
+        meta.replay_gain.track_peak,
+        meta.replay_gain.album_gain_db,
+        meta.replay_gain.album_peak,
+        TAG_SCAN_VERSION,
     )
 }
 
 pub fn scan_folder(db: &Db, root: &Path) -> Result<ScanOutcome, ScanError> {
-    let conn = db.conn();
-    scan_folder_inner(&UnixLibrarySource, conn, root, None)
+    scan_folder_with_writer(&UnixLibrarySource, db, root)
 }
 
 #[cfg(test)]
@@ -126,12 +142,11 @@ fn scan_folder_with_source(
     db: &Db,
     root: &Path,
 ) -> Result<ScanOutcome, ScanError> {
-    let conn = db.conn();
-    scan_folder_inner(source, conn, root, None)
+    scan_folder_with_writer(source, db, root)
 }
 
 pub(crate) fn scan_folder_in(conn: &Connection, root: &Path) -> Result<ScanOutcome, ScanError> {
-    scan_folder_inner(&UnixLibrarySource, conn, root, None)
+    scan_folder_with_writer(&UnixLibrarySource, conn, root)
 }
 
 pub fn scan_folder_with_progress(
@@ -139,7 +154,7 @@ pub fn scan_folder_with_progress(
     root: &Path,
     mut on_progress: impl FnMut(ScanProgress),
 ) -> Result<ScanOutcome, ScanError> {
-    scan_folder_with_progress_from(&UnixLibrarySource, db, root, &mut on_progress)
+    scan_folder_with_writer_and_progress(&UnixLibrarySource, db, root, &mut on_progress)
 }
 
 /// Scans through an explicitly selected library source while forwarding the
@@ -152,28 +167,119 @@ pub fn scan_folder_with_source_and_progress(
     root: &Path,
     mut on_progress: impl FnMut(ScanProgress),
 ) -> Result<ScanOutcome, ScanError> {
-    scan_folder_with_progress_from(source, db, root, &mut on_progress)
+    scan_folder_with_writer_and_progress(source, db, root, &mut on_progress)
 }
 
-fn scan_folder_with_progress_from(
+pub fn scan_folder_with_writer_and_progress(
     source: &dyn LibrarySource,
-    db: &Db,
+    writer: &dyn ScanWriter,
     root: &Path,
-    on_progress: &mut dyn FnMut(ScanProgress),
+    mut on_progress: impl FnMut(ScanProgress),
 ) -> Result<ScanOutcome, ScanError> {
-    let conn = db.conn();
     on_progress(ScanProgress::Discovering);
-    let total = scan_progress::estimated_audio_files(conn, root)?;
-    let reporter = scan_progress::ScanProgressReporter::new(on_progress, total);
-    scan_folder_inner(source, conn, root, Some(reporter))
+    let mut progress = BatchProgress::new(Some(&mut on_progress));
+    run_tracked_scan(source, writer, root, &mut progress)
+}
+
+fn scan_folder_with_writer(
+    source: &dyn LibrarySource,
+    writer: &dyn ScanWriter,
+    root: &Path,
+) -> Result<ScanOutcome, ScanError> {
+    let mut progress = BatchProgress::new(None);
+    run_tracked_scan(source, writer, root, &mut progress)
+}
+
+fn run_tracked_scan(
+    source: &dyn LibrarySource,
+    writer: &dyn ScanWriter,
+    root: &Path,
+    progress: &mut BatchProgress<'_>,
+) -> Result<ScanOutcome, ScanError> {
+    let mut leases = LeaseMetrics::default();
+    let result = scan_folder_inner(source, writer, root, progress, &mut leases);
+    tracing::debug!(
+        longest_lease_ms = leases.longest.as_millis() as u64,
+        leases = leases.count,
+        estimate_lease = u8::from(leases.estimate),
+        "scan writer leases"
+    );
+    result
 }
 
 /// What the walk delivered, and what the report owes for it.
+#[derive(Default)]
 struct WalkTrace {
     audio_files_seen: u64,
     observed_paths: HashSet<PathBuf>,
     dirs: HashSet<PathBuf>,
     failed: HashSet<PathBuf>,
+}
+
+struct BatchProgress<'a> {
+    callback: Option<&'a mut dyn FnMut(ScanProgress)>,
+    reporter: Option<scan_progress::ScanProgressReporter<'a>>,
+}
+
+impl<'a> BatchProgress<'a> {
+    fn new(callback: Option<&'a mut dyn FnMut(ScanProgress)>) -> Self {
+        Self {
+            callback,
+            reporter: None,
+        }
+    }
+
+    fn initialize(&mut self, conn: &Connection, root: &Path) -> Result<(), ScanError> {
+        let Some(callback) = self.callback.take() else {
+            return Ok(());
+        };
+        let total = scan_progress::estimated_audio_files(conn, root)?;
+        self.reporter = Some(scan_progress::ScanProgressReporter::new(callback, total));
+        Ok(())
+    }
+
+    fn advance(&mut self, path: &Path) {
+        if let Some(reporter) = &mut self.reporter {
+            reporter.advance(path);
+        }
+    }
+}
+
+#[derive(Default)]
+struct LeaseMetrics {
+    longest: Duration,
+    count: u64,
+    estimate: bool,
+}
+
+impl LeaseMetrics {
+    fn run_estimate(
+        &mut self,
+        writer: &dyn ScanWriter,
+        work: &mut dyn FnMut(&Connection) -> Result<(), ScanError>,
+    ) -> Result<(), ScanError> {
+        let result = writer.lease(work);
+        self.estimate = true;
+        result
+    }
+
+    fn run(
+        &mut self,
+        writer: &dyn ScanWriter,
+        work: &mut dyn FnMut(&Connection) -> Result<(), ScanError>,
+    ) -> Result<(), ScanError> {
+        let mut elapsed = Duration::ZERO;
+        let mut timed_work = |conn: &Connection| {
+            let started = Instant::now();
+            let result = work(conn);
+            elapsed = started.elapsed();
+            result
+        };
+        let result = writer.lease(&mut timed_work);
+        self.longest = self.longest.max(elapsed);
+        self.count = self.count.saturating_add(1);
+        result
+    }
 }
 
 struct WalkState {
@@ -205,11 +311,15 @@ impl WalkState {
                 self.report.moved += 1;
                 self.report.healed += healed;
             }
-            EntryOutcome::Imported { is_update, healed } => {
+            EntryOutcome::Imported {
+                is_update,
+                healed,
+                tracks,
+            } => {
                 if is_update {
-                    self.report.updated += 1;
+                    self.report.updated += tracks;
                 } else {
-                    self.report.added += 1;
+                    self.report.added += tracks;
                 }
                 self.report.healed += healed;
             }
@@ -272,89 +382,17 @@ fn guard_root_before_walk(source: &dyn LibrarySource, root: &Path) -> Option<Sca
     None
 }
 
-fn handle_walk_item(
-    item: LibraryWalkItem,
-    root: &Path,
-    state: &mut WalkState,
-    mobile_sync: &mut mobile_sync::MobileSyncDiscovery,
-    scan: &mut entry::EntryScan<'_, '_, '_>,
-    progress: &mut Option<scan_progress::ScanProgressReporter<'_>>,
-) -> Result<(), ScanError> {
-    let entry = match item {
-        LibraryWalkItem::Error(error) => {
-            let outcome =
-                record_walk_error(scan.source, scan.tx, &mut state.trace.failed, root, &error)?;
-            state.record(&outcome);
-            return Ok(());
-        }
-        LibraryWalkItem::Entry(entry) => entry,
-    };
-    mobile_sync.observe(scan.source, root, &entry);
-    let LibraryEntry {
-        path,
-        is_file,
-        metadata,
-    } = entry;
-    state.trace.observed_paths.insert(path.clone());
-    if !is_file {
-        state.trace.dirs.insert(path);
-        state.record(&EntryOutcome::Directory);
-        return Ok(());
-    }
-    let outcome = entry::scan_entry(scan, &path, metadata)?;
-    if outcome.examined_audio_file() {
-        if let Some(progress) = progress {
-            progress.advance(&path);
-        }
-    }
-    state.record(&outcome);
-    Ok(())
-}
-
-fn walk_root<'source>(
-    source: &'source dyn LibrarySource,
-    tx: &rusqlite::Transaction,
-    root: &Path,
-    state: &mut WalkState,
-    mobile_sync: &mut mobile_sync::MobileSyncDiscovery,
-    mount_cache: &mut mount::MountPointCache<'source>,
-    progress: &mut Option<scan_progress::ScanProgressReporter<'_>>,
-) -> Result<(), ScanError> {
-    let mut scan = entry::EntryScan {
-        source,
-        tx,
-        mount_cache,
-    };
-    let mut walk_failure = None;
-    source::walk_with(
-        source,
-        root,
-        LibraryWalkOrder::Native,
-        |item| match handle_walk_item(item, root, state, mobile_sync, &mut scan, progress) {
-            Ok(()) => LibraryWalkControl::Continue,
-            Err(error) => {
-                walk_failure = Some(error);
-                LibraryWalkControl::Stop
-            }
-        },
-    );
-    if let Some(error) = walk_failure {
-        return Err(error);
-    }
-    Ok(())
-}
-
-/// The metadata a mobile sync left beside the audio, applied inside the walk's
-/// own transaction so the sidecars and the rows they describe commit together.
+/// The metadata a mobile sync left beside the audio, applied inside the atomic
+/// tail transaction together with sidecar registration and vanish decisions.
 fn apply_mobile_sync(
     mobile_sync: &mobile_sync::MobileSyncDiscovery,
-    source: &dyn LibrarySource,
+    metadata: Option<&crate::device_sync::track_metadata_list::TrackMetadataList>,
     tx: &rusqlite::Transaction,
     report: &mut ScanReport,
 ) -> Result<(), ScanError> {
     report.updated = report
         .updated
-        .saturating_add(mobile_sync.apply_metadata(source, tx)?);
+        .saturating_add(mobile_sync.apply_metadata(metadata, tx)?);
     mobile_sync.register_analysis_sidecars(tx)?;
     mobile_sync.register_device_paths(tx)?;
     Ok(())
@@ -420,9 +458,9 @@ fn decide_outcome(
     });
     if root_unavailable {
         // Root-Guard case (b): see `scan_folder_inner`'s `## Root guard` doc
-        // section. The upserts the walk itself produced (normally none,
-        // since `audio_files_seen == 0`, but a traversal error is still
-        // possible) still commit below — only the mark phase is skipped.
+        // section. Walk batches have already committed. This tail still
+        // commits the mobile-sync changes applied above; only the vanish and
+        // event-log phase is skipped.
         tracing::warn!(
             root = %root.display(),
             candidate_count = evidence.guard_evidence.map_or(0, |e| e.len()),
@@ -444,8 +482,8 @@ fn decide_outcome(
     )?;
     // T0.3: one collective change-log row per scan that actually touched
     // the catalog (never per track, never for a no-op reconcile), inside
-    // the same transaction as the walk so the event and the rows it
-    // announces commit together. Foreign scanners (`reprise-cli scan`)
+    // the same tail transaction as the final scan decisions. Foreign scanners
+    // (`reprise-cli scan`)
     // wake the running app through this; the app's own scans carry its
     // writer token and are filtered out by its own consumer.
     if scan_touched_library(&report) || reclassified > 0 {
@@ -455,9 +493,10 @@ fn decide_outcome(
     Ok(ScanOutcome::Completed(report))
 }
 
-/// Walks `root`, upserting every audio file found, then — in the SAME
-/// transaction — reconciles whatever the walk did NOT find: rows the DB
-/// still believes are present under `root` whose file has actually vanished.
+/// Walks `root`, committing bounded batches of observed entries, then
+/// reconciles whatever the complete walk did NOT find in one atomic tail
+/// transaction: rows the DB still believes are present under `root` whose file
+/// has actually vanished.
 ///
 /// ## Fold: scan IS reconcile, not scan-then-mark
 ///
@@ -472,11 +511,11 @@ fn decide_outcome(
 /// yet-rescanned file as missing. A convention that needs three paragraphs
 /// of documentation and that every call site must get in the right order
 /// belongs in the structure, not in a comment: Task 1.5 folds the mark phase
-/// into this function, after the walk loop, inside the walk's own `tx` —
-/// there is now nothing left to call in the wrong order, and a move and an
-/// unrelated deletion discovered in the same pass reconcile as one atomic
-/// transaction instead of leaving a window (between the old two commits)
-/// where the database briefly says a moved file is gone.
+/// into this function, after the walk loop. There is now nothing left to call
+/// in the wrong order. The walk's batches may commit incrementally, while the
+/// complete trace, mobile-sync metadata, and vanish decisions stay together
+/// in the final transaction; an interrupted walk therefore imports true rows
+/// but never marks unseen rows missing.
 ///
 /// ## Root guard: no evidence about `root` must never look like "all gone"
 ///
@@ -507,8 +546,9 @@ fn decide_outcome(
 /// really is the one previously scanned — proceed to mark normally
 /// (Root-Guard case (c): a real, provable deletion). If no such evidence
 /// exists, mark nothing and return [`ScanOutcome::RootUnavailable`] instead
-/// (Root-Guard case (b)) — the transaction still commits whatever the
-/// (empty) walk itself produced, but the mark phase never runs.
+/// (Root-Guard case (b)) — the walk's batches have already committed, and the
+/// tail still commits any mobile-sync changes applied before the guard, but
+/// the vanish and event-log phase never runs.
 ///
 /// This evidence set is deliberately wider than the mark phase's own
 /// `PRESENT`-only candidate list (`scanner_vanish::present_candidates_under_
@@ -553,16 +593,16 @@ fn decide_outcome(
 /// (the file got re-tagged) clears it.
 fn scan_folder_inner(
     source: &dyn LibrarySource,
-    conn: &Connection,
+    writer: &dyn ScanWriter,
     root: &Path,
-    mut progress: Option<scan_progress::ScanProgressReporter<'_>>,
+    progress: &mut BatchProgress<'_>,
+    leases: &mut LeaseMetrics,
 ) -> Result<ScanOutcome, ScanError> {
     if let Some(outcome) = guard_root_before_walk(source, root) {
         return Ok(outcome);
     }
     let mut mobile_sync = mobile_sync::MobileSyncDiscovery::default();
     let mut mount_cache = mount::MountPointCache::new(source);
-    let tx = conn.unchecked_transaction()?;
     let mut state = WalkState {
         report: ScanReport::default(),
         trace: WalkTrace {
@@ -572,20 +612,47 @@ fn scan_folder_inner(
             failed: HashSet::new(),
         },
     };
-    walk_root(
+    let mut cues = cue_sheets::CueDirectories::default();
+    leases.run_estimate(writer, &mut |conn| {
+        progress.initialize(conn, root)?;
+        cues.load_applied(conn, root)?;
+        Ok(())
+    })?;
+    batches::walk_root_in_batches(
         source,
-        &tx,
+        writer,
         root,
         &mut state,
         &mut mobile_sync,
         &mut mount_cache,
-        &mut progress,
+        &mut cues,
+        progress,
+        leases,
     )?;
-    apply_mobile_sync(&mobile_sync, source, &tx, &mut state.report)?;
-    let evidence = gather_vanish_evidence(&tx, root, state.trace)?;
-    let outcome = decide_outcome(source, &tx, root, evidence, state.report)?;
-    tx.commit()?;
-    Ok(outcome)
+    let synced_metadata = mobile_sync.read_metadata(source);
+    let mut outcome = None;
+    leases.run(writer, &mut |conn| {
+        let tx = conn.unchecked_transaction()?;
+        apply_mobile_sync(
+            &mobile_sync,
+            synced_metadata.as_ref(),
+            &tx,
+            &mut state.report,
+        )?;
+        let evidence = gather_vanish_evidence(&tx, root, std::mem::take(&mut state.trace))?;
+        outcome = Some(decide_outcome(
+            source,
+            &tx,
+            root,
+            evidence,
+            std::mem::take(&mut state.report),
+        )?);
+        tx.commit()?;
+        Ok(())
+    })?;
+    outcome.ok_or(ScanError::InternalInvariant(
+        "the tail writer lease skipped its work",
+    ))
 }
 
 /// Whether a completed scan changed anything a consumer's view reflects — any
@@ -610,6 +677,16 @@ mod scan_progress;
 
 #[path = "scanner_entry.rs"]
 mod entry;
+
+// Which sheet describes an audio file, and the layout its tracks take.
+#[path = "scanner_cue.rs"]
+mod cue_sheets;
+
+#[path = "scanner_segments.rs"]
+mod segments;
+
+#[path = "scanner_batches.rs"]
+mod batches;
 
 #[path = "scanner_mobile_sync.rs"]
 mod mobile_sync;
@@ -664,6 +741,10 @@ mod mobile_sync_path_tests;
 #[path = "scanner_metadata_persistence_tests.rs"]
 mod metadata_persistence_tests;
 
+#[cfg(test)]
+#[path = "scanner_loudness_tests.rs"]
+mod loudness_tests;
+
 // Task 1.7: the episode/dismiss/directory-dedup test suite lives in its own
 // file, same 800-line reason as every other `_tests.rs` sibling here.
 #[cfg(test)]
@@ -690,3 +771,15 @@ mod tombstone_tests;
 #[cfg(test)]
 #[path = "scanner_exclusion_tests.rs"]
 mod exclusion_tests;
+
+#[cfg(test)]
+#[path = "scanner_lease_tests.rs"]
+mod lease_tests;
+
+#[cfg(test)]
+#[path = "scanner_cue_tests.rs"]
+mod cue_tests;
+
+#[cfg(test)]
+#[path = "scanner_cue_files_tests.rs"]
+mod cue_files_tests;

@@ -274,6 +274,54 @@ mod tests {
     }
 
     #[test]
+    #[ignore = "requires a display; run via xvfb-run"]
+    fn set_11a_master_description_names_the_offline_promise() {
+        let _main_context = crate::ui::test_main_context::lock_main_context();
+        gtk4::init().unwrap();
+        let master = OnlineMaster::new(false);
+        let window = gtk4::Window::builder()
+            .default_width(720)
+            .default_height(220)
+            .child(master.widget())
+            .build();
+        window.present();
+        assert!(crate::ui::test_settle::settle_until_mapped(&window));
+
+        let description = description_label(master.widget())
+            .expect("the online master must render its description label");
+        assert_eq!(
+            description.text(),
+            "Turn off to keep Reprise offline: none of these plugins run, nothing is requested, and their sidebar entries are hidden."
+        );
+        let label_column = description
+            .parent()
+            .expect("the master description must belong to the label column");
+        let bounds = description
+            .compute_bounds(&label_column)
+            .expect("the mapped master description must have label-column bounds");
+        assert_eq!(bounds.x(), 0.0);
+        assert_eq!(bounds.width(), label_column.width() as f32);
+
+        window.close();
+    }
+
+    fn description_label(root: &gtk4::Widget) -> Option<gtk4::Label> {
+        if let Ok(label) = root.clone().downcast::<gtk4::Label>() {
+            if label.has_css_class(DESCRIPTION_CLASS) {
+                return Some(label);
+            }
+        }
+        let mut child = root.first_child();
+        while let Some(current) = child {
+            if let Some(label) = description_label(&current) {
+                return Some(label);
+            }
+            child = current.next_sibling();
+        }
+        None
+    }
+
+    #[test]
     fn the_master_switch_is_larger_than_a_child_switch() {
         let css = css();
 

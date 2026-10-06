@@ -11,7 +11,7 @@ use super::clauses::{
     filter_clause, like_pattern, order_clause, row_to_id, row_to_track, track_projection, PRESENT,
 };
 use super::queue::QUEUE_LIMIT;
-use super::MAX_WINDOW_LIMIT;
+use super::{AiColumn, RowWindow, TrackSort, TrackViewQuery, MAX_WINDOW_LIMIT};
 use rusqlite::Connection;
 
 /// Loads one `SmartPlaylist` row by id via `playlists::list_smart` (a full
@@ -37,27 +37,27 @@ fn load_smart_playlist(
 /// treat that as "no rows" rather than propagating it as a SQL failure.
 fn build_smart_window_query(
     smart: &SmartPlaylist,
-    sort_field: &str,
-    sort_dir: &str,
-    filter: &str,
-    offset: i64,
-    limit: i64,
-    project_ai: bool,
+    view: &TrackViewQuery<'_>,
+    sort: TrackSort<'_>,
+    rows: RowWindow,
+    ai: AiColumn,
 ) -> Result<(String, Vec<rusqlite::types::Value>), playlists::SmartRulesError> {
-    let has_filter = !filter.trim().is_empty();
+    let has_filter = !view.filter.trim().is_empty();
     let member_order = order_clause(&smart.sort_field, &smart.sort_dir);
-    let view_order = order_clause(sort_field, sort_dir);
+    let view_order = order_clause(sort.field, sort.dir);
     let (rules_frag, mut params) = playlists::smart_rules_to_sql(&smart.rules_json)?;
 
     let mut next_idx = params.len() as u8 + 1;
-    let projection = track_projection("", project_ai);
+    let projection = track_projection("", ai == AiColumn::Project);
     let mut inner_sql = format!(
         "SELECT {projection} \
          FROM tracks WHERE {PRESENT} AND ({rules_frag})"
     );
     if has_filter {
         inner_sql.push_str(&filter_clause(true, next_idx));
-        params.push(rusqlite::types::Value::Text(like_pattern(filter.trim())));
+        params.push(rusqlite::types::Value::Text(like_pattern(
+            view.filter.trim(),
+        )));
         next_idx += 1;
     }
     inner_sql.push_str(&format!(" ORDER BY {member_order}"));
@@ -73,8 +73,8 @@ fn build_smart_window_query(
         "SELECT * FROM ({inner_sql}) ORDER BY {view_order} \
          LIMIT ?{limit_idx} OFFSET ?{offset_idx}"
     );
-    params.push(rusqlite::types::Value::Integer(limit));
-    params.push(rusqlite::types::Value::Integer(offset));
+    params.push(rusqlite::types::Value::Integer(rows.limit));
+    params.push(rusqlite::types::Value::Integer(rows.offset));
 
     Ok((sql, params))
 }
@@ -82,13 +82,15 @@ fn build_smart_window_query(
 pub(super) fn query_track_window_smart(
     conn: &Connection,
     smart_id: i64,
-    view_sort: (&str, &str),
-    filter: &str,
-    offset: i64,
-    limit: i64,
-    project_ai: bool,
+    view: &TrackViewQuery<'_>,
+    sort: TrackSort<'_>,
+    rows: RowWindow,
+    ai: AiColumn,
 ) -> Result<Vec<Track>, rusqlite::Error> {
-    let limit = limit.clamp(0, MAX_WINDOW_LIMIT);
+    let rows = RowWindow {
+        limit: rows.limit.clamp(0, MAX_WINDOW_LIMIT),
+        ..rows
+    };
     let Some(smart) = load_smart_playlist(conn, smart_id)? else {
         tracing::warn!(
             smart_id,
@@ -97,29 +99,16 @@ pub(super) fn query_track_window_smart(
         return Ok(Vec::new());
     };
     if smart.role.as_deref() == Some(playlists::RECENTLY_ADDED_ROLE) {
-        let browse = super::recently_added_browse(&super::BrowseFilter::default());
-        return super::library::query_track_window_library(
-            conn,
-            view_sort.0,
-            view_sort.1,
-            filter,
-            offset,
-            limit,
-            &browse,
-            false,
-            project_ai,
-        );
+        let browse = super::track_view::recently_added_browse(&super::BrowseFilter::default());
+        let recent_view = TrackViewQuery {
+            browse: &browse,
+            exclude_ai: false,
+            ..*view
+        };
+        return super::library::query_track_window_library(conn, &recent_view, sort, rows, ai);
     }
 
-    let (sql, params) = match build_smart_window_query(
-        &smart,
-        view_sort.0,
-        view_sort.1,
-        filter,
-        offset,
-        limit,
-        project_ai,
-    ) {
+    let (sql, params) = match build_smart_window_query(&smart, view, sort, rows, ai) {
         Ok(v) => v,
         Err(error) => {
             tracing::error!(%error, smart_id, "invalid smart playlist rules; returning empty window");
@@ -135,7 +124,7 @@ pub(super) fn query_track_window_smart(
 pub(super) fn query_track_count_smart(
     conn: &Connection,
     smart_id: i64,
-    filter: &str,
+    view: &TrackViewQuery<'_>,
 ) -> Result<i64, rusqlite::Error> {
     let Some(smart) = load_smart_playlist(conn, smart_id)? else {
         tracing::warn!(
@@ -145,13 +134,15 @@ pub(super) fn query_track_count_smart(
         return Ok(0);
     };
     if smart.role.as_deref() == Some(playlists::RECENTLY_ADDED_ROLE) {
-        return super::library::query_track_count_library(
-            conn,
-            filter,
-            &super::recently_added_browse(&super::BrowseFilter::default()),
-        );
+        let browse = super::track_view::recently_added_browse(&super::BrowseFilter::default());
+        let recent_view = TrackViewQuery {
+            browse: &browse,
+            exclude_ai: false,
+            ..*view
+        };
+        return super::library::query_track_count_library(conn, &recent_view);
     }
-    let has_filter = !filter.trim().is_empty();
+    let has_filter = !view.filter.trim().is_empty();
     let (rules_frag, mut params) = match playlists::smart_rules_to_sql(&smart.rules_json) {
         Ok(v) => v,
         Err(error) => {
@@ -163,7 +154,9 @@ pub(super) fn query_track_count_smart(
     let mut sql = format!("SELECT count(*) FROM tracks WHERE {PRESENT} AND ({rules_frag})");
     if has_filter {
         sql.push_str(&filter_clause(true, next_idx));
-        params.push(rusqlite::types::Value::Text(like_pattern(filter.trim())));
+        params.push(rusqlite::types::Value::Text(like_pattern(
+            view.filter.trim(),
+        )));
     }
     let raw: i64 = conn.query_row(&sql, rusqlite::params_from_iter(params.iter()), |r| {
         r.get(0)
@@ -177,9 +170,8 @@ pub(super) fn query_track_count_smart(
 pub(super) fn query_track_ids_smart(
     conn: &Connection,
     smart_id: i64,
-    sort_field: &str,
-    sort_dir: &str,
-    filter: &str,
+    view: &TrackViewQuery<'_>,
+    sort: TrackSort<'_>,
 ) -> Result<Vec<i64>, rusqlite::Error> {
     let Some(smart) = load_smart_playlist(conn, smart_id)? else {
         tracing::warn!(
@@ -189,18 +181,12 @@ pub(super) fn query_track_ids_smart(
         return Ok(Vec::new());
     };
     if smart.role.as_deref() == Some(playlists::RECENTLY_ADDED_ROLE) {
-        return super::query_track_ids_recently_added(
-            conn,
-            sort_field,
-            sort_dir,
-            filter,
-            &super::BrowseFilter::default(),
-            false,
-        );
+        let recent_view = TrackViewQuery::new(view.source).with_filter(view.filter);
+        return super::track_view::query_track_ids_recently_added(conn, &recent_view, sort);
     }
-    let has_filter = !filter.trim().is_empty();
+    let has_filter = !view.filter.trim().is_empty();
     let member_order = order_clause(&smart.sort_field, &smart.sort_dir);
-    let view_order = order_clause(sort_field, sort_dir);
+    let view_order = order_clause(sort.field, sort.dir);
     let (rules_frag, mut params) = match playlists::smart_rules_to_sql(&smart.rules_json) {
         Ok(v) => v,
         Err(error) => {
@@ -211,11 +197,14 @@ pub(super) fn query_track_ids_smart(
     let next_idx = params.len() as u8 + 1;
     let mut inner_sql = format!(
         "SELECT id, title, artist, album, year, track_no, genre, duration_ms, \
-         rating, play_count, added_at FROM tracks WHERE {PRESENT} AND ({rules_frag})"
+         rating, play_count, added_at, last_played_at \
+         FROM tracks WHERE {PRESENT} AND ({rules_frag})"
     );
     if has_filter {
         inner_sql.push_str(&filter_clause(true, next_idx));
-        params.push(rusqlite::types::Value::Text(like_pattern(filter.trim())));
+        params.push(rusqlite::types::Value::Text(like_pattern(
+            view.filter.trim(),
+        )));
     }
     // The smart playlist's own limit bounds the queue too (capped by
     // `QUEUE_LIMIT` for defense in depth, same as every other source's ids
@@ -228,4 +217,100 @@ pub(super) fn query_track_ids_smart(
     let mut stmt = conn.prepare(&sql)?;
     let rows = stmt.query_map(rusqlite::params_from_iter(params.iter()), row_to_id)?;
     rows.collect()
+}
+
+#[cfg(test)]
+mod browse_15_tests {
+    use super::*;
+
+    #[test]
+    fn member_order_survives_when_the_view_sort_equals_it() {
+        let db = crate::db::Db::open_in_memory().unwrap();
+        let conn = db.conn();
+        for (id, added_at) in [(1, 10), (2, 30), (3, 20)] {
+            conn.execute(
+                "INSERT INTO tracks (id, path, title, artist, added_at) VALUES (?1, ?2, ?3, '', ?4)",
+                rusqlite::params![id, format!("/{id}.flac"), format!("Track {id}"), added_at],
+            )
+            .unwrap();
+        }
+        conn.execute(
+            "INSERT INTO smart_playlists (name, rules_json, sort_field, sort_dir, limit_count) \
+             VALUES ('Newest', '[]', 'added_at', 'desc', 2)",
+            [],
+        )
+        .unwrap();
+        let smart_id = conn.last_insert_rowid();
+        let source = crate::view_source::ViewSource::Smart(smart_id);
+        let view = TrackViewQuery::new(&source);
+
+        let rows = query_track_window_smart(
+            conn,
+            smart_id,
+            &view,
+            TrackSort {
+                field: "added_at",
+                dir: "desc",
+            },
+            RowWindow {
+                offset: 0,
+                limit: 10,
+            },
+            AiColumn::Skip,
+        )
+        .unwrap();
+
+        assert_eq!(
+            rows.iter().map(|track| track.id).collect::<Vec<_>>(),
+            [2, 3]
+        );
+    }
+
+    #[test]
+    fn browse_15_recently_played_queries_return_the_newest_play_first() {
+        let db = crate::db::Db::open_in_memory().unwrap();
+        let conn = db.conn();
+        for (id, title, last_played_at) in [(1, "Zulu", 10), (2, "Alpha", 30), (3, "Mike", 20)] {
+            conn.execute(
+                "INSERT INTO tracks (id, path, title, artist, added_at, last_played_at) \
+                 VALUES (?1, ?2, ?3, '', 1, ?4)",
+                rusqlite::params![id, format!("/{id}.flac"), title, last_played_at],
+            )
+            .unwrap();
+        }
+        let smart_id = conn
+            .query_row(
+                "SELECT id FROM smart_playlists \
+                 WHERE rules_json = '[{\"field\":\"last_played_at\",\"op\":\"not-null\"}]'",
+                [],
+                |row| row.get::<_, i64>(0),
+            )
+            .unwrap();
+        let source = crate::view_source::ViewSource::Smart(smart_id);
+        let view = TrackViewQuery::new(&source);
+        let sort = TrackSort {
+            field: "last_played_at",
+            dir: "desc",
+        };
+
+        let rows = query_track_window_smart(
+            conn,
+            smart_id,
+            &view,
+            sort,
+            RowWindow {
+                offset: 0,
+                limit: 10,
+            },
+            AiColumn::Skip,
+        )
+        .unwrap();
+        let ids = query_track_ids_smart(conn, smart_id, &view, sort).unwrap();
+
+        assert_eq!(
+            rows.iter().map(|track| track.id).collect::<Vec<_>>(),
+            [2, 3, 1]
+        );
+        assert_eq!(ids, [2, 3, 1]);
+    }
 }

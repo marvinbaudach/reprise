@@ -117,24 +117,38 @@ struct EpisodeArtworkContext {
     factory: EpisodeArtworkFactory,
 }
 
-#[allow(clippy::too_many_arguments)]
+/// The inputs of one render pass of the source-group list; `replace_with_sync` turns them into
+/// the private `GroupRenderContext` together with the per-pass artwork and path tables.
+#[derive(Clone, Copy)]
+pub(super) struct GroupRenderInputs<'a> {
+    pub(super) playing_episode: Option<EpisodeMark>,
+    pub(super) expanded_sources: &'a Rc<RefCell<BTreeSet<i64>>>,
+    pub(super) expanded_episode_sources: &'a Rc<RefCell<BTreeSet<i64>>>,
+    pub(super) download_states: &'a BTreeMap<i64, DownloadState>,
+    pub(super) images_allowed: bool,
+    pub(super) conn: &'a Rc<Db>,
+    pub(super) connectivity: Connectivity,
+    pub(super) unavailable_episode: Option<i64>,
+    pub(super) selection: &'a Rc<RefCell<PodcastSelection>>,
+    pub(super) query: &'a str,
+}
+
+#[cfg(test)]
 pub(super) fn replace(
     container: &gtk4::Box,
     groups: &[RenderedSourceGroup],
-    playing_episode: Option<EpisodeMark>,
-    expanded_sources: &Rc<RefCell<BTreeSet<i64>>>,
-    expanded_episode_sources: &Rc<RefCell<BTreeSet<i64>>>,
-    download_states: &BTreeMap<i64, DownloadState>,
-    images_allowed: bool,
-    conn: &Rc<Db>,
-    connectivity: Connectivity,
-    unavailable_episode: Option<i64>,
-    selection: &Rc<RefCell<PodcastSelection>>,
-    query: &str,
+    inputs: GroupRenderInputs<'_>,
 ) -> RenderedRowWidgets {
-    replace_with_sync(
-        container,
-        groups,
+    replace_with_sync(container, groups, inputs, &HashMap::new())
+}
+
+pub(super) fn replace_with_sync(
+    container: &gtk4::Box,
+    groups: &[RenderedSourceGroup],
+    inputs: GroupRenderInputs<'_>,
+    syncing: &HashMap<i64, SyncRowState>,
+) -> RenderedRowWidgets {
+    let GroupRenderInputs {
         playing_episode,
         expanded_sources,
         expanded_episode_sources,
@@ -145,26 +159,7 @@ pub(super) fn replace(
         unavailable_episode,
         selection,
         query,
-        &HashMap::new(),
-    )
-}
-
-#[allow(clippy::too_many_arguments)]
-pub(super) fn replace_with_sync(
-    container: &gtk4::Box,
-    groups: &[RenderedSourceGroup],
-    playing_episode: Option<EpisodeMark>,
-    expanded_sources: &Rc<RefCell<BTreeSet<i64>>>,
-    expanded_episode_sources: &Rc<RefCell<BTreeSet<i64>>>,
-    download_states: &BTreeMap<i64, DownloadState>,
-    images_allowed: bool,
-    conn: &Rc<Db>,
-    connectivity: Connectivity,
-    unavailable_episode: Option<i64>,
-    selection: &Rc<RefCell<PodcastSelection>>,
-    query: &str,
-    syncing: &HashMap<i64, SyncRowState>,
-) -> RenderedRowWidgets {
+    } = inputs;
     let paths = Rc::new(EpisodePaths::from_row_refs(snapshot_rows(groups)));
     let context = GroupRenderContext {
         playing_episode,
@@ -485,6 +480,7 @@ fn group_header_with_rebind(
     header.upcast()
 }
 
+#[cfg(test)]
 fn episode_row(
     row: &EpisodeRow,
     title_parts: &TitleParts,

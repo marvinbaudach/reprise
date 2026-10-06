@@ -5,20 +5,21 @@ use reprise_core::library::playlists::{self, PlaylistSummary};
 use reprise_core::models::Track;
 use reprise_core::queries;
 use reprise_core::view_source::ViewSource;
+use reprise_core::CoreError;
 use serde_json::{json, Value};
 
 use crate::error::CliError;
 use crate::json_models;
 use crate::output::{format_duration_ms, print_json, sanitize_for_terminal};
-use crate::retry::{rusqlite_is_busy, with_retry};
+use crate::retry::with_retry;
 
 /// One page of `query_track_window`; core caps a single window at 500 rows, so
 /// listing a whole playlist pages in these steps.
 const PAGE: i64 = 500;
 
 /// Wraps a mutating facade call in the busy-retry policy and maps its error.
-fn retry_write<T>(op: impl FnMut() -> Result<T, rusqlite::Error>) -> Result<T, CliError> {
-    with_retry(op, rusqlite_is_busy).map_err(CliError::from)
+fn retry_write<T>(op: impl FnMut() -> Result<T, CoreError>) -> Result<T, CliError> {
+    with_retry(op, CoreError::is_busy).map_err(CliError::from)
 }
 
 /// Looks a playlist up by id, or returns [`CliError::NotFound`]. Uses the
@@ -55,18 +56,22 @@ pub fn list(db: &Db, json_output: bool) -> Result<(), CliError> {
 /// per-window cap.
 fn all_playlist_tracks(db: &Db, id: i64) -> Result<Vec<Track>, CliError> {
     let source = ViewSource::Playlist(id);
+    let view = queries::TrackViewQuery::new(&source);
     let mut tracks = Vec::new();
     let mut offset = 0i64;
     loop {
         let page = queries::query_track_window(
             db,
-            &source,
-            "playlist_order",
-            "asc",
-            "",
-            offset,
-            PAGE,
-            &[],
+            &view,
+            queries::TrackSort {
+                field: "playlist_order",
+                dir: "asc",
+            },
+            queries::RowWindow {
+                offset,
+                limit: PAGE,
+            },
+            queries::AiColumn::Project,
         )?;
         let fetched = page.len() as i64;
         tracks.extend(page);

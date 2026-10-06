@@ -10,23 +10,19 @@ use std::fs::OpenOptions;
 use std::io::Write;
 #[cfg(any(test, feature = "test-fixtures"))]
 use std::path::Path;
-use std::sync::{Mutex, MutexGuard};
-use std::time::{Duration, Instant};
+use std::time::Duration;
 #[cfg(any(test, feature = "test-fixtures"))]
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use crate::http_body::{self, BoundedReadError};
+use crate::net::client::{build_agent, AgentPolicy};
+use crate::net::rate::{wait_for_slot, RateLimitKey};
 
 const HTTP_TIMEOUT: Duration = Duration::from_secs(15);
-const MIN_REQUEST_INTERVAL: Duration = Duration::from_secs(1);
 #[cfg(any(test, feature = "test-fixtures"))]
 const FIXTURE_DIR_ENV: &str = "REPRISE_MUSICBRAINZ_FIXTURE_DIR";
 #[cfg(any(test, feature = "test-fixtures"))]
 const FIXTURE_LOG_ENV: &str = "REPRISE_MUSICBRAINZ_FIXTURE_LOG";
-
-pub const CONTACT_URL: &str = "https://github.com/marvinbaudach";
-
-static LAST_REQUEST: Mutex<Option<Instant>> = Mutex::new(None);
 
 #[derive(Debug, thiserror::Error, PartialEq, Eq)]
 pub enum FetchError {
@@ -42,22 +38,19 @@ pub enum FetchError {
     BodyTooLarge,
 }
 
-pub fn user_agent() -> String {
-    format!("Reprise/{} ( {CONTACT_URL} )", env!("CARGO_PKG_VERSION"))
+/// MusicBrainz answers are read through ureq's status errors.
+pub(crate) const fn agent_policy() -> AgentPolicy {
+    AgentPolicy::strict(HTTP_TIMEOUT)
 }
 
 /// Performs a blocking, rate-limited MusicBrainz GET.
 pub fn get(url: &str) -> Result<String, FetchError> {
-    respect_rate_limit();
+    let _ = wait_for_slot(RateLimitKey::MusicBrainz, &mut || false);
     #[cfg(any(test, feature = "test-fixtures"))]
     if let Ok(directory) = std::env::var(FIXTURE_DIR_ENV) {
         return fixture_get(url, Path::new(&directory));
     }
-    let response = ureq::Agent::config_builder()
-        .timeout_global(Some(HTTP_TIMEOUT))
-        .user_agent(user_agent())
-        .build()
-        .new_agent()
+    let response = build_agent(agent_policy())
         .get(url)
         .call()
         .map_err(classify_error)?;
@@ -186,103 +179,22 @@ fn classify_error(error: ureq::Error) -> FetchError {
     }
 }
 
-fn request_delay(previous: Option<Instant>, now: Instant) -> Duration {
-    let Some(previous) = previous else {
-        return Duration::ZERO;
-    };
-    MIN_REQUEST_INTERVAL.saturating_sub(now.saturating_duration_since(previous))
-}
-
-fn respect_rate_limit() {
-    let _ = wait_for_request_slot(&mut || false);
-}
-
-/// Shares MusicBrainz's process-wide request slot with cancellable jobs.
-/// Returns `false` when cancellation happens before the slot is acquired.
-pub(crate) fn wait_for_request_slot(cancelled: &mut dyn FnMut() -> bool) -> bool {
-    const SLICE: Duration = Duration::from_millis(50);
-    let mut previous = lock_unpoisoned(&LAST_REQUEST);
-    let mut delay = request_delay(*previous, Instant::now());
-    while !delay.is_zero() {
-        if cancelled() {
-            return false;
-        }
-        let slice = delay.min(SLICE);
-        std::thread::sleep(slice);
-        delay = delay.saturating_sub(slice);
-    }
-    if cancelled() {
-        return false;
-    }
-    *previous = Some(Instant::now());
-    true
-}
-
-#[cfg(test)]
-fn respect_rate_limit_with<N, S>(limiter: &Mutex<Option<Instant>>, now: &mut N, sleep: &mut S)
-where
-    N: FnMut() -> Instant,
-    S: FnMut(Duration),
-{
-    let mut previous = lock_unpoisoned(limiter);
-    let delay = request_delay(*previous, now());
-    if !delay.is_zero() {
-        sleep(delay);
-    }
-    *previous = Some(now());
-}
-
-fn lock_unpoisoned<T>(mutex: &Mutex<T>) -> MutexGuard<'_, T> {
-    mutex
-        .lock()
-        .unwrap_or_else(std::sync::PoisonError::into_inner)
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::cell::Cell;
-    use std::sync::Mutex;
-    use std::time::{Duration, Instant};
 
     #[test]
-    fn user_agent_identifies_version_and_maintainer() {
-        let value = user_agent();
-        assert!(value.contains(env!("CARGO_PKG_VERSION")));
-        assert!(value.contains("https://github.com/marvinbaudach"));
-    }
-
-    #[test]
-    fn request_delay_enforces_one_second_interval() {
-        let now = Instant::now();
-        assert_eq!(request_delay(None, now), Duration::ZERO);
+    fn agent_policy_surfaces_statuses_as_errors() {
         assert_eq!(
-            request_delay(Some(now - Duration::from_millis(250)), now),
-            Duration::from_millis(750)
+            agent_policy(),
+            AgentPolicy {
+                timeout: Duration::from_secs(15),
+                status_as_error: true,
+                https_only: false,
+                max_redirects: None,
+                proxy_from_env: true,
+            }
         );
-        assert_eq!(
-            request_delay(Some(now - Duration::from_secs(2)), now),
-            Duration::ZERO
-        );
-    }
-
-    #[test]
-    fn fetch_respects_rate_limit() {
-        let base = Instant::now();
-        let elapsed = Cell::new(Duration::ZERO);
-        let slept = Cell::new(Duration::ZERO);
-        let limiter = Mutex::new(None);
-        let mut now = || base + elapsed.get();
-        let mut sleep = |duration| {
-            slept.set(slept.get() + duration);
-            elapsed.set(elapsed.get() + duration);
-        };
-
-        respect_rate_limit_with(&limiter, &mut now, &mut sleep);
-        elapsed.set(Duration::from_millis(250));
-        respect_rate_limit_with(&limiter, &mut now, &mut sleep);
-
-        assert_eq!(slept.get(), Duration::from_millis(750));
     }
 
     #[test]
@@ -301,16 +213,6 @@ mod tests {
             ),
             Err(FetchError::BodyTooLarge)
         );
-    }
-
-    #[test]
-    fn poisoned_limiter_mutex_is_recovered() {
-        let mutex = Mutex::new(7_u8);
-        let _ = std::panic::catch_unwind(|| {
-            let _guard = mutex.lock().unwrap();
-            panic!("poison test mutex");
-        });
-        assert_eq!(*lock_unpoisoned(&mutex), 7);
     }
 
     #[test]

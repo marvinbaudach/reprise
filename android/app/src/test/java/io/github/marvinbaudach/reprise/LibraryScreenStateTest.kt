@@ -1,7 +1,5 @@
 package io.github.marvinbaudach.reprise
 
-import androidx.media3.common.Player
-import java.lang.reflect.Proxy
 import java.util.concurrent.CountDownLatch
 import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicInteger
@@ -16,52 +14,6 @@ import uniffi.reprise_android_ffi.AndroidPlaybackState
 import uniffi.reprise_android_ffi.AndroidRepeatMode
 
 class LibraryScreenStateTest {
-@Test
-fun mediaSessionTransportReturnsToCore() {
-    var playWhenReady = false
-    val player = Proxy.newProxyInstance(
-        Player::class.java.classLoader,
-        arrayOf(Player::class.java),
-    ) { _, method, _ ->
-        when (method.name) {
-            "getPlayWhenReady" -> playWhenReady
-            else -> primitiveDefault(method.returnType)
-        }
-    } as Player
-    val calls = mutableListOf<String>()
-    val controlled = CoreControlledPlayer(player, object : CoreControlledPlayer.Commands {
-        override fun togglePause() {
-            calls += "toggle"
-        }
-
-        override fun next() {
-            calls += "next"
-        }
-
-        override fun previousInQueueOrder() {
-            calls += "queue-previous"
-        }
-    })
-
-    controlled.play()
-    playWhenReady = true
-    controlled.pause()
-    controlled.seekToNext()
-    controlled.seekToPrevious()
-    controlled.seekToPreviousMediaItem()
-
-    assertEquals(listOf("toggle", "toggle", "next", "queue-previous", "queue-previous"), calls)
-}
-
-private fun primitiveDefault(type: Class<*>): Any? = when (type) {
-    Boolean::class.javaPrimitiveType -> false
-    Int::class.javaPrimitiveType -> 0
-    Long::class.javaPrimitiveType -> 0L
-    Float::class.javaPrimitiveType -> 0f
-    Double::class.javaPrimitiveType -> 0.0
-    else -> null
-}
-
 @Test
 fun everyFieldTheSurfaceReadsSurvivesTheTripFromTheBridge() {
     val state = AndroidPlaybackSnapshot(
@@ -205,6 +157,54 @@ fun rememberedReadableTreeLoadsOnlyTheRememberedDestinationWithoutScanning() {
     )
     assertEquals(1, port.listCalls)
     assertEquals(0, port.scanCalls)
+}
+
+@Test
+fun net_7d_restore_starts_artwork_once_immediately_after_configuring_the_tree() {
+    val port = RecordingLibrarySessionPort(
+        rememberedTreeUri = "content://provider/tree/Music",
+        readable = true,
+        tracks = listOf(testTrack()),
+    )
+    val session = LibrarySession(
+        port = port,
+        afterRestoreConfigured = { port.operations += "after-restore" },
+    )
+
+    session.restore()
+
+    assertEquals(1, port.operations.count { it == "after-restore" })
+    assertEquals(
+        listOf(
+            "readable:content://provider/tree/Music",
+            "configure:content://provider/tree/Music",
+            "after-restore",
+            "search::0:200",
+            "artists:0:1",
+            "search-albums::0:1",
+        ),
+        port.operations,
+    )
+}
+
+@Test
+fun net_7d_restore_does_not_start_artwork_without_a_readable_remembered_tree() {
+    var starts = 0
+    val noTree = RecordingLibrarySessionPort(
+        rememberedTreeUri = null,
+        readable = true,
+        tracks = listOf(testTrack()),
+    )
+    val unreadableTree = RecordingLibrarySessionPort(
+        rememberedTreeUri = "content://provider/tree/Music",
+        readable = false,
+        tracks = listOf(testTrack()),
+    )
+
+    LibrarySession(noTree, afterRestoreConfigured = { starts += 1 }).restore()
+    LibrarySession(unreadableTree, afterRestoreConfigured = { starts += 1 }).restore()
+
+    assertEquals(0, starts)
 }
 
 @Test
@@ -657,6 +657,7 @@ private class RecordingLibrarySessionPort(
     ): LibraryWindow<LibraryTrack> = completeTestWindow(emptyList())
 
     override fun albumTrackIds(album: String, albumArtist: String): List<Long> = emptyList()
+    override fun artistTrackIds(artist: String): List<Long> = emptyList()
 
     override fun trackById(trackId: Long): LibraryTrack? = tracks.firstOrNull { it.id == trackId }
 

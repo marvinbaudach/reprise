@@ -101,7 +101,7 @@ impl<T: 'static> DeferredPage<T> {
 
 pub(super) fn build() -> gtk4::Stack {
     let stack = gtk4::Stack::new();
-    super::library_player_bar::configure_content_stack(&stack);
+    crate::ui::player_bar::library_player_bar::configure_content_stack(&stack);
     stack.set_transition_type(gtk4::StackTransitionType::Crossfade);
     stack.set_transition_duration(crate::ui::motion::STANDARD_MS);
     stack

@@ -40,6 +40,7 @@ jobs:
     runs-on: ubuntu-24.04
     outputs:
       suite_skip: ${{ steps.authorization.outputs.suite_skip }}
+      contained: ${{ steps.containment.outputs.contained }}
     steps:
       - name: Check out the tested revision
         uses: actions/checkout@v7
@@ -51,7 +52,10 @@ jobs:
         env:
           EVENT_NAME: ${{ github.event_name }}
           REF_NAME: ${{ github.ref }}
-          ACTOR: ${{ github.actor }}
+          # The pull request's author, not its latest pusher: the Flatpak sources
+          # workflow pushes onto a Dependabot branch as the token's owner, and
+          # that must not turn the bump into a PR whose suites are skipped.
+          ACTOR: ${{ github.event.pull_request.user.login || github.actor }}
           HEAD_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
           REPOSITORY_OWNER: ${{ github.repository_owner }}
         run: |
@@ -65,10 +69,29 @@ jobs:
           )
           echo "suite_skip=$suite_skip" >> "$GITHUB_OUTPUT"
 
+      # A pull request with stale Flatpak sources is red anyway (ci.yml keeps
+      # the Quality gate red for it), so the cross-target compilation is skipped
+      # too. A suite-reuse run skips this job already, and ci.yml has judged it.
+      # This is not suite reuse.
+      - name: Contain a pull request with stale Flatpak sources
+        id: containment
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          SUITE_SKIP: ${{ steps.authorization.outputs.suite_skip }}
+        run: |
+          sources_status=0
+          if [[ $EVENT_NAME == pull_request && $SUITE_SKIP == false ]]; then
+            scripts/check-flatpak-cargo-sources.sh || sources_status=$?
+          fi
+          contained=$(.github/scripts/ci-paths.sh --contain "$EVENT_NAME" "$sources_status")
+          echo "contained=$contained" >> "$GITHUB_OUTPUT"
+
   cross-target:
     name: Core and Android FFI cross-target check
     needs: suite-skip
-    if: needs['suite-skip'].outputs.suite_skip != 'true'
+    if: >-
+      needs['suite-skip'].outputs.suite_skip != 'true' &&
+      needs['suite-skip'].outputs.contained != 'true'
     runs-on: ubuntu-24.04
     timeout-minutes: 45
     env:
@@ -88,8 +111,14 @@ jobs:
       - name: Add the cross-compilation Rust targets
         run: rustup target add x86_64-pc-windows-msvc aarch64-linux-android
 
+      # Only dev writes caches: a pull request's entries are scoped to its own
+      # ref, so dev could never read them back. Each save sits right behind the
+      # step that fills its path and hangs on that step's outcome: a failed
+      # download or install is never frozen under the exact key, and a later red
+      # step or a cancelled run changes nothing about what is saved.
       - name: Cache Cargo downloads
-        uses: actions/cache@v6
+        id: cargo_downloads
+        uses: actions/cache/restore@v6
         with:
           path: |
             ~/.cargo/registry
@@ -98,9 +127,25 @@ jobs:
           restore-keys: |
             cross-cargo-
 
+      - name: Fetch Cargo dependencies
+        id: cargo_fetch
+        run: cargo fetch --locked
+
+      - name: Save Cargo downloads
+        if: >-
+          github.ref == 'refs/heads/dev' &&
+          steps.cargo_downloads.outputs.cache-hit != 'true' &&
+          steps.cargo_fetch.outcome == 'success'
+        uses: actions/cache/save@v6
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+          key: cross-cargo-${{ hashFiles('Cargo.lock') }}
+
       - name: Cache cargo-xwin
         id: cargo_xwin_cache
-        uses: actions/cache@v6
+        uses: actions/cache/restore@v6
         with:
           path: ~/.cargo/bin/cargo-xwin
           key: cargo-xwin-${{ runner.os }}-0.23.0
@@ -116,9 +161,20 @@ jobs:
           sudo apt-get install -y --no-install-recommends clang llvm lld
 
       - name: Install cargo-xwin
+        id: cargo_xwin_install
         if: steps.cargo_xwin_cache.outputs.cache-hit != 'true'
         run: |
           cargo install --locked --version 0.23.0 cargo-xwin
+
+      - name: Save cargo-xwin
+        if: >-
+          github.ref == 'refs/heads/dev' &&
+          steps.cargo_xwin_cache.outputs.cache-hit != 'true' &&
+          steps.cargo_xwin_install.outcome == 'success'
+        uses: actions/cache/save@v6
+        with:
+          path: ~/.cargo/bin/cargo-xwin
+          key: cargo-xwin-${{ runner.os }}-0.23.0
 
       - name: cargo check reprise-core for x86_64-pc-windows-msvc
         run: cargo xwin check --locked -p reprise-core --target x86_64-pc-windows-msvc

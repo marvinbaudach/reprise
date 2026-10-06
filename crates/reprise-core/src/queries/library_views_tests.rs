@@ -1,5 +1,7 @@
 use super::*;
-use crate::queries::{query_track_count, query_track_ids, query_track_window, WindowRange};
+use crate::queries::{
+    query_track_count, query_track_ids, query_track_window, test_rows, test_sort, WindowRange,
+};
 use crate::view_source::ViewSource;
 
 fn seeded_library() -> crate::db::Db {
@@ -31,7 +33,7 @@ fn full_window() -> WindowRange {
 fn shared_artist_album_selection_keeps_the_desktop_where_clause_byte_identical() {
     assert_eq!(
         artist_albums_selection(1),
-        "missing_since IS NULL AND removed_at IS NULL AND TRIM(album) <> '' AND CASE WHEN TRIM(album_artist) <> '' THEN TRIM(album_artist) ELSE TRIM(artist) END = ?1 COLLATE NOCASE"
+        "missing_since IS NULL AND removed_at IS NULL AND TRIM(album) <> '' AND CASE WHEN TRIM(album_artist) <> '' THEN TRIM(album_artist) ELSE TRIM(artist) END = TRIM(?1) COLLATE NOCASE"
     );
 }
 
@@ -135,17 +137,31 @@ fn album_source_count_window_and_ids_select_the_exact_album_artist_group() {
         album_artist: "solo".into(),
     };
 
-    assert_eq!(query_track_count(&db, &source, "", &[]).unwrap(), 2);
     assert_eq!(
-        query_track_window(&db, &source, "title", "desc", "", 0, 20, &[])
-            .unwrap()
-            .into_iter()
-            .map(|track| track.title)
-            .collect::<Vec<_>>(),
+        query_track_count(&db, &TrackViewQuery::new(&source)).unwrap(),
+        2
+    );
+    assert_eq!(
+        query_track_window(
+            &db,
+            &TrackViewQuery::new(&source),
+            test_sort("title", "desc"),
+            test_rows(0, 20),
+            AiColumn::Project
+        )
+        .unwrap()
+        .into_iter()
+        .map(|track| track.title)
+        .collect::<Vec<_>>(),
         ["B", "A"]
     );
     assert_eq!(
-        query_track_ids(&db, &source, "title", "asc", "A", &[]).unwrap(),
+        query_track_ids(
+            &db,
+            &TrackViewQuery::new(&source).with_filter("A"),
+            test_sort("title", "asc")
+        )
+        .unwrap(),
         [1]
     );
 }
@@ -248,17 +264,31 @@ fn artist_source_count_window_and_ids_select_the_exact_artist_group() {
     let db = seeded_library();
     let source = ViewSource::Artist(" SOLO ".into());
 
-    assert_eq!(query_track_count(&db, &source, "", &[]).unwrap(), 2);
     assert_eq!(
-        query_track_window(&db, &source, "title", "desc", "", 0, 20, &[])
-            .unwrap()
-            .into_iter()
-            .map(|track| track.title)
-            .collect::<Vec<_>>(),
+        query_track_count(&db, &TrackViewQuery::new(&source)).unwrap(),
+        2
+    );
+    assert_eq!(
+        query_track_window(
+            &db,
+            &TrackViewQuery::new(&source),
+            test_sort("title", "desc"),
+            test_rows(0, 20),
+            AiColumn::Project
+        )
+        .unwrap()
+        .into_iter()
+        .map(|track| track.title)
+        .collect::<Vec<_>>(),
         ["B", "A"]
     );
     assert_eq!(
-        query_track_ids(&db, &source, "title", "asc", "A", &[]).unwrap(),
+        query_track_ids(
+            &db,
+            &TrackViewQuery::new(&source).with_filter("A"),
+            test_sort("title", "asc")
+        )
+        .unwrap(),
         [1]
     );
 }
@@ -289,9 +319,15 @@ fn albums_include_year_duration_added_and_play_count_aggregates() {
 fn artist_source_matches_by_effective_album_artist() {
     let db = seeded_library();
     let solo = ViewSource::Artist(" SOLO ".into());
-    assert_eq!(query_track_count(&db, &solo, "", &[]).unwrap(), 2);
+    assert_eq!(
+        query_track_count(&db, &TrackViewQuery::new(&solo)).unwrap(),
+        2
+    );
     let va = ViewSource::Artist("Various Artists".into());
-    assert_eq!(query_track_count(&db, &va, "", &[]).unwrap(), 2);
+    assert_eq!(
+        query_track_count(&db, &TrackViewQuery::new(&va)).unwrap(),
+        2
+    );
 }
 
 #[test]
@@ -435,7 +471,11 @@ fn artist_album_and_untagged_windows_partition_the_artists_tracks() {
 
     let albums = query_artist_albums(&db, "Solo", full_window()).unwrap();
     let untagged = query_artist_untagged_tracks(&db, "Solo", full_window()).unwrap();
-    let artist_total = query_track_count(&db, &ViewSource::Artist("Solo".into()), "", &[]).unwrap();
+    let artist_total = query_track_count(
+        &db,
+        &TrackViewQuery::new(&ViewSource::Artist("Solo".into())),
+    )
+    .unwrap();
 
     assert_eq!(
         untagged
@@ -652,5 +692,99 @@ fn canonical_album_ids_never_collect_the_untagged_rows_under_a_blank_album() {
     assert_eq!(
         query_album_canonical_track_ids(&db, "Album", "artist").unwrap(),
         [30]
+    );
+}
+
+#[test]
+fn canonical_artist_ids_cover_every_album_then_the_untagged_rows() {
+    let db = crate::db::Db::open_in_memory().unwrap();
+    let conn = db.conn();
+    conn.execute_batch(
+        "INSERT INTO tracks
+           (id,path,title,artist,album,album_artist,year,disc_no,track_no,added_at,missing_since) VALUES
+         (10,'/music/old-2.flac','Old 2','Artist','Old','Artist',1999,1,2,0,NULL),
+         (20,'/music/old-1.flac','Old 1','artist','old','',1999,1,1,0,NULL),
+         (30,'/music/new-1.flac','New 1','Artist','New','Artist',2020,1,1,0,NULL),
+         (40,'/music/loose-b.flac','Loose B','Artist','','',0,NULL,NULL,0,NULL),
+         (50,'/music/loose-a.flac','Loose A','Artist','  ','',0,NULL,NULL,0,NULL),
+         (60,'/music/feature.flac','Feature','Artist','Mix','Various Artists',2021,1,1,0,NULL),
+         (70,'/music/missing.flac','Missing','Artist','New','Artist',2020,1,2,0,99),
+         (80,'/music/other.flac','Other','Other','New','Other',2020,1,1,0,NULL);",
+    )
+    .unwrap();
+
+    // Newest album first like the artist page, canonical order inside an
+    // album, then the tracks without an album by title.
+    assert_eq!(
+        query_artist_canonical_track_ids(&db, " artist ").unwrap(),
+        [30, 20, 10, 50, 40]
+    );
+    let summary = query_artists(&db, "", full_window())
+        .unwrap()
+        .rows
+        .into_iter()
+        .find(|row| row.artist == "Artist")
+        .unwrap();
+    // The delete dialog promises the row's count; the ids must keep it.
+    assert_eq!(summary.track_count, 5);
+}
+
+#[test]
+fn canonical_artist_ids_never_collect_the_rows_without_an_artist() {
+    let db = crate::db::Db::open_in_memory().unwrap();
+    let conn = db.conn();
+    conn.execute_batch(
+        "INSERT INTO tracks
+           (id,path,title,artist,album,album_artist,added_at,missing_since) VALUES
+         (10,'/music/nobody-a.flac','Nobody A','','Album','',0,NULL),
+         (20,'/music/nobody-b.flac','Nobody B','   ','','   ',0,NULL),
+         (30,'/music/somebody.flac','Somebody','Artist','Album','',0,NULL);",
+    )
+    .unwrap();
+
+    // This list feeds an irreversible delete, so a blank artist must select
+    // nothing at all rather than every track without an artist tag.
+    assert!(query_artist_canonical_track_ids(&db, "")
+        .unwrap()
+        .is_empty());
+    assert!(query_artist_canonical_track_ids(&db, "   ")
+        .unwrap()
+        .is_empty());
+    assert_eq!(
+        query_artist_canonical_track_ids(&db, "Artist").unwrap(),
+        [30]
+    );
+}
+
+#[test]
+fn canonical_ids_trim_like_the_rows_they_were_listed_from() {
+    let db = crate::db::Db::open_in_memory().unwrap();
+    let conn = db.conn();
+    conn.execute_batch(
+        "INSERT INTO tracks
+           (id,path,title,artist,album,album_artist,added_at,missing_since) VALUES
+         (10,'/music/plain.flac','Plain','Artist','Album','',0,NULL),
+         (20,'/music/nbsp.flac','Nbsp','Artist\u{a0}','Album\u{a0}','',0,NULL);",
+    )
+    .unwrap();
+
+    // The artist list shows two rows here. Each delete must take its own row
+    // only, so a no-break space may not be trimmed away on one side alone.
+    assert_eq!(query_artists(&db, "", full_window()).unwrap().total, 2);
+    assert_eq!(
+        query_artist_canonical_track_ids(&db, "Artist").unwrap(),
+        [10]
+    );
+    assert_eq!(
+        query_artist_canonical_track_ids(&db, "Artist\u{a0}").unwrap(),
+        [20]
+    );
+    assert_eq!(
+        query_album_canonical_track_ids(&db, "Album\u{a0}", "Artist\u{a0}").unwrap(),
+        [20]
+    );
+    assert_eq!(
+        query_album_canonical_track_ids(&db, " Album ", " Artist ").unwrap(),
+        [10]
     );
 }

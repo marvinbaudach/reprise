@@ -55,9 +55,9 @@ const ICON_VOLUME_HIGH: &str = "audio-volume-high-symbolic";
 
 pub(in crate::ui) struct PlayerBarWidgets {
     pub(in crate::ui) root: gtk4::Box,
-    #[allow(dead_code)] // Exposed for structural player-bar layout tests.
+    #[cfg(test)]
     pub(in crate::ui) center_box: gtk4::CenterBox,
-    #[allow(dead_code)] // Exposed for structural player-bar layout tests.
+    #[cfg(test)]
     pub(in crate::ui) info_box: gtk4::Box,
     pub(in crate::ui) cover: gtk4::Image,
     pub(in crate::ui) cover_button: gtk4::Button,
@@ -94,6 +94,7 @@ pub(in crate::ui) struct PlayerBarWidgets {
     pub(in crate::ui) time_alignment: gtk4::SizeGroup,
     pub(in crate::ui) volume_icon: gtk4::Button,
     pub(in crate::ui) volume_scale: gtk4::Scale,
+    pub(in crate::ui) sleep_timer: super::sleep_timer_button::SleepTimerButton,
 }
 
 pub(in crate::ui) fn build() -> PlayerBarWidgets {
@@ -358,6 +359,8 @@ pub(in crate::ui) fn build() -> PlayerBarWidgets {
     volume_icon.add_css_class("flat");
 
     let end_zone = gtk4::Box::new(gtk4::Orientation::Horizontal, ZONE_SPACING);
+    let sleep_timer = super::sleep_timer_button::SleepTimerButton::new();
+    end_zone.append(sleep_timer.widget());
     end_zone.append(&volume_icon);
     end_zone.append(&volume_scale);
     end_zone.set_valign(gtk4::Align::Center);
@@ -415,7 +418,9 @@ pub(in crate::ui) fn build() -> PlayerBarWidgets {
 
     PlayerBarWidgets {
         root,
+        #[cfg(test)]
         center_box,
+        #[cfg(test)]
         info_box,
         cover,
         cover_button,
@@ -448,6 +453,7 @@ pub(in crate::ui) fn build() -> PlayerBarWidgets {
         time_alignment,
         volume_icon,
         volume_scale,
+        sleep_timer,
     }
 }
 

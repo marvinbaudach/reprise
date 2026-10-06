@@ -26,6 +26,18 @@ export function ChapterThree({ reducedMotion }: ChapterThreeProps) {
           language that preserves each platform's navigation and interaction patterns. The spectral
           seek bar makes the structure of a track visible on both.
         </p>
+        <p className="chapter__intro" data-reveal>
+          On the phone, the waveform and spectrogram behind that bar arrive with the desktop sync. A
+          track without them is decoded and analysed on the device, and the rest of the library
+          follows in the background, only while music plays and never in battery saver.
+        </p>
+        <p className="chapter__intro" data-reveal>
+          Each platform also keeps its own habits. On the desktop the mini-player is a window of its
+          own: switching to it hides the library window instead of resizing it, so the library keeps
+          its size and place. On Android a long press on an artist offers Delete from device…; after
+          a confirmation that it cannot be undone, it deletes the files of that artist&apos;s tracks
+          from the phone.
+        </p>
         <details className="evidence-details">
           <summary>Explore the interactive seek bar</summary>
           <SpectralSeekTrack reducedMotion={reducedMotion} />

@@ -3,6 +3,7 @@
 use rusqlite::{params, Connection, OptionalExtension, Row};
 
 use super::StationRow;
+use crate::CoreError;
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct NewStation {
@@ -22,7 +23,7 @@ pub fn add_or_restore(
     db: &crate::db::Db,
     station: &NewStation,
     now: i64,
-) -> Result<i64, rusqlite::Error> {
+) -> Result<i64, CoreError> {
     let conn = db.conn();
     let transaction = conn.unchecked_transaction()?;
     let existing_id = find_identity(&transaction, station)?;
@@ -74,7 +75,7 @@ pub fn add_or_restore(
     Ok(id)
 }
 
-pub fn list(db: &crate::db::Db) -> Result<Vec<StationRow>, rusqlite::Error> {
+pub fn list(db: &crate::db::Db) -> Result<Vec<StationRow>, CoreError> {
     let conn = db.conn();
     let mut statement = conn.prepare(
         "SELECT id, uuid, name, stream_url, homepage, favicon_url, genre, codec,
@@ -89,17 +90,18 @@ pub fn list(db: &crate::db::Db) -> Result<Vec<StationRow>, rusqlite::Error> {
     Ok(stations)
 }
 
-pub fn get(db: &crate::db::Db, id: i64) -> Result<Option<StationRow>, rusqlite::Error> {
+pub fn get(db: &crate::db::Db, id: i64) -> Result<Option<StationRow>, CoreError> {
     let conn = db.conn();
-    conn.query_row(
-        "SELECT id, uuid, name, stream_url, homepage, favicon_url, genre, codec,
+    Ok(conn
+        .query_row(
+            "SELECT id, uuid, name, stream_url, homepage, favicon_url, genre, codec,
                 bitrate_kbps, country_code, votes, added_at, removed_at
          FROM radio_stations
          WHERE id = ?1 AND removed_at IS NULL",
-        params![id],
-        row_to_station,
-    )
-    .optional()
+            params![id],
+            row_to_station,
+        )
+        .optional()?)
 }
 
 pub fn count_stations(db: &crate::db::Db) -> Result<u64, rusqlite::Error> {
@@ -112,7 +114,7 @@ pub fn count_stations(db: &crate::db::Db) -> Result<u64, rusqlite::Error> {
     Ok(count.try_into().unwrap_or_default())
 }
 
-pub fn tombstone(db: &crate::db::Db, id: i64, now: i64) -> Result<bool, rusqlite::Error> {
+pub fn tombstone(db: &crate::db::Db, id: i64, now: i64) -> Result<bool, CoreError> {
     let conn = db.conn();
     Ok(conn.execute(
         "UPDATE radio_stations SET removed_at = ?2
@@ -130,7 +132,7 @@ pub fn undo_remove(db: &crate::db::Db, id: i64) -> Result<bool, rusqlite::Error>
     )? != 0)
 }
 
-pub fn commit_remove(db: &crate::db::Db, id: i64) -> Result<bool, rusqlite::Error> {
+pub fn commit_remove(db: &crate::db::Db, id: i64) -> Result<bool, CoreError> {
     let conn = db.conn();
     Ok(conn.execute(
         "DELETE FROM radio_stations WHERE id = ?1 AND removed_at IS NOT NULL",
@@ -174,7 +176,7 @@ pub fn update_details(
     )? != 0)
 }
 
-pub fn update(db: &crate::db::Db, id: i64, station: &NewStation) -> Result<bool, rusqlite::Error> {
+pub fn update(db: &crate::db::Db, id: i64, station: &NewStation) -> Result<bool, CoreError> {
     let conn = db.conn();
     Ok(conn.execute(
         "UPDATE radio_stations

@@ -1,14 +1,11 @@
 package io.github.marvinbaudach.reprise
 
 import android.app.Application
-import android.content.Context
 import android.os.Looper
+import androidx.activity.OnBackPressedCallback
 import androidx.compose.ui.test.assertCountEquals
 import androidx.compose.ui.test.assertHeightIsEqualTo
 import androidx.compose.ui.test.assertIsDisplayed
-import androidx.compose.ui.test.assertIsOff
-import androidx.compose.ui.test.hasText
-import androidx.compose.ui.test.isToggleable
 import androidx.compose.ui.test.junit4.v2.createAndroidComposeRule
 import androidx.compose.ui.test.onAllNodesWithTag
 import androidx.compose.ui.test.onNodeWithContentDescription
@@ -50,96 +47,26 @@ class MainActivitySettingsNavigationTest {
 
     @After
     fun releaseTheService() {
-        application.releaseOnlineSourcesWrites()
         application.releaseService()
     }
 
     @Test
-    fun overviewListsExactlyTheFiveSectionsThatExist() {
+    fun overviewListsExactlyTheFourSectionsThatExist() {
         openSettings()
 
         val rows = compose.onAllNodesWithTag("settings-overview-row")
-        rows.assertCountEquals(5)
-        repeat(5) { index -> rows[index].assertHeightIsEqualTo(72.dp) }
+        rows.assertCountEquals(4)
+        repeat(4) { index -> rows[index].assertHeightIsEqualTo(72.dp) }
         compose.onNodeWithText("Library & scan folder").assertIsDisplayed()
         compose.onNodeWithText("450 titles · 1 folder").assertIsDisplayed()
         compose.onNodeWithText("Audio").assertIsDisplayed()
         compose.onNodeWithText("Gapless, Equalizer").assertIsDisplayed()
         compose.onNodeWithText("Appearance").assertIsDisplayed()
         compose.onNodeWithText("Nocturne").assertIsDisplayed()
-        compose.onNodeWithText("Online sources").assertIsDisplayed()
-        compose.onNodeWithText("Off").assertIsDisplayed()
+        compose.onNodeWithText("Online sources").assertDoesNotExist()
         compose.onNodeWithText("About Reprise").assertIsDisplayed()
         compose.onNodeWithText(BuildConfig.VERSION_NAME).assertIsDisplayed()
         compose.onNodeWithText("Sync & devices").assertDoesNotExist()
-    }
-
-    @Test
-    fun theOnlineSourcesPageOpensAndBackReturnsToTheOverview() {
-        openSettings()
-
-        compose.onNodeWithContentDescription("Open Online sources").performClick()
-        compose.onNodeWithTag("settings-page-online-sources").assertIsDisplayed()
-        compose.onAllNodesWithTag("settings-overview-row").assertCountEquals(0)
-
-        compose.onNodeWithContentDescription("Back to Settings").performClick()
-
-        compose.onAllNodesWithTag("settings-overview-row").assertCountEquals(5)
-        compose.onNodeWithText("Online sources").assertIsDisplayed()
-    }
-
-    @Test
-    fun aFailedOnlineSourcesWriteKeepsTheSwitchAndOverviewOff() {
-        application.onlineSourcesWriteSucceeds = false
-        openSettings()
-        compose.onNodeWithContentDescription("Open Online sources").performClick()
-
-        compose.onNode(hasText("Download artist photos") and isToggleable())
-            .assertIsOff()
-            .performClick()
-
-        assertFalse(application.onlineSourcesEnabled)
-        compose.onNode(hasText("Download artist photos") and isToggleable()).assertIsOff()
-        compose.onNodeWithContentDescription("Back to Settings").performClick()
-        compose.onNodeWithText("Off").assertIsDisplayed()
-    }
-
-    @Test
-    fun aSecondOnlineSourcesTapSubmitsTheOppositeTargetWithoutMovingEarly() {
-        application.blockOnlineSourcesWrites()
-        openSettings()
-        compose.onNodeWithContentDescription("Open Online sources").performClick()
-        val toggle = compose.onNode(hasText("Download artist photos") and isToggleable())
-
-        toggle.performClick()
-        assertTrue(application.awaitOnlineSourcesWrite())
-        toggle.assertIsOff()
-        toggle.performClick()
-        toggle.assertIsOff()
-
-        application.releaseOnlineSourcesWrites()
-        compose.waitUntil(timeoutMillis = 5_000) {
-            application.onlineSourcesWrites.size == 2
-        }
-        assertEquals(listOf(true, false), application.onlineSourcesWrites.toList())
-        toggle.assertIsOff()
-    }
-
-    @Test
-    fun net_4b_downloadUsesTheSettingsEnablePathAndSettlesBeforeTheWrite() {
-        compose.onNodeWithText("Show artist photos?").assertIsDisplayed()
-
-        compose.onNodeWithText("Download artist photos").performClick()
-
-        compose.onNodeWithText("Show artist photos?").assertDoesNotExist()
-        compose.waitUntil(timeoutMillis = 5_000) {
-            application.onlineSourcesWrites == listOf(true)
-        }
-        assertTrue(application.onlineSourcesEnabled)
-        assertTrue(
-            application.getSharedPreferences(PREFERENCES_NAME, Context.MODE_PRIVATE)
-                .getBoolean(ARTIST_PHOTO_OFFER_SETTLED, false),
-        )
     }
 
     @Test
@@ -152,7 +79,7 @@ class MainActivitySettingsNavigationTest {
         compose.activity.onBackPressedDispatcher.onBackPressed()
         compose.waitForIdle()
 
-        compose.onAllNodesWithTag("settings-overview-row").assertCountEquals(5)
+        compose.onAllNodesWithTag("settings-overview-row").assertCountEquals(4)
         assertTrue(surfaceState().settingsVisible)
 
         compose.activity.onBackPressedDispatcher.onBackPressed()
@@ -161,6 +88,33 @@ class MainActivitySettingsNavigationTest {
         assertFalse(surfaceState().settingsVisible)
         compose.onNodeWithContentDescription("Library actions").assertIsDisplayed()
         compose.onAllNodesWithTag("settings-overview-row").assertCountEquals(0)
+    }
+
+    @Test
+    fun aBackPressDuringTheClosingSlideReachesWhatIsUnderneath() {
+        var forwardedBackPresses = 0
+        compose.runOnUiThread {
+            compose.activity.onBackPressedDispatcher.addCallback(
+                object : OnBackPressedCallback(true) {
+                    override fun handleOnBackPressed() {
+                        forwardedBackPresses++
+                    }
+                },
+            )
+        }
+        openSettings()
+        compose.waitForIdle()
+
+        compose.mainClock.autoAdvance = false
+        compose.runOnUiThread { compose.activity.onBackPressedDispatcher.onBackPressed() }
+        compose.waitForIdle()
+        compose.mainClock.advanceTimeByFrame()
+        assertFalse(surfaceState().settingsVisible)
+        compose.onAllNodesWithTag("settings-overlay").assertCountEquals(1)
+
+        compose.runOnUiThread { compose.activity.onBackPressedDispatcher.onBackPressed() }
+
+        assertEquals(1, forwardedBackPresses)
     }
 
     @Test

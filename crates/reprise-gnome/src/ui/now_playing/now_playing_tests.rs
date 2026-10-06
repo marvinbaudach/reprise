@@ -277,7 +277,7 @@ fn panel_has_no_local_header_refresh_or_close_buttons() {
 
 #[test]
 #[ignore = "requires a display; run via xvfb-run"]
-#[allow(deprecated)]
+#[expect(deprecated, reason = "the compatible API supports the workspace MSRV")]
 fn npp_2_no_volume_in_panel() {
     gtk4::init().unwrap();
     let content = gtk4::Box::new(gtk4::Orientation::Vertical, 0);
@@ -428,7 +428,7 @@ fn npp_14_icons_only_switcher_keeps_three_labeled_keyboard_targets() {
 
 #[test]
 #[ignore = "requires a display; run via xvfb-run"]
-fn ac_23_visual_page_shrinks_instead_of_overlapping_the_tab_switcher() {
+fn ac_29_visual_page_shrinks_instead_of_overlapping_the_tab_switcher() {
     gtk4::init().unwrap();
     let content = gtk4::Box::new(gtk4::Orientation::Vertical, 0);
     let widgets = test_widgets(&content, true);

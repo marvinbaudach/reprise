@@ -52,7 +52,9 @@ assert flatpak_tooling_run.count("ostree --version") == 1, (
 )
 
 flatpak_cache = named_step("flatpak", "Restore cached Flatpak runtimes")
-assert flatpak_cache.get("uses") == "actions/cache@v6"
+assert flatpak_cache.get("uses") == "actions/cache/restore@v6", (
+    "the Flatpak runtimes are restored by a restore-only step; the save is its own step"
+)
 assert flatpak_cache.get("continue-on-error", False) is False, (
     "restoring cached Flatpak runtimes must fail the release job"
 )
@@ -95,6 +97,14 @@ expected_flatpak_cache_key = "flatpak-user-" + "-".join(
 assert flatpak_cache_with.get("key") == expected_flatpak_cache_key, (
     "the exact cache key must be mechanically derived from every installed runtime ref"
 )
+flatpak_save = named_step("flatpak", "Save cached Flatpak runtimes")
+assert flatpak_save.get("uses") == "actions/cache/save@v6"
+assert flatpak_save.get("with") == flatpak_cache_with, (
+    "the runtimes must be saved under exactly the key and path they were restored from"
+)
+assert flatpak_steps.index(named_step("flatpak", "Verify restored Flatpak runtimes")) < (
+    flatpak_steps.index(flatpak_save)
+), "the runtimes may be saved only after they were verified"
 assert "for attempt in 1 2 3 4 5; do" in flatpak_install_run, (
     "Flatpak runtime installation must make exactly five bounded attempts"
 )

@@ -6,7 +6,6 @@ use gtk4::prelude::*;
 
 use super::releases_cell_surface::{self as cell_surface, OnWireCell};
 use super::releases_model::ReleaseObject;
-use crate::ui::strings;
 use crate::ui::table_column_widths as widths;
 
 pub(super) fn append(
@@ -55,7 +54,7 @@ pub(super) fn append(
         }
     });
     let column = gtk4::ColumnViewColumn::builder()
-        .title(strings::text(strings::COLUMN_COVER))
+        .title("")
         .factory(&factory)
         .resizable(false)
         .build();

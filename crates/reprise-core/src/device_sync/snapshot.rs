@@ -43,7 +43,15 @@ pub fn load_mirror_playlist_snapshots_with_source(
     }
     for playlist in crate::library::playlists::list_smart(db)? {
         let view_source = crate::view_source::ViewSource::Smart(playlist.id);
-        let ids = crate::queries::query_track_ids(db, &view_source, "title", "asc", "", &[])?;
+        let view = crate::queries::TrackViewQuery::new(&view_source);
+        let ids = crate::queries::query_track_ids(
+            db,
+            &view,
+            crate::queries::TrackSort {
+                field: "title",
+                dir: "asc",
+            },
+        )?;
         let stability_margin_track_ids = load_smart_stability_margin(conn, &playlist, ids.len())?;
         let tracks = crate::queries::query_sync_tracks_with_source(source, db, &ids)?;
         snapshots.push(MirrorPlaylistSnapshot {
@@ -106,6 +114,7 @@ fn smart_member_order(sort_field: &str, sort_dir: &str) -> String {
         "duration_ms" => "duration_ms",
         "rating" => "rating",
         "play_count" => "play_count",
+        "last_played_at" => "last_played_at",
         "added_at" => "added_at",
         "album_canonical" => {
             "CASE WHEN disc_no IS NULL THEN 1 ELSE disc_no END, \
@@ -135,13 +144,15 @@ pub fn load_everything_playlist_snapshot_with_source(
     source: &dyn LibrarySource,
     db: &crate::db::Db,
 ) -> Result<MirrorPlaylistSnapshot, rusqlite::Error> {
+    let view_source = crate::view_source::ViewSource::Library;
+    let view = crate::queries::TrackViewQuery::new(&view_source);
     let library_ids = crate::queries::query_track_ids(
         db,
-        &crate::view_source::ViewSource::Library,
-        "title",
-        "asc",
-        "",
-        &[],
+        &view,
+        crate::queries::TrackSort {
+            field: "title",
+            dir: "asc",
+        },
     )?;
     let library_tracks = crate::queries::query_sync_tracks_with_source(source, db, &library_ids)?;
     Ok(everything_playlist_snapshot(library_tracks))

@@ -83,7 +83,7 @@ internal fun NowPlayingQueuePage(
             )
             else -> Column(modifier = Modifier.fillMaxSize()) {
                 Text(
-                    text = checkNotNull(tracks).visibleCountLabel(
+                    text = checkNotNull(tracks).totalCountLabel(
                         "upcoming track",
                         "upcoming tracks",
                     ),

@@ -1,8 +1,6 @@
 use std::cell::{Cell, RefCell};
 use std::rc::Rc;
 
-use reprise_view::search_scope::SearchScope;
-
 use super::*;
 
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
@@ -68,10 +66,6 @@ impl FilterModel for TestModel {
                 SelectionDescriptor::new(facet.clone(), value.clone(), label)
             })
             .collect()
-    }
-
-    fn search_scope(&self) -> SearchScope {
-        SearchScope::Releases
     }
 
     fn add_filter_label(&self) -> String {

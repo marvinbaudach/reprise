@@ -3,6 +3,7 @@ package io.github.marvinbaudach.reprise
 import android.os.Looper
 import android.util.Log
 import androidx.media3.common.C
+import androidx.media3.common.MediaItem
 import androidx.media3.common.PlaybackException
 import androidx.media3.common.Player
 import java.io.FileNotFoundException
@@ -176,7 +177,7 @@ class Media3PlaybackPortTest {
     }
 }
 
-private class CallbackPlayer(
+internal class CallbackPlayer(
     var playbackState: Int,
     var playWhenReady: Boolean,
     var isPlaying: Boolean = false,
@@ -184,6 +185,8 @@ private class CallbackPlayer(
     var duration: Long = 180_000,
 ) {
     lateinit var listener: Player.Listener
+    val mediaItems = mutableListOf<MediaItem>()
+    val seeks = mutableListOf<Long>()
 
     val player: Player = Proxy.newProxyInstance(
         Player::class.java.classLoader,
@@ -198,6 +201,18 @@ private class CallbackPlayer(
             "getPlaybackState" -> playbackState
             "getCurrentPosition" -> currentPosition
             "getDuration" -> duration
+            "setMediaItem" -> {
+                mediaItems.clear()
+                mediaItems += arguments!!.single() as MediaItem
+            }
+            "addMediaItem" -> mediaItems += arguments!!.single() as MediaItem
+            "removeMediaItems" -> {
+                val range = arguments!!.map { it as Int }
+                mediaItems.subList(range[0], range[1]).clear()
+            }
+            "getMediaItemCount" -> mediaItems.size
+            "getCurrentMediaItemIndex" -> 0
+            "seekTo" -> seeks += arguments!!.last() as Long
             "pause" -> playWhenReady = false
             "play" -> playWhenReady = true
             else -> callbackPlayerDefault(method.returnType)

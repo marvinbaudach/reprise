@@ -135,6 +135,9 @@ internal class LivePcmRenderersFactory(
     context: Context,
     private val processor: AudioProcessor,
 ) : DefaultRenderersFactory(context) {
+    internal var trackGainSink: TrackGainAudioSink? = null
+        private set
+
     public override fun buildAudioSink(
         context: Context,
         enableFloatOutput: Boolean,
@@ -143,13 +146,14 @@ internal class LivePcmRenderersFactory(
         require(!enableFloatOutput) {
             "Live PCM visualization requires signed 16-bit audio output"
         }
-        return DefaultAudioSink.Builder(context)
+        val defaultSink = DefaultAudioSink.Builder(context)
             // Media3 prepends caller processors before SilenceSkipping and Sonic,
             // so this tap observes audio before silence removal or speed changes.
             .setAudioProcessors(arrayOf(processor))
             .setEnableFloatOutput(false)
             .setEnableAudioOutputPlaybackParameters(enableAudioOutputPlaybackParameters)
             .build()
+        return TrackGainAudioSink(defaultSink).also { trackGainSink = it }
     }
 }
 

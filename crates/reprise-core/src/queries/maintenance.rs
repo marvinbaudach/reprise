@@ -6,18 +6,19 @@
 use std::collections::{HashMap, HashSet};
 use std::path::PathBuf;
 
-use crate::db::Db;
 use crate::device_sync::SyncTrack;
 use crate::library::source::{
     LibraryLinkMode, LibraryPathPresence, LibrarySource, UnixLibrarySource,
 };
+use crate::{db::Db, CoreError};
 use rusqlite::{Connection, OptionalExtension};
 
 use super::clauses::PRESENT;
 use super::TrackSummary;
+use crate::models::TrackSegment;
 
-const TRACK_SUMMARY_COLUMNS: &str =
-    "path, title, artist, album, album_artist, genre, artist_mbid, year, duration_ms";
+const TRACK_SUMMARY_COLUMNS: &str = "path, title, artist, album, album_artist, genre, \
+     artist_mbid, year, duration_ms, segment_index, segment_start_ms, segment_end_ms, cue_path";
 
 fn row_to_summary(row: &rusqlite::Row<'_>) -> Result<TrackSummary, rusqlite::Error> {
     Ok(TrackSummary {
@@ -30,7 +31,26 @@ fn row_to_summary(row: &rusqlite::Row<'_>) -> Result<TrackSummary, rusqlite::Err
         artist_mbid: row.get(6)?,
         year: row.get(7)?,
         duration_ms: row.get(8)?,
+        segment: row_segment(row, 9)?,
     })
+}
+
+/// The segment a summary row carries, read from the four columns that start at
+/// `first`; `segment_index = 0` is a whole-file track.
+fn row_segment(
+    row: &rusqlite::Row<'_>,
+    first: usize,
+) -> Result<Option<TrackSegment>, rusqlite::Error> {
+    let index: i64 = row.get(first)?;
+    if index == 0 {
+        return Ok(None);
+    }
+    Ok(Some(TrackSegment {
+        index,
+        start_ms: row.get::<_, Option<i64>>(first + 1)?.unwrap_or(0),
+        end_ms: row.get::<_, Option<i64>>(first + 2)?.unwrap_or(0),
+        cue_path: row.get(first + 3)?,
+    }))
 }
 
 /// Resolves one track id to its `TrackSummary` — the queue's per-track
@@ -40,27 +60,15 @@ fn row_to_summary(row: &rusqlite::Row<'_>) -> Result<TrackSummary, rusqlite::Err
 /// matching row (e.g. deleted between queueing and playback) — never an
 /// error; the caller decides how to degrade (skip/stop), matching every
 /// other fallible path in this module.
-pub fn query_track_summary(db: &Db, id: i64) -> Result<Option<TrackSummary>, rusqlite::Error> {
+pub fn query_track_summary(db: &Db, id: i64) -> Result<Option<TrackSummary>, CoreError> {
     let conn = db.conn();
-    conn.query_row(
-        "SELECT path, title, artist, album, album_artist, genre, artist_mbid,
-                year, duration_ms FROM tracks WHERE id = ?1",
-        rusqlite::params![id],
-        |r| {
-            Ok(TrackSummary {
-                path: r.get(0)?,
-                title: r.get(1)?,
-                artist: r.get(2)?,
-                album: r.get(3)?,
-                album_artist: r.get(4)?,
-                genre: r.get(5)?,
-                artist_mbid: r.get(6)?,
-                year: r.get(7)?,
-                duration_ms: r.get(8)?,
-            })
-        },
-    )
-    .optional()
+    Ok(conn
+        .query_row(
+            &format!("SELECT {TRACK_SUMMARY_COLUMNS} FROM tracks WHERE id = ?1"),
+            rusqlite::params![id],
+            row_to_summary,
+        )
+        .optional()?)
 }
 
 /// Returns every non-missing track id for validating persisted playback
@@ -105,7 +113,7 @@ pub fn query_random_live_track_ids(db: &Db) -> Result<Vec<i64>, rusqlite::Error>
 /// rejects ids that exist but are currently missing (`missing_since` set), so a
 /// caller can list exactly which ids it must not accept. An empty input is an
 /// empty result with no query issued.
-pub fn filter_present(db: &Db, ids: &[i64]) -> Result<Vec<i64>, rusqlite::Error> {
+pub fn filter_present(db: &Db, ids: &[i64]) -> Result<Vec<i64>, CoreError> {
     let conn = db.conn();
     if ids.is_empty() {
         return Ok(Vec::new());
@@ -185,11 +193,13 @@ pub fn query_live_track_paths(db: &Db) -> Result<Vec<String>, rusqlite::Error> {
 }
 
 /// Returns the metadata and paths needed by background lyrics scheduling for
-/// every present library track in stable path order.
+/// every present library track in stable path order, the tracks of one file
+/// in the order they play.
 pub fn query_live_track_summaries(db: &Db) -> Result<Vec<TrackSummary>, rusqlite::Error> {
     let conn = db.conn();
     let mut statement = conn.prepare(&format!(
-        "SELECT {TRACK_SUMMARY_COLUMNS} FROM tracks WHERE {PRESENT} ORDER BY path"
+        "SELECT {TRACK_SUMMARY_COLUMNS} FROM tracks WHERE {PRESENT} \
+         ORDER BY path, segment_index, id"
     ))?;
     let summaries = statement.query_map([], row_to_summary)?.collect();
     summaries
@@ -204,7 +214,8 @@ pub fn query_track_summaries_added_since(
     let conn = db.conn();
     let mut statement = conn.prepare(&format!(
         "SELECT {TRACK_SUMMARY_COLUMNS} FROM tracks \
-         WHERE {PRESENT} AND (added_at > ?1 OR file_mtime > ?1) ORDER BY path"
+         WHERE {PRESENT} AND (added_at > ?1 OR file_mtime > ?1) \
+         ORDER BY path, segment_index, id"
     ))?;
     let summaries = statement
         .query_map([since], row_to_summary)?
@@ -729,12 +740,21 @@ pub fn query_import_error_count(db: &Db) -> Result<i64, rusqlite::Error> {
 /// if no track has that exact path — not an error; the caller (`ui::
 /// playlist_io::import_playlist`) treats an unmatched path as "not found",
 /// counted but not added.
+///
+/// A file that holds the tracks of a CUE sheet has one row per track. The path
+/// then stands for the first of them in play order. Callers that mean the whole
+/// file use [`track_ids_for_path`]; a playlist import uses
+/// [`playlist_tracks_for_path`](super::playlist_tracks_for_path).
 pub fn track_id_for_path(db: &Db, path: &str) -> Result<Option<i64>, rusqlite::Error> {
+    Ok(track_ids_for_path(db, path)?.first().copied())
+}
+
+/// Every track id stored for `path`, in the order they play inside the file: one
+/// for an ordinary file, one per track for a file cut by a CUE sheet.
+pub fn track_ids_for_path(db: &Db, path: &str) -> Result<Vec<i64>, rusqlite::Error> {
     let conn = db.conn();
-    conn.query_row(
-        "SELECT id FROM tracks WHERE path = ?1",
-        rusqlite::params![path],
-        |r| r.get(0),
-    )
-    .optional()
+    let mut statement =
+        conn.prepare("SELECT id FROM tracks WHERE path = ?1 ORDER BY segment_index, id")?;
+    let ids = statement.query_map(rusqlite::params![path], |row| row.get(0))?;
+    ids.collect()
 }

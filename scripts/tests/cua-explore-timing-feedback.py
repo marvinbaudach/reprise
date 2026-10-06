@@ -91,7 +91,9 @@ class TimingFeedbackTests(unittest.TestCase):
 
     def test_explained_activation_failures_do_not_repeat_as_waiting_failures(self):
         scenarios = (
-            ("cell", (), "ax", "no-accessible-action"),
+            # No AT-SPI action: the click is rerouted to the pointer, so its
+            # silence is judged as a pointer click's, never as an app fault.
+            ("cell", (), "ax", "click-no-visible-effect"),
             ("button", ("click",), "px", "click-no-visible-effect"),
             ("button", ("click",), "ax", "suspected-no-handler"),
         )

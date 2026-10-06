@@ -39,7 +39,6 @@ class VisualizerSceneDriverTest {
         val frames = SpectrogramFrames(24, 20, ByteArray(0))
         val scene = SceneState(frames)
         val driver = SceneDriver(
-            frames = frames,
             state = scene,
             clock = SceneClock { 0L },
             positionSource = ScenePositionSource {
@@ -82,7 +81,6 @@ class VisualizerSceneDriverTest {
             }
         }
         val driver = SceneDriver(
-            frames = frames,
             state = state,
             clock = SceneClock { nowNanos },
             positionSource = ScenePositionSource {
@@ -122,7 +120,6 @@ class VisualizerSceneDriverTest {
             }
         }
         val driver = SceneDriver(
-            frames = frames,
             state = state,
             clock = SceneClock { 0L },
             positionSource = ScenePositionSource { ScenePositionSample(0, 0, true) },
@@ -145,7 +142,6 @@ class VisualizerSceneDriverTest {
         val frames = SpectrogramFrames(24, 20, ByteArray(24) { (it * 9).toByte() })
         val received = mutableListOf<FloatArray?>()
         val driver = SceneDriver(
-            frames = frames,
             state = SceneState(frames),
             clock = SceneClock { 0L },
             positionSource = ScenePositionSource { ScenePositionSample(0, 0, true) },
@@ -172,7 +168,6 @@ class VisualizerSceneDriverTest {
         val received = mutableListOf<FloatArray?>()
         var allowed = true
         val driver = SceneDriver(
-            frames = frames,
             state = SceneState(frames),
             clock = SceneClock { 0L },
             positionSource = ScenePositionSource { ScenePositionSample(0, 0, true) },
@@ -196,7 +191,6 @@ class VisualizerSceneDriverTest {
         var nowNanos = 0L
         val received = mutableListOf<FloatArray?>()
         val driver = SceneDriver(
-            frames = frames,
             state = SceneState(frames),
             clock = SceneClock { nowNanos },
             positionSource = ScenePositionSource {
@@ -241,7 +235,6 @@ class VisualizerSceneDriverTest {
         var nowNanos = 0L
         val received = mutableListOf<FloatArray?>()
         val driver = SceneDriver(
-            frames = frames,
             state = SceneState(frames),
             clock = SceneClock { nowNanos },
             // Paused two thirds of the way into the first frame.
@@ -268,7 +261,6 @@ class VisualizerSceneDriverTest {
         val state = SceneState(frames)
         val received = mutableListOf<FloatArray?>()
         val driver = SceneDriver(
-            frames = frames,
             state = state,
             clock = SceneClock { nowNanos },
             positionSource = ScenePositionSource { ScenePositionSample(0, 0, true) },

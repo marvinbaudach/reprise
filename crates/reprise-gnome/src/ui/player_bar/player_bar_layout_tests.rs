@@ -162,7 +162,7 @@ fn style_5_player_bar_fits_a_narrow_short_window_without_clipping() {
         .child(&gtk4::Label::new(Some("Scrollable library content")))
         .vexpand(true)
         .build();
-    let shell = crate::ui::library_player_bar::LibraryPlayerBarShell::new(
+    let shell = crate::ui::player_bar::library_player_bar::LibraryPlayerBarShell::new(
         &content,
         Some(layout.root.upcast_ref()),
         reprise_core::library::settings::PlayerBarPosition::Bottom,

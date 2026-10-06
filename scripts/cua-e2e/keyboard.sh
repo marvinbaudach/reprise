@@ -206,8 +206,8 @@ keyboard_issues_import() {
     "$pid" "$window_id" "Music" acc-issues-main-collection)
   assert_focus_evidence_label "$collection_path" "Music"
   focus_path=$(cua_focus_label_via_key \
-    "$pid" "$window_id" "Missing files" down acc-issues-focus)
-  assert_focus_evidence_label "$focus_path" "Missing files"
+    "$pid" "$window_id" "Missing Files" down acc-issues-focus)
+  assert_focus_evidence_label "$focus_path" "Missing Files"
   cua_press_key_window "$pid" "$window_id" enter acc-issues-open
   assert_after_has_focus acc-issues-open
 }

@@ -6,6 +6,7 @@ use std::path::Path;
 
 use reprise_core::db::Db;
 use reprise_core::db::DbError;
+use reprise_core::CoreError;
 
 use crate::capability;
 
@@ -19,7 +20,7 @@ pub enum StartupError {
     /// The database could not be opened or migrated.
     Open(DbError),
     /// The capability snapshot query failed.
-    Query(rusqlite::Error),
+    Query(CoreError),
 }
 
 /// The write-class capability snapshot taken at startup — the restart-gated

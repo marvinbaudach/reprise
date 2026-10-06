@@ -86,7 +86,7 @@ fn episode_context_rows_hide_remove_and_reorder_but_manual_episodes_do_not() {
 }
 
 #[test]
-fn que_2_two_sections_headers_conditional() {
+fn que_2a_two_sections_and_the_context_title_names_its_source() {
     let both = crate::ui::track_list::queue_sections::compose(
         Some(track(10)),
         &tracks(&[20, 21]),

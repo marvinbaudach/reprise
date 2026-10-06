@@ -1,0 +1,179 @@
+## A — screen on, Reprise activity in front, VOLUME_DOWN hold
+21:33:57.718 MediaSessionService: onSessionPlaybackStateChanged: state=PLAYING(3), position=2746
+21:33:58.376 MediaSessionService: dispatchVolumeKeyEvent, pkg=io.github.marvinbaudach.reprise, opPkg=io.github.marvinbaudach.reprise, pid=16808, uid=10285, asSystem=true, event=KeyEvent { action=ACTION_DOWN, keyCode=KEYCODE_VOLUME_DOWN, scanCode=114, metaState=0, flags=0x8, repeatCount=0
+21:33:58.376 MediaSessionService: Adjusting io.github.marvinbaudach.reprise/androidx.media3.session.id./3 (userId=0) by -1. flags=4113
+21:33:58.623 MediaSessionService: dispatchVolumeKeyEvent, pkg=io.github.marvinbaudach.reprise, opPkg=io.github.marvinbaudach.reprise, pid=16808, uid=10285, asSystem=true, event=KeyEvent { action=ACTION_DOWN, keyCode=KEYCODE_VOLUME_DOWN, scanCode=114, metaState=0, flags=0x88, repeatCount=1
+21:33:58.624 MediaSessionService: Adjusting io.github.marvinbaudach.reprise/androidx.media3.session.id./3 (userId=0) by -1. flags=4113
+21:33:58.672 MediaSessionService: dispatchVolumeKeyEvent, pkg=io.github.marvinbaudach.reprise, opPkg=io.github.marvinbaudach.reprise, pid=16808, uid=10285, asSystem=true, event=KeyEvent { action=ACTION_DOWN, keyCode=KEYCODE_VOLUME_DOWN, scanCode=114, metaState=0, flags=0x8, repeatCount=2
+21:33:58.673 MediaSessionService: Adjusting io.github.marvinbaudach.reprise/androidx.media3.session.id./3 (userId=0) by -1. flags=4113
+21:33:58.723 MediaSessionService: dispatchVolumeKeyEvent, pkg=io.github.marvinbaudach.reprise, opPkg=io.github.marvinbaudach.reprise, pid=16808, uid=10285, asSystem=true, event=KeyEvent { action=ACTION_DOWN, keyCode=KEYCODE_VOLUME_DOWN, scanCode=114, metaState=0, flags=0x8, repeatCount=3
+21:33:58.723 MediaSessionService: Adjusting io.github.marvinbaudach.reprise/androidx.media3.session.id./3 (userId=0) by -1. flags=4113
+21:33:58.774 MediaSessionService: dispatchVolumeKeyEvent, pkg=io.github.marvinbaudach.reprise, opPkg=io.github.marvinbaudach.reprise, pid=16808, uid=10285, asSystem=true, event=KeyEvent { action=ACTION_DOWN, keyCode=KEYCODE_VOLUME_DOWN, scanCode=114, metaState=0, flags=0x8, repeatCount=4
+21:33:58.774 MediaSessionService: Adjusting io.github.marvinbaudach.reprise/androidx.media3.session.id./3 (userId=0) by -1. flags=4113
+21:33:58.825 MediaSessionService: dispatchVolumeKeyEvent, pkg=io.github.marvinbaudach.reprise, opPkg=io.github.marvinbaudach.reprise, pid=16808, uid=10285, asSystem=true, event=KeyEvent { action=ACTION_DOWN, keyCode=KEYCODE_VOLUME_DOWN, scanCode=114, metaState=0, flags=0x8, repeatCount=5
+21:33:58.825 MediaSessionService: Adjusting io.github.marvinbaudach.reprise/androidx.media3.session.id./3 (userId=0) by -1. flags=4113
+21:33:58.878 MediaSessionService: dispatchVolumeKeyEvent, pkg=io.github.marvinbaudach.reprise, opPkg=io.github.marvinbaudach.reprise, pid=16808, uid=10285, asSystem=true, event=KeyEvent { action=ACTION_DOWN, keyCode=KEYCODE_VOLUME_DOWN, scanCode=114, metaState=0, flags=0x8, repeatCount=6
+21:33:58.878 MediaSessionService: Adjusting io.github.marvinbaudach.reprise/androidx.media3.session.id./3 (userId=0) by -1. flags=4113
+21:33:58.927 MediaSessionService: dispatchVolumeKeyEvent, pkg=io.github.marvinbaudach.reprise, opPkg=io.github.marvinbaudach.reprise, pid=16808, uid=10285, asSystem=true, event=KeyEvent { action=ACTION_DOWN, keyCode=KEYCODE_VOLUME_DOWN, scanCode=114, metaState=0, flags=0x8, repeatCount=7
+21:33:58.927 MediaSessionService: Adjusting io.github.marvinbaudach.reprise/androidx.media3.session.id./3 (userId=0) by -1. flags=4113
+21:33:58.974 MediaSessionService: dispatchVolumeKeyEvent, pkg=io.github.marvinbaudach.reprise, opPkg=io.github.marvinbaudach.reprise, pid=16808, uid=10285, asSystem=true, event=KeyEvent { action=ACTION_DOWN, keyCode=KEYCODE_VOLUME_DOWN, scanCode=114, metaState=0, flags=0x8, repeatCount=8
+21:33:58.974 MediaSessionService: Adjusting io.github.marvinbaudach.reprise/androidx.media3.session.id./3 (userId=0) by -1. flags=4113
+21:33:59.035 MediaSessionService: dispatchVolumeKeyEvent, pkg=io.github.marvinbaudach.reprise, opPkg=io.github.marvinbaudach.reprise, pid=16808, uid=10285, asSystem=true, event=KeyEvent { action=ACTION_DOWN, keyCode=KEYCODE_VOLUME_DOWN, scanCode=114, metaState=0, flags=0x8, repeatCount=9
+21:33:59.036 MediaSessionService: Adjusting io.github.marvinbaudach.reprise/androidx.media3.session.id./3 (userId=0) by -1. flags=4113
+21:33:59.076 MediaSessionService: dispatchVolumeKeyEvent, pkg=io.github.marvinbaudach.reprise, opPkg=io.github.marvinbaudach.reprise, pid=16808, uid=10285, asSystem=true, event=KeyEvent { action=ACTION_DOWN, keyCode=KEYCODE_VOLUME_DOWN, scanCode=114, metaState=0, flags=0x8, repeatCount=10
+21:33:59.076 MediaSessionService: Adjusting io.github.marvinbaudach.reprise/androidx.media3.session.id./3 (userId=0) by -1. flags=4113
+21:33:59.126 MediaSessionService: dispatchVolumeKeyEvent, pkg=io.github.marvinbaudach.reprise, opPkg=io.github.marvinbaudach.reprise, pid=16808, uid=10285, asSystem=true, event=KeyEvent { action=ACTION_DOWN, keyCode=KEYCODE_VOLUME_DOWN, scanCode=114, metaState=0, flags=0x8, repeatCount=11
+21:33:59.126 MediaSessionService: Adjusting io.github.marvinbaudach.reprise/androidx.media3.session.id./3 (userId=0) by -1. flags=4113
+21:33:59.177 MediaSessionService: dispatchVolumeKeyEvent, pkg=io.github.marvinbaudach.reprise, opPkg=io.github.marvinbaudach.reprise, pid=16808, uid=10285, asSystem=true, event=KeyEvent { action=ACTION_DOWN, keyCode=KEYCODE_VOLUME_DOWN, scanCode=114, metaState=0, flags=0x8, repeatCount=12
+21:33:59.177 MediaSessionService: Adjusting io.github.marvinbaudach.reprise/androidx.media3.session.id./3 (userId=0) by -1. flags=4113
+21:33:59.234 MediaSessionService: dispatchVolumeKeyEvent, pkg=io.github.marvinbaudach.reprise, opPkg=io.github.marvinbaudach.reprise, pid=16808, uid=10285, asSystem=true, event=KeyEvent { action=ACTION_DOWN, keyCode=KEYCODE_VOLUME_DOWN, scanCode=114, metaState=0, flags=0x8, repeatCount=13
+21:33:59.234 MediaSessionService: Adjusting io.github.marvinbaudach.reprise/androidx.media3.session.id./3 (userId=0) by -1. flags=4113
+21:33:59.274 MediaSessionService: dispatchVolumeKeyEvent, pkg=io.github.marvinbaudach.reprise, opPkg=io.github.marvinbaudach.reprise, pid=16808, uid=10285, asSystem=true, event=KeyEvent { action=ACTION_UP, keyCode=KEYCODE_VOLUME_DOWN, scanCode=114, metaState=0, flags=0x8, repeatCount=0
+21:33:59.274 MediaSessionService: Adjusting io.github.marvinbaudach.reprise/androidx.media3.session.id./3 (userId=0) by 0. flags=4116
+21:33:59.275 VolumeProviderCompat: onAdjustVolume: Ignoring unknown direction: 0
+## B — screen off (Dozing), VOLUME_UP hold 1.8 s: DOWN and UP only, no repeats
+21:57:39.272 MediaSessionService: onSessionPlaybackStateChanged: state=PLAYING(3), position=163778
+21:57:39.806 MediaSessionService: dispatchVolumeKeyEvent, pkg=android, opPkg=android, pid=1435, uid=1000, asSystem=false, event=KeyEvent { action=ACTION_DOWN, keyCode=KEYCODE_VOLUME_UP, scanCode=115, metaState=0, flags=0x8, repeatCount=0
+21:57:39.806 MediaSessionService: Adjusting io.github.marvinbaudach.reprise/androidx.media3.session.id./3 (userId=0) by 1. flags=4096
+21:57:41.633 MediaSessionService: dispatchVolumeKeyEvent, pkg=android, opPkg=android, pid=1435, uid=1000, asSystem=false, event=KeyEvent { action=ACTION_UP, keyCode=KEYCODE_VOLUME_UP, scanCode=115, metaState=0, flags=0x8, repeatCount=0
+21:57:41.634 MediaSessionService: Adjusting io.github.marvinbaudach.reprise/androidx.media3.session.id./3 (userId=0) by 0. flags=4096
+21:57:41.650 VolumeProviderCompat: onAdjustVolume: Ignoring unknown direction: 0
+## C — screen off, further holds, no repeats
+21:58:12.066 MediaSessionService: dispatchVolumeKeyEvent, pkg=android, opPkg=android, pid=1435, uid=1000, asSystem=false, event=KeyEvent { action=ACTION_DOWN, keyCode=KEYCODE_VOLUME_DOWN, scanCode=114, metaState=0, flags=0x8, repeatCount=0
+21:58:12.067 MediaSessionService: Adjusting io.github.marvinbaudach.reprise/androidx.media3.session.id./3 (userId=0) by -1. flags=4096
+21:58:12.207 MediaSessionService: dispatchVolumeKeyEvent, pkg=android, opPkg=android, pid=1435, uid=1000, asSystem=false, event=KeyEvent { action=ACTION_UP, keyCode=KEYCODE_VOLUME_DOWN, scanCode=114, metaState=0, flags=0x8, repeatCount=0
+21:58:12.207 MediaSessionService: Adjusting io.github.marvinbaudach.reprise/androidx.media3.session.id./3 (userId=0) by 0. flags=4096
+21:58:12.215 VolumeProviderCompat: onAdjustVolume: Ignoring unknown direction: 0
+21:58:12.375 MediaSessionService: dispatchVolumeKeyEvent, pkg=android, opPkg=android, pid=1435, uid=1000, asSystem=false, event=KeyEvent { action=ACTION_DOWN, keyCode=KEYCODE_VOLUME_DOWN, scanCode=114, metaState=0, flags=0x8, repeatCount=0
+21:58:12.375 MediaSessionService: Adjusting io.github.marvinbaudach.reprise/androidx.media3.session.id./3 (userId=0) by -1. flags=4096
+21:58:12.552 MediaSessionService: dispatchVolumeKeyEvent, pkg=android, opPkg=android, pid=1435, uid=1000, asSystem=false, event=KeyEvent { action=ACTION_UP, keyCode=KEYCODE_VOLUME_DOWN, scanCode=114, metaState=0, flags=0x8, repeatCount=0
+21:58:12.552 MediaSessionService: Adjusting io.github.marvinbaudach.reprise/androidx.media3.session.id./3 (userId=0) by 0. flags=4096
+21:58:12.562 VolumeProviderCompat: onAdjustVolume: Ignoring unknown direction: 0
+21:58:12.812 MediaSessionService: dispatchVolumeKeyEvent, pkg=android, opPkg=android, pid=1435, uid=1000, asSystem=false, event=KeyEvent { action=ACTION_DOWN, keyCode=KEYCODE_VOLUME_DOWN, scanCode=114, metaState=0, flags=0x8, repeatCount=0
+21:58:12.812 MediaSessionService: Adjusting io.github.marvinbaudach.reprise/androidx.media3.session.id./3 (userId=0) by -1. flags=4096
+21:58:12.994 MediaSessionService: dispatchVolumeKeyEvent, pkg=android, opPkg=android, pid=1435, uid=1000, asSystem=false, event=KeyEvent { action=ACTION_UP, keyCode=KEYCODE_VOLUME_DOWN, scanCode=114, metaState=0, flags=0x8, repeatCount=0
+21:58:12.994 MediaSessionService: Adjusting io.github.marvinbaudach.reprise/androidx.media3.session.id./3 (userId=0) by 0. flags=4096
+21:58:12.997 VolumeProviderCompat: onAdjustVolume: Ignoring unknown direction: 0
+21:58:13.302 MediaSessionService: dispatchVolumeKeyEvent, pkg=android, opPkg=android, pid=1435, uid=1000, asSystem=false, event=KeyEvent { action=ACTION_DOWN, keyCode=KEYCODE_VOLUME_DOWN, scanCode=114, metaState=0, flags=0x8, repeatCount=0
+21:58:13.302 MediaSessionService: Adjusting io.github.marvinbaudach.reprise/androidx.media3.session.id./3 (userId=0) by -1. flags=4096
+21:58:13.487 MediaSessionService: dispatchVolumeKeyEvent, pkg=android, opPkg=android, pid=1435, uid=1000, asSystem=false, event=KeyEvent { action=ACTION_UP, keyCode=KEYCODE_VOLUME_DOWN, scanCode=114, metaState=0, flags=0x8, repeatCount=0
+21:58:13.488 MediaSessionService: Adjusting io.github.marvinbaudach.reprise/androidx.media3.session.id./3 (userId=0) by 0. flags=4096
+21:58:13.495 VolumeProviderCompat: onAdjustVolume: Ignoring unknown direction: 0
+21:58:13.946 MediaSessionService: onSessionPlaybackStateChanged: state=PLAYING(3), position=21144
+21:58:14.052 MediaSessionService: dispatchVolumeKeyEvent, pkg=android, opPkg=android, pid=1435, uid=1000, asSystem=false, event=KeyEvent { action=ACTION_DOWN, keyCode=KEYCODE_VOLUME_DOWN, scanCode=114, metaState=0, flags=0x8, repeatCount=0
+21:58:14.052 MediaSessionService: Adjusting io.github.marvinbaudach.reprise/androidx.media3.session.id./3 (userId=0) by -1. flags=4096
+21:58:14.992 MediaSessionService: dispatchVolumeKeyEvent, pkg=android, opPkg=android, pid=1435, uid=1000, asSystem=false, event=KeyEvent { action=ACTION_UP, keyCode=KEYCODE_VOLUME_DOWN, scanCode=114, metaState=0, flags=0x8, repeatCount=0
+21:58:14.993 MediaSessionService: Adjusting io.github.marvinbaudach.reprise/androidx.media3.session.id./3 (userId=0) by 0. flags=4096
+21:58:15.010 VolumeProviderCompat: onAdjustVolume: Ignoring unknown direction: 0
+22:03:58.637 MediaSessionService: dispatchVolumeKeyEvent, pkg=android, opPkg=android, pid=1435, uid=1000, asSystem=false, event=KeyEvent { action=ACTION_DOWN, keyCode=KEYCODE_VOLUME_UP, scanCode=115, metaState=0, flags=0x8, repeatCount=0
+22:03:58.638 MediaSessionService: Adjusting io.github.marvinbaudach.reprise/androidx.media3.session.id./3 (userId=0) by 1. flags=4096
+22:04:00.732 MediaSessionService: onSessionPlaybackStateChanged: state=PLAYING(3), position=116767
+22:04:01.460 MediaSessionService: dispatchVolumeKeyEvent, pkg=android, opPkg=android, pid=1435, uid=1000, asSystem=false, event=KeyEvent { action=ACTION_UP, keyCode=KEYCODE_VOLUME_UP, scanCode=115, metaState=0, flags=0x8, repeatCount=0
+22:04:01.461 MediaSessionService: Adjusting io.github.marvinbaudach.reprise/androidx.media3.session.id./3 (userId=0) by 0. flags=4096
+22:04:01.481 VolumeProviderCompat: onAdjustVolume: Ignoring unknown direction: 0
+22:04:02.667 MediaSessionService: dispatchVolumeKeyEvent, pkg=android, opPkg=android, pid=1435, uid=1000, asSystem=false, event=KeyEvent { action=ACTION_DOWN, keyCode=KEYCODE_VOLUME_DOWN, scanCode=114, metaState=0, flags=0x8, repeatCount=0
+22:04:02.667 MediaSessionService: Adjusting io.github.marvinbaudach.reprise/androidx.media3.session.id./3 (userId=0) by -1. flags=4096
+22:04:04.887 MediaSessionService: onSessionPlaybackStateChanged: state=PLAYING(3), position=120924
+22:04:05.145 MediaSessionService: dispatchVolumeKeyEvent, pkg=android, opPkg=android, pid=1435, uid=1000, asSystem=false, event=KeyEvent { action=ACTION_UP, keyCode=KEYCODE_VOLUME_DOWN, scanCode=114, metaState=0, flags=0x8, repeatCount=0
+22:04:05.145 MediaSessionService: Adjusting io.github.marvinbaudach.reprise/androidx.media3.session.id./3 (userId=0) by 0. flags=4096
+22:04:05.161 VolumeProviderCompat: onAdjustVolume: Ignoring unknown direction: 0
+## D — screen on, Brave browser in front, VOLUME_UP hold: repeats arrive, 3 skips in one hold
+22:04:40.849 MediaSessionService: dispatchVolumeKeyEvent, pkg=com.brave.browser_beta, opPkg=com.brave.browser_beta, pid=5739, uid=10230, asSystem=true, event=KeyEvent { action=ACTION_DOWN, keyCode=KEYCODE_VOLUME_UP, scanCode=115, metaState=0, flags=0x8, repeatCount=0
+22:04:40.849 MediaSessionService: Adjusting io.github.marvinbaudach.reprise/androidx.media3.session.id./3 (userId=0) by 1. flags=4113
+22:04:41.092 MediaSessionService: dispatchVolumeKeyEvent, pkg=com.brave.browser_beta, opPkg=com.brave.browser_beta, pid=5739, uid=10230, asSystem=true, event=KeyEvent { action=ACTION_DOWN, keyCode=KEYCODE_VOLUME_UP, scanCode=115, metaState=0, flags=0x88, repeatCount=1
+22:04:41.093 MediaSessionService: Adjusting io.github.marvinbaudach.reprise/androidx.media3.session.id./3 (userId=0) by 1. flags=4113
+22:04:41.141 MediaSessionService: dispatchVolumeKeyEvent, pkg=com.brave.browser_beta, opPkg=com.brave.browser_beta, pid=5739, uid=10230, asSystem=true, event=KeyEvent { action=ACTION_DOWN, keyCode=KEYCODE_VOLUME_UP, scanCode=115, metaState=0, flags=0x8, repeatCount=2
+22:04:41.141 MediaSessionService: Adjusting io.github.marvinbaudach.reprise/androidx.media3.session.id./3 (userId=0) by 1. flags=4113
+22:04:41.179 MediaSessionService: onSessionPlaybackStateChanged: state=BUFFERING(6), position=0 (×3)
+22:04:41.192 MediaSessionService: dispatchVolumeKeyEvent, pkg=com.brave.browser_beta, opPkg=com.brave.browser_beta, pid=5739, uid=10230, asSystem=true, event=KeyEvent { action=ACTION_DOWN, keyCode=KEYCODE_VOLUME_UP, scanCode=115, metaState=0, flags=0x8, repeatCount=3
+22:04:41.192 MediaSessionService: Adjusting io.github.marvinbaudach.reprise/androidx.media3.session.id./3 (userId=0) by 1. flags=4113
+22:04:41.193 MediaSessionService: onSessionPlaybackStateChanged: state=BUFFERING(6), position=0 (×5)
+22:04:41.242 MediaSessionService: dispatchVolumeKeyEvent, pkg=com.brave.browser_beta, opPkg=com.brave.browser_beta, pid=5739, uid=10230, asSystem=true, event=KeyEvent { action=ACTION_DOWN, keyCode=KEYCODE_VOLUME_UP, scanCode=115, metaState=0, flags=0x8, repeatCount=4
+22:04:41.242 MediaSessionService: Adjusting io.github.marvinbaudach.reprise/androidx.media3.session.id./3 (userId=0) by 1. flags=4113
+22:04:41.293 MediaSessionService: dispatchVolumeKeyEvent, pkg=com.brave.browser_beta, opPkg=com.brave.browser_beta, pid=5739, uid=10230, asSystem=true, event=KeyEvent { action=ACTION_DOWN, keyCode=KEYCODE_VOLUME_UP, scanCode=115, metaState=0, flags=0x8, repeatCount=5
+22:04:41.293 MediaSessionService: Adjusting io.github.marvinbaudach.reprise/androidx.media3.session.id./3 (userId=0) by 1. flags=4113
+22:04:41.343 MediaSessionService: dispatchVolumeKeyEvent, pkg=com.brave.browser_beta, opPkg=com.brave.browser_beta, pid=5739, uid=10230, asSystem=true, event=KeyEvent { action=ACTION_DOWN, keyCode=KEYCODE_VOLUME_UP, scanCode=115, metaState=0, flags=0x8, repeatCount=6
+22:04:41.343 MediaSessionService: Adjusting io.github.marvinbaudach.reprise/androidx.media3.session.id./3 (userId=0) by 1. flags=4113
+22:04:41.395 MediaSessionService: dispatchVolumeKeyEvent, pkg=com.brave.browser_beta, opPkg=com.brave.browser_beta, pid=5739, uid=10230, asSystem=true, event=KeyEvent { action=ACTION_DOWN, keyCode=KEYCODE_VOLUME_UP, scanCode=115, metaState=0, flags=0x8, repeatCount=7
+22:04:41.396 MediaSessionService: Adjusting io.github.marvinbaudach.reprise/androidx.media3.session.id./3 (userId=0) by 1. flags=4113
+22:04:41.446 MediaSessionService: dispatchVolumeKeyEvent, pkg=com.brave.browser_beta, opPkg=com.brave.browser_beta, pid=5739, uid=10230, asSystem=true, event=KeyEvent { action=ACTION_DOWN, keyCode=KEYCODE_VOLUME_UP, scanCode=115, metaState=0, flags=0x8, repeatCount=8
+22:04:41.446 MediaSessionService: Adjusting io.github.marvinbaudach.reprise/androidx.media3.session.id./3 (userId=0) by 1. flags=4113
+22:04:41.471 MediaSessionService: onSessionPlaybackStateChanged: state=BUFFERING(6), position=0
+22:04:41.497 MediaSessionService: dispatchVolumeKeyEvent, pkg=com.brave.browser_beta, opPkg=com.brave.browser_beta, pid=5739, uid=10230, asSystem=true, event=KeyEvent { action=ACTION_DOWN, keyCode=KEYCODE_VOLUME_UP, scanCode=115, metaState=0, flags=0x8, repeatCount=9
+22:04:41.497 MediaSessionService: Adjusting io.github.marvinbaudach.reprise/androidx.media3.session.id./3 (userId=0) by 1. flags=4113
+22:04:41.546 MediaSessionService: dispatchVolumeKeyEvent, pkg=com.brave.browser_beta, opPkg=com.brave.browser_beta, pid=5739, uid=10230, asSystem=true, event=KeyEvent { action=ACTION_DOWN, keyCode=KEYCODE_VOLUME_UP, scanCode=115, metaState=0, flags=0x8, repeatCount=10
+22:04:41.546 MediaSessionService: Adjusting io.github.marvinbaudach.reprise/androidx.media3.session.id./3 (userId=0) by 1. flags=4113
+22:04:41.580 MediaSessionService: onSessionPlaybackStateChanged: state=PLAYING(3), position=0 (×2)
+22:04:41.597 MediaSessionService: dispatchVolumeKeyEvent, pkg=com.brave.browser_beta, opPkg=com.brave.browser_beta, pid=5739, uid=10230, asSystem=true, event=KeyEvent { action=ACTION_DOWN, keyCode=KEYCODE_VOLUME_UP, scanCode=115, metaState=0, flags=0x8, repeatCount=11
+22:04:41.597 MediaSessionService: Adjusting io.github.marvinbaudach.reprise/androidx.media3.session.id./3 (userId=0) by 1. flags=4113
+22:04:41.648 MediaSessionService: dispatchVolumeKeyEvent, pkg=com.brave.browser_beta, opPkg=com.brave.browser_beta, pid=5739, uid=10230, asSystem=true, event=KeyEvent { action=ACTION_DOWN, keyCode=KEYCODE_VOLUME_UP, scanCode=115, metaState=0, flags=0x8, repeatCount=12
+22:04:41.648 MediaSessionService: Adjusting io.github.marvinbaudach.reprise/androidx.media3.session.id./3 (userId=0) by 1. flags=4113
+22:04:41.679 MediaSessionService: onSessionPlaybackStateChanged: state=BUFFERING(6), position=0 (×6)
+22:04:41.698 MediaSessionService: dispatchVolumeKeyEvent, pkg=com.brave.browser_beta, opPkg=com.brave.browser_beta, pid=5739, uid=10230, asSystem=true, event=KeyEvent { action=ACTION_DOWN, keyCode=KEYCODE_VOLUME_UP, scanCode=115, metaState=0, flags=0x8, repeatCount=13
+22:04:41.698 MediaSessionService: Adjusting io.github.marvinbaudach.reprise/androidx.media3.session.id./3 (userId=0) by 1. flags=4113
+22:04:41.700 MediaSessionService: onSessionPlaybackStateChanged: state=BUFFERING(6), position=0 (×3)
+22:04:41.749 MediaSessionService: dispatchVolumeKeyEvent, pkg=com.brave.browser_beta, opPkg=com.brave.browser_beta, pid=5739, uid=10230, asSystem=true, event=KeyEvent { action=ACTION_DOWN, keyCode=KEYCODE_VOLUME_UP, scanCode=115, metaState=0, flags=0x8, repeatCount=14
+22:04:41.749 MediaSessionService: Adjusting io.github.marvinbaudach.reprise/androidx.media3.session.id./3 (userId=0) by 1. flags=4113
+22:04:41.799 MediaSessionService: dispatchVolumeKeyEvent, pkg=com.brave.browser_beta, opPkg=com.brave.browser_beta, pid=5739, uid=10230, asSystem=true, event=KeyEvent { action=ACTION_DOWN, keyCode=KEYCODE_VOLUME_UP, scanCode=115, metaState=0, flags=0x8, repeatCount=15
+22:04:41.799 MediaSessionService: Adjusting io.github.marvinbaudach.reprise/androidx.media3.session.id./3 (userId=0) by 1. flags=4113
+22:04:41.832 MediaSessionService: onSessionPlaybackStateChanged: state=PLAYING(3), position=0 (×2)
+22:04:41.850 MediaSessionService: dispatchVolumeKeyEvent, pkg=com.brave.browser_beta, opPkg=com.brave.browser_beta, pid=5739, uid=10230, asSystem=true, event=KeyEvent { action=ACTION_DOWN, keyCode=KEYCODE_VOLUME_UP, scanCode=115, metaState=0, flags=0x8, repeatCount=16
+22:04:41.850 MediaSessionService: Adjusting io.github.marvinbaudach.reprise/androidx.media3.session.id./3 (userId=0) by 1. flags=4113
+22:04:41.904 MediaSessionService: dispatchVolumeKeyEvent, pkg=com.brave.browser_beta, opPkg=com.brave.browser_beta, pid=5739, uid=10230, asSystem=true, event=KeyEvent { action=ACTION_DOWN, keyCode=KEYCODE_VOLUME_UP, scanCode=115, metaState=0, flags=0x8, repeatCount=17
+22:04:41.904 MediaSessionService: Adjusting io.github.marvinbaudach.reprise/androidx.media3.session.id./3 (userId=0) by 1. flags=4113
+22:04:41.939 MediaSessionService: onSessionPlaybackStateChanged: state=BUFFERING(6), position=0 (×5)
+22:04:41.952 MediaSessionService: dispatchVolumeKeyEvent, pkg=com.brave.browser_beta, opPkg=com.brave.browser_beta, pid=5739, uid=10230, asSystem=true, event=KeyEvent { action=ACTION_UP, keyCode=KEYCODE_VOLUME_UP, scanCode=115, metaState=0, flags=0x8, repeatCount=0
+22:04:41.952 MediaSessionService: Adjusting io.github.marvinbaudach.reprise/androidx.media3.session.id./3 (userId=0) by 0. flags=4116
+22:04:41.957 MediaSessionService: onSessionPlaybackStateChanged: state=BUFFERING(6), position=0 (×4)
+22:04:42.212 MediaSessionService: onSessionPlaybackStateChanged: state=PLAYING(3), position=0 (×2)
+## E — same, second hold: 2 skips
+22:04:43.550 MediaSessionService: dispatchVolumeKeyEvent, pkg=com.brave.browser_beta, opPkg=com.brave.browser_beta, pid=5739, uid=10230, asSystem=true, event=KeyEvent { action=ACTION_DOWN, keyCode=KEYCODE_VOLUME_DOWN, scanCode=114, metaState=0, flags=0x8, repeatCount=0
+22:04:43.551 MediaSessionService: Adjusting io.github.marvinbaudach.reprise/androidx.media3.session.id./3 (userId=0) by -1. flags=4113
+22:04:43.800 MediaSessionService: dispatchVolumeKeyEvent, pkg=com.brave.browser_beta, opPkg=com.brave.browser_beta, pid=5739, uid=10230, asSystem=true, event=KeyEvent { action=ACTION_DOWN, keyCode=KEYCODE_VOLUME_DOWN, scanCode=114, metaState=0, flags=0x88, repeatCount=1
+22:04:43.801 MediaSessionService: Adjusting io.github.marvinbaudach.reprise/androidx.media3.session.id./3 (userId=0) by -1. flags=4113
+22:04:43.848 MediaSessionService: dispatchVolumeKeyEvent, pkg=com.brave.browser_beta, opPkg=com.brave.browser_beta, pid=5739, uid=10230, asSystem=true, event=KeyEvent { action=ACTION_DOWN, keyCode=KEYCODE_VOLUME_DOWN, scanCode=114, metaState=0, flags=0x8, repeatCount=2
+22:04:43.848 MediaSessionService: Adjusting io.github.marvinbaudach.reprise/androidx.media3.session.id./3 (userId=0) by -1. flags=4113
+22:04:43.900 MediaSessionService: dispatchVolumeKeyEvent, pkg=com.brave.browser_beta, opPkg=com.brave.browser_beta, pid=5739, uid=10230, asSystem=true, event=KeyEvent { action=ACTION_DOWN, keyCode=KEYCODE_VOLUME_DOWN, scanCode=114, metaState=0, flags=0x8, repeatCount=3
+22:04:43.900 MediaSessionService: Adjusting io.github.marvinbaudach.reprise/androidx.media3.session.id./3 (userId=0) by -1. flags=4113
+22:04:43.912 MediaSessionService: onSessionPlaybackStateChanged: state=BUFFERING(6), position=0 (×7)
+22:04:43.950 MediaSessionService: dispatchVolumeKeyEvent, pkg=com.brave.browser_beta, opPkg=com.brave.browser_beta, pid=5739, uid=10230, asSystem=true, event=KeyEvent { action=ACTION_DOWN, keyCode=KEYCODE_VOLUME_DOWN, scanCode=114, metaState=0, flags=0x8, repeatCount=4
+22:04:43.950 MediaSessionService: Adjusting io.github.marvinbaudach.reprise/androidx.media3.session.id./3 (userId=0) by -1. flags=4113
+22:04:43.954 MediaSessionService: onSessionPlaybackStateChanged: state=BUFFERING(6), position=0
+22:04:44.001 MediaSessionService: dispatchVolumeKeyEvent, pkg=com.brave.browser_beta, opPkg=com.brave.browser_beta, pid=5739, uid=10230, asSystem=true, event=KeyEvent { action=ACTION_DOWN, keyCode=KEYCODE_VOLUME_DOWN, scanCode=114, metaState=0, flags=0x8, repeatCount=5
+22:04:44.002 MediaSessionService: Adjusting io.github.marvinbaudach.reprise/androidx.media3.session.id./3 (userId=0) by -1. flags=4113
+22:04:44.015 MediaSessionService: onSessionPlaybackStateChanged: state=BUFFERING(6), position=0
+22:04:44.051 MediaSessionService: dispatchVolumeKeyEvent, pkg=com.brave.browser_beta, opPkg=com.brave.browser_beta, pid=5739, uid=10230, asSystem=true, event=KeyEvent { action=ACTION_DOWN, keyCode=KEYCODE_VOLUME_DOWN, scanCode=114, metaState=0, flags=0x8, repeatCount=6
+22:04:44.051 MediaSessionService: Adjusting io.github.marvinbaudach.reprise/androidx.media3.session.id./3 (userId=0) by -1. flags=4113
+22:04:44.102 MediaSessionService: dispatchVolumeKeyEvent, pkg=com.brave.browser_beta, opPkg=com.brave.browser_beta, pid=5739, uid=10230, asSystem=true, event=KeyEvent { action=ACTION_DOWN, keyCode=KEYCODE_VOLUME_DOWN, scanCode=114, metaState=0, flags=0x8, repeatCount=7
+22:04:44.103 MediaSessionService: Adjusting io.github.marvinbaudach.reprise/androidx.media3.session.id./3 (userId=0) by -1. flags=4113
+22:04:44.120 MediaSessionService: onSessionPlaybackStateChanged: state=PLAYING(3), position=0 (×2)
+22:04:44.152 MediaSessionService: dispatchVolumeKeyEvent, pkg=com.brave.browser_beta, opPkg=com.brave.browser_beta, pid=5739, uid=10230, asSystem=true, event=KeyEvent { action=ACTION_DOWN, keyCode=KEYCODE_VOLUME_DOWN, scanCode=114, metaState=0, flags=0x8, repeatCount=8
+22:04:44.152 MediaSessionService: Adjusting io.github.marvinbaudach.reprise/androidx.media3.session.id./3 (userId=0) by -1. flags=4113
+22:04:44.203 MediaSessionService: dispatchVolumeKeyEvent, pkg=com.brave.browser_beta, opPkg=com.brave.browser_beta, pid=5739, uid=10230, asSystem=true, event=KeyEvent { action=ACTION_DOWN, keyCode=KEYCODE_VOLUME_DOWN, scanCode=114, metaState=0, flags=0x8, repeatCount=9
+22:04:44.204 MediaSessionService: Adjusting io.github.marvinbaudach.reprise/androidx.media3.session.id./3 (userId=0) by -1. flags=4113
+22:04:44.226 MediaSessionService: onSessionPlaybackStateChanged: state=BUFFERING(6), position=0 (×8)
+22:04:44.254 MediaSessionService: dispatchVolumeKeyEvent, pkg=com.brave.browser_beta, opPkg=com.brave.browser_beta, pid=5739, uid=10230, asSystem=true, event=KeyEvent { action=ACTION_DOWN, keyCode=KEYCODE_VOLUME_DOWN, scanCode=114, metaState=0, flags=0x8, repeatCount=10
+22:04:44.254 MediaSessionService: Adjusting io.github.marvinbaudach.reprise/androidx.media3.session.id./3 (userId=0) by -1. flags=4113
+22:04:44.304 MediaSessionService: dispatchVolumeKeyEvent, pkg=com.brave.browser_beta, opPkg=com.brave.browser_beta, pid=5739, uid=10230, asSystem=true, event=KeyEvent { action=ACTION_DOWN, keyCode=KEYCODE_VOLUME_DOWN, scanCode=114, metaState=0, flags=0x8, repeatCount=11
+22:04:44.304 MediaSessionService: Adjusting io.github.marvinbaudach.reprise/androidx.media3.session.id./3 (userId=0) by -1. flags=4113
+22:04:44.354 MediaSessionService: dispatchVolumeKeyEvent, pkg=com.brave.browser_beta, opPkg=com.brave.browser_beta, pid=5739, uid=10230, asSystem=true, event=KeyEvent { action=ACTION_DOWN, keyCode=KEYCODE_VOLUME_DOWN, scanCode=114, metaState=0, flags=0x8, repeatCount=12
+22:04:44.354 MediaSessionService: Adjusting io.github.marvinbaudach.reprise/androidx.media3.session.id./3 (userId=0) by -1. flags=4113
+22:04:44.407 MediaSessionService: dispatchVolumeKeyEvent, pkg=com.brave.browser_beta, opPkg=com.brave.browser_beta, pid=5739, uid=10230, asSystem=true, event=KeyEvent { action=ACTION_DOWN, keyCode=KEYCODE_VOLUME_DOWN, scanCode=114, metaState=0, flags=0x8, repeatCount=13
+22:04:44.408 MediaSessionService: Adjusting io.github.marvinbaudach.reprise/androidx.media3.session.id./3 (userId=0) by -1. flags=4113
+22:04:44.451 MediaSessionService: dispatchVolumeKeyEvent, pkg=com.brave.browser_beta, opPkg=com.brave.browser_beta, pid=5739, uid=10230, asSystem=true, event=KeyEvent { action=ACTION_UP, keyCode=KEYCODE_VOLUME_DOWN, scanCode=114, metaState=0, flags=0x8, repeatCount=0
+22:04:44.451 MediaSessionService: Adjusting io.github.marvinbaudach.reprise/androidx.media3.session.id./3 (userId=0) by 0. flags=4116
+22:04:44.470 MediaSessionService: onSessionPlaybackStateChanged: state=BUFFERING(6), position=0
+22:04:44.593 MediaSessionService: onSessionPlaybackStateChanged: state=PLAYING(3), position=0 (×2)
+## F — control: AOD off (doze_always_on=0), screen off, VOLUME_UP held 8.5 s: DOWN and UP only
+22:12:45.316 PowerManagerService: Going to sleep due to power_button (uid 1000, screenOffTimeout=1800000, activityTimeoutWM=-1, maxDimRatio=0.20000005, maxDimDur=7000)...
+22:12:46.041 MediaSessionService: onSessionPlaybackStateChanged: state=PLAYING(3), position=55637
+22:12:49.075 MediaSessionService: onSessionPlaybackStateChanged: state=PLAYING(3), position=58670
+22:12:52.139 MediaSessionService: onSessionPlaybackStateChanged: state=PLAYING(3), position=61759
+22:12:52.332 MediaSessionService: dispatchVolumeKeyEvent, pkg=android, opPkg=android, pid=1435, uid=1000, asSystem=false, event=KeyEvent { action=ACTION_DOWN, keyCode=KEYCODE_VOLUME_UP, scanCode=115, metaState=0, flags=0x8, repeatCount=0
+22:12:52.332 MediaSessionService: Adjusting io.github.marvinbaudach.reprise/androidx.media3.session.id./3 (userId=0) by 1. flags=4096
+22:12:55.176 MediaSessionService: onSessionPlaybackStateChanged: state=PLAYING(3), position=64812
+22:12:58.258 MediaSessionService: onSessionPlaybackStateChanged: state=PLAYING(3), position=67953
+22:13:00.907 MediaSessionService: dispatchVolumeKeyEvent, pkg=android, opPkg=android, pid=1435, uid=1000, asSystem=false, event=KeyEvent { action=ACTION_UP, keyCode=KEYCODE_VOLUME_UP, scanCode=115, metaState=0, flags=0x8, repeatCount=0
+22:13:00.908 MediaSessionService: Adjusting io.github.marvinbaudach.reprise/androidx.media3.session.id./3 (userId=0) by 0. flags=4096
+22:13:00.930 VolumeProviderCompat: onAdjustVolume: Ignoring unknown direction: 0
+22:13:01.301 MediaSessionService: onSessionPlaybackStateChanged: state=PLAYING(3), position=70830

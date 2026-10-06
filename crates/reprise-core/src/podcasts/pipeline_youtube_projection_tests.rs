@@ -1,7 +1,5 @@
 //! What a YouTube refresh projects into the store: channel image, title, episode dates.
 
-use std::fs;
-use std::os::unix::fs::PermissionsExt;
 use std::path::Path;
 
 use super::youtube_test_support::*;
@@ -36,14 +34,12 @@ fn a_listed_video_carries_its_duration_into_the_episode() {
 fn channel_tab_entries_are_not_episodes_and_still_resolve_the_source_url() {
     let directory = tempfile::tempdir().unwrap();
     let binary = directory.path().join("yt-dlp");
-    fs::write(
+    super::super::ytdlp::test_support::write_executable(
         &binary,
         r##"#!/bin/sh
 printf '%s\n' '{"entries":[{"_type":"playlist","id":"UClDzr-KM5H2-bsO3xIC32mg","title":"Bjorth - Shorts","channel_id":"UClDzr-KM5H2-bsO3xIC32mg","duration":null},{"_type":"url","id":"abcdefghijk","title":"Real video","duration":225}]}'
 "##,
-    )
-    .unwrap();
-    fs::set_permissions(&binary, fs::Permissions::from_mode(0o700)).unwrap();
+    );
 
     let listing = super::super::ytdlp::YtDlp::with_binary(binary)
         .list("https://www.youtube.com/channel/UClDzr-KM5H2-bsO3xIC32mg")
@@ -186,6 +182,7 @@ impl YoutubeFetcher for ChannelWithNewestVideo {
         Ok(ParsedFeed {
             title: Some("VOID PREACHER".to_owned()),
             author: Some("VOID PREACHER".to_owned()),
+            description: None,
             image_url: Some("https://yt3.googleusercontent.com/ytc/AIdro=s900".to_owned()),
             episodes: vec![ParsedEpisode {
                 guid: self.newest.to_owned(),
@@ -305,6 +302,7 @@ fn youtube_rss_refresh_never_promotes_the_playlist_title() {
     let videos_feed = ParsedFeed {
         title: Some("Videos".to_owned()),
         author: Some("HOLLOW FALLEN".to_owned()),
+        description: None,
         image_url: None,
         episodes: Vec::new(),
     };
@@ -316,6 +314,7 @@ fn youtube_rss_refresh_never_promotes_the_playlist_title() {
     let authorless = ParsedFeed {
         title: Some("Videos".to_owned()),
         author: Some("   ".to_owned()),
+        description: None,
         image_url: None,
         episodes: Vec::new(),
     };
@@ -351,6 +350,7 @@ impl YoutubeFetcher for DatedYoutubeListing {
         Ok(ParsedFeed {
             title: Some("Channel".to_owned()),
             author: None,
+            description: None,
             image_url: None,
             episodes: vec![ParsedEpisode {
                 guid: "video".to_owned(),

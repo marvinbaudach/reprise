@@ -100,11 +100,13 @@ fn apply_window_control(
         }
     }?;
     match control {
-        LibraryWindowControl::Sidebar => super::window_navigation::apply_sidebar_visibility(
-            &context.split_view,
-            &context.sidebar_page,
-            active,
-        ),
+        LibraryWindowControl::Sidebar => {
+            crate::ui::window::window_navigation::apply_sidebar_visibility(
+                &context.split_view,
+                &context.sidebar_page,
+                active,
+            );
+        }
         LibraryWindowControl::BrowseBar => context.track_list.set_browse_visible(active),
         LibraryWindowControl::InfoPanel => {
             context.info_panel.apply_persisted_visibility(active);

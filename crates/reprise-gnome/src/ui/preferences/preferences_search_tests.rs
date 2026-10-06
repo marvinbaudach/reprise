@@ -6,7 +6,7 @@ use gtk4::prelude::*;
 use libadwaita as adw;
 use libadwaita::prelude::*;
 
-use crate::ui::preferences_window::{self, PageId};
+use crate::ui::preferences::preferences_window::{self, PageId};
 
 #[test]
 #[ignore = "requires a display; run via xvfb-run"]

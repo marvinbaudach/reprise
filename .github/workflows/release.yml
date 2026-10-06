@@ -204,13 +204,18 @@ jobs:
             echo '```'
           } >> "$GITHUB_STEP_SUMMARY"
 
+      # Only a push writes caches: a pull request's entries are scoped to its own
+      # ref, and nothing else can read them. The restore and the save are two
+      # steps because the combined action saves on every ref that ran it.
       - name: Restore cached Flatpak runtimes
-        uses: actions/cache@v6
+        id: flatpak_runtimes
+        uses: actions/cache/restore@v6
         with:
           path: ~/.local/share/flatpak
           key: flatpak-user-org.gnome.Platform-50-org.gnome.Sdk-50-org.freedesktop.Sdk.Extension.rust-stable-25.08
 
       - name: Install GNOME 50 SDK
+        id: flatpak_install
         run: |
           set -euo pipefail
           retry_delays=(20 40 60 120)
@@ -360,6 +365,16 @@ jobs:
             fi
           done
 
+      - name: Save cached Flatpak runtimes
+        if: >-
+          github.event_name == 'push' &&
+          steps.flatpak_runtimes.outputs.cache-hit != 'true' &&
+          steps.flatpak_install.outcome == 'success'
+        uses: actions/cache/save@v6
+        with:
+          path: ~/.local/share/flatpak
+          key: flatpak-user-org.gnome.Platform-50-org.gnome.Sdk-50-org.freedesktop.Sdk.Extension.rust-stable-25.08
+
       - name: Upload Flatpak runtime install log
         if: failure()
         uses: actions/upload-artifact@v7
@@ -452,8 +467,12 @@ jobs:
       - name: Add Android Rust targets
         run: rustup target add aarch64-linux-android x86_64-linux-android
 
+      # Only a push writes caches: a pull request's entries are scoped to its own
+      # ref, and nothing else can read them. The save sits right behind the
+      # fetch that fills the path and hangs on that step's outcome.
       - name: Cache Cargo downloads
-        uses: actions/cache@v6
+        id: cargo_downloads
+        uses: actions/cache/restore@v6
         with:
           path: |
             ~/.cargo/registry
@@ -461,6 +480,22 @@ jobs:
           key: release-android-cargo-${{ hashFiles('Cargo.lock') }}
           restore-keys: |
             release-android-cargo-
+
+      - name: Fetch Cargo dependencies
+        id: cargo_fetch
+        run: cargo fetch --locked
+
+      - name: Save Cargo downloads
+        if: >-
+          github.event_name == 'push' &&
+          steps.cargo_downloads.outputs.cache-hit != 'true' &&
+          steps.cargo_fetch.outcome == 'success'
+        uses: actions/cache/save@v6
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+          key: release-android-cargo-${{ hashFiles('Cargo.lock') }}
 
       - name: Build both native ABIs and generate bindings
         run: |

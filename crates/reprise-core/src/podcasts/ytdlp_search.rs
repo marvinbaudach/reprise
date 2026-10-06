@@ -102,7 +102,11 @@ pub(super) fn entry_follower_count(entry: &Value) -> Option<u64> {
     let count = value.as_f64()?;
     if count.is_finite() && count >= 0.0 {
         // `as` saturates at the integer bounds for finite floats.
-        #[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)]
+        #[expect(
+            clippy::cast_possible_truncation,
+            clippy::cast_sign_loss,
+            reason = "the finite nonnegative count was validated before conversion"
+        )]
         Some(count as u64)
     } else {
         None
@@ -214,7 +218,11 @@ fn positive_dimension(thumbnail: &Value, key: &str) -> Option<u64> {
             // can reach this branch. Kept because it costs one comparison.
             .filter(|value| value.is_finite() && *value >= 0.0)
             .map(|value| {
-                #[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)]
+                #[expect(
+                    clippy::cast_possible_truncation,
+                    clippy::cast_sign_loss,
+                    reason = "the finite nonnegative count was validated before conversion"
+                )]
                 {
                     value as u64
                 }

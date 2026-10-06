@@ -188,14 +188,17 @@ pub(in crate::ui) fn queue_ids_for_activation(
 
     let ids = {
         let conn = &shared.conn;
-        queries::query_track_ids_browsed(
+        let view = queries::TrackViewQuery::new(&source)
+            .with_filter(&filter)
+            .with_browse(&browse)
+            .with_queue_items(&queue_items);
+        queries::query_track_ids(
             conn,
-            &source,
-            &sort.field,
-            &sort.dir,
-            &filter,
-            &browse,
-            &queue_items,
+            &view,
+            queries::TrackSort {
+                field: &sort.field,
+                dir: &sort.dir,
+            },
         )
     };
 

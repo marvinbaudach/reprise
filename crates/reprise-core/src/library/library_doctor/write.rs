@@ -59,6 +59,14 @@ pub(super) struct PreparedDoctorWriteJob {
     lock: TagWriteJobLock,
 }
 
+#[derive(Debug)]
+struct SuccessfulFileWrite {
+    snapshot_was_current: bool,
+    applied: Vec<GuardedTagField>,
+    conflicts: Vec<GuardedTagField>,
+    post_write_failure: Option<TagMutationFailure>,
+}
+
 impl PreparedDoctorWriteJob {
     pub(super) fn into_lock_attempt(self) -> TagWriteLockAttempt {
         self.lock.into_attempt()
@@ -466,13 +474,11 @@ fn terminal_success(
     conn: &Connection,
     job_id: i64,
     file: &ExecutableFile,
-    applied: &[GuardedTagField],
-    conflicts: &[GuardedTagField],
+    outcome: SuccessfulFileWrite,
     source_job_id: Option<i64>,
-    post_write_failure: Option<TagMutationFailure>,
 ) -> Result<(), DoctorError> {
     let transaction = conn.unchecked_transaction()?;
-    for field in applied {
+    for field in &outcome.applied {
         let changed = transaction.execute(
             "UPDATE tag_write_journal SET outcome='applied' \
              WHERE file_id=?1 AND field=?2 AND outcome='prepared'",
@@ -484,7 +490,7 @@ fn terminal_success(
             ));
         }
     }
-    for field in conflicts {
+    for field in &outcome.conflicts {
         let changed = transaction.execute(
             "UPDATE tag_write_journal SET outcome='conflict' \
              WHERE file_id=?1 AND field=?2 AND outcome='prepared'",
@@ -496,8 +502,8 @@ fn terminal_success(
             ));
         }
     }
-    let wrote = !applied.is_empty();
-    let (state, kind, message) = match post_write_failure {
+    let wrote = !outcome.applied.is_empty();
+    let (state, kind, message) = match outcome.post_write_failure {
         Some(failure) => {
             let (kind, message, file_written) = failure.into_parts();
             if !file_written {
@@ -520,6 +526,7 @@ fn terminal_success(
             job_id,
             file.id,
             file.track_id,
+            outcome.snapshot_was_current,
         )?;
     }
     transaction.execute(
@@ -528,7 +535,7 @@ fn terminal_success(
         params![state, kind, message, i64::from(wrote), file.id],
     )?;
     if let Some(source) = source_job_id {
-        for field in applied {
+        for field in &outcome.applied {
             let changed = transaction.execute(
                 "UPDATE tag_write_journal SET outcome='reverted' \
                  WHERE file_id=(SELECT id FROM tag_write_job_files \
@@ -602,15 +609,24 @@ pub(super) fn run_job(
             return report(conn, job_id);
         }
         claim_file(conn, job_id, file)?;
+        let snapshot_was_current = super::store::doctor_snapshot_matches_current_track(
+            conn,
+            job_id,
+            file.id,
+            file.track_id,
+        )?;
         match commit_guarded_tag_changes(conn, file.track_id, &file.path, &file.changes, true) {
             Ok(outcome) => terminal_success(
                 conn,
                 job_id,
                 file,
-                &outcome.applied,
-                &outcome.conflicts,
+                SuccessfulFileWrite {
+                    snapshot_was_current,
+                    applied: outcome.applied,
+                    conflicts: outcome.conflicts,
+                    post_write_failure: outcome.post_write_failure,
+                },
                 source_job_id,
-                outcome.post_write_failure,
             )?,
             Err(failure) => terminal_failure(conn, file, failure, source_job_id)?,
         }

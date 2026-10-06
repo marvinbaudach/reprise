@@ -1,5 +1,6 @@
 use super::super::sidebar_boundary_navigation::{first_issue_row, last_main_row};
 use super::*;
+use crate::ui::sidebar::{sidebar_dnd, sidebar_presentation};
 
 /// Builds a bare `Shared` over a fresh in-memory database — enough for
 /// `rebuild` and the drop-handler functions, without an `adw::
@@ -132,7 +133,7 @@ fn handle_queue_drop_dispatches_ids_to_the_wired_callback() {
         reprise_core::up_next::QueueItem::Episode(7),
     ];
     let expected_after_episode_filter = [reprise_core::up_next::QueueItem::Track(7)];
-    assert!(crate::ui::sidebar_dnd::handle_queue_drop(&shared, &items));
+    assert!(sidebar_dnd::handle_queue_drop(&shared, &items));
     assert_eq!(
         *seen.borrow(),
         expected_after_episode_filter,
@@ -145,7 +146,7 @@ fn handle_queue_drop_is_a_noop_without_ids_or_callback() {
     gtk4::init().unwrap();
     let shared = test_shared();
     // No callback wired at all: report failure, don't panic.
-    assert!(!crate::ui::sidebar_dnd::handle_queue_drop(
+    assert!(!sidebar_dnd::handle_queue_drop(
         &shared,
         &[reprise_core::up_next::QueueItem::Track(7)]
     ));
@@ -159,7 +160,7 @@ fn handle_queue_drop_is_a_noop_without_ids_or_callback() {
             true
         }));
     }
-    assert!(!crate::ui::sidebar_dnd::handle_queue_drop(&shared, &[]));
+    assert!(!sidebar_dnd::handle_queue_drop(&shared, &[]));
     assert!(!invoked.get());
 }
 
@@ -209,8 +210,12 @@ fn fb_8_a_visible_progress_card_no_longer_hides_the_issues_block() {
     assert_eq!(root.first_child().as_ref(), Some(scrolled.upcast_ref()));
     let region = root
         .last_child()
+        .and_then(|widget| widget.downcast::<gtk4::ScrolledWindow>().ok())
+        .and_then(|scrolled| scrolled.child())
+        .and_then(|widget| widget.downcast::<gtk4::Viewport>().ok())
+        .and_then(|viewport| viewport.child())
         .and_then(|widget| widget.downcast::<gtk4::Box>().ok())
-        .expect("the sidebar must end in one bottom region");
+        .expect("the sidebar's pinned viewport must contain one bottom region");
     assert!(!region.vexpands());
     assert_eq!(region.valign(), gtk4::Align::End);
 
@@ -257,9 +262,9 @@ fn acc_3_sidebar_uses_the_available_page_height_before_scrolling() {
         "Queue",
         "New playlist",
         "Import playlist",
-        "Recently played",
-        "Top rated",
-        "Recently added",
+        "Recently Played",
+        "Top Rated",
+        "Recently Added",
         "My Stats",
     ] {
         list.append(&gtk4::Label::new(Some(label)));
@@ -355,13 +360,10 @@ fn acc_3_bottom_pinned_issues_collection_is_a_tab_stop() {
     gtk4::init().unwrap();
     let issues = gtk4::ListBox::new();
     configure_issues_listbox(&issues);
-    let row = crate::ui::sidebar_presentation::build_issue_nav_row(
+    let row = sidebar_presentation::build_issue_nav_row(
         "Missing files",
-        crate::ui::sidebar_presentation::issue_row_presentation(
-            1,
-            crate::ui::sidebar_presentation::NavIcon::Missing,
-        ),
-        crate::ui::sidebar_presentation::NavIcon::Missing,
+        sidebar_presentation::issue_row_presentation(1, sidebar_presentation::NavIcon::Missing),
+        sidebar_presentation::NavIcon::Missing,
     );
     issues.append(&row);
 
@@ -492,13 +494,10 @@ fn acc_3_focus_transfer_between_sidebar_collections_does_not_resync_mid_flight()
     wire_row_selected(&shared);
     wire_focus_leave_resync(&shared);
     rebuild(&shared, None, "test build");
-    let missing = crate::ui::sidebar_presentation::build_issue_nav_row(
+    let missing = sidebar_presentation::build_issue_nav_row(
         "Missing files",
-        crate::ui::sidebar_presentation::issue_row_presentation(
-            1,
-            crate::ui::sidebar_presentation::NavIcon::Missing,
-        ),
-        crate::ui::sidebar_presentation::NavIcon::Missing,
+        sidebar_presentation::issue_row_presentation(1, sidebar_presentation::NavIcon::Missing),
+        sidebar_presentation::NavIcon::Missing,
     );
     shared.issues_listbox.append(&missing);
     remember_issue_focus_entry(&shared.issues_listbox, &missing);
@@ -542,13 +541,10 @@ fn acc_3_sidebar_collection_boundaries_link_main_and_issues() {
     gtk4::init().unwrap();
     let shared = test_shared();
     rebuild(&shared, None, "test build");
-    let missing = crate::ui::sidebar_presentation::build_issue_nav_row(
+    let missing = sidebar_presentation::build_issue_nav_row(
         "Missing files",
-        crate::ui::sidebar_presentation::issue_row_presentation(
-            1,
-            crate::ui::sidebar_presentation::NavIcon::Missing,
-        ),
-        crate::ui::sidebar_presentation::NavIcon::Missing,
+        sidebar_presentation::issue_row_presentation(1, sidebar_presentation::NavIcon::Missing),
+        sidebar_presentation::NavIcon::Missing,
     );
     shared.issues_listbox.append(&missing);
     shared.rows.borrow_mut().push((
@@ -571,7 +567,7 @@ fn smart_playlist_rows_badge_their_live_track_count() {
     gtk4::init().unwrap();
     let shared = test_shared();
 
-    // Seed five present tracks; the default "Recently added" smart list has an
+    // Seed five present tracks; the default "Recently Added" smart list has an
     // empty rule set, so it matches every present track — the badge must read 5.
     let _smart_id = {
         let conn = &shared.conn;
@@ -591,7 +587,7 @@ fn smart_playlist_rows_badge_their_live_track_count() {
         }
         crate::test_db::connection(conn)
             .query_row(
-                "SELECT id FROM smart_playlists WHERE name = 'Recently added'",
+                "SELECT id FROM smart_playlists WHERE name = 'Recently Added'",
                 [],
                 |r| r.get::<_, i64>(0),
             )
@@ -601,7 +597,7 @@ fn smart_playlist_rows_badge_their_live_track_count() {
     rebuild(&shared, None, "test build");
 
     let row = find_row(&shared, &ViewSource::RecentlyAdded)
-        .expect("the 'Recently added' smart list must have a sidebar row");
+        .expect("the 'Recently Added' smart list must have a sidebar row");
     assert_eq!(
         numeric_badge_text(row.upcast_ref()),
         Some("5".to_string()),
@@ -621,7 +617,7 @@ fn empty_smart_playlist_shows_no_badge() {
         let conn = &shared.conn;
         crate::test_db::connection(conn)
             .query_row(
-                "SELECT id FROM smart_playlists WHERE name = 'Recently added'",
+                "SELECT id FROM smart_playlists WHERE name = 'Recently Added'",
                 [],
                 |r| r.get::<_, i64>(0),
             )
@@ -631,7 +627,7 @@ fn empty_smart_playlist_shows_no_badge() {
     rebuild(&shared, None, "test build");
 
     let row = find_row(&shared, &ViewSource::RecentlyAdded)
-        .expect("the 'Recently added' smart list must have a sidebar row");
+        .expect("the 'Recently Added' smart list must have a sidebar row");
     assert_eq!(
         numeric_badge_text(row.upcast_ref()),
         None,

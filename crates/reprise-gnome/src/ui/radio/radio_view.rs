@@ -20,8 +20,7 @@ use super::radio_model::{RadioModel, RadioObject};
 use super::radio_presentation::{sort_rows, RadioLiveState};
 use crate::ui::playback::external_media::{ExternalMedia, RadioPhase};
 use crate::ui::playback::player_controller::PlayerController;
-use crate::ui::sidebar::sidebar_presentation::NavIcon;
-use crate::ui::source_empty_state::{SourceEmptyState, SourceEmptyStateCopy};
+use crate::ui::source_empty_state::SourceEmptyState;
 use crate::ui::source_error_banner::SourceErrorBanner;
 use crate::ui::source_reveal::LoadedItemChange;
 use crate::ui::strings;
@@ -38,10 +37,11 @@ use failure_ui::{
 
 const LIST_PAGE: &str = "list";
 const STATUS_PAGE: &str = "status";
-/// `SRC-10`: the stack page holding the shared "nothing added yet" empty
+/// `SRC-10a`: the stack page holding the shared "nothing added yet" empty
 /// state — distinct from `STATUS_PAGE`, which still carries `NoResults`
 /// (Block B2, unchanged).
 const EMPTY_PAGE: &str = "empty";
+const MODULE_OFF_PAGE: &str = "module-off";
 const ACTION_OPEN_ADD: &str = "open-add";
 
 type IdCallback = Rc<dyn Fn(i64)>;
@@ -62,14 +62,16 @@ pub(super) struct Shared {
     /// [`RadioView::set_connectivity`].
     connectivity: Rc<Cell<Connectivity>>,
     failure_kind: RefCell<Option<SourceErrorKind>>,
-    stack: gtk4::Stack,
+    pub(super) stack: gtk4::Stack,
     status: adw::StatusPage,
     status_button: gtk4::Button,
     empty_state: Cell<RadioEmptyState>,
     empty_page: SourceEmptyState,
+    pub(super) module_off_state: SourceEmptyState,
     error_banner: SourceErrorBanner,
     pub(super) root: gtk4::Widget,
     footer: gtk4::Box,
+    #[cfg(test)]
     footer_add: gtk4::Button,
     pub(super) add_dialog: RefCell<Option<Rc<RadioAddDialog>>>,
     toast_overlay: gtk4::glib::WeakRef<adw::ToastOverlay>,
@@ -77,6 +79,7 @@ pub(super) struct Shared {
     on_mutated: RefCell<Option<Callback>>,
     on_activated: RefCell<Option<IdCallback>>,
     on_removed: RefCell<Option<IdCallback>>,
+    pub(super) on_open_preferences: RefCell<Option<Callback>>,
     /// `SRC-13`: kept so a station change arriving from outside this view
     /// reaches the same reveal policy that view entry uses.
     reveal: Rc<super::radio_reveal::RadioReveal>,
@@ -180,7 +183,8 @@ impl RadioView {
         let status_button = gtk4::Button::new();
         status_button.set_halign(gtk4::Align::Center);
         status.set_child(Some(&status_button));
-        let empty_page = SourceEmptyState::new(&radio_empty_state_copy());
+        let empty_page = SourceEmptyState::new(&super::radio_view_copy::empty_state());
+        let module_off_state = SourceEmptyState::new(&super::radio_view_copy::module_off());
         let error_banner = SourceErrorBanner::new();
         let stack = gtk4::Stack::builder()
             .transition_type(gtk4::StackTransitionType::Crossfade)
@@ -189,6 +193,7 @@ impl RadioView {
         stack.add_named(&list_overlay, Some(LIST_PAGE));
         stack.add_named(&status, Some(STATUS_PAGE));
         stack.add_named(empty_page.widget(), Some(EMPTY_PAGE));
+        stack.add_named(module_off_state.widget(), Some(MODULE_OFF_PAGE));
         let root = gtk4::Box::new(gtk4::Orientation::Vertical, 0);
         root.add_css_class("reprise-radio-view");
         root.append(filter_bar.widget());
@@ -227,9 +232,11 @@ impl RadioView {
             status_button: status_button.clone(),
             empty_state: Cell::new(RadioEmptyState::Empty),
             empty_page,
+            module_off_state,
             error_banner,
             root: root.upcast(),
             footer,
+            #[cfg(test)]
             footer_add,
             add_dialog: RefCell::new(None),
             toast_overlay: gtk4::glib::WeakRef::new(),
@@ -237,6 +244,7 @@ impl RadioView {
             on_mutated: RefCell::new(None),
             on_activated: RefCell::new(None),
             on_removed: RefCell::new(None),
+            on_open_preferences: RefCell::new(None),
             reveal,
             cells,
             artwork_cells,
@@ -287,13 +295,14 @@ impl RadioView {
                 }
             });
         }
+        super::radio_preferences::wire_module_off_action(&shared);
         {
             let weak = Rc::downgrade(&shared);
             status_button.connect_clicked(move |_| {
                 let Some(shared) = weak.upgrade() else {
                     return;
                 };
-                // `SRC-10` moved the "nothing added yet" empty state onto
+                // `SRC-10a` moved the "nothing added yet" empty state onto
                 // its own page with its own button (wired above via
                 // `empty_page.connect_add`); this button is reachable only
                 // for `NoResults` now.
@@ -355,25 +364,6 @@ impl RadioView {
 
     pub(in crate::ui) fn set_on_mutated(&self, callback: impl Fn() + 'static) {
         *self.shared.on_mutated.borrow_mut() = Some(Rc::new(callback));
-    }
-
-    pub(in crate::ui) fn set_on_station_activated(&self, callback: impl Fn(i64) + 'static) {
-        *self.shared.on_activated.borrow_mut() = Some(Rc::new(callback));
-    }
-
-    pub(in crate::ui) fn set_on_station_removed(&self, callback: impl Fn(i64) + 'static) {
-        *self.shared.on_removed.borrow_mut() = Some(Rc::new(callback));
-    }
-
-    /// `RAD-5`: forwards to the Add Station dialog's "Near you" hand-off —
-    /// see `RadioAddDialog::set_on_location_settings`. Wired from
-    /// `window_runtime_wiring.rs` once `PreferencesContext` exists, the same
-    /// shape as the Online Lyrics settings button's `present_plugins` deep
-    /// link.
-    pub(in crate::ui) fn set_on_location_settings(&self, callback: impl Fn() + 'static) {
-        if let Some(dialog) = self.shared.add_dialog.borrow().as_ref() {
-            dialog.set_on_location_settings(callback);
-        }
     }
 }
 
@@ -451,26 +441,29 @@ fn render_rows(shared: &Rc<Shared>) {
     // which case the model deliberately emits no rebind signal. Reapply the
     // bound cells so their in-place search markup still follows the query.
     shared.cells.reapply();
+    let module_enabled = reprise_core::online_sources::network_allowed_or_off(
+        &shared.conn,
+        &reprise_core::modules::RADIO_MODULE,
+    );
     apply_empty_state(
         shared,
-        radio_empty_state_for(rows.len(), filter.is_active()),
+        radio_empty_state_for(rows.len(), filter.is_active(), module_enabled),
     );
 }
 
 fn apply_empty_state(shared: &Shared, state: RadioEmptyState) {
     shared.empty_state.set(state);
-    // `SRC-10`: the true "nothing added yet" empty state hides the toolbar
+    // `SRC-10a`: the true "nothing added yet" empty state hides the toolbar
     // too — Add button, filter chips, and count all disappear, so the view
     // reads as unused rather than broken. `NoResults` keeps the toolbar,
     // since clearing filters is the way out of that state.
-    shared
-        .filter_bar
-        .widget()
-        .set_visible(state != RadioEmptyState::Empty);
-    shared.footer.set_visible(state != RadioEmptyState::Empty);
+    let whole_page_replaced = matches!(state, RadioEmptyState::Empty | RadioEmptyState::ModuleOff);
+    shared.filter_bar.widget().set_visible(!whole_page_replaced);
+    shared.footer.set_visible(!whole_page_replaced);
     match state {
         RadioEmptyState::List => shared.stack.set_visible_child_name(LIST_PAGE),
         RadioEmptyState::Empty => shared.stack.set_visible_child_name(EMPTY_PAGE),
+        RadioEmptyState::ModuleOff => shared.stack.set_visible_child_name(MODULE_OFF_PAGE),
         RadioEmptyState::NoResults => {
             shared.status.set_icon_name(Some("system-search-symbolic"));
             shared
@@ -482,19 +475,6 @@ fn apply_empty_state(shared: &Shared, state: RadioEmptyState) {
                 .set_label(&strings::text(strings::SRC_CLEAR_FILTERS));
             shared.stack.set_visible_child_name(STATUS_PAGE);
         }
-    }
-}
-
-fn radio_empty_state_copy() -> SourceEmptyStateCopy {
-    SourceEmptyStateCopy {
-        icon_name: NavIcon::Radio.icon_name(),
-        title: strings::text(strings::RADIO_NO_STATIONS),
-        body: strings::text(strings::RADIO_NO_STATIONS_DESCRIPTION),
-        button_label: strings::text(strings::RADIO_ADD),
-        button_icon_name: "list-add-symbolic",
-        // Radio has no secondary line — the body already names the URL
-        // path (a stream URL), so a second line would repeat it.
-        secondary_line: None,
     }
 }
 

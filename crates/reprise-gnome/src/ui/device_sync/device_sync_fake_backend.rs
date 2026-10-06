@@ -411,7 +411,6 @@ impl DeviceBackend for FakeBackend {
         Box::pin(async move { Ok(exists) })
     }
 
-    #[allow(clippy::too_many_arguments)]
     fn replace_track(
         &self,
         device_id: String,

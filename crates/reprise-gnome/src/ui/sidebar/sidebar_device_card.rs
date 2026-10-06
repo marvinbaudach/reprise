@@ -10,9 +10,9 @@ use reprise_core::device_sync::device_view::DeviceContentsState;
 
 use super::sidebar_device_card_text;
 #[cfg(test)]
-use crate::ui::device_sync_runtime::SyncStep;
-use crate::ui::device_sync_runtime::{DeviceView, PlannedSyncPhase};
-use crate::ui::device_sync_strings;
+use crate::ui::device_sync::device_sync_runtime::SyncStep;
+use crate::ui::device_sync::device_sync_runtime::{DeviceView, PlannedSyncPhase};
+use crate::ui::device_sync::device_sync_strings;
 
 #[path = "../device_sync/device_sync_card_menu.rs"]
 pub(super) mod menu;
@@ -545,8 +545,8 @@ pub(super) mod tests {
             units_total,
             estimated_remaining: None,
             contents_state: reprise_core::device_sync::device_view::DeviceContentsState::Verified,
-            content_row: crate::ui::device_sync_runtime::empty_content_row(),
-            target_reading: crate::ui::device_sync_runtime::empty_target_reading(),
+            content_row: crate::ui::device_sync::device_sync_runtime::empty_content_row(),
+            target_reading: crate::ui::device_sync::device_sync_runtime::empty_target_reading(),
             keep_smart_playlists_updated: true,
             page: Default::default(),
         }

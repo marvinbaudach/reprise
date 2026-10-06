@@ -1,6 +1,4 @@
 //! Podcasts source surface.
-#![allow(dead_code)]
-
 mod add_dialog;
 mod add_dialog_chips;
 mod add_dialog_followers;
@@ -23,6 +21,7 @@ mod podcasts_filter_bar;
 mod podcasts_footer;
 mod podcasts_groups;
 mod podcasts_list_surface;
+#[cfg(test)]
 mod podcasts_model;
 mod podcasts_playback;
 mod podcasts_presentation;

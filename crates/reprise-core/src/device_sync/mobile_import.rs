@@ -100,6 +100,7 @@ pub fn import_analysis_bytes_for_track(
     if state.imported_source == Some(sidecar.source)
         && crate::db_spectrogram::get_track_spectrogram(db, track_id)?.is_some()
         && crate::db_spectrogram::get_waveform_peaks(db, track_id)?.is_some()
+        && crate::library::loudness_store::stored_loudness(db.conn(), track_id)?.is_some()
     {
         return Ok(AnalysisImportOutcome::AlreadyImported);
     }
@@ -109,6 +110,7 @@ pub fn import_analysis_bytes_for_track(
     let data = TrackRenderData {
         waveform_peaks: sidecar.waveform_peaks,
         spectrogram: sidecar.spectrogram,
+        loudness: sidecar.loudness,
     };
     if crate::db_spectrogram::set_track_render_data(db, track_id, phone_source, &data)?
         == crate::db_spectrogram::SpectrogramStoreOutcome::SourceChanged

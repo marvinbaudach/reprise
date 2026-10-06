@@ -1,5 +1,3 @@
-#![allow(dead_code)]
-
 use std::rc::Rc;
 
 use chrono::Local;
@@ -53,7 +51,9 @@ fn similar_caption(row: &ConcertRow) -> Option<String> {
 
 pub(super) struct ArtistCell {
     pub(super) root: gtk4::Box,
+    #[cfg(test)]
     pub(super) artist: gtk4::Label,
+    #[cfg(test)]
     pub(super) caption: gtk4::Label,
 }
 
@@ -76,7 +76,9 @@ pub(super) fn build_artist_cell() -> ArtistCell {
     root.append(&caption);
     ArtistCell {
         root,
+        #[cfg(test)]
         artist,
+        #[cfg(test)]
         caption,
     }
 }

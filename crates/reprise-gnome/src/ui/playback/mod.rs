@@ -20,12 +20,15 @@ pub(crate) mod playback_faults;
 pub(in crate::ui) mod playback_history_transport;
 pub(crate) mod player_callbacks;
 pub(crate) mod player_controller;
+mod player_controller_build;
+mod player_controller_seams;
 mod player_controller_toast;
 mod player_controller_types;
 pub(crate) mod player_controller_wiring;
 pub(in crate::ui) mod player_event_handling;
 pub(in crate::ui) mod preview;
 mod queue_change_dispatch;
+mod queue_edit;
 mod queue_insertion;
 pub(crate) mod queue_transport;
 mod seek_start;
@@ -34,9 +37,15 @@ mod seek_start_tests;
 pub(crate) mod session_player;
 #[cfg(test)]
 mod session_player_tests;
+#[cfg(test)]
+mod sleep_timer_display_tests;
+pub(in crate::ui) mod sleep_timer_hooks;
 pub(in crate::ui) mod source_item_identity;
 #[cfg(test)]
 pub(in crate::ui) mod test_support;
 pub(in crate::ui) mod up_next_transport;
-#[allow(unused_imports)]
+#[allow(
+    unused_imports,
+    reason = "child modules share the parent UI vocabulary through this import"
+)]
 use super::*;

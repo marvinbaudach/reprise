@@ -4,10 +4,10 @@ use std::path::Path;
 use tempfile::TempDir;
 
 use super::*;
-use crate::lyrics::breaker::Breaker;
 use crate::lyrics::{
     LyricsBody, LyricsProvider, LyricsQuery, LyricsSource, SourceOutcome, TimedLine,
 };
+use crate::net::breaker::Breaker;
 
 fn query() -> LyricsQuery {
     LyricsQuery {
@@ -142,7 +142,7 @@ fn provider_skips_an_open_breaker_unless_forced() {
     let fetcher = FixtureFetcher::new(temp.path());
     let breaker = Breaker::new(3, 300);
     for now in 1..=3 {
-        breaker.record(HOST, crate::lyrics::breaker::BreakerOutcome::Failure, now);
+        breaker.record(HOST, crate::net::breaker::BreakerOutcome::Failure, now);
     }
 
     assert_eq!(
@@ -187,4 +187,20 @@ fn two_request_lookup_shares_one_eight_second_source_budget() {
     assert_eq!(timeouts.len(), 2);
     assert_eq!(timeouts[0], HTTP_TIMEOUT);
     assert!(timeouts[1] <= HTTP_TIMEOUT);
+}
+
+#[test]
+fn netease_agent_surfaces_statuses_as_errors_with_the_callers_timeout() {
+    let timeout = Duration::from_secs(3);
+    assert_eq!(
+        agent_policy(timeout),
+        AgentPolicy {
+            timeout,
+            status_as_error: true,
+            https_only: false,
+            max_redirects: None,
+            proxy_from_env: true,
+        }
+    );
+    assert_eq!(HTTP_TIMEOUT, Duration::from_secs(8));
 }

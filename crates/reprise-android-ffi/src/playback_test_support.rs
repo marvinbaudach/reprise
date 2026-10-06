@@ -24,7 +24,7 @@ pub(super) fn library_in(directory: &Path) -> Arc<MusicLibrary> {
 #[derive(Clone, Debug, PartialEq)]
 pub(super) enum PortCall {
     SetEventBridge,
-    PlayPath(String),
+    PlayPath(String, f64),
     PlayUri(String),
     TogglePause,
     SeekTo(i64),
@@ -34,7 +34,8 @@ pub(super) enum PortCall {
     SetAudioEffects,
     SetSpectrumEnabled(bool),
     Stop,
-    SetNext(Option<String>),
+    SetNext(Option<String>, f64),
+    SetGains(f64, Option<f64>),
     SetTransition(AndroidTransitionMode),
     CurrentGeneration,
 }
@@ -57,9 +58,26 @@ impl AndroidPlaybackPort for RecordingPort {
         Ok(())
     }
 
-    fn play_path(&self, path: String) -> Result<(), AndroidPlaybackError> {
-        self.record(PortCall::PlayPath(path));
-        Ok(())
+    fn play_path(&self, path: String, gain_db: f64) -> Result<(), AndroidPlaybackError> {
+        let emits_buffering = path == SYNCHRONOUS_BUFFERING_URI;
+        let fails = path == FAILING_PLAY_URI;
+        self.record(PortCall::PlayPath(path, gain_db));
+        if emits_buffering {
+            let bridge = self.bridge.lock().unwrap().clone().unwrap();
+            bridge.emit(
+                23,
+                AndroidPlayerEvent::StateChanged {
+                    state: AndroidPlaybackState::Buffering,
+                },
+            );
+        }
+        if fails {
+            Err(AndroidPlaybackError::Backend {
+                detail: "play_path failed".to_owned(),
+            })
+        } else {
+            Ok(())
+        }
     }
 
     fn play_uri(&self, uri: String) -> Result<(), AndroidPlaybackError> {
@@ -132,8 +150,17 @@ impl AndroidPlaybackPort for RecordingPort {
         Ok(())
     }
 
-    fn set_next(&self, uri: Option<String>) -> Result<(), AndroidPlaybackError> {
-        self.record(PortCall::SetNext(uri));
+    fn set_next(&self, uri: Option<String>, gain_db: f64) -> Result<(), AndroidPlaybackError> {
+        self.record(PortCall::SetNext(uri, gain_db));
+        Ok(())
+    }
+
+    fn set_gains(
+        &self,
+        current_gain_db: f64,
+        next_gain_db: Option<f64>,
+    ) -> Result<(), AndroidPlaybackError> {
+        self.record(PortCall::SetGains(current_gain_db, next_gain_db));
         Ok(())
     }
 

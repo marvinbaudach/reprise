@@ -15,6 +15,8 @@ pub struct TrackEditSeed {
     pub bitrate_kbps: Option<u32>,
 }
 
+/// The tags of a whole-file track to edit. A track of a CUE sheet has no seed:
+/// its tags belong to the sheet, which Reprise never writes, so it is read-only.
 pub fn track_edit_seed_by_id(db: &Db, id: i64) -> Result<Option<TrackEditSeed>, rusqlite::Error> {
     let conn = db.conn();
     track_edit_seed_by_id_in(conn, id)
@@ -27,7 +29,7 @@ fn track_edit_seed_by_id_in(
     conn.query_row(
         "SELECT id,path,title,artist,album,album_artist,year,track_no,genre,rating,bitrate_kbps
          FROM tracks
-         WHERE id = ?1",
+         WHERE id = ?1 AND segment_index = 0",
         [id],
         track_edit_seed_from_row,
     )
@@ -49,7 +51,7 @@ fn live_track_edit_seed_by_path_in(
     conn.query_row(
         "SELECT id,path,title,artist,album,album_artist,year,track_no,genre,rating,bitrate_kbps
          FROM tracks
-         WHERE path = ?1 AND removed_at IS NULL",
+         WHERE path = ?1 AND segment_index = 0 AND removed_at IS NULL",
         [path],
         track_edit_seed_from_row,
     )

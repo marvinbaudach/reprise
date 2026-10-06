@@ -4,7 +4,6 @@ import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
-import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
@@ -18,8 +17,6 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.requiredWidth
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -27,19 +24,18 @@ import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.key
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
-import androidx.compose.ui.FrameRateCategory
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.blur
-import androidx.compose.ui.draw.clip
 import androidx.compose.ui.geometry.CornerRadius
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Rect
 import androidx.compose.ui.geometry.RoundRect
-import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.ColorFilter
 import androidx.compose.ui.graphics.ColorMatrix
@@ -51,8 +47,6 @@ import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.preferredFrameRate
-import androidx.compose.ui.semantics.selected
-import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
@@ -68,18 +62,17 @@ import io.github.marvinbaudach.reprise.ui.theme.AmbientTrueBlack
 import io.github.marvinbaudach.reprise.ui.theme.NowPlayingOnBackdrop
 import io.github.marvinbaudach.reprise.ui.theme.toComposeColor
 import uniffi.reprise_android_ffi.AndroidArtworkSize
-import uniffi.reprise_android_ffi.AndroidRepeatMode
 import kotlin.math.roundToInt
 import kotlin.math.abs
 import kotlin.math.max
 import kotlin.math.min
 
-private const val COVER_SIZE_DP = 272
+// Shared with NowPlayingFogLayer.kt, which centres the one stationary fog
+// canvas on the same cover geometry the panels use.
+internal const val COVER_SIZE_DP = 272
 private const val COVER_RADIUS_DP = 18f
-private const val PLAYED_CENTRE_FRACTION = 0.34f
+internal const val PLAYED_CENTRE_FRACTION = 0.34f
 private const val TITLE_TO_ARTIST_GAP_DP = 6
-private const val TITLE_PANEL_WIDTH_RATIO = 1.282f
-private const val GLOW_TRANSLATION_FACTOR = 0.23f
 private const val MAXIMUM_COLOR_CHANNEL = 255
 
 private val SATURATION_FILTERS by lazy {
@@ -95,171 +88,6 @@ private fun cachedSaturationFilter(saturation: Float): ColorFilter? {
     return SATURATION_FILTERS[channel]
 }
 
-internal data class NowPlayingPanelTransform(
-    val translationX: Float,
-    val scale: Float,
-    val rotationDegrees: Float,
-    val opacity: Float,
-    val blurPx: Float,
-    val saturation: Float,
-) {
-    val rotationForLayer: Float?
-        get() = rotationDegrees.takeUnless { it.toRawBits() == 0f.toRawBits() }
-}
-
-internal fun nowPlayingPanelTransform(
-    panelIndex: Int,
-    positionPx: Float,
-    widthPx: Float,
-): NowPlayingPanelTransform {
-    if (widthPx <= 0f) return NowPlayingPanelTransform(0f, 1f, 0f, 1f, 0f, 1f)
-    if (positionPx == panelIndex * widthPx) {
-        return NowPlayingPanelTransform(0f, 1f, 0f, 1f, 0f, 1f)
-    }
-    val fractionalIndex = positionPx / widthPx
-    val delta = panelIndex - fractionalIndex
-    val distance = min(1.6f, abs(delta))
-    val near = max(0f, 1f - min(1f, abs(delta)))
-    return NowPlayingPanelTransform(
-        translationX = panelIndex * widthPx - positionPx,
-        scale = 1f - distance * 0.13f,
-        rotationDegrees = delta.coerceIn(-1f, 1f) * -3.5f,
-        opacity = max(0f, 1f - distance * 0.75f),
-        blurPx = (1f - near) * 5f,
-        saturation = 0.4f + near * 0.6f,
-    )
-}
-
-// The title rides its own panel offset at the wider ratio and nothing else.
-// A half-panel-width term used to be subtracted here to re-centre a container
-// that is laid out `TITLE_PANEL_WIDTH_RATIO` wide, but that container already
-// centres its text on the screen, so the term only shifted every title
-// 0.141 * width to the left -- 152 px on a 1080 px screen, enough to clip the
-// first glyphs of a long title off the display. It also broke the symmetry the
-// panels need: the neighbour on the left has to sit as far out as the one on
-// the right, which only holds when this is odd in `positionPx`.
-internal fun nowPlayingTitleTranslation(positionPx: Float): Float =
-    -positionPx * TITLE_PANEL_WIDTH_RATIO
-
-internal data class NowPlayingGlowTransform(
-    val translationX: Float,
-    val opacity: Float,
-)
-
-internal fun nowPlayingGlowTransform(
-    panelIndex: Int,
-    positionPx: Float,
-    widthPx: Float,
-): NowPlayingGlowTransform {
-    if (widthPx <= 0f) return NowPlayingGlowTransform(0f, 1f)
-    if (positionPx == panelIndex * widthPx) return NowPlayingGlowTransform(0f, 1f)
-    val delta = panelIndex - positionPx / widthPx
-    return NowPlayingGlowTransform(
-        translationX = delta * widthPx * GLOW_TRANSLATION_FACTOR,
-        opacity = max(0f, 1f - abs(delta) * 1.1f),
-    )
-}
-
-internal data class NowPlayingProgressTransform(
-    val translationY: Float,
-    val opacity: Float,
-    val scaleX: Float,
-)
-
-internal fun nowPlayingProgressTransform(
-    currentIndex: Int,
-    positionPx: Float,
-    widthPx: Float,
-): NowPlayingProgressTransform {
-    val offset = if (widthPx > 0f) {
-        min(1f, abs(positionPx / widthPx - currentIndex))
-    } else {
-        0f
-    }
-    return NowPlayingProgressTransform(
-        translationY = -offset * 70f,
-        opacity = 1f - offset * 0.9f,
-        scaleX = 1f - offset * 0.06f,
-    )
-}
-
-internal data class NowPlayingVisualBlend(
-    val coverOpacity: Float,
-    val barsOpacity: Float,
-)
-
-/**
- * Decides between a panel's cover and its bars from data availability alone.
- *
- * This used to be `near`, the panel's distance from the pager's centre —
- * which meant a neighbour with its spectrogram already loaded still showed
- * its cover, and the panel that had just become current could lose its bars
- * again mid-swipe, before it settled back to `near == 1`. Distance is still
- * used elsewhere (scale, blur, saturation): it earns a panel's depth, not
- * whether it is allowed to show what it already has.
- *
- * [dataAvailability] carries the animation, not this function: it is 0 or 1
- * at rest, and only spends time strictly between them while a caller fades
- * one into the other. `visualizerOpacity == 0` still forces the cover — a
- * listener who chose cover mode is not offering an opinion on data
- * availability.
- */
-internal fun nowPlayingVisualBlend(
-    visualizerOpacity: Float,
-    dataAvailability: Float,
-): NowPlayingVisualBlend {
-    val availability = dataAvailability.coerceIn(0f, 1f)
-    val bars = visualizerOpacity.coerceIn(0f, 1f) * availability
-    return NowPlayingVisualBlend(coverOpacity = 1f - bars, barsOpacity = bars)
-}
-
-/**
- * Whether a panel has a real scene to draw as bars right now.
- *
- * A stored spectrogram always counts. The live panel additionally counts once
- * its own engine has actually captured a real, non-empty frame — never on the
- * mere fact of being live: a track the desktop never analysed starts with
- * nothing to scene, and this stays false until live audio produces that first
- * frame. Getting this wrong opened the bars slot the instant a panel became
- * live, before its engine had anything to show, which painted an empty (flat
- * or black) scene over the cover during the crossfade.
- */
-internal fun panelHasVisualData(
-    storedFrameCount: Int,
-    isLivePanel: Boolean,
-    hasCapturedLiveScene: Boolean,
-): Boolean = storedFrameCount > 0 || (isLivePanel && hasCapturedLiveScene)
-
-/**
- * Whether the live panel still has to poll for its first real scene.
- *
- * `sceneBytes()` is the only place [FrozenSceneBytes] learns that real data
- * has landed, so the live panel must keep evaluating it even while
- * [panelHasVisualData] is still false — otherwise it could never leave that
- * state. Scoped to the live panel, and only while bars were actually asked
- * for, so a neighbour or a panel viewed in pure cover mode never pays for a
- * scene it will not draw.
- */
-internal fun panelAwaitsFirstLiveScene(
-    visualizerOpacity: Float,
-    isLivePanel: Boolean,
-    hasCapturedLiveScene: Boolean,
-): Boolean = visualizerOpacity > 0f && isLivePanel && !hasCapturedLiveScene
-
-internal fun shouldRequestHighVisualizerFrameRate(
-    visualizerOpacity: Float,
-    playing: Boolean,
-): Boolean = visualizerOpacity.isFinite() && visualizerOpacity > 0f && playing
-
-internal fun requestedVisualizerFrameRateCategory(
-    visualizerOpacity: Float,
-    playing: Boolean,
-): FrameRateCategory? = if (shouldRequestHighVisualizerFrameRate(visualizerOpacity, playing)) {
-    FrameRateCategory.High
-} else {
-    null
-}
-
 @Composable
 internal fun NowPlayingScene(
     track: LibraryTrack,
@@ -269,8 +97,16 @@ internal fun NowPlayingScene(
     currentIndex: Int = 0,
     panels: List<PlayPanel> = listOf(PlayPanel(currentIndex, track)),
     visualizerOpacity: Float = 0f,
+    // No default of visualizerOpacity here: that would let a forgetful caller
+    // land on the bars' fast 220 ms light with no compiler complaint. See
+    // NowPlayingSheet, which drives this from its own slow FOG_CROSSFADE_MS clock.
+    visualizerLight: Float,
     cueRevision: Int = 0,
+    // Hoisted with a default rather than remembered locally so a test can hand
+    // in its own handle and read what the live panel published to it.
+    liveScene: LiveSceneHandle = remember { LiveSceneHandle() },
     onCoverBounds: (Rect) -> Unit = {},
+    onSeekBounds: (Rect) -> Unit = {},
     onPrevious: () -> Unit = {},
     onNext: () -> Unit = {},
 ) {
@@ -307,6 +143,10 @@ internal fun NowPlayingScene(
         }
         SideEffect { onCoverBounds(reportedCoverBounds) }
         Box(Modifier.fillMaxSize().testTag("now-playing-scene")) {
+            // Drawn first so every panel rides on top of it: the fog no longer
+            // belongs to any one panel's canvas (see NowPlayingPanelLayer below),
+            // it is one stationary layer the live panel publishes into.
+            NowPlayingFogLayer(liveScene, motion, visualizerLight)
             panels.forEach { panel ->
                 key(panel.track.id, panel.index) {
                     NowPlayingPanelLayer(
@@ -318,6 +158,7 @@ internal fun NowPlayingScene(
                         motion = motion,
                         visualizerOpacity = visualizerOpacity,
                         coverTop = coverTop,
+                        liveScene = liveScene,
                     )
                     SceneTitle(
                         track = panel.track,
@@ -364,14 +205,11 @@ internal fun NowPlayingScene(
             surfaceState = surfaceState,
             cueRevision = cueRevision,
             animationsEnabled = motion.sceneAnimationsEnabled,
+            transform = progressTransform,
+            onSeekBounds = onSeekBounds,
             modifier = Modifier
                 .align(Alignment.TopCenter)
-                .offset(y = maxHeight * 0.69f)
-                .graphicsLayer {
-                    translationY = progressTransform.translationY
-                    alpha = progressTransform.opacity
-                    scaleX = progressTransform.scaleX
-                },
+                .offset(y = maxHeight * 0.69f),
         )
 
         SceneTransport(
@@ -397,34 +235,82 @@ private fun NowPlayingPanelLayer(
     motion: AmbientMotionController,
     visualizerOpacity: Float,
     coverTop: androidx.compose.ui.unit.Dp,
+    liveScene: LiveSceneHandle,
 ) {
     val artwork = rememberTrackArtworkVisual(
         panel.track.uri,
         AndroidArtworkSize.NOW_PLAYING,
         panel.track.title,
         panel.track.artist,
+        allowFetch = true,
     )
     val fog = rememberCoverFogBitmap(artwork?.image, AmbientTrueBlack)
-    val frames = rememberSpectrogram(panel.track.id)
-    val state = remember(frames) { SceneState(frames) }
+    val isLivePanel = panel.index == currentIndex
+    val frames = rememberSpectrogram(panel.track.id, pollProgress = isLivePanel)
+    // One state per track: the frames grow while the phone decodes the track, and the
+    // scene must keep its envelopes, shimmer and fog while they do.
+    val state = remember(panel.track.id, frames.bandCount, frames.frameRateHz) {
+        SceneState(frames)
+    }
+    SideEffect { state.adoptFrames(frames) }
     val accent = artwork?.ambientColors?.first?.toComposeColor()
         ?: MaterialTheme.colorScheme.primary
     val visualEngine = rememberVisualSceneEngine(
         panel.track.id,
         playback,
         accent,
-        live = panel.index == currentIndex,
+        live = isLivePanel,
+        liveScene = liveScene,
     )
+    // Read via rememberUpdatedState, not the plain val: this panel can keep the
+    // live slot across many recompositions in which fog/state are replaced
+    // (a fresh blur landing, a track change swapping the frames), while the
+    // DisposableEffect below only remounts when visualEngine's identity
+    // changes. Its onDispose must still see whatever this panel last
+    // published, or the === guard below would compare against a stale value
+    // and never clear the handle.
+    val latestFog by rememberUpdatedState(fog)
+    val latestState by rememberUpdatedState(state)
+    if (isLivePanel) {
+        DisposableEffect(liveScene, visualEngine) {
+            liveScene.engine = visualEngine
+            onDispose {
+                if (liveScene.engine === visualEngine) liveScene.engine = null
+                if (liveScene.fog === latestFog) liveScene.fog = null
+                if (liveScene.state === latestState) liveScene.state = null
+            }
+        }
+    }
     val frameSink = remember(visualEngine) { visualEngine?.let(::visualSceneFrameSink) }
-    val drawRevision = DriveScene(frames, state, playback, motion, frameSink)
-    val power = motion.sceneRenderPower()
+    val drawRevision = DriveScene(state, playback, motion, frameSink)
+    if (isLivePanel) {
+        // The revision write is what invalidates NowPlayingFogLayer's canvas:
+        // it is the one field here that changes every scene frame, and the
+        // layer's draw lambda reads it purely so Compose reruns that draw,
+        // the same way each panel's own canvases already observe it.
+        SideEffect {
+            liveScene.fog = fog
+            liveScene.state = state
+            liveScene.drawRevision = drawRevision
+        }
+    }
     val transform = nowPlayingPanelTransform(panel.index, positionPx, widthPx)
-    val glow = nowPlayingGlowTransform(panel.index, positionPx, widthPx)
     val distance = if (widthPx > 0f) abs(panel.index - positionPx / widthPx) else 0f
     val near = max(0f, 1f - min(1f, distance))
     val frozenScene = rememberFrozenSceneBytes(panel.track.id)
-    val isLivePanel = panel.index == currentIndex
-    val hasVisualData = panelHasVisualData(frames.frameCount, isLivePanel, frozenScene.hasCapturedScene)
+    val canMirrorLiveScene = panelCanMirrorLiveScene(
+        isLivePanel,
+        frames.frameCount,
+        liveSceneAvailable = liveScene.engine != null,
+    )
+    val mirroredEngine = liveScene.engine.takeIf {
+        panelMirrorsLiveScene(isLivePanel, frames.frameCount, near, liveSceneAvailable = it != null)
+    }
+    val hasVisualData = panelHasVisualData(
+        frames.frameCount,
+        frozenScene.hasCapturedScene,
+        canMirrorLiveScene = canMirrorLiveScene,
+    )
     val dataAvailability by animateFloatAsState(
         targetValue = if (hasVisualData) 1f else 0f,
         // Shares its timing with the visualizerOpacity toggle for a matching feel, not because it
@@ -440,30 +326,8 @@ private fun NowPlayingPanelLayer(
     val density = LocalDensity.current
     val saturationFilter = cachedSaturationFilter(transform.saturation)
 
-    Canvas(
-        modifier = Modifier
-            .fillMaxSize()
-            .graphicsLayer { translationX = glow.translationX },
-    ) {
-        observeSceneFrame(drawRevision)
-        val center = Offset(size.width / 2f, size.height * PLAYED_CENTRE_FRACTION)
-        drawPlayedNowPlayingFog(
-            fog = fog,
-            center = center,
-            state = state,
-            visualizerOpacity = barsOpacity,
-            opacity = glow.opacity,
-            rotationsEnabled = power.fogRotates,
-        )
-        drawPlayedNowPlayingShimmer(
-            fog = fog,
-            center = center,
-            state = state,
-            opacity = glow.opacity,
-            rotationsEnabled = power.fogRotates,
-        )
-    }
-
+    // The panel now draws only its own cover box and bars; the fog is
+    // NowPlayingFogLayer's, drawn once behind every panel (see NowPlayingScene).
     Box(
         modifier = Modifier
             .offset(y = coverTop)
@@ -499,10 +363,13 @@ private fun NowPlayingPanelLayer(
         }
         val awaitingFirstLiveScene = panelAwaitsFirstLiveScene(
             visualizerOpacity,
-            isLivePanel,
+            drawsLiveScene = isLivePanel || mirroredEngine != null,
             frozenScene.hasCapturedScene,
         )
-        if (visualEngine != null && (barsOpacity > 0f || awaitingFirstLiveScene)) {
+        // A resting neighbour sits off the screen: it draws no bars at all, so
+        // the frozen picture it keeps for the next swipe costs nothing per frame.
+        val onScreen = isLivePanel || near > 0f
+        if (visualEngine != null && onScreen && (barsOpacity > 0f || awaitingFirstLiveScene)) {
             Canvas(
                 Modifier
                     .size(COVER_SIZE_DP.dp)
@@ -510,10 +377,19 @@ private fun NowPlayingPanelLayer(
             ) {
                 observeSceneFrame(drawRevision)
                 val center = Offset(size.width / 2f, size.height / 2f)
+                val scene = when {
+                    mirroredEngine != null -> mirroredEngine.sceneBytesTinted(
+                        size.width,
+                        size.height,
+                        accent.red,
+                        accent.green,
+                        accent.blue,
+                    )
+                    isLivePanel || frames.frameCount > 0 -> visualEngine.sceneBytes(size.width, size.height)
+                    else -> ByteArray(0)
+                }
                 drawPlayedVisualizer(
-                    buffer = frozenScene.latestOrFrozen(
-                        visualEngine.sceneBytes(size.width, size.height),
-                    ),
+                    buffer = frozenScene.latestOrFrozen(scene),
                     center = center,
                     side = size.width,
                     radius = COVER_RADIUS_DP.dp.toPx(),
@@ -531,14 +407,41 @@ private fun rememberVisualSceneEngine(
     playback: PlaybackUiState,
     accent: Color,
     live: Boolean,
+    liveScene: LiveSceneHandle,
 ): VisualSceneEngine? {
     val factory = visualSceneFactoryForPanel(live, LocalVisualSceneEngineFactory.current)
+    // Read before the engine swap below: while the panel that is losing the
+    // live slot is still composing this same pass, `liveScene.engine` is
+    // still its outgoing engine — its DisposableEffect that would null this
+    // out has not run yet (see `shouldAdoptLiveShape`).
+    val previousLiveEngine = liveScene.engine
     val engine: VisualSceneEngine? = remember(factory) { factory.create() }
+    // Read alongside engine creation, not inside the adopt effect below: by
+    // the time effects run, the outgoing panel's own `DisposableEffect(engine)
+    // { onDispose { engine?.close() } }` may already have closed
+    // `previousLiveEngine`, and reading a closed native engine throws.
+    // This native read deliberately happens during composition, before that outgoing lease closes.
+    // It is idempotent, for the same reason `factory.create()` belongs in this `remember` block.
+    val adoptedBands = remember(factory) {
+        val created = engine
+        if (created != null && shouldAdoptLiveShape(live, previousLiveEngine, created)) {
+            previousLiveEngine!!.currentBands()
+        } else {
+            null
+        }
+    }
     DisposableEffect(engine) {
         onDispose { engine?.close() }
     }
     DisposableEffect(engine, trackId) {
         engine?.noteTrackChanged()
+        onDispose { }
+    }
+    // Declared after the `noteTrackChanged` effect above: that call clears
+    // `has_ingested` on the Rust side, which would otherwise wipe the shape
+    // this adopts right back out.
+    DisposableEffect(engine) {
+        adoptedBands?.let { engine?.adoptShape(it) }
         onDispose { }
     }
     SideEffect {
@@ -559,6 +462,26 @@ internal fun updateVisualSceneEngine(
 ) {
     engine.setPlaying(playback.visualizerActive)
     engine.setAccent(accent.red, accent.green, accent.blue)
+}
+
+/**
+ * What the live panel publishes for the rest of the scene to read.
+ *
+ * [engine] is read by a neighbour the swipe has carried onto the screen (see
+ * [panelMirrorsLiveScene]) — only ever the current engine or null, and a
+ * neighbour never keeps it past the frame it drew. [fog] and [state] are read
+ * by [NowPlayingFogLayer], the one stationary fog canvas behind every panel:
+ * since the fog no longer belongs to any one panel's own canvas, it has to
+ * learn what the live panel is currently showing from here instead.
+ * [drawRevision] is the live panel's own per-frame counter ([DriveScene]'s
+ * return value), republished so the fog layer's canvas invalidates on exactly
+ * the same frames the live panel's own canvases do.
+ */
+internal class LiveSceneHandle {
+    var engine: VisualSceneEngine? by mutableStateOf(null)
+    var fog: CoverFogBitmap? by mutableStateOf(null)
+    var state: SceneState? by mutableStateOf(null)
+    var drawRevision: Int by mutableIntStateOf(0)
 }
 
 @Composable
@@ -608,49 +531,13 @@ internal fun visualSceneFrameSink(engine: VisualSceneEngine): SceneFrameSink =
         }
     }
 
-/** The played-view wiring kept shared with its rendered-pixel verification. */
-internal fun DrawScope.drawPlayedNowPlayingFog(
-    fog: CoverFogBitmap?,
-    center: Offset,
-    state: SceneState,
-    visualizerOpacity: Float,
-    opacity: Float,
-    rotationsEnabled: Boolean,
-) {
-    drawNowPlayingFog(
-        // Behind the spectrum there is no artwork to read a palette from, so
-        // the film borrows the ramp the bars themselves are drawn from and
-        // follows the cross-fade across to it.
-        palette = fog?.palette?.blendedTo(VisualizerRampPalette, visualizerOpacity),
-        center = center,
-        seconds = state.oilFilmSeconds,
-        level = state.oilFilmLevel,
-        opacity = opacity,
-        driftEnabled = rotationsEnabled,
-    )
-}
-
-/** The cover-disc wiring shared with its deterministic renderer tests. */
-internal fun DrawScope.drawPlayedNowPlayingShimmer(
-    fog: CoverFogBitmap?,
-    center: Offset,
-    state: SceneState,
-    opacity: Float,
-    rotationsEnabled: Boolean,
-) {
-    drawNowPlayingShimmer(
-        fog = fog,
-        center = center,
-        coverDiameterDp = COVER_SIZE_DP.toFloat(),
-        elapsedSeconds = state.shimmerElapsedSeconds,
-        swell = state.fogLevel,
-        opacity = opacity,
-        rotationsEnabled = rotationsEnabled,
-    )
-}
-
+/**
+ * The track's spectrogram: the final one once stored, otherwise the decoded
+ * prefix while [pollProgress] lets this panel ask for it (the live panel only),
+ * otherwise the last decoded prefix this panel saw.
+ */
 @Composable
-private fun rememberSpectrogram(trackId: Long): SpectrogramFrames {
+private fun rememberSpectrogram(trackId: Long, pollProgress: Boolean): SpectrogramFrames {
     val analysis = LocalTrackAnalysis.current
     val revision = analysis.revision
     var frames by remember(trackId) { mutableStateOf<SpectrogramFrames?>(null) }
@@ -661,7 +548,18 @@ private fun rememberSpectrogram(trackId: Long): SpectrogramFrames {
         }
         onDispose { active = false }
     }
-    return frames ?: remember(trackId) { SpectrogramFrames(24, 20, ByteArray(0)) }
+    // While the phone still decodes the track, the decoded prefix stands in for the final
+    // spectrogram; the scene adopts it without a restart, and again when the final one lands.
+    val partial = rememberAnalysisProgress(
+        analysis, trackId, count = 1, revision, active = frames == null && pollProgress,
+    )
+    // Between the decode's end and the final spectrogram's delivery there is no partial;
+    // the scene keeps the frames it already stands on rather than fall back to none.
+    val lastDecoded = remember(trackId) { arrayOfNulls<SpectrogramFrames>(1) }
+    val decoded = partial?.frames?.takeIf { it.frameCount > 0 }
+    if (decoded != null) lastDecoded[0] = decoded
+    val none = remember(trackId) { SpectrogramFrames.empty() }
+    return frames ?: decoded ?: lastDecoded[0] ?: none
 }
 
 @Composable
@@ -743,127 +641,6 @@ private fun SceneTitle(
     }
 }
 
-@Composable
-private fun SceneProgress(
-    track: LibraryTrack,
-    playback: PlaybackUiState,
-    surfaceState: MobileSurfaceViewModel,
-    cueRevision: Int,
-    animationsEnabled: Boolean,
-    modifier: Modifier,
-) {
-    Box(modifier.padding(horizontal = 24.dp)) {
-        SpectralSeekSlider(
-            track.id,
-            playback,
-            surfaceState,
-            cueRevision = cueRevision,
-            animationsEnabled = animationsEnabled,
-        )
-    }
-}
-
-@Composable
-private fun SceneTransport(
-    playback: PlaybackUiState,
-    cueRevision: Int,
-    animationsEnabled: Boolean,
-    onPrevious: () -> Unit,
-    onNext: () -> Unit,
-    modifier: Modifier,
-) {
-    val controls = LocalPlaybackControls.current
-    Row(
-        modifier = modifier
-            .fillMaxWidth()
-            .testTag("now-playing-transport"),
-        horizontalArrangement = Arrangement.SpaceBetween,
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
-        FlatSceneButton(
-            symbol = "shuffle",
-            description = if (playback.shuffled) "Turn shuffle off" else "Turn shuffle on",
-            active = playback.shuffled,
-            tag = "now-playing-shuffle",
-            onClick = { controls.setShuffle(!playback.shuffled) },
-        )
-        FlatSceneButton("skip_previous", "Previous track", onClick = onPrevious)
-        ScenePauseButton(playback, cueRevision, animationsEnabled, controls::togglePause)
-        FlatSceneButton("skip_next", "Next track", onClick = onNext)
-        FlatSceneButton(
-            symbol = if (playback.repeat == AndroidRepeatMode.ONE) "repeat_one" else "repeat",
-            description = "Repeat ${playback.repeat.name.lowercase()}",
-            active = playback.repeat != AndroidRepeatMode.OFF,
-            tag = "now-playing-repeat",
-            onClick = { controls.setRepeat(cycleRepeatMode(playback.repeat)) },
-        )
-    }
-}
-
-@Composable
-private fun FlatSceneButton(
-    symbol: String,
-    description: String,
-    active: Boolean = false,
-    tag: String? = null,
-    onClick: () -> Unit,
-) {
-    IconButton(
-        onClick = onClick,
-        modifier = Modifier
-            .size(48.dp)
-            .then(if (tag == null) Modifier else Modifier.testTag(tag))
-            .semantics { selected = active }
-            .then(
-                if (active) {
-                    Modifier
-                        .clip(MaterialTheme.shapes.large)
-                        .background(MaterialTheme.colorScheme.secondaryContainer)
-                } else {
-                    Modifier
-                },
-            ),
-    ) {
-        MaterialSymbol(
-            symbol,
-            description,
-            tint = if (active) {
-                MaterialTheme.colorScheme.onSecondaryContainer
-            } else {
-                NowPlayingOnBackdrop
-            },
-        )
-    }
-}
-
-@Composable
-private fun ScenePauseButton(
-    playback: PlaybackUiState,
-    cueRevision: Int,
-    animationsEnabled: Boolean,
-    onClick: () -> Unit,
-) {
-    val shape = RoundedCornerShape(28.dp)
-    Box(Modifier.size(80.dp), contentAlignment = Alignment.Center) {
-        PlayButtonPulse(cueRevision, animationsEnabled)
-        IconButton(
-            onClick = onClick,
-            modifier = Modifier
-                .size(80.dp)
-                .testTag("now-playing-play")
-                .clip(shape)
-                .background(MaterialTheme.colorScheme.primary),
-        ) {
-            MaterialSymbol(
-                name = playback.playPauseSymbol,
-                contentDescription = playback.playPauseLabel,
-                tint = NowPlayingOnBackdrop,
-                sizeSp = 40,
-            )
-        }
-    }
-}
-
 internal fun DrawScope.drawPlayedCover(
     artwork: ImageBitmap?,
     center: Offset,
@@ -906,4 +683,4 @@ internal fun playedCoverRect(center: Offset, side: Float): Rect = Rect(
 )
 
 /** Keeps the frame counter captured by the scene's draw lambda; the value is not drawn. */
-private fun observeSceneFrame(@Suppress("UNUSED_PARAMETER") revision: Int) = Unit
+internal fun observeSceneFrame(@Suppress("UNUSED_PARAMETER") revision: Int) = Unit

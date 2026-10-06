@@ -18,7 +18,7 @@ use super::panel_state::*;
 use super::song_visualizer::SongVisualizer;
 use super::strings;
 use super::up_next_panel::UpNextPanel;
-use crate::ui::artist_news_worker::ArtistNewsRuntime;
+use crate::ui::artist_news::artist_news_worker::ArtistNewsRuntime;
 use crate::ui::lyrics_view::LyricsView;
 use crate::ui::playback::external_media::ExternalPlaybackSnapshot;
 use crate::ui::player_controller::NowPlaying;

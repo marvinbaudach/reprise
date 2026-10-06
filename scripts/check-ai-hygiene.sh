@@ -114,26 +114,28 @@ n=$({ production_rust_lines "$src" | cut -d: -f3- | grep -Pc "$emoji" || true; }
 $(production_rust_lines "$src" | { grep -P ':[0-9]+:\s*//.*(?:(?![★☆✓✕⏏🗑✦])[\x{1F300}-\x{1FAFF}\x{2600}-\x{27BF}])' || true; } \
   | sed -n '1,10p')"
 
-# GP-20 — dead-code allowances without a stated reason. A reason is a comment
-# on the same line or on the line directly above.
-allows=$(production_rust_lines "$src" | grep -F '#[allow(dead_code)]' || true)
-unexplained=0
-while IFS= read -r hit; do
-  [[ -n $hit ]] || continue
-  file=${hit%%:*}
-  rest=${hit#*:}
-  line=${rest%%:*}
-  same_line=${hit#*:*:}
-  above=""
-  if (( line > 1 )); then
-    above=$(sed -n "$((line - 1))p" "$file")
-  fi
-  if [[ $same_line != *"//"* && $above != *"//"* ]]; then
-    unexplained=$((unexplained + 1))
-    printf '  %s:%s\n' "$file" "$line" >&2
-  fi
-done <<< "$allows"
-(( unexplained == 0 )) || report_violation GP-20 \
-  "$unexplained #[allow(dead_code)] without a stated reason (listed above)"
+# GP-20 — dead-code suppressions without a stated reason. A reason is the
+# `reason = "..."` argument of the attribute. rustfmt lays that attribute out
+# over several lines, so the search is multi-line: it finds every `allow(` or
+# `expect(` whose argument list names `dead_code` (this covers the inner `#![...]`
+# form and `cfg_attr(..., allow(...))` wrappers too) and rejects one in which
+# no `reason =` appears before the attribute's closing bracket. Clippy's
+# `allow_attributes_without_reason` (workspace lint, `-D warnings` in the gates)
+# enforces the same thing at compile time for every lint; this check keeps the
+# rule visible in the rulebook gate and fails without a build. The per-file
+# count of the suppressions that exist at all is pinned in
+# check-frontend-thinness.sh.
+unexplained=$({ rg -U -P --no-heading --line-number --only-matching \
+  '(?:allow|expect)\((?![^\]]*\breason\s*=)[^\]]*?\bdead_code\b' \
+  "$src" --glob '*.rs' || true; } \
+  | { grep -E '^[^:]+:[0-9]+:(allow|expect)\(' || true; } | sed -E 's/^([^:]+:[0-9]+):.*/\1/')
+if [[ -n $unexplained ]]; then
+  while IFS= read -r hit; do
+    printf '  %s\n' "$hit" >&2
+  done <<< "$unexplained"
+  count=$(printf '%s\n' "$unexplained" | wc -l)
+  report_violation GP-20 \
+    "$count dead-code suppression(s) without a reason = \"...\" (listed above)"
+fi
 
 rulebook_exit

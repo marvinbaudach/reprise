@@ -1,6 +1,21 @@
+mod backfill;
+mod compute;
+mod decodes;
+mod progress;
+pub(crate) use backfill::TrackAnalysisBackfill;
+#[cfg(test)]
+pub(crate) use backfill::{TrackAnalysisProgress, TrackAnalysisProgressListener};
+pub(crate) use compute::{
+    AnalysisContext, AnalysisInFlight, AndroidAnalysisOutcome, CurrentDecodeSlot, TrackPcmDecoder,
+};
+#[cfg(test)]
+pub(crate) use compute::{AnalysisDecodeError, AnalysisPcmSink};
+
 use reprise_core::db::{get_track_spectrogram, get_waveform_peaks};
 use reprise_core::queries::query_present_track_by_id;
-use reprise_core::spectrogram::{SPECTROGRAM_BAND_COUNT, SPECTROGRAM_FRAME_RATE_HZ};
+use reprise_core::spectrogram::{
+    TrackSpectrogram, SPECTROGRAM_BAND_COUNT, SPECTROGRAM_FRAME_RATE_HZ,
+};
 use reprise_view::spectral_colour::{
     shape_centroid, smooth_centroid_over_seconds, spectral_colour, CENTROID_WINDOW_S,
 };
@@ -45,11 +60,7 @@ impl MusicLibrary {
             .map_err(query_error)?
             .ok_or(LibraryError::TrackNotFound { track_id })?;
         let spectrogram = get_track_spectrogram(&reader, track_id).map_err(database_error)?;
-        Ok(spectrogram.map(|spectrogram| AndroidTrackSpectrogram {
-            band_count: SPECTROGRAM_BAND_COUNT as u32,
-            frame_rate_hz: SPECTROGRAM_FRAME_RATE_HZ,
-            cells: spectrogram.cells().to_vec(),
-        }))
+        Ok(spectrogram.map(android_spectrogram))
     }
 
     /// Returns finished seek-bar cells for one track and requested bar count.
@@ -72,43 +83,68 @@ impl MusicLibrary {
         let Some((peaks, spectrogram)) = peaks.zip(spectrogram) else {
             return Ok(None);
         };
-        let count = (bar_count as usize)
-            .min(MAX_TRACK_RENDER_BAR_COUNT)
-            .min(usize::MAX / peaks.len().max(1));
-        let display_bars = shape_display_peaks(&peaks, count);
-        if display_bars.is_empty() {
-            return Ok(None);
-        }
-
-        let raw_centroid = spectrogram.centroid_curve(peaks.len());
-        let duration_s = track.duration_ms as f64 / 1_000.0;
-        let smoothed = smooth_centroid_over_seconds(&raw_centroid, duration_s, CENTROID_WINDOW_S);
-        let mut positions = shape_centroid(&smoothed, count);
-        if positions.is_empty() {
-            positions.resize(display_bars.len(), 0.5);
-        }
-
-        Ok(Some(
-            display_bars
-                .into_iter()
-                .zip(positions)
-                .map(|(bar, position)| {
-                    let (silence, level) = match bar {
-                        DisplayBar::Silence => (true, 0.0),
-                        DisplayBar::Level(level) => (false, level),
-                    };
-                    let (red, green, blue) = spectral_colour(f64::from(position));
-                    AndroidTrackRenderBar {
-                        silence,
-                        level,
-                        red,
-                        green,
-                        blue,
-                    }
-                })
-                .collect(),
-        ))
+        let bars = shaped_render_bars(
+            &peaks,
+            &spectrogram,
+            bar_count as usize,
+            track.duration_ms as f64 / 1_000.0,
+        );
+        Ok((!bars.is_empty()).then_some(bars))
     }
+}
+
+/// The spectrogram in the shape Kotlin receives it.
+fn android_spectrogram(spectrogram: TrackSpectrogram) -> AndroidTrackSpectrogram {
+    AndroidTrackSpectrogram {
+        band_count: SPECTROGRAM_BAND_COUNT as u32,
+        frame_rate_hz: SPECTROGRAM_FRAME_RATE_HZ,
+        cells: spectrogram.into_cells(),
+    }
+}
+
+/// Shapes `peaks` into at most `bar_count` seek-bar cells, coloured from
+/// `spectrogram`'s centroid averaged over `duration_s` seconds. Shared by the
+/// stored read and the in-memory progress read, so a partial picture is drawn
+/// exactly like the final one. Empty when there is nothing to draw.
+fn shaped_render_bars(
+    peaks: &[u8],
+    spectrogram: &TrackSpectrogram,
+    bar_count: usize,
+    duration_s: f64,
+) -> Vec<AndroidTrackRenderBar> {
+    let count = bar_count
+        .min(MAX_TRACK_RENDER_BAR_COUNT)
+        .min(usize::MAX / peaks.len().max(1));
+    let display_bars = shape_display_peaks(peaks, count);
+    if display_bars.is_empty() {
+        return Vec::new();
+    }
+
+    let raw_centroid = spectrogram.centroid_curve(peaks.len());
+    let smoothed = smooth_centroid_over_seconds(&raw_centroid, duration_s, CENTROID_WINDOW_S);
+    let mut positions = shape_centroid(&smoothed, count);
+    if positions.is_empty() {
+        positions.resize(display_bars.len(), 0.5);
+    }
+
+    display_bars
+        .into_iter()
+        .zip(positions)
+        .map(|(bar, position)| {
+            let (silence, level) = match bar {
+                DisplayBar::Silence => (true, 0.0),
+                DisplayBar::Level(level) => (false, level),
+            };
+            let (red, green, blue) = spectral_colour(f64::from(position));
+            AndroidTrackRenderBar {
+                silence,
+                level,
+                red,
+                green,
+                blue,
+            }
+        })
+        .collect()
 }
 
 fn database_error(error: impl std::fmt::Display) -> LibraryError {
@@ -184,6 +220,7 @@ mod tests {
             &TrackRenderData {
                 waveform_peaks: vec![0, u8::MAX],
                 spectrogram: TrackSpectrogram::from_cells(stored_spectrogram_cells()).unwrap(),
+                loudness: None,
             },
         )
         .unwrap();

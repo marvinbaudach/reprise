@@ -15,7 +15,10 @@ use crate::ui::playing_links::LinkSurface;
 
 use super::super::metadata_navigation::MetadataNavigator;
 
-#[allow(clippy::too_many_arguments)]
+#[expect(
+    clippy::too_many_arguments,
+    reason = "one handle per surface wired to the playing source; should take a parameter object"
+)]
 pub(super) fn install(
     app: &adw::Application,
     window: &adw::ApplicationWindow,

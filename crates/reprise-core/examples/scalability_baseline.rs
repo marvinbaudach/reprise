@@ -26,6 +26,11 @@ const MAX_ITERATIONS: usize = 100;
 const MAX_GENERATED_TRACKS: usize = 1_000_000;
 const WINDOW_ROWS: i64 = 200;
 const WRITE_BATCH_LIMIT: usize = 10_000;
+static LIBRARY_SOURCE: ViewSource = ViewSource::Library;
+
+fn library_view(filter: &str) -> queries::TrackViewQuery<'_> {
+    queries::TrackViewQuery::new(&LIBRARY_SOURCE).with_filter(filter)
+}
 
 #[derive(Debug, PartialEq, Eq)]
 struct Config {
@@ -344,7 +349,7 @@ fn run(config: &Config) -> Result<BaselineReport, Box<dyn Error>> {
 
     let startup = measure(config.iterations, || {
         let db = reprise_core::db::Db::open_migrated(Some(&config.db_path))?;
-        let count = queries::query_track_count(&db, &ViewSource::Library, "", &[])?;
+        let count = queries::query_track_count(&db, &library_view(""))?;
         let count = usize::try_from(count).unwrap_or(usize::MAX);
         if count != config.track_count {
             return Err(format!(
@@ -358,7 +363,7 @@ fn run(config: &Config) -> Result<BaselineReport, Box<dyn Error>> {
 
     let db = reprise_core::db::Db::open_migrated(Some(&config.db_path))?;
     let library_count = measure(config.iterations, || {
-        let count = queries::query_track_count(&db, &ViewSource::Library, "", &[])?;
+        let count = queries::query_track_count(&db, &library_view(""))?;
         Ok(usize::try_from(count).unwrap_or(usize::MAX))
     })?;
 
@@ -375,7 +380,7 @@ fn run(config: &Config) -> Result<BaselineReport, Box<dyn Error>> {
     let album_window_query_plan = explain_window(&config.db_path, "album")?;
 
     let filtered_count = measure(config.iterations, || {
-        let count = queries::query_track_count(&db, &ViewSource::Library, "needle", &[])?;
+        let count = queries::query_track_count(&db, &library_view("needle"))?;
         Ok(usize::try_from(count).unwrap_or(usize::MAX))
     })?;
     let library_stats = measure(config.iterations, || {
@@ -383,7 +388,14 @@ fn run(config: &Config) -> Result<BaselineReport, Box<dyn Error>> {
         Ok(usize::try_from(stats.track_count).unwrap_or(usize::MAX))
     })?;
     let playback_ids = measure(config.iterations, || {
-        let ids = queries::query_track_ids(&db, &ViewSource::Library, "title", "asc", "", &[])?;
+        let ids = queries::query_track_ids(
+            &db,
+            &library_view(""),
+            queries::TrackSort {
+                field: "title",
+                dir: "asc",
+            },
+        )?;
         Ok(ids.len())
     })?;
     drop(db);
@@ -476,13 +488,16 @@ fn measure_window(
     measure(iterations, || {
         let rows = queries::query_track_window(
             db,
-            &ViewSource::Library,
-            sort_field,
-            "asc",
-            "",
-            offset,
-            WINDOW_ROWS,
-            &[],
+            &library_view(""),
+            queries::TrackSort {
+                field: sort_field,
+                dir: "asc",
+            },
+            queries::RowWindow {
+                offset,
+                limit: WINDOW_ROWS,
+            },
+            queries::AiColumn::Project,
         )?;
         Ok(rows.len())
     })
@@ -707,7 +722,7 @@ mod tests {
         let db = reprise_core::db::Db::open_migrated(Some(&db_path)).unwrap();
         assert!(reprise_core::library::settings::get_onboarding_completed(&db).unwrap());
         assert_eq!(
-            queries::query_track_count(&db, &ViewSource::Library, "", &[]).unwrap(),
+            queries::query_track_count(&db, &library_view("")).unwrap(),
             2
         );
 

@@ -44,7 +44,10 @@ pub struct RemoteTrackMetadata {
 }
 
 impl RemoteTrackMetadata {
-    #[allow(clippy::too_many_arguments)]
+    #[expect(
+        clippy::too_many_arguments,
+        reason = "each argument is one independently normalized metadata field"
+    )]
     pub fn from_actual_tags(
         _database_or_filename_title: &str,
         title: &str,

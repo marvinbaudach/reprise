@@ -1,7 +1,7 @@
 //! Minimal Android library surface over `reprise-core`.
 
 use reprise_core::db::Db;
-use reprise_core::library::scanner::{scan_folder_with_source_and_progress, ScanOutcome};
+use reprise_core::library::scanner::{scan_folder_with_writer_and_progress, ScanOutcome};
 use reprise_core::library::settings;
 use reprise_core::queries;
 use source::{BridgedSource, SafSource};
@@ -24,6 +24,7 @@ mod listen_export_recorder;
 #[cfg(test)]
 mod log_capture;
 mod logging;
+mod media_browse;
 mod mobile_sync;
 mod online_sources;
 mod play_journal;
@@ -33,6 +34,8 @@ mod play_recorder_writer;
 pub mod playback;
 mod playback_session;
 mod playback_settings;
+mod queue_persister;
+mod queue_snapshot_file;
 #[cfg(test)]
 mod read_during_scan_tests;
 pub mod source;
@@ -44,6 +47,9 @@ mod track_analysis;
 mod visualizer;
 #[cfg(test)]
 mod visualizer_tests;
+#[cfg(test)]
+mod write_during_scan_tests;
+mod writer_backoff;
 pub use appearance::*;
 pub use browse::{
     AlbumRow, AlbumWindow, ArtistRow, ArtistWindow, TrackRow, TrackWindow, WindowRange,
@@ -55,6 +61,7 @@ pub use library_types::{
 };
 use library_types::{ConfiguredTree, PortraitFetch, DATABASE_FILE_NAME};
 pub use logging::init_logging;
+pub use media_browse::PlaylistRow;
 pub use playback_session::{
     AndroidPlaybackListener, AndroidPlaybackSession, AndroidPlaybackSnapshot, AndroidRepeatMode,
     AndroidTrashFailure, AndroidTrashReport, TrashAction,
@@ -92,6 +99,7 @@ impl MusicLibrary {
         let writer = Db::open_migrated(Some(&db_path)).map_err(|error| LibraryError::Database {
             detail: error.to_string(),
         })?;
+        online_sources::open_artwork_gate(&writer)?;
         // The migrating writer must establish the current schema before the
         // non-migrating reader asserts that the database is ready.
         let reader = Db::open_ready(&db_path).map_err(|error| LibraryError::Database {
@@ -105,6 +113,10 @@ impl MusicLibrary {
             database_path: db_path,
             portrait_fetch,
             portrait_backfill: reprise_core::artist_portrait::PortraitBackfill::new(),
+            pcm_decoder: Arc::new(Mutex::new(None)),
+            analysis_in_flight: Arc::new(track_analysis::AnalysisInFlight::new()),
+            analysis_failed: Arc::new(Mutex::new(std::collections::HashSet::new())),
+            analysis_backfill: track_analysis::TrackAnalysisBackfill::new(),
         })
     }
 
@@ -168,12 +180,15 @@ impl MusicLibrary {
         &self,
         progress: Box<dyn ScanProgressListener>,
     ) -> Result<ScanSummary, LibraryError> {
-        let writer = self.writer()?;
         let (tree_uri, source) = self.configured_tree()?;
-        let outcome =
-            scan_folder_with_source_and_progress(source.as_ref(), &writer, &tree_uri, |event| {
+        let outcome = scan_folder_with_writer_and_progress(
+            source.as_ref(),
+            &*self.writer,
+            &tree_uri,
+            |event| {
                 progress.on_progress(event.into());
-            });
+            },
+        );
         drop(progress);
         let outcome = outcome.map_err(|error| LibraryError::Scan {
             detail: error.to_string(),

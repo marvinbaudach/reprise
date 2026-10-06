@@ -275,6 +275,60 @@ fn server_and_rate_limit_statuses_remain_retryable_without_a_marker() {
 }
 
 #[test]
+fn a_cover_lands_under_the_given_root() {
+    let cache_dir = tempfile::tempdir().unwrap();
+    let cache_root = cache_dir.path();
+    let outcome = fetch_and_cache_with_in(
+        &downloaded_dir_in(cache_root),
+        "Root Band",
+        "Root Album",
+        Some("aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa"),
+        &[],
+        &mut |_| panic!("an embedded release id must skip MusicBrainz search"),
+        &mut |_| CaaFetchResult::Found(vec![1, 2, 3, 4], "png"),
+    );
+    let key = album_key("Root Band", "Root Album");
+    match outcome {
+        CoverFetchOutcome::Downloaded(path) => {
+            assert_eq!(
+                path,
+                downloaded_dir_in(cache_root).join(format!("{key}.png"))
+            );
+            assert!(path.exists());
+        }
+        other => panic!("expected Downloaded, got {other:?}"),
+    }
+}
+
+#[test]
+fn a_negative_marker_lands_under_the_given_root() {
+    let cache_dir = tempfile::tempdir().unwrap();
+    let cache_root = cache_dir.path();
+    let outcome = fetch_and_cache_with_in(
+        &downloaded_dir_in(cache_root),
+        "Root Miss Band",
+        "Root Miss Album",
+        None,
+        &[],
+        &mut |_| Some(MB_WEAK.to_owned()),
+        &mut |_| panic!("a definitive search miss must not reach Cover Art Archive"),
+    );
+    let key = album_key("Root Miss Band", "Root Miss Album");
+    assert_eq!(outcome, CoverFetchOutcome::NotFound);
+    assert!(negative_marker_path_in(&downloaded_dir_in(cache_root), &key).exists());
+}
+
+#[test]
+fn the_default_root_path_is_unchanged() {
+    let key = "unchanged-path-key";
+    assert_eq!(
+        negative_marker_path(key),
+        negative_marker_path_in(&downloaded_dir(), key),
+    );
+    assert_eq!(publish_marker(), publish_marker_in(&downloaded_dir()));
+}
+
+#[test]
 fn invalid_embedded_release_mbid_is_rejected_before_the_caa_request() {
     let album = format!("Invalid embedded MBID {:016x}", fastrand::u64(..));
     let key = album_key("Invalid ID Band", &album);

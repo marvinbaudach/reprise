@@ -8,8 +8,14 @@ import androidx.media3.common.C
 import androidx.media3.common.MediaItem
 import androidx.media3.common.PlaybackException
 import androidx.media3.common.Player
+import io.github.marvinbaudach.reprise.library.PlaybackItems
+import io.github.marvinbaudach.reprise.library.TrackMetadataResolver
 import java.io.File
 import java.io.FileNotFoundException
+import java.util.concurrent.Executor
+import java.util.concurrent.ExecutorService
+import java.util.concurrent.Executors
+import java.util.concurrent.RejectedExecutionException
 import uniffi.reprise_android_ffi.AndroidEqualizerBand
 import uniffi.reprise_android_ffi.AndroidEqualizerBandCapability
 import uniffi.reprise_android_ffi.AndroidEqualizerPoint
@@ -74,11 +80,52 @@ internal fun isMissingFilePlaybackError(error: PlaybackException): Boolean {
     return false
 }
 
-/** Media3 implementation of the foreign half of Core's PlaybackBackend. */
+private val URI_SCHEME = Regex("^[a-zA-Z][a-zA-Z0-9+.-]*://")
+
+/**
+ * The playable URI for what Core hands over: a device path or a provider URI.
+ *
+ * A string is only a URI when it begins with a real `scheme://`. A local path
+ * may contain a colon (`/Music/AC:DC/x.mp3`), which `Uri.parse` would read as a
+ * scheme boundary, so everything else is a file path.
+ */
+internal fun playbackUri(path: String): Uri =
+    if (!path.startsWith("/") && URI_SCHEME.containsMatchIn(path)) {
+        Uri.parse(path)
+    } else {
+        Uri.fromFile(File(path))
+    }
+
+/**
+ * Media3 implementation of the foreign half of Core's PlaybackBackend.
+ *
+ * Every item carries its track's metadata and cover, which the notification,
+ * lock screen, Android Auto and the widget read from it. They come from a
+ * blocking library read, so the player's own thread never makes one: when the
+ * Core asks for playback on that thread (a notification's next button does) an
+ * unknown track starts bare and is completed in place a moment later. A caller
+ * on any other thread is already blocked and reads straight away.
+ *
+ * [metadataExecutor] runs those reads; the port makes and owns one when none
+ * is given.
+ */
 internal class Media3PlaybackPort(
     private val player: Player,
+    metadata: TrackMetadataResolver = TrackMetadataResolver.None,
+    mediaIdOf: (trackId: Long) -> String? = { null },
+    metadataExecutor: Executor? = null,
+    private val trackGainSink: TrackGainAudioSink? = null,
     private val equalizerChanged: () -> Unit,
 ) : AndroidPlaybackPort {
+    private val items = PlaybackItems(metadata, mediaIdOf)
+    private val ownedExecutor: ExecutorService? =
+        if (metadataExecutor == null) {
+            Executors.newSingleThreadExecutor { task -> Thread(task, "reprise-metadata") }
+        } else {
+            null
+        }
+    private val metadataExecutor: Executor = metadataExecutor ?: checkNotNull(ownedExecutor)
+    private val resolving = mutableSetOf<String>()
     private val handler = Handler(player.applicationLooper)
     private val dispatch = player.applicationLooper.dispatch(handler)
     private val deviceEqualizer =
@@ -86,6 +133,8 @@ internal class Media3PlaybackPort(
     private var eventBridge: PlaybackEventBridgeInterface? = null
     private var generation = 0UL
     private var nextUri: String? = null
+    private var released = false
+    private var nextGainDb = 0.0
     private var transitionMode = AndroidTransitionMode.GAPLESS
     private var lastState: AndroidPlaybackState? = null
     private var finishedGeneration: ULong? = null
@@ -135,6 +184,7 @@ internal class Media3PlaybackPort(
             }
             generation += 1UL
             finishedGeneration = null
+            trackGainSink?.advanceToNext()
             emit(AndroidPlayerEvent.AdvancedToNext)
             discardPlayedItems()
         }
@@ -167,12 +217,16 @@ internal class Media3PlaybackPort(
         eventBridge = bridge
     }
 
-    override fun playPath(path: String) = dispatch.call {
-        start(MediaItem.fromUri(Uri.fromFile(File(path))))
-    }
+    override fun playPath(path: String, gainDb: Double) = startWithGain(path, gainDb)
 
-    override fun playUri(uri: String) = dispatch.call {
-        start(MediaItem.fromUri(Uri.parse(uri)))
+    override fun playUri(uri: String) = startWithGain(uri, 0.0)
+
+    private fun startWithGain(uri: String, gainDb: Double) {
+        ensureKnown(uri)
+        dispatch.call {
+            trackGainSink?.startPlaylist(gainDb, nextUri?.let { nextGainDb })
+            start(itemFor(uri))
+        }
     }
 
     override fun togglePause(): AndroidPlaybackState = dispatch.call {
@@ -234,13 +288,29 @@ internal class Media3PlaybackPort(
 
     override fun stop() = dispatch.call {
         nextUri = null
+        nextGainDb = 0.0
+        trackGainSink?.clearPlaylist()
         player.stop()
         player.clearMediaItems()
     }
 
-    override fun setNext(uri: String?) = dispatch.call {
-        nextUri = uri
-        applyNextItem()
+    override fun setNext(uri: String?, gainDb: Double) {
+        uri?.let(::ensureKnown)
+        dispatch.call {
+            nextUri = uri
+            nextGainDb = gainDb
+            trackGainSink?.setNextGain(uri?.let { gainDb })
+            applyNextItem()
+        }
+    }
+
+    override fun setGains(currentGainDb: Double, nextGainDb: Double?): Unit = dispatch.call {
+        // Gain only: the queued items stay as they are, so the gapless
+        // prebuffer of the next one survives a settings change.
+        if (nextUri != null && nextGainDb != null) {
+            this.nextGainDb = nextGainDb
+        }
+        trackGainSink?.setGains(currentGainDb, nextUri?.let { this.nextGainDb })
     }
 
     override fun setTransition(mode: AndroidTransitionMode) = dispatch.call {
@@ -251,11 +321,19 @@ internal class Media3PlaybackPort(
     override fun currentGeneration(): ULong = dispatch.call { generation }
 
     fun release() = dispatch.call {
+        released = true
+        ownedExecutor?.shutdownNow()
         handler.removeCallbacks(positionTicker)
         player.removeListener(listener)
         deviceEqualizer.release()
         player.release()
         eventBridge = null
+    }
+
+    /** The item for [uri], with its playable URI read by [playbackUri] so a colon in a local path stays a path. */
+    private fun itemFor(uri: String): MediaItem {
+        val item = items.build(uri)
+        return item.buildUpon().setUri(playbackUri(uri)).build()
     }
 
     private fun start(mediaItem: MediaItem) {
@@ -264,7 +342,7 @@ internal class Media3PlaybackPort(
         lastState = null
         player.setMediaItem(mediaItem)
         if (transitionMode == AndroidTransitionMode.GAPLESS) {
-            nextUri?.let { player.addMediaItem(MediaItem.fromUri(it)) }
+            nextUri?.let { uri -> player.addMediaItem(itemFor(uri)) }
         }
         player.prepare()
         player.play()
@@ -279,7 +357,57 @@ internal class Media3PlaybackPort(
             player.removeMediaItems(afterCurrent, player.mediaItemCount)
         }
         if (transitionMode == AndroidTransitionMode.GAPLESS) {
-            nextUri?.let { player.addMediaItem(MediaItem.fromUri(it)) }
+            nextUri?.let { uri -> player.addMediaItem(itemFor(uri)) }
+        }
+    }
+
+    /**
+     * Remembers the cover of [uri] and gives every queued item with that uri
+     * its cover. Remembered, so an item built for the same track later (a
+     * replay, the gapless next item) is born with it. The item is updated in
+     * place: only its metadata changes, so ExoPlayer keeps the source it is
+     * already playing and the notification, lock screen and widget pick the
+     * cover up from the metadata change.
+     */
+    fun attachArtwork(uri: String, artwork: Uri) = dispatch.call {
+        items.rememberCover(uri, artwork)
+        refreshQueued(uri)
+    }
+
+    /** Replaces each queued item for [uri] with a rebuild from what is known now, if that differs. */
+    private fun refreshQueued(uri: String) {
+        val rebuilt = itemFor(uri)
+        for (index in 0 until player.mediaItemCount) {
+            val item = player.getMediaItemAt(index)
+            if (item.localConfiguration?.uri == playbackUri(uri) && item != rebuilt) {
+                player.replaceMediaItem(index, rebuilt)
+            }
+        }
+    }
+
+    /**
+     * Makes sure what is known about [uri] is as complete as it can be before an
+     * item is built: read now by a caller that is blocked anyway, scheduled
+     * for the player's own thread, which must not wait for the library.
+     */
+    private fun ensureKnown(uri: String) {
+        if (items.isKnown(uri)) return
+        if (Looper.myLooper() != player.applicationLooper) {
+            items.resolve(uri)
+            return
+        }
+        if (!resolving.add(uri)) return
+        try {
+            metadataExecutor.execute {
+                val found = items.resolve(uri)
+                handler.post {
+                    resolving.remove(uri)
+                    if (found && !released) refreshQueued(uri)
+                }
+            }
+        } catch (error: RejectedExecutionException) {
+            // The port is being released; nothing is left to decorate.
+            resolving.remove(uri)
         }
     }
 

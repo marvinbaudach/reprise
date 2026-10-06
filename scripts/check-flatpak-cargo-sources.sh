@@ -27,6 +27,29 @@ def fail(message: str) -> None:
     sys.exit(f"check-flatpak-cargo-sources.sh: {message}")
 
 
+# Python keeps the last of two equal keys, and flatpak-builder's own parser may
+# keep another, so a file that repeats a key could pass this check and build
+# differently. Duplicates and non-finite numbers are therefore rejected outright.
+def reject_duplicate_keys(pairs):
+    keys = [key for key, _ in pairs]
+    repeated = sorted({key for key in keys if keys.count(key) > 1})
+    if repeated:
+        raise ValueError(f"duplicate key {repeated[0]!r}")
+    return dict(pairs)
+
+
+def reject_constant(constant: str):
+    raise ValueError(f"non-finite number {constant}")
+
+
+def parse_json(text: str):
+    return json.loads(
+        text,
+        object_pairs_hook=reject_duplicate_keys,
+        parse_constant=reject_constant,
+    )
+
+
 try:
     with lock_path.open("rb") as lock_stream:
         lock_data = tomllib.load(lock_stream)
@@ -34,15 +57,14 @@ except (OSError, tomllib.TOMLDecodeError) as error:
     fail(f"cannot read {lock_path}: {error}")
 
 try:
-    with sources_path.open(encoding="utf-8") as sources_stream:
-        sources_data = json.load(sources_stream)
-except (OSError, json.JSONDecodeError) as error:
+    sources_data = parse_json(sources_path.read_text(encoding="utf-8"))
+except (OSError, ValueError) as error:
     fail(f"cannot read {sources_path}: {error}")
 
 if not isinstance(sources_data, list):
     fail(f"{sources_path} must contain a JSON array")
 
-lock_packages = set()
+lock_packages = {}
 for package in lock_data.get("package", []):
     if "checksum" not in package:
         continue
@@ -50,23 +72,68 @@ for package in lock_data.get("package", []):
     version = package.get("version")
     if not isinstance(name, str) or not isinstance(version, str):
         fail(f"{lock_path} has a checksummed package without a name and version")
-    lock_packages.add(f"{name}-{version}")
+    lock_packages[f"{name}-{version}"] = (name, version, package["checksum"])
 
+# The file is built by third-party code from PyPI and consumed by the Flatpak
+# release build, so every entry is held to the exact shapes the pinned
+# generator emits for a registry-only Cargo.lock; anything else is rejected.
 vendor_prefix = "cargo/vendor/"
-vendored_packages = set()
-for source in sources_data:
-    if not isinstance(source, dict) or source.get("type") != "archive":
-        continue
+archive_keys = {"type", "archive-type", "url", "sha256", "dest"}
+inline_keys = {"type", "contents", "dest", "dest-filename"}
+checksum_filename = ".cargo-checksum.json"
+cargo_config_source = {
+    "type": "inline",
+    "contents": (
+        '[source.vendored-sources]\ndirectory = "cargo/vendor"\n\n'
+        '[source.crates-io]\nreplace-with = "vendored-sources"\n'
+    ),
+    "dest": "cargo",
+    "dest-filename": "config",
+}
+
+
+def package_of(source: dict, what: str) -> str:
     destination = source.get("dest")
     if not isinstance(destination, str) or not destination.startswith(vendor_prefix):
-        fail(f"{sources_path} has an archive without a {vendor_prefix}<name>-<version> dest")
+        fail(f"{sources_path} has {what} without a {vendor_prefix}<name>-<version> dest")
     package = destination.removeprefix(vendor_prefix)
-    if not package or "/" in package:
-        fail(f"{sources_path} has an invalid archive dest: {destination}")
-    vendored_packages.add(package)
+    if not package or "/" in package or package in {".", ".."}:
+        fail(f"{sources_path} has {what} with an invalid dest: {destination}")
+    return package
 
-missing = sorted(lock_packages - vendored_packages)
-orphaned = sorted(vendored_packages - lock_packages)
+
+archives = {}
+checksum_inlines = {}
+config_sources = []
+for source in sources_data:
+    if not isinstance(source, dict):
+        fail(f"{sources_path} has an entry that is not an object")
+    kind = source.get("type")
+    if kind == "archive":
+        if set(source) != archive_keys:
+            fail(f"{sources_path} has an archive with keys {sorted(source)}")
+        package = package_of(source, "an archive")
+        if package in archives:
+            fail(f"{sources_path} lists the archive {package} twice")
+        archives[package] = source
+    elif kind == "inline" and source.get("dest-filename") == checksum_filename:
+        if set(source) != inline_keys:
+            fail(f"{sources_path} has a checksum file with keys {sorted(source)}")
+        package = package_of(source, "a checksum file")
+        if package in checksum_inlines:
+            fail(f"{sources_path} has two checksum files for {package}")
+        checksum_inlines[package] = source
+    elif kind == "inline" and source == cargo_config_source:
+        config_sources.append(source)
+    else:
+        fail(f"{sources_path} has an entry that is not allowed: {json.dumps(source)[:200]}")
+
+if len(config_sources) != 1:
+    fail(f"{sources_path} must hold the Cargo vendoring config exactly once")
+
+vendored_packages = set(archives)
+missing = sorted(set(lock_packages) - vendored_packages)
+orphaned = sorted(vendored_packages - set(lock_packages))
 if missing or orphaned:
     print(
         f"check-flatpak-cargo-sources.sh: {sources_path} does not match "
@@ -90,6 +157,39 @@ if missing or orphaned:
         "-o flatpak/cargo-sources.json",
         file=sys.stderr,
     )
+    sys.exit(1)
+
+problems = []
+for package, (name, version, checksum) in sorted(lock_packages.items()):
+    archive = archives[package]
+    expected_url = f"https://static.crates.io/crates/{name}/{name}-{version}.crate"
+    if archive["url"] != expected_url:
+        problems.append(f"{package}: url is {archive['url']!r}, expected {expected_url!r}")
+    if archive["sha256"] != checksum:
+        problems.append(f"{package}: archive sha256 does not equal the Cargo.lock checksum")
+    if archive["archive-type"] != "tar-gzip":
+        problems.append(f"{package}: archive-type is {archive['archive-type']!r}")
+    inline = checksum_inlines.get(package)
+    if inline is None:
+        problems.append(f"{package}: no {checksum_filename} entry")
+        continue
+    try:
+        contents = parse_json(inline["contents"])
+    except (TypeError, ValueError):
+        problems.append(f"{package}: {checksum_filename} contents are not plain JSON")
+        continue
+    if contents != {"package": checksum, "files": {}}:
+        problems.append(f"{package}: {checksum_filename} contents differ from the Cargo.lock checksum")
+for package in sorted(set(checksum_inlines) - set(lock_packages)):
+    problems.append(f"{package}: {checksum_filename} entry without a Cargo.lock package")
+if problems:
+    print(
+        f"check-flatpak-cargo-sources.sh: {sources_path} has entries that do not "
+        f"match {lock_path}",
+        file=sys.stderr,
+    )
+    for problem in problems:
+        print(f"  - {problem}", file=sys.stderr)
     sys.exit(1)
 
 print(

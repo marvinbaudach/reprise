@@ -21,7 +21,7 @@ enumerated! {
 
     /// Every mode, generated from the declaration above so a new one cannot
     /// stay out of the `PLAY-12` link contract it is checked against.
-    #[allow(dead_code)] // Exhaustive contract exercised by PLAY-12 tests.
+    #[cfg(test)]
     pub(in crate::ui) const Self::ALL;
 }
 

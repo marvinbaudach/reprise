@@ -408,7 +408,10 @@ pub(in crate::ui) fn present(
                     state.borrow_mut().storages = storages;
                     storage_dropdown.set_sensitive(true);
                     if let Some(index) = resolved_index {
-                        #[allow(clippy::cast_possible_truncation)]
+                        #[expect(
+                            clippy::cast_possible_truncation,
+                            reason = "the value was bounded before conversion"
+                        )]
                         {
                             updating.set(true);
                             storage_dropdown.set_selected(index as u32);
@@ -440,7 +443,10 @@ pub(in crate::ui) fn present(
 /// generation. A result for a navigation the user has already left is
 /// dropped silently, exactly like a recycled list row's stale cover load
 /// (`cover_loader.rs`).
-#[allow(clippy::too_many_arguments)]
+#[expect(
+    clippy::too_many_arguments,
+    reason = "the request identity, generation token and both callbacks should travel as a parameter object"
+)]
 async fn load_folders_if_current(
     runtime: Rc<DeviceSyncRuntime>,
     device_id: String,

@@ -22,7 +22,7 @@ impl Sidebar {
     /// activation through the existing source-selection callback.
     pub fn bind_device_sync(
         &self,
-        runtime: &Rc<crate::ui::device_sync_runtime::DeviceSyncRuntime>,
+        runtime: &Rc<crate::ui::device_sync::device_sync_runtime::DeviceSyncRuntime>,
         on_open: Rc<dyn Fn(String, String)>,
     ) {
         let runtime_weak = Rc::downgrade(runtime);

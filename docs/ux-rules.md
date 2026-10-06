@@ -241,6 +241,111 @@ result.
   once. Checked by hand because no automated level drives either entry
   point end to end: the cua-e2e scenario that once proved this path drove
   the header item and retired with NAV-7.
+- **NAV-15c** [active] [android] — **The playing track gets its spectrum
+  without a desktop sync.** This holds whether or not the library folder is
+  registered yet, and whether or not a desktop sync ever ran. Without a
+  sidecar the phone computes. A non-final failure (error, cancellation, or a
+  file changing during the computation) is retried at most three times per
+  track and never twice at once. A cancelled background analysis never leaves
+  the presented track without a result. *Tests:*
+  `nav_15c_only_cancelled_changed_or_thrown_analysis_is_non_final`,
+  `nav_15c_a_non_final_result_allows_the_current_track_to_request_again`,
+  `nav_15c_background_playback_changes_enter_analysis_on_the_main_thread`,
+  `nav_15c_a_real_failed_request_posts_its_retry_state_to_main`,
+  `nav_15c_a_stale_settle_cannot_clear_the_current_request`,
+  `nav_15c_cancelled_import_retries_and_refreshes_after_each_attempt`,
+  `nav_15c_shutdown_cancels_a_pending_retry_without_another_import`.
+- **NAV-15d** [active] [android] — **The seek bar fills while the phone
+  decodes.** While the phone computes the playing track's analysis, the seek
+  bar shows the part already decoded, filling from the left, and the rest
+  stays the plain line. The partial picture is held only in memory: it is
+  never stored and never counts as analysed for sync, sidecar or backfill.
+  The Now Playing scene adopts the growing spectrum without restarting:
+  only the playing panel asks for it, it keeps the decoded frames until the
+  final ones arrive, and frames decoded behind a playhead that ran ahead
+  play on instead of snapping, unless live audio drove the scene in the
+  meantime. The decoded part is asked for about once a second, only while
+  the app is visible with the screen on and the final analysis is missing,
+  and never while an earlier answer is still outstanding. After half a
+  minute of empty answers it is asked only every five seconds, until an
+  answer comes or the next analysis attempt ends.
+  When the final bars replace a partial picture they appear at full height,
+  even if a cue asked for a build at that moment; final bars that follow a
+  partial picture which ended without a result build in as a first analysis
+  does.
+  *Tests:* `nav_15d_partial_bars_cover_only_the_decoded_part`,
+  `nav_15d_final_bars_replace_the_partial`,
+  `nav_15d_progress_reads_are_never_cached`,
+  `nav_15d_growing_frames_do_not_reset_the_scene`,
+  `nav_15d_the_driver_reads_adopted_frames`,
+  `nav_15d_adopting_longer_frames_continues_the_scene_instead_of_resetting`,
+  `nav_15d_a_running_decode_reports_progress_for_its_track`,
+  `nav_15d_progress_is_none_without_a_decode_and_after_the_store`,
+  `nav_15d_a_cancelled_decode_leaves_no_render_data`,
+  `nav_15d_the_backfill_decode_reports_progress_too`,
+  `nav_15d_the_expected_length_ends_at_one_week`,
+  `nav_15d_polls_about_once_per_interval_while_decoding`,
+  `nav_15d_no_polls_once_the_final_data_arrived`,
+  `nav_15d_no_polls_while_the_screen_is_not_started`,
+  `nav_15d_no_polls_while_the_screen_is_off`,
+  `nav_15d_a_track_that_never_reports_progress_is_asked_less_often`,
+  `nav_15d_a_new_revision_asks_at_the_full_rate_again`,
+  `nav_15d_an_answer_in_flight_when_the_screen_stops_is_not_applied`,
+  `nav_15d_empty_answers_count_again_after_the_screen_returns`,
+  `nav_15d_a_poll_waits_for_the_previous_answer`,
+  `nav_15d_a_late_answer_from_an_earlier_revision_is_not_shown`,
+  `nav_15d_an_unchanged_answer_does_not_recompose`,
+  `nav_15d_final_bars_after_a_partial_that_ended_without_a_result_build_in`,
+  `nav_15d_an_empty_or_broken_covered_fraction_is_no_partial`,
+  `nav_15d_the_scene_keeps_the_decoded_frames_until_the_final_ones_arrive`,
+  `nav_15d_only_the_live_panel_asks_for_the_decoded_part`,
+  `nav_15d_adopting_shorter_frames_keeps_the_playhead_instead_of_seeking`,
+  `nav_15d_frames_growing_under_a_playhead_past_the_decode_edge_continue_instead_of_snapping`,
+  `nav_15d_the_decode_edge_allowance_lasts_while_the_playhead_stands_on_the_edge`,
+  `nav_15d_live_audio_ends_the_decode_edge_allowance`,
+  `nav_15d_the_scene_stand_in_has_the_spectrogram_shape`.
+  <!-- REVIEW: rule proposal -->
+- **NAV-15e** [active] [android] — **Leaving a track stops its analysis.**
+  Switching to another track stops the outgoing track's foreground analysis
+  (a stop or a pause does not), and the abandoned track is not retried until
+  it plays again. The backfill picks it up later. A queued analysis for a
+  track that is no longer playing is skipped. An analysis that had already
+  decoded the whole track when the switch came is stored, not thrown away.
+  Returning to a track restarts its analysis even while the stopped one is
+  still winding down, and a request waiting on the backfill's analysis of a
+  track no longer playing is let go while the backfill carries on. A stop
+  right after a switch still stops the track that was left, but a stop after
+  several quick switches leaves the last track's analysis running, and a
+  request for the stopped track that starts only after the stop still runs.
+  A stale stop that reaches the track now playing only makes it ask again.
+  *Tests:*
+  `nav_15e_superseded_is_final`,
+  `nav_15e_a_queued_prepare_for_a_track_no_longer_playing_is_skipped`,
+  `nav_15e_a_retry_pause_that_ends_for_a_superseded_track_ends_the_loop`,
+  `nav_15e_a_track_change_supersedes_the_outgoing_analysis`,
+  `nav_15e_stopping_playback_supersedes_nothing`,
+  `nav_15e_superseding_keeps_the_playing_track`,
+  `nav_15e_a_superseded_decode_is_final_for_its_waiter`,
+  `nav_15e_superseding_never_cancels_the_backfill`,
+  `nav_15e_returning_to_a_superseded_track_restarts_its_analysis`,
+  `nav_15e_superseding_frees_a_foreground_waiter_on_the_backfill_decode`,
+  `nav_15e_a_supersede_right_after_joining_the_backfill_decode_frees_the_waiter`,
+  `nav_15e_a_supersede_right_after_joining_is_final_for_the_waiter`,
+  `nav_15e_a_supersede_before_the_decode_registers_still_stops_it`,
+  `nav_15e_a_supersede_after_the_whole_stream_is_decoded_still_stores_it`,
+  `nav_15e_a_supersede_while_the_decode_is_stored_releases_the_waiter_and_keeps_the_data`,
+  `nav_15e_a_superseded_settle_for_the_playing_track_requests_again`,
+  `nav_15e_a_superseded_import_of_the_track_still_playing_retries`,
+  `nav_15e_a_superseded_import_of_a_track_the_service_left_ends`,
+  `nav_15e_a_request_that_starts_after_its_track_lost_its_place_imports_nothing`,
+  `nav_15e_stopping_after_a_switch_still_supersedes_the_outgoing_track`,
+  `nav_15e_the_track_cannot_move_while_a_supersede_is_in_the_library`,
+  `nav_15e_a_stop_after_quick_switches_never_supersedes_the_last_track`,
+  `nav_15e_a_request_belongs_to_the_last_track_even_after_a_stop`,
+  `nav_15e_quick_switches_supersede_through_the_gate_and_a_stop_spares_the_last_track`,
+  `nav_15e_a_request_for_a_track_left_before_a_stop_imports_nothing`,
+  `nav_15e_a_request_for_the_track_a_stop_left_still_imports`.
+  <!-- REVIEW: rule proposal -->
 - **NAV-16** [active] [gtk] — **Optional sidebar places carry their own off
   switch and way back.** A secondary click, Menu, or Shift+F10 on Podcasts,
   YouTube, Radio, Releases, or Concerts opens an arrowed menu anchored to the
@@ -254,6 +359,8 @@ result.
   fallback. Otherwise the current place does not change. A turned-off place
   leaves no trace in the sidebar; it comes back through Plugins in
   Preferences, and a stored session that points at it opens Music instead.
+  Releases and Concerts sit in the SMART group but are module places and
+  offer the menu; the rows built from `smart_playlists` do not.
   Music, Queue, playlists, smart lists, and My Stats never offer the menu.
   *Tests:* `nav_16_only_optional_module_rows_offer_turn_off`,
   `nav_16_turn_off_dispatches_the_clicked_module_once`,
@@ -438,6 +545,66 @@ result.
   a non-text accent-surface control. In dark appearance the app-accent pairing
   measures 1.69:1; light appearance uses the derived contrast-safe playback
   accent. The exemption records the dark cost rather than hiding it.
+- **PLAY-17** [active] [gtk] — The playing row is highlighted as one row: one
+  tint across the full row width with no seams between cells, plus the leading
+  accent.
+- **PLAY-18** [active] [gtk] — The sleep timer sits as a moon button left of the
+  volume control in the player bar and offers 15, 30, 45 and 60 minutes, End of
+  track, and Cancel while armed. When it runs out, the volume fades over 4 s in
+  eight steps, playback **pauses** (never stops) through the controller's own
+  pause path — so podcasts keep their resume position and radio follows its
+  disconnect contract — and the volume returns to the user's level. End of track
+  arms on the current item: a natural end runs the item's completion bookkeeping
+  but does not advance; a gapless hand-off advances the queue model first, then
+  pauses. A manual track change re-arms on the new item; seeking out of the fade
+  window restores the volume. A volume change during the fade becomes the new
+  restore level and the fade continues. End of track is disabled while a radio
+  stream plays. Armed, the button carries the `:checked` accent and a tooltip with
+  the remaining time; no badge dot (FB-4). Firing shows one toast, "Paused by
+  sleep timer", only when it actually paused. The timer is session state and is
+  never persisted.
+- **PLAY-19** [active] [core] — **Volume normalisation never needs a tag.** A
+  track without ReplayGain tags is normalised from the loudness Reprise measured
+  for it (EBU R128, integrated, aimed at the ReplayGain 2.0 reference of
+  -18 LUFS). A track that carries tags is normalised from them, and the tags win
+  over a measurement of the same track. The mode **Off** disables both sources
+  at once: tags and measurements alike resolve to unity gain. A positive gain
+  never lets the chosen source's peak clip, and a silent track has no measured
+  gain. A fresh library and a default effects state both mean Track; an
+  explicit Off stays Off.
+- **PLAY-20a** [active] [core] — **A track's gain changes at its first sample,
+  gapless.** When playback hands over to the pre-fed next track without a gap,
+  the next track's own gain is already applied when that track's stream starts,
+  before its first buffer reaches the output. The previous track keeps its own
+  gain up to that point, including the tail it still has queued ahead of the
+  output. Proven by the GStreamer backend tests: one reads the gain element at
+  each stream start, one measures the gain every buffer of both tracks leaves
+  with, and one holds the playback queue full to prove the tail keeps its gain.
+- **PLAY-20b** [active] [core] — **A crossfade hands over to the incoming
+  track's own gain.** The pipeline that takes over when a crossfade completes
+  carries the gain of the incoming track, never the outgoing track's.
+- **PLAY-20c** [active] [android] — **A track's gain changes at its first sample
+  on the phone.** The audio sink applies a track's gain to the buffers of that
+  track's stream, chosen by the stream offset Media3 announces: the first buffer
+  at the next track's offset gets the next track's gain, and not a buffer
+  earlier. The gain belongs to the media item, so replacing the next track after
+  its offset was announced, seeking back across the boundary, and a flush all
+  leave every buffer with its own track's gain. The sink scales into a buffer of
+  its own and never writes into Media3's (which may be read-only), a buffer the
+  output stage takes only in part is retried from the same scaled copy, and at
+  exactly unity gain the buffer passes through untouched. Proven by JVM tests
+  that put a recording sink behind the gain sink and read what the output stage
+  receives; they do not run Media3's `DefaultAudioSink` or a device. Android has
+  no crossfade; if it gains one, this rule needs a sibling.
+- **PLAY-21** [active] [android] — Volume normalisation is offered in the
+  phone's playback settings with the same three modes as on the desktop,
+  **Off**, **Per Track** and **Per Album**, in a row titled "Volume
+  Normalization", and choosing one reports that mode. The choice applies at
+  once, as on the desktop: the track that is playing and the one pre-fed after
+  it are given the gain of the new mode without being restarted or re-queued.
+  Proven at the session boundary (the port receives the re-resolved gains and
+  no play or re-queue) and in the port (the gain sink applies them); the audible
+  result on a device is a manual check.
 - **SEEK-1** [active] [gtk] — **The seek bar's colour is a reading, not a
   decoration, and it is averaged over time.** The spectral centroid swings
   from beat to beat: taken per bar it puts cyan next to magenta inside two
@@ -766,12 +933,14 @@ result.
   thin progress line at the bottom of the card (`MTP-6`, unchanged) remains the
   only status indicator.
 - **MTP-30** [active] [core] [gtk] — The switch "Sync automatically when this
-  phone connects" (7a, `DeviceSettings::sync_automatically`, default **on**)
+  phone connects" (7a, `DeviceSettings::sync_automatically`, default **off**)
   means: as soon as the sync plan is settled after connecting, the sync starts
   by itself, with no button press. This applies exclusively to the first
   refresh after connecting (new connection or reconnect) — a manual "Refresh"
-  or the verification refresh after a sync never triggers it. An automatic
-  start requires a verified scan **and** an error-free planned sync (no
+  or the verification refresh after a sync never triggers it. A newly
+  remembered device starts with the switch off; schema v87 also switched
+  every already remembered device off once. Automatic start requires a verified
+  scan **and** an error-free planned sync (no
   `scan_error`, no planning error); a device that has not been verified yet
   (`MTP-26`) never starts automatically. It is also skipped when the device is
   already busy, or when there is simply nothing to do according to the existing
@@ -1229,7 +1398,9 @@ result.
   "Online content" leaves the card list and becomes the bracket above it: it
   stands free, with a larger title, a state badge that counts its children
   ("N of M plugins on", "all M plugins off"), its description over the full
-  width, and a switch visibly larger than a child's. The whole row is
+  width ("Turn off to keep Reprise offline: none of these plugins run, nothing
+  is requested, and their sidebar entries are hidden."), and a switch visibly
+  larger than a child's. The whole row is
   clickable. Its children sit in **one** card below, indented behind a slim
   vertical rail — the indent and the rail say who obeys whom — separated by
   hairlines, not by gaps. Off dims that card but keeps it readable and stops it
@@ -1317,7 +1488,8 @@ result.
   `reprise_core::equalizer::EqualizerPreset::ALL`. The ten band controls sit
   beneath it in an `AdwExpanderRow` that starts collapsed. A manually adjusted
   curve remains stored and labels the row “Custom”; it never becomes a menu
-  entry. The profile list is not enumerated anywhere.
+  entry. The profile list is not enumerated anywhere. The profile row and the
+  bands are insensitive while the equalizer is off.
 
 - **SET-19** [active] [gtk] — Preferences pages scroll inside a short window;
   the dialog stays within a 720 px window and every page reaches its last row.
@@ -1429,8 +1601,8 @@ result.
   occupy no space; only active or still-fading-out cards take part in
   the layout. The bottom edge of the visible card block sits directly
   above the player bar, while all free sidebar height stays above the
-  block. Resting device status scrolls with the places; a running sync card
-  stays pinned.
+  block, measured on the composed window, not a fixture. Resting device status
+  scrolls with the places; a running sync card stays pinned.
   *Amended 2026-08-07.* Until then a visible card **replaced** the whole
   Issues block. That made starting any scan take the `ISSUES` section away,
   including the Library Doctor's own result row — so the entry that says
@@ -1438,6 +1610,19 @@ result.
   and `Missing files` disappeared for the duration of an unrelated scan. The
   design shows both at once; coexistence is the rule now. Do not restore the
   replacement.
+  *Amended 2026-09-16.* The block's bottom edge sits directly above the player
+  bar at every moment it is visible, including when it appears after the window
+  is already laid out — the normal case, since the start-up scan reports import
+  errors and job cards reveal seconds after the map. On `1f808182f1`, the
+  Relink and Library Doctor cards were docked while the block was still hidden
+  and kept GTK's default `visible` flag because the sync compared against the
+  ancestor-aware `is_visible`; when the block appeared, they reserved 170 px
+  of crossfade height without painting (162 px in the 1280×720 headless tour
+  of 2026-09-16). The sync now writes the widget's own flag. Tests:
+  `fb_8_the_real_sidebar_leaves_no_band_under_the_pinned_block` is the control,
+  with cards docked into a visible block, and
+  `fb_8_a_card_docked_behind_a_hidden_block_reserves_no_height` covers cards
+  docked behind the hidden block before it appears after the map.
   Card: spinner + title + % on the right (tabular) + 3px bar +
   ellipsized detail line. Clicking the card → Missing files; the visible
   Cancel button checks for abort before each audio file. Modal dialogs
@@ -1482,6 +1667,17 @@ result.
   those views are next reworked: the failure notice then moves into chrome
   or a reserved line, and this paragraph goes with the last in-flow
   banner. No new surface may cite it.
+  On Android, the library's transient status lives in chrome. Errors and the
+  deletion line share one pill slot over the top edge of the list. On a detail
+  page it sits below the header and the page's Play row or the notice that
+  replaces it; it shows
+  one pill at a time in priority order, has no layout height, and only an error's
+  close button takes input. Artwork
+  progress is a 3 dp bar on the pager's top edge, with its phase and count in
+  the summary row and its cancel in the overflow menu. The list never moves
+  when any of these appear or leave. The level stays `[gtk]`; the Android half
+  is covered by `DeletionLineOverlayTest` and `LibraryStatusChromeTest`, which
+  the traceability gate does not read.
 - **FB-10** [planned] [gtk] — The track
   browser says when its own reload will take longer than a moment, and it
   never pretends to be working while it is frozen. This covers every reload
@@ -1572,6 +1768,48 @@ result.
   Tests: `fb_14_podcasts_show_a_loading_row_until_the_model_arrives`,
   `fb_14_updates_popover_reserves_its_resting_height_while_loading`.
 
+- **FB-15** [active] [gtk] — The pinned block never claims more than it paints
+  and never raises the window's minimum: below the room the LIBRARY floor
+  leaves, the block scrolls inside itself. At the minimum window the ISSUES
+  heading, one row and one running card are visible.
+- **FB-16** [active] [android] — **Deleting tracks on the phone waits
+  out an Undo window instead of asking first.** The rows disappear and leave
+  the upcoming queue at once; if the playing track is among them, playback
+  skips on. A snackbar says "N tracks will be deleted" with an Undo button —
+  future tense, because nothing is gone yet. The window is 6 s, or longer when
+  the listener's accessibility settings ask for more time. Only when it ends,
+  or when a newer delete takes the snackbar, are the files moved to the trash,
+  once. Undo restores the rows and puts the queue rows back at their old
+  positions; if the queue changed size meanwhile, they come back as next.
+  Unlike FB-7 on the desktop, a screen or process that ends inside the window
+  deletes nothing: here the action is a file deletion, and the safe direction
+  is to keep the file. *Tests:*
+  `fb_16_beginning_hides_the_tracks_and_takes_them_out_of_the_queue_at_once`,
+  `fb_16_undo_restores_the_rows_and_the_queue_exactly`,
+  `fb_16_when_the_window_passes_the_files_are_deleted_once`,
+  `fb_16_a_second_delete_commits_the_first_immediately`,
+  `fb_16_a_cleared_screen_deletes_nothing_even_if_its_timer_fires_later`,
+  `fb_16_the_offer_is_worded_in_the_future_because_nothing_is_deleted_yet`.
+- **FB-17** [active] [android] — "Remove from queue" on the phone offers
+  "Removed from queue" with Undo for the same window as FB-16, and only when
+  the queue really lost that one row. Undo puts the row back at its old
+  position if the queue still has the size the removal left; otherwise it
+  comes back as next. Known limitation: only the size is compared, so a queue
+  that was reordered but kept its size gets the row back by its old index,
+  possibly between different neighbours. A queue offer that arrives while a delete's window runs
+  waits for it instead of ending it. *Tests:*
+  `fb_17_removing_a_queue_row_offers_an_undo_that_puts_it_back_where_it_was`,
+  `fb_17_a_queue_undo_after_the_queue_changed_shape_appends_the_row_next`,
+  `fb_17_a_queue_that_kept_its_size_but_was_reshuffled_still_gets_the_row_back_by_its_old_index`.
+- **FB-18** [active] [android] — Neither the Undo snackbar nor the
+  "Deleting N tracks…" line moves the list: both are overlays without layout
+  height. The snackbar floats above the bottom navigation; while the Now
+  Playing sheet is open it sits just above the sheet's transport row instead.
+  *Tests:*
+  `fb_18_the_undo_snackbar_floats_above_the_bottom_frame_without_moving_the_list`,
+  `fb_18_the_titles_tab_stays_where_it_is`,
+  `fb_18_over_the_stacked_sheet_the_snackbar_sits_just_above_the_transport_row`.
+
 ## H. File association & OS integration
 
 - **OS-1** [planned] [e2e] — A file opened (double-click in the file
@@ -1615,6 +1853,41 @@ result.
   `Releases only` while the Concerts module is off. Nothing else notifies.
   Test: `os_7_all_updates_adds_the_concerts_delta`
   (`ui/preferences/preference_new_releases.rs`, `#[cfg(test)]`).
+- **OS-8** [active] [android] — Android Auto and other media browsers see
+  the library as a tree under "Reprise": Recently played (the last 50 songs,
+  newest first), Playlists, Albums, Artists, in that order. Playlists and
+  albums lead to their songs; artists lead to albums, then songs. Folders are
+  paged, capped at 2,000 children. Tapping a song plays its whole container,
+  starting at that song, through the same Core queue the app uses. Search is
+  not offered. *Tests:*
+  `os_8_the_root_lists_the_four_top_level_folders_in_order`,
+  `os_8_tapping_a_song_queues_its_whole_container_positioned_on_the_song`.
+- **OS-9** [active] [android] — Only trusted controllers may browse or drive
+  the session: the app itself (by uid), controllers the platform vouches for
+  (Media3 `isTrusted`), and Android Auto and Wear OS when their single signing
+  certificate matches a pinned digest. A package name alone never suffices.
+  Everyone else connects with no commands, sees no current item, and gets a
+  permission error from every browse and play entry point. *Tests:*
+  `os_9_android_auto_is_trusted_only_with_its_pinned_certificate`,
+  `os_9_an_untrusted_controller_gets_no_browse_data_from_any_read_entry_point`,
+  `os_9_a_package_the_callers_uid_does_not_own_has_no_signers`,
+  `os_9_a_controller_the_platform_vouches_for_is_let_in_through_media3s_trust_flag`.
+- **OS-10** [active] [android] — The home-screen widget comes in two
+  placements. The wide one (4×1) shows cover, title, artist and
+  previous / play-pause / next; the square one (2×2) is the cover with one
+  play/pause button. The buttons control playback without opening the app;
+  the cover opens the app. Before anything was played the widget shows the
+  app icon and "Reprise" and opens the app; when the queue has run out, play
+  opens the app instead of doing nothing. *Tests:*
+  `os_10_the_wide_widgets_buttons_send_media_commands_to_the_service`,
+  `os_10_the_square_widget_is_a_cover_with_one_play_pause_button`,
+  `os_10_before_anything_was_played_the_widget_shows_the_app_name_and_opens_the_app`,
+  `os_10_before_anything_was_played_the_square_widget_shows_the_app_name_and_opens_the_app`.
+- **OS-11** [active] [android] — Every item the player plays carries the
+  track's title, artist, album and duration, and its cover once it is known,
+  so the notification, the lock screen, Android Auto and the widget all name
+  what is playing. *Test:*
+  `os_11_the_item_the_core_starts_carries_the_tracks_metadata`.
 
 ## I. Start state
 
@@ -1642,6 +1915,87 @@ result.
   episode still applies its saved resume position and expands its required
   podcast or YouTube group and preview window first. Merely launching and
   closing the app never replaces the persisted queue.
+- **START-5a** [active] [gtk] — **A termination request saves the session
+  and shuts down through the window close.** When Reprise receives SIGTERM,
+  SIGHUP or SIGINT (logout, `systemctl --user stop`, a harness restart,
+  Ctrl-C in a terminal; #1093) while its main window exists, it saves the
+  same session a normal window close saves — window geometry, the visible
+  browser place with its refinements (START-4, BROWSE-12), the queue and Up
+  Next — and then closes the window like a normal close, in compact mode
+  too, where the library window was never presented. The session is written
+  at most once however many routes reach it, so a close that follows a
+  termination request does not save again. The clean-exit marker is written
+  with it, deliberately: a termination in the middle of a scan counts as the
+  clean exit a normal close is. *Tests:*
+  `start_5a_the_clean_exit_marker_is_written_with_the_session`,
+  `start_5a_a_saver_without_a_live_window_content_still_saves_geometry`,
+  `start_5a_saving_twice_keeps_the_first_session`,
+  `start_5a_a_termination_request_saves_the_visible_place_and_closes_the_window`,
+  `start_5a_a_termination_request_in_compact_mode_saves_without_a_presented_window`,
+  `start_5a_a_termination_request_saves_the_queue_and_up_next`.
+- **START-5b** [active] [gtk] — **A termination request always ends the
+  application.** After the window close the application quits, so an open
+  modal such as the first-run wizard, or any other veto of the close, cannot
+  keep the process alive; the session is already on disk by then. A request
+  that reaches the main loop with no window left quits the application as
+  well instead of being swallowed. *Tests:*
+  `start_5b_the_application_quits_even_when_the_window_refuses_to_close`,
+  `start_5b_a_request_without_a_window_still_quits_the_application`.
+- **START-5c** [active] [gtk] — **Repeated requests are coalesced while the
+  save runs, and a main loop that never answers cannot hold the process.** A
+  closing terminal sends SIGHUP twice and a service manager follows SIGTERM
+  with SIGHUP within milliseconds, so a repeat that arrives before the main
+  loop has taken the first request, or within three seconds after it did, is
+  ignored, also while the application is being torn down, so it cannot cut
+  the database close short. A repeat after that grace ends the process the
+  way the signal normally would, so a wedged shutdown can still be ended. If
+  the main loop has not taken the first request ten seconds after it arrived
+  (longer than the grace), a watchdog ends the process the same way, with or
+  without a repeat signal; a first signal reaching an application that has
+  already stopped running takes its normal course at once. *Tests:*
+  `start_5c_the_first_request_is_forwarded`,
+  `start_5c_a_repeat_before_the_main_loop_took_the_first_is_coalesced`,
+  `start_5c_a_repeat_inside_the_grace_after_the_take_is_coalesced`,
+  `start_5c_a_repeat_after_the_grace_ends_the_process`,
+  `start_5c_a_first_signal_after_the_application_stopped_ends_the_process`,
+  `start_5c_a_repeat_inside_the_grace_is_coalesced_after_the_application_stopped`,
+  `start_5c_a_repeat_after_the_grace_ends_the_process_once_the_application_stopped`,
+  `start_5c_a_stopped_application_ends_a_request_nothing_will_take`,
+  `start_5c_two_signals_in_quick_succession_reach_the_main_loop_once_and_end_nothing`,
+  `start_5c_a_repeat_stays_coalesced_while_the_main_loop_is_saving`,
+  `start_5c_a_first_signal_reaching_a_released_listener_ends_the_process`,
+  `start_5c_a_repeat_during_teardown_does_not_end_the_process_inside_the_grace`,
+  `start_5c_a_request_the_main_loop_never_takes_ends_the_process_without_a_repeat`,
+  `start_5c_the_watchdog_leaves_a_request_the_main_loop_took_alone`,
+  `start_5c_the_wedge_limit_outlasts_the_repeat_grace`,
+  `start_5c_a_repeat_right_after_the_first_request_does_not_end_the_process_before_the_save`.
+- **START-5d** [active] [gtk] — **An ignored signal stays ignored.** A
+  termination signal the process inherited as ignored (`nohup reprise &`, a
+  background job) is not listened for and keeps being ignored. *Tests:*
+  `start_5d_signals_that_were_ignored_at_start_are_not_armed`,
+  `start_5d_the_inherited_ignore_disposition_is_detected`.
+- **START-5e** [active] [gtk] — **A handled request ends the process by its
+  signal.** After the save and quit, once the application has run and been
+  torn down, the process ends with the default action of the signal it
+  handled, so a shell sees death by that signal (128 plus its number) and a
+  service manager sees the stop it asked for, instead of an unrelated exit
+  status of 0. The first handled signal decides; a normal exit, with no
+  request handled, ends nothing. *Tests:*
+  `start_5e_a_handled_signal_ends_the_process_the_way_that_signal_would`,
+  `start_5e_a_normal_exit_without_a_handled_signal_ends_nothing`,
+  `start_5e_the_first_handled_signal_decides_the_exit`.
+- **START-5f** [active] [gtk] — **One listener per process.** Arming the
+  listener a second time registers nothing: a second set of signal handlers
+  would let the first signal end the process unsaved. A start that armed
+  nothing, because every signal was inherited as ignored, may be retried.
+  *Tests:* `start_5f_a_second_start_registers_nothing`,
+  `start_5f_a_start_that_armed_nothing_may_be_retried`.
+- **START-5g** [planned] [gtk] — **What START-5a to START-5f leave unproven.**
+  A request that arrives before the main window exists ends the process as
+  before, since there is no session to save yet. The active episode with its
+  resume position is part of the saved session. The application releases the
+  listener when `run` returns, so a request still unread at that point ends
+  the process too.
 
 ## J. Queue view
 
@@ -1654,7 +2008,7 @@ result.
   list. Every ColumnView section header shares one uniform height; the
   plain title row grows to the authored button-row floor rather than
   shrinking the real Clear button's target.
-- **QUE-2** [active] [gtk] — The panel divides the future into exactly
+- **QUE-2** [replaced by QUE-2a] — The panel divides the future into exactly
   two conditional sections: **Next in Queue** for manually enqueued
   tracks and **Continuing from "<Album/Playlist>"** for the automatic
   context from `play_origin`. A header appears only if its section has
@@ -1662,6 +2016,12 @@ result.
   Their visible order is also the playback order; as long as something
   is playing, the queue never shows two empty sections. QUE-10 owns the
   direct-episode variant of the named context section.
+- **QUE-2a** [active] [gtk] — The panel divides the future into exactly
+  two conditional sections. The context section is titled **Playing from
+  <place> · N tracks** through `queue_context_tail`; the manual section stays
+  **Next in Queue**. A header appears only when its section has entries, and
+  their visible order is the playback order; as long as something is playing,
+  the queue never shows two empty sections.
 - **QUE-3** [active] [core] — Played manual entries silently disappear
   from "Next in Queue" on queue-item change: no strikethrough and no
   lingering. The section contains only the still-pending future.
@@ -1890,7 +2250,8 @@ result.
   with ×-click target) and into the counting per **FIL-2** ("15 of
   1,664 tracks", force-show); like the facet chips it is
   **library-only** and is implemented as a query clause in Core
-  (`queries::query_track_window_browsed_ai`). The filter state is
+  (`queries::query_track_window` with
+  `TrackViewQuery::with_exclude_ai`). The filter state is
   **sticky across sessions** like other view states. **No
   shuffle/auto-queue special rule** in v1: queue refill follows the
   visible view — with the filter active, AI titles are not visible and
@@ -2849,8 +3210,9 @@ the panel).
 - **NR-39** [active] [gtk] — The Releases table's `Status` and `Link`
   columns are ordinary columns in the free band: hideable, movable, visible
   in the column editor, and visible by default. Only the `Cover` column stays
-  fixed. Hiding the `Link` column removes the visible route for opening a
-  release's purchase link; the header popover restores either column. A layout
+  fixed. Its column-editor name remains `Cover`, while its visual header
+  renders no text. Hiding the `Link` column removes the visible route for
+  opening a release's purchase link; the header popover restores either column. A layout
   saved before this change keeps both columns visible, while a saved layout
   that never mentioned them starts without them.
   Test: `nr_39_the_column_editor_lists_status_and_link_and_hides_them`
@@ -3092,7 +3454,7 @@ property is set and yet nothing happens.
   is never asked, and reaches the sources only through Preferences → Plugins.
   Its initial gate value follows the grandfathering in `NET-2a`; without that
   prior-use evidence, the gate starts shut.
-- **NET-4b** [active] [android] — On Android the artist-photo question is asked
+- **NET-4b** [replaced by NET-4c] — On Android the artist-photo question is asked
   by exactly one dismissible banner in the Library, shown whenever the global
   gate is off, the question has not been settled, and the library holds at
   least one artist. It carries "Download artist photos" and "Not now"; either
@@ -3100,6 +3462,23 @@ property is set and yet nothing happens.
   Online sources. It is never a modal or a toast, and never appears while the
   gate is already on. It enables directly because Android has a single online
   switch and the banner already names what is sent.
+- **NET-4c** [replaced by NET-4d] — On Android the artwork download is always on
+  and there is no question to settle: no banner, no switch, no off state.
+  `MusicLibrary::open` reads the global online-sources gate and the Artwork
+  module and, when either is off, turns both on through core's own setters —
+  on a fresh database and on one that still stores an earlier "off" alike. A
+  database that already has both on is not written again. Core's default
+  stays off and the desktop keeps the wizard of `NET-4a`; the platform
+  decision lives at the FFI boundary. Settings → Online sources remains the
+  page that names what leaves the phone and shows a running artwork pass.
+- **NET-4d** [active] [core] — On Android the artwork download is always on
+  and there is no question to settle: no banner, no switch, no off state.
+  `MusicLibrary::open` reads the global online-sources gate and the Artwork
+  module and, when either is off, turns both on through core's own setters —
+  on a fresh database and on one that still stores an earlier "off" alike. A
+  database that already has both on is not written again. Core's default
+  stays off and the desktop keeps the wizard of `NET-4a`; the platform
+  decision lives at the FFI boundary.
 - **NET-5** [active] [gtk] — Enabling Artwork while the global online-sources
   gate is open and the device is online immediately starts exactly one fresh
   cover pass through the same Preferences transition used by Plugins and the
@@ -3116,6 +3495,48 @@ property is set and yet nothing happens.
   surfaces stay cold. The refresh is part of the same Preferences transition
   that starts the cover pass; it does not rerun a statistics or source query
   and does not rebuild an entire source page.
+- **NET-7a** [active] [android] — A cover the phone downloads reaches every
+  artwork surface that shows its album while that surface stays on screen. The
+  now-playing scene and sheet, the mini-player, dock mode, track and album list
+  rows and the album header replace their generated cover without a relaunch,
+  a navigation or a scroll. This holds for a cover that now-playing or the
+  album page downloaded itself and for one the background cover pass
+  downloaded. Reaching a surface is a local read and never starts a download
+  of its own. A surface that already shows a real cover keeps it unchanged and
+  is not read again.
+- **NET-7b** [active] [android] — When the phone's network connection returns
+  (a validated network that is not a VPN) after being offline, every visible
+  surface that may download a cover and still shows a generated one asks
+  again. A cover found that way
+  reaches the other surfaces by NET-7a. A return that happened while the app
+  was in the background counts when the app comes back to the foreground. A
+  switch between two online networks is not a return. A surface that already
+  shows a real cover is not asked again. NET-7d governs restarting the
+  background pass. The return is followed by at most three bounded retries
+  after 3, 10 and 30 seconds while the physical network stays online and the
+  app stays in the foreground. A configuration change preserves that schedule;
+  moving the app to the background cancels it.
+- **NET-7c** [active] [gtk] — When the desktop's network returns after being
+  offline, Artwork starts at most one cover pass if an enable was waiting for
+  connectivity or if the previous pass left a transient failure open or
+  failed. A return seen during a running pass is remembered: if that pass then
+  leaves a transient failure open or fails, its one retry starts when the pass
+  ends. A return after a clean pass does nothing visible.
+  (#1052)
+- **NET-7d** [active] [android] — The cover pass runs on every app start,
+  including after an update without a scan, once the library folder is
+  registered. It restarts once on every real network return after an offline
+  period, but not on a switch between two online networks. It does not restart
+  if the user stopped the download in this process; the next scan or app start
+  runs it again. The progress card shows as on a start. *Tests:*
+  `net_7d_restore_starts_artwork_once_immediately_after_configuring_the_tree`,
+  `net_7d_restore_does_not_start_artwork_without_a_readable_remembered_tree`,
+  `net_7d_activity_recreation_does_not_restart_a_stopped_artwork_pass`,
+  `net_7d_one_real_network_return_starts_one_background_pass_not_followups`,
+  `net_7d_a_pending_real_return_replays_one_artwork_start_after_monitor_restart`,
+  `net_7d_configuration_change_monitor_restart_does_not_duplicate_artwork_start`,
+  `net_7d_a_stopped_download_ignores_the_view_model_network_return_path`,
+  `net_7d_stopped_artwork_waits_for_a_scan_before_network_returns_can_restart_it`.
 - **NET-3** [active] [core] [gtk] — Offline is a state, not an error: no network-backed
   place in the app may treat a missing network connection like an error
   message. The contract covers seven states every network-backed view (feed,
@@ -3415,6 +3836,22 @@ property is set and yet nothing happens.
   reached in one move — the restoration is never visible as an intermediate
   position first. The eye lands on the destination, it does not follow the
   list there.)
+- **SEARCH-17** [active] [gtk] — Quick Open (Ctrl+K, listed in the shortcuts
+  dialog, no header button) is a jump-to palette, never a filter: it changes no
+  SEARCH-1a…16 state except through its "Show all" row. It is a centred
+  `AdwDialog` (a bottom sheet on narrow windows) with one entry and one grouped
+  result list — Tracks, Albums, Artists, Playlists, Podcast shows, Radio stations,
+  at most five rows each, only enabled modules, no network sources. It searches
+  one local snapshot taken when it opens, matching real fields only
+  (case- and diacritic-insensitive; exact, then prefix, then word-prefix, then
+  play count). Enter on a track plays it in its album context (artist context
+  without an album, else alone); Alt+Enter is Play Next; albums, artists,
+  playlists and shows navigate and are recorded in NAV-2 history; a station plays
+  under the same NET-3b gate as the radio view. Enter never acts on results older
+  than the typed query. "Show all N" exists only for kinds with a searchable
+  section and hands the raw query to that section as a committed chip
+  (SEARCH-12). An empty query shows up to eight items opened this session.
+  Escape closes and returns focus; playing from it keeps focus where it was.
 - **LYR-4** [active] [gtk] — Centering of the active lyrics line is
   clamped to the top at the start of the song. As long as there aren't
   enough context lines above the active line, the text block sits at the
@@ -3444,14 +3881,17 @@ property is set and yet nothing happens.
   and volume lie entirely within their allocation. Long titles and artists
   ellipsize within the left metadata zone and never push transport or
   waveform out of the window center. Scrollable content gives up space,
-  not the player bar. At the enforced 600 × 400 minimum, the structural
-  player bar's bounds lie inside the window at its natural height.
+  not the player bar. At the enforced 600 × 550 minimum, the structural player
+  bar's bounds lie inside the window at its natural height, the LIBRARY block
+  is whole, and the pinned block shows its ISSUES heading, first row and first
+  running card.
 - **STYLE-6** [active] [gtk] — On strong horizontal shrinking, the track
   table temporarily collapses secondary visible columns; cover, title, and
   artist stay visible. This collapsing changes neither stored visibility,
   order, or widths nor the sort. "Show columns" restores the user's
   configuration in the narrow window; additional width is then scrolled
-  exclusively horizontally within the table.
+  exclusively horizontally within the table. Tests include
+  `style_6_the_real_table_never_overflows_at_1280` against the composed window.
 - **STYLE-7** [active] [gtk] — The left library sidebar is a structural
   column, not a responsive one: no window width closes it, hides it, or
   turns it into an overlay over the content. If the library window is
@@ -4254,15 +4694,21 @@ STYLE-1).
 - **AC-20** [replaced by AC-21]
 - **AC-21** [replaced by AC-22]
 - **AC-22** [replaced by AC-23]
-- **AC-23** [active] [core] [gtk] — „Song Visuals" is a plugin, switched
+- **AC-23** [replaced by AC-28]
+- **AC-28** [replaced by AC-29]
+- **AC-29** [active] [core] [gtk] — „Song Visuals" is a plugin, switched
   on by default and applicable live. When switched on, the Linux
   pipeline branches off locally normalized mono PCM before ReplayGain;
   CAVA math generates 64 logarithmic display bands from it, clamped to
   0–1. The portable core uses CAVA's double FFT resolution below 100 Hz,
   quantized cutoff frequencies, and a fixed frequency EQ, as well as
-  noise-floor gate, auto-sensitivity, integral, and gravity. Digital
-  silence does not increase sensitivity; non-finite inputs and outputs
-  are neutralized, and all internal feedback loops stay bounded.
+  auto-sensitivity, integral, and gravity, exactly as `cavacore` computes
+  them; there is no noise-floor gate. An auto-sensitivity overshoot clips
+  only the overshooting band to 1.0. There is no whole-frame scaling and no
+  cold-start climb: a stream boundary's sensitivity is measured instead
+  (Stream boundaries, below). Digital silence does not increase sensitivity;
+  non-finite inputs and outputs are neutralized, and all internal feedback
+  loops stay bounded.
   The scene engine takes over every CAVA band in the same frame without
   a second loudness mapping, normalization, or live envelope. It draws
   64 frequency-dependent, finely segmented neon columns one to one, with
@@ -4326,6 +4772,94 @@ STYLE-1).
   STYLE-8; its secondary hue is always a fixed 42-degree shift of that same
   color. Changing the app/system source or the live system accent updates the
   canvas without reading or sampling the cover.
+  **Stream boundaries.** A stream boundary measures its sensitivity; it
+  neither carries the last stream's blindly nor climbs from a cold start. A
+  boundary is the first audio a CAVA processor sees (app start, the plugin
+  switched on, Android's first PCM or a sample-rate change, a pipeline rebuilt
+  after a playback failure or promoted from a crossfade), another track, and a
+  seek or other discontinuity. On Android a pause or a buffering stall that
+  resumes the same stream is not a boundary: only the FFT window clears, and
+  the sensitivity, the shape and every pending measurement stay. A new song's
+  loudness says nothing about the last one's: a carried sensitivity draws a
+  louder song as a wall of pinned bars and a quieter one as a dim line for
+  seconds, and `cavacore`'s cold climb swells the whole frame up and back down.
+  *With nothing on screen* (a first start, the plugin switched on) the
+  sensitivity is set every frame from the loudest raw bar seen since the
+  boundary, so the bars the first window produces rise to the song's level
+  without overshooting it, and only fall if a louder bar turns up; the
+  measurement ends once a full FFT window of signal is in (the 8192 samples
+  every bar is computed from), and digital silence restarts it. *With a shape
+  on screen* (a track change, a seek) the sensitivity that drew the shape is
+  kept, because the song before is usually about as loud and a changed
+  sensitivity redraws the whole frame. The loudest bar of the new stream so
+  far is the evidence: as soon as it says the kept sensitivity would draw the
+  new stream more than twice too tall, the measurement takes over, before the
+  window is full; once a full window is in and it says more than twice too
+  dim, the sensitivity moves up to the measurement within a few frames; within
+  a factor of two it stays. The sensitivity is held, not creeping, while a
+  measurement or such a move is under way. After that, for the next fourteen
+  seconds of audio (silence counts), a frame the sensitivity would draw at
+  twice full height or more, 1.3 times in the first half second, a quiet intro
+  followed by the song itself, pulls the sensitivity down at once to land at
+  0.85 of full height. The span outlasts the longest quiet intro it covers,
+  because an intro is indistinguishable from a quiet song until its body
+  arrives. A pull also says the rise may not be over (the FFT window fills
+  with the body over the frames that follow, and a fade-in rises for seconds,
+  each frame only a little over the last): for the next 1.1 seconds of audio,
+  a frame the sensitivity would draw at full height or more is pulled down to
+  land at 0.92 of full height, and each such pull extends that; only a pull
+  starts it. Throughout this span and after it `cavacore`'s auto-sensitivity
+  creeps in both directions, so the sensitivity settles where it would have
+  settled without the boundary. A rise inside the span does not pin the bars,
+  but it does draw them dim for a few seconds, because each pull lands under
+  full height and the creep climbs back at about 6 % a second. Measured on
+  real music against an engine settled on the same audio: a verse giving way
+  to a chorus 8 to 10 dB louder draws its first second at about 0.6 times that
+  engine's level and the next seconds, up to four of them, at 0.74 to 0.95
+  times (the earlier seven-second span read 0.66, 0.82 and 0.97 for the first
+  three seconds of an 8 dB step at six seconds; a rise after the span is the
+  creep's alone and reads like the settled engine); the body of a track that
+  opens quietly draws 0.84, 0.91 and 0.92 times in its first three seconds. A
+  track change and a seek keep the bar shape on screen, so the bars fall
+  through gravity from their old heights instead of collapsing to zero; only a
+  first start and the plugin switched back on begin from nothing. In steady
+  state the output stays frame for frame what `cavacore` draws. Acceptance, at
+  the Android engine, the desktop pipeline stage and the core processor, for a
+  fresh start, a song 14 dB louder, one 14 dB quieter, one of the same
+  loudness, an Android 44.1 to 48 kHz change, a desktop seek and a resume,
+  with boundaries landing at several points inside a beat: over the second
+  that starts 0.3 s after the boundary the drawn level averages within 0.7 to
+  1.4 times that of an engine that has played the same audio for long enough
+  to have settled, and no tenth of a second of it strays further than 0.7 to
+  2.3 times for a fresh start, 0.55 to 2.0 times for a different song, or 0.85
+  to 1.2 times for a boundary that continues the song; no frame is a wall of
+  pinned bars; the frame's breathing depth and how often the whole spectrum
+  moves together stay close to that reference over the first second and after
+  it; a boundary that continues the song on screen never shrinks the frame or
+  steps it; the level three to ten seconds on equals that of a run that never
+  had the boundary; silent chunks inside a song do not keep a boundary
+  measuring; a resume keeps a quiet passage quiet; silence never raises the
+  sensitivity, whether the boundary is settled or still braking; and a loud
+  body after a quiet intro and a fade-in draw no wall (no frame with half the
+  bars pinned, no run of more than 25 frames with eight or more) and no more
+  frames with a pinned bar than an engine that has played the same audio long
+  enough to have settled, plus a few, from a first start and after another
+  song; every intro named below is drawn at no less than 0.85 times that
+  engine's level, averaged over the three seconds after its body arrives, and
+  every fade-in at no less than 0.95 times over its first ten (the three
+  surfaces measure 0.88 to 1.01 and 1.04 to 1.56 on the synthetic music). Real
+  music dims more than that while the creep climbs back, as above, and no test
+  bounds it. The core processor is judged on intros of 2.5, 6, 8 and 10
+  seconds, 14 to 30 dB below the body, and on fades of three and five seconds,
+  linear in amplitude and from 60 dB down linear in decibels; the Android
+  engine and the desktop stage on an 8 second intro 30 dB down, a 10 second
+  intro 14 dB down, a three second linear fade and a five second fade in
+  decibels. A quiet opening that outlasts the fourteen seconds of braking is a
+  known gap that no test covers. *Amended 2026-10-06: braking lasts fourteen
+  seconds, not seven, and a rise that follows a pull is followed and lands at
+  0.92; the acceptance covers quiet intros of up to ten seconds and fade-ins,
+  which were a known gap, and states the dimming a rise inside the span
+  leaves.*
 
 - **AC-24** [active] [gtk] — The reactive light lives on the panel's blurred
   cover bloom, the cover in the player bar and the playhead, nowhere else; the
@@ -4460,7 +4994,7 @@ STYLE-1).
   An RSS podcast is speech, not music: speech has no spectrum worth drawing,
   so the bars would flicker around a voice instead of answering it. While such
   an episode plays, the whole audio-reactive chain behaves as though the "Song
-  Visuals" plugin (AC-23) were off: **the spectrum stops at the source**, the
+  Visuals" plugin (AC-29) were off: **the spectrum stops at the source**, the
   Visual tab disappears from the panel, the reactive light of AC-24 rests
   without a cover, and **the bar's bass layers settle instead of freezing at
   their last reading**. The episode's own surfaces are untouched — the seek
@@ -4650,6 +5184,51 @@ means deterministic and high-confidence, never „without review".
   grouping key and from the search, so the set is looked up once and compared
   whole. The marker is dropped only at the end of the title, only with a
   number, and never down to an empty title.*
+  *DOC-1h qualifies "skips unchanged files": the file is still skipped, but
+  each field the Doctor wrote is refreshed before a later scan reuses the
+  stored reading.*
+
+- **DOC-1h** [active] [core] — **A field the Doctor has written is reused as
+  written.** After a successful `doctor_apply`, each field that write applied
+  is refreshed in the stored reading from the file's reconciled read-back,
+  with an applied empty title preserved from the write journal instead of the
+  scanner's filename fallback, together with the file's identity. A later scan
+  that reuses the reading therefore never works from that field's pre-write
+  value, including a spelling split the Doctor's own partial apply created. A
+  field last changed on disk by something other than a Doctor write is not
+  refreshed by it — see DOC-1i and the amendment below. *Tests:*
+  `doc_1h_a_written_field_is_remembered_as_the_file_now_reads_it`,
+  `doc_1h_an_empty_title_write_is_remembered_as_empty`,
+  `doc_1h_an_untitled_file_keeps_an_empty_title_in_the_snapshot`,
+  `doc_1h_a_split_the_doctor_created_is_found_by_the_next_scan`.
+  *Amended 2026-10-01: the refresh happens only when the library's current
+  `tracks` identity still matches the identity its stored reading carried when
+  the write began; see DOC-1i. When an intervening change is already registered
+  there, a later scan does not work from the pre-write value: the stale reading
+  is re-read. A file change not yet reflected in `tracks` remains the gap
+  recorded by DOC-1j.*
+
+- **DOC-1i** [active] [core] — **A field written by another actor must not
+  remain frozen when a later Doctor write refreshes the file identity.** A
+  Doctor write refreshes the stored reading only when, at the moment that
+  write begins, the library's current `tracks` row still matches the identity
+  that stored reading carries. If the library has already registered an
+  intervening change — as the Tag Editor and the scanner's move path do
+  synchronously, and an external tagger does after a rescan or reconciliation —
+  the write leaves the stored reading and its identity untouched, so the next
+  scan re-reads the file instead of skipping it. A file with no registered
+  intervening change is refreshed exactly as DOC-1h describes. *Tests:*
+  `doc_1i_a_field_another_actor_wrote_is_not_frozen_by_a_later_doctor_write`,
+  `doc_1i_a_second_doctor_write_still_blesses_its_own_file`.
+
+<!-- REVIEW: rule proposal -->
+- **DOC-1j** [planned] [core] — **A Doctor write does not act on a reading the
+  file has outgrown.** The per-field conflict check guards the field being
+  written, so a plan frozen before another actor changed a *different* field
+  still applies, with a justification derived from a reading that no longer
+  holds. A change not yet reflected in `tracks` is also invisible to DOC-1i's
+  verdict. Whether the Doctor should `stat()` the file to catch that gap, and
+  whether the write should happen at all, are open.
 
 - **DOC-2a** [active] [core] — **Scope and scan result are snapshots.**
   Whole Library contains only locally present tracks currently `PRESENT`;
@@ -5402,10 +5981,11 @@ means deterministic and high-confidence, never „without review".
 - **BROWSE-12** [active] [core] [gtk] — **The last browser destination is a
   session value.** Its structured place owns source, scope, search, facets,
   sorting, stable anchor, selection, and content focus and survives a normal
-  restart. Stable source roots such as Podcasts, YouTube, Radio, Releases,
-  Concerts, and My Stats remain resolvable without a track collection; stale
-  database-backed places fall back to the remembered Music root. Back/Forward
-  history, utility overlays, and raw widget focus remain process-local.
+  restart. A termination request saves it too (START-5a). Stable source
+  roots such as Podcasts, YouTube, Radio, Releases, Concerts, and My Stats
+  remain resolvable without a track collection; stale database-backed places
+  fall back to the remembered Music root. Back/Forward history, utility
+  overlays, and raw widget focus remain process-local.
 
 - **BROWSE-13** [active] [gtk] — **A track-list cover is its album link.**
   When the currently bound track has a nonblank album, its cover exposes the
@@ -5426,6 +6006,11 @@ means deterministic and high-confidence, never „without review".
   unrestricted reveal remains an in-place replacement and adds no duplicate
   history entry. Album, Artist, and Genre drills continue carrying the query
   under SEARCH-8a.
+
+- **BROWSE-15** [active] [core] [gtk] — **A smart list opens in the order its
+  definition names.** Recently Played opens newest play first, Recently Added
+  newest first, and Top Rated best first. A column sort applies until the
+  place changes.
 
 - **COVER-1** [active] [core] — After a downloaded album cover has been
   published in the XDG cache, Reprise also writes `cover.<ext>` into every
@@ -6017,7 +6602,7 @@ listening statistics.
   in. A failed or timed-out request is deliberately indistinguishable from a
   hidden count: the optional segment stays absent and search success remains
   undisturbed.
-- **SRC-10** [active] [gtk] — The genuine "nothing added yet" empty state
+- **SRC-10** [replaced by SRC-10a] [gtk] — The genuine "nothing added yet" empty state
   carries the same geometry for Podcasts, YouTube and Radio: the glyph of its
   own sidebar entry in a muted rounded tile, a title, a paragraph with one
   sentence each on *what* lands here and *where it comes from*, exactly one
@@ -6047,6 +6632,42 @@ listening statistics.
   subscription but no cached or downloaded episode uses the same geometry as
   `PodcastsEmptyState::FetchFailed`, with Retry and the collapsed Details
   block; it never masquerades as "nothing subscribed yet".
+- **SRC-10a** [active] [gtk] — Replaces `SRC-10`. The geometry is unchanged;
+  what changes is the page the module-off button names. The genuine "nothing
+  added yet" empty state carries the same geometry for Podcasts, YouTube and
+  Radio: the glyph of its own sidebar entry in a muted rounded tile, a title, a
+  paragraph with one sentence each on *what* lands here and *where it comes
+  from*, exactly one primary button with a plus icon, and beneath it, as a quiet
+  second line, the URL path — where the source has one of its own; radio has
+  none, because the paragraph already names the stream URL. Neither toolbar nor
+  filter row nor counter appears in this state, and never "0 of 0": the surface
+  looks unused, not broken. Never a generic placeholder graphic, never a spinner
+  with nothing to do. As soon as the first subscription lands, this state
+  disappears entirely. **Addendum (Block B2):** two siblings extend this
+  geometry rather than replacing it. When a source's own module is switched off
+  (`G1`/`NET-1a`) and nothing is subscribed yet, the same
+  tile/title/body/one-button shape appears as "{Source} is turned off" with an
+  "Enable in Preferences" button that opens Preferences → Plugins directly:
+  `SET-10` folded the former "Online sources" main page into Plugins, and the
+  deep link sends the three online-source rows, which arrive expanded and
+  briefly highlighted, the first of them focused. Existing subscriptions are
+  named as kept. The button is never a plus icon here, since there is nothing
+  to add while the source is off (`PodcastsEmptyState::ModuleOff`); it carries
+  the network glyph `network-server-symbolic`, which names what is being
+  enabled rather than the icon of the page it lands on. Existing subscriptions
+  outrank the module gate:
+  it only ever replaces the empty case, never an already-populated view. The
+  filter-mismatch state ("Nothing matches these filters",
+  `PodcastsEmptyState::NoResults` / `RadioEmptyState::NoResults`) and the
+  downloads-only state ("Nothing downloaded yet",
+  `PodcastsEmptyState::NoDownloads`) are the opposite of the genuine empty
+  state: the toolbar and filter row stay visible, with a "Clear filters" action,
+  because clearing the filter — not adding a source — is the way out.
+  `NoEpisodes` (subscribed, the feed genuinely has nothing yet) is unchanged and
+  keeps the filter row hidden. A fetch failure with an existing subscription but
+  no cached or downloaded episode uses the same geometry as
+  `PodcastsEmptyState::FetchFailed`, with Retry and the collapsed Details block;
+  it never masquerades as "nothing subscribed yet".
 - **SRC-11** [active] [core] [gtk] — Channel, show and station images (YouTube
   `thumbnails`, iTunes `artworkUrl600`, radio-browser `favicon` — `C1`) run
   through the shared Artwork module (`module.artwork.enabled`, which also
@@ -6353,6 +6974,20 @@ listening statistics.
   lookup requests a refused source is promised never to make. Both halves are
   read once, when the dialog is built, and a failed consent lookup counts as
   refused.
+- **SRC-19a** [active] [core] — Extends `SRC-19`: **one flaky answer does not end the
+  chart.** Each of the chip's two requests — the chart feed and the batched lookup — is asked
+  **once more** when it times out or Apple answers with a server error (HTTP 5xx); a failed
+  lookup is asked again on its own, never by fetching the chart a second time. Nothing else is
+  retried: a rate limit is Apple asking us to stop, a 4xx or a storefront that does not exist
+  answers the same way twice, an unreachable host usually means the network is down, and an
+  unreadable answer is not a network accident — each ends the request at once with its
+  classified reason (`POD-13`). The retry adds no wait of its own; the shared
+  one-request-per-second podcast spacing is the only gap between the two attempts. Every
+  failed attempt — retried or not, an unreadable answer included — leaves **one** log line,
+  `podcast chart request failed`, and an attempt that succeeds leaves none. The line carries
+  only the step (`chart` or `lookup`), the storefront code, the attempt number, whether a
+  retry follows, the HTTP status when there is one, and the classified reason — never the
+  request URL, the response body or the provider's error text (`POD-3`).
 - **SRC-20** [active] [gtk] — **Dormant Apple Podcasts search results sink
   without losing relevance order.** Search results whose newest episode is at
   least 365 days old move after every fresher result, using the exact boundary
@@ -6826,6 +7461,16 @@ listening statistics.
   provider failure is best-effort: the station is still added and `RAD-7`
   supplies its visible fallback. An explicitly supplied HTTP(S) favicon or
   homepage is stored without lookup.
+- **POD-27** [active] [core] — Feed text never keeps an HTML entity: titles,
+  authors and descriptions are decoded once at parse time, CDATA included, and
+  a refresh repairs a stored title.
+- **POD-28** [active] [gtk] — A podcast or YouTube refresh never waits
+  behind an episode download. The Download button's jobs and the background
+  fill-up (`POD-5`) run on their own worker lane; refreshes, load-more and
+  new-subscription syncs run on the other, so they start while a download job
+  is still running. Covered by
+  `pod_28_a_refresh_completes_while_a_fill_up_is_still_downloading` and
+  `pod_28_downloads_and_feed_work_take_separate_lanes`.
 
 ## AG. Runtime service (headless control)
 
@@ -7031,7 +7676,76 @@ committee published on 2026-05-29.
   model, no banner comment blocks drawn from repeated `=` or `-`, no emoji in
   comments.
 - **GP-20** [active] [core] — No dead code: no unused items, and no
-  `#[allow(dead_code)]` without a stated reason on the same or preceding line.
+  `#[allow(dead_code)]` or `#[expect(dead_code)]` without a stated reason in
+  the attribute's own `reason = "…"` argument. A comment on the same or
+  preceding line no longer counts; clippy's `allow_attributes_without_reason`
+  and `scripts/check-ai-hygiene.sh` both enforce it.
+- **GP-21** [active] [gtk] — Labels, titles, menu items and status badges use
+  HIG header capitalisation; descriptions and status lines use sentence case.
+  The Plugins count badge keeps its uppercase rendering. The Releases badges
+  are `Upcoming`, `Missing` and `Incomplete`. Sidebar row labels and the seeded
+  smart lists are header case.
+
+## AK. CUE sheets
+
+<!-- REVIEW: rule proposal -->
+
+An album ripped as one audio file plus a `.cue` sheet, or a FLAC that carries
+the sheet in its `CUESHEET` comment, is listed as the tracks the sheet names.
+Reprise only reads sheets: it never writes one, and a track cut from a file has
+no tags of its own to write.
+
+- **CUE-1a** [active] [core] — A sheet beside an audio file, or embedded in a
+  FLAC, lists the file as the sheet's tracks, in sheet order, each with the
+  sheet's title, artist and its own start, end and duration. What the sheet
+  leaves out comes from the file's own tags. The file is never also listed as
+  one track, however the walk happens to order the sheet and the audio.
+- **CUE-1b** [active] [core] — A rescan follows the sheet. When the sheet
+  changes, a track it still has keeps its place in the library, with its rating
+  and play count; when the sheet is removed, the file is one track again; when a
+  sheet appears beside a file already in the library, the file's single track is
+  replaced by the sheet's tracks.
+- **CUE-2** [active] [core] — A sheet that cannot be applied to its audio, because
+  it does not parse, names a file that is not there, has no audio track, names
+  one file twice or places a track past the end of its file, leaves the audio as
+  one ordinary track and raises an issue that names the sheet. Mending the sheet
+  clears the issue, and dismissing it keeps it quiet until the sheet changes.
+- **CUE-3** [active] [core] — A CUE file that moves keeps every one of its
+  tracks, with their ratings and play counts.
+- **CUE-4** [active] [core] — Removing one track of a CUE file from the library
+  hides that track and keeps its siblings; removing the file hides them all.
+- **CUE-5** [active] [core] — A track cut from a sheet is read-only. It has no
+  tag-editing seed and no tag write passes validation for it, because its tags
+  live in the sheet and writing the file would change every track in it.
+- **CUE-6** [active] [core] — A path stands for the whole file wherever a lookup
+  takes one. Opening a CUE file queues all its tracks in play order; an M3U line
+  that names it adds all its tracks still in the library, in play order, and a
+  run of consecutive lines naming it adds them once, so an exported album comes
+  back as the album; a Rhythmbox playlist that names it resolves to its first
+  track, and so does the phone's player handing the file back, to the first
+  track still in the library; a rating or play-count import, the phone's
+  listens and ratings included, a sync sidecar and an instrumental promotion
+  address whole-file tracks only, and a sync device path reaches each of the
+  tracks.
+- **CUE-7** [active] [core] — Locating a missing CUE track moves the file with
+  all of its tracks and leaves their tags alone; the file is compared with the
+  sheet by its length, not by a track's title.
+- **CUE-8** [active] [core] — A CUE file that disappears marks every one of its
+  tracks missing, and one that returns restores them all.
+- **CUE-9** [active] [core] — Each track of a CUE file has its own waveform,
+  spectrogram and loudness, measured from its own stretch of the file with a
+  single decode of the file for all of its tracks. A track played before the
+  backfill reaches it is measured from its own stretch too, never from the whole
+  file, and that decode measures the file's other unmeasured tracks with it;
+  moving on to another track stops a decode nobody waits for any more. Where no
+  backend can cut the file, a track simply has no analysis, and a track the
+  decode never reaches stays unmeasured. A track whose cut changes loses its
+  analysis and is measured again, never from its old cut; its siblings keep
+  theirs.
+- **CUE-10** [active] [core] — A track cut from a file gets no sync analysis
+  sidecar, because one file's tracks would all write the same sidecar name. For
+  the same reason its lyrics are never read from or written to a sidecar beside
+  the file or the file's tags; they come from the online sources and the cache.
 
 ## AJ. Showroom (public site)
 

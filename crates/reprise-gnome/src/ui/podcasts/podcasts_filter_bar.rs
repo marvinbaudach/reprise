@@ -55,6 +55,7 @@ impl PodcastsFilterBar {
     pub(super) fn filter(&self) -> PodcastFilter {
         self.inner.filter()
     }
+    #[cfg(test)]
     pub(super) fn result_text(&self) -> String {
         self.inner.count_text()
     }

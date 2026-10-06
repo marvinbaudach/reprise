@@ -172,7 +172,7 @@ test('show-7 the incident is quoted from the record, never recounted from the tr
   );
 
   // Both links have to reach a real anchor, not the file's top.
-  assert.match(chapter, /style\/mod\.rs#L41-L45/);
+  assert.match(chapter, /style\/mod\.rs#L42-L46/);
   assert.match(chapter, /queue-anchor-grill-followups\.md#c-gate-the-444-claim/);
   const range = source.match(/permalink\(STYLE_SOURCE\)\}#L(\d+)-L(\d+)/);
   assert.ok(range, 'the quote permalink must carry an explicit line range');

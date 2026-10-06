@@ -37,15 +37,14 @@ mpris = ["dep:zbus", "dep:reprise-runtime-protocol"]
 
 [dependencies]
 # Default build stays core-only plus the CLI's own presentation deps (clap +
-# serde_json), enforced by package I via `cargo tree`. `rusqlite` remains a
-# direct dependency because the adapter has a few intentionally local SQL test
-# seams and inspects busy/lock error codes. It is neither a workspace crate nor
-# one of the banned gtk/glib/gstreamer/zbus families, so the dependency rule
-# holds.
+# serde_json), enforced by package I via `cargo tree`. `reprise_core::CoreError`
+# is the error type the core facades hand out, and it classifies busy/lock
+# failures in core, so the surface needs no SQLite crate of its own.
+# `rusqlite` remains a dev-dependency only because the integration tests
+# arrange their fixtures in SQL.
 reprise-core = { path = "../reprise-core" }
 clap = { version = "4", features = ["derive"] }
 serde_json = "1.0"
-rusqlite = { version = "0.40", features = ["bundled"] }
 chrono = { version = "0.4", default-features = false, features = ["clock"] }
 
 # --- Feature `worker` only (removable ML job host) --------------------------

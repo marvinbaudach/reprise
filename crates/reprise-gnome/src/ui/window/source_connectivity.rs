@@ -22,6 +22,11 @@ const TEST_CONNECTIVITY_FILE_ENV: &str = "REPRISE_TEST_CONNECTIVITY_FILE";
 #[derive(Clone)]
 struct ConnectivityTargets {
     state: Rc<Cell<Connectivity>>,
+    sources: Option<Rc<ConnectivitySourceTargets>>,
+    cover_batch: Weak<crate::ui::cover_download_batch::CoverDownloadBatch>,
+}
+
+struct ConnectivitySourceTargets {
     concerts: super::content_stack::DeferredPage<crate::ui::concerts::ConcertsView>,
     releases: Weak<crate::ui::releases::ReleasesView>,
     podcasts: super::content_stack::DeferredPage<crate::ui::podcasts::PodcastsView>,
@@ -38,6 +43,7 @@ impl ConnectivityTargets {
         youtube: &super::content_stack::DeferredPage<crate::ui::podcasts::PodcastsView>,
         radio: &super::content_stack::DeferredPage<crate::ui::radio::RadioView>,
         preferences: &Rc<crate::ui::preferences::PreferencesContext>,
+        cover_batch: &Rc<crate::ui::cover_download_batch::CoverDownloadBatch>,
     ) -> Self {
         let state = Rc::new(Cell::new(Connectivity::Online));
         for page in [podcasts, youtube] {
@@ -54,17 +60,41 @@ impl ConnectivityTargets {
         }
         Self {
             state,
-            concerts: concerts.clone(),
-            releases: Rc::downgrade(releases),
-            podcasts: podcasts.clone(),
-            youtube: youtube.clone(),
-            radio: radio.clone(),
-            preferences: Rc::downgrade(preferences),
+            sources: Some(Rc::new(ConnectivitySourceTargets {
+                concerts: concerts.clone(),
+                releases: Rc::downgrade(releases),
+                podcasts: podcasts.clone(),
+                youtube: youtube.clone(),
+                radio: radio.clone(),
+                preferences: Rc::downgrade(preferences),
+            })),
+            cover_batch: Rc::downgrade(cover_batch),
         }
     }
 
     fn project(&self, connectivity: Connectivity) {
-        self.state.set(connectivity);
+        let previous = self.state.replace(connectivity);
+        if let Some(sources) = &self.sources {
+            sources.project(connectivity);
+        }
+        let cover_batch = self.cover_batch.upgrade();
+        if let Some(cover_batch) = cover_batch {
+            cover_batch.on_connectivity_changed(previous, connectivity);
+        }
+    }
+
+    #[cfg(test)]
+    fn for_test(batch: &Rc<crate::ui::cover_download_batch::CoverDownloadBatch>) -> Self {
+        Self {
+            state: Rc::new(Cell::new(Connectivity::Online)),
+            sources: None,
+            cover_batch: Rc::downgrade(batch),
+        }
+    }
+}
+
+impl ConnectivitySourceTargets {
+    fn project(&self, connectivity: Connectivity) {
         self.concerts
             .if_materialized(|view| view.set_connectivity(connectivity));
         if let Some(view) = self.releases.upgrade() {
@@ -130,9 +160,17 @@ pub(super) fn wire(
     youtube: &super::content_stack::DeferredPage<crate::ui::podcasts::PodcastsView>,
     radio: &super::content_stack::DeferredPage<crate::ui::radio::RadioView>,
     preferences: &Rc<crate::ui::preferences::PreferencesContext>,
+    cover_batch: &Rc<crate::ui::cover_download_batch::CoverDownloadBatch>,
 ) {
-    let targets =
-        ConnectivityTargets::new(concerts, releases, podcasts, youtube, radio, preferences);
+    let targets = ConnectivityTargets::new(
+        concerts,
+        releases,
+        podcasts,
+        youtube,
+        radio,
+        preferences,
+        cover_batch,
+    );
     #[cfg(feature = "test-fixtures")]
     if wire_test_connectivity(targets.clone()) {
         return;
@@ -156,3 +194,7 @@ mod tests {
         assert_eq!(connectivity_for(false), Connectivity::Offline);
     }
 }
+
+#[cfg(test)]
+#[path = "source_connectivity_net_7c_tests.rs"]
+mod network_retry_tests;

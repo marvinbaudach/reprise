@@ -11,6 +11,8 @@ pub const CHART_LIMIT: usize = 12;
 
 const CHART_ENDPOINT: &str = "https://rss.marketingtools.apple.com/api/v2";
 const LOOKUP_ENDPOINT: &str = "https://itunes.apple.com/lookup";
+const ATTEMPTS_PER_REQUEST: usize = 2;
+const _: () = assert!(ATTEMPTS_PER_REQUEST >= 1);
 
 #[derive(Deserialize)]
 struct ChartResponse {
@@ -71,131 +73,84 @@ pub fn in_chart_order(ids: &[String], rows: Vec<(Option<i64>, SearchResult)>) ->
 }
 
 pub fn top_podcasts(country: &str) -> Result<Vec<SearchResult>, PodcastError> {
-    let chart = super::http::get_json(&chart_url(country))?;
-    let ids = parse_chart_ids(&chart.body)?;
+    top_podcasts_with(country, &mut super::http::get_json)
+}
+
+fn top_podcasts_with(
+    country: &str,
+    fetch: &mut dyn FnMut(&str) -> Result<super::http::Response, PodcastError>,
+) -> Result<Vec<SearchResult>, PodcastError> {
+    let storefront = if itunes::is_country_code(country) {
+        country
+    } else {
+        "us"
+    }
+    .to_ascii_lowercase();
+    let ids = fetch_step(
+        &chart_url(&storefront),
+        "chart",
+        &storefront,
+        fetch,
+        parse_chart_ids,
+    )?;
     if ids.is_empty() {
         return Ok(Vec::new());
     }
-    let lookup = super::http::get_json(&lookup_url(&ids))?;
-    let rows = itunes::parse_results_with_ids(&lookup.body)?;
+    let rows = fetch_step(
+        &lookup_url(&ids),
+        "lookup",
+        &storefront,
+        fetch,
+        itunes::parse_results_with_ids,
+    )?;
     Ok(in_chart_order(&ids, rows))
 }
 
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use crate::podcasts::itunes::SearchResult;
-
-    fn result(title: &str, feed_url: &str) -> SearchResult {
-        SearchResult {
-            title: title.to_owned(),
-            author: None,
-            feed_url: feed_url.to_owned(),
-            episode_count: None,
-            image_url: None,
-            last_episode: None,
+fn fetch_step<T>(
+    url: &str,
+    step: &'static str,
+    storefront: &str,
+    fetch: &mut dyn FnMut(&str) -> Result<super::http::Response, PodcastError>,
+    parse: impl Fn(&str) -> Result<T, PodcastError>,
+) -> Result<T, PodcastError> {
+    for attempt in 1..=ATTEMPTS_PER_REQUEST {
+        match fetch(url).and_then(|response| parse(&response.body)) {
+            Ok(value) => return Ok(value),
+            Err(error) => {
+                let retrying = attempt < ATTEMPTS_PER_REQUEST && is_transient(&error);
+                tracing::warn!(
+                    step,
+                    storefront,
+                    attempt,
+                    retrying,
+                    status = error_status(&error),
+                    reason = error.classify(),
+                    "podcast chart request failed"
+                );
+                if !retrying {
+                    return Err(error);
+                }
+            }
         }
     }
+    unreachable!("a chart request always has at least one attempt")
+}
 
-    #[test]
-    fn src_19_the_chart_request_uses_the_lowercase_storefront_code() {
-        assert_eq!(
-            chart_url("DE"),
-            "https://rss.marketingtools.apple.com/api/v2/de/podcasts/top/12/podcasts.json"
-        );
-    }
+fn is_transient(error: &PodcastError) -> bool {
+    matches!(
+        error,
+        PodcastError::Timeout | PodcastError::HttpStatus(500..=599)
+    )
+}
 
-    #[test]
-    fn src_19_the_lookup_batches_every_charted_id_into_one_request() {
-        let ids = (1..=12).map(|id| id.to_string()).collect::<Vec<_>>();
-        let url = lookup_url(&ids);
-
-        assert!(url.contains("id=1,2,3,4,5,6,7,8,9,10,11,12"));
-        assert!(url.contains("entity=podcast"));
-        assert_eq!(url.matches("id=").count(), 1);
-    }
-
-    #[test]
-    fn src_19_chart_ids_are_read_in_chart_order() {
-        let ids = parse_chart_ids(r#"{"feed":{"results":[{"id":"42"},{"id":"7"},{"id":"99"}]}}"#)
-            .unwrap();
-
-        assert_eq!(ids, ["42", "7", "99"]);
-    }
-
-    #[test]
-    fn src_19_the_lookup_answer_is_restored_to_chart_order() {
-        let rows = vec![
-            (Some(7), result("Seven", "https://e.test/7")),
-            (Some(42), result("Forty-two", "https://e.test/42")),
-            (Some(99), result("Ninety-nine", "https://e.test/99")),
-        ];
-
-        let ordered = in_chart_order(&["42".into(), "7".into(), "99".into()], rows);
-
-        assert_eq!(
-            ordered
-                .iter()
-                .map(|row| row.title.as_str())
-                .collect::<Vec<_>>(),
-            ["Forty-two", "Seven", "Ninety-nine"]
-        );
-    }
-
-    #[test]
-    fn src_19_an_id_the_lookup_drops_falls_out_rather_than_leaving_a_hole() {
-        let ids = (1..=12).map(|id| id.to_string()).collect::<Vec<_>>();
-        let rows = (1..=12)
-            .filter(|id| *id != 6)
-            .rev()
-            .map(|id| {
-                (
-                    Some(id),
-                    result(&format!("Show {id}"), &format!("https://e.test/{id}")),
-                )
-            })
-            .collect();
-
-        let ordered = in_chart_order(&ids, rows);
-
-        assert_eq!(ordered.len(), 11);
-        assert_eq!(
-            ordered
-                .iter()
-                .map(|row| row.title.as_str())
-                .collect::<Vec<_>>(),
-            [
-                "Show 1", "Show 2", "Show 3", "Show 4", "Show 5", "Show 7", "Show 8", "Show 9",
-                "Show 10", "Show 11", "Show 12"
-            ]
-        );
-    }
-
-    /// `SRC-19`: the ids come from Apple's chart feed, and the only thing the
-    /// lookup can do with them is `i64`. Rejecting an unusable one *after* the
-    /// request has gone out — which is where `in_chart_order`'s parse sits —
-    /// would mean asking on behalf of a value we already know we cannot use,
-    /// so the boundary parser drops it instead.
-    #[test]
-    fn src_19_a_chart_id_the_lookup_cannot_use_never_reaches_the_request() {
-        let ids = parse_chart_ids(
-            r#"{"feed":{"results":[
-                {"id":"42"},{"id":"not-an-id"},{"id":"7x"},{"id":""},
-                {"id":"1,2"},{"id":" 7"},{"id":"7"}
-            ]}}"#,
-        )
-        .unwrap();
-
-        assert_eq!(ids, ["42", "7"]);
-        assert_eq!(
-            lookup_url(&ids),
-            format!("{LOOKUP_ENDPOINT}?id=42,7&entity=podcast")
-        );
-    }
-
-    #[test]
-    fn malformed_chart_body_is_a_parse_error() {
-        let error = parse_chart_ids(r#"{"feed":{"results":not-json}}"#).unwrap_err();
-        assert!(matches!(error, crate::podcasts::PodcastError::Parse(_)));
+fn error_status(error: &PodcastError) -> Option<u16> {
+    match error {
+        PodcastError::HttpStatus(status) | PodcastError::SourceGone(status) => Some(*status),
+        PodcastError::RateLimited { .. } => Some(429),
+        _ => None,
     }
 }
+
+#[cfg(test)]
+#[path = "itunes_charts_tests.rs"]
+mod tests;

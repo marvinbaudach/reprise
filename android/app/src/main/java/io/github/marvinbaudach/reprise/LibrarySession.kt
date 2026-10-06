@@ -60,9 +60,15 @@ internal interface LibrarySessionPort {
 
     fun albumTrackIds(album: String, albumArtist: String): List<Long>
 
+    fun artistTrackIds(artist: String): List<Long>
+
     fun trackById(trackId: Long): LibraryTrack?
 
     fun artworkFor(trackUri: String, size: AndroidArtworkSize): String?
+
+    /** Fetches an album cover on demand (decision 9). No fake implements
+     * this unless it has to — a plain miss is the harmless default. */
+    fun artworkFetched(trackUri: String, size: AndroidArtworkSize): String? = null
 
     fun artistPortraitCached(name: String, size: AndroidArtworkSize): String?
 
@@ -81,6 +87,7 @@ private data class ArtworkCacheKey(
 internal class LibrarySession(
     private val port: LibrarySessionPort,
     private val startPortraitPrefetch: () -> Unit = {},
+    private val afterRestoreConfigured: () -> Unit = {},
     private val nowMillis: () -> Long = System::currentTimeMillis,
     private val scanMonitor: Any = Any(),
 ) {
@@ -106,6 +113,7 @@ internal class LibrarySession(
             return LibraryScreenState.TreeUnreadable
         }
         port.configureTree(treeUri)
+        afterRestoreConfigured()
         val state = browseState(selectedTab = selectedTab)
         startPortraitPrefetch()
         return state
@@ -148,6 +156,26 @@ internal class LibrarySession(
         startPortraitPrefetch()
         state
     }
+
+    /**
+     * Reads the library again after tracks were deleted, without a scan.
+     *
+     * Runs under the scan monitor so it never interleaves with a scan's writes.
+     * [previous] is what the screen had open; it comes back rebuilt in
+     * [RefreshedLibrary.windows], or null when there was nothing to rebuild or
+     * the rebuild failed (then [RefreshedLibrary.reloadFailure] says why).
+     */
+    fun refreshBrowse(previous: LoadedLibraryWindows?): RefreshedLibrary =
+        synchronized(scanMonitor) {
+            val state = browseState()
+            if (previous == null) {
+                return@synchronized RefreshedLibrary(state, windows = null)
+            }
+            runCatching { rebuildWindows(state, previous) }.fold(
+                onSuccess = { windows -> RefreshedLibrary(state, windows) },
+                onFailure = { error -> RefreshedLibrary(state, windows = null, reloadFailure = error) },
+            )
+        }
 
     fun stateAfterFailure(message: String): LibraryScreenState {
         val treeUri = port.rememberedTreeUri() ?: return LibraryScreenState.NoFolder(message)
@@ -214,6 +242,8 @@ internal class LibrarySession(
     fun albumTrackIds(album: LibraryAlbum): List<Long> =
         port.albumTrackIds(album.title, album.artist)
 
+    fun artistTrackIds(artist: LibraryArtist): List<Long> = port.artistTrackIds(artist.name)
+
     fun listArtistTracks(
         artist: LibraryArtist,
         window: LibraryWindowRange,
@@ -252,6 +282,41 @@ internal class LibrarySession(
             }
         }
         return path
+    }
+
+    /**
+     * Fetches an album cover on demand and, on success, drops this track's
+     * memo entries so the next [artworkFor] resolves it instead of the
+     * placeholder path it remembered before the fetch. The generation bump
+     * — the same one [clearArtworkPaths] uses — matters as much as the
+     * removal: a call to [artworkFor] already in flight for this track
+     * still writes back after this returns, and without it that write would
+     * restore the stale `null` it started with.
+     */
+    fun artworkFetched(
+        trackUri: String,
+        size: AndroidArtworkSize = AndroidArtworkSize.NOW_PLAYING,
+    ): String? {
+        val path = port.artworkFetched(trackUri, size)
+        if (path != null) {
+            synchronized(artworkPaths) {
+                artworkPaths.keys.removeAll { it.trackUri == trackUri }
+                artworkGeneration++
+            }
+        }
+        return path
+    }
+
+    /**
+     * Forgets only resolved misses after an album cover arrives elsewhere.
+     * Real paths remain memoised, while the generation bump prevents a miss
+     * already being resolved from restoring its stale answer afterwards.
+     */
+    fun forgetArtworkMisses() {
+        synchronized(artworkPaths) {
+            artworkPaths.entries.removeAll { (_, path) -> path == null }
+            artworkGeneration++
+        }
     }
 
     fun artistPortraitCached(name: String, size: AndroidArtworkSize): String? =
@@ -310,10 +375,16 @@ internal class LibrarySession(
 private fun countOnlyLibraryWindow() =
     LibraryWindowRange(offset = 0, limit = COUNT_ONLY_WINDOW_SIZE)
 
-private fun <T> LibraryWindow<T>.withoutRows() = copy(rows = emptyList(), hasMore = false)
+internal fun <T> LibraryWindow<T>.withoutRows() = copy(rows = emptyList(), hasMore = false)
 
 /** The unwindowed album identity query used only by whole-album actions. */
 internal val LocalAlbumTrackIds =
     staticCompositionLocalOf<(LibraryAlbum) -> List<Long>> {
+        { throw IllegalStateException("library is not connected") }
+    }
+
+/** The unwindowed artist identity query used only by whole-artist actions. */
+internal val LocalArtistTrackIds =
+    staticCompositionLocalOf<(LibraryArtist) -> List<Long>> {
         { throw IllegalStateException("library is not connected") }
     }

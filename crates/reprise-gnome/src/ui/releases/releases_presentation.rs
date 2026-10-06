@@ -1,5 +1,3 @@
-#![allow(dead_code)]
-
 use std::borrow::Cow;
 
 use chrono::NaiveDate;
@@ -241,11 +239,13 @@ pub(super) fn release_link(entry: &HistoryEntry) -> Option<ReleaseLink<'_>> {
     })
 }
 
-pub(super) fn release_link_label(entry: &HistoryEntry) -> Option<String> {
+#[cfg(test)]
+fn release_link_label(entry: &HistoryEntry) -> Option<String> {
     release_link(entry).map(|link| link.label())
 }
 
-pub(super) fn release_link_target(entry: &HistoryEntry) -> Option<Cow<'_, str>> {
+#[cfg(test)]
+fn release_link_target(entry: &HistoryEntry) -> Option<Cow<'_, str>> {
     release_link(entry).map(|link| link.target)
 }
 
@@ -369,14 +369,14 @@ mod tests {
     }
 
     #[test]
-    fn status_pills_describe_discography_gaps() {
+    fn gp_21_sidebar_labels_use_header_case() {
         assert_eq!(
             release_status_label(&entry("2027", LibraryPresence::Complete, false), today()),
             "In library"
         );
         assert_eq!(
             release_status_label(&entry("2026-08", LibraryPresence::Absent, false), today()),
-            "upcoming"
+            "Upcoming"
         );
         assert_eq!(
             release_status_label(&entry("unknown", LibraryPresence::Partial, false), today()),
@@ -394,6 +394,30 @@ mod tests {
             "Missing"
         );
         assert_eq!(release_type_label("ep"), "EP");
+
+        assert_eq!(strings::text(strings::SIDEBAR_MUSIC), "Music");
+        assert_eq!(
+            strings::text(strings::SIDEBAR_RECENTLY_ADDED),
+            "Recently Added"
+        );
+        assert_eq!(strings::text(strings::SIDEBAR_QUEUE), "Queue");
+        assert_eq!(
+            strings::text(strings::SIDEBAR_IMPORT_ERRORS),
+            "Import Errors"
+        );
+        assert_eq!(
+            strings::text(strings::SIDEBAR_MISSING_FILES),
+            "Missing Files"
+        );
+        assert_eq!(strings::text(strings::SIDEBAR_MY_STATS), "My Stats");
+
+        let db = reprise_core::db::Db::open_in_memory().unwrap();
+        let names = reprise_core::library::playlists::list_smart(&db)
+            .unwrap()
+            .into_iter()
+            .map(|playlist| playlist.name)
+            .collect::<Vec<_>>();
+        assert_eq!(names, ["Recently Played", "Top Rated", "Recently Added"]);
     }
 
     #[test]

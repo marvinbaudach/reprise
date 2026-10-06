@@ -2,11 +2,12 @@ use std::collections::{BTreeMap, BTreeSet, HashMap};
 
 use crate::db::Db;
 use crate::format::DatePattern;
-use chrono::{Datelike, NaiveDate, TimeZone};
+use chrono::{Datelike, NaiveDate, TimeZone, Weekday};
 
 use super::group_key::KeyResolver;
 use super::stats_period::{
-    apply_activity_granularity_with_pattern, local_parts, week_start, PeriodRange, StatsPeriod,
+    apply_activity_granularity_with_pattern, local_parts, week_start, Bucket, PeriodRange,
+    StatsPeriod,
 };
 use super::stats_screen::{
     album_rows, artist_rows, first_event_unix, fold_album_rows, genre_artist_rows, genre_rows,
@@ -203,33 +204,24 @@ pub fn compute_with_pattern<Tz: TimeZone>(
     let genre_artists = genre_artist_rows(conn, range.start_unix, range.end_unix)?; // 7
     let track_aggregates = track_rows(conn, range.start_unix, range.end_unix)?; // 8
 
+    let activity = ActivitySummary::from_rows(&listen_rows, tz);
     if listen_rows.is_empty() {
         range.buckets.clear();
     } else {
-        let active_days = listen_rows
-            .iter()
-            .filter_map(|row| local_parts(tz, row.played_at).map(|(day, _)| day))
-            .collect::<BTreeSet<_>>();
-        let active_weeks = listen_rows
-            .iter()
-            .filter_map(|row| week_start(tz, row.played_at))
-            .collect::<BTreeSet<_>>();
         let first_active_unix = listen_rows
-            .iter()
-            .map(|row| row.played_at)
-            .min()
-            .unwrap_or(range.start_unix);
+            .first()
+            .map_or(range.start_unix, |row| row.played_at);
         apply_activity_granularity_with_pattern(
             &mut range,
             tz,
-            active_days.len() as i64,
-            active_weeks.len(),
+            activity.active_days.len() as i64,
+            activity.weekly_totals.len(),
             first_active_unix,
             pattern,
         );
     }
 
-    let total_ms = listen_rows.iter().map(|row| row.ms).sum::<i64>();
+    let total_ms = activity.total_ms;
     let top_artists = ranked_groups(&artists);
     let top_albums = fold_album_rows(&albums);
     let mut top_tracks = track_aggregates
@@ -259,26 +251,14 @@ pub fn compute_with_pattern<Tz: TimeZone>(
         average_ms_per_day: total_ms / elapsed_days,
         artists: top_artists.len() as i64,
         previous_ms,
-        this_week_ms: this_week_ms(&listen_rows, tz, now_unix, &range),
+        this_week_ms: this_week_ms(&activity.weekly_totals, tz, now_unix, &range),
         pace_projection_ms,
         comparison_percent,
         comparison_presentation: previous_ms
             .and_then(|value| comparison_presentation(total_ms, value, comparison_percent)),
     };
-    let ribbon = range
-        .buckets
-        .iter()
-        .map(|bucket| RibbonPoint {
-            label: bucket.label.clone(),
-            total_ms: listen_rows
-                .iter()
-                .filter(|row| row.played_at >= bucket.start_unix && row.played_at < bucket.end_unix)
-                .map(|row| row.ms)
-                .sum(),
-            open: bucket.open,
-        })
-        .collect();
-    let best_week = best_week(&listen_rows, tz);
+    let ribbon = ribbon_points(&listen_rows, &range.buckets);
+    let best_week = best_week(&activity.weekly_totals);
     let artist_resolver = key_resolver(&artists);
     let genres = genre_section(&genres, &genre_artists, &artist_resolver, &top_artists);
 
@@ -299,7 +279,7 @@ pub fn compute_with_pattern<Tz: TimeZone>(
 /// [`apply_activity_granularity`] and is only weekly for some periods, so the
 /// same figure would silently change meaning with the selected range.
 fn this_week_ms<Tz: TimeZone>(
-    rows: &[super::stats_screen::ListenRow],
+    weekly_totals: &BTreeMap<NaiveDate, i64>,
     tz: &Tz,
     now_unix: i64,
     range: &PeriodRange,
@@ -308,30 +288,67 @@ fn this_week_ms<Tz: TimeZone>(
         return None;
     }
     let current = week_start(tz, now_unix)?;
-    Some(
-        rows.iter()
-            .filter(|row| week_start(tz, row.played_at) == Some(current))
-            .map(|row| row.ms)
-            .sum(),
-    )
+    Some(weekly_totals.get(&current).copied().unwrap_or_default())
 }
 
-fn best_week<Tz: TimeZone>(rows: &[super::stats_screen::ListenRow], tz: &Tz) -> Option<BestWeek> {
-    let mut totals = BTreeMap::<NaiveDate, i64>::new();
-    for row in rows {
-        let Some(start) = week_start(tz, row.played_at) else {
-            continue;
-        };
-        *totals.entry(start).or_default() += row.ms;
-    }
-    totals
-        .into_iter()
+fn best_week(weekly_totals: &BTreeMap<NaiveDate, i64>) -> Option<BestWeek> {
+    weekly_totals
+        .iter()
         .max_by(|(left_start, left_ms), (right_start, right_ms)| {
             left_ms
                 .cmp(right_ms)
                 .then_with(|| right_start.cmp(left_start))
         })
-        .map(|(start, total_ms)| BestWeek { start, total_ms })
+        .map(|(start, total_ms)| BestWeek {
+            start: *start,
+            total_ms: *total_ms,
+        })
+}
+
+struct ActivitySummary {
+    total_ms: i64,
+    active_days: BTreeSet<NaiveDate>,
+    weekly_totals: BTreeMap<NaiveDate, i64>,
+}
+
+impl ActivitySummary {
+    fn from_rows<Tz: TimeZone>(rows: &[super::stats_screen::ListenRow], tz: &Tz) -> Self {
+        let mut summary = Self {
+            total_ms: 0,
+            active_days: BTreeSet::new(),
+            weekly_totals: BTreeMap::new(),
+        };
+        for row in rows {
+            summary.total_ms += row.ms;
+            let Some((day, _)) = local_parts(tz, row.played_at) else {
+                continue;
+            };
+            summary.active_days.insert(day);
+            let start = day.week(Weekday::Mon).first_day();
+            *summary.weekly_totals.entry(start).or_default() += row.ms;
+        }
+        summary
+    }
+}
+
+fn ribbon_points(rows: &[super::stats_screen::ListenRow], buckets: &[Bucket]) -> Vec<RibbonPoint> {
+    let mut prefix_ms = Vec::with_capacity(rows.len().saturating_add(1));
+    prefix_ms.push(0_i64);
+    for row in rows {
+        prefix_ms.push(prefix_ms.last().copied().unwrap_or_default() + row.ms);
+    }
+    buckets
+        .iter()
+        .map(|bucket| {
+            let start = rows.partition_point(|row| row.played_at < bucket.start_unix);
+            let end = rows.partition_point(|row| row.played_at < bucket.end_unix);
+            RibbonPoint {
+                label: bucket.label.clone(),
+                total_ms: prefix_ms[end] - prefix_ms[start],
+                open: bucket.open,
+            }
+        })
+        .collect()
 }
 
 fn comparison_percent(current_ms: i64, previous_ms: i64) -> Option<i64> {

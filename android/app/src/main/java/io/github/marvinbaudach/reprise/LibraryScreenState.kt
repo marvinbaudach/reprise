@@ -70,14 +70,12 @@ internal fun LibraryWindow<LibraryTrack>.removeTrack(
 
 internal fun firstLibraryWindow() = LibraryWindowRange(offset = 0, limit = LIBRARY_WINDOW_SIZE)
 
-internal fun LibraryWindow<*>.visibleCountLabel(singular: String, plural: String): String {
-    val noun = if (total == 1L) singular else plural
-    return if (rows.size.toLong() < total) {
-        "${rows.size} of $total $noun loaded"
-    } else {
-        "$total $noun"
-    }
-}
+/**
+ * The window's count as the person reads it: the whole library, never the rows paged in
+ * so far. "200 of 727" reads as a filter that left 527 titles out.
+ */
+internal fun LibraryWindow<*>.totalCountLabel(singular: String, plural: String): String =
+    countLabel(total, singular, plural)
 
 internal sealed interface LibraryScreenState {
     data class NoFolder(val message: String? = null) : LibraryScreenState

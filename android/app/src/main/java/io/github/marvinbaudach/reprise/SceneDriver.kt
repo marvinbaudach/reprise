@@ -44,13 +44,14 @@ internal fun interface SceneFrameSink {
  * wall time for the fog's signal-independent base drift.
  */
 internal class SceneDriver(
-    private val frames: SpectrogramFrames,
     private val state: SceneState,
     private val clock: SceneClock,
     private val positionSource: ScenePositionSource,
     frameSink: SceneFrameSink? = null,
     private val framesAllowed: () -> Boolean,
 ) {
+    private val frames: SpectrogramFrames
+        get() = state.frames
     private var frameSink = frameSink
     private var frameSinkNeedsSnapshot = frameSink != null
     var lastDrivenFrameIndex: Int? = null
@@ -211,15 +212,14 @@ private object SystemSceneClock : SceneClock {
  */
 @Composable
 internal fun DriveScene(
-    frames: SpectrogramFrames,
     state: SceneState,
     playback: PlaybackUiState,
     controller: AmbientMotionController,
     frameSink: SceneFrameSink? = null,
 ): Int {
     val source = remember(state) { MutableScenePositionSource() }
-    val driver = remember(frames, state) {
-        SceneDriver(frames, state, SystemSceneClock, source) {
+    val driver = remember(state) {
+        SceneDriver(state, SystemSceneClock, source) {
             controller.sceneFramesAllowed
         }
     }
@@ -257,7 +257,7 @@ internal fun DriveScene(
         }
         do {
             val audible = sink?.hasLiveAudio() == true
-            if (!(audible || visualizerActive) || frames.frameCount == 0 && frameSink == null) {
+            if (!(audible || visualizerActive) || state.frames.frameCount == 0 && frameSink == null) {
                 delay(PAUSED_SCENE_FRAME_INTERVAL_MS)
             }
             withFrameNanos {

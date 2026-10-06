@@ -2,7 +2,7 @@
 
 use rusqlite::Connection;
 
-use crate::db::Db;
+use crate::{db::Db, CoreError};
 
 use super::browse::BrowseFilter;
 use super::clauses::PRESENT;
@@ -27,9 +27,13 @@ pub struct LibraryStats {
 /// the status line only ever shows library-wide totals; for non-Library
 /// sources `ui::status_bar` hides the line outright — there the filter
 /// row is the one count on screen.
-pub fn query_library_stats(db: &Db, filter: &str) -> Result<LibraryStats, rusqlite::Error> {
+pub fn query_library_stats(db: &Db, filter: &str) -> Result<LibraryStats, CoreError> {
     let conn = db.conn();
-    query_library_stats_browsed_conn(conn, filter, &BrowseFilter::default())
+    Ok(query_library_stats_browsed_conn(
+        conn,
+        filter,
+        &BrowseFilter::default(),
+    )?)
 }
 
 pub fn query_library_stats_browsed(
@@ -54,7 +58,11 @@ fn query_library_stats_browsed_conn(
     let filtered_count = if filter.trim().is_empty() && browse.is_empty() {
         None
     } else {
-        Some(library::query_track_count_library(conn, filter, browse)?)
+        let source = crate::view_source::ViewSource::Library;
+        let view = super::TrackViewQuery::new(&source)
+            .with_filter(filter)
+            .with_browse(browse);
+        Some(library::query_track_count_library(conn, &view)?)
     };
     Ok(LibraryStats {
         track_count,

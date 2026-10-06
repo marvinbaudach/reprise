@@ -44,6 +44,33 @@ fn scoped_sync_coalesces_a_large_feed_to_its_final_count_before_completion() {
 }
 
 #[test]
+fn a_refreshed_subscription_carries_its_elapsed_time_on_the_summary() {
+    let db = conn();
+    let subscription_id = add_subscription(db.conn(), "https://example.test/feed", false);
+    let feed = FakeFeed {
+        responses: RefCell::new(vec![Ok(feed_response("Show", 1, None))]),
+        ..FakeFeed::default()
+    };
+
+    let summary = sync_subscription(
+        &db,
+        &feed,
+        &FakeYoutube,
+        10,
+        subscription_id,
+        &SyncAbort::new(),
+        &mut |_| {},
+    )
+    .unwrap();
+
+    assert_eq!(summary.subscriptions.len(), 1);
+    let record = &summary.subscriptions[0];
+    assert_eq!(record.subscription_id, subscription_id);
+    assert_eq!(record.kind, PodcastKind::Rss);
+    assert_eq!(record.outcome, SubscriptionOutcome::Refreshed);
+}
+
+#[test]
 fn external_removal_before_the_sync_transaction_emits_a_terminal_failure() {
     let directory = tempfile::tempdir().unwrap();
     let database_path = directory.path().join("reprise.db");
@@ -111,15 +138,7 @@ fn concurrent_removal_cannot_commit_between_the_active_check_and_sync_commit() {
             if event == SyncProgress::FetchingArtwork {
                 let removal =
                     super::super::store::tombstone_subscription(&remover, subscription_id, 11);
-                removal_was_blocked = matches!(
-                    removal,
-                    Err(rusqlite::Error::SqliteFailure(error, _))
-                        if matches!(
-                            error.code,
-                            rusqlite::ErrorCode::DatabaseBusy
-                                | rusqlite::ErrorCode::DatabaseLocked
-                        )
-                );
+                removal_was_blocked = removal.is_err_and(|error| error.is_busy());
             }
         },
     )

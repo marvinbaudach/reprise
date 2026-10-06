@@ -40,6 +40,10 @@ const PLAYBACK_SHORTCUTS: &[ShortcutSpec] = &[
 
 const NAVIGATION_SHORTCUTS: &[ShortcutSpec] = &[
     ShortcutSpec {
+        title_message: strings::QUICK_OPEN,
+        accelerator: "<Control>k",
+    },
+    ShortcutSpec {
         title_message: strings::SEARCH_LIBRARY,
         accelerator: "<Control>f",
     },
@@ -160,7 +164,7 @@ mod tests {
 
         assert_eq!(sections.len(), 2);
         assert_eq!(
-            sections[1].shortcuts[5],
+            sections[1].shortcuts[6],
             ShortcutSpec {
                 title_message: strings::CLEAR_SEARCH_OR_RETURN_TO_CONTENT,
                 accelerator: "Escape",
@@ -173,6 +177,7 @@ mod tests {
                 "Return",
                 "<Control>Up",
                 "<Control>Down",
+                "<Control>k",
                 "<Control>f",
                 "<Control>l",
                 "<Alt>Left",
@@ -202,7 +207,7 @@ mod tests {
         assert_eq!(sections[0].title().as_deref(), Some("Playback"));
         assert_eq!(sections[0].n_items(), 4);
         assert_eq!(sections[1].title().as_deref(), Some("Navigation"));
-        assert_eq!(sections[1].n_items(), 14);
+        assert_eq!(sections[1].n_items(), 15);
 
         let items = sections
             .iter()
@@ -223,6 +228,7 @@ mod tests {
                 ("Play Selected Track".to_string(), "Return".to_string()),
                 ("Increase Volume".to_string(), "<Control>Up".to_string()),
                 ("Decrease Volume".to_string(), "<Control>Down".to_string()),
+                ("Quick Open".to_string(), "<Control>k".to_string()),
                 ("Search Library".to_string(), "<Control>f".to_string()),
                 ("Jump to now playing".to_string(), "<Control>l".to_string(),),
                 ("Back to previous view".to_string(), "<Alt>Left".to_string()),

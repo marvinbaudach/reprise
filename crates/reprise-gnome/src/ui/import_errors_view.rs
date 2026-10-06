@@ -46,7 +46,9 @@ fn kind_copy(kind: ImportErrorKind) -> KindCopy {
             strings::IMPORT_ISSUE_IO_TITLE,
             strings::IMPORT_ISSUE_IO_ROW,
         ),
-        ImportErrorKind::Unknown => (
+        // A broken CUE sheet shares the catch-all copy until the surfaces wave
+        // gives it its own wording.
+        ImportErrorKind::Unknown | ImportErrorKind::InvalidCueSheet => (
             strings::IMPORT_ISSUE_UNKNOWN_ICON,
             strings::IMPORT_ISSUE_UNKNOWN_TITLE,
             strings::IMPORT_ISSUE_UNKNOWN_ROW,

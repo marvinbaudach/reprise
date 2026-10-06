@@ -9,7 +9,9 @@ import androidx.compose.ui.test.junit4.v2.createAndroidComposeRule
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
+import androidx.compose.ui.test.performScrollToIndex
 import androidx.compose.ui.unit.dp
+import androidx.lifecycle.ViewModelProvider
 import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
@@ -94,17 +96,17 @@ class MobileHeaderRowTest {
 
     @Test
     fun summaryAndActionsShareOneRowWhileActionsStayPutWhenTheSummaryChanges() {
-        compose.onNodeWithText("200 of 450 titles loaded").assertIsDisplayed()
+        compose.onNodeWithText("450 titles").assertIsDisplayed()
         val row = compose.onNodeWithTag("library-summary-row").getUnclippedBoundsInRoot()
-        val longSummary = compose.onNodeWithTag("library-summary-text").getUnclippedBoundsInRoot()
+        val titlesSummary = compose.onNodeWithTag("library-summary-text").getUnclippedBoundsInRoot()
         val titlesSearch = compose.onNodeWithTag("library-summary-search")
             .getUnclippedBoundsInRoot()
         val titlesOverflow = compose.onNodeWithTag("library-summary-overflow")
             .getUnclippedBoundsInRoot()
 
-        assertTrue(longSummary.top >= row.top)
-        assertTrue(longSummary.bottom <= row.bottom)
-        assertTrue(longSummary.right <= titlesSearch.left)
+        assertTrue(titlesSummary.top >= row.top)
+        assertTrue(titlesSummary.bottom <= row.bottom)
+        assertTrue(titlesSummary.right <= titlesSearch.left)
         assertEquals(row.top, titlesSearch.top)
         assertEquals(row.bottom, titlesSearch.bottom)
         assertEquals(row.top, titlesOverflow.top)
@@ -112,7 +114,7 @@ class MobileHeaderRowTest {
 
         compose.onNodeWithTag("library-destination-ARTISTS").performClick()
         compose.onNodeWithTag("library-page-ARTISTS").assertIsDisplayed()
-        compose.onNodeWithText("200 of 450 artists loaded").assertIsDisplayed()
+        compose.onNodeWithText("450 artists").assertIsDisplayed()
 
         val artistsSearch = compose.onNodeWithTag("library-summary-search")
             .getUnclippedBoundsInRoot()
@@ -122,5 +124,51 @@ class MobileHeaderRowTest {
         assertEquals(titlesSearch.right, artistsSearch.right)
         assertEquals(titlesOverflow.left, artistsOverflow.left)
         assertEquals(titlesOverflow.right, artistsOverflow.right)
+
+        compose.onNodeWithTag("library-artists-list").performScrollToIndex(198)
+        compose.onNodeWithText("Artist 199").performClick()
+        compose.onNodeWithText("1 album • 199 tracks").assertIsDisplayed()
+
+        val artistDetailRow = compose.onNodeWithTag("library-summary-row")
+            .getUnclippedBoundsInRoot()
+        val artistDetailSummary = compose.onNodeWithTag("library-summary-text")
+            .getUnclippedBoundsInRoot()
+        val artistDetailSearch = compose.onNodeWithTag("library-summary-search")
+            .getUnclippedBoundsInRoot()
+        val artistDetailOverflow = compose.onNodeWithTag("library-summary-overflow")
+            .getUnclippedBoundsInRoot()
+        assertTrue(artistDetailSummary.top >= artistDetailRow.top)
+        assertTrue(artistDetailSummary.bottom <= artistDetailRow.bottom)
+        assertTrue(artistDetailSummary.right <= artistDetailSearch.left)
+        assertEquals(titlesSearch.left, artistDetailSearch.left)
+        assertEquals(titlesSearch.right, artistDetailSearch.right)
+        assertEquals(titlesOverflow.left, artistDetailOverflow.left)
+        assertEquals(titlesOverflow.right, artistDetailOverflow.right)
+    }
+
+    @Test
+    fun artworkProgressChangesTheSummaryWithoutChangingTheHeaderRow() {
+        val rowBefore = compose.onNodeWithTag("library-summary-row").getUnclippedBoundsInRoot()
+        val searchBefore = compose.onNodeWithTag("library-summary-search").getUnclippedBoundsInRoot()
+        val overflowBefore = compose.onNodeWithTag("library-summary-overflow")
+            .getUnclippedBoundsInRoot()
+        val surface = ViewModelProvider(compose.activity)[MobileSurfaceViewModel::class.java]
+
+        compose.runOnIdle {
+            surface.acceptArtistPhotoProgress(
+                ArtistPhotoProgress(4, ArtistPhotoProgressPhase.RUNNING, 2, 0, 6),
+            )
+        }
+
+        compose.onNodeWithText("450 titles · Artwork 2/6").assertIsDisplayed()
+        assertEquals(rowBefore, compose.onNodeWithTag("library-summary-row").getUnclippedBoundsInRoot())
+        assertEquals(
+            searchBefore,
+            compose.onNodeWithTag("library-summary-search").getUnclippedBoundsInRoot(),
+        )
+        assertEquals(
+            overflowBefore,
+            compose.onNodeWithTag("library-summary-overflow").getUnclippedBoundsInRoot(),
+        )
     }
 }

@@ -269,6 +269,7 @@ def _validate_workloads(
             "hover-sweep": {
                 "kind",
                 "sections",
+                "section_handles",
                 "min_targets_per_section",
                 "roles",
             },
@@ -348,6 +349,16 @@ def _validate_workloads(
                 _string(section, "hover-sweep section")
             for role in roles:
                 _string(role, "hover-sweep role")
+            handles = _object(
+                workload.get("section_handles", {}), "hover-sweep section_handles"
+            )
+            for section, token in handles.items():
+                if section not in sections:
+                    raise ContractError(
+                        f"hover-sweep section_handles names a section not swept: {section}"
+                    )
+                if _string(token, "hover-sweep section handle") not in fixture_tokens:
+                    raise ContractError(f"unknown hover-sweep section handle token: {token}")
             _integer(
                 workload.get("min_targets_per_section"),
                 "hover-sweep min_targets_per_section",

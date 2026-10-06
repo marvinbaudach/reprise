@@ -1,5 +1,5 @@
 use super::*;
-use crate::ui::tag_editor_state::number_patch;
+use crate::ui::tag_edit::tag_editor_state::number_patch;
 
 const TINY_PNG: &[u8] = &[
     0x89, b'P', b'N', b'G', 0x0d, 0x0a, 0x1a, 0x0a, 0x00, 0x00, 0x00, 0x0d, b'I', b'H', b'D', b'R',

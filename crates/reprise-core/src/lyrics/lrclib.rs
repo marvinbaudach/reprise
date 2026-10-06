@@ -1,29 +1,38 @@
+#[cfg(any(test, feature = "test-fixtures"))]
 use std::fs::OpenOptions;
+#[cfg(any(test, feature = "test-fixtures"))]
 use std::io::Write;
-use std::path::{Path, PathBuf};
-use std::sync::{LazyLock, Mutex};
-use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
+use std::path::Path;
+#[cfg(any(test, feature = "test-fixtures"))]
+use std::path::PathBuf;
+use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
-use serde::{Deserialize, Serialize};
+use serde::Deserialize;
+#[cfg(any(test, feature = "test-fixtures"))]
+use serde::Serialize;
 
-use super::breaker::{Breaker, BreakerOutcome, HOST_BREAKER};
 use super::{
     parse_lrc, rounded_duration_seconds, LyricsBody, LyricsError, LyricsHit, LyricsProvider,
     LyricsQuery, LyricsSource, SourceOutcome,
 };
+use crate::net::breaker::{Breaker, BreakerOutcome, HOST_BREAKER};
+use crate::net::client::{build_agent, AgentPolicy};
+use crate::net::rate::{wait_for_slot, RateLimitKey};
 
 pub(super) const HOST: &str = "lrclib.net";
 const API_URL: &str = "https://lrclib.net/api/get";
 const SEARCH_API_URL: &str = "https://lrclib.net/api/search";
 const HTTP_TIMEOUT: Duration = Duration::from_secs(8);
-const REQUEST_INTERVAL: Duration = Duration::from_millis(250);
 const SEARCH_DURATION_TOLERANCE_SECONDS: f64 = 2.0;
 const SEARCH_DURATION_TOLERANCE_MILLIS: u16 = 2_000;
+#[cfg(any(test, feature = "test-fixtures"))]
 const FIXTURE_DIR_ENV: &str = "REPRISE_LYRICS_FIXTURE_DIR";
+#[cfg(any(test, feature = "test-fixtures"))]
 const LEGACY_FIXTURE_DIR_ENV: &str = "REPRISE_LRCLIB_FIXTURE_DIR";
+#[cfg(any(test, feature = "test-fixtures"))]
 const FIXTURE_LOG_ENV: &str = "REPRISE_LYRICS_FIXTURE_LOG";
+#[cfg(any(test, feature = "test-fixtures"))]
 const LEGACY_FIXTURE_LOG_ENV: &str = "REPRISE_LRCLIB_FIXTURE_LOG";
-static LAST_REQUEST: LazyLock<Mutex<Option<Instant>>> = LazyLock::new(|| Mutex::new(None));
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(super) enum FetchOutcome {
@@ -33,6 +42,7 @@ pub(super) enum FetchOutcome {
     Failed(bool),
 }
 
+#[cfg(any(test, feature = "test-fixtures"))]
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 pub(super) struct FixtureRequest {
     pub(super) title: String,
@@ -41,6 +51,7 @@ pub(super) struct FixtureRequest {
     pub(super) duration_seconds: i64,
 }
 
+#[cfg(any(test, feature = "test-fixtures"))]
 impl FixtureRequest {
     pub(super) fn filename(&self) -> String {
         format!("lrclib-{}", self.identity_suffix())
@@ -299,6 +310,7 @@ fn search_url(query: &LyricsQuery) -> Result<String, LyricsError> {
     Ok(url.into())
 }
 
+#[cfg(any(test, feature = "test-fixtures"))]
 pub(super) fn fixture_request(url: &str) -> Option<FixtureRequest> {
     let url = url::Url::parse(url).ok()?;
     if url.scheme() != "https" || url.host_str() != Some(HOST) || url.path() != "/api/get" {
@@ -328,6 +340,7 @@ pub(super) fn fixture_request(url: &str) -> Option<FixtureRequest> {
     })
 }
 
+#[cfg(any(test, feature = "test-fixtures"))]
 pub(super) fn fixture_get_at(url: &str, directory: &Path, log_path: Option<&Path>) -> FetchOutcome {
     let Some(request) = fixture_request(url) else {
         return FetchOutcome::Failed(false);
@@ -338,6 +351,7 @@ pub(super) fn fixture_get_at(url: &str, directory: &Path, log_path: Option<&Path
     for filename in [request.filename(), request.legacy_filename()] {
         let path = directory.join(filename);
         if path.is_file() {
+            hold_for_delay_file(&path);
             return std::fs::File::open(path)
                 .map_err(|_| ())
                 .and_then(|file| crate::http_body::read_bounded_string(file).map_err(|_| ()))
@@ -345,6 +359,16 @@ pub(super) fn fixture_get_at(url: &str, directory: &Path, log_path: Option<&Path
         }
     }
     FetchOutcome::Failed(false)
+}
+
+/// A `<fixture>.delay-ms` file holds the answer back, so a smoke can race a slow response
+/// against a fast one.
+#[cfg(any(test, feature = "test-fixtures"))]
+fn hold_for_delay_file(fixture: &Path) {
+    if let Ok(delay) = std::fs::read_to_string(fixture.with_extension("delay-ms")) {
+        let millis = delay.trim().parse::<u64>().unwrap_or_default();
+        std::thread::sleep(Duration::from_millis(millis));
+    }
 }
 
 pub(super) fn parse_response(body: &str) -> Result<LyricsBody, LyricsError> {
@@ -447,19 +471,12 @@ fn body_from_response(response: &ProviderResponse) -> Result<LyricsBody, LyricsE
 }
 
 fn fetch(url: &str) -> FetchOutcome {
+    #[cfg(any(test, feature = "test-fixtures"))]
     if let Some(directory) = fixture_directory() {
         return fixture_get_at(url, &directory, fixture_log().as_deref());
     }
-    wait_for_request_slot();
-    let response = match ureq::Agent::config_builder()
-        .timeout_global(Some(HTTP_TIMEOUT))
-        .user_agent(crate::musicbrainz::user_agent())
-        .http_status_as_error(false)
-        .build()
-        .new_agent()
-        .get(url)
-        .call()
-    {
+    let _ = wait_for_slot(RateLimitKey::Lrclib, &mut || false);
+    let response = match build_agent(agent_policy()).get(url).call() {
         Ok(response) => response,
         Err(_) => return FetchOutcome::Failed(true),
     };
@@ -504,6 +521,7 @@ fn retry_after_deadline(value: Option<&str>, observed_at: SystemTime) -> Option<
     })
 }
 
+#[cfg(any(test, feature = "test-fixtures"))]
 fn append_fixture_log(request: &FixtureRequest, log_path: Option<&Path>) -> bool {
     let Some(log_path) = log_path else {
         return true;
@@ -519,6 +537,7 @@ fn append_fixture_log(request: &FixtureRequest, log_path: Option<&Path>) -> bool
         .is_ok()
 }
 
+#[cfg(any(test, feature = "test-fixtures"))]
 fn fixture_directory() -> Option<PathBuf> {
     std::env::var(FIXTURE_DIR_ENV)
         .or_else(|_| std::env::var(LEGACY_FIXTURE_DIR_ENV))
@@ -526,6 +545,7 @@ fn fixture_directory() -> Option<PathBuf> {
         .map(PathBuf::from)
 }
 
+#[cfg(any(test, feature = "test-fixtures"))]
 fn fixture_log() -> Option<PathBuf> {
     std::env::var(FIXTURE_LOG_ENV)
         .or_else(|_| std::env::var(LEGACY_FIXTURE_LOG_ENV))
@@ -533,16 +553,9 @@ fn fixture_log() -> Option<PathBuf> {
         .map(PathBuf::from)
 }
 
-fn wait_for_request_slot() {
-    let mut last = LAST_REQUEST
-        .lock()
-        .unwrap_or_else(std::sync::PoisonError::into_inner);
-    if let Some(remaining) =
-        last.and_then(|instant| REQUEST_INTERVAL.checked_sub(instant.elapsed()))
-    {
-        std::thread::sleep(remaining);
-    }
-    *last = Some(Instant::now());
+/// lrclib answers are classified by status code, so ureq's status errors stay off.
+const fn agent_policy() -> AgentPolicy {
+    AgentPolicy::source(HTTP_TIMEOUT)
 }
 
 #[cfg(test)]

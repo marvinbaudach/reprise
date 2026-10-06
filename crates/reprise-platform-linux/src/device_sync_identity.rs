@@ -146,7 +146,7 @@ pub fn usb_serial_from_sysfs(root_uri: &str, sysfs_root: &Path) -> Option<String
 
 /// Resolves the USB serial from the stable volume identifier when GVfs
 /// publishes one, retaining the legacy MTP URI address as a fallback.
-#[cfg_attr(not(test), allow(dead_code))]
+#[cfg(test)]
 pub(crate) fn usb_serial_from_volume_identifier(
     unix_device: Option<&str>,
     root_uri: &str,

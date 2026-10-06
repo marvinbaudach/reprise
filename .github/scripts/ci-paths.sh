@@ -52,6 +52,12 @@ emit_routes() {
         display=true
     fi
 
+    # The core suite's workspace gate already tests the GNOME crate, so a
+    # change that routes core does not run the GNOME suite on top of it.
+    if [[ $core == true ]]; then
+        gnome=false
+    fi
+
     printf 'android=%s\ngnome=%s\ncore=%s\ndisplay=%s\n' \
         "$android" "$gnome" "$core" "$display"
 }
@@ -71,7 +77,7 @@ case "${1:-}" in
         base_sha=$4
         head_sha=$5
         if [[ $event == schedule || $event == push && $ref == refs/heads/main ]]; then
-            printf 'android=true\ngnome=true\ncore=true\ndisplay=true\n'
+            printf 'android=true\ngnome=false\ncore=true\ndisplay=true\n'
             exit 0
         fi
         if [[ $event == workflow_dispatch || -z $base_sha || $base_sha =~ ^0+$ ]] || \
@@ -111,8 +117,29 @@ case "${1:-}" in
             echo false
         fi
         ;;
+    --contain)
+        if (( $# != 3 )); then
+            echo "usage: $0 --contain EVENT SOURCES_STATUS" >&2
+            exit 64
+        fi
+        event=$2
+        sources_status=$3
+        # A pull request whose Flatpak sources are stale is red anyway: dev would
+        # go red after the merge. A Dependabot bump would burn its suites on it,
+        # and keeps base-contracts, where the same check fails. A human pull
+        # request skips its suites and base-contracts as suite reuse, so without
+        # this verdict nothing would run the check and its Quality gate would be
+        # green. Either way the gate must be red until the sources match. This is
+        # NOT suite reuse: reuse turns the Quality gate green, and an auto-merge
+        # armed pull request would merge with broken sources.
+        if [[ $event == pull_request && $sources_status != 0 ]]; then
+            echo true
+        else
+            echo false
+        fi
+        ;;
     *)
-        echo "usage: $0 --paths [PATH ...] | --diff EVENT REF BASE_SHA HEAD_SHA | --suite-skip EVENT REF ACTOR REPOSITORY_OWNER HEAD_SHA DEV_SHA" >&2
+        echo "usage: $0 --paths [PATH ...] | --diff EVENT REF BASE_SHA HEAD_SHA | --suite-skip EVENT REF ACTOR REPOSITORY_OWNER HEAD_SHA DEV_SHA | --contain EVENT SOURCES_STATUS" >&2
         exit 64
         ;;
 esac

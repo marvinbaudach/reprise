@@ -1,5 +1,3 @@
-#![allow(dead_code)]
-
 macro_rules! N_ {
     ($message:literal) => {
         $message
@@ -12,17 +10,9 @@ pub const PLUGIN_GROUP_LOCAL: &str = N_!("Local");
 pub const PLUGIN_GROUP_ONLINE_CONTENT: &str = N_!("Online content");
 pub const PLUGIN_GROUP_CONNECTED_SERVICES: &str = N_!("Connected services");
 pub const ONLINE_CONTENT_MASTER_DESCRIPTION: &str = N_!(
-    "Use online sources — off makes this a local player: nothing below runs, no requests, sidebar entries hidden."
+    "Turn off to keep Reprise offline: none of these plugins run, nothing is requested, and their sidebar entries are hidden."
 );
-pub const ONLINE_CONTENT_SHOW_SOURCES: &str = N_!("Show the {count} sources");
 pub const SCROBBLING_NEEDS_ONLINE_SOURCES: &str = N_!("Scrobbling · needs online sources");
-
-pub fn online_content_show_sources(count: usize) -> String {
-    formatted(
-        ONLINE_CONTENT_SHOW_SOURCES,
-        &[("count", &count.to_string())],
-    )
-}
 
 pub const PREFERENCES_ONLINE_SOURCES: &str = N_!("Online sources");
 pub const ONBOARDING_ONLINE_SOURCES_BODY: &str = N_!(
@@ -30,13 +20,6 @@ pub const ONBOARDING_ONLINE_SOURCES_BODY: &str = N_!(
 );
 pub const ONBOARDING_ONLINE_SOURCES_FOOTER: &str =
     N_!("You can change this any time in Preferences · Plugins.");
-pub const ONLINE_SOURCES_MASTER_TITLE: &str = N_!("Use online sources");
-pub const ONLINE_SOURCES_MASTER_BODY: &str = N_!(
-    "Off makes this a local player only: no requests, no downloads, nothing hidden — the three entries disappear from the sidebar."
-);
-pub const ONLINE_SOURCES_FOOTER: &str = N_!(
-    "Each block is self-contained: turning one off hides its sidebar entry and stops its requests; subscriptions and favorites are kept, not deleted."
-);
 pub const ONLINE_SOURCES_YOUTUBE_SUBTITLE: &str =
     N_!("Channels as audio episodes · channel feeds, audio via yt-dlp");
 pub const ONLINE_SOURCES_PODCASTS_SUBTITLE: &str =

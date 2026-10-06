@@ -280,6 +280,12 @@ internal class QueueReorderState internal constructor(private val scope: Corouti
         return queueNeighbourShiftRows(slot, start, targetSlot)
     }
 
+    /** Every displaced neighbour travels by the captured dragged-row height. */
+    fun neighbourOffsetPx(shiftRows: Float, fallbackRowHeightPx: Float): Float {
+        val heightPx = if (rowHeightPx > 0f) rowHeightPx else fallbackRowHeightPx
+        return shiftRows * heightPx
+    }
+
     fun begin(
         slot: Int,
         trackId: Long,

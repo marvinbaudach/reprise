@@ -36,6 +36,7 @@ use super::cover_cloud_blob::{
 #[cfg(test)]
 use super::cover_cloud_blob::{MAX_ANCHOR_COVERAGE_DISTANCE, MIN_ANCHOR_SEPARATION};
 use super::cover_scrim::{self, ScrimCache};
+use crate::ui::podcasts::source_image::ArtworkStage;
 use crate::ui::style::tokens;
 
 /// The field, and how far it hangs off each edge, as multiples of the cover.
@@ -276,9 +277,13 @@ struct Inner {
     layer_scratch: Option<LayerScratch>,
     /// Reading of the drift clock when the current cover arrived.
     arrived_at_us: Cell<i64>,
-    /// Cover generation the cached fields were built from; the panel bumps it
-    /// once per rendered track, exactly as `cover_bloom` keys its own cache.
-    generation: Cell<Option<u64>>,
+    /// Cover generation (and artwork stage) the cached fields were built
+    /// from; the panel bumps the generation once per rendered track, exactly
+    /// as `cover_bloom` keys its own cache. The stage is carried too because
+    /// one generation legitimately publishes a fallback (show/channel)
+    /// texture and then a primary (episode) texture (SRC-11), and a
+    /// generation-only key would treat the second as a repeat of the first.
+    generation: Cell<Option<(u64, ArtworkStage)>>,
     drift_clock: Cell<DriftClock>,
     last_drawn_pose: Cell<Option<([Drift; BLOBS_PER_LAYER], [Drift; BLOBS_PER_LAYER])>>,
     scrim: RefCell<Option<ScrimCache>>,
@@ -340,17 +345,26 @@ impl CoverCloud {
     /// placeholder, or no track. Without artwork the clouds stay dark: a light
     /// whose colour is not in the record is the dishonesty this layer exists to
     /// avoid.
-    pub(super) fn set_cover(&self, texture: Option<&gtk4::gdk::Texture>, generation: u64) {
+    ///
+    /// `stage` distinguishes a show/channel fallback texture from the
+    /// episode's own primary texture within the same generation — see the
+    /// `generation` field's doc comment.
+    pub(super) fn set_cover(
+        &self,
+        texture: Option<&gtk4::gdk::Texture>,
+        generation: u64,
+        stage: ArtworkStage,
+    ) {
         match texture {
             Some(texture) => {
-                if self.inner.generation.get() == Some(generation) {
+                if self.inner.generation.get() == Some((generation, stage)) {
                     return;
                 }
                 let back = build_blob_rasters(texture, BACK_BLUR_EDGE, &BACK_BLOBS);
                 let front = build_blob_rasters(texture, FRONT_BLUR_EDGE, &FRONT_BLOBS);
                 if let Some((back, front)) = complete_raster_pair(back, front) {
                     self.begin_fade(Some(back), Some(front));
-                    self.inner.generation.set(Some(generation));
+                    self.inner.generation.set(Some((generation, stage)));
                 }
             }
             None => {

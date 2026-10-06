@@ -65,6 +65,29 @@ fn two_row_review() -> DoctorReviewSession {
     )
 }
 
+#[test]
+fn remote_toggle_keeps_the_first_selection_for_duplicate_row_keys() {
+    let duplicate = proposal(1, DoctorField::Title, ProposalSource::Local);
+    let mut source = scan(vec![duplicate.clone(), duplicate]);
+    source.options.remote_enabled = true;
+    let mut review = DoctorReviewSession::from_scan(source, DoctorReviewFilter::NeedsReview);
+    let first = review.rows()[0].id;
+    let second = review.rows()[1].id;
+    review.set_selected(first, false).unwrap();
+    review.set_selected(second, true).unwrap();
+
+    review.set_remote_visible(false);
+
+    assert_eq!(
+        review
+            .rows()
+            .iter()
+            .map(|row| row.selected)
+            .collect::<Vec<_>>(),
+        vec![false, false]
+    );
+}
+
 fn tie_review() -> DoctorReviewSession {
     let unresolved = DoctorUnresolvedGroup {
         field: DoctorField::Artist,

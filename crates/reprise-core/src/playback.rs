@@ -5,6 +5,12 @@
 //! per-OS platform crates (Linux: GStreamer `playbin3` in `player.rs`).
 
 mod bass_pressure;
+/// Seeded synthetic music and the stream-boundary yardstick the visualizer
+/// surfaces are tested against. Debug builds only, like the other cross-crate
+/// test seams.
+#[cfg(debug_assertions)]
+#[doc(hidden)]
+pub mod boundary_fixture;
 mod cava;
 mod fault_policy;
 pub(crate) mod spectral;
@@ -37,9 +43,18 @@ impl Default for AudioEffects {
         Self {
             equalizer_enabled: false,
             equalizer_bands: [0.0; 10],
-            replay_gain: crate::library::settings::ReplayGainMode::Off,
+            replay_gain: crate::library::settings::ReplayGainMode::Track,
         }
     }
+}
+
+#[cfg(test)]
+#[test]
+fn play_19_audio_effects_default_to_track_gain() {
+    assert_eq!(
+        AudioEffects::default().replay_gain,
+        crate::library::settings::ReplayGainMode::Track
+    );
 }
 
 /// One-to-one CAVA bars carried by [`SpectrumFrame`].
@@ -70,7 +85,7 @@ impl SpectrumFrame {
 
     /// Attaches the absolute bass measurement taken from the same PCM. Kept
     /// separate from the bars because CAVA's auto-sensitivity makes those
-    /// relative, and the glow layer needs an honest level (AC-23).
+    /// relative, and the glow layer needs an honest level (AC-29).
     #[must_use]
     pub fn with_bass_pressure(self, pressure: BassPressure) -> Self {
         Self {
@@ -253,7 +268,10 @@ mod playback_failure_redaction_tests {
 /// passed to `Player::new`.
 // `Spectrum` carries a fixed 64-band snapshot (~276 B) emitted ~60×/s; boxing
 // it would add a per-frame heap allocation on the audio hot path.
-#[allow(clippy::large_enum_variant)]
+#[expect(
+    clippy::large_enum_variant,
+    reason = "boxing spectrum frames would allocate on the audio hot path"
+)]
 #[derive(Debug, Clone)]
 pub enum PlayerEvent {
     StateChanged(PlaybackState),
@@ -353,9 +371,31 @@ mod song_visual_tests;
 #[path = "playback/cava_tests.rs"]
 mod cava_tests;
 
+// The yardstick is compiled in debug builds only (see `boundary_fixture`).
+#[cfg(all(test, debug_assertions))]
+#[path = "playback/boundary_tests.rs"]
+mod boundary_tests;
+
+#[cfg(all(test, debug_assertions))]
+#[path = "playback/boundary_intro_tests.rs"]
+mod boundary_intro_tests;
+
 #[cfg(test)]
 #[path = "playback/bass_pressure_tests.rs"]
 mod bass_pressure_tests;
+
+/// A local track to start: where it plays from, the gain, in dB, its stream
+/// plays at, and the part of the file it covers.
+///
+/// `segment` is the `(start_ms, end_ms)` of a track cut from a larger file by a
+/// CUE sheet; position and duration are then relative to it. `None` plays the
+/// whole file. A backend that does not cut segments yet plays the whole file.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct PlaybackItem<'a> {
+    pub path: &'a str,
+    pub gain_db: f64,
+    pub segment: Option<(i64, i64)>,
+}
 
 /// The audio-playback contract every platform implements (Linux: GStreamer
 /// playbin3 in `player.rs`; future macOS/Windows: AVFoundation / WASAPI —
@@ -388,7 +428,7 @@ mod bass_pressure_tests;
 /// `Fn(PlayerEvent)` construction path is unaffected, and a consumer that
 /// never asks for tagging never observes either new type.
 pub trait PlaybackBackend {
-    fn play(&self, path: &str) -> Result<(), PlaybackError>;
+    fn play(&self, item: PlaybackItem<'_>) -> Result<(), PlaybackError>;
     /// Starts a non-local media URI. Implementations must accept `http`,
     /// `https`, and `file`; local-path callers continue to use [`Self::play`].
     fn play_uri(&self, uri: &str) -> Result<(), PlaybackError>;
@@ -403,6 +443,11 @@ pub trait PlaybackBackend {
     fn seek_to(&self, position_ms: i64) -> Result<(), PlaybackError>;
     fn set_volume(&self, volume: f64);
     fn set_audio_effects(&self, effects: AudioEffects) -> Result<(), PlaybackError>;
+    /// Applies a newly resolved gain to the current local track without
+    /// restarting it. Backends without per-track gain may keep the no-op.
+    fn set_current_gain_db(&self, _gain_db: f64) -> Result<(), PlaybackError> {
+        Ok(())
+    }
     /// Enables or disables the optional spectrum analyzer at runtime. Backends
     /// without an analyzer may keep the default no-op implementation.
     fn set_spectrum_enabled(&self, _enabled: bool) -> Result<(), PlaybackError> {
@@ -419,7 +464,7 @@ pub trait PlaybackBackend {
     /// latest value ("last write wins"). A backend that does not support
     /// gapless handoff may treat this as a no-op — playback then falls back to
     /// the ordinary `TrackFinished`-driven advance.
-    fn set_next(&self, path: Option<&str>);
+    fn set_next(&self, item: Option<PlaybackItem<'_>>);
 
     /// Selects how the backend transitions into the pre-fed next track (see
     /// `set_next`): `Off`/`Gapless` hand off at the end (the frontend only

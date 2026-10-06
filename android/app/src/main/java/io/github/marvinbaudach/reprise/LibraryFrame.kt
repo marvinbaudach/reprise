@@ -15,9 +15,11 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.asPaddingValues
 import androidx.compose.foundation.layout.calculateStartPadding
+import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -51,8 +53,10 @@ import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalLayoutDirection
 import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import io.github.marvinbaudach.reprise.ui.theme.MaterialSymbolsRounded
@@ -66,6 +70,8 @@ internal fun LibrarySummaryActions(
     toggleSearch: () -> Unit,
     rescan: () -> Unit,
     openSettings: () -> Unit,
+    artworkProgress: ArtistPhotoProgress? = null,
+    stopArtworkDownload: () -> Unit = {},
 ) {
     var menuExpanded by remember { mutableStateOf(false) }
     Row(
@@ -131,6 +137,20 @@ internal fun LibrarySummaryActions(
                         openSettings()
                     },
                 )
+                if (
+                    artworkProgress?.phase == ArtistPhotoProgressPhase.PREPARING ||
+                    artworkProgress?.phase == ArtistPhotoProgressPhase.RUNNING ||
+                    artworkProgress?.phase == ArtistPhotoProgressPhase.PAUSED
+                ) {
+                    DropdownMenuItem(
+                        text = { Text("Stop artwork download") },
+                        leadingIcon = { MaterialSymbol("stop", "") },
+                        onClick = {
+                            menuExpanded = false
+                            stopArtworkDownload()
+                        },
+                    )
+                }
             }
         }
     }
@@ -179,11 +199,17 @@ internal fun LibraryBottomFrame(
         // only the status bar, so this is the one place the bottom inset is
         // spent.
         val systemBarInsets = NavigationBarDefaults.windowInsets
+        val minimumNavigationBarHeight = metrics.navigationBarHeightDp.dp +
+            systemBarInsets.asPaddingValues().calculateBottomPadding()
         NavigationBar(
             modifier = Modifier
-                .height(
-                    metrics.navigationBarHeightDp.dp +
-                    systemBarInsets.asPaddingValues().calculateBottomPadding(),
+                .heightIn(
+                    min = minimumNavigationBarHeight,
+                    max = if (LocalDensity.current.fontScale <= 1f) {
+                        minimumNavigationBarHeight
+                    } else {
+                        Dp.Unspecified
+                    },
                 )
                 .testTag("library-navigation-bar"),
             containerColor = MaterialTheme.colorScheme.surface,
@@ -263,10 +289,12 @@ private fun MiniPlayer(
     val performanceObserver = LocalLibraryPerformanceObserver.current
     val progressRail = MaterialTheme.colorScheme.outlineVariant
     val progressFill = MaterialTheme.colorScheme.primary
+    val minimumHeight = metrics.miniPlayerHeightDp.dp
+    val needsTextClearance = LocalDensity.current.fontScale > 1f
     Surface(
         modifier = Modifier
             .fillMaxWidth()
-            .height(metrics.miniPlayerHeightDp.dp)
+            .heightIn(min = minimumHeight)
             .testTag("library-mini-player")
             .padding(horizontal = 12.dp)
             // The label names the *action*; it does not replace what this node
@@ -287,10 +315,14 @@ private fun MiniPlayer(
                 TrackCover(
                     trackUri = track.uri,
                     size = metrics.trackCoverSizeDp,
+                    modifier = Modifier.testTag("library-mini-player-cover"),
                     decorative = true,
                 )
                 Spacer(Modifier.width(12.dp))
                 Column(modifier = Modifier.weight(1f)) {
+                    if (needsTextClearance) {
+                        Spacer(Modifier.height(8.dp))
+                    }
                     Text(
                         text = track.title,
                         style = MaterialTheme.typography.titleMedium,
@@ -304,6 +336,9 @@ private fun MiniPlayer(
                         maxLines = 1,
                         overflow = TextOverflow.Ellipsis,
                     )
+                    if (needsTextClearance) {
+                        Spacer(Modifier.height(8.dp))
+                    }
                 }
                 IconButton(onClick = controls::previous, modifier = Modifier.size(48.dp)) {
                     MaterialSymbol("skip_previous", "Previous track")

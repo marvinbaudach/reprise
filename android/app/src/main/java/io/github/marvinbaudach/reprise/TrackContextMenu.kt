@@ -10,17 +10,17 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.size
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
-import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.IconButton
-import androidx.compose.material3.TextButton
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.Stable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.composed
@@ -33,6 +33,8 @@ import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.unit.DpOffset
 import androidx.compose.ui.unit.dp
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.launch
 import uniffi.reprise_android_ffi.AndroidTrashReport
 
 @Stable
@@ -67,8 +69,12 @@ internal fun rememberTrackContextMenuAnchorState() = remember { TrackContextMenu
  *
  * So the row calls this below its own content, which is the shape
  * [FavouriteHeartButton] already uses for its failure: control first, message
- * in a slot underneath. That matters beyond tidiness — a partial deletion
- * ("2 of 12 could not be deleted") is reported through this same text.
+ * in a slot underneath.
+ *
+ * A deletion's outcome is not said here when the row sits on the library
+ * screen: the row is often gone by the time the deletion answers, so
+ * [LocalDeletionMessages] points at a line the screen owns. Only rows outside
+ * it fall back to this slot.
  */
 @Composable
 internal fun TrackContextMenuMessage(anchor: TrackContextMenuAnchorState) {
@@ -116,17 +122,19 @@ internal data class QueueTrackMenuTarget(
     val actions: QueueRowActions,
 )
 
-private data class TrackDeletionTarget(
-    val label: String,
-    val trackCount: Long,
-    val resolveTrackIds: () -> List<Long>,
-)
-
-private fun LibraryTrackMenuTarget.deletionTarget() = TrackDeletionTarget(
-    label = label,
-    trackCount = trackCount,
-    resolveTrackIds = resolveTrackIds,
-)
+/**
+ * The ids to delete, once the selection was resolved: a selection that cannot
+ * be deleted is refused, saying why, before anything is hidden. Null after
+ * saying it. The ids hidden are the ids later deleted.
+ */
+private fun deletableIds(ids: List<Long>, messages: DeletionMessages): List<Long>? {
+    // A full answer may be a cut one: see TRACK_ID_QUERY_LIMIT.
+    if (ids.size >= TRACK_ID_QUERY_LIMIT) {
+        messages.say(SELECTION_TOO_LARGE_TO_DELETE)
+        return null
+    }
+    return ids
+}
 
 /**
  * The queue row's menu.
@@ -142,6 +150,8 @@ internal fun TrackContextMenu(
     anchor: TrackContextMenuAnchorState,
     target: QueueTrackMenuTarget,
 ) {
+    val controls = LocalPlaybackControls.current
+    val pendingDeletions = LocalDeletionMessages.current?.pendingDeletions
     DropdownMenu(
         expanded = anchor.expanded,
         onDismissRequest = { anchor.expanded = false },
@@ -158,10 +168,36 @@ internal fun TrackContextMenu(
             text = { Text("Remove from queue") },
             onClick = {
                 anchor.expanded = false
-                target.actions.remove(target.position, target.trackId)
+                removeFromQueue(target, controls, pendingDeletions)
             },
         )
     }
+}
+
+/**
+ * Removes the row and, when the screen can show one, offers to put it back.
+ *
+ * The undo re-reads the queue page by sending the no-op move (a row onto its
+ * own position) through the page's own action: that page reloads after every
+ * edit, whatever its answer, and is the one place that knows how.
+ */
+private fun removeFromQueue(
+    target: QueueTrackMenuTarget,
+    controls: PlaybackControls,
+    pendingDeletions: PendingDeletions?,
+) {
+    val remove = { target.actions.remove(target.position, target.trackId) }
+    if (pendingDeletions == null) {
+        remove()
+        return
+    }
+    pendingDeletions.removeFromQueueWithUndo(
+        position = target.position,
+        trackId = target.trackId,
+        playback = controls,
+        remove = remove,
+        refresh = { target.actions.move(0, target.trackId, 0) },
+    )
 }
 
 @Composable
@@ -170,13 +206,61 @@ internal fun TrackContextMenu(
     target: LibraryTrackMenuTarget,
 ) {
     val controls = LocalPlaybackControls.current
-    var deleteConfirmation by remember { mutableStateOf<TrackDeletionTarget?>(null) }
+    // The screen's line when there is one: this row may be gone when a
+    // deletion answers or a lookup is cancelled.
+    val screenMessages = LocalDeletionMessages.current
+    val pendingDeletions = screenMessages?.pendingDeletions
+    val deletionMessages = screenMessages ?: anchor.asDeletionMessages()
+    val scope = rememberCoroutineScope()
+    // The id query is not instant for a big artist. While one is out, the
+    // menu's items are off: a second tap would ask the catalog the same
+    // question again and, for a deletion, hide the same tracks twice.
+    var resolving by remember { mutableStateOf(false) }
 
-    fun resolvedIds(): List<Long>? = runCatching(target.resolveTrackIds)
-        .onFailure { error ->
-            anchor.say("Could not load the tracks: ${error.message ?: "unknown error"}")
+    fun whileResolving(work: suspend () -> Unit) {
+        if (resolving) {
+            return
         }
-        .getOrNull()
+        resolving = true
+        scope.launch {
+            try {
+                work()
+            } finally {
+                resolving = false
+            }
+        }
+    }
+
+    suspend fun resolvedIds(reportFailure: (String) -> Unit = anchor::say): List<Long>? {
+        val outcome = try {
+            resolveOffMain(target.resolveTrackIds)
+        } catch (cancelled: CancellationException) {
+            // The row's line leaves with it, so only the screen can explain
+            // why its unfinished action disappeared.
+            screenMessages?.say(
+                "The list changed before the tracks of ${target.label} were found. Nothing was done.",
+            )
+            throw cancelled
+        }
+        return outcome
+            .onFailure { error -> reportFailure(couldNotLoadTracks(error)) }
+            .getOrNull()
+    }
+
+    // Tracks already waiting to be deleted are not there to act on. Saying so
+    // when that is all there was: an action that does nothing, silently, reads
+    // as a tap that was lost.
+    fun withoutPending(ids: List<Long>, say: (String) -> Unit): List<Long>? {
+        val visible = pendingDeletions?.withoutHidden(ids) ?: ids
+        if (visible.isEmpty() && ids.isNotEmpty()) {
+            say(EVERYTHING_TAPPED_IS_BEING_DELETED)
+            return null
+        }
+        return visible
+    }
+
+    suspend fun actionableIds(): List<Long>? =
+        resolvedIds()?.let { ids -> withoutPending(ids, anchor::say) }
 
     fun queued(outcome: Result<UInt>) {
         val text = outcome.fold(
@@ -202,55 +286,77 @@ internal fun TrackContextMenu(
     ) {
         DropdownMenuItem(
             text = { Text("Play") },
+            enabled = !resolving,
             onClick = {
                 anchor.expanded = false
-                resolvedIds()?.let(target.play)
+                whileResolving { actionableIds()?.let(target.play) }
             },
         )
         DropdownMenuItem(
             text = { Text("Play next") },
+            enabled = !resolving,
             onClick = {
                 anchor.expanded = false
-                resolvedIds()?.let { ids -> controls.queueTracksNext(ids, ::queued) }
+                whileResolving {
+                    actionableIds()?.let { ids -> controls.queueTracksNext(ids, ::queued) }
+                }
             },
         )
         DropdownMenuItem(
             text = { Text("Add to queue") },
+            enabled = !resolving,
             onClick = {
                 anchor.expanded = false
-                resolvedIds()?.let { ids -> controls.queueTracksLast(ids, ::queued) }
+                whileResolving {
+                    actionableIds()?.let { ids -> controls.queueTracksLast(ids, ::queued) }
+                }
             },
         )
         HorizontalDivider()
         DropdownMenuItem(
             text = { Text("Delete from device…") },
+            enabled = !resolving,
             onClick = {
                 anchor.expanded = false
-                deleteConfirmation = target.deletionTarget()
+                whileResolving {
+                    resolvedIds(deletionMessages::say)?.let { ids ->
+                        // The cap is checked on the whole answer, hidden rows
+                        // included: a capped answer stays refused.
+                        deletableIds(ids, deletionMessages)
+                    }?.let { ids ->
+                        withoutPending(ids, deletionMessages::say)
+                    }?.let { deletable ->
+                        pendingDeletions?.begin(deletable, controls)
+                            ?: deletionMessages.say(DELETION_UNAVAILABLE)
+                    }
+                }
             },
         )
     }
-    TrackDeletionConfirmation(
-        target = deleteConfirmation,
-        dismiss = { deleteConfirmation = null },
-        report = anchor::say,
-    )
 }
 
 @Composable
 internal fun NowPlayingTrackContextMenu(track: LibraryTrack) {
     val enabled = LocalNowPlayingActionsEnabled.current
+    val controls = LocalPlaybackControls.current
+    val screenMessages = LocalDeletionMessages.current
+    val pendingDeletions = screenMessages?.pendingDeletions
     var expanded by remember { mutableStateOf(false) }
-    var deleteConfirmation by remember { mutableStateOf<TrackDeletionTarget?>(null) }
     var message by remember { mutableStateOf<TransientMessage?>(null) }
-    val target = remember(track.id, track.title) {
-        TrackDeletionTarget(track.title, 1) { listOf(track.id) }
+    // The screen's deletion line sits under this sheet, so what a delete
+    // started here has to say goes beside the button, for as long as the sheet
+    // is there to show it, and to the screen's line once it is not.
+    val sheetMessages = remember(screenMessages) {
+        SheetDeletionMessages(screenMessages) { text ->
+            message = TransientMessage(text).after(message)
+        }
+    }
+    DisposableEffect(sheetMessages) {
+        sheetMessages.open = true
+        onDispose { sheetMessages.open = false }
     }
     LaunchedEffect(enabled) {
-        if (!enabled) {
-            expanded = false
-            deleteConfirmation = null
-        }
+        if (!enabled) expanded = false
     }
     // The message needs a slot of its own, exactly as in FavouriteHeartButton
     // next door: as a bare sibling it becomes another cell of the actions Row
@@ -269,17 +375,32 @@ internal fun NowPlayingTrackContextMenu(track: LibraryTrack) {
                     text = { Text("Delete from device…") },
                     onClick = {
                         expanded = false
-                        deleteConfirmation = target
+                        // The one id is already in hand: nothing to resolve.
+                        pendingDeletions?.begin(listOf(track.id), controls, sheetMessages)
+                            ?: run { message = TransientMessage(DELETION_UNAVAILABLE).after(message) }
                     },
                 )
             }
         }
-        TrackDeletionConfirmation(
-            target = deleteConfirmation,
-            dismiss = { deleteConfirmation = null },
-            report = { text -> message = TransientMessage(text).after(message) },
-        )
         TransientMessageText(message) { message = null }
+    }
+}
+
+/** Says a delete's progress beside the sheet's button while it is open, else on the screen. */
+private class SheetDeletionMessages(
+    private val screen: DeletionMessages?,
+    private val showHere: (String) -> Unit,
+) : DeletionMessages {
+    var open = true
+
+    override fun say(text: String) {
+        if (open) showHere(text) else screen?.say(text)
+    }
+
+    override fun begin(text: String): DeletionRun {
+        if (!open) return screen?.begin(text) ?: DeletionRun { }
+        showHere(text)
+        return DeletionRun { outcome -> say(outcome) }
     }
 }
 
@@ -303,7 +424,7 @@ internal fun trashOutcomeMessage(report: AndroidTrashReport, requested: Int): St
     }
 
 /** Keeps the per-file detail the message deliberately leaves out. */
-private fun logTrashFailures(report: AndroidTrashReport) {
+internal fun logTrashFailures(report: AndroidTrashReport) {
     if (report.failures.isEmpty()) {
         return
     }
@@ -312,57 +433,6 @@ private fun logTrashFailures(report: AndroidTrashReport) {
         report.failures.joinToString(separator = "; ") { failure ->
             // An already-gone row has no path to name.
             "track ${failure.trackId} (${failure.uri.ifEmpty { "no file" }}): ${failure.error}"
-        },
-    )
-}
-
-@Composable
-private fun TrackDeletionConfirmation(
-    target: TrackDeletionTarget?,
-    dismiss: () -> Unit,
-    report: (String) -> Unit,
-) {
-    val controls = LocalPlaybackControls.current
-    target ?: return
-    val title = if (target.trackCount == 1L) {
-        "Delete ${target.label}?"
-    } else {
-        "Delete ${target.trackCount} tracks from ${target.label}?"
-    }
-    AlertDialog(
-        onDismissRequest = dismiss,
-        title = { Text(title) },
-        text = {
-            Text("The selected files will be deleted from this device. This cannot be undone.")
-        },
-        dismissButton = {
-            TextButton(onClick = dismiss) { Text("Cancel") }
-        },
-        confirmButton = {
-            TextButton(
-                onClick = {
-                    dismiss()
-                    val ids = runCatching(target.resolveTrackIds).getOrElse { error ->
-                        report("Could not load the tracks: ${error.message ?: "unknown error"}")
-                        return@TextButton
-                    }
-                    controls.deleteTracks(ids) { outcome ->
-                        report(
-                            outcome.fold(
-                                onSuccess = { deletion ->
-                                    logTrashFailures(deletion)
-                                    trashOutcomeMessage(deletion, ids.size)
-                                },
-                                onFailure = { error ->
-                                    Log.w(TRACK_MENU_TAG, "Could not delete tracks", error)
-                                    "Could not delete tracks: " +
-                                        (error.message ?: "unknown error")
-                                },
-                            ),
-                        )
-                    }
-                },
-            ) { Text("Delete") }
         },
     )
 }

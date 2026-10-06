@@ -5,7 +5,6 @@ use reprise_core::artist_news::{
     RELEASES_FILTER_TYPE_KEY,
 };
 use reprise_core::db::Db;
-use reprise_view::search_scope::SearchScope;
 
 use super::releases_filter_bar::{persist_filter, release_count_presentation, window_label};
 use crate::ui::browse::filter_bar::{
@@ -151,9 +150,6 @@ impl FilterModel for ReleasesModel {
         selections
     }
 
-    fn search_scope(&self) -> SearchScope {
-        SearchScope::Releases
-    }
     fn add_filter_label(&self) -> String {
         strings::text(strings::RELEASES_ADD_FILTER)
     }

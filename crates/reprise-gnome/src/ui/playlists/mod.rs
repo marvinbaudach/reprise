@@ -14,5 +14,8 @@ pub(in crate::ui) mod playlist_io_names {
     }
 }
 
-#[allow(unused_imports)]
+#[allow(
+    unused_imports,
+    reason = "child modules share the parent UI vocabulary through this import"
+)]
 use super::*;

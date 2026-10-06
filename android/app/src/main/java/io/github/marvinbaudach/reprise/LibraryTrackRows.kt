@@ -1,6 +1,5 @@
 package io.github.marvinbaudach.reprise
 
-import androidx.compose.animation.core.animateDpAsState
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.gestures.awaitEachGesture
@@ -12,8 +11,10 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.GridItemSpan
@@ -30,7 +31,9 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -44,10 +47,11 @@ import androidx.compose.ui.input.pointer.positionChange
 import androidx.compose.ui.layout.LocalPinnableContainer
 import androidx.compose.ui.layout.boundsInRoot
 import androidx.compose.ui.layout.onGloballyPositioned
+import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.layout.positionInRoot
 import androidx.compose.ui.platform.LocalDensity
-import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.semantics.CustomAccessibilityAction
@@ -61,10 +65,16 @@ internal data class QueueRowActions(
     val remove: (position: Int, expectedTrackId: Long) -> Unit,
 )
 
+private val TrailingColumnMinWidth = 48.dp
+
+internal fun trackRowDragHeightPx(measuredHeightPx: Int, minimumHeightPx: Float): Float =
+    if (measuredHeightPx > 0) measuredHeightPx.toFloat() else minimumHeightPx
+
 /**
- * The library's track list: the 72 dp rows, their continuation sentinel, and
- * the badges the row carries. Shared by the Titles tab and by an opened album,
- * which is why it is not part of either.
+ * The library's track list: rows with a 72 dp floor that grow with the font
+ * scale, their continuation sentinel, and the badges the row carries. Shared
+ * by the Titles tab and by an opened album, which is why it is not part of
+ * either.
  */
 @Composable
 internal fun TrackRows(
@@ -82,7 +92,13 @@ internal fun TrackRows(
     owner: String = "",
 ) {
     val metrics = libraryFrameMetrics(surfaceLayout)
-    val content = trackListContent(tracks, lastRequestedOffset)
+    val deletions = surfaceState.pendingDeletions
+    // Hidden here, at render time, and never cut out of the window: its paging
+    // offsets count its rows. The queue is not filtered — a delete takes its
+    // tracks out of the queue itself.
+    val content = trackListContent(tracks, lastRequestedOffset).filterNot { item ->
+        queueActions == null && item is TrackListContent.Row && deletions.isHidden(item.track.id)
+    }
     val anchor = surfaceState.scrollPosition(listKey, owner).within(content.size)
     val rowKey: (TrackListContent) -> Any = if (queueActions == null) {
         TrackListContent::libraryRowKey
@@ -314,7 +330,22 @@ private fun LibraryTrackRow(
     play: () -> Unit,
 ) {
     val contextMenu = rememberTrackContextMenuAnchorState()
+    val density = LocalDensity.current
+    val fontScale = density.fontScale
+    val minimumRowHeight = metrics.trackRowHeightDp.dp
+    val minimumRowHeightPx = with(density) { minimumRowHeight.toPx() }
     val queueDrag = if (queueActions == null) null else reorder
+    val measuredRowHeightPx = if (queueDrag == null) {
+        null
+    } else {
+        remember(track.id, metrics.trackRowHeightDp) { mutableIntStateOf(0) }
+    }
+    val dragRowHeightPx = {
+        trackRowDragHeightPx(
+            measuredHeightPx = measuredRowHeightPx?.intValue ?: 0,
+            minimumHeightPx = minimumRowHeightPx,
+        )
+    }
     val dragged = queueDrag?.isDragging(queuePosition) == true
     val shiftRows = if (offsetsHold) queueDrag?.neighbourShiftRows(queuePosition) ?: 0 else 0
     // One envelope for the whole lift, read by both the transform and the
@@ -326,9 +357,10 @@ private fun LibraryTrackRow(
     } else {
         MaterialTheme.colorScheme.background
     }
-    // The row itself is a fixed-height, clipped Surface, so the context menu's
-    // acknowledgement gets a slot under it rather than a place on top of the
-    // cover and the title. See TrackContextMenuMessage.
+    // The row itself is a clipped Surface with a minimum height, so the text
+    // can establish its measured height and the context menu's acknowledgement
+    // gets a slot under it rather than a place on top of the cover and title.
+    // See TrackContextMenuMessage.
     Column(
         modifier = if (queueDrag == null) {
             Modifier
@@ -340,14 +372,24 @@ private fun LibraryTrackRow(
                     dragged = dragged && offsetsHold,
                     lift = lift,
                     shiftRows = shiftRows,
-                    rowHeightDp = metrics.trackRowHeightDp,
+                    rowHeightPx = dragRowHeightPx,
                 )
         },
     ) {
         Surface(
             modifier = Modifier
                 .fillMaxWidth()
-                .height(metrics.trackRowHeightDp.dp)
+                .heightIn(
+                    min = minimumRowHeight,
+                    max = if (fontScale <= 1f) minimumRowHeight else Dp.Unspecified,
+                )
+                .then(
+                    if (measuredRowHeightPx == null) {
+                        Modifier
+                    } else {
+                        Modifier.onSizeChanged { measuredRowHeightPx.intValue = it.height }
+                    },
+                )
                 .clipToBounds()
                 .testTag(
                     if (queueActions == null) {
@@ -428,12 +470,14 @@ private fun LibraryTrackRow(
                             track = track,
                             position = queuePosition,
                             rowCount = queueRowCount,
-                            rowHeightDp = metrics.trackRowHeightDp,
+                            rowHeightPx = dragRowHeightPx,
                             reorder = queueDrag,
                         )
                     }
                     Column(
-                        modifier = Modifier.width(48.dp),
+                        modifier = Modifier.widthIn(
+                            min = TrailingColumnMinWidth * fontScale,
+                        ),
                         horizontalAlignment = Alignment.End,
                         verticalArrangement = Arrangement.spacedBy(2.dp),
                     ) {
@@ -530,16 +574,20 @@ private fun Modifier.queueDragMotion(
     dragged: Boolean,
     lift: Float,
     shiftRows: Int,
-    rowHeightDp: Int,
+    rowHeightPx: () -> Float,
 ): Modifier {
-    val neighbourOffset by animateDpAsState(
-        targetValue = (shiftRows * rowHeightDp).dp,
+    val neighbourShift by animateFloatAsState(
+        targetValue = shiftRows.toFloat(),
         animationSpec = tween(QUEUE_DRAG_NEIGHBOUR_MS, easing = QueueDragEasing),
         label = "queue-drag-neighbour",
     )
     return graphicsLayer {
         val scale = 1f + (QUEUE_DRAG_LIFT_SCALE - 1f) * lift
-        translationY = if (dragged) reorder.translationPx else neighbourOffset.toPx()
+        translationY = if (dragged) {
+            reorder.translationPx
+        } else {
+            reorder.neighbourOffsetPx(neighbourShift, rowHeightPx())
+        }
         scaleX = scale
         scaleY = scale
         shadowElevation = QUEUE_DRAG_LIFT_ELEVATION_DP.dp.toPx() * lift
@@ -635,15 +683,15 @@ private fun QueueDragHandle(
     track: LibraryTrack,
     position: Int,
     rowCount: Int,
-    rowHeightDp: Int,
+    rowHeightPx: () -> Float,
     reorder: QueueReorderState,
 ) {
-    val rowHeightPx = with(LocalDensity.current) { rowHeightDp.dp.toPx() }
     // Where the finger is on the screen, which is what the auto-scroll edges
     // are measured against. Read once at lift-off and carried forward by the
     // finger's own movement: the handle's layout position stops being the
     // truth the moment the row is translated out from under it.
     var handleTopPx by remember(track.id) { mutableFloatStateOf(0f) }
+    val currentRowHeightPx = rememberUpdatedState(rowHeightPx)
     Box(
         modifier = Modifier
             .width(48.dp)
@@ -652,7 +700,7 @@ private fun QueueDragHandle(
             .onGloballyPositioned { coordinates ->
                 handleTopPx = coordinates.positionInRoot().y
             }
-            .pointerInput(track.id, position, rowCount, rowHeightPx) {
+            .pointerInput(track.id, position, rowCount) {
                 awaitEachGesture {
                     val down = awaitFirstDown(requireUnconsumed = false)
                     // Consuming the down is what keeps the row's own clickable
@@ -661,7 +709,7 @@ private fun QueueDragHandle(
                     reorder.begin(
                         slot = position,
                         trackId = track.id,
-                        rowHeightPx = rowHeightPx,
+                        rowHeightPx = currentRowHeightPx.value(),
                         slotCount = rowCount,
                         pointerRootYPx = handleTopPx + down.position.y,
                     )
@@ -688,29 +736,6 @@ private fun QueueDragHandle(
         contentAlignment = Alignment.Center,
     ) {
         MaterialSymbol("drag_handle", "Reorder ${track.title}")
-    }
-}
-
-@Composable
-private fun PlayCountBadge(playCount: Long) {
-    val normalizedPlayCount = playCount.coerceAtLeast(0)
-    val description = pluralStringResource(
-        R.plurals.play_count_description,
-        normalizedPlayCount.coerceAtMost(Int.MAX_VALUE.toLong()).toInt(),
-        normalizedPlayCount,
-    )
-    Surface(
-        color = MaterialTheme.colorScheme.secondaryContainer,
-        contentColor = MaterialTheme.colorScheme.onSecondaryContainer,
-        shape = MaterialTheme.shapes.small,
-    ) {
-        Row(
-            modifier = Modifier.padding(horizontal = 5.dp, vertical = 1.dp),
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            MaterialSymbol("play_arrow", description, sizeSp = 12)
-            Text(normalizedPlayCount.toString(), style = MaterialTheme.typography.labelSmall)
-        }
     }
 }
 

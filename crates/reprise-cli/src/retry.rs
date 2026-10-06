@@ -1,12 +1,21 @@
 //! Bounded write-retry with jittered backoff.
 //!
-//! The database is opened with SQLite's own `busy_timeout` (5 s), which blocks
-//! a writer while another connection holds the write lock. This layer sits on
-//! top for the rarer case where a *long* foreign write (e.g. a full rescan by
-//! the running app) outlasts that timeout and the facade still returns
-//! `SQLITE_BUSY`/`SQLITE_LOCKED`: rather than fail the whole command, the CLI
-//! retries a few times with a short, jittered backoff. Reads never need this —
-//! WAL readers do not block on a writer — so only mutating facades are wrapped.
+//! The database is opened with SQLite's own `busy_timeout` (5 s), but SQLite
+//! waits only when a transaction's first step takes the write lock. A deferred
+//! transaction that has already read and then upgrades to a write while another
+//! connection holds the write lock gets `SQLITE_BUSY` at once: SQLite skips the
+//! busy handler for that upgrade, because waiting there could deadlock. Measured
+//! with `playlist create` against a held `BEGIN IMMEDIATE`, the first attempt
+//! fails at once, not after 5 s.
+//!
+//! Rather than fail the whole command on that `SQLITE_BUSY`/`SQLITE_LOCKED`, the
+//! CLI retries a few times with a short, jittered backoff, about 0.3 s in all. A
+//! foreign write that holds the lock longer (e.g. a full rescan by the running
+//! app) still fails such a command. Reads never need this — WAL readers do not
+//! block on a writer — so only mutating facades are wrapped.
+//!
+//! Each retry says so on stderr (one line, never stdout, which stays
+//! machine-readable), so a write that waits is visible rather than mysterious.
 
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
@@ -21,9 +30,14 @@ pub const MAX_BACKOFF_MS: u64 = 200;
 /// writers so they do not wake in lockstep.
 pub const MAX_JITTER_MS: u64 = 20;
 
+/// Prefix of the stderr line printed before each retry; the rest is
+/// ` (attempt N/M)`, where N is the attempt about to run.
+const RETRY_NOTE_PREFIX: &str = "note: database busy, retrying";
+
 /// Runs `op`, retrying while `is_busy` reports a transient lock/busy failure,
 /// up to [`MAX_WRITE_ATTEMPTS`]. Any error `is_busy` rejects is returned
 /// immediately; the last busy error is returned once attempts are exhausted.
+/// Each retry is announced on stderr before its backoff.
 pub fn with_retry<T, E>(
     mut op: impl FnMut() -> Result<T, E>,
     is_busy: impl Fn(&E) -> bool,
@@ -37,10 +51,17 @@ pub fn with_retry<T, E>(
                 if attempt >= MAX_WRITE_ATTEMPTS || !is_busy(&error) {
                     return Err(error);
                 }
+                eprintln!("{}", retry_note(attempt + 1));
                 std::thread::sleep(backoff(attempt));
             }
         }
     }
+}
+
+/// The stderr line announcing that attempt `next_attempt` (1-based, out of
+/// [`MAX_WRITE_ATTEMPTS`]) is about to run.
+fn retry_note(next_attempt: u32) -> String {
+    format!("{RETRY_NOTE_PREFIX} (attempt {next_attempt}/{MAX_WRITE_ATTEMPTS})")
 }
 
 /// Backoff before the `attempt`-th retry (`attempt` is 1-based): exponential,
@@ -60,25 +81,15 @@ fn jitter_ms() -> u64 {
     nanos % (MAX_JITTER_MS + 1)
 }
 
-/// Whether a `rusqlite::Error` is a transient busy/locked failure worth
-/// retrying.
-pub fn rusqlite_is_busy(error: &rusqlite::Error) -> bool {
-    matches!(
-        error,
-        rusqlite::Error::SqliteFailure(inner, _)
-            if inner.code == rusqlite::ErrorCode::DatabaseBusy
-                || inner.code == rusqlite::ErrorCode::DatabaseLocked
-    )
-}
-
 /// Whether a scan failure is a transient busy/locked failure worth retrying —
-/// `ScanError` wraps the underlying `rusqlite`/`DbError` cause.
+/// `ScanError` wraps the underlying SQLite or `DbError` cause.
 pub fn scan_is_busy(error: &reprise_core::library::scanner::ScanError) -> bool {
     use reprise_core::db::DbError;
     use reprise_core::library::scanner::ScanError;
+    use reprise_core::library::stats::is_database_busy;
     match error {
-        ScanError::Sqlite(inner) => rusqlite_is_busy(inner),
-        ScanError::Db(DbError::Sqlite(inner)) => rusqlite_is_busy(inner),
+        ScanError::Sqlite(inner) => is_database_busy(inner),
+        ScanError::Db(DbError::Sqlite(inner)) => is_database_busy(inner),
         _ => false,
     }
 }
@@ -167,26 +178,11 @@ mod tests {
     }
 
     #[test]
-    fn rusqlite_busy_and_locked_are_retryable() {
-        let busy = rusqlite::Error::SqliteFailure(
-            rusqlite::ffi::Error::new(rusqlite::ffi::SQLITE_BUSY),
-            None,
+    fn the_retry_note_names_the_attempt_about_to_run() {
+        assert_eq!(
+            retry_note(2),
+            "note: database busy, retrying (attempt 2/5)",
+            "one English line, no trailing newline"
         );
-        let locked = rusqlite::Error::SqliteFailure(
-            rusqlite::ffi::Error::new(rusqlite::ffi::SQLITE_LOCKED),
-            None,
-        );
-        assert!(rusqlite_is_busy(&busy));
-        assert!(rusqlite_is_busy(&locked));
-    }
-
-    #[test]
-    fn rusqlite_other_failures_are_not_retryable() {
-        let readonly = rusqlite::Error::SqliteFailure(
-            rusqlite::ffi::Error::new(rusqlite::ffi::SQLITE_READONLY),
-            None,
-        );
-        assert!(!rusqlite_is_busy(&readonly));
-        assert!(!rusqlite_is_busy(&rusqlite::Error::QueryReturnedNoRows));
     }
 }

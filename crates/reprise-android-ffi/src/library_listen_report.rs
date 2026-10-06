@@ -42,7 +42,10 @@ impl MusicLibrary {
     /// Produces the complete pending `RPT-BACK` bytes after applying only a
     /// valid desktop acknowledgement. Kotlin owns the sync-tree read and write.
     // UniFFI transfers optional byte buffers by value across the ABI.
-    #[allow(clippy::needless_pass_by_value)]
+    #[expect(
+        clippy::needless_pass_by_value,
+        reason = "UniFFI hands owned byte buffers across the FFI boundary"
+    )]
     pub fn prepare_listen_report(
         &self,
         acknowledgement: Option<Vec<u8>>,

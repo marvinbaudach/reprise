@@ -114,7 +114,6 @@ pub(in crate::ui) struct WaveformSeek {
     tick_id: Rc<RefCell<Option<gtk4::TickCallbackId>>>,
     /// Active pause-desaturation animation. Replacements skip the previous
     /// visual state before starting from its settled endpoint.
-    #[allow(dead_code)] // Consumed by the PlayerBar/Compact wiring in MOT-5 Phase B.
     desaturation_animation: Rc<RefCell<Option<libadwaita::TimedAnimation>>>,
 }
 
@@ -494,7 +493,6 @@ impl WaveformSeek {
 
     /// Instantly set the playback position (0..1).  Prefer `set_fraction_smooth`
     /// when updating from a sub-second position tick so movement is continuous.
-    #[allow(dead_code)]
     pub(in crate::ui) fn set_fraction(&self, fraction: f64) {
         let fraction = fraction.clamp(0.0, 1.0);
         let mut s = self.state.borrow_mut();

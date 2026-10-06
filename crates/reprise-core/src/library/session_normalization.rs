@@ -7,7 +7,9 @@ use crate::queue::{Queue, QueueSnapshot, Repeat};
 use crate::up_next::QueueItem;
 use crate::view_source::ViewSource;
 
-use super::{SessionEpisodeOrigin, SessionSource, SessionState, VERSION};
+use super::{
+    SessionEpisodeOrigin, SessionSource, SessionState, MIN_WINDOW_HEIGHT, MIN_WINDOW_WIDTH, VERSION,
+};
 
 pub(super) fn resolve_persisted_places(conn: &Connection, mut state: SessionState) -> SessionState {
     let root = state
@@ -78,8 +80,8 @@ pub(super) fn empty_queue() -> QueueSnapshot {
 
 pub(super) fn normalize(mut state: SessionState) -> SessionState {
     state.version = VERSION;
-    state.window_width = state.window_width.clamp(600, 8192);
-    state.window_height = state.window_height.clamp(400, 8192);
+    state.window_width = state.window_width.clamp(MIN_WINDOW_WIDTH, 8192);
+    state.window_height = state.window_height.clamp(MIN_WINDOW_HEIGHT, 8192);
     truncate_utf8(&mut state.search, 1024);
     if matches!(state.source, SessionSource::Playlist(id) | SessionSource::Smart(id) if id <= 0) {
         state.source = SessionSource::Library;

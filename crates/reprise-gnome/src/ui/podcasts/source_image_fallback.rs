@@ -82,7 +82,7 @@ impl super::SourceImage {
                 cache_scope,
                 super::StartupTiming::AfterQuiet,
             ),
-            |_| {},
+            |_, _| {},
         );
         image
     }

@@ -1,5 +1,3 @@
-#![allow(dead_code)]
-
 macro_rules! N_ {
     ($message:literal) => {
         $message
@@ -37,7 +35,6 @@ pub const CONCERTS_INCLUDE_SIMILAR: &str = N_!("Include similar artists");
 pub const CONCERTS_SET_LOCATION_TOOLTIP: &str = N_!("Set a location in Preferences");
 pub const CONCERTS_NO_DATA_TITLE: &str = N_!("No concert data yet");
 pub const CONCERTS_NO_UPCOMING_TITLE: &str = N_!("No upcoming concerts for your artists");
-pub const CONCERTS_FETCH_FAILED: &str = N_!("Concerts fetch failed · showing saved concerts");
 pub const CONCERTS_COULD_NOT_REFRESH: &str = N_!("Couldn't refresh concerts");
 pub const CONCERTS_NEEDS_CONFIGURATION: &str = N_!("Concerts needs provider credentials");
 pub const CONCERTS_CACHED_FAILURE_DESCRIPTION: &str =
@@ -47,13 +44,6 @@ pub const CONCERTS_EMPTY_FAILURE_DESCRIPTION: &str =
 pub const CONCERTS_CONFIGURATION_DESCRIPTION: &str =
     N_!("Saved concerts stay available. Add credentials in Preferences to refresh them.");
 pub const CONCERTS_NO_LINK: &str = N_!("No ticket or event link available");
-pub const CONCERTS_LOCATION: &str = N_!("Location");
-pub const CONCERTS_CITY_ENTRY: &str = N_!("City");
-pub const CONCERTS_USE_CURRENT_LOCATION: &str = N_!("Use current location");
-pub const CONCERTS_CLEAR_LOCATION: &str = N_!("Clear location");
-pub const CONCERTS_CURRENT_LOCATION: &str = N_!("Current location");
-pub const CONCERTS_LOCATION_NOT_FOUND: &str = N_!("Could not find that place");
-pub const CONCERTS_DEFAULT_RADIUS: &str = N_!("Default radius");
 pub const CONCERTS_PLAY_WINDOW: &str = N_!("Consider artists played in the last N days");
 pub const CONCERTS_SIMILAR_ENABLED: &str = N_!("Include similar artists");
 pub const CONCERTS_SIMILAR_COUNT: &str = N_!("Similar artists per top artist");
@@ -69,6 +59,7 @@ pub const FEED_RELOAD: &str = N_!("Reload");
 pub const CONCERTS_UPDATE_FAILED: &str = N_!("Update failed — showing saved concerts from {time}");
 pub const CONCERTS_OFFLINE: &str = N_!("Offline — showing saved concerts from {time}");
 
+#[cfg(test)]
 pub fn concert_count_line(shown: usize, total: usize) -> String {
     concert_count(&shown.to_string(), total)
 }

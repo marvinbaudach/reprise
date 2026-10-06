@@ -155,7 +155,13 @@ fn lyr_6_an_automatic_pass_covers_only_tracks_added_since_the_last_completed_one
         assert_eq!(batch.progress.get().total, 1);
         let request = requests.try_recv().unwrap();
         assert_eq!(request.tracks.len(), 1);
-        assert_eq!(request.tracks[0].path.to_str(), Some("/music/new.flac"));
+        assert_eq!(
+            request.tracks[0]
+                .path
+                .as_deref()
+                .and_then(std::path::Path::to_str),
+            Some("/music/new.flac")
+        );
         request.events.try_send(WorkerEvent::Cancelled).unwrap();
         glib::timeout_future(Duration::from_millis(1)).await;
     });
@@ -259,7 +265,13 @@ fn lyr_6_a_full_sweep_attempt_defers_the_next_one_by_the_full_interval() {
 
         let request = requests.try_recv().unwrap();
         assert_eq!(request.tracks.len(), 1);
-        assert_eq!(request.tracks[0].path.to_str(), Some("/music/new.flac"));
+        assert_eq!(
+            request.tracks[0]
+                .path
+                .as_deref()
+                .and_then(std::path::Path::to_str),
+            Some("/music/new.flac")
+        );
         request.events.try_send(WorkerEvent::Cancelled).unwrap();
         glib::timeout_future(Duration::from_millis(1)).await;
     });
@@ -342,7 +354,10 @@ fn lyr_6_an_empty_explicit_pass_releases_the_automatic_start_guard() {
         let request = requests.try_recv().unwrap();
         assert_eq!(request.tracks.len(), 1);
         assert_eq!(
-            request.tracks[0].path.to_str(),
+            request.tracks[0]
+                .path
+                .as_deref()
+                .and_then(std::path::Path::to_str),
             Some("/music/new-after-empty-pass.flac")
         );
         request.events.try_send(WorkerEvent::Cancelled).unwrap();

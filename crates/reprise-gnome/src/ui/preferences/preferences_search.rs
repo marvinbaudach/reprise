@@ -10,7 +10,7 @@ use super::preferences_search_index::{collect_rows, IndexedRow, PageHitCounts};
 #[cfg(test)]
 use super::preferences_search_results::TestOrigin;
 use super::preferences_search_results::{MovedResult, PreparedResult};
-use crate::ui::preferences_window::{PageId, PAGE_ORDER};
+use crate::ui::preferences::preferences_window::{PageId, PAGE_ORDER};
 
 const SIDEBAR_DIM_OPACITY: f64 = 0.42;
 const SEARCH_FIELD_WIDTH: i32 = 340;

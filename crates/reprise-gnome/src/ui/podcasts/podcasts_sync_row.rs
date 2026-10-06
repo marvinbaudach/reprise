@@ -36,7 +36,9 @@ pub(super) struct SyncRowWidgets {
     pub(super) expander: gtk4::Expander,
     pub(super) progress_stack: gtk4::Stack,
     pub(super) action_stack: gtk4::Stack,
+    #[cfg(test)]
     pub(super) step_rows: Vec<gtk4::Box>,
+    #[cfg(test)]
     pub(super) step_labels: Vec<gtk4::Label>,
     kind: PodcastKind,
     steps: Vec<StepWidgets>,
@@ -97,7 +99,9 @@ pub(super) fn attach(
         expander: expander.clone(),
         progress_stack,
         action_stack,
+        #[cfg(test)]
         step_rows: steps.iter().map(|step| step.row.clone()).collect(),
+        #[cfg(test)]
         step_labels: steps.iter().map(|step| step.label.clone()).collect(),
         kind,
         steps,

@@ -27,9 +27,21 @@ pub struct TrackSummary {
     /// Optional release year displayed by metadata-rich player surfaces.
     pub year: Option<i32>,
     pub duration_ms: i64,
+    /// The slice of `path` this track plays, `None` for a whole-file track.
+    /// Position and duration are relative to the segment, so a consumer that
+    /// plays `path` has to honour it.
+    pub segment: Option<crate::models::TrackSegment>,
 }
 
 impl TrackSummary {
+    /// The `(start_ms, end_ms)` a player cuts out of `path`, `None` for a
+    /// whole-file track.
+    pub fn playback_segment(&self) -> Option<(i64, i64)> {
+        self.segment
+            .as_ref()
+            .map(|segment| (segment.start_ms, segment.end_ms))
+    }
+
     /// Returns the effective album artist: `album_artist` when non-empty
     /// (trimmed), `artist` otherwise. Mirrors the SQL expression
     /// `CASE WHEN TRIM(album_artist) <> '' THEN TRIM(album_artist) ELSE

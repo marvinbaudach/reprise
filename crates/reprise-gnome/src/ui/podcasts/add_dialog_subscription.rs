@@ -52,7 +52,7 @@ pub(super) fn subscribe(
     auto_download: bool,
     future_only_baseline: Option<&[String]>,
 ) -> Result<i64, rusqlite::Error> {
-    podcasts::store::add_or_restore_with_baseline(
+    Ok(podcasts::store::add_or_restore_with_baseline(
         conn,
         &podcasts::store::NewSubscription {
             kind: candidate.kind,
@@ -73,7 +73,7 @@ pub(super) fn subscribe(
         },
         chrono::Utc::now().timestamp(),
         future_only_baseline,
-    )
+    )?)
 }
 
 pub(super) fn configured_auto_download_default(

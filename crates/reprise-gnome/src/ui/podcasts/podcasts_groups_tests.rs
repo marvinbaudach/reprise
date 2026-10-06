@@ -238,16 +238,18 @@ fn src_14_grouped_secondary_click_opens_for_one_row_or_the_three_row_selection()
     let widgets = replace(
         &container,
         &[rendered],
-        None,
-        &Rc::new(RefCell::new(BTreeSet::from([1]))),
-        &Rc::new(RefCell::new(BTreeSet::new())),
-        &BTreeMap::new(),
-        false,
-        &Rc::new(crate::test_db::open().unwrap()),
-        Connectivity::Online,
-        None,
-        &selection,
-        "",
+        GroupRenderInputs {
+            playing_episode: None,
+            expanded_sources: &Rc::new(RefCell::new(BTreeSet::from([1]))),
+            expanded_episode_sources: &Rc::new(RefCell::new(BTreeSet::new())),
+            download_states: &BTreeMap::new(),
+            images_allowed: false,
+            conn: &Rc::new(crate::test_db::open().unwrap()),
+            connectivity: Connectivity::Online,
+            unavailable_episode: None,
+            selection: &selection,
+            query: "",
+        },
     );
     let window = gtk4::Window::new();
     window.set_child(Some(&container));
@@ -372,16 +374,18 @@ fn collapsed_group_renders_ten_episodes_and_one_show_all_action() {
     replace(
         &container,
         &[rendered],
-        None,
-        &Rc::new(RefCell::new(BTreeSet::new())),
-        &Rc::new(RefCell::new(BTreeSet::new())),
-        &BTreeMap::new(),
-        false,
-        &Rc::new(crate::test_db::open().unwrap()),
-        Connectivity::Online,
-        None,
-        &Rc::new(RefCell::new(PodcastSelection::default())),
-        "",
+        GroupRenderInputs {
+            playing_episode: None,
+            expanded_sources: &Rc::new(RefCell::new(BTreeSet::new())),
+            expanded_episode_sources: &Rc::new(RefCell::new(BTreeSet::new())),
+            download_states: &BTreeMap::new(),
+            images_allowed: false,
+            conn: &Rc::new(crate::test_db::open().unwrap()),
+            connectivity: Connectivity::Online,
+            unavailable_episode: None,
+            selection: &Rc::new(RefCell::new(PodcastSelection::default())),
+            query: "",
+        },
     );
 
     let rows = container
@@ -429,16 +433,18 @@ fn src_5_one_expander_is_rendered_per_source_group() {
     let widgets = replace(
         &container,
         &[rendered],
-        None,
-        &Rc::new(RefCell::new(BTreeSet::new())),
-        &Rc::new(RefCell::new(BTreeSet::new())),
-        &BTreeMap::new(),
-        false,
-        &Rc::new(crate::test_db::open().unwrap()),
-        Connectivity::Online,
-        None,
-        &Rc::new(RefCell::new(PodcastSelection::default())),
-        "",
+        GroupRenderInputs {
+            playing_episode: None,
+            expanded_sources: &Rc::new(RefCell::new(BTreeSet::new())),
+            expanded_episode_sources: &Rc::new(RefCell::new(BTreeSet::new())),
+            download_states: &BTreeMap::new(),
+            images_allowed: false,
+            conn: &Rc::new(crate::test_db::open().unwrap()),
+            connectivity: Connectivity::Online,
+            unavailable_episode: None,
+            selection: &Rc::new(RefCell::new(PodcastSelection::default())),
+            query: "",
+        },
     );
     assert!(widgets.downloads.is_empty());
     assert!(widgets.selection.is_empty());
@@ -480,16 +486,18 @@ fn src_12b_grouped_selection_survives_render_rebuild_on_the_row() {
         let widgets = replace(
             &container,
             std::slice::from_ref(&rendered),
-            None,
-            &expanded_sources,
-            &Rc::new(RefCell::new(BTreeSet::new())),
-            &BTreeMap::new(),
-            false,
-            &Rc::new(crate::test_db::open().unwrap()),
-            Connectivity::Online,
-            None,
-            &selection,
-            "",
+            GroupRenderInputs {
+                playing_episode: None,
+                expanded_sources: &expanded_sources,
+                expanded_episode_sources: &Rc::new(RefCell::new(BTreeSet::new())),
+                download_states: &BTreeMap::new(),
+                images_allowed: false,
+                conn: &Rc::new(crate::test_db::open().unwrap()),
+                connectivity: Connectivity::Online,
+                unavailable_episode: None,
+                selection: &selection,
+                query: "",
+            },
         );
         let row = &widgets.selection[&1].row;
         assert!(row.has_css_class(SELECTED_ROW_CLASS));

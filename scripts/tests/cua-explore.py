@@ -6,6 +6,7 @@ import sys
 import tempfile
 import time
 import unittest
+from unittest import mock
 
 
 REPO_ROOT = pathlib.Path(__file__).resolve().parents[2]
@@ -13,6 +14,7 @@ EXPLORE_ROOT = REPO_ROOT / "scripts" / "cua-explore"
 sys.path.insert(0, str(EXPLORE_ROOT))
 
 from protocol import ActionGateway, ContractError, load_mission  # noqa: E402
+import fixtures  # noqa: E402
 from fixtures import FixtureError, build_plan, validate_scratch_root  # noqa: E402
 from oracles import (  # noqa: E402
     ActionEvidence,
@@ -230,6 +232,19 @@ class FixtureProfileTests(unittest.TestCase):
         unsafe_child = REPO_ROOT / "reprise-cua-explore-unsafe"
         with self.assertRaisesRegex(FixtureError, "protected"):
             validate_scratch_root(unsafe_child)
+
+    def test_fixture_root_inside_a_checkout_under_the_scratch_cache_is_protected(self) -> None:
+        # Throwaway clones live under ~/.cache/reprise-scratch/, so the checkout
+        # itself sits inside an approved scratch base there.
+        with mock.patch.object(fixtures, "CACHE_SCRATCH_BASE", REPO_ROOT.parent):
+            with self.assertRaisesRegex(FixtureError, "protected"):
+                validate_scratch_root(REPO_ROOT / "reprise-cua-explore-unsafe")
+
+            sibling = REPO_ROOT.parent / "reprise-cua-explore-sibling-of-checkout"
+            self.assertEqual(validate_scratch_root(sibling), sibling.resolve())
+
+        own_scratch = fixtures.WORKTREE_SCRATCH_BASE / "reprise-cua-explore-own"
+        self.assertEqual(validate_scratch_root(own_scratch), own_scratch.resolve())
 
 
 def window_element(x=0, y=0, w=1200, h=800, **extra):

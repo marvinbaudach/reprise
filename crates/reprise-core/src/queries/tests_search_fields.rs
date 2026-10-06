@@ -46,13 +46,10 @@ fn fil_1d_music_free_text_matches_title_artist_and_album_but_not_genre() {
 
     let rows = query_track_window(
         &db,
-        &ViewSource::Library,
-        "title",
-        "asc",
-        "needle",
-        0,
-        10,
-        &[],
+        &TrackViewQuery::new(&ViewSource::Library).with_filter("needle"),
+        test_sort("title", "asc"),
+        test_rows(0, 10),
+        AiColumn::Project,
     )
     .unwrap();
 
@@ -61,7 +58,11 @@ fn fil_1d_music_free_text_matches_title_artist_and_album_but_not_genre() {
         vec![1, 2, 3]
     );
     assert_eq!(
-        query_track_count(&db, &ViewSource::Library, "needle", &[]).unwrap(),
+        query_track_count(
+            &db,
+            &TrackViewQuery::new(&ViewSource::Library).with_filter("needle")
+        )
+        .unwrap(),
         3
     );
 }
@@ -83,16 +84,12 @@ fn fil_1d_genre_facet_still_returns_a_genre_only_match() {
         ..BrowseFilter::default()
     };
 
-    let rows = query_track_window_browsed(
+    let rows = query_track_window(
         &db,
-        &ViewSource::Library,
-        "title",
-        "asc",
-        "",
-        &browse,
-        0,
-        10,
-        &[],
+        &TrackViewQuery::new(&ViewSource::Library).with_browse(&browse),
+        test_sort("title", "asc"),
+        test_rows(0, 10),
+        AiColumn::Project,
     )
     .unwrap();
 

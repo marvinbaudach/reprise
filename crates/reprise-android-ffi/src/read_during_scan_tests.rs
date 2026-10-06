@@ -239,7 +239,8 @@ fn read_while_scanning() -> (Option<Result<TrackWindow, LibraryError>>, TrackWin
         "scan never reached the read-during-scan rendezvous; the fixture scanner did not call list_children for the configured tree"
     );
 
-    let during_scan = match observed_answer.lock().unwrap().take() {
+    let observed = observed_answer.lock().unwrap().take();
+    let during_scan = match observed {
         Some(ReaderAnswer::Browse(answer)) => Some(answer),
         Some(ReaderAnswer::Artwork(_)) => panic!("browse rendezvous received artwork"),
         Some(ReaderAnswer::Playback(_)) => panic!("browse rendezvous received playback"),
@@ -295,7 +296,8 @@ fn artwork_while_scanning() -> Option<Result<Option<String>, LibraryError>> {
         "scan never reached the read-during-scan rendezvous; the fixture scanner did not call list_children for the configured tree"
     );
 
-    let answer = match observed_answer.lock().unwrap().take() {
+    let observed = observed_answer.lock().unwrap().take();
+    let answer = match observed {
         Some(ReaderAnswer::Artwork(answer)) => Some(answer),
         Some(ReaderAnswer::Browse(_)) => panic!("artwork rendezvous received browse answer"),
         Some(ReaderAnswer::Playback(_)) => panic!("artwork rendezvous received playback"),
@@ -314,7 +316,7 @@ impl AndroidPlaybackPort for QuietPlaybackPort {
         Ok(())
     }
 
-    fn play_path(&self, _path: String) -> Result<(), AndroidPlaybackError> {
+    fn play_path(&self, _path: String, _gain_db: f64) -> Result<(), AndroidPlaybackError> {
         Ok(())
     }
 
@@ -358,7 +360,15 @@ impl AndroidPlaybackPort for QuietPlaybackPort {
         Ok(())
     }
 
-    fn set_next(&self, _uri: Option<String>) -> Result<(), AndroidPlaybackError> {
+    fn set_next(&self, _uri: Option<String>, _gain_db: f64) -> Result<(), AndroidPlaybackError> {
+        Ok(())
+    }
+
+    fn set_gains(
+        &self,
+        _current_gain_db: f64,
+        _next_gain_db: Option<f64>,
+    ) -> Result<(), AndroidPlaybackError> {
         Ok(())
     }
 
@@ -427,7 +437,8 @@ fn playback_session_while_scanning() -> Option<Result<(), AndroidPlaybackError>>
         ReaderRendezvousOutcome::ReadAttempted
     ));
 
-    let answer = match observed_answer.lock().unwrap().take() {
+    let observed = observed_answer.lock().unwrap().take();
+    let answer = match observed {
         Some(ReaderAnswer::Playback(answer)) => Some(answer.map(drop)),
         Some(ReaderAnswer::Browse(_)) => panic!("playback rendezvous received browse answer"),
         Some(ReaderAnswer::Artwork(_)) => panic!("playback rendezvous received artwork"),

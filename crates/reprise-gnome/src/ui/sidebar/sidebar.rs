@@ -54,7 +54,7 @@
 //! `RefCell` either.
 //!
 //! The playlist row's drop target/drop-handling logic lives in the sibling
-//! `ui::sidebar_dnd` module (split out to keep this file under 800 lines,
+//! `ui::sidebar::sidebar_dnd` module (split out to keep this file under 800 lines,
 //! mirroring `track_list.rs`/`track_list_dnd.rs`) — hence `Shared`/`conn`/
 //! `rebuild`/`show_toast`/`on_tracks_added` being `pub(in crate::ui)`.
 
@@ -243,6 +243,9 @@ pub struct Sidebar {
     pub(in crate::ui) shared: Rc<Shared>,
     root: gtk4::Box,
     pub(super) activity_slot: SidebarActivitySlot,
+    pub(super) pinned_scroller: gtk4::ScrolledWindow,
+    #[cfg(test)]
+    navigation_scroller: gtk4::ScrolledWindow,
 }
 
 impl Sidebar {
@@ -287,6 +290,10 @@ impl Sidebar {
         let activity_slot = SidebarActivitySlot::new();
         let scrolled = build_navigation_scroller(&listbox, activity_slot.widget());
         let root = build_root(&scrolled, &activity_slot, &issues_listbox);
+        let pinned_scroller = root
+            .last_child()
+            .and_downcast::<gtk4::ScrolledWindow>()
+            .expect("the sidebar ends in its pinned scroller");
 
         let shared = Rc::new(Shared {
             conn,
@@ -333,6 +340,9 @@ impl Sidebar {
             shared,
             root,
             activity_slot,
+            pinned_scroller,
+            #[cfg(test)]
+            navigation_scroller: scrolled,
         }
     }
 
@@ -340,6 +350,35 @@ impl Sidebar {
     /// page content.
     pub fn widget(&self) -> &gtk4::Box {
         &self.root
+    }
+
+    #[cfg(test)]
+    pub(in crate::ui) fn navigation_scroller_for_test(&self) -> gtk4::ScrolledWindow {
+        self.navigation_scroller.clone()
+    }
+
+    #[cfg(test)]
+    pub(in crate::ui) fn activity_slot_for_test(&self) -> gtk4::Box {
+        self.activity_slot.progress_widget().clone()
+    }
+
+    #[cfg(test)]
+    pub(in crate::ui) fn has_device_for_layout_test(&self) -> bool {
+        self.activity_slot.widget().first_child().is_some()
+    }
+
+    #[cfg(test)]
+    pub(in crate::ui) fn library_block_min_height_for_test() -> i32 {
+        super::sidebar_navigation_scroller::LIBRARY_BLOCK_MIN_HEIGHT
+    }
+
+    #[cfg(test)]
+    pub(in crate::ui) fn present_device_for_layout_test(&self) {
+        let device = super::sidebar_device_card::tests::view(
+            crate::ui::device_sync::device_sync_runtime::PlannedSyncPhase::Idle,
+        );
+        let section = super::sidebar_device_section::present_device_section_for_test(&device);
+        self.activity_slot.set_device_section(&section);
     }
 
     /// Sets the callback invoked whenever the selected source changes.
@@ -475,7 +514,7 @@ impl Sidebar {
     }
 
     pub(in crate::ui) fn restore_source(&self, requested: ViewSource) -> (ViewSource, String) {
-        crate::ui::sidebar_session::restore_source(&self.shared, requested)
+        crate::ui::sidebar::sidebar_session::restore_source(&self.shared, requested)
     }
 
     pub(in crate::ui) fn ensure_startup_build(&self) {
@@ -522,7 +561,7 @@ pub(in crate::ui) fn remember_issue_focus_entry(listbox: &gtk4::ListBox, row: &g
 /// doc comment for the full trigger inventory this makes verifiable in
 /// headless E2E output.
 pub(in crate::ui) fn rebuild(shared: &Rc<Shared>, force_select: Option<ViewSource>, reason: &str) {
-    crate::ui::sidebar_rebuild::rebuild(shared, force_select, reason);
+    crate::ui::sidebar::sidebar_rebuild::rebuild(shared, force_select, reason);
 }
 
 #[cfg(test)]

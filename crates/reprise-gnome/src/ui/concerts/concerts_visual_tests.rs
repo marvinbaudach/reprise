@@ -36,7 +36,7 @@ fn visual_fixture_row(
 }
 
 #[test]
-#[ignore = "visual fixture; run through the isolated CUA session"]
+#[ignore = "measurement: shows the concerts view for a screenshot; needs a display (isolated CUA session or Xvfb), optional REPRISE_SMOKE_CONCERTS_FIXTURE"]
 fn concerts_visual_acceptance_fixture() {
     let _main_context = crate::ui::test_main_context::lock_main_context();
     gtk4::init().unwrap();

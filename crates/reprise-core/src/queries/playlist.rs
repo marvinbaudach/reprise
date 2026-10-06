@@ -11,7 +11,7 @@ use super::clauses::{
     PRESENT,
 };
 use super::queue::QUEUE_LIMIT;
-use super::MAX_WINDOW_LIMIT;
+use super::{AiColumn, RowWindow, TrackSort, TrackViewQuery, MAX_WINDOW_LIMIT};
 use rusqlite::Connection;
 
 /// Builds the parameterized SELECT for a `Playlist(id)` window — see the
@@ -21,22 +21,17 @@ use rusqlite::Connection;
 /// position. Playback obtains its separately filtered ids below; the window
 /// is the membership view and must not silently rewrite that membership.
 ///
-/// The trailing `pt.position` column (index 22, read by `row_to_playlist_
+/// The trailing `pt.position` column (read by `row_to_playlist_
 /// track`) is the durable fix for the "remove from playlist deletes the
 /// wrong row" bug: it surfaces each row's *true* `playlist_tracks.position`
 /// regardless of what `ORDER BY` this query used, so `ui::track_actions::
 /// remove_selected_from_playlist` can resolve a selected on-screen row back
 /// to the position `library::playlists::remove_positions` actually needs —
 /// see `Track::playlist_position`'s doc comment.
-fn build_playlist_track_query(
-    sort_field: &str,
-    sort_dir: &str,
-    has_filter: bool,
-    project_ai: bool,
-) -> String {
-    let order = order_clause(sort_field, sort_dir);
+fn build_playlist_track_query(sort: TrackSort<'_>, has_filter: bool, ai: AiColumn) -> String {
+    let order = order_clause(sort.field, sort.dir);
     let filter_clause = filter_clause(has_filter, 4);
-    let projection = track_projection("tracks.", project_ai);
+    let projection = track_projection("tracks.", ai == AiColumn::Project);
     format!(
         "SELECT {projection}, \
          pt.position \
@@ -46,30 +41,27 @@ fn build_playlist_track_query(
     )
 }
 
-#[allow(clippy::too_many_arguments)]
 pub(super) fn query_track_window_playlist(
     conn: &Connection,
     playlist_id: i64,
-    sort_field: &str,
-    sort_dir: &str,
-    filter: &str,
-    offset: i64,
-    limit: i64,
-    project_ai: bool,
+    view: &TrackViewQuery<'_>,
+    sort: TrackSort<'_>,
+    rows: RowWindow,
+    ai: AiColumn,
 ) -> Result<Vec<Track>, rusqlite::Error> {
-    let limit = limit.clamp(0, MAX_WINDOW_LIMIT);
-    let has_filter = !filter.trim().is_empty();
-    let sql = build_playlist_track_query(sort_field, sort_dir, has_filter, project_ai);
+    let limit = rows.limit.clamp(0, MAX_WINDOW_LIMIT);
+    let has_filter = !view.filter.trim().is_empty();
+    let sql = build_playlist_track_query(sort, has_filter, ai);
     let mut stmt = conn.prepare(&sql)?;
-    let like = like_pattern(filter.trim());
+    let like = like_pattern(view.filter.trim());
     let rows = if has_filter {
         stmt.query_map(
-            rusqlite::params![limit, offset, playlist_id, like],
+            rusqlite::params![limit, rows.offset, playlist_id, like],
             row_to_playlist_track,
         )?
     } else {
         stmt.query_map(
-            rusqlite::params![limit, offset, playlist_id],
+            rusqlite::params![limit, rows.offset, playlist_id],
             row_to_playlist_track,
         )?
     };
@@ -79,16 +71,16 @@ pub(super) fn query_track_window_playlist(
 pub(super) fn query_track_count_playlist(
     conn: &Connection,
     playlist_id: i64,
-    filter: &str,
+    view: &TrackViewQuery<'_>,
 ) -> Result<i64, rusqlite::Error> {
-    let has_filter = !filter.trim().is_empty();
+    let has_filter = !view.filter.trim().is_empty();
     let sql = format!(
         "SELECT count(*) FROM tracks JOIN playlist_tracks pt ON pt.track_id = tracks.id \
          WHERE pt.playlist_id = ?1{}",
         filter_clause(has_filter, 2)
     );
     if has_filter {
-        let like = like_pattern(filter.trim());
+        let like = like_pattern(view.filter.trim());
         conn.query_row(&sql, rusqlite::params![playlist_id, like], |r| r.get(0))
     } else {
         conn.query_row(&sql, rusqlite::params![playlist_id], |r| r.get(0))
@@ -98,13 +90,13 @@ pub(super) fn query_track_count_playlist(
 pub(super) fn query_playable_track_ids_playlist(
     conn: &Connection,
     playlist_id: i64,
-    filter: &str,
+    view: &TrackViewQuery<'_>,
 ) -> Result<Vec<i64>, rusqlite::Error> {
     // Deliberately always `pt.position` order, never the caller's current
     // column sort (see the module doc's `Playlist(id)` section): "play this
     // playlist" always follows playlist order, even if the visible window
     // is temporarily sorted by a clicked column header.
-    let has_filter = !filter.trim().is_empty();
+    let has_filter = !view.filter.trim().is_empty();
     let sql = format!(
         "SELECT tracks.id FROM tracks JOIN playlist_tracks pt ON pt.track_id = tracks.id \
          WHERE pt.playlist_id = ?1 AND {PRESENT}{} \
@@ -113,7 +105,7 @@ pub(super) fn query_playable_track_ids_playlist(
     );
     let mut stmt = conn.prepare(&sql)?;
     let rows = if has_filter {
-        let like = like_pattern(filter.trim());
+        let like = like_pattern(view.filter.trim());
         stmt.query_map(rusqlite::params![playlist_id, like], row_to_id)?
     } else {
         stmt.query_map(rusqlite::params![playlist_id], row_to_id)?
@@ -127,12 +119,11 @@ pub(super) fn query_playable_track_ids_playlist(
 pub(super) fn query_visible_track_ids_playlist(
     conn: &Connection,
     playlist_id: i64,
-    sort_field: &str,
-    sort_dir: &str,
-    filter: &str,
+    view: &TrackViewQuery<'_>,
+    sort: TrackSort<'_>,
 ) -> Result<Vec<i64>, rusqlite::Error> {
-    let has_filter = !filter.trim().is_empty();
-    let order = order_clause(sort_field, sort_dir);
+    let has_filter = !view.filter.trim().is_empty();
+    let order = order_clause(sort.field, sort.dir);
     let sql = format!(
         "SELECT tracks.id FROM tracks JOIN playlist_tracks pt ON pt.track_id = tracks.id \
          WHERE pt.playlist_id = ?1{} \
@@ -141,7 +132,7 @@ pub(super) fn query_visible_track_ids_playlist(
     );
     let mut stmt = conn.prepare(&sql)?;
     let rows = if has_filter {
-        let like = like_pattern(filter.trim());
+        let like = like_pattern(view.filter.trim());
         stmt.query_map(rusqlite::params![playlist_id, like], row_to_id)?
     } else {
         stmt.query_map(rusqlite::params![playlist_id], row_to_id)?

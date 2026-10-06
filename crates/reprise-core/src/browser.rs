@@ -31,8 +31,8 @@ impl AlbumKey {
     #[must_use]
     pub fn new(album: impl Into<String>, album_artist: impl Into<String>) -> Self {
         Self {
-            album: album.into().trim().to_owned(),
-            album_artist: album_artist.into().trim().to_owned(),
+            album: sql_trim(&album.into()).to_owned(),
+            album_artist: sql_trim(&album_artist.into()).to_owned(),
         }
     }
 }
@@ -51,14 +51,21 @@ impl PartialEq for ArtistKey {
 impl Eq for ArtistKey {}
 
 fn normalized_identity(value: &str) -> String {
-    value.trim().to_lowercase()
+    sql_trim(value).to_lowercase()
+}
+
+/// Trims the way SQLite's `TRIM()` does: spaces only. The library lists group
+/// artists and albums by `TRIM()`, so a key trimmed by `str::trim` would drop
+/// a trailing no-break space and open the plain spelling's row instead.
+fn sql_trim(value: &str) -> &str {
+    value.trim_matches(' ')
 }
 
 impl ArtistKey {
     #[must_use]
     pub fn new(artist: impl Into<String>) -> Self {
         Self {
-            artist: artist.into().trim().to_owned(),
+            artist: sql_trim(&artist.into()).to_owned(),
         }
     }
 }
@@ -418,6 +425,35 @@ mod tests {
         assert_eq!(
             BrowserPlace::from(ViewSource::Genre(" METALCORE ".into())).view_source(),
             ViewSource::Genre("METALCORE".into())
+        );
+    }
+
+    #[test]
+    fn browse_1_scope_keys_keep_a_no_break_space_like_the_rows_they_open() {
+        // The library lists group by SQLite's TRIM(), which strips only
+        // spaces. A key trimmed by str::trim would lose the U+00A0 and open
+        // the plain spelling's row instead of its own.
+        let artist = BrowserPlace::from(ViewSource::Artist("Artist\u{a0}".into()));
+        assert_eq!(
+            artist.view_source(),
+            ViewSource::Artist("Artist\u{a0}".into())
+        );
+        assert_ne!(ArtistKey::new("Artist\u{a0}"), ArtistKey::new("Artist"));
+
+        let album = BrowserPlace::from(ViewSource::Album {
+            album: " Blue\u{a0}".into(),
+            album_artist: "Joni\u{a0} ".into(),
+        });
+        assert_eq!(
+            album.view_source(),
+            ViewSource::Album {
+                album: "Blue\u{a0}".into(),
+                album_artist: "Joni\u{a0}".into(),
+            }
+        );
+        assert_ne!(
+            AlbumKey::new("Blue\u{a0}", "Joni"),
+            AlbumKey::new("Blue", "Joni")
         );
     }
 

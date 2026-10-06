@@ -12,6 +12,7 @@ use reprise_core::podcasts::discovery::Candidate;
 use reprise_core::podcasts::{self, PodcastKind};
 
 use crate::ui::one_shot_task;
+use crate::ui::source_add_dialog::generation::Generation;
 use crate::ui::strings;
 
 use super::add_dialog_results::{search_result_markup, subscriber_order, youtube_subtitle};
@@ -159,8 +160,8 @@ impl YoutubeResults {
         &self,
         counts: &[(String, Option<u64>)],
         cancelled: bool,
-        current_generation: u64,
-        request_generation: u64,
+        current_generation: Generation,
+        request_generation: Generation,
     ) -> bool {
         if cancelled || current_generation != request_generation {
             return false;
@@ -195,8 +196,8 @@ pub(super) fn start(
     results: YoutubeResults,
     request: YoutubeFollowerRequest,
     conn: &Db,
-    generation: Rc<Cell<u64>>,
-    request_generation: u64,
+    generation: Rc<Cell<Generation>>,
+    request_generation: Generation,
 ) {
     // `NET-1a`: permission is re-read after wave 1. It can change while the
     // first search is running, and an earlier allow is not authority for a
@@ -247,13 +248,25 @@ pub(super) fn start(
 
 #[cfg(test)]
 mod tests {
-    use std::fs;
-    use std::os::unix::fs::PermissionsExt;
     use std::time::Duration;
 
     use reprise_core::podcasts::ytdlp::{YtDlp, YtDlpTimeouts};
 
     use super::*;
+
+    /// Writes the fake executable through a short-lived `sh` that is waited on,
+    /// so this test process never holds a write descriptor a sibling test's
+    /// `fork` could inherit — that keeps the file busy (`ETXTBSY`) when it is
+    /// executed. The text travels as an argument, not through a pipe.
+    fn write_executable(path: &std::path::Path, contents: &str) {
+        let status = std::process::Command::new("sh")
+            .args(["-c", r#"printf '%s\n' "$1" > "$2" && chmod 755 "$2""#, "_"])
+            .arg(contents)
+            .arg(path)
+            .status()
+            .expect("start the fixture writer");
+        assert!(status.success(), "the fixture writer failed: {status}");
+    }
 
     fn candidate(id: &str, title: &str, url: &str, matching_video_count: usize) -> Candidate {
         Candidate {
@@ -274,7 +287,7 @@ mod tests {
     fn src_9_the_two_argv_search_path_reaches_the_channel_subtitle() {
         let directory = tempfile::tempdir().unwrap();
         let binary = directory.path().join("fake-yt-dlp");
-        fs::write(
+        write_executable(
             &binary,
             r#"#!/bin/sh
 set -eu
@@ -286,11 +299,7 @@ case "$*" in
   *) printf '%s\n' "unexpected arguments: $*" >&2; exit 2 ;;
 esac
 "#,
-        )
-        .unwrap();
-        let mut permissions = fs::metadata(&binary).unwrap().permissions();
-        permissions.set_mode(0o700);
-        fs::set_permissions(&binary, permissions).unwrap();
+        );
         let short = Duration::from_secs(2);
         let runner = YtDlp::with_binary_and_timeouts(
             binary,
@@ -421,7 +430,13 @@ esac
         let subtitle = row.subtitle.clone();
         results.push(candidate, row);
 
-        let applied = results.apply_if_current(&[("UC-stale".into(), Some(62_400))], false, 2, 1);
+        let request = Generation::default();
+        let applied = results.apply_if_current(
+            &[("UC-stale".into(), Some(62_400))],
+            false,
+            request.next(),
+            request,
+        );
 
         assert!(!applied);
         assert_eq!(subtitle.text(), "3 matching videos · audio only");

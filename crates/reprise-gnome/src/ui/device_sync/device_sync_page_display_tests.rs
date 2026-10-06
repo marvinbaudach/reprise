@@ -150,7 +150,7 @@ fn mtp_60_sync_status_text_does_not_resize_the_playlist_workspace() {
     gtk4::init().expect("GTK test display");
     let mut device = device();
     device.sync_phase = PlannedSyncPhase::Syncing {
-        step: crate::ui::device_sync_runtime::SyncStep::Transcoding,
+        step: crate::ui::device_sync::device_sync_runtime::SyncStep::Transcoding,
         done: 8,
         total: 278,
         current_track: "Claw Marks — Brand of Sacrifice".into(),
@@ -194,7 +194,7 @@ fn mtp_60_sync_status_text_does_not_resize_the_playlist_workspace() {
         .1;
 
     device.sync_phase = PlannedSyncPhase::Syncing {
-        step: crate::ui::device_sync_runtime::SyncStep::Copying,
+        step: crate::ui::device_sync::device_sync_runtime::SyncStep::Copying,
         done: 16,
         total: 278,
         current_track: "Lifeblood (feat. Will Ramos) — Brand of Sacrifice".into(),
@@ -416,7 +416,7 @@ fn mtp_64_full_page_renders_and_wires_only_the_playlist_mirroring_controls() {
     assert_eq!(*starts.borrow(), 1);
 
     device.sync_phase = PlannedSyncPhase::Syncing {
-        step: crate::ui::device_sync_runtime::SyncStep::Copying,
+        step: crate::ui::device_sync::device_sync_runtime::SyncStep::Copying,
         done: 1,
         total: 2,
         current_track: "Immortal — Lorna Shore".into(),

@@ -1,6 +1,6 @@
 //! Persisted podcast behavior and filter settings.
 
-use crate::db::Db;
+use crate::{db::Db, CoreError};
 use rusqlite::Connection;
 
 use super::PodcastKind;
@@ -21,7 +21,7 @@ pub const FILTER_SOURCE_KEY: &str = "podcasts.filter.source";
 /// playlist-only since `MTP-54`, and the per-channel override that used to
 /// beat this default is gone with it, so this value now stands alone.
 pub const LATEST_PER_CHANNEL_DEFAULT_KEY: &str = "podcasts.latest_per_channel_default";
-/// `SRC-10` addendum (Block B2): the "Downloaded" filter chip.
+/// `SRC-10a` addendum (Block B2): the "Downloaded" filter chip.
 pub const FILTER_DOWNLOADED_KEY: &str = "podcasts.filter.downloaded";
 /// `POD-5` / `O-5`: the global "keep N downloaded" default backing
 /// `CleanupPolicy::KeepLast5`, overridable per channel
@@ -172,9 +172,9 @@ pub struct PodcastFilterConfig {
     pub downloaded_only: bool,
 }
 
-pub fn load(db: &Db) -> Result<PodcastConfig, rusqlite::Error> {
+pub fn load(db: &Db) -> Result<PodcastConfig, CoreError> {
     let conn = db.conn();
-    load_in(conn)
+    Ok(load_in(conn)?)
 }
 
 pub(crate) fn load_in(conn: &Connection) -> Result<PodcastConfig, rusqlite::Error> {
@@ -308,9 +308,9 @@ pub fn save_filter(db: &Db, filter: &PodcastFilterConfig) -> Result<(), rusqlite
 /// (`NET-1a`) with the kind's own module (Podcasts for RSS, YouTube for
 /// YouTube). Every podcast/YouTube network entry point routes through this
 /// instead of checking a module flag alone.
-pub fn source_network_allowed(db: &Db, kind: PodcastKind) -> Result<bool, rusqlite::Error> {
+pub fn source_network_allowed(db: &Db, kind: PodcastKind) -> Result<bool, CoreError> {
     let conn = db.conn();
-    source_network_allowed_in(conn, kind)
+    Ok(source_network_allowed_in(conn, kind)?)
 }
 
 pub(crate) fn source_network_allowed_in(
@@ -473,10 +473,10 @@ mod tests {
         assert_eq!(load_filter(&db).unwrap().source, None);
     }
 
-    /// `SRC-10` addendum (Block B2): the "Downloaded" filter persists like
+    /// `SRC-10a` addendum (Block B2): the "Downloaded" filter persists like
     /// every other sticky filter value.
     #[test]
-    fn src_10_downloaded_filter_persists_across_a_reload() {
+    fn src_10a_downloaded_filter_persists_across_a_reload() {
         let db = db();
         crate::library::settings::set_bool(&db, FILTER_DOWNLOADED_KEY, true).unwrap();
 

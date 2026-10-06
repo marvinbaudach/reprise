@@ -2,10 +2,18 @@ package io.github.marvinbaudach.reprise.scene
 
 import io.github.marvinbaudach.reprise.VisualBassPressure
 
-/** Signal state stepped by spectrogram frames, with wall-time base drift applied separately. */
+/**
+ * Signal state stepped by spectrogram frames, with wall-time base drift applied separately.
+ *
+ * One state serves one track and outlives its frames: [adoptFrames] swaps in a longer
+ * analysis of the same track without touching the envelopes, shimmer or fog.
+ */
 class SceneState(
-    private val frames: SpectrogramFrames,
+    frames: SpectrogramFrames,
 ) {
+    /** The analysis the scene is currently stepped on; read it, never hold it across frames. */
+    var frames: SpectrogramFrames = frames
+        private set
     private val filmEnvelope = OilFilmEnvelope()
     private var filmSeconds = 0.0
     private val fogEnvelopes = BandEnvelopes.fog(frames.bandCount, frames.frameRateHz)
@@ -15,6 +23,13 @@ class SceneState(
     private val targets = FloatArray(frames.bandCount)
     private val projectedMotion = FloatArray(frames.bandCount)
     private var lastFrameIndex: Int? = null
+
+    /**
+     * The frame a playhead was held on when frames grew past it; see [adoptFrames]. Its
+     * long catch-up applies only while the scene still stands there, and live audio
+     * driving the scene in between ends it.
+     */
+    private var decodeEdge: Int? = null
 
     /**
      * The live follower array, handed out by reference on purpose.
@@ -78,11 +93,14 @@ class SceneState(
         val targetIndex = frames.clampFrameIndex(frameIndex)
         val previous = lastFrameIndex
         if (previous == targetIndex) return
+        val resumingFromDecodeEdge = previous != null && previous == decodeEdge
+        decodeEdge = null
         if (previous == null && targetIndex > SEEK_FRAMES) {
             resetTo(targetIndex)
             return
         }
-        val forwardLimit = if (afterMissedFrames) CATCH_UP_FRAMES else SEEK_FRAMES
+        val forwardLimit =
+            if (afterMissedFrames || resumingFromDecodeEdge) CATCH_UP_FRAMES else SEEK_FRAMES
         if (previous != null && (targetIndex < previous || targetIndex - previous > forwardLimit)) {
             resetTo(targetIndex)
             return
@@ -92,8 +110,34 @@ class SceneState(
         lastFrameIndex = targetIndex
     }
 
+    /**
+     * Continues on a longer analysis of the same track, for example the final one replacing
+     * the part decoded so far. Nothing restarts: the envelopes, the film, the shimmer and the
+     * fog angles keep their values, and the playhead keeps its place in the frame sequence.
+     */
+    fun adoptFrames(next: SpectrogramFrames) {
+        require(next.bandCount == frames.bandCount && next.frameRateHz == frames.frameRateHz) {
+            "an adopted analysis must keep its ${frames.bandCount} bands at ${frames.frameRateHz} Hz"
+        }
+        val previousLastFrame = frames.frameCount - 1
+        frames = next
+        val last = lastFrameIndex ?: return
+        val nextLastFrame = next.frameCount - 1
+        if (next.frameCount > 0 && last > nextLastFrame) {
+            // A shorter analysis: stand on its last frame rather than read the step back
+            // as a seek and snap.
+            lastFrameIndex = nextLastFrame
+            decodeEdge = null
+        } else if (last == previousLastFrame && nextLastFrame > last) {
+            // The playhead ran past the decoded part and was held at its edge. The frames
+            // decoded since are music that played, not a seek: replay them in order.
+            decodeEdge = last
+        }
+    }
+
     fun resetTo(frameIndex: Int) {
         if (frames.frameCount == 0) return
+        decodeEdge = null
         val targetIndex = frames.clampFrameIndex(frameIndex)
         readRaw(targetIndex)
         val fogChanged = fogEnvelopes.adopt(rawBands)
@@ -194,6 +238,9 @@ class SceneState(
 
     /** Applies the detector's real kick and held pressure without a second envelope. */
     internal fun adoptLiveBassPressure(reading: VisualBassPressure, elapsedSeconds: Float) {
+        // The analysis is not what plays the music now: no frame held at the decode edge
+        // is replayed from it once the live audio stops.
+        decodeEdge = null
         val kick = reading.kick.finiteUnit()
         val pressure = reading.pressure.finiteUnit()
         val energy = maxOf(kick, pressure)

@@ -4,8 +4,8 @@ use libadwaita as adw;
 use libadwaita::prelude::*;
 use reprise_core::library::settings::{self, WindowDecorationMode};
 
-use super::window_decoration_strings as strings;
 use super::PreferencesContext;
+use crate::ui::window::window_decoration_strings as strings;
 
 pub(in crate::ui) fn mode_from_index(index: u32) -> WindowDecorationMode {
     match index {

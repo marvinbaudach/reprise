@@ -5,7 +5,7 @@ use std::rc::Rc;
 pub(super) fn wire(
     preferences: &Rc<crate::ui::preferences::PreferencesContext>,
     cover_batch: &Rc<crate::ui::cover_download_batch::CoverDownloadBatch>,
-    stats: &super::super::content_stack::DeferredPage<crate::ui::stats_view::StatsView>,
+    stats: &super::super::content_stack::DeferredPage<crate::ui::stats::stats_view::StatsView>,
     podcasts: &super::super::content_stack::DeferredPage<crate::ui::podcasts::PodcastsView>,
     youtube: &super::super::content_stack::DeferredPage<crate::ui::podcasts::PodcastsView>,
     radio: &super::super::content_stack::DeferredPage<crate::ui::radio::RadioView>,

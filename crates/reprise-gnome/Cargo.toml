@@ -48,6 +48,9 @@ serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
 chrono = { version = "0.4", default-features = false, features = ["clock"] }
 [dev-dependencies]
+# `time` gives the display tests a safe per-thread CPU clock, so a frame budget
+# can ignore the time a loaded runner keeps the thread off the core.
+rustix = { version = "1", default-features = false, features = ["std", "time"] }
 tempfile = "3"
 
 [lints]

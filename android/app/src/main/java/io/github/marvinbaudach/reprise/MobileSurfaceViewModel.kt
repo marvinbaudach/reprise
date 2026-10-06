@@ -1,5 +1,10 @@
 package io.github.marvinbaudach.reprise
 
+import android.content.Context
+import android.net.ConnectivityManager
+import android.os.Handler
+import android.os.Looper
+import android.os.SystemClock
 import androidx.compose.material3.windowsizeclass.WindowHeightSizeClass
 import androidx.compose.material3.windowsizeclass.WindowSizeClass
 import androidx.compose.material3.windowsizeclass.WindowWidthSizeClass
@@ -12,6 +17,7 @@ import uniffi.reprise_android_ffi.MusicLibrary
 
 private const val ANALYSIS_PREFETCH_OFFSET = -3L
 private const val ANALYSIS_PREFETCH_LIMIT = 5L
+private const val ALBUM_COVER_REFRESH_WINDOW_MS = 2_000L
 
 /** The two surface arrangements M9a supports; neither is an orientation. */
 internal enum class SurfaceLayout {
@@ -119,7 +125,18 @@ private data class ArtistPhotoBackfillBinding(
  * playing track is deliberately absent: the playback session owns it and the
  * activity asks.
  */
-internal class MobileSurfaceViewModel : ViewModel() {
+internal class MobileSurfaceViewModel(
+    private val nowMillis: () -> Long = SystemClock::elapsedRealtime,
+    private val scheduleAfter: (Long, () -> Unit) -> Unit = { delayMs, work ->
+        Handler(Looper.getMainLooper()).postDelayed(work, delayMs)
+    },
+) : ViewModel(), DeletionMessages {
+    val networkReturnDetector = NetworkReturnDetector()
+    private var networkReturnMonitor: NetworkReturnMonitor? = null
+    private var reportNetworkReturn: (() -> Unit)? = null
+    private var networkReturnPending = false
+    private var artworkNetworkReturnPending = false
+
     var selectedTab by mutableStateOf(BrowseTab.TITLES)
         private set
     var searchVisible by mutableStateOf(false)
@@ -136,11 +153,33 @@ internal class MobileSurfaceViewModel : ViewModel() {
         private set
     var dockOfferVersion by mutableStateOf(0L)
         private set
+    /**
+     * What a running deletion is doing, and what the last one did. Here rather
+     * than on the row the deletion started from: that row, its page, even its
+     * list may be gone by the time the deletion answers.
+     */
+    private var runningDeletions by mutableStateOf(emptyList<DeletionProgress>())
+    private var lastDeletionRun = 0L
+
+    /** The latest deletion still waiting for its answer, if any. */
+    val deletionProgress: DeletionProgress?
+        get() = runningDeletions.lastOrNull()
+    var deletionMessage by mutableStateOf<TransientMessage?>(null)
+        private set
+    private var refreshTickets = 0
+    private var appliedRefreshTicket = 0
     private var artistPhotoProgress by mutableStateOf<ArtistPhotoProgress?>(null)
     private var dismissedArtistPhotoRunId by mutableStateOf<Long?>(null)
     private var refreshArtistPortraits: () -> Unit = {}
     private var refreshedArtistPortraitRunId = 0L
     private var refreshedArtistPortraitDone = 0L
+    private var refreshAlbumCovers: () -> Unit = {}
+    private var refreshedAlbumCoverRunId = 0L
+    private var observedAlbumCoverDone = 0L
+    private var refreshedAlbumCoverDone = 0L
+    private var albumCoverWindowStartedAtMs: Long? = null
+    private var albumCoverScheduleGeneration = 0L
+    private var artworkBackfillStopped = false
     @Volatile
     private var artistPhotoBackfillBinding: ArtistPhotoBackfillBinding? = null
     val libraryScanMonitor = Any()
@@ -178,6 +217,74 @@ internal class MobileSurfaceViewModel : ViewModel() {
         reportLibraryState?.invoke(state) ?: run { pendingLibraryState = state }
     }
 
+    /**
+     * Orders refreshes across activity recreation: this outlives the activity
+     * that started one, so a refresh from before a rotation cannot land after
+     * one from after it. Main thread only.
+     */
+    fun takeRefreshTicket(): Int = ++refreshTickets
+
+    fun isNewestRefresh(ticket: Int): Boolean = ticket > appliedRefreshTicket
+
+    /** What the screen shows right now, taken on the main thread before a refresh reads. */
+    fun removalRefreshBasis() = RemovalRefreshBasis(loadedWindows, selectedTab)
+
+    /**
+     * Hands over the library as it is after a deletion.
+     *
+     * The rebuilt windows are stored under the new catalog's shape first, so the
+     * screen's own restore path takes them up — open pages, paged-in rows and
+     * refinement together — instead of falling back to the first 200 rows. Both
+     * calls happen in one main-thread turn: no composition can run between them.
+     * They are only stored while [basis] still describes the screen; a listener
+     * who moved on meanwhile gets the plain fresh state, as after a scan.
+     */
+    fun updateLibraryAfterRemoval(
+        refreshed: RefreshedLibrary,
+        basis: RemovalRefreshBasis,
+        ticket: Int,
+    ) {
+        appliedRefreshTicket = maxOf(appliedRefreshTicket, ticket)
+        val windows = refreshed.windows
+        if (windows != null && basis.stillDescribes(loadedWindows, selectedTab, searchText)) {
+            keepLoadedWindows(refreshed.state.catalogShape(), windows)
+        }
+        updateLibraryState(refreshed.state)
+        pendingDeletions.libraryRefreshed(ticket)
+    }
+
+    override fun say(text: String) {
+        deletionMessage = TransientMessage(text).after(deletionMessage)
+    }
+
+    override fun begin(text: String): DeletionRun {
+        val started = DeletionProgress(run = ++lastDeletionRun, text = text)
+        runningDeletions = runningDeletions + started
+        return DeletionRun { outcome ->
+            runningDeletions = runningDeletions.filterNot { it.run == started.run }
+            say(outcome)
+        }
+    }
+
+    fun dismissDeletionMessage() {
+        deletionMessage = null
+    }
+
+    /** What is playing, as the library screen last saw it: a delete of it skips on. */
+    var playingTrackId: Long? = null
+        private set
+
+    fun observePlayingTrack(trackId: Long?) {
+        playingTrackId = trackId
+    }
+
+    override val pendingDeletions = PendingDeletions(
+        offers = UndoOffers(scheduleAfter),
+        messages = this,
+        currentTrackId = { playingTrackId },
+        latestRefreshTicket = { refreshTickets },
+    )
+
     fun bindArtistPhotoBackfill(
         snapshot: () -> ArtistPhotoProgress,
         start: ((ArtistPhotoProgress) -> Unit) -> Unit,
@@ -198,6 +305,49 @@ internal class MobileSurfaceViewModel : ViewModel() {
         refreshArtistPortraits = refresh
     }
 
+    fun bindAlbumCoverRefresh(refresh: () -> Unit) {
+        refreshAlbumCovers = refresh
+    }
+
+    fun startNetworkReturnMonitor(context: Context, onNetworkReturned: () -> Unit) {
+        reportNetworkReturn = onNetworkReturned
+        if (networkReturnPending) {
+            networkReturnPending = false
+            onNetworkReturned()
+        }
+        if (artworkNetworkReturnPending) {
+            artworkNetworkReturnPending = false
+            networkReturnedRestartArtwork()
+        }
+        networkReturnMonitor?.let { monitor ->
+            monitor.start()
+            return
+        }
+        val connectivity = context.applicationContext
+            .getSystemService(ConnectivityManager::class.java)
+        networkReturnMonitor = NetworkReturnMonitor(
+            connectivity = connectivity,
+            detector = networkReturnDetector,
+            onNetworkReturned = {
+                reportNetworkReturn?.invoke() ?: run { networkReturnPending = true }
+            },
+            onRealNetworkReturned = {
+                if (reportNetworkReturn == null) {
+                    artworkNetworkReturnPending = true
+                } else {
+                    networkReturnedRestartArtwork()
+                }
+            },
+        ).also(NetworkReturnMonitor::start)
+    }
+
+    fun stopNetworkReturnMonitor(configurationChange: Boolean = false) {
+        if (configurationChange) return
+        networkReturnMonitor?.stop()
+        networkReturnMonitor = null
+        reportNetworkReturn = null
+    }
+
     fun startArtistPhotoBackfill() {
         val binding = artistPhotoBackfillBinding ?: return
         binding.start { update ->
@@ -207,9 +357,17 @@ internal class MobileSurfaceViewModel : ViewModel() {
         binding.postToMain { acceptArtistPhotoProgress(snapshot) }
     }
 
-    fun cancelArtistPhotoBackfill() {
-        artistPhotoBackfillBinding?.cancel?.invoke()
-        artistPhotoProgress = null
+    fun networkReturnedRestartArtwork() {
+        startArtistPhotoBackfillUnlessStopped()
+    }
+
+    fun startArtistPhotoBackfillUnlessStopped() {
+        if (!artworkBackfillStopped) startArtistPhotoBackfill()
+    }
+
+    fun scanCompletedRestartArtwork() {
+        artworkBackfillStopped = false
+        startArtistPhotoBackfill()
     }
 
     fun acceptArtistPhotoProgress(update: ArtistPhotoProgress) {
@@ -217,15 +375,70 @@ internal class MobileSurfaceViewModel : ViewModel() {
             refreshedArtistPortraitRunId = update.runId
             refreshedArtistPortraitDone = 0
         }
-        if (update.done > refreshedArtistPortraitDone) {
+        val portraitDone = update.done - update.coversDone
+        if (portraitDone > refreshedArtistPortraitDone) {
             refreshArtistPortraits()
-            refreshedArtistPortraitDone = update.done
+            refreshedArtistPortraitDone = portraitDone
         }
+        acceptAlbumCoverProgress(update)
         artistPhotoProgress = update
+    }
+
+    private fun acceptAlbumCoverProgress(update: ArtistPhotoProgress) {
+        if (update.runId != refreshedAlbumCoverRunId) {
+            flushAlbumCoverRefresh()
+            refreshedAlbumCoverRunId = update.runId
+            observedAlbumCoverDone = 0
+            refreshedAlbumCoverDone = 0
+            albumCoverWindowStartedAtMs = null
+            albumCoverScheduleGeneration++
+        }
+        if (update.coversDone > observedAlbumCoverDone) {
+            observedAlbumCoverDone = update.coversDone
+            val now = nowMillis()
+            val windowStartedAt = albumCoverWindowStartedAtMs
+            if (
+                windowStartedAt != null &&
+                now - windowStartedAt >= ALBUM_COVER_REFRESH_WINDOW_MS
+            ) {
+                flushAlbumCoverRefresh()
+            } else if (windowStartedAt == null) {
+                albumCoverWindowStartedAtMs = now
+                val scheduledGeneration = ++albumCoverScheduleGeneration
+                scheduleAfter(ALBUM_COVER_REFRESH_WINDOW_MS) {
+                    if (scheduledGeneration == albumCoverScheduleGeneration) {
+                        flushAlbumCoverRefresh()
+                    }
+                }
+            }
+        }
+        if (observedAlbumCoverDone <= refreshedAlbumCoverDone) return
+
+        val complete = observedAlbumCoverDone > 0 && (
+            update.phase == ArtistPhotoProgressPhase.COMPLETE ||
+                (update.coversTotal > 0 && observedAlbumCoverDone >= update.coversTotal)
+        )
+        if (!complete) return
+
+        flushAlbumCoverRefresh()
+    }
+
+    private fun flushAlbumCoverRefresh() {
+        if (observedAlbumCoverDone <= refreshedAlbumCoverDone) return
+        refreshAlbumCovers()
+        refreshedAlbumCoverDone = observedAlbumCoverDone
+        albumCoverWindowStartedAtMs = null
+        albumCoverScheduleGeneration++
     }
 
     fun dismissArtistPhotoProgress() {
         dismissedArtistPhotoRunId = artistPhotoProgress?.runId
+    }
+
+    fun cancelArtistPhotoBackfill() {
+        artworkBackfillStopped = true
+        artistPhotoBackfillBinding?.cancel?.invoke()
+        dismissArtistPhotoProgress()
     }
 
     fun initializeSelectedTab(initial: BrowseTab, remember: (BrowseTab) -> Unit) {
@@ -429,7 +642,17 @@ internal class MobileSurfaceViewModel : ViewModel() {
         return released
     }
 
+    fun cancelScrub(trackId: Long) {
+        if (scrubTrackId != trackId) return
+        scrubPosition = checkNotNull(scrubPosition).cancel()
+    }
+
     override fun onCleared() {
+        pendingDeletions.close()
+        stopNetworkReturnMonitor()
+        albumCoverScheduleGeneration++
+        refreshAlbumCovers = {}
+        refreshArtistPortraits = {}
         val backfill = artistPhotoBackfillBinding
         artistPhotoBackfillBinding = null
         backfill?.cancel?.invoke()

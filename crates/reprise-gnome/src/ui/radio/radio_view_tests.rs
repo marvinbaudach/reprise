@@ -294,8 +294,9 @@ fn src_13_activating_a_station_here_leaves_the_viewport_where_the_user_put_it() 
 fn src_1a_radio_empty_state_offers_add_station_without_playback() {
     gtk4::init().unwrap();
     let conn = Rc::new(crate::test_db::open().unwrap());
+    reprise_core::modules::set_enabled(&conn, &reprise_core::modules::RADIO_MODULE, true).unwrap();
     let view = RadioView::new(conn, None);
-    // `SRC-10` moved this action onto the shared empty-state page's own
+    // `SRC-10a` moved this action onto the shared empty-state page's own
     // button (`empty_page`) rather than the still-existing
     // `status_button`, which now serves only `NoResults`.
     assert_eq!(
@@ -404,9 +405,10 @@ fn fil_3a_radio_end_line_counts_stations_and_recovers_with_clear_all() {
 
 #[test]
 #[ignore = "requires a display; run via xvfb-run"]
-fn src_10_radio_empty_state_hides_the_toolbar_and_the_first_station_restores_it() {
+fn src_10a_radio_empty_state_hides_the_toolbar_and_the_first_station_restores_it() {
     gtk4::init().unwrap();
     let conn = Rc::new(crate::test_db::open().unwrap());
+    reprise_core::modules::set_enabled(&conn, &reprise_core::modules::RADIO_MODULE, true).unwrap();
     let view = RadioView::new(conn.clone(), None);
 
     assert!(!view.shared.filter_bar.widget().is_visible());
@@ -441,14 +443,61 @@ fn src_10_radio_empty_state_hides_the_toolbar_and_the_first_station_restores_it(
     );
 }
 
-/// `SRC-10` addendum (Block B2): the filter-mismatch state is the
+#[test]
+#[ignore = "requires a display; run via xvfb-run"]
+fn src_10a_radio_module_off_opens_preferences() {
+    gtk4::init().unwrap();
+    let conn = Rc::new(crate::test_db::open().unwrap());
+    reprise_core::modules::set_enabled(&conn, &reprise_core::modules::RADIO_MODULE, false).unwrap();
+    let view = RadioView::new(conn.clone(), None);
+
+    assert_eq!(view.shared.empty_state.get(), RadioEmptyState::ModuleOff);
+    assert_eq!(
+        view.shared.stack.visible_child_name().as_deref(),
+        Some(MODULE_OFF_PAGE)
+    );
+    assert_eq!(
+        view.shared.module_off_state.button_label_text().as_deref(),
+        Some("Enable in Preferences")
+    );
+    let copy = descendant_labels(view.shared.module_off_state.widget());
+    assert!(copy.iter().any(|text| text == "Radio is turned off"));
+    assert!(copy
+        .iter()
+        .any(|text| text.contains("Existing stations are kept")));
+    assert!(!view.shared.filter_bar.widget().is_visible());
+    assert!(!view.shared.footer.is_visible());
+    let opened = Rc::new(Cell::new(false));
+    let opened_from_button = opened.clone();
+    view.set_on_open_preferences(move || opened_from_button.set(true));
+    view.shared.module_off_state.button().emit_clicked();
+    assert!(opened.get());
+}
+
+fn descendant_labels(widget: &gtk4::Widget) -> Vec<String> {
+    let mut labels = widget
+        .clone()
+        .downcast::<gtk4::Label>()
+        .ok()
+        .map(|label| label.text().to_string())
+        .into_iter()
+        .collect::<Vec<_>>();
+    let mut child = widget.first_child();
+    while let Some(current) = child {
+        labels.extend(descendant_labels(&current));
+        child = current.next_sibling();
+    }
+    labels
+}
+
+/// `SRC-10a` addendum (Block B2): the filter-mismatch state is the
 /// opposite of the genuine empty state — the filter row stays visible,
 /// with a "Clear filters" action, because clearing the filter (not
 /// adding a station) is the way out. Would go red if `NoResults` hid
 /// the toolbar the same way `Empty` does.
 #[test]
 #[ignore = "requires a display; run via xvfb-run"]
-fn src_10_the_filter_mismatch_state_keeps_the_filter_row_visible_unlike_the_true_empty_state() {
+fn src_10a_the_filter_mismatch_state_keeps_the_filter_row_visible_unlike_the_true_empty_state() {
     gtk4::init().unwrap();
     let conn = Rc::new(crate::test_db::open().unwrap());
     let view = RadioView::new(conn, None);

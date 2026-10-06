@@ -113,7 +113,6 @@ fn build_primary_menu() -> gio::Menu {
     menu
 }
 
-#[allow(clippy::needless_pass_by_value)]
 pub(super) fn install(
     header: &adw::HeaderBar,
     window: &adw::ApplicationWindow,

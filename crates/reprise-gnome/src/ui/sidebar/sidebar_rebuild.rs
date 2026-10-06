@@ -54,8 +54,9 @@ pub(in crate::ui) fn rebuild(shared: &Rc<Shared>, force_select: Option<ViewSourc
         concerts_count,
     ) = {
         let conn = &shared.conn;
-        let music_count =
-            queries::query_track_count(conn, &ViewSource::Library, "", &[]).unwrap_or(0);
+        let library = ViewSource::Library;
+        let library_view = queries::TrackViewQuery::new(&library);
+        let music_count = queries::query_track_count(conn, &library_view).unwrap_or(0);
         let missing_count = queries::count_missing(conn).unwrap_or_else(|error| {
             tracing::error!(%error, "failed to count missing files for sidebar visibility");
             0
@@ -118,15 +119,15 @@ pub(in crate::ui) fn rebuild(shared: &Rc<Shared>, force_select: Option<ViewSourc
                 } else {
                     ViewSource::Smart(smart.id)
                 };
-                let count =
-                    queries::query_track_count(conn, &source, "", &[]).unwrap_or_else(|error| {
-                        tracing::error!(
-                            %error,
-                            smart_id = smart.id,
-                            "failed to count smart playlist tracks for sidebar badge"
-                        );
-                        0
-                    });
+                let view = queries::TrackViewQuery::new(&source);
+                let count = queries::query_track_count(conn, &view).unwrap_or_else(|error| {
+                    tracing::error!(
+                        %error,
+                        smart_id = smart.id,
+                        "failed to count smart playlist tracks for sidebar badge"
+                    );
+                    0
+                });
                 (smart, count)
             })
             .collect();
@@ -183,7 +184,12 @@ pub(in crate::ui) fn rebuild(shared: &Rc<Shared>, force_select: Option<ViewSourc
             concerts::config::persisted_filter(conn)
                 .and_then(|filter| {
                     let location = concerts::config::location(conn)?;
-                    concerts::count_upcoming(conn, &filter, location.as_ref(), today)
+                    Ok(concerts::count_upcoming(
+                        conn,
+                        &filter,
+                        location.as_ref(),
+                        today,
+                    )?)
                 })
                 .unwrap_or_else(|error| {
                     tracing::error!(%error, "failed to count Concerts rows for sidebar badge");

@@ -228,7 +228,7 @@ fn a_downloaded_cover_is_taken_from_the_platform_cache_root() {
 
     std::fs::remove_file(&default_cover).ok();
     match resolved {
-        Some(CoverSource::FolderImage(path)) => assert_eq!(
+        Some(CoverSource::CacheImage(path)) => assert_eq!(
             path, platform_cover,
             "stage 1 must read the cache root it was handed, not the XDG default"
         ),

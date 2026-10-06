@@ -35,7 +35,7 @@ pub(in crate::ui) fn arm_quit(window: &libadwaita::ApplicationWindow) {
 
 pub(in crate::ui) fn arm_bar_position(
     conn: &Rc<Db>,
-    library_player_bar: &super::library_player_bar::LibraryPlayerBarShell,
+    library_player_bar: &crate::ui::player_bar::library_player_bar::LibraryPlayerBarShell,
 ) {
     let Ok(value) = std::env::var(SMOKE_BAR_POSITION_ENV_VAR) else {
         return;

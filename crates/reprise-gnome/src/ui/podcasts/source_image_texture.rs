@@ -47,18 +47,18 @@ fn decode_pixels_with_thumbnail(
 ) -> Result<DecodedPixels, gtk4::glib::Error> {
     let requested_edge = width.max(height).max(0).saturating_mul(2) as u32;
     let size = thumbnail_size_for_edge(requested_edge);
-    let thumbnail_path =
-        match resolve_thumbnail(&CoverSource::FolderImage(path.to_path_buf()), size) {
-            Ok(thumbnail_path) => thumbnail_path,
-            Err(error) => {
-                tracing::debug!(
-                    %error,
-                    source = %path.display(),
-                    "could not cache source artwork thumbnail; decoding the original"
-                );
-                path.to_path_buf()
-            }
-        };
+    let thumbnail_path = match resolve_thumbnail(&CoverSource::CacheImage(path.to_path_buf()), size)
+    {
+        Ok(thumbnail_path) => thumbnail_path,
+        Err(error) => {
+            tracing::debug!(
+                %error,
+                source = %path.display(),
+                "could not cache source artwork thumbnail; decoding the original"
+            );
+            path.to_path_buf()
+        }
+    };
     let pixbuf = gtk4::gdk_pixbuf::Pixbuf::from_file_at_scale(
         thumbnail_path,
         width.saturating_mul(2),
@@ -242,7 +242,7 @@ mod tests {
                 // decoding the resolver's cached PNG.
                 assert!(matches!(
                     requested,
-                    CoverSource::FolderImage(path) if path == &original
+                    CoverSource::CacheImage(path) if path == &original
                 ));
                 assert_eq!(size, ThumbnailSize::Bar);
                 let path = reprise_core::cover::thumbnail_with_source(

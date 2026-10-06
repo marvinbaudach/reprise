@@ -3,7 +3,6 @@
 use std::path::Path;
 
 use reprise_core::library::trash_tracks::{commit_trash, plan_trash, TrashFailure};
-use reprise_core::playback::PlaybackBackend;
 use reprise_core::queries;
 
 use super::{AndroidPlaybackError, AndroidPlaybackSession};
@@ -43,7 +42,10 @@ pub struct AndroidTrashReport {
 #[uniffi::export]
 impl AndroidPlaybackSession {
     // UniFFI transfers callback objects by value across the ABI.
-    #[allow(clippy::needless_pass_by_value)]
+    #[expect(
+        clippy::needless_pass_by_value,
+        reason = "UniFFI hands owned callbacks across the FFI boundary"
+    )]
     pub fn trash_tracks(
         &self,
         track_ids: Vec<i64>,
@@ -51,15 +53,15 @@ impl AndroidPlaybackSession {
     ) -> Result<AndroidTrashReport, LibraryError> {
         let (plan, already_gone) = {
             let database = self.inner.library.writer()?;
+            let paths = queries::track_source_paths(&database, &track_ids).map_err(|error| {
+                LibraryError::Query {
+                    detail: format!("could not resolve a track for deletion: {error}"),
+                }
+            })?;
             let mut tracks = Vec::with_capacity(track_ids.len());
             let mut already_gone = Vec::new();
             for track_id in track_ids {
-                let path = queries::track_source_path(&database, track_id).map_err(|error| {
-                    LibraryError::Query {
-                        detail: format!("could not resolve a track for deletion: {error}"),
-                    }
-                })?;
-                match path {
+                match paths.get(&track_id).cloned() {
                     Some(path) => tracks.push((track_id, path)),
                     None => already_gone.push(AndroidTrashFailure {
                         track_id,
@@ -96,7 +98,7 @@ impl AndroidPlaybackSession {
             commit_trash(&database, &trashed, failures)
         };
 
-        let (removed_current, has_current, next_uri, queue_to_save) = {
+        let (removed_current, has_current, next, queue_to_save) = {
             let mut state = self
                 .inner
                 .lock()
@@ -112,12 +114,12 @@ impl AndroidPlaybackSession {
             (
                 removed_current,
                 state.queue.current().is_some(),
-                state.next_uri(),
+                state.next_track(),
                 state.queue.clone(),
             )
         };
         self.inner
-            .persist_queue(&queue_to_save)
+            .persist_queue(queue_to_save)
             .map_err(|error| playback_as_library_error(&error))?;
 
         if removed_current {
@@ -132,9 +134,8 @@ impl AndroidPlaybackSession {
             }
         } else {
             self.inner
-                .backend()
-                .map_err(|error| playback_as_library_error(&error))?
-                .set_next(next_uri.as_deref());
+                .feed_next(next)
+                .map_err(|error| playback_as_library_error(&error))?;
             self.inner.notify();
         }
 

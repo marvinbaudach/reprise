@@ -16,6 +16,8 @@ use reprise_core::podcasts::discovery::{
 use reprise_core::podcasts::{self, PodcastKind};
 
 use crate::ui::one_shot_task;
+use crate::ui::source_add_dialog::chrome::{ChromeSpec, SourceAddChrome};
+use crate::ui::source_add_dialog::generation::Generation;
 use crate::ui::strings;
 
 use super::add_dialog_chips::{chip_for, dialog_country, AddDialogChip};
@@ -35,6 +37,7 @@ use super::add_dialog_subscription::{baseline_for_import_choice, subscribe};
 use super::add_dialog_subscription::{configured_auto_download_default, subscribe_offline};
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[cfg(test)]
 pub(super) enum AddDialogPhase {
     Idle,
     Searching,
@@ -53,7 +56,7 @@ const CONTENT_WIDTH: i32 = 620;
 const CONTENT_HEIGHT: i32 = 560;
 
 struct SearchContext<'a> {
-    generation: &'a Rc<Cell<u64>>,
+    generation: &'a Rc<Cell<Generation>>,
     status: &'a gtk4::Label,
     results: &'a gtk4::Box,
     conn: &'a Rc<Db>,
@@ -67,10 +70,12 @@ struct AddDialogSurface {
     /// — no played YouTube genre, or an offline Apple dialog.
     suggestion_chip: Option<gtk4::Button>,
     chip_action: Option<AddDialogChip>,
+    chrome: SourceAddChrome,
     dialog: adw::Dialog,
     entry: gtk4::SearchEntry,
     status: gtk4::Label,
     results: gtk4::Box,
+    #[cfg(test)]
     cancel: gtk4::Button,
     primary: gtk4::Button,
 }
@@ -82,16 +87,6 @@ fn build_surface(
     country: &str,
     library_genre: Option<&str>,
 ) -> AddDialogSurface {
-    let content = gtk4::Box::new(gtk4::Orientation::Vertical, 12);
-    content.set_margin_top(18);
-    content.set_margin_bottom(18);
-    content.set_margin_start(18);
-    content.set_margin_end(18);
-
-    let entry = gtk4::SearchEntry::builder()
-        .placeholder_text(strings::text(dialog_hint(kind)))
-        .build();
-    content.append(&entry);
     // `SRC-15a` / `SRC-19`: the one suggestion slot is a library-genre query
     // for YouTube and the country chart for Apple Podcasts.
     let chip_action = chip_for(kind, connectivity, network_allowed, country, library_genre);
@@ -101,13 +96,8 @@ fn build_surface(
         // Left-aligned and only as wide as its text, like the radio chips —
         // a full-width button would read as a second primary action.
         chip.set_halign(gtk4::Align::Start);
-        content.append(&chip);
         chip
     });
-    let status = gtk4::Label::new(None);
-    status.add_css_class("reprise-text-secondary");
-    status.set_xalign(0.0);
-    content.append(&status);
     let results = gtk4::Box::new(gtk4::Orientation::Vertical, 8);
     // SRC-8: vertical scrolling only. Without this the widest result row adds a
     // horizontal scrollbar and pushes the row actions past the viewport edge.
@@ -119,26 +109,33 @@ fn build_surface(
         .build();
     // Keep the rows clear of the overlay scrollbar so no action sits under it.
     results.set_margin_end(6);
-    content.append(&scroller);
 
-    // SRC-7: say once why an added source stops appearing, instead of letting
-    // it vanish unexplained on the next search.
-    let footnote = gtk4::Label::new(Some(&strings::text(strings::SOURCE_SUBSCRIBED_DROP_OUT)));
-    footnote.add_css_class("caption");
-    footnote.add_css_class("reprise-text-secondary");
-    footnote.set_xalign(0.0);
-    footnote.set_wrap(true);
-    content.append(&footnote);
-
-    let cancel = gtk4::Button::with_label(&strings::text(strings::PODCAST_CANCEL));
-    let primary = gtk4::Button::with_label(&strings::text(strings::PODCAST_SEARCH));
-    primary.add_css_class("suggested-action");
-    primary.set_sensitive(false);
-    let footer = gtk4::Box::new(gtk4::Orientation::Horizontal, 8);
-    footer.set_halign(gtk4::Align::End);
-    footer.append(&cancel);
-    footer.append(&primary);
-    content.append(&footer);
+    // SRC-7: the footnote says once why an added source stops appearing, instead
+    // of letting it vanish unexplained on the next search.
+    let chrome = SourceAddChrome::build(
+        ChromeSpec {
+            title: strings::text(dialog_title(kind)),
+            dialog_title: true,
+            hint: strings::text(dialog_hint(kind)),
+            footnote: strings::text(strings::SOURCE_SUBSCRIBED_DROP_OUT),
+            cancel_label: strings::text(strings::PODCAST_CANCEL),
+            primary_label: strings::text(strings::PODCAST_SEARCH),
+            content_width: CONTENT_WIDTH,
+            content_height: CONTENT_HEIGHT,
+            margin: 18,
+            status_wraps: false,
+        },
+        |content, status| {
+            if let Some(chip) = &suggestion_chip {
+                content.append(chip);
+            }
+            content.append(status);
+            content.append(&scroller);
+        },
+    );
+    let entry = chrome.entry.clone();
+    let status = chrome.status.clone();
+    let primary = chrome.primary.clone();
 
     // `NET-3` point 4: the reason offline search is unavailable is visible
     // immediately, before the user types anything — not only after a first
@@ -157,30 +154,17 @@ fn build_surface(
         set_status_hint(&status_for_entry, &parsed, kind, connectivity);
     });
 
-    let header = adw::HeaderBar::new();
-    header.set_title_widget(Some(&adw::WindowTitle::new(
-        &strings::text(dialog_title(kind)),
-        "",
-    )));
-    let toolbar = adw::ToolbarView::new();
-    toolbar.add_top_bar(&header);
-    toolbar.set_content(Some(&content));
-    let dialog = adw::Dialog::builder()
-        .title(strings::text(dialog_title(kind)))
-        .content_width(CONTENT_WIDTH)
-        .content_height(CONTENT_HEIGHT)
-        .child(&toolbar)
-        .build();
-
     AddDialogSurface {
         suggestion_chip,
         chip_action,
-        dialog,
+        dialog: chrome.dialog.clone(),
         entry,
         status,
         results,
-        cancel,
+        #[cfg(test)]
+        cancel: chrome.cancel.clone(),
         primary,
+        chrome,
     }
 }
 
@@ -227,9 +211,9 @@ pub(super) fn present(
     let entry = surface.entry;
     let status = surface.status;
     let results = surface.results;
-    let cancel = surface.cancel;
     let primary = surface.primary;
-    let generation = Rc::new(Cell::new(0_u64));
+    let chrome = surface.chrome;
+    let generation = Rc::new(Cell::new(Generation::default()));
     let follower_cancel = Rc::new(RefCell::new(None::<Arc<AtomicBool>>));
     let submit: Rc<dyn Fn(String)> = Rc::new({
         let conn = conn.clone();
@@ -244,7 +228,7 @@ pub(super) fn present(
                 cancelled.store(true, Ordering::Release);
             }
             clear(&results);
-            let next = generation.get().wrapping_add(1);
+            let next = generation.get().next();
             generation.set(next);
             let parsed = classify_input(&input);
             // SRC-6, NET-1a and NET-3 point 4 decided in one place, before
@@ -284,8 +268,10 @@ pub(super) fn present(
                         PodcastKind::Rss,
                         &url,
                         &generation,
-                        &status,
-                        &results,
+                        ResultSurface {
+                            status: &status,
+                            results: &results,
+                        },
                         &conn,
                         &on_added,
                     );
@@ -301,8 +287,10 @@ pub(super) fn present(
                         PodcastKind::Youtube,
                         &url,
                         &generation,
-                        &status,
-                        &results,
+                        ResultSurface {
+                            status: &status,
+                            results: &results,
+                        },
                         &conn,
                         &on_added,
                     );
@@ -323,7 +311,7 @@ pub(super) fn present(
                 let follower_cancel = follower_cancel.clone();
                 chip.connect_clicked(move |_| {
                     clear(&results);
-                    let next = generation.get().wrapping_add(1);
+                    let next = generation.get().next();
                     generation.set(next);
                     status.set_text(&strings::text(strings::PODCAST_SEARCHING));
                     load_charts(
@@ -362,23 +350,21 @@ pub(super) fn present(
             submit_on_click(entry.text().to_string());
         }
     });
-    let dialog_for_cancel = dialog.downgrade();
-    cancel.connect_clicked(move |_| {
-        if let Some(dialog) = dialog_for_cancel.upgrade() {
-            dialog.close();
-        }
-    });
     let follower_cancel_on_close = follower_cancel.clone();
     dialog.connect_closed(move |_| {
         if let Some(cancelled) = follower_cancel_on_close.borrow_mut().take() {
             cancelled.store(true, Ordering::Release);
         }
     });
-    dialog.present(Some(parent));
-    entry.grab_focus();
+    chrome.present(parent);
 }
 
-fn search(request_generation: u64, terms: String, country: String, context: &SearchContext<'_>) {
+fn search(
+    request_generation: Generation,
+    terms: String,
+    country: String,
+    context: &SearchContext<'_>,
+) {
     let config = podcasts::config::load(context.conn).ok();
     let auto_download_default = configured_auto_download_default(config.as_ref());
     // SRC-6: exactly one provider is queried — the one this dialog belongs to.
@@ -401,15 +387,19 @@ fn search(request_generation: u64, terms: String, country: String, context: &Sea
                 task,
                 request_generation,
                 context.generation,
-                context.status,
-                &section,
+                ResultSurface {
+                    status: context.status,
+                    results: &section,
+                },
                 context.conn,
                 context.on_added,
-                strings::text(strings::PODCAST_APPLE_RESULTS),
-                Some(query),
-                auto_download_default,
-                empty_status,
-                None,
+                AddOptions {
+                    heading: strings::text(strings::PODCAST_APPLE_RESULTS),
+                    query: Some(query),
+                    auto_download_default,
+                    empty_status,
+                    follower_request: None,
+                },
             );
         }
         PodcastKind::Youtube => {
@@ -442,21 +432,25 @@ fn search(request_generation: u64, terms: String, country: String, context: &Sea
                 task,
                 request_generation,
                 context.generation,
-                context.status,
-                &section,
+                ResultSurface {
+                    status: context.status,
+                    results: &section,
+                },
                 context.conn,
                 context.on_added,
-                strings::text(strings::PODCAST_YOUTUBE_RESULTS),
-                Some(query),
-                auto_download_default,
-                empty_status,
-                Some(follower_request),
+                AddOptions {
+                    heading: strings::text(strings::PODCAST_YOUTUBE_RESULTS),
+                    query: Some(query),
+                    auto_download_default,
+                    empty_status,
+                    follower_request: Some(follower_request),
+                },
             );
         }
     }
 }
 
-fn load_charts(request_generation: u64, country: String, context: &SearchContext<'_>) {
+fn load_charts(request_generation: Generation, country: String, context: &SearchContext<'_>) {
     let config = podcasts::config::load(context.conn).ok();
     let auto_download_default = configured_auto_download_default(config.as_ref());
     let section = result_section();
@@ -474,36 +468,58 @@ fn load_charts(request_generation: u64, country: String, context: &SearchContext
         task,
         request_generation,
         context.generation,
-        context.status,
-        &section,
+        ResultSurface {
+            status: context.status,
+            results: &section,
+        },
         context.conn,
         context.on_added,
-        heading,
-        None,
-        auto_download_default,
-        empty_status,
-        None,
+        AddOptions {
+            heading,
+            query: None,
+            auto_download_default,
+            empty_status,
+            follower_request: None,
+        },
     );
 }
 
-#[allow(clippy::too_many_arguments)]
-fn attach_candidates(
-    receiver: std::io::Result<async_channel::Receiver<Result<Vec<Candidate>, String>>>,
-    request_generation: u64,
-    generation: &Rc<Cell<u64>>,
-    status: &gtk4::Label,
-    results: &gtk4::Box,
-    conn: &Rc<Db>,
-    on_added: &OnAdded,
+/// The two widgets a candidate list is rendered into.
+#[derive(Clone, Copy)]
+struct ResultSurface<'a> {
+    status: &'a gtk4::Label,
+    results: &'a gtk4::Box,
+}
+
+/// How the candidates of one request are offered: the list heading, the query that produced
+/// them, the auto-download default, the empty-list status, and the YouTube follower request.
+struct AddOptions {
     heading: String,
     query: Option<String>,
     auto_download_default: bool,
     empty_status: String,
     follower_request: Option<YoutubeFollowerRequest>,
+}
+
+fn attach_candidates(
+    receiver: std::io::Result<async_channel::Receiver<Result<Vec<Candidate>, String>>>,
+    request_generation: Generation,
+    generation: &Rc<Cell<Generation>>,
+    surface: ResultSurface<'_>,
+    conn: &Rc<Db>,
+    on_added: &OnAdded,
+    options: AddOptions,
 ) {
+    let AddOptions {
+        heading,
+        query,
+        auto_download_default,
+        empty_status,
+        follower_request,
+    } = options;
     let generation = generation.clone();
-    let status = status.clone();
-    let results = results.clone();
+    let status = surface.status.clone();
+    let results = surface.results.clone();
     let conn = conn.clone();
     let on_added = on_added.clone();
     gtk4::glib::spawn_future_local(async move {
@@ -578,14 +594,12 @@ fn preview_error(error: &podcasts::PodcastError) -> String {
     error.classify().to_owned()
 }
 
-#[allow(clippy::too_many_arguments)]
 fn preview(
-    request_generation: u64,
+    request_generation: Generation,
     kind: PodcastKind,
     url: &str,
-    generation: &Rc<Cell<u64>>,
-    status: &gtk4::Label,
-    results: &gtk4::Box,
+    generation: &Rc<Cell<Generation>>,
+    surface: ResultSurface<'_>,
     conn: &Rc<Db>,
     on_added: &OnAdded,
 ) {
@@ -656,8 +670,8 @@ fn preview(
         },
     );
     let generation = generation.clone();
-    let status = status.clone();
-    let results = results.clone();
+    let status = surface.status.clone();
+    let results = surface.results.clone();
     let conn = conn.clone();
     let on_added = on_added.clone();
     gtk4::glib::spawn_future_local(async move {
@@ -717,3 +731,7 @@ fn set_status_hint(
 #[cfg(test)]
 #[path = "add_dialog_tests.rs"]
 mod tests;
+
+#[cfg(test)]
+#[path = "add_dialog_chrome_tests.rs"]
+mod chrome_tests;
