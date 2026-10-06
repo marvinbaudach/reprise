@@ -24,7 +24,7 @@ gcc -O2 -o oracle <repo>/docs/research/cava-oracle/oracle.c cavacore.c -I. -lfft
 python3 <repo>/docs/research/cava-oracle/gen.py synth.f32          # 360 frames x 735 samples
 ./oracle synth.f32 bars.csv cutoffs.txt sens.txt                   # one CSV row per frame, gain per frame
 sed -n '173p;241p;256p;331p' bars.csv                              # frames 172, 240, 255, 330
-sed -n '101p' sens.txt                                             # the gain after frame 100
+sed -n '101p;201p;301p' sens.txt                                   # the gain after frames 100, 200, 300
 ```
 
 `oracle.c` mirrors the port's configuration: 64 bars, 44.1 kHz mono, autosens
@@ -45,6 +45,12 @@ after frame 100 (`0.745497722`, the fourth output of `oracle.c`, row 101 of
 creep, which is what the reference pins. Every comparison after it is
 unchanged, and the overshoot limit cycle at frames 255 and 330 still depends on
 the port making `cavacore`'s decisions frame by frame.
+
+The test also pins `cavacore`'s gain after frames 200 (`0.774628729`) and 300
+(`0.806024941`), rows 201 and 301 of `sens.txt`, at 1e-4 relative. A creep that
+drifted would show there before it moved a bar past the 2e-3 tolerance.
+Regenerate all three values with the `sed` line above; `sens.txt` holds one
+gain per frame, so row `k + 1` is the gain after frame `k`.
 
 ## What the test pins
 

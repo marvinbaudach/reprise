@@ -184,8 +184,8 @@ impl CavaBarProcessor {
     }
 
     /// Clears buffered audio and the whole smoothing history: a hard restart
-    /// whose bars begin at zero. The sensitivity is estimated again from the
-    /// next full window of audio (see [`Self::reset_stream`]).
+    /// whose bars begin at zero and whose sensitivity is measured from the new
+    /// audio alone, as for a freshly constructed processor.
     pub fn reset(&mut self) {
         self.input_buffer.fill(0.0);
         self.smoother.reset();
@@ -198,17 +198,25 @@ impl CavaBarProcessor {
     /// `fall`/`memory`), so the next frames fall through the normal gravity
     /// from their old heights instead of dropping to zero.
     ///
-    /// The sensitivity is *not* carried over. Another song's loudness says
-    /// nothing about this one's, so once a full FFT window of the new audio is
-    /// in, the smoother measures its level and sets the gain once, so the
-    /// frame lands at a target height. Until then the gain holds and no frame
-    /// is drawn as a wall: a frame the held gain would draw at more than
-    /// twice full height is scaled down. After the measurement `cavacore`'s own
-    /// auto-sensitivity takes over. A freshly constructed processor does the
-    /// same, in place of `cavacore`'s cold climb.
+    /// The sensitivity is measured again, with the one that drew the shape kept
+    /// as a prior: a full FFT window of the new audio decides whether it is off
+    /// by more than a factor of two (it is replaced) or not (it stays), and a
+    /// frame drawn at twice full height or more brakes it for a few seconds.
+    /// `cavacore`'s own creep runs throughout. A freshly constructed processor
+    /// measures from nothing instead of `cavacore`'s cold climb. The measure is
+    /// in `boundary`'s module docs.
     pub fn reset_stream(&mut self) {
         self.input_buffer.fill(0.0);
         self.smoother.rearm_boundary();
+    }
+
+    /// Clears only the FFT input buffer, for a gap in the audio that is not a
+    /// boundary: the same stream resumes after a pause or a buffering stall. The
+    /// sensitivity, the bar shape and every pending measurement stay as they
+    /// are, because nothing about the music changed; only the window must not
+    /// bridge the gap.
+    pub fn reset_window(&mut self) {
+        self.input_buffer.fill(0.0);
     }
 
     /// Seeds the smoother with a shape already on screen — another
@@ -223,6 +231,12 @@ impl CavaBarProcessor {
     /// never is. See `Smoother::seed_shape`.
     pub fn seed_shape(&mut self, bars: &[f32]) {
         self.smoother.seed_shape(bars);
+    }
+
+    /// The smoother's gain, for the golden test's comparison with `cavacore`'s.
+    #[cfg(test)]
+    pub(crate) fn sensitivity(&self) -> f32 {
+        self.smoother.sensitivity()
     }
 
     /// Starts the smoother from a gain `cavacore` itself reached, without its

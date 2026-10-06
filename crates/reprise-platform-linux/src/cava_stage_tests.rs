@@ -4,8 +4,8 @@
 
 use super::*;
 use reprise_core::playback::boundary_fixture::{
-    assert_no_dip, judge_boundary, Frame, SyntheticMusic, FRAMES_PER_SECOND, JUDGED_FRAMES,
-    SETTLE_FRAMES,
+    assert_no_dip, judge_boundary, Boundary, Frame, SyntheticMusic, BOUNDARY_OFFSETS_SECONDS,
+    FRAMES_PER_SECOND, JUDGED_FRAMES, SETTLE_FRAMES,
 };
 
 const RATE_HZ: u32 = 44_100;
@@ -24,17 +24,21 @@ fn quiet() -> SyntheticMusic {
     loud().louder_by(-LEVEL_STEP_DB)
 }
 
-/// What the tap does with consecutive buffers of `music` starting `from`
-/// seconds into it. `discontinuous` is the DISCONT flag on the first one.
+/// The sample `offset_seconds` past `BOUNDARY_SECONDS` into a song.
+fn boundary_sample(offset_seconds: f32) -> usize {
+    BOUNDARY_SECONDS * RATE_HZ as usize + (offset_seconds * RATE_HZ as f32) as usize
+}
+
+/// What the tap does with consecutive buffers of `music` starting at sample
+/// `first`. `discontinuous` is the DISCONT flag on the first one.
 fn play(
     stage: &mut CavaStage,
     music: &SyntheticMusic,
     generation: u64,
-    from_seconds: usize,
+    first: usize,
     frames: usize,
     discontinuous: bool,
 ) -> Vec<Frame> {
-    let first = from_seconds * RATE_HZ as usize;
     (0..frames)
         .map(|frame| {
             let pcm = music.mono(first + frame * HOP, HOP);
@@ -46,13 +50,13 @@ fn play(
 }
 
 /// A stage that has been playing `music` up to the boundary.
-fn warmed(music: &SyntheticMusic) -> CavaStage {
+fn warmed(music: &SyntheticMusic, offset_seconds: f32) -> CavaStage {
     let mut stage = CavaStage::new(RATE_HZ, FIRST_STREAM).unwrap();
     play(
         &mut stage,
         music,
         FIRST_STREAM,
-        BOUNDARY_SECONDS - WARM_SECONDS,
+        boundary_sample(offset_seconds) - WARM_SECONDS * RATE_HZ as usize,
         WARM_SECONDS * FRAMES_PER_SECOND,
         false,
     );
@@ -60,12 +64,12 @@ fn warmed(music: &SyntheticMusic) -> CavaStage {
 }
 
 /// The frames `music` draws on a stage that has been playing it all along.
-fn settled_reference(music: &SyntheticMusic) -> Vec<Frame> {
+fn settled_reference(music: &SyntheticMusic, offset_seconds: f32) -> Vec<Frame> {
     play(
-        &mut warmed(music),
+        &mut warmed(music, offset_seconds),
         music,
         FIRST_STREAM,
-        BOUNDARY_SECONDS,
+        boundary_sample(offset_seconds),
         RECORDED_FRAMES,
         false,
     )
@@ -82,52 +86,70 @@ fn restart_for_names_the_restart_each_event_needs() {
 
 #[test]
 fn ac_29_a_seek_keeps_the_shape_and_the_height_the_song_was_drawn_at() {
-    let mut stage = warmed(&loud());
+    for offset in BOUNDARY_OFFSETS_SECONDS {
+        let mut stage = warmed(&loud(), offset);
 
-    // A seek lands in the same song: the buffer after it carries DISCONT.
-    let run = play(
-        &mut stage,
-        &loud(),
-        FIRST_STREAM,
-        BOUNDARY_SECONDS,
-        RECORDED_FRAMES,
-        true,
-    );
+        // A seek lands in the same song: the buffer after it carries DISCONT.
+        let run = play(
+            &mut stage,
+            &loud(),
+            FIRST_STREAM,
+            boundary_sample(offset),
+            RECORDED_FRAMES,
+            true,
+        );
 
-    judge_boundary("seek", &run, &settled_reference(&loud()), true);
-    assert_no_dip("seek", &run, &settled_reference(&loud()));
+        let reference = settled_reference(&loud(), offset);
+        let label = format!("seek at +{offset}");
+        judge_boundary(&label, &run, &reference, Boundary::Continuing);
+        assert_no_dip(&label, &run, &reference);
+    }
 }
 
 #[test]
 fn ac_29_a_new_stream_keeps_the_shape_and_measures_the_new_songs_level() {
-    let mut stage = warmed(&loud());
+    for offset in BOUNDARY_OFFSETS_SECONDS {
+        let mut stage = warmed(&loud(), offset);
 
-    let run = play(
-        &mut stage,
-        &quiet(),
-        FIRST_STREAM + 1,
-        BOUNDARY_SECONDS,
-        RECORDED_FRAMES,
-        true,
-    );
+        let run = play(
+            &mut stage,
+            &quiet(),
+            FIRST_STREAM + 1,
+            boundary_sample(offset),
+            RECORDED_FRAMES,
+            true,
+        );
 
-    judge_boundary("new stream", &run, &settled_reference(&quiet()), true);
+        judge_boundary(
+            &format!("new stream at +{offset}"),
+            &run,
+            &settled_reference(&quiet(), offset),
+            Boundary::Different,
+        );
+    }
 }
 
 #[test]
 fn ac_29_enabling_the_visualizer_measures_the_level_and_starts_from_nothing() {
-    let mut stage = warmed(&quiet());
-    stage.disable();
+    for offset in BOUNDARY_OFFSETS_SECONDS {
+        let mut stage = warmed(&quiet(), offset);
+        stage.disable();
 
-    let run = play(
-        &mut stage,
-        &loud(),
-        FIRST_STREAM,
-        BOUNDARY_SECONDS,
-        RECORDED_FRAMES,
-        false,
-    );
+        let run = play(
+            &mut stage,
+            &loud(),
+            FIRST_STREAM,
+            boundary_sample(offset),
+            RECORDED_FRAMES,
+            false,
+        );
 
-    // Nothing was on screen to continue, so the first frames start low.
-    judge_boundary("enable", &run, &settled_reference(&loud()), false);
+        // Nothing was on screen to continue, so the first frames start low.
+        judge_boundary(
+            &format!("enable at +{offset}"),
+            &run,
+            &settled_reference(&loud(), offset),
+            Boundary::Fresh,
+        );
+    }
 }

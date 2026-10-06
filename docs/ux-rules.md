@@ -4613,11 +4613,11 @@ STYLE-1).
   quantized cutoff frequencies, and a fixed frequency EQ, as well as
   auto-sensitivity, integral, and gravity, exactly as `cavacore` computes
   them; there is no noise-floor gate. An auto-sensitivity overshoot clips
-  only the overshooting band to 1.0. The only whole-frame scaling is the
-  wall cap while a stream boundary's sensitivity is still being measured
-  (Stream boundaries, below); there is no cold-start climb. Digital
-  silence does not increase sensitivity; non-finite inputs and outputs are
-  neutralized, and all internal feedback loops stay bounded.
+  only the overshooting band to 1.0. There is no whole-frame scaling and no
+  cold-start climb: a stream boundary's sensitivity is measured instead
+  (Stream boundaries, below). Digital silence does not increase sensitivity;
+  non-finite inputs and outputs are neutralized, and all internal feedback
+  loops stay bounded.
   The scene engine takes over every CAVA band in the same frame without
   a second loudness mapping, normalization, or live envelope. It draws
   64 frequency-dependent, finely segmented neon columns one to one, with
@@ -4682,38 +4682,52 @@ STYLE-1).
   color. Changing the app/system source or the live system accent updates the
   canvas without reading or sampling the cover.
   **Stream boundaries.** A stream boundary measures its sensitivity; it
-  neither carries the last stream's nor climbs from a cold start. A boundary is
-  the first audio a CAVA processor sees (app start, the plugin switched on,
-  Android's first PCM or a sample-rate change, a pipeline rebuilt after a
-  playback failure or promoted from a crossfade), another track, and a seek or
-  other discontinuity. A new song's loudness says nothing about the
-  last one's: a carried sensitivity draws a louder song as a wall of pinned
-  bars and a quieter one as a dim line for seconds, and `cavacore`'s cold
-  climb swells the whole frame up and back down. So the smoother measures
-  instead, in three phases. *Waiting:* until a full FFT window of the new
-  stream's signal is in (the 8192 samples every bar is computed from; digital
-  silence does not fill it), the sensitivity holds, and a frame the held
-  sensitivity would draw at more than twice full height, a wall belonging to a
-  far louder song, is scaled down to 0.85; a shape below that keeps its
-  heights. *Tracking:* the sensitivity is then set, from the loudest raw bar
-  seen since the boundary, so that bar lands at full height, and for the next
-  forty windows (about seven seconds) it may go down, never up, the moment a
-  louder bar turns up. A window can fall between two kicks or inside a quiet
-  intro, and the creep alone would pin the bars for seconds. *Done:*
-  `cavacore`'s auto-sensitivity runs untouched. A track change and a seek
-  keep the bar shape on screen, so the bars fall through gravity from their
-  old heights instead of collapsing to zero; only a first start and the
-  plugin switched back on begin from nothing. In steady state the output stays
-  frame for frame what `cavacore` draws. Acceptance, at the Android engine,
-  the desktop pipeline stage and the core processor, for a fresh start, a song
-  14 dB louder, one 14 dB quieter, one of the same loudness, an Android 44.1 to
-  48 kHz change and a desktop seek: from 0.3 s after the boundary the drawn
-  level is within 0.7 to 1.4 times that of an engine that has played the same
-  audio for long enough to have settled (and every tenth of a second within
-  0.75 to 1.25), no frame is a wall of pinned bars, and the frame's breathing
-  depth and how often the whole spectrum moves together stay within 0.05 of
-  that reference. A boundary that continues the song on screen never shrinks
-  the frame, and a loud body after an intro up to 30 dB quieter does not wall.
+  neither carries the last stream's blindly nor climbs from a cold start. A
+  boundary is the first audio a CAVA processor sees (app start, the plugin
+  switched on, Android's first PCM or a sample-rate change, a pipeline rebuilt
+  after a playback failure or promoted from a crossfade), another track, and a
+  seek or other discontinuity. A pause or a buffering stall that resumes the
+  same stream is not a boundary: only the FFT window clears, and the
+  sensitivity, the shape and every pending measurement stay. A new song's
+  loudness says nothing about the last one's: a carried sensitivity draws a
+  louder song as a wall of pinned bars and a quieter one as a dim line for
+  seconds, and `cavacore`'s cold climb swells the whole frame up and back down.
+  *With nothing on screen* (a first start, the plugin switched on) the
+  sensitivity is set every frame from the loudest raw bar seen since the
+  boundary, so the bars the first window produces rise to the song's level
+  without overshooting it, and only fall if a louder bar turns up; the
+  measurement ends once a full FFT window of signal is in (the 8192 samples
+  every bar is computed from), and digital silence restarts it. *With a shape
+  on screen* (a track change, a seek) the sensitivity that drew the shape is
+  kept, because the song before is usually about as loud and a changed
+  sensitivity redraws the whole frame; the new stream's full window is the
+  evidence. If it says the kept sensitivity would draw the new stream more
+  than twice too tall, the measurement takes over at once; if more than twice
+  too dim, the sensitivity moves up to it within a few frames; within a factor
+  of two it stays. For the next seven seconds of audio (silence counts) a
+  frame the sensitivity would draw at twice full height or more, a quiet intro
+  followed by the song itself, pulls the sensitivity down at once to land at
+  0.85 of full height; nothing else changes. Everything else is
+  `cavacore`'s auto-sensitivity, which creeps in both directions throughout, so
+  the sensitivity settles where it would have settled without the boundary and
+  neither sits dim nor swells back. A track change and a seek keep the bar
+  shape on screen, so the bars fall through gravity from their old heights
+  instead of collapsing to zero; only a first start and the plugin switched
+  back on begin from nothing. In steady state the output stays frame for frame
+  what `cavacore` draws. Acceptance, at the Android engine, the desktop
+  pipeline stage and the core processor, for a fresh start, a song 14 dB louder,
+  one 14 dB quieter, one of the same loudness, an Android 44.1 to 48 kHz
+  change, a desktop seek and a resume, with boundaries landing at several
+  points inside a beat: from 0.3 s after the boundary the drawn level is
+  within 0.7 to 1.4 times that of an engine that has played the same audio for
+  long enough to have settled; no frame is a wall of pinned bars; the frame's
+  breathing depth and how often the whole spectrum moves together stay close
+  to that reference over the first second and after it; a boundary that
+  continues the song on screen never shrinks the frame or steps it; the
+  level three to ten seconds on equals that of a run that never had the
+  boundary; silent chunks inside a song do not keep a boundary measuring; a
+  resume keeps a quiet passage quiet; and a loud body after an intro up to
+  30 dB quieter does not wall.
 
 - **AC-24** [active] [gtk] — The reactive light lives on the panel's blurred
   cover bloom, the cover in the player bar and the playhead, nowhere else; the

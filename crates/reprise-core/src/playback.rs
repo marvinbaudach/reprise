@@ -371,7 +371,8 @@ mod song_visual_tests;
 #[path = "playback/cava_tests.rs"]
 mod cava_tests;
 
-#[cfg(test)]
+// The yardstick is compiled in debug builds only (see `boundary_fixture`).
+#[cfg(all(test, debug_assertions))]
 #[path = "playback/boundary_tests.rs"]
 mod boundary_tests;
 

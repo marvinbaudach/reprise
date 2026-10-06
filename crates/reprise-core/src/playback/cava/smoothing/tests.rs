@@ -47,25 +47,24 @@ fn plateau(smoother: &mut Smoother, level: f32) -> f32 {
         .fold(0.0, f32::max)
 }
 
+// While the first window fills, the gain follows the loudest bar so far, so a
+// signal that is rising as fast as ten percent a frame is never drawn clipped.
+// Once the window is in, a signal that keeps rising is `cavacore`'s to handle.
 #[test]
-fn a_rising_signal_from_a_cold_start_never_exposes_clipping() {
+fn a_rising_signal_does_not_clip_while_the_first_window_fills() {
+    const RISE_PER_FRAME: f32 = 1.1;
     let mut smoother = smoother(1);
-    let mut max_mean = 0.0_f32;
-    let mut max_near_full = 0;
+    let mut raw_level = 0.01_f32;
 
-    for raw_level in [
-        0.01, 0.02, 0.04, 0.08, 0.12, 0.16, 0.18, 0.18, 0.18, 0.18, 0.18, 0.18,
-    ] {
-        let mut bars = [raw_level; 64];
-        smoother.apply(&mut bars, 4_096, 44_100, true);
-        max_mean = max_mean.max(bars.iter().sum::<f32>() / bars.len() as f32);
-        max_near_full = max_near_full.max(bars.iter().filter(|bar| **bar >= NEAR_FULL).count());
+    for index in 0..WINDOW_SAMPLES / SAMPLES {
+        let bars = frame(&mut smoother, raw_level);
+        assert!(
+            bars.iter().all(|bar| *bar < NEAR_FULL),
+            "frame {index} of the window clipped at {}",
+            bars[0]
+        );
+        raw_level *= RISE_PER_FRAME;
     }
-
-    assert!(
-        max_mean < NEAR_FULL && max_near_full == 0,
-        "cold rising signal saturated: max_mean={max_mean:.3}, max_near_full={max_near_full}"
-    );
 }
 
 #[test]

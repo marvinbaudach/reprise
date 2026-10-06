@@ -22,7 +22,10 @@ const MAX_JUMP_OVER_CONTROL: f32 = 0.15;
 /// (the new track's own audio legitimately starts to move the bars after that).
 const PENDING_SEED_TICKS: usize = 3;
 const MIN_PENDING_SEED_RATIO: f32 = 0.75;
-const MAX_PENDING_SEED_RATIO: f32 = 1.15;
+// A fresh processor normalizes its first frames to the audio that has arrived
+// (AC-29), so the shape drifts toward the new stream's own level as the
+// integral warms up: about four percent a tick here, never a jump.
+const MAX_PENDING_SEED_RATIO: f32 = 1.3;
 const ENVELOPE_STEP_FRAMES: usize = 4_800;
 const KICK_PERIOD_FRAMES: usize = 24_000;
 const PARTIAL_HZ: [f32; 9] = [

@@ -5,8 +5,10 @@ const MAX_SENSITIVITY: f32 = 1_000_000.0;
 const MIN_SENSITIVITY: f32 = 1.0e-6;
 const MAX_INTERNAL_BAR_VALUE: f32 = 64.0;
 const MAX_INTEGRAL_FEEDBACK: f32 = 0.98;
+/// The most a measured gain may rise in one frame on its way up to its goal.
+const GOAL_RISE_PER_FRAME: f32 = 1.6;
 
-use super::boundary::{BoundaryEstimator, Step, PENDING_CEILING, WALL_LEVEL};
+use super::boundary::{BoundaryEstimator, Step};
 
 pub(super) struct Smoother {
     noise_reduction: f32,
@@ -19,7 +21,9 @@ pub(super) struct Smoother {
     peaks: Vec<f32>,
     fall: Vec<f32>,
     memory: Vec<f32>,
-    /// Bars whose history the new stream has written since the boundary.
+    /// A gain the measurement found and the smoother is still moving up to.
+    goal: Option<f32>,
+    /// Bars the new stream has written since the boundary.
     driven: Vec<bool>,
 }
 
@@ -43,6 +47,7 @@ impl Smoother {
             peaks: vec![0.0; bar_count],
             fall: vec![0.0; bar_count],
             memory: vec![0.0; bar_count],
+            goal: None,
             driven: vec![false; bar_count],
         }
     }
@@ -59,31 +64,54 @@ impl Smoother {
         let integral_feedback = self.integral_feedback(framerate_mod);
         let gravity_mod = (self.noise_reduction > 0.1)
             .then(|| framerate_mod.powf(2.5) * 2.0 / self.noise_reduction);
-        let mut waiting = false;
+        let mut measuring = false;
         if self.autosensitivity > 0 {
             let raw_peak = bars
                 .iter()
                 .copied()
                 .filter(|bar| bar.is_finite())
                 .fold(0.0, f32::max);
-            match self
-                .boundary
-                .advance(new_samples, signal_present, raw_peak, integral_feedback)
-            {
-                Step::Waiting => waiting = true,
-                Step::Measured { sensitivity, first } => {
-                    let measured = sensitivity.clamp(MIN_SENSITIVITY, MAX_SENSITIVITY);
-                    if first || measured < self.sensitivity {
-                        self.rescale_history(measured / self.sensitivity);
-                        self.sensitivity = measured;
+            let step = self.boundary.advance(
+                new_samples,
+                signal_present,
+                raw_peak,
+                integral_feedback,
+                self.sensitivity,
+            );
+            match step {
+                Step::Hold => measuring = true,
+                Step::Measure(sensitivity) => {
+                    measuring = true;
+                    self.sensitivity = sensitivity.clamp(MIN_SENSITIVITY, MAX_SENSITIVITY);
+                }
+                Step::Goal(sensitivity) => {
+                    self.goal = Some(sensitivity.clamp(MIN_SENSITIVITY, MAX_SENSITIVITY));
+                }
+                Step::Brake { trigger, target } => {
+                    if self.sensitivity > trigger {
+                        self.brake_to(target);
                     }
                 }
                 Step::Done => {}
             }
         }
 
+        if let Some(goal) = self.goal {
+            measuring = true;
+            if goal <= self.sensitivity {
+                self.brake_to(goal);
+                self.goal = None;
+            } else {
+                let risen = (self.sensitivity * GOAL_RISE_PER_FRAME).min(goal);
+                self.rescale_driven(risen / self.sensitivity);
+                self.sensitivity = risen;
+                if self.sensitivity >= goal {
+                    self.goal = None;
+                }
+            }
+        }
+
         let mut overshoot = false;
-        let mut max_internal = 0.0_f32;
         for (bar, (((previous, peak), fall), memory)) in bars.iter_mut().zip(
             self.previous
                 .iter_mut()
@@ -120,22 +148,23 @@ impl Smoother {
             } else {
                 *memory = bar.clamp(0.0, MAX_INTERNAL_BAR_VALUE);
                 overshoot |= *bar > 1.0;
-                max_internal = max_internal.max(*bar);
             }
         }
 
-        if waiting {
+        if self.boundary.is_collecting() || self.goal.is_some() {
             // A bar that rose this frame (`fall` restarted) was written by the
             // new stream; one falling by gravity still carries the old one.
             for (driven, fall) in self.driven.iter_mut().zip(&self.fall) {
                 *driven |= *fall == 0.0;
             }
+        } else {
+            self.driven.fill(true);
         }
 
-        // While an estimate is pending the gain holds: creeping on a stale
-        // overshoot or climbing from a cold start is the pumping the estimate
+        // While the gain is being set from the new stream, creeping on a stale
+        // overshoot or climbing from a cold start is the pumping that
         // replaces.
-        if self.autosensitivity > 0 && !waiting {
+        if self.autosensitivity > 0 && !measuring {
             if overshoot {
                 let reduction = (1.0 - 0.02 * framerate_mod).max(0.01);
                 self.sensitivity *= reduction;
@@ -145,23 +174,27 @@ impl Smoother {
             self.sensitivity = self.sensitivity.clamp(MIN_SENSITIVITY, MAX_SENSITIVITY);
         }
 
-        let output_scale = if waiting && max_internal > WALL_LEVEL {
-            PENDING_CEILING / max_internal
-        } else {
-            1.0
-        };
         for bar in bars {
-            *bar = (*bar * output_scale).clamp(0.0, 1.0);
+            *bar = bar.clamp(0.0, 1.0);
         }
     }
 
-    /// The bar history is in units of the gain that produced it. A bar the
-    /// new stream has driven since the boundary holds its frames at the old
-    /// gain, so its integral and gravity state is converted to the new one;
-    /// otherwise the estimating frame would add the old gain's memory on top
-    /// of its own. A bar still falling from the previous stream is already in
-    /// screen units and keeps its value.
-    fn rescale_history(&mut self, ratio: f32) {
+    /// Lowers the gain at once. A frame that needs braking is louder than what
+    /// a pending goal was measured from, so the goal is stale.
+    fn brake_to(&mut self, sensitivity: f32) {
+        let sensitivity = sensitivity.clamp(MIN_SENSITIVITY, MAX_SENSITIVITY);
+        self.goal = None;
+        self.rescale_driven(sensitivity / self.sensitivity);
+        self.sensitivity = sensitivity;
+    }
+
+    /// The bar history is in units of the gain that produced it. A bar the new
+    /// stream has written since the boundary holds its integral and gravity
+    /// state at the old gain, so it is converted to the new one; otherwise the
+    /// next frame would add the old gain's memory, or hold a gravity peak, on
+    /// top of its own. A bar still falling from the previous stream is already
+    /// in screen units and keeps its value.
+    fn rescale_driven(&mut self, ratio: f32) {
         for (index, driven) in self.driven.iter().enumerate() {
             if *driven {
                 self.previous[index] *= ratio;
@@ -169,8 +202,6 @@ impl Smoother {
                 self.memory[index] *= ratio;
             }
         }
-        // Everything drawn from here on is the new stream's.
-        self.driven.fill(true);
     }
 
     /// Clears the bar history (`previous`/`peaks`/`fall`/`memory`) and owes a
@@ -181,8 +212,14 @@ impl Smoother {
         self.peaks.fill(0.0);
         self.fall.fill(0.0);
         self.memory.fill(0.0);
+        self.goal = None;
         self.driven.fill(false);
-        self.boundary.arm();
+        self.boundary.arm(false);
+    }
+
+    #[cfg(test)]
+    pub(super) fn sensitivity(&self) -> f32 {
+        self.sensitivity
     }
 
     /// Replaces the gain and ends any pending estimate, so a test can start the
@@ -190,20 +227,22 @@ impl Smoother {
     #[cfg(test)]
     pub(super) fn adopt_sensitivity(&mut self, sensitivity: f32) {
         self.sensitivity = sensitivity;
+        self.goal = None;
         self.boundary.settle();
     }
 
     /// Owes a new boundary estimate and keeps the bar history, so the next
     /// frames fall from the shape already on screen.
     pub(super) fn rearm_boundary(&mut self) {
+        self.goal = None;
         self.driven.fill(false);
-        self.boundary.arm();
+        self.boundary.arm(true);
     }
 
     /// Seeds the smoother with a shape a viewer has already seen, so the next
     /// frame continues it. Leaves the autosensitivity gain, the pending
-    /// boundary estimate and `framerate` untouched. Shorter input than `bar_count` seeds only its own bars;
-    /// longer input is truncated by `zip`.
+    /// boundary estimate and `framerate` untouched. Shorter input than
+    /// `bar_count` seeds only its own bars; longer input is truncated by `zip`.
     ///
     /// `bars` is the displayed shape, approximately the smoother's own
     /// output: on Android it is the visual engine's `current_bands()`, which
@@ -219,11 +258,9 @@ impl Smoother {
     /// autosensitivity gain down.
     ///
     /// Two limits on "continues":
-    /// - The wall cap is not bypassed. While the boundary estimate is pending
-    ///   (always so on a fresh smoother), a frame whose tallest bar would reach
-    ///   `WALL_LEVEL` times full height is scaled down to `PENDING_CEILING`.
-    ///   A seed is a displayed shape, never above 1.0, so a seed alone is never
-    ///   capped.
+    /// - A seed on a fresh smoother is continued by the new stream's own
+    ///   level, not by a gain: the first frames are normalized to the audio
+    ///   that has arrived, so the seed's memory feeds a ramp, not a held shape.
     /// - `integral_feedback` is evaluated with the framerate from before the
     ///   next `apply` runs `update_framerate`. Normally the difference is about
     ///   1e-3; a tiny first chunk can push the real feedback toward the 0.98

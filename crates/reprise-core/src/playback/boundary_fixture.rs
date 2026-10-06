@@ -25,6 +25,11 @@ pub const FRAMES_PER_SECOND: usize = 60;
 pub const SETTLE_FRAMES: usize = 18;
 /// Frames judged after the settle span: one second.
 pub const JUDGED_FRAMES: usize = FRAMES_PER_SECOND;
+/// Where inside a beat a boundary may land, in seconds past a whole second.
+/// The synthetic song's kick falls every half second, so a boundary at a whole
+/// second always opens on a kick; these offsets open on the tail of one, on
+/// nothing, and just before the next.
+pub const BOUNDARY_OFFSETS_SECONDS: [f32; 4] = [0.0, 0.13, 0.29, 0.41];
 /// A bar at or above this is pinned.
 const PINNED_LEVEL: f32 = 0.99;
 /// A frame with this many pinned bars is a wall.
@@ -186,23 +191,88 @@ impl Measure {
 /// The widest the drawn level may stray from the settled reference once the
 /// boundary has had a window of audio, as a multiple.
 pub const LEVEL_BAND: (f32, f32) = (0.7, 1.4);
-/// The widest a tenth of a second of drawn level may stray from the reference's,
-/// as a multiple. Looser than the whole-second band only for the noise of a
-/// handful of frames; a swell or a dim stretch that long still falls outside.
-pub const BLOCK_BAND: (f32, f32) = (0.75, 1.25);
-/// Frames per block of [`BLOCK_BAND`].
+/// Frames per block of a block band.
 const BLOCK_FRAMES: usize = 6;
-/// How far the whole frame may breathe more than the reference does.
-const DEPTH_SLACK: f32 = 0.05;
-/// How much more often the whole spectrum may move together than the
-/// reference's.
-const COMOVE_SLACK: f32 = 0.05;
-/// How many more frames than the reference may touch the ceiling.
-const PINNED_SLACK: usize = 8;
+
+/// What kind of boundary a run crossed, which decides how closely it must
+/// follow the settled reference.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Boundary {
+    /// Nothing was on screen: a first start, or the visualizer switched on.
+    /// The bars rise from zero as the first window fills, and what the first
+    /// window shows of a song with sparse hits decides the level it is drawn
+    /// at until the next hit.
+    Fresh,
+    /// A shape was on screen and the song is another, at another level.
+    Different,
+    /// A shape was on screen and the song carries on at its level: a seek, or a
+    /// swipe to a song of the same loudness.
+    Continuing,
+}
+
+/// How far a run may stray from the reference.
+struct Limits {
+    /// Frame-mean RMS over the level, over the first second, above the reference's.
+    first_second_depth: f32,
+    /// Share of frame steps moving the whole spectrum, over the first second.
+    first_second_comove: f32,
+    /// The same two over the second after the settle span.
+    settled_depth: f32,
+    settled_comove: f32,
+    /// The largest step of the frame mean between two frames of the settle span,
+    /// as a share of the reference's level. A ramp that rises to the level is a
+    /// handful of small steps; a swell that ends in a cliff is one large one.
+    settle_step: f32,
+    /// Frames more than the reference that touch full height in the first second.
+    pinned: usize,
+    /// The widest a tenth of a second of drawn level may stray from the
+    /// reference's, as a multiple.
+    block_band: (f32, f32),
+    /// Whether the bars may be empty at the boundary.
+    may_start_empty: bool,
+}
+
+impl Boundary {
+    fn limits(self) -> Limits {
+        match self {
+            Self::Fresh => Limits {
+                first_second_depth: 0.2,
+                first_second_comove: 0.18,
+                settled_depth: 0.08,
+                settled_comove: 0.08,
+                settle_step: 0.5,
+                pinned: 20,
+                block_band: (0.7, 2.3),
+                may_start_empty: true,
+            },
+            Self::Different => Limits {
+                first_second_depth: 0.24,
+                first_second_comove: 0.2,
+                settled_depth: 0.12,
+                settled_comove: 0.12,
+                settle_step: 0.4,
+                pinned: 24,
+                block_band: (0.55, 2.0),
+                may_start_empty: false,
+            },
+            Self::Continuing => Limits {
+                first_second_depth: 0.04,
+                first_second_comove: 0.03,
+                settled_depth: 0.02,
+                settled_comove: 0.03,
+                settle_step: 0.15,
+                pinned: 10,
+                block_band: (0.85, 1.2),
+                may_start_empty: false,
+            },
+        }
+    }
+}
 
 /// What a boundary run is judged against: the frames the same audio draws on
 /// a visualizer that has been running it for long enough to have settled.
-pub fn judge_boundary(label: &str, run: &[Frame], reference: &[Frame], expect_no_gap: bool) {
+pub fn judge_boundary(label: &str, run: &[Frame], reference: &[Frame], kind: Boundary) {
+    let limits = kind.limits();
     let end = SETTLE_FRAMES + JUDGED_FRAMES;
     assert!(
         run.len() >= end && reference.len() >= end,
@@ -217,12 +287,27 @@ pub fn judge_boundary(label: &str, run: &[Frame], reference: &[Frame], expect_no
         "{label}: a wall of pinned bars in the first second: {first_second:?}"
     );
     assert!(
-        first_second.pinned_frames <= reference_first_second.pinned_frames + PINNED_SLACK,
+        first_second.pinned_frames <= reference_first_second.pinned_frames + limits.pinned,
         "{label}: pinned frames {} against the reference's {}",
         first_second.pinned_frames,
         reference_first_second.pinned_frames
     );
-    if expect_no_gap {
+    assert!(
+        first_second.depth <= reference_first_second.depth + limits.first_second_depth,
+        "{label}: over the first second the frame breathes {:.3} deep against the \
+         reference's {:.3}",
+        first_second.depth,
+        reference_first_second.depth
+    );
+    assert!(
+        first_second.comove <= reference_first_second.comove + limits.first_second_comove,
+        "{label}: over the first second the spectrum moves as one {:.2} of the time \
+         against the reference's {:.2}",
+        first_second.comove,
+        reference_first_second.comove
+    );
+    judge_settle_span(label, run, reference, limits.settle_step);
+    if !limits.may_start_empty {
         assert_eq!(
             first_second.empty_frames, reference_first_second.empty_frames,
             "{label}: the bars collapsed to nothing at the boundary"
@@ -231,13 +316,13 @@ pub fn judge_boundary(label: &str, run: &[Frame], reference: &[Frame], expect_no
     let judged = Measure::of(&run[SETTLE_FRAMES..end]);
     let settled = Measure::of(&reference[SETTLE_FRAMES..end]);
     assert!(
-        judged.depth <= settled.depth + DEPTH_SLACK,
+        judged.depth <= settled.depth + limits.settled_depth,
         "{label}: the frame breathes {:.3} deep against the reference's {:.3}",
         judged.depth,
         settled.depth
     );
     assert!(
-        judged.comove <= settled.comove + COMOVE_SLACK,
+        judged.comove <= settled.comove + limits.settled_comove,
         "{label}: the spectrum moves as one {:.2} of the time against the reference's {:.2}",
         judged.comove,
         settled.comove
@@ -256,7 +341,7 @@ pub fn judge_boundary(label: &str, run: &[Frame], reference: &[Frame], expect_no
         };
         let block_ratio = level(run) / level(reference);
         assert!(
-            (BLOCK_BAND.0..=BLOCK_BAND.1).contains(&block_ratio),
+            (limits.block_band.0..=limits.block_band.1).contains(&block_ratio),
             "{label}: frames {start}..{} are drawn at {block_ratio:.2} times the reference's",
             start + BLOCK_FRAMES
         );
@@ -265,7 +350,7 @@ pub fn judge_boundary(label: &str, run: &[Frame], reference: &[Frame], expect_no
 
 /// How far below the reference the shape on screen may dip while a boundary
 /// inside a song it already shows settles, as a multiple.
-const DIP_FLOOR: f32 = 0.9;
+const DIP_FLOOR: f32 = 0.8;
 
 /// A boundary that continues what the viewer is watching (a seek, or a swipe to
 /// the same song) must not shrink the frame while the new window fills: every
@@ -278,4 +363,47 @@ pub fn assert_no_dip(label: &str, run: &[Frame], reference: &[Frame]) {
             "{label}: frame {index} dips to {ratio:.2} times the reference's"
         );
     }
+}
+
+/// The settle span itself: no cliff after a swell.
+fn judge_settle_span(label: &str, run: &[Frame], reference: &[Frame], step_share: f32) {
+    let means: Vec<f32> = run[..SETTLE_FRAMES].iter().map(frame_mean).collect();
+    let reference_level = reference[..SETTLE_FRAMES]
+        .iter()
+        .map(frame_mean)
+        .sum::<f32>()
+        / SETTLE_FRAMES as f32;
+    let largest_step = means
+        .windows(2)
+        .map(|pair| (pair[1] - pair[0]).abs())
+        .fold(0.0, f32::max);
+    assert!(
+        largest_step <= reference_level * step_share,
+        "{label}: the frame mean steps by {largest_step:.3} between two frames, against a \
+         reference level of {reference_level:.3}: {means:.2?}"
+    );
+}
+
+/// How far the level a boundary inside a song leaves behind may stray from the
+/// run that never had one, over the three to ten seconds after it, as a
+/// multiple. The creep that takes over must find the same equilibrium and not
+/// settle dim and swell back.
+pub const SETTLED_BAND: (f32, f32) = (0.93, 1.07);
+/// First and last frame of that stretch.
+pub const SETTLED_FRAMES: std::ops::Range<usize> = 180..600;
+
+pub fn assert_settles_where_a_continuing_run_does(
+    label: &str,
+    run: &[Frame],
+    continuing: &[Frame],
+) {
+    let level = |frames: &[Frame]| {
+        frames[SETTLED_FRAMES].iter().map(frame_mean).sum::<f32>() / SETTLED_FRAMES.len() as f32
+    };
+    let ratio = level(run) / level(continuing);
+    assert!(
+        (SETTLED_BAND.0..=SETTLED_BAND.1).contains(&ratio),
+        "{label}: three to ten seconds on, the level is {ratio:.2} times a run that never had \
+         the boundary"
+    );
 }

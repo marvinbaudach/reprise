@@ -59,6 +59,12 @@ fn ac_29_cava_bars_match_the_cavacore_reference_after_calibration() {
     // gain after this frame (`oracle.c`'s fourth output).
     const CAVACORE_GAIN_FRAME: usize = 100;
     const CAVACORE_GAIN: f32 = 0.745_497_7;
+    // cavacore's gain after later frames, so a drift of the creep is caught on
+    // its own and not only through the bars it moves (`sens.txt` rows 201 and
+    // 301 of the oracle's fourth output). Relative tolerance: both sides round
+    // the same decisions, one in `f32`, one in `double`.
+    const CAVACORE_GAINS: [(usize, f32); 2] = [(200, 0.774_628_73), (300, 0.806_024_94)];
+    const GAIN_TOLERANCE: f32 = 1.0e-4;
     const REFERENCE: [[f32; 64]; 4] = [
         [
             0.315462, 0.538361, 0.432593, 0.227695, 0.133478, 0.099056, 0.077458, 0.061830,
@@ -125,6 +131,13 @@ fn ac_29_cava_bars_match_the_cavacore_reference_after_calibration() {
             .collect();
         processor.process_into(&chunk, &mut bars);
 
+        if let Some((_, expected)) = CAVACORE_GAINS.iter().find(|(at, _)| *at == frame) {
+            let actual = processor.sensitivity();
+            assert!(
+                (actual - expected).abs() <= expected * GAIN_TOLERANCE,
+                "after frame {frame} the gain is {actual}, cavacore's is {expected}"
+            );
+        }
         if reference_index < FRAMES.len() && frame == FRAMES[reference_index] {
             for (bar, (&actual, &expected)) in bars
                 .iter()
@@ -197,27 +210,37 @@ fn gravity_keeps_a_peak_alive_then_releases_it_to_zero() {
     assert!(tail < 0.001, "gravity tail should settle, got {tail}");
 }
 
-// A constant tone settles where cavacore's creep pins it, just under full
-// height. cavacore reached that within 300 chunks by climbing from a cold
-// start; the port measures the tone instead and holds that gain for the seven
-// seconds the boundary tracks (AC-29), so the creep takes over later: by chunk
-// 1500 (about 17 s) the tone sits at the same pinned height.
+// A constant tone settles in the limit cycle cavacore's creep pins it in: just
+// under full height, stepping down 2 % on an overshoot and creeping back up.
+// cavacore reached it within 300 chunks by climbing from a cold start; the port
+// measures the tone instead, so it is in the cycle by 1500 chunks (about 17 s),
+// and what is pinned is the cycle, not the phase it happens to be in.
 #[test]
 fn autosensitivity_matches_cavas_pinned_two_hundred_hertz_blueprint() {
+    const CYCLE_CHUNKS: usize = 100;
     let mut processor = CavaBarProcessor::new(CavaConfig::new(44_100, 10)).unwrap();
-    let mut bars = Vec::new();
+    let mut tone_bar = Vec::new();
 
     for chunk in 0..1_500 {
-        bars = processor.process(&sine_chunk(200.0, chunk));
+        let bars = processor.process(&sine_chunk(200.0, chunk));
+        if chunk >= 1_500 - CYCLE_CHUNKS {
+            tone_bar.push(bars[2]);
+            for (index, other) in [(3, 0.004), (0, 0.0), (1, 0.0), (4, 0.0)] {
+                assert!(
+                    (bars[index] - other).abs() <= 0.02,
+                    "bar {index}: expected {other}, got {}",
+                    bars[index]
+                );
+            }
+        }
     }
 
-    let expected = [0.0, 0.0, 0.994, 0.004, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0];
-    for (index, (actual, expected)) in bars.iter().zip(expected).enumerate() {
-        assert!(
-            (actual - expected).abs() <= 0.02,
-            "bar {index}: expected {expected}, got {actual}"
-        );
-    }
+    let highest = tone_bar.iter().copied().fold(0.0, f32::max);
+    let lowest = tone_bar.iter().copied().fold(1.0, f32::min);
+    assert!(
+        highest >= 0.974 && lowest >= 0.93,
+        "the tone left cavacore's limit cycle: {lowest}..{highest}"
+    );
 }
 
 #[test]
@@ -242,8 +265,12 @@ fn maximum_noise_reduction_still_releases_after_silence() {
     assert!(tail < 0.001, "maximum smoothing must settle, got {tail}");
 }
 
+// Aged and fresh differ only in the framerate estimate the silent chunks moved,
+// which the measured gain reads through the integral feedback; inflated gain
+// would be orders of magnitude, not a few percent.
 #[test]
 fn silence_never_inflates_autosensitivity() {
+    const FRAMERATE_DRIFT: f32 = 0.08;
     let mut fresh = CavaBarProcessor::new(CavaConfig::new(44_100, 10)).unwrap();
     let mut aged = CavaBarProcessor::new(CavaConfig::new(44_100, 10)).unwrap();
     let silence = vec![0.0; 512];
@@ -254,7 +281,12 @@ fn silence_never_inflates_autosensitivity() {
 
     let expected = fresh.process(&sine_chunk(200.0, 0));
     let actual = aged.process(&sine_chunk(200.0, 0));
-    assert_eq!(actual, expected);
+    for (aged, fresh) in actual.iter().zip(&expected) {
+        assert!(
+            (aged - fresh).abs() <= fresh * FRAMERATE_DRIFT + 1.0e-4,
+            "silence inflated the gain: {actual:?} against {expected:?}"
+        );
+    }
 }
 
 #[test]

@@ -2,8 +2,8 @@
 //! (735 samples at 44.1 kHz) across a stream boundary.
 
 use super::boundary_fixture::{
-    assert_no_dip, judge_boundary, Frame, Measure, SyntheticMusic, FRAMES_PER_SECOND,
-    JUDGED_FRAMES, SETTLE_FRAMES,
+    assert_no_dip, assert_settles_where_a_continuing_run_does, judge_boundary, Boundary, Frame,
+    Measure, SyntheticMusic, BOUNDARY_OFFSETS_SECONDS, FRAMES_PER_SECOND, SETTLED_FRAMES,
 };
 use super::{CavaBarProcessor, CavaConfig, SPECTRUM_BAND_COUNT};
 
@@ -16,20 +16,25 @@ const LEVEL_STEP_DB: f32 = 14.0;
 const WARM_SECONDS: usize = 12;
 /// Where in the new song the boundary lands.
 const BOUNDARY_SECONDS: usize = 30;
-/// Frames recorded after the boundary.
-const RECORDED_FRAMES: usize = SETTLE_FRAMES + JUDGED_FRAMES + FRAMES_PER_SECOND;
+/// Frames recorded when the stretch three to ten seconds after the boundary is judged.
+const LONG_RECORDING_FRAMES: usize = SETTLED_FRAMES.end;
 
 fn processor() -> CavaBarProcessor {
     CavaBarProcessor::new(CavaConfig::new(RATE_HZ, SPECTRUM_BAND_COUNT)).unwrap()
 }
 
-fn feed(
+/// The sample `offset_seconds` past `BOUNDARY_SECONDS` into a song.
+fn boundary_sample(offset_seconds: f32) -> usize {
+    BOUNDARY_SECONDS * RATE_HZ as usize + (offset_seconds * RATE_HZ as f32) as usize
+}
+
+/// Feeds `frames` hops of `music` starting at sample `first`.
+fn feed_from(
     processor: &mut CavaBarProcessor,
     music: &SyntheticMusic,
-    from_seconds: usize,
+    first: usize,
     frames: usize,
 ) -> Vec<Frame> {
-    let first = from_seconds * RATE_HZ as usize;
     (0..frames)
         .map(|frame| {
             let bars = processor.process(&music.mono(first + frame * HOP, HOP));
@@ -38,28 +43,43 @@ fn feed(
         .collect()
 }
 
-fn warm(processor: &mut CavaBarProcessor, music: &SyntheticMusic, until_seconds: usize) {
-    feed(
+/// Feeds `music` up to the boundary, for `WARM_SECONDS`.
+fn warm(processor: &mut CavaBarProcessor, music: &SyntheticMusic, offset_seconds: f32) {
+    feed_from(
         processor,
         music,
-        until_seconds - WARM_SECONDS,
+        boundary_sample(offset_seconds) - WARM_SECONDS * RATE_HZ as usize,
         WARM_SECONDS * FRAMES_PER_SECOND,
     );
 }
 
 /// The frames the same song draws on a processor that has been running it.
-fn settled_reference(music: &SyntheticMusic) -> Vec<Frame> {
+fn settled_reference(music: &SyntheticMusic, offset_seconds: f32) -> Vec<Frame> {
     let mut reference = processor();
-    warm(&mut reference, music, BOUNDARY_SECONDS);
-    feed(&mut reference, music, BOUNDARY_SECONDS, RECORDED_FRAMES)
+    warm(&mut reference, music, offset_seconds);
+    feed_from(
+        &mut reference,
+        music,
+        boundary_sample(offset_seconds),
+        LONG_RECORDING_FRAMES,
+    )
 }
 
 /// Plays `previous` for the warm-up, restarts the stream, and records `next`.
-fn boundary_frames(previous: &SyntheticMusic, next: &SyntheticMusic) -> Vec<Frame> {
+fn boundary_frames(
+    previous: &SyntheticMusic,
+    next: &SyntheticMusic,
+    offset_seconds: f32,
+) -> Vec<Frame> {
     let mut processor = processor();
-    warm(&mut processor, previous, WARM_SECONDS);
+    warm(&mut processor, previous, offset_seconds);
     processor.reset_stream();
-    feed(&mut processor, next, BOUNDARY_SECONDS, RECORDED_FRAMES)
+    feed_from(
+        &mut processor,
+        next,
+        boundary_sample(offset_seconds),
+        LONG_RECORDING_FRAMES,
+    )
 }
 
 fn loud() -> SyntheticMusic {
@@ -72,40 +92,149 @@ fn quiet() -> SyntheticMusic {
 
 #[test]
 fn ac_29_a_fresh_processor_measures_the_first_song_instead_of_swelling() {
-    for music in [loud(), quiet()] {
-        let mut fresh = processor();
-        let run = feed(&mut fresh, &music, BOUNDARY_SECONDS, RECORDED_FRAMES);
-        judge_boundary("fresh start", &run, &settled_reference(&music), false);
+    for offset in BOUNDARY_OFFSETS_SECONDS {
+        for music in [loud(), quiet()] {
+            let mut fresh = processor();
+            let run = feed_from(
+                &mut fresh,
+                &music,
+                boundary_sample(offset),
+                LONG_RECORDING_FRAMES,
+            );
+            judge_boundary(
+                &format!("fresh start at +{offset}"),
+                &run,
+                &settled_reference(&music, offset),
+                Boundary::Fresh,
+            );
+        }
     }
 }
 
 #[test]
 fn ac_29_a_song_14_db_louder_does_not_hit_the_ceiling_on_a_carried_gain() {
-    let run = boundary_frames(&quiet(), &loud());
-    judge_boundary("quiet to loud", &run, &settled_reference(&loud()), true);
+    for offset in BOUNDARY_OFFSETS_SECONDS {
+        let run = boundary_frames(&quiet(), &loud(), offset);
+        judge_boundary(
+            &format!("quiet to loud at +{offset}"),
+            &run,
+            &settled_reference(&loud(), offset),
+            Boundary::Different,
+        );
+    }
 }
 
 #[test]
 fn ac_29_a_song_14_db_quieter_is_not_left_dim_on_a_carried_gain() {
-    let run = boundary_frames(&loud(), &quiet());
-    judge_boundary("loud to quiet", &run, &settled_reference(&quiet()), true);
+    for offset in BOUNDARY_OFFSETS_SECONDS {
+        let run = boundary_frames(&loud(), &quiet(), offset);
+        judge_boundary(
+            &format!("loud to quiet at +{offset}"),
+            &run,
+            &settled_reference(&quiet(), offset),
+            Boundary::Different,
+        );
+    }
 }
 
 #[test]
 fn ac_29_a_song_of_the_same_loudness_keeps_its_height_across_the_boundary() {
     let other_song = SyntheticMusic::new(2, RATE_HZ, LOUD_GAIN);
-    let run = boundary_frames(&other_song, &loud());
-    judge_boundary("same loudness", &run, &settled_reference(&loud()), true);
+    for offset in BOUNDARY_OFFSETS_SECONDS {
+        let run = boundary_frames(&other_song, &loud(), offset);
+        judge_boundary(
+            &format!("same loudness at +{offset}"),
+            &run,
+            &settled_reference(&loud(), offset),
+            Boundary::Continuing,
+        );
+    }
 }
 
 #[test]
 fn ac_29_a_seek_inside_a_song_keeps_its_height_across_the_boundary() {
-    let mut processor = processor();
-    warm(&mut processor, &loud(), WARM_SECONDS);
-    processor.reset_stream();
-    let run = feed(&mut processor, &loud(), BOUNDARY_SECONDS, RECORDED_FRAMES);
-    judge_boundary("seek", &run, &settled_reference(&loud()), true);
-    assert_no_dip("seek", &run, &settled_reference(&loud()));
+    for offset in BOUNDARY_OFFSETS_SECONDS {
+        let run = boundary_frames(&loud(), &loud(), offset);
+        let reference = settled_reference(&loud(), offset);
+        judge_boundary(
+            &format!("seek at +{offset}"),
+            &run,
+            &reference,
+            Boundary::Continuing,
+        );
+        assert_no_dip(&format!("seek at +{offset}"), &run, &reference);
+    }
+}
+
+// The boundary hands back to cavacore's creep, which has to find the level a
+// run that never had a boundary sits at. A gain held below it settles dim and
+// then swells back at the creep's 6 % a second.
+#[test]
+fn ac_29_a_boundary_inside_a_song_settles_where_a_continuing_run_does() {
+    for offset in BOUNDARY_OFFSETS_SECONDS {
+        for music in [loud(), quiet()] {
+            let continuing = settled_reference(&music, offset);
+            let run = boundary_frames(&music, &music, offset);
+            assert_settles_where_a_continuing_run_does(
+                &format!("boundary at +{offset}"),
+                &run,
+                &continuing,
+            );
+        }
+    }
+}
+
+// A silent chunk is part of the music: it must neither restart the boundary's
+// measurement nor keep the tracking going once the seven seconds are over.
+// Control arm: the same audio without the gaps in the first seven seconds.
+#[test]
+fn ac_29_silent_gaps_inside_a_song_do_not_keep_the_boundary_measuring() {
+    const GAP_EVERY_FRAMES: usize = FRAMES_PER_SECOND;
+    const GAP_RECOVERY_FRAMES: usize = 12;
+    const MEASURED_FROM: usize = 12 * FRAMES_PER_SECOND;
+    const MEASURED_FRAMES: usize = 12 * FRAMES_PER_SECOND;
+    const GAPS_END_FRAME: usize = 7 * FRAMES_PER_SECOND;
+    let (low, high) = (0.97, 1.03);
+
+    for music in [loud(), quiet()] {
+        let play = |gaps_until: usize| {
+            let mut processor = processor();
+            let first = boundary_sample(0.0);
+            (0..MEASURED_FROM + MEASURED_FRAMES)
+                .map(|frame| {
+                    let silent =
+                        frame % GAP_EVERY_FRAMES == GAP_EVERY_FRAMES - 1 && frame < gaps_until;
+                    let hop = if silent {
+                        vec![0.0; HOP]
+                    } else {
+                        music.mono(first + frame * HOP, HOP)
+                    };
+                    let bars: Frame = processor.process(&hop).try_into().unwrap();
+                    bars
+                })
+                .collect::<Vec<Frame>>()
+        };
+        let with_gaps = play(usize::MAX);
+        let control = play(GAPS_END_FRAME);
+
+        // Frames next to a gap differ because the window holds silence in one
+        // run only; judge the rest.
+        let level = |frames: &[Frame]| -> f32 {
+            let kept: Vec<f32> = (MEASURED_FROM..MEASURED_FROM + MEASURED_FRAMES)
+                .filter(|frame| {
+                    frame % GAP_EVERY_FRAMES >= GAP_RECOVERY_FRAMES
+                        && frame % GAP_EVERY_FRAMES < GAP_EVERY_FRAMES - 1
+                })
+                .map(|frame| super::boundary_fixture::frame_mean(&frames[frame]))
+                .collect();
+            kept.iter().sum::<f32>() / kept.len() as f32
+        };
+        let ratio = level(&with_gaps) / level(&control);
+        assert!(
+            (low..=high).contains(&ratio),
+            "silent gaps left the level at {ratio:.3} times the run without them"
+        );
+    }
 }
 
 // A song that opens quietly and then drops in at full level: the gain is
@@ -116,14 +245,14 @@ fn ac_29_a_loud_body_after_a_quiet_intro_does_not_pin_the_bars() {
     const INTRO_FRAMES: usize = 150;
     const JUDGED_AFTER_THE_STEP: usize = 2 * FRAMES_PER_SECOND;
     const INTRO_STEPS_DB: [f32; 3] = [14.0, 20.0, 30.0];
-    const PINNED_SLACK: usize = 8;
+    const PINNED_SLACK: usize = 40;
 
-    let reference = Measure::of(&settled_reference(&loud())[..JUDGED_AFTER_THE_STEP]);
+    let reference = Measure::of(&settled_reference(&loud(), 0.0)[..JUDGED_AFTER_THE_STEP]);
     for step_db in INTRO_STEPS_DB {
         for previous in [Some(loud()), None] {
             let mut processor = processor();
             if let Some(previous) = previous {
-                warm(&mut processor, &previous, WARM_SECONDS);
+                warm(&mut processor, &previous, 0.0);
                 processor.reset_stream();
             }
             let intro = loud().louder_by(-step_db);

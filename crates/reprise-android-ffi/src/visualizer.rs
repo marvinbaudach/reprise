@@ -17,7 +17,9 @@ pub(crate) use scene_encoding::encode_scene;
 
 #[cfg(test)]
 pub(crate) use live_audio::TARGET_PCM_BUFFER_DURATION;
-use live_audio::{live_processor_for_stream, reset_live_processor, LiveAudioState};
+use live_audio::{
+    live_processor_for_stream, reset_live_history, reset_live_processor, LiveAudioState,
+};
 
 const MAX_PCM_CHANNEL_COUNT: usize = 32;
 pub(crate) const LIVE_AUDIO_STALE_AFTER: Duration = Duration::from_millis(500);
@@ -381,7 +383,10 @@ impl AndroidVisualEngine {
         }
     }
 
-    /// Drops decoder history on resume without discarding the last live scene.
+    /// Drops decoder history on resume without discarding the last live scene or
+    /// the gain it was drawn at. Resume follows every `onIsPlayingChanged`
+    /// false to true, a buffering stall included, so it must not read as a new
+    /// song.
     pub fn reset_audio_history(&self) {
         // Keep the same lock order as live PCM ingestion and ticking: audio
         // before display. Taking both before the generation changes keeps a
@@ -390,7 +395,9 @@ impl AndroidVisualEngine {
         *self.lock_pending_shape_seed() = None;
         let mut state = self.lock();
         let stream_generation = self.advance_stream_generation();
-        reset_live_processor(&mut live_audio, stream_generation);
+        // The same stream resumes: this is a gap, not a boundary, so the
+        // processor keeps its gain and shape and nothing is measured again.
+        reset_live_history(&mut live_audio, stream_generation);
         state.stream_generation = stream_generation;
         state.has_adopted_shape = false;
         state.last_live_audio_at = state.has_live_audio.then(|| self.clock.now());
@@ -675,7 +682,9 @@ mod pcm_tests {
     include!("visualizer_pcm_tests.rs");
 }
 
-#[cfg(test)]
+// The yardstick lives in `reprise_core::playback::boundary_fixture`, which
+// exists in debug builds only.
+#[cfg(all(test, debug_assertions))]
 mod boundary_tests {
     include!("visualizer_boundary_tests.rs");
 }

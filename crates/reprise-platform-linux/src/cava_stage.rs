@@ -95,6 +95,8 @@ impl CavaStage {
     }
 }
 
-#[cfg(test)]
+// The yardstick lives in `reprise_core::playback::boundary_fixture`, which
+// exists in debug builds only.
+#[cfg(all(test, debug_assertions))]
 #[path = "cava_stage_tests.rs"]
 mod tests;

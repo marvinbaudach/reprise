@@ -143,6 +143,17 @@ impl LiveAudioState {
         ))
     }
 
+    /// A gap in the same stream (a pause, a buffering stall): the window and the
+    /// PCM buffered across the gap go, but the processor keeps its gain and its
+    /// shape, because the music did not change.
+    pub(crate) fn reset_history(&mut self) {
+        self.processor.reset_window();
+        self.pressure_detector.reset();
+        self.mono_samples.clear();
+        self.pcm_buffer.clear();
+        self.bands.fill(0.0);
+    }
+
     pub(crate) fn reset(&mut self) {
         // A stream boundary must not mix a different track's samples into
         // the FFT window, but it deliberately keeps the smoother's bar shape
@@ -168,6 +179,14 @@ pub(crate) fn reset_live_processor(
 ) {
     if let Some(live_audio) = live_audio.as_mut() {
         live_audio.reset();
+        live_audio.stream_generation = stream_generation;
+    }
+}
+
+/// The same stream resumes after a gap: see [`LiveAudioState::reset_history`].
+pub(crate) fn reset_live_history(live_audio: &mut Option<LiveAudioState>, stream_generation: u64) {
+    if let Some(live_audio) = live_audio.as_mut() {
+        live_audio.reset_history();
         live_audio.stream_generation = stream_generation;
     }
 }
