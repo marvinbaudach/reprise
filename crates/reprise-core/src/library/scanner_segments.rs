@@ -13,7 +13,7 @@ use crate::library::import_errors;
 use crate::library::loudness::ReplayGainTags;
 use crate::models::ImportErrorKind;
 
-use super::cue_sheets::{self, SheetRef};
+use super::cue_sheets::{self, SheetFit, SheetRef};
 use super::entry::{EntryScan, FileFacts, ImportedTrack};
 use super::{now_unix, track_meta::TrackMeta, ScanError};
 
@@ -37,6 +37,32 @@ impl Layout {
     }
 }
 
+/// What the sheets have to say about a file: the layout it takes, and the issue
+/// a sheet that could not be applied raises.
+pub(super) struct Plan {
+    pub(super) layout: Layout,
+    pub(super) issue: Option<SheetIssue>,
+}
+
+impl Plan {
+    fn whole(rejected_by: Option<SheetRef>, issue: Option<SheetIssue>) -> Self {
+        Self {
+            layout: Layout::Whole { rejected_by },
+            issue,
+        }
+    }
+}
+
+/// Why a sheet was not applied, and so where its issue goes.
+pub(super) enum SheetIssue {
+    /// The sheet beside the file parses but does not fit it; the issue names
+    /// the sheet.
+    Rejected { sheet: SheetRef, reason: String },
+    /// The sheet embedded in the file cannot be applied; the issue names the
+    /// file, since an embedded sheet has no path of its own.
+    Embedded(String),
+}
+
 /// Where a row sits inside its file and which sheet put it there.
 pub(super) struct Placement<'a> {
     pub(super) segment_index: i64,
@@ -47,52 +73,85 @@ pub(super) struct Placement<'a> {
 
 /// Decides the shape of `path`: the sheet beside it wins, then one embedded in
 /// the file, and a sheet that does not fit the audio leaves the file whole.
+/// `None` when the sheet beside the file could not be read: then nothing is
+/// known about the file's shape, and the caller must leave its rows alone.
+///
+/// Writes nothing about the file itself, so the caller can still back out.
 pub(super) fn plan_layout(
     scan: &mut EntryScan<'_, '_, '_>,
     path: &Path,
-    path_str: &str,
     governing: Option<&SheetRef>,
     meta: &TrackMeta,
-) -> Result<Layout, ScanError> {
+) -> Result<Option<Plan>, ScanError> {
     let own_file = |_: &cue::CueFile| Some((path.to_path_buf(), meta.duration_ms));
     if let Some(sheet) = governing {
-        let Some(sub_sheet) = scan.cues.sub_sheet(scan.source, scan.tx, sheet, path)? else {
-            return Ok(Layout::Whole {
-                rejected_by: Some(sheet.clone()),
-            });
+        let sub_sheet = match scan.cues.sub_sheet(scan.source, scan.tx, sheet, path)? {
+            SheetFit::Part(sub_sheet) => sub_sheet,
+            SheetFit::Unfit => return Ok(Some(Plan::whole(Some(sheet.clone()), None))),
+            SheetFit::Unknown => return Ok(None),
         };
-        return match cue::segments(&sub_sheet, own_file) {
-            Ok(segments) => Ok(Layout::Segments {
-                segments,
-                sheet: Some(sheet.clone()),
-            }),
-            Err(error) => {
-                cue_sheets::report_rejected(scan.tx, sheet, &error.to_string())?;
-                Ok(Layout::Whole {
-                    rejected_by: Some(sheet.clone()),
-                })
-            }
-        };
+        return Ok(Some(match cue::segments(&sub_sheet, own_file) {
+            Ok(segments) => Plan {
+                layout: Layout::Segments {
+                    segments,
+                    sheet: Some(sheet.clone()),
+                },
+                issue: None,
+            },
+            Err(error) => Plan::whole(
+                Some(sheet.clone()),
+                Some(SheetIssue::Rejected {
+                    sheet: sheet.clone(),
+                    reason: error.to_string(),
+                }),
+            ),
+        }));
     }
     let Some(text) = &meta.embedded_cuesheet else {
-        return Ok(Layout::Whole { rejected_by: None });
+        return Ok(Some(Plan::whole(None, None)));
     };
-    match cue::parse(text.as_bytes()).and_then(|sheet| cue::segments(&sheet, own_file)) {
-        Ok(segments) => Ok(Layout::Segments {
-            segments,
-            sheet: None,
-        }),
-        Err(error) => {
-            // Keyed by the audio file: an embedded sheet has no path of its own.
-            tracing::warn!(path = %path_str, %error, "embedded CUE sheet ignored");
+    Ok(Some(
+        match cue::parse(text.as_bytes()).and_then(|sheet| cue::segments(&sheet, own_file)) {
+            Ok(segments) => Plan {
+                layout: Layout::Segments {
+                    segments,
+                    sheet: None,
+                },
+                issue: None,
+            },
+            Err(error) => Plan::whole(None, Some(SheetIssue::Embedded(error.to_string()))),
+        },
+    ))
+}
+
+/// Records the issue a plan raised, unless the user dismissed this very
+/// version of what it names: the sheet beside the file, or the file itself for
+/// a sheet embedded in it.
+pub(super) fn report_issue(
+    scan: &EntryScan<'_, '_, '_>,
+    path_str: &str,
+    facts: &FileFacts,
+    issue: &SheetIssue,
+) -> Result<(), ScanError> {
+    match issue {
+        SheetIssue::Rejected { sheet, reason } => {
+            cue_sheets::report_rejected(scan.tx, sheet, reason)
+        }
+        SheetIssue::Embedded(reason) => {
+            let now = now_unix();
+            if import_errors::check_dismissed(scan.tx, path_str, facts.mtime, facts.file_size, now)?
+            {
+                return Ok(());
+            }
+            tracing::warn!(path = %path_str, %reason, "embedded CUE sheet ignored");
             import_errors::record_error(
                 scan.tx,
                 path_str,
                 ImportErrorKind::InvalidCueSheet,
-                &error.to_string(),
-                now_unix(),
+                reason,
+                now,
             )?;
-            Ok(Layout::Whole { rejected_by: None })
+            Ok(())
         }
     }
 }

@@ -11,6 +11,12 @@
 //! never while the scan holds the database writer. The classification that
 //! follows only looks things up.
 //!
+//! A sheet the scan cannot see is not a sheet that is gone. When a directory
+//! cannot be listed, or a sheet in it cannot be probed or read, every audio file
+//! there is [`Cover::Unknown`] for the rest of the scan, and the catalog keeps
+//! what it has for them: deleting the tracks a sheet cut, with their ratings
+//! and playlists, takes proof that the sheet changed.
+//!
 //! A sheet an earlier scan already applied, and that has not changed since, is
 //! recognised from the catalog (`cue_path`, `cue_mtime` and `cue_size` on its tracks, loaded
 //! once when the scan starts) and not read again. Only a new, changed or broken
@@ -82,6 +88,28 @@ enum SheetState {
     Parsed(Rc<ParsedSheet>),
     /// The sheet cannot be applied; the text says why.
     Invalid(String),
+    /// The sheet could not be probed or read, so nothing is known about it.
+    Unknown,
+}
+
+/// Which sheet governs an audio file, as far as the scan can tell.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub(super) enum Cover {
+    /// No sheet beside the file describes it.
+    Plain,
+    Sheet(SheetRef),
+    /// The directory or one of its sheets could not be seen.
+    Unknown,
+}
+
+/// What a governing sheet says about one of its files.
+pub(super) enum SheetFit {
+    /// The part of the sheet that describes the file.
+    Part(CueSheet),
+    /// The sheet cannot be applied to the file after all; its issue is recorded.
+    Unfit,
+    /// The sheet could not be read.
+    Unknown,
 }
 
 struct DirectorySheet {
@@ -96,6 +124,18 @@ struct DirectorySheet {
 struct DirectoryCues {
     audio: Vec<PathBuf>,
     sheets: Vec<DirectorySheet>,
+    /// The directory could not be listed.
+    unlisted: bool,
+}
+
+impl DirectoryCues {
+    fn is_unknown(&self) -> bool {
+        self.unlisted
+            || self
+                .sheets
+                .iter()
+                .any(|sheet| matches!(sheet.state, SheetState::Unknown))
+    }
 }
 
 /// What the catalog says an earlier scan applied: the sheet's mtime and size
@@ -164,24 +204,27 @@ impl CueDirectories {
         self.directories.insert(directory.to_path_buf(), cues);
     }
 
-    /// The sheet that governs `audio`, if any. The first sheet by path wins
-    /// when two describe the same file. Records, on the way, what the scan has
-    /// learned about the sheets of its directory.
+    /// The sheet that governs `audio`. The first sheet by path wins when two
+    /// describe the same file. Records, on the way, what the scan has learned
+    /// about the sheets of its directory.
     pub(super) fn covering(
         &mut self,
         source: &dyn LibrarySource,
         tx: &Transaction<'_>,
         audio: &Path,
-    ) -> Result<Option<SheetRef>, ScanError> {
+    ) -> Result<Cover, ScanError> {
         let Some(cues) = self.directory_of(source, audio) else {
-            return Ok(None);
+            return Ok(Cover::Plain);
         };
         report_unreported(tx, cues)?;
+        if cues.is_unknown() {
+            return Ok(Cover::Unknown);
+        }
         Ok(cues
             .sheets
             .iter()
             .find(|sheet| sheet_covers(sheet, audio))
-            .map(|sheet| sheet.reference.clone()))
+            .map_or(Cover::Plain, |sheet| Cover::Sheet(sheet.reference.clone())))
     }
 
     /// Reads a sheet that was only recognised from the catalog, because one of
@@ -212,25 +255,30 @@ impl CueDirectories {
         }
     }
 
-    /// The part of `sheet` that describes `audio`. `None` means the sheet cannot
-    /// be applied after all, for instance because a file it names has since been
-    /// deleted; the issue is recorded by the time this returns.
+    /// What `sheet` says about `audio`. It can turn out unfit after all, for
+    /// instance because a file it names has since been deleted; the issue is
+    /// recorded by the time this returns.
     pub(super) fn sub_sheet(
         &mut self,
         source: &dyn LibrarySource,
         tx: &Transaction<'_>,
         sheet: &SheetRef,
         audio: &Path,
-    ) -> Result<Option<CueSheet>, ScanError> {
+    ) -> Result<SheetFit, ScanError> {
         let Some(cues) = self.directory_of(source, audio) else {
-            return Ok(None);
+            return Ok(SheetFit::Unknown);
         };
         report_unreported(tx, cues)?;
+        if cues.is_unknown() {
+            return Ok(SheetFit::Unknown);
+        }
         let found = cues.sheets.iter().find(|entry| entry.reference == *sheet);
-        Ok(found.and_then(|entry| match &entry.state {
-            SheetState::Parsed(parsed) if parsed.covers(audio) => Some(parsed.sub_sheet(audio)),
-            _ => None,
-        }))
+        Ok(match found.map(|entry| &entry.state) {
+            Some(SheetState::Parsed(parsed)) if parsed.covers(audio) => {
+                SheetFit::Part(parsed.sub_sheet(audio))
+            }
+            _ => SheetFit::Unfit,
+        })
     }
 
     fn directory_of(
@@ -247,7 +295,7 @@ fn sheet_covers(sheet: &DirectorySheet, audio: &Path) -> bool {
     match &sheet.state {
         SheetState::Settled(files) => files.contains(audio),
         SheetState::Parsed(parsed) => parsed.covers(audio),
-        SheetState::Invalid(_) => false,
+        SheetState::Invalid(_) | SheetState::Unknown => false,
     }
 }
 
@@ -257,7 +305,11 @@ fn list_directory(
     directory: &Path,
 ) -> DirectoryCues {
     let Some(entries) = source.read_directory(directory) else {
-        return DirectoryCues::default();
+        tracing::warn!(directory = %directory.display(), "directory cannot be listed; its CUE sheets are unknown this scan");
+        return DirectoryCues {
+            unlisted: true,
+            ..DirectoryCues::default()
+        };
     };
     let mut audio: Vec<PathBuf> = entries
         .iter()
@@ -271,7 +323,11 @@ fn list_directory(
         .filter_map(|entry| directory_sheet(source, applied, &audio, entry))
         .collect();
     sheets.sort_by(|left, right| left.reference.path.cmp(&right.reference.path));
-    DirectoryCues { audio, sheets }
+    DirectoryCues {
+        audio,
+        sheets,
+        unlisted: false,
+    }
 }
 
 fn is_sheet_file(entry: &LibraryDirectoryEntry) -> bool {
@@ -292,12 +348,24 @@ fn directory_sheet(
     audio: &[PathBuf],
     entry: &LibraryDirectoryEntry,
 ) -> Option<DirectorySheet> {
-    let metadata = entry.metadata.clone().or_else(|| {
-        match source.probe(&entry.path, LibraryLinkMode::Follow) {
-            LibraryPathPresence::Present(metadata) => Some(metadata),
-            LibraryPathPresence::Absent | LibraryPathPresence::Unknown => None,
-        }
-    })?;
+    let metadata = match entry.metadata.clone() {
+        Some(metadata) => metadata,
+        None => match source.probe(&entry.path, LibraryLinkMode::Follow) {
+            LibraryPathPresence::Present(metadata) => metadata,
+            LibraryPathPresence::Absent => return None,
+            LibraryPathPresence::Unknown => {
+                return Some(DirectorySheet {
+                    reference: SheetRef {
+                        path: entry.path.clone(),
+                        mtime: 0,
+                        size: 0,
+                    },
+                    state: SheetState::Unknown,
+                    reported: false,
+                });
+            }
+        },
+    };
     let (mtime, stat) = scanner_file_metadata(Some(metadata));
     let reference = SheetRef {
         path: entry.path.clone(),
@@ -321,7 +389,14 @@ fn directory_sheet(
 }
 
 fn read_state(source: &dyn LibrarySource, reference: &SheetRef, audio: &[PathBuf]) -> SheetState {
-    match read_and_resolve(source, reference, audio) {
+    let bytes = match read_sheet(source, &reference.path) {
+        Ok(bytes) => bytes,
+        Err(error) => {
+            tracing::warn!(sheet = %reference.path.display(), %error, "CUE sheet cannot be read this scan");
+            return SheetState::Unknown;
+        }
+    };
+    match resolve(&bytes, reference, audio) {
         Ok(parsed) => SheetState::Parsed(Rc::new(parsed)),
         Err(reason) => SheetState::Invalid(reason),
     }
@@ -338,19 +413,14 @@ fn report_unreported(tx: &Transaction<'_>, cues: &mut DirectoryCues) -> Result<(
             SheetState::Parsed(_) => {
                 import_errors::clear_error(tx, &sheet.reference.path_text())?;
             }
-            SheetState::Settled(_) => {}
+            SheetState::Settled(_) | SheetState::Unknown => {}
         }
     }
     Ok(())
 }
 
-fn read_and_resolve(
-    source: &dyn LibrarySource,
-    reference: &SheetRef,
-    audio: &[PathBuf],
-) -> Result<ParsedSheet, String> {
-    let bytes = read_sheet(source, &reference.path)?;
-    let parsed = cue::parse(&bytes).map_err(|error| error.to_string())?;
+fn resolve(bytes: &[u8], reference: &SheetRef, audio: &[PathBuf]) -> Result<ParsedSheet, String> {
+    let parsed = cue::parse(bytes).map_err(|error| error.to_string())?;
     let directory = reference.path.parent().unwrap_or(Path::new(""));
     let mut resolved: Vec<(usize, PathBuf)> = Vec::new();
     for (index, file) in parsed.files.iter().enumerate() {
@@ -377,16 +447,13 @@ fn read_and_resolve(
     })
 }
 
-fn read_sheet(source: &dyn LibrarySource, path: &Path) -> Result<Vec<u8>, String> {
-    let reader = source
-        .open_read(path)
-        .map_err(|error| format!("the sheet cannot be read: {error}"))?;
+fn read_sheet(source: &dyn LibrarySource, path: &Path) -> std::io::Result<Vec<u8>> {
     // One byte past the cap is enough for `cue::parse` to refuse the sheet.
     let mut bytes = Vec::new();
-    reader
+    source
+        .open_read(path)?
         .take(cue::MAX_SHEET_BYTES as u64 + 1)
-        .read_to_end(&mut bytes)
-        .map_err(|error| format!("the sheet cannot be read: {error}"))?;
+        .read_to_end(&mut bytes)?;
     Ok(bytes)
 }
 

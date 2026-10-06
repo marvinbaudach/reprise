@@ -12,8 +12,8 @@ use crate::library::source::{
 };
 use crate::library::{exclusions, import_errors};
 
-use super::cue_sheets::{CueDirectories, SheetRef};
-use super::segments::{self, Placement};
+use super::cue_sheets::{Cover, CueDirectories, SheetRef};
+use super::segments::{self, Placement, SheetIssue};
 use super::{move_detect, repair, track_meta, ScanError};
 
 pub(super) struct EntryScan<'a, 'conn, 'source> {
@@ -348,8 +348,16 @@ pub(super) fn classify_entry(
     if exclusions::matches_file(scan.tx, path, facts.device, facts.inode)? {
         return Ok(EntryPlan::Skip(EntryOutcome::Excluded));
     }
-    let governing = scan.cues.covering(scan.source, scan.tx, path)?;
     let known = known_row(scan.tx, &path_str);
+    let governing = match scan.cues.covering(scan.source, scan.tx, path)? {
+        Cover::Sheet(sheet) => Some(sheet),
+        Cover::Plain => None,
+        // Whether a sheet cuts this file cannot be told this scan. Its rows stay
+        // exactly as they are; a file the catalog does not know yet is read as
+        // if no sheet were there, which loses nothing.
+        Cover::Unknown if known.exists => return Ok(EntryPlan::Skip(EntryOutcome::Unchanged)),
+        Cover::Unknown => None,
+    };
     if known.mtime == Some(facts.mtime)
         && known.tag_scan_version >= super::TAG_SCAN_VERSION
         && !known.untagged
@@ -364,8 +372,11 @@ pub(super) fn classify_entry(
     // `read_meta` — see `check_dismissed`'s doc comment. An `untagged` row
     // is exempt: a dismissal only silences the notification and predates
     // auto-repair, so skipping here would strand a now-repairable file
-    // forever (its mtime never changes, so it is never re-read).
+    // forever (its mtime never changes, so it is never re-read). Neither is a
+    // file whose sheet changed: a dismissal is about the file as it was read,
+    // and a sheet that arrived since may well apply.
     if !known.untagged
+        && known.matches_sheet(governing.as_ref())
         && import_errors::check_dismissed(
             scan.tx,
             &path_str,
@@ -625,11 +636,24 @@ fn import_readable_entry(
     } else {
         meta.title.clone()
     };
+    // The sheets are consulted before anything is written: a sheet that could
+    // not be read leaves the file's rows, and its issue, as they are.
+    let Some(plan) = segments::plan_layout(scan, path, governing.as_ref(), &meta)? else {
+        return Ok(EntryOutcome::Unchanged);
+    };
+    let layout = plan.layout;
     // Task 1.6: recorded now, while still reachable, and
     // memoized per parent dir — see `scanner_mount.rs`.
     let mount_point = scan.mount_cache.resolve(path);
-    let healed = record_hint_or_healing(scan.tx, path_str, hint)?;
-    let layout = segments::plan_layout(scan, path, path_str, governing.as_ref(), &meta)?;
+    // A broken embedded sheet is the file's issue: it replaces the clearing a
+    // clean read would do, so its dismissal survives the read.
+    let healed = match (&hint, &plan.issue) {
+        (None, Some(SheetIssue::Embedded(_))) => 0,
+        _ => record_hint_or_healing(scan.tx, path_str, hint)?,
+    };
+    if let Some(issue) = &plan.issue {
+        segments::report_issue(scan, path_str, facts, issue)?;
+    }
     let candidate = find_move(scan, facts, &title, &meta, is_update)?;
     let imported = ImportedTrack {
         title: &title,
