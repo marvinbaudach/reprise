@@ -388,6 +388,41 @@ class SceneStateTest {
     }
 
     @Test
+    fun nav_15d_adopting_shorter_frames_keeps_the_playhead_instead_of_seeking() {
+        val state = SceneState(levelFrames(frameCount = 60, level = 200))
+        (0..50).forEach(state::advanceTo)
+        val fog = state.fogBands.copyOf()
+
+        state.adoptFrames(levelFrames(frameCount = 40, level = 0))
+        state.advanceTo(45)
+
+        assertArrayEquals("a shorter analysis snapped the scene as if it was a seek", fog, state.fogBands, 0f)
+    }
+
+    @Test
+    fun nav_15d_frames_growing_under_a_playhead_past_the_decode_edge_continue_instead_of_snapping() {
+        val prefix = levelFrames(frameCount = 20, level = 200)
+        val whole = SpectrogramFrames(
+            bandCount = 24,
+            frameRateHz = 20,
+            cells = ByteArray(200 * 24) { index -> if (index / 24 < 20) 200.toByte() else 60.toByte() },
+        )
+        // The playhead ran to frame 100 while only 20 frames were decoded.
+        val growing = SceneState(prefix).also { state -> (0..19).forEach(state::advanceTo) }
+        growing.advanceTo(100)
+        val stepped = SceneState(prefix).also { state -> (0..19).forEach(state::advanceTo) }
+
+        growing.adoptFrames(whole)
+        growing.advanceTo(100)
+        stepped.adoptFrames(whole)
+        (20..100).forEach(stepped::advanceTo)
+
+        assertArrayEquals("the newly decoded frames were skipped by a snap", stepped.fogBands, growing.fogBands, 0f)
+        assertArrayEquals(stepped.motionBands, growing.motionBands, 0f)
+        assertEquals(stepped.fogLevel, growing.fogLevel, 0f)
+    }
+
+    @Test
     fun nav_15d_adopting_frames_of_another_shape_is_refused() {
         val state = SceneState(SpectrogramFrames(24, 20, ByteArray(0)))
 
@@ -403,6 +438,9 @@ private fun risingFrames(frameCount: Int): SpectrogramFrames = SpectrogramFrames
     frameRateHz = 20,
     cells = ByteArray(frameCount * 24) { index -> if (index / 24 < 4) 0 else 200.toByte() },
 )
+
+private fun levelFrames(frameCount: Int, level: Int): SpectrogramFrames =
+    SpectrogramFrames(bandCount = 24, frameRateHz = 20, cells = ByteArray(frameCount * 24) { level.toByte() })
 
 private fun SpectrogramFrames.cellsPrefix(frameCount: Int): ByteArray =
     ByteArray(frameCount * bandCount) { index -> band(index / bandCount, index % bandCount).toByte() }

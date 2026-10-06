@@ -260,8 +260,10 @@ result.
   bar shows the part already decoded, filling from the left, and the rest
   stays the plain line. The partial picture is held only in memory: it is
   never stored and never counts as analysed for sync, sidecar or backfill.
-  The Now Playing scene adopts the growing spectrum without restarting.
-  The decoded part is asked for about once a second, only while the screen
+  The Now Playing scene adopts the growing spectrum without restarting:
+  only the playing panel asks for it, it keeps the decoded frames until the
+  final ones arrive, and frames decoded behind a playhead that ran ahead
+  play on instead of snapping. The decoded part is asked for about once a second, only while the screen
   is visible and the final analysis is missing, never while an earlier
   answer is still outstanding, and no more after half a minute of empty
   answers until the next analysis attempt ends. When the final bars replace
@@ -286,7 +288,11 @@ result.
   `nav_15d_a_late_answer_from_an_earlier_revision_is_not_shown`,
   `nav_15d_an_unchanged_answer_does_not_recompose`,
   `nav_15d_final_bars_after_a_partial_that_ended_without_a_result_build_in`,
-  `nav_15d_an_empty_or_broken_covered_fraction_is_no_partial`.
+  `nav_15d_an_empty_or_broken_covered_fraction_is_no_partial`,
+  `nav_15d_the_scene_keeps_the_decoded_frames_until_the_final_ones_arrive`,
+  `nav_15d_only_the_live_panel_asks_for_the_decoded_part`,
+  `nav_15d_adopting_shorter_frames_keeps_the_playhead_instead_of_seeking`,
+  `nav_15d_frames_growing_under_a_playhead_past_the_decode_edge_continue_instead_of_snapping`.
   <!-- REVIEW: rule proposal -->
 - **NAV-15e** [active] [android] — **Leaving a track stops its analysis.**
   Switching to another track stops the outgoing track's foreground analysis
