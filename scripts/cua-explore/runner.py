@@ -243,11 +243,18 @@ def _trace_from_observations(
         )
 
     def values(observation: Mapping[str, Any]) -> tuple[tuple[str, str], ...]:
-        return tuple(
-            (str(item["label"]), str(item.get("value", "")))
-            for item in elements(observation)
-            if item.get("label")
-        )
+        # The audits read this as a dict, so a label that appears twice keeps
+        # only its last value. "Search all fields" names both the toggle that
+        # opens the search and the search box itself; the toggle has no value
+        # and, listed after the box, used to erase the typed text.
+        by_label: dict[str, str] = {}
+        for item in elements(observation):
+            if not item.get("label"):
+                continue
+            label, value = str(item["label"]), str(item.get("value", ""))
+            if value or label not in by_label:
+                by_label[label] = value
+        return tuple(by_label.items())
 
     after_elements = elements(after)
     return ActionTrace(

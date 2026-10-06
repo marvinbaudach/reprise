@@ -450,6 +450,21 @@ class OracleEngine:
             findings.extend(self._layout_findings((before, *settled)))
         return self._deduplicate(findings)
 
+    @staticmethod
+    def _offers_no_action(action: ActionEvidence) -> bool:
+        return action.dispatch == "ax" and action.target_has_action is False
+
+    @staticmethod
+    def _no_accessible_action(action: ActionEvidence) -> Finding:
+        return Finding(
+            "no-accessible-action",
+            "error",
+            0.9,
+            f"'{action.target_label}' offers assistive technology no action to invoke.",
+            {"target": action.target_label},
+            blocks_gate=True,
+        )
+
     def _click_findings(
         self, action: ActionEvidence, before: Snapshot, after: Snapshot, changed: bool
     ) -> list[Finding]:
@@ -471,20 +486,11 @@ class OracleEngine:
                     blocks_gate=True,
                 )
             ]
-        if action.dispatch == "ax" and action.target_has_action is False:
+        if self._offers_no_action(action):
             # Not a dead handler: no node with this label offers assistive
             # technology any action to invoke in the first place. Reporting it
             # as a no-handler blamed the app for a target the harness picked.
-            return [
-                Finding(
-                    "no-accessible-action",
-                    "error",
-                    0.9,
-                    f"'{action.target_label}' offers assistive technology no action to invoke.",
-                    {"target": action.target_label},
-                    blocks_gate=True,
-                )
-            ]
+            return [self._no_accessible_action(action)]
         if action.dispatch == "ax" and action.effect == "suspected_noop":
             return [
                 Finding(

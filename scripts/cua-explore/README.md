@@ -95,10 +95,13 @@ cannot overwrite an earlier untrusted measurement.
 
 The two driver tools take pixels in different spaces, measured from their own
 schemas: `move_cursor` with `scope=desktop` takes desktop coordinates, while
-`click` takes x/y together with `window_id` in full-window space. Every pixel
+`click` takes x/y together with `window_id` in window-local pixels of the screenshot
+the driver returned. On cua-driver 0.33 that screenshot is shrunk when the window
+exceeds about 1.15 megapixels (`frame_scale` 0.8475 for the 1600x1000 mission
+windows), so those pixels are the window pixels times `frame_scale`. Every pixel
 click therefore goes through `window_pointer_point`, which subtracts the window
-origin exactly once and then asserts the point lands inside the target's own
-rectangle. A point outside its target is a coordinate-space error in the
+origin exactly once, asserts the point lands inside the target's own rectangle, and
+only then applies `frame_scale`. A point outside its target is a coordinate-space error in the
 harness, not a measurement, so it fails loudly rather than returning a number
 that looks like a finding.
 
@@ -119,9 +122,11 @@ green while the real run did nothing. Role spellings live in exactly one place,
 `ui_vocabulary.ROLE_ALIASES`; an unknown one still falls through unchanged and
 fails where it is used.
 
-The sidebar sections are not exposed to accessibility at all, so the sweep
-measures the view it starts in first and records any section it cannot reach as
-`reachable: false` instead of aborting the run.
+On cua-driver 0.28 the sidebar sections were not exposed to accessibility at all; with
+complete walks on 0.33 they appear as list items without actions (`Playlists` is a
+heading with no row while the profile has no playlist). The sweep measures the view it
+starts in first and records any section it cannot reach as `reachable: false` instead of
+aborting the run.
 
 The hover sweep points at every visible, enabled, actionable element whose role
 has a hover contract - buttons and links strictly, rows, cells, tabs, chips and
@@ -390,6 +395,92 @@ had no sidebar.
 so the collapse and its undo toast are part of what that mission tests. The
 other five declare `1600x1000`.
 
+## Input delivery on Xvfb
+
+Raw input is delivered with `delivery_mode: "foreground"` from the first attempt:
+a pixel click, a scroll or `type_text` without an element, and every `press_key` and
+`hotkey`. Calls that carry an `element_token` or `element_index` stay on the AT-SPI
+route, which is focus-free and needs nothing else. The constant is
+`RAW_INPUT_DELIVERY_MODE` in `driver_transport.py`.
+
+The reason, measured on cua-driver 0.33.3 (issue 1092). The default background route
+for raw input is the XInput2 MPX pointer: the driver creates a `/dev/uinput` device and
+waits for the X server to attach it as a slave device. Xvfb has no input hotplug, so
+the wait always times out after about 5 s with `background_pointer_failed` (a pixel
+click that hits no AT-SPI action, exit status 1) or `virtual master keyboard delivery
+failed: timed out waiting for X input slave device ... uinput pointer` (a key or text
+without an element; a scroll waits the same 5 s). It is not host load. The driver's own
+`LINUX.md` says this path "needs a real Xorg + `/dev/uinput`" and names foreground
+delivery as the escalation; foreground uses XTest and works on Xvfb. A real Xorg with
+udev hotplug is not an option here, because it would also attach the host's own
+keyboard and mouse to the private session.
+
+Choosing foreground up front matters for timing as well: a background attempt that
+waits out the timeout and is then retried would put five seconds inside the measured
+action time, and the feedback and stall oracles would blame the app. The
+response-driven retry stays as a safety net for element-addressed calls.
+`foreground-desktop` in a mission's `forbidden` list means the live desktop. Foreground
+delivery here activates a window on the private Xvfb and nothing else.
+
+A key press aimed at a named element - clearing the search box with Escape - used to
+send `press_key` with that element's token, which makes the driver call AT-SPI
+`Component.GrabFocus`. GTK4 accessibles do not implement it: a plain `Gtk.SearchEntry`
+and a plain `Gtk.Button` both answer `org.freedesktop.DBus.Error.NotSupported`, so the
+fault is not in Reprise. The harness now focuses the element with a click, as a user
+does, sends the key without an element address, and records the click as `focus_click`
+in the step response. Typing is the same when the target is not an entry: the
+`Search all fields` toggle that opens the search box has no AT-SPI EditableText, so the
+driver would fall back to key events and the same `GrabFocus` call. Typing into an
+entry keeps the element-addressed AT-SPI route.
+
+A click addressed to an element with no AT-SPI click action - a list row, whose only
+action is `listitem.scroll-to` - falls to the pointer inside the driver. The executor
+asks for foreground delivery for such targets straight away. cua-driver 0.33.3 then
+refuses to aim at a row whose centre another element owns (exit 1,
+`element_bounds_unavailable`, `point_owned_by_another_element`, `effect: none`). That
+answer proves the input never arrived, so it is booked like the other undelivered
+shell: retained in `driver-faults.jsonl`, reported as `driver-action-undelivered`, and
+no product verdict is drawn. The same holds for the accessibility re-click that
+follows a pointer click with no visible effect: an undelivered probe never counts as
+`ax_probe_changed`, so it cannot produce a `suspected-occlusion` verdict.
+
+Every `get_window_state` carries `timeout_ms: 10000` (`SNAPSHOT_WALK_BUDGET_MS`). The
+driver's default is 1000 ms for the whole accessibility walk and a walk that runs out
+returns a partial tree flagged `truncated: true`, with every element after the cut
+silently missing. Reprise's tree is 600-700 nodes and the walk took 1.0-1.2 s on a
+loaded host, so single snapshots lost the `Music` row at random and the run ended with
+`target is not actionable in fresh observation`. The budget is a ceiling, not a delay.
+
+The hover sweep's time budget is 2700 s for 220 actions. Each action costs a before
+snapshot, an after snapshot and three settling snapshots; with complete accessibility
+walks those took about 9.5 s per action on a host at load 10-14 (cua-driver 0.33.3),
+which ran the previous 1800 s out at action 190 with every section already visited. At
+host load 2-3 the same sweep takes about 20 minutes, so the larger budget only matters
+when the host is busy.
+
+## Known gaps on cua-driver 0.33
+
+The deck now runs every mission to a finish instead of aborting, and
+`first-time-exploration` reaches `mission_complete`. The workload audits of the others
+still expect the tree of an older driver:
+
+- `hover-affordance-sweep` cannot complete on the generated profiles: `Playlists` has no
+  accessible handle while no playlist exists, and the audit requires every listed section
+  to be visited.
+- `section-search-isolation` counts the sidebar list items (`Music`, `Queue`, ...) as result
+  rows, so `len(after_rows) == 1` fails even where the screenshot shows the single correct
+  result. Podcast and YouTube results are buttons, not rows.
+- The bundled agent's plans address rows and the column-header row with `dispatch: ax`.
+  Neither offers an AT-SPI click, and the driver refuses to aim at them by element. The
+  executor therefore sends such a click by pixel (`dispatch: px`, with the
+  `frame_scale`-corrected point, no accessibility probe afterwards) and records the
+  reroute as `dispatch_rerouted` in the step response, so `sort-cycle`,
+  `combined-filter` and `batch-edit` in `large-library-stress` get their actions. Only
+  when there is no window origin or frame to aim at does the click stay undelivered; it
+  is then a `driver-action-undelivered` note at confidence 0.3 with
+  `blocks_gate: false`, never an app finding. `no-accessible-action` is reserved for a
+  click that was delivered and did nothing.
+
 ## Semantic dispatch fallback
 
 The reasoning agent switches its effective activation policy from `ax` to `px`
@@ -399,11 +490,13 @@ That is the `semantic-route-unavailable` environmental finding.
 
 A driver refusal is categorically different. It is a harness contract failure,
 raises `DriverError`, aborts the action path, and never reaches the agent as an
-ineffective activation. The one bounded exception is an exact
-`background_unavailable` response from an action whose schema accepts
-`delivery_mode`: the harness retains and counts that fault, retries once with
-`delivery_mode: "foreground"`, and records the escalation in the step response.
-Every other error shell still fails closed, as does a failed foreground attempt.
+ineffective activation. The one bounded exception is a background-delivery
+refusal from an action whose schema accepts `delivery_mode`: the exact
+`background_unavailable` or `background_pointer_failed` code object, or the plain
+text `virtual master keyboard delivery failed:`. The harness retains and counts
+that fault, retries once with `delivery_mode: "foreground"`, and records the
+escalation in the step response. Every other error shell still fails closed, as
+does a failed foreground attempt.
 No refusal can schedule a pointer retry, increment the three-attempt fallback
 counter, emit `semantic-route-unavailable`, or supersede the accessibility
 oracle.

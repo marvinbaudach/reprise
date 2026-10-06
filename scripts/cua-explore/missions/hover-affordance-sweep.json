@@ -7,7 +7,7 @@
   "agent": "optional",
   "profile": "mixed-sources-128",
   "window": {"width": 1600, "height": 1000},
-  "budgets": {"actions": 220, "seconds": 1800, "restarts": 0},
+  "budgets": {"actions": 220, "seconds": 2700, "restarts": 0},
   "capabilities": ["activate", "hover", "scroll", "wait", "complete-workload", "finish"],
   "fixture_tokens": {"SEARCH_NEEDLE": "Writable Batch 0042"},
   "oracles": ["clean-runtime", "feedback", "layout-shift", "pointer-reachability", "accessibility", "hover-affordance"],
