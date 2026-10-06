@@ -587,6 +587,14 @@ fn cue_2_a_dismissed_rejection_stays_quiet_when_the_audio_is_cut_again() {
         "still whole"
     );
     assert_eq!(times_seen(&album), before);
+    let dismissed: Option<i64> = album
+        .db
+        .conn()
+        .query_row("SELECT dismissed_mtime FROM import_errors", [], |row| {
+            row.get(0)
+        })
+        .unwrap();
+    assert!(dismissed.is_some(), "the dismissal itself survives");
 }
 
 #[path = "scanner_cue_identity_tests.rs"]

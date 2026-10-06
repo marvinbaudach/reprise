@@ -411,7 +411,12 @@ fn report_unreported(tx: &Transaction<'_>, cues: &mut DirectoryCues) -> Result<(
         match &sheet.state {
             SheetState::Invalid(reason) => report_invalid(tx, sheet, reason)?,
             SheetState::Parsed(_) => {
-                import_errors::clear_error(tx, &sheet.reference.path_text())?;
+                import_errors::clear_error_unless_dismissed(
+                    tx,
+                    &sheet.reference.path_text(),
+                    sheet.reference.mtime,
+                    sheet.reference.size,
+                )?;
             }
             SheetState::Settled(_) | SheetState::Unknown => {}
         }

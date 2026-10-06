@@ -158,6 +158,24 @@ pub(crate) fn clear_error(tx: &Transaction, path: &str) -> rusqlite::Result<bool
     Ok(changed > 0)
 }
 
+/// Clears the `import_errors` row for `path` unless the user dismissed this
+/// very version of it (`mtime`/`size`). For a CUE sheet that parses again: it
+/// can still turn out not to fit its audio a moment later, and a dismissal of
+/// exactly that rejection must not be thrown away on the way.
+pub(crate) fn clear_error_unless_dismissed(
+    tx: &Transaction,
+    path: &str,
+    mtime: i64,
+    size: i64,
+) -> rusqlite::Result<()> {
+    tx.execute(
+        "DELETE FROM import_errors WHERE path = ?1 \
+         AND NOT (dismissed_mtime IS ?2 AND dismissed_size IS ?3)",
+        rusqlite::params![path, mtime, size],
+    )?;
+    Ok(())
+}
+
 /// The dismiss-skip fast path: called BEFORE `read_meta`, with only a `stat`
 /// (`mtime`/`size`) already in hand — never a tag parse — so a dismissed
 /// file costs the scan almost nothing. Returns `true` when the caller should
