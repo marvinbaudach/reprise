@@ -498,3 +498,7 @@ mod retry_tests;
 #[cfg(test)]
 #[path = "compute_progress_tests.rs"]
 mod progress_tests;
+
+#[cfg(test)]
+#[path = "compute_supersede_tests.rs"]
+mod supersede_tests;

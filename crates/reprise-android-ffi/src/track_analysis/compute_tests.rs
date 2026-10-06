@@ -129,7 +129,7 @@ pub(super) fn set_flag(state: &Arc<(Mutex<bool>, Condvar)>) {
     condvar.notify_all();
 }
 
-fn wait_for_in_flight_waiter(library: &MusicLibrary, track_id: i64) {
+pub(super) fn wait_for_in_flight_waiter(library: &MusicLibrary, track_id: i64) {
     let deadline = std::time::Instant::now() + Duration::from_secs(10);
     loop {
         let strong_count = library
