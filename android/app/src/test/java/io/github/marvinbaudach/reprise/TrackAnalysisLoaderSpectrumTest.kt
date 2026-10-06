@@ -106,7 +106,36 @@ class TrackAnalysisLoaderSpectrumTest {
     }
 
     @Test
-    fun nav_15e_a_superseded_import_of_the_track_still_prepared_retries() {
+    fun nav_15e_a_superseded_import_of_a_track_the_service_left_ends() {
+        listOf<Long?>(7L, null).forEach { playing ->
+            val imports = AtomicInteger(0)
+            val reimported = CountDownLatch(1)
+            val loader = TrackAnalysisLoader(
+                importAnalysis = {
+                    if (imports.incrementAndGet() > 1) reimported.countDown()
+                    AndroidAnalysisOutcome.SUPERSEDED
+                },
+                readBars = { _, _ -> null },
+                onMainThread = {},
+                pauseBetweenAttempts = {},
+                // A skip from the lock screen: no newer prepare reaches a stopped screen.
+                playingTrackId = { playing },
+            )
+
+            loader.prepare(41)
+
+            // Shutdown would end the loop too, so the re-import must be ruled out before it.
+            assertFalse(
+                "playing $playing: the abandoned track was decoded again",
+                reimported.await(NEGATIVE_PROOF_MS, TimeUnit.MILLISECONDS),
+            )
+            loader.shutdownForTest()
+            assertEquals(1, imports.get())
+        }
+    }
+
+    @Test
+    fun nav_15e_a_superseded_import_of_the_track_still_playing_retries() {
         val imports = AtomicInteger(0)
         val mainHops = ArrayDeque<() -> Unit>()
         val retried = CountDownLatch(1)
@@ -123,6 +152,7 @@ class TrackAnalysisLoaderSpectrumTest {
             readBars = { _, _ -> null },
             onMainThread = { work -> synchronized(mainHops) { mainHops.add(work) } },
             pauseBetweenAttempts = {},
+            playingTrackId = { 41L },
         )
 
         loader.prepare(41)

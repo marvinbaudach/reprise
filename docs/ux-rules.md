@@ -318,7 +318,8 @@ result.
   `nav_15e_a_supersede_before_the_decode_registers_still_stops_it`,
   `nav_15e_a_supersede_after_the_whole_stream_is_decoded_still_stores_it`,
   `nav_15e_a_superseded_settle_for_the_playing_track_requests_again`,
-  `nav_15e_a_superseded_import_of_the_track_still_prepared_retries`,
+  `nav_15e_a_superseded_import_of_the_track_still_playing_retries`,
+  `nav_15e_a_superseded_import_of_a_track_the_service_left_ends`,
   `nav_15e_a_request_that_starts_after_its_track_lost_its_place_imports_nothing`,
   `nav_15e_stopping_after_a_switch_still_supersedes_the_outgoing_track`,
   `nav_15e_the_track_cannot_move_while_a_supersede_is_in_the_library`.

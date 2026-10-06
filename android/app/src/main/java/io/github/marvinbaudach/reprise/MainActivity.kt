@@ -149,6 +149,7 @@ class MainActivity : ComponentActivity() {
                 library.trackAnalysisProgress(trackId, count.toUInt())?.toPartialTrackAnalysis()
             },
             onMainThread = { work -> runOnUiThread { work() } },
+            playingTrackId = { boundService.value?.playbackSnapshots?.value?.currentTrackId },
         )
     }
     private val analysis by analysisDelegate

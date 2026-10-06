@@ -146,6 +146,12 @@ internal class TrackAnalysisLoader(
     private val readDispatcher: CoroutineDispatcher = analysisReadLane(),
     private val pauseBetweenAttempts: suspend () -> Unit = { delay(ANALYSIS_RETRY_DELAY_MS) },
     private val clockMs: () -> Long = { System.nanoTime() / NANOS_PER_MILLI },
+    /**
+     * The track the playback service plays right now, or `null` when that is not
+     * known (no service bound). The latest [prepare] alone cannot tell: a skip
+     * made while the screen is stopped reaches the service but no [prepare].
+     */
+    private val playingTrackId: () -> Long? = { null },
 ) : TrackAnalysisPort {
     private val accepting = AtomicBoolean(true)
     private val closing = CompletableDeferred<Unit>()
@@ -201,7 +207,7 @@ internal class TrackAnalysisLoader(
                     invalidate(trackId)
                     revision += 1L
                 }
-                val stillPlaying = latestPreparedTrackId == trackId
+                val stillPlaying = latestPreparedTrackId == trackId && playingTrackId() == trackId
                 if (!trackAnalysisShouldRetry(outcome, failure, stillPlaying)) break
                 if (attempt < MAX_ANALYSIS_ATTEMPTS && !pauseForRetry()) break
             }
