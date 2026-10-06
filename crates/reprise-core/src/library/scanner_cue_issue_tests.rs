@@ -6,7 +6,7 @@ use std::path::Path;
 use rusqlite::Connection;
 
 use super::super::tests::fixture_copy;
-use super::{issue, scan, segments_of, titles, Album, THREE_TRACKS};
+use super::{bump_mtime, issue, scan, segments_of, titles, write_wav, Album, THREE_TRACKS};
 
 const BROKEN: &str = "this is not a cue sheet at all";
 
@@ -132,6 +132,31 @@ fn cue_1a_a_sheet_beside_a_flac_wins_over_a_broken_one_inside_it() {
         issue(db.conn(), &audio),
         None,
         "the embedded sheet is not used"
+    );
+}
+
+#[test]
+fn cue_1a_a_file_of_an_applied_sheet_that_had_no_tracks_yet_is_cut_by_it() {
+    let dir = tempfile::tempdir().unwrap();
+    write_wav(&dir.path().join("01.wav"), 12);
+    std::fs::write(dir.path().join("02.wav"), b"not audio yet").unwrap();
+    std::fs::write(
+        dir.path().join("disc.cue"),
+        "FILE \"01.wav\" WAVE\n  TRACK 01 AUDIO\n    TITLE \"First\"\n    INDEX 01 00:00:00\n\
+         FILE \"02.wav\" WAVE\n  TRACK 02 AUDIO\n    TITLE \"Second\"\n    INDEX 01 00:00:00\n",
+    )
+    .unwrap();
+    let db = crate::db::Db::open_in_memory().unwrap();
+    scan(&db, dir.path());
+    assert!(segments_of(db.conn(), &dir.path().join("02.wav")).is_empty());
+
+    write_wav(&dir.path().join("02.wav"), 20);
+    bump_mtime(&dir.path().join("02.wav"));
+    scan(&db, dir.path());
+
+    assert_eq!(
+        segments_of(db.conn(), &dir.path().join("02.wav")),
+        [(1, Some(0), Some(20_000), "Second".to_string())]
     );
 }
 

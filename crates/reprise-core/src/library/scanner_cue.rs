@@ -323,10 +323,34 @@ fn list_directory(
         .filter_map(|entry| directory_sheet(source, applied, &audio, entry))
         .collect();
     sheets.sort_by(|left, right| left.reference.path.cmp(&right.reference.path));
+    read_sheets_that_may_cover_more(source, &audio, &mut sheets);
     DirectoryCues {
         audio,
         sheets,
         unlisted: false,
+    }
+}
+
+/// An applied sheet is known only by the files it cut. A file beside it that no
+/// sheet claims may still be one the sheet names but never cut, for instance
+/// because its import failed the first time; only the sheet's text can tell, so
+/// the applied sheets of such a directory are read after all.
+fn read_sheets_that_may_cover_more(
+    source: &dyn LibrarySource,
+    audio: &[PathBuf],
+    sheets: &mut [DirectorySheet],
+) {
+    let unclaimed = audio
+        .iter()
+        .any(|file| !sheets.iter().any(|sheet| sheet_covers(sheet, file)));
+    if !unclaimed {
+        return;
+    }
+    for sheet in sheets
+        .iter_mut()
+        .filter(|sheet| matches!(sheet.state, SheetState::Settled(_)))
+    {
+        sheet.state = read_state(source, &sheet.reference, audio);
     }
 }
 
