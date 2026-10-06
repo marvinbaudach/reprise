@@ -45,7 +45,7 @@ own timestamps are UTC.
 | C4 — airplane mode retry | NOT RUN | PASS / INCONCLUSIVE | steps 1–2 PASS (placeholder stays, no crash, no bytes, genuine `TransientFailure`); step 3 INCONCLUSIVE (portrait retried on relaunch, album cover produced no new file in the observation window) |
 | Combined — backfill running + fresh play | NOT RUN | PASS | 3.657 s from tap to `Computed`, with both the artwork and the track-analysis backfills active concurrently |
 
-The hardware re-run on 2026-10-02 settles A1, A5 and C2 on the physical phone. It
+The hardware re-run on 2026-10-02 settles A1, A4, A5 and C2 on the physical phone. It
 shows C4's album-cover retry happening only after a relaunch. See "Hardware re-run,
 2026-10-02" below.
 
@@ -629,8 +629,30 @@ when the network comes back.
   network callback or a re-request from the visible artwork surfaces.
 - **C2 / mini-player:** a cover downloaded while the mini-player is showing does not
   repaint the mini-player until the next visit.
-- **A4, activity removal:** not attempted. This run did not use the recents swipe on
-  real hardware.
+- **A4, activity removal:** closed by the follow-up below, which passed.
+- The C4 and C2 items shipped through
+  `docs/plans/android-cover-retry-and-repaint.md` (#1061).
+
+### A4 follow-up — recents swipe on hardware (same day)
+
+Both halves pass, with no confound. The fixtures were two probe MP3s with embedded
+art in album "A4 Swipe": "A4 One" (60 s) and "A4 Two" (30 s). Playing One made Two
+the next track. Evidence is in `~/.local/share/reprise-device-run-20261002/a4/`.
+
+- **The task is removed and playback continues.** The swipe marker is at
+  17:19:50.865. The Reprise card was swiped up out of recents with a real 250 ms
+  `input swipe`.
+  - Task #3713 is in `recents-pre.txt` and missing from `recents-post1.txt` and
+    `activities-post1.txt`.
+  - pid 10518 is the same before and after.
+  - The foreground service is still running (`services-post1.txt`).
+  - `poll.log` shows the `media_session` PLAYING with One's position still
+    advancing. Two then played to the end of the queue.
+- **The next track's analysis lands after the swipe.** Two started at
+  17:20:27.3, and `Computed analysis for track 772` followed at 17:20:30.897. No
+  `Computed` line for 772 appears before the swipe. The concurrent library
+  backfill runs on another thread and logs no `Computed` lines. That 772 is Two
+  is inferred from sequential IDs (One was 771) and from the timing.
 
 ### Side effects on the phone
 
