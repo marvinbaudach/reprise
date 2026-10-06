@@ -7,6 +7,7 @@ use libadwaita as adw;
 use reprise_core::browser::navigation::{NavigationIntent, SourceTarget};
 
 use super::library_shell::{self, ActiveContentFocus};
+use super::visible_place;
 use crate::ui::nav_history::NavHistory;
 use crate::ui::sidebar::Sidebar;
 use crate::ui::track_list::TrackList;
@@ -102,10 +103,10 @@ impl MetadataNavigator {
                 else {
                     return;
                 };
-                if let Some(place) = self
-                    .history
-                    .navigate_from(intent, track_list.browser_place())
-                {
+                if let Some(place) = self.history.navigate_from(
+                    intent,
+                    visible_place::origin(&self.content_stack, &track_list),
+                ) {
                     library_shell::route_to_place(
                         &place,
                         &sidebar,
@@ -136,10 +137,10 @@ impl MetadataNavigator {
             }
             return;
         };
-        let Some(place) = self
-            .history
-            .navigate_from(intent, track_list.browser_place())
-        else {
+        let Some(place) = self.history.navigate_from(
+            intent,
+            visible_place::origin(&self.content_stack, &track_list),
+        ) else {
             return;
         };
         let content_pages =

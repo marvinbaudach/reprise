@@ -36,6 +36,36 @@ impl NavPlace {
     }
 }
 
+/// The place the user is leaving, and what produced it (`BROWSE-4a`).
+///
+/// The kind decides how the router may use it: only a page that names a
+/// section of its own may enter history as a place the router never held.
+#[derive(Clone, Debug, PartialEq)]
+pub(in crate::ui) enum Origin {
+    /// A section page that names its own place (Podcasts, the Library Doctor).
+    Section(BrowserPlace),
+    /// The track list's own page: its place refreshes the router's current one.
+    TrackList(BrowserPlace),
+    /// A page with no place of its own (the device card, an unrecognised
+    /// page). The track list's place is handed over but, as for `TrackList`,
+    /// never enters history.
+    Unknown(BrowserPlace),
+}
+
+impl Origin {
+    fn into_place(self) -> BrowserPlace {
+        match self {
+            Self::Section(place) | Self::TrackList(place) | Self::Unknown(place) => place,
+        }
+    }
+}
+
+impl From<BrowserPlace> for Origin {
+    fn from(place: BrowserPlace) -> Self {
+        Self::TrackList(place)
+    }
+}
+
 #[derive(Default)]
 pub(in crate::ui) struct NavHistory {
     navigation: RefCell<Option<BrowserNavigation>>,
@@ -54,7 +84,9 @@ impl NavHistory {
             *navigation = Some(BrowserNavigation::new(new.browser.clone()));
             return;
         };
-        let _ = router.navigate(intent_for(&new.browser));
+        if let Some(intent) = intent_for(&new.browser) {
+            let _ = router.navigate(intent);
+        }
     }
 
     pub(in crate::ui) fn restore(&self, current: BrowserPlace, library_root: BrowserPlace) {
@@ -69,29 +101,44 @@ impl NavHistory {
         self.replace_current(visible_track_place);
         let navigation = self.navigation.borrow();
         let navigation = navigation.as_ref()?;
-        Some((
-            navigation.current().clone(),
-            navigation.library_root().clone(),
-        ))
+        // BROWSE-12: the Doctor is a utility overlay, process-local like the
+        // rest; a restart opens the place behind it, or the Music root.
+        let current = match navigation.current() {
+            BrowserPlace::LibraryDoctor => navigation
+                .previous()
+                .filter(|place| **place != BrowserPlace::LibraryDoctor)
+                .unwrap_or_else(|| navigation.library_root()),
+            current => current,
+        };
+        Some((current.clone(), navigation.library_root().clone()))
     }
 
-    pub(in crate::ui) fn record_route_from(&self, new: &NavPlace, current: BrowserPlace) {
-        self.replace_current(current);
+    /// Records a sidebar-driven switch, capturing the page it leaves.
+    ///
+    /// The sidebar's `on_select` also runs *after* the router has moved —
+    /// replaying Back or Forward, or routing a metadata intent through a
+    /// source row — while the old page is still on screen. Observing then
+    /// would pull the router back to where it left, so the origin only enters
+    /// history when this is a fresh switch to a destination the router does
+    /// not already hold.
+    pub(in crate::ui) fn record_route_from(&self, new: &NavPlace, origin: impl Into<Origin>) {
+        let fresh = !self.replaying_history.get() && !self.holds(new.browser_place());
+        match origin.into() {
+            Origin::Section(place) if fresh => self.observe_origin(place),
+            origin => self.replace_current(origin.into_place()),
+        }
         self.record_route(new);
     }
 
     pub(in crate::ui) fn navigate_from(
         &self,
         intent: NavigationIntent,
-        current: BrowserPlace,
+        origin: impl Into<Origin>,
     ) -> Option<NavPlace> {
-        self.replace_current(current);
-        let transition = self.navigation.borrow_mut().as_mut()?.navigate(intent)?;
-        Some(NavPlace {
-            browser: transition.to,
-        })
+        self.navigate_observing(origin.into(), intent)
     }
 
+    #[cfg(test)]
     pub(in crate::ui) fn go_back(&self) -> Option<NavPlace> {
         let transition = self
             .navigation
@@ -103,11 +150,11 @@ impl NavHistory {
         })
     }
 
-    pub(in crate::ui) fn go_back_from(&self, current: BrowserPlace) -> Option<NavPlace> {
-        self.replace_current(current);
-        self.go_back()
+    pub(in crate::ui) fn go_back_from(&self, origin: impl Into<Origin>) -> Option<NavPlace> {
+        self.navigate_observing(origin.into(), NavigationIntent::Back)
     }
 
+    #[cfg(test)]
     pub(in crate::ui) fn go_forward(&self) -> Option<NavPlace> {
         let transition = self
             .navigation
@@ -119,9 +166,8 @@ impl NavHistory {
         })
     }
 
-    pub(in crate::ui) fn go_forward_from(&self, current: BrowserPlace) -> Option<NavPlace> {
-        self.replace_current(current);
-        self.go_forward()
+    pub(in crate::ui) fn go_forward_from(&self, origin: impl Into<Origin>) -> Option<NavPlace> {
+        self.navigate_observing(origin.into(), NavigationIntent::Forward)
     }
 
     pub(in crate::ui) fn begin_back(&self) {
@@ -132,15 +178,50 @@ impl NavHistory {
         self.replaying_history.set(false);
     }
 
+    /// Refreshes the router's current place from the track list. A place the
+    /// router does not hold is ignored.
     fn replace_current(&self, current: BrowserPlace) {
         if let Some(router) = self.navigation.borrow_mut().as_mut() {
             let _ = router.replace_current(current);
         }
     }
+
+    /// Captures a section the router never held, only for an intent that
+    /// goes somewhere (`BROWSE-4a`).
+    fn navigate_observing(&self, origin: Origin, intent: NavigationIntent) -> Option<NavPlace> {
+        let mut navigation = self.navigation.borrow_mut();
+        let router = navigation.as_mut()?;
+        let transition = match origin {
+            Origin::Section(place) => router.navigate_observing(place, intent),
+            Origin::TrackList(place) | Origin::Unknown(place) => {
+                let _ = router.replace_current(place);
+                router.navigate(intent)
+            }
+        }?;
+        Some(NavPlace {
+            browser: transition.to,
+        })
+    }
+
+    /// Enters a section the router never held as a new place.
+    fn observe_origin(&self, place: BrowserPlace) {
+        if let Some(router) = self.navigation.borrow_mut().as_mut() {
+            let _ = router.observe_visible(place);
+        }
+    }
+
+    fn holds(&self, place: &BrowserPlace) -> bool {
+        self.navigation
+            .borrow()
+            .as_ref()
+            .is_some_and(|router| router.holds(place))
+    }
 }
 
-fn intent_for(place: &BrowserPlace) -> NavigationIntent {
-    match place {
+/// The intent that routes to `place`. None for the Library Doctor: no intent
+/// produces it, it enters history only as an observed origin (`BROWSE-4a`).
+fn intent_for(place: &BrowserPlace) -> Option<NavigationIntent> {
+    Some(match place {
         BrowserPlace::Tracks(track_place) => match &track_place.collection {
             reprise_core::browser::TrackCollection::Library(
                 reprise_core::browser::LibraryScope::All,
@@ -186,7 +267,8 @@ fn intent_for(place: &BrowserPlace) -> NavigationIntent {
         BrowserPlace::Youtube => NavigationIntent::Sidebar(SidebarTarget::Youtube),
         BrowserPlace::Radio => NavigationIntent::Sidebar(SidebarTarget::Radio),
         BrowserPlace::Conversions => NavigationIntent::Sidebar(SidebarTarget::Conversions),
-    }
+        BrowserPlace::LibraryDoctor => return None,
+    })
 }
 
 #[cfg(test)]
@@ -318,5 +400,298 @@ mod tests {
         assert_eq!(nav.session_places(current.clone()), Some((current, root)));
         assert_eq!(nav.go_back(), None);
         assert_eq!(nav.go_forward(), None);
+    }
+
+    fn doctor() -> Origin {
+        Origin::Section(BrowserPlace::LibraryDoctor)
+    }
+
+    fn section(place: BrowserPlace) -> Origin {
+        Origin::Section(place)
+    }
+
+    fn open_album(nav: &NavHistory, visible: Origin) -> NavPlace {
+        nav.navigate_from(
+            NavigationIntent::OpenAlbum {
+                album: AlbumKey::new("Blue", "Joni Mitchell"),
+                anchor_track_id: None,
+            },
+            visible,
+        )
+        .expect("an album is a new destination")
+    }
+
+    #[test]
+    fn browse_4a_back_after_a_jump_from_podcasts_returns_to_podcasts() {
+        let nav = NavHistory::default();
+        nav.record_route(&place(ViewSource::Library));
+        nav.record_route_from(
+            &place(ViewSource::Podcasts),
+            BrowserPlace::from(ViewSource::Library),
+        );
+
+        // The track list still holds the library place behind the section.
+        let album = open_album(&nav, section(BrowserPlace::Podcasts));
+
+        assert_eq!(
+            nav.go_back_from(album.browser_place().clone())
+                .unwrap()
+                .browser_place(),
+            &BrowserPlace::Podcasts
+        );
+    }
+
+    #[test]
+    fn browse_4a_back_after_a_jump_from_the_doctor_returns_to_the_doctor_not_the_last_list() {
+        let nav = NavHistory::default();
+        nav.record_route(&place(ViewSource::Library));
+        nav.record_route_from(
+            &place(ViewSource::Radio),
+            BrowserPlace::from(ViewSource::Library),
+        );
+
+        let album = open_album(&nav, doctor());
+
+        let back = nav.go_back_from(album.browser_place().clone()).unwrap();
+        assert_eq!(back.browser_place(), &BrowserPlace::LibraryDoctor);
+        let back = nav.go_back_from(doctor()).unwrap();
+        assert_eq!(back.browser_place(), &BrowserPlace::Radio);
+    }
+
+    #[test]
+    fn browse_4a_alt_left_out_of_the_doctor_returns_to_the_section_it_was_opened_from() {
+        let nav = NavHistory::default();
+        nav.record_route(&place(ViewSource::Library));
+        nav.record_route_from(
+            &place(ViewSource::Podcasts),
+            BrowserPlace::from(ViewSource::Library),
+        );
+
+        let back = nav.go_back_from(doctor()).unwrap();
+
+        assert_eq!(back.browser_place(), &BrowserPlace::Podcasts);
+    }
+
+    /// Back re-routes through the sidebar, whose `on_select` records the place
+    /// again while the old page is still on screen. That replay must neither
+    /// move the router back nor wipe Forward.
+    #[test]
+    fn browse_4a_the_sidebar_replay_of_a_back_between_sections_keeps_the_router_put() {
+        let nav = NavHistory::default();
+        nav.record_route(&place(ViewSource::Library));
+        nav.record_route_from(
+            &place(ViewSource::Podcasts),
+            BrowserPlace::from(ViewSource::Library),
+        );
+        nav.record_route_from(&place(ViewSource::Radio), section(BrowserPlace::Podcasts));
+
+        let back = nav.go_back_from(section(BrowserPlace::Radio)).unwrap();
+        assert_eq!(back.browser_place(), &BrowserPlace::Podcasts);
+        nav.begin_back();
+        // `on_select` while the Radio page is still the visible one.
+        nav.record_route_from(&back, section(BrowserPlace::Radio));
+        nav.end_back();
+
+        let again = nav.go_back_from(section(BrowserPlace::Podcasts)).unwrap();
+        assert_eq!(
+            again.browser_place(),
+            &BrowserPlace::from(ViewSource::Library)
+        );
+        let forward = nav.go_forward_from(BrowserPlace::from(ViewSource::Library));
+        assert_eq!(
+            forward.unwrap().browser_place(),
+            &BrowserPlace::Podcasts,
+            "Forward survives the replayed record"
+        );
+    }
+
+    /// A metadata intent that routes through the sidebar (a playlist from
+    /// Quick Open) is recorded by `on_select` after the router already moved.
+    #[test]
+    fn browse_4a_a_sidebar_routed_jump_from_the_doctor_still_returns_to_the_doctor() {
+        let nav = NavHistory::default();
+        nav.record_route(&place(ViewSource::Library));
+        nav.record_route_from(
+            &place(ViewSource::Podcasts),
+            BrowserPlace::from(ViewSource::Library),
+        );
+
+        let playlist = nav
+            .navigate_from(
+                NavigationIntent::Sidebar(SidebarTarget::Playlist(7)),
+                doctor(),
+            )
+            .unwrap();
+        // `on_select` runs before the stack leaves the Doctor page.
+        nav.record_route_from(&playlist, doctor());
+
+        let back = nav.go_back_from(playlist.browser_place().clone()).unwrap();
+        assert_eq!(back.browser_place(), &BrowserPlace::LibraryDoctor);
+        let back = nav.go_back_from(doctor()).unwrap();
+        assert_eq!(back.browser_place(), &BrowserPlace::Podcasts);
+    }
+
+    /// Exit A: the Doctor was opened from its row, which never told the router.
+    #[test]
+    fn browse_4a_a_sidebar_click_out_of_an_unrecorded_doctor_enters_it_into_history() {
+        let nav = NavHistory::default();
+        nav.record_route(&place(ViewSource::Library));
+        nav.record_route_from(
+            &place(ViewSource::Podcasts),
+            BrowserPlace::from(ViewSource::Library),
+        );
+
+        nav.record_route_from(&place(ViewSource::Radio), doctor());
+
+        let back = nav.go_back_from(section(BrowserPlace::Radio)).unwrap();
+        assert_eq!(back.browser_place(), &BrowserPlace::LibraryDoctor);
+        let back = nav.go_back_from(doctor()).unwrap();
+        assert_eq!(back.browser_place(), &BrowserPlace::Podcasts);
+    }
+
+    /// Exit B: the Doctor was reached by Back, so the router holds it. Both
+    /// exits must read the same.
+    #[test]
+    fn browse_4a_a_sidebar_click_out_of_a_doctor_reached_by_back_enters_it_into_history() {
+        let nav = NavHistory::default();
+        nav.record_route(&place(ViewSource::Library));
+        nav.record_route_from(
+            &place(ViewSource::Podcasts),
+            BrowserPlace::from(ViewSource::Library),
+        );
+        let album = open_album(&nav, doctor());
+        let back = nav.go_back_from(album.browser_place().clone()).unwrap();
+        assert_eq!(back.browser_place(), &BrowserPlace::LibraryDoctor);
+
+        nav.record_route_from(&place(ViewSource::Radio), doctor());
+
+        let back = nav.go_back_from(section(BrowserPlace::Radio)).unwrap();
+        assert_eq!(back.browser_place(), &BrowserPlace::LibraryDoctor);
+        let back = nav.go_back_from(doctor()).unwrap();
+        assert_eq!(back.browser_place(), &BrowserPlace::Podcasts);
+    }
+
+    fn podcasts_after_library() -> NavHistory {
+        let nav = NavHistory::default();
+        nav.record_route(&place(ViewSource::Library));
+        nav.record_route_from(
+            &place(ViewSource::Podcasts),
+            BrowserPlace::from(ViewSource::Library),
+        );
+        nav
+    }
+
+    fn assert_doctor_left_no_trace(nav: &NavHistory) {
+        let back = nav.go_back_from(section(BrowserPlace::Podcasts)).unwrap();
+        assert_eq!(
+            back.browser_place(),
+            &BrowserPlace::from(ViewSource::Library),
+            "an intent that goes nowhere must not enter the Doctor into history"
+        );
+    }
+
+    #[test]
+    fn browse_4a_an_empty_album_intent_leaves_a_visible_doctor_out_of_history() {
+        let nav = podcasts_after_library();
+
+        let moved = nav.navigate_from(
+            NavigationIntent::OpenAlbum {
+                album: AlbumKey::new("", "Anyone"),
+                anchor_track_id: None,
+            },
+            doctor(),
+        );
+
+        assert_eq!(moved, None);
+        assert_doctor_left_no_trace(&nav);
+    }
+
+    #[test]
+    fn browse_4a_a_reveal_of_no_track_leaves_a_visible_doctor_out_of_history() {
+        let nav = podcasts_after_library();
+
+        let moved = nav.navigate_from(
+            NavigationIntent::RevealTrack {
+                origin: Box::new(BrowserPlace::from(ViewSource::Library)),
+                track_id: 0,
+            },
+            doctor(),
+        );
+
+        assert_eq!(moved, None);
+        assert_doctor_left_no_trace(&nav);
+    }
+
+    #[test]
+    fn browse_4a_forward_with_nothing_ahead_neither_enters_the_doctor_nor_clears_forward() {
+        let nav = podcasts_after_library();
+        let back = nav.go_back_from(section(BrowserPlace::Podcasts)).unwrap();
+        assert_eq!(
+            back.browser_place(),
+            &BrowserPlace::from(ViewSource::Library)
+        );
+
+        assert_eq!(nav.go_forward_from(doctor()), None);
+
+        let forward = nav.go_forward_from(BrowserPlace::from(ViewSource::Library));
+        assert_eq!(forward.unwrap().browser_place(), &BrowserPlace::Podcasts);
+    }
+
+    /// A page with no place of its own hands over the track list's place, and
+    /// a stale trackless place there must not enter history: ImportErrors,
+    /// Podcasts, the device card, a jump, Back.
+    #[test]
+    fn browse_4a_a_page_without_a_place_never_enters_a_stale_track_place_into_history() {
+        let nav = NavHistory::default();
+        nav.record_route(&place(ViewSource::ImportErrors));
+        nav.record_route_from(&place(ViewSource::Podcasts), BrowserPlace::ImportErrors);
+
+        let album = nav
+            .navigate_from(
+                NavigationIntent::OpenAlbum {
+                    album: AlbumKey::new("Blue", "Joni Mitchell"),
+                    anchor_track_id: None,
+                },
+                Origin::Unknown(BrowserPlace::ImportErrors),
+            )
+            .unwrap();
+
+        let back = nav.go_back_from(album.browser_place().clone()).unwrap();
+        assert_eq!(back.browser_place(), &BrowserPlace::Podcasts);
+    }
+
+    /// The session keeps the place behind the Doctor, not the Music root.
+    #[test]
+    fn browse_12_a_doctor_reached_by_back_saves_the_place_behind_it() {
+        let nav = NavHistory::default();
+        let playlist = BrowserPlace::from(ViewSource::Playlist(7));
+        nav.restore(playlist.clone(), BrowserPlace::from(ViewSource::Library));
+        let album = open_album(&nav, doctor());
+        let back = nav.go_back_from(album.browser_place().clone()).unwrap();
+        assert_eq!(back.browser_place(), &BrowserPlace::LibraryDoctor);
+
+        let saved = nav.session_places(BrowserPlace::from(ViewSource::Library));
+
+        assert_eq!(
+            saved,
+            Some((playlist, BrowserPlace::from(ViewSource::Library)))
+        );
+    }
+
+    #[test]
+    fn browse_12_the_doctor_is_never_saved_as_the_last_destination() {
+        let nav = NavHistory::default();
+        let mut root = BrowserPlace::from(ViewSource::Library);
+        root.track_state_mut().unwrap().search = "root query".into();
+        nav.restore(root.clone(), root.clone());
+
+        // The real path to Doctor-as-current: a jump out of it, then Back.
+        let album = open_album(&nav, doctor());
+        let back = nav.go_back_from(album.browser_place().clone()).unwrap();
+        assert_eq!(back.browser_place(), &BrowserPlace::LibraryDoctor);
+
+        let saved = nav.session_places(root.clone());
+
+        assert_eq!(saved, Some((root.clone(), root)));
     }
 }

@@ -3,8 +3,7 @@ use reprise_core::view_source::ViewSource;
 
 use super::Shared;
 
-const LIBRARY_DOCTOR_PAGE: &str = "library-doctor";
-const DEVICE_SYNC_PAGE: &str = "device-sync";
+use crate::ui::window::content_stack::{DEVICE_SYNC_PAGE, LIBRARY_DOCTOR_PAGE};
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub(in crate::ui) enum SidebarPlace {

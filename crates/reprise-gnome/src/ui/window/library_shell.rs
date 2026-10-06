@@ -15,6 +15,7 @@ use super::track_list::TrackList;
 use crate::ui::artist_news::artist_news_worker::ArtistNewsRuntime;
 use crate::ui::nav_history::NavPlace;
 use crate::ui::stats::stats_view::StatsView;
+use reprise_core::browser::BrowserPlace;
 use reprise_core::view_source::ViewSource;
 
 pub(in crate::ui) struct LibraryShell {
@@ -44,7 +45,7 @@ pub(super) fn active_content_target(content_name: Option<&str>) -> Option<Active
         Some("podcasts") => Some(ActiveContentTarget::Podcasts),
         Some("youtube") => Some(ActiveContentTarget::Youtube),
         Some("radio") => Some(ActiveContentTarget::Radio),
-        Some("library-doctor") => Some(ActiveContentTarget::LibraryDoctor),
+        Some(super::content_stack::LIBRARY_DOCTOR_PAGE) => Some(ActiveContentTarget::LibraryDoctor),
         Some("library") => Some(ActiveContentTarget::Tracks),
         _ => None,
     }
@@ -119,7 +120,7 @@ pub(in crate::ui) fn wire_source_routing(
         // re-routes through here too, silenced by its suppression flag.
         nav_history.record_route_from(
             &NavPlace::source(source.clone()),
-            track_list.browser_place(),
+            super::visible_place::origin(&content_stack, &track_list),
         );
         let viewed = {
             let conn = &conn;
@@ -310,7 +311,7 @@ fn route_to_place_with_viewport(
     viewport: crate::ui::view_session::BrowserPlaceViewport,
 ) {
     tracing::debug!(
-        source = %place.view_source().label(),
+        source = %place_label(place),
         reason,
         "history nav: routing to place"
     );
@@ -323,6 +324,14 @@ fn route_to_place_with_viewport(
         .shared
         .scroll_glide
         .clear_deliberate_destination();
+    if place.browser_place() == &BrowserPlace::LibraryDoctor {
+        // BROWSE-4a: Back to the Doctor shows its stack page as it was left —
+        // the inner navigation keeps its page and selection (DOC-7c). Its
+        // chrome and the sidebar marking follow the stack (NAV-18).
+        content_pages.show(super::content_stack::LIBRARY_DOCTOR_PAGE);
+        active_content_focus.focus_later();
+        return;
+    }
     let source = place.view_source();
     match &source {
         ViewSource::Album { .. } | ViewSource::Artist(_) | ViewSource::Genre(_) => {
@@ -352,6 +361,14 @@ fn route_to_place_with_viewport(
     // switch must map the page first); a `false` is logged like every other
     // focus move in this codebase.
     active_content_focus.focus_later();
+}
+
+/// The Doctor has no source; logging its stand-in would claim the library.
+fn place_label(place: &NavPlace) -> String {
+    match place.browser_place() {
+        BrowserPlace::LibraryDoctor => super::content_stack::LIBRARY_DOCTOR_PAGE.to_owned(),
+        _ => place.view_source().label(),
+    }
 }
 
 fn scope_title(source: &ViewSource) -> String {

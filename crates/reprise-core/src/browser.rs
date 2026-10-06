@@ -186,6 +186,10 @@ pub enum BrowserPlace {
     Youtube,
     Radio,
     Conversions,
+    /// The Library Doctor page. A placeless view: it owns no track list and no
+    /// sidebar source, and it is never persisted as the last destination — it
+    /// exists so Back can return to it (`BROWSE-4a`).
+    LibraryDoctor,
 }
 
 impl BrowserPlace {
@@ -213,7 +217,8 @@ impl BrowserPlace {
             | Self::Podcasts
             | Self::Youtube
             | Self::Radio
-            | Self::Conversions => None,
+            | Self::Conversions
+            | Self::LibraryDoctor => None,
         }
     }
 
@@ -233,7 +238,8 @@ impl BrowserPlace {
             | Self::Podcasts
             | Self::Youtube
             | Self::Radio
-            | Self::Conversions => None,
+            | Self::Conversions
+            | Self::LibraryDoctor => None,
         }
     }
 
@@ -248,7 +254,8 @@ impl BrowserPlace {
             | Self::Podcasts
             | Self::Youtube
             | Self::Radio
-            | Self::Conversions => None,
+            | Self::Conversions
+            | Self::LibraryDoctor => None,
         }
     }
 
@@ -281,6 +288,10 @@ impl BrowserPlace {
             Self::Youtube => ViewSource::Youtube,
             Self::Radio => ViewSource::Radio,
             Self::Conversions => ViewSource::Conversions,
+            // The Doctor has no source of its own; the track list underneath
+            // stays on the library. Routing branches on the place before it
+            // asks for a source.
+            Self::LibraryDoctor => ViewSource::Library,
         }
     }
 }

@@ -29,7 +29,9 @@ pub(super) fn wire_nav_back(w: &RuntimeWiring<'_>, scratch: &WiringScratch) {
             let window_title = window_title.clone();
             let active_content_focus = scratch.active_content_focus.clone();
             back_action.connect_activate(move |_, _| {
-                let Some(place) = nav_history.go_back_from(track_list.browser_place()) else {
+                let Some(place) = nav_history.go_back_from(
+                    crate::ui::window::visible_place::origin(&content_stack, &track_list),
+                ) else {
                     tracing::debug!("nav back: history is empty");
                     return;
                 };
@@ -66,7 +68,9 @@ pub(super) fn wire_nav_back(w: &RuntimeWiring<'_>, scratch: &WiringScratch) {
             let window_title = window_title.clone();
             let active_content_focus = scratch.active_content_focus.clone();
             forward_action.connect_activate(move |_, _| {
-                let Some(place) = nav_history.go_forward_from(track_list.browser_place()) else {
+                let Some(place) = nav_history.go_forward_from(
+                    crate::ui::window::visible_place::origin(&content_stack, &track_list),
+                ) else {
                     tracing::debug!("nav forward: nothing ahead");
                     return;
                 };

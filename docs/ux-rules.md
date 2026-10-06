@@ -5950,6 +5950,23 @@ means deterministic and high-confidence, never „without review".
   reveal the station row. These jumps always land in the source list, never a
   detail page; an open channel detail page closes for the jump.
 
+- **BROWSE-4a** [planned] [gtk] — **The point of origin is the page that is
+  visible, not the last track-list place.** Every navigation that records an
+  origin — a metadata jump from a link or from Quick Open, a sidebar click,
+  Back, and Forward — reads it from the content page on screen when it starts.
+  A jump from Podcasts, YouTube, Radio, Releases, Concerts, My Stats or the
+  Library Doctor therefore returns to that page on Back. The Library Doctor
+  enters Back history on every exit — a jump, a sidebar click, Alt+Left —
+  whether it was opened from its row or reached by Back, and it returns as it
+  was left: its own start, review, or result page and its in-session selection
+  are kept (DOC-7c). An intent that goes nowhere (an empty album, a track id
+  that addresses nothing, Forward with nothing ahead) records nothing and
+  clears no Forward history. The Doctor is a process-local overlay and never
+  the saved last destination (BROWSE-12): when it is current at quit, the place
+  behind it is saved. A page that names no place of its own — the opened device
+  card — leaves history as before; covering it is not part of this rule.
+  <!-- REVIEW: rule proposal -->
+
 - **BROWSE-5** [replaced by BROWSE-12] — Session restore previously retained
   sorting and playback origin but always opened the library root.
 
