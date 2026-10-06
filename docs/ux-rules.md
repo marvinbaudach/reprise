@@ -7595,10 +7595,15 @@ no tags of its own to write.
   tag-editing seed and no tag write passes validation for it, because its tags
   live in the sheet and writing the file would change every track in it.
 - **CUE-6** [active] [core] — A path stands for the whole file wherever a lookup
-  takes one. Opening a CUE file queues all its tracks in play order; an M3U or a
-  Rhythmbox playlist that names it resolves to its first track; a rating or
-  play-count import, a sync sidecar and an instrumental promotion address
-  whole-file tracks only, and a sync device path reaches each of the tracks.
+  takes one. Opening a CUE file queues all its tracks in play order; an M3U line
+  that names it adds all its tracks still in the library, in play order, and a
+  run of consecutive lines naming it adds them once, so an exported album comes
+  back as the album; a Rhythmbox playlist that names it resolves to its first
+  track, and so does the phone's player handing the file back, to the first
+  track still in the library; a rating or play-count import, the phone's
+  listens and ratings included, a sync sidecar and an instrumental promotion
+  address whole-file tracks only, and a sync device path reaches each of the
+  tracks.
 - **CUE-7** [active] [core] — Locating a missing CUE track moves the file with
   all of its tracks and leaves their tags alone; the file is compared with the
   sheet by its length, not by a track's title.

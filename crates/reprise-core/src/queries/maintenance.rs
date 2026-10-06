@@ -742,8 +742,9 @@ pub fn query_import_error_count(db: &Db) -> Result<i64, rusqlite::Error> {
 /// counted but not added.
 ///
 /// A file that holds the tracks of a CUE sheet has one row per track. The path
-/// then stands for the first of them: an M3U names files, not tracks inside
-/// them. Callers that mean the whole file use [`track_ids_for_path`].
+/// then stands for the first of them in play order. Callers that mean the whole
+/// file use [`track_ids_for_path`]; a playlist import uses
+/// [`playlist_tracks_for_path`](super::playlist_tracks_for_path).
 pub fn track_id_for_path(db: &Db, path: &str) -> Result<Option<i64>, rusqlite::Error> {
     Ok(track_ids_for_path(db, path)?.first().copied())
 }

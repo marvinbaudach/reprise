@@ -41,7 +41,7 @@ fn cue_6_a_path_lists_every_track_in_the_order_they_play() {
 }
 
 #[test]
-fn cue_6_an_m3u_path_resolves_to_the_first_track_not_the_lowest_id() {
+fn cue_6_the_first_track_of_a_path_is_the_first_in_play_order_not_the_lowest_id() {
     let db = seeded();
 
     assert_eq!(
@@ -294,4 +294,47 @@ fn cue_6_summaries_list_the_tracks_of_a_file_in_play_order() {
         titles(crate::queries::query_track_summaries_added_since(&db, 0).unwrap()),
         ["One", "Two", "Three", "Plain"]
     );
+}
+
+#[test]
+fn cue_6_an_m3u_line_naming_a_cue_file_stands_for_its_tracks_still_in_the_library() {
+    let db = seeded();
+    let tracks = |path| crate::queries::playlist_tracks_for_path(&db, path).unwrap();
+
+    let live = tracks("/m/live.flac").unwrap();
+    assert_eq!(
+        (live.ids.as_slice(), live.cut),
+        ([30, 20, 10].as_slice(), true)
+    );
+    let plain = tracks("/m/plain.flac").unwrap();
+    assert_eq!((plain.ids.as_slice(), plain.cut), ([40].as_slice(), false));
+    assert_eq!(tracks("/m/none.flac"), None);
+
+    db.conn()
+        .execute("UPDATE tracks SET removed_at = 1 WHERE id IN (30, 40)", [])
+        .unwrap();
+    assert_eq!(tracks("/m/live.flac").unwrap().ids, [20, 10]);
+    assert_eq!(tracks("/m/plain.flac"), None);
+}
+
+#[test]
+fn cue_6_consecutive_m3u_lines_naming_one_cue_file_stand_for_it_once() {
+    let db = seeded();
+    let line = |path| {
+        crate::queries::playlist_tracks_for_path(&db, path)
+            .unwrap()
+            .unwrap()
+    };
+    let (live, plain) = (line("/m/live.flac"), line("/m/plain.flac"));
+
+    let ids = crate::queries::playlist_ids(&[
+        live.clone(),
+        live.clone(),
+        live.clone(),
+        plain.clone(),
+        plain,
+        live,
+    ]);
+
+    assert_eq!(ids, [30, 20, 10, 40, 40, 30, 20, 10]);
 }

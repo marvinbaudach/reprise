@@ -100,6 +100,7 @@ mod maintenance;
 mod maintenance_delete;
 mod maintenance_missing;
 mod playlist;
+mod playlist_paths;
 mod queue;
 mod smart;
 mod stats;
@@ -192,6 +193,7 @@ pub use maintenance::{
     undo_tombstone,
 };
 pub use maintenance_missing::mark_track_missing_if_current;
+pub use playlist_paths::{playlist_ids, playlist_tracks_for_path, PathTracks};
 pub use track_gain::effective_gain_db;
 pub use track_summary::TrackSummary;
 // `remove_tracks_impl`/`RemoveGuard` are the internal shared deletion path

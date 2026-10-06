@@ -127,18 +127,22 @@ impl MusicLibrary {
 
     /// Resolves the uri a player was handed back to its library row. `None`
     /// when no present track lives there — a stale uri is an ordinary answer.
+    /// A file cut into tracks by a CUE sheet resolves to the first of its
+    /// tracks, in play order, that is still present.
     #[expect(
         clippy::needless_pass_by_value,
         reason = "UniFFI hands owned strings across the FFI boundary"
     )]
     pub fn track_by_uri(&self, uri: String) -> Result<Option<TrackRow>, LibraryError> {
         let reader = self.reader()?;
-        let Some(id) = queries::track_id_for_path(&reader, &uri).map_err(query_error)? else {
-            return Ok(None);
-        };
-        queries::query_present_track_by_id(&reader, id)
-            .map(|track| track.map(TrackRow::from))
-            .map_err(query_error)
+        for id in queries::track_ids_for_path(&reader, &uri).map_err(query_error)? {
+            if let Some(track) =
+                queries::query_present_track_by_id(&reader, id).map_err(query_error)?
+            {
+                return Ok(Some(TrackRow::from(track)));
+            }
+        }
+        Ok(None)
     }
 }
 
