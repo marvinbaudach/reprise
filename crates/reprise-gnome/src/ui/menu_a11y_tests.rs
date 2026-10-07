@@ -312,7 +312,7 @@ fn gp_10_repeated_flips_remaps_and_calls_connect_one_handler_per_object() {
     assert_eq!(
         connection_count(),
         baseline + APPENDED,
-        "only the appended items may add a connection, one `notify::active` each"
+        "only the appended items may add a connection, one `notify` handler each"
     );
     popover.popdown();
     popover.unparent();
@@ -328,4 +328,28 @@ fn gp_10_the_spoken_name_drops_the_mnemonic_underscore() {
     holder.append(&gtk4::Label::with_mnemonic("_Open"));
 
     assert_eq!(visible_text(holder.upcast_ref()).as_deref(), Some("Open"));
+}
+
+#[test]
+#[ignore = "requires a display; run via xvfb-run"]
+fn gp_10_a_button_property_gtk_relabels_on_keeps_the_items_name() {
+    let _main_context = crate::ui::test_main_context::lock_main_context();
+    gtk4::init().unwrap();
+    let model = gio::Menu::new();
+    model.append(Some("Original"), Some("win.original"));
+    let popover = popover_menu_from_model(&model);
+    let (window, buttons) = popped_up(&popover);
+    let [button] = buttons.as_slice() else {
+        panic!("one item expected, found {}", buttons.len());
+    };
+
+    button.set_property("text", "Renamed");
+    assert_named_by_text(&buttons);
+    button.set_property("accel", "<Control>r");
+    assert_named_by_text(&buttons);
+    button.set_property("menu-name", "elsewhere");
+    assert_named_by_text(&buttons);
+    popover.popdown();
+    popover.unparent();
+    window.close();
 }
