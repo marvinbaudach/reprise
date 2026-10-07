@@ -104,7 +104,7 @@ impl LiveAudioState {
     pub(crate) fn analyze_elapsed(
         &mut self,
         elapsed: Duration,
-    ) -> Option<(SpectrumFrame, BassPressure)> {
+    ) -> Option<(SpectrumFrame, BassPressure, bool)> {
         let target_samples = samples_for_duration(TARGET_PCM_BUFFER_DURATION, self.sample_rate_hz);
         let fill_samples = self.pcm_buffer.samples.len();
         if fill_samples > target_samples.saturating_mul(2) {
@@ -140,6 +140,7 @@ impl LiveAudioState {
         Some((
             SpectrumFrame::from_cava_bars(self.bands).with_bass_pressure(pressure),
             pressure,
+            self.processor.is_waiting_for_boundary(),
         ))
     }
 

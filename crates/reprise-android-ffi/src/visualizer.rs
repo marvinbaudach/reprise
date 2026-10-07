@@ -521,14 +521,19 @@ impl AndroidVisualEngine {
             })
         });
         let live_frame = live_frame.flatten();
-        let ingested_live_frame = if let Some((frame, pressure)) = live_frame {
+        let mut ingested_live_frame = false;
+        let analyzed_live_frame = if let Some((frame, pressure, boundary_waiting)) = live_frame {
             state.engine.set_retain_paused_live_shape(true);
             state.engine.set_has_track(true);
             let playing = state.playing;
             state.set_engine_playing(playing, now);
-            state.engine.ingest(&frame);
-            state.has_ingested = true;
-            state.has_adopted_shape = false;
+            let hold_adopted_shape = state.has_adopted_shape && boundary_waiting;
+            if !hold_adopted_shape {
+                state.engine.ingest(&frame);
+                state.has_ingested = true;
+                state.has_adopted_shape = false;
+                ingested_live_frame = true;
+            }
             state.awaiting_stream_after_reset = false;
             state.has_live_audio = true;
             state.last_live_audio_at = Some(now);
@@ -542,7 +547,7 @@ impl AndroidVisualEngine {
         if ingested_live_frame {
             state.last_live_bands = Some((now, *state.engine.current_bands()));
         }
-        advanced || ingested_live_frame
+        advanced || analyzed_live_frame
     }
 
     /// Returns the scene in the flat format documented by this module.
@@ -719,6 +724,20 @@ impl AndroidVisualEngine {
             .unwrap_or_else(PoisonError::into_inner)
             .as_ref()
             .map_or([0.0; SPECTRUM_BAND_COUNT], |live_audio| live_audio.bands)
+    }
+
+    #[cfg(test)]
+    pub(crate) fn live_boundary_for_testing(&self) -> Option<(bool, f32)> {
+        self.live_audio
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .as_ref()
+            .map(|live_audio| {
+                (
+                    live_audio.processor.is_waiting_for_boundary(),
+                    live_audio.processor.sensitivity(),
+                )
+            })
     }
 
     #[cfg(test)]

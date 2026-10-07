@@ -126,6 +126,22 @@ fn frame_means_after_swipe(adopt: bool) -> Vec<f32> {
         .collect()
 }
 
+fn frame_means_and_boundary_after_swipe(adopt: bool) -> Vec<(f32, bool)> {
+    let mut playback = Playback::new();
+    playback.warm_up(1);
+    playback.swipe(adopt);
+    (0..MEASURED_TICKS)
+        .map(|_| {
+            let frame_mean = mean(&playback.tick(2));
+            let waiting = playback
+                .engine
+                .live_boundary_for_testing()
+                .is_some_and(|(waiting, _)| waiting);
+            (frame_mean, waiting)
+        })
+        .collect()
+}
+
 #[test]
 fn control_run_is_live_and_not_saturated() {
     let control = frame_means_after_swipe(false);
@@ -140,9 +156,15 @@ fn control_run_is_live_and_not_saturated() {
 #[test]
 fn a_swiped_track_change_does_not_pump_the_spectrum() {
     let control = frame_means_after_swipe(false);
-    let seeded = frame_means_after_swipe(true);
+    let seeded = frame_means_and_boundary_after_swipe(true);
 
-    for (index, (control_mean, seeded_mean)) in control.iter().zip(&seeded).enumerate() {
+    for (index, (control_mean, (seeded_mean, waiting))) in control.iter().zip(&seeded).enumerate() {
+        // AC-29 now deliberately holds the adopted shape while the first
+        // window decides. Once released, it must still join the control
+        // without pumping.
+        if *waiting {
+            continue;
+        }
         let deviation = (seeded_mean - control_mean).abs() / control_mean.max(1.0e-3);
         let jump = seeded_mean / control_mean.max(1.0e-3) - 1.0;
         assert!(
@@ -202,4 +224,71 @@ fn a_pending_seed_on_a_fresh_engine_continues_into_the_first_live_frames() {
              frame means={frames:.3?}"
         );
     }
+}
+
+#[test]
+fn ac_29_a_adopted_shape_holds_until_the_quiet_stream_decides_its_level() {
+    const HELD_LEVEL: f32 = 0.8;
+    const LEVEL_TOLERANCE: f32 = 0.02;
+
+    let mut control = Playback::new();
+    control.warm_up(2);
+    let settled_mean = mean(&control.engine.current_bands());
+
+    let mut handed_over = Playback::new();
+    handed_over.engine.note_track_changed();
+    handed_over
+        .engine
+        .adopt_shape(vec![HELD_LEVEL; SPECTRUM_BAND_COUNT]);
+
+    let mut released = false;
+    let mut reached_stream_level = false;
+    let mut waited = false;
+    let mut carried_gain = None;
+    for tick in 0..MEASURED_TICKS {
+        let displayed_mean = mean(&handed_over.tick(2));
+        let (waiting, gain) = handed_over
+            .engine
+            .live_boundary_for_testing()
+            .expect("the quiet stream created its live processor");
+
+        if waiting {
+            waited = true;
+            carried_gain.get_or_insert(gain);
+            assert!(
+                (displayed_mean - HELD_LEVEL).abs() <= LEVEL_TOLERANCE,
+                "tick {tick}: the adopted shape decayed while its boundary was waiting: {displayed_mean:.3}"
+            );
+            continue;
+        }
+
+        if !released {
+            released = true;
+            assert!(
+                (displayed_mean - HELD_LEVEL).abs() > LEVEL_TOLERANCE,
+                "the display stayed held after the first boundary decision"
+            );
+            if let Some(carried_gain) = carried_gain {
+                assert!(
+                    (gain / carried_gain - 1.0).abs() <= 0.03,
+                    "a boundary within the carry band changed gain from {carried_gain} to {gain}"
+                );
+            }
+        }
+        assert!(
+            displayed_mean + LEVEL_TOLERANCE >= settled_mean,
+            "tick {tick}: the handover dipped below the new stream: displayed={displayed_mean:.3}, settled={settled_mean:.3}"
+        );
+        if (displayed_mean - settled_mean).abs() <= LEVEL_TOLERANCE {
+            reached_stream_level = true;
+            break;
+        }
+    }
+
+    assert!(waited, "the adopted shape never entered the boundary hold");
+    assert!(released, "the hold outlived the first decided window");
+    assert!(
+        reached_stream_level,
+        "the handover did not reach the quiet stream's settled level"
+    );
 }

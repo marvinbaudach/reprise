@@ -253,6 +253,10 @@ impl Smoother {
         self.boundary.arm(true);
     }
 
+    pub(super) fn is_waiting_for_boundary(&self) -> bool {
+        self.boundary.is_waiting()
+    }
+
     /// Seeds the smoother with a shape a viewer has already seen, so the next
     /// frame continues it. Leaves the autosensitivity gain, the pending
     /// boundary estimate and `framerate` untouched. Shorter input than

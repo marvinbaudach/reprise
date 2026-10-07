@@ -288,6 +288,10 @@ impl BoundaryEstimator {
         matches!(self.phase, Phase::Measuring | Phase::Waiting)
     }
 
+    pub(super) fn is_waiting(&self) -> bool {
+        self.phase == Phase::Waiting
+    }
+
     /// Feeds one frame: its new samples, whether they carried signal, its
     /// loudest raw bar, and the gain that drew it.
     pub(super) fn advance(
