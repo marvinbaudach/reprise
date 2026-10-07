@@ -2,7 +2,7 @@ use gtk4::prelude::*;
 
 use super::tests::bar;
 use super::FilterModel;
-use crate::ui::test_accessible_label::accessible_label_mismatch;
+use crate::ui::test_accessible_label::{accessible_label_mismatch, has_labelled_by_relation};
 
 fn visible_text(row: &gtk4::ListBoxRow) -> String {
     row.child()
@@ -32,6 +32,10 @@ fn assert_rows_are_named(list: &gtk4::ListBox, page: &str) {
             accessible_label_mismatch(&row, &text),
             None,
             "the {page} row drawn as {text:?} must be announced by that name"
+        );
+        assert!(
+            !has_labelled_by_relation(&row),
+            "the {page} row drawn as {text:?} must not be named through a labelled-by relation"
         );
     }
 }

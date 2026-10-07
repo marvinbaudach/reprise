@@ -1,7 +1,7 @@
 use gtk4::prelude::*;
 
 use super::*;
-use crate::ui::test_accessible_label::accessible_label_mismatch;
+use crate::ui::test_accessible_label::{accessible_label_mismatch, has_labelled_by_relation};
 
 fn rows(list: &gtk4::ListBox) -> Vec<gtk4::ListBoxRow> {
     std::iter::successors(list.first_child(), gtk4::prelude::WidgetExt::next_sibling)
@@ -21,6 +21,10 @@ fn assert_row_names(list: &gtk4::ListBox, expected: &[&str], page: &str) {
             accessible_label_mismatch(row, name),
             None,
             "the {page} row must be announced as {name:?}"
+        );
+        assert!(
+            !has_labelled_by_relation(row),
+            "the {page} row {name:?} must not be named through a labelled-by relation"
         );
     }
 }
@@ -42,6 +46,10 @@ fn gp_10_browse_chooser_rows_are_named_by_their_text() {
             accessible_label_mismatch(row, &name),
             None,
             "the facet row {name:?} must be announced by that name"
+        );
+        assert!(
+            !has_labelled_by_relation(row),
+            "the facet row {name:?} must not be named through a labelled-by relation"
         );
     }
 
