@@ -504,6 +504,7 @@ private fun WideShortNowPlayingContent(
     Row(
         modifier = Modifier
             .fillMaxSize()
+            .sheetNavigationBarPadding(WIDE_SHORT_SHEET_INSET_SIDES)
             .padding(horizontal = 16.dp, vertical = 8.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
