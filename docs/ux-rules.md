@@ -622,6 +622,18 @@ result.
   Proven at the session boundary (the port receives the re-resolved gains and
   no play or re-queue) and in the port (the gain sink applies them); the audible
   result on a device is a manual check.
+- **PLAY-22** [planned] [core] — **A CUE track plays from its own start to its
+  own end, and its seek bar and time are its own.** A track a CUE sheet cuts
+  from a larger file starts at its own first sample, not at the file's start
+  (within 20 ms). Its elapsed time counts from zero and its duration is its own
+  length, never the file's; a seek lands inside the track, never before its
+  start or past its end. At its end it stops being heard and finishes as a
+  track does. The last track of a file whose end lies within one second of the
+  file's duration plays to the end of the file, because the sheet's end for it
+  is only a metadata estimate. A whole file plays, reports and seeks as before.
+  Proven by the GStreamer backend tests on a generated file with a tone where
+  the track starts.
+  <!-- REVIEW: rule proposal -->
 - **SEEK-1** [active] [gtk] — **The seek bar's colour is a reading, not a
   decoration, and it is averaged over time.** The spectral centroid swings
   from beat to beat: taken per bar it puts cyan next to magenta inside two

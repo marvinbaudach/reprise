@@ -19,6 +19,9 @@ use crate::player_pipeline::{
     attach_bus_watch, build_playbin, configure_download_buffering, path_to_uri,
     validated_playback_uri,
 };
+use segment::{SegmentGate, SegmentHandle};
+
+mod segment;
 
 /// Default playback volume before the user ever moves the slider — full scale,
 /// matching `playbin3`'s own `volume` property default. Also the value the
@@ -107,6 +110,9 @@ pub struct Player {
     /// generations" contract. Stamped onto events as a `StreamEvent` for
     /// `new_with_generation` consumers.
     stream_generation: Arc<AtomicU64>,
+    /// The stretch of the file a CUE track covers, while one plays — see
+    /// `player/segment.rs`. Shared with the position ticker.
+    segments: SegmentHandle,
 }
 
 impl Player {
@@ -165,6 +171,7 @@ impl Player {
         let incoming: IncomingSlot = Arc::new(Mutex::new(None));
         let spectrum_enabled = Arc::new(AtomicBool::new(false));
         let cava_stream_generation = Arc::new(AtomicU64::new(0));
+        let segments = SegmentGate::new(on_event.clone());
 
         let playbin = build_playbin(
             &effects.lock().unwrap_or_else(PoisonError::into_inner),
@@ -211,6 +218,7 @@ impl Player {
         // only long enough to clone the `gst::Element` handle out (a cheap
         // refcount bump) — the actual state/position queries run outside the lock.
         let ticker = engine.clone();
+        let ticker_segments = segments.clone();
         std::thread::spawn(move || {
             let mut last_stable_duration_ms = 0;
             loop {
@@ -230,18 +238,19 @@ impl Player {
                         .query_duration::<gst::ClockTime>()
                         .map_or(0, |t| t.mseconds() as i64);
                     let handoff_pending = ticker.handoff_pending.load(Ordering::SeqCst);
-                    let duration_ms = reported_duration_ms(
-                        queried_duration_ms,
-                        last_stable_duration_ms,
-                        handoff_pending,
-                    );
+                    let whole_file = || {
+                        let duration_ms = reported_duration_ms(
+                            queried_duration_ms,
+                            last_stable_duration_ms,
+                            handoff_pending,
+                        );
+                        (position_ms, duration_ms)
+                    };
+                    let (position_ms, duration_ms) =
+                        ticker_segments.send_tick(position_ms, queried_duration_ms, whole_file);
                     if !handoff_pending && queried_duration_ms > 0 {
                         last_stable_duration_ms = queried_duration_ms;
                     }
-                    (ticker.on_event)(PlayerEvent::Position {
-                        position_ms,
-                        duration_ms,
-                    });
                     ticker.maybe_start(position_ms, duration_ms);
                 }
             }
@@ -263,6 +272,7 @@ impl Player {
             spectrum_enabled,
             cava_stream_generation,
             stream_generation,
+            segments,
         })
     }
 
@@ -301,6 +311,7 @@ impl Player {
     fn reset_transition(&self) {
         self.abort_crossfade();
         self.reset_gapless();
+        self.segments.reset();
     }
 
     /// Clears the gapless slot and the handoff flag. Called on every manual
@@ -321,12 +332,20 @@ impl Player {
 
     /// One playback attempt on the *current* pipeline: `Null` → set the new
     /// URI → `Playing`. Shared by `play`'s first attempt and its post-
-    /// rebuild retry (DRY) — see `play`'s doc comment.
+    /// rebuild retry (DRY) — see `play`'s doc comment. A CUE track's
+    /// `segment` is prerolled and sought to before `Playing` (see
+    /// `segment::start_segment`).
     ///
     /// Bumps `stream_generation` only once `Playing` is entered (a failed
     /// attempt never emits an event, nothing to mislabel), still under the
     /// `playbin` lock so no event — `StateChanged` below included — sees stale.
-    fn try_play(&self, uri: &str, live: bool, gain_db: f64) -> Result<(), PlaybackError> {
+    fn try_play(
+        &self,
+        uri: &str,
+        live: bool,
+        gain_db: f64,
+        segment: Option<(i64, i64)>,
+    ) -> Result<(), PlaybackError> {
         let playbin = self
             .playbin
             .lock()
@@ -337,6 +356,9 @@ impl Player {
         configure_download_buffering(&playbin, uri, live)?;
         set_playbin_track_gain(&playbin, gain_db)?;
         playbin.set_property("uri", uri);
+        if let Some(segment) = segment {
+            segment::start_segment(&playbin, &self.segments, segment)?;
+        }
         playbin
             .set_state(gst::State::Playing)
             .map_err(|e| PlaybackError::Backend(format!("GStreamer: {e}")))?;
@@ -352,11 +374,12 @@ impl Player {
         source: &str,
         live: bool,
         gain_db: f64,
+        segment: Option<(i64, i64)>,
     ) -> Result<(), PlaybackError> {
         // A manual jump invalidates every gapless/crossfade transition. This
         // applies equally to local paths and external media.
         self.reset_transition();
-        match self.try_play(uri, live, gain_db) {
+        match self.try_play(uri, live, gain_db, segment) {
             Ok(()) => Ok(()),
             Err(error) => {
                 tracing::warn!(
@@ -365,7 +388,7 @@ impl Player {
                     "playback failed; rebuilding pipeline and retrying once"
                 );
                 self.rebuild_playbin()?;
-                self.try_play(uri, live, gain_db)
+                self.try_play(uri, live, gain_db, segment)
             }
         }
     }
@@ -453,17 +476,17 @@ impl PlaybackBackend for Player {
     /// to guarantee (a deleted file must never crash *or dead-end* the app).
     fn play(&self, item: PlaybackItem<'_>) -> Result<(), PlaybackError> {
         let uri = path_to_uri(item.path)?;
-        self.play_resolved_uri(&uri, item.path, false, item.gain_db)
+        self.play_resolved_uri(&uri, item.path, false, item.gain_db, item.segment)
     }
 
     fn play_uri(&self, uri: &str) -> Result<(), PlaybackError> {
         let uri = validated_playback_uri(uri)?;
-        self.play_resolved_uri(&uri, uri.as_str(), false, 0.0)
+        self.play_resolved_uri(&uri, uri.as_str(), false, 0.0, None)
     }
 
     fn play_live_uri(&self, uri: &str) -> Result<(), PlaybackError> {
         let uri = validated_playback_uri(uri)?;
-        self.play_resolved_uri(&uri, uri.as_str(), true, 0.0)
+        self.play_resolved_uri(&uri, uri.as_str(), true, 0.0, None)
     }
 
     fn toggle_pause(&self) -> Result<PlaybackState, PlaybackError> {
@@ -483,6 +506,9 @@ impl PlaybackBackend for Player {
         Ok(next.1)
     }
 
+    /// Seeks within the current track. A CUE track's `position_ms` is its
+    /// own: the seek lands sample-accurately inside the track's stretch of
+    /// the file. A whole file seeks to the nearest key unit, as it always has.
     fn seek_to(&self, position_ms: i64) -> Result<(), PlaybackError> {
         // A seek within the current track abandons any crossfade that may have
         // begun in its tail (the overlap position no longer applies); the
@@ -490,11 +516,21 @@ impl PlaybackBackend for Player {
         // is left intact so an already-in-progress fade that consumed it does
         // not silently lose the successor for the rest of the track.
         self.abort_crossfade();
+        let (flags, target_ms) = match self.segments.seek_target_ms(position_ms) {
+            Some(file_position_ms) => (
+                gst::SeekFlags::FLUSH | gst::SeekFlags::ACCURATE,
+                file_position_ms,
+            ),
+            None => (
+                gst::SeekFlags::FLUSH | gst::SeekFlags::KEY_UNIT,
+                position_ms,
+            ),
+        };
         let playbin = self.playbin.lock().unwrap_or_else(PoisonError::into_inner);
         playbin
             .seek_simple(
-                gst::SeekFlags::FLUSH | gst::SeekFlags::KEY_UNIT,
-                gst::ClockTime::from_mseconds(position_ms.max(0) as u64),
+                flags,
+                gst::ClockTime::from_mseconds(target_ms.max(0) as u64),
             )
             .map_err(|e| PlaybackError::Backend(format!("GStreamer: {e}")))
     }
