@@ -784,3 +784,6 @@ fn list_smart_recently_added_seed() {
 
 #[path = "playlists_role_tests.rs"]
 mod role_tests;
+
+#[path = "playlists_contention_tests.rs"]
+mod contention_tests;
