@@ -7,7 +7,7 @@ msgid ""
 msgstr ""
 "Project-Id-Version: Reprise 0.1.0\n"
 "Report-Msgid-Bugs-To: Marvin Baudach\n"
-"POT-Creation-Date: 2026-10-07 11:34+0200\n"
+"POT-Creation-Date: 2026-10-07 11:53+0200\n"
 "PO-Revision-Date: 2026-07-20 11:38+0200\n"
 "Last-Translator: Reprise contributors\n"
 "Language-Team: French\n"
@@ -5220,6 +5220,24 @@ msgstr ""
 #, rust-format
 msgid "{count} values"
 msgstr ""
+
+#: crates/reprise-gnome/src/ui/strings_tag_edit.rs:289
+#, rust-format
+msgid ""
+"This CUE track has no tags of its own to edit: its title and artist come "
+"from its sheet"
+msgid_plural ""
+"These {count} CUE tracks have no tags of their own to edit: their titles and "
+"artists come from their sheets"
+msgstr[0] ""
+msgstr[1] ""
+
+#: crates/reprise-gnome/src/ui/strings_tag_edit.rs:300
+#, rust-format
+msgid "{count} CUE track left out: its tags come from its sheet"
+msgid_plural "{count} CUE tracks left out: their tags come from their sheets"
+msgstr[0] ""
+msgstr[1] ""
 
 #: crates/reprise-gnome/src/ui/strings_track_menu.rs:5
 msgid "Add to queue"

@@ -18,7 +18,6 @@
 //! this file among the modules that must route background work through that
 //! helper, which is what caught the hand-rolled version.
 
-use std::path::PathBuf;
 use std::rc::Rc;
 
 use gtk4::gio;
@@ -28,8 +27,7 @@ use gtk4::prelude::*;
 use libadwaita as adw;
 use libadwaita::prelude::*;
 use reprise_core::library::tag_edit::{
-    apply_track_writes, live_track_edit_seed_by_path, track_edit_seed_by_id, EditableTags,
-    TagBatchReport, TagWriteFailure, TrackWrite,
+    apply_track_writes, live_track_edit_seed_by_path, TagBatchReport, TagWriteFailure, TrackWrite,
 };
 use reprise_core::library::tag_edit_session::SessionTrack;
 use reprise_core::view_source::ViewSource;
@@ -38,6 +36,7 @@ use crate::ui::one_shot_task;
 use crate::ui::player_controller::PlayerController;
 use crate::ui::sidebar::Sidebar;
 use crate::ui::strings;
+use crate::ui::tag_edit::tag_edit_selection::{self as selection, TagEditChoice};
 use crate::ui::tag_edit::tag_editor;
 use crate::ui::tag_edit::tag_editor_failures;
 use crate::ui::tag_edit::tag_reload_anchor::{
@@ -51,7 +50,6 @@ use crate::ui::track_list::tag_mutation_refresh::{
 use crate::ui::track_list::track_list_activation::current_queue_ids;
 use crate::ui::track_list::track_list_reload::{capture_reload_anchor, reload_with_anchor};
 use crate::ui::track_list::{show_toast, Shared, TrackList};
-use crate::ui::track_list_context_menu::current_selection_positions;
 use reprise_core::db::Db;
 
 pub(in crate::ui) const ACTION_EDIT_TAGS: &str = "edit-tags";
@@ -126,94 +124,39 @@ pub(in crate::ui) fn add_action(group: &gio::SimpleActionGroup, shared: &Rc<Shar
     group.add_action(&action);
 }
 
-/// Builds one `SessionTrack` plus its bitrate from a `models::Track` row —
-/// the in-memory data the visible list already has, no disk re-read needed
-/// for the normal open-from-selection path.
-fn session_track_from_model(track: &reprise_core::models::Track) -> (SessionTrack, Option<u32>) {
-    let tags = EditableTags {
-        title: track.title.clone(),
-        artist: track.artist.clone(),
-        album: track.album.clone(),
-        album_artist: track.album_artist.clone(),
-        year: track.year.and_then(|value| u32::try_from(value).ok()),
-        track_no: track.track_no.and_then(|value| u32::try_from(value).ok()),
-        genre: track.genre.clone(),
-    };
-    let session_track = SessionTrack {
-        id: track.id,
-        path: PathBuf::from(&track.path),
-        tags,
-        rating: track.rating,
-    };
-    let bitrate = track
-        .bitrate_kbps
-        .and_then(|value| u32::try_from(value).ok());
-    (session_track, bitrate)
-}
-
-fn tracks_and_bitrates_from_selection(
-    shared: &Rc<Shared>,
-) -> Option<(Vec<SessionTrack>, Vec<Option<u32>>)> {
-    let positions = current_selection_positions(shared);
-    if positions.is_empty() {
-        return None;
-    }
-    let mut tracks = Vec::with_capacity(positions.len());
-    let mut bitrates = Vec::with_capacity(positions.len());
-    for position in positions {
-        let track = shared.model.track_at(position)?;
-        // CTX-8: tags are edited on present files only — missing rows are
-        // skipped, so a mixed selection edits the present subset and the
-        // editor title counts only those. An all-missing selection yields
-        // None (no editor), matching the menu's disabled edit-tags state.
-        if track.is_missing() {
-            continue;
-        }
-        let (session_track, bitrate) = session_track_from_model(&track);
-        tracks.push(session_track);
-        bitrates.push(bitrate);
-    }
-    (!tracks.is_empty()).then_some((tracks, bitrates))
-}
-
-/// Fresh, pending-free `SessionTrack`s for an explicit id list (FB-3's
-/// "Edit failed tracks…" retry path) — re-reads path/rating from the DB and
-/// tags straight from the file, since these ids may not even be in the
-/// currently visible/filtered list anymore.
-fn tracks_and_bitrates_for_ids(db: &Db, ids: &[i64]) -> Vec<(SessionTrack, Option<u32>)> {
-    ids.iter()
-        .filter_map(|&id| {
-            let seed = track_edit_seed_by_id(db, id).ok().flatten()?;
-            let tags = reprise_core::library::tag_edit::read_editable_tags(&seed.path).ok()?;
-            Some((
-                SessionTrack {
-                    id: seed.id,
-                    path: seed.path,
-                    tags,
-                    rating: seed.rating,
-                },
-                seed.bitrate_kbps,
-            ))
-        })
-        .collect()
-}
-
 fn begin(shared: &Rc<Shared>) {
-    let Some((tracks, bitrates)) = tracks_and_bitrates_from_selection(shared) else {
-        tracing::debug!("tag editor requested without a fully resolvable selection");
-        return;
-    };
-    open_editor(shared, tracks, &bitrates);
+    open_choice(shared, selection::from_selection(shared));
 }
 
 pub(in crate::ui) fn begin_for_ids(shared: &Rc<Shared>, ids: &[i64]) {
-    let entries = tracks_and_bitrates_for_ids(&shared.conn, ids);
-    if entries.is_empty() {
+    let choice = selection::for_ids(&shared.conn, ids);
+    if choice == TagEditChoice::Nothing {
         tracing::warn!("tag editor retry: none of the failed tracks could be re-read");
-        return;
     }
-    let (tracks, bitrates): (Vec<_>, Vec<_>) = entries.into_iter().unzip();
-    open_editor(shared, tracks, &bitrates);
+    open_choice(shared, choice);
+}
+
+/// Opens the editor on what a selection may edit, or says why it cannot
+/// (CUE-12).
+fn open_choice(shared: &Rc<Shared>, choice: TagEditChoice<selection::Editable>) {
+    match choice {
+        TagEditChoice::Edit {
+            tracks,
+            cue_left_out,
+        } => {
+            let (tracks, bitrates): (Vec<_>, Vec<_>) = tracks.into_iter().unzip();
+            open_editor(shared, tracks, &bitrates);
+            if cue_left_out > 0 {
+                show_toast(shared, &strings::tag_edit_cue_left_out(cue_left_out));
+            }
+        }
+        TagEditChoice::CueOnly { count } => {
+            show_toast(shared, &strings::tag_edit_cue_only_notice(count));
+        }
+        TagEditChoice::Nothing => {
+            tracing::debug!("tag editor requested without a fully resolvable selection");
+        }
+    }
 }
 
 /// G1 (TAG-4): the browse snapshot for a single-track open — the visible
@@ -283,8 +226,9 @@ fn browsable_snapshot(shared: &Rc<Shared>, ids: &[i64]) -> Option<tag_editor::Br
     let mut tracks = Vec::with_capacity(ids.len());
     let mut bitrates = Vec::with_capacity(ids.len());
     for id in ids {
-        if let Some(track) = by_id.get(id) {
-            let (session_track, bitrate) = session_track_from_model(track);
+        // A CUE track has no tags of its own to step to (CUE-12).
+        if let Some(track) = by_id.get(id).filter(|track| track.segment.is_none()) {
+            let (session_track, bitrate) = selection::session_track_from_model(track);
             tracks.push(session_track);
             bitrates.push(bitrate);
         }
@@ -723,9 +667,10 @@ pub(in crate::ui) fn arm_smoke(shared: &Rc<Shared>) {
             return;
         }
         shared.selection.select_range(0, count, true);
-        let Some((tracks, bitrates)) = tracks_and_bitrates_from_selection(&shared) else {
+        let TagEditChoice::Edit { tracks, .. } = selection::from_selection(&shared) else {
             return;
         };
+        let (tracks, bitrates): (Vec<_>, Vec<_>) = tracks.into_iter().unzip();
         let SmokeTagEditMode::SaveTitle(title) = mode else {
             open_editor(&shared, tracks, &bitrates);
             return;

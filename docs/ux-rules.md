@@ -7887,6 +7887,13 @@ no tags of its own to write.
   library instead, as Remove from Library hides them, and the confirmation
   counts the files it moves to Trash apart from the CUE tracks it hides.
   <!-- REVIEW: rule proposal -->
+- **CUE-12** [active] [gtk] — The tag editor leaves tracks cut from a CUE sheet
+  out (CUE-5 stays the core refusal). A selection of nothing but CUE tracks gets
+  a notice that their tags come from their sheet instead of an editor; a mixed
+  selection opens the editor on the whole-file tracks and says how many CUE
+  tracks were left out. "Edit failed tracks…" and stepping through the list in
+  single-track mode leave them out the same way.
+  <!-- REVIEW: rule proposal -->
 - **CUE-13** [active] [core] — The Library Doctor never checks a track cut from a
   CUE sheet, whatever its scope (whole library, current view, queue or
   selection) and through MCP alike: every proposal it makes is a tag write, and

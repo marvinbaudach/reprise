@@ -1,6 +1,8 @@
 use super::*;
 use crate::ui::track_list::reload_restore;
+use reprise_core::library::tag_edit::EditableTags;
 use std::io::Write;
+use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
 
 #[derive(Clone, Default)]
