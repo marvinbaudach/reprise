@@ -72,9 +72,9 @@ class NowPlayingSceneEngineTest {
         // Bars used to fade with `near`, the panel's distance from the pager's centre — so the
         // panel that just became live could lose its bars again the instant a swipe carried it
         // away from dead centre, even though it is the one panel guaranteed to have something to
-        // scene once PCM starts arriving. Neighbours are locked onto NativeVisualSceneEngineFactory
-        // (see only_the_current_panel_uses_the_live_audio_scene_factory), so the live slot is the
-        // only place this recording factory can observe the real call site.
+        // scene once PCM starts arriving. Neighbours own no engine (see
+        // only_the_current_panel_owns_a_scene_engine), so the live slot is the only place this
+        // recording factory can observe the real call site.
         val factory = RecordingSceneEngineFactory()
         val analysis = ReadySpectrogramAnalysis()
         val surfaceState = MobileSurfaceViewModel()

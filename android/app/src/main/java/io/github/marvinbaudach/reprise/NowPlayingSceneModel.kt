@@ -153,7 +153,6 @@ internal fun panelHasVisualData(
  */
 internal fun panelCanMirrorLiveScene(
     isLivePanel: Boolean,
-    storedFrameCount: Int,
     liveSceneAvailable: Boolean,
 ): Boolean = !isLivePanel && liveSceneAvailable
 
@@ -168,25 +167,22 @@ internal fun panelCanMirrorLiveScene(
  */
 internal fun panelMirrorsLiveScene(
     isLivePanel: Boolean,
-    storedFrameCount: Int,
     near: Float,
     liveSceneAvailable: Boolean,
-): Boolean = panelCanMirrorLiveScene(isLivePanel, storedFrameCount, liveSceneAvailable) && near > 0f
+): Boolean = panelCanMirrorLiveScene(isLivePanel, liveSceneAvailable) && near > 0f
 
 /**
  * Whether a newly created live engine should adopt the outgoing live engine's
  * bar shape instead of starting from zero.
  *
- * Production gives each panel a new lease over one shared live engine (see
- * [visualSceneFactoryForPanel]). The explicit `noteTrackChanged()` call resets
- * that engine's CAVA history, which otherwise leaves a bare peak cap with no
- * bars underneath for one frame; the seed carries the displayed shape across
- * that reset. Only the panel taking over the live slot adopts anything — a
- * non-live panel's engine never scenes live audio, and a panel that keeps the
- * live slot across a recomposition has no `previous` to speak of (`created`
- * did not change). In production `previous !== created` is always true
- * because every `create()` returns a new lease; it only guards test doubles
- * that return the same engine instance.
+ * Production creates an engine only for the panel taking over the live slot
+ * (see [visualSceneFactoryForPanel]). The explicit `noteTrackChanged()` call
+ * resets that engine's CAVA history, which otherwise leaves a bare peak cap
+ * with no bars underneath for one frame; the seed carries the displayed shape
+ * across that reset. A panel that keeps the live slot across a recomposition
+ * has no `previous` to speak of (`created` did not change). In production
+ * `previous !== created` is always true because every `create()` returns a new
+ * lease; it only guards test doubles that return the same engine instance.
  */
 internal fun shouldAdoptLiveShape(
     live: Boolean,

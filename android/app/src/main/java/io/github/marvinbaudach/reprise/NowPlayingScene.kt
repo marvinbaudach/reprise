@@ -282,8 +282,12 @@ private fun NowPlayingPanelLayer(
             }
         }
     }
-    val frameSink = remember(visualEngine) { visualEngine?.let(::visualSceneFrameSink) }
-    val drawRevision = DriveScene(state, playback, motion, frameSink)
+    val drawRevision = if (isLivePanel) {
+        val frameSink = remember(visualEngine) { visualEngine?.let(::visualSceneFrameSink) }
+        DriveScene(state, playback, motion, frameSink)
+    } else {
+        liveScene.drawRevision
+    }
     if (isLivePanel) {
         // The revision write is what invalidates NowPlayingFogLayer's canvas:
         // it is the one field here that changes every scene frame, and the
@@ -301,11 +305,10 @@ private fun NowPlayingPanelLayer(
     val frozenScene = rememberFrozenSceneBytes(panel.track.id)
     val canMirrorLiveScene = panelCanMirrorLiveScene(
         isLivePanel,
-        frames.frameCount,
         liveSceneAvailable = liveScene.engine != null,
     )
     val mirroredEngine = liveScene.engine.takeIf {
-        panelMirrorsLiveScene(isLivePanel, frames.frameCount, near, liveSceneAvailable = it != null)
+        panelMirrorsLiveScene(isLivePanel, near, liveSceneAvailable = it != null)
     }
     val hasVisualData = panelHasVisualData(
         frames.frameCount,
@@ -370,7 +373,10 @@ private fun NowPlayingPanelLayer(
         // A resting neighbour sits off the screen: it draws no bars at all, so
         // the frozen picture it keeps for the next swipe costs nothing per frame.
         val onScreen = isLivePanel || near > 0f
-        if (visualEngine != null && onScreen && (barsOpacity > 0f || awaitingFirstLiveScene)) {
+        if ((visualEngine != null || mirroredEngine != null) &&
+            onScreen &&
+            (barsOpacity > 0f || awaitingFirstLiveScene)
+        ) {
             Canvas(
                 Modifier
                     .size(COVER_SIZE_DP.dp)
@@ -386,7 +392,7 @@ private fun NowPlayingPanelLayer(
                         accent.green,
                         accent.blue,
                     )
-                    isLivePanel || frames.frameCount > 0 -> visualEngine.sceneBytes(size.width, size.height)
+                    visualEngine != null -> visualEngine.sceneBytes(size.width, size.height)
                     else -> ByteArray(0)
                 }
                 drawPlayedVisualizer(
@@ -416,7 +422,7 @@ private fun rememberVisualSceneEngine(
     // still its outgoing engine — its DisposableEffect that would null this
     // out has not run yet (see `shouldAdoptLiveShape`).
     val previousLiveEngine = liveScene.engine
-    val engine: VisualSceneEngine? = remember(factory) { factory.create() }
+    val engine: VisualSceneEngine? = remember(factory) { factory?.create() }
     // Read alongside engine creation, not inside the adopt effect below: by
     // the time effects run, the outgoing panel's own `DisposableEffect(engine)
     // { onDispose { engine?.close() } }` may already have closed
@@ -465,7 +471,7 @@ private fun rememberVisualSceneEngine(
 internal fun visualSceneFactoryForPanel(
     live: Boolean,
     liveFactory: VisualSceneEngineFactory,
-): VisualSceneEngineFactory = if (live) liveFactory else NativeVisualSceneEngineFactory
+): VisualSceneEngineFactory? = liveFactory.takeIf { live }
 
 internal fun updateVisualSceneEngine(
     engine: VisualSceneEngine,
@@ -503,13 +509,13 @@ private fun rememberFrozenSceneBytes(trackId: Long): FrozenSceneBytes =
 /**
  * Keeps a panel's last drawn scene buffer alive across its own engine swaps.
  *
- * A panel's [VisualSceneEngine] is replaced the moment it crosses into (or
- * out of) the live slot — see [visualSceneFactoryForPanel] — and a freshly
- * live engine reports an empty scene ([VisualSceneEngine.sceneBytes]) until
+ * A neighbour has no engine of its own: it stores the tinted scene it mirrors
+ * from the live engine. When it crosses into the live slot, its freshly
+ * created engine reports an empty scene ([VisualSceneEngine.sceneBytes]) until
  * it has ingested its first frame (`has_ingested` on the Rust side). Keyed on
- * the panel's own track rather than on the engine, this instance survives
- * exactly that swap and hands back the panel's last non-empty picture in the
- * gap, so the transition never draws nothing.
+ * the panel's own track rather than on the engine, this instance survives that
+ * handover and returns the mirrored picture in the gap, so the transition
+ * never draws nothing.
  */
 internal class FrozenSceneBytes {
     private var lastNonEmpty: ByteArray = ByteArray(0)
