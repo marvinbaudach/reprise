@@ -120,7 +120,7 @@ const LAST_IN_FILE: &str = "t.segment_index >= MAX( \
                          AND e.device IS t.device AND e.inode IS t.inode) \
                      OR ((e.device IS NULL OR e.inode IS NULL) AND e.path = t.path)), 0))";
 
-/// Whether `track_id` is the last track of its file, see [`LAST_IN_FILE`]; a
+/// Whether `track_id` is the last track of its file, see `LAST_IN_FILE`; a
 /// track that does not exist is not.
 pub fn track_is_last_in_file(db: &Db, track_id: i64) -> Result<bool, DbError> {
     let last: Option<bool> = db
