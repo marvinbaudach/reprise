@@ -12,6 +12,9 @@ use rusqlite::Connection;
 
 use super::source::{LibraryEntry, LibrarySource};
 
+/// How far a reported track start may lie from the phone's own: one CD frame.
+const SEGMENT_START_TOLERANCE_MS: i64 = 14;
+
 #[derive(Default)]
 pub(super) struct MobileSyncDiscovery {
     metadata_list: Option<PathBuf>,
@@ -125,6 +128,35 @@ impl MobileSyncDiscovery {
             )?;
             changed = changed.saturating_add(u32::try_from(rows).unwrap_or(u32::MAX));
         }
+        for entry in &list.segments {
+            let Some(track_path) = self.tracks_by_device_path.get(&entry.device_path) else {
+                continue;
+            };
+            // The track of the file starting nearest the start the desktop
+            // reported, within one CD frame (CUE-17).
+            let rows = conn.execute(
+                "UPDATE tracks SET rating = ?1, play_count = ?2, \
+                                   rated_at = CASE WHEN rating IS NOT ?1 THEN ?3 ELSE rated_at END \
+                 WHERE id = (SELECT id FROM tracks \
+                              WHERE path = ?4 AND segment_index > 0 \
+                                AND abs(segment_start_ms - ?5) <= ?6 \
+                              ORDER BY abs(segment_start_ms - ?5) LIMIT 1) \
+                   AND (rating IS NOT ?1 OR play_count IS NOT ?2)",
+                rusqlite::params![
+                    entry.rating,
+                    entry.play_count,
+                    rated_at,
+                    track_path,
+                    entry.segment_start_ms,
+                    SEGMENT_START_TOLERANCE_MS
+                ],
+            )?;
+            changed = changed.saturating_add(u32::try_from(rows).unwrap_or(u32::MAX));
+        }
         Ok(changed)
     }
 }
+
+#[cfg(test)]
+#[path = "scanner_mobile_sync_cue_tests.rs"]
+mod cue_tests;

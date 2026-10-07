@@ -517,6 +517,7 @@ pub(super) async fn write_track_metadata_list(
             .map(|record| (record.track_id, record.device_path))
             .collect::<std::collections::HashMap<_, _>>();
     let mut entries = Vec::with_capacity(desired_files.len());
+    let mut segments = Vec::new();
     for desired in desired_files {
         let Some(track) = tracks.get(&desired.track.id) else {
             continue;
@@ -525,6 +526,18 @@ pub(super) async fn write_track_metadata_list(
             .get(&desired.track.id)
             .cloned()
             .unwrap_or(desired.device_path);
+        // A track a CUE sheet cut from the file is named by its start (CUE-17).
+        if let Some(segment) = &track.segment {
+            segments.push(
+                reprise_core::device_sync::track_metadata_list::SegmentMetadataEntry {
+                    device_path,
+                    segment_start_ms: segment.start_ms,
+                    rating: track.rating,
+                    play_count: track.play_count,
+                },
+            );
+            continue;
+        }
         entries.push(
             reprise_core::device_sync::track_metadata_list::TrackMetadataEntry {
                 device_path,
@@ -534,7 +547,12 @@ pub(super) async fn write_track_metadata_list(
         );
     }
     entries.sort_by(|left, right| left.device_path.cmp(&right.device_path));
+    segments.sort_by(|left, right| {
+        (&left.device_path, left.segment_start_ms)
+            .cmp(&(&right.device_path, right.segment_start_ms))
+    });
     let bytes = reprise_core::device_sync::track_metadata_list::TrackMetadataList::new(entries)
+        .with_segments(segments)
         .encode()
         .map_err(|error| format!("could not encode track metadata list: {error}"))?;
     let temporary_path = reprise_core::device_sync::staging::stage_bytes(

@@ -7928,6 +7928,14 @@ derives for a synced CUE file on the device (CUE-15).
   every track of a CUE album synced to it. The live device proof is a post-merge
   check of the CUE sheets wave.
   <!-- REVIEW: rule proposal -->
+- **CUE-17** [active] [core] — A phone listen or rating of a track a CUE sheet cut
+  from a synced file counts for that track on the desktop: the phone reports
+  the synced device path together with the track's start in the file, and the
+  desktop finds the track of that file starting there, whether or not that
+  track was itself selected for sync. The rating and play count the desktop
+  sends back reach the same track on the phone. A report entry that names no
+  track is counted in the sync summary and logged, never dropped silently.
+  <!-- REVIEW: rule proposal -->
 - **CUE-18** [active] [core] — A CUE track removed from the library stays hidden
   as the song it was across an edit of its sheet: it is recognised by its start
   and title, then a unique title, then its start, then its position, as CUE-1b

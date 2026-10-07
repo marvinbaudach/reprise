@@ -77,6 +77,27 @@ pub(crate) fn device_path_for_track(db: &Db, track_id: i64) -> Result<Option<Str
         .optional()?)
 }
 
+/// The device path a track was synced to and, for a track a CUE sheet cut
+/// from that file, where it starts in it: what the phone reports a listen or
+/// rating of it as (CUE-17).
+pub(crate) fn report_identity_for_track(
+    db: &Db,
+    track_id: i64,
+) -> Result<Option<(String, Option<i64>)>, DbError> {
+    Ok(db
+        .conn()
+        .query_row(
+            "SELECT paths.device_path,
+                    CASE WHEN tracks.segment_index > 0 THEN tracks.segment_start_ms END
+               FROM track_mobile_sync_paths AS paths
+               JOIN tracks ON tracks.id = paths.track_id
+              WHERE paths.track_id = ?1",
+            [track_id],
+            |row| Ok((row.get(0)?, row.get(1)?)),
+        )
+        .optional()?)
+}
+
 pub(crate) fn register_sidecar(
     conn: &Connection,
     track_path: &str,

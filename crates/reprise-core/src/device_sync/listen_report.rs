@@ -2,8 +2,11 @@
 //!
 //! A report is `RPT-BACK`, a little-endian `u16` version, then two counted
 //! sections. Listen entries contain `u64 sequence`, a `u32`-length UTF-8
-//! device path, `i64 played_at`, and `u64 ms_played`; rating entries contain
+//! device path, the segment start (a `u8` flag, `1` followed by an `i64`
+//! start in milliseconds for a track a CUE sheet cut from the file, `0` for a
+//! whole file), `i64 played_at`, and `u64 ms_played`; rating entries contain
 //! the same identity fields followed by `i32 rating` and `i64 rated_at`.
+//! Version 2 added the segment start (CUE-17); a version 1 report is refused.
 //! The acknowledgement is `RPT-ACKN`, the same version, and one `u64` high
 //! water mark. Sequence bytes stored in SQLite use the same little-endian
 //! representation so the full unsigned range survives a round trip.
@@ -16,7 +19,11 @@ const REPORT_MAGIC: &[u8; 8] = b"RPT-BACK";
 const ACKNOWLEDGEMENT_MAGIC: &[u8; 8] = b"RPT-ACKN";
 const MAX_PREALLOCATED_ENTRIES: usize = 4_096;
 
-pub const FORMAT_VERSION: u16 = 1;
+pub const FORMAT_VERSION: u16 = 2;
+
+/// How far a reported segment start may lie from the track's own: one CD
+/// frame, the resolution a sheet places a track at.
+const SEGMENT_START_TOLERANCE_MS: i64 = 14;
 // Enforced across Rust and Kotlin by scripts/check-listen-report-parity.sh.
 pub const REPORT_FILE_NAME: &str = "reprise-listens-back.rpl";
 pub const ACKNOWLEDGEMENT_FILE_NAME: &str = "reprise-listens-back-ack.rpl";
@@ -25,6 +32,9 @@ pub const ACKNOWLEDGEMENT_FILE_NAME: &str = "reprise-listens-back-ack.rpl";
 pub struct ListenEntry {
     pub sequence: u64,
     pub device_path: String,
+    /// Where the track starts in the file, for a track a CUE sheet cut from
+    /// it; `None` for a whole file.
+    pub segment_start_ms: Option<i64>,
     pub played_at: i64,
     pub ms_played: u64,
 }
@@ -33,6 +43,8 @@ pub struct ListenEntry {
 pub struct RatingEntry {
     pub sequence: u64,
     pub device_path: String,
+    /// As [`ListenEntry::segment_start_ms`].
+    pub segment_start_ms: Option<i64>,
     pub rating: i32,
     pub rated_at: i64,
 }
@@ -60,6 +72,7 @@ impl ListenReport {
         for entry in &self.listens {
             bytes.extend_from_slice(&entry.sequence.to_le_bytes());
             encode_path(&mut bytes, &entry.device_path)?;
+            encode_segment_start(&mut bytes, entry.segment_start_ms);
             bytes.extend_from_slice(&entry.played_at.to_le_bytes());
             bytes.extend_from_slice(&entry.ms_played.to_le_bytes());
         }
@@ -67,6 +80,7 @@ impl ListenReport {
         for entry in &self.ratings {
             bytes.extend_from_slice(&entry.sequence.to_le_bytes());
             encode_path(&mut bytes, &entry.device_path)?;
+            encode_segment_start(&mut bytes, entry.segment_start_ms);
             bytes.extend_from_slice(&entry.rating.to_le_bytes());
             bytes.extend_from_slice(&entry.rated_at.to_le_bytes());
         }
@@ -82,6 +96,7 @@ impl ListenReport {
             listens.push(ListenEntry {
                 sequence: reader.u64()?,
                 device_path: reader.path()?,
+                segment_start_ms: reader.segment_start()?,
                 played_at: reader.i64()?,
                 ms_played: reader.u64()?,
             });
@@ -92,6 +107,7 @@ impl ListenReport {
             ratings.push(RatingEntry {
                 sequence: reader.u64()?,
                 device_path: reader.path()?,
+                segment_start_ms: reader.segment_start()?,
                 rating: reader.i32()?,
                 rated_at: reader.i64()?,
             });
@@ -168,8 +184,12 @@ pub fn apply_listen_report(
             .iter()
             .filter(|entry| previous.is_none_or(|sequence| entry.sequence > sequence))
         {
-            let Some((track_id, snapshot)) =
-                resolve_track(conn, device_serial, &entry.device_path)?
+            let Some((track_id, snapshot)) = resolve_track(
+                conn,
+                device_serial,
+                &entry.device_path,
+                entry.segment_start_ms,
+            )?
             else {
                 summary.unresolved += 1;
                 summary.unresolved_paths.push(entry.device_path.clone());
@@ -192,7 +212,12 @@ pub fn apply_listen_report(
             .iter()
             .filter(|entry| previous.is_none_or(|sequence| entry.sequence > sequence))
         {
-            let Some((track_id, _)) = resolve_track(conn, device_serial, &entry.device_path)?
+            let Some((track_id, _)) = resolve_track(
+                conn,
+                device_serial,
+                &entry.device_path,
+                entry.segment_start_ms,
+            )?
             else {
                 summary.unresolved += 1;
                 summary.unresolved_paths.push(entry.device_path.clone());
@@ -226,40 +251,72 @@ pub fn apply_listen_report(
     })
 }
 
-/// The track a phone's device path stands for. A file cut into tracks by a CUE
-/// sheet syncs as one file, so a listen or rating of it is no one track's: like
-/// every other play-count and rating import, it reaches whole-file tracks only,
-/// and such a path counts as unresolved.
+/// The track a phone's device path and segment start stand for (CUE-17).
+///
+/// Without a segment start the path names a whole file: like every other
+/// play-count and rating import it reaches a whole-file track only (CUE-6). A
+/// segment start names the track a CUE sheet cut from the file at that start,
+/// found through the file the device path was synced from, so a track of the
+/// file that has no inventory row of its own is found as well.
 fn resolve_track(
     conn: &Connection,
     device_serial: &str,
     device_path: &str,
+    segment_start_ms: Option<i64>,
 ) -> Result<Option<(i64, ListenEventSnapshot)>, rusqlite::Error> {
-    conn.query_row(
-        "SELECT t.id, t.title, t.artist, t.album, t.album_artist, t.genre,
-                t.duration_ms, t.path, t.artist_mbid
-           FROM device_files AS files
-           JOIN tracks AS t ON t.id = files.track_id
-          WHERE files.device_serial = ?1 AND files.device_path = ?2
-            AND t.removed_at IS NULL AND t.segment_index = 0",
-        rusqlite::params![device_serial, device_path],
-        |row| {
-            Ok((
-                row.get(0)?,
-                ListenEventSnapshot {
-                    title: row.get(1)?,
-                    artist: row.get(2)?,
-                    album: row.get(3)?,
-                    album_artist: row.get(4)?,
-                    genre: row.get(5)?,
-                    duration_ms: row.get(6)?,
-                    path: row.get(7)?,
-                    artist_mbid: row.get(8)?,
-                },
-            ))
-        },
-    )
-    .optional()
+    const COLUMNS: &str = "t.id, t.title, t.artist, t.album, t.album_artist, t.genre,
+                t.duration_ms, t.path, t.artist_mbid";
+    let snapshot = |row: &rusqlite::Row<'_>| {
+        Ok((
+            row.get(0)?,
+            ListenEventSnapshot {
+                title: row.get(1)?,
+                artist: row.get(2)?,
+                album: row.get(3)?,
+                album_artist: row.get(4)?,
+                genre: row.get(5)?,
+                duration_ms: row.get(6)?,
+                path: row.get(7)?,
+                artist_mbid: row.get(8)?,
+            },
+        ))
+    };
+    match segment_start_ms {
+        None => conn
+            .query_row(
+                &format!(
+                    "SELECT {COLUMNS}
+                       FROM device_files AS files
+                       JOIN tracks AS t ON t.id = files.track_id
+                      WHERE files.device_serial = ?1 AND files.device_path = ?2
+                        AND t.removed_at IS NULL AND t.segment_index = 0"
+                ),
+                rusqlite::params![device_serial, device_path],
+                snapshot,
+            )
+            .optional(),
+        Some(start_ms) => conn
+            .query_row(
+                &format!(
+                    "SELECT {COLUMNS}
+                       FROM tracks AS t
+                      WHERE t.path IN (SELECT source_path FROM device_files
+                                        WHERE device_serial = ?1 AND device_path = ?2)
+                        AND t.removed_at IS NULL AND t.segment_index > 0
+                        AND abs(t.segment_start_ms - ?3) <= ?4
+                      ORDER BY abs(t.segment_start_ms - ?3), t.segment_index
+                      LIMIT 1"
+                ),
+                rusqlite::params![
+                    device_serial,
+                    device_path,
+                    start_ms,
+                    SEGMENT_START_TOLERANCE_MS
+                ],
+                snapshot,
+            )
+            .optional(),
+    }
 }
 
 fn load_applied_sequence(
@@ -318,6 +375,8 @@ pub enum ListenReportError {
     TrailingBytes,
     #[error("listen report is too large")]
     TooLarge,
+    #[error("listen report has an invalid segment marker")]
+    InvalidSegmentFlag,
 }
 
 fn encode_path(bytes: &mut Vec<u8>, path: &str) -> Result<(), ListenReportError> {
@@ -326,6 +385,16 @@ fn encode_path(bytes: &mut Vec<u8>, path: &str) -> Result<(), ListenReportError>
     bytes.extend_from_slice(&path_len.to_le_bytes());
     bytes.extend_from_slice(path);
     Ok(())
+}
+
+fn encode_segment_start(bytes: &mut Vec<u8>, segment_start_ms: Option<i64>) {
+    match segment_start_ms {
+        Some(start_ms) => {
+            bytes.push(1);
+            bytes.extend_from_slice(&start_ms.to_le_bytes());
+        }
+        None => bytes.push(0),
+    }
 }
 
 fn read_header(reader: &mut Reader<'_>, magic: &[u8; 8]) -> Result<(), ListenReportError> {
@@ -361,6 +430,14 @@ impl<'a> Reader<'a> {
         std::str::from_utf8(self.take(path_len)?)
             .map(str::to_owned)
             .map_err(|_| ListenReportError::InvalidUtf8)
+    }
+
+    fn segment_start(&mut self) -> Result<Option<i64>, ListenReportError> {
+        match self.take(1)?[0] {
+            0 => Ok(None),
+            1 => self.i64().map(Some),
+            _ => Err(ListenReportError::InvalidSegmentFlag),
+        }
     }
 
     fn u16(&mut self) -> Result<u16, ListenReportError> {
