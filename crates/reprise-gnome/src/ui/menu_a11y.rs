@@ -18,31 +18,39 @@
 //! sites, once GTK names its model buttons itself.
 //!
 //! Build every popover from a model with [`popover_menu_from_model`], or call
-//! [`name_model_buttons_on_map`] for a popover another builder made, such as the
+//! [`keep_model_buttons_named`] for a popover another builder made, such as the
 //! one a `GtkMenuButton` creates ([`name_menu_button_items`]). A source scan in
 //! `menu_a11y_guard_tests.rs` fails when a site bypasses it.
 //!
 //! GTK puts the relation back whenever a button refreshes its accessible
 //! properties, and it creates fresh buttons when a model changes, so naming once
-//! is not enough. For one popover the items are named:
+//! is not enough. One refresh walks the popover's widget tree, names every model
+//! button and connects whatever is new. For one popover a refresh runs:
 //!
 //! - when the popover is set up;
 //! - every time it maps;
 //! - when its menu model is replaced;
-//! - when the model, or any section or submenu below it, emits `items-changed`,
-//!   which covers in-place edits such as `remove_all` plus `append`;
-//! - on each model button's notification of a property whose setter makes GTK
-//!   refresh the button's accessible properties ([`RELABELING_PROPERTIES`]):
-//!   `active` is how a check or radio item reports an action state change, and
-//!   `text`, `role`, `accel`, `menu-name` and `popover` change when the model
-//!   edits an item in place.
+//! - once per main-loop turn after the model, or any section or submenu below
+//!   it, emitted `items-changed`, which covers in-place edits such as
+//!   `remove_all` plus `append`. The signal only schedules an idle callback, and
+//!   every further emission before it runs finds the callback already pending,
+//!   so a bulk `append` costs one walk instead of one per item.
+//!
+//! Between refreshes a single button is named again on its own notification of a
+//! property whose setter makes GTK refresh the button's accessible properties
+//! ([`RELABELING_PROPERTIES`]): `active` is how a check or radio item reports an
+//! action state change, and `text`, `role`, `accel`, `menu-name` and `popover`
+//! change when the model edits an item in place. That handler touches one
+//! button and runs synchronously.
 //!
 //! Each button, each model and each popover is connected to at most once, however
-//! often the popover re-maps or the walks repeat. The bookkeeping holds weak
-//! references only, and the handlers hold the popover weakly, so naming keeps
-//! nothing alive.
+//! often the popover re-maps or the walks repeat. Membership is a hash lookup by
+//! object address, so a walk is linear in the size of the menu. The bookkeeping
+//! holds weak references only, and the handlers hold the popover weakly, so
+//! naming keeps nothing alive.
 
-use std::cell::RefCell;
+use std::cell::{Cell, RefCell};
+use std::collections::HashMap;
 use std::rc::Rc;
 
 use gtk4::gio;
@@ -56,37 +64,81 @@ const RELABELING_PROPERTIES: [&str; 6] =
     ["active", "text", "role", "accel", "menu-name", "popover"];
 const MENU_LINKS: [&str; 2] = ["section", "submenu"];
 
-/// What one popover has been connected to. Weak references only: an entry
-/// whose object is gone is dropped the next time the list is consulted.
-#[derive(Default)]
-struct Connected {
-    buttons: RefCell<Vec<WeakRef<gtk4::Widget>>>,
-    models: RefCell<Vec<WeakRef<gio::MenuModel>>>,
+/// The objects already connected, by address, each held weakly.
+///
+/// An entry counts only while its weak reference still upgrades to the very
+/// object asked about, so a dead entry, or one whose address a newer object has
+/// reused, reads as absent and is overwritten.
+struct WeakSet<T: ObjectType> {
+    entries: RefCell<HashMap<usize, WeakRef<T>>>,
+    /// The size the set had after its last [`WeakSet::prune_when_doubled`].
+    pruned_at: Cell<usize>,
 }
 
-impl Connected {
+impl<T: ObjectType> Default for WeakSet<T> {
+    fn default() -> Self {
+        Self {
+            entries: RefCell::default(),
+            pruned_at: Cell::new(0),
+        }
+    }
+}
+
+/// The set is never pruned below this size, so a handful of popovers does not
+/// trigger a sweep on every call.
+const MIN_PRUNE_SIZE: usize = 16;
+
+impl<T: ObjectType> WeakSet<T> {
     /// Records `object` and returns whether it was new.
-    fn remember<T: ObjectType>(list: &RefCell<Vec<WeakRef<T>>>, object: &T) -> bool {
-        let mut list = list.borrow_mut();
-        list.retain(|weak| weak.upgrade().is_some());
-        if list
-            .iter()
-            .any(|weak| weak.upgrade().as_ref() == Some(object))
+    fn remember(&self, object: &T) -> bool {
+        let key = object.as_ptr() as usize;
+        let mut entries = self.entries.borrow_mut();
+        if entries
+            .get(&key)
+            .is_some_and(|weak| weak.upgrade().as_ref() == Some(object))
         {
             return false;
         }
-        list.push(object.downgrade());
+        entries.insert(key, object.downgrade());
         true
     }
+
+    /// Drops every entry whose object is gone.
+    fn prune(&self) {
+        let mut entries = self.entries.borrow_mut();
+        entries.retain(|_, weak| weak.upgrade().is_some());
+        self.pruned_at.set(entries.len());
+    }
+
+    /// [`WeakSet::prune`] once the set has doubled since the last prune, which
+    /// keeps the sweeps amortised constant for a set that is never walked.
+    fn prune_when_doubled(&self) {
+        let size = self.entries.borrow().len();
+        if size >= MIN_PRUNE_SIZE.max(self.pruned_at.get() * 2) {
+            self.prune();
+        }
+    }
+}
+
+/// What one popover has been connected to, and whether a refresh is queued.
+#[derive(Default)]
+struct Connected {
+    buttons: WeakSet<gtk4::Widget>,
+    models: WeakSet<gio::MenuModel>,
+    /// Set while an idle refresh is queued, so a burst of `items-changed`
+    /// emissions queues exactly one.
+    refresh_pending: Cell<bool>,
 }
 
 thread_local! {
     /// The popovers already set up, so a second call for one popover is a no-op.
-    static NAMED_POPOVERS: RefCell<Vec<WeakRef<gtk4::PopoverMenu>>> =
-        const { RefCell::new(Vec::new()) };
+    static NAMED_POPOVERS: WeakSet<gtk4::PopoverMenu> = WeakSet::default();
     /// How many signal handlers this module has connected on this thread.
     #[cfg(test)]
     static CONNECTIONS: std::cell::Cell<usize> = const { std::cell::Cell::new(0) };
+    /// How many full walks of a popover's widget tree this thread has run.
+    #[cfg(test)]
+    static WALKS: std::cell::Cell<usize> = const { std::cell::Cell::new(0) };
 }
 
 fn count_connection() {
@@ -97,7 +149,7 @@ fn count_connection() {
 /// A `PopoverMenu::from_model` whose items are named for assistive technology.
 pub(crate) fn popover_menu_from_model(model: &impl IsA<gio::MenuModel>) -> gtk4::PopoverMenu {
     let popover = gtk4::PopoverMenu::from_model(Some(model));
-    name_model_buttons_on_map(&popover);
+    keep_model_buttons_named(&popover);
     popover
 }
 
@@ -105,18 +157,10 @@ pub(crate) fn popover_menu_from_model(model: &impl IsA<gio::MenuModel>) -> gtk4:
 /// replaced, on `items-changed` of the model and of every section and submenu
 /// below it, and when a button reports a relabeling property. Calling it again
 /// for the same popover does nothing.
-pub(crate) fn name_model_buttons_on_map(popover: &gtk4::PopoverMenu) {
+pub(crate) fn keep_model_buttons_named(popover: &gtk4::PopoverMenu) {
     let first_call = NAMED_POPOVERS.with(|named| {
-        let mut named = named.borrow_mut();
-        named.retain(|weak| weak.upgrade().is_some());
-        if named
-            .iter()
-            .any(|weak| weak.upgrade().as_ref() == Some(popover))
-        {
-            return false;
-        }
-        named.push(popover.downgrade());
-        true
+        named.prune_when_doubled();
+        named.remember(popover)
     });
     if !first_call {
         return;
@@ -134,14 +178,14 @@ pub(crate) fn name_model_buttons_on_map(popover: &gtk4::PopoverMenu) {
     count_connection();
 }
 
-/// [`name_model_buttons_on_map`] for the popover a `GtkMenuButton` builds from
+/// [`keep_model_buttons_named`] for the popover a `GtkMenuButton` builds from
 /// its menu model. A button with a different kind of popover is left alone.
 pub(crate) fn name_menu_button_items(button: &gtk4::MenuButton) {
     if let Some(popover) = button
         .popover()
         .and_then(|popover| popover.downcast::<gtk4::PopoverMenu>().ok())
     {
-        name_model_buttons_on_map(&popover);
+        keep_model_buttons_named(&popover);
     }
 }
 
@@ -151,8 +195,25 @@ fn refresh_weak(popover: &WeakRef<gtk4::PopoverMenu>, connected: &Rc<Connected>)
     }
 }
 
+/// Queues one idle refresh unless one is already queued. The flag is cleared
+/// before the walk so an emission during the walk queues the next one.
+fn schedule_refresh(popover: &WeakRef<gtk4::PopoverMenu>, connected: &Rc<Connected>) {
+    if connected.refresh_pending.replace(true) {
+        return;
+    }
+    let (popover, connected) = (popover.clone(), connected.clone());
+    glib::idle_add_local_once(move || {
+        connected.refresh_pending.set(false);
+        refresh_weak(&popover, &connected);
+    });
+}
+
 /// Follows the popover's current model tree and names every model button.
 fn refresh(popover: &gtk4::PopoverMenu, connected: &Rc<Connected>) {
+    #[cfg(test)]
+    WALKS.with(|count| count.set(count.get() + 1));
+    connected.buttons.prune();
+    connected.models.prune();
     if let Some(model) = popover.menu_model() {
         follow_model(&popover.downgrade(), connected, &model);
     }
@@ -166,9 +227,9 @@ fn follow_model(
     connected: &Rc<Connected>,
     model: &gio::MenuModel,
 ) {
-    if Connected::remember(&connected.models, model) {
+    if connected.models.remember(model) {
         let (popover, connected) = (popover.clone(), connected.clone());
-        model.connect_items_changed(move |_, _, _, _| refresh_weak(&popover, &connected));
+        model.connect_items_changed(move |_, _, _, _| schedule_refresh(&popover, &connected));
         count_connection();
     }
     for item in 0..model.n_items() {
@@ -189,7 +250,7 @@ fn name_model_buttons(root: &gtk4::Widget, connected: &Connected) {
     while let Some(widget) = child {
         if widget.type_().name() == MODEL_BUTTON_TYPE {
             name_model_button(&widget);
-            if Connected::remember(&connected.buttons, &widget) {
+            if connected.buttons.remember(&widget) {
                 widget.connect_notify_local(None, |button, pspec| {
                     if RELABELING_PROPERTIES.contains(&pspec.name()) {
                         name_model_button(button.upcast_ref());
@@ -230,8 +291,17 @@ fn connection_count() -> usize {
 }
 
 #[cfg(test)]
+fn walk_count() -> usize {
+    WALKS.with(std::cell::Cell::get)
+}
+
+#[cfg(test)]
 #[path = "menu_a11y_tests.rs"]
 mod tests;
+
+#[cfg(test)]
+#[path = "menu_a11y_scan.rs"]
+mod scan;
 
 #[cfg(test)]
 #[path = "menu_a11y_guard_tests.rs"]

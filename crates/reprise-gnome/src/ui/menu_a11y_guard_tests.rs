@@ -2,93 +2,15 @@
 //!
 //! They read the production sources under `src/ui` and fail when a new site
 //! builds a popover menu or a menu button's model without the naming helper.
-//! The scans are textual, so each rule is a heuristic and is spelled out where
-//! it is applied.
+//! The scans are textual, so each rule is a heuristic; they live in
+//! `menu_a11y_scan.rs`, where each is spelled out, and the fixture tests below
+//! pin what they catch and what they leave alone.
 
 use std::path::{Path, PathBuf};
 
-/// The production code of `source`: everything before a trailing
-/// `#[cfg(test)] mod …` (inline or `#[path]`-wired test module), without
-/// comment lines. Test modules sit at the end of a file here, and a
-/// `#[cfg(test)]` on a field or function in the middle of a file must not hide
-/// what follows it, so only a `mod` item ends the production code.
-fn production_code(source: &str) -> String {
-    let lines: Vec<&str> = source.lines().collect();
-    let mut end = lines.len();
-    for (index, line) in lines.iter().enumerate() {
-        if line.trim() != "#[cfg(test)]" {
-            continue;
-        }
-        let next_item = lines[index + 1..]
-            .iter()
-            .map(|line| line.trim())
-            .find(|line| !line.starts_with("#["));
-        if next_item.is_some_and(is_module_item) {
-            end = index;
-            break;
-        }
-    }
-    lines[..end]
-        .iter()
-        .filter(|line| !line.trim_start().starts_with("//"))
-        .copied()
-        .collect::<Vec<_>>()
-        .join("\n")
-}
-
-fn is_module_item(line: &str) -> bool {
-    let line = line
-        .strip_prefix("pub")
-        .map_or(line, |rest| match rest.find(')') {
-            Some(close) if rest.starts_with('(') => rest[close + 1..].trim_start(),
-            _ => rest.trim_start(),
-        });
-    line.starts_with("mod ")
-}
-
-/// A `PopoverMenu` constructor: any associated function called on the type.
-/// `downcast::<PopoverMenu>()` and type annotations have no `::` after the name.
-fn builds_a_popover_menu(code: &str) -> bool {
-    code.match_indices("PopoverMenu::").any(|(at, name)| {
-        let rest = &code[at + name.len()..];
-        // `PopoverMenuBar::` and friends are other types.
-        rest.starts_with(|c: char| c.is_ascii_lowercase())
-    })
-}
-
-/// How many menu models `code` gives to a `MenuButton`, each of which needs its
-/// own `name_menu_button_items` call.
-///
-/// A site is `.menu_model(<argument>)` on a builder, or `.set_menu_model(` on a
-/// receiver whose last name does not mention a popover. The argument may sit on
-/// the next line; `.menu_model()` with no argument is the getter. Whitespace and
-/// line breaks between the tokens are ignored.
-fn menu_button_model_sites(code: &str) -> usize {
-    let compact: String = code.chars().filter(|c| !c.is_whitespace()).collect();
-    let builder = compact
-        .match_indices(".menu_model(")
-        .filter(|(at, name)| !compact[at + name.len()..].starts_with(')'))
-        .count();
-    let setter = compact
-        .match_indices(".set_menu_model(")
-        .filter(|(at, _)| !receiver_is_a_popover(&compact[..*at]))
-        .count();
-    builder + setter
-}
-
-/// Whether the expression ending at `before_dot` names a popover, by its last
-/// identifier (`self.popover`, `menu_popover`, `popover`).
-fn receiver_is_a_popover(before_dot: &str) -> bool {
-    let end = before_dot.trim_end_matches(')');
-    let start = end
-        .rfind(|c: char| !(c.is_alphanumeric() || c == '_'))
-        .map_or(0, |at| at + 1);
-    end[start..].to_ascii_lowercase().contains("popover")
-}
-
-fn named_menu_button_calls(code: &str) -> usize {
-    code.matches("menu_a11y::name_menu_button_items(").count()
-}
+use super::scan::{
+    builds_a_popover_menu, menu_button_model_sites, named_menu_button_calls, production_code,
+};
 
 fn ui_sources(directory: &Path, found: &mut Vec<(PathBuf, String)>) {
     let Ok(entries) = std::fs::read_dir(directory) else {
@@ -234,4 +156,90 @@ fn the_scans_skip_trailing_test_modules_and_comments_only() {
         builds_a_popover_menu(&production_code(on_a_field)),
         "a cfg(test) field must not hide the code after it"
     );
+}
+
+#[test]
+fn the_popover_scan_follows_import_aliases() {
+    for violation in [
+        "use gtk4::PopoverMenu as Foo;\nlet p = Foo::from_model(None);",
+        "use gtk4::{Button, PopoverMenu as Pm};\nlet p = Pm::builder().build();",
+        "use gtk::PopoverMenu as Foo;\nfn f() -> Foo { Foo::new_from_model(None) }",
+        "type Menu = gtk4::PopoverMenu;\nlet p = Menu::from_model(None);",
+    ] {
+        assert!(builds_a_popover_menu(violation), "{violation}");
+    }
+    for fine in [
+        "use gtk4::PopoverMenuBar as Bar;\nlet b = Bar::from_model(None);",
+        "use gtk4::PopoverMenu as Foo;\nfn f(p: &Foo) -> bool { p.is_visible() }",
+        "use gtk4::Button as Foo;\nlet b = Foo::new();",
+    ] {
+        assert!(!builds_a_popover_menu(fine), "{fine}");
+    }
+}
+
+#[test]
+fn the_popover_scan_catches_generic_object_constructors() {
+    for violation in [
+        "let p = glib::Object::new::<gtk4::PopoverMenu>();",
+        "let p = Object::new::<PopoverMenu>();",
+        "let p = glib::Object::builder::<gtk4::PopoverMenu>().build();",
+        "let p = glib::Object::builder::<\n    gtk4::PopoverMenu,\n>()\n.build();",
+        "use gtk4::PopoverMenu as Foo;\nlet p = glib::Object::new::<Foo>();",
+    ] {
+        assert!(builds_a_popover_menu(violation), "{violation}");
+    }
+    for fine in [
+        "let b = glib::Object::new::<gtk4::Button>();",
+        "let b = glib::Object::new::<gtk4::PopoverMenuBar>();",
+        "let b = glib::Object::builder::<gtk4::Popover>().build();",
+    ] {
+        assert!(!builds_a_popover_menu(fine), "{fine}");
+    }
+}
+
+#[test]
+fn the_menu_button_scan_does_not_mistake_a_button_named_popover_for_a_popover() {
+    for (code, sites) in [
+        ("popover_button.set_menu_model(Some(&m));", 1),
+        ("self.popover_menu_button.set_menu_model(None);", 1),
+        (
+            "let popover_trigger = gtk4::MenuButton::new();\npopover_trigger.set_menu_model(Some(&m));",
+            1,
+        ),
+        (
+            "struct S { popover_trigger: gtk4::MenuButton }\nself.popover_trigger.set_menu_model(None);",
+            1,
+        ),
+        ("self.popover.set_menu_model(Some(&m));", 0),
+        ("popover_menu.set_menu_model(Some(&m));", 0),
+        (
+            "let popover = button.popover().unwrap();\npopover.set_menu_model(Some(&m));",
+            0,
+        ),
+    ] {
+        assert_eq!(menu_button_model_sites(code), sites, "{code}");
+    }
+}
+
+#[test]
+fn the_scans_keep_the_production_code_that_follows_a_mid_file_test_module() {
+    let inline = "fn before() {}\n#[cfg(test)]\nmod tests {\n    fn t() { let _ = gtk4::PopoverMenu::from_model(None); let brace = \"{\"; let close = '}'; let quote = '\\''; let tab = \"\\\"{\"; }\n}\nfn after() { let _ = gtk4::PopoverMenu::from_model(None); }\n";
+    let code = production_code(inline);
+    assert!(code.contains("fn before"));
+    assert!(
+        code.contains("fn after"),
+        "production code after the module"
+    );
+    assert!(!code.contains("fn t()"), "the test module is skipped");
+    assert_eq!(code.matches("PopoverMenu::from_model").count(), 1);
+
+    let wired =
+        "fn before() {}\n#[cfg(test)]\n#[path = \"x_tests.rs\"]\nmod tests;\nfn after() {}\n";
+    assert_eq!(production_code(wired), "fn before() {}\nfn after() {}");
+
+    let two = "#[cfg(test)]\nmod a {\n    mod nested { fn x() {} }\n}\nfn middle() {}\n#[cfg(test)]\nmod b {}\nfn last() {}\n";
+    assert_eq!(production_code(two), "fn middle() {}\nfn last() {}");
+
+    let unclosed = "fn before() {}\n#[cfg(test)]\nmod tests {\n    fn t() {}\n";
+    assert_eq!(production_code(unclosed), "fn before() {}");
 }
