@@ -2,10 +2,12 @@
 //! as the position it held (finding B9), and a CUE file whose every track is
 //! hidden is as settled as any other unchanged file (finding A11).
 
-use std::os::unix::fs::PermissionsExt;
 use std::path::{Path, PathBuf};
 
+use super::super::cue_tests::unknown::{Fault, FlakySource};
 use super::super::cue_tests::{segments_of, titles, Album, THREE_TRACKS};
+use super::super::{scan_folder_with_source, tests::completed};
+use crate::library::scanner::ScanReport;
 
 /// `THREE_TRACKS` with a track inserted between the first and the second: the
 /// second and third keep their start and title, and move one place on.
@@ -26,6 +28,16 @@ FILE \"album.wav\" WAVE
     TITLE \"Candidate\"
     INDEX 01 00:20:00
 ";
+
+/// Scans `album` through a source that cannot open a `.cue` file. A source
+/// that fails, rather than a `chmod 000`, because a process with root rights
+/// reads a mode-000 file all the same and the test would then prove nothing.
+fn scan_with_unreadable_sheet(album: &Album) -> ScanReport {
+    completed(
+        scan_folder_with_source(&FlakySource(Fault::SheetRead), &album.db, album.dir.path())
+            .unwrap(),
+    )
+}
 
 fn remove_titled(album: &Album, title: &str) {
     let (id, path): (i64, String) = album
@@ -181,12 +193,8 @@ fn cue_18_a_fully_hidden_cue_file_is_not_read_again_on_an_unchanged_rescan() {
     // A sheet the scan reads although nothing changed cannot be read now, and
     // an unreadable sheet leaves a file with no rows to be read as if none
     // were there: the hidden album would come back as one whole-file track.
-    let sheet = album.sheet();
-    std::fs::set_permissions(&sheet, std::fs::Permissions::from_mode(0o000)).unwrap();
+    let report = scan_with_unreadable_sheet(&album);
 
-    let report = album.scan();
-
-    std::fs::set_permissions(&sheet, std::fs::Permissions::from_mode(0o644)).unwrap();
     assert!(segments_of(album.db.conn(), &album.audio()).is_empty());
     assert_eq!(
         (report.added, report.updated, report.skipped_unchanged),
@@ -207,11 +215,9 @@ fn cue_18_a_fully_hidden_cue_file_stays_hidden_while_its_changed_sheet_cannot_be
     let sheet = album.sheet();
     let text = std::fs::read(&sheet).unwrap();
     std::fs::write(&sheet, [text.as_slice(), b"\n"].concat()).unwrap();
-    std::fs::set_permissions(&sheet, std::fs::Permissions::from_mode(0o000)).unwrap();
 
-    let report = album.scan();
+    let report = scan_with_unreadable_sheet(&album);
 
-    std::fs::set_permissions(&sheet, std::fs::Permissions::from_mode(0o644)).unwrap();
     assert!(segments_of(album.db.conn(), &album.audio()).is_empty());
     assert_eq!(
         (report.added, report.updated, report.skipped_unchanged),
