@@ -414,18 +414,82 @@ pub(in crate::ui) fn file_stat(path: &str) -> Option<(i64, i64)> {
     ))
 }
 
-/// Scans `root`: the file an issue names, or a broken sheet's directory (see
-/// [`ImportErrorEntry::retry_root`]).
+/// Scans `root`, the file an issue names or a broken sheet's directory (see
+/// [`ImportErrorEntry::retry_root`]), off the main thread: a directory is a
+/// whole subtree to walk.
 fn handle_retry(shared: &Rc<Shared>, root: &Path) {
-    let result = {
-        let conn = &shared.conn;
-        scanner::scan_folder(conn, root)
-    };
-    if let Err(error) = result {
-        tracing::error!(%error, root = %root.display(), "import errors view: retry failed to run");
-        show_toast(shared, &strings::import_error_retry_failed_toast());
+    scan_off_main_thread(
+        shared,
+        vec![root.to_path_buf()],
+        FailureToast::AnyFailure(strings::import_error_retry_failed_toast()),
+    );
+}
+
+/// When a retry says it failed.
+enum FailureToast {
+    /// When the scan could not run at all.
+    NotRun(String),
+    /// Also when a scanned root failed.
+    AnyFailure(String),
+}
+
+impl FailureToast {
+    fn text(&self) -> &str {
+        match self {
+            Self::NotRun(text) | Self::AnyFailure(text) => text,
+        }
     }
-    notify_mutated(shared);
+}
+
+/// Scans `roots` on a worker with its own connection, then tells the view
+/// back on the main thread.
+fn scan_off_main_thread(shared: &Rc<Shared>, roots: Vec<std::path::PathBuf>, toast: FailureToast) {
+    let Some(db_path) = shared.conn.path() else {
+        show_toast(shared, toast.text());
+        return;
+    };
+    let receiver = match one_shot_task::spawn("reprise-retry-import-errors", move || {
+        let conn = reprise_core::db::Db::open_migrated(Some(&db_path))
+            .map_err(|error| error.to_string())?;
+        let mut failures = 0usize;
+        for root in roots {
+            if let Err(error) = scanner::scan_folder(&conn, &root) {
+                failures += 1;
+                tracing::error!(%error, root = %root.display(), "import errors view: retry item failed");
+            }
+        }
+        Ok::<usize, String>(failures)
+    }) {
+        Ok(receiver) => receiver,
+        Err(error) => {
+            tracing::error!(%error, "import errors view: could not start retry worker");
+            show_toast(shared, toast.text());
+            return;
+        }
+    };
+    let shared = Rc::downgrade(shared);
+    glib::spawn_future_local(async move {
+        let Ok(result) = receiver.recv().await else {
+            return;
+        };
+        let Some(shared) = shared.upgrade() else {
+            return;
+        };
+        match result {
+            Ok(0) => {}
+            Ok(failures) => {
+                tracing::warn!(failures, "import errors view: retry incomplete");
+                if matches!(toast, FailureToast::AnyFailure(_)) {
+                    show_toast(&shared, toast.text());
+                }
+            }
+            Err(error) => {
+                tracing::error!(%error, "import errors view: retry failed");
+                show_toast(&shared, toast.text());
+            }
+        }
+        notify_mutated(&shared);
+    });
 }
 
 fn handle_restore(shared: &Rc<Shared>, path: &str, root: &Path) {
@@ -513,57 +577,11 @@ fn handle_retry_all(shared: &Rc<Shared>) {
     if paths.is_empty() {
         return;
     }
-    let db_path = shared.conn.path();
-    let Some(db_path) = db_path else {
-        show_toast(
-            shared,
-            &strings::issue_text(strings::IMPORT_ISSUE_RETRY_ALL_FAILED),
-        );
-        return;
-    };
-    let receiver = match one_shot_task::spawn("reprise-retry-import-errors", move || {
-        let conn = reprise_core::db::Db::open_migrated(Some(&db_path))
-            .map_err(|error| error.to_string())?;
-        let mut failures = 0usize;
-        for path in paths {
-            if let Err(error) = scanner::scan_folder(&conn, &path) {
-                failures += 1;
-                tracing::error!(%error, path = %path.display(), "import errors view: retry-all item failed");
-            }
-        }
-        Ok::<usize, String>(failures)
-    }) {
-        Ok(receiver) => receiver,
-        Err(error) => {
-            tracing::error!(%error, "import errors view: could not start retry-all worker");
-            show_toast(
-                shared,
-                &strings::issue_text(strings::IMPORT_ISSUE_RETRY_ALL_FAILED),
-            );
-            return;
-        }
-    };
-    let shared = Rc::downgrade(shared);
-    glib::spawn_future_local(async move {
-        let Ok(result) = receiver.recv().await else {
-            return;
-        };
-        let Some(shared) = shared.upgrade() else {
-            return;
-        };
-        match result {
-            Ok(0) => {}
-            Ok(failures) => tracing::warn!(failures, "import errors view: retry all incomplete"),
-            Err(error) => {
-                tracing::error!(%error, "import errors view: retry all failed");
-                show_toast(
-                    &shared,
-                    &strings::issue_text(strings::IMPORT_ISSUE_RETRY_ALL_FAILED),
-                );
-            }
-        }
-        notify_mutated(&shared);
-    });
+    scan_off_main_thread(
+        shared,
+        paths,
+        FailureToast::NotRun(strings::issue_text(strings::IMPORT_ISSUE_RETRY_ALL_FAILED)),
+    );
 }
 
 fn export_text(shared: &Shared) -> String {

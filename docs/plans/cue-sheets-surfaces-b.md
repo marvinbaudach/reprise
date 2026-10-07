@@ -196,7 +196,9 @@ All tasks committed, gate battery green on the worktree. The device proofs (post
 - **b4** — one `WHOLE_FILE` clause on the three selectors (`current_view` goes through
   `present_track_ref`).
 - **b5** — Retry uses `ImportErrorEntry::retry_root` (a method, because `queries/mod.rs` is not
-  this strand's). Vanished sheets are cleared when their directory is listed, filtered by
+  this strand's). Retry, Restore and
+  Retry all scan on a worker thread (`scan_off_main_thread`), since a sheet's directory is a
+  whole subtree. Vanished sheets are cleared when their directory is listed, filtered by
   `parent_of` and the `.cue` extension, so an embedded sheet's issue (keyed by the audio file)
   is never touched. A10: a sidecar whose cut fails gives way to a valid embedded sheet and the
   rows remember the sidecar's version, so the next scan is `(0, 0, 1)`; a sheet that stopped
