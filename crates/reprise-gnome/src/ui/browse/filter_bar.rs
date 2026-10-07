@@ -604,3 +604,7 @@ fn wire<M: FilterModel>(bar: &Rc<FilterBar<M>>) {
 #[cfg(test)]
 #[path = "filter_bar_tests.rs"]
 mod tests;
+
+#[cfg(test)]
+#[path = "filter_bar_a11y_tests.rs"]
+mod a11y_tests;

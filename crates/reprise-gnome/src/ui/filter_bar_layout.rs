@@ -303,16 +303,23 @@ pub(in crate::ui) fn style_clear_all(button: &impl IsA<gtk4::Widget>) {
     button.add_css_class(CLEAR_ALL_CSS_CLASS);
 }
 
+/// A row of the Add filter popover. The row, not its Label, carries the
+/// accessible name: GTK exposes a `ListBoxRow` as a list item with no name
+/// computed from its content, so without the explicit label a screen reader
+/// reads an unnamed item.
 pub(in crate::ui) fn chooser_row(label: &str) -> gtk4::ListBoxRow {
+    let text = label;
     let label = gtk4::Label::builder()
-        .label(label)
+        .label(text)
         .xalign(0.0)
         .margin_top(7)
         .margin_bottom(7)
         .margin_start(10)
         .margin_end(10)
         .build();
-    gtk4::ListBoxRow::builder().child(&label).build()
+    let row = gtk4::ListBoxRow::builder().child(&label).build();
+    row.update_property(&[gtk4::accessible::Property::Label(text)]);
+    row
 }
 
 pub(in crate::ui) fn count_label() -> gtk4::Label {
