@@ -236,6 +236,9 @@ Review fixes:
   so it was removed. MTP-67's seek-bar coverage is the FFI test
   `mtp_67_the_seek_bar_of_a_later_track_fills_from_its_own_start`; the decoder's timestamps
   stay a device check.
+- **#17** The "two clips of one file" gain test never involved clipping, so it is renamed
+  `two_queued_items_of_one_uri_each_play_at_the_gain_of_their_own_offset`, no longer
+  rule-named. MTP-66 says the per-clip gain proof is the post-merge device check.
 
 Left open, by design or for a later change:
 - A foreground request for a track whose file the backfill is decoding under a sibling's id
