@@ -8,8 +8,8 @@ impl MusicLibrary {
     /// removed after it crossed the boundary.
     pub fn set_track_rating(&self, track_id: i64, rating: i32) -> Result<(), LibraryError> {
         let writer = self.writer()?;
-        let device_path =
-            reprise_core::device_sync::mobile_import::device_path_for_track(&writer, track_id)
+        let (device_path, segment_start_ms) =
+            reprise_core::device_sync::mobile_import::report_identity_for_track(&writer, track_id)
                 .map_err(|error| LibraryError::Database {
                     detail: error.to_string(),
                 })?
@@ -29,7 +29,10 @@ impl MusicLibrary {
         }
         crate::listen_export_journal::record_rating(
             &self.database_path,
-            &device_path,
+            crate::listen_export_journal::ReportedTrack {
+                device_path: &device_path,
+                segment_start_ms,
+            },
             rating.clamp(0, 5),
             rated_at,
         )

@@ -33,6 +33,7 @@ fn listen(sequence: u64, device_path: &str, played_at: i64) -> ListenEntry {
     ListenEntry {
         sequence,
         device_path: device_path.into(),
+        segment_start_ms: None,
         played_at,
         ms_played: 150_000,
     }
@@ -42,6 +43,7 @@ fn rating(sequence: u64, device_path: &str, value: i32, rated_at: i64) -> Rating
     RatingEntry {
         sequence,
         device_path: device_path.into(),
+        segment_start_ms: None,
         rating: value,
         rated_at,
     }
@@ -52,12 +54,14 @@ fn sample_report() -> ListenReport {
         vec![ListenEntry {
             sequence: 7,
             device_path: "Artist/Album/01 Song.opus".into(),
+            segment_start_ms: None,
             played_at: 1_754_600_001,
             ms_played: 183_421,
         }],
         vec![RatingEntry {
             sequence: u64::MAX,
             device_path: "Artist/Album/02 Next.opus".into(),
+            segment_start_ms: Some(40_013),
             rating: 5,
             rated_at: 1_754_600_002,
         }],
@@ -502,5 +506,119 @@ fn cue_6_a_phone_listen_of_a_file_cut_into_tracks_credits_none_of_them() {
     assert_eq!(
         touched, 0,
         "a listen of the whole file is no track's listen"
+    );
+}
+
+/// A CUE file of three tracks, synced as one device file; only `rows` have a
+/// device inventory row of their own.
+fn cue_album_database(rows: &[i64]) -> crate::db::Db {
+    let db = crate::db::Db::open_in_memory().unwrap();
+    for (id, index, start_ms) in [(5, 1, 0), (6, 2, 10_013), (7, 3, 20_000)] {
+        db.conn()
+            .execute(
+                "INSERT INTO tracks (id, path, title, added_at, segment_index, segment_start_ms,
+                                     segment_end_ms, play_count, rating)
+                 VALUES (?1, '/music/live.flac', ?2, 1, ?3, ?4, ?4 + 9000, 0, 0)",
+                rusqlite::params![id, format!("Part {index}"), index, start_ms],
+            )
+            .unwrap();
+    }
+    for id in rows {
+        db.conn()
+            .execute(
+                "INSERT INTO device_files
+                 (device_serial, track_id, source_path, source_size, source_mtime,
+                  device_path, device_size, profile_fingerprint, pinned)
+                 VALUES ('phone-a', ?1, '/music/live.flac', 100, 1, 'Live/live.opus', 80,
+                         'opus-v1', 0)",
+                [id],
+            )
+            .unwrap();
+    }
+    db
+}
+
+fn counts(db: &crate::db::Db) -> Vec<(i64, i64, i32)> {
+    db.conn()
+        .prepare("SELECT id, play_count, rating FROM tracks ORDER BY id")
+        .unwrap()
+        .query_map([], |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)))
+        .unwrap()
+        .map(Result::unwrap)
+        .collect()
+}
+
+#[test]
+fn cue_17_a_phone_listen_and_rating_of_cue_tracks_count_for_those_tracks() {
+    let db = cue_album_database(&[5, 6, 7]);
+    let report = ListenReport::new(
+        vec![ListenEntry {
+            segment_start_ms: Some(10_013),
+            ..listen(3, "Live/live.opus", 1_754_600_100)
+        }],
+        vec![RatingEntry {
+            segment_start_ms: Some(20_000),
+            ..rating(4, "Live/live.opus", 5, 1_754_600_200)
+        }],
+    );
+    let received = ListenReport::decode(&report.encode().unwrap()).unwrap();
+
+    let summary = apply_listen_report(&db, "phone-a", &received).unwrap();
+
+    assert_eq!(received, report);
+    assert_eq!(
+        (
+            summary.listens_applied,
+            summary.ratings_applied,
+            summary.unresolved
+        ),
+        (1, 1, 0)
+    );
+    assert_eq!(counts(&db), [(5, 0, 0), (6, 1, 0), (7, 0, 5)]);
+}
+
+#[test]
+fn cue_17_a_cue_track_without_a_row_of_its_own_is_found_through_its_file() {
+    let db = cue_album_database(&[5]);
+    let report = ListenReport::new(
+        vec![ListenEntry {
+            segment_start_ms: Some(20_000),
+            ..listen(3, "Live/live.opus", 1_754_600_100)
+        }],
+        Vec::new(),
+    );
+
+    let summary = apply_listen_report(&db, "phone-a", &report).unwrap();
+
+    assert_eq!(summary.listens_applied, 1);
+    assert_eq!(counts(&db), [(5, 0, 0), (6, 0, 0), (7, 1, 0)]);
+}
+
+#[test]
+fn cue_17_a_start_no_track_of_the_file_has_is_counted_unresolved() {
+    let db = cue_album_database(&[5, 6, 7]);
+    let report = ListenReport::new(
+        vec![ListenEntry {
+            segment_start_ms: Some(15_000),
+            ..listen(3, "Live/live.opus", 1_754_600_100)
+        }],
+        Vec::new(),
+    );
+
+    let summary = apply_listen_report(&db, "phone-a", &report).unwrap();
+
+    assert_eq!((summary.listens_applied, summary.unresolved), (0, 1));
+    assert_eq!(summary.unresolved_paths, ["Live/live.opus"]);
+    assert_eq!(summary.acknowledged_sequence, Some(3));
+}
+
+#[test]
+fn cue_17_a_report_in_the_first_format_is_refused() {
+    let mut encoded = sample_report().encode().unwrap();
+    encoded[8..10].copy_from_slice(&1_u16.to_le_bytes());
+
+    assert_eq!(
+        ListenReport::decode(&encoded),
+        Err(ListenReportError::UnsupportedVersion(1))
     );
 }

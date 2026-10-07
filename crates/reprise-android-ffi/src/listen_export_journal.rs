@@ -11,7 +11,7 @@ use std::path::{Path, PathBuf};
 use std::sync::Mutex;
 
 use reprise_core::device_sync::listen_report::{
-    ListenEntry, ListenReport, ListenReportAcknowledgement, RatingEntry,
+    ListenEntry, ListenReport, ListenReportAcknowledgement, ListenReportError, RatingEntry,
 };
 
 pub(super) const FILE_NAME: &str = "android-listens-back-export.journal";
@@ -42,17 +42,37 @@ impl Default for JournalState {
     }
 }
 
-pub(super) fn record_listen(
+/// What a phone action is reported against: the synced device path and, for a
+/// track a CUE sheet cut from that file, where it starts in it (CUE-17). A bare
+/// path stands for a whole file.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(super) struct ReportedTrack<'a> {
+    pub(super) device_path: &'a str,
+    pub(super) segment_start_ms: Option<i64>,
+}
+
+impl<'a> From<&'a str> for ReportedTrack<'a> {
+    fn from(device_path: &'a str) -> Self {
+        Self {
+            device_path,
+            segment_start_ms: None,
+        }
+    }
+}
+
+pub(super) fn record_listen<'a>(
     database_path: &Path,
-    device_path: &str,
+    track: impl Into<ReportedTrack<'a>>,
     played_at: i64,
     ms_played: u64,
 ) -> io::Result<u64> {
+    let track = track.into();
     update(database_path, |state| {
         let sequence = take_sequence(state)?;
         state.report.listens.push(ListenEntry {
             sequence,
-            device_path: device_path.to_owned(),
+            device_path: track.device_path.to_owned(),
+            segment_start_ms: track.segment_start_ms,
             played_at,
             ms_played,
         });
@@ -60,17 +80,19 @@ pub(super) fn record_listen(
     })
 }
 
-pub(super) fn record_rating(
+pub(super) fn record_rating<'a>(
     database_path: &Path,
-    device_path: &str,
+    track: impl Into<ReportedTrack<'a>>,
     rating: i32,
     rated_at: i64,
 ) -> io::Result<u64> {
+    let track = track.into();
     update(database_path, |state| {
         let sequence = take_sequence(state)?;
         state.report.ratings.push(RatingEntry {
             sequence,
-            device_path: device_path.to_owned(),
+            device_path: track.device_path.to_owned(),
+            segment_start_ms: track.segment_start_ms,
             rating,
             rated_at,
         });
@@ -209,7 +231,21 @@ fn load(path: &Path) -> io::Result<JournalState> {
             ));
         }
     };
-    let report = ListenReport::decode(&bytes[at..]).map_err(invalid_data)?;
+    let report = match ListenReport::decode(&bytes[at..]) {
+        Ok(report) => report,
+        // Reprise is unreleased: exports waiting in an earlier report format
+        // are dropped rather than converted, but the sequence state is kept,
+        // so no identity the desktop already acknowledged is issued again and
+        // the journal keeps working.
+        Err(ListenReportError::UnsupportedVersion(version)) => {
+            tracing::warn!(
+                version,
+                "dropped Android listen exports written in an earlier report format"
+            );
+            ListenReport::default()
+        }
+        Err(error) => return Err(invalid_data(error)),
+    };
     let highest = report.highest_sequence().unwrap_or(0);
     if next_sequence == 0
         || highest >= next_sequence
@@ -284,4 +320,35 @@ fn read_array<const N: usize>(bytes: &[u8], at: &mut usize) -> io::Result<[u8; N
 
 fn invalid_data(error: impl std::fmt::Display) -> io::Error {
     io::Error::new(io::ErrorKind::InvalidData, error.to_string())
+}
+
+#[cfg(test)]
+mod format_tests {
+    use super::*;
+
+    #[test]
+    fn cue_17_a_journal_in_the_first_report_format_keeps_its_sequence_and_works_on() {
+        let directory = tempfile::tempdir().unwrap();
+        let database_path = directory.path().join("reprise.db");
+        let mut journal = Vec::new();
+        journal.extend_from_slice(MAGIC);
+        journal.extend_from_slice(&VERSION.to_le_bytes());
+        journal.extend_from_slice(&9_u64.to_le_bytes());
+        journal.push(1);
+        journal.extend_from_slice(&8_u64.to_le_bytes());
+        journal.extend_from_slice(b"RPT-BACK");
+        journal.extend_from_slice(&1_u16.to_le_bytes());
+        journal.extend_from_slice(&0_u32.to_le_bytes());
+        journal.extend_from_slice(&0_u32.to_le_bytes());
+        fs::write(journal_path(&database_path), journal).unwrap();
+
+        let sequence = record_listen(&database_path, "Live/live.opus", 1, 2).unwrap();
+
+        assert_eq!(
+            sequence, 9,
+            "an acknowledged identity is never issued again"
+        );
+        let report = ListenReport::decode(&prepare_report(&database_path, None).unwrap()).unwrap();
+        assert_eq!(report.listens.len(), 1);
+    }
 }

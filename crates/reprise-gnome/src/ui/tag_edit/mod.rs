@@ -16,3 +16,4 @@ mod tag_write_admission;
     reason = "child modules share the parent UI vocabulary through this import"
 )]
 use super::*;
+mod tag_edit_selection;

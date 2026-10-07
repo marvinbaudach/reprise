@@ -7,7 +7,7 @@ msgid ""
 msgstr ""
 "Project-Id-Version: Reprise 0.1.0\n"
 "Report-Msgid-Bugs-To: Marvin Baudach\n"
-"POT-Creation-Date: 2026-10-05 13:11+0200\n"
+"POT-Creation-Date: 2026-10-07 17:11+0200\n"
 "PO-Revision-Date: 2026-07-20 11:38+0200\n"
 "Last-Translator: Reprise contributors\n"
 "Language-Team: Bengali\n"
@@ -1477,95 +1477,103 @@ msgid "The file could not be read"
 msgstr ""
 
 #: crates/reprise-gnome/src/ui/strings_issues.rs:192
-msgid "Unclassified"
-msgstr "অবর্গিত"
-
-#: crates/reprise-gnome/src/ui/strings_issues.rs:193
-msgid "The error could not be classified"
+msgid "CUE sheet not applied"
 msgstr ""
 
-#: crates/reprise-gnome/src/ui/strings_issues.rs:194
-msgid "1 file"
+#: crates/reprise-gnome/src/ui/strings_issues.rs:193
+msgid "The sheet beside this file could not be applied to it"
 msgstr ""
 
 #: crates/reprise-gnome/src/ui/strings_issues.rs:195
+msgid "Unclassified"
+msgstr "অবর্গিত"
+
+#: crates/reprise-gnome/src/ui/strings_issues.rs:196
+msgid "The error could not be classified"
+msgstr ""
+
+#: crates/reprise-gnome/src/ui/strings_issues.rs:197
+msgid "1 file"
+msgstr ""
+
+#: crates/reprise-gnome/src/ui/strings_issues.rs:198
 #, rust-format
 msgid "{count} files"
 msgstr ""
 
-#: crates/reprise-gnome/src/ui/strings_issues.rs:196
+#: crates/reprise-gnome/src/ui/strings_issues.rs:199
 msgid "seen in 1 scan"
 msgstr ""
 
-#: crates/reprise-gnome/src/ui/strings_issues.rs:197
+#: crates/reprise-gnome/src/ui/strings_issues.rs:200
 #, rust-format
 msgid "seen in {count} scans"
 msgstr ""
 
-#: crates/reprise-gnome/src/ui/strings_issues.rs:198
+#: crates/reprise-gnome/src/ui/strings_issues.rs:201
 msgid "Imported without metadata"
 msgstr ""
 
-#: crates/reprise-gnome/src/ui/strings_issues.rs:199
+#: crates/reprise-gnome/src/ui/strings_issues.rs:202
 msgid "Open in Tag Editor"
 msgstr ""
 
-#: crates/reprise-gnome/src/ui/strings_issues.rs:200
+#: crates/reprise-gnome/src/ui/strings_issues.rs:203
 #: crates/reprise-gnome/src/ui/strings_track_menu.rs:10
 msgid "Show in Files"
 msgstr ""
 
-#: crates/reprise-gnome/src/ui/strings_issues.rs:201
+#: crates/reprise-gnome/src/ui/strings_issues.rs:204
 msgid "Retry all"
 msgstr ""
 
-#: crates/reprise-gnome/src/ui/strings_issues.rs:202
+#: crates/reprise-gnome/src/ui/strings_issues.rs:205
 msgid "Dismiss all"
 msgstr ""
 
-#: crates/reprise-gnome/src/ui/strings_issues.rs:203
+#: crates/reprise-gnome/src/ui/strings_issues.rs:206
 msgid "Export list…"
 msgstr ""
 
-#: crates/reprise-gnome/src/ui/strings_issues.rs:204
+#: crates/reprise-gnome/src/ui/strings_issues.rs:207
 msgid "Export import errors"
 msgstr ""
 
-#: crates/reprise-gnome/src/ui/strings_issues.rs:205
+#: crates/reprise-gnome/src/ui/strings_issues.rs:208
 msgid "Restore"
 msgstr ""
 
-#: crates/reprise-gnome/src/ui/strings_issues.rs:206
+#: crates/reprise-gnome/src/ui/strings_issues.rs:209
 #, rust-format
 msgid "{count} dismissed · Show"
 msgstr ""
 
-#: crates/reprise-gnome/src/ui/strings_issues.rs:207
+#: crates/reprise-gnome/src/ui/strings_issues.rs:210
 msgid "Hide dismissed"
 msgstr ""
 
-#: crates/reprise-gnome/src/ui/strings_issues.rs:208
+#: crates/reprise-gnome/src/ui/strings_issues.rs:211
 msgid "Could not dismiss — the file is unavailable"
 msgstr ""
 
-#: crates/reprise-gnome/src/ui/strings_issues.rs:209
+#: crates/reprise-gnome/src/ui/strings_issues.rs:212
 msgid "Could not retry all import errors"
 msgstr ""
 
-#: crates/reprise-gnome/src/ui/strings_issues.rs:210
+#: crates/reprise-gnome/src/ui/strings_issues.rs:213
 msgid "Could not export the import-error list"
 msgstr ""
 
-#: crates/reprise-gnome/src/ui/strings_issues.rs:211
+#: crates/reprise-gnome/src/ui/strings_issues.rs:214
 msgid "1 failed"
 msgstr ""
 
-#: crates/reprise-gnome/src/ui/strings_issues.rs:212
+#: crates/reprise-gnome/src/ui/strings_issues.rs:215
 #, rust-format
 msgid "{count} failed"
 msgstr ""
 
-#: crates/reprise-gnome/src/ui/strings_issues.rs:213
+#: crates/reprise-gnome/src/ui/strings_issues.rs:216
 #: crates/reprise-gnome/src/ui/strings_library_doctor.rs:79
 #: crates/reprise-gnome/src/ui/strings_sources.rs:15
 #: crates/reprise-gnome/src/ui/strings_tag_edit.rs:154
@@ -1573,7 +1581,7 @@ msgstr ""
 msgid "Details"
 msgstr "বর্ণনা"
 
-#: crates/reprise-gnome/src/ui/strings_issues.rs:251
+#: crates/reprise-gnome/src/ui/strings_issues.rs:254
 msgid "Track unavailable — skipped"
 msgstr ""
 
@@ -5198,6 +5206,24 @@ msgstr ""
 msgid "{count} values"
 msgstr ""
 
+#: crates/reprise-gnome/src/ui/strings_tag_edit.rs:289
+#, rust-format
+msgid ""
+"This CUE track has no tags of its own to edit: its title and artist come "
+"from its sheet"
+msgid_plural ""
+"These {count} CUE tracks have no tags of their own to edit: their titles and "
+"artists come from their sheets"
+msgstr[0] ""
+msgstr[1] ""
+
+#: crates/reprise-gnome/src/ui/strings_tag_edit.rs:300
+#, rust-format
+msgid "{count} CUE track left out: its tags come from its sheet"
+msgid_plural "{count} CUE tracks left out: their tags come from their sheets"
+msgstr[0] ""
+msgstr[1] ""
+
 #: crates/reprise-gnome/src/ui/strings_track_menu.rs:5
 msgid "Add to queue"
 msgstr ""
@@ -6137,3 +6163,33 @@ msgstr ""
 #: crates/reprise-gnome/src/ui/window/window_decoration_strings.rs:18
 msgid "Separate title bar"
 msgstr ""
+
+#: crates/reprise-gnome/src/ui/strings_delete_cue.rs:31
+#, rust-format
+msgid "{count} CUE track hidden"
+msgid_plural "{count} CUE tracks hidden"
+msgstr[0] ""
+msgstr[1] ""
+
+#: crates/reprise-gnome/src/ui/strings_delete_cue.rs:45
+#, rust-format
+msgid ""
+"This CUE track shares its music file with tracks that are not selected, so "
+"nothing is moved to Trash: it is hidden from the library instead."
+msgid_plural ""
+"These {count} CUE tracks share their music files with tracks that are not "
+"selected, so nothing is moved to Trash: they are hidden from the library "
+"instead."
+msgstr[0] ""
+msgstr[1] ""
+
+#: crates/reprise-gnome/src/ui/strings_delete_cue.rs:55
+#, rust-format
+msgid ""
+"{count} CUE track shares its music file with tracks that are not selected; "
+"it is hidden from the library instead."
+msgid_plural ""
+"{count} CUE tracks share their music files with tracks that are not "
+"selected; they are hidden from the library instead."
+msgstr[0] ""
+msgstr[1] ""

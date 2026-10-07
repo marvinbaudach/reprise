@@ -361,12 +361,25 @@ pub(super) fn classify_entry(
         // Rows a sheet cut stay exactly as they are. Any other file is read as
         // if no sheet were there, which is how its rows came about, so that
         // loses nothing either; a sheet that is new beside it waits for a scan
-        // that can see it.
-        Cover::Unknown if known.was_cut_by_a_sheet() => {
+        // that can see it. A file with every track hidden has no rows, and its
+        // exclusions say the same.
+        Cover::Unknown
+            if known.was_cut_by_a_sheet()
+                || (!known.exists
+                    && exclusions::was_hidden_by_a_sheet(
+                        scan.tx,
+                        path,
+                        facts.device,
+                        facts.inode,
+                    )?) =>
+        {
             return Ok(EntryPlan::Skip(EntryOutcome::Unchanged));
         }
         Cover::Unknown => None,
     };
+    if !known.exists && hidden_file_unchanged(scan, path, &facts, governing.as_ref())? {
+        return Ok(EntryPlan::Skip(EntryOutcome::Unchanged));
+    }
     if known.mtime == Some(facts.mtime)
         && known.tag_scan_version >= super::TAG_SCAN_VERSION
         && !known.untagged
@@ -403,6 +416,29 @@ pub(super) fn classify_entry(
         known,
         governing,
     })))
+}
+
+/// A CUE file whose every track the user removed has no row to be unchanged
+/// against; its exclusions stand in for the rows (see
+/// [`exclusions::hidden_file_unchanged`]).
+fn hidden_file_unchanged(
+    scan: &EntryScan<'_, '_, '_>,
+    path: &Path,
+    facts: &FileFacts,
+    governing: Option<&SheetRef>,
+) -> Result<bool, ScanError> {
+    let sheet_text = governing.map(SheetRef::path_text);
+    let governing = governing
+        .zip(sheet_text.as_deref())
+        .map(|(sheet, text)| (text, sheet.mtime, sheet.size));
+    Ok(exclusions::hidden_file_unchanged(
+        scan.tx,
+        path,
+        facts.device,
+        facts.inode,
+        facts.mtime,
+        governing,
+    )?)
 }
 
 fn read_import_meta(

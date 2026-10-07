@@ -46,9 +46,12 @@ fn kind_copy(kind: ImportErrorKind) -> KindCopy {
             strings::IMPORT_ISSUE_IO_TITLE,
             strings::IMPORT_ISSUE_IO_ROW,
         ),
-        // A broken CUE sheet shares the catch-all copy until the surfaces wave
-        // gives it its own wording.
-        ImportErrorKind::Unknown | ImportErrorKind::InvalidCueSheet => (
+        ImportErrorKind::InvalidCueSheet => (
+            strings::IMPORT_ISSUE_CUE_ICON,
+            strings::IMPORT_ISSUE_CUE_TITLE,
+            strings::IMPORT_ISSUE_CUE_ROW,
+        ),
+        ImportErrorKind::Unknown => (
             strings::IMPORT_ISSUE_UNKNOWN_ICON,
             strings::IMPORT_ISSUE_UNKNOWN_TITLE,
             strings::IMPORT_ISSUE_UNKNOWN_ROW,
@@ -303,11 +306,11 @@ fn action_pill(
     match action {
         ImportRowAction::Retry => {
             let shared = shared.clone();
-            let path = entry.path.clone();
+            let root = entry.retry_root();
             IssuePill::new(
                 strings::issue_text(strings::IMPORT_ERROR_RETRY),
                 move || {
-                    handle_retry(&shared, &path);
+                    handle_retry(&shared, &root);
                 },
             )
         }
@@ -381,6 +384,7 @@ fn populate_dismissed(shared: &Rc<Shared>, rows: &gtk4::ListBox) {
     };
     for entry in dismissed {
         let path = entry.path.clone();
+        let root = entry.retry_root();
         let shared_for_restore = shared.clone();
         let row = IssueRow::new(RowSpec {
             cover: None,
@@ -393,7 +397,7 @@ fn populate_dismissed(shared: &Rc<Shared>, rows: &gtk4::ListBox) {
             right_idle: strings::import_issue_seen(entry.seen_count),
             pills: vec![IssuePill::new(
                 strings::issue_text(strings::IMPORT_ISSUE_RESTORE),
-                move || handle_restore(&shared_for_restore, &path),
+                move || handle_restore(&shared_for_restore, &path, &root),
             )],
         });
         row.widget()
@@ -410,25 +414,91 @@ pub(in crate::ui) fn file_stat(path: &str) -> Option<(i64, i64)> {
     ))
 }
 
-fn handle_retry(shared: &Rc<Shared>, path: &str) {
-    let result = {
-        let conn = &shared.conn;
-        scanner::scan_folder(conn, Path::new(path))
-    };
-    if let Err(error) = result {
-        tracing::error!(%error, path, "import errors view: retry failed to run");
-        show_toast(shared, &strings::import_error_retry_failed_toast());
-    }
-    notify_mutated(shared);
+/// Scans `root`, the file an issue names or a broken sheet's directory (see
+/// [`ImportErrorEntry::retry_root`]), off the main thread: a directory is a
+/// whole subtree to walk.
+fn handle_retry(shared: &Rc<Shared>, root: &Path) {
+    scan_off_main_thread(
+        shared,
+        vec![root.to_path_buf()],
+        FailureToast::AnyFailure(strings::import_error_retry_failed_toast()),
+    );
 }
 
-fn handle_restore(shared: &Rc<Shared>, path: &str) {
+/// When a retry says it failed.
+enum FailureToast {
+    /// When the scan could not run at all.
+    NotRun(String),
+    /// Also when a scanned root failed.
+    AnyFailure(String),
+}
+
+impl FailureToast {
+    fn text(&self) -> &str {
+        match self {
+            Self::NotRun(text) | Self::AnyFailure(text) => text,
+        }
+    }
+}
+
+/// Scans `roots` on a worker with its own connection, then tells the view
+/// back on the main thread.
+fn scan_off_main_thread(shared: &Rc<Shared>, roots: Vec<std::path::PathBuf>, toast: FailureToast) {
+    let Some(db_path) = shared.conn.path() else {
+        show_toast(shared, toast.text());
+        return;
+    };
+    let receiver = match one_shot_task::spawn("reprise-retry-import-errors", move || {
+        let conn = reprise_core::db::Db::open_migrated(Some(&db_path))
+            .map_err(|error| error.to_string())?;
+        let mut failures = 0usize;
+        for root in roots {
+            if let Err(error) = scanner::scan_folder(&conn, &root) {
+                failures += 1;
+                tracing::error!(%error, root = %root.display(), "import errors view: retry item failed");
+            }
+        }
+        Ok::<usize, String>(failures)
+    }) {
+        Ok(receiver) => receiver,
+        Err(error) => {
+            tracing::error!(%error, "import errors view: could not start retry worker");
+            show_toast(shared, toast.text());
+            return;
+        }
+    };
+    let shared = Rc::downgrade(shared);
+    glib::spawn_future_local(async move {
+        let Ok(result) = receiver.recv().await else {
+            return;
+        };
+        let Some(shared) = shared.upgrade() else {
+            return;
+        };
+        match result {
+            Ok(0) => {}
+            Ok(failures) => {
+                tracing::warn!(failures, "import errors view: retry incomplete");
+                if matches!(toast, FailureToast::AnyFailure(_)) {
+                    show_toast(&shared, toast.text());
+                }
+            }
+            Err(error) => {
+                tracing::error!(%error, "import errors view: retry failed");
+                show_toast(&shared, toast.text());
+            }
+        }
+        notify_mutated(&shared);
+    });
+}
+
+fn handle_restore(shared: &Rc<Shared>, path: &str, root: &Path) {
     let result = {
         let conn = &shared.conn;
         queries::restore_import_error(conn, path)
     };
     match result {
-        Ok(()) => handle_retry(shared, path),
+        Ok(()) => handle_retry(shared, root),
         Err(error) => tracing::error!(%error, path, "import errors view: restore failed"),
     }
 }
@@ -466,7 +536,7 @@ fn handle_dismiss_all(shared: &Rc<Shared>) {
     }
 }
 
-fn active_paths(shared: &Shared) -> Vec<String> {
+fn active_entries(shared: &Shared) -> Vec<ImportErrorEntry> {
     let conn = &shared.conn;
     queries::query_import_errors_grouped(conn).map_or_else(
         |error| {
@@ -476,68 +546,42 @@ fn active_paths(shared: &Shared) -> Vec<String> {
         |groups| {
             groups
                 .into_iter()
-                .flat_map(|(_, entries)| entries.into_iter().map(|entry| entry.path))
+                .flat_map(|(_, entries)| entries)
                 .collect()
         },
     )
 }
 
+fn active_paths(shared: &Shared) -> Vec<String> {
+    active_entries(shared)
+        .into_iter()
+        .map(|entry| entry.path)
+        .collect()
+}
+
+/// What Retry all scans: each active issue's retry root, once.
+fn retry_roots(shared: &Shared) -> Vec<std::path::PathBuf> {
+    active_entries(shared)
+        .iter()
+        .map(ImportErrorEntry::retry_root)
+        .fold(Vec::new(), |mut roots, root| {
+            if !roots.contains(&root) {
+                roots.push(root);
+            }
+            roots
+        })
+}
+
 fn handle_retry_all(shared: &Rc<Shared>) {
-    let paths = active_paths(shared);
+    let paths = retry_roots(shared);
     if paths.is_empty() {
         return;
     }
-    let db_path = shared.conn.path();
-    let Some(db_path) = db_path else {
-        show_toast(
-            shared,
-            &strings::issue_text(strings::IMPORT_ISSUE_RETRY_ALL_FAILED),
-        );
-        return;
-    };
-    let receiver = match one_shot_task::spawn("reprise-retry-import-errors", move || {
-        let conn = reprise_core::db::Db::open_migrated(Some(&db_path))
-            .map_err(|error| error.to_string())?;
-        let mut failures = 0usize;
-        for path in paths {
-            if let Err(error) = scanner::scan_folder(&conn, Path::new(&path)) {
-                failures += 1;
-                tracing::error!(%error, path, "import errors view: retry-all item failed");
-            }
-        }
-        Ok::<usize, String>(failures)
-    }) {
-        Ok(receiver) => receiver,
-        Err(error) => {
-            tracing::error!(%error, "import errors view: could not start retry-all worker");
-            show_toast(
-                shared,
-                &strings::issue_text(strings::IMPORT_ISSUE_RETRY_ALL_FAILED),
-            );
-            return;
-        }
-    };
-    let shared = Rc::downgrade(shared);
-    glib::spawn_future_local(async move {
-        let Ok(result) = receiver.recv().await else {
-            return;
-        };
-        let Some(shared) = shared.upgrade() else {
-            return;
-        };
-        match result {
-            Ok(0) => {}
-            Ok(failures) => tracing::warn!(failures, "import errors view: retry all incomplete"),
-            Err(error) => {
-                tracing::error!(%error, "import errors view: retry all failed");
-                show_toast(
-                    &shared,
-                    &strings::issue_text(strings::IMPORT_ISSUE_RETRY_ALL_FAILED),
-                );
-            }
-        }
-        notify_mutated(&shared);
-    });
+    scan_off_main_thread(
+        shared,
+        paths,
+        FailureToast::NotRun(strings::issue_text(strings::IMPORT_ISSUE_RETRY_ALL_FAILED)),
+    );
 }
 
 fn export_text(shared: &Shared) -> String {
@@ -646,6 +690,19 @@ mod task_3_3_tests {
             copies[0].row_text,
             "Tags unreadable — the file itself can usually still be played"
         );
+    }
+
+    #[test]
+    fn cue_14_a_broken_sheet_has_its_own_issue_copy() {
+        let copy = kind_copy(ImportErrorKind::InvalidCueSheet);
+
+        assert_eq!(copy.title, "CUE sheet not applied");
+        // True whether the file is read whole or cut by a sheet embedded in it.
+        assert_eq!(
+            copy.row_text,
+            "The sheet beside this file could not be applied to it"
+        );
+        assert_ne!(copy, kind_copy(ImportErrorKind::Unknown));
     }
 
     #[test]

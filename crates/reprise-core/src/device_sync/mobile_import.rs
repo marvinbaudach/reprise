@@ -32,6 +32,15 @@ pub fn device_path_for_track(db: &Db, track_id: i64) -> Result<Option<String>, D
     crate::db_mobile_sync::device_path_for_track(db, track_id)
 }
 
+/// What the phone reports a listen or rating of a track as: its synced device
+/// path and, for a track a CUE sheet cut from that file, its start in it.
+pub fn report_identity_for_track(
+    db: &Db,
+    track_id: i64,
+) -> Result<Option<(String, Option<i64>)>, DbError> {
+    crate::db_mobile_sync::report_identity_for_track(db, track_id)
+}
+
 /// Reads one sidecar through its owning library source.
 ///
 /// Missing and failed reads are ordinary no-data answers, matching playback's

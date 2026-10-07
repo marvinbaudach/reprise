@@ -165,11 +165,13 @@ fn playlist_projection_preserves_entries_but_deduplicates_physical_tracks() {
             source: SelectionSource::Playlist(10),
             name: "Repeated".into(),
             tracks: vec![low_mp3.clone(), flac, low_mp3.clone()],
+            cue_files: Vec::new(),
         },
         PlaylistTracks {
             source: SelectionSource::Smart(11),
             name: "Smart snapshot".into(),
             tracks: vec![low_mp3, high_mp3],
+            cue_files: Vec::new(),
         },
     ];
 

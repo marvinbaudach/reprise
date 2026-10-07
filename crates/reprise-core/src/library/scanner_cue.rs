@@ -126,6 +126,8 @@ struct DirectoryCues {
     sheets: Vec<DirectorySheet>,
     /// The directory could not be listed.
     unlisted: bool,
+    /// Whether the issues of sheets no longer in the directory were cleared.
+    vanished_cleared: bool,
 }
 
 impl DirectoryCues {
@@ -169,16 +171,22 @@ impl CueDirectories {
              WHERE cue_path IS NOT NULL AND cue_mtime IS NOT NULL AND cue_size IS NOT NULL \
                AND path LIKE ?1 ESCAPE '\\'",
         )?;
-        let rows = statement.query_map([pattern], |row| {
-            Ok((
-                row.get::<_, String>(0)?,
-                (row.get::<_, i64>(1)?, row.get::<_, i64>(2)?),
-                row.get::<_, String>(3)?,
-            ))
-        })?;
+        let mut rows = statement
+            .query_map([&pattern], |row| {
+                Ok((
+                    row.get::<_, String>(0)?,
+                    (row.get::<_, i64>(1)?, row.get::<_, i64>(2)?),
+                    row.get::<_, String>(3)?,
+                ))
+            })?
+            .collect::<Result<Vec<_>, _>>()?;
+        // A file whose every track is hidden has no row left to say which sheet
+        // cut it; its exclusions say it instead, and must agree with the rows.
+        rows.extend(crate::db_library_exclusions::applied_sheet_rows(
+            conn, &pattern,
+        )?);
         self.applied.clear();
-        for row in rows {
-            let (sheet, version, path) = row?;
+        for (sheet, version, path) in rows {
             let entry = self.applied.entry(sheet).or_insert(AppliedSheet {
                 version: Some(version),
                 files: HashSet::new(),
@@ -213,10 +221,10 @@ impl CueDirectories {
         tx: &Transaction<'_>,
         audio: &Path,
     ) -> Result<Cover, ScanError> {
-        let Some(cues) = self.directory_of(source, audio) else {
+        let Some((directory, cues)) = self.directory_of(source, audio) else {
             return Ok(Cover::Plain);
         };
-        report_unreported(tx, cues)?;
+        report_unreported(source, tx, &directory, cues)?;
         if cues.is_unknown() {
             return Ok(Cover::Unknown);
         }
@@ -265,10 +273,10 @@ impl CueDirectories {
         sheet: &SheetRef,
         audio: &Path,
     ) -> Result<SheetFit, ScanError> {
-        let Some(cues) = self.directory_of(source, audio) else {
+        let Some((directory, cues)) = self.directory_of(source, audio) else {
             return Ok(SheetFit::Unknown);
         };
-        report_unreported(tx, cues)?;
+        report_unreported(source, tx, &directory, cues)?;
         if cues.is_unknown() {
             return Ok(SheetFit::Unknown);
         }
@@ -285,9 +293,10 @@ impl CueDirectories {
         &mut self,
         source: &dyn LibrarySource,
         audio: &Path,
-    ) -> Option<&mut DirectoryCues> {
+    ) -> Option<(PathBuf, &mut DirectoryCues)> {
         let directory = source.parent_of(audio)?;
-        self.directories.get_mut(&directory)
+        let cues = self.directories.get_mut(&directory)?;
+        Some((directory, cues))
     }
 }
 
@@ -328,6 +337,7 @@ fn list_directory(
         audio,
         sheets,
         unlisted: false,
+        vanished_cleared: false,
     }
 }
 
@@ -420,7 +430,7 @@ fn read_state(source: &dyn LibrarySource, reference: &SheetRef, audio: &[PathBuf
             return SheetState::Unknown;
         }
     };
-    match resolve(&bytes, reference, audio) {
+    match resolve(source, &bytes, reference, audio) {
         Ok(parsed) => SheetState::Parsed(Rc::new(parsed)),
         Err(reason) => SheetState::Invalid(reason),
     }
@@ -429,7 +439,16 @@ fn read_state(source: &dyn LibrarySource, reference: &SheetRef, audio: &[PathBuf
 /// Tells the catalog what the scan found out about the sheets of a directory:
 /// an issue for one that cannot be applied, and the end of an old issue for one
 /// that can. Once per sheet and state.
-fn report_unreported(tx: &Transaction<'_>, cues: &mut DirectoryCues) -> Result<(), ScanError> {
+fn report_unreported(
+    source: &dyn LibrarySource,
+    tx: &Transaction<'_>,
+    directory: &Path,
+    cues: &mut DirectoryCues,
+) -> Result<(), ScanError> {
+    if !cues.vanished_cleared && !cues.unlisted {
+        cues.vanished_cleared = true;
+        clear_vanished_sheet_issues(source, tx, directory, cues)?;
+    }
     for sheet in cues.sheets.iter_mut().filter(|sheet| !sheet.reported) {
         sheet.reported = true;
         match &sheet.state {
@@ -448,20 +467,71 @@ fn report_unreported(tx: &Transaction<'_>, cues: &mut DirectoryCues) -> Result<(
     Ok(())
 }
 
-fn resolve(bytes: &[u8], reference: &SheetRef, audio: &[PathBuf]) -> Result<ParsedSheet, String> {
+/// Clears the issue of every sheet that was in `directory` and is not any
+/// more: the listing just taken is the proof that it is gone. Only an issue
+/// keyed by a sheet is touched; one for a sheet embedded in a file is keyed by
+/// that file and goes with the file.
+fn clear_vanished_sheet_issues(
+    source: &dyn LibrarySource,
+    tx: &Transaction<'_>,
+    directory: &Path,
+    cues: &DirectoryCues,
+) -> Result<(), ScanError> {
+    let pattern = format!(
+        "{}%",
+        crate::library::playlists::escape_like(&directory.to_string_lossy())
+    );
+    let issues: Vec<String> = tx
+        .prepare_cached(
+            "SELECT path FROM import_errors WHERE reason_kind = ?1 AND path LIKE ?2 ESCAPE '\\'",
+        )?
+        .query_map(
+            rusqlite::params![ImportErrorKind::InvalidCueSheet.as_str(), pattern],
+            |row| row.get(0),
+        )?
+        .collect::<Result<_, _>>()?;
+    for issue in issues {
+        let path = PathBuf::from(&issue);
+        let vanished = path
+            .extension()
+            .is_some_and(|extension| extension.eq_ignore_ascii_case("cue"))
+            && source.parent_of(&path).as_deref() == Some(directory)
+            && !cues.sheets.iter().any(|sheet| sheet.reference.path == path);
+        if vanished {
+            import_errors::clear_error(tx, &issue)?;
+        }
+    }
+    Ok(())
+}
+
+fn resolve(
+    source: &dyn LibrarySource,
+    bytes: &[u8],
+    reference: &SheetRef,
+    audio: &[PathBuf],
+) -> Result<ParsedSheet, String> {
     let parsed = cue::parse(bytes).map_err(|error| error.to_string())?;
-    let directory = reference.path.parent().unwrap_or(Path::new(""));
+    let directory = source.parent_of(&reference.path).unwrap_or_default();
+    let addressed: Vec<PathBuf> = audio
+        .iter()
+        .map(|path| addressed_by_name(source, &directory, path))
+        .collect();
     let mut resolved: Vec<(usize, PathBuf)> = Vec::new();
     for (index, file) in parsed.files.iter().enumerate() {
         if !file.tracks.iter().any(|track| track.is_audio) {
             continue;
         }
-        let path = cue::resolve_file(directory, &file.name, audio).ok_or_else(|| {
-            CueError::MissingDuration {
-                file: file.name.clone(),
-            }
-            .to_string()
-        })?;
+        let path = cue::resolve_file(&directory, &file.name, &addressed)
+            .and_then(|found| {
+                let position = addressed.iter().position(|candidate| *candidate == found)?;
+                audio.get(position).cloned()
+            })
+            .ok_or_else(|| {
+                CueError::MissingDuration {
+                    file: file.name.clone(),
+                }
+                .to_string()
+            })?;
         if resolved.iter().any(|(_, seen)| *seen == path) {
             return Err(CueError::DuplicateFile { path }.to_string());
         }
@@ -474,6 +544,21 @@ fn resolve(bytes: &[u8], reference: &SheetRef, audio: &[PathBuf]) -> Result<Pars
         sheet: parsed,
         resolved,
     })
+}
+
+/// `audio` as a sheet in `directory` names it: by its own path where the
+/// source's paths are file names joined to their directory, as on a
+/// filesystem, otherwise by the name the source shows for it joined to that
+/// directory. A document-tree URI is no file name joined to its parent, so a
+/// sheet beside a synced file on the phone finds it by its display name (CUE-16).
+fn addressed_by_name(source: &dyn LibrarySource, directory: &Path, audio: &Path) -> PathBuf {
+    let joined = audio.file_name().map(|name| directory.join(name));
+    if joined.as_deref() == Some(audio) {
+        return audio.to_path_buf();
+    }
+    source
+        .display_name(audio)
+        .map_or_else(|| audio.to_path_buf(), |name| directory.join(name))
 }
 
 fn read_sheet(source: &dyn LibrarySource, path: &Path) -> std::io::Result<Vec<u8>> {
@@ -521,3 +606,7 @@ pub(super) fn report_rejected(
     import_errors::record_error(tx, &path, ImportErrorKind::InvalidCueSheet, reason, now)?;
     Ok(())
 }
+
+#[cfg(test)]
+#[path = "scanner_cue_sheet_issue_tests.rs"]
+mod sheet_issue_tests;

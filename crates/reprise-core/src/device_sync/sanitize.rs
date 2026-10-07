@@ -49,13 +49,6 @@ pub fn device_track_path(
     forced_extension: Option<&str>,
     collision_index: usize,
 ) -> String {
-    let album_artist = if metadata.album_artist.trim().is_empty() {
-        &metadata.artist
-    } else {
-        &metadata.album_artist
-    };
-    let album_artist = sanitize_component(album_artist, "Unknown Artist");
-    let album = sanitize_component(&metadata.album, "Unknown Album");
     let title = sanitize_component(&metadata.title, "Untitled");
     let number = metadata.track_number.unwrap_or(0);
     let number = if number < 100 {
@@ -63,6 +56,43 @@ pub fn device_track_path(
     } else {
         number.to_string()
     };
+    device_path_named(
+        metadata,
+        &format!("{number} {title}"),
+        forced_extension,
+        collision_index,
+    )
+}
+
+/// The device path of a file a CUE sheet cut into tracks: one file for all of
+/// them, so it is named after the source file's stem rather than one track.
+pub fn device_file_path(
+    metadata: &DevicePathMetadata,
+    forced_extension: Option<&str>,
+    collision_index: usize,
+) -> String {
+    let stem = metadata
+        .source_path
+        .file_stem()
+        .map(|stem| stem.to_string_lossy().into_owned())
+        .unwrap_or_default();
+    let stem = sanitize_component(&stem, "Untitled");
+    device_path_named(metadata, &stem, forced_extension, collision_index)
+}
+
+fn device_path_named(
+    metadata: &DevicePathMetadata,
+    name: &str,
+    forced_extension: Option<&str>,
+    collision_index: usize,
+) -> String {
+    let album_artist = if metadata.album_artist.trim().is_empty() {
+        &metadata.artist
+    } else {
+        &metadata.album_artist
+    };
+    let album_artist = sanitize_component(album_artist, "Unknown Artist");
+    let album = sanitize_component(&metadata.album, "Unknown Album");
     let suffix = if collision_index > 1 {
         format!(" ({collision_index})")
     } else {
@@ -78,7 +108,7 @@ pub fn device_track_path(
                 .map(str::to_ascii_lowercase)
         })
         .unwrap_or_else(|| "audio".into());
-    format!("{album_artist}/{album}/{number} {title}{suffix}.{extension}")
+    format!("{album_artist}/{album}/{name}{suffix}.{extension}")
 }
 
 pub(crate) fn truncate_utf8(value: &str, max_bytes: usize) -> String {

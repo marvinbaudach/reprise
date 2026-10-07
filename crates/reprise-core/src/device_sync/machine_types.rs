@@ -75,7 +75,18 @@ pub enum Effect {
         device_size: u64,
         device_path: String,
     },
+    /// Write the inventory row of a CUE track whose file another track's
+    /// transfer brought, or that is already on the device (CUE-15).
+    RecordSharedFile {
+        index: usize,
+        device_size: u64,
+        device_path: String,
+    },
     WriteAnalysis {
+        index: usize,
+    },
+    /// Write `plan.cue_writes[index]`, a sheet derived for a CUE file.
+    WriteDerivedCue {
         index: usize,
     },
     WriteLyrics {
@@ -147,6 +158,9 @@ pub enum Event {
     /// Carries the number of bytes and relative path actually written.
     TrackCopied(Result<CopiedTrack, String>),
     FileRecorded(Result<(), String>),
+    SharedFileRecorded(Result<(), String>),
+    /// Carries the number of bytes of the derived sheet written.
+    DerivedCueWritten(Result<u64, String>),
     /// Bytes written so far for the copy in flight.
     CopyProgress {
         copied: u64,

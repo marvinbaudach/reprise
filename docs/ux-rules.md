@@ -7823,8 +7823,9 @@ committee published on 2026-05-29.
 
 An album ripped as one audio file plus a `.cue` sheet, or a FLAC that carries
 the sheet in its `CUESHEET` comment, is listed as the tracks the sheet names.
-Reprise only reads sheets: it never writes one, and a track cut from a file has
-no tags of its own to write.
+Reprise never writes a sheet into the music collection, and a track cut from a
+file has no tags of its own to write. The one sheet it writes is the one it
+derives for a synced CUE file on the device (CUE-15).
 
 - **CUE-1a** [active] [core] — A sheet beside an audio file, or embedded in a
   FLAC, lists the file as the sheet's tracks, in sheet order, each with the
@@ -7877,6 +7878,73 @@ no tags of its own to write.
   sidecar, because one file's tracks would all write the same sidecar name. For
   the same reason its lyrics are never read from or written to a sidecar beside
   the file or the file's tags; they come from the online sources and the cache.
+  <!-- REVIEW: rule proposal -->
+- **CUE-11** [active] [core] — Move to Trash acts on audio files. A CUE file goes
+  to the Trash only when every one of its tracks still in the library is
+  selected, and the sheet beside it goes with it once no other file in the
+  library, or hidden from it, still needs that sheet: a sheet over several
+  files goes with the last of them. That holds too for a sheet beside the file
+  that did not fit and gave way to the sheet embedded in it, since it names the
+  file; a sheet that left the file one whole track stays. The
+  selected tracks of a CUE file whose other tracks stay are hidden from the
+  library instead, as Remove from Library hides them, and the confirmation
+  counts the files it moves to Trash apart from the CUE tracks it hides.
+  <!-- REVIEW: rule proposal -->
+- **CUE-12** [active] [gtk] — The tag editor leaves tracks cut from a CUE sheet
+  out (CUE-5 stays the core refusal). A selection of nothing but CUE tracks gets
+  a notice that their tags come from their sheet instead of an editor; a mixed
+  selection opens the editor on the whole-file tracks and says how many CUE
+  tracks were left out. "Edit failed tracks…" and stepping through the list in
+  single-track mode leave them out the same way.
+  <!-- REVIEW: rule proposal -->
+- **CUE-13** [active] [core] — The Library Doctor never checks a track cut from a
+  CUE sheet, whatever its scope (whole library, current view, queue or
+  selection) and through MCP alike: every proposal it makes is a tag write, and
+  such a track has no tags of its own (CUE-5). A scope that holds only CUE
+  tracks falls back like an empty one.
+  <!-- REVIEW: rule proposal -->
+- **CUE-14** [active] [gtk] — A sheet that cannot be applied (CUE-2) is listed
+  under Issues → Import errors with its own copy, never as an unclassified
+  error. Retry rescans the sheet's directory, where its audio is; an issue for a
+  sheet embedded in a file retries that file. An issue for a sheet that is gone
+  clears on the next scan of its directory; an embedded sheet's issue stays
+  with its file. A sheet beside a file that parses but does not fit it gives
+  way to a valid sheet embedded in the file, and its issue stays raised.
+  <!-- REVIEW: rule proposal -->
+- **CUE-15** [active] [core] — Device sync copies a CUE file once, transcoded per
+  the profile like any file, however many of its tracks are selected; it is
+  named after the source file and its bytes are counted once. Beside it goes a
+  sheet derived for the device, whose `FILE` line names the device file and
+  which places every track of the file still in the library, also for a sheet
+  that was embedded in the file; a sheet edit on the desktop replaces it on
+  the next sync, even one that keeps its length. Each selected track keeps its
+  own row in the device inventory; a track that leaves the selection while
+  another still needs the file only loses its row, and the file and its sheet
+  go with the last track that needs them. A newly selected track of a file already on the
+  device is recorded without a copy, and a CUE file kept on the device by a
+  frozen smart playlist keeps its sheet.
+  <!-- REVIEW: rule proposal -->
+- **CUE-16** [active] [core] — A sheet beside an audio file cuts it on the phone
+  as on the desktop, through the document tree the phone's library lives in:
+  the sheet finds its file by the name the tree shows for it. So the phone lists
+  every track of a CUE album synced to it. The live device proof is a post-merge
+  check of the CUE sheets wave.
+  <!-- REVIEW: rule proposal -->
+- **CUE-17** [active] [core] — A phone listen or rating of a track a CUE sheet cut
+  from a synced file counts for that track on the desktop: the phone reports
+  the synced device path together with the track's start in the file, and the
+  desktop finds the track of that file starting there, whether or not that
+  track was itself selected for sync. The rating and play count the desktop
+  sends back reach the same track on the phone. A report entry that names no
+  track is counted in the sync summary and logged, never dropped silently.
+  <!-- REVIEW: rule proposal -->
+- **CUE-18** [active] [core] — A CUE track removed from the library stays hidden
+  as the song it was across an edit of its sheet: it is recognised by its start
+  and title, then a unique title, then its start, then its position, as CUE-1b
+  keeps a song on its row. A track the edit moves into a hidden song's old
+  position stays visible, and removing that one too hides both. A CUE file whose
+  every track is hidden counts as unchanged on a rescan when neither the file
+  nor its sheet changed, so its sheet is not read again.
 
 ## AJ. Showroom (public site)
 

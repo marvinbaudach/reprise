@@ -44,3 +44,23 @@ fn track_metadata_list_path_is_recognised_case_insensitively() {
     )));
     assert!(!is_list_path(std::path::Path::new("Song.opus")));
 }
+
+#[test]
+fn cue_17_the_list_carries_each_cue_track_with_its_start() {
+    let list = TrackMetadataList::new(vec![TrackMetadataEntry {
+        device_path: "Artist/Album/01 Song.opus".into(),
+        rating: 3,
+        play_count: 2,
+    }])
+    .with_segments(vec![SegmentMetadataEntry {
+        device_path: "Band/Album/album.opus".into(),
+        segment_start_ms: 10_013,
+        rating: 4,
+        play_count: 7,
+    }]);
+
+    let decoded = TrackMetadataList::decode(&list.encode().unwrap()).unwrap();
+
+    assert_eq!(decoded, list);
+    assert_eq!(decoded.segments[0].segment_start_ms, 10_013);
+}

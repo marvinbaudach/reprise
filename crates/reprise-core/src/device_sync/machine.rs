@@ -14,7 +14,7 @@
 //! Cancellation is a plain flag. The platform keeps whatever cancellation
 //! primitive its I/O needs; the machine simply stops emitting work.
 
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 
 use super::ledger::WorkLedger;
 use super::phase_transitions;
@@ -40,7 +40,9 @@ pub(super) enum Awaiting {
     Transcode(usize),
     Copy(usize),
     RecordFile(usize),
+    RecordShared(usize),
     WriteAnalysis(usize),
+    WriteCue(usize),
     WriteLyrics(usize),
     WritePlaylist(usize),
     RecordPlaylist(usize),
@@ -71,6 +73,11 @@ pub struct DeviceSyncMachine {
     copied_device_path: Option<String>,
     transcoded_bytes: Option<u64>,
     deferred_replacements: Vec<(String, i64)>,
+    /// Size and device path of every file this run copied, by the track whose
+    /// row recorded it, so the CUE tracks sharing it can be recorded too.
+    copied_files: HashMap<i64, (u64, String)>,
+    /// The device path the shared record in flight is being recorded at.
+    shared_path: Option<String>,
     planned_playlist_sources: HashSet<SelectionSource>,
     successful_playlist_sources: HashSet<SelectionSource>,
     /// Set when a playlist file the device should no longer hold is still
@@ -103,6 +110,8 @@ impl DeviceSyncMachine {
             copied_device_path: None,
             transcoded_bytes: None,
             deferred_replacements: Vec::new(),
+            copied_files: HashMap::new(),
+            shared_path: None,
             planned_playlist_sources,
             successful_playlist_sources: HashSet::new(),
             stale_playlist_on_device: false,
@@ -240,6 +249,10 @@ impl DeviceSyncMachine {
                                 ));
                             }
                         }
+                        self.copied_files.insert(
+                            operation.desired.track.id,
+                            (self.copied_bytes.unwrap_or_default(), recorded_path),
+                        );
                     }
                     Err(_) => {
                         self.copied_device_path = None;
@@ -249,6 +262,28 @@ impl DeviceSyncMachine {
                 self.ledger
                     .complete_unit(self.copied_bytes.take().unwrap_or_default());
                 self.advance_past_transfer(index)
+            }
+            (Awaiting::RecordShared(index), Event::SharedFileRecorded(result)) => {
+                let recorded_path = self.shared_path.take().unwrap_or_default();
+                match result {
+                    Ok(()) => self.defer_shared_previous(index, &recorded_path),
+                    Err(_) => {
+                        let track_id = self.plan.shared_records[index].desired.track.id;
+                        self.fail_track(track_id);
+                    }
+                }
+                self.enter_shared_records(index + 1)
+            }
+            (Awaiting::WriteCue(index), Event::DerivedCueWritten(result)) => {
+                match result {
+                    Ok(bytes) => self.ledger.complete_unit(bytes),
+                    Err(_) => {
+                        let track_id = self.plan.cue_writes[index].track_id;
+                        self.fail_track(track_id);
+                        self.ledger.complete_unit(0);
+                    }
+                }
+                self.enter_cue_writes(index + 1)
             }
             (Awaiting::WriteAnalysis(index), Event::AnalysisWritten(result)) => {
                 match result {
@@ -369,7 +404,10 @@ impl DeviceSyncMachine {
     fn observe_copy_progress(&mut self, copied: u64) {
         if !matches!(
             self.awaiting,
-            Awaiting::Copy(_) | Awaiting::WriteAnalysis(_) | Awaiting::WriteLyrics(_)
+            Awaiting::Copy(_)
+                | Awaiting::WriteAnalysis(_)
+                | Awaiting::WriteCue(_)
+                | Awaiting::WriteLyrics(_)
         ) {
             return;
         }
@@ -390,7 +428,7 @@ impl DeviceSyncMachine {
             return self.finish();
         }
         let Some(operation) = self.transfers.get(from) else {
-            return self.enter_analysis_writes(0);
+            return self.enter_shared_records(0);
         };
         self.transcoded_bytes = None;
         self.copied_bytes = None;
@@ -541,6 +579,12 @@ impl DeviceSyncMachine {
         let Some(removal) = self.plan.remove.get(from) else {
             return self.enter_deferred_removals(0);
         };
+        if matches!(removal, super::ManagedRemoval::Unshared(_)) {
+            // Another row still needs the file: only this row goes.
+            self.ledger.begin_unit(0);
+            self.awaiting = Awaiting::ForgetFile(from);
+            return vec![Effect::ForgetFile { index: from }];
+        }
         self.ledger.begin_unit(0);
         self.phase = phase_transitions::syncing(
             &self.ledger,

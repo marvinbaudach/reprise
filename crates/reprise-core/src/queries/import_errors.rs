@@ -143,6 +143,24 @@ pub struct ImportErrorEntry {
     pub is_hint: bool,
 }
 
+impl ImportErrorEntry {
+    /// What Retry scans: the file the issue names, or for a sheet beside its
+    /// audio the sheet's directory, since scanning a sheet alone finds no audio
+    /// to apply it to. A sheet embedded in a file is keyed by that file.
+    pub fn retry_root(&self) -> std::path::PathBuf {
+        let path = std::path::Path::new(&self.path);
+        let is_sheet = path
+            .extension()
+            .is_some_and(|extension| extension.eq_ignore_ascii_case("cue"));
+        match path.parent() {
+            Some(directory) if self.kind == ImportErrorKind::InvalidCueSheet && is_sheet => {
+                directory.to_path_buf()
+            }
+            _ => path.to_path_buf(),
+        }
+    }
+}
+
 /// Every non-dismissed `import_errors` row, grouped by [`ImportErrorKind`]
 /// — the ImportErrors triage UI's main list. See the module doc's "Group
 /// and row ordering" section for the exact, deterministic order both the

@@ -10,6 +10,10 @@ use super::{DoctorScopeRequest, DoctorTrackRef, DoctorViewSnapshot, FrozenScope}
 
 const PAGE_SIZE: i64 = 200;
 
+/// A track cut from a CUE sheet has no tags of its own (CUE-5): every Doctor
+/// proposal is a tag write, so no scope ever holds one. MCP shares this scope.
+const WHOLE_FILE: &str = "segment_index = 0";
+
 pub(super) fn freeze_scope(
     db: &Db,
     request: &DoctorScopeRequest,
@@ -28,7 +32,8 @@ pub(super) fn freeze_scope(
 
 fn whole_library(conn: &Connection) -> Result<Vec<DoctorTrackRef>, rusqlite::Error> {
     let mut statement = conn.prepare(&format!(
-        "SELECT id, path, file_mtime, file_size, device, inode FROM tracks WHERE {} ORDER BY id",
+        "SELECT id, path, file_mtime, file_size, device, inode FROM tracks \
+         WHERE {} AND {WHOLE_FILE} ORDER BY id",
         crate::queries::PRESENT
     ))?;
     let tracks = statement
@@ -117,7 +122,7 @@ fn selection(conn: &Connection, track_ids: &[i64]) -> Result<Vec<DoctorTrackRef>
             .query_row(
                 &format!(
                     "SELECT id, path, file_mtime, file_size, device, inode \
-                     FROM tracks WHERE id=?1 AND {}",
+                     FROM tracks WHERE id=?1 AND {} AND {WHOLE_FILE}",
                     crate::queries::PRESENT
                 ),
                 [track_id],
@@ -149,7 +154,7 @@ fn present_track_ref(
     conn.query_row(
         &format!(
             "SELECT id, path, file_mtime, file_size, device, inode \
-             FROM tracks WHERE id=?1 AND {}",
+             FROM tracks WHERE id=?1 AND {} AND {WHOLE_FILE}",
             crate::queries::PRESENT
         ),
         [track_id],
@@ -157,3 +162,7 @@ fn present_track_ref(
     )
     .optional()
 }
+
+#[cfg(test)]
+#[path = "scope_tests.rs"]
+mod tests;
