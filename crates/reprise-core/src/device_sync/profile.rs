@@ -2,6 +2,7 @@
 
 use std::collections::HashSet;
 
+use super::cue_files::CueSyncFile;
 use super::{SelectionSource, SyncTrack};
 
 /// Room for encoder rounding and container structures in addition to
@@ -150,6 +151,8 @@ pub struct PlaylistTracks {
     pub source: SelectionSource,
     pub name: String,
     pub tracks: Vec<SyncTrack>,
+    /// The CUE files the tracks were cut from.
+    pub cue_files: Vec<CueSyncFile>,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -168,24 +171,59 @@ pub struct PlaylistSizeProjection {
     pub target_bytes: u64,
 }
 
+/// A track's projected bytes. Tracks of one CUE file reach the device as one
+/// file (CUE-15), so the file is counted once, at its whole length however few
+/// of its tracks are selected.
+fn projected_bytes(
+    profile: TransferProfile,
+    track: &SyncTrack,
+    cue_files: &[CueSyncFile],
+    counted_files: &mut HashSet<std::path::PathBuf>,
+) -> u64 {
+    let Some(file) = cue_files
+        .iter()
+        .find(|file| file.track_ids().any(|id| id == track.id))
+    else {
+        return profile.estimated_target_bytes(track);
+    };
+    if !counted_files.insert(file.source_path.clone()) {
+        return 0;
+    }
+    profile.estimated_target_bytes(&SyncTrack {
+        duration_ms: file.duration_ms,
+        ..track.clone()
+    })
+}
+
 pub fn project_playlist_sizes(
     playlists: &[PlaylistTracks],
     profile: TransferProfile,
 ) -> PlaylistSizeProjection {
     let mut union = HashSet::new();
+    let mut union_files = HashSet::new();
     let mut union_bytes = 0_u64;
     let playlists = playlists
         .iter()
         .map(|playlist| {
             let mut unique = HashSet::new();
+            let mut files = HashSet::new();
             let mut target_bytes = 0_u64;
             for track in &playlist.tracks {
                 if unique.insert(track.id) {
-                    target_bytes =
-                        target_bytes.saturating_add(profile.estimated_target_bytes(track));
+                    target_bytes = target_bytes.saturating_add(projected_bytes(
+                        profile,
+                        track,
+                        &playlist.cue_files,
+                        &mut files,
+                    ));
                 }
                 if union.insert(track.id) {
-                    union_bytes = union_bytes.saturating_add(profile.estimated_target_bytes(track));
+                    union_bytes = union_bytes.saturating_add(projected_bytes(
+                        profile,
+                        track,
+                        &playlist.cue_files,
+                        &mut union_files,
+                    ));
                 }
             }
             PlaylistTargetSize {

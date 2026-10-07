@@ -26,7 +26,9 @@ pub(super) enum Layout {
     /// file and could not be applied; the row remembers it, so the next scan
     /// does not try the same sheet again.
     Whole { rejected_by: Option<SheetRef> },
-    /// The tracks of a sheet. `sheet` is `None` for a sheet embedded in the file.
+    /// The tracks of a sheet. `sheet` is the sheet beside the file whose version
+    /// the rows remember: the one that cut it, or one that did not fit and gave
+    /// way to the sheet embedded in the file. `None` for an embedded sheet alone.
     Segments {
         segments: Vec<CueSegment>,
         sheet: Option<SheetRef>,
@@ -90,7 +92,9 @@ pub(super) fn plan_layout(
     if let Some(sheet) = governing {
         let sub_sheet = match scan.cues.sub_sheet(scan.source, scan.tx, sheet, path)? {
             SheetFit::Part(sub_sheet) => sub_sheet,
-            SheetFit::Unfit => return Ok(Some(Plan::whole(Some(sheet.clone()), None))),
+            // The sheet stopped covering the file, so the next scan will not
+            // offer it either: the rows remember none.
+            SheetFit::Unfit => return Ok(Some(fall_back(path, meta, None, None))),
             SheetFit::Unknown => return Ok(None),
         };
         return Ok(Some(match cue::segments(&sub_sheet, own_file) {
@@ -101,8 +105,10 @@ pub(super) fn plan_layout(
                 },
                 issue: None,
             },
-            Err(error) => Plan::whole(
-                Some(sheet.clone()),
+            Err(error) => fall_back(
+                path,
+                meta,
+                Some(sheet),
                 Some(SheetIssue::Rejected {
                     sheet: sheet.clone(),
                     reason: error.to_string(),
@@ -113,18 +119,52 @@ pub(super) fn plan_layout(
     let Some(text) = &meta.embedded_cuesheet else {
         return Ok(Some(Plan::whole(None, None)));
     };
-    Ok(Some(
-        match cue::parse(text.as_bytes()).and_then(|sheet| cue::segments(&sheet, own_file)) {
-            Ok(segments) => Plan {
-                layout: Layout::Segments {
-                    segments,
-                    sheet: None,
-                },
-                issue: None,
+    Ok(Some(match embedded_segments(path, meta, text) {
+        Ok(segments) => Plan {
+            layout: Layout::Segments {
+                segments,
+                sheet: None,
             },
-            Err(error) => Plan::whole(None, Some(SheetIssue::Embedded(error.to_string()))),
+            issue: None,
         },
-    ))
+        Err(error) => Plan::whole(None, Some(SheetIssue::Embedded(error.to_string()))),
+    }))
+}
+
+/// The plan for a file whose sheet beside it cannot be applied: the sheet
+/// embedded in the file when that one fits (finding A10), the file whole
+/// otherwise. `rejected` is the sheet beside the file the rows remember, so the
+/// next scan, offered the same sheet, finds the file unchanged; `issue` stays
+/// raised either way, since that sheet still does not fit.
+fn fall_back(
+    path: &Path,
+    meta: &TrackMeta,
+    rejected: Option<&SheetRef>,
+    issue: Option<SheetIssue>,
+) -> Plan {
+    let embedded = meta
+        .embedded_cuesheet
+        .as_deref()
+        .and_then(|text| embedded_segments(path, meta, text).ok());
+    match embedded {
+        Some(segments) => Plan {
+            layout: Layout::Segments {
+                segments,
+                sheet: rejected.cloned(),
+            },
+            issue,
+        },
+        None => Plan::whole(rejected.cloned(), issue),
+    }
+}
+
+fn embedded_segments(
+    path: &Path,
+    meta: &TrackMeta,
+    text: &str,
+) -> Result<Vec<CueSegment>, cue::CueError> {
+    let own_file = |_: &cue::CueFile| Some((path.to_path_buf(), meta.duration_ms));
+    cue::parse(text.as_bytes()).and_then(|sheet| cue::segments(&sheet, own_file))
 }
 
 /// Records the issue a plan raised, unless the user dismissed this very
@@ -211,19 +251,12 @@ fn write_segments(
     segments: &[CueSegment],
     sheet: &Option<SheetRef>,
 ) -> Result<usize, ScanError> {
-    let mut included = Vec::with_capacity(segments.len());
-    for segment in segments {
-        let excluded = exclusions::matches_segment(
-            scan.tx,
-            path,
-            facts.device,
-            facts.inode,
-            segment.segment_index,
-        )?;
-        if !excluded {
-            included.push(segment);
-        }
-    }
+    let hidden = hide_excluded(scan, path, facts, segments, sheet)?;
+    let included: Vec<&CueSegment> = segments
+        .iter()
+        .zip(hidden)
+        .filter_map(|(segment, hidden)| (!hidden).then_some(segment))
+        .collect();
     let titles: Vec<String> = included
         .iter()
         .map(|segment| segment_title(segment))
@@ -267,6 +300,64 @@ fn write_segments(
         super::entry::upsert_track(scan, path_str, facts, &track, &placement)?;
     }
     Ok(included.len())
+}
+
+/// Which of `segments` the user removed from the library, matched to their
+/// exclusions as tracks are matched to rows (see [`segment_match`]), so a song
+/// stays hidden when a sheet edit moves it. Each matched exclusion then takes
+/// its song's current position, start, title and sheet; one the sheet no longer
+/// has is parked at a position no track has and matches by start and title only.
+fn hide_excluded(
+    scan: &EntryScan<'_, '_, '_>,
+    path: &Path,
+    facts: &FileFacts,
+    segments: &[CueSegment],
+    sheet: &Option<SheetRef>,
+) -> Result<Vec<bool>, ScanError> {
+    let path_str = path.to_string_lossy();
+    let excluded = exclusions::segment_exclusions(scan.tx, &path_str, facts.device, facts.inode)?;
+    if excluded.is_empty() {
+        return Ok(vec![false; segments.len()]);
+    }
+    let known: Vec<segment_match::KnownSegment> = excluded
+        .iter()
+        .map(|exclusion| segment_match::KnownSegment {
+            id: exclusion.id,
+            index: exclusion.index,
+            start_ms: exclusion.start_ms,
+            title: exclusion.title.clone().unwrap_or_default(),
+        })
+        .collect();
+    let titles: Vec<String> = segments.iter().map(segment_title).collect();
+    let wanted: Vec<segment_match::WantedSegment<'_>> = segments
+        .iter()
+        .zip(&titles)
+        .map(|(segment, title)| segment_match::WantedSegment {
+            index: segment.segment_index,
+            start_ms: segment.start_ms,
+            title,
+        })
+        .collect();
+    let matched = segment_match::match_rows(&known, &wanted);
+    let ids: Vec<i64> = excluded.iter().map(|exclusion| exclusion.id).collect();
+    exclusions::park_segment_exclusions(scan.tx, &ids)?;
+    let sheet_text = sheet.as_ref().map(SheetRef::path_text);
+    for ((segment, title), id) in segments.iter().zip(&titles).zip(&matched) {
+        let Some(id) = id else { continue };
+        let placement = exclusions::SegmentPlacement {
+            index: segment.segment_index,
+            start_ms: segment.start_ms,
+            title,
+            sheet: sheet
+                .as_ref()
+                .zip(sheet_text.as_deref())
+                .map(|(sheet, path)| (path, sheet.mtime, sheet.size)),
+            file_mtime: facts.mtime,
+            file_size: facts.file_size,
+        };
+        exclusions::place_segment_exclusion(scan.tx, *id, &placement)?;
+    }
+    Ok(matched.iter().map(Option::is_some).collect())
 }
 
 /// The tracks the file holds now.
@@ -406,3 +497,7 @@ mod tests {
         assert_eq!(leading_year("19790"), None);
     }
 }
+
+#[cfg(test)]
+#[path = "scanner_cue_exclusion_tests.rs"]
+mod exclusion_tests;

@@ -30,6 +30,13 @@ const RESPONSE_REMOVE: &str = "remove";
 const RESPONSE_TRASH: &str = "trash";
 const SMOKE_ENV: &str = "REPRISE_SMOKE_DELETE";
 
+#[path = "delete_tracks_run.rs"]
+mod run;
+#[path = "strings_delete_cue.rs"]
+mod strings_cue;
+
+use run::run_delete;
+
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 enum DeleteMode {
     Remove,
@@ -39,6 +46,8 @@ enum DeleteMode {
 #[derive(Debug)]
 struct DeleteReport {
     removed_ids: Vec<i64>,
+    /// CUE tracks a trash hid instead of trashing; they count in `removed_ids`.
+    hidden: usize,
     failures: usize,
 }
 
@@ -103,6 +112,40 @@ fn selected_tracks(shared: &Rc<Shared>) -> Option<Vec<(i64, PathBuf)>> {
         .collect()
 }
 
+/// Trash acts on audio files: the dialog counts the files apart from the CUE
+/// tracks it hides because their file holds other tracks too (CUE-11).
+fn trash_body(shared: &Rc<Shared>, tracks: &[(i64, PathBuf)]) -> String {
+    let (files, hidden) = trash_counts(shared, tracks);
+    strings_cue::trash_body(files, hidden)
+}
+
+fn choice_body(shared: &Rc<Shared>, tracks: &[(i64, PathBuf)]) -> String {
+    let choice = strings::text(strings::DELETE_TRACKS_CHOICE);
+    let (_, hidden) = trash_counts(shared, tracks);
+    match strings_cue::choice_note(hidden) {
+        Some(note) => format!("{choice} {note}"),
+        None => choice,
+    }
+}
+
+/// A selection without a CUE track is one file per track; only one with a
+/// CUE track asks the catalog how its files group.
+fn trash_counts(shared: &Rc<Shared>, tracks: &[(i64, PathBuf)]) -> (usize, usize) {
+    let any_cue = current_selection_positions(shared)
+        .into_iter()
+        .any(|position| {
+            shared
+                .model
+                .track_at(position)
+                .is_some_and(|track| track.segment.is_some())
+        });
+    if any_cue {
+        run::trash_counts(&shared.conn, tracks)
+    } else {
+        (tracks.len(), 0)
+    }
+}
+
 fn confirm(shared: &Rc<Shared>, mode: DeleteMode) {
     let Some(tracks) = selected_tracks(shared) else {
         return;
@@ -120,7 +163,7 @@ fn confirm(shared: &Rc<Shared>, mode: DeleteMode) {
         ),
         DeleteMode::Trash => (
             &strings::text(strings::MOVE_TO_TRASH),
-            strings::trash_confirmation_body(tracks.len()),
+            trash_body(shared, &tracks),
             &strings::text(strings::DELETE_TRACKS_TRASH),
             RESPONSE_TRASH,
         ),
@@ -156,7 +199,7 @@ fn choose(shared: &Rc<Shared>) {
     let reload_state = capture_catalog_delete_reload(shared);
     let dialog = adw::AlertDialog::builder()
         .heading(strings::text(strings::DELETE_TRACKS_HEADING))
-        .body(strings::text(strings::DELETE_TRACKS_CHOICE))
+        .body(choice_body(shared, &tracks))
         .close_response(RESPONSE_CANCEL)
         .build();
     dialog.add_response(
@@ -237,60 +280,6 @@ fn start_worker(
             }
         }
     });
-}
-
-fn run_delete(
-    db: &reprise_core::db::Db,
-    tracks: &[(i64, PathBuf)],
-    mode: DeleteMode,
-) -> DeleteReport {
-    match mode {
-        DeleteMode::Remove => {
-            match reprise_core::queries::exclude_tracks_matching_paths(db, tracks, now_unix()) {
-                Ok(removed_ids) => {
-                    let failures = tracks.len().saturating_sub(removed_ids.len());
-                    DeleteReport {
-                        removed_ids,
-                        failures,
-                    }
-                }
-                Err(error) => {
-                    tracing::error!(%error, "remove-from-library transaction failed");
-                    DeleteReport {
-                        removed_ids: Vec::new(),
-                        failures: tracks.len(),
-                    }
-                }
-            }
-        }
-        DeleteMode::Trash => {
-            let report = match reprise_platform_linux::trash::Session::open() {
-                Ok(session) => {
-                    reprise_core::library::trash_tracks::trash_tracks_with(db, tracks, |path| {
-                        session.delete(path)
-                    })
-                }
-                Err(error) => {
-                    reprise_core::library::trash_tracks::trash_tracks_with(db, tracks, |_| {
-                        Err(error.clone())
-                    })
-                }
-            };
-            for failure in &report.failures {
-                tracing::warn!(id = failure.id, path = %failure.path.display(), error = %failure.error, "move-to-trash failed");
-            }
-            DeleteReport {
-                removed_ids: report.removed_ids,
-                failures: report.failures.len(),
-            }
-        }
-    }
-}
-
-fn now_unix() -> i64 {
-    std::time::SystemTime::now()
-        .duration_since(std::time::UNIX_EPOCH)
-        .map_or(0, |duration| duration.as_secs() as i64)
 }
 
 fn deletion_focus_position(
@@ -421,7 +410,16 @@ fn finish(
         || {
             show_toast(
                 shared,
-                &strings::delete_result_toast(removed, report.failures, mode == DeleteMode::Trash),
+                &strings_cue::result_toast(
+                    strings::delete_result_toast(
+                        removed - report.hidden,
+                        report.failures,
+                        mode == DeleteMode::Trash,
+                    ),
+                    removed - report.hidden,
+                    report.failures,
+                    report.hidden,
+                ),
             );
         },
         move || {

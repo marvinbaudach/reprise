@@ -21,6 +21,7 @@ fn listen(sequence: u64, path: &str) -> ListenEntry {
     ListenEntry {
         sequence,
         device_path: path.into(),
+        segment_start_ms: None,
         played_at: 1_754_600_100,
         ms_played: 900,
     }
@@ -30,6 +31,7 @@ fn rating(sequence: u64, path: &str) -> RatingEntry {
     RatingEntry {
         sequence,
         device_path: path.into(),
+        segment_start_ms: None,
         rating: 5,
         rated_at: 20,
     }

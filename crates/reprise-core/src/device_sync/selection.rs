@@ -17,6 +17,7 @@ pub fn everything_playlist_snapshot(tracks: Vec<SyncTrack>) -> MirrorPlaylistSna
         name: "Everything".to_string(),
         entries: tracks.into_iter().map(MirrorTrack::Available).collect(),
         stability_margin_track_ids: Vec::new(),
+        cue_files: Vec::new(),
     }
 }
 
@@ -31,14 +32,30 @@ pub fn apply_frozen_smart_playlist_policy(
     }
     plan.playlist_writes
         .retain(|write| !frozen_sources.contains(&write.source));
+    // A frozen file stays, and so does the sheet derived for it (CUE-15).
+    let kept_paths: Vec<String> = plan
+        .remove
+        .iter()
+        .filter_map(|removal| match removal {
+            ManagedRemoval::Inventory(file) if frozen_track_ids.contains(&file.track_id) => {
+                Some(file.device_path.clone())
+            }
+            _ => None,
+        })
+        .collect();
     plan.remove.retain(|removal| match removal {
-        ManagedRemoval::Inventory(file) => !frozen_track_ids.contains(&file.track_id),
-        ManagedRemoval::Orphan(_) => true,
+        ManagedRemoval::Inventory(file) | ManagedRemoval::Unshared(file) => {
+            !frozen_track_ids.contains(&file.track_id)
+        }
+        ManagedRemoval::Orphan(file) => !kept_paths
+            .iter()
+            .any(|audio| super::derived_cue::describes(&file.relative_path, audio)),
     });
     plan.bytes_freed = plan.remove.iter().fold(0_u64, |sum, removal| {
         let bytes = match removal {
             ManagedRemoval::Inventory(file) => file.device_size,
             ManagedRemoval::Orphan(file) => file.size_bytes,
+            ManagedRemoval::Unshared(_) => 0,
         };
         sum.saturating_add(bytes)
     });

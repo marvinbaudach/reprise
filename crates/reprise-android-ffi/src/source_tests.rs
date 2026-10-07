@@ -521,3 +521,174 @@ fn derived_walk_stops_before_entering_or_listing_the_next_item() {
         LibraryWalkItem::Entry(entry) if entry.path == Path::new(&blocked)
     ));
 }
+
+/// A provider tree backed by real scratch files: each document URI maps to a
+/// local file, so the scan reads real audio through the adopted descriptor.
+struct FileTreeSource {
+    files: HashMap<String, std::path::PathBuf>,
+    children: HashMap<String, Vec<SourceChild>>,
+}
+
+impl SafSource for FileTreeSource {
+    fn residence_token(&self, _uri: String) -> Result<Option<i64>, SafSourceError> {
+        Ok(Some(41))
+    }
+
+    fn probe(
+        &self,
+        uri: String,
+        _follow_links: bool,
+    ) -> Result<Option<SourceFacts>, SafSourceError> {
+        if let Some(path) = self.files.get(&uri) {
+            let metadata = std::fs::metadata(path).unwrap();
+            return Ok(Some(SourceFacts {
+                display_name: path
+                    .file_name()
+                    .map(|name| name.to_string_lossy().into_owned()),
+                is_file: true,
+                is_directory: false,
+                size_bytes: Some(metadata.len()),
+                modified_unix_ms: Some(1_775_000_000_000),
+                document_id: uri,
+            }));
+        }
+        Ok(self.children.contains_key(&uri).then(|| SourceFacts {
+            display_name: Some("Music".to_owned()),
+            is_file: false,
+            is_directory: true,
+            size_bytes: None,
+            modified_unix_ms: None,
+            document_id: uri,
+        }))
+    }
+
+    fn list_children(&self, uri: String) -> Result<Vec<SourceChild>, SafSourceError> {
+        self.children
+            .get(&uri)
+            .cloned()
+            .ok_or(SafSourceError::NotFound { detail: uri })
+    }
+
+    fn open_read_fd(&self, uri: String) -> Result<i32, SafSourceError> {
+        let path = self
+            .files
+            .get(&uri)
+            .ok_or(SafSourceError::NotFound { detail: uri })?;
+        Ok(std::fs::File::open(path).unwrap().into_raw_fd())
+    }
+}
+
+/// A mono 8-bit WAV of `seconds` of silence, which the scanner reads the
+/// duration of.
+fn write_silent_wav(path: &Path, seconds: u32) {
+    const RATE: u32 = 8_000;
+    let data_len = RATE * seconds;
+    let mut body = Vec::new();
+    body.extend_from_slice(b"WAVEfmt ");
+    body.extend_from_slice(&16_u32.to_le_bytes());
+    body.extend_from_slice(&1_u16.to_le_bytes());
+    body.extend_from_slice(&1_u16.to_le_bytes());
+    body.extend_from_slice(&RATE.to_le_bytes());
+    body.extend_from_slice(&RATE.to_le_bytes());
+    body.extend_from_slice(&1_u16.to_le_bytes());
+    body.extend_from_slice(&8_u16.to_le_bytes());
+    body.extend_from_slice(b"data");
+    body.extend_from_slice(&data_len.to_le_bytes());
+    body.extend(std::iter::repeat_n(0x80_u8, data_len as usize));
+    let mut out = Vec::new();
+    out.extend_from_slice(b"RIFF");
+    out.extend_from_slice(&(body.len() as u32).to_le_bytes());
+    out.extend_from_slice(&body);
+    std::fs::write(path, out).unwrap();
+}
+
+#[test]
+fn cue_16_a_sheet_beside_a_synced_file_cuts_it_through_a_document_tree() {
+    let scratch = tempfile::tempdir().unwrap();
+    let audio_file = scratch.path().join("The Album.opus.wav");
+    let sheet_file = scratch.path().join("The Album.cue");
+    write_silent_wav(&audio_file, 30);
+    std::fs::write(
+        &sheet_file,
+        "PERFORMER \"Band\"\nTITLE \"The Album\"\nFILE \"The Album.opus.wav\" WAVE\n\
+         \x20 TRACK 01 AUDIO\n    TITLE \"One\"\n    INDEX 01 00:00:00\n\
+         \x20 TRACK 02 AUDIO\n    TITLE \"Two\"\n    INDEX 01 00:12:00\n",
+    )
+    .unwrap();
+    let root = "content://com.android.externalstorage.documents/tree/primary%3AMusic";
+    let album = format!("{root}/document/primary%3AMusic%2FMy%20Album");
+    let audio = format!("{album}%2FThe%20Album.opus.wav");
+    let sheet = format!("{album}%2FThe%20Album.cue");
+    let size = |path: &Path| Some(std::fs::metadata(path).unwrap().len());
+    let source = FileTreeSource {
+        files: HashMap::from([
+            (audio.clone(), audio_file.clone()),
+            (sheet.clone(), sheet_file.clone()),
+        ]),
+        children: HashMap::from([
+            (
+                root.to_owned(),
+                vec![child(
+                    &album,
+                    "My Album",
+                    "primary:Music/My Album",
+                    false,
+                    None,
+                )],
+            ),
+            (
+                album.clone(),
+                vec![
+                    child(
+                        &sheet,
+                        "The Album.cue",
+                        "primary:Music/My Album/The Album.cue",
+                        true,
+                        size(&sheet_file),
+                    ),
+                    child(
+                        &audio,
+                        "The Album.opus.wav",
+                        "primary:Music/My Album/The Album.opus.wav",
+                        true,
+                        size(&audio_file),
+                    ),
+                ],
+            ),
+        ]),
+    };
+    let bridged = BridgedSource::with_tree_root(Box::new(source), root);
+    let db = reprise_core::db::Db::open_in_memory().unwrap();
+
+    reprise_core::library::scanner::scan_folder_with_source_and_progress(
+        &bridged,
+        &db,
+        Path::new(root),
+        |_| {},
+    )
+    .unwrap();
+
+    let rows: Vec<(Option<i64>, Option<i64>, String)> =
+        reprise_core::queries::track_ids_for_path(&db, &audio)
+            .unwrap()
+            .into_iter()
+            .map(|id| {
+                let track = reprise_core::queries::query_present_track_by_id(&db, id)
+                    .unwrap()
+                    .unwrap();
+                let segment = track.segment.as_ref();
+                (
+                    segment.map(|segment| segment.index),
+                    segment.map(|segment| segment.start_ms),
+                    track.title,
+                )
+            })
+            .collect();
+    assert_eq!(
+        rows,
+        [
+            (Some(1), Some(0), "One".to_owned()),
+            (Some(2), Some(12_000), "Two".to_owned()),
+        ]
+    );
+}

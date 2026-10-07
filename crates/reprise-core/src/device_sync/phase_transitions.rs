@@ -89,7 +89,7 @@ pub(super) fn transfer_activity(operation: &TransferOperation) -> String {
 /// this crate itself wrote, and honest about the paths it did not.
 pub(super) fn removal_activity(removal: &ManagedRemoval) -> String {
     let path = match removal {
-        ManagedRemoval::Inventory(file) => &file.device_path,
+        ManagedRemoval::Inventory(file) | ManagedRemoval::Unshared(file) => &file.device_path,
         ManagedRemoval::Orphan(file) => &file.relative_path,
     };
     removal_name(path)
@@ -153,7 +153,7 @@ pub(super) fn playlist_removal_activity(record: &DevicePlaylistRecord) -> String
 
 pub(super) fn removal_track_id(removal: &ManagedRemoval) -> Option<i64> {
     match removal {
-        ManagedRemoval::Inventory(file) => Some(file.track_id),
+        ManagedRemoval::Inventory(file) | ManagedRemoval::Unshared(file) => Some(file.track_id),
         ManagedRemoval::Orphan(_) => None,
     }
 }

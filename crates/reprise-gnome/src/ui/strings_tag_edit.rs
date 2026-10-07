@@ -278,3 +278,28 @@ pub fn tag_distinct_value_count(count: usize) -> String {
         &[("count", &count_text)],
     )
 }
+
+// --- CUE-12: tracks cut from a CUE sheet have no tags of their own ---
+
+/// The notice shown instead of the tag editor when every selected track was
+/// cut from a CUE sheet.
+pub fn tag_edit_cue_only_notice(count: usize) -> String {
+    let count_text = count.to_string();
+    plural(
+        "This CUE track has no tags of its own to edit: its title and artist come from its sheet",
+        "These {count} CUE tracks have no tags of their own to edit: their titles and artists come from their sheets",
+        count,
+        &[("count", &count_text)],
+    )
+}
+
+/// Said when the editor opens on a selection some CUE tracks were left out of.
+pub fn tag_edit_cue_left_out(count: usize) -> String {
+    let count_text = count.to_string();
+    plural(
+        "{count} CUE track left out: its tags come from its sheet",
+        "{count} CUE tracks left out: their tags come from their sheets",
+        count,
+        &[("count", &count_text)],
+    )
+}
