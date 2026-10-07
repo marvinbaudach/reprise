@@ -264,7 +264,6 @@ impl CrossfadeEngine {
             self.crossfading.clone(),
             self.spectrum_enabled.clone(),
             self.cava_stream_generation.clone(),
-            self.segments.clone(),
         ) {
             Ok(watch) => watch,
             Err(error) => {

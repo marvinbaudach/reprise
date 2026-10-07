@@ -131,8 +131,16 @@ them here.
   converts PTS to stream time with the pad's own last SEGMENT event (kept per pad, not in the
   shared gate). Hand-off: gain switch, cut swap, `stream_generation` bump and `AdvancedToNext` are
   sent **from the probe under the cut lock** — not via a bus application message, which could not
-  be ordered against ticker ticks. No armed successor: the boundary buffer and everything after is
-  dropped, `TrackFinished` is sent once, and the bus watch suppresses the file's later EOS. Open
+  be ordered against ticker ticks. No armed successor: the boundary buffer is dropped and an EOS
+  event is sent into the gain element in its place (outside the cut lock, because it blocks the
+  streaming thread until the sink has drained). The sink holds audio it was already handed, so a
+  `TrackFinished` sent from the probe would be answered by the next `play()` and cut that tail off;
+  the bus EOS arrives only once the sink has played it out and is the single `TrackFinished`. The
+  pad refuses everything after its own EOS, the file's EOS included, so nothing suppresses
+  anything and no `finished` flag exists; a flushing seek clears the pad's EOS and reopens the
+  track. Open: an EOS on the audio branch ends the pipeline only when every sink has it, so a
+  file that also links a video or text sink finishes its CUE track at the file's end, not at the
+  boundary. Open
   end: `OPEN_END_TOLERANCE_MS` = 1000. Arming through `set_next` landed here (the PLAY-23 test
   needs it); PLAY-23 also has a Crossfade-mode variant.
 - **a3** `bb226e131a` — `QueuedTrack.segment`; `SegmentGate::route_next` arms the contiguous

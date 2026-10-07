@@ -359,9 +359,9 @@ pub(crate) fn attach_cava_sink(
 /// needs its own watch rather than reusing the old one). `pub(crate)` for the
 /// crossfade caller.
 ///
-/// `segments` gates it too: a CUE track that already finished at its boundary
-/// (see `player/segment.rs`) drops the rest of its file silently, and that
-/// file's own end-of-stream must not finish it a second time.
+/// A CUE track's end is an end-of-stream too: its boundary probe sends one in
+/// place of the first buffer past the end (see `player/segment.rs`), so this
+/// watch reports the finish for it as for a whole file.
 ///
 /// `crossfading` gates the EOS→`TrackFinished` emission: while a crossfade is in
 /// flight the *outgoing* pipeline (which still holds this watch until promotion)
@@ -375,7 +375,6 @@ pub(crate) fn attach_bus_watch(
     crossfading: Arc<AtomicBool>,
     spectrum_enabled: Arc<AtomicBool>,
     cava_stream_generation: Arc<AtomicU64>,
-    segments: SegmentHandle,
 ) -> Result<gst::bus::BusWatchGuard, PlaybackError> {
     attach_cava_sink(
         playbin,
@@ -398,11 +397,6 @@ pub(crate) fn attach_bus_watch(
                     tracing::debug!(
                         "end-of-stream on the outgoing pipeline during a crossfade; \
                          suppressing TrackFinished (promotion drives the advance)"
-                    );
-                } else if segments.finished() {
-                    tracing::debug!(
-                        "end-of-stream after a CUE track finished at its boundary; \
-                         suppressing a second TrackFinished"
                     );
                 } else {
                     tracing::debug!("playback reached end-of-stream");

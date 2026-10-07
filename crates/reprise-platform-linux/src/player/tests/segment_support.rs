@@ -220,6 +220,57 @@ fn peak(buffer: &gst::BufferRef, format: Option<&str>) -> f64 {
     }
 }
 
+/// The end, in the file's own clock, of the last buffer a sink has rendered.
+#[derive(Clone, Default)]
+pub(super) struct RenderedLog {
+    end_ms: Arc<std::sync::atomic::AtomicI64>,
+}
+
+impl RenderedLog {
+    pub(super) fn end_ms(&self) -> i64 {
+        self.end_ms.load(Ordering::SeqCst)
+    }
+}
+
+/// Latency of the emulated ring buffer, comfortably above what a real audio
+/// sink holds, so a boundary that does not wait for the sink misses by it.
+const SINK_BACKLOG_NANOS: u64 = 400_000_000;
+
+/// Swaps the player's audio sink for a queue ahead of a clock-synced
+/// `fakesink`: like a real sink's ring buffer, the queue accepts audio well
+/// before it is rendered, and an end-of-stream drains through it. A plain
+/// `fakesink` has no such lead, so it cannot tell a track that was heard to its
+/// end from one that was cut off while the sink still held its tail. What the
+/// returned log reports was rendered on the clock, not merely written.
+pub(super) fn slow_sink(player: &Player) -> RenderedLog {
+    let sink = gst::parse::bin_from_description(
+        &format!(
+            "queue max-size-time={SINK_BACKLOG_NANOS} max-size-buffers=0 max-size-bytes=0 \
+             ! fakesink name=rendered sync=true signal-handoffs=true"
+        ),
+        true,
+    )
+    .unwrap();
+    let rendered = RenderedLog::default();
+    let end_ms = rendered.end_ms.clone();
+    sink.by_name("rendered")
+        .unwrap()
+        .connect("handoff", false, move |values| {
+            let buffer = values[1].get::<gst::Buffer>().unwrap();
+            if let Some(pts) = buffer.pts() {
+                let end = pts + buffer.duration().unwrap_or(gst::ClockTime::ZERO);
+                end_ms.store(end.mseconds() as i64, Ordering::SeqCst);
+            }
+            None
+        });
+    player
+        .playbin
+        .lock()
+        .unwrap_or_else(PoisonError::into_inner)
+        .set_property("audio-sink", &sink);
+    rendered
+}
+
 /// A headless player on `fakesink`, its events, and the sink lock held for
 /// the harness's whole life.
 pub(super) struct Harness {

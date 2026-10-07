@@ -9,9 +9,13 @@
 //! pad, behind the one-second playback queue, where a buffer is about to be
 //! heard. The first buffer whose stream time reaches the boundary either
 //! carries on into the armed contiguous successor — the next track of the same
-//! file, starting exactly where this one ends — with that track's gain, or,
-//! with nothing armed, is dropped together with everything after it, and the
-//! track is reported finished once.
+//! file, starting exactly where this one ends — with that track's gain. With
+//! nothing armed it is dropped and an end-of-stream goes in its place: the
+//! audio sink has not played what it was already handed, and only an
+//! end-of-stream drains it. The pad refuses everything after that, the file's
+//! own end-of-stream included, so the bus sees exactly one end-of-stream and
+//! it is the track's `TrackFinished` — which the frontend answers with the next
+//! `play()`, so it must not arrive before the tail has been heard.
 //!
 //! The last track of a file has no boundary when its end lies within
 //! [`OPEN_END_TOLERANCE_MS`] of the file's duration: it plays to the end of the
@@ -121,9 +125,6 @@ struct CutState {
     /// The probe handed over to the armed successor and the frontend has not
     /// fed a next track since: a re-feed of that track is the one playing.
     handed_off: bool,
-    /// The boundary was reached with nothing armed: every later buffer is
-    /// dropped, and the file's own end-of-stream is not a second finish.
-    finished: bool,
 }
 
 /// The shared cut state, the event sink ticks and boundaries are sent
@@ -208,19 +209,13 @@ impl SegmentGate {
             && state.active.is_some_and(|active| active.matches(segment))
     }
 
-    /// Whether the active track already reported its end at the boundary, so
-    /// the file's end-of-stream must not report it again.
-    pub(crate) fn finished(&self) -> bool {
-        self.lock().finished
-    }
-
     /// The file position a seek to `position_ms` of the active CUE track goes
-    /// to, or `None` for a whole file. A seek reopens a finished track: the
-    /// boundary fires again when playback reaches it.
+    /// to, or `None` for a whole file. The flush the seek sends clears the
+    /// end-of-stream the boundary pushed, so the boundary fires again when
+    /// playback reaches it.
     pub(crate) fn seek_target_ms(&self, position_ms: i64) -> Option<i64> {
-        let mut state = self.lock();
+        let state = self.lock();
         let cut = state.active?;
-        state.finished = false;
         Some(cut.seek_target_ms(position_ms, state.file_duration_ms))
     }
 
@@ -310,7 +305,7 @@ pub(crate) fn install_segment_boundary(
     let stream_segment = Mutex::new(None::<gst::FormattedSegment<gst::ClockTime>>);
     sink.add_probe(
         gst::PadProbeType::BUFFER | gst::PadProbeType::EVENT_DOWNSTREAM,
-        move |_, info| match &info.data {
+        move |pad, info| match &info.data {
             Some(gst::PadProbeData::Event(event)) => {
                 if let gst::EventView::Segment(segment) = event.view() {
                     *stream_segment
@@ -331,12 +326,27 @@ pub(crate) fn install_segment_boundary(
                         None => Some(pts),
                     }
                 });
-                gate.on_buffer(stream_time, &gain)
+                match gate.on_buffer(stream_time, &gain) {
+                    BoundaryVerdict::Pass => gst::PadProbeReturn::Ok,
+                    BoundaryVerdict::EndOfTrack => {
+                        // Outside the cut lock: the event blocks this
+                        // streaming thread until the sink has drained.
+                        pad.send_event(gst::event::Eos::new());
+                        gst::PadProbeReturn::Drop
+                    }
+                }
             }
             _ => gst::PadProbeReturn::Ok,
         },
     );
     Ok(())
+}
+
+/// What the probe does with a buffer.
+enum BoundaryVerdict {
+    Pass,
+    /// The track ends before this buffer: drop it and end the stream.
+    EndOfTrack,
 }
 
 impl SegmentGate {
@@ -347,19 +357,16 @@ impl SegmentGate {
         &self,
         stream_time: Option<gst::ClockTime>,
         gain: &gst::Element,
-    ) -> gst::PadProbeReturn {
+    ) -> BoundaryVerdict {
         let mut state = self.lock();
         let Some(cut) = state.active else {
-            return gst::PadProbeReturn::Ok;
+            return BoundaryVerdict::Pass;
         };
-        if state.finished {
-            return gst::PadProbeReturn::Drop;
-        }
         let (Some(boundary_ns), Some(stream_time)) = (cut.boundary_ns(), stream_time) else {
-            return gst::PadProbeReturn::Ok;
+            return BoundaryVerdict::Pass;
         };
         if stream_time.nseconds() < boundary_ns {
-            return gst::PadProbeReturn::Ok;
+            return BoundaryVerdict::Pass;
         }
         match state.armed.take() {
             Some(next) => {
@@ -369,13 +376,11 @@ impl SegmentGate {
                 self.stream_generation.fetch_add(1, Ordering::SeqCst);
                 tracing::debug!(boundary_ms = cut.end_ms, "cue: contiguous hand-off");
                 (self.on_event)(PlayerEvent::AdvancedToNext);
-                gst::PadProbeReturn::Ok
+                BoundaryVerdict::Pass
             }
             None => {
-                state.finished = true;
                 tracing::debug!(boundary_ms = cut.end_ms, "cue: track reached its end");
-                (self.on_event)(PlayerEvent::TrackFinished);
-                gst::PadProbeReturn::Drop
+                BoundaryVerdict::EndOfTrack
             }
         }
     }

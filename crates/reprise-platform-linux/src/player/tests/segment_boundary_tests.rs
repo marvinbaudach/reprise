@@ -5,7 +5,7 @@
 //! receives.
 
 use super::segment_support::{
-    count, cue_item, linear, record_heard, ticks, write_regions_wav, Harness,
+    count, cue_item, linear, record_heard, slow_sink, ticks, write_regions_wav, Harness,
 };
 use super::*;
 use reprise_core::library::settings::TrackTransition;
@@ -60,6 +60,77 @@ fn play_22_a_cue_track_is_not_heard_past_its_end() {
     assert!(ticks(&events)
         .iter()
         .all(|&(position_ms, duration_ms)| duration_ms == length_ms && position_ms <= length_ms));
+}
+
+/// The frontend answers `TrackFinished` with the next `play()`, which stops the
+/// pipeline and drops whatever the sink still holds. So a track has to report
+/// its end only once the sink has rendered all of it.
+#[test]
+fn play_22_a_cue_track_finishes_only_once_its_tail_has_been_rendered() {
+    const START_MS: i64 = 1_000;
+    const END_MS: i64 = 2_500;
+    const TOLERANCE_MS: i64 = 100;
+    let harness = Harness::new();
+    let directory = tempfile::tempdir().unwrap();
+    let album = directory.path().join("album.wav");
+    write_regions_wav(&album, &[(1_000, false), (3_000, true)]);
+    let rendered = slow_sink(&harness.player);
+
+    harness
+        .player
+        .play(cue_item(&album, (START_MS, END_MS), 0.0))
+        .unwrap();
+    let events = harness.pump_until(HANG_GUARD, |events| count(events, finished) > 0);
+
+    assert_eq!(count(&events, finished), 1, "the track must finish");
+    assert!(
+        rendered.end_ms() >= END_MS - TOLERANCE_MS,
+        "the track reported its end with the sink having rendered only up to {} ms of {END_MS}",
+        rendered.end_ms()
+    );
+}
+
+/// A seek inside a track that has already ended reopens it: the flush clears
+/// the boundary's end-of-stream, the track plays on to its end again and
+/// reports it once more — one `TrackFinished` per arrival at the end, never a
+/// stale extra one.
+#[test]
+fn play_22_a_seek_after_the_end_reopens_the_track() {
+    const START_MS: i64 = 1_000;
+    const END_MS: i64 = 2_000;
+    let harness = Harness::new();
+    let directory = tempfile::tempdir().unwrap();
+    let album = directory.path().join("album.wav");
+    write_regions_wav(&album, &[(1_000, false), (3_000, true)]);
+    let heard = record_heard(&harness.player);
+
+    harness
+        .player
+        .play(cue_item(&album, (START_MS, END_MS), 0.0))
+        .unwrap();
+    let first = harness.pump_until(HANG_GUARD, |events| count(events, finished) > 0);
+    assert_eq!(count(&first, finished), 1);
+
+    harness.player.seek_to(500).unwrap();
+    let mut second = harness.pump_until(HANG_GUARD, |events| count(events, finished) > 0);
+    second.extend(harness.pump_for(PAST_THE_FILE_END));
+
+    assert_eq!(
+        count(&second, finished),
+        1,
+        "the reopened track finishes once more, and only once"
+    );
+    let buffers = heard.buffers();
+    assert!(
+        buffers
+            .iter()
+            .any(|buffer| buffer.start_ms < START_MS + 600),
+        "the seek must land inside the track: {buffers:?}"
+    );
+    assert!(
+        buffers.iter().all(|buffer| buffer.start_ms < END_MS),
+        "nothing past the end may be heard after the seek: {buffers:?}"
+    );
 }
 
 #[test]

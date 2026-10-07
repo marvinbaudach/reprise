@@ -190,7 +190,6 @@ impl Player {
             crossfading.clone(),
             spectrum_enabled.clone(),
             cava_stream_generation.clone(),
-            segments.clone(),
         )?;
         let playbin = Arc::new(Mutex::new(playbin));
         let bus_watch = Arc::new(Mutex::new(bus_watch));
@@ -429,7 +428,6 @@ impl Player {
             self.crossfading.clone(),
             self.spectrum_enabled.clone(),
             self.cava_stream_generation.clone(),
-            self.segments.clone(),
         )?;
 
         let mut playbin = self.playbin.lock().unwrap_or_else(PoisonError::into_inner);
