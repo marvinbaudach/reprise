@@ -121,9 +121,17 @@ them here.
 
 - **a1** `eda95563ed` — `player/segment.rs` (declared from `player.rs`) holds the active
   `Cut {start_ms, end_ms, open_end}` behind one mutex in a `SegmentGate`. `play()` with a segment
-  prerolls paused (`SEGMENT_PREROLL_TIMEOUT` 5 s; a timeout fails the attempt into the existing
-  rebuild-and-retry), caches the file duration, then seeks `FLUSH|ACCURATE` to the start before
-  `Playing`. A refused seek is logged, not failed (failing would mark the file missing). The
+  installs the cut, sets the pipeline paused and **returns at once** — `play` runs on the GTK main
+  thread, and a file on a slow mount must not freeze it (nor the ticker, which shares the `playbin`
+  lock). The preroll's bus `ASYNC_DONE` calls `SegmentGate::complete_start`, which learns the file
+  duration (re-deciding `open_end` for the cut and an armed successor), seeks `FLUSH|ACCURATE` to
+  the start, bumps the stream generation, enters `Playing` and sends `StateChanged(Playing)` — so
+  that event now arrives from the bus, not from `play()`. It does nothing unless a start is pending
+  and the pipeline has really prerolled (a stale `ASYNC_DONE` from a restarted pipeline, or the
+  seek's own, is ignored). A refused seek is logged, not failed (failing would mark the file
+  missing). A seek before then (`CutSeek::Deferred`) only retargets the pending start. There is no
+  preroll timeout any more: a file that cannot be read fails on the bus as a whole file does, and a
+  file that never delivers stalls silently, as a whole file on a stalled mount does. The
   ticker computes and *sends* each tick under the cut lock; `seek_to` on a cut is `ACCURATE` to
   `start + clamp(p, 0, len − 1)`.
 - **a2** `ab3880c9cc` — the boundary probe sits on the gain element's sink pad (installed by

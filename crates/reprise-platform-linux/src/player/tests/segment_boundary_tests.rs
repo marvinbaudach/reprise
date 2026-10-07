@@ -133,6 +133,66 @@ fn play_22_a_seek_after_the_end_reopens_the_track() {
     );
 }
 
+/// `play()` runs on the GTK main thread. A CUE track's file that does not
+/// preroll — a stalled mount, a slow probe — must not freeze the UI until it
+/// does: `play()` returns at once and the start finishes on the bus once the
+/// file delivers. A FIFO that has its WAV header but no samples yet stalls
+/// exactly like that.
+#[test]
+fn play_22_a_cue_track_starts_without_blocking_on_its_file() {
+    use std::io::Write;
+    const RETURNS_WITHIN: Duration = Duration::from_millis(500);
+    const SAMPLES_ARRIVE_AFTER: Duration = Duration::from_millis(1_500);
+    const WAV_HEADER_BYTES: usize = 44;
+    let harness = Harness::new();
+    let directory = tempfile::tempdir().unwrap();
+    let source = directory.path().join("source.wav");
+    write_regions_wav(&source, &[(3_000, true)]);
+    let wav = std::fs::read(&source).unwrap();
+    let stalled = directory.path().join("stalled.wav");
+    assert!(std::process::Command::new("mkfifo")
+        .arg(&stalled)
+        .status()
+        .unwrap()
+        .success());
+    // Read-write, so opening the FIFO does not wait for a reader or a writer.
+    let mut writer = std::fs::OpenOptions::new()
+        .read(true)
+        .write(true)
+        .open(&stalled)
+        .unwrap();
+    writer.write_all(&wav[..WAV_HEADER_BYTES]).unwrap();
+    std::thread::spawn(move || {
+        std::thread::sleep(SAMPLES_ARRIVE_AFTER);
+        writer.write_all(&wav[WAV_HEADER_BYTES..]).unwrap();
+        // Dropping the writer is the reader's end-of-file.
+    });
+    let heard = record_heard(&harness.player);
+
+    let started = std::time::Instant::now();
+    let played = harness.player.play(cue_item(&stalled, (1_000, 2_000), 0.0));
+    let took = started.elapsed();
+
+    assert!(
+        played.is_ok() && took < RETURNS_WITHIN,
+        "play() must return at once for a file that has not prerolled: {played:?} after {took:?}"
+    );
+    let events = harness.pump_until(HANG_GUARD, |events| {
+        count(events, |event| {
+            matches!(event, PlayerEvent::StateChanged(PlaybackState::Playing))
+        }) > 0
+    });
+    assert!(
+        count(&events, |event| matches!(
+            event,
+            PlayerEvent::StateChanged(PlaybackState::Playing)
+        )) > 0,
+        "the start must finish once the file delivers"
+    );
+    harness.pump_until(HANG_GUARD, |_| !heard.buffers().is_empty());
+    assert!(!heard.buffers().is_empty(), "the track must be heard");
+}
+
 #[test]
 fn play_22_the_last_track_of_a_file_plays_to_the_file_end() {
     const START_MS: i64 = 2_000;

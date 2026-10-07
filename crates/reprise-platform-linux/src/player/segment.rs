@@ -17,6 +17,12 @@
 //! it is the track's `TrackFinished` — which the frontend answers with the next
 //! `play()`, so it must not arrive before the tail has been heard.
 //!
+//! A CUE track starts without waiting: [`start_segment`] sets the file's
+//! pipeline to paused and returns, and the bus's `ASYNC_DONE` — the preroll —
+//! calls [`SegmentGate::complete_start`], which learns the file's duration,
+//! seeks to the track's start and only then plays. `play` runs on the GTK main
+//! thread, and a file on a slow mount must not freeze it.
+//!
 //! The last track of a file has no boundary when its end lies within
 //! [`OPEN_END_TOLERANCE_MS`] of the file's duration: it plays to the end of the
 //! file and finishes like a whole file does. The end a sheet gives its last
@@ -32,20 +38,14 @@ use gstreamer as gst;
 use gstreamer::prelude::*;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
-use std::time::Duration;
 
-use reprise_core::playback::{PlaybackError, PlayerEvent};
+use reprise_core::playback::{PlaybackError, PlaybackState, PlayerEvent};
 
 use crate::gapless::QueuedTrack;
 use crate::player_effects::{linear_gain, TRACK_GAIN_NAME};
 
 /// An end this close to the file's duration means "to the end of the file".
 pub(crate) const OPEN_END_TOLERANCE_MS: i64 = 1000;
-
-/// How long `play` waits for a CUE track's file to preroll before it seeks to
-/// the track's start. A local file prerolls in milliseconds; one that has not
-/// after this long counts as a failed attempt.
-const SEGMENT_PREROLL_TIMEOUT: Duration = Duration::from_secs(5);
 
 const NANOS_PER_MILLI: u64 = 1_000_000;
 
@@ -110,6 +110,15 @@ impl Cut {
     }
 }
 
+/// What a seek within a CUE track comes to.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum CutSeek {
+    /// Seek the pipeline to this file position now.
+    Now(i64),
+    /// The track has not started yet; its start-seek will go there.
+    Deferred,
+}
+
 #[derive(Clone, Copy, Debug)]
 struct ArmedNext {
     cut: Cut,
@@ -122,6 +131,9 @@ struct CutState {
     active: Option<Cut>,
     file_duration_ms: Option<i64>,
     armed: Option<ArmedNext>,
+    /// The file position the track's start-seek goes to once the file has
+    /// prerolled; `None` once it has run. A seek before then retargets it.
+    pending_start_ms: Option<i64>,
     /// The probe handed over to the armed successor and the frontend has not
     /// fed a next track since: a re-feed of that track is the one playing.
     handed_off: bool,
@@ -172,6 +184,69 @@ impl SegmentGate {
         };
     }
 
+    /// Makes `segment` of `uri` the active cut before the file has prerolled
+    /// and records that its start-seek is still to come. The duration is not
+    /// known yet: [`Self::complete_start`] adds it. The cut is installed now
+    /// because the frontend feeds the next track right after `play`.
+    fn begin_start(&self, uri: &str, segment: (i64, i64)) {
+        self.begin(uri, segment, None);
+        self.lock().pending_start_ms = Some(segment.0);
+    }
+
+    /// Learns the file's duration once it is known: an end within the
+    /// tolerance of it opens the track, for the active cut and an armed
+    /// successor alike. An open-ended track has no boundary to hand over at.
+    fn learn_file_duration(&self, file_duration_ms: Option<i64>) {
+        let mut state = self.lock();
+        state.file_duration_ms = file_duration_ms;
+        state.active = state
+            .active
+            .map(|cut| Cut::new(cut.start_ms, cut.end_ms, file_duration_ms));
+        if state.active.is_some_and(|cut| cut.open_end) {
+            state.armed = None;
+        }
+        state.armed = state.armed.map(|next| ArmedNext {
+            cut: Cut::new(next.cut.start_ms, next.cut.end_ms, file_duration_ms),
+            ..next
+        });
+    }
+
+    /// The start `ASYNC_DONE` of a CUE track's file calls: seeks —
+    /// flushing and sample-accurate — to the track's start, so the first sample
+    /// heard is the track's own, then plays. A refused seek is logged and the
+    /// track plays from where the file stands, because failing would mark a
+    /// playable file missing. Does nothing unless a start is pending and
+    /// `playbin` has really prerolled: a message left over from a pipeline that
+    /// has since been restarted arrives while the new one still prerolls, and a
+    /// later `ASYNC_DONE` (the seek's own) finds the start already run.
+    pub(crate) fn complete_start(&self, playbin: &gst::Element) {
+        let (prerolled, _, _) = playbin.state(gst::ClockTime::ZERO);
+        if matches!(prerolled, Ok(gst::StateChangeSuccess::Async) | Err(_)) {
+            return;
+        }
+        let Some(start_ms) = self.lock().pending_start_ms.take() else {
+            return;
+        };
+        let file_duration_ms = playbin
+            .query_duration::<gst::ClockTime>()
+            .map(|duration| duration.mseconds() as i64);
+        self.learn_file_duration(file_duration_ms);
+        let start = gst::ClockTime::from_mseconds(start_ms.max(0) as u64);
+        if let Err(error) =
+            playbin.seek_simple(gst::SeekFlags::FLUSH | gst::SeekFlags::ACCURATE, start)
+        {
+            tracing::warn!(%error, start_ms, "could not seek to the CUE track's start");
+        }
+        // Before `Playing`, so no event of the new stream carries the old one.
+        self.stream_generation.fetch_add(1, Ordering::SeqCst);
+        if let Err(error) = playbin.set_state(gst::State::Playing) {
+            // GStreamer posts the failure on the bus as well.
+            tracing::warn!(%error, "CUE track's file would not start playing");
+            return;
+        }
+        (self.on_event)(PlayerEvent::StateChanged(PlaybackState::Playing));
+    }
+
     /// Routes the next track the frontend feeds and returns whether it may
     /// go into the whole-file URI slot — only when neither it nor the playing
     /// track is a CUE track. The next track of the same file, starting where
@@ -209,14 +284,20 @@ impl SegmentGate {
             && state.active.is_some_and(|active| active.matches(segment))
     }
 
-    /// The file position a seek to `position_ms` of the active CUE track goes
-    /// to, or `None` for a whole file. The flush the seek sends clears the
-    /// end-of-stream the boundary pushed, so the boundary fires again when
-    /// playback reaches it.
-    pub(crate) fn seek_target_ms(&self, position_ms: i64) -> Option<i64> {
-        let state = self.lock();
+    /// Where a seek to `position_ms` of the active CUE track goes, or `None`
+    /// for a whole file. Before the file has prerolled there is nothing to
+    /// seek in: the seek only retargets the start-seek that is still to come.
+    /// Otherwise the flush it sends clears the end-of-stream the boundary
+    /// pushed, so the boundary fires again when playback reaches it.
+    pub(crate) fn seek_target_ms(&self, position_ms: i64) -> Option<CutSeek> {
+        let mut state = self.lock();
         let cut = state.active?;
-        Some(cut.seek_target_ms(position_ms, state.file_duration_ms))
+        let target_ms = cut.seek_target_ms(position_ms, state.file_duration_ms);
+        if state.pending_start_ms.is_some() {
+            state.pending_start_ms = Some(target_ms);
+            return Some(CutSeek::Deferred);
+        }
+        Some(CutSeek::Now(target_ms))
     }
 
     /// Computes the tick for the active cut — or `whole_file` for a whole
@@ -246,42 +327,22 @@ impl SegmentGate {
     }
 }
 
-/// Prerolls a CUE track's file paused, makes `segment` the active cut and
-/// seeks — flushing and sample-accurate — to its start, so the first sample
-/// heard is the track's own. Runs under `Player::try_play`'s `playbin` lock,
-/// after the URI is set and before `Playing`. A file that does not preroll
-/// fails the attempt; a refused seek is logged and the track plays from where
-/// the file stands, because failing would mark a playable file missing.
+/// Makes `segment` of `uri` the active cut and sets `playbin` to paused,
+/// without waiting for the file: the preroll's `ASYNC_DONE` completes the
+/// start (see [`SegmentGate::complete_start`]). Runs under
+/// `Player::try_play`'s `playbin` lock, after the URI is set. A file that
+/// cannot even be set paused fails the attempt; one that cannot be read fails
+/// on the bus, as a whole file does.
 pub(super) fn start_segment(
     playbin: &gst::Element,
     gate: &SegmentGate,
     uri: &str,
     segment: (i64, i64),
 ) -> Result<(), PlaybackError> {
+    gate.begin_start(uri, segment);
     playbin
         .set_state(gst::State::Paused)
         .map_err(|e| PlaybackError::Backend(format!("GStreamer: {e}")))?;
-    let (prerolled, _, _) = playbin.state(gst::ClockTime::from_mseconds(
-        SEGMENT_PREROLL_TIMEOUT.as_millis() as u64,
-    ));
-    match prerolled {
-        Ok(gst::StateChangeSuccess::Async) => {
-            return Err(PlaybackError::Backend(
-                "GStreamer: CUE track's file did not preroll".into(),
-            ))
-        }
-        Ok(_) => {}
-        Err(error) => return Err(PlaybackError::Backend(format!("GStreamer: {error}"))),
-    }
-    let file_duration_ms = playbin
-        .query_duration::<gst::ClockTime>()
-        .map(|duration| duration.mseconds() as i64);
-    gate.begin(uri, segment, file_duration_ms);
-    let start = gst::ClockTime::from_mseconds(segment.0.max(0) as u64);
-    if let Err(error) = playbin.seek_simple(gst::SeekFlags::FLUSH | gst::SeekFlags::ACCURATE, start)
-    {
-        tracing::warn!(%error, start_ms = segment.0, "could not seek to the CUE track's start");
-    }
     Ok(())
 }
 

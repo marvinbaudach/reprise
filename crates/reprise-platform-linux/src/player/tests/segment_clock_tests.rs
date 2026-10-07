@@ -110,6 +110,30 @@ fn play_22_a_seek_lands_inside_the_cue_track() {
     }
 }
 
+/// The start finishes on the bus, so a seek can arrive while the file is still
+/// prerolling. There is nothing to seek in yet: it must not fail, and the track
+/// must then start where the seek asked, not at its start.
+#[test]
+fn play_22_a_seek_before_the_start_has_finished_moves_the_start() {
+    let harness = Harness::new();
+    let directory = tempfile::tempdir().unwrap();
+    let album = tone_in_the_middle(&directory);
+    let heard = record_heard(&harness.player);
+
+    harness
+        .player
+        .play(cue_item(&album, (TRACK_START_MS, TRACK_END_MS), 0.0))
+        .unwrap();
+    harness.player.seek_to(1_000).unwrap();
+    harness.pump_until(SETTLE, |_| heard.heard_after(SEGMENTS_AFTER_START));
+
+    let first = heard.first();
+    assert!(
+        (first.start_ms - (TRACK_START_MS + 1_000)).abs() <= START_TOLERANCE_MS,
+        "the track must start at the sought position, got {first:?}"
+    );
+}
+
 #[test]
 fn play_22_a_whole_file_still_reports_and_seeks_in_file_time() {
     let harness = Harness::new();

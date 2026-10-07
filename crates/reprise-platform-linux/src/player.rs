@@ -19,7 +19,7 @@ use crate::player_pipeline::{
     attach_bus_watch, build_playbin, configure_download_buffering, path_to_uri,
     validated_playback_uri,
 };
-use segment::{SegmentGate, SegmentHandle};
+use segment::{CutSeek, SegmentGate, SegmentHandle};
 
 pub(crate) mod segment;
 mod successor;
@@ -190,6 +190,7 @@ impl Player {
             crossfading.clone(),
             spectrum_enabled.clone(),
             cava_stream_generation.clone(),
+            segments.clone(),
         )?;
         let playbin = Arc::new(Mutex::new(playbin));
         let bus_watch = Arc::new(Mutex::new(bus_watch));
@@ -336,8 +337,8 @@ impl Player {
     /// One playback attempt on the *current* pipeline: `Null` → set the new
     /// URI → `Playing`. Shared by `play`'s first attempt and its post-
     /// rebuild retry (DRY) — see `play`'s doc comment. A CUE track's
-    /// `segment` is prerolled and sought to before `Playing` (see
-    /// `segment::start_segment`).
+    /// `segment` is set paused and returns at once: the bus's `ASYNC_DONE`
+    /// seeks to its start and enters `Playing` (see `segment::start_segment`).
     ///
     /// Bumps `stream_generation` only once `Playing` is entered (a failed
     /// attempt never emits an event, nothing to mislabel), still under the
@@ -360,7 +361,8 @@ impl Player {
         set_playbin_track_gain(&playbin, gain_db)?;
         playbin.set_property("uri", uri);
         if let Some(segment) = segment {
-            segment::start_segment(&playbin, &self.segments, uri, segment)?;
+            // The bus finishes the start once the file has prerolled.
+            return segment::start_segment(&playbin, &self.segments, uri, segment);
         }
         playbin
             .set_state(gst::State::Playing)
@@ -428,6 +430,7 @@ impl Player {
             self.crossfading.clone(),
             self.spectrum_enabled.clone(),
             self.cava_stream_generation.clone(),
+            self.segments.clone(),
         )?;
 
         let mut playbin = self.playbin.lock().unwrap_or_else(PoisonError::into_inner);
@@ -521,7 +524,8 @@ impl PlaybackBackend for Player {
         // not silently lose the successor for the rest of the track.
         self.abort_crossfade();
         let (flags, target_ms) = match self.segments.seek_target_ms(position_ms) {
-            Some(file_position_ms) => (
+            Some(CutSeek::Deferred) => return Ok(()),
+            Some(CutSeek::Now(file_position_ms)) => (
                 gst::SeekFlags::FLUSH | gst::SeekFlags::ACCURATE,
                 file_position_ms,
             ),
