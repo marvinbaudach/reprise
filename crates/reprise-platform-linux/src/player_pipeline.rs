@@ -24,6 +24,7 @@ use crate::crossfade::Transition;
 use crate::gapless::{
     connect_about_to_finish, note_stream_start, HandoffFlag, NextUri, PendingGain,
 };
+use crate::player::segment::{install_segment_boundary, SegmentHandle};
 use crate::player_effects::{
     apply_audio_filter, install_stream_start_gain_switch, CAVA_SAMPLE_RATE_HZ, CAVA_SINK_NAME,
 };
@@ -243,12 +244,15 @@ pub(crate) fn build_playbin(
     transition: Transition,
     stream_generation: Arc<AtomicU64>,
     pending_gain: PendingGain,
+    segments: SegmentHandle,
 ) -> Result<gst::Element, PlaybackError> {
     let playbin = gst::ElementFactory::make("playbin3")
         .build()
         .map_err(|e| PlaybackError::Backend(format!("GStreamer: {e}")))?;
     apply_audio_filter(&playbin, effects)?;
     install_stream_start_gain_switch(&playbin, pending_gain.clone())?;
+    // A CUE track's end: see `player/segment.rs`.
+    install_segment_boundary(&playbin, segments)?;
 
     // Gapless handoff: consume any pre-fed URI on `about-to-finish` without a
     // pipeline restart (Gapless mode only — the handler no-ops in Crossfade/Off,
@@ -355,6 +359,13 @@ pub(crate) fn attach_cava_sink(
 /// needs its own watch rather than reusing the old one). `pub(crate)` for the
 /// crossfade caller.
 ///
+/// `segments` completes the start of a CUE track once its file has prerolled
+/// (`ASYNC_DONE`, see `player/segment.rs`).
+///
+/// A CUE track's end is an end-of-stream too: its boundary probe sends one in
+/// place of the first buffer past the end (see `player/segment.rs`), so this
+/// watch reports the finish for it as for a whole file.
+///
 /// `crossfading` gates the EOS→`TrackFinished` emission: while a crossfade is in
 /// flight the *outgoing* pipeline (which still holds this watch until promotion)
 /// naturally ends if the track is shorter than the fade overlap; that EOS must
@@ -367,6 +378,7 @@ pub(crate) fn attach_bus_watch(
     crossfading: Arc<AtomicBool>,
     spectrum_enabled: Arc<AtomicBool>,
     cava_stream_generation: Arc<AtomicU64>,
+    segments: SegmentHandle,
 ) -> Result<gst::bus::BusWatchGuard, PlaybackError> {
     attach_cava_sink(
         playbin,
@@ -394,6 +406,9 @@ pub(crate) fn attach_bus_watch(
                     tracing::debug!("playback reached end-of-stream");
                     (*on_event)(PlayerEvent::TrackFinished);
                 }
+            }
+            MessageView::AsyncDone(_) if msg.src() == Some(watched_playbin.upcast_ref()) => {
+                segments.complete_start(&watched_playbin);
             }
             MessageView::StateChanged(state)
                 if state.src() == Some(watched_playbin.upcast_ref())

@@ -111,3 +111,156 @@ fn play_20b_crossfade_promotion_carries_the_next_gain_from_the_first_sample() {
     player.stop().unwrap();
     std::env::remove_var(AUDIO_SINK_ENV_VAR);
 }
+
+mod cue {
+    //! No crossfade into or out of a CUE track (PLAY-24). Two tracks of one
+    //! file play through (PLAY-23, `segment_boundary_tests`); every other
+    //! change with a CUE track on either side is a hard change.
+
+    use super::super::segment_support::{count, cue_item, write_regions_wav, Harness};
+    use super::*;
+    use crate::crossfade::CrossfadeEngine;
+    use crate::gapless::QueuedTrack;
+    use crate::player_pipeline::path_to_uri;
+
+    const CROSSFADE_SECONDS: u8 = 1;
+    const HANG_GUARD: Duration = Duration::from_secs(20);
+
+    fn finished(event: &PlayerEvent) -> bool {
+        matches!(event, PlayerEvent::TrackFinished)
+    }
+
+    fn advanced(event: &PlayerEvent) -> bool {
+        matches!(event, PlayerEvent::AdvancedToNext)
+    }
+
+    fn tone(directory: &tempfile::TempDir, name: &str, ms: u32) -> std::path::PathBuf {
+        let path = directory.path().join(name);
+        write_regions_wav(&path, &[(ms, true)]);
+        path
+    }
+
+    /// Pumps until the playing track finishes, noting whether a second
+    /// pipeline ever started on the way.
+    fn pump_to_finish(harness: &Harness) -> (Vec<PlayerEvent>, bool) {
+        let crossfaded = std::cell::Cell::new(false);
+        let events = harness.pump_until(HANG_GUARD, |events| {
+            if harness.player.crossfading.load(Ordering::SeqCst) {
+                crossfaded.set(true);
+            }
+            count(events, finished) > 0
+        });
+        (events, crossfaded.get())
+    }
+
+    #[test]
+    fn play_24_a_cue_track_changes_hard_to_a_whole_file() {
+        let harness = Harness::new();
+        harness
+            .player
+            .set_transition(TrackTransition::Crossfade, CROSSFADE_SECONDS);
+        let directory = tempfile::tempdir().unwrap();
+        let album = tone(&directory, "album.wav", 6_000);
+        let single = tone(&directory, "single.wav", 3_000);
+
+        harness
+            .player
+            .play(cue_item(&album, (1_000, 3_000), 0.0))
+            .unwrap();
+        harness
+            .player
+            .set_next(Some(item(single.to_str().unwrap())));
+        let (events, crossfaded) = pump_to_finish(&harness);
+
+        assert!(
+            !crossfaded,
+            "no second pipeline may fade out of a CUE track"
+        );
+        assert_eq!(count(&events, finished), 1);
+        assert_eq!(count(&events, advanced), 0);
+        harness.player.play(item(single.to_str().unwrap())).unwrap();
+        let current_uri = harness
+            .player
+            .playbin
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .property::<Option<String>>("current-uri");
+        assert!(current_uri.is_some_and(|uri| uri.ends_with("single.wav")));
+    }
+
+    #[test]
+    fn play_24_a_whole_file_changes_hard_to_a_cue_track() {
+        let harness = Harness::new();
+        harness
+            .player
+            .set_transition(TrackTransition::Crossfade, CROSSFADE_SECONDS);
+        let directory = tempfile::tempdir().unwrap();
+        let single = tone(&directory, "single.wav", 2_500);
+        let album = tone(&directory, "album.wav", 6_000);
+
+        harness.player.play(item(single.to_str().unwrap())).unwrap();
+        harness
+            .player
+            .set_next(Some(cue_item(&album, (1_000, 3_000), 0.0)));
+        let (events, crossfaded) = pump_to_finish(&harness);
+
+        assert!(!crossfaded, "no second pipeline may fade into a CUE track");
+        assert_eq!(count(&events, finished), 1);
+        assert_eq!(count(&events, advanced), 0);
+    }
+
+    /// The trigger itself refuses while a CUE track plays, even with a whole
+    /// file in the slot — the pre-feed rules keep it empty, this guard does
+    /// not rely on them.
+    #[test]
+    fn play_24_the_crossfade_trigger_refuses_while_a_cue_track_plays() {
+        let harness = Harness::new();
+        harness
+            .player
+            .set_transition(TrackTransition::Crossfade, CROSSFADE_SECONDS);
+        let directory = tempfile::tempdir().unwrap();
+        let album = tone(&directory, "album.wav", 6_000);
+        let single = tone(&directory, "single.wav", 3_000);
+        harness
+            .player
+            .play(cue_item(&album, (1_000, 3_000), 0.0))
+            .unwrap();
+        *harness
+            .player
+            .next_uri
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner) = Some(QueuedTrack {
+            uri: path_to_uri(single.to_str().unwrap()).unwrap(),
+            gain_db: 0.0,
+            segment: None,
+        });
+
+        let player = &harness.player;
+        CrossfadeEngine {
+            playbin: player.playbin.clone(),
+            bus_watch: player.bus_watch.clone(),
+            on_event: player.on_event.clone(),
+            effects: player.effects.clone(),
+            next_uri: player.next_uri.clone(),
+            pending_gain: player.pending_gain.clone(),
+            handoff_pending: player.handoff_pending.clone(),
+            transition: player.transition.clone(),
+            crossfading: player.crossfading.clone(),
+            user_volume: player.user_volume.clone(),
+            generation: player.fade_generation.clone(),
+            incoming: player.incoming.clone(),
+            spectrum_enabled: player.spectrum_enabled.clone(),
+            cava_stream_generation: player.cava_stream_generation.clone(),
+            stream_generation: player.stream_generation.clone(),
+            segments: player.segments.clone(),
+        }
+        .maybe_start(1_500, 2_000);
+
+        assert!(!player.crossfading.load(Ordering::SeqCst));
+        assert!(player
+            .next_uri
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .is_some());
+    }
+}

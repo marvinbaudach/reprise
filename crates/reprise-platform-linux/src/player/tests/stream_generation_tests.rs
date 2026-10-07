@@ -54,6 +54,7 @@ fn start_crossfade_for_generation_test(player: &Player) {
         spectrum_enabled: player.spectrum_enabled.clone(),
         cava_stream_generation: player.cava_stream_generation.clone(),
         stream_generation: player.stream_generation.clone(),
+        segments: player.segments.clone(),
     }
     .maybe_start(0, 1_000);
 }

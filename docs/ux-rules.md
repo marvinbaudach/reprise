@@ -622,6 +622,40 @@ result.
   Proven at the session boundary (the port receives the re-resolved gains and
   no play or re-queue) and in the port (the gain sink applies them); the audible
   result on a device is a manual check.
+- **PLAY-22** [active] [core] — **A CUE track plays from its own start to its
+  own end, and its seek bar and time are its own.** A track a CUE sheet cuts
+  from a larger file starts at its own first sample, not at the file's start
+  (within 20 ms). Its elapsed time counts from zero and its duration is its own
+  length, never the file's; a seek lands inside the track, never before its
+  start or past its end. At its end it stops being heard and finishes as a
+  track does. The last track of a file whose end lies within one second of the
+  file's duration plays to the end of the file, because the sheet's end for it
+  is only a metadata estimate. A whole file plays, reports and seeks as before.
+  Proven by the GStreamer backend tests on a generated file with a tone where
+  the track starts, and by GTK controller tests that play counting, scrobble
+  eligibility, Previous, the sleep timer and the lyrics lookup measure the
+  track rather than its file.
+  <!-- REVIEW: rule proposal -->
+- **PLAY-23** [active] [core] — **Consecutive tracks of one CUE file play
+  through without a gap or a reload, each with its own loudness gain.** When
+  the next track is the one that starts where the playing track ends in the
+  same file, playback carries on inside the file: no new stream starts and
+  nothing is reloaded. From the first buffer at the boundary on, the next
+  track's own gain applies (give or take that one buffer), and the moment the
+  next track takes over, its time and length are the ones shown — no tick of
+  the previous track arrives afterwards. This holds with the transition set to
+  Gapless or Crossfade; with transitions off nothing is pre-fed and the next
+  track starts like any other. Every other change into or out of a CUE track
+  may have a short gap. Proven by the GStreamer backend tests.
+  <!-- REVIEW: rule proposal -->
+- **PLAY-24** [active] [core] — **No crossfade into or out of a CUE track.**
+  With the transition set to Crossfade, a change from a CUE track to any track
+  that does not follow on in the same file, and from any track to a CUE track,
+  is a hard change: the playing track finishes and the next one starts, with
+  no second pipeline fading between them. Two consecutive tracks of one file
+  play through instead (PLAY-23). Crossfades between whole files are
+  unchanged. Proven by the GStreamer backend tests.
+  <!-- REVIEW: rule proposal -->
 - **SEEK-1** [active] [gtk] — **The seek bar's colour is a reading, not a
   decoration, and it is averaged over time.** The spectral centroid swings
   from beat to beat: taken per bar it puts cyan next to magenta inside two
