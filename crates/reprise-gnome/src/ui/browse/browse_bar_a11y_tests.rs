@@ -1,5 +1,3 @@
-use gtk4::prelude::*;
-
 use super::*;
 use crate::ui::test_accessible_label::{accessible_label_mismatch, has_labelled_by_relation};
 
