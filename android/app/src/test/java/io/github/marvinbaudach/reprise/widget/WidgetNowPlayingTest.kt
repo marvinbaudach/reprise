@@ -1,5 +1,6 @@
 package io.github.marvinbaudach.reprise.widget
 
+import io.github.marvinbaudach.reprise.library.TrackMetadata
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
@@ -75,7 +76,7 @@ class WidgetNowPlayingTest {
         val paused = widgetNowPlaying(
             snapshot(AndroidPlaybackState.PAUSED, 5),
             playing,
-            { uri -> reads += uri; metadataFor(uri) },
+            { key -> reads += key.uri; metadataFor(key) },
             { uri -> reads += uri; null },
         )
 
@@ -148,5 +149,23 @@ class WidgetNowPlayingTest {
         assertEquals(playing, snapshot(AndroidPlaybackState.PLAYING, 5, positionMs = 9_000).widgetKey())
         assertFalse(playing == snapshot(AndroidPlaybackState.PAUSED, 5).widgetKey())
         assertFalse(playing == snapshot(AndroidPlaybackState.PLAYING, 6).widgetKey())
+    }
+
+    @Test
+    fun mtp_66_the_widget_names_a_cue_track_by_its_row_not_by_its_file() {
+        val titles = mapOf(21L to "Disorder", 22L to "Day of the Lords")
+        val playing = snapshot(AndroidPlaybackState.PLAYING, 22)
+            .copy(currentTrackUri = "content://tree/album.flac")
+
+        val state = widgetNowPlaying(
+            playing,
+            WidgetNowPlaying.Empty,
+            { key ->
+                key.trackId?.let { id -> TrackMetadata(id, titles.getValue(id), "Joy Division", "", 0) }
+            },
+            artwork,
+        )
+
+        assertEquals("Day of the Lords", state.title)
     }
 }

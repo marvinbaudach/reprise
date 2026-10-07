@@ -1338,6 +1338,27 @@ result.
 - **MTP-65** [active] [gtk] — When the device row is narrower than its natural
   status text, the trailing "· syncing" or "· synced" detail yields before
   the leading activity is hidden.
+- **MTP-66** [planned] [android] — **A CUE track plays its own stretch on the
+  phone, with its own metadata.** A track a CUE sheet cuts from a larger file
+  starts at its own start and ends at its own end; its position and duration
+  count from its own start. The notification, lock screen, Android Auto and
+  the widget show that track's own title and artist, never those of the
+  file's first track, and every track of the file shows the file's cover.
+  Each track plays at its own gain. The phone never crossfades, so no
+  transition into or out of a CUE track is a crossfade.
+  <!-- REVIEW: rule proposal -->
+- **MTP-67** [planned] [android] — **The phone analyses CUE tracks.** One
+  decode of a CUE file stores the seek-bar shape, spectrum and loudness of
+  each of its tracks, each measured from its own stretch of the file, placed
+  by the decoder's timestamps. While the playing track is still being
+  decoded, its seek bar fills from its own start. A file that cannot be
+  measured is remembered and not decoded again until it changes.
+  <!-- REVIEW: rule proposal -->
+- **MTP-68** [planned] [android] — **The last track of a file plays to its
+  end on the phone.** The last track of a CUE file plays to the end of the
+  audio, whatever duration the file's metadata claims, and its analysis
+  covers everything up to the decoded end.
+  <!-- REVIEW: rule proposal -->
 
 ## F. Settings & modals
 

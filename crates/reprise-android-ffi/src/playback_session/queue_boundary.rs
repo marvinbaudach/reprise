@@ -7,7 +7,7 @@ use reprise_core::queue::QueuePlacement;
 use reprise_core::up_next::QueueItem;
 
 use super::{AndroidPlaybackError, AndroidPlaybackSession};
-use crate::{TrackRow, TrackWindow, WindowRange};
+use crate::{TrackWindow, WindowRange};
 
 #[uniffi::export]
 impl AndroidPlaybackSession {
@@ -105,13 +105,26 @@ impl AndroidPlaybackSession {
                 })
                 .collect::<Vec<_>>();
             if missing.is_empty() {
-                let rows = metadata
+                let tracks = metadata
                     .into_iter()
                     .filter_map(|metadata| match metadata {
-                        QueueItemMetadata::Track(track) => Some(TrackRow::from(track)),
+                        QueueItemMetadata::Track(track) => Some(track),
                         QueueItemMetadata::Episode(_) => None,
                     })
                     .collect::<Vec<_>>();
+                let database =
+                    self.inner
+                        .library
+                        .reader()
+                        .map_err(|error| AndroidPlaybackError::Backend {
+                            detail: error.to_string(),
+                        })?;
+                let rows =
+                    crate::track_segment::track_rows(&database, tracks).map_err(|error| {
+                        AndroidPlaybackError::Backend {
+                            detail: format!("could not load the playback queue: {error}"),
+                        }
+                    })?;
                 return Ok(TrackWindow {
                     total,
                     rows,

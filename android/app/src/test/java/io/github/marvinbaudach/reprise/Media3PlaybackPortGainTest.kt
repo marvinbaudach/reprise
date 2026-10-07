@@ -27,8 +27,8 @@ class Media3PlaybackPortGainTest {
         val fake = CallbackPlayer(playbackState = Player.STATE_IDLE, playWhenReady = false)
         val sink = TrackGainAudioSink(probe.sink)
         val port = Media3PlaybackPort(fake.player, trackGainSink = sink) {}
-        port.setNext("/music/b.flac", doubleDb)
-        port.playPath("/music/a.flac", halfDb)
+        port.setNext(playbackItem("/music/b.flac", doubleDb))
+        port.playPath(playbackItem("/music/a.flac", halfDb))
         sink.setOutputStreamOffsetUs(0)
         sink.setOutputStreamOffsetUs(boundaryUs)
         assertEquals(20_000, scaledAt(sink, boundaryUs))
@@ -37,7 +37,7 @@ class Media3PlaybackPortGainTest {
             MediaItem.fromUri("/music/b.flac"),
             Player.MEDIA_ITEM_TRANSITION_REASON_AUTO,
         )
-        port.setNext("/music/c.flac", halfDb)
+        port.setNext(playbackItem("/music/c.flac", halfDb))
         sink.setOutputStreamOffsetUs(boundaryUs)
         sink.setOutputStreamOffsetUs(2 * boundaryUs)
         sink.flush()
@@ -53,8 +53,8 @@ class Media3PlaybackPortGainTest {
         val fake = CallbackPlayer(playbackState = Player.STATE_IDLE, playWhenReady = false)
         val sink = TrackGainAudioSink(probe.sink)
         val port = Media3PlaybackPort(fake.player, trackGainSink = sink) {}
-        port.setNext("/music/b.flac", 0.0)
-        port.playPath("/music/a.flac", 0.0)
+        port.setNext(playbackItem("/music/b.flac", 0.0))
+        port.playPath(playbackItem("/music/a.flac", 0.0))
         sink.setOutputStreamOffsetUs(0)
         sink.setOutputStreamOffsetUs(boundaryUs)
         val queued = fake.mediaItems.toList()
@@ -67,7 +67,7 @@ class Media3PlaybackPortGainTest {
 
         // The next track is dropped from the player: a later call with no next
         // gain must not bring its gain back.
-        port.setNext(null, 0.0)
+        port.setNext(null)
         port.setGains(halfDb, null)
         assertEquals(5_000, scaledAt(sink, boundaryUs))
         port.release()

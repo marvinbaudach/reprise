@@ -17,6 +17,7 @@ import org.robolectric.RobolectricTestRunner
 import org.robolectric.Shadows.shadowOf
 import org.robolectric.annotation.Config
 import java.util.concurrent.Executor
+import uniffi.reprise_android_ffi.AndroidPlaybackSegment
 import uniffi.reprise_android_ffi.AndroidTransitionMode
 
 private const val FIRST = "content://tree/first.flac"
@@ -37,6 +38,20 @@ private val SECOND_TRACK = TrackMetadata(
     durationMs = 200_000,
 )
 
+private const val ALBUM = "content://tree/album.flac"
+
+/** Two tracks a CUE sheet cuts from [ALBUM], known by their rows. */
+private val CUE_TRACKS = mapOf(
+    21L to TrackMetadata(21, "Disorder", "Joy Division", "Unknown Pleasures", 10_000),
+    22L to TrackMetadata(22, "Day of the Lords", "Joy Division", "Unknown Pleasures", 20_000),
+)
+
+private fun cueItem(trackId: Long, startMs: Long, endMs: Long?) = playbackItem(
+    ALBUM,
+    trackId = trackId,
+    segment = AndroidPlaybackSegment(startMs = startMs, endMs = endMs),
+)
+
 /**
  * Notification, lock screen, Auto and the widget all read the item's metadata.
  *
@@ -54,10 +69,11 @@ class Media3PlaybackPortMetadataTest {
     private val port = Media3PlaybackPort(
         fake.player,
         equalizerChanged = {},
-        metadata = TrackMetadataResolver { uri ->
-            resolved += uri
+        metadata = TrackMetadataResolver { key ->
+            resolved += key.uri
             if (fail) error("the library is not answering")
-            mapOf(FIRST to FIRST_TRACK, SECOND to SECOND_TRACK)[uri]
+            key.trackId?.let(CUE_TRACKS::get)
+                ?: mapOf(FIRST to FIRST_TRACK, SECOND to SECOND_TRACK)[key.uri]
         },
         mediaIdOf = { trackId -> mediaIds(trackId) },
         metadataExecutor = Executor { queued.addLast(it) },
@@ -134,7 +150,7 @@ class Media3PlaybackPortMetadataTest {
     fun theGaplessNextItemCarriesItsMetadataToo() {
         port.playUri(FIRST)
 
-        port.setNext(SECOND, 0.0)
+        port.setNext(playbackItem(SECOND))
         settle()
 
         assertEquals(listOf("First", "Second"), fake.items.map { it.mediaMetadata.title })
@@ -144,7 +160,7 @@ class Media3PlaybackPortMetadataTest {
     @Test
     fun aNextItemSetBeforeATransitionModeChangeIsNotResolvedAgain() {
         port.playUri(FIRST)
-        port.setNext(SECOND, 0.0)
+        port.setNext(playbackItem(SECOND))
         settle()
         resolved.clear()
 
@@ -158,7 +174,7 @@ class Media3PlaybackPortMetadataTest {
     @Test
     fun aNextItemQueuedBeforeItsMetadataArrivedIsNotReAddedBare() {
         port.playUri(FIRST)
-        port.setNext(SECOND, 0.0)
+        port.setNext(playbackItem(SECOND))
 
         port.setTransition(AndroidTransitionMode.GAPLESS)
         settle()
@@ -192,7 +208,7 @@ class Media3PlaybackPortMetadataTest {
     @Test
     fun aLateCoverIsAttachedToTheMatchingItemOnly() {
         port.playUri(FIRST)
-        port.setNext(SECOND, 0.0)
+        port.setNext(playbackItem(SECOND))
         settle()
         val cover = Uri.parse("file:///cache/first.png")
 
@@ -240,7 +256,7 @@ class Media3PlaybackPortMetadataTest {
         port.playUri(FIRST)
         settle()
 
-        port.setNext(SECOND, 0.0)
+        port.setNext(playbackItem(SECOND))
 
         assertEquals(
             Uri.parse("file:///cache/second.png"),
@@ -264,7 +280,7 @@ class Media3PlaybackPortMetadataTest {
         mediaIds = { trackId -> if (trackId == 11L) "track:recent:11:4" else null }
 
         port.playUri(FIRST)
-        port.setNext(SECOND, 0.0)
+        port.setNext(playbackItem(SECOND))
         settle()
 
         assertEquals(listOf("track:recent:11:4", "12"), fake.items.map { it.mediaId })
@@ -279,5 +295,29 @@ class Media3PlaybackPortMetadataTest {
         settle()
 
         assertFalse(fake.calls.contains("replaceMediaItem"))
+    }
+
+    @Test
+    fun mtp_66_two_tracks_of_one_cue_file_each_carry_their_own_metadata() {
+        port.playPath(cueItem(21, 0, 10_000))
+        port.setNext(cueItem(22, 10_000, null))
+        settle()
+
+        assertEquals(listOf("Disorder", "Day of the Lords"), fake.items.map { it.mediaMetadata.title })
+        assertEquals(listOf("21", "22"), fake.items.map { it.mediaId })
+        assertTrue(fake.items.all { it.localConfiguration?.uri == Uri.parse(ALBUM) })
+    }
+
+    @Test
+    fun mtp_66_the_files_cover_reaches_each_of_its_tracks_without_swapping_them() {
+        port.playPath(cueItem(21, 0, 10_000))
+        port.setNext(cueItem(22, 10_000, null))
+        settle()
+        val cover = Uri.parse("file:///cache/album.png")
+
+        port.attachArtwork(ALBUM, cover)
+
+        assertEquals(listOf(cover, cover), fake.items.map { it.mediaMetadata.artworkUri })
+        assertEquals(listOf("Disorder", "Day of the Lords"), fake.items.map { it.mediaMetadata.title })
     }
 }

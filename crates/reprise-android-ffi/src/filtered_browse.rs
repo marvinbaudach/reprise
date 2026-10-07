@@ -37,10 +37,10 @@ impl MusicLibrary {
     ) -> Result<TrackWindow, LibraryError> {
         let reader = self.reader()?;
         queries::query_artist_untagged_tracks(&reader, artist.as_str(), window.into())
-            .map(TrackWindow::from)
             .map_err(|error| LibraryError::Query {
                 detail: error.to_string(),
             })
+            .and_then(|window| crate::track_segment::track_window(&reader, window))
     }
 
     /// Returns one artist's present tracks in album and track-number order.
@@ -62,10 +62,10 @@ impl MusicLibrary {
                 window: window.into(),
             },
         )
-        .map(TrackWindow::from)
         .map_err(|error| LibraryError::Query {
             detail: error.to_string(),
         })
+        .and_then(|window| crate::track_segment::track_window(&reader, window))
     }
 }
 
