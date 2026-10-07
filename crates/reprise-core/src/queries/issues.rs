@@ -443,7 +443,8 @@ fn tombstone_still_missing_in(
         MissingGroupKind::Unlocatable => unlocatable_predicate(),
         MissingGroupKind::Unavailable { .. } => return Ok(Vec::new()),
     };
-    let tx = conn.unchecked_transaction()?;
+    // IMMEDIATE: the revalidation read precedes the guarded update (see `events::in_txn_immediate`).
+    let tx = crate::events::immediate_transaction(conn)?;
     let currently_matching: HashSet<i64> = {
         let mut statement = tx.prepare(&format!(
             "SELECT id FROM tracks WHERE {MISSING} AND {state_predicate}"

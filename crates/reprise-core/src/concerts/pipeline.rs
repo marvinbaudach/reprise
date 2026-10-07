@@ -433,7 +433,8 @@ fn reconcile_artist(
     today: NaiveDate,
     now: i64,
 ) -> Result<usize, rusqlite::Error> {
-    let transaction = conn.unchecked_transaction()?;
+    // IMMEDIATE: each listing's stored owner is read before the upsert (see `events::in_txn_immediate`).
+    let transaction = crate::events::immediate_transaction(conn)?;
     let mut fresh_keys = HashSet::with_capacity(events.len());
     let mut upserted = 0;
     for event in events {

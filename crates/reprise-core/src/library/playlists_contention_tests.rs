@@ -79,17 +79,16 @@ fn ensuring_an_existing_role_playlist_never_waits_for_the_write_lock() {
 }
 
 fn seed_tracks(db: &Db, count: i64) -> Vec<i64> {
-    (1..=count)
-        .map(|id| {
-            db.conn()
-                .execute(
-                    "INSERT INTO tracks (id, path, title, added_at) VALUES (?1, ?2, 'Track', 0)",
-                    params![id, format!("/x/{id}.flac")],
-                )
-                .unwrap();
-            id
-        })
-        .collect()
+    let ids: Vec<i64> = (1..=count).collect();
+    for id in &ids {
+        db.conn()
+            .execute(
+                "INSERT INTO tracks (id, path, title, added_at) VALUES (?1, ?2, 'Track', 0)",
+                params![id, format!("/x/{id}.flac")],
+            )
+            .unwrap();
+    }
+    ids
 }
 
 #[test]

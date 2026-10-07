@@ -133,7 +133,8 @@ pub fn relink_track_with_source(
     let mount_point =
         super::mounts::mount_point_of(new_path).map(|path| path.to_string_lossy().into_owned());
 
-    let tx = conn.unchecked_transaction()?;
+    // IMMEDIATE: the missing-track check is read before the relink (see `events::in_txn_immediate`).
+    let tx = crate::events::immediate_transaction(conn)?;
     let segment_index: Option<i64> = tx
         .query_row(
             &format!(
@@ -270,7 +271,8 @@ fn relink_from_folder_with_source(
             };
             let mount_point = super::mounts::mount_point_of(path)
                 .map(|mount| mount.to_string_lossy().into_owned());
-            let tx = conn.unchecked_transaction()?;
+            // IMMEDIATE: the missing-track check is read before the relink (see `events::in_txn_immediate`).
+            let tx = crate::events::immediate_transaction(conn)?;
             let candidate = super::scanner::move_detect::find_move_candidate_in_with_source(
                 source,
                 &tx,
@@ -381,3 +383,7 @@ mod tests;
 #[cfg(test)]
 #[path = "relink_source_name_tests.rs"]
 mod source_name_tests;
+
+#[cfg(test)]
+#[path = "relink_contention_tests.rs"]
+mod contention_tests;

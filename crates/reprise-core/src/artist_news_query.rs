@@ -403,7 +403,8 @@ pub fn set_release_hidden(
     hidden: bool,
 ) -> Result<(), rusqlite::Error> {
     let conn = db.conn();
-    let transaction = conn.unchecked_transaction()?;
+    // IMMEDIATE: un-hiding reads the release and its deleted-memory first (see `events::in_txn_immediate`).
+    let transaction = crate::events::immediate_transaction(conn)?;
     apply_release_hidden_in(&transaction, release_group_mbid, hidden)?;
     transaction.commit()
 }
@@ -417,7 +418,8 @@ pub fn set_releases_hidden(
         return Ok(());
     }
     let conn = db.conn();
-    let transaction = conn.unchecked_transaction()?;
+    // IMMEDIATE: un-hiding reads the release and its deleted-memory first (see `events::in_txn_immediate`).
+    let transaction = crate::events::immediate_transaction(conn)?;
     for mbid in release_group_mbids {
         apply_release_hidden_in(&transaction, mbid, hidden)?;
     }

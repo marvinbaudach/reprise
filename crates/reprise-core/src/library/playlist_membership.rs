@@ -18,26 +18,17 @@ pub fn add_unique_tracks(
         return Ok(0);
     }
 
-    let tx = conn.unchecked_transaction()?;
-    let existing = {
-        let mut statement =
-            tx.prepare_cached("SELECT track_id FROM playlist_tracks WHERE playlist_id=?1")?;
-        let ids = statement
-            .query_map([playlist_id], |row| row.get::<_, i64>(0))?
-            .collect::<Result<HashSet<_>, _>>()?;
-        ids
-    };
-    let mut seen = HashSet::new();
-    let mut unique = Vec::new();
-    for &track_id in track_ids {
-        if !seen.insert(track_id) {
-            continue;
-        }
-        if !existing.contains(&track_id) {
-            unique.push(track_id);
-        }
+    // A request that adds nothing (every id is already a member) settles before
+    // any transaction opens, so it never queues for the write lock.
+    if new_members(conn, playlist_id, track_ids)?.is_empty() {
+        return Ok(0);
     }
 
+    // IMMEDIATE: the existing members are read before the insert (see
+    // `events::in_txn_immediate`). The read is repeated under the lock; that one
+    // is authoritative.
+    let tx = crate::events::immediate_transaction(conn)?;
+    let unique = new_members(&tx, playlist_id, track_ids)?;
     if unique.is_empty() {
         tx.commit()?;
         return Ok(0);
@@ -63,6 +54,28 @@ pub fn add_unique_tracks(
     let inserted = unique.len() as u32;
     tx.commit()?;
     Ok(inserted)
+}
+
+/// The requested ids that are not yet members, in request order, each once.
+fn new_members(
+    conn: &rusqlite::Connection,
+    playlist_id: i64,
+    track_ids: &[i64],
+) -> Result<Vec<i64>, rusqlite::Error> {
+    let existing = {
+        let mut statement =
+            conn.prepare_cached("SELECT track_id FROM playlist_tracks WHERE playlist_id=?1")?;
+        let ids = statement
+            .query_map([playlist_id], |row| row.get::<_, i64>(0))?
+            .collect::<Result<HashSet<_>, _>>()?;
+        ids
+    };
+    let mut seen = HashSet::new();
+    Ok(track_ids
+        .iter()
+        .copied()
+        .filter(|track_id| seen.insert(*track_id) && !existing.contains(track_id))
+        .collect())
 }
 
 #[cfg(test)]
@@ -114,7 +127,9 @@ mod tests {
         let inserted = super::add_unique_tracks(&db, playlist_id, &[2, 3, 3, 4]).unwrap();
         db.conn().trace_v2(TraceEventCodes::empty(), None);
         assert_eq!(inserted, 2);
-        assert_eq!(MEMBERSHIP_SELECTS.load(Ordering::SeqCst), 1);
+        // One set read to settle a no-op before any transaction opens, one under
+        // the write lock — never one per requested id.
+        assert_eq!(MEMBERSHIP_SELECTS.load(Ordering::SeqCst), 2);
 
         let ids = db
             .conn()

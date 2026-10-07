@@ -13,7 +13,8 @@ use crate::{db::Db, CoreError};
 /// UI would otherwise claim "Playlist deleted" when nothing was).
 pub fn delete(db: &Db, id: i64, expected_name: &str) -> Result<bool, CoreError> {
     let conn = db.conn();
-    let tx = conn.unchecked_transaction()?;
+    // IMMEDIATE: the `(id, name)` identity is read before the delete (see `events::in_txn_immediate`).
+    let tx = crate::events::immediate_transaction(conn)?;
     let position = tx
         .query_row(
             "SELECT position FROM playlists WHERE id = ?1 AND name = ?2",
