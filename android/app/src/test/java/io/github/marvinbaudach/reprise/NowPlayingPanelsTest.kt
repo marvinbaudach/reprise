@@ -338,8 +338,8 @@ class NowPlayingPanelsTest {
     }
 
     @Test
-    fun a_stored_spectrogram_is_not_eligible_to_mirror_either() {
-        assertFalse(
+    fun a_stored_spectrogram_neighbour_is_eligible_to_mirror() {
+        assertTrue(
             panelCanMirrorLiveScene(isLivePanel = false, storedFrameCount = 3, liveSceneAvailable = true),
         )
     }
@@ -366,7 +366,7 @@ class NowPlayingPanelsTest {
     fun a_visible_neighbour_mirrors_the_live_scene_and_a_resting_one_does_not() {
         assertTrue(panelMirrorsLiveScene(isLivePanel = false, storedFrameCount = 0, near = 0.4f, liveSceneAvailable = true))
         assertFalse("at rest the neighbour is off the screen", panelMirrorsLiveScene(isLivePanel = false, storedFrameCount = 0, near = 0f, liveSceneAvailable = true))
-        assertFalse("a stored spectrogram is the panel's own scene", panelMirrorsLiveScene(isLivePanel = false, storedFrameCount = 3, near = 0.4f, liveSceneAvailable = true))
+        assertTrue("stored frames must not replace the live swipe shape", panelMirrorsLiveScene(isLivePanel = false, storedFrameCount = 3, near = 0.4f, liveSceneAvailable = true))
         assertFalse("the live panel is the source, not a mirror", panelMirrorsLiveScene(isLivePanel = true, storedFrameCount = 0, near = 1f, liveSceneAvailable = true))
         assertFalse("nothing to mirror before the live engine exists", panelMirrorsLiveScene(isLivePanel = false, storedFrameCount = 0, near = 0.4f, liveSceneAvailable = false))
     }

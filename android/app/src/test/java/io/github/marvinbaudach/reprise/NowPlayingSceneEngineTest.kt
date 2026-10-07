@@ -156,6 +156,50 @@ class NowPlayingSceneEngineTest {
     }
 
     @Test
+    fun a_neighbour_with_a_spectrogram_mirrors_the_live_scene_through_the_transport_reset() {
+        val factory = RecordingSceneEngineFactory()
+        val analysis = ReadySpectrogramAnalysis()
+        val surfaceState = MobileSurfaceViewModel()
+        var positionPx by mutableStateOf(0f)
+        var playbackPositionMs by mutableLongStateOf(91_000L)
+
+        compose.setContent {
+            SwipeScene(
+                factory,
+                analysis,
+                surfaceState,
+                positionPx,
+                withNeighbour = true,
+                playbackPositionMs = playbackPositionMs,
+            )
+        }
+        compose.waitForIdle()
+        val sceneNode = compose.onNodeWithTag("now-playing-scene")
+        val widthPx = sceneNode.fetchSemanticsNode().size.width.toFloat()
+
+        positionPx = widthPx * 0.5f
+        compose.waitForIdle()
+        sceneNode.captureToImage()
+        val callsDuringDrag = factory.engine.tintedCalls
+        assertTrue(
+            "a dragged neighbour with stored frames must mirror the live engine",
+            callsDuringDrag > 0,
+        )
+
+        // controls.next() resets the shared playhead before the transport answer changes
+        // currentIndex. The same incoming panel must keep mirroring the outgoing live shape,
+        // rather than asking its private stored-frame driver for frame zero.
+        playbackPositionMs = 0L
+        compose.waitForIdle()
+        sceneNode.captureToImage()
+
+        assertTrue(
+            "the neighbour must keep mirroring after the playhead reset and before the index flip",
+            factory.engine.tintedCalls > callsDuringDrag,
+        )
+    }
+
+    @Test
     fun the_outgoing_panel_mirrors_the_new_live_engine_on_its_way_out() {
         // The panel that just lost the live slot has a picture of its own — the last scene it
         // drew while live, kept in FrozenSceneBytes across the engine swap. That picture is not
@@ -474,6 +518,7 @@ class NowPlayingSceneEngineTest {
         positionPx: Float,
         withNeighbour: Boolean = false,
         currentIndex: Int = 0,
+        playbackPositionMs: Long = 0L,
     ) {
         val theme = MobileThemeSelection(
             palette = MobileTheme.NOCTURNE,
@@ -494,7 +539,10 @@ class NowPlayingSceneEngineTest {
                 }
                 NowPlayingScene(
                     track = track,
-                    playback = PlaybackUiState(state = AndroidPlaybackState.PLAYING),
+                    playback = PlaybackUiState(
+                        state = AndroidPlaybackState.PLAYING,
+                        positionMs = playbackPositionMs,
+                    ),
                     surfaceState = surfaceState,
                     positionPx = positionPx,
                     currentIndex = currentIndex,
