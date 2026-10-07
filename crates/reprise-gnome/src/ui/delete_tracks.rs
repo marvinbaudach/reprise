@@ -416,6 +416,8 @@ fn finish(
                         report.failures,
                         mode == DeleteMode::Trash,
                     ),
+                    removed - report.hidden,
+                    report.failures,
                     report.hidden,
                 ),
             );

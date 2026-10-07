@@ -19,8 +19,10 @@ pub(super) fn choice_note(hidden: usize) -> Option<String> {
     (hidden > 0).then(|| hidden_note(hidden))
 }
 
-/// The result toast of a trash, followed by how many CUE tracks it hid.
-pub(super) fn result_toast(toast: String, hidden: usize) -> String {
+/// The result toast of a trash, followed by how many CUE tracks it hid. When
+/// nothing was moved and nothing failed, only the hidden count is told: the
+/// toast would otherwise open by saying that nothing happened.
+pub(super) fn result_toast(toast: String, moved: usize, failures: usize, hidden: usize) -> String {
     if hidden == 0 {
         return toast;
     }
@@ -31,6 +33,9 @@ pub(super) fn result_toast(toast: String, hidden: usize) -> String {
         hidden,
         &[("count", &count)],
     );
+    if moved == 0 && failures == 0 {
+        return note;
+    }
     format!("{toast} · {note}")
 }
 
@@ -68,7 +73,19 @@ mod tests {
         assert!(mixed.contains("2 CUE tracks share their music files"));
         assert_eq!(choice_note(0), None);
         assert!(choice_note(1).unwrap().contains("1 CUE track shares"));
-        assert_eq!(result_toast("done".into(), 0), "done");
-        assert_eq!(result_toast("done".into(), 2), "done · 2 CUE tracks hidden");
+        assert_eq!(result_toast("done".into(), 1, 0, 0), "done");
+        assert_eq!(
+            result_toast("done".into(), 1, 0, 2),
+            "done · 2 CUE tracks hidden"
+        );
+        assert_eq!(
+            result_toast("failed".into(), 0, 1, 2),
+            "failed · 2 CUE tracks hidden"
+        );
+        assert_eq!(
+            result_toast("0 tracks moved to Trash".into(), 0, 0, 1),
+            "1 CUE track hidden",
+            "nothing moved, so the toast tells only what was hidden"
+        );
     }
 }
