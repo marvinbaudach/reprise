@@ -1,5 +1,11 @@
 //! Platform-independent move-to-trash reconciliation. The caller injects
 //! its platform trash action; tests inject scratch-only actions.
+//!
+//! Trash acts on audio files, and a CUE file holds several tracks: it goes to
+//! the trash only when every track of it still in the library is selected,
+//! together with the sheet beside it once no other file still needs that
+//! sheet. The selected tracks of a file that is only partly selected are
+//! hidden instead, as Remove from Library hides them (CUE-11).
 
 use std::collections::HashSet;
 use std::path::{Path, PathBuf};
@@ -17,7 +23,31 @@ pub struct TrashFailure {
 
 #[derive(Debug, Default, Clone, PartialEq, Eq)]
 pub struct TrashReport {
+    /// Every track that left the library: trashed, or hidden.
     pub removed_ids: Vec<i64>,
+    /// The tracks of partly selected CUE files that were hidden, not trashed.
+    pub hidden_ids: Vec<i64>,
+    pub failures: Vec<TrashFailure>,
+}
+
+/// One audio file the selection covers completely.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct TrashFile {
+    pub path: PathBuf,
+    /// Every track of the file, as selected.
+    pub tracks: Vec<(i64, PathBuf)>,
+    /// The sheet beside the file that cut it, to be trashed after the file:
+    /// set on the last file of the selection that the sheet describes, and
+    /// only when no file outside the selection still needs it.
+    pub sheet: Option<PathBuf>,
+}
+
+/// A selection grouped by audio file.
+#[derive(Debug, Default, Clone, PartialEq, Eq)]
+pub struct FileTrashPlan {
+    pub files: Vec<TrashFile>,
+    /// Selected tracks of CUE files whose other tracks stay; they are hidden.
+    pub hidden: Vec<(i64, PathBuf)>,
     pub failures: Vec<TrashFailure>,
 }
 
@@ -78,8 +108,8 @@ pub fn commit_trash(
     failures: Vec<TrashFailure>,
 ) -> TrashReport {
     let mut report = TrashReport {
-        removed_ids: Vec::new(),
         failures,
+        ..TrashReport::default()
     };
     if trashed.is_empty() {
         return report;
@@ -110,22 +140,184 @@ pub fn commit_trash(
     report
 }
 
+/// Groups the validated selection by file: a file whose every present track
+/// is selected is trashed whole, the selected tracks of any other file are
+/// hidden. See [`TrashFile::sheet`] for when a sheet goes along.
+pub fn plan_file_trash(db: &Db, tracks: &[(i64, PathBuf)]) -> FileTrashPlan {
+    let validated = plan_trash(db, tracks);
+    let mut plan = FileTrashPlan {
+        failures: validated.failures,
+        ..FileTrashPlan::default()
+    };
+    let mut groups: Vec<(PathBuf, Vec<(i64, PathBuf)>)> = Vec::new();
+    for (id, path) in validated.validated {
+        match groups.iter_mut().find(|(file, _)| *file == path) {
+            Some((_, group)) => group.push((id, path)),
+            None => groups.push((path.clone(), vec![(id, path)])),
+        }
+    }
+    let conn = db.conn();
+    let mut sheets = Vec::new();
+    for (path, group) in groups {
+        match file_layout(conn, &path) {
+            Ok(layout)
+                if layout
+                    .present_ids
+                    .iter()
+                    .all(|id| group.iter().any(|(selected, _)| selected == id)) =>
+            {
+                sheets.push(layout.sheet);
+                plan.files.push(TrashFile {
+                    path,
+                    tracks: group,
+                    sheet: None,
+                });
+            }
+            Ok(_) => plan.hidden.extend(group),
+            Err(error) => plan
+                .failures
+                .extend(group.into_iter().map(|(id, path)| TrashFailure {
+                    id,
+                    path,
+                    error: format!("could not read the tracks of the file before trash: {error}"),
+                })),
+        }
+    }
+    assign_sheets(conn, &mut plan.files, &sheets);
+    plan
+}
+
+/// What the catalog holds for one audio file.
+struct FileLayout {
+    /// The tracks still in the library.
+    present_ids: Vec<i64>,
+    /// The sheet beside the file that cut it into tracks.
+    sheet: Option<PathBuf>,
+}
+
+fn file_layout(conn: &rusqlite::Connection, path: &Path) -> Result<FileLayout, rusqlite::Error> {
+    let path = path.to_string_lossy();
+    let present_ids = conn
+        .prepare_cached(&format!(
+            "SELECT id FROM tracks WHERE path = ?1 AND {}",
+            crate::queries::PRESENT
+        ))?
+        .query_map([&path], |row| row.get(0))?
+        .collect::<Result<Vec<i64>, _>>()?;
+    // A whole-file row may remember a sheet that did not fit it; only a sheet
+    // that cut the file is the file's.
+    let sheet = conn
+        .prepare_cached("SELECT min(cue_path) FROM tracks WHERE path = ?1 AND segment_index > 0")?
+        .query_row([&path], |row| row.get::<_, Option<String>>(0))?
+        .map(PathBuf::from);
+    Ok(FileLayout { present_ids, sheet })
+}
+
+/// Hands each sheet to the last file of the selection it describes, unless a
+/// file outside the selection, in the library or hidden from it, still names
+/// it: without its sheet a hidden CUE file would come back whole.
+fn assign_sheets(conn: &rusqlite::Connection, files: &mut [TrashFile], sheets: &[Option<PathBuf>]) {
+    let trashed: HashSet<String> = files
+        .iter()
+        .map(|file| file.path.to_string_lossy().into_owned())
+        .collect();
+    for (position, sheet) in sheets.iter().enumerate() {
+        let Some(sheet) = sheet else { continue };
+        let later = sheets[position + 1..]
+            .iter()
+            .any(|other| other.as_ref() == Some(sheet));
+        if later {
+            continue;
+        }
+        match paths_naming_sheet(conn, sheet) {
+            Ok(paths) if paths.iter().all(|path| trashed.contains(path)) => {
+                files[position].sheet = Some(sheet.clone());
+            }
+            Ok(_) => {}
+            Err(error) => {
+                tracing::warn!(sheet = %sheet.display(), %error, "kept a CUE sheet: could not tell which files still need it");
+            }
+        }
+    }
+}
+
+fn paths_naming_sheet(
+    conn: &rusqlite::Connection,
+    sheet: &Path,
+) -> Result<Vec<String>, rusqlite::Error> {
+    let sheet = sheet.to_string_lossy();
+    let mut paths = conn
+        .prepare_cached("SELECT DISTINCT path FROM tracks WHERE cue_path = ?1")?
+        .query_map([&sheet], |row| row.get(0))?
+        .collect::<Result<Vec<String>, _>>()?;
+    paths.extend(crate::db_library_exclusions::paths_naming_sheet(
+        conn, &sheet,
+    )?);
+    Ok(paths)
+}
+
+/// Trashes the selection per file (see [`plan_file_trash`]) and hides the
+/// selected tracks of files that are only partly selected.
 pub fn trash_tracks_with<F>(db: &Db, tracks: &[(i64, PathBuf)], trash_action: F) -> TrashReport
 where
     F: Fn(&Path) -> Result<(), String>,
 {
-    let plan = plan_trash(db, tracks);
+    let plan = plan_file_trash(db, tracks);
     let mut trashed = Vec::new();
     let mut failures = plan.failures;
 
-    for (id, path) in plan.validated {
-        match trash_action(&path) {
-            Ok(()) => trashed.push((id, path)),
-            Err(error) => failures.push(TrashFailure { id, path, error }),
+    for file in plan.files {
+        match trash_action(&file.path) {
+            Ok(()) => {
+                trashed.extend(file.tracks);
+                if let Some(sheet) = file.sheet {
+                    // The audio is gone and its rows go with it; a sheet left
+                    // behind only raises an issue on the next scan.
+                    if let Err(error) = trash_action(&sheet) {
+                        tracing::warn!(sheet = %sheet.display(), %error, "move-to-trash of a CUE sheet failed");
+                    }
+                }
+            }
+            Err(error) => failures.extend(file.tracks.into_iter().map(|(id, path)| TrashFailure {
+                id,
+                path,
+                error: error.clone(),
+            })),
         }
     }
 
-    commit_trash(db, &trashed, failures)
+    let mut report = commit_trash(db, &trashed, failures);
+    hide_partial_selection(db, &plan.hidden, &mut report);
+    report
+}
+
+fn hide_partial_selection(db: &Db, hidden: &[(i64, PathBuf)], report: &mut TrashReport) {
+    if hidden.is_empty() {
+        return;
+    }
+    let excluded_at = crate::library::stats::now_unix();
+    match crate::queries::exclude_tracks_matching_paths(db, hidden, excluded_at) {
+        Ok(ids) => {
+            for (id, path) in hidden {
+                if !ids.contains(id) {
+                    report.failures.push(TrashFailure {
+                        id: *id,
+                        path: path.clone(),
+                        error: "track changed before it could be hidden".into(),
+                    });
+                }
+            }
+            report.removed_ids.extend(&ids);
+            report.hidden_ids = ids;
+        }
+        Err(error) => report
+            .failures
+            .extend(hidden.iter().map(|(id, path)| TrashFailure {
+                id: *id,
+                path: path.clone(),
+                error: format!("could not hide the track: {error}"),
+            })),
+    }
 }
 
 #[cfg(test)]
@@ -265,3 +457,7 @@ mod tests {
         assert_eq!(crate::artist_news::hidden_release_count(&db).unwrap(), 1);
     }
 }
+
+#[cfg(test)]
+#[path = "trash_tracks_cue_tests.rs"]
+mod cue_tests;

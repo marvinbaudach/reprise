@@ -7,7 +7,7 @@ msgid ""
 msgstr ""
 "Project-Id-Version: Reprise 0.1.0\n"
 "Report-Msgid-Bugs-To: Marvin Baudach\n"
-"POT-Creation-Date: 2026-10-05 13:11+0200\n"
+"POT-Creation-Date: 2026-10-07 11:04+0200\n"
 "PO-Revision-Date: 2026-07-20 11:38+0200\n"
 "Last-Translator: Reprise contributors\n"
 "Language-Team: Bengali\n"
@@ -6137,3 +6137,33 @@ msgstr ""
 #: crates/reprise-gnome/src/ui/window/window_decoration_strings.rs:18
 msgid "Separate title bar"
 msgstr ""
+
+#: crates/reprise-gnome/src/ui/strings_delete_cue.rs:29
+#, rust-format
+msgid "{count} CUE track hidden"
+msgid_plural "{count} CUE tracks hidden"
+msgstr[0] ""
+msgstr[1] ""
+
+#: crates/reprise-gnome/src/ui/strings_delete_cue.rs:40
+#, rust-format
+msgid ""
+"This CUE track shares its music file with tracks that are not selected, so "
+"nothing is moved to Trash: it is hidden from the library instead."
+msgid_plural ""
+"These {count} CUE tracks share their music files with tracks that are not "
+"selected, so nothing is moved to Trash: they are hidden from the library "
+"instead."
+msgstr[0] ""
+msgstr[1] ""
+
+#: crates/reprise-gnome/src/ui/strings_delete_cue.rs:50
+#, rust-format
+msgid ""
+"{count} CUE track shares its music file with tracks that are not selected; "
+"it is hidden from the library instead."
+msgid_plural ""
+"{count} CUE tracks share their music files with tracks that are not "
+"selected; they are hidden from the library instead."
+msgstr[0] ""
+msgstr[1] ""

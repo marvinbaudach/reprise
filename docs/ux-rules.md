@@ -7878,6 +7878,15 @@ no tags of its own to write.
   the same reason its lyrics are never read from or written to a sidecar beside
   the file or the file's tags; they come from the online sources and the cache.
   <!-- REVIEW: rule proposal -->
+- **CUE-11** [active] [core] — Move to Trash acts on audio files. A CUE file goes
+  to the Trash only when every one of its tracks still in the library is
+  selected, and the sheet beside it goes with it once no other file in the
+  library, or hidden from it, still needs that sheet: a sheet over several
+  files goes with the last of them. A sheet that never cut the file stays. The
+  selected tracks of a CUE file whose other tracks stay are hidden from the
+  library instead, as Remove from Library hides them, and the confirmation
+  counts the files it moves to Trash apart from the CUE tracks it hides.
+  <!-- REVIEW: rule proposal -->
 - **CUE-13** [active] [core] — The Library Doctor never checks a track cut from a
   CUE sheet, whatever its scope (whole library, current view, queue or
   selection) and through MCP alike: every proposal it makes is a tag write, and

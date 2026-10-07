@@ -291,6 +291,17 @@ pub(crate) fn hidden_file_version(
     })
 }
 
+/// The files whose hidden tracks a sheet beside them placed.
+pub(crate) fn paths_naming_sheet(
+    conn: &Connection,
+    sheet: &str,
+) -> Result<Vec<String>, rusqlite::Error> {
+    let mut statement =
+        conn.prepare_cached("SELECT DISTINCT path FROM library_exclusions WHERE cue_path = ?1")?;
+    let paths = statement.query_map([sheet], |row| row.get(0))?.collect();
+    paths
+}
+
 #[cfg(test)]
 mod tests {
     #[test]

@@ -2,7 +2,7 @@ msgid ""
 msgstr ""
 "Project-Id-Version: Reprise 0.1.1\n"
 "Report-Msgid-Bugs-To: Marvin Baudach\n"
-"POT-Creation-Date: 2026-10-05 13:11+0200\n"
+"POT-Creation-Date: 2026-10-07 11:04+0200\n"
 "PO-Revision-Date: 2026-07-26 14:47+0200\n"
 "Last-Translator: Reprise contributors\n"
 "Language-Team: Spanish\n"
@@ -6377,3 +6377,43 @@ msgstr "Decoración del lado del cliente"
 #: crates/reprise-gnome/src/ui/window/window_decoration_strings.rs:18
 msgid "Separate title bar"
 msgstr "Barra de título independiente"
+
+#: crates/reprise-gnome/src/ui/strings_delete_cue.rs:29
+#, rust-format
+msgid "{count} CUE track hidden"
+msgid_plural "{count} CUE tracks hidden"
+msgstr[0] "{count} pista CUE oculta"
+msgstr[1] "{count} pistas CUE ocultas"
+
+#: crates/reprise-gnome/src/ui/strings_delete_cue.rs:40
+#, rust-format
+msgid ""
+"This CUE track shares its music file with tracks that are not selected, so "
+"nothing is moved to Trash: it is hidden from the library instead."
+msgid_plural ""
+"These {count} CUE tracks share their music files with tracks that are not "
+"selected, so nothing is moved to Trash: they are hidden from the library "
+"instead."
+msgstr[0] ""
+"Esta pista CUE comparte su archivo de música con pistas no seleccionadas, "
+"así que no se mueve nada a la papelera: se oculta de la biblioteca en su "
+"lugar."
+msgstr[1] ""
+"Estas {count} pistas CUE comparten sus archivos de música con pistas no "
+"seleccionadas, así que no se mueve nada a la papelera: se ocultan de la "
+"biblioteca en su lugar."
+
+#: crates/reprise-gnome/src/ui/strings_delete_cue.rs:50
+#, rust-format
+msgid ""
+"{count} CUE track shares its music file with tracks that are not selected; "
+"it is hidden from the library instead."
+msgid_plural ""
+"{count} CUE tracks share their music files with tracks that are not "
+"selected; they are hidden from the library instead."
+msgstr[0] ""
+"{count} pista CUE comparte su archivo de música con pistas no seleccionadas; "
+"se oculta de la biblioteca en su lugar."
+msgstr[1] ""
+"{count} pistas CUE comparten sus archivos de música con pistas no "
+"seleccionadas; se ocultan de la biblioteca en su lugar."

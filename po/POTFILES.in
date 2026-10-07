@@ -38,3 +38,4 @@ crates/reprise-view/src/device_sync.rs
 crates/reprise-view/src/queue.rs
 crates/reprise-gnome/src/ui/track_list/track_list_queue_menu.rs
 crates/reprise-gnome/src/ui/window/window_decoration_strings.rs
+crates/reprise-gnome/src/ui/strings_delete_cue.rs

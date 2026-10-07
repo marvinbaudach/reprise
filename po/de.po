@@ -2,7 +2,7 @@ msgid ""
 msgstr ""
 "Project-Id-Version: Reprise 0.1.1\n"
 "Report-Msgid-Bugs-To: Marvin Baudach\n"
-"POT-Creation-Date: 2026-10-05 13:11+0200\n"
+"POT-Creation-Date: 2026-10-07 11:04+0200\n"
 "PO-Revision-Date: 2026-07-26 14:47+0200\n"
 "Last-Translator: Marvin Baudach\n"
 "Language-Team: German\n"
@@ -6377,3 +6377,43 @@ msgstr "Clientseitige Dekoration"
 #: crates/reprise-gnome/src/ui/window/window_decoration_strings.rs:18
 msgid "Separate title bar"
 msgstr "Separate Titelleiste"
+
+#: crates/reprise-gnome/src/ui/strings_delete_cue.rs:29
+#, rust-format
+msgid "{count} CUE track hidden"
+msgid_plural "{count} CUE tracks hidden"
+msgstr[0] "{count} CUE-Titel ausgeblendet"
+msgstr[1] "{count} CUE-Titel ausgeblendet"
+
+#: crates/reprise-gnome/src/ui/strings_delete_cue.rs:40
+#, rust-format
+msgid ""
+"This CUE track shares its music file with tracks that are not selected, so "
+"nothing is moved to Trash: it is hidden from the library instead."
+msgid_plural ""
+"These {count} CUE tracks share their music files with tracks that are not "
+"selected, so nothing is moved to Trash: they are hidden from the library "
+"instead."
+msgstr[0] ""
+"Dieser CUE-Titel teilt seine Musikdatei mit nicht ausgewählten Titeln. "
+"Deshalb wird nichts in den Papierkorb verschoben, sondern der Titel wird aus "
+"der Bibliothek ausgeblendet."
+msgstr[1] ""
+"Diese {count} CUE-Titel teilen ihre Musikdateien mit nicht ausgewählten "
+"Titeln. Deshalb wird nichts in den Papierkorb verschoben, sondern die Titel "
+"werden aus der Bibliothek ausgeblendet."
+
+#: crates/reprise-gnome/src/ui/strings_delete_cue.rs:50
+#, rust-format
+msgid ""
+"{count} CUE track shares its music file with tracks that are not selected; "
+"it is hidden from the library instead."
+msgid_plural ""
+"{count} CUE tracks share their music files with tracks that are not "
+"selected; they are hidden from the library instead."
+msgstr[0] ""
+"{count} CUE-Titel teilt seine Musikdatei mit nicht ausgewählten Titeln und "
+"wird stattdessen aus der Bibliothek ausgeblendet."
+msgstr[1] ""
+"{count} CUE-Titel teilen ihre Musikdateien mit nicht ausgewählten Titeln und "
+"werden stattdessen aus der Bibliothek ausgeblendet."
