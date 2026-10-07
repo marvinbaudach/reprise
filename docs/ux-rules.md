@@ -632,7 +632,9 @@ result.
   file's duration plays to the end of the file, because the sheet's end for it
   is only a metadata estimate. A whole file plays, reports and seeks as before.
   Proven by the GStreamer backend tests on a generated file with a tone where
-  the track starts.
+  the track starts, and by GTK controller tests that play counting, scrobble
+  eligibility, Previous, the sleep timer and the lyrics lookup measure the
+  track rather than its file.
   <!-- REVIEW: rule proposal -->
 - **PLAY-23** [active] [core] — **Consecutive tracks of one CUE file play
   through without a gap or a reload, each with its own loudness gain.** When
