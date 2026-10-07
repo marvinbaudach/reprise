@@ -8,6 +8,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.test.getUnclippedBoundsInRoot
 import androidx.compose.ui.test.junit4.v2.createAndroidComposeRule
+import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.unit.dp
 import androidx.core.graphics.Insets
@@ -29,6 +30,10 @@ import uniffi.reprise_android_ffi.AndroidColorScheme
  * place the bottom system inset is spent: the portrait bar spends it inside the
  * navigation bar, and the landscape frame, which has no bar, has to spend it
  * under the mini-player itself.
+ *
+ * The same goes for the side of the screen a three-button navigation bar
+ * occupies in landscape (#1172): the Scaffold pads its content but not its
+ * bottom bar, so the mini-player spends the side inset itself.
  */
 @RunWith(RobolectricTestRunner::class)
 class MiniPlayerSystemInsetTest {
@@ -73,6 +78,48 @@ class MiniPlayerSystemInsetTest {
         assertEquals("$player above $bar", 0f, (bar.top - player.bottom).value, 0.1f)
     }
 
+    @Test
+    @Config(sdk = [36], qualifiers = "w1000dp-h500dp-land")
+    fun wideShortMiniPlayerControlsClearTheEndSideNavigationBar() {
+        showFrame(SurfaceLayout.WIDE_SHORT)
+        applyNavigationBarInset(end = INSET_DP)
+
+        val root = compose.onNodeWithTag("frame-root").getUnclippedBoundsInRoot()
+        val next = compose.onNodeWithContentDescription("Next track").getUnclippedBoundsInRoot()
+        assertTrue(
+            "the trailing control must end $INSET_DP dp before the end edge: $next in $root",
+            root.right - next.right >= INSET_DP.dp,
+        )
+    }
+
+    @Test
+    @Config(sdk = [36], qualifiers = "w1000dp-h500dp-land")
+    fun wideShortMiniPlayerLeavesTheStartSideToTheRail() {
+        showFrame(SurfaceLayout.WIDE_SHORT)
+        val before = coverBounds()
+        applyNavigationBarInset(start = INSET_DP)
+
+        val after = coverBounds()
+        assertEquals("the rail already spends the start inset", before.left.value, after.left.value, 0.1f)
+    }
+
+    @Test
+    @Config(sdk = [36], qualifiers = "w700dp-h400dp-land")
+    fun stackedLandscapeMiniPlayerClearsBothSideInsets() {
+        showFrame(SurfaceLayout.STACKED)
+        applyNavigationBarInset(start = INSET_DP, end = INSET_DP)
+
+        val root = compose.onNodeWithTag("frame-root").getUnclippedBoundsInRoot()
+        val cover = coverBounds()
+        val next = compose.onNodeWithContentDescription("Next track").getUnclippedBoundsInRoot()
+        assertTrue("$cover in $root", cover.left - root.left >= INSET_DP.dp)
+        assertTrue("$next in $root", root.right - next.right >= INSET_DP.dp)
+    }
+
+    private fun coverBounds() = compose
+        .onNodeWithTag("library-mini-player-cover", useUnmergedTree = true)
+        .getUnclippedBoundsInRoot()
+
     private fun showFrame(surfaceLayout: SurfaceLayout) {
         compose.setContent {
             RepriseTheme(theme, darkPalette = true) {
@@ -95,13 +142,25 @@ class MiniPlayerSystemInsetTest {
         compose.waitForIdle()
     }
 
-    /** What a gesture-navigation device reports: a bottom navigation-bar inset. */
-    private fun applyNavigationBarInset() {
+    /**
+     * What a navigation bar reports: at the bottom for gesture navigation, at
+     * the [start] or [end] side for three-button navigation in landscape.
+     */
+    private fun applyNavigationBarInset(
+        start: Float = 0f,
+        end: Float = 0f,
+        bottom: Float = if (start == 0f && end == 0f) INSET_DP else 0f,
+    ) {
         val density = compose.activity.resources.displayMetrics.density
         val insets = WindowInsetsCompat.Builder()
             .setInsets(
                 WindowInsetsCompat.Type.navigationBars(),
-                Insets.of(0, 0, 0, (INSET_DP * density).toInt()),
+                Insets.of(
+                    (start * density).toInt(),
+                    0,
+                    (end * density).toInt(),
+                    (bottom * density).toInt(),
+                ),
             )
             .build()
             .toWindowInsets()!!
