@@ -474,7 +474,9 @@ result.
   Repeat off or Repeat one changes nothing, like Previous on the first: the
   song keeps playing, and the position and the queue stay as they were. This holds for
   every surface that sends Next — notification, headset, widget, volume-key
-  skip, dock mode and the mini player. After a back-step, Next still returns
+  skip, dock mode and the mini player. With Repeat off, the notification
+  offers no Next button on the last track, so it sends no Next there; with
+  Repeat one it keeps the button, and pressing it changes nothing. After a back-step, Next still returns
   to the item the step left (PLAY-14), and with Repeat All it wraps to the
   start. The automatic end of the last track still ends playback (PLAY-8), and
   deleting the playing last track still leaves it.
