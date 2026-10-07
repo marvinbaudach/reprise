@@ -162,3 +162,67 @@ Near the cap: `db_spectrogram.rs` 730, `platform-linux/waveform.rs` 692, FFI
 
 All tasks committed, gate battery + Android suite green on the worktree. The device and
 cross-strand proofs (post-merge checks 2, 3, 5) are not this strand's.
+
+## As built
+
+Commits on `feature/cue-sheets-surfaces-c`, in the order they landed (c3, c4 and c5 first:
+they are core-only and c6 builds on all three):
+
+- **c3** `712ba9016b`: `SegmentedRenderDataSession::push_pcm_*` take `start_us: Option<i64>`
+  (microseconds, rounded to the nearest frame). A gap leaves its stretch short; audio for a
+  stretch already measured is dropped, so the earlier copy wins. A timestamp within
+  `CONTIGUOUS_TOLERANCE_US` (1 ms) of the running count is taken as the count, which keeps
+  decoders that truncate to whole microseconds bit-exact. Frames stamped before 0 are dropped.
+  Desktop `waveform.rs` passes each buffer's PTS (`start_us_of`).
+- **c4** `eb376c094c`: `SegmentBounds` gained `last_in_file`, and `same_cut` compares only
+  start and end. The store checks the cut alone, so the flag never reads as a re-cut. "Last"
+  is the highest `segment_index` of the path over all rows, missing ones included, in the
+  pending queries, `waveform_cache::segment_bounds` and the FFI alike. The pending queries
+  moved to `db_spectrogram_pending.rs`.
+- **c5** `a857c3958e`: `db_render_data_failures.rs` (hung off `db_spectrogram.rs`). The
+  accessors are reachable from outside core as `reprise_core::spectrogram_backfill::*`,
+  because `core/db.rs` is not this strand's. A successful store clears the marker. Desktop
+  and phone record a decode error, a CUE file that cannot be decoded, and a stretch the
+  stream never reached. Cancelled, superseded and source-changed decodes record nothing.
+  The phone's in-memory `analysis_failed` set is gone. The desktop backfill's tests moved to
+  `spectrogram_backfill_tests.rs`.
+- **c1** `87ba207bc5`: `TrackRow.segment_start_ms/segment_end_ms` (UniFFI default `None`),
+  built through `track_segment.rs`. The port takes `AndroidPlaybackItem { track_id, uri,
+  gain_db, segment }`; the session resolves the segment by track id, as it does the gain.
+  - Kotlin keys metadata by `PlaybackKey(trackId, uri)`, and each `MediaItem` carries its
+    `PlaybackRequest` as its tag. A late answer or cover rebuilds each item from its own
+    request.
+  - Deviation: a cover stays keyed by uri, because it belongs to the file and every track of
+    a CUE file shows it. The bug the plan meant, a rebuild by uri swapping track 2 for
+    track 1, is fixed.
+  - The widget resolves metadata by key too; it had the same `trackByUri` flaw.
+  - The `[planned]` drafts for MTP-66/67/68 are in this commit, because its tests already
+    carry those ids.
+- **c2** `cdfa279999`: `PlaybackItems.build` sets the `ClippingConfiguration`, with
+  `C.TIME_END_OF_SOURCE` for the last track. Crossfade finding: the phone never crossfades.
+  Media3 has none, and `AndroidPlaybackBackend` maps Crossfade to Gapless. MTP-66 and
+  MTP-68 are active. The MTP-68 text covers playback only; the analysis-to-EOF clause moved
+  to MTP-67.
+- **c6** `916d5bee5d`:
+  - The C7 refusal was removed. `segment_job.rs` plans one decode of the file: the track
+    asked for plus its pending siblings, the last running to EOF.
+  - The PCM sink moved to `sink.rs`. It holds either a whole-file session or a segmented
+    one, and the partial picture comes from the asked-for track's stretch.
+  - The backfill lists pending CUE files after whole files. It counts each track of a
+    decoded file as stored or remembered as failed.
+  - Kotlin calls the new `push_pcm_i16_at` with `presentationTimeUs`. The old
+    `push_pcm_i16` stays for a chunk without a time. MTP-67 is active.
+
+Left open, by design or for a later change:
+- A foreground request for a track whose file the backfill is decoding under a sibling's id
+  preempts the backfill and decodes the file again. This is documented in `segment_job.rs`
+  and was not optimised.
+- A SAF failure (no file descriptor, resolver gone) surfaces as a decode error and is now
+  remembered until the file's fingerprint changes. Before c5 such a failure was retried on
+  the next process start.
+- Media3 clipping with a start above 0 needs a seekable source (FLAC with a seek table or
+  binary search, WAV, CBR or Xing MP3). An unseekable file fails to play its later tracks.
+  The device check shows whether this matters.
+- Post-merge device checks, as listed in the mother plan: the gap between two contiguous
+  clips, each clip's own gain, the last track playing to EOF, and `presentationTimeUs`
+  placement on real decoders.
