@@ -12,9 +12,13 @@ const HOP: usize = WINDOW / 4;
 const CAP: usize = MEASURING_CAP_WINDOWS * WINDOW;
 const LOUD_BAR: f32 = 0.5;
 const QUIET_BAR: f32 = 0.1;
-/// What the estimator asks for while the loudest bar it has seen is `peak`.
+/// What an estimator with nothing on screen asks for while the loudest bar it
+/// has seen is `peak`.
 fn measure_for(peak: f32) -> Step {
-    Step::Measure(TARGET_HEIGHT / peak)
+    Step::Measure {
+        sensitivity: TARGET_HEIGHT / peak,
+        rescales_history: true,
+    }
 }
 
 fn estimator(keeps_shape: bool) -> BoundaryEstimator {

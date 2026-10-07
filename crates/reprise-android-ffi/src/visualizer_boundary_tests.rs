@@ -8,10 +8,11 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use reprise_core::playback::boundary_fixture::{
-    assert_no_dip, dimming_complaints, frame_mean, judge_boundary, pinning_complaints,
-    settled_seconds, spread_complaints, Boundary, Frame, Measure, Opening, Spread, SyntheticMusic,
-    BOUNDARY_OFFSETS_SECONDS, FADE_LEVEL_FLOOR, FRAMES_PER_SECOND, INTRO_LEVEL_FLOOR,
-    JUDGED_FRAMES, SETTLE_FRAMES, SPREAD_FRAMES,
+    assert_no_dip, dead_zone_complaints, dimming_complaints, first_window_complaint, frame_mean,
+    judge_boundary, pinning_complaints, settled_seconds, spread_complaints, Boundary, Frame,
+    Measure, Opening, Spread, SyntheticMusic, BOUNDARY_OFFSETS_SECONDS, DEAD_ZONE_STEPS_DB,
+    FADE_LEVEL_FLOOR, FRAMES_PER_SECOND, INTRO_LEVEL_FLOOR, JUDGED_FRAMES, SETTLE_FRAMES,
+    SPREAD_FRAMES,
 };
 
 use super::{AndroidVisualEngine, MonotonicClock};
@@ -286,6 +287,38 @@ fn ac_29_the_first_pcm_is_measured_instead_of_swelling_from_a_cold_start() {
             );
         }
     }
+}
+
+#[test]
+fn ac_29_the_first_pcm_does_not_swell_in_its_first_window() {
+    let mut complaints = Vec::new();
+    for offset in BOUNDARY_OFFSETS_SECONDS {
+        for music in [loud(), quiet()] {
+            let frames = Phone::new().play(&music, boundary_at(offset), RECORDED_SECONDS);
+            complaints.extend(first_window_complaint(
+                &format!("first pcm at +{offset}"),
+                &frames,
+                &settled_reference(&music, offset),
+            ));
+        }
+    }
+    assert!(complaints.is_empty(), "{complaints:#?}");
+}
+
+#[test]
+fn ac_29_a_swiped_to_song_3_to_6_db_quieter_stays_above_the_dead_zone_floor() {
+    let mut complaints = Vec::new();
+    for step in DEAD_ZONE_STEPS_DB {
+        let next = loud().louder_by(step);
+        for offset in BOUNDARY_OFFSETS_SECONDS {
+            complaints.extend(dead_zone_complaints(
+                &format!("{step} dB at +{offset}"),
+                &after_track_change(&loud(), &next, offset),
+                &settled_reference(&next, offset),
+            ));
+        }
+    }
+    assert!(complaints.is_empty(), "{complaints:#?}");
 }
 
 #[test]

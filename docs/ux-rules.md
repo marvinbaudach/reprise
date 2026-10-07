@@ -4814,7 +4814,10 @@ STYLE-1).
   *With nothing on screen* (a first start, the plugin switched on) the
   sensitivity is set every frame from the loudest raw bar seen since the
   boundary, so the bars the first window produces rise to the song's level
-  without overshooting it, and only fall if a louder bar turns up; the
+  without overshooting it, and only fall if a louder bar turns up (on a first
+  start the bar history follows each new sensitivity, as it does when a pull
+  or the move up changes it; kept in the units of the gain before it would
+  draw the first 0.3 s at up to twice a settled engine's level); the
   measurement ends once a full FFT window of signal is in (the 8192 samples
   every bar is computed from), and digital silence restarts it, for the first
   four windows of audio after its first signal (about 0.7 s; a lead-in of
@@ -4831,7 +4834,7 @@ STYLE-1).
   sensitivity redraws the whole frame. The loudest bar of the new stream so
   far is the evidence: as soon as it says the kept sensitivity would draw the
   new stream more than twice too tall, the measurement takes over, before the
-  window is full; once a full window is in and it says more than twice too
+  window is full, and the bars on screen keep their history; once a full window is in and it says more than twice too
   dim, the sensitivity moves up to the measurement within a few frames; within
   a factor of two it stays. The sensitivity is held, not creeping, while a
   measurement or such a move is under way. After that, for the next fourteen
@@ -4867,7 +4870,12 @@ STYLE-1).
   with boundaries landing at several points inside a beat: over the second
   that starts 0.3 s after the boundary the drawn level averages within 0.7 to
   1.4 times that of an engine that has played the same audio for long enough
-  to have settled, and no tenth of a second of it strays further than 0.7 to
+  to have settled (on the synthetic music of the tests: a fresh start's first
+  0.3 s at no more than 0.9 times, where real music reads a median 0.83 and a
+  mean 1.07; and, guarding today's behaviour, a drop of 3, 4.5 or 6 dB on a
+  track change at no less than 0.5 times, with no wall and at most 17 frames
+  more with a pinned bar than the settled engine), and no tenth of a second
+  of it strays further than 0.7 to
   2.3 times for a fresh start, 0.55 to 2.0 times for a different song, or 0.85
   to 1.2 times for a boundary that continues the song; no frame is a wall of
   pinned bars; the frame's breathing depth and how often the whole spectrum
@@ -4905,7 +4913,27 @@ STYLE-1).
   only until it has gathered four windows of audio from its first signal and
   pauses it after that, except for a silence a whole window long, which still
   restarts it; music with recurring gaps is judged against the same music
-  without them.*
+  without them. Amended 2026-10-07 (#1142): with nothing on screen the bar
+  history is rescaled with every measured sensitivity, which takes a fresh
+  start's first 0.3 s from a median 1.15 and a mean 1.58 times a settled
+  engine's level to 0.83 and 1.07; a track change does not rescale it, because
+  that steps the frame (rescaling there fails the 14 dB acceptance). The
+  issue's premise, that the 0.85 target sits below `cavacore`'s equilibrium,
+  was wrong: the equilibrium gain lands the first window's loudest bar at a
+  median 0.77 of full height (0.52 to 1.06 for the middle 80 % of windows, the
+  same at 44.1 and 48 kHz), so the measurement lands above it in 65 % of the
+  windows and more than 1.3 times above in 30 %. What remains is accepted. A
+  fresh start reads a median 1.17 times a settled engine's level over 0.3 to
+  1 s on real music, 1.56 times at the 90th percentile (up to 3 times), when
+  the first window under-reads the song at an unlucky offset, and the creep
+  brings it down within three seconds. A drop of 3 to 7.5 dB keeps the dim
+  carried gain, as before: a median 0.74 times the settled level at 3 and
+  4.5 dB, about half the cases under 0.75. The zone cannot narrow yet: a gain
+  the measurement replaces lands above the equilibrium in most windows, so
+  every replaced gain pins more frames than the settled engine (a 6 dB drop on
+  a real pair of songs 1061 against 720 over 0 to 3 s), and narrowing the dim
+  side to 1.7 times lifts the dim cases at the price of the same pinned
+  frames; the guard floor of 0.5 holds today's behaviour.*
 
   **Swipes on the phone.** On the phone, a swipe to another song hands the new
   song's bars the outgoing song's last live shape, never an already decayed

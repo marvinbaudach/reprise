@@ -80,9 +80,16 @@ impl Smoother {
             );
             match step {
                 Step::Hold => measuring = true,
-                Step::Measure(sensitivity) => {
+                Step::Measure {
+                    sensitivity,
+                    rescales_history,
+                } => {
                     measuring = true;
-                    self.sensitivity = sensitivity.clamp(MIN_SENSITIVITY, MAX_SENSITIVITY);
+                    let measured = sensitivity.clamp(MIN_SENSITIVITY, MAX_SENSITIVITY);
+                    if rescales_history {
+                        self.rescale_driven(measured / self.sensitivity);
+                    }
+                    self.sensitivity = measured;
                 }
                 Step::Goal(sensitivity) => {
                     self.goal = Some(sensitivity.clamp(MIN_SENSITIVITY, MAX_SENSITIVITY));
@@ -304,6 +311,8 @@ impl Smoother {
 
 #[cfg(test)]
 mod boundary_cap_tests;
+#[cfg(test)]
+mod boundary_rescale_tests;
 #[cfg(test)]
 mod boundary_tests;
 #[cfg(test)]

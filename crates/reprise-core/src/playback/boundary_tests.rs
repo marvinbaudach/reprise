@@ -2,9 +2,10 @@
 //! (735 samples at 44.1 kHz) across a stream boundary.
 
 use super::boundary_fixture::{
-    assert_no_dip, assert_settles_where_a_continuing_run_does, dimming_complaints, judge_boundary,
-    settled_seconds, Boundary, Frame, Measure, SyntheticMusic, BOUNDARY_OFFSETS_SECONDS,
-    FRAMES_PER_SECOND, INTRO_LEVEL_FLOOR, SETTLED_FRAMES,
+    assert_no_dip, assert_settles_where_a_continuing_run_does, dead_zone_complaints,
+    dimming_complaints, first_window_complaint, judge_boundary, settled_seconds, Boundary, Frame,
+    Measure, SyntheticMusic, BOUNDARY_OFFSETS_SECONDS, DEAD_ZONE_STEPS_DB, FRAMES_PER_SECOND,
+    INTRO_LEVEL_FLOOR, SETTLED_FRAMES,
 };
 use super::{CavaBarProcessor, CavaConfig, SPECTRUM_BAND_COUNT};
 
@@ -423,4 +424,49 @@ fn ac_29_the_gain_does_not_jump_when_the_braking_span_ends() {
             );
         }
     }
+}
+
+// With nothing on screen the gain falls from ten or forty times the measured
+// one to it over the first frames. The history that gain drew is in its units,
+// so it has to follow the gain down; kept as it was, it draws the first 0.3 s at
+// up to twice the settled level before the creep takes over.
+#[test]
+fn ac_29_a_fresh_start_does_not_swell_in_its_first_window() {
+    let mut complaints = Vec::new();
+    for offset in BOUNDARY_OFFSETS_SECONDS {
+        for music in [loud(), quiet()] {
+            let run = feed_from(
+                &mut processor(),
+                &music,
+                boundary_sample(offset),
+                LONG_RECORDING_FRAMES,
+            );
+            complaints.extend(first_window_complaint(
+                &format!("fresh start at +{offset}"),
+                &run,
+                &settled_reference(&music, offset),
+            ));
+        }
+    }
+    assert!(complaints.is_empty(), "{complaints:#?}");
+}
+
+// A drop of 3 to 6 dB keeps the carried gain while the new window says it is
+// less than twice too low (`CARRY_BAND`), and the new song stays dim until the
+// creep climbs back. This guards that carry band as it stands, floor and pinned
+// allowance included; it is not a goal, and the rescale does not touch it.
+#[test]
+fn ac_29_a_song_3_to_6_db_quieter_stays_above_the_dead_zone_floor() {
+    let mut complaints = Vec::new();
+    for step in DEAD_ZONE_STEPS_DB {
+        let next = loud().louder_by(step);
+        for offset in BOUNDARY_OFFSETS_SECONDS {
+            complaints.extend(dead_zone_complaints(
+                &format!("{step} dB at +{offset}"),
+                &boundary_frames(&loud(), &next, offset),
+                &settled_reference(&next, offset),
+            ));
+        }
+    }
+    assert!(complaints.is_empty(), "{complaints:#?}");
 }

@@ -4,10 +4,11 @@
 
 use super::*;
 use reprise_core::playback::boundary_fixture::{
-    assert_no_dip, dimming_complaints, judge_boundary, pinning_complaints, settled_seconds,
-    spread_complaints, Boundary, Frame, Measure, Opening, Spread, SyntheticMusic,
-    BOUNDARY_OFFSETS_SECONDS, FADE_LEVEL_FLOOR, FRAMES_PER_SECOND, INTRO_LEVEL_FLOOR,
-    JUDGED_FRAMES, SETTLE_FRAMES, SPREAD_FRAMES,
+    assert_no_dip, dead_zone_complaints, dimming_complaints, first_window_complaint,
+    judge_boundary, pinning_complaints, settled_seconds, spread_complaints, Boundary, Frame,
+    Measure, Opening, Spread, SyntheticMusic, BOUNDARY_OFFSETS_SECONDS, DEAD_ZONE_STEPS_DB,
+    FADE_LEVEL_FLOOR, FRAMES_PER_SECOND, INTRO_LEVEL_FLOOR, JUDGED_FRAMES, SETTLE_FRAMES,
+    SPREAD_FRAMES,
 };
 
 const RATE_HZ: u32 = 44_100;
@@ -158,6 +159,55 @@ fn ac_29_enabling_the_visualizer_measures_the_level_and_starts_from_nothing() {
             Boundary::Fresh,
         );
     }
+}
+
+#[test]
+fn ac_29_a_fresh_stage_does_not_swell_in_its_first_window() {
+    let mut complaints = Vec::new();
+    for offset in BOUNDARY_OFFSETS_SECONDS {
+        for music in [loud(), quiet()] {
+            let mut stage = CavaStage::new(RATE_HZ, FIRST_STREAM).unwrap();
+            let run = play(
+                &mut stage,
+                &music,
+                FIRST_STREAM,
+                boundary_sample(offset),
+                RECORDED_FRAMES,
+                false,
+            );
+            complaints.extend(first_window_complaint(
+                &format!("fresh stage at +{offset}"),
+                &run,
+                &settled_reference(&music, offset),
+            ));
+        }
+    }
+    assert!(complaints.is_empty(), "{complaints:#?}");
+}
+
+#[test]
+fn ac_29_a_new_stream_3_to_6_db_quieter_stays_above_the_dead_zone_floor() {
+    let mut complaints = Vec::new();
+    for step in DEAD_ZONE_STEPS_DB {
+        let next = loud().louder_by(step);
+        for offset in BOUNDARY_OFFSETS_SECONDS {
+            let run = play(
+                &mut warmed(&loud(), offset),
+                &next,
+                FIRST_STREAM + 1,
+                boundary_sample(offset),
+                RECORDED_FRAMES,
+                true,
+            );
+            let reference = settled_reference(&next, offset);
+            complaints.extend(dead_zone_complaints(
+                &format!("{step} dB at +{offset}"),
+                &run,
+                &reference,
+            ));
+        }
+    }
+    assert!(complaints.is_empty(), "{complaints:#?}");
 }
 
 /// Frames more than the settled stage that may touch full height.
