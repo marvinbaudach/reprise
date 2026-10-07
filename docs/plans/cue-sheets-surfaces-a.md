@@ -116,3 +116,35 @@ Near the cap: `player.rs` 664, `up_next_transport.rs` 747.
 All tasks committed, gate battery green on the worktree, the ignored GTK rule tests for
 PLAY-22…24 green. Cross-strand checks are the mother plan's post-merge list — do not attempt
 them here.
+
+## As built
+
+- **a1** `eda95563ed` — `player/segment.rs` (declared from `player.rs`) holds the active
+  `Cut {start_ms, end_ms, open_end}` behind one mutex in a `SegmentGate`. `play()` with a segment
+  prerolls paused (`SEGMENT_PREROLL_TIMEOUT` 5 s; a timeout fails the attempt into the existing
+  rebuild-and-retry), caches the file duration, then seeks `FLUSH|ACCURATE` to the start before
+  `Playing`. A refused seek is logged, not failed (failing would mark the file missing). The
+  ticker computes and *sends* each tick under the cut lock; `seek_to` on a cut is `ACCURATE` to
+  `start + clamp(p, 0, len − 1)`.
+- **a2** `ab3880c9cc` — the boundary probe sits on the gain element's sink pad (installed by
+  `build_playbin`, so rebuilds and the crossfade secondary carry it; a no-op without a cut). It
+  converts PTS to stream time with the pad's own last SEGMENT event (kept per pad, not in the
+  shared gate). Hand-off: gain switch, cut swap, `stream_generation` bump and `AdvancedToNext` are
+  sent **from the probe under the cut lock** — not via a bus application message, which could not
+  be ordered against ticker ticks. No armed successor: the boundary buffer and everything after is
+  dropped, `TrackFinished` is sent once, and the bus watch suppresses the file's later EOS. Open
+  end: `OPEN_END_TOLERANCE_MS` = 1000. Arming through `set_next` landed here (the PLAY-23 test
+  needs it); PLAY-23 also has a Crossfade-mode variant.
+- **a3** `bb226e131a` — `QueuedTrack.segment`; `SegmentGate::route_next` arms the contiguous
+  successor and allows the URI slot only when neither side is a CUE track. The in-flight gain
+  refresh moved to `player/successor.rs` (size cap) and matches `(uri, segment)`, including a
+  track the probe already handed over to (`handed_off`, cleared on the next `set_next`).
+- **a4** `9559a895f9` — `CrossfadeEngine::maybe_start` returns while a cut is active.
+- **a5** `85e40fccd7` — GTK controller tests (`ui/playback/cue_track_frontend_tests.rs`, display
+  tests named `play_22_*`); no frontend code change was needed. Lyrics *position* forwarding is
+  not asserted — `PlayerLyrics::position_ms` is private to `ui/lyrics/**`, outside this strand;
+  only the lookup (`lyrics_query_for`) is.
+
+Open: with the transition set to **Off**, `feed_next` sends `None`, so contiguous CUE tracks get
+the short `TrackFinished` → `play()` gap. PLAY-23 is worded for Gapless and Crossfade; whether Off
+should still arm the in-file successor is a product decision, not taken here.
