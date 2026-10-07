@@ -188,7 +188,9 @@ All tasks committed, gate battery green on the worktree. The device proofs (post
   title, sheet version and file mtime/size; an unmatched one is parked at `-id` and matches by
   start and title only. So a track that moves into a hidden song's old position never collides
   with it. A file with no rows whose v91 exclusions agree on the file mtime and the governing
-  sheet takes the unchanged fast path; a pre-v91 exclusion opts out until a scan re-places it.
+  sheet takes the unchanged fast path; a pre-v91 exclusion opts out until a scan re-places it. When the
+  directory or a sheet cannot be seen this scan, such a file is skipped as unchanged too, as
+  rows a sheet cut are, so it never comes back as one whole-file track.
 - **b3** — classification in `tag_edit/tag_edit_selection.rs`; the notice and the left-out
   count are toasts. Single-track browsing in the editor skips CUE tracks too.
 - **b4** — one `WHOLE_FILE` clause on the three selectors (`current_view` goes through
@@ -209,7 +211,9 @@ All tasks committed, gate battery green on the worktree. The device proofs (post
   after the copy or against the resident file. Every track of a CUE file takes its device path
   from the file — its album and album artist, or with none the performer of its first track — so
   a compilation sheet with only per-track performers still yields one path. A row no longer wanted whose file another row
-  still needs is `ManagedRemoval::Unshared` (forget only). The derived sheet is
+  still needs is `ManagedRemoval::Unshared` (forget only); when no row of a file is wanted any
+  more, one row removes the file and the rest are forgotten, and the file's bytes are counted
+  once, whether it leaves, is kept for stability or is kept because it is missing. The derived sheet is
   `DerivedCueWrite`, written by `WriteDerivedCue` under the Copying step (no new `SyncStep`:
   foreign matches); it is kept by `known_paths` and leaves as an orphan with its file. Its
   name carries an FNV-1a hash of its contents (`album.1a2b3c4d.cue`): the inventory knows

@@ -83,6 +83,24 @@ pub(crate) fn hidden_file_unchanged(
     }))
 }
 
+/// Whether a sheet beside the file placed the hidden tracks of a file the
+/// catalog holds no track of: such a file must not be read as if no sheet cut
+/// it while that sheet cannot be seen.
+pub(crate) fn was_hidden_by_a_sheet(
+    conn: &Connection,
+    path: &Path,
+    device: Option<i64>,
+    inode: Option<i64>,
+) -> Result<bool, rusqlite::Error> {
+    let version = crate::db_library_exclusions::hidden_file_version(
+        conn,
+        &path.to_string_lossy(),
+        device,
+        inode,
+    )?;
+    Ok(version.is_some_and(|(_, sheet)| sheet.is_some()))
+}
+
 pub fn count(db: &Db) -> Result<u32, rusqlite::Error> {
     let conn = db.conn();
     conn.query_row("SELECT count(*) FROM library_exclusions", [], |row| {

@@ -193,3 +193,28 @@ fn cue_18_a_fully_hidden_cue_file_is_not_read_again_on_an_unchanged_rescan() {
         (0, 0, 1)
     );
 }
+
+#[test]
+fn cue_18_a_fully_hidden_cue_file_stays_hidden_while_its_changed_sheet_cannot_be_read() {
+    let album = Album::new();
+    album.scan();
+    for title in ["Disorder", "Day of the Lords", "Candidate"] {
+        remove_titled(&album, title);
+    }
+    // The sheet changed since the hidden tracks were placed, and cannot be
+    // read now: nothing is known about the file this scan, and the rows it
+    // would be read into are not the whole-file track of a file nobody cut.
+    let sheet = album.sheet();
+    let text = std::fs::read(&sheet).unwrap();
+    std::fs::write(&sheet, [text.as_slice(), b"\n"].concat()).unwrap();
+    std::fs::set_permissions(&sheet, std::fs::Permissions::from_mode(0o000)).unwrap();
+
+    let report = album.scan();
+
+    std::fs::set_permissions(&sheet, std::fs::Permissions::from_mode(0o644)).unwrap();
+    assert!(segments_of(album.db.conn(), &album.audio()).is_empty());
+    assert_eq!(
+        (report.added, report.updated, report.skipped_unchanged),
+        (0, 0, 1)
+    );
+}

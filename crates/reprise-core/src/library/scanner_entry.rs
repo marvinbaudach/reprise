@@ -361,8 +361,18 @@ pub(super) fn classify_entry(
         // Rows a sheet cut stay exactly as they are. Any other file is read as
         // if no sheet were there, which is how its rows came about, so that
         // loses nothing either; a sheet that is new beside it waits for a scan
-        // that can see it.
-        Cover::Unknown if known.was_cut_by_a_sheet() => {
+        // that can see it. A file with every track hidden has no rows, and its
+        // exclusions say the same.
+        Cover::Unknown
+            if known.was_cut_by_a_sheet()
+                || (!known.exists
+                    && exclusions::was_hidden_by_a_sheet(
+                        scan.tx,
+                        path,
+                        facts.device,
+                        facts.inode,
+                    )?) =>
+        {
             return Ok(EntryPlan::Skip(EntryOutcome::Unchanged));
         }
         Cover::Unknown => None,
