@@ -445,7 +445,8 @@ fn tombstone_still_missing_in(
         MissingGroupKind::Unlocatable => unlocatable_predicate(),
         MissingGroupKind::Unavailable { .. } => return Ok(Vec::new()),
     };
-    // IMMEDIATE: the revalidation read precedes the guarded update (see `events::in_txn_immediate`).
+    // IMMEDIATE: the revalidation read precedes the guarded update, so the write lock comes first
+    // (see `events::immediate_transaction`).
     let tx = crate::events::immediate_transaction(conn)?;
     let currently_matching: HashSet<i64> = {
         let mut statement = tx.prepare(&format!(

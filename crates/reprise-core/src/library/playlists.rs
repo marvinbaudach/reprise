@@ -494,12 +494,15 @@ fn move_position_in(
             .collect::<Result<Vec<_>, _>>()?;
         drop(stmt);
 
-        if from as usize >= tracks.len() {
+        // The range is checked again here: the playlist may have shrunk since the
+        // autocommit check above, and `Vec::insert` panics past the end.
+        if from as usize >= tracks.len() || to as usize >= tracks.len() {
             tracing::warn!(
                 playlist_id = playlist_id,
                 from = from,
+                to = to,
                 len = tracks.len(),
-                "move_position: from position out of range"
+                "move_position: position out of range"
             );
             return Ok(());
         }

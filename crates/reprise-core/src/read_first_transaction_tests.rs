@@ -5,8 +5,10 @@
 //! `busy_timeout` never retries. The shared fixture places the rival commit
 //! deterministically; see `library::rival_commit_test_support`.
 
-use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU32, Ordering};
 use std::sync::Arc;
+
+use rusqlite::hooks::{AuthAction, AuthContext, Authorization};
 
 use crate::db::{Db, SpectrogramStoreOutcome};
 use crate::library::rival_commit_test_support::{arm, arm_on_first_write};
@@ -239,9 +241,7 @@ fn restoring_a_release_survives_a_rival_commit_between_its_read_and_its_write() 
     assert!(!is_hidden(&db, "one"));
 }
 
-#[test]
-fn reconciling_deleted_release_memory_survives_a_rival_commit_between_its_read_and_its_write() {
-    let (directory, db) = contended_db();
+fn seed_deleted_release_memory(db: &Db) {
     db.conn()
         .execute_batch(
             "INSERT INTO new_releases (
@@ -256,11 +256,68 @@ fn reconciling_deleted_release_memory_survives_a_rival_commit_between_its_read_a
              VALUES ('release artist', 'ghost', 'album', 10);",
         )
         .unwrap();
+}
+
+#[test]
+fn reconciling_deleted_release_memory_survives_a_rival_commit_between_its_read_and_its_write() {
+    let (directory, db) = contended_db();
+    seed_deleted_release_memory(&db);
     let flag = arm_first_write(&directory, &db, "deleted_releases");
 
     crate::artist_news_pipeline::reconcile_deleted_release_memory(db.conn()).unwrap();
 
     assert_interleaved(&flag);
+}
+
+/// Every refresh reconciles, and most listeners have forgotten nothing, so an
+/// empty memory must settle without the write lock another connection holds.
+#[test]
+fn reconciling_with_no_deleted_release_memory_never_waits_for_the_write_lock() {
+    let (directory, db) = contended_db();
+    db.conn().pragma_update(None, "busy_timeout", 0).unwrap();
+    let holder = rusqlite::Connection::open(directory.path().join(DB_FILE)).unwrap();
+    holder.execute_batch("BEGIN IMMEDIATE").unwrap();
+
+    crate::artist_news_pipeline::reconcile_deleted_release_memory(db.conn()).unwrap();
+}
+
+/// The whole-library scan behind the reconciliation must not run while the
+/// write lock is held: the rival connection, which has no busy timeout, asks
+/// for the lock each time the scan prepares its read of `tracks`.
+#[test]
+fn reconciling_deleted_release_memory_scans_the_library_outside_the_write_lock() {
+    let (directory, db) = contended_db();
+    seed_deleted_release_memory(&db);
+    let rival = rusqlite::Connection::open(directory.path().join(DB_FILE)).unwrap();
+    rival.pragma_update(None, "busy_timeout", 0).unwrap();
+    let scans = Arc::new(AtomicU32::new(0));
+    let scans_under_the_lock = Arc::new(AtomicU32::new(0));
+    let (seen, locked) = (Arc::clone(&scans), Arc::clone(&scans_under_the_lock));
+    db.conn()
+        .authorizer(Some(move |context: AuthContext<'_>| {
+            if matches!(
+                context.action,
+                AuthAction::Read {
+                    table_name: "tracks",
+                    ..
+                }
+            ) {
+                seen.fetch_add(1, Ordering::SeqCst);
+                match rival.execute_batch("BEGIN IMMEDIATE") {
+                    Ok(()) => rival.execute_batch("ROLLBACK").unwrap(),
+                    Err(_) => {
+                        locked.fetch_add(1, Ordering::SeqCst);
+                    }
+                }
+            }
+            Authorization::Allow
+        }))
+        .unwrap();
+
+    crate::artist_news_pipeline::reconcile_deleted_release_memory(db.conn()).unwrap();
+
+    assert!(scans.load(Ordering::SeqCst) > 0, "the library must be read");
+    assert_eq!(scans_under_the_lock.load(Ordering::SeqCst), 0);
 }
 
 /// Adding only ids that are already members changes nothing, so it must not

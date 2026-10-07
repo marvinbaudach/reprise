@@ -610,16 +610,14 @@ fn artist_cache_is_fresh(
     }))
 }
 
-/// Applies the deleted-release memory to the stored releases in one
-/// transaction.
+/// Applies the deleted-release memory to the stored releases. It takes the
+/// write lock only when a memory exists, and never while scanning the library.
 pub(crate) fn reconcile_deleted_release_memory(
     conn: &rusqlite::Connection,
 ) -> Result<(), NewsError> {
-    // IMMEDIATE: the stored memories are read before any of them is applied
-    // (see `events::in_txn_immediate`).
-    let transaction = crate::events::immediate_transaction(conn).map_err(database_error)?;
-    crate::deleted_releases::apply_deleted_release_memory(&transaction).map_err(database_error)?;
-    transaction.commit().map_err(database_error)
+    crate::deleted_releases::apply_deleted_release_memory(conn)
+        .map(|_| ())
+        .map_err(database_error)
 }
 
 fn sync_releases(

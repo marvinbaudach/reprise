@@ -13,7 +13,8 @@ use crate::{db::Db, CoreError};
 /// UI would otherwise claim "Playlist deleted" when nothing was).
 pub fn delete(db: &Db, id: i64, expected_name: &str) -> Result<bool, CoreError> {
     let conn = db.conn();
-    // IMMEDIATE: the `(id, name)` identity is read before the delete (see `events::in_txn_immediate`).
+    // IMMEDIATE: the `(id, name)` identity is read before the delete, so the write lock comes first
+    // (see `events::immediate_transaction`).
     let tx = crate::events::immediate_transaction(conn)?;
     let position = tx
         .query_row(

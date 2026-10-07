@@ -143,6 +143,50 @@ fn moving_a_track_survives_a_rival_commit_between_its_read_and_its_write() {
     assert_eq!(track_ids(&db, playlist).unwrap(), vec![2, 3, 1]);
 }
 
+/// A playlist that shrinks between the autocommit range check and the write lock
+/// must not panic `Vec::insert`: the range is checked again under the lock. The
+/// rival shrinks the playlist while the `BEGIN IMMEDIATE` is being prepared,
+/// which is after the autocommit check and before the lock is taken.
+#[test]
+fn moving_a_track_in_a_playlist_that_shrank_before_the_lock_is_a_no_op() {
+    use rusqlite::hooks::{AuthAction, AuthContext, Authorization, TransactionOperation};
+
+    let (directory, db) = contended_db();
+    let tracks = seed_tracks(&db, 3);
+    let playlist = create_with_tracks(&db, "Shrinking", &tracks).unwrap();
+    let rival = rusqlite::Connection::open(directory.path().join("reprise.db")).unwrap();
+    rival.pragma_update(None, "busy_timeout", 0).unwrap();
+    let shrunk = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false));
+    let hook_shrunk = std::sync::Arc::clone(&shrunk);
+    db.conn()
+        .authorizer(Some(move |context: AuthContext<'_>| {
+            let begins = matches!(
+                context.action,
+                AuthAction::Transaction {
+                    operation: TransactionOperation::Begin
+                }
+            );
+            if begins && !hook_shrunk.swap(true, Ordering::SeqCst) {
+                rival
+                    .execute(
+                        "DELETE FROM playlist_tracks WHERE playlist_id = ?1 AND position >= 1",
+                        [playlist],
+                    )
+                    .unwrap();
+            }
+            Authorization::Allow
+        }))
+        .unwrap();
+
+    move_position(&db, playlist, 0, 2).unwrap();
+
+    assert!(
+        shrunk.load(Ordering::SeqCst),
+        "the playlist must have shrunk"
+    );
+    assert_eq!(track_ids(&db, playlist).unwrap(), vec![1]);
+}
+
 /// `remove_positions` opens with a DELETE, so its first statement already
 /// takes the write lock: the audit leaves it deferred, and this keeps that
 /// reading honest.

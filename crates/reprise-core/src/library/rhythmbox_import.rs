@@ -277,7 +277,8 @@ pub fn merge_stats(
     on_progress: Option<&dyn Fn(usize)>,
 ) -> Result<(RhythmboxImportSummary, RhythmboxRollback), RhythmboxImportError> {
     let conn = db.conn();
-    // IMMEDIATE: each track's stored stats are read before the merge (see `events::in_txn_immediate`).
+    // IMMEDIATE: each track's stored stats are read before the merge, so the write lock comes first
+    // (see `events::immediate_transaction`).
     let transaction = crate::events::immediate_transaction(conn)?;
     let mut summary = RhythmboxImportSummary {
         parsed: tracks.len(),

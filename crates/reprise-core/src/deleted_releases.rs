@@ -199,14 +199,47 @@ pub(crate) fn remember_deleted_releases(
     forget_acquired_memories(conn, |memory| survivors.holds(memory))
 }
 
+/// Reconciles the stored releases with the deleted-release memory, taking the
+/// write lock only when there is something to reconcile and scanning the library
+/// before it is taken. An empty memory settles without the lock; the scan, the
+/// one expensive step, runs outside it. The scan is trusted under the lock only
+/// while no other connection has committed since it began (`PRAGMA
+/// data_version` advances on exactly that), otherwise it is redone there.
 pub(crate) fn apply_deleted_release_memory(conn: &Connection) -> Result<usize, rusqlite::Error> {
     #[cfg(test)]
     FULL_RECONCILIATION_CALLS.with(|calls| calls.set(calls.get() + 1));
+    if load_memories(conn)?.is_empty() {
+        return Ok(0);
+    }
+    let seen_version = data_version(conn)?;
+    let scanned = LibraryHoldIndex::load_full(conn, &HashSet::new())?;
+    // IMMEDIATE: the memories are read before any of them is applied, so the
+    // write lock comes first (see `events::immediate_transaction`).
+    let transaction = crate::events::immediate_transaction(conn)?;
+    let library = if data_version(&transaction)? == seen_version {
+        scanned
+    } else {
+        LibraryHoldIndex::load_full(&transaction, &HashSet::new())?
+    };
+    let hidden = apply_with_library(&transaction, &library)?;
+    transaction.commit()?;
+    Ok(hidden)
+}
+
+fn data_version(conn: &Connection) -> Result<i64, rusqlite::Error> {
+    conn.query_row("PRAGMA data_version", [], |row| row.get(0))
+}
+
+/// Applies the memory against `library`, reading the memories afresh: under the
+/// write lock they are the committed ones, whatever they were when the scan ran.
+fn apply_with_library(
+    conn: &Connection,
+    library: &LibraryHoldIndex,
+) -> Result<usize, rusqlite::Error> {
     let memories = load_memories(conn)?;
     if memories.is_empty() {
         return Ok(0);
     }
-    let library = LibraryHoldIndex::load_full(conn, &HashSet::new())?;
     let (acquired, remaining): (Vec<_>, Vec<_>) = memories
         .into_iter()
         .partition(|memory| library.holds(memory));

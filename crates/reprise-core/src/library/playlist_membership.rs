@@ -25,7 +25,7 @@ pub fn add_unique_tracks(
     }
 
     // IMMEDIATE: the existing members are read before the insert (see
-    // `events::in_txn_immediate`). The read is repeated under the lock; that one
+    // `events::immediate_transaction`). The read is repeated under the lock; that one
     // is authoritative.
     let tx = crate::events::immediate_transaction(conn)?;
     let unique = new_members(&tx, playlist_id, track_ids)?;
