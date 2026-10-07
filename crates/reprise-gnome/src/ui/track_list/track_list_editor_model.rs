@@ -6,7 +6,7 @@ use reprise_core::view_source::ViewSource;
 
 use super::column_layout::ColumnRegistry;
 use super::track_list_sort::{self, SortState, PLAYLIST_ORDER_SORT_FIELD};
-use super::{Shared, TrackList};
+use super::Shared;
 use crate::ui::strings;
 use crate::ui::table_columns::{ColumnDescriptor, EditorModel};
 
@@ -15,11 +15,11 @@ struct TrackListEditorModel {
     shared: Rc<Shared>,
 }
 
-pub(super) fn model(track_list: &Rc<TrackList>) -> Rc<dyn EditorModel> {
-    Rc::new(TrackListEditorModel {
-        registry: super::column_layout::registry(track_list),
-        shared: track_list.shared.clone(),
-    })
+/// Builds the one editor model a `TrackList` owns for its whole life. The
+/// header gestures hold it only weakly, so whoever asks for it later must get
+/// this instance back rather than a fresh one that dies with its caller.
+pub(super) fn build(shared: Rc<Shared>, registry: ColumnRegistry) -> Rc<dyn EditorModel> {
+    Rc::new(TrackListEditorModel { registry, shared })
 }
 
 impl EditorModel for TrackListEditorModel {

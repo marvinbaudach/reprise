@@ -365,6 +365,11 @@ pub struct TrackList {
     pub(in crate::ui) shared: Rc<Shared>,
     pub(in crate::ui) root: gtk4::Box,
     pub(in crate::ui) column_registry: ColumnRegistry,
+    /// The shared customization surface's model. Owned here because the
+    /// header gestures installed on the `ColumnView` keep only a weak
+    /// reference: a model built by whoever installs them would be gone
+    /// before the first click, and every header press would do nothing.
+    pub(super) editor_model: Rc<dyn crate::ui::table_columns::EditorModel>,
     pub(super) responsive_columns: Rc<super::responsive_columns::ResponsiveColumns>,
 }
 

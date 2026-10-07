@@ -394,10 +394,14 @@ pub(in crate::ui) fn build(
     track_list_dnd_smoke::arm_smoke_dnd(&shared);
     super::row_loss_watchdog::install(&shared);
 
+    let editor_model =
+        super::track_list_editor_model::build(shared.clone(), column_registry.clone());
+
     TrackList {
         shared,
         root,
         column_registry,
+        editor_model,
         responsive_columns,
     }
 }

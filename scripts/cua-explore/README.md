@@ -484,14 +484,17 @@ The deck runs every mission to a finish instead of aborting. On the generated pr
 `first-time-exploration`, `hover-affordance-sweep` and `section-search-isolation` reach
 `mission_complete`. `large-library-stress` does not, and what stops it is not the harness:
 
-- `sort-cycle` needs a column header that sorts when clicked. Pixel clicks do reach the
-  header (it takes the hover wash), yet neither the order nor the sort arrow changes, and
-  the app log shows no query with a different sort across 24 clicks. A plain `xdotool`
-  click (press and release, with and without a pointer move, one and two clicks) on a
-  bare Xvfb and openbox session with no cua-driver involved behaves the same on every
-  header, while a pixel click through the driver opens the Add filter popover. That makes
-  it a candidate Reprise defect rather than a harness limit, but it was seen only under
-  Xvfb: confirm it on a real desktop before filing.
+- `sort-cycle` was blocked by an app defect, not by Xvfb or the harness (issue 1159,
+  fixed). The music table's header gestures keep only a weak reference to the column
+  editor model, and the main window built that model as a temporary that was dropped
+  right after the gestures were installed. Every header press then reached the sort
+  handler with no model and returned silently, so neither the order, the arrow nor the
+  query changed - under a real desktop as well. A plain `xdotool` click on a bare Xvfb
+  and openbox session reproduced it exactly, which is why pixel clicks seemed to land
+  (the header still took the hover wash). The table now owns its model; the
+  `style_13_a_pointer_click_on_a_track_list_header_sorts_by_that_column` display test
+  clicks the header through the X server and guards it. Re-run `large-library-stress`
+  to see whether anything else stops the mission.
 - `combined-filter` and `batch-edit` have to choose from popover lists, and a plain
   `Atspi` walk of the same session (no driver) shows what the driver shows: the rows of
   the Add filter popover are `list item`s with an empty name whose text sits in an
