@@ -223,7 +223,8 @@ All tasks committed, gate battery green on the worktree. The device proofs (post
   a run without a successful device inspection (`managed_files_scanned == false`) leaves it
   behind when its file goes; the next inspected run removes it. Analysis
   sidecars are not planned for CUE files. Per-playlist and picker size estimates count a
-  copied CUE file once. A playlist naming one CUE track still names the whole device file in
+  CUE file once, at its whole length however few of its tracks are selected (the sync page and
+  `project_playlist_sizes`, which takes the playlist's CUE files). A playlist naming one CUE track still names the whole device file in
   its M3U, so the phone's import adds the whole album (CUE-6 behaviour), and a hidden track's
   stretch plays as part of the track before it on the phone.
 - **b8** — `RPT-BACK` and `RPT-LIST` are format 2; v1 is refused. The phone journal keeps its

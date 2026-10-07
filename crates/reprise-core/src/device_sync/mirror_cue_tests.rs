@@ -294,11 +294,37 @@ fn cue_15_the_size_projection_counts_a_copied_cue_file_once() {
             source: SelectionSource::Playlist(1),
             name: "Album".into(),
             tracks: vec![segment(1), segment(2), segment(3)],
+            cue_files: vec![album()],
         }],
         TransferProfile::Original,
     );
 
     assert_eq!(projection.playlists[0].target_bytes, 3_000_000);
+}
+
+#[test]
+fn cue_15_the_size_projection_of_a_transcode_counts_the_whole_file() {
+    let projected = |ids: &[i64]| {
+        super::project_playlist_sizes(
+            &[super::PlaylistTracks {
+                source: SelectionSource::Playlist(1),
+                name: "Album".into(),
+                tracks: ids.iter().map(|id| segment(*id)).collect(),
+                cue_files: vec![album()],
+            }],
+            PROFILE,
+        )
+    };
+    let file_bytes = PROFILE.estimated_target_bytes(&SyncTrack {
+        duration_ms: 30_000,
+        ..segment(1)
+    });
+
+    for ids in [&[1][..], &[1, 2][..], &[1, 2, 3][..]] {
+        let projection = projected(ids);
+        assert_eq!(projection.playlists[0].target_bytes, file_bytes, "{ids:?}");
+        assert_eq!(projection.target_bytes, file_bytes, "{ids:?}");
+    }
 }
 
 #[test]
