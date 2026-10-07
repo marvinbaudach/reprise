@@ -525,6 +525,7 @@ mod tests {
         );
         let tracked = Rc::new(Cell::new((900, 600, false)));
         crate::ui::session_restore::wire_geometry_tracking(&window, &tracked);
+        let tracked_for_wait = tracked.clone();
         let conn_for_close = conn.clone();
         let saved = Rc::new(Cell::new(false));
         let saved_from_close = saved.clone();
@@ -547,12 +548,35 @@ mod tests {
             window.width() > 0 && window.height() > 0
         });
         let xid = x11_window_id(&window);
-        xdotool(&["windowsize", "--sync", &xid, "987", "654"]);
-        wait_for_window_state("library resized", || {
-            (window.width(), window.height()) != (900, 600)
-        });
-        while glib::MainContext::default().iteration(false) {}
+        // The 640 x 480 test screen clamps the window's first map, so it is
+        // never 900 x 600 and "differs from the default" is true before the
+        // resize is even sent. Wait for the resize itself: the surface
+        // reports the requested size, and the layout has caught up with it.
+        let size_before_resize = (window.width(), window.height());
+        let surface = window.surface().unwrap();
+        xdotool(&["windowsize", &xid, "987", "654"]);
+        assert!(
+            crate::ui::test_settle::settle_until(
+                crate::ui::test_settle::DISPLAY_TEST_TIMEOUT,
+                || {
+                    (surface.width(), surface.height()) == (987, 654)
+                        && (window.width(), window.height()) != size_before_resize
+                }
+            ),
+            "the library window did not take the requested size"
+        );
         let visible_size = (window.width(), window.height());
+        // A hidden window reports 0 x 0, so the save falls back to the size
+        // the geometry tracker last recorded. The tracker runs from an idle
+        // callback after the surface notifies; quitting before it has run
+        // saves the size from before the resize.
+        assert!(
+            crate::ui::test_settle::settle_until(
+                crate::ui::test_settle::DISPLAY_TEST_TIMEOUT,
+                || tracked_for_wait.get() == (visible_size.0, visible_size.1, false)
+            ),
+            "the geometry tracker did not record the visible size"
+        );
 
         mode.toggle();
         wait_for_window_state("compact visible", || !window.is_visible());
