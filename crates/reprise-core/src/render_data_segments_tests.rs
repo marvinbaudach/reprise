@@ -53,7 +53,7 @@ fn expected_band(frequency_hz: f64) -> usize {
 fn analyse(stream: &[i16], bounds: &[SegmentBounds], chunk_frames: usize) -> Vec<TrackRenderData> {
     let mut session = SegmentedRenderDataSession::new(bounds, 100);
     for chunk in stream.chunks(chunk_frames * 2) {
-        session.push_pcm_i16(chunk, RATE, 2).unwrap();
+        session.push_pcm_i16(chunk, RATE, 2, None).unwrap();
     }
     session
         .finish()
@@ -133,7 +133,7 @@ fn a_track_the_stream_never_reaches_is_empty_and_the_others_are_not() {
     };
     let mut session = SegmentedRenderDataSession::new(&[bounds[0], bounds[1], late], 100);
 
-    session.push_pcm_i16(&stream, RATE, 2).unwrap();
+    session.push_pcm_i16(&stream, RATE, 2, None).unwrap();
     let results = session.finish();
 
     assert!(results[0].is_ok() && results[1].is_ok());
@@ -147,18 +147,20 @@ fn a_track_the_stream_never_reaches_is_empty_and_the_others_are_not() {
 fn a_change_of_rate_or_channels_is_refused() {
     let (stream, bounds) = two_track_stream();
     let mut session = SegmentedRenderDataSession::new(&bounds, 100);
-    session.push_pcm_i16(&stream[..4_410], RATE, 2).unwrap();
+    session
+        .push_pcm_i16(&stream[..4_410], RATE, 2, None)
+        .unwrap();
 
     assert_eq!(
-        session.push_pcm_i16(&stream[..4_410], 48_000, 2),
+        session.push_pcm_i16(&stream[..4_410], 48_000, 2, None),
         Err(RenderDataSessionError::RateOrChannelChanged)
     );
     assert_eq!(
-        session.push_pcm_i16(&stream[..4_410], RATE, 1),
+        session.push_pcm_i16(&stream[..4_410], RATE, 1, None),
         Err(RenderDataSessionError::RateOrChannelChanged)
     );
     assert_eq!(
-        session.push_pcm_i16(&stream[..4_410], 0, 2),
+        session.push_pcm_i16(&stream[..4_410], 0, 2, None),
         Err(RenderDataSessionError::InvalidStreamConfig)
     );
 }
@@ -172,9 +174,137 @@ fn float_pcm_is_routed_the_same_way() {
         .collect();
     let mut session = SegmentedRenderDataSession::new(&bounds, 100);
 
-    session.push_pcm_f32(&floats, RATE, 2).unwrap();
+    session.push_pcm_f32(&floats, RATE, 2, None).unwrap();
     let data: Vec<_> = session.finish().into_iter().map(Result::unwrap).collect();
 
     assert_eq!(peak_band(&data[0]), expected_band(440.0));
     assert_eq!(peak_band(&data[1]), expected_band(1_000.0));
+}
+
+/// The timestamp of a chunk starting `frame` frames into the stream, truncated
+/// to whole microseconds the way a decoder that counts in microseconds does.
+fn truncated_us(frame: usize) -> i64 {
+    i64::try_from(frame as u64 * 1_000_000 / u64::from(RATE)).unwrap()
+}
+
+/// Feeds `stream` in chunks of `chunk_frames`, each stamped with its start
+/// time, skipping the chunks `drop` names (by index).
+fn analyse_timed(
+    stream: &[i16],
+    bounds: &[SegmentBounds],
+    chunk_frames: usize,
+    drop: &[usize],
+) -> Vec<Result<TrackRenderData, RenderDataSessionError>> {
+    let mut session = SegmentedRenderDataSession::new(bounds, 100);
+    for (index, chunk) in stream.chunks(chunk_frames * 2).enumerate() {
+        if drop.contains(&index) {
+            continue;
+        }
+        session
+            .push_pcm_i16(chunk, RATE, 2, Some(truncated_us(index * chunk_frames)))
+            .unwrap();
+    }
+    session.finish()
+}
+
+fn assert_same(left: &TrackRenderData, right: &TrackRenderData) {
+    assert_eq!(left.waveform_peaks, right.waveform_peaks);
+    assert_eq!(left.spectrogram.cells(), right.spectrogram.cells());
+    assert_eq!(left.loudness, right.loudness);
+}
+
+#[test]
+fn timestamps_a_decoder_rounds_to_microseconds_place_chunks_exactly() {
+    let (stream, bounds) = two_track_stream();
+
+    let counted = analyse(&stream, &bounds, 997);
+    let timed = analyse_timed(&stream, &bounds, 997, &[]);
+
+    for (left, right) in counted.iter().zip(&timed) {
+        assert_same(left, right.as_ref().unwrap());
+    }
+}
+
+#[test]
+fn a_dropped_chunk_does_not_shift_the_later_tracks() {
+    let (stream, bounds) = two_track_stream();
+    let whole = analyse_timed(&stream, &bounds, 4_410, &[]);
+
+    // Chunk 5 is half a second into the first track.
+    let dropped = analyse_timed(&stream, &bounds, 4_410, &[5]);
+
+    assert_same(whole[1].as_ref().unwrap(), dropped[1].as_ref().unwrap());
+    assert_ne!(
+        whole[0].as_ref().unwrap().spectrogram.frame_count(),
+        dropped[0].as_ref().unwrap().spectrogram.frame_count(),
+        "the first track is short by the dropped chunk, not padded with silence"
+    );
+}
+
+#[test]
+fn a_chunk_without_a_timestamp_continues_from_the_running_frame_count() {
+    let (stream, bounds) = two_track_stream();
+    let counted = analyse(&stream, &bounds, 4_410);
+    let mut session = SegmentedRenderDataSession::new(&bounds, 100);
+
+    for (index, chunk) in stream.chunks(4_410 * 2).enumerate() {
+        let stamp = (index % 2 == 0).then(|| truncated_us(index * 4_410));
+        session.push_pcm_i16(chunk, RATE, 2, stamp).unwrap();
+    }
+
+    for (left, right) in counted.iter().zip(session.finish()) {
+        assert_same(left, &right.unwrap());
+    }
+}
+
+#[test]
+fn audio_that_arrives_again_is_dropped_and_the_first_copy_wins() {
+    let (stream, bounds) = two_track_stream();
+    let counted = analyse(&stream, &bounds, 4_410);
+    let mut session = SegmentedRenderDataSession::new(&bounds, 100);
+    let chunks: Vec<&[i16]> = stream.chunks(4_410 * 2).collect();
+
+    for (index, chunk) in chunks.iter().enumerate() {
+        session
+            .push_pcm_i16(chunk, RATE, 2, Some(truncated_us(index * 4_410)))
+            .unwrap();
+        if index == 3 {
+            // The same chunk again, then a louder copy of it: both are late.
+            session
+                .push_pcm_i16(chunk, RATE, 2, Some(truncated_us(index * 4_410)))
+                .unwrap();
+            let louder: Vec<i16> = chunk
+                .iter()
+                .map(|sample| sample.saturating_mul(4))
+                .collect();
+            session
+                .push_pcm_i16(&louder, RATE, 2, Some(truncated_us(index * 4_410)))
+                .unwrap();
+        }
+    }
+
+    for (left, right) in counted.iter().zip(session.finish()) {
+        assert_same(left, &right.unwrap());
+    }
+}
+
+#[test]
+fn audio_stamped_before_the_start_of_the_stream_is_dropped() {
+    let (stream, bounds) = two_track_stream();
+    let counted = analyse(&stream, &bounds, 4_410);
+    let mut session = SegmentedRenderDataSession::new(&bounds, 100);
+    let priming = vec![i16::MAX; 441 * 2];
+
+    session
+        .push_pcm_i16(&priming, RATE, 2, Some(-10_000))
+        .unwrap();
+    for (index, chunk) in stream.chunks(4_410 * 2).enumerate() {
+        session
+            .push_pcm_i16(chunk, RATE, 2, Some(truncated_us(index * 4_410)))
+            .unwrap();
+    }
+
+    for (left, right) in counted.iter().zip(session.finish()) {
+        assert_same(left, &right.unwrap());
+    }
 }
