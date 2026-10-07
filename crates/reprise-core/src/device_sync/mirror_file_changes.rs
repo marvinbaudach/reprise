@@ -81,10 +81,14 @@ pub(super) fn plan_file_changes(input: FileChangeInput<'_>, plan: &mut MirrorPla
         .collect::<Vec<_>>();
     unavailable_ids.sort_unstable();
     let mut retained_ids = HashSet::new();
+    // Rows of one CUE file share a device file: it is counted and removed once.
+    let mut sized_paths: HashSet<&str> = HashSet::new();
     for track_id in unavailable_ids {
         if let Some(existing) = inventory_by_id.get(&track_id) {
             retained_ids.insert(track_id);
-            plan.target_bytes = plan.target_bytes.saturating_add(existing.device_size);
+            if sized_paths.insert(existing.device_path.as_str()) {
+                plan.target_bytes = plan.target_bytes.saturating_add(existing.device_size);
+            }
             plan.retained_unavailable.push(existing.clone());
         } else {
             push_warning(
@@ -109,6 +113,7 @@ pub(super) fn plan_file_changes(input: FileChangeInput<'_>, plan: &mut MirrorPla
                 .map(|existing| existing.device_path.as_str()),
         )
         .collect();
+    let mut removed_paths: HashSet<&str> = HashSet::new();
     for existing in inventory {
         if desired.contains_key(&existing.track_id) || retained_ids.contains(&existing.track_id) {
             continue;
@@ -120,14 +125,20 @@ pub(super) fn plan_file_changes(input: FileChangeInput<'_>, plan: &mut MirrorPla
             continue;
         }
         if stability_margin_ids.contains(&existing.track_id) {
-            plan.target_bytes = plan.target_bytes.saturating_add(existing.device_size);
+            if sized_paths.insert(existing.device_path.as_str()) {
+                plan.target_bytes = plan.target_bytes.saturating_add(existing.device_size);
+            }
             plan.retained_stable.push(existing.clone());
             continue;
         }
         if safe_managed_path(&existing.device_path) {
-            plan.bytes_freed = plan.bytes_freed.saturating_add(existing.device_size);
-            plan.remove
-                .push(ManagedRemoval::Inventory(existing.clone()));
+            if removed_paths.insert(existing.device_path.as_str()) {
+                plan.bytes_freed = plan.bytes_freed.saturating_add(existing.device_size);
+                plan.remove
+                    .push(ManagedRemoval::Inventory(existing.clone()));
+            } else {
+                plan.remove.push(ManagedRemoval::Unshared(existing.clone()));
+            }
         } else {
             push_warning(
                 &mut plan.warnings,

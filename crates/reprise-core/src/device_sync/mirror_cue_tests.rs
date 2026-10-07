@@ -418,3 +418,68 @@ fn cue_15_a_synced_compilation_plans_nothing_on_the_next_run() {
 
     assert!(is_quiet(&plan), "{plan:?}");
 }
+
+/// Rows `rows` of the synced album, with no track of it selected any more.
+fn dropped(rows: &[i64]) -> MirrorInput {
+    let mut mirror_input = synced(&[1], rows);
+    mirror_input.playlists[0].entries.clear();
+    mirror_input
+}
+
+#[test]
+fn cue_15_a_file_whose_tracks_all_leave_is_removed_once_and_counted_once() {
+    let single = plan_mirror(dropped(&[1]));
+    let plan = plan_mirror(dropped(&[1, 2]));
+
+    let removals =
+        |kind: fn(&ManagedRemoval) -> bool| plan.remove.iter().filter(|r| kind(r)).count();
+    assert_eq!(
+        removals(|removal| matches!(removal, ManagedRemoval::Inventory(_))),
+        1,
+        "{:?}",
+        plan.remove
+    );
+    assert_eq!(
+        removals(|removal| matches!(removal, ManagedRemoval::Unshared(_))),
+        1
+    );
+    assert_eq!(plan.bytes_freed, single.bytes_freed);
+}
+
+#[test]
+fn cue_15_a_file_kept_for_stability_is_counted_once() {
+    let held = |rows: &[i64]| {
+        let mut mirror_input = dropped(rows);
+        mirror_input.playlists[0].stability_margin_track_ids = rows.to_vec();
+        plan_mirror(mirror_input)
+    };
+    let single = held(&[1]);
+    let plan = held(&[1, 2]);
+
+    assert_eq!(plan.retained_stable.len(), 2);
+    assert_eq!(plan.target_bytes, single.target_bytes);
+}
+
+#[test]
+fn cue_15_a_missing_file_kept_on_the_device_is_counted_once() {
+    let missing = |rows: &[i64]| {
+        let mut mirror_input = dropped(rows);
+        mirror_input.playlists[0].entries = rows
+            .iter()
+            .map(|id| {
+                MirrorTrack::Unavailable(super::UnavailableTrack {
+                    track_id: *id,
+                    title: format!("Song {id}"),
+                    artist: "Band".into(),
+                    duration_ms: 10_000,
+                })
+            })
+            .collect();
+        plan_mirror(mirror_input)
+    };
+    let single = missing(&[1]);
+    let plan = missing(&[1, 2]);
+
+    assert_eq!(plan.retained_unavailable.len(), 2);
+    assert_eq!(plan.target_bytes, single.target_bytes);
+}
