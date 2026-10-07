@@ -18,7 +18,7 @@ use reprise_core::waveform::TrackRenderData;
 
 use crate::LibraryError;
 
-use super::compute::AndroidAnalysisOutcome;
+use super::compute::{failure_outcome, AndroidAnalysisOutcome};
 
 /// The tracks one decode of a CUE file measures, the one asked for first.
 pub(super) struct SegmentJob {
@@ -56,14 +56,15 @@ impl SegmentJob {
         self.tracks.iter().map(|(_, bounds)| *bounds).collect()
     }
 
-    /// Every track the job measures.
-    pub(super) fn track_ids(&self) -> impl Iterator<Item = i64> + '_ {
-        self.tracks.iter().map(|(track_id, _)| *track_id)
+    /// Every track the job measures, with the stretch it measures for it.
+    pub(super) fn measured(&self) -> impl Iterator<Item = (i64, SegmentBounds)> + '_ {
+        self.tracks.iter().copied()
     }
 
     /// Stores what the decode measured for each track, each only while the
     /// file and that track's cut are what they were when the decode began,
-    /// and remembers a track the stream never reached as failed. Returns the
+    /// and remembers a track the stream never reached as failed, under the
+    /// same condition. Returns the
     /// outcome for the track asked for.
     pub(super) fn store(
         &self,
@@ -88,11 +89,16 @@ impl SegmentJob {
                 }
                 Err(reason) => {
                     tracing::debug!(track_id, reason, "a CUE track's stretch was not decoded");
-                    reprise_core::spectrogram_backfill::record_render_data_failure(
-                        writer, *track_id, &reason,
+                    failure_outcome(
+                        reprise_core::spectrogram_backfill::record_render_data_failure(
+                            writer,
+                            *track_id,
+                            source,
+                            Some(*bounds),
+                            &reason,
+                        )
+                        .map_err(database_error)?,
                     )
-                    .map_err(database_error)?;
-                    AndroidAnalysisOutcome::DecodeFailed
                 }
             };
             if index == 0 {

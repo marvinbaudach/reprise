@@ -606,6 +606,33 @@ fn a_file_replaced_during_the_decode_is_not_stored() {
         .is_none());
 }
 
+/// A decode that fails on a file being rewritten says nothing about the file
+/// it became, so the new file stays pending rather than remembered as failed.
+#[test]
+fn a_decode_that_fails_on_a_file_replaced_meanwhile_leaves_it_pending() {
+    let (_directory, library, track_id, music) = library_with_one_track();
+    let writer = library.writer_handle();
+    library.register_track_pcm_decoder(Box::new(ClosureDecoder::new(
+        Arc::new(AtomicUsize::new(0)),
+        move |_uri, _sink| {
+            let file = File::open(music.join("song.flac")).unwrap();
+            file.set_modified(std::time::SystemTime::now() + std::time::Duration::from_secs(120))
+                .unwrap();
+            drop(file);
+            scan_folder(&writer.lock().unwrap(), &music).unwrap();
+            Err(super::AnalysisDecodeError::DecodeFailed {
+                detail: "truncated while it was rewritten".into(),
+            })
+        },
+    )));
+
+    let outcome = library.import_track_analysis(track_id).unwrap();
+
+    assert_eq!(outcome, AndroidAnalysisOutcome::PhoneSourceChanged);
+    let reader = library.reader().unwrap();
+    assert!(!reprise_core::spectrogram_backfill::render_data_failed(&reader, track_id).unwrap());
+}
+
 #[test]
 fn no_registered_decoder_reports_no_decoder() {
     let (_directory, library, track_id, _music) = library_with_one_track();

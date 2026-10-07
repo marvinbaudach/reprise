@@ -79,8 +79,14 @@ pub fn run_render_data_backfill(
                     error = %error,
                     "spectrogram backfill could not decode a track; it waits for its file to change"
                 );
-                record_render_data_failure(db, track.track_id, &error.to_string())?;
-                summary.failed += 1;
+                let outcome = record_render_data_failure(
+                    db,
+                    track.track_id,
+                    track.source,
+                    None,
+                    &error.to_string(),
+                )?;
+                count_failure(outcome, &mut summary);
                 completed += 1;
                 on_progress(BackfillProgress {
                     completed,
@@ -116,9 +122,15 @@ pub fn run_render_data_backfill(
                 return Ok(summary);
             }
             FileDecode::Failed(reason) => {
-                summary.failed += file.tracks.len();
                 for track in &file.tracks {
-                    record_render_data_failure(db, track.track_id, &reason)?;
+                    let outcome = record_render_data_failure(
+                        db,
+                        track.track_id,
+                        file.source,
+                        Some(track.bounds()),
+                        &reason,
+                    )?;
+                    count_failure(outcome, &mut summary);
                 }
                 report_file_done(&file, &mut completed, total, &mut on_progress);
                 continue;
@@ -142,8 +154,14 @@ pub fn run_render_data_backfill(
                         error = %error,
                         "spectrogram backfill could not measure a CUE track; it waits for its file to change"
                     );
-                    record_render_data_failure(db, track.track_id, &error.to_string())?;
-                    summary.failed += 1;
+                    let outcome = record_render_data_failure(
+                        db,
+                        track.track_id,
+                        file.source,
+                        Some(track.bounds()),
+                        &error.to_string(),
+                    )?;
+                    count_failure(outcome, &mut summary);
                 }
             }
             completed += 1;
@@ -228,6 +246,16 @@ fn extract_file(
 fn count_store(outcome: SpectrogramStoreOutcome, summary: &mut BackfillSummary) {
     match outcome {
         SpectrogramStoreOutcome::Stored => summary.stored += 1,
+        SpectrogramStoreOutcome::SourceChanged => summary.source_changed += 1,
+    }
+}
+
+/// Counts a failure. One that was not remembered, because the file or the
+/// track's cut changed during the decode, leaves the track pending like a
+/// store that found the same, and counts like one.
+fn count_failure(outcome: SpectrogramStoreOutcome, summary: &mut BackfillSummary) {
+    match outcome {
+        SpectrogramStoreOutcome::Stored => summary.failed += 1,
         SpectrogramStoreOutcome::SourceChanged => summary.source_changed += 1,
     }
 }

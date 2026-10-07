@@ -112,17 +112,11 @@ fn store_render_data(
     bounds: Option<SegmentBounds>,
     data: &TrackRenderData,
 ) -> Result<SpectrogramStoreOutcome, DbError> {
-    // IMMEDIATE: the source-fingerprint check is read before the cache write, so the write lock
+    // IMMEDIATE: the source check is read before the cache write, so the write lock
     // comes first (see `events::immediate_transaction`).
     let transaction = crate::events::immediate_transaction(db.conn())?;
-    let current = source_fingerprint(&transaction, track_id)?;
-    if current != Some(source) {
+    if !still_current(&transaction, track_id, source, bounds)? {
         return Ok(SpectrogramStoreOutcome::SourceChanged);
-    }
-    if let Some(bounds) = bounds {
-        if segment_cut(&transaction, track_id)? != Some((bounds.start_ms, bounds.end_ms)) {
-            return Ok(SpectrogramStoreOutcome::SourceChanged);
-        }
     }
     transaction.execute(
         "UPDATE tracks SET waveform_peaks = ?1 WHERE id = ?2",
@@ -133,6 +127,25 @@ fn store_render_data(
     failures::clear_failure(&transaction, track_id)?;
     transaction.commit()?;
     Ok(SpectrogramStoreOutcome::Stored)
+}
+
+/// Whether `track_id` is still the track a decode that began on `source`, cut
+/// at `bounds` for a CUE track, measured: no rescan replaced the file or re-cut
+/// the track in the meantime, and the track still exists. Neither a result nor
+/// a failure of that decode says anything about the track as it is otherwise.
+fn still_current(
+    conn: &Connection,
+    track_id: i64,
+    source: TrackSourceFingerprint,
+    bounds: Option<SegmentBounds>,
+) -> Result<bool, rusqlite::Error> {
+    if source_fingerprint(conn, track_id)? != Some(source) {
+        return Ok(false);
+    }
+    Ok(match bounds {
+        Some(bounds) => segment_cut(conn, track_id)? == Some((bounds.start_ms, bounds.end_ms)),
+        None => true,
+    })
 }
 
 /// The stretch of its file a track covers, start and end in milliseconds, as

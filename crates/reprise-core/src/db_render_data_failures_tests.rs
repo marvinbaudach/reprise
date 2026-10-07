@@ -23,6 +23,13 @@ fn database() -> Db {
     db
 }
 
+/// Records a failure of a decode that began on the track as it is now.
+fn fail(db: &Db, track_id: i64, reason: &str) {
+    let source = track_source_fingerprint(db, track_id).unwrap().unwrap();
+    let outcome = record_render_data_failure(db, track_id, source, None, reason).unwrap();
+    assert_eq!(outcome, SpectrogramStoreOutcome::Stored);
+}
+
 fn pending_ids(db: &Db) -> Vec<i64> {
     let whole = pending_render_data_tracks(db).unwrap();
     let segments = pending_segment_render_data_files(db).unwrap();
@@ -42,8 +49,8 @@ fn pending_ids(db: &Db) -> Vec<i64> {
 fn a_recorded_failure_takes_the_track_out_of_the_pending_work() {
     let db = database();
 
-    record_render_data_failure(&db, 1, "rate changed mid-stream").unwrap();
-    record_render_data_failure(&db, 11, "the stream ended before the track").unwrap();
+    fail(&db, 1, "rate changed mid-stream");
+    fail(&db, 11, "the stream ended before the track");
 
     assert!(render_data_failed(&db, 1).unwrap());
     assert!(render_data_failed(&db, 11).unwrap());
@@ -55,7 +62,7 @@ fn a_recorded_failure_takes_the_track_out_of_the_pending_work() {
 fn a_track_without_a_stat_identity_can_be_marked() {
     let db = database();
 
-    record_render_data_failure(&db, 3, "decode error").unwrap();
+    fail(&db, 3, "decode error");
 
     assert!(render_data_failed(&db, 3).unwrap());
     assert!(!pending_ids(&db).contains(&3));
@@ -64,7 +71,7 @@ fn a_track_without_a_stat_identity_can_be_marked() {
 #[test]
 fn a_changed_file_is_pending_again() {
     let db = database();
-    record_render_data_failure(&db, 1, "decode error").unwrap();
+    fail(&db, 1, "decode error");
 
     db.conn()
         .execute("UPDATE tracks SET file_mtime = 12 WHERE id = 1", [])
@@ -77,7 +84,7 @@ fn a_changed_file_is_pending_again() {
 #[test]
 fn a_re_cut_track_is_pending_again() {
     let db = database();
-    record_render_data_failure(&db, 11, "the stream ended before the track").unwrap();
+    fail(&db, 11, "the stream ended before the track");
 
     db.conn()
         .execute(
@@ -93,7 +100,7 @@ fn a_re_cut_track_is_pending_again() {
 #[test]
 fn a_failure_from_another_analysis_format_does_not_hold() {
     let db = database();
-    record_render_data_failure(&db, 1, "decode error").unwrap();
+    fail(&db, 1, "decode error");
 
     db.conn()
         .execute(
@@ -109,8 +116,8 @@ fn a_failure_from_another_analysis_format_does_not_hold() {
 #[test]
 fn clearing_or_a_successful_store_forgets_the_failure() {
     let db = database();
-    record_render_data_failure(&db, 1, "decode error").unwrap();
-    record_render_data_failure(&db, 2, "decode error").unwrap();
+    fail(&db, 1, "decode error");
+    fail(&db, 2, "decode error");
 
     clear_render_data_failure(&db, 1).unwrap();
     let source = track_source_fingerprint(&db, 2).unwrap().unwrap();
@@ -141,9 +148,22 @@ fn clearing_or_a_successful_store_forgets_the_failure() {
 fn recording_again_keeps_one_row_with_the_latest_reason() {
     let db = database();
 
-    record_render_data_failure(&db, 1, "first").unwrap();
-    record_render_data_failure(&db, 1, "second").unwrap();
-    record_render_data_failure(&db, 999, "a track that is gone").unwrap();
+    fail(&db, 1, "first");
+    fail(&db, 1, "second");
+    let gone = record_render_data_failure(
+        &db,
+        999,
+        TrackSourceFingerprint {
+            mtime_seconds: 11,
+            size_bytes: 22,
+            device: None,
+            inode: None,
+        },
+        None,
+        "a track that is gone",
+    )
+    .unwrap();
+    assert_eq!(gone, SpectrogramStoreOutcome::SourceChanged);
 
     let reasons: Vec<String> = db
         .conn()
@@ -154,4 +174,46 @@ fn recording_again_keeps_one_row_with_the_latest_reason() {
         .collect::<Result<_, _>>()
         .unwrap();
     assert_eq!(reasons, ["second"]);
+}
+
+#[test]
+fn a_failure_recorded_after_the_file_changed_leaves_the_track_pending() {
+    let db = database();
+    let started = track_source_fingerprint(&db, 1).unwrap().unwrap();
+    // A rescan saw the file rewritten while the decode ran, and the decode
+    // then failed on the file as it was.
+    db.conn()
+        .execute("UPDATE tracks SET file_mtime = 12 WHERE id = 1", [])
+        .unwrap();
+
+    let outcome =
+        record_render_data_failure(&db, 1, started, None, "truncated while it was rewritten")
+            .unwrap();
+
+    assert_eq!(outcome, SpectrogramStoreOutcome::SourceChanged);
+    assert!(!render_data_failed(&db, 1).unwrap());
+    assert!(pending_ids(&db).contains(&1));
+}
+
+#[test]
+fn a_failure_recorded_after_the_track_was_re_cut_leaves_it_pending() {
+    let db = database();
+    let started = track_source_fingerprint(&db, 11).unwrap().unwrap();
+    let cut = SegmentBounds {
+        start_ms: 3_000,
+        end_ms: 8_000,
+        last_in_file: true,
+    };
+    db.conn()
+        .execute(
+            "UPDATE tracks SET segment_start_ms = 2500 WHERE id = 11",
+            [],
+        )
+        .unwrap();
+
+    let outcome = record_render_data_failure(&db, 11, started, Some(cut), "ended early").unwrap();
+
+    assert_eq!(outcome, SpectrogramStoreOutcome::SourceChanged);
+    assert!(!render_data_failed(&db, 11).unwrap());
+    assert!(pending_ids(&db).contains(&11));
 }

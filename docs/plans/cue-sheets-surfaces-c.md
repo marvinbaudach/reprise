@@ -218,6 +218,14 @@ Checked after c6: a clipped item that gains its cover is updated in place by a r
 not re-prepare the clip. A CUE track has no sidecar to import: `register_sidecar` registers
 whole-file rows only (`segment_index = 0`), so the segmented compute always runs for it.
 
+Review fixes:
+- **#14** A failure is recorded only against the decode's own start.
+  `record_render_data_failure` takes the `TrackSourceFingerprint` the decode began on and,
+  for a CUE track, the cut it measured. It writes the marker only while both are still the
+  track's (`still_current`, shared with `store_render_data`), else it returns
+  `SourceChanged` and the track stays pending. The desktop backfill counts such a track as
+  source-changed, and the phone reports `PhoneSourceChanged` for it.
+
 Left open, by design or for a later change:
 - A foreground request for a track whose file the backfill is decoding under a sibling's id
   preempts the backfill and decodes the file again. This is documented in `segment_job.rs`

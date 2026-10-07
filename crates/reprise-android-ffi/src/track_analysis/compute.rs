@@ -7,6 +7,8 @@ use std::collections::HashMap;
 use std::sync::{Arc, Condvar, Mutex, PoisonError};
 
 use reprise_core::db::Db;
+use reprise_core::render_data_segments::SegmentBounds;
+use reprise_core::spectrogram::TrackSourceFingerprint;
 
 use crate::track_analysis::decodes::{expected_frame_count, DecodeRegistry};
 use crate::track_analysis::segment_job::SegmentJob;
@@ -437,18 +439,21 @@ impl AnalysisContext<'_> {
         }
         // A file that cannot be decoded, or whose rate or channel count
         // changes mid-stream, fails for every track the decode measured.
-        let measured: Vec<i64> = job
-            .as_ref()
-            .map_or_else(|| vec![track_id], |job| job.track_ids().collect());
+        let measured: Vec<(i64, Option<SegmentBounds>)> = job.as_ref().map_or_else(
+            || vec![(track_id, None)],
+            |job| {
+                job.measured()
+                    .map(|(id, bounds)| (id, Some(bounds)))
+                    .collect()
+            },
+        );
         if let Err(error) = decode_result {
             tracing::debug!(track_id, %error, "track analysis decode failed");
-            self.mark_failed(&measured, &error.to_string())?;
-            return Ok(AndroidAnalysisOutcome::DecodeFailed);
+            return self.mark_failed(fingerprint, &measured, &error.to_string());
         }
         if let Some(reason) = sink.refused_reason() {
             tracing::debug!(track_id, reason, "track analysis session refused a chunk");
-            self.mark_failed(&measured, &reason)?;
-            return Ok(AndroidAnalysisOutcome::DecodeFailed);
+            return self.mark_failed(fingerprint, &measured, &reason);
         }
         let data = match (sink.finish(), job) {
             (FinishedAnalysis::Whole(Ok(data)), _) => data,
@@ -458,8 +463,7 @@ impl AnalysisContext<'_> {
             }
             (FinishedAnalysis::Whole(Err(reason)), _) => {
                 tracing::debug!(track_id, reason, "track analysis produced no data");
-                self.mark_failed(&measured, &reason)?;
-                return Ok(AndroidAnalysisOutcome::DecodeFailed);
+                return self.mark_failed(fingerprint, &measured, &reason);
             }
             (FinishedAnalysis::Segmented(_), None) => {
                 unreachable!("only a CUE track's job makes a segmented sink")
@@ -481,18 +485,44 @@ impl AnalysisContext<'_> {
         }
     }
 
-    /// Remembers in the library that `track_ids` could not be measured, so
-    /// the backfill leaves them alone until their file changes (finding C8).
-    /// Called only after the decoder has returned, never while it runs.
-    fn mark_failed(&self, track_ids: &[i64], reason: &str) -> Result<(), LibraryError> {
+    /// Remembers in the library that the tracks a decode `measured`, each
+    /// with the cut it was measuring, could not be measured, so the backfill
+    /// leaves them alone until their file changes (finding C8). A track whose
+    /// file or cut changed since the decode began, `source` being what it
+    /// began on, is not marked and stays pending. Returns the outcome for the
+    /// first track, the one asked for. Called only after the decoder has
+    /// returned, never while it runs.
+    fn mark_failed(
+        &self,
+        source: TrackSourceFingerprint,
+        measured: &[(i64, Option<SegmentBounds>)],
+        reason: &str,
+    ) -> Result<AndroidAnalysisOutcome, LibraryError> {
         let writer = self.writer.lock().map_err(poisoned)?;
-        for track_id in track_ids {
-            reprise_core::spectrogram_backfill::record_render_data_failure(
-                &writer, *track_id, reason,
+        let mut asked = AndroidAnalysisOutcome::DecodeFailed;
+        for (index, (track_id, bounds)) in measured.iter().enumerate() {
+            let outcome = reprise_core::spectrogram_backfill::record_render_data_failure(
+                &writer, *track_id, source, *bounds, reason,
             )
             .map_err(database_error)?;
+            if index == 0 {
+                asked = failure_outcome(outcome);
+            }
         }
-        Ok(())
+        Ok(asked)
+    }
+}
+
+/// What a failed decode reports for a track: a failure, unless its file or
+/// cut changed while the decode ran and nothing was remembered for it.
+pub(super) fn failure_outcome(
+    outcome: reprise_core::db::SpectrogramStoreOutcome,
+) -> AndroidAnalysisOutcome {
+    match outcome {
+        reprise_core::db::SpectrogramStoreOutcome::Stored => AndroidAnalysisOutcome::DecodeFailed,
+        reprise_core::db::SpectrogramStoreOutcome::SourceChanged => {
+            AndroidAnalysisOutcome::PhoneSourceChanged
+        }
     }
 }
 
