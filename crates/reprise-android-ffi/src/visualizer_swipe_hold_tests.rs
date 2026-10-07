@@ -124,6 +124,27 @@ fn ac_29_a_track_change_keeps_the_last_live_shape_for_adoption() {
 }
 
 #[test]
+fn ac_29_a_stream_reset_before_the_track_flip_holds_the_last_live_shape() {
+    let clock = Arc::new(FakeMonotonicClock::default());
+    let engine = AndroidVisualEngine::with_clock(clock.clone());
+    play_live_tone(&engine, &clock);
+    let live_shape = engine.current_bands();
+
+    engine.reset_audio_stream();
+
+    // The transport answer has not arrived, so no `note_track_changed` has
+    // happened and no new PCM is available. The visible card must keep the
+    // shape it had at release instead of falling toward an empty card.
+    run_display_ticks(&engine, &clock, 15);
+
+    let held_shape = engine.current_bands();
+    assert!(
+        largest_difference(&held_shape, &live_shape) <= 0.028 + f32::EPSILON,
+        "the reset gap decayed by more than one gravity step: live={live_shape:?}, held={held_shape:?}"
+    );
+}
+
+#[test]
 fn ac_29_adoptable_bands_fall_back_to_the_display_without_live_audio() {
     let engine = AndroidVisualEngine::new();
     engine.set_playing(true);
