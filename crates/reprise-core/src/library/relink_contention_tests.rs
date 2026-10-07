@@ -189,18 +189,21 @@ fn relinking_from_a_folder_touches_the_filesystem_only_outside_the_write_lock() 
 }
 
 /// A file that matches no missing track writes nothing, so it must not wait for
-/// the write lock another connection holds.
+/// the write lock another connection holds. The unmatched file is created while
+/// the matching one still exists: a filesystem may hand a freed inode number to
+/// the next file it creates, and a file that reuses the missing track's
+/// `(device, inode)` is that track, moved, and does write.
 #[test]
 fn a_folder_file_that_matches_nothing_never_waits_for_the_write_lock() {
     let (_temp, memory, ids, new_folder) = moved_group(1);
     let targets = targets_for(&memory, &ids);
-    std::fs::remove_file(new_folder.join("00.flac")).unwrap();
     let foreign = new_folder.join("foreign.flac");
     std::fs::copy(
         Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/sine.flac"),
         &foreign,
     )
     .unwrap();
+    std::fs::remove_file(new_folder.join("00.flac")).unwrap();
     let directory = tempfile::tempdir().unwrap();
     let db = into_file_db(&memory, directory.path());
     db.conn().pragma_update(None, "busy_timeout", 0).unwrap();
