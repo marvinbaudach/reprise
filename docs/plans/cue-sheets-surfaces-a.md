@@ -2,7 +2,7 @@
 slug: cue-sheets-surfaces-a
 worktree: /home/marvin/Projects/reprise-cue-sheets-surfaces-a
 branch: feature/cue-sheets-surfaces-a
-phase: planned
+phase: shipped
 codex_session:
 created: 2026-10-06
 ---
