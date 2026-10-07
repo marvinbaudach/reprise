@@ -109,8 +109,9 @@ pub(super) fn wire_source_header(header: &impl IsA<gtk4::Widget>, group: &Source
             return;
         };
         gesture.set_state(gtk4::EventSequenceState::Claimed);
-        let popover =
-            gtk4::PopoverMenu::from_model(Some(&podcasts_context_menu::build_source(&group)));
+        let popover = crate::ui::menu_a11y::popover_menu_from_model(
+            &podcasts_context_menu::build_source(&group),
+        );
         popover.set_has_arrow(false);
         popover.set_parent(&parent);
         popover.set_pointing_to(Some(&gtk4::gdk::Rectangle::new(x as i32, y as i32, 1, 1)));

@@ -73,7 +73,11 @@ pub(super) fn build_chooser() -> (
     (stack, facet_list, back, search, value_list)
 }
 
+/// A row of the browse bar's chooser. The row carries the accessible name, as
+/// in the Add filter popover: GTK takes no name for a list item from its
+/// content. The count, when there is one, is part of what the row says.
 pub(super) fn chooser_row(title: &str, count: Option<&str>) -> gtk4::ListBoxRow {
+    let name = count.map_or_else(|| title.to_owned(), |count| format!("{title} ({count})"));
     let content = gtk4::Box::new(gtk4::Orientation::Horizontal, 12);
     content.set_margin_top(7);
     content.set_margin_bottom(7);
@@ -90,7 +94,9 @@ pub(super) fn chooser_row(title: &str, count: Option<&str>) -> gtk4::ListBoxRow 
         count.add_css_class("caption");
         content.append(&count);
     }
-    gtk4::ListBoxRow::builder().child(&content).build()
+    let row = gtk4::ListBoxRow::builder().child(&content).build();
+    row.update_property(&[gtk4::accessible::Property::Label(&name)]);
+    row
 }
 
 pub(super) fn wire_chooser(bar: &Rc<BrowseBar>) {

@@ -121,7 +121,7 @@ fn show_context_menu(
         );
     }
 
-    let popover = gtk4::PopoverMenu::from_model(Some(&menu));
+    let popover = crate::ui::menu_a11y::popover_menu_from_model(&menu);
     popover.set_parent(row);
     popover.set_has_arrow(false);
 

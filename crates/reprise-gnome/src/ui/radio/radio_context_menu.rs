@@ -134,8 +134,11 @@ pub(super) fn wire_gesture(
             return;
         };
         gesture.set_state(gtk4::EventSequenceState::Claimed);
-        let popover =
-            gtk4::PopoverMenu::from_model(Some(&build(&row, is_playing(row.id), connectivity())));
+        let popover = crate::ui::menu_a11y::popover_menu_from_model(&build(
+            &row,
+            is_playing(row.id),
+            connectivity(),
+        ));
         popover.set_has_arrow(false);
         popover.set_parent(&parent);
         popover.set_pointing_to(Some(&gtk4::gdk::Rectangle::new(x as i32, y as i32, 1, 1)));
@@ -165,8 +168,11 @@ pub(super) fn wire_keyboard(
             return gtk4::glib::Propagation::Proceed;
         };
         let row = object.row();
-        let popover =
-            gtk4::PopoverMenu::from_model(Some(&build(&row, is_playing(row.id), connectivity())));
+        let popover = crate::ui::menu_a11y::popover_menu_from_model(&build(
+            &row,
+            is_playing(row.id),
+            connectivity(),
+        ));
         popover.set_has_arrow(false);
         popover.set_parent(&menu_parent);
         popover.set_pointing_to(Some(&gtk4::gdk::Rectangle::new(

@@ -654,3 +654,7 @@ fn schedule_smoke_step(
 #[cfg(test)]
 #[path = "browse_bar_tests.rs"]
 mod tests;
+
+#[cfg(test)]
+#[path = "browse_bar_a11y_tests.rs"]
+mod a11y_tests;

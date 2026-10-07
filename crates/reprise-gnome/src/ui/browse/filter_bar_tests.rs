@@ -4,13 +4,13 @@ use std::rc::Rc;
 use super::*;
 
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
-struct TestFilter {
+pub(super) struct TestFilter {
     query: String,
     selections: Vec<(String, String)>,
 }
 
 #[derive(Default)]
-struct TestModel {
+pub(super) struct TestModel {
     fail_persistence: bool,
     values_calls: Rc<Cell<usize>>,
 }
@@ -93,7 +93,7 @@ impl FilterModel for TestModel {
     }
 }
 
-fn bar() -> Rc<FilterBar<TestModel>> {
+pub(super) fn bar() -> Rc<FilterBar<TestModel>> {
     FilterBar::new(TestModel::default())
 }
 

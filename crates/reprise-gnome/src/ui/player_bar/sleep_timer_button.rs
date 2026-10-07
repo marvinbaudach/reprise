@@ -77,7 +77,7 @@ impl SleepTimerButton {
         let model = gtk4::gio::Menu::new();
         model.append_section(None, &choices);
         model.append_section(None, &cancel_menu);
-        let popover = gtk4::PopoverMenu::from_model(Some(&model));
+        let popover = crate::ui::menu_a11y::popover_menu_from_model(&model);
         popover.set_parent(&button);
         popover.set_has_arrow(false);
 

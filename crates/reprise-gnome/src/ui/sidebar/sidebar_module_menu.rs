@@ -186,7 +186,7 @@ fn show(
         Some(&strings::sidebar_module_settings(title)),
         Some(&format!("{ACTION_GROUP}.{ACTION_SETTINGS}")),
     );
-    let popover = gtk4::PopoverMenu::from_model(Some(&menu));
+    let popover = crate::ui::menu_a11y::popover_menu_from_model(&menu);
     popover.set_parent(row);
     popover.set_has_arrow(true);
     popover.set_position(gtk4::PositionType::Right);

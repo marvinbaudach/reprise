@@ -27,7 +27,7 @@ pub(in crate::ui) fn wire(column_view: &gtk4::ColumnView, shared: &std::rc::Rc<S
         }
 
         let menu = track_list_context_menu::build_context_menu_model(&shared);
-        let popover = gtk4::PopoverMenu::from_model(Some(&menu));
+        let popover = crate::ui::menu_a11y::popover_menu_from_model(&menu);
         present_keyboard_popover(&column_view_handle, &popover);
         tracing::debug!("track context menu opened from keyboard");
         gtk4::glib::Propagation::Stop

@@ -56,6 +56,7 @@ pub(super) fn build_equalizer_controls(
         .label(strings::text(selected_label))
         .menu_model(&preset_menu)
         .build();
+    crate::ui::menu_a11y::name_menu_button_items(&preset_button);
     let preset_row = crate::ui::rows::action_row()
         .title(strings::text(strings::EQUALIZER_PRESET))
         .build();

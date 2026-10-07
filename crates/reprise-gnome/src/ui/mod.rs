@@ -72,6 +72,7 @@ mod list_geometry_layout;
 mod list_store_delta;
 pub(in crate::ui) mod location_broadcast;
 mod lyrics;
+pub(crate) mod menu_a11y;
 pub(crate) mod motion;
 pub(crate) mod motion_reveal;
 mod mounts;

@@ -102,7 +102,7 @@ impl CompactMenu {
 
         let playback_section = gio::Menu::new();
         let menu_model = menu_model(&playback_section, true);
-        let popover = gtk4::PopoverMenu::from_model(Some(&menu_model));
+        let popover = crate::ui::menu_a11y::popover_menu_from_model(&menu_model);
         popover.set_has_arrow(false);
 
         Self {
