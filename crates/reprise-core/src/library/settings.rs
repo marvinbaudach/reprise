@@ -56,33 +56,41 @@ pub(crate) fn get_setting_in(
 }
 
 /// Writes `key` = `value`, overwriting any previous value — an upsert via
-/// `ON CONFLICT`, not a delete-then-insert (keeps this a single statement,
-/// no transaction needed).
+/// `ON CONFLICT`, with a dedup read in front of it.
 pub(crate) fn set_setting_in(
     conn: &Connection,
     key: &str,
     value: &str,
 ) -> Result<(), rusqlite::Error> {
+    // An unchanged value is the common case (re-persisting an untouched
+    // layout, a repeated toggle). Settle it before any transaction opens, so
+    // it never takes the write lock below and never waits behind another
+    // writer's long transaction. Inside a caller's transaction the shortcut is
+    // skipped; the authoritative check stays the one under the write lock.
+    if conn.is_autocommit() && get_setting_in(conn, key)?.as_deref() == Some(value) {
+        return Ok(());
+    }
     // Every settings write funnels through here, so a single change-log append
     // covers both plain settings and module toggles (which persist under the
     // `module.<id>.enabled` key via `modules::set_enabled`) — exactly one event
-    // per write, keyed by the setting key. `in_txn` keeps the row and the event
-    // atomic without a nested `BEGIN` when a caller already holds one.
-    crate::events::in_txn(conn, |conn| {
+    // per write, keyed by the setting key. `in_txn_immediate` keeps the row
+    // and the event atomic without a nested `BEGIN` when a caller already
+    // holds one.
+    //
+    // It must be IMMEDIATE: the body reads before it writes. Under a deferred
+    // transaction another connection committing between the two (the Android
+    // queue persister saves the session setting at startup) fails the
+    // write-lock upgrade at once with `SQLITE_BUSY_SNAPSHOT`, which
+    // `busy_timeout` never retries (#1173). Taking the write lock first makes
+    // a contending writer wait its turn instead.
+    crate::events::in_txn_immediate(conn, |conn| {
         // Dedup (mirrors `create_smart`): an identical stored value is a
         // genuine no-op, so it must neither rewrite the row nor append a
         // `change_log` event — otherwise every idempotent settings write (e.g.
         // re-persisting an unchanged layout) would wake every other frontend
-        // for nothing. Reading inside the same transaction keeps the
-        // check-then-write atomic against a concurrent writer.
-        let current: Option<String> = conn
-            .query_row(
-                "SELECT value FROM settings WHERE key = ?1",
-                rusqlite::params![key],
-                |r| r.get(0),
-            )
-            .optional()?;
-        if current.as_deref() == Some(value) {
+        // for nothing. Reading under the write lock keeps the check-then-write
+        // atomic against a concurrent writer.
+        if get_setting_in(conn, key)?.as_deref() == Some(value) {
             return Ok(());
         }
         conn.execute(
