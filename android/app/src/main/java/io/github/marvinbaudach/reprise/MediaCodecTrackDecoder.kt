@@ -93,9 +93,10 @@ internal class MediaCodecTrackDecoder(
     }
 
     /**
-     * Feeds compressed samples in and pushes decoded 16-bit PCM chunks into
-     * [sink] until end of stream or until [AnalysisPcmSink.pushPcmI16]
-     * returns `false` (cancelled, or the session refused the chunk).
+     * Feeds compressed samples in and pushes decoded 16-bit PCM chunks, each
+     * with its presentation time, into [sink] until end of stream or until
+     * [AnalysisPcmSink.pushPcmI16At] returns `false` (cancelled, or the
+     * session refused the chunk).
      */
     private fun runDecodeLoop(
         extractor: MediaExtractor,
@@ -146,10 +147,13 @@ internal class MediaCodecTrackDecoder(
                         outputBuffer.position(bufferInfo.offset)
                         outputBuffer.limit(bufferInfo.offset + bufferInfo.size)
                         outputBuffer.get(bytes)
-                        val accepted = sink.pushPcmI16(
+                        // The time is what lets the core cut the tracks of a CUE
+                        // file at the right sample even when a buffer goes missing.
+                        val accepted = sink.pushPcmI16At(
                             bytes,
                             sampleRateHz.toUInt(),
                             channelCount.toUInt(),
+                            bufferInfo.presentationTimeUs,
                         )
                         codec.releaseOutputBuffer(outputIndex, false)
                         if (!accepted) return

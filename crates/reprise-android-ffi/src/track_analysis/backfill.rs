@@ -3,7 +3,6 @@
 //! of the mother plan; `ReprisePlaybackService.kt` starts and cancels this
 //! while playback runs (A5).
 
-use std::collections::HashSet;
 use std::sync::{Arc, Mutex, PoisonError};
 use std::thread::JoinHandle;
 
@@ -53,7 +52,6 @@ struct Handles {
     writer: Arc<Mutex<Db>>,
     decoder: Arc<Mutex<Option<Arc<dyn TrackPcmDecoder>>>>,
     in_flight: Arc<AnalysisInFlight>,
-    failed: Arc<Mutex<HashSet<i64>>>,
 }
 
 impl Handles {
@@ -63,7 +61,6 @@ impl Handles {
             writer: &self.writer,
             decoder: &self.decoder,
             in_flight: &self.in_flight,
-            failed: &self.failed,
         }
     }
 }
@@ -97,7 +94,6 @@ impl TrackAnalysisBackfill {
         writer: Arc<Mutex<Db>>,
         decoder: Arc<Mutex<Option<Arc<dyn TrackPcmDecoder>>>>,
         in_flight: Arc<AnalysisInFlight>,
-        failed: Arc<Mutex<HashSet<i64>>>,
         listener: Box<dyn TrackAnalysisProgressListener>,
     ) {
         let mut worker = self.worker.lock().unwrap_or_else(PoisonError::into_inner);
@@ -135,7 +131,6 @@ impl TrackAnalysisBackfill {
             writer,
             decoder,
             in_flight,
-            failed,
         };
         let listener: Arc<ProgressListener> =
             Arc::new(move |progress| listener.on_progress(progress));
@@ -251,35 +246,22 @@ fn run_worker(control: &Control, handles: &Handles, listener: &Arc<ProgressListe
         if is_cancelled(control) {
             break;
         }
-        let pending = {
-            let reader = handles
-                .reader
-                .lock()
-                .unwrap_or_else(PoisonError::into_inner);
-            match reprise_core::db::pending_render_data_tracks(&reader) {
-                Ok(pending) => pending,
-                Err(_) => break,
-            }
+        let Some(pending) = pending_items(handles) else {
+            break;
         };
-        let failed_ids = handles
-            .failed
-            .lock()
-            .unwrap_or_else(PoisonError::into_inner)
-            .clone();
         // Recomputed every iteration rather than fixed at the start: a
         // track another caller (a foreground request) finishes while the
         // backfill is on a different item simply disappears from `pending`,
         // and the total shrinks with it rather than the backfill's own
-        // counters chasing a number that was never going to be reached.
-        let still_pending: Vec<_> = pending
-            .into_iter()
-            .filter(|track| !failed_ids.contains(&track.track_id))
-            .collect();
-        let total = done + failed_count + still_pending.len() as u32;
+        // counters chasing a number that was never going to be reached. A
+        // track whose decode failed is remembered in the library and is no
+        // longer pending at all (finding C8).
+        let pending_tracks: usize = pending.iter().map(|item| item.counted.len()).sum();
+        let total = done + failed_count + pending_tracks as u32;
 
-        let Some(track) = still_pending
+        let Some(item) = pending
             .into_iter()
-            .find(|track| !handles.in_flight.contains(track.track_id))
+            .find(|item| !handles.in_flight.contains(item.track_id))
         else {
             publish(
                 control,
@@ -304,38 +286,17 @@ fn run_worker(control: &Control, handles: &Handles, listener: &Arc<ProgressListe
         // sink yet to cancel.
         let outcome = handles
             .context()
-            .compute(track.track_id, true, None, Some(&control.current));
+            .compute(item.track_id, true, None, Some(&control.current));
 
-        match outcome {
-            Ok(
-                AndroidAnalysisOutcome::Cancelled
-                | AndroidAnalysisOutcome::Superseded
-                | AndroidAnalysisOutcome::PhoneSourceChanged,
-            ) => {
-                // Not a failure and not progress: `Cancelled` stored
-                // nothing because the sink was told to stop (or this worker
-                // joined a foreground decode superseded before it arrived),
-                // `Superseded` is the outcome of a foreground decode this
-                // worker waited on that stopped short when its track stopped
-                // playing — a background waiter is never let go early, and a
-                // decode that reached the end of the stream is stored and
-                // reports `Computed` instead — and
-                // `PhoneSourceChanged` stored nothing because
-                // `set_track_render_data` found the file's fingerprint had
-                // changed mid-decode (`SpectrogramStoreOutcome::SourceChanged`).
-                // Either way the track stays pending and is picked up again
-                // on a later loop iteration.
-            }
-            Ok(AndroidAnalysisOutcome::DecodeFailed | AndroidAnalysisOutcome::NoDecoder) => {
-                failed_count += 1;
-            }
-            Ok(_) => {
-                done += 1;
-            }
-            Err(_) => {
-                failed_count += 1;
-            }
-        }
+        let (stored, failed) = if item.counted.len() > 1 {
+            // One decode of a CUE file measured several tracks: each is
+            // counted by what the library now holds for it.
+            settled_tracks(handles, &item.counted)
+        } else {
+            counted_outcome(&outcome)
+        };
+        done += stored;
+        failed_count += failed;
         publish(
             control,
             TrackAnalysisProgress {
@@ -346,6 +307,90 @@ fn run_worker(control: &Control, handles: &Handles, listener: &Arc<ProgressListe
             listener,
         );
     }
+}
+
+/// One decode the backfill can start: `track_id` is computed, and `counted`
+/// are the tracks that decode measures — one for a whole file, every pending
+/// track of a CUE file, which one decode of the file measures together.
+struct BackfillItem {
+    track_id: i64,
+    counted: Vec<i64>,
+}
+
+/// Whole files first, then CUE files, each in the library's stable order.
+/// `None` when the library cannot be read.
+fn pending_items(handles: &Handles) -> Option<Vec<BackfillItem>> {
+    let reader = handles
+        .reader
+        .lock()
+        .unwrap_or_else(PoisonError::into_inner);
+    let whole = reprise_core::db::pending_render_data_tracks(&reader).ok()?;
+    let files = reprise_core::db::pending_segment_render_data_files(&reader).ok()?;
+    let whole = whole.into_iter().map(|track| BackfillItem {
+        track_id: track.track_id,
+        counted: vec![track.track_id],
+    });
+    let files = files.into_iter().filter_map(|file| {
+        let counted: Vec<i64> = file.tracks.iter().map(|track| track.track_id).collect();
+        Some(BackfillItem {
+            track_id: *counted.first()?,
+            counted,
+        })
+    });
+    Some(whole.chain(files).collect())
+}
+
+/// How one track's compute counts: `(stored, failed)`.
+fn counted_outcome(outcome: &Result<AndroidAnalysisOutcome, crate::LibraryError>) -> (u32, u32) {
+    match outcome {
+        // Not a failure and not progress: `Cancelled` stored nothing because
+        // the sink was told to stop (or this worker joined a foreground
+        // decode superseded before it arrived), `Superseded` is the outcome
+        // of a foreground decode this worker waited on that stopped short
+        // when its track stopped playing — a background waiter is never let
+        // go early, and a decode that reached the end of the stream is stored
+        // and reports `Computed` instead — and `PhoneSourceChanged` stored
+        // nothing because the store found the file's fingerprint had changed
+        // mid-decode (`SpectrogramStoreOutcome::SourceChanged`). Either way
+        // the track stays pending and is picked up again on a later loop
+        // iteration.
+        Ok(
+            AndroidAnalysisOutcome::Cancelled
+            | AndroidAnalysisOutcome::Superseded
+            | AndroidAnalysisOutcome::PhoneSourceChanged,
+        ) => (0, 0),
+        Ok(AndroidAnalysisOutcome::DecodeFailed | AndroidAnalysisOutcome::NoDecoder) | Err(_) => {
+            (0, 1)
+        }
+        Ok(_) => (1, 0),
+    }
+}
+
+/// Counts the tracks of one CUE file after its decode: `(stored, failed)`.
+/// A track neither stored nor remembered as failed stays pending (the decode
+/// was cancelled, or its cut or file changed) and counts as neither.
+fn settled_tracks(handles: &Handles, track_ids: &[i64]) -> (u32, u32) {
+    let context = handles.context();
+    let mut settled = (0, 0);
+    for track_id in track_ids {
+        if context
+            .render_data_already_valid(*track_id)
+            .unwrap_or(false)
+        {
+            settled.0 += 1;
+            continue;
+        }
+        let reader = handles
+            .reader
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner);
+        if reprise_core::spectrogram_backfill::render_data_failed(&reader, *track_id)
+            .unwrap_or(false)
+        {
+            settled.1 += 1;
+        }
+    }
+    settled
 }
 
 fn is_cancelled(control: &Control) -> bool {
@@ -375,7 +420,6 @@ impl MusicLibrary {
             self.writer_handle(),
             Arc::clone(&self.pcm_decoder),
             Arc::clone(&self.analysis_in_flight),
-            Arc::clone(&self.analysis_failed),
             listener,
         );
     }

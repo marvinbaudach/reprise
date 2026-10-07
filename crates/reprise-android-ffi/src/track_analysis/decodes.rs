@@ -14,7 +14,7 @@ use reprise_core::spectrogram::SPECTROGRAM_FRAME_RATE_HZ;
 
 use crate::MusicLibrary;
 
-use super::compute::AnalysisPcmSink;
+use super::sink::AnalysisPcmSink;
 
 const MILLIS_PER_SECOND: i64 = 1_000;
 /// The longest duration a track may claim and still report progress: one

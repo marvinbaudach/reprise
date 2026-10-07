@@ -11,6 +11,18 @@ use crate::library::loudness_store::{write_track_loudness, LOUDNESS_FORMAT_VERSI
 use crate::render_data_segments::SegmentBounds;
 use crate::spectrogram::{TrackSourceFingerprint, TrackSpectrogram, SPECTROGRAM_FORMAT_VERSION};
 use crate::waveform::TrackRenderData;
+
+#[path = "db_render_data_failures.rs"]
+mod failures;
+pub use failures::{clear_render_data_failure, record_render_data_failure, render_data_failed};
+
+#[path = "db_spectrogram_pending.rs"]
+mod pending;
+pub use pending::{
+    pending_render_data_tracks, pending_segment_render_data_files, pending_segment_tracks_of,
+    track_is_last_in_file, PendingRenderDataTrack, PendingSegmentFile, PendingSegmentTrack,
+};
+
 const SCHEMA_V55: &str = r#"
 CREATE TABLE IF NOT EXISTS track_spectrograms (
   track_id       INTEGER PRIMARY KEY REFERENCES tracks(id) ON DELETE CASCADE,
@@ -50,13 +62,6 @@ pub(crate) fn migrate_v55(conn: &Connection) -> Result<(), rusqlite::Error> {
 pub enum SpectrogramStoreOutcome {
     Stored,
     SourceChanged,
-}
-
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct PendingRenderDataTrack {
-    pub track_id: i64,
-    pub path: String,
-    pub source: TrackSourceFingerprint,
 }
 
 pub fn set_track_spectrogram(
@@ -107,14 +112,10 @@ fn store_render_data(
     bounds: Option<SegmentBounds>,
     data: &TrackRenderData,
 ) -> Result<SpectrogramStoreOutcome, DbError> {
-    // IMMEDIATE: the source-fingerprint check is read before the cache write, so the write lock
+    // IMMEDIATE: the source check is read before the cache write, so the write lock
     // comes first (see `events::immediate_transaction`).
     let transaction = crate::events::immediate_transaction(db.conn())?;
-    let current = source_fingerprint(&transaction, track_id)?;
-    if current != Some(source) {
-        return Ok(SpectrogramStoreOutcome::SourceChanged);
-    }
-    if bounds.is_some() && segment_bounds(&transaction, track_id)? != bounds {
+    if !still_current(&transaction, track_id, source, bounds)? {
         return Ok(SpectrogramStoreOutcome::SourceChanged);
     }
     transaction.execute(
@@ -123,15 +124,34 @@ fn store_render_data(
     )?;
     write_spectrogram(&transaction, track_id, source, &data.spectrogram)?;
     write_track_loudness(&transaction, track_id, source, data.loudness)?;
+    failures::clear_failure(&transaction, track_id)?;
     transaction.commit()?;
     Ok(SpectrogramStoreOutcome::Stored)
 }
 
-/// The stretch of its file a track covers, as the catalog records it now.
-fn segment_bounds(
+/// Whether `track_id` is still the track a decode that began on `source`, cut
+/// at `bounds` for a CUE track, measured: no rescan replaced the file or re-cut
+/// the track in the meantime, and the track still exists. Neither a result nor
+/// a failure of that decode says anything about the track as it is otherwise.
+fn still_current(
     conn: &Connection,
     track_id: i64,
-) -> Result<Option<SegmentBounds>, rusqlite::Error> {
+    source: TrackSourceFingerprint,
+    bounds: Option<SegmentBounds>,
+) -> Result<bool, rusqlite::Error> {
+    if source_fingerprint(conn, track_id)? != Some(source) {
+        return Ok(false);
+    }
+    Ok(match bounds {
+        Some(bounds) => segment_cut(conn, track_id)? == Some((bounds.start_ms, bounds.end_ms)),
+        None => true,
+    })
+}
+
+/// The stretch of its file a track covers, start and end in milliseconds, as
+/// the catalog records it now. Whether it is the file's last track is no part
+/// of the cut: it changes how far the decode measures, not which track it is.
+fn segment_cut(conn: &Connection, track_id: i64) -> Result<Option<(i64, i64)>, rusqlite::Error> {
     let row: Option<(Option<i64>, Option<i64>)> = conn
         .query_row(
             "SELECT segment_start_ms, segment_end_ms FROM tracks WHERE id = ?1",
@@ -140,7 +160,7 @@ fn segment_bounds(
         )
         .optional()?;
     Ok(match row {
-        Some((Some(start_ms), Some(end_ms))) => Some(SegmentBounds { start_ms, end_ms }),
+        Some((Some(start_ms), Some(end_ms))) => Some((start_ms, end_ms)),
         _ => None,
     })
 }
@@ -395,132 +415,6 @@ pub fn get_waveform_peaks(db: &Db, track_id: i64) -> Result<Option<Vec<u8>>, DbE
     Ok(result)
 }
 
-/// One track of a CUE file that still needs its rendering data.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct PendingSegmentTrack {
-    pub track_id: i64,
-    pub start_ms: i64,
-    pub end_ms: i64,
-}
-
-/// A CUE file with at least one track that still needs rendering data. The file
-/// is decoded once for all of them.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct PendingSegmentFile {
-    pub path: String,
-    pub source: TrackSourceFingerprint,
-    pub tracks: Vec<PendingSegmentTrack>,
-}
-
-/// Returns live whole-file tracks whose rendering data is absent or stale, in
-/// stable id order. The tracks of a CUE file are not among them: each is a
-/// stretch of a file, and [`pending_segment_render_data_files`] lists them.
-pub fn pending_render_data_tracks(db: &Db) -> Result<Vec<PendingRenderDataTrack>, DbError> {
-    let mut statement = db.conn().prepare(&format!(
-        "SELECT t.id, t.path, t.file_mtime, t.file_size, t.device, t.inode \
-         FROM tracks t \
-         LEFT JOIN track_spectrograms s ON s.track_id = t.id \
-           AND s.format_version = ?1 AND s.source_mtime = t.file_mtime \
-           AND s.source_size = t.file_size AND s.source_device IS t.device \
-           AND s.source_inode IS t.inode \
-         LEFT JOIN track_loudness l ON l.track_id = t.id \
-           AND l.format_version = ?2 AND l.source_mtime = t.file_mtime \
-           AND l.source_size = t.file_size AND l.source_device IS t.device \
-           AND l.source_inode IS t.inode \
-         WHERE {} AND t.segment_index = 0 \
-           AND (t.waveform_peaks IS NULL OR s.track_id IS NULL OR l.track_id IS NULL) \
-         ORDER BY t.id",
-        crate::queries::PRESENT
-    ))?;
-    let tracks = statement
-        .query_map(
-            rusqlite::params![SPECTROGRAM_FORMAT_VERSION, LOUDNESS_FORMAT_VERSION],
-            |row| {
-                Ok(PendingRenderDataTrack {
-                    track_id: row.get(0)?,
-                    path: row.get(1)?,
-                    source: TrackSourceFingerprint {
-                        mtime_seconds: row.get(2)?,
-                        size_bytes: row.get(3)?,
-                        device: row.get(4)?,
-                        inode: row.get(5)?,
-                    },
-                })
-            },
-        )?
-        .collect::<Result<_, _>>()?;
-    Ok(tracks)
-}
-
-/// Returns the CUE files with live tracks whose rendering data is absent or
-/// stale, each with just those tracks in play order, in stable path order.
-pub fn pending_segment_render_data_files(db: &Db) -> Result<Vec<PendingSegmentFile>, DbError> {
-    pending_segment_files(db, None)
-}
-
-/// The live tracks of the CUE file at `path` whose rendering data is absent or
-/// stale, in play order.
-pub fn pending_segment_tracks_of(db: &Db, path: &str) -> Result<Vec<PendingSegmentTrack>, DbError> {
-    Ok(pending_segment_files(db, Some(path))?
-        .into_iter()
-        .flat_map(|file| file.tracks)
-        .collect())
-}
-
-fn pending_segment_files(db: &Db, path: Option<&str>) -> Result<Vec<PendingSegmentFile>, DbError> {
-    let mut statement = db.conn().prepare(&format!(
-        "SELECT t.id, t.path, t.file_mtime, t.file_size, t.device, t.inode, \
-                t.segment_start_ms, t.segment_end_ms \
-         FROM tracks t \
-         LEFT JOIN track_spectrograms s ON s.track_id = t.id \
-           AND s.format_version = ?1 AND s.source_mtime = t.file_mtime \
-           AND s.source_size = t.file_size AND s.source_device IS t.device \
-           AND s.source_inode IS t.inode \
-         LEFT JOIN track_loudness l ON l.track_id = t.id \
-           AND l.format_version = ?2 AND l.source_mtime = t.file_mtime \
-           AND l.source_size = t.file_size AND l.source_device IS t.device \
-           AND l.source_inode IS t.inode \
-         WHERE {} AND t.segment_index > 0 \
-           AND t.segment_start_ms IS NOT NULL AND t.segment_end_ms IS NOT NULL \
-           AND (t.waveform_peaks IS NULL OR s.track_id IS NULL OR l.track_id IS NULL) \
-           AND (?3 IS NULL OR t.path = ?3) \
-         ORDER BY t.path, t.segment_index",
-        crate::queries::PRESENT
-    ))?;
-    let rows = statement.query_map(
-        rusqlite::params![SPECTROGRAM_FORMAT_VERSION, LOUDNESS_FORMAT_VERSION, path],
-        |row| {
-            Ok((
-                row.get::<_, String>(1)?,
-                TrackSourceFingerprint {
-                    mtime_seconds: row.get(2)?,
-                    size_bytes: row.get(3)?,
-                    device: row.get(4)?,
-                    inode: row.get(5)?,
-                },
-                PendingSegmentTrack {
-                    track_id: row.get(0)?,
-                    start_ms: row.get(6)?,
-                    end_ms: row.get(7)?,
-                },
-            ))
-        },
-    )?;
-    let mut files: Vec<PendingSegmentFile> = Vec::new();
-    for row in rows {
-        let (path, source, track) = row?;
-        match files.last_mut() {
-            Some(file) if file.path == path => file.tracks.push(track),
-            _ => files.push(PendingSegmentFile {
-                path,
-                source,
-                tracks: vec![track],
-            }),
-        }
-    }
-    Ok(files)
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -590,44 +484,6 @@ mod tests {
     }
 
     #[test]
-    fn pending_render_data_includes_tracks_with_old_peaks_but_no_spectrogram() {
-        let db = Db::open_in_memory().unwrap();
-        for (id, missing_since) in [(1, None), (2, None), (3, Some(1))] {
-            db.conn()
-                .execute(
-                    "INSERT INTO tracks \
-                     (id, path, title, added_at, file_mtime, file_size, device, inode, missing_since) \
-                     VALUES (?1, ?2, '', 0, 11, 22, 33, ?3, ?4)",
-                    rusqlite::params![id, format!("/{id}.flac"), 40 + id, missing_since],
-                )
-                .unwrap();
-        }
-        set_waveform_peaks(&db, 1, &[9]).unwrap();
-
-        assert_eq!(
-            pending_render_data_tracks(&db).unwrap(),
-            vec![
-                PendingRenderDataTrack {
-                    track_id: 1,
-                    path: "/1.flac".into(),
-                    source: TrackSourceFingerprint {
-                        inode: Some(41),
-                        ..source()
-                    },
-                },
-                PendingRenderDataTrack {
-                    track_id: 2,
-                    path: "/2.flac".into(),
-                    source: TrackSourceFingerprint {
-                        inode: Some(42),
-                        ..source()
-                    },
-                },
-            ]
-        );
-    }
-
-    #[test]
     fn source_change_physically_invalidates_both_rendering_caches() {
         let db = Db::open_in_memory().unwrap();
         db.conn()
@@ -682,22 +538,6 @@ mod tests {
     }
 
     #[test]
-    fn pending_render_data_includes_a_track_missing_only_loudness() {
-        let db = Db::open_in_memory().unwrap();
-        db.conn()
-            .execute(
-                "INSERT INTO tracks \
-                 (id, path, title, added_at, file_mtime, file_size, device, inode, waveform_peaks) \
-                 VALUES (1, '/old.flac', '', 0, 11, 22, 33, 44, X'01')",
-                [],
-            )
-            .unwrap();
-        set_track_spectrogram(&db, 1, source(), &TrackSpectrogram::empty()).unwrap();
-
-        assert_eq!(pending_render_data_tracks(&db).unwrap().len(), 1);
-    }
-
-    #[test]
     fn spectrogram_is_a_separate_cascading_track_table() {
         let db = Db::open_in_memory().unwrap();
         db.conn()
@@ -730,5 +570,48 @@ mod tests {
             })
             .unwrap();
         assert_eq!(rows, 0);
+    }
+
+    #[test]
+    fn a_last_track_measured_to_the_end_of_its_file_is_stored() {
+        let db = Db::open_in_memory().unwrap();
+        db.conn()
+            .execute(
+                "INSERT INTO tracks (id, path, title, added_at, file_mtime, file_size,
+                                     device, inode, segment_index, segment_start_ms,
+                                     segment_end_ms)
+                 VALUES (2, '/a.flac', '', 0, 11, 22, 33, 44, 2, 3000, 8000)",
+                [],
+            )
+            .unwrap();
+        let data = TrackRenderData {
+            waveform_peaks: vec![4],
+            spectrogram: TrackSpectrogram::empty(),
+            loudness: None,
+        };
+        let bounds = SegmentBounds {
+            start_ms: 3_000,
+            end_ms: 8_000,
+            last_in_file: true,
+        };
+
+        assert_eq!(
+            set_segment_render_data(&db, 2, source(), bounds, &data).unwrap(),
+            SpectrogramStoreOutcome::Stored
+        );
+        assert_eq!(
+            set_segment_render_data(
+                &db,
+                2,
+                source(),
+                SegmentBounds {
+                    end_ms: 9_000,
+                    ..bounds
+                },
+                &data
+            )
+            .unwrap(),
+            SpectrogramStoreOutcome::SourceChanged
+        );
     }
 }

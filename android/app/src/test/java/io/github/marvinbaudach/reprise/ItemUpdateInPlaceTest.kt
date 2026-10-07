@@ -9,7 +9,11 @@ import androidx.media3.common.Timeline
 import androidx.media3.common.util.UnstableApi
 import androidx.media3.exoplayer.ExoPlayer
 import androidx.media3.exoplayer.source.DefaultMediaSourceFactory
+import io.github.marvinbaudach.reprise.library.PlaybackItems
+import io.github.marvinbaudach.reprise.library.PlaybackKey
+import io.github.marvinbaudach.reprise.library.PlaybackRequest
 import io.github.marvinbaudach.reprise.library.TrackMetadata
+import io.github.marvinbaudach.reprise.library.TrackMetadataResolver
 import io.github.marvinbaudach.reprise.library.playbackMediaItem
 import androidx.test.core.app.ApplicationProvider
 import org.junit.After
@@ -19,6 +23,7 @@ import org.junit.Test
 import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
 import org.robolectric.annotation.Config
+import uniffi.reprise_android_ffi.AndroidPlaybackSegment
 
 /**
  * A late cover is attached by replacing the playing item with one that only
@@ -116,6 +121,32 @@ class ItemUpdateInPlaceTest {
         assertEquals(full, player.getMediaItemAt(0))
         assertEquals(entryBefore, player.currentTimeline.getWindow(0, window).uid)
         assertEquals(emptyList<Int>(), discontinuities)
+    }
+
+    @Test
+    fun mtp_66_a_clipped_cue_track_that_gains_its_cover_is_updated_in_place() {
+        // Built the way the port builds them: one clip per CUE track, the tag
+        // carrying its request, the cover added once the file's cover is known.
+        val items = PlaybackItems(TrackMetadataResolver { key ->
+            TrackMetadata(key.trackId ?: 0, "Day of the Lords", "Joy Division", "", 10_000)
+        })
+        val request = PlaybackRequest(
+            PlaybackKey(22, uri.toString()),
+            AndroidPlaybackSegment(startMs = 10_000, endMs = 20_000),
+        )
+        items.resolve(request.key)
+        val clipped = items.build(request)
+        items.rememberCover(uri.toString(), Uri.parse("file:///cache/album.png"))
+        val covered = items.build(request)
+        assertTrue(DefaultMediaSourceFactory(context).createMediaSource(clipped).canUpdateMediaItem(covered))
+        player.setMediaItems(listOf(clipped, MediaItem.fromUri("content://tree/2.flac")))
+        val window = Timeline.Window()
+        val entryBefore = player.currentTimeline.getWindow(0, window).uid
+
+        player.replaceMediaItem(0, covered)
+
+        assertEquals(covered, player.getMediaItemAt(0))
+        assertEquals(entryBefore, player.currentTimeline.getWindow(0, window).uid)
     }
 
     @Test

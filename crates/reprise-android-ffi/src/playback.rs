@@ -6,7 +6,7 @@ use reprise_core::playback::{
     StreamEvent, StreamGeneration,
 };
 
-use crate::{AndroidEqualizerPoint, AndroidEqualizerSnapshot};
+use crate::{AndroidEqualizerPoint, AndroidEqualizerSnapshot, AndroidPlaybackSegment};
 
 #[cfg(test)]
 #[path = "playback_test_support.rs"]
@@ -59,6 +59,10 @@ mod trash_boundary_tests;
 #[path = "listen_export_playback_tests.rs"]
 mod listen_export_playback_tests;
 
+#[cfg(test)]
+#[path = "playback_cue_tests.rs"]
+mod cue_tests;
+
 type EventHandler = dyn Fn(StreamEvent) + Send + Sync + 'static;
 type FaultAwareEventHandler = dyn Fn(StreamEvent, Option<bool>) + Send + Sync + 'static;
 
@@ -105,6 +109,37 @@ impl From<AndroidPlaybackError> for PlaybackError {
     }
 }
 
+/// One local track as Media3 is told to play it.
+///
+/// `track_id` is the library row, so Kotlin names the item by the row and
+/// not by its file: two tracks cut from one CUE file share `uri` and differ
+/// in their id and `segment`. `None` for an item Core started without a row.
+#[derive(Clone, Debug, PartialEq, uniffi::Record)]
+pub struct AndroidPlaybackItem {
+    pub track_id: Option<i64>,
+    pub uri: String,
+    pub gain_db: f64,
+    /// The stretch of `uri` to play; `None` plays the whole file.
+    pub segment: Option<AndroidPlaybackSegment>,
+}
+
+impl AndroidPlaybackItem {
+    /// The item for Core's playback request, which names no library row.
+    fn from_core(item: PlaybackItem<'_>) -> Self {
+        Self {
+            track_id: None,
+            uri: item.path.to_owned(),
+            gain_db: item.gain_db,
+            segment: item
+                .segment
+                .map(|(start_ms, end_ms)| AndroidPlaybackSegment {
+                    start_ms,
+                    end_ms: Some(end_ms),
+                }),
+        }
+    }
+}
+
 /// The synchronous command surface Kotlin implements around Media3.
 ///
 /// Every implementation method must enter Media3's application Looper before
@@ -117,7 +152,7 @@ pub trait AndroidPlaybackPort: Send + Sync {
         &self,
         bridge: Arc<PlaybackEventBridge>,
     ) -> Result<(), AndroidPlaybackError>;
-    fn play_path(&self, path: String, gain_db: f64) -> Result<(), AndroidPlaybackError>;
+    fn play_path(&self, item: AndroidPlaybackItem) -> Result<(), AndroidPlaybackError>;
     fn play_uri(&self, uri: String) -> Result<(), AndroidPlaybackError>;
     fn toggle_pause(&self) -> Result<AndroidPlaybackState, AndroidPlaybackError>;
     fn seek_to(&self, position_ms: i64) -> Result<(), AndroidPlaybackError>;
@@ -131,7 +166,7 @@ pub trait AndroidPlaybackPort: Send + Sync {
     fn set_audio_effects(&self) -> Result<(), AndroidPlaybackError>;
     fn set_spectrum_enabled(&self, enabled: bool) -> Result<(), AndroidPlaybackError>;
     fn stop(&self) -> Result<(), AndroidPlaybackError>;
-    fn set_next(&self, uri: Option<String>, gain_db: f64) -> Result<(), AndroidPlaybackError>;
+    fn set_next(&self, item: Option<AndroidPlaybackItem>) -> Result<(), AndroidPlaybackError>;
     /// Re-declares the gains of the track that is playing and of the one
     /// pre-fed after it, without restarting either. `next_gain_db` is `None`
     /// when nothing is pre-fed.
@@ -168,6 +203,16 @@ impl AndroidPlaybackBackend {
         Ok(Self { port })
     }
 
+    /// Starts `item`, which names its library row and its stretch of the file.
+    pub(crate) fn play_item(&self, item: AndroidPlaybackItem) -> Result<(), PlaybackError> {
+        self.port.play_path(item).map_err(PlaybackError::from)
+    }
+
+    /// Pre-feeds `item` for a gapless hand-off, or clears the feed.
+    pub(crate) fn set_next_item(&self, item: Option<AndroidPlaybackItem>) {
+        let _ = self.port.set_next(item);
+    }
+
     /// Applies freshly resolved gains to the playing track and the pre-fed one.
     pub(crate) fn set_gains(
         &self,
@@ -196,9 +241,7 @@ impl AndroidPlaybackBackend {
 
 impl PlaybackBackend for AndroidPlaybackBackend {
     fn play(&self, item: PlaybackItem<'_>) -> Result<(), PlaybackError> {
-        self.port
-            .play_path(item.path.to_owned(), item.gain_db)
-            .map_err(PlaybackError::from)
+        self.play_item(AndroidPlaybackItem::from_core(item))
     }
 
     fn play_uri(&self, uri: &str) -> Result<(), PlaybackError> {
@@ -237,10 +280,7 @@ impl PlaybackBackend for AndroidPlaybackBackend {
     }
 
     fn set_next(&self, item: Option<PlaybackItem<'_>>) {
-        let (uri, gain_db) = item.map_or((None, 0.0), |item| {
-            (Some(item.path.to_owned()), item.gain_db)
-        });
-        let _ = self.port.set_next(uri, gain_db);
+        self.set_next_item(item.map(AndroidPlaybackItem::from_core));
     }
 
     fn set_transition(&self, mode: TrackTransition, _crossfade_seconds: u8) {

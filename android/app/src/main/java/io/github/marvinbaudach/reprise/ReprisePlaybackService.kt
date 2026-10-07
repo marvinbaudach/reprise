@@ -29,6 +29,7 @@ import io.github.marvinbaudach.reprise.library.BrowseQueue
 import io.github.marvinbaudach.reprise.library.CurrentTrackArtwork
 import io.github.marvinbaudach.reprise.library.MediaBrowseLibrary
 import io.github.marvinbaudach.reprise.library.MediaBrowseTree
+import io.github.marvinbaudach.reprise.library.PlaybackKey
 import io.github.marvinbaudach.reprise.library.TrackMetadata
 import io.github.marvinbaudach.reprise.library.TrackMetadataResolver
 import io.github.marvinbaudach.reprise.widget.RepriseWidget
@@ -341,11 +342,17 @@ open class ReprisePlaybackService : MediaLibraryService() {
     internal open fun browseLibrary(): MediaBrowseLibrary =
         AndroidMediaBrowseLibrary(sharedMusicLibrary())
 
-    /** What the notification, lock screen, Auto and the widget show for [uri]. */
-    internal open fun resolveTrackMetadata(uri: String): TrackMetadata? =
-        sharedMusicLibrary().trackByUri(uri)?.let { row ->
-            TrackMetadata(row.id, row.title, row.artist, row.album, row.durationMs)
-        }
+    /**
+     * What the notification, lock screen, Auto and the widget show for [key]:
+     * the track's own row when it has one, never just the first track of its
+     * file — the tracks a CUE sheet cuts from one file share its uri.
+     */
+    internal open fun resolveTrackMetadata(key: PlaybackKey): TrackMetadata? {
+        val library = sharedMusicLibrary()
+        val trackId = key.trackId
+        val row = if (trackId != null) library.trackById(trackId) else library.trackByUri(key.uri)
+        return row?.let { TrackMetadata(it.id, it.title, it.artist, it.album, it.durationMs) }
+    }
 
     internal open fun resolveArtworkPath(trackUri: String): String? =
         sharedMusicLibrary().trackArtwork(trackUri, AndroidArtworkSize.NOW_PLAYING)

@@ -19,9 +19,12 @@ internal data class TrackMetadata(
     val artworkUri: Uri? = null,
 )
 
-/** Answers who a playback uri is. `null` is an ordinary answer: an unknown file. */
+/**
+ * Answers who a queued item is: by its library row when it has one, by its uri
+ * otherwise. `null` is an ordinary answer: an unknown file.
+ */
 internal fun interface TrackMetadataResolver {
-    fun resolve(uri: String): TrackMetadata?
+    fun resolve(key: PlaybackKey): TrackMetadata?
 
     companion object {
         val None = TrackMetadataResolver { null }

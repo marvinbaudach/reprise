@@ -2,6 +2,8 @@ mod backfill;
 mod compute;
 mod decodes;
 mod progress;
+mod segment_job;
+mod sink;
 pub(crate) use backfill::TrackAnalysisBackfill;
 #[cfg(test)]
 pub(crate) use backfill::{TrackAnalysisProgress, TrackAnalysisProgressListener};

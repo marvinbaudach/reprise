@@ -528,7 +528,7 @@ fn a_zero_sample_rate_chunk_is_refused_and_reported_as_decode_failed() {
 }
 
 #[test]
-fn a_track_cut_from_a_file_is_never_given_the_analysis_of_the_whole_file() {
+fn mtp_67_a_track_cut_from_a_file_is_given_only_its_own_stretch_of_it() {
     let (_directory, library, _whole, music) = library_with_one_track();
     std::fs::write(
         music.join("song.cue"),
@@ -550,7 +550,12 @@ fn a_track_cut_from_a_file_is_never_given_the_analysis_of_the_whole_file() {
         .unwrap()
         .rows
         .into_iter()
-        .find(|track| track.segment.is_some())
+        .find(|track| {
+            track
+                .segment
+                .as_ref()
+                .is_some_and(|segment| segment.index == 1)
+        })
         .expect("the sheet cut the file into tracks")
         .id
     };
@@ -559,19 +564,16 @@ fn a_track_cut_from_a_file_is_never_given_the_analysis_of_the_whole_file() {
 
     let outcome = library.import_track_analysis(cue_track).unwrap();
 
-    assert_eq!(outcome, AndroidAnalysisOutcome::DecodeFailed);
-    assert_eq!(
-        calls.load(Ordering::SeqCst),
-        0,
-        "the file is not decoded for it"
-    );
+    assert_eq!(outcome, AndroidAnalysisOutcome::Computed);
+    assert_eq!(calls.load(Ordering::SeqCst), 1);
+    // The decoder pushes one second, twenty spectrogram frames; the first
+    // track covers the first 40 CUE frames of it (about 0.53 s).
     let reader = library.reader().unwrap();
-    assert!(reprise_core::db::get_waveform_peaks(&reader, cue_track)
+    let frames = reprise_core::db::get_track_spectrogram(&reader, cue_track)
         .unwrap()
-        .is_none());
-    assert!(reprise_core::db::get_track_spectrogram(&reader, cue_track)
-        .unwrap()
-        .is_none());
+        .expect("the track is measured")
+        .frame_count();
+    assert!((10..=11).contains(&frames), "{frames} frames");
 }
 
 #[test]
@@ -602,6 +604,33 @@ fn a_file_replaced_during_the_decode_is_not_stored() {
     assert!(reprise_core::db::get_track_spectrogram(&reader, track_id)
         .unwrap()
         .is_none());
+}
+
+/// A decode that fails on a file being rewritten says nothing about the file
+/// it became, so the new file stays pending rather than remembered as failed.
+#[test]
+fn a_decode_that_fails_on_a_file_replaced_meanwhile_leaves_it_pending() {
+    let (_directory, library, track_id, music) = library_with_one_track();
+    let writer = library.writer_handle();
+    library.register_track_pcm_decoder(Box::new(ClosureDecoder::new(
+        Arc::new(AtomicUsize::new(0)),
+        move |_uri, _sink| {
+            let file = File::open(music.join("song.flac")).unwrap();
+            file.set_modified(std::time::SystemTime::now() + std::time::Duration::from_secs(120))
+                .unwrap();
+            drop(file);
+            scan_folder(&writer.lock().unwrap(), &music).unwrap();
+            Err(super::AnalysisDecodeError::DecodeFailed {
+                detail: "truncated while it was rewritten".into(),
+            })
+        },
+    )));
+
+    let outcome = library.import_track_analysis(track_id).unwrap();
+
+    assert_eq!(outcome, AndroidAnalysisOutcome::PhoneSourceChanged);
+    let reader = library.reader().unwrap();
+    assert!(!reprise_core::spectrogram_backfill::render_data_failed(&reader, track_id).unwrap());
 }
 
 #[test]

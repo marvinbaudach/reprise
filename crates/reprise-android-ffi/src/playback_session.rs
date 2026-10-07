@@ -7,7 +7,7 @@ use gain::QueuedTrack;
 use next_at_end::PlayheadMove;
 #[cfg(test)]
 use reprise_core::db::Db;
-use reprise_core::playback::{PlaybackBackend, PlaybackItem, StreamGeneration};
+use reprise_core::playback::{PlaybackBackend, StreamGeneration};
 use reprise_core::queue::{Queue, Repeat};
 
 use crate::listen_export_recorder::ListenExportRecorder;
@@ -386,11 +386,7 @@ impl SessionInner {
             state.current_loaded = true;
             (track_id, uri, next, history_entry)
         };
-        if let Err(error) = backend.play(PlaybackItem {
-            segment: None,
-            path: &uri,
-            gain_db: self.gain_db_for(track_id),
-        }) {
+        if let Err(error) = backend.play_item(self.playback_item(track_id, uri)) {
             let detail = error.to_string();
             if let Ok(mut state) = self.state.lock() {
                 state.snapshot.state = AndroidPlaybackState::Stopped;

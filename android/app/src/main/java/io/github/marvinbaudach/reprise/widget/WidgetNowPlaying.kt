@@ -1,5 +1,6 @@
 package io.github.marvinbaudach.reprise.widget
 
+import io.github.marvinbaudach.reprise.library.PlaybackKey
 import io.github.marvinbaudach.reprise.library.TrackMetadata
 import uniffi.reprise_android_ffi.AndroidPlaybackSnapshot
 import uniffi.reprise_android_ffi.AndroidPlaybackState
@@ -54,7 +55,7 @@ internal fun AndroidPlaybackSnapshot?.widgetKey(): WidgetStateKey =
 internal fun widgetNowPlaying(
     snapshot: AndroidPlaybackSnapshot?,
     previous: WidgetNowPlaying,
-    metadata: (trackUri: String) -> TrackMetadata?,
+    metadata: (PlaybackKey) -> TrackMetadata?,
     artworkPath: (trackUri: String) -> String?,
 ): WidgetNowPlaying {
     val trackId = snapshot?.currentTrackId
@@ -69,7 +70,7 @@ internal fun widgetNowPlaying(
         val cover = previous.artworkPath ?: artworkPath(trackUri)
         return previous.copy(isPlaying = playing, artworkPath = cover, canResume = true)
     }
-    val track = metadata(trackUri)
+    val track = metadata(PlaybackKey(trackId, trackUri))
     return WidgetNowPlaying(
         trackId = trackId,
         title = track?.title.orEmpty(),

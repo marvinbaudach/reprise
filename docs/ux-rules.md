@@ -1338,6 +1338,57 @@ result.
 - **MTP-65** [active] [gtk] — When the device row is narrower than its natural
   status text, the trailing "· syncing" or "· synced" detail yields before
   the leading activity is hidden.
+- **MTP-66** [active] [android] — **A CUE track plays its own stretch on the
+  phone, with its own metadata.** A track a CUE sheet cuts from a larger file
+  starts at its own start and ends at its own end; its position and duration
+  count from its own start. The notification, lock screen, Android Auto and
+  the widget show that track's own title and artist, never those of the
+  file's first track, and every track of the file shows the file's cover.
+  Each track plays at its own gain. The phone never crossfades, so no
+  transition into or out of a CUE track is a crossfade. A track whose
+  successors in the sheet are only removed from the library keeps its own
+  end.
+  *Tests:* `mtp_66_each_track_of_a_cue_file_is_its_own_row_and_the_last_runs_to_the_end`,
+  `mtp_66_a_cue_track_starts_as_its_own_stretch_and_the_next_one_is_fed_as_its_own`,
+  `mtp_66_two_tracks_of_one_cue_file_each_carry_their_own_metadata`,
+  `mtp_66_the_files_cover_reaches_each_of_its_tracks_without_swapping_them`,
+  `mtp_66_the_widget_names_a_cue_track_by_its_row_not_by_its_file`,
+  `mtp_66_a_cue_track_and_the_next_one_are_each_clipped_to_their_own_stretch`,
+  `mtp_66_a_whole_file_is_not_clipped`,
+  `mtp_66_late_metadata_completes_a_clip_in_place_and_keeps_its_stretch`,
+  `mtp_66_a_clipped_cue_track_that_gains_its_cover_is_updated_in_place`,
+  `mtp_66_a_track_whose_successor_is_only_excluded_still_plays_to_its_own_end`,
+  `mtp_66_a_track_whose_successor_is_only_excluded_keeps_its_own_end`.
+  The gap between two clips and each clip's own gain are proved only by the
+  post-merge device check: no automated test drives the stream offsets a real
+  player announces for clipped items.
+  <!-- REVIEW: rule proposal -->
+- **MTP-67** [active] [android] — **The phone analyses CUE tracks.** One
+  decode of a CUE file stores the seek-bar shape, spectrum and loudness of
+  each of its tracks, each measured from its own stretch of the file, placed
+  by the decoder's timestamps; the file's last track is measured to the
+  decoded end of the file. While the playing track is still being decoded,
+  its seek bar fills from its own start. A file that cannot be measured is
+  remembered and not decoded again until it changes.
+  *Tests:* `mtp_67_one_decode_stores_each_track_of_the_file_from_its_own_stretch`,
+  `mtp_67_a_track_cut_from_a_file_is_given_only_its_own_stretch_of_it`,
+  `mtp_67_a_chunk_the_decoder_dropped_does_not_shift_the_later_tracks`,
+  `mtp_67_the_last_track_is_measured_to_the_decoded_end_of_its_file`,
+  `mtp_67_a_track_the_file_never_reaches_is_remembered_and_the_others_are_stored`,
+  `mtp_67_a_decode_that_fails_remembers_every_track_it_was_measuring`,
+  `mtp_67_the_seek_bar_of_a_later_track_fills_from_its_own_start`,
+  `mtp_67_the_backfill_measures_a_cue_file_in_one_decode_and_counts_each_track`.
+  The platform decoder's timestamps are verified on a device.
+  <!-- REVIEW: rule proposal -->
+- **MTP-68** [active] [android] — **The last track of a file plays to its
+  end on the phone.** The last track of a CUE file plays to the end of the
+  audio, whatever duration the file's metadata claims. It is the sheet's own
+  last track: one whose successor was only removed from the library is not,
+  and is analysed and played to its own end.
+  *Tests:* `mtp_68_a_single_row_of_the_last_track_has_no_end_either`,
+  `mtp_68_the_last_track_of_a_cue_file_is_handed_over_without_an_end`,
+  `mtp_68_the_last_track_of_a_file_is_clipped_at_its_start_only`.
+  <!-- REVIEW: rule proposal -->
 
 ## F. Settings & modals
 

@@ -352,7 +352,8 @@ fn cue_9_playing_a_cue_track_stores_its_own_stretch_and_never_the_whole_file() {
         backend.cuts.lock().unwrap().as_slice(),
         [SegmentBounds {
             start_ms: 3_000,
-            end_ms: 8_000
+            end_ms: 8_000,
+            last_in_file: true,
         }]
     );
     assert_eq!(peaks[0], 5);
@@ -515,18 +516,22 @@ fn cue_9_playing_one_track_measures_the_rest_of_its_file_in_the_same_decode() {
         [
             SegmentBounds {
                 start_ms: 3_000,
-                end_ms: 8_000
+                end_ms: 8_000,
+                last_in_file: false,
             },
             SegmentBounds {
                 start_ms: 0,
-                end_ms: 3_000
+                end_ms: 3_000,
+                last_in_file: false,
             },
             SegmentBounds {
                 start_ms: 8_000,
-                end_ms: 9_000
+                end_ms: 9_000,
+                last_in_file: true,
             },
         ],
-        "the track that plays first, then its siblings in play order"
+        "the track that plays first, then its siblings in play order; the last \
+         runs to the end of the file"
     );
     for track_id in [1, 2, 3] {
         assert!(
@@ -560,4 +565,38 @@ fn cue_9_a_decode_cancelled_by_the_next_track_stores_nothing() {
     for track_id in [1, 2, 3] {
         assert_eq!(get_waveform_peaks(&db, track_id).unwrap(), None);
     }
+}
+
+#[test]
+fn cue_9_a_track_whose_successor_is_only_excluded_is_measured_to_its_own_end() {
+    let db = database_with_a_cue_album();
+    // The sheet has a fourth track; the user removed it, so it has no row.
+    db.conn()
+        .execute(
+            "INSERT INTO library_exclusions \
+             (path, device, inode, file_size, file_mtime, excluded_at, segment_index) \
+             VALUES ('/album.flac', 33, 44, 22, 11, 0, 4)",
+            [],
+        )
+        .unwrap();
+    let backend = CuttingBackend::default();
+
+    peaks_for_playback(
+        &db,
+        3,
+        Path::new("/album.flac"),
+        &backend,
+        &AtomicBool::new(false),
+    )
+    .unwrap();
+
+    assert_eq!(
+        backend.cuts.lock().unwrap().first(),
+        Some(&SegmentBounds {
+            start_ms: 8_000,
+            end_ms: 9_000,
+            last_in_file: false,
+        }),
+        "the excluded fourth track's audio is not part of the third"
+    );
 }

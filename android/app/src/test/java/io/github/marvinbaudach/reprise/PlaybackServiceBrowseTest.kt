@@ -15,6 +15,7 @@ import io.github.marvinbaudach.reprise.library.BrowsePage
 import io.github.marvinbaudach.reprise.library.BrowsePlaylist
 import io.github.marvinbaudach.reprise.library.BrowseTrack
 import io.github.marvinbaudach.reprise.library.MediaBrowseLibrary
+import io.github.marvinbaudach.reprise.library.PlaybackKey
 import io.github.marvinbaudach.reprise.library.TrackMetadata
 import org.junit.After
 import org.junit.Assert.assertEquals
@@ -241,7 +242,7 @@ internal class UntrustedPlaybackService : ReprisePlaybackService() {
 
     override fun browseLibrary(): MediaBrowseLibrary = emptyBrowseLibrary()
 
-    override fun resolveTrackMetadata(uri: String): TrackMetadata? = null
+    override fun resolveTrackMetadata(key: PlaybackKey): TrackMetadata? = null
 
     override fun resolveArtworkPath(trackUri: String): String? = null
 
@@ -298,7 +299,7 @@ internal class BrowsingPlaybackService : ReprisePlaybackService() {
             BrowsePage(emptyList<BrowseAlbum>(), false)
     }
 
-    override fun resolveTrackMetadata(uri: String): TrackMetadata? = null
+    override fun resolveTrackMetadata(key: PlaybackKey): TrackMetadata? = null
 
     override fun resolveArtworkPath(trackUri: String): String? = null
 

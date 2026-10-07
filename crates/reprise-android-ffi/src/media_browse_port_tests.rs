@@ -36,7 +36,10 @@ impl AndroidPlaybackPort for ReaderProbePort {
         Ok(())
     }
 
-    fn play_path(&self, _path: String, _gain_db: f64) -> Result<(), AndroidPlaybackError> {
+    fn play_path(
+        &self,
+        _item: crate::playback::AndroidPlaybackItem,
+    ) -> Result<(), AndroidPlaybackError> {
         self.observe("play_path");
         Ok(())
     }
@@ -82,7 +85,10 @@ impl AndroidPlaybackPort for ReaderProbePort {
         Ok(())
     }
 
-    fn set_next(&self, _uri: Option<String>, _gain_db: f64) -> Result<(), AndroidPlaybackError> {
+    fn set_next(
+        &self,
+        _item: Option<crate::playback::AndroidPlaybackItem>,
+    ) -> Result<(), AndroidPlaybackError> {
         self.observe("set_next");
         Ok(())
     }

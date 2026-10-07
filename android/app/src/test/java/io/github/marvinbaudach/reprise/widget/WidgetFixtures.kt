@@ -1,5 +1,6 @@
 package io.github.marvinbaudach.reprise.widget
 
+import io.github.marvinbaudach.reprise.library.PlaybackKey
 import io.github.marvinbaudach.reprise.library.TrackMetadata
 import uniffi.reprise_android_ffi.AndroidPlaybackSnapshot
 import uniffi.reprise_android_ffi.AndroidPlaybackState
@@ -21,6 +22,8 @@ internal fun snapshot(
     repeat = AndroidRepeatMode.OFF,
     error = null,
 )
+
+internal fun metadataFor(key: PlaybackKey): TrackMetadata? = metadataFor(key.uri)
 
 internal fun metadataFor(uri: String): TrackMetadata? {
     val id = uri.substringAfterLast('/').substringBefore('.').toLongOrNull() ?: return null

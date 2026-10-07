@@ -3,12 +3,12 @@ use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex};
 
 use crate::playback::{
-    AndroidPlaybackError, AndroidPlaybackPort, AndroidPlaybackState, AndroidPlayerEvent,
-    AndroidTransitionMode, PlaybackEventBridge,
+    AndroidPlaybackError, AndroidPlaybackItem, AndroidPlaybackPort, AndroidPlaybackState,
+    AndroidPlayerEvent, AndroidTransitionMode, PlaybackEventBridge,
 };
 use crate::{
     AndroidEqualizerPoint, AndroidEqualizerSnapshot, AndroidPlaybackListener,
-    AndroidPlaybackSession, AndroidPlaybackSnapshot, MusicLibrary,
+    AndroidPlaybackSegment, AndroidPlaybackSession, AndroidPlaybackSnapshot, MusicLibrary,
 };
 
 pub(super) fn library_in(directory: &Path) -> Arc<MusicLibrary> {
@@ -35,9 +35,33 @@ pub(super) enum PortCall {
     SetSpectrumEnabled(bool),
     Stop,
     SetNext(Option<String>, f64),
+    /// A track cut from a CUE file, recorded with everything the port gets.
+    PlayClip(Clip),
+    SetNextClip(Clip),
     SetGains(f64, Option<f64>),
     SetTransition(AndroidTransitionMode),
     CurrentGeneration,
+}
+
+/// A clipped item as the port receives it.
+#[derive(Clone, Debug, PartialEq)]
+pub(super) struct Clip {
+    pub(super) track_id: Option<i64>,
+    pub(super) uri: String,
+    pub(super) gain_db: f64,
+    pub(super) segment: AndroidPlaybackSegment,
+}
+
+impl Clip {
+    /// The clip `item` describes; `None` for a whole-file item.
+    fn of(item: &AndroidPlaybackItem) -> Option<Self> {
+        Some(Self {
+            track_id: item.track_id,
+            uri: item.uri.clone(),
+            gain_db: item.gain_db,
+            segment: item.segment?,
+        })
+    }
 }
 
 pub(super) const SYNCHRONOUS_BUFFERING_URI: &str = "test://synchronous-buffering";
@@ -58,10 +82,13 @@ impl AndroidPlaybackPort for RecordingPort {
         Ok(())
     }
 
-    fn play_path(&self, path: String, gain_db: f64) -> Result<(), AndroidPlaybackError> {
-        let emits_buffering = path == SYNCHRONOUS_BUFFERING_URI;
-        let fails = path == FAILING_PLAY_URI;
-        self.record(PortCall::PlayPath(path, gain_db));
+    fn play_path(&self, item: AndroidPlaybackItem) -> Result<(), AndroidPlaybackError> {
+        let emits_buffering = item.uri == SYNCHRONOUS_BUFFERING_URI;
+        let fails = item.uri == FAILING_PLAY_URI;
+        self.record(Clip::of(&item).map_or_else(
+            || PortCall::PlayPath(item.uri.clone(), item.gain_db),
+            PortCall::PlayClip,
+        ));
         if emits_buffering {
             let bridge = self.bridge.lock().unwrap().clone().unwrap();
             bridge.emit(
@@ -150,8 +177,14 @@ impl AndroidPlaybackPort for RecordingPort {
         Ok(())
     }
 
-    fn set_next(&self, uri: Option<String>, gain_db: f64) -> Result<(), AndroidPlaybackError> {
-        self.record(PortCall::SetNext(uri, gain_db));
+    fn set_next(&self, item: Option<AndroidPlaybackItem>) -> Result<(), AndroidPlaybackError> {
+        self.record(match item {
+            None => PortCall::SetNext(None, 0.0),
+            Some(item) => Clip::of(&item).map_or_else(
+                || PortCall::SetNext(Some(item.uri.clone()), item.gain_db),
+                PortCall::SetNextClip,
+            ),
+        });
         Ok(())
     }
 

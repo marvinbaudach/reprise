@@ -42,6 +42,14 @@ pub struct TrackRow {
     pub duration_ms: i64,
     pub play_count: i64,
     pub rating: i32,
+    /// Where in [`uri`](Self::uri) this track starts, in milliseconds, when a
+    /// CUE sheet cut it from a larger file; `None` for a whole-file track.
+    #[uniffi(default = None)]
+    pub segment_start_ms: Option<i64>,
+    /// Where it ends. `None` for a whole-file track and for the last track of
+    /// a CUE file, which plays to the end of the file (`track_segment.rs`).
+    #[uniffi(default = None)]
+    pub segment_end_ms: Option<i64>,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, uniffi::Record)]
@@ -89,8 +97,13 @@ pub struct ArtistWindow {
     pub has_more: bool,
 }
 
-impl From<reprise_core::models::Track> for TrackRow {
-    fn from(track: reprise_core::models::Track) -> Self {
+impl TrackRow {
+    /// The row for `track`, cut to `segment` when it is a CUE track. Built
+    /// through `track_segment.rs`, which knows which track ends its file.
+    pub(crate) fn new(
+        track: reprise_core::models::Track,
+        segment: Option<crate::track_segment::AndroidPlaybackSegment>,
+    ) -> Self {
         Self {
             id: track.id,
             uri: track.path,
@@ -100,6 +113,8 @@ impl From<reprise_core::models::Track> for TrackRow {
             duration_ms: track.duration_ms,
             play_count: track.play_count,
             rating: track.rating,
+            segment_start_ms: segment.map(|segment| segment.start_ms),
+            segment_end_ms: segment.and_then(|segment| segment.end_ms),
         }
     }
 }
@@ -109,16 +124,6 @@ impl From<WindowRange> for queries::WindowRange {
         Self {
             offset: window.offset,
             limit: window.limit,
-        }
-    }
-}
-
-impl From<queries::TrackWindow> for TrackWindow {
-    fn from(window: queries::TrackWindow) -> Self {
-        Self {
-            total: window.total,
-            rows: window.rows.into_iter().map(TrackRow::from).collect(),
-            has_more: window.has_more,
         }
     }
 }
@@ -169,10 +174,11 @@ impl MusicLibrary {
     pub fn track_by_id(&self, track_id: i64) -> Result<Option<TrackRow>, LibraryError> {
         let reader = self.reader()?;
         queries::query_present_track_by_id(&reader, track_id)
-            .map(|track| track.map(TrackRow::from))
             .map_err(|error| LibraryError::Query {
                 detail: error.to_string(),
-            })
+            })?
+            .map(|track| crate::track_segment::track_row(&reader, track))
+            .transpose()
     }
 
     /// Returns every present track in one album in canonical disc/track order.
@@ -244,7 +250,11 @@ mod tests {
 
         let playing = library.track_by_id(expected.id).unwrap().unwrap();
 
-        assert_eq!(playing, TrackRow::from(expected));
+        assert_eq!(playing, TrackRow::new(expected, None));
+        assert_eq!(
+            (playing.segment_start_ms, playing.segment_end_ms),
+            (None, None)
+        );
         assert_eq!(library.track_by_id(999).unwrap(), None);
     }
 

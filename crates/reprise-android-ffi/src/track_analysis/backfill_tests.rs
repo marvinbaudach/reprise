@@ -232,18 +232,14 @@ fn cancel_stops_at_the_next_chunk_and_leaves_the_track_pending() {
     );
 }
 
-#[test]
-fn a_failed_track_is_skipped_for_the_rest_of_the_process() {
-    let (_directory, library, expected) = library_with_n_tracks(3);
-    let bad_uri = expected[0].1.clone();
-    let attempts_on_bad = Arc::new(AtomicUsize::new(0));
-    let attempts_on_bad_in_decode = Arc::clone(&attempts_on_bad);
-    let bad_uri_in_decode = bad_uri.clone();
-    library.register_track_pcm_decoder(Box::new(ClosureDecoder::new(
+/// Fails every decode of `bad_uri`, counting the attempts; decodes every
+/// other track.
+fn decoder_failing_on(bad_uri: String, attempts: Arc<AtomicUsize>) -> Box<dyn TrackPcmDecoder> {
+    Box::new(ClosureDecoder::new(
         Arc::new(AtomicUsize::new(0)),
         move |uri, sink| {
-            if uri == bad_uri_in_decode {
-                attempts_on_bad_in_decode.fetch_add(1, Ordering::SeqCst);
+            if uri == bad_uri {
+                attempts.fetch_add(1, Ordering::SeqCst);
                 return Err(AnalysisDecodeError::DecodeFailed {
                     detail: "boom".into(),
                 });
@@ -251,21 +247,71 @@ fn a_failed_track_is_skipped_for_the_rest_of_the_process() {
             assert!(sink.push_pcm_i16(valid_pcm_bytes(), 32_000, 1));
             Ok(())
         },
-    )));
+    ))
+}
 
+fn run_backfill_to_the_end(library: &MusicLibrary) -> TrackAnalysisProgress {
     let state: WaitState = Arc::new((Mutex::new(None), Condvar::new()));
     library.start_track_analysis_backfill(Box::new(RecordingListener {
         state: Arc::clone(&state),
     }));
     let progress = wait_until_done(&state);
+    wait_for_worker_to_finish(library);
+    progress
+}
 
-    assert_eq!(progress.done, 2);
-    assert_eq!(progress.failed, 1);
+#[test]
+fn a_failed_track_is_decoded_once_across_runs_and_restarts() {
+    let (directory, library, expected) = library_with_n_tracks(3);
+    let bad = expected[0].clone();
+    let attempts = Arc::new(AtomicUsize::new(0));
+    library.register_track_pcm_decoder(decoder_failing_on(bad.1.clone(), Arc::clone(&attempts)));
+
+    let progress = run_backfill_to_the_end(&library);
+    assert_eq!((progress.done, progress.failed), (2, 1));
+    let again = run_backfill_to_the_end(&library);
+    assert_eq!((again.done, again.failed, again.total), (0, 0, 0));
+    drop(library);
+    let reopened = MusicLibrary::open(
+        directory.path().to_str().unwrap(),
+        directory.path().join("cache").to_str().unwrap(),
+    )
+    .unwrap();
+    reopened.register_track_pcm_decoder(decoder_failing_on(bad.1.clone(), Arc::clone(&attempts)));
+    run_backfill_to_the_end(&reopened);
+
     assert_eq!(
-        attempts_on_bad.load(Ordering::SeqCst),
+        attempts.load(Ordering::SeqCst),
         1,
-        "a failed track must not be retried within the same process"
+        "a failed track is remembered in the library, not in the process"
     );
+    let reader = reopened.reader().unwrap();
+    assert!(reprise_core::spectrogram_backfill::render_data_failed(&reader, bad.0).unwrap());
+}
+
+#[test]
+fn a_changed_file_is_tried_again() {
+    let (directory, library, expected) = library_with_n_tracks(1);
+    let bad = expected[0].clone();
+    let attempts = Arc::new(AtomicUsize::new(0));
+    library.register_track_pcm_decoder(decoder_failing_on(bad.1.clone(), Arc::clone(&attempts)));
+    run_backfill_to_the_end(&library);
+
+    let touched = std::time::SystemTime::now() + Duration::from_secs(3_600);
+    File::options()
+        .write(true)
+        .open(&bad.1)
+        .unwrap()
+        .set_modified(touched)
+        .unwrap();
+    scan_folder(
+        &library.writer_handle().lock().unwrap(),
+        &directory.path().join("music"),
+    )
+    .unwrap();
+    run_backfill_to_the_end(&library);
+
+    assert_eq!(attempts.load(Ordering::SeqCst), 2);
 }
 
 #[test]

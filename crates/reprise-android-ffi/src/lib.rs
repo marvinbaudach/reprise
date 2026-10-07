@@ -13,6 +13,8 @@ mod artist_portrait;
 #[cfg(test)]
 mod artwork_tests;
 mod browse;
+#[cfg(test)]
+mod cue_album_test_support;
 mod fallback_cover;
 mod filtered_browse;
 mod library_listen_report;
@@ -44,6 +46,7 @@ mod source_names;
 #[cfg(test)]
 mod source_tests;
 mod track_analysis;
+mod track_segment;
 mod visualizer;
 #[cfg(test)]
 mod visualizer_tests;
@@ -67,6 +70,7 @@ pub use playback_session::{
     AndroidTrashFailure, AndroidTrashReport, TrashAction,
 };
 pub use playback_settings::*;
+pub use track_segment::AndroidPlaybackSegment;
 pub use visualizer::*;
 uniffi::setup_scaffolding!();
 
@@ -115,7 +119,6 @@ impl MusicLibrary {
             portrait_backfill: reprise_core::artist_portrait::PortraitBackfill::new(),
             pcm_decoder: Arc::new(Mutex::new(None)),
             analysis_in_flight: Arc::new(track_analysis::AnalysisInFlight::new()),
-            analysis_failed: Arc::new(Mutex::new(std::collections::HashSet::new())),
             analysis_backfill: track_analysis::TrackAnalysisBackfill::new(),
         })
     }
@@ -208,10 +211,10 @@ impl MusicLibrary {
     pub fn list_tracks(&self, window: WindowRange) -> Result<TrackWindow, LibraryError> {
         let reader = self.reader()?;
         queries::query_library_text_search(&reader, "", window.into())
-            .map(TrackWindow::from)
             .map_err(|error| LibraryError::Query {
                 detail: error.to_string(),
             })
+            .and_then(|window| track_segment::track_window(&reader, window))
     }
 
     pub fn search_albums(
@@ -254,10 +257,10 @@ impl MusicLibrary {
         let album_artist = album_artist.into_boxed_str();
         let reader = self.reader()?;
         queries::query_album_tracks(&reader, &album, &album_artist, window.into())
-            .map(TrackWindow::from)
             .map_err(|error| LibraryError::Query {
                 detail: error.to_string(),
             })
+            .and_then(|window| track_segment::track_window(&reader, window))
     }
 
     pub fn search_tracks(
@@ -271,10 +274,10 @@ impl MusicLibrary {
             bounded_search_text(text),
             window.into(),
         )
-        .map(TrackWindow::from)
         .map_err(|error| LibraryError::Query {
             detail: error.to_string(),
         })
+        .and_then(|window| track_segment::track_window(&reader, window))
     }
 
     /// Resolves local artwork lazily for one track and returns its cached

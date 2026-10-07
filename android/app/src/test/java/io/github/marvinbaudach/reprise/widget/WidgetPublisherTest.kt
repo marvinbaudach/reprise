@@ -25,10 +25,10 @@ class WidgetPublisherTest {
     private val publisher = WidgetPublisher(
         executor = Executor { queued.addLast(it) },
         store = store,
-        metadata = { uri ->
+        metadata = { key ->
             metadataReads += 1
             if (failMetadata) error("library unavailable")
-            metadataFor(uri)
+            metadataFor(key)
         },
         artworkPath = { cover },
         refresh = { refreshes += 1 },
@@ -161,7 +161,7 @@ class WidgetPublisherTest {
         val closed = WidgetPublisher(
             executor = Executor { throw java.util.concurrent.RejectedExecutionException("shut down") },
             store = store,
-            metadata = { uri -> metadataFor(uri) },
+            metadata = { key -> metadataFor(key) },
             artworkPath = { null },
             refresh = { refreshes += 1 },
         )

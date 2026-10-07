@@ -3,14 +3,17 @@
 //! when a sidecar import ends in `Missing`/`Invalid` (decision 5 of the
 //! mother plan).
 
-use std::collections::{HashMap, HashSet};
-use std::sync::atomic::{AtomicBool, AtomicU8, Ordering};
+use std::collections::HashMap;
 use std::sync::{Arc, Condvar, Mutex, PoisonError};
 
 use reprise_core::db::Db;
-use reprise_core::render_data_session::{PartialRenderData, RenderDataSession};
+use reprise_core::render_data_segments::SegmentBounds;
+use reprise_core::spectrogram::TrackSourceFingerprint;
 
 use crate::track_analysis::decodes::{expected_frame_count, DecodeRegistry};
+use crate::track_analysis::segment_job::SegmentJob;
+pub(crate) use crate::track_analysis::sink::AnalysisPcmSink;
+use crate::track_analysis::sink::FinishedAnalysis;
 use crate::track_analysis::TrackAnalysisBackfill;
 use crate::{LibraryError, MusicLibrary};
 
@@ -50,144 +53,6 @@ pub trait TrackPcmDecoder: Send + Sync {
         sink: Arc<AnalysisPcmSink>,
         background: bool,
     ) -> Result<(), AnalysisDecodeError>;
-}
-
-/// The sink still takes PCM.
-const SINK_RUNNING: u8 = 0;
-/// Told to stop by a foreground request preempting the backfill's item.
-const SINK_CANCELLED: u8 = 1;
-/// Told to stop because the track is no longer playing.
-const SINK_SUPERSEDED: u8 = 2;
-
-/// Owns one track's [`RenderDataSession`] for the duration of one decode
-/// call. `stop_reason` is set from outside the decode call — by a foreground
-/// request preempting the backfill's current item, or by a track change
-/// superseding a foreground decode — so the decoder can be told to stop
-/// without a second channel back into Kotlin. The first reason wins; it
-/// decides whether waiters retry (`Cancelled`) or stop asking (`Superseded`).
-/// A supersede that arrives after the whole stream was pushed discards
-/// nothing: the decode is stored as if it had not come (`decode_one`).
-#[derive(uniffi::Object)]
-pub struct AnalysisPcmSink {
-    session: Mutex<Option<RenderDataSession>>,
-    stop_reason: AtomicU8,
-    /// Set when a chunk was turned away because the sink had been told to
-    /// stop: the decoder then returns with the stream cut short.
-    cut_short: AtomicBool,
-    /// Set when the session itself refused a chunk (a rate or channel
-    /// change mid-stream): a data problem, distinct from the decoder giving
-    /// up and distinct from being told to stop.
-    refused: Mutex<Option<String>>,
-}
-
-impl AnalysisPcmSink {
-    fn new() -> Arc<Self> {
-        Arc::new(Self {
-            session: Mutex::new(Some(RenderDataSession::new())),
-            stop_reason: AtomicU8::new(SINK_RUNNING),
-            cut_short: AtomicBool::new(false),
-            refused: Mutex::new(None),
-        })
-    }
-
-    fn stop(&self, reason: u8) {
-        let _ = self.stop_reason.compare_exchange(
-            SINK_RUNNING,
-            reason,
-            Ordering::AcqRel,
-            Ordering::Acquire,
-        );
-    }
-
-    pub(crate) fn cancel(&self) {
-        self.stop(SINK_CANCELLED);
-    }
-
-    pub(super) fn supersede(&self) {
-        self.stop(SINK_SUPERSEDED);
-    }
-
-    fn is_cancelled(&self) -> bool {
-        self.stop_reason.load(Ordering::Acquire) != SINK_RUNNING
-    }
-
-    fn is_superseded(&self) -> bool {
-        self.stop_reason.load(Ordering::Acquire) == SINK_SUPERSEDED
-    }
-
-    fn was_cut_short(&self) -> bool {
-        self.cut_short.load(Ordering::Acquire)
-    }
-
-    /// What has been decoded so far. Only the copy of the decoded frames is
-    /// taken under the session lock the decoder pushes through; the picture is
-    /// built after it is released. `None` before one peak bucket is complete
-    /// and once the session has been taken to finish.
-    pub(super) fn partial(&self, expected_frames: usize) -> Option<PartialRenderData> {
-        let source = self
-            .session
-            .lock()
-            .unwrap_or_else(PoisonError::into_inner)
-            .as_ref()?
-            .partial_source();
-        source.render(expected_frames)
-    }
-
-    fn refused_reason(&self) -> Option<String> {
-        self.refused
-            .lock()
-            .unwrap_or_else(PoisonError::into_inner)
-            .clone()
-    }
-
-    /// Takes the session out and finishes it. Only ever called once, after
-    /// the decode call has returned and cancellation has been ruled out.
-    fn finish(&self) -> Result<reprise_core::waveform::TrackRenderData, String> {
-        let session = self
-            .session
-            .lock()
-            .unwrap_or_else(PoisonError::into_inner)
-            .take();
-        session
-            .expect("finish is called at most once per sink")
-            .finish()
-            .map_err(|error| error.to_string())
-    }
-}
-
-#[uniffi::export]
-impl AnalysisPcmSink {
-    /// `false` tells the decoder to stop: either cancelled, or the session
-    /// refused this chunk (a rate or channel change mid-stream).
-    #[expect(
-        clippy::needless_pass_by_value,
-        reason = "UniFFI cannot export borrowed byte slices"
-    )]
-    pub fn push_pcm_i16(&self, bytes: Vec<u8>, sample_rate_hz: u32, channel_count: u32) -> bool {
-        if self.is_cancelled() {
-            self.cut_short.store(true, Ordering::Release);
-            return false;
-        }
-        let samples: Vec<i16> = bytes
-            .as_chunks::<2>()
-            .0
-            .iter()
-            .map(|pair| i16::from_le_bytes(*pair))
-            .collect();
-        let mut guard = self.session.lock().unwrap_or_else(PoisonError::into_inner);
-        let Some(session) = guard.as_mut() else {
-            return false;
-        };
-        match session.push_pcm_i16(&samples, sample_rate_hz, channel_count) {
-            Ok(()) => true,
-            Err(error) => {
-                drop(guard);
-                *self.refused.lock().unwrap_or_else(PoisonError::into_inner) =
-                    Some(error.to_string());
-                false
-            }
-        }
-    }
 }
 
 /// The Kotlin-facing outcome of one `import_track_analysis` call: the
@@ -426,7 +291,6 @@ pub(crate) struct AnalysisContext<'a> {
     pub(crate) writer: &'a Mutex<Db>,
     pub(crate) decoder: &'a Mutex<Option<Arc<dyn TrackPcmDecoder>>>,
     pub(crate) in_flight: &'a AnalysisInFlight,
-    pub(crate) failed: &'a Mutex<HashSet<i64>>,
 }
 
 impl AnalysisContext<'_> {
@@ -481,7 +345,7 @@ impl AnalysisContext<'_> {
         unreachable!("the compute loop always returns on its final round")
     }
 
-    fn render_data_already_valid(&self, track_id: i64) -> Result<bool, LibraryError> {
+    pub(super) fn render_data_already_valid(&self, track_id: i64) -> Result<bool, LibraryError> {
         let reader = self.reader.lock().map_err(poisoned)?;
         let has_spectrogram = reprise_core::db::get_track_spectrogram(&reader, track_id)
             .map_err(database_error)?
@@ -508,19 +372,17 @@ impl AnalysisContext<'_> {
         // released before the decode call, per decision 6 of the mother
         // plan: the decoder callback never runs while `reader` or `writer`
         // is held.
-        let (track_uri, fingerprint, expected_frames) = {
+        // A track cut from a CUE file is measured from its own stretch of the
+        // file, together with the other tracks of the file still lacking
+        // their analysis (`segment_job.rs`); storing the whole file's data
+        // under it would be wrong for good, since the fingerprint is the
+        // file's and nothing would measure the track again.
+        let (track_uri, fingerprint, expected_frames, job) = {
             let reader = self.reader.lock().map_err(poisoned)?;
             let track = reprise_core::queries::query_present_track_by_id(&reader, track_id)
                 .map_err(query_error)?
                 .ok_or(LibraryError::TrackNotFound { track_id })?;
-            // A track cut from a CUE file is a stretch of its file, and this decode
-            // measures the whole file. Storing that under the track would be wrong
-            // for good: the stored fingerprint is the file's, so nothing would ever
-            // measure the track again. The phone cuts tracks out of the decode in a
-            // later change; until then such a track has no analysis.
-            if track.segment.is_some() {
-                return Ok(AndroidAnalysisOutcome::DecodeFailed);
-            }
+            let job = SegmentJob::plan(&reader, &track)?;
             let fingerprint = reprise_core::db::track_source_fingerprint(&reader, track_id)
                 .map_err(database_error)?
                 .ok_or(LibraryError::TrackNotFound { track_id })?;
@@ -528,10 +390,13 @@ impl AnalysisContext<'_> {
                 track.path,
                 fingerprint,
                 expected_frame_count(track.duration_ms),
+                job,
             )
         };
 
-        let sink = AnalysisPcmSink::new();
+        let sink = job.as_ref().map_or_else(AnalysisPcmSink::new, |job| {
+            AnalysisPcmSink::segmented(&job.bounds())
+        });
         // Registered for the whole call, store included, and dropped on every
         // way out of this function.
         let _registration =
@@ -572,22 +437,36 @@ impl AnalysisContext<'_> {
                 AndroidAnalysisOutcome::Cancelled
             });
         }
+        // A file that cannot be decoded, or whose rate or channel count
+        // changes mid-stream, fails for every track the decode measured.
+        let measured: Vec<(i64, Option<SegmentBounds>)> = job.as_ref().map_or_else(
+            || vec![(track_id, None)],
+            |job| {
+                job.measured()
+                    .map(|(id, bounds)| (id, Some(bounds)))
+                    .collect()
+            },
+        );
         if let Err(error) = decode_result {
             tracing::debug!(track_id, %error, "track analysis decode failed");
-            self.mark_failed(track_id)?;
-            return Ok(AndroidAnalysisOutcome::DecodeFailed);
+            return self.mark_failed(fingerprint, &measured, &error.to_string());
         }
         if let Some(reason) = sink.refused_reason() {
             tracing::debug!(track_id, reason, "track analysis session refused a chunk");
-            self.mark_failed(track_id)?;
-            return Ok(AndroidAnalysisOutcome::DecodeFailed);
+            return self.mark_failed(fingerprint, &measured, &reason);
         }
-        let data = match sink.finish() {
-            Ok(data) => data,
-            Err(reason) => {
+        let data = match (sink.finish(), job) {
+            (FinishedAnalysis::Whole(Ok(data)), _) => data,
+            (FinishedAnalysis::Segmented(results), Some(job)) => {
+                let writer = self.writer.lock().map_err(poisoned)?;
+                return job.store(&writer, fingerprint, results);
+            }
+            (FinishedAnalysis::Whole(Err(reason)), _) => {
                 tracing::debug!(track_id, reason, "track analysis produced no data");
-                self.mark_failed(track_id)?;
-                return Ok(AndroidAnalysisOutcome::DecodeFailed);
+                return self.mark_failed(fingerprint, &measured, &reason);
+            }
+            (FinishedAnalysis::Segmented(_), None) => {
+                unreachable!("only a CUE track's job makes a segmented sink")
             }
         };
 
@@ -606,9 +485,44 @@ impl AnalysisContext<'_> {
         }
     }
 
-    fn mark_failed(&self, track_id: i64) -> Result<(), LibraryError> {
-        self.failed.lock().map_err(poisoned)?.insert(track_id);
-        Ok(())
+    /// Remembers in the library that the tracks a decode `measured`, each
+    /// with the cut it was measuring, could not be measured, so the backfill
+    /// leaves them alone until their file changes (finding C8). A track whose
+    /// file or cut changed since the decode began, `source` being what it
+    /// began on, is not marked and stays pending. Returns the outcome for the
+    /// first track, the one asked for. Called only after the decoder has
+    /// returned, never while it runs.
+    fn mark_failed(
+        &self,
+        source: TrackSourceFingerprint,
+        measured: &[(i64, Option<SegmentBounds>)],
+        reason: &str,
+    ) -> Result<AndroidAnalysisOutcome, LibraryError> {
+        let writer = self.writer.lock().map_err(poisoned)?;
+        let mut asked = AndroidAnalysisOutcome::DecodeFailed;
+        for (index, (track_id, bounds)) in measured.iter().enumerate() {
+            let outcome = reprise_core::spectrogram_backfill::record_render_data_failure(
+                &writer, *track_id, source, *bounds, reason,
+            )
+            .map_err(database_error)?;
+            if index == 0 {
+                asked = failure_outcome(outcome);
+            }
+        }
+        Ok(asked)
+    }
+}
+
+/// What a failed decode reports for a track: a failure, unless its file or
+/// cut changed while the decode ran and nothing was remembered for it.
+pub(super) fn failure_outcome(
+    outcome: reprise_core::db::SpectrogramStoreOutcome,
+) -> AndroidAnalysisOutcome {
+    match outcome {
+        reprise_core::db::SpectrogramStoreOutcome::Stored => AndroidAnalysisOutcome::DecodeFailed,
+        reprise_core::db::SpectrogramStoreOutcome::SourceChanged => {
+            AndroidAnalysisOutcome::PhoneSourceChanged
+        }
     }
 }
 
@@ -660,3 +574,7 @@ mod supersede_tests;
 #[cfg(test)]
 #[path = "compute_supersede_race_tests.rs"]
 mod supersede_race_tests;
+
+#[cfg(test)]
+#[path = "compute_cue_tests.rs"]
+mod cue_tests;

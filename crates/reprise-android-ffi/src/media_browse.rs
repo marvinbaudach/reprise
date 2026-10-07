@@ -102,8 +102,8 @@ impl MusicLibrary {
     pub fn playlist_tracks(&self, playlist_id: i64) -> Result<Vec<TrackRow>, LibraryError> {
         let reader = self.reader()?;
         queries::query_playlist_tracks_full(&reader, playlist_id)
-            .map(|tracks| tracks.into_iter().map(TrackRow::from).collect())
             .map_err(query_error)
+            .and_then(|tracks| crate::track_segment::track_rows(&reader, tracks))
     }
 
     /// Returns the ids of the most recently played present tracks, newest
@@ -118,11 +118,9 @@ impl MusicLibrary {
 
     /// The same tracks as [`Self::recently_played_track_ids`], as rows.
     pub fn recently_played_tracks(&self, limit: i64) -> Result<Vec<TrackRow>, LibraryError> {
-        Ok(self
-            .recently_played_rows(limit)?
-            .into_iter()
-            .map(TrackRow::from)
-            .collect())
+        let tracks = self.recently_played_rows(limit)?;
+        let reader = self.reader()?;
+        crate::track_segment::track_rows(&reader, tracks)
     }
 
     /// Resolves the uri a player was handed back to its library row. `None`
@@ -139,7 +137,7 @@ impl MusicLibrary {
             if let Some(track) =
                 queries::query_present_track_by_id(&reader, id).map_err(query_error)?
             {
-                return Ok(Some(TrackRow::from(track)));
+                return crate::track_segment::track_row(&reader, track).map(Some);
             }
         }
         Ok(None)

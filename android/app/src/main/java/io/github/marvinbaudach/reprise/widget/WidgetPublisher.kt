@@ -2,6 +2,7 @@ package io.github.marvinbaudach.reprise.widget
 
 import android.os.SystemClock
 import android.util.Log
+import io.github.marvinbaudach.reprise.library.PlaybackKey
 import io.github.marvinbaudach.reprise.library.TrackMetadata
 import java.util.concurrent.Executor
 import java.util.concurrent.RejectedExecutionException
@@ -30,7 +31,7 @@ internal const val RETRY_DELAY_MS = 5_000L
 internal class WidgetPublisher(
     private val executor: Executor,
     private val store: WidgetStateStore,
-    private val metadata: (trackUri: String) -> TrackMetadata?,
+    private val metadata: (PlaybackKey) -> TrackMetadata?,
     private val artworkPath: (trackUri: String) -> String?,
     private val refresh: () -> Unit,
     private val now: () -> Long = SystemClock::elapsedRealtime,

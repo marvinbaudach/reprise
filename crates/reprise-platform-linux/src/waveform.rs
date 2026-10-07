@@ -133,7 +133,7 @@ fn extract_segments(
     let decoded = decode(&pipeline, &sink, cancelled, |sample| {
         let (samples, rate, channels) = pcm_of(sample)?;
         session
-            .push_pcm_f32(&samples, rate, channels)
+            .push_pcm_f32(&samples, rate, channels, start_us_of(sample))
             .map_err(map_session_error)
     });
     let _ = pipeline.set_state(gst::State::Null);
@@ -279,6 +279,14 @@ fn pcm_of(sample: &gst::Sample) -> Result<(Vec<f32>, u32, u32), WaveformError> {
         .and_then(|value| u32::try_from(value).ok())
         .ok_or_else(|| WaveformError::DecodeFailed("sample has no valid channel count".into()))?;
     Ok((samples, rate, channels))
+}
+
+/// When a decoded buffer starts, in microseconds from the start of the file;
+/// `None` when the decoder stamped no time on it. The segmented session places
+/// the buffer by it, so a buffer the decoder dropped does not shift later tracks.
+fn start_us_of(sample: &gst::Sample) -> Option<i64> {
+    let pts = sample.buffer()?.pts()?;
+    i64::try_from(pts.useconds()).ok()
 }
 
 fn map_session_error(error: RenderDataSessionError) -> WaveformError {
@@ -526,10 +534,12 @@ mod tests {
             SegmentBounds {
                 start_ms: 0,
                 end_ms: 2_000,
+                last_in_file: false,
             },
             SegmentBounds {
                 start_ms: 2_000,
                 end_ms: 4_000,
+                last_in_file: false,
             },
         ];
 
@@ -562,6 +572,22 @@ mod tests {
     }
 
     #[test]
+    fn a_decoded_buffer_is_placed_by_its_presentation_time() {
+        gst::init().unwrap();
+        let caps = gst::Caps::builder("audio/x-raw").build();
+        let mut stamped = gst::Buffer::with_size(8).unwrap();
+        stamped
+            .get_mut()
+            .unwrap()
+            .set_pts(gst::ClockTime::from_nseconds(2_500_000_999));
+        let unstamped = gst::Buffer::with_size(8).unwrap();
+        let sample = |buffer| gst::Sample::builder().buffer(&buffer).caps(&caps).build();
+
+        assert_eq!(start_us_of(&sample(stamped)), Some(2_500_000));
+        assert_eq!(start_us_of(&sample(unstamped)), None);
+    }
+
+    #[test]
     fn a_track_past_the_end_of_the_decoded_file_is_not_measured() {
         let directory = tempfile::tempdir().unwrap();
         let path = directory.path().join("short.wav");
@@ -570,10 +596,12 @@ mod tests {
             SegmentBounds {
                 start_ms: 0,
                 end_ms: 1_000,
+                last_in_file: false,
             },
             SegmentBounds {
                 start_ms: 5_000,
                 end_ms: 6_000,
+                last_in_file: false,
             },
         ];
 

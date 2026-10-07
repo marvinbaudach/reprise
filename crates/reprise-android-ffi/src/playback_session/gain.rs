@@ -1,10 +1,12 @@
-//! The gain a queued track plays at, resolved from its track id.
+//! The gain a queued track plays at and the stretch of its file it covers,
+//! resolved from its track id.
 //!
 //! The session knows every queue entry by id; the path the backend sees may be
-//! a provider URI that is not the path Core stored, so a gain is never looked
-//! up from the path.
+//! a provider URI that is not the path Core stored, so neither is ever looked
+//! up from the path — and the tracks a CUE sheet cuts from one file share it.
 
-use reprise_core::playback::{PlaybackBackend, PlaybackItem};
+use crate::playback::AndroidPlaybackItem;
+use crate::AndroidPlaybackSegment;
 
 use super::{AndroidPlaybackError, SessionInner};
 
@@ -31,16 +33,41 @@ impl SessionInner {
         reprise_core::queries::effective_gain_db(&reader, track_id, mode)
     }
 
-    /// Pre-feeds `next` to the backend with its own gain, or clears the feed.
-    /// Call it without holding the state lock: it reads the database.
+    /// The stretch of its file `track_id` plays; `None` for a whole-file
+    /// track, and when the library cannot say — the whole file then plays,
+    /// which is what a missing row could only ever have meant.
+    fn segment_for(&self, track_id: i64) -> Option<AndroidPlaybackSegment> {
+        let reader = self.library.reader().ok()?;
+        let track = reprise_core::queries::query_present_track_by_id(&reader, track_id).ok()??;
+        match crate::track_segment::playback_segment(&reader, &track) {
+            Ok(segment) => segment,
+            Err(error) => {
+                tracing::warn!(track_id, %error, "could not read where a CUE track ends; playing to the end of its file");
+                track.segment.map(|segment| AndroidPlaybackSegment {
+                    start_ms: segment.start_ms,
+                    end_ms: None,
+                })
+            }
+        }
+    }
+
+    /// The item the backend plays for `track_id` at `uri`: its own gain and
+    /// its own stretch of the file. Reads the database; call it without
+    /// holding the state lock.
+    pub(super) fn playback_item(&self, track_id: i64, uri: String) -> AndroidPlaybackItem {
+        AndroidPlaybackItem {
+            track_id: Some(track_id),
+            gain_db: self.gain_db_for(track_id),
+            segment: self.segment_for(track_id),
+            uri,
+        }
+    }
+
+    /// Pre-feeds `next` to the backend with its own gain and stretch, or clears
+    /// the feed. Call it without holding the state lock: it reads the database.
     pub(super) fn feed_next(&self, next: Option<QueuedTrack>) -> Result<(), AndroidPlaybackError> {
         let backend = self.backend()?;
-        let resolved = next.map(|next| (self.gain_db_for(next.track_id), next.uri));
-        backend.set_next(resolved.as_ref().map(|(gain_db, uri)| PlaybackItem {
-            segment: None,
-            path: uri,
-            gain_db: *gain_db,
-        }));
+        backend.set_next_item(next.map(|next| self.playback_item(next.track_id, next.uri)));
         Ok(())
     }
 

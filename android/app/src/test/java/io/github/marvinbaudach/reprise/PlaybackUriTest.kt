@@ -43,8 +43,8 @@ class PlaybackUriTest {
         val fake = CallbackPlayer(playbackState = Player.STATE_IDLE, playWhenReady = false)
         val port = Media3PlaybackPort(fake.player) {}
 
-        port.setNext("/storage/emulated/0/Music/AC:DC/y.mp3", 0.0)
-        port.playPath(colonPath, 0.0)
+        port.setNext(playbackItem("/storage/emulated/0/Music/AC:DC/y.mp3"))
+        port.playPath(playbackItem(colonPath))
 
         assertEquals(
             listOf(colonPath, "/storage/emulated/0/Music/AC:DC/y.mp3"),
@@ -55,7 +55,7 @@ class PlaybackUriTest {
             fake.mediaItems.map { it.localConfiguration!!.uri.scheme },
         )
 
-        port.setNext("/storage/emulated/0/Music/Q:Q/z.mp3", 0.0)
+        port.setNext(playbackItem("/storage/emulated/0/Music/Q:Q/z.mp3"))
 
         assertEquals("file", fake.mediaItems.last().localConfiguration!!.uri.scheme)
         assertEquals(

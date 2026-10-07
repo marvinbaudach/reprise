@@ -89,6 +89,24 @@ fn storing_render_data_survives_a_rival_commit_between_its_read_and_its_write() 
 }
 
 #[test]
+fn recording_a_render_data_failure_survives_a_rival_commit_between_its_read_and_its_write() {
+    let (directory, db) = contended_db();
+    insert_track(&db, 1);
+    let flag = arm(
+        db.conn(),
+        &directory.path().join(DB_FILE),
+        "render_data_failures",
+    );
+
+    let outcome =
+        crate::db_spectrogram::record_render_data_failure(&db, 1, fingerprint(), None, "truncated")
+            .unwrap();
+
+    assert_interleaved(&flag);
+    assert_eq!(outcome, SpectrogramStoreOutcome::Stored);
+}
+
+#[test]
 fn deleting_a_playlist_survives_a_rival_commit_between_its_read_and_its_write() {
     let (directory, db) = contended_db();
     let id = playlists::create(&db, "Doomed").unwrap();
