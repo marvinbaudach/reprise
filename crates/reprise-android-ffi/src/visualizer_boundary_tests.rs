@@ -8,9 +8,10 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use reprise_core::playback::boundary_fixture::{
-    assert_no_dip, dimming_complaints, FADE_LEVEL_FLOOR, INTRO_LEVEL_FLOOR, frame_mean, judge_boundary, pinning_complaints, settled_seconds, Boundary, Frame, Measure,
-    Opening, SyntheticMusic, BOUNDARY_OFFSETS_SECONDS, FRAMES_PER_SECOND, JUDGED_FRAMES,
-    SETTLE_FRAMES,
+    assert_no_dip, dimming_complaints, frame_mean, judge_boundary, pinning_complaints,
+    settled_seconds, spread_complaints, Boundary, Frame, Measure, Opening, Spread, SyntheticMusic,
+    BOUNDARY_OFFSETS_SECONDS, FADE_LEVEL_FLOOR, FRAMES_PER_SECOND, INTRO_LEVEL_FLOOR,
+    JUDGED_FRAMES, SETTLE_FRAMES, SPREAD_FRAMES,
 };
 
 use super::{AndroidVisualEngine, MonotonicClock};
@@ -572,6 +573,47 @@ fn ac_29_a_fade_in_does_not_pin_the_swiped_to_songs_bars() {
             complaints.extend(pinning_complaints(&label, measured, allowed));
             complaints.extend(dimming_complaints(&label, measured, reference, FADE_LEVEL_FLOOR));
         }
+    }
+    assert!(complaints.is_empty(), "{complaints:#?}");
+}
+
+// Music that falls to digital silence again and again, as hard-gated electronic
+// music does. A silent stretch that holds a whole tick's PCM restarts the
+// boundary measurement, so a gap that recurs before a window of signal has
+// gathered keeps it restarting; the tallest bar, seconds 15 to 30 in, is then a
+// flat line, or never leaves the gain the last song left. Judged against the
+// same music without the gaps.
+#[test]
+fn ac_29_a_gap_that_recurs_before_the_window_fills_does_not_flatten_the_tallest_bar() {
+    // The window is 8192 samples, 170 ms at 48 kHz. A tick consumes about 16 ms
+    // of PCM, two when a vsync is missed, so a silent stretch of 50 ms always
+    // holds a whole one; the signal between two of them is 117 ms.
+    const GAP_PERIOD: usize = 8_000;
+    const GAP: usize = 2_400;
+    // A previous song this many decibels louder than the one the run plays.
+    const PREVIOUS_DB: [f32; 2] = [-4.0, 4.0];
+    // The frames judged end at second 30; vsyncs that miss leave a few short.
+    const RUN_SECONDS: f32 = 31.0;
+    let played = |previous_db: Option<f32>, song: &SyntheticMusic| {
+        let mut phone = Phone::new();
+        if let Some(db) = previous_db {
+            phone.play(&loud().louder_by(db), boundary_at(0.0) - settled_for(), settled_for());
+            phone.change_track();
+        }
+        let frames = phone.play(song, boundary_at(0.0), RUN_SECONDS);
+        Spread::of_tallest_bars(&frames[SPREAD_FRAMES])
+    };
+    let mut complaints = Vec::new();
+    for previous_db in [None, Some(PREVIOUS_DB[0]), Some(PREVIOUS_DB[1])] {
+        let continuous = played(previous_db, &loud());
+        let after = previous_db.map_or("a first start".to_string(), |db| {
+            format!("a track change from a song {db:+} dB against this one")
+        });
+        complaints.extend(spread_complaints(
+            &format!("a gap every {GAP_PERIOD} samples, {after}"),
+            played(previous_db, &loud().gated(GAP_PERIOD, GAP)),
+            continuous,
+        ));
     }
     assert!(complaints.is_empty(), "{complaints:#?}");
 }

@@ -303,6 +303,8 @@ impl Smoother {
 }
 
 #[cfg(test)]
+mod boundary_cap_tests;
+#[cfg(test)]
 mod boundary_tests;
 #[cfg(test)]
 mod tests;

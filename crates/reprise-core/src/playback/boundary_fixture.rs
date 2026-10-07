@@ -66,6 +66,19 @@ pub struct SyntheticMusic {
     gain: f32,
     /// How the song opens, and the sample it opens at.
     opening: Option<(Opening, usize)>,
+    /// Digital silence that recurs through the song.
+    gate: Option<Gate>,
+}
+
+/// Exact zeros for the last `silent` samples of every `period`, counted from
+/// sample zero of the song. A chunk of the audio is only silent to the
+/// visualizer when it lies wholly inside such a stretch, so a test picks a
+/// period and a silent stretch that are whole multiples of the chunk it feeds,
+/// from a start that is one too.
+#[derive(Debug, Clone, Copy)]
+struct Gate {
+    period: usize,
+    silent: usize,
 }
 
 impl SyntheticMusic {
@@ -75,6 +88,20 @@ impl SyntheticMusic {
             rate_hz,
             gain,
             opening: None,
+            gate: None,
+        }
+    }
+
+    /// The same music with exact digital silence for the last `silent` samples
+    /// of every `period`, as hard-gated electronic music has.
+    pub fn gated(self, period: usize, silent: usize) -> Self {
+        assert!(
+            silent < period,
+            "a gate that never opens is not music: {silent} of {period}"
+        );
+        Self {
+            gate: Some(Gate { period, silent }),
+            ..self
         }
     }
 
@@ -122,6 +149,11 @@ impl SyntheticMusic {
     }
 
     fn sample(&self, n: usize) -> f32 {
+        if let Some(gate) = self.gate {
+            if n % gate.period >= gate.period - gate.silent {
+                return 0.0;
+            }
+        }
         let t = n as f64 / f64::from(self.rate_hz);
         let beat = t % 0.5;
         let kick = (-beat / 0.07).exp() * (TAU * 55.0 * t).sin();
@@ -543,4 +575,65 @@ pub fn assert_settles_where_a_continuing_run_does(
         "{label}: three to ten seconds on, the level is {ratio:.2} times a run that never had \
          the boundary"
     );
+}
+
+/// The stretch of a run the tallest bar's spread is judged over: seconds 15 to
+/// 30, once the braking span of a boundary is over and the creep alone decides.
+pub const SPREAD_FRAMES: std::ops::Range<usize> = 15 * FRAMES_PER_SECOND..30 * FRAMES_PER_SECOND;
+/// A gated run's tallest bar may spread no less than this share of a continuous
+/// run's. A measurement that restarts on every gap sets the gain from the
+/// loudest bar since the last one, which flattens the spread: to 0.2 to 0.7 of
+/// the continuous run's on the synthetic music of the core and the desktop
+/// stage, 0.7 to 0.8 on the Android engine, whose gaps hold fewer whole
+/// buffers. A measurement that is allowed to finish reads 1.0 to 1.2, the dips
+/// of the gaps included.
+pub const SPREAD_FLOOR: f32 = 0.85;
+/// A gated run's tallest bar may sit no further than this from a continuous
+/// run's mean, in fractions of full height. A gain that is held at the last
+/// song's, a boundary after the song changed, is off by 0.3; the dips of the
+/// gaps themselves move the mean by up to 0.04.
+pub const SPREAD_MEAN_BAND: f32 = 0.06;
+
+/// How the tallest bar of each frame is distributed over a stretch.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct Spread {
+    pub mean: f32,
+    pub sd: f32,
+}
+
+impl Spread {
+    pub fn of_tallest_bars(frames: &[Frame]) -> Self {
+        let tallest: Vec<f32> = frames
+            .iter()
+            .map(|frame| frame.iter().copied().fold(0.0, f32::max))
+            .collect();
+        let mean = tallest.iter().sum::<f32>() / tallest.len() as f32;
+        let variance =
+            tallest.iter().map(|bar| (bar - mean).powi(2)).sum::<f32>() / tallest.len() as f32;
+        Self {
+            mean,
+            sd: variance.sqrt(),
+        }
+    }
+}
+
+/// What a gated run got wrong against the same audio without the gaps, if
+/// anything: a tallest bar that moves less than the continuous run's, or sits
+/// higher or lower on average. Both mean the gain follows each frame instead of
+/// the song.
+pub fn spread_complaints(label: &str, gated: Spread, continuous: Spread) -> Vec<String> {
+    let mut complaints = Vec::new();
+    if gated.sd < continuous.sd * SPREAD_FLOOR {
+        complaints.push(format!(
+            "{label}: the tallest bar spreads {:.3}, a continuous run's {:.3}",
+            gated.sd, continuous.sd
+        ));
+    }
+    if (gated.mean - continuous.mean).abs() > SPREAD_MEAN_BAND {
+        complaints.push(format!(
+            "{label}: the tallest bar averages {:.3}, a continuous run's {:.3}",
+            gated.mean, continuous.mean
+        ));
+    }
+    complaints
 }
