@@ -601,7 +601,7 @@ fn cue_2_a_dismissed_rejection_stays_quiet_when_the_audio_is_cut_again() {
 mod identity;
 
 #[path = "scanner_cue_unknown_tests.rs"]
-mod unknown;
+pub(super) mod unknown;
 
 #[path = "scanner_cue_issue_tests.rs"]
 mod issue_tests;

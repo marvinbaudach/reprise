@@ -9,7 +9,7 @@ use super::{bump_mtime, ids_of, issue, segments_of, write_wav, Album};
 use crate::library::source::{self, LibraryLinkMode, LibraryPathPresence, UnixLibrarySource};
 
 #[derive(Clone, Copy, Debug)]
-enum Fault {
+pub(in crate::library::scanner) enum Fault {
     /// The directory of the audio cannot be listed.
     Listing,
     /// The sheet is listed, but whether it is there cannot be established.
@@ -19,7 +19,7 @@ enum Fault {
 }
 
 /// The Unix source with one kind of failure injected for `.cue` files.
-struct FlakySource(Fault);
+pub(in crate::library::scanner) struct FlakySource(pub(in crate::library::scanner) Fault);
 
 fn is_sheet(path: &Path) -> bool {
     path.extension().is_some_and(|extension| extension == "cue")
