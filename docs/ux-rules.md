@@ -7877,6 +7877,12 @@ no tags of its own to write.
   sidecar, because one file's tracks would all write the same sidecar name. For
   the same reason its lyrics are never read from or written to a sidecar beside
   the file or the file's tags; they come from the online sources and the cache.
+  <!-- REVIEW: rule proposal -->
+- **CUE-13** [active] [core] — The Library Doctor never checks a track cut from a
+  CUE sheet, whatever its scope (whole library, current view, queue or
+  selection) and through MCP alike: every proposal it makes is a tag write, and
+  such a track has no tags of its own (CUE-5). A scope that holds only CUE
+  tracks falls back like an empty one.
 
 ## AJ. Showroom (public site)
 
