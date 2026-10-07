@@ -7883,7 +7883,9 @@ derives for a synced CUE file on the device (CUE-15).
   to the Trash only when every one of its tracks still in the library is
   selected, and the sheet beside it goes with it once no other file in the
   library, or hidden from it, still needs that sheet: a sheet over several
-  files goes with the last of them. A sheet that never cut the file stays. The
+  files goes with the last of them. That holds too for a sheet beside the file
+  that did not fit and gave way to the sheet embedded in it, since it names the
+  file; a sheet that left the file one whole track stays. The
   selected tracks of a CUE file whose other tracks stay are hidden from the
   library instead, as Remove from Library hides them, and the confirmation
   counts the files it moves to Trash apart from the CUE tracks it hides.

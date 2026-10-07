@@ -205,7 +205,8 @@ fn file_layout(conn: &rusqlite::Connection, path: &Path) -> Result<FileLayout, r
         .query_map([&path], |row| row.get(0))?
         .collect::<Result<Vec<i64>, _>>()?;
     // A whole-file row may remember a sheet that did not fit it; only a sheet
-    // that cut the file is the file's.
+    // the file's tracks remember is the file's: the one that cut it, or one
+    // that did not fit and gave way to the sheet embedded in the file.
     let sheet = conn
         .prepare_cached("SELECT min(cue_path) FROM tracks WHERE path = ?1 AND segment_index > 0")?
         .query_row([&path], |row| row.get::<_, Option<String>>(0))?

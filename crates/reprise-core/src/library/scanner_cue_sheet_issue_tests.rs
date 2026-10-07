@@ -127,3 +127,39 @@ fn cue_14_a_sheet_beside_a_file_that_does_not_fit_gives_way_to_its_embedded_shee
     );
     assert_eq!(titles(&segments_of(db.conn(), &audio)), ["A", "B"]);
 }
+
+#[test]
+fn cue_11_trashing_a_file_whose_embedded_sheet_won_takes_the_sheet_beside_it_along() {
+    let dir = tempfile::tempdir().unwrap();
+    let audio = fixture_copy(dir.path(), "embedded.flac");
+    embed_sheet(
+        &audio,
+        "FILE \"CDImage.wav\" WAVE\n  TRACK 01 AUDIO\n    TITLE \"A\"\n    INDEX 01 00:00:00\n  \
+         TRACK 02 AUDIO\n    TITLE \"B\"\n    INDEX 01 00:00:40\n",
+    );
+    let sheet = dir.path().join("embedded.cue");
+    std::fs::write(
+        &sheet,
+        "FILE \"embedded.flac\" WAVE\n  TRACK 01 AUDIO\n    INDEX 01 99:00:00\n",
+    )
+    .unwrap();
+    let db = crate::db::Db::open_in_memory().unwrap();
+    scan(&db, dir.path());
+    let selection: Vec<(i64, std::path::PathBuf)> =
+        crate::queries::track_ids_for_path(&db, &audio.to_string_lossy())
+            .unwrap()
+            .into_iter()
+            .map(|id| (id, audio.clone()))
+            .collect();
+    assert_eq!(selection.len(), 2);
+
+    let report = crate::library::trash_tracks::trash_tracks_with(&db, &selection, |path| {
+        std::fs::remove_file(path).map_err(|error| error.to_string())
+    });
+
+    assert_eq!(report.removed_ids.len(), 2);
+    assert!(
+        !sheet.exists(),
+        "the sheet beside the file names it and would only raise an issue once it is gone"
+    );
+}
