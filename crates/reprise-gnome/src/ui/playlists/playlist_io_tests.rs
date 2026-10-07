@@ -289,7 +289,7 @@ fn export_playlist_writes_absolute_paths_and_extinf() {
 }
 
 #[test]
-fn cue_6_an_m3u_naming_a_cue_file_imports_its_tracks_once_per_run_of_lines() {
+fn cue_6a_an_m3u_naming_a_cue_file_imports_its_tracks_once_per_run_of_lines() {
     let conn = seeded_conn();
     crate::test_db::connection(&conn)
         .execute_batch(

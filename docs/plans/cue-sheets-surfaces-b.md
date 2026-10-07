@@ -229,7 +229,7 @@ All tasks committed, gate battery green on the worktree. The device proofs (post
   sidecars are not planned for CUE files. Per-playlist and picker size estimates count a
   CUE file once, at its whole length however few of its tracks are selected (the sync page and
   `project_playlist_sizes`, which takes the playlist's CUE files). A playlist naming one CUE track still names the whole device file in
-  its M3U, so the phone's import adds the whole album (CUE-6 behaviour), and a hidden track's
+  its M3U, so the phone's import adds the whole album (CUE-6a behaviour), and a hidden track's
   stretch plays as part of the track before it on the phone.
 - **b8** — `RPT-BACK` and `RPT-LIST` are format 2; v1 is refused. The phone journal keeps its
   sequence state but drops entries still in the v1 report format (one-time loss on the
@@ -241,3 +241,5 @@ All tasks committed, gate battery green on the worktree. The device proofs (post
   whole-file tracks only. Its `cue_6_` tests live in files this strand does not own
   (`cue_lookup_tests.rs`, `media_browse_tests.rs`, `file_open.rs`, `playlist_io_tests.rs`), so
   replacing it with CUE-19 is left for a decision; CUE-17 now covers CUE tracks.
+  Resolved afterwards: CUE-6 is `[replaced by CUE-6a/CUE-17]`. The phone's listens and ratings
+  follow CUE-17, the rest of CUE-6 continues as CUE-6a, and CUE-19 stays unused.

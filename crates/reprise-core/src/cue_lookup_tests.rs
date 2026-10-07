@@ -24,7 +24,7 @@ fn seeded() -> Db {
 }
 
 #[test]
-fn cue_6_a_path_lists_every_track_in_the_order_they_play() {
+fn cue_6a_a_path_lists_every_track_in_the_order_they_play() {
     let db = seeded();
 
     assert_eq!(
@@ -41,7 +41,7 @@ fn cue_6_a_path_lists_every_track_in_the_order_they_play() {
 }
 
 #[test]
-fn cue_6_the_first_track_of_a_path_is_the_first_in_play_order_not_the_lowest_id() {
+fn cue_6a_the_first_track_of_a_path_is_the_first_in_play_order_not_the_lowest_id() {
     let db = seeded();
 
     assert_eq!(
@@ -55,7 +55,7 @@ fn cue_6_the_first_track_of_a_path_is_the_first_in_play_order_not_the_lowest_id(
 }
 
 #[test]
-fn cue_6_the_stats_target_of_a_path_is_its_first_track() {
+fn cue_6a_the_stats_target_of_a_path_is_its_first_track() {
     let db = seeded();
 
     let target = crate::queries::query_stats_album_target_for_path(&db, "/m/live.flac")
@@ -66,7 +66,7 @@ fn cue_6_the_stats_target_of_a_path_is_its_first_track() {
 }
 
 #[test]
-fn cue_6_a_promoted_render_is_the_whole_file_row_only() {
+fn cue_6a_a_promoted_render_is_the_whole_file_row_only() {
     let db = seeded();
 
     let registered = |path: &str| {
@@ -78,7 +78,7 @@ fn cue_6_a_promoted_render_is_the_whole_file_row_only() {
 }
 
 #[test]
-fn cue_6_rhythmbox_ratings_reach_whole_files_only() {
+fn cue_6a_rhythmbox_ratings_reach_whole_files_only() {
     use crate::library::rhythmbox_import::{
         merge_stats, RhythmboxImportChoices, RhythmboxTrackStats,
     };
@@ -115,7 +115,7 @@ fn cue_6_rhythmbox_ratings_reach_whole_files_only() {
 }
 
 #[test]
-fn cue_6_a_sidecar_is_registered_for_a_whole_file_only() {
+fn cue_6a_a_sidecar_is_registered_for_a_whole_file_only() {
     let db = seeded();
 
     crate::db_mobile_sync::register_sidecar(
@@ -143,7 +143,7 @@ fn cue_6_a_sidecar_is_registered_for_a_whole_file_only() {
 }
 
 #[test]
-fn cue_6_the_device_path_of_a_file_reaches_each_of_its_tracks() {
+fn cue_6a_the_device_path_of_a_file_reaches_each_of_its_tracks() {
     let db = seeded();
 
     crate::db_mobile_sync::register_device_path(db.conn(), "/m/live.flac", "Music/live.flac")
@@ -280,7 +280,7 @@ fn cue_7_locating_a_cue_track_leaves_a_sibling_removed_from_the_library_removed(
 }
 
 #[test]
-fn cue_6_summaries_list_the_tracks_of_a_file_in_play_order() {
+fn cue_6a_summaries_list_the_tracks_of_a_file_in_play_order() {
     let db = seeded();
     let titles = |summaries: Vec<crate::queries::TrackSummary>| -> Vec<String> {
         summaries.into_iter().map(|summary| summary.title).collect()
@@ -297,7 +297,7 @@ fn cue_6_summaries_list_the_tracks_of_a_file_in_play_order() {
 }
 
 #[test]
-fn cue_6_an_m3u_line_naming_a_cue_file_stands_for_its_tracks_still_in_the_library() {
+fn cue_6a_an_m3u_line_naming_a_cue_file_stands_for_its_tracks_still_in_the_library() {
     let db = seeded();
     let tracks = |path| crate::queries::playlist_tracks_for_path(&db, path).unwrap();
 
@@ -318,7 +318,7 @@ fn cue_6_an_m3u_line_naming_a_cue_file_stands_for_its_tracks_still_in_the_librar
 }
 
 #[test]
-fn cue_6_consecutive_m3u_lines_naming_one_cue_file_stand_for_it_once() {
+fn cue_6a_consecutive_m3u_lines_naming_one_cue_file_stand_for_it_once() {
     let db = seeded();
     let line = |path| {
         crate::queries::playlist_tracks_for_path(&db, path)
