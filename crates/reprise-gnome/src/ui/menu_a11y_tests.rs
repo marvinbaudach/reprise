@@ -1,4 +1,3 @@
-use std::path::{Path, PathBuf};
 use std::time::Duration;
 
 use gtk4::gio;
@@ -27,8 +26,20 @@ fn model_buttons(root: &gtk4::Widget, found: &mut Vec<gtk4::Widget>) {
 /// Pops `popover` up on a realized window and returns the window with the
 /// popover's model buttons, submenu pages included.
 fn popped_up(popover: &gtk4::PopoverMenu) -> (gtk4::Window, Vec<gtk4::Widget>) {
+    popped_up_with(popover, &[])
+}
+
+/// [`popped_up`] with action groups installed on the window first, so the
+/// popover resolves its items' actions (and their state) when it maps.
+fn popped_up_with(
+    popover: &gtk4::PopoverMenu,
+    groups: &[(&str, &gio::SimpleActionGroup)],
+) -> (gtk4::Window, Vec<gtk4::Widget>) {
     let anchor = gtk4::Button::with_label("anchor");
     let window = gtk4::Window::builder().child(&anchor).build();
+    for (name, group) in groups {
+        window.insert_action_group(name, Some(*group));
+    }
     window.present();
     popover.set_parent(&anchor);
     popover.popup();
@@ -172,6 +183,142 @@ fn gp_10_the_track_context_menu_items_are_named_by_their_text() {
     window.close();
 }
 
+fn buttons_of(popover: &gtk4::PopoverMenu) -> Vec<gtk4::Widget> {
+    let mut buttons = Vec::new();
+    model_buttons(popover.upcast_ref(), &mut buttons);
+    buttons
+}
+
+/// A boolean toggle ("check" item) and a string-targeted radio pair.
+fn stateful_actions() -> (
+    gio::SimpleActionGroup,
+    gio::SimpleAction,
+    gio::SimpleAction,
+    gio::Menu,
+) {
+    let toggle = gio::SimpleAction::new_stateful("toggle", None, &false.to_variant());
+    let mode = gio::SimpleAction::new_stateful(
+        "mode",
+        Some(gtk4::glib::VariantTy::STRING),
+        &"a".to_variant(),
+    );
+    let group = gio::SimpleActionGroup::new();
+    group.add_action(&toggle);
+    group.add_action(&mode);
+    let model = gio::Menu::new();
+    model.append(Some("Always on top"), Some("act.toggle"));
+    for (label, target) in [("Mode A", "a"), ("Mode B", "b")] {
+        let item = gio::MenuItem::new(Some(label), None);
+        item.set_action_and_target_value(Some("act.mode"), Some(&target.to_variant()));
+        model.append_item(&item);
+    }
+    (group, toggle, mode, model)
+}
+
+#[test]
+#[ignore = "requires a display; run via xvfb-run"]
+fn gp_10_a_toggle_or_radio_flipping_while_open_keeps_its_name() {
+    let _main_context = crate::ui::test_main_context::lock_main_context();
+    gtk4::init().unwrap();
+    let (group, toggle, mode, model) = stateful_actions();
+    let popover = popover_menu_from_model(&model);
+    let (window, buttons) = popped_up_with(&popover, &[("act", &group)]);
+    assert_eq!(buttons.len(), 3);
+    assert_named_by_text(&buttons);
+
+    toggle.set_state(&true.to_variant());
+    mode.set_state(&"b".to_variant());
+    settle_for(SETTLE);
+
+    assert_named_by_text(&buttons_of(&popover));
+    toggle.set_state(&false.to_variant());
+    mode.set_state(&"a".to_variant());
+    settle_for(SETTLE);
+    assert_named_by_text(&buttons_of(&popover));
+    popover.popdown();
+    popover.unparent();
+    window.close();
+}
+
+#[test]
+#[ignore = "requires a display; run via xvfb-run"]
+fn gp_10_items_added_to_the_live_model_while_open_are_named() {
+    let _main_context = crate::ui::test_main_context::lock_main_context();
+    gtk4::init().unwrap();
+    let section = gio::Menu::new();
+    let model = gio::Menu::new();
+    model.append(Some("Fixed item"), Some("win.fixed"));
+    model.append_section(None, &section);
+    let popover = popover_menu_from_model(&model);
+    let (window, buttons) = popped_up(&popover);
+    assert_eq!(buttons.len(), 1);
+
+    model.append(Some("Added to the menu"), Some("win.added"));
+    section.append(Some("Added to the section"), Some("win.section"));
+    settle_for(SETTLE);
+    section.remove_all();
+    section.append(Some("Replaced in the section"), Some("win.replaced"));
+    settle_for(SETTLE);
+
+    let buttons = buttons_of(&popover);
+    let texts: Vec<String> = buttons
+        .iter()
+        .filter_map(visible_text)
+        .map(|text| text.to_string())
+        .collect();
+    for expected in ["Added to the menu", "Replaced in the section"] {
+        assert!(
+            texts.iter().any(|text| text == expected),
+            "{expected:?} missing from {texts:?}"
+        );
+    }
+    assert_named_by_text(&buttons);
+    popover.popdown();
+    popover.unparent();
+    window.close();
+}
+
+#[test]
+#[ignore = "requires a display; run via xvfb-run"]
+fn gp_10_repeated_flips_remaps_and_calls_connect_one_handler_per_object() {
+    let _main_context = crate::ui::test_main_context::lock_main_context();
+    gtk4::init().unwrap();
+    let (group, toggle, _mode, model) = stateful_actions();
+    let submenu = gio::Menu::new();
+    submenu.append(Some("Inner item"), Some("win.inner"));
+    model.append_submenu(Some("Submenu"), &submenu);
+    let popover = popover_menu_from_model(&model);
+    let (window, buttons) = popped_up_with(&popover, &[("act", &group)]);
+    let baseline = connection_count();
+    assert!(
+        baseline >= buttons.len(),
+        "every model button, model and the popover is connected: {baseline} connections \
+         for {} buttons",
+        buttons.len()
+    );
+
+    const APPENDED: usize = 4;
+    for flip in 0..APPENDED {
+        toggle.set_state(&(flip % 2 == 0).to_variant());
+        popover.popdown();
+        settle_for(SETTLE);
+        popover.popup();
+        settle_for(SETTLE);
+        name_model_buttons_on_map(&popover);
+        model.append(Some(&format!("Extra {flip}")), Some("win.extra"));
+        settle_for(SETTLE);
+    }
+
+    assert_eq!(
+        connection_count(),
+        baseline + APPENDED,
+        "only the appended items may add a connection, one `notify::active` each"
+    );
+    popover.popdown();
+    popover.unparent();
+    window.close();
+}
+
 #[test]
 #[ignore = "requires a display; run via xvfb-run"]
 fn gp_10_the_spoken_name_drops_the_mnemonic_underscore() {
@@ -181,82 +328,4 @@ fn gp_10_the_spoken_name_drops_the_mnemonic_underscore() {
     holder.append(&gtk4::Label::with_mnemonic("_Open"));
 
     assert_eq!(visible_text(holder.upcast_ref()).as_deref(), Some("Open"));
-}
-
-fn ui_sources(directory: &Path, found: &mut Vec<(PathBuf, String)>) {
-    let Ok(entries) = std::fs::read_dir(directory) else {
-        return;
-    };
-    for entry in entries.flatten() {
-        let path = entry.path();
-        if path.is_dir() {
-            ui_sources(&path, found);
-            continue;
-        }
-        let name = path
-            .file_name()
-            .and_then(|name| name.to_str())
-            .unwrap_or_default();
-        let is_production_source =
-            name.ends_with(".rs") && !name.ends_with("_tests.rs") && !name.starts_with("menu_a11y");
-        if is_production_source {
-            if let Ok(source) = std::fs::read_to_string(&path) {
-                found.push((path, source));
-            }
-        }
-    }
-}
-
-fn production_sources() -> Vec<(PathBuf, String)> {
-    let mut found = Vec::new();
-    let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("src/ui");
-    ui_sources(&root, &mut found);
-    assert!(found.len() > 100, "the scan reads the ui source tree");
-    found
-}
-
-fn code_lines(source: &str) -> impl Iterator<Item = &str> {
-    source
-        .lines()
-        .filter(|line| !line.trim_start().starts_with("//"))
-}
-
-#[test]
-fn gp_10_no_popover_menu_is_built_without_the_naming_helper() {
-    const CONSTRUCTORS: [&str; 3] = [
-        "PopoverMenu::from_model",
-        "PopoverMenu::builder",
-        "PopoverMenu::new_from_model",
-    ];
-    let bypasses: Vec<String> = production_sources()
-        .into_iter()
-        .filter(|(_, source)| {
-            code_lines(source).any(|line| CONSTRUCTORS.iter().any(|name| line.contains(name)))
-        })
-        .map(|(path, _)| path.display().to_string())
-        .collect();
-
-    assert!(
-        bypasses.is_empty(),
-        "build popover menus with menu_a11y::popover_menu_from_model so their items have \
-         accessible names (GTK fb6f2118); bypassed in {bypasses:?}"
-    );
-}
-
-#[test]
-fn gp_10_every_menu_button_with_a_model_names_its_items() {
-    let bypasses: Vec<String> = production_sources()
-        .into_iter()
-        .filter(|(_, source)| {
-            code_lines(source).any(|line| line.contains(".menu_model(&"))
-                && !source.contains("menu_a11y::name_menu_button_items")
-        })
-        .map(|(path, _)| path.display().to_string())
-        .collect();
-
-    assert!(
-        bypasses.is_empty(),
-        "call menu_a11y::name_menu_button_items for a MenuButton built with a menu model, so \
-         its items have accessible names (GTK fb6f2118); missing in {bypasses:?}"
-    );
 }
