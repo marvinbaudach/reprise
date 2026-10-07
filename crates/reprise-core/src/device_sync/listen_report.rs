@@ -254,7 +254,7 @@ pub fn apply_listen_report(
 /// The track a phone's device path and segment start stand for (CUE-17).
 ///
 /// Without a segment start the path names a whole file: like every other
-/// play-count and rating import it reaches a whole-file track only (CUE-6). A
+/// play-count and rating import it reaches a whole-file track only (CUE-6a). A
 /// segment start names the track a CUE sheet cut from the file at that start,
 /// found through the file the device path was synced from, so a track of the
 /// file that has no inventory row of its own is found as well.

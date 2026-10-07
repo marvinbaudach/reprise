@@ -290,7 +290,7 @@ mod tests {
     }
 
     #[test]
-    fn cue_6_opening_a_cue_file_queues_all_its_tracks_in_play_order() {
+    fn cue_6a_opening_a_cue_file_queues_all_its_tracks_in_play_order() {
         let db = crate::test_db::open().unwrap();
         crate::test_db::connection(&db)
             .execute_batch(

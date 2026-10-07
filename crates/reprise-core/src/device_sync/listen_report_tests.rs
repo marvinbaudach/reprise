@@ -465,7 +465,7 @@ fn a_history_insert_failure_rolls_back_the_play_and_acknowledgement() {
 }
 
 #[test]
-fn cue_6_a_phone_listen_of_a_file_cut_into_tracks_credits_none_of_them() {
+fn cue_17_a_phone_listen_without_a_start_of_a_file_cut_into_tracks_is_counted_unresolved() {
     let db = crate::db::Db::open_in_memory().unwrap();
     for (id, index) in [(5, 2), (6, 1)] {
         db.conn()

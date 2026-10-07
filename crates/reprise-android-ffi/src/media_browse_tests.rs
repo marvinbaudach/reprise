@@ -234,7 +234,7 @@ fn a_uri_resolves_to_its_present_row_and_a_stale_uri_to_none() {
 }
 
 #[test]
-fn cue_6_a_uri_of_a_file_cut_into_tracks_resolves_to_its_first_track_still_present() {
+fn cue_6a_a_uri_of_a_file_cut_into_tracks_resolves_to_its_first_track_still_present() {
     let fixture = Fixture::new(&["live"]);
     let music = fixture.directory.path().join("music");
     std::fs::write(
