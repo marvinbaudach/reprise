@@ -45,7 +45,23 @@ pub fn set_row_and_section_header_heights(
     row_height: f64,
     section_header_height: f64,
 ) -> Result<(), SqlError> {
-    crate::events::in_txn(db.conn(), |conn| {
+    // Settle an unchanged pair before any transaction opens: a settled list
+    // re-persists the heights it already has, and that must never queue for
+    // the write lock behind another writer (mirrors `set_setting_in`).
+    let conn = db.conn();
+    let row_text = row_height.to_string();
+    let header_text = section_header_height.to_string();
+    if conn.is_autocommit()
+        && get_setting_in(conn, ROW_HEIGHT_KEY)?.as_deref() == Some(row_text.as_str())
+        && get_setting_in(conn, SECTION_HEADER_HEIGHT_KEY)?.as_deref() == Some(header_text.as_str())
+    {
+        return Ok(());
+    }
+    // IMMEDIATE: each `set_height_in` reads (the dedup check) before it writes,
+    // so a deferred outer transaction would pin a read snapshot first and fail
+    // the write-lock upgrade with `SQLITE_BUSY_SNAPSHOT` when a rival commits
+    // in between (see `events::in_txn_immediate`).
+    crate::events::in_txn_immediate(conn, |conn| {
         set_height_in(conn, ROW_HEIGHT_KEY, Some(row_height))?;
         set_height_in(conn, SECTION_HEADER_HEIGHT_KEY, Some(section_header_height))
     })
@@ -101,6 +117,52 @@ pub(crate) fn migrate_v80(conn: &Connection) -> Result<(), SqlError> {
 mod tests {
     use super::super::{get_setting_in, set_setting_in};
     use super::*;
+
+    /// The pair write reads each stored height (the dedup check) before it
+    /// writes. Under a deferred outer transaction a rival commit between that
+    /// read and the write fails it with `SQLITE_BUSY_SNAPSHOT` (#1185).
+    #[test]
+    fn the_height_pair_write_survives_a_rival_commit_between_its_read_and_its_write() {
+        use std::sync::atomic::Ordering;
+
+        let directory = tempfile::tempdir().unwrap();
+        let path = directory.path().join("reprise.db");
+        let writer = crate::db::Db::open_migrated(Some(&path)).unwrap();
+        let interleaved =
+            crate::library::rival_commit_test_support::arm(writer.conn(), &path, "settings");
+
+        set_row_and_section_header_heights(&writer, 34.0, 28.0).unwrap();
+
+        assert!(
+            interleaved.load(Ordering::SeqCst),
+            "the rival write must have been attempted between the read and the write",
+        );
+        assert_eq!(get_row_height(&writer).unwrap(), Some(34.0));
+        assert_eq!(get_section_header_height(&writer).unwrap(), Some(28.0));
+    }
+
+    /// Re-persisting the heights already stored is the common case; it must
+    /// not wait for the write lock another connection holds.
+    #[test]
+    fn an_unchanged_height_pair_is_a_no_op_that_never_waits_for_the_write_lock() {
+        let directory = tempfile::tempdir().unwrap();
+        let path = directory.path().join("reprise.db");
+        let writer = crate::db::Db::open_migrated(Some(&path)).unwrap();
+        writer
+            .conn()
+            .pragma_update(None, "busy_timeout", 0)
+            .unwrap();
+        set_row_and_section_header_heights(&writer, 34.0, 28.0).unwrap();
+        let holder = Connection::open(&path).unwrap();
+        holder.execute_batch("BEGIN IMMEDIATE").unwrap();
+
+        set_row_and_section_header_heights(&writer, 34.0, 28.0).unwrap();
+
+        assert!(
+            set_row_and_section_header_heights(&writer, 34.0, 30.0).is_err(),
+            "a changed pair does need the write lock the holder keeps",
+        );
+    }
 
     fn open_at_v78() -> Connection {
         let conn = crate::db::open(None).unwrap();

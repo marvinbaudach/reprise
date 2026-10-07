@@ -471,37 +471,13 @@ fn play_19_fresh_replaygain_defaults_to_track_and_explicit_off_stays_off() {
 /// exactly after the read and before the write.
 #[test]
 fn a_settings_write_survives_a_rival_commit_between_its_read_and_its_write() {
-    use rusqlite::hooks::{AuthAction, Authorization};
-    use std::sync::atomic::{AtomicBool, Ordering};
-    use std::sync::Arc;
+    use std::sync::atomic::Ordering;
 
     let directory = tempfile::tempdir().unwrap();
     let path = directory.path().join("reprise.db");
     let writer = crate::db::Db::open_migrated(Some(&path)).unwrap();
-    let rival = rusqlite::Connection::open(&path).unwrap();
-    rival.pragma_update(None, "busy_timeout", 0).unwrap();
-    let interleaved = Arc::new(AtomicBool::new(false));
-    let hook_interleaved = Arc::clone(&interleaved);
-    writer
-        .conn()
-        .authorizer(Some(move |context: rusqlite::hooks::AuthContext<'_>| {
-            let upserting = matches!(
-                context.action,
-                AuthAction::Insert {
-                    table_name: "settings"
-                }
-            );
-            if upserting && !hook_interleaved.swap(true, Ordering::SeqCst) {
-                // The rival may win (deferred) or lose to the held write lock
-                // (immediate); only the writer under test must always succeed.
-                let _ = rival.execute(
-                    "INSERT OR REPLACE INTO settings (key, value) VALUES ('rival', '1')",
-                    [],
-                );
-            }
-            Authorization::Allow
-        }))
-        .unwrap();
+    let interleaved =
+        crate::library::rival_commit_test_support::arm(writer.conn(), &path, "settings");
 
     set_setting(&writer, "ui.contested", "mine").unwrap();
 
