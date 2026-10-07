@@ -339,3 +339,82 @@ fn cue_15_a_frozen_cue_file_keeps_its_derived_sheet() {
     )));
     assert_eq!(plan.bytes_freed, 0);
 }
+
+/// `album()` as a compilation: per-track performers and no album artist.
+fn compilation(ids: &[i64]) -> MirrorInput {
+    let performer = |id: i64| ["A", "B", "C"][usize::try_from(id - 1).unwrap()].to_string();
+    let mut file = album();
+    file.album_artist = String::new();
+    for track in &mut file.tracks {
+        track.performer = performer(track.track_id);
+    }
+    let base = input(ids);
+    let playlist = MirrorPlaylistSnapshot {
+        entries: ids
+            .iter()
+            .map(|id| {
+                MirrorTrack::Available(SyncTrack {
+                    artist: performer(*id),
+                    album_artist: String::new(),
+                    ..segment(*id)
+                })
+            })
+            .collect(),
+        cue_files: vec![file],
+        ..base.playlists[0].clone()
+    };
+    MirrorInput {
+        playlists: vec![playlist],
+        ..base
+    }
+}
+
+#[test]
+fn cue_15_a_compilation_file_has_one_device_path_whichever_tracks_are_selected() {
+    let plan = plan_mirror(compilation(&[1, 3]));
+
+    let paths: Vec<&str> = plan
+        .desired_files
+        .iter()
+        .map(|file| file.device_path.as_str())
+        .collect();
+    assert_eq!(paths, ["A/Album/album.mp3", "A/Album/album.mp3"]);
+    assert_eq!(plan.copy.len(), 1);
+    assert_eq!(plan.cue_writes.len(), 1);
+    for ids in [&[2][..], &[1, 2, 3][..]] {
+        let plan = plan_mirror(compilation(ids));
+        assert!(
+            plan.desired_files
+                .iter()
+                .all(|file| file.device_path == "A/Album/album.mp3"),
+            "{ids:?}: {:?}",
+            plan.desired_files
+        );
+    }
+}
+
+#[test]
+fn cue_15_a_synced_compilation_plans_nothing_on_the_next_run() {
+    let first = plan_mirror(compilation(&[1, 3]));
+    let device_path = "A/Album/album.mp3";
+    let rows = [1, 3].map(|id| DeviceFileRecord {
+        device_path: device_path.into(),
+        ..row(id)
+    });
+    let plan = plan_mirror(MirrorInput {
+        inventory: rows.to_vec(),
+        managed_files: vec![
+            ManagedDeviceFile {
+                relative_path: device_path.into(),
+                size_bytes: 960_000,
+            },
+            ManagedDeviceFile {
+                relative_path: first.cue_writes[0].device_path.clone(),
+                size_bytes: first.cue_writes[0].size_bytes,
+            },
+        ],
+        ..compilation(&[1, 3])
+    });
+
+    assert!(is_quiet(&plan), "{plan:?}");
+}

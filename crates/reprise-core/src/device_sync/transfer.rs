@@ -69,15 +69,18 @@ pub(super) fn build_transfer_plan_with_files(
                 TransferAction::TranscodeOpus160 => TransferMode::TranscodeOpus160,
                 TransferAction::TranscodeMp3(quality) => TransferMode::TranscodeMp3 { quality },
             };
-            let metadata = DevicePathMetadata {
-                album_artist: track.album_artist.clone(),
-                artist: track.artist.clone(),
-                album: track.album.clone(),
-                track_number: track.track_number,
-                title: track.title.clone(),
-                source_path: track.source_path.clone(),
-            };
             let cue_file = cue_files.get(&track.id).copied();
+            let metadata = match cue_file {
+                Some(file) => file_path_metadata(file),
+                None => DevicePathMetadata {
+                    album_artist: track.album_artist.clone(),
+                    artist: track.artist.clone(),
+                    album: track.album.clone(),
+                    track_number: track.track_number,
+                    title: track.title.clone(),
+                    source_path: track.source_path.clone(),
+                },
+            };
             let collision_key = match cue_file {
                 Some(_) => file_stem_key(&metadata),
                 None => path_stem_key(&metadata),
@@ -124,6 +127,24 @@ pub(super) fn build_transfer_plan_with_files(
         .collect::<Vec<_>>();
     plan.sort_by_key(|(index, _)| *index);
     plan.into_iter().map(|(_, entry)| entry).collect()
+}
+
+/// The path metadata of a CUE file, the same for every track of it whichever
+/// are selected: the file's album and album artist, or, with no album artist,
+/// the performer of its first track.
+fn file_path_metadata(file: &CueSyncFile) -> DevicePathMetadata {
+    DevicePathMetadata {
+        album_artist: file.album_artist.clone(),
+        artist: file
+            .tracks
+            .first()
+            .map(|first| first.performer.clone())
+            .unwrap_or_default(),
+        album: file.album.clone(),
+        track_number: None,
+        title: String::new(),
+        source_path: file.source_path.clone(),
+    }
 }
 
 #[derive(Default)]

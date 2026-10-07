@@ -206,7 +206,9 @@ All tasks committed, gate battery green on the worktree. The device proofs (post
   (foreign test literals); the CUE data travels as `MirrorPlaylistSnapshot.cue_files`, filled by
   the snapshot loaders. One member carries the transfer (a file-level `SyncTrack`: album title,
   file length); the others become `SharedRecord`s, written by the new `RecordSharedFile` effect
-  after the copy or against the resident file. A row no longer wanted whose file another row
+  after the copy or against the resident file. Every track of a CUE file takes its device path
+  from the file — its album and album artist, or with none the performer of its first track — so
+  a compilation sheet with only per-track performers still yields one path. A row no longer wanted whose file another row
   still needs is `ManagedRemoval::Unshared` (forget only). The derived sheet is
   `DerivedCueWrite`, written by `WriteDerivedCue` under the Copying step (no new `SyncStep`:
   foreign matches); it is kept by `known_paths` and leaves as an orphan with its file. Its
