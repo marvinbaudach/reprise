@@ -36,9 +36,10 @@ pub struct TrashFile {
     pub path: PathBuf,
     /// Every track of the file, as selected.
     pub tracks: Vec<(i64, PathBuf)>,
-    /// The sheet beside the file that cut it, to be trashed after the file:
-    /// set on the last file of the selection that the sheet describes, and
-    /// only when no file outside the selection still needs it.
+    /// The sheet beside the file that cut it, when it goes to the trash with
+    /// the selection: set on every file of the selection that the sheet
+    /// describes, and only when no file outside the selection still needs it.
+    /// It goes after all of them, and only when every one of them went.
     pub sheet: Option<PathBuf>,
 }
 
@@ -214,7 +215,7 @@ fn file_layout(conn: &rusqlite::Connection, path: &Path) -> Result<FileLayout, r
     Ok(FileLayout { present_ids, sheet })
 }
 
-/// Hands each sheet to the last file of the selection it describes, unless a
+/// Hands each sheet to the files of the selection it describes, unless a
 /// file outside the selection, in the library or hidden from it, still names
 /// it: without its sheet a hidden CUE file would come back whole.
 fn assign_sheets(conn: &rusqlite::Connection, files: &mut [TrashFile], sheets: &[Option<PathBuf>]) {
@@ -222,17 +223,18 @@ fn assign_sheets(conn: &rusqlite::Connection, files: &mut [TrashFile], sheets: &
         .iter()
         .map(|file| file.path.to_string_lossy().into_owned())
         .collect();
-    for (position, sheet) in sheets.iter().enumerate() {
-        let Some(sheet) = sheet else { continue };
-        let later = sheets[position + 1..]
-            .iter()
-            .any(|other| other.as_ref() == Some(sheet));
-        if later {
+    let mut decided = HashSet::new();
+    for sheet in sheets.iter().flatten() {
+        if !decided.insert(sheet) {
             continue;
         }
         match paths_naming_sheet(conn, sheet) {
             Ok(paths) if paths.iter().all(|path| trashed.contains(path)) => {
-                files[position].sheet = Some(sheet.clone());
+                for (file, named) in files.iter_mut().zip(sheets) {
+                    if named.as_ref() == Some(sheet) {
+                        file.sheet = Some(sheet.clone());
+                    }
+                }
             }
             Ok(_) => {}
             Err(error) => {
@@ -266,24 +268,32 @@ where
     let plan = plan_file_trash(db, tracks);
     let mut trashed = Vec::new();
     let mut failures = plan.failures;
+    // Each sheet, and whether every file it describes went to the trash.
+    let mut sheets: Vec<(PathBuf, bool)> = Vec::new();
 
     for file in plan.files {
-        match trash_action(&file.path) {
-            Ok(()) => {
-                trashed.extend(file.tracks);
-                if let Some(sheet) = file.sheet {
-                    // The audio is gone and its rows go with it; a sheet left
-                    // behind only raises an issue on the next scan.
-                    if let Err(error) = trash_action(&sheet) {
-                        tracing::warn!(sheet = %sheet.display(), %error, "move-to-trash of a CUE sheet failed");
-                    }
-                }
+        let result = trash_action(&file.path);
+        if let Some(sheet) = file.sheet {
+            match sheets.iter_mut().find(|(known, _)| *known == sheet) {
+                Some((_, all_went)) => *all_went &= result.is_ok(),
+                None => sheets.push((sheet, result.is_ok())),
             }
+        }
+        match result {
+            Ok(()) => trashed.extend(file.tracks),
             Err(error) => failures.extend(file.tracks.into_iter().map(|(id, path)| TrashFailure {
                 id,
                 path,
                 error: error.clone(),
             })),
+        }
+    }
+    // A file that stays still needs its sheet, or the next scan reads it whole.
+    // Once the audio is gone, a sheet left behind only raises an issue on the
+    // next scan.
+    for (sheet, _) in sheets.into_iter().filter(|(_, all_went)| *all_went) {
+        if let Err(error) = trash_action(&sheet) {
+            tracing::warn!(sheet = %sheet.display(), %error, "move-to-trash of a CUE sheet failed");
         }
     }
 

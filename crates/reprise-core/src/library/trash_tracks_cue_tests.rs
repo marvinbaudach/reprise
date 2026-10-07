@@ -245,3 +245,50 @@ fn cue_11_a_failed_trash_keeps_every_track_of_the_file() {
     assert_eq!(library.ids(), [1, 2]);
     assert!(sheet.exists());
 }
+
+#[test]
+fn cue_11_a_sheet_over_two_files_trashed_together_goes_after_both() {
+    let library = Library::new();
+    let first = library.file("01.flac");
+    let second = library.file("02.flac");
+    let sheet = library.file("disc.cue");
+    library.segment(1, &first, 1, Some(&sheet));
+    library.segment(2, &second, 1, Some(&sheet));
+
+    let (report, calls) = trash(&library, &[(1, first.clone()), (2, second.clone())]);
+
+    assert_eq!(calls, [first, second, sheet.clone()]);
+    assert_eq!(report.removed_ids, [1, 2]);
+    assert!(!sheet.exists());
+}
+
+#[test]
+fn cue_11_a_sheet_stays_when_an_earlier_file_it_describes_fails_to_trash() {
+    let library = Library::new();
+    let first = library.file("01.flac");
+    let second = library.file("02.flac");
+    let sheet = library.file("disc.cue");
+    library.segment(1, &first, 1, Some(&sheet));
+    library.segment(2, &second, 1, Some(&sheet));
+    let calls = RefCell::new(Vec::new());
+
+    let report = trash_tracks_with(
+        &library.db,
+        &[(1, first.clone()), (2, second.clone())],
+        |path| {
+            calls.borrow_mut().push(path.to_path_buf());
+            if path == first {
+                return Err("refused".into());
+            }
+            std::fs::remove_file(path).map_err(|error| error.to_string())
+        },
+    );
+
+    assert_eq!(calls.into_inner(), [first.clone(), second]);
+    assert_eq!(report.removed_ids, [2]);
+    assert_eq!(library.ids(), [1]);
+    assert!(
+        sheet.exists(),
+        "without its sheet the file left behind would come back whole"
+    );
+}

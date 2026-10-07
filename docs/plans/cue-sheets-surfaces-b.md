@@ -176,7 +176,9 @@ All tasks committed, gate battery green on the worktree. The device proofs (post
   (strand c) still trashes per `(id, path)`. A sheet goes along when the file's tracks remember
   it (`cue_path` on a segment row) and no other file in the library or among the exclusions
   names it; that includes a sidecar that did not fit and gave way to the embedded sheet (b5),
-  and CUE-11 says so. A sidecar whose trash fails after its audio went is only logged. The
+  and CUE-11 says so. The sheet goes after every file of the selection it describes, and
+  stays when any of them failed to go. A sidecar whose trash fails after its audio went is only
+  logged. The
   dialog asks the catalog only when the selection holds a CUE track; the result toast adds how
   many CUE tracks were hidden. `run_delete` moved to `delete_tracks_run.rs`; the CUE copy lives
   in `strings_delete_cue.rs` (new in `po/POTFILES.in`), since `strings.rs` is not this strand's.
