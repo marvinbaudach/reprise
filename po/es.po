@@ -2,7 +2,7 @@ msgid ""
 msgstr ""
 "Project-Id-Version: Reprise 0.1.1\n"
 "Report-Msgid-Bugs-To: Marvin Baudach\n"
-"POT-Creation-Date: 2026-10-07 11:04+0200\n"
+"POT-Creation-Date: 2026-10-07 11:34+0200\n"
 "PO-Revision-Date: 2026-07-26 14:47+0200\n"
 "Last-Translator: Reprise contributors\n"
 "Language-Team: Spanish\n"
@@ -1527,95 +1527,106 @@ msgid "The file could not be read"
 msgstr "No se pudo leer el archivo"
 
 #: crates/reprise-gnome/src/ui/strings_issues.rs:192
+msgid "CUE sheet not applied"
+msgstr "Hoja CUE no aplicada"
+
+#: crates/reprise-gnome/src/ui/strings_issues.rs:194
+msgid ""
+"The sheet does not fit its audio, so the music file is listed as one track"
+msgstr ""
+"La hoja no encaja con su audio, así que el archivo de música aparece como "
+"una sola pista"
+
+#: crates/reprise-gnome/src/ui/strings_issues.rs:196
 msgid "Unclassified"
 msgstr "Desclasificado"
 
-#: crates/reprise-gnome/src/ui/strings_issues.rs:193
+#: crates/reprise-gnome/src/ui/strings_issues.rs:197
 msgid "The error could not be classified"
 msgstr "No se pudo clasificar el error"
 
-#: crates/reprise-gnome/src/ui/strings_issues.rs:194
+#: crates/reprise-gnome/src/ui/strings_issues.rs:198
 msgid "1 file"
 msgstr "1 archivo"
 
-#: crates/reprise-gnome/src/ui/strings_issues.rs:195
+#: crates/reprise-gnome/src/ui/strings_issues.rs:199
 #, rust-format
 msgid "{count} files"
 msgstr "{count} archivos"
 
-#: crates/reprise-gnome/src/ui/strings_issues.rs:196
+#: crates/reprise-gnome/src/ui/strings_issues.rs:200
 msgid "seen in 1 scan"
 msgstr "detectado en 1 análisis"
 
-#: crates/reprise-gnome/src/ui/strings_issues.rs:197
+#: crates/reprise-gnome/src/ui/strings_issues.rs:201
 #, rust-format
 msgid "seen in {count} scans"
 msgstr "detectado en {count} análisis"
 
-#: crates/reprise-gnome/src/ui/strings_issues.rs:198
+#: crates/reprise-gnome/src/ui/strings_issues.rs:202
 msgid "Imported without metadata"
 msgstr "Importado sin metadatos"
 
-#: crates/reprise-gnome/src/ui/strings_issues.rs:199
+#: crates/reprise-gnome/src/ui/strings_issues.rs:203
 msgid "Open in Tag Editor"
 msgstr "Abrir en el editor de etiquetas"
 
-#: crates/reprise-gnome/src/ui/strings_issues.rs:200
+#: crates/reprise-gnome/src/ui/strings_issues.rs:204
 #: crates/reprise-gnome/src/ui/strings_track_menu.rs:10
 msgid "Show in Files"
 msgstr "Mostrar en Archivos"
 
-#: crates/reprise-gnome/src/ui/strings_issues.rs:201
+#: crates/reprise-gnome/src/ui/strings_issues.rs:205
 msgid "Retry all"
 msgstr "Reintentar todo"
 
-#: crates/reprise-gnome/src/ui/strings_issues.rs:202
+#: crates/reprise-gnome/src/ui/strings_issues.rs:206
 msgid "Dismiss all"
 msgstr "Descartar todo"
 
-#: crates/reprise-gnome/src/ui/strings_issues.rs:203
+#: crates/reprise-gnome/src/ui/strings_issues.rs:207
 msgid "Export list…"
 msgstr "Exportar lista…"
 
-#: crates/reprise-gnome/src/ui/strings_issues.rs:204
+#: crates/reprise-gnome/src/ui/strings_issues.rs:208
 msgid "Export import errors"
 msgstr "Exportar errores de importación"
 
-#: crates/reprise-gnome/src/ui/strings_issues.rs:205
+#: crates/reprise-gnome/src/ui/strings_issues.rs:209
 msgid "Restore"
 msgstr "Restaurar"
 
-#: crates/reprise-gnome/src/ui/strings_issues.rs:206
+#: crates/reprise-gnome/src/ui/strings_issues.rs:210
 #, rust-format
 msgid "{count} dismissed · Show"
 msgstr "{count} descartados · Mostrar"
 
-#: crates/reprise-gnome/src/ui/strings_issues.rs:207
+#: crates/reprise-gnome/src/ui/strings_issues.rs:211
 msgid "Hide dismissed"
 msgstr "Ocultar los descartados"
 
-#: crates/reprise-gnome/src/ui/strings_issues.rs:208
+#: crates/reprise-gnome/src/ui/strings_issues.rs:212
 msgid "Could not dismiss — the file is unavailable"
 msgstr "No se pudo descartar; el archivo no está disponible"
 
-#: crates/reprise-gnome/src/ui/strings_issues.rs:209
+#: crates/reprise-gnome/src/ui/strings_issues.rs:213
 msgid "Could not retry all import errors"
 msgstr "No se pudieron reintentar todos los errores de importación"
 
-#: crates/reprise-gnome/src/ui/strings_issues.rs:210
+#: crates/reprise-gnome/src/ui/strings_issues.rs:214
 msgid "Could not export the import-error list"
 msgstr "No se pudo exportar la lista de errores de importación"
 
-#: crates/reprise-gnome/src/ui/strings_issues.rs:211
+#: crates/reprise-gnome/src/ui/strings_issues.rs:215
 msgid "1 failed"
 msgstr "1 fallido"
 
-#: crates/reprise-gnome/src/ui/strings_issues.rs:212
+#: crates/reprise-gnome/src/ui/strings_issues.rs:216
 #, rust-format
 msgid "{count} failed"
 msgstr "{count} fallidos"
 
-#: crates/reprise-gnome/src/ui/strings_issues.rs:213
+#: crates/reprise-gnome/src/ui/strings_issues.rs:217
 #: crates/reprise-gnome/src/ui/strings_library_doctor.rs:79
 #: crates/reprise-gnome/src/ui/strings_sources.rs:15
 #: crates/reprise-gnome/src/ui/strings_tag_edit.rs:154
@@ -1623,7 +1634,7 @@ msgstr "{count} fallidos"
 msgid "Details"
 msgstr "Detalles"
 
-#: crates/reprise-gnome/src/ui/strings_issues.rs:251
+#: crates/reprise-gnome/src/ui/strings_issues.rs:255
 msgid "Track unavailable — skipped"
 msgstr "Pista no disponible; se omitió"
 

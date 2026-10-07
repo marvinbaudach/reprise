@@ -188,6 +188,10 @@ pub const IMPORT_ISSUE_FORMAT_ROW: &str = N_!("This audio format is not supporte
 pub const IMPORT_ISSUE_IO_ICON: &str = "⚠";
 pub const IMPORT_ISSUE_IO_TITLE: &str = N_!("Read error");
 pub const IMPORT_ISSUE_IO_ROW: &str = N_!("The file could not be read");
+pub const IMPORT_ISSUE_CUE_ICON: &str = "♫";
+pub const IMPORT_ISSUE_CUE_TITLE: &str = N_!("CUE sheet not applied");
+pub const IMPORT_ISSUE_CUE_ROW: &str =
+    N_!("The sheet does not fit its audio, so the music file is listed as one track");
 pub const IMPORT_ISSUE_UNKNOWN_ICON: &str = "?";
 pub const IMPORT_ISSUE_UNKNOWN_TITLE: &str = N_!("Unclassified");
 pub const IMPORT_ISSUE_UNKNOWN_ROW: &str = N_!("The error could not be classified");

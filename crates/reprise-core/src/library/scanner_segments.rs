@@ -26,7 +26,9 @@ pub(super) enum Layout {
     /// file and could not be applied; the row remembers it, so the next scan
     /// does not try the same sheet again.
     Whole { rejected_by: Option<SheetRef> },
-    /// The tracks of a sheet. `sheet` is `None` for a sheet embedded in the file.
+    /// The tracks of a sheet. `sheet` is the sheet beside the file whose version
+    /// the rows remember: the one that cut it, or one that did not fit and gave
+    /// way to the sheet embedded in the file. `None` for an embedded sheet alone.
     Segments {
         segments: Vec<CueSegment>,
         sheet: Option<SheetRef>,
@@ -90,7 +92,9 @@ pub(super) fn plan_layout(
     if let Some(sheet) = governing {
         let sub_sheet = match scan.cues.sub_sheet(scan.source, scan.tx, sheet, path)? {
             SheetFit::Part(sub_sheet) => sub_sheet,
-            SheetFit::Unfit => return Ok(Some(Plan::whole(Some(sheet.clone()), None))),
+            // The sheet stopped covering the file, so the next scan will not
+            // offer it either: the rows remember none.
+            SheetFit::Unfit => return Ok(Some(fall_back(path, meta, None, None))),
             SheetFit::Unknown => return Ok(None),
         };
         return Ok(Some(match cue::segments(&sub_sheet, own_file) {
@@ -101,8 +105,10 @@ pub(super) fn plan_layout(
                 },
                 issue: None,
             },
-            Err(error) => Plan::whole(
-                Some(sheet.clone()),
+            Err(error) => fall_back(
+                path,
+                meta,
+                Some(sheet),
                 Some(SheetIssue::Rejected {
                     sheet: sheet.clone(),
                     reason: error.to_string(),
@@ -113,18 +119,52 @@ pub(super) fn plan_layout(
     let Some(text) = &meta.embedded_cuesheet else {
         return Ok(Some(Plan::whole(None, None)));
     };
-    Ok(Some(
-        match cue::parse(text.as_bytes()).and_then(|sheet| cue::segments(&sheet, own_file)) {
-            Ok(segments) => Plan {
-                layout: Layout::Segments {
-                    segments,
-                    sheet: None,
-                },
-                issue: None,
+    Ok(Some(match embedded_segments(path, meta, text) {
+        Ok(segments) => Plan {
+            layout: Layout::Segments {
+                segments,
+                sheet: None,
             },
-            Err(error) => Plan::whole(None, Some(SheetIssue::Embedded(error.to_string()))),
+            issue: None,
         },
-    ))
+        Err(error) => Plan::whole(None, Some(SheetIssue::Embedded(error.to_string()))),
+    }))
+}
+
+/// The plan for a file whose sheet beside it cannot be applied: the sheet
+/// embedded in the file when that one fits (finding A10), the file whole
+/// otherwise. `rejected` is the sheet beside the file the rows remember, so the
+/// next scan, offered the same sheet, finds the file unchanged; `issue` stays
+/// raised either way, since that sheet still does not fit.
+fn fall_back(
+    path: &Path,
+    meta: &TrackMeta,
+    rejected: Option<&SheetRef>,
+    issue: Option<SheetIssue>,
+) -> Plan {
+    let embedded = meta
+        .embedded_cuesheet
+        .as_deref()
+        .and_then(|text| embedded_segments(path, meta, text).ok());
+    match embedded {
+        Some(segments) => Plan {
+            layout: Layout::Segments {
+                segments,
+                sheet: rejected.cloned(),
+            },
+            issue,
+        },
+        None => Plan::whole(rejected.cloned(), issue),
+    }
+}
+
+fn embedded_segments(
+    path: &Path,
+    meta: &TrackMeta,
+    text: &str,
+) -> Result<Vec<CueSegment>, cue::CueError> {
+    let own_file = |_: &cue::CueFile| Some((path.to_path_buf(), meta.duration_ms));
+    cue::parse(text.as_bytes()).and_then(|sheet| cue::segments(&sheet, own_file))
 }
 
 /// Records the issue a plan raised, unless the user dismissed this very

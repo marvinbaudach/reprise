@@ -7893,6 +7893,14 @@ no tags of its own to write.
   such a track has no tags of its own (CUE-5). A scope that holds only CUE
   tracks falls back like an empty one.
   <!-- REVIEW: rule proposal -->
+- **CUE-14** [active] [gtk] — A sheet that cannot be applied (CUE-2) is listed
+  under Issues → Import errors with its own copy, never as an unclassified
+  error. Retry rescans the sheet's directory, where its audio is; an issue for a
+  sheet embedded in a file retries that file. An issue for a sheet that is gone
+  clears on the next scan of its directory; an embedded sheet's issue stays
+  with its file. A sheet beside a file that parses but does not fit it gives
+  way to a valid sheet embedded in the file, and its issue stays raised.
+  <!-- REVIEW: rule proposal -->
 - **CUE-18** [active] [core] — A CUE track removed from the library stays hidden
   as the song it was across an edit of its sheet: it is recognised by its start
   and title, then a unique title, then its start, then its position, as CUE-1b
