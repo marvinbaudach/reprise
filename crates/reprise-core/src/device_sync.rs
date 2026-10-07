@@ -15,7 +15,9 @@ use crate::library::m3u::{M3uEntry, M3uExportEntry};
 pub mod analysis_sidecar;
 pub mod auto_start;
 pub mod browser;
+pub mod cue_files;
 pub mod delta;
+pub mod derived_cue;
 mod device_case;
 pub mod device_presence;
 pub mod device_view;
@@ -62,10 +64,10 @@ pub use machine::{
     TransferOperation, TransferSource,
 };
 pub use mirror::{
-    plan_mirror, AnalysisSidecarWrite, DesiredManagedFile, DesktopAnalysis, ManagedDeviceFile,
-    ManagedRemoval, MirrorBlocker, MirrorInput, MirrorPlan, MirrorPlaylistProjection,
-    MirrorPlaylistSnapshot, MirrorReplacement, MirrorTrack, MirrorWarning, PlaylistWrite,
-    UnavailableTrack,
+    plan_mirror, AnalysisSidecarWrite, DerivedCueWrite, DesiredManagedFile, DesktopAnalysis,
+    ManagedDeviceFile, ManagedRemoval, MirrorBlocker, MirrorInput, MirrorPlan,
+    MirrorPlaylistProjection, MirrorPlaylistSnapshot, MirrorReplacement, MirrorTrack,
+    MirrorWarning, PlaylistWrite, SharedRecord, UnavailableTrack,
 };
 pub use music_diff::{aggregate_balance, MusicDiff, MusicReading, SyncBalance};
 pub use page::{
@@ -423,6 +425,10 @@ mod mirror_inventory_truth_tests;
 #[cfg(test)]
 #[path = "device_sync/mirror_tests.rs"]
 mod mirror_tests;
+
+#[cfg(test)]
+#[path = "device_sync/mirror_cue_tests.rs"]
+mod mirror_cue_tests;
 
 #[cfg(test)]
 #[path = "device_sync/machine_lyrics_tests.rs"]

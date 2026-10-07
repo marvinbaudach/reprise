@@ -394,7 +394,7 @@ fn ambiguous_uninventoried_apostrophe_variant_keeps_its_resident_file() {
     assert!(plan.copy.is_empty());
     assert!(plan.replace.is_empty());
     assert!(!plan.remove.iter().any(|removal| match removal {
-        ManagedRemoval::Inventory(_) => false,
+        ManagedRemoval::Inventory(_) | ManagedRemoval::Unshared(_) => false,
         ManagedRemoval::Orphan(file) => file.relative_path == wanted_resident,
     }));
 }
@@ -417,7 +417,8 @@ fn ambiguous_directory_keeps_a_track_at_its_distinct_inventory_path() {
 
     assert_eq!(plan.desired_files[0].device_path, inventory_path);
     assert!(!plan.remove.iter().any(|removal| match removal {
-        ManagedRemoval::Inventory(file) => file.track_id == wanted.id,
+        ManagedRemoval::Inventory(file) | ManagedRemoval::Unshared(file) =>
+            file.track_id == wanted.id,
         ManagedRemoval::Orphan(_) => false,
     }));
 }
@@ -449,7 +450,9 @@ fn unavailable_track_is_retained_at_its_minority_inventory_spelling() {
 
     assert!(plan.retained_unavailable.contains(&minority));
     assert!(!plan.remove.iter().any(|removal| match removal {
-        ManagedRemoval::Inventory(file) => file.device_path == minority_path,
+        ManagedRemoval::Inventory(file) | ManagedRemoval::Unshared(file) => {
+            file.device_path == minority_path
+        }
         ManagedRemoval::Orphan(file) => file.relative_path == minority_path,
     }));
 }

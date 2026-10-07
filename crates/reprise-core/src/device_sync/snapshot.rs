@@ -39,6 +39,7 @@ pub fn load_mirror_playlist_snapshots_with_source(
             name: playlist.name,
             entries: load_manual_entries(source, conn, playlist.id)?,
             stability_margin_track_ids: Vec::new(),
+            cue_files: Vec::new(),
         });
     }
     for playlist in crate::library::playlists::list_smart(db)? {
@@ -59,9 +60,10 @@ pub fn load_mirror_playlist_snapshots_with_source(
             name: playlist.name,
             entries: tracks.into_iter().map(MirrorTrack::Available).collect(),
             stability_margin_track_ids,
+            cue_files: Vec::new(),
         });
     }
-    Ok(snapshots)
+    super::cue_files::with_cue_files(conn, snapshots)
 }
 
 fn load_smart_stability_margin(
@@ -155,7 +157,9 @@ pub fn load_everything_playlist_snapshot_with_source(
         },
     )?;
     let library_tracks = crate::queries::query_sync_tracks_with_source(source, db, &library_ids)?;
-    Ok(everything_playlist_snapshot(library_tracks))
+    let snapshot = everything_playlist_snapshot(library_tracks);
+    let mut snapshots = super::cue_files::with_cue_files(db.conn(), vec![snapshot])?;
+    Ok(snapshots.remove(0))
 }
 
 fn load_manual_entries(

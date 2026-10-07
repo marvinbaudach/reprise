@@ -7823,8 +7823,9 @@ committee published on 2026-05-29.
 
 An album ripped as one audio file plus a `.cue` sheet, or a FLAC that carries
 the sheet in its `CUESHEET` comment, is listed as the tracks the sheet names.
-Reprise only reads sheets: it never writes one, and a track cut from a file has
-no tags of its own to write.
+Reprise never writes a sheet into the music collection, and a track cut from a
+file has no tags of its own to write. The one sheet it writes is the one it
+derives for a synced CUE file on the device (CUE-15).
 
 - **CUE-1a** [active] [core] — A sheet beside an audio file, or embedded in a
   FLAC, lists the file as the sheet's tracks, in sheet order, each with the
@@ -7907,6 +7908,17 @@ no tags of its own to write.
   clears on the next scan of its directory; an embedded sheet's issue stays
   with its file. A sheet beside a file that parses but does not fit it gives
   way to a valid sheet embedded in the file, and its issue stays raised.
+  <!-- REVIEW: rule proposal -->
+- **CUE-15** [active] [core] — Device sync copies a CUE file once, transcoded per
+  the profile like any file, however many of its tracks are selected; it is
+  named after the source file and its bytes are counted once. Beside it goes a
+  sheet derived for the device, whose `FILE` line names the device file and
+  which places every track of the file still in the library, also for a sheet
+  that was embedded in the file. Each selected track keeps its own row in the
+  device inventory; a track that leaves the selection while another still
+  needs the file only loses its row, and the file and its sheet go with the
+  last track that needs them. A newly selected track of a file already on the
+  device is recorded without a copy.
   <!-- REVIEW: rule proposal -->
 - **CUE-16** [active] [core] — A sheet beside an audio file cuts it on the phone
   as on the desktop, through the document tree the phone's library lives in:

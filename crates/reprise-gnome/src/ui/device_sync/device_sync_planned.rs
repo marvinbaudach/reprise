@@ -122,14 +122,16 @@ fn playlist_stem(device_path: &str, fallback: &str) -> String {
 
 fn removal_path(removal: &ManagedRemoval) -> String {
     match removal {
-        ManagedRemoval::Inventory(file) => file.device_path.clone(),
+        ManagedRemoval::Inventory(file) | ManagedRemoval::Unshared(file) => {
+            file.device_path.clone()
+        }
         ManagedRemoval::Orphan(file) => file.relative_path.clone(),
     }
 }
 
 fn removal_track_id(removal: &ManagedRemoval) -> Option<i64> {
     match removal {
-        ManagedRemoval::Inventory(file) => Some(file.track_id),
+        ManagedRemoval::Inventory(file) | ManagedRemoval::Unshared(file) => Some(file.track_id),
         ManagedRemoval::Orphan(_) => None,
     }
 }
@@ -142,7 +144,9 @@ fn removal_track_id(removal: &ManagedRemoval) -> Option<i64> {
 /// `effects::remove_lyrics_sidecar`).
 fn removal_source_path(removal: &ManagedRemoval) -> Option<PathBuf> {
     match removal {
-        ManagedRemoval::Inventory(file) => Some(PathBuf::from(&file.source_path)),
+        ManagedRemoval::Inventory(file) | ManagedRemoval::Unshared(file) => {
+            Some(PathBuf::from(&file.source_path))
+        }
         ManagedRemoval::Orphan(_) => None,
     }
 }

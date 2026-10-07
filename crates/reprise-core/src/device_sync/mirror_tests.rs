@@ -39,6 +39,7 @@ fn playlist(
         name: name.into(),
         entries,
         stability_margin_track_ids: Vec::new(),
+        cue_files: Vec::new(),
     }
 }
 

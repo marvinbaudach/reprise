@@ -5,6 +5,9 @@
 
 use super::*;
 
+#[path = "device_sync_cue_effects.rs"]
+mod cue_effects;
+
 /// Best-effort phone-to-desktop input at the start of every transfer run.
 /// Applying the database transaction before publishing its acknowledgement
 /// is the ordering invariant that prevents a returned listen from being lost.
@@ -199,6 +202,14 @@ pub(super) async fn perform(
                 tracing::warn!(track_id = entry.track.id, %error, "could not update device inventory");
                 error.to_string()
             }))
+        }
+        Effect::RecordSharedFile {
+            index,
+            device_size,
+            device_path,
+        } => cue_effects::record_shared_file(runtime, work, index, device_size, device_path),
+        Effect::WriteDerivedCue { index } => {
+            cue_effects::write_derived_cue(runtime, work, index).await
         }
         Effect::WriteAnalysis { index } => {
             let planned = work.machine.borrow().plan().analysis_writes[index].clone();

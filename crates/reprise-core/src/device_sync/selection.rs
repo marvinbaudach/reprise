@@ -17,6 +17,7 @@ pub fn everything_playlist_snapshot(tracks: Vec<SyncTrack>) -> MirrorPlaylistSna
         name: "Everything".to_string(),
         entries: tracks.into_iter().map(MirrorTrack::Available).collect(),
         stability_margin_track_ids: Vec::new(),
+        cue_files: Vec::new(),
     }
 }
 
@@ -32,13 +33,16 @@ pub fn apply_frozen_smart_playlist_policy(
     plan.playlist_writes
         .retain(|write| !frozen_sources.contains(&write.source));
     plan.remove.retain(|removal| match removal {
-        ManagedRemoval::Inventory(file) => !frozen_track_ids.contains(&file.track_id),
+        ManagedRemoval::Inventory(file) | ManagedRemoval::Unshared(file) => {
+            !frozen_track_ids.contains(&file.track_id)
+        }
         ManagedRemoval::Orphan(_) => true,
     });
     plan.bytes_freed = plan.remove.iter().fold(0_u64, |sum, removal| {
         let bytes = match removal {
             ManagedRemoval::Inventory(file) => file.device_size,
             ManagedRemoval::Orphan(file) => file.size_bytes,
+            ManagedRemoval::Unshared(_) => 0,
         };
         sum.saturating_add(bytes)
     });

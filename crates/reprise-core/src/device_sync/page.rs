@@ -255,12 +255,30 @@ fn playlist_row(
     let mut unique = HashSet::new();
     let mut target_bytes = 0_u64;
     let mut unavailable_count = 0;
+    // A CUE file reaches the device once, however many of its tracks the
+    // playlist holds (CUE-15).
+    let mut counted_files = HashSet::new();
     for entry in &playlist.entries {
         let track_id = mirror_track_id(entry);
         if matches!(entry, MirrorTrack::Unavailable(_)) {
             unavailable_count += 1;
         }
         if !unique.insert(track_id) {
+            continue;
+        }
+        let cue_file = playlist
+            .cue_files
+            .iter()
+            .find(|file| file.track_ids().any(|id| id == track_id));
+        if let (Some(file), MirrorTrack::Available(track)) = (cue_file, entry) {
+            if counted_files.insert(&file.source_path) {
+                target_bytes = target_bytes.saturating_add(profile.estimated_target_bytes(
+                    &super::SyncTrack {
+                        duration_ms: file.duration_ms,
+                        ..track.clone()
+                    },
+                ));
+            }
             continue;
         }
         target_bytes = target_bytes.saturating_add(match entry {
