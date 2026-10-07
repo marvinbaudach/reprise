@@ -517,6 +517,78 @@ pub fn judge_boundary(label: &str, run: &[Frame], reference: &[Frame], kind: Bou
     }
 }
 
+/// The most a fresh start's first window may draw above a settled engine's
+/// level over the same frames, as a multiple. A fresh start has no shape to
+/// continue, so the bars rise from nothing and a settled engine is the upper
+/// bound: the gain falls from ten or forty times the measured one to it over the
+/// first frames, and a history kept in the units of the gain before would draw the
+/// frame at up to twice the level (0.87 to 1.81 times on the synthetic music at
+/// the offsets below, 0.57 to 0.74 on all three surfaces once the history
+/// follows the gain; the bound sits between).
+pub const FIRST_WINDOW_LEVEL_MAX: f32 = 0.9;
+
+/// What a fresh start's first window drew too tall, if anything.
+pub fn first_window_complaint(label: &str, run: &[Frame], reference: &[Frame]) -> Option<String> {
+    let ratio =
+        Measure::of(&run[..SETTLE_FRAMES]).level / Measure::of(&reference[..SETTLE_FRAMES]).level;
+    (ratio > FIRST_WINDOW_LEVEL_MAX).then(|| {
+        format!(
+            "{label}: the first {SETTLE_FRAMES} frames are drawn at {ratio:.2} times the \
+             settled level, at most {FIRST_WINDOW_LEVEL_MAX:.1} wanted"
+        )
+    })
+}
+
+/// Track-change steps inside the carry band: smaller than the 14 dB of the
+/// other tiers, in the dead zone where a carried gain is kept and draws the new
+/// song dim.
+pub const DEAD_ZONE_STEPS_DB: [f32; 3] = [-3.0, -4.5, -6.0];
+/// The least the second after the settle span may be drawn at, as a share of
+/// the settled level, for a drop in the dead zone. The carried gain is kept
+/// while the measurement reads under twice too low, so a drop draws dim: 0.51 to
+/// 0.77 on the synthetic music at the offsets of `BOUNDARY_OFFSETS_SECONDS`,
+/// with no drop measured as more than twice too low reading above that. A guard
+/// on today's behaviour, not a goal: the dead zone is accepted (AC-29).
+pub const DEAD_ZONE_FLOOR: f32 = 0.5;
+/// Frames more than the settled engine that a drop may touch full height in the
+/// first 2.3 s. A gain the measurement replaces lands above what the creep
+/// settles at, so a 4.5 or 6 dB drop draws 15 to 16 frames more than the settled
+/// engine's one at its worst offset (+0.29) on the core processor and the
+/// desktop stage, 7 more on the Android engine. A guard on that, one frame of
+/// room: a replaced gain that pins more than today's is a regression.
+pub const DEAD_ZONE_PINNED_SLACK: usize = 17;
+
+/// What a drop in the dead zone got wrong, if anything: a level under the floor
+/// or over the band, a wall, or more pinned frames than the settled engine plus
+/// the slack.
+pub fn dead_zone_complaints(label: &str, run: &[Frame], reference: &[Frame]) -> Vec<String> {
+    let mut complaints = Vec::new();
+    let judged = SETTLE_FRAMES..SETTLE_FRAMES + JUDGED_FRAMES;
+    let ratio = Measure::of(&run[judged.clone()]).level / Measure::of(&reference[judged]).level;
+    if !(DEAD_ZONE_FLOOR..=LEVEL_BAND.1).contains(&ratio) {
+        complaints.push(format!(
+            "{label}: drawn at {ratio:.2} times the settled level, {DEAD_ZONE_FLOOR} to {} wanted",
+            LEVEL_BAND.1
+        ));
+    }
+    let end = SETTLE_FRAMES + JUDGED_FRAMES + FRAMES_PER_SECOND;
+    let measured = Measure::of(&run[..end]);
+    let settled = Measure::of(&reference[..end]);
+    if measured.wall_frames > 0 {
+        complaints.push(format!(
+            "{label}: {} frames with half the bars pinned",
+            measured.wall_frames
+        ));
+    }
+    if measured.pinned_frames > settled.pinned_frames + DEAD_ZONE_PINNED_SLACK {
+        complaints.push(format!(
+            "{label}: {} frames pinned against the settled engine's {}",
+            measured.pinned_frames, settled.pinned_frames
+        ));
+    }
+    complaints
+}
+
 /// How far below the reference the shape on screen may dip while a boundary
 /// inside a song it already shows settles, as a multiple.
 const DIP_FLOOR: f32 = 0.8;

@@ -16,8 +16,13 @@
 //! bars are normalized by that peak, so the window-fill ramp the FFT produces
 //! rises through the integral stage to the song's level without drawing it at
 //! a gain it has not earned. The peak only grows, so the gain only falls: a
-//! louder bar after a quiet start is followed down on the spot. The
-//! measurement ends when a full window of signal is in. Silence restarts it,
+//! louder bar after a quiet start is followed down on the spot, from ten or
+//! forty times the measured gain in the first frame to the measured one. The
+//! bar history those frames drew is in the units of the gain that drew it, so
+//! each new gain rescales it, as the brakes and the move up do; left alone, the history of
+//! the high early gains is added to every later frame and the first 0.3 s are
+//! drawn at up to twice the level a settled engine draws. The measurement ends
+//! when a full window of signal is in. Silence restarts it,
 //! because a window that is mostly silence understates the level, until the
 //! measurement has gathered [`MEASURING_CAP_WINDOWS`] windows of audio since its
 //! first signal, silent or not: from there on a silence only pauses it, unless
@@ -36,10 +41,11 @@
 //! loudest bar of the new stream so far is the evidence. While the window
 //! fills the gain is held, not creeping. If the gain would draw the new stream
 //! as a wall (the measurement says it is more than [`CARRY_BAND`] too high) the
-//! measurement takes over at once, as above, without waiting for the window. If
-//! it would draw it dim (more than [`CARRY_BAND`] too low) the gain moves up to
-//! the measurement over a few frames once the window is in. Within the band the
-//! gain stays.
+//! measurement takes over at once, as above, without waiting for the window,
+//! and without rescaling the history: the shape on screen is not to jump when
+//! the gain under it is replaced. If it would draw it dim (more than
+//! [`CARRY_BAND`] too low) the gain moves up to the measurement over a few
+//! frames once the window is in. Within the band the gain stays.
 //!
 //! *Braking* then lasts about fourteen seconds on either path. A frame the gain
 //! would draw at [`BRAKE_LEVEL`] times full height or more (a song that opened
@@ -60,6 +66,30 @@
 //! the chain is following a rise, and a landing at the shared target leaves
 //! the rest of it dim. Each brake of the chain extends the span; a stream the
 //! gain draws under full height lets it lapse, and only a brake starts it.
+//!
+//! What the measurement cannot settle is the first window's own reading. It is
+//! the loudest bar of about 0.2 s of audio, and the gain `cavacore` settles at
+//! lands that bar anywhere from half to full height (median 0.77 of full height,
+//! the middle 80 % of windows between 0.52 and 1.06 on real music; the same at
+//! 44.1 and 48 kHz): the measurement lands above that equilibrium in about
+//! 65 % of the windows and more than 1.3 times above it in 30 %. A fresh start
+//! therefore reads a median 1.17 times a settled engine's level over 0.3 to 1 s
+//! after the boundary, 1.56 times at the 90th percentile, until the creep
+//! brings it down; a replaced gain lands above equilibrium in most windows and
+//! below it in the rest, and pins more frames than the settled engine. No
+//! landing height fixes this, because the error changes sign from one window to
+//! the next, and a longer measurement trades it for more pinned frames in a
+//! fade-in; it is accepted, and AC-29 states it.
+//!
+//! The same reading keeps the dead zone of the carry band as it is. A drop of 3
+//! to 7.5 dB keeps the carried gain when the measurement reads under twice too
+//! low, and the new song stays dim until the creep climbs back: a median 0.74
+//! times a settled engine's level at 3 and 4.5 dB, about half the cases under
+//! 0.75. A dim side narrowed to 1.7 times lifts those, and pins more frames
+//! doing so, because the gain it moves to is the measurement's. The project
+//! prefers dim to pinned (the brakes above land under full height for the same
+//! reason), so the band stays at twice until a measurement closer to
+//! equilibrium exists.
 //!
 //! What is left is dimming, not pinning. A rise inside the span (a verse
 //! giving way to a chorus eight or ten decibels up, say) reads under the level
@@ -85,7 +115,12 @@ pub(super) const TARGET_HEIGHT: f32 = 0.85;
 /// would take seconds to get such a frame under control.
 pub(super) const BRAKE_LEVEL: f32 = 2.0;
 /// A carried gain is kept while the new stream's measurement stays within this
-/// factor of it, either way.
+/// factor of it, either way. The dim side could be narrower, a dim line costing
+/// seconds where a wall is braked at once, but every gain the measurement
+/// replaces lands above `cavacore`'s equilibrium more often than below it (see
+/// the module docs) and pins more frames than the settled engine does, so a
+/// narrower dim side trades dim for pinned: a 6 dB drop replaced on a real pair
+/// of songs pins 1061 frames over 0 to 3 s against the settled engine's 720.
 pub(super) const CARRY_BAND: f32 = 2.0;
 /// For the first stretch after the window the evidence is thin: a first window
 /// that fell between two hits gave a gain the next hit overshoots, and a hit
@@ -157,8 +192,13 @@ pub(super) const MEASURING_CAP_WINDOWS: usize = 4;
 pub(super) enum Step {
     /// No signal to measure: hold the gain.
     Hold,
-    /// Set the gain to `sensitivity`.
-    Measure(f32),
+    /// Set the gain to `sensitivity`. With nothing on screen
+    /// (`rescales_history`) the bar history follows it; under a shape that is
+    /// kept the history stays, or the frame would jump.
+    Measure {
+        sensitivity: f32,
+        rescales_history: bool,
+    },
     /// Move the gain to `sensitivity`: down at once, up by a bounded factor a
     /// frame, so a carried gain that was too low does not jump.
     Goal(f32),
@@ -195,6 +235,9 @@ pub(super) struct BoundaryEstimator {
     chain_samples: usize,
     peak: f32,
     phase: Phase,
+    /// A shape was on screen when the boundary was armed, and its gain is a
+    /// prior. Decides whether a measured gain rescales the bar history.
+    keeps_shape: bool,
 }
 
 impl BoundaryEstimator {
@@ -210,6 +253,7 @@ impl BoundaryEstimator {
             chain_samples: 0,
             peak: 0.0,
             phase: Phase::Measuring,
+            keeps_shape: false,
         };
         estimator.arm(false);
         estimator
@@ -225,6 +269,7 @@ impl BoundaryEstimator {
         self.elapsed_samples = 0;
         self.chain_samples = 0;
         self.peak = 0.0;
+        self.keeps_shape = keeps_shape;
         self.phase = if keeps_shape {
             Phase::Waiting
         } else {
@@ -312,13 +357,19 @@ impl BoundaryEstimator {
         }
         match (waiting, measured) {
             (_, None) => Step::Hold,
-            (false, Some(sensitivity)) => Step::Measure(sensitivity),
+            (false, Some(sensitivity)) => Step::Measure {
+                sensitivity,
+                rescales_history: !self.keeps_shape,
+            },
             // The carried gain draws this stream as a wall: stop trusting it.
             (true, Some(sensitivity)) if sensitivity < gain / CARRY_BAND => {
                 if !full {
                     self.phase = Phase::Measuring;
                 }
-                Step::Measure(sensitivity)
+                Step::Measure {
+                    sensitivity,
+                    rescales_history: false,
+                }
             }
             // Too low: the window is the evidence, and the gain moves to it.
             (true, Some(sensitivity)) if full && sensitivity > gain * CARRY_BAND => {
