@@ -22,14 +22,10 @@ use reprise_view::columns::{layout, Layout};
 pub type ColumnLayout = Layout<ColumnId>;
 pub(in crate::ui) type ColumnRegistry = Rc<GenericColumnRegistry<ColumnId>>;
 
-pub(in crate::ui) fn registry(track_list: &Rc<TrackList>) -> ColumnRegistry {
-    track_list.column_registry.clone()
-}
-
 pub(in crate::ui) fn model(
     track_list: &Rc<TrackList>,
 ) -> Rc<dyn crate::ui::table_columns::EditorModel> {
-    super::track_list_editor_model::model(track_list)
+    track_list.editor_model.clone()
 }
 
 fn cell_alignment(id: ColumnId) -> CellAlignment {

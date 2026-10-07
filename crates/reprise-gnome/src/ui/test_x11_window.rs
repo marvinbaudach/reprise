@@ -21,7 +21,7 @@
 use std::process::{Child, Command, Stdio};
 use std::time::{Duration, Instant};
 
-use libadwaita as adw;
+use gtk4::prelude::*;
 
 /// Starts `openbox` for the life of the guard and kills it on drop.
 ///
@@ -54,9 +54,7 @@ impl Drop for TestWindowManager {
 ///
 /// Panics if the window has no surface yet or the display is not X11 — both
 /// are test setup errors, not conditions a display test should recover from.
-pub(crate) fn x11_window_id(window: &adw::ApplicationWindow) -> String {
-    use gtk4::prelude::*;
-
+pub(crate) fn x11_window_id(window: &impl IsA<gtk4::Native>) -> String {
     let surface = window
         .surface()
         .unwrap()

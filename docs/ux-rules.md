@@ -4058,6 +4058,9 @@ property is set and yet nothing happens.
   `style_13_table_customization_sort_and_header_click_converge_and_reload_once`
   and `style_13_header_sort_is_marked_when_table_customization_opens`
   (`ui/track_list/track_list_sort.rs`),
+  `style_13_a_pointer_click_on_a_track_list_header_sorts_by_that_column`
+  (`ui/window/table_columns_click_tests.rs`, a real X11 pointer click on the
+  music table wired by the main window's own `table_columns::install`),
   `style_13_sort_choices_match_every_accepted_table_sort_field`,
   `style_13_sort_choices_are_keyboard_radio_actions`, and
   `style_13_sort_popover_closes_on_escape`

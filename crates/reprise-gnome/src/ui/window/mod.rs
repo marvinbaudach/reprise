@@ -22,6 +22,8 @@ mod spectrogram_backend;
 #[path = "window.rs"]
 mod surface;
 mod table_columns;
+#[cfg(test)]
+mod table_columns_click_tests;
 pub(in crate::ui) mod visible_place;
 pub(in crate::ui) mod window_action_wiring;
 mod window_bootstrap;
