@@ -68,7 +68,9 @@ struct Rule {
 /// Positions are assigned sequentially (new playlist gets `max(position) + 1`).
 /// Empty or whitespace-only name is accepted (backend is dumb; UI validates).
 fn create_in(conn: &Connection, name: &str) -> Result<i64, rusqlite::Error> {
-    crate::events::in_txn(conn, |conn| {
+    // IMMEDIATE: `create_playlist_row` reads `MAX(position)` before it inserts
+    // (see `events::in_txn_immediate`).
+    crate::events::in_txn_immediate(conn, |conn| {
         let id = create_playlist_row(conn, name)?;
         crate::events::record(conn, "playlist", &id.to_string(), "create")?;
         Ok(id)
@@ -309,7 +311,17 @@ pub(crate) fn ensure_role_playlist_in(
     name: &str,
     role: &str,
 ) -> Result<i64, rusqlite::Error> {
-    crate::events::in_txn(conn, |conn| {
+    // An existing role playlist is the common case (this runs on every startup
+    // and every drop). Settle it before any transaction opens, so it never
+    // queues for the write lock behind another writer.
+    if conn.is_autocommit() {
+        if let Some(id) = find_role_playlist_in(conn, role)? {
+            return Ok(id);
+        }
+    }
+    // IMMEDIATE: the role lookup and `MAX(position)` are read before the insert
+    // (see `events::in_txn_immediate`).
+    crate::events::in_txn_immediate(conn, |conn| {
         if let Some(id) = find_role_playlist_in(conn, role)? {
             return Ok(id);
         }
@@ -671,7 +683,9 @@ fn create_smart_in(
 ) -> Result<i64, rusqlite::Error> {
     smart_rules_to_sql(rules_json)
         .map_err(|error| rusqlite::Error::ToSqlConversionFailure(Box::new(error)))?;
-    crate::events::in_txn(conn, |conn| {
+    // IMMEDIATE: the dedup lookup is read before the insert (see
+    // `events::in_txn_immediate`).
+    crate::events::in_txn_immediate(conn, |conn| {
         let existing = conn
             .query_row(
                 "SELECT id FROM smart_playlists \
