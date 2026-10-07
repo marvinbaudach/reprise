@@ -697,9 +697,10 @@ mod task_3_3_tests {
         let copy = kind_copy(ImportErrorKind::InvalidCueSheet);
 
         assert_eq!(copy.title, "CUE sheet not applied");
+        // True whether the file is read whole or cut by a sheet embedded in it.
         assert_eq!(
             copy.row_text,
-            "The sheet does not fit its audio, so the music file is listed as one track"
+            "The sheet beside this file could not be applied to it"
         );
         assert_ne!(copy, kind_copy(ImportErrorKind::Unknown));
     }

@@ -203,6 +203,8 @@ All tasks committed, gate battery green on the worktree. The device proofs (post
   is never touched. A10: a sidecar whose cut fails gives way to a valid embedded sheet and the
   rows remember the sidecar's version, so the next scan is `(0, 0, 1)`; a sheet that stopped
   covering the file (`Unfit`) is not remembered.
+  The issue row says only that the sheet beside the file could not be applied, which holds
+  whether the file is listed whole or cut by a sheet embedded in it.
 - **b6** — `scanner_cue::resolve` addresses each audio file by its own path where the source's
   paths are file names joined to their directory, otherwise by `display_name` joined to
   `parent_of(sheet)`; desktop resolution is byte-for-byte the old one.
