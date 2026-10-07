@@ -7908,6 +7908,12 @@ no tags of its own to write.
   with its file. A sheet beside a file that parses but does not fit it gives
   way to a valid sheet embedded in the file, and its issue stays raised.
   <!-- REVIEW: rule proposal -->
+- **CUE-16** [active] [core] — A sheet beside an audio file cuts it on the phone
+  as on the desktop, through the document tree the phone's library lives in:
+  the sheet finds its file by the name the tree shows for it. So the phone lists
+  every track of a CUE album synced to it. The live device proof is a post-merge
+  check of the CUE sheets wave.
+  <!-- REVIEW: rule proposal -->
 - **CUE-18** [active] [core] — A CUE track removed from the library stays hidden
   as the song it was across an edit of its sheet: it is recognised by its start
   and title, then a unique title, then its start, then its position, as CUE-1b

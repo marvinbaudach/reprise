@@ -430,7 +430,7 @@ fn read_state(source: &dyn LibrarySource, reference: &SheetRef, audio: &[PathBuf
             return SheetState::Unknown;
         }
     };
-    match resolve(&bytes, reference, audio) {
+    match resolve(source, &bytes, reference, audio) {
         Ok(parsed) => SheetState::Parsed(Rc::new(parsed)),
         Err(reason) => SheetState::Invalid(reason),
     }
@@ -504,20 +504,34 @@ fn clear_vanished_sheet_issues(
     Ok(())
 }
 
-fn resolve(bytes: &[u8], reference: &SheetRef, audio: &[PathBuf]) -> Result<ParsedSheet, String> {
+fn resolve(
+    source: &dyn LibrarySource,
+    bytes: &[u8],
+    reference: &SheetRef,
+    audio: &[PathBuf],
+) -> Result<ParsedSheet, String> {
     let parsed = cue::parse(bytes).map_err(|error| error.to_string())?;
-    let directory = reference.path.parent().unwrap_or(Path::new(""));
+    let directory = source.parent_of(&reference.path).unwrap_or_default();
+    let addressed: Vec<PathBuf> = audio
+        .iter()
+        .map(|path| addressed_by_name(source, &directory, path))
+        .collect();
     let mut resolved: Vec<(usize, PathBuf)> = Vec::new();
     for (index, file) in parsed.files.iter().enumerate() {
         if !file.tracks.iter().any(|track| track.is_audio) {
             continue;
         }
-        let path = cue::resolve_file(directory, &file.name, audio).ok_or_else(|| {
-            CueError::MissingDuration {
-                file: file.name.clone(),
-            }
-            .to_string()
-        })?;
+        let path = cue::resolve_file(&directory, &file.name, &addressed)
+            .and_then(|found| {
+                let position = addressed.iter().position(|candidate| *candidate == found)?;
+                audio.get(position).cloned()
+            })
+            .ok_or_else(|| {
+                CueError::MissingDuration {
+                    file: file.name.clone(),
+                }
+                .to_string()
+            })?;
         if resolved.iter().any(|(_, seen)| *seen == path) {
             return Err(CueError::DuplicateFile { path }.to_string());
         }
@@ -530,6 +544,21 @@ fn resolve(bytes: &[u8], reference: &SheetRef, audio: &[PathBuf]) -> Result<Pars
         sheet: parsed,
         resolved,
     })
+}
+
+/// `audio` as a sheet in `directory` names it: by its own path where the
+/// source's paths are file names joined to their directory, as on a
+/// filesystem, otherwise by the name the source shows for it joined to that
+/// directory. A document-tree URI is no file name joined to its parent, so a
+/// sheet beside a synced file on the phone finds it by its display name (CUE-16).
+fn addressed_by_name(source: &dyn LibrarySource, directory: &Path, audio: &Path) -> PathBuf {
+    let joined = audio.file_name().map(|name| directory.join(name));
+    if joined.as_deref() == Some(audio) {
+        return audio.to_path_buf();
+    }
+    source
+        .display_name(audio)
+        .map_or_else(|| audio.to_path_buf(), |name| directory.join(name))
 }
 
 fn read_sheet(source: &dyn LibrarySource, path: &Path) -> std::io::Result<Vec<u8>> {
