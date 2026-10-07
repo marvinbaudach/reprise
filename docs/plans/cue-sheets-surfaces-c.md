@@ -232,6 +232,10 @@ Review fixes:
   `SegmentJob` and the playback end in `track_segment.rs`. A track whose successor is only
   excluded gets its own end, in analysis and in playback. A stale exclusion beyond a sheet
   that has since shrunk makes the real last track end at its recorded end, not at EOF.
+- **#16** The Kotlin MTP-67 seek-bar test only forwarded a stub's answer and proved nothing,
+  so it was removed. MTP-67's seek-bar coverage is the FFI test
+  `mtp_67_the_seek_bar_of_a_later_track_fills_from_its_own_start`; the decoder's timestamps
+  stay a device check.
 
 Left open, by design or for a later change:
 - A foreground request for a track whose file the backfill is decoding under a sibling's id

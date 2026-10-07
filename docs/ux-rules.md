@@ -1377,8 +1377,7 @@ result.
   `mtp_67_a_track_the_file_never_reaches_is_remembered_and_the_others_are_stored`,
   `mtp_67_a_decode_that_fails_remembers_every_track_it_was_measuring`,
   `mtp_67_the_seek_bar_of_a_later_track_fills_from_its_own_start`,
-  `mtp_67_the_backfill_measures_a_cue_file_in_one_decode_and_counts_each_track`,
-  `mtp_67_a_cue_tracks_seek_bar_reads_the_progress_of_its_own_stretch`.
+  `mtp_67_the_backfill_measures_a_cue_file_in_one_decode_and_counts_each_track`.
   The platform decoder's timestamps are verified on a device.
   <!-- REVIEW: rule proposal -->
 - **MTP-68** [active] [android] — **The last track of a file plays to its
