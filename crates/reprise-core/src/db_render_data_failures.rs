@@ -38,7 +38,9 @@ pub fn record_render_data_failure(
     bounds: Option<SegmentBounds>,
     reason: &str,
 ) -> Result<SpectrogramStoreOutcome, DbError> {
-    let transaction = db.conn().unchecked_transaction()?;
+    // IMMEDIATE: the source check is read before the marker write, so the write lock
+    // comes first (see `events::immediate_transaction`).
+    let transaction = crate::events::immediate_transaction(db.conn())?;
     if !super::still_current(&transaction, track_id, source, bounds)? {
         return Ok(SpectrogramStoreOutcome::SourceChanged);
     }
