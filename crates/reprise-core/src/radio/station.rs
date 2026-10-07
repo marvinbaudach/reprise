@@ -25,7 +25,9 @@ pub fn add_or_restore(
     now: i64,
 ) -> Result<i64, CoreError> {
     let conn = db.conn();
-    let transaction = conn.unchecked_transaction()?;
+    // IMMEDIATE: the identity lookup is read before the insert/update, so the write lock comes
+    // first (see `events::immediate_transaction`).
+    let transaction = crate::events::immediate_transaction(conn)?;
     let existing_id = find_identity(&transaction, station)?;
     let id = if let Some(id) = existing_id {
         transaction.execute(

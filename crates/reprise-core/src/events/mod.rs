@@ -124,6 +124,18 @@ pub(crate) fn in_txn_immediate<T>(
     }
 }
 
+/// A raw `BEGIN IMMEDIATE` transaction for facades that hold a [`Transaction`]
+/// across several statements instead of a closure.
+///
+/// Same reason as [`in_txn_immediate`]: a facade whose **first** statement is a
+/// read must take the write lock before it, or a rival commit between the read
+/// and the write fails the upgrade with `SQLITE_BUSY_SNAPSHOT`. Unlike
+/// [`in_txn_immediate`] it never joins a caller's transaction: `BEGIN` inside
+/// one fails, exactly as `conn.unchecked_transaction()` did.
+pub(crate) fn immediate_transaction(conn: &Connection) -> Result<Transaction<'_>, rusqlite::Error> {
+    Transaction::new_unchecked(conn, TransactionBehavior::Immediate)
+}
+
 pub fn read_since(
     db: &crate::db::Db,
     last_seen_id: i64,

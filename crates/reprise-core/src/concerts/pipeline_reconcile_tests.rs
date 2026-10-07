@@ -86,3 +86,38 @@ fn provider_owned_listing_survives_a_later_losing_batch() {
         )
     );
 }
+
+/// The reconcile reads each listing's stored owner before it upserts, so a
+/// rival commit between the two must not fail it with a snapshot conflict
+/// (#1188).
+#[test]
+fn reconciling_an_artist_survives_a_rival_commit_between_its_read_and_its_write() {
+    use std::sync::atomic::Ordering;
+
+    let directory = tempfile::tempdir().unwrap();
+    let path = directory.path().join("reprise.db");
+    let db = crate::db::Db::open_migrated(Some(&path)).unwrap();
+    let flag = crate::library::rival_commit_test_support::arm(db.conn(), &path, "concert_events");
+    let artist = LedgerArtist {
+        key: "artist",
+        name: "Artist",
+        mbid: None,
+        is_similar: false,
+        similar_to: None,
+    };
+    let identity = ResolvedIdentity {
+        provider: ProviderKind::Ticketmaster,
+        provider_id: "provider-id",
+        mbid_verified: false,
+    };
+    let today = NaiveDate::from_ymd_opt(2026, 7, 25).unwrap();
+    let event = listing("Winner Hall", "https://ticketmaster.com/event/winner");
+
+    let upserted = reconcile_artist(db.conn(), &artist, &identity, &[event], today, 1_000).unwrap();
+
+    assert!(
+        flag.load(Ordering::SeqCst),
+        "the rival must have committed mid-transaction"
+    );
+    assert_eq!(upserted, 1);
+}

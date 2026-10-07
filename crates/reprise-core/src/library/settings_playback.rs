@@ -125,12 +125,35 @@ pub(in crate::library) fn set_replay_gain_mode_in(
     conn: &Connection,
     value: ReplayGainMode,
 ) -> Result<(), rusqlite::Error> {
-    let value = match value {
+    set_setting_in(conn, REPLAY_GAIN_MODE_KEY, replay_gain_text(value))
+}
+
+fn replay_gain_text(value: ReplayGainMode) -> &'static str {
+    match value {
         ReplayGainMode::Off => "off",
         ReplayGainMode::Track => "track",
         ReplayGainMode::Album => "album",
-    };
-    set_setting_in(conn, REPLAY_GAIN_MODE_KEY, value)
+    }
+}
+
+/// Whether `effects` is already exactly what the three effect setters would
+/// store, read with errors propagated (the typed getters swallow them and
+/// would let a failed read pass for "unchanged"). A missing key counts as
+/// changed. It lets the store facade settle an unchanged state before any
+/// transaction takes the write lock.
+pub(in crate::library) fn audio_effects_are_stored_in(
+    conn: &Connection,
+    effects: &crate::playback::AudioEffects,
+) -> Result<bool, rusqlite::Error> {
+    let curve = crate::equalizer::EqualizerCurve::from_gstreamer_levels(effects.equalizer_bands)
+        .serialize();
+    Ok(
+        get_bool_in(conn, EQUALIZER_ENABLED_KEY, !effects.equalizer_enabled)?
+            == effects.equalizer_enabled
+            && get_setting_in(conn, EQUALIZER_CURVE_KEY)?.as_deref() == Some(curve.as_str())
+            && get_setting_in(conn, REPLAY_GAIN_MODE_KEY)?.as_deref()
+                == Some(replay_gain_text(effects.replay_gain)),
+    )
 }
 
 /// Whether gapless playback is enabled. Independent of crossfade: it only takes

@@ -6,7 +6,7 @@ use std::sync::atomic::Ordering;
 
 use super::*;
 use crate::db::Db;
-use crate::library::rival_commit_test_support::arm;
+use crate::library::rival_commit_test_support::{arm, arm_on_first_write};
 
 fn contended_db() -> (tempfile::TempDir, Db) {
     let directory = tempfile::tempdir().unwrap();
@@ -76,4 +76,137 @@ fn ensuring_an_existing_role_playlist_never_waits_for_the_write_lock() {
     let again = ensure_role_playlist(&db, "Conversion", "conversion").unwrap();
 
     assert_eq!(again, id);
+}
+
+fn seed_tracks(db: &Db, count: i64) -> Vec<i64> {
+    let ids: Vec<i64> = (1..=count).collect();
+    for id in &ids {
+        db.conn()
+            .execute(
+                "INSERT INTO tracks (id, path, title, added_at) VALUES (?1, ?2, 'Track', 0)",
+                params![id, format!("/x/{id}.flac")],
+            )
+            .unwrap();
+    }
+    ids
+}
+
+#[test]
+fn appending_tracks_survives_a_rival_commit_between_its_read_and_its_write() {
+    let (directory, db) = contended_db();
+    let tracks = seed_tracks(&db, 3);
+    let playlist = create(&db, "Contested").unwrap();
+    let interleaved = arm_on_playlists(&directory, &db, "playlist_tracks");
+
+    let inserted = add_tracks(&db, playlist, &tracks).unwrap();
+
+    assert!(
+        interleaved(),
+        "the rival must have committed mid-transaction"
+    );
+    assert_eq!(inserted, 3);
+    assert_eq!(track_ids(&db, playlist).unwrap(), tracks);
+}
+
+#[test]
+fn creating_a_playlist_with_tracks_survives_a_rival_commit_between_its_read_and_its_write() {
+    let (directory, db) = contended_db();
+    let tracks = seed_tracks(&db, 2);
+    let interleaved = arm_on_playlists(&directory, &db, "playlists");
+
+    let id = create_with_tracks(&db, "Contested", &tracks).unwrap();
+
+    assert!(
+        interleaved(),
+        "the rival must have committed mid-transaction"
+    );
+    assert_eq!(track_ids(&db, id).unwrap(), tracks);
+}
+
+#[test]
+fn moving_a_track_survives_a_rival_commit_between_its_read_and_its_write() {
+    let (directory, db) = contended_db();
+    let tracks = seed_tracks(&db, 3);
+    let playlist = create_with_tracks(&db, "Contested", &tracks).unwrap();
+    let flag = arm_on_first_write(
+        db.conn(),
+        &directory.path().join("reprise.db"),
+        "playlist_tracks",
+    );
+
+    move_position(&db, playlist, 0, 2).unwrap();
+
+    assert!(
+        flag.load(Ordering::SeqCst),
+        "the rival must have committed mid-transaction"
+    );
+    assert_eq!(track_ids(&db, playlist).unwrap(), vec![2, 3, 1]);
+}
+
+/// A playlist that shrinks between the autocommit range check and the write lock
+/// must not panic `Vec::insert`: the range is checked again under the lock. The
+/// rival shrinks the playlist while the `BEGIN IMMEDIATE` is being prepared,
+/// which is after the autocommit check and before the lock is taken.
+#[test]
+fn moving_a_track_in_a_playlist_that_shrank_before_the_lock_is_a_no_op() {
+    use rusqlite::hooks::{AuthAction, AuthContext, Authorization, TransactionOperation};
+
+    let (directory, db) = contended_db();
+    let tracks = seed_tracks(&db, 3);
+    let playlist = create_with_tracks(&db, "Shrinking", &tracks).unwrap();
+    let rival = rusqlite::Connection::open(directory.path().join("reprise.db")).unwrap();
+    rival.pragma_update(None, "busy_timeout", 0).unwrap();
+    let shrunk = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false));
+    let hook_shrunk = std::sync::Arc::clone(&shrunk);
+    db.conn()
+        .authorizer(Some(move |context: AuthContext<'_>| {
+            let begins = matches!(
+                context.action,
+                AuthAction::Transaction {
+                    operation: TransactionOperation::Begin
+                }
+            );
+            if begins && !hook_shrunk.swap(true, Ordering::SeqCst) {
+                rival
+                    .execute(
+                        "DELETE FROM playlist_tracks WHERE playlist_id = ?1 AND position >= 1",
+                        [playlist],
+                    )
+                    .unwrap();
+            }
+            Authorization::Allow
+        }))
+        .unwrap();
+
+    move_position(&db, playlist, 0, 2).unwrap();
+
+    assert!(
+        shrunk.load(Ordering::SeqCst),
+        "the playlist must have shrunk"
+    );
+    assert_eq!(track_ids(&db, playlist).unwrap(), vec![1]);
+}
+
+/// `remove_positions` opens with a DELETE, so its first statement already
+/// takes the write lock: the audit leaves it deferred, and this keeps that
+/// reading honest.
+#[test]
+fn removing_positions_opens_with_a_write_and_survives_a_rival_commit() {
+    let (directory, db) = contended_db();
+    let tracks = seed_tracks(&db, 3);
+    let playlist = create_with_tracks(&db, "Contested", &tracks).unwrap();
+    let flag = arm_on_first_write(
+        db.conn(),
+        &directory.path().join("reprise.db"),
+        "playlist_tracks",
+    );
+
+    let removed = remove_positions(&db, playlist, &[1]).unwrap();
+
+    assert!(
+        flag.load(Ordering::SeqCst),
+        "the rival must have committed mid-transaction"
+    );
+    assert_eq!(removed, 1);
+    assert_eq!(track_ids(&db, playlist).unwrap(), vec![1, 3]);
 }

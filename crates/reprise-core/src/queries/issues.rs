@@ -414,8 +414,10 @@ pub fn mark_mount_unavailable(
 /// only rows that still belong to that exact missing state.
 ///
 /// The revalidation read and guarded update share one transaction so a
-/// scanner resurrection cannot land between them. A conflicting writer
-/// makes the operation fail without leaving a partial tombstone batch.
+/// scanner resurrection cannot land between them. The transaction takes the
+/// write lock first, so a conflicting writer makes it wait out the busy timeout
+/// rather than fail it with a snapshot conflict; a failure still leaves no
+/// partial tombstone batch.
 /// Returned ids preserve the caller's order with duplicates collapsed.
 pub fn tombstone_still_missing(
     db: &Db,
@@ -443,7 +445,9 @@ fn tombstone_still_missing_in(
         MissingGroupKind::Unlocatable => unlocatable_predicate(),
         MissingGroupKind::Unavailable { .. } => return Ok(Vec::new()),
     };
-    let tx = conn.unchecked_transaction()?;
+    // IMMEDIATE: the revalidation read precedes the guarded update, so the write lock comes first
+    // (see `events::immediate_transaction`).
+    let tx = crate::events::immediate_transaction(conn)?;
     let currently_matching: HashSet<i64> = {
         let mut statement = tx.prepare(&format!(
             "SELECT id FROM tracks WHERE {MISSING} AND {state_predicate}"

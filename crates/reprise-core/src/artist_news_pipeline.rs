@@ -319,12 +319,7 @@ where
         }
         Ok(())
     })();
-    let reconciliation_result = (|| -> Result<(), NewsError> {
-        let transaction = conn.unchecked_transaction().map_err(database_error)?;
-        crate::deleted_releases::apply_deleted_release_memory(&transaction)
-            .map_err(database_error)?;
-        transaction.commit().map_err(database_error)
-    })();
+    let reconciliation_result = reconcile_deleted_release_memory(conn);
     let finish_result = refresh_result
         .and(reconciliation_result)
         .and_then(|()| {
@@ -613,6 +608,16 @@ fn artist_cache_is_fresh(
                 | crate::artist_news_ledger::FetchOutcome::Unmatched
         ) && now.saturating_sub(attempt.at).max(0) <= FETCH_TTL_SECONDS
     }))
+}
+
+/// Applies the deleted-release memory to the stored releases. It takes the
+/// write lock only when a memory exists, and never while scanning the library.
+pub(crate) fn reconcile_deleted_release_memory(
+    conn: &rusqlite::Connection,
+) -> Result<(), NewsError> {
+    crate::deleted_releases::apply_deleted_release_memory(conn)
+        .map(|_| ())
+        .map_err(database_error)
 }
 
 fn sync_releases(

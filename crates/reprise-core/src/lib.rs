@@ -152,3 +152,5 @@ mod artist_news_view_tests;
 mod deleted_releases_tests;
 #[cfg(test)]
 mod fingerprint_tests;
+#[cfg(test)]
+mod read_first_transaction_tests;

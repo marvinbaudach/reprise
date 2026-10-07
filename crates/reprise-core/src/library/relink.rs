@@ -133,7 +133,10 @@ pub fn relink_track_with_source(
     let mount_point =
         super::mounts::mount_point_of(new_path).map(|path| path.to_string_lossy().into_owned());
 
-    let tx = conn.unchecked_transaction()?;
+    // IMMEDIATE: the missing-track check is read before the relink, so the write
+    // lock comes first (see `events::immediate_transaction`). Every file read
+    // above ran before it; only database statements run under the lock.
+    let tx = crate::events::immediate_transaction(conn)?;
     let segment_index: Option<i64> = tx
         .query_row(
             &format!(
@@ -270,67 +273,51 @@ fn relink_from_folder_with_source(
             };
             let mount_point = super::mounts::mount_point_of(path)
                 .map(|mount| mount.to_string_lossy().into_owned());
-            let tx = conn.unchecked_transaction()?;
-            let candidate = super::scanner::move_detect::find_move_candidate_in_with_source(
-                source,
-                &tx,
-                &super::scanner::move_detect::MoveLookup {
-                    identity,
-                    title: &title,
-                    artist: &meta.artist,
-                    album: &meta.album,
-                    duration_ms: meta.duration_ms,
-                    file_size: facts.size as i64,
-                    tracks_album: None,
-                },
-                &remaining,
-            )?;
+            // The lookup and its filesystem probes run in a plain read snapshot: a
+            // file that matches nothing never takes the write lock, and no probe
+            // ever runs under it.
+            let candidate = {
+                let snapshot = conn.unchecked_transaction()?;
+                super::scanner::move_detect::find_move_candidate_in_with_source(
+                    source,
+                    &snapshot,
+                    &super::scanner::move_detect::MoveLookup {
+                        identity,
+                        title: &title,
+                        artist: &meta.artist,
+                        album: &meta.album,
+                        duration_ms: meta.duration_ms,
+                        file_size: facts.size as i64,
+                        tracks_album: None,
+                    },
+                    &remaining,
+                )?
+            };
             if let Some(candidate) = candidate {
                 let expected_path = expected_paths
                     .get(&candidate.id)
                     .expect("move candidates are restricted to remaining target ids");
-                let still_missing = source.probe(expected_path, LibraryLinkMode::Follow)
-                    == LibraryPathPresence::Absent
-                    && tx
-                        .query_row(
-                            &format!(
-                                "SELECT 1 FROM tracks WHERE id = ?1 AND path = ?2 AND {}",
-                                crate::queries::MISSING
-                            ),
-                            rusqlite::params![candidate.id, expected_path.to_string_lossy()],
-                            |_| Ok(()),
-                        )
-                        .optional()?
-                        .is_some();
-                if still_missing {
-                    let (device, inode) = identity
-                        .map_or((None, None), |(device, inode)| (Some(device), Some(inode)));
-                    let file_identity = super::scanner::move_detect::FileIdentity {
-                        file_mtime: facts.mtime,
-                        file_size: facts.size as i64,
-                        device,
-                        inode,
-                        mount_point,
-                    };
-                    if candidate.segmented {
-                        super::scanner::move_detect::move_segment_rows(
-                            &tx,
-                            &candidate.path,
-                            path,
-                            &file_identity,
-                        )?;
-                    } else {
-                        super::scanner::move_detect::apply_file_identity(
-                            &tx,
-                            candidate.id,
-                            path,
-                            &title,
-                            &meta,
-                            false,
-                            &file_identity,
-                        )?;
-                    }
-                }
+                let path_is_gone = source.probe(expected_path, LibraryLinkMode::Follow)
+                    == LibraryPathPresence::Absent;
+                let (device, inode) =
+                    identity.map_or((None, None), |(device, inode)| (Some(device), Some(inode)));
+                let file_identity = super::scanner::move_detect::FileIdentity {
+                    file_mtime: facts.mtime,
+                    file_size: facts.size as i64,
+                    device,
+                    inode,
+                    mount_point,
+                };
+                let still_missing = path_is_gone
+                    && apply_folder_match(
+                        conn,
+                        &candidate,
+                        expected_path,
+                        path,
+                        &title,
+                        &meta,
+                        &file_identity,
+                    )?;
                 // A CUE file stands for all of its tracks at once, and each of
                 // them counts as relinked, as `group_size` counts them.
                 let settled: Vec<i64> = expected_paths
@@ -350,7 +337,6 @@ fn relink_from_folder_with_source(
                     expected_paths.remove(&id);
                 }
             }
-            tx.commit()?;
             on_progress(processed, total);
             if remaining.is_empty() {
                 return Ok(LibraryWalkControl::Stop);
@@ -374,6 +360,57 @@ fn relink_from_folder_with_source(
     })
 }
 
+/// Writes one folder match under the write lock. The lookup ran before the lock
+/// was taken, so the row is read again here: a rival writer may have relinked,
+/// removed or re-pointed it since, and a stale match must write nothing.
+/// Returns whether the row was still the missing track the group expected.
+fn apply_folder_match(
+    conn: &rusqlite::Connection,
+    candidate: &super::scanner::move_detect::MoveCandidate,
+    expected_path: &Path,
+    new_path: &Path,
+    title: &str,
+    meta: &super::scanner::track_meta::TrackMeta,
+    identity: &super::scanner::move_detect::FileIdentity,
+) -> Result<bool, ScanError> {
+    // IMMEDIATE: the missing-track check is read before the relink, so the
+    // write lock comes first (see `events::immediate_transaction`).
+    let tx = crate::events::immediate_transaction(conn)?;
+    let still_missing = tx
+        .query_row(
+            &format!(
+                "SELECT 1 FROM tracks WHERE id = ?1 AND path = ?2 AND {}",
+                crate::queries::MISSING
+            ),
+            rusqlite::params![candidate.id, expected_path.to_string_lossy()],
+            |_| Ok(()),
+        )
+        .optional()?
+        .is_some();
+    if still_missing {
+        if candidate.segmented {
+            super::scanner::move_detect::move_segment_rows(
+                &tx,
+                &candidate.path,
+                new_path,
+                identity,
+            )?;
+        } else {
+            super::scanner::move_detect::apply_file_identity(
+                &tx,
+                candidate.id,
+                new_path,
+                title,
+                meta,
+                false,
+                identity,
+            )?;
+        }
+    }
+    tx.commit()?;
+    Ok(still_missing)
+}
+
 #[cfg(test)]
 #[path = "relink_tests.rs"]
 mod tests;
@@ -381,3 +418,7 @@ mod tests;
 #[cfg(test)]
 #[path = "relink_source_name_tests.rs"]
 mod source_name_tests;
+
+#[cfg(test)]
+#[path = "relink_contention_tests.rs"]
+mod contention_tests;

@@ -16,11 +16,21 @@ pub fn load(db: &Db) -> AudioEffects {
 
 pub fn store(db: &Db, effects: &AudioEffects) -> Result<(), rusqlite::Error> {
     let conn = db.conn();
-    let transaction = conn.unchecked_transaction()?;
-    settings::set_equalizer_enabled_in(&transaction, effects.equalizer_enabled)?;
-    settings::set_equalizer_bands_in(&transaction, effects.equalizer_bands)?;
-    settings::set_replay_gain_mode_in(&transaction, effects.replay_gain)?;
-    transaction.commit()
+    // An unchanged state is the common case (re-applying the stored effects).
+    // Settle it before any transaction opens, so it never queues for the write
+    // lock behind another writer (mirrors `set_setting_in`).
+    if conn.is_autocommit() && settings::audio_effects_are_stored_in(conn, effects)? {
+        return Ok(());
+    }
+    // IMMEDIATE: each setter reads (its dedup check) before it writes, so a
+    // deferred transaction would fail the write-lock upgrade with
+    // `SQLITE_BUSY_SNAPSHOT` when a rival commits in between (see
+    // `events::in_txn_immediate`).
+    crate::events::in_txn_immediate(conn, |conn| {
+        settings::set_equalizer_enabled_in(conn, effects.equalizer_enabled)?;
+        settings::set_equalizer_bands_in(conn, effects.equalizer_bands)?;
+        settings::set_replay_gain_mode_in(conn, effects.replay_gain)
+    })
 }
 
 #[cfg(test)]

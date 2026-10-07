@@ -317,7 +317,9 @@ pub fn restore_release(
     release_group_mbid: &str,
 ) -> Result<(), rusqlite::Error> {
     let conn = db.conn();
-    let transaction = conn.unchecked_transaction()?;
+    // IMMEDIATE: un-hiding reads the release and its deleted-memory first, so the write lock comes
+    // first (see `events::immediate_transaction`).
+    let transaction = crate::events::immediate_transaction(conn)?;
     crate::artist_news_query::apply_release_hidden_in(&transaction, release_group_mbid, false)?;
     transaction.commit()
 }

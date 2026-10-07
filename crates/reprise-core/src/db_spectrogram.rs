@@ -65,7 +65,9 @@ pub fn set_track_spectrogram(
     source: TrackSourceFingerprint,
     spectrogram: &TrackSpectrogram,
 ) -> Result<SpectrogramStoreOutcome, DbError> {
-    let transaction = db.conn().unchecked_transaction()?;
+    // IMMEDIATE: the source-fingerprint check is read before the cache write, so the write lock
+    // comes first (see `events::immediate_transaction`).
+    let transaction = crate::events::immediate_transaction(db.conn())?;
     let current = source_fingerprint(&transaction, track_id)?;
     if current != Some(source) {
         return Ok(SpectrogramStoreOutcome::SourceChanged);
@@ -105,7 +107,9 @@ fn store_render_data(
     bounds: Option<SegmentBounds>,
     data: &TrackRenderData,
 ) -> Result<SpectrogramStoreOutcome, DbError> {
-    let transaction = db.conn().unchecked_transaction()?;
+    // IMMEDIATE: the source-fingerprint check is read before the cache write, so the write lock
+    // comes first (see `events::immediate_transaction`).
+    let transaction = crate::events::immediate_transaction(db.conn())?;
     let current = source_fingerprint(&transaction, track_id)?;
     if current != Some(source) {
         return Ok(SpectrogramStoreOutcome::SourceChanged);

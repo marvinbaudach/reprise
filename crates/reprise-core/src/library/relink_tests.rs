@@ -17,7 +17,9 @@ fn tag_file(path: &Path, title: &str) {
         .unwrap();
 }
 
-fn imported_missing_track(title: &str) -> (tempfile::TempDir, Db, i64, std::path::PathBuf) {
+pub(super) fn imported_missing_track(
+    title: &str,
+) -> (tempfile::TempDir, Db, i64, std::path::PathBuf) {
     let temp = tempfile::tempdir().unwrap();
     let old_path = fixture_copy(temp.path(), "old.flac");
     tag_file(&old_path, title);
@@ -42,7 +44,7 @@ fn imported_missing_track(title: &str) -> (tempfile::TempDir, Db, i64, std::path
     (temp, conn, track_id, new_path)
 }
 
-fn target_for(conn: &Db, track_id: i64) -> RelinkTarget {
+pub(super) fn target_for(conn: &Db, track_id: i64) -> RelinkTarget {
     let old_path = conn
         .conn()
         .query_row("SELECT path FROM tracks WHERE id = ?1", [track_id], |row| {
@@ -55,14 +57,14 @@ fn target_for(conn: &Db, track_id: i64) -> RelinkTarget {
     }
 }
 
-fn targets_for(conn: &Db, track_ids: &[i64]) -> Vec<RelinkTarget> {
+pub(super) fn targets_for(conn: &Db, track_ids: &[i64]) -> Vec<RelinkTarget> {
     track_ids
         .iter()
         .map(|track_id| target_for(conn, *track_id))
         .collect()
 }
 
-fn moved_group(count: usize) -> (tempfile::TempDir, Db, Vec<i64>, std::path::PathBuf) {
+pub(super) fn moved_group(count: usize) -> (tempfile::TempDir, Db, Vec<i64>, std::path::PathBuf) {
     let temp = tempfile::tempdir().unwrap();
     let old_folder = temp.path().join("old");
     std::fs::create_dir(&old_folder).unwrap();
