@@ -1,5 +1,6 @@
 use crate::browse::WindowRange;
 use crate::cue_album_test_support::cue_album;
+use reprise_core::queries;
 
 const WINDOW: WindowRange = WindowRange {
     offset: 0,
@@ -61,5 +62,35 @@ fn mtp_68_a_single_row_of_the_last_track_has_no_end_either() {
     assert_eq!(
         (middle.segment_start_ms, middle.segment_end_ms),
         (Some(10_000), Some(20_000))
+    );
+}
+
+#[test]
+fn mtp_66_a_track_whose_successor_is_only_excluded_still_plays_to_its_own_end() {
+    let album = cue_album();
+    // The user removes the last track from the library; it keeps its place in
+    // the sheet as an exclusion, but no row.
+    let database = reprise_core::db::Db::open_migrated(Some(
+        &album._directory.path().join(crate::DATABASE_FILE_NAME),
+    ))
+    .unwrap();
+    queries::exclude_tracks_matching_paths(
+        &database,
+        &[(album.track_ids[2], std::path::PathBuf::from(&album.path))],
+        0,
+    )
+    .unwrap();
+    drop(database);
+
+    let second = album
+        .library
+        .track_by_id(album.track_ids[1])
+        .unwrap()
+        .unwrap();
+
+    assert_eq!(
+        (second.segment_start_ms, second.segment_end_ms),
+        (Some(10_000), Some(20_000)),
+        "the removed track's audio is not part of the second"
     );
 }

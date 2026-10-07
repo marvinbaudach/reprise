@@ -1345,7 +1345,9 @@ result.
   the widget show that track's own title and artist, never those of the
   file's first track, and every track of the file shows the file's cover.
   Each track plays at its own gain. The phone never crossfades, so no
-  transition into or out of a CUE track is a crossfade.
+  transition into or out of a CUE track is a crossfade. A track whose
+  successors in the sheet are only removed from the library keeps its own
+  end.
   *Tests:* `mtp_66_each_track_of_a_cue_file_is_its_own_row_and_the_last_runs_to_the_end`,
   `mtp_66_a_cue_track_starts_as_its_own_stretch_and_the_next_one_is_fed_as_its_own`,
   `mtp_66_two_tracks_of_one_cue_file_each_carry_their_own_metadata`,
@@ -1355,7 +1357,9 @@ result.
   `mtp_66_a_whole_file_is_not_clipped`,
   `mtp_66_late_metadata_completes_a_clip_in_place_and_keeps_its_stretch`,
   `mtp_66_two_clips_of_one_file_each_play_at_their_own_gain`,
-  `mtp_66_a_clipped_cue_track_that_gains_its_cover_is_updated_in_place`.
+  `mtp_66_a_clipped_cue_track_that_gains_its_cover_is_updated_in_place`,
+  `mtp_66_a_track_whose_successor_is_only_excluded_still_plays_to_its_own_end`,
+  `mtp_66_a_track_whose_successor_is_only_excluded_keeps_its_own_end`.
   The gap between two clips and each clip's gain on a real device are a
   manual check.
   <!-- REVIEW: rule proposal -->
@@ -1379,7 +1383,9 @@ result.
   <!-- REVIEW: rule proposal -->
 - **MTP-68** [active] [android] — **The last track of a file plays to its
   end on the phone.** The last track of a CUE file plays to the end of the
-  audio, whatever duration the file's metadata claims.
+  audio, whatever duration the file's metadata claims. It is the sheet's own
+  last track: one whose successor was only removed from the library is not,
+  and is analysed and played to its own end.
   *Tests:* `mtp_68_a_single_row_of_the_last_track_has_no_end_either`,
   `mtp_68_the_last_track_of_a_cue_file_is_handed_over_without_an_end`,
   `mtp_68_the_last_track_of_a_file_is_clipped_at_its_start_only`.

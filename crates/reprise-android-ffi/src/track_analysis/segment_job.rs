@@ -9,9 +9,10 @@
 //! file again: the in-flight registry is keyed by track. That costs a second
 //! decode in a rare case and is accepted rather than optimised.
 
-use reprise_core::db::{pending_segment_tracks_of, set_segment_render_data, Db};
+use reprise_core::db::{
+    pending_segment_tracks_of, set_segment_render_data, track_is_last_in_file, Db,
+};
 use reprise_core::models::Track;
-use reprise_core::queries;
 use reprise_core::render_data_segments::SegmentBounds;
 use reprise_core::spectrogram::TrackSourceFingerprint;
 use reprise_core::waveform::TrackRenderData;
@@ -32,14 +33,11 @@ impl SegmentJob {
         let Some(segment) = &track.segment else {
             return Ok(None);
         };
-        let last_of_file = queries::track_ids_for_path(reader, &track.path)
-            .map_err(query_error)?
-            .last()
-            .copied();
+        let last_in_file = track_is_last_in_file(reader, track.id).map_err(database_error)?;
         let asked = SegmentBounds {
             start_ms: segment.start_ms,
             end_ms: segment.end_ms,
-            last_in_file: last_of_file == Some(track.id),
+            last_in_file,
         };
         let siblings = pending_segment_tracks_of(reader, &track.path)
             .map_err(database_error)?
@@ -111,12 +109,6 @@ impl SegmentJob {
 
 fn database_error(error: impl std::fmt::Display) -> LibraryError {
     LibraryError::Database {
-        detail: error.to_string(),
-    }
-}
-
-fn query_error(error: impl std::fmt::Display) -> LibraryError {
-    LibraryError::Query {
         detail: error.to_string(),
     }
 }

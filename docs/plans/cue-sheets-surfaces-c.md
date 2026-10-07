@@ -225,6 +225,13 @@ Review fixes:
   track's (`still_current`, shared with `store_render_data`), else it returns
   `SourceChanged` and the track stays pending. The desktop backfill counts such a track as
   source-changed, and the phone reports `PhoneSourceChanged` for it.
+- **#15** "Last track of the file" is the file's true last segment, not the highest surviving
+  row. `LAST_IN_FILE` in `db_spectrogram_pending.rs` also counts the segment indexes kept in
+  `library_exclusions` (matched to the file by identity, else path) and is the one SQL for
+  the pending query, `track_is_last_in_file`, desktop `segment_bounds`, the phone's
+  `SegmentJob` and the playback end in `track_segment.rs`. A track whose successor is only
+  excluded gets its own end, in analysis and in playback. A stale exclusion beyond a sheet
+  that has since shrunk makes the real last track end at its recorded end, not at EOF.
 
 Left open, by design or for a later change:
 - A foreground request for a track whose file the backfill is decoding under a sibling's id

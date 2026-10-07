@@ -20,7 +20,7 @@ pub use failures::{clear_render_data_failure, record_render_data_failure, render
 mod pending;
 pub use pending::{
     pending_render_data_tracks, pending_segment_render_data_files, pending_segment_tracks_of,
-    PendingRenderDataTrack, PendingSegmentFile, PendingSegmentTrack,
+    track_is_last_in_file, PendingRenderDataTrack, PendingSegmentFile, PendingSegmentTrack,
 };
 
 const SCHEMA_V55: &str = r#"

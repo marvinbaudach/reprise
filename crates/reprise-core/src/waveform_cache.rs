@@ -108,27 +108,28 @@ fn measure_cue_file(
 
 /// The stretch of its file a CUE track covers; `None` for a whole-file track.
 /// A CUE track without its stretch recorded cannot be measured at all. The
-/// file's last track (the highest segment index of its path) runs to the end
+/// file's last track (see [`crate::db::track_is_last_in_file`]) runs to the end
 /// of the decoded file.
 fn segment_bounds(db: &Db, track_id: i64) -> Result<Option<SegmentBounds>, WaveformError> {
-    let row: Option<(Option<i64>, Option<i64>, bool)> = db
+    let decode_failed =
+        |error: &dyn std::fmt::Display| WaveformError::DecodeFailed(error.to_string());
+    let row: Option<(Option<i64>, Option<i64>)> = db
         .conn()
         .query_row(
-            "SELECT segment_start_ms, segment_end_ms, \
-                    segment_index = (SELECT MAX(u.segment_index) FROM tracks u \
-                                     WHERE u.path = t.path) \
-             FROM tracks t WHERE id = ?1 AND segment_index > 0",
+            "SELECT segment_start_ms, segment_end_ms \
+             FROM tracks WHERE id = ?1 AND segment_index > 0",
             [track_id],
-            |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)),
+            |row| Ok((row.get(0)?, row.get(1)?)),
         )
         .optional()
-        .map_err(|error| WaveformError::DecodeFailed(error.to_string()))?;
+        .map_err(|error| decode_failed(&error))?;
     match row {
         None => Ok(None),
-        Some((Some(start_ms), Some(end_ms), last_in_file)) => Ok(Some(SegmentBounds {
+        Some((Some(start_ms), Some(end_ms))) => Ok(Some(SegmentBounds {
             start_ms,
             end_ms,
-            last_in_file,
+            last_in_file: crate::db::track_is_last_in_file(db, track_id)
+                .map_err(|error| decode_failed(&error))?,
         })),
         Some(_) => Err(WaveformError::DecodeFailed(
             "the track's stretch of its file is not recorded".into(),

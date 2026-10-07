@@ -1,6 +1,8 @@
 //! The tracks whose rendering data is still to be produced: whole files one by
 //! one, and the tracks of a CUE file grouped by the file they are cut from.
 
+use rusqlite::OptionalExtension;
+
 use crate::db::{Db, DbError};
 use crate::library::loudness_store::LOUDNESS_FORMAT_VERSION;
 use crate::render_data_segments::SegmentBounds;
@@ -104,12 +106,39 @@ pub fn pending_segment_tracks_of(db: &Db, path: &str) -> Result<Vec<PendingSegme
         .collect())
 }
 
+/// Whether the track `t` is the true last track of its file: no other track
+/// of the file has a higher index, and no sheet track the user removed
+/// (`library_exclusions`, which keep the index of a track that has no row any
+/// more) comes after it. The last track is measured and played to the end of
+/// the file, so a track whose successor is only excluded must not count: the
+/// removed track's audio is not its own. An exclusion belongs to the file by
+/// its identity, or by its path while it has none, as a scan matches it.
+const LAST_IN_FILE: &str = "t.segment_index >= MAX( \
+        (SELECT MAX(u.segment_index) FROM tracks u WHERE u.path = t.path), \
+        COALESCE((SELECT MAX(e.segment_index) FROM library_exclusions e \
+                  WHERE (e.device IS NOT NULL AND e.inode IS NOT NULL \
+                         AND e.device IS t.device AND e.inode IS t.inode) \
+                     OR ((e.device IS NULL OR e.inode IS NULL) AND e.path = t.path)), 0))";
+
+/// Whether `track_id` is the last track of its file, see [`LAST_IN_FILE`]; a
+/// track that does not exist is not.
+pub fn track_is_last_in_file(db: &Db, track_id: i64) -> Result<bool, DbError> {
+    let last: Option<bool> = db
+        .conn()
+        .query_row(
+            &format!("SELECT {LAST_IN_FILE} FROM tracks t WHERE t.id = ?1"),
+            [track_id],
+            |row| row.get(0),
+        )
+        .optional()?;
+    Ok(last.unwrap_or(false))
+}
+
 fn pending_segment_files(db: &Db, path: Option<&str>) -> Result<Vec<PendingSegmentFile>, DbError> {
     let mut statement = db.conn().prepare(&format!(
         "SELECT t.id, t.path, t.file_mtime, t.file_size, t.device, t.inode, \
                 t.segment_start_ms, t.segment_end_ms, \
-                t.segment_index = (SELECT MAX(u.segment_index) FROM tracks u \
-                                   WHERE u.path = t.path) \
+                {} \
          FROM tracks t \
          LEFT JOIN track_spectrograms s ON s.track_id = t.id \
            AND s.format_version = ?1 AND s.source_mtime = t.file_mtime \
@@ -125,6 +154,7 @@ fn pending_segment_files(db: &Db, path: Option<&str>) -> Result<Vec<PendingSegme
            AND (t.waveform_peaks IS NULL OR s.track_id IS NULL OR l.track_id IS NULL) \
            AND (?3 IS NULL OR t.path = ?3) \
          ORDER BY t.path, t.segment_index",
+        LAST_IN_FILE,
         super::failures::FAILURE_JOIN,
         crate::queries::PRESENT
     ))?;
@@ -262,5 +292,66 @@ mod tests {
                 last_in_file: true,
             }
         );
+    }
+
+    /// Two tracks of `/a.flac` (identity 33/44) are left of a sheet whose
+    /// third track the user removed.
+    fn database_with_an_excluded_final_segment(exclusion: &str) -> Db {
+        let db = Db::open_in_memory().unwrap();
+        db.conn()
+            .execute_batch(&format!(
+                "INSERT INTO tracks (id, path, title, added_at, file_mtime, file_size,
+                                     device, inode, segment_index, segment_start_ms,
+                                     segment_end_ms)
+                 VALUES (1, '/a.flac', '', 0, 11, 22, 33, 44, 1, 0, 3000),
+                        (2, '/a.flac', '', 0, 11, 22, 33, 44, 2, 3000, 8000);
+                 INSERT INTO library_exclusions
+                   (path, device, inode, file_size, file_mtime, excluded_at, segment_index)
+                 VALUES {exclusion};"
+            ))
+            .unwrap();
+        db
+    }
+
+    #[test]
+    fn mtp_66_a_track_whose_successor_is_only_excluded_keeps_its_own_end() {
+        for exclusion in [
+            "('/a.flac', 33, 44, 22, 11, 0, 3)",
+            // A file without a stat identity is matched by its path.
+            "('/a.flac', NULL, NULL, 22, 11, 0, 3)",
+            // Excluded under another name; the identity follows the file.
+            "('/renamed.flac', 33, 44, 22, 11, 0, 3)",
+        ] {
+            let db = database_with_an_excluded_final_segment(exclusion);
+
+            let marks: Vec<bool> = pending_segment_tracks_of(&db, "/a.flac")
+                .unwrap()
+                .iter()
+                .map(|track| track.last_in_file)
+                .collect();
+
+            assert_eq!(marks, [false, false], "{exclusion}");
+        }
+    }
+
+    #[test]
+    fn an_exclusion_of_another_file_or_of_the_whole_file_changes_no_last_track() {
+        let db = database_with_an_excluded_final_segment("('/b.flac', 55, 66, 22, 11, 0, 3)");
+        db.conn()
+            .execute(
+                "INSERT INTO library_exclusions
+                   (path, device, inode, file_size, file_mtime, excluded_at, segment_index)
+                 VALUES ('/a.flac', 33, 44, 22, 11, 0, 0)",
+                [],
+            )
+            .unwrap();
+
+        let marks: Vec<bool> = pending_segment_tracks_of(&db, "/a.flac")
+            .unwrap()
+            .iter()
+            .map(|track| track.last_in_file)
+            .collect();
+
+        assert_eq!(marks, [false, true]);
     }
 }

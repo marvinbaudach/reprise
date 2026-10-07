@@ -5,13 +5,12 @@
 //! the file does, and the end the catalog records for it is only the
 //! duration the file's metadata claims. So the phone gives that track no end
 //! at all and lets Media3 play it to the end of the source (decision 3 of
-//! `docs/plans/cue-sheets-surfaces.md`). The last track is the one with the
-//! highest segment index of its path, which is the order
-//! [`queries::track_ids_for_path`] returns.
+//! `docs/plans/cue-sheets-surfaces.md`). The last track is the file's true
+//! last one, see [`track_is_last_in_file`]: a track whose successor the user
+//! only removed keeps its own end, or it would play on into the removed
+//! track's audio.
 
-use std::collections::HashMap;
-
-use reprise_core::db::Db;
+use reprise_core::db::{track_is_last_in_file, Db};
 use reprise_core::models::Track;
 use reprise_core::queries;
 
@@ -27,40 +26,18 @@ pub struct AndroidPlaybackSegment {
     pub end_ms: Option<i64>,
 }
 
-/// Remembers, per path, which track id is the last of its file, so a window
-/// of rows asks once per file.
-#[derive(Default)]
-struct LastOfFile {
-    by_path: HashMap<String, Option<i64>>,
-}
-
-impl LastOfFile {
-    fn segment_of(
-        &mut self,
-        reader: &Db,
-        track: &Track,
-    ) -> Result<Option<AndroidPlaybackSegment>, LibraryError> {
-        let Some(segment) = &track.segment else {
-            return Ok(None);
-        };
-        let last = match self.by_path.get(&track.path) {
-            Some(last) => *last,
-            None => {
-                let last = queries::track_ids_for_path(reader, &track.path)
-                    .map_err(|error| LibraryError::Query {
-                        detail: error.to_string(),
-                    })?
-                    .last()
-                    .copied();
-                self.by_path.insert(track.path.clone(), last);
-                last
-            }
-        };
-        Ok(Some(AndroidPlaybackSegment {
-            start_ms: segment.start_ms,
-            end_ms: (last != Some(track.id)).then_some(segment.end_ms),
-        }))
-    }
+/// The stretch of its file `track` plays, as Media3 is handed it.
+fn segment_of(reader: &Db, track: &Track) -> Result<Option<AndroidPlaybackSegment>, LibraryError> {
+    let Some(segment) = &track.segment else {
+        return Ok(None);
+    };
+    let last = track_is_last_in_file(reader, track.id).map_err(|error| LibraryError::Query {
+        detail: error.to_string(),
+    })?;
+    Ok(Some(AndroidPlaybackSegment {
+        start_ms: segment.start_ms,
+        end_ms: (!last).then_some(segment.end_ms),
+    }))
 }
 
 /// The stretch of its file `track` plays; `None` for a whole-file track.
@@ -68,16 +45,15 @@ pub(crate) fn playback_segment(
     reader: &Db,
     track: &Track,
 ) -> Result<Option<AndroidPlaybackSegment>, LibraryError> {
-    LastOfFile::default().segment_of(reader, track)
+    segment_of(reader, track)
 }
 
 /// The rows for `tracks`, each CUE track carrying its stretch.
 pub(crate) fn track_rows(reader: &Db, tracks: Vec<Track>) -> Result<Vec<TrackRow>, LibraryError> {
-    let mut last_of_file = LastOfFile::default();
     tracks
         .into_iter()
         .map(|track| {
-            let segment = last_of_file.segment_of(reader, &track)?;
+            let segment = segment_of(reader, &track)?;
             Ok(TrackRow::new(track, segment))
         })
         .collect()

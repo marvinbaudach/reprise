@@ -566,3 +566,37 @@ fn cue_9_a_decode_cancelled_by_the_next_track_stores_nothing() {
         assert_eq!(get_waveform_peaks(&db, track_id).unwrap(), None);
     }
 }
+
+#[test]
+fn cue_9_a_track_whose_successor_is_only_excluded_is_measured_to_its_own_end() {
+    let db = database_with_a_cue_album();
+    // The sheet has a fourth track; the user removed it, so it has no row.
+    db.conn()
+        .execute(
+            "INSERT INTO library_exclusions \
+             (path, device, inode, file_size, file_mtime, excluded_at, segment_index) \
+             VALUES ('/album.flac', 33, 44, 22, 11, 0, 4)",
+            [],
+        )
+        .unwrap();
+    let backend = CuttingBackend::default();
+
+    peaks_for_playback(
+        &db,
+        3,
+        Path::new("/album.flac"),
+        &backend,
+        &AtomicBool::new(false),
+    )
+    .unwrap();
+
+    assert_eq!(
+        backend.cuts.lock().unwrap().first(),
+        Some(&SegmentBounds {
+            start_ms: 8_000,
+            end_ms: 9_000,
+            last_in_file: false,
+        }),
+        "the excluded fourth track's audio is not part of the third"
+    );
+}
