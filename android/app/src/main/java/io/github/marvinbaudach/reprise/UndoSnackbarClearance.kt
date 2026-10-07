@@ -29,10 +29,16 @@ internal fun nowPlayingTransportTop(layout: SurfaceLayout): Dp = when (layout) {
 /**
  * Where the snackbar floats: above the transport row while the Now Playing
  * sheet is up, otherwise above whatever the library keeps along its bottom edge
- * ([libraryFrameInset]).
+ * ([libraryFrameInset]). The sheet lifts its transport clear of the navigation
+ * bar, so the row's top is [sheetBottomInset] higher than its own layout puts it.
  */
 internal fun undoSnackbarClearance(
     nowPlayingOpen: Boolean,
     layout: SurfaceLayout,
     libraryFrameInset: Dp,
-): Dp = if (nowPlayingOpen) nowPlayingTransportTop(layout) else libraryFrameInset
+    sheetBottomInset: Dp = 0.dp,
+): Dp = if (nowPlayingOpen) {
+    nowPlayingTransportTop(layout) + sheetBottomInset
+} else {
+    libraryFrameInset
+}

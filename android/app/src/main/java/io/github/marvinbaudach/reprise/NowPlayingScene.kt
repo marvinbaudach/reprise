@@ -220,6 +220,7 @@ internal fun NowPlayingScene(
             onNext = onNext,
             modifier = Modifier
                 .align(Alignment.BottomCenter)
+                .sheetNavigationBarPadding(STACKED_SHEET_INSET_SIDES)
                 .padding(horizontal = 18.dp, vertical = 18.dp),
         )
     }
