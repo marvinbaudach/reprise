@@ -168,3 +168,57 @@ Near the cap (extract before growing): `delete_tracks.rs` 782, `track_menu.rs` 7
 
 All tasks committed, gate battery green on the worktree. The device proofs (post-merge checks
 2–4) are not this strand's — do not attempt them here.
+
+## As built
+
+- **b1** — `trash_tracks_with` keeps its signature and acts per file through the new
+  `plan_file_trash`; `plan_trash`/`commit_trash` are unchanged, so the Android trash boundary
+  (strand c) still trashes per `(id, path)`. A sheet goes along when the file's tracks remember
+  it (`cue_path` on a segment row) and no other file in the library or among the exclusions
+  names it; that includes a sidecar that did not fit and gave way to the embedded sheet (b5),
+  and CUE-11 says so. A sidecar whose trash fails after its audio went is only logged. The
+  dialog asks the catalog only when the selection holds a CUE track; the result toast adds how
+  many CUE tracks were hidden. `run_delete` moved to `delete_tracks_run.rs`; the CUE copy lives
+  in `strings_delete_cue.rs` (new in `po/POTFILES.in`), since `strings.rs` is not this strand's.
+- **b2** — exclusions write every v91 column through `ON CONFLICT … DO UPDATE` on both partial
+  indexes. On every sheet the scan applies, a file's exclusions are matched like rows
+  (`scanner_segment_match`) and each matched one takes its song's current position, start,
+  title, sheet version and file mtime/size; an unmatched one is parked at `-id` and matches by
+  start and title only. So a track that moves into a hidden song's old position never collides
+  with it. A file with no rows whose v91 exclusions agree on the file mtime and the governing
+  sheet takes the unchanged fast path; a pre-v91 exclusion opts out until a scan re-places it.
+- **b3** — classification in `tag_edit/tag_edit_selection.rs`; the notice and the left-out
+  count are toasts. Single-track browsing in the editor skips CUE tracks too.
+- **b4** — one `WHOLE_FILE` clause on the three selectors (`current_view` goes through
+  `present_track_ref`).
+- **b5** — Retry uses `ImportErrorEntry::retry_root` (a method, because `queries/mod.rs` is not
+  this strand's). Vanished sheets are cleared when their directory is listed, filtered by
+  `parent_of` and the `.cue` extension, so an embedded sheet's issue (keyed by the audio file)
+  is never touched. A10: a sidecar whose cut fails gives way to a valid embedded sheet and the
+  rows remember the sidecar's version, so the next scan is `(0, 0, 1)`; a sheet that stopped
+  covering the file (`Unfit`) is not remembered.
+- **b6** — `scanner_cue::resolve` addresses each audio file by its own path where the source's
+  paths are file names joined to their directory, otherwise by `display_name` joined to
+  `parent_of(sheet)`; desktop resolution is byte-for-byte the old one.
+- **b7** — per-track ledger rows as planned. `SyncTrack`/`DesiredManagedFile` gained no fields
+  (foreign test literals); the CUE data travels as `MirrorPlaylistSnapshot.cue_files`, filled by
+  the snapshot loaders. One member carries the transfer (a file-level `SyncTrack`: album title,
+  file length); the others become `SharedRecord`s, written by the new `RecordSharedFile` effect
+  after the copy or against the resident file. A row no longer wanted whose file another row
+  still needs is `ManagedRemoval::Unshared` (forget only). The derived sheet is
+  `DerivedCueWrite`, written by `WriteDerivedCue` under the Copying step (no new `SyncStep`:
+  foreign matches); it is kept by `known_paths` and leaves as an orphan with its file. Analysis
+  sidecars are not planned for CUE files. Per-playlist and picker size estimates count a
+  copied CUE file once. A playlist naming one CUE track still names the whole device file in
+  its M3U, so the phone's import adds the whole album (CUE-6 behaviour), and a hidden track's
+  stretch plays as part of the track before it on the phone.
+- **b8** — `RPT-BACK` and `RPT-LIST` are format 2; v1 is refused. The phone journal keeps its
+  sequence state but drops entries still in the v1 report format (one-time loss on the
+  developer's phone; the alternative bricked every later write). `record_listen`/`record_rating`
+  take `impl Into<ReportedTrack>`, so strand c's `&str` call sites compile unchanged. A start
+  matches within one CD frame (14 ms); the derived sheet's ms→frames rounding is pinned by a
+  round-trip test over every frame of 80 minutes (step 7).
+- **Not changed, for the reviewer:** CUE-6 still says the phone's listens and ratings address
+  whole-file tracks only. Its `cue_6_` tests live in files this strand does not own
+  (`cue_lookup_tests.rs`, `media_browse_tests.rs`, `file_open.rs`, `playlist_io_tests.rs`), so
+  replacing it with CUE-19 is left for a decision; CUE-17 now covers CUE tracks.
