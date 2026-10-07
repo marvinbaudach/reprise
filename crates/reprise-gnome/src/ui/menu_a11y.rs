@@ -20,7 +20,7 @@
 //! Build every popover from a model with [`popover_menu_from_model`], or call
 //! [`name_model_buttons_on_map`] for a popover another builder made, such as the
 //! one a `GtkMenuButton` creates ([`name_menu_button_items`]). A source scan in
-//! this module's tests fails when a site bypasses it.
+//! `menu_a11y_guard_tests.rs` fails when a site bypasses it.
 //!
 //! GTK puts the relation back whenever a button refreshes its accessible
 //! properties, and it creates fresh buttons when a model changes, so naming once
@@ -31,8 +31,11 @@
 //! - when its menu model is replaced;
 //! - when the model, or any section or submenu below it, emits `items-changed`,
 //!   which covers in-place edits such as `remove_all` plus `append`;
-//! - on the `notify::active` of each model button, which is how a check or
-//!   radio item reports an action state change.
+//! - on each model button's notification of a property whose setter makes GTK
+//!   refresh the button's accessible properties ([`RELABELING_PROPERTIES`]):
+//!   `active` is how a check or radio item reports an action state change, and
+//!   `text`, `role`, `accel`, `menu-name` and `popover` change when the model
+//!   edits an item in place.
 //!
 //! Each button, each model and each popover is connected to at most once, however
 //! often the popover re-maps or the walks repeat. The bookkeeping holds weak
@@ -47,7 +50,10 @@ use gtk4::glib::{self, WeakRef};
 use gtk4::prelude::*;
 
 const MODEL_BUTTON_TYPE: &str = "GtkModelButton";
-const ACTIVE_PROPERTY: &str = "active";
+/// The `GtkModelButton` properties whose setters restore the labelled-by
+/// relation. GTK notifies each one after its setter has updated the button.
+const RELABELING_PROPERTIES: [&str; 6] =
+    ["active", "text", "role", "accel", "menu-name", "popover"];
 const MENU_LINKS: [&str; 2] = ["section", "submenu"];
 
 /// What one popover has been connected to. Weak references only: an entry
@@ -97,8 +103,8 @@ pub(crate) fn popover_menu_from_model(model: &impl IsA<gio::MenuModel>) -> gtk4:
 
 /// Keeps the items of `popover` named: now, on every map, when its model is
 /// replaced, on `items-changed` of the model and of every section and submenu
-/// below it, and on each button's `notify::active`. Calling it again for the
-/// same popover does nothing.
+/// below it, and when a button reports a relabeling property. Calling it again
+/// for the same popover does nothing.
 pub(crate) fn name_model_buttons_on_map(popover: &gtk4::PopoverMenu) {
     let first_call = NAMED_POPOVERS.with(|named| {
         let mut named = named.borrow_mut();
@@ -177,15 +183,17 @@ fn follow_model(
 /// Walks every descendant of `root`, the unmapped submenu pages included, and
 /// gives each model button the visible text as its accessible label in place of
 /// the labelled-by relation GTK installed. A button is also named again
-/// whenever it reports `notify::active`.
+/// whenever it notifies one of [`RELABELING_PROPERTIES`].
 fn name_model_buttons(root: &gtk4::Widget, connected: &Connected) {
     let mut child = root.first_child();
     while let Some(widget) = child {
         if widget.type_().name() == MODEL_BUTTON_TYPE {
             name_model_button(&widget);
             if Connected::remember(&connected.buttons, &widget) {
-                widget.connect_notify_local(Some(ACTIVE_PROPERTY), |button, _| {
-                    name_model_button(button.upcast_ref());
+                widget.connect_notify_local(None, |button, pspec| {
+                    if RELABELING_PROPERTIES.contains(&pspec.name()) {
+                        name_model_button(button.upcast_ref());
+                    }
                 });
                 count_connection();
             }
