@@ -13,7 +13,7 @@ const TRACK_START_MS: i64 = 2_000;
 const TRACK_END_MS: i64 = 4_000;
 const TRACK_LENGTH_MS: i64 = TRACK_END_MS - TRACK_START_MS;
 /// Generous: under a loaded parallel test run the pipeline can take a while.
-const SETTLE: Duration = Duration::from_secs(5);
+const SETTLE: Duration = Duration::from_secs(20);
 /// The preroll at the file's start, then the seek to the track's start.
 const SEGMENTS_AFTER_START: usize = 2;
 

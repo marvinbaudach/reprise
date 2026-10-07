@@ -99,6 +99,7 @@ fn play_20b_a_refed_gain_reaches_the_prebuilt_crossfade_secondary() {
         player.transition.clone(),
         player.stream_generation.clone(),
         player.pending_gain.clone(),
+        player.segments.clone(),
     )
     .unwrap();
     secondary.set_property("uri", path_to_uri(NEXT_PATH).unwrap());

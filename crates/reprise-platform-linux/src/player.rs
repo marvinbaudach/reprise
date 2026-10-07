@@ -21,7 +21,7 @@ use crate::player_pipeline::{
 };
 use segment::{SegmentGate, SegmentHandle};
 
-mod segment;
+pub(crate) mod segment;
 
 /// Default playback volume before the user ever moves the slider — full scale,
 /// matching `playbin3`'s own `volume` property default. Also the value the
@@ -171,7 +171,7 @@ impl Player {
         let incoming: IncomingSlot = Arc::new(Mutex::new(None));
         let spectrum_enabled = Arc::new(AtomicBool::new(false));
         let cava_stream_generation = Arc::new(AtomicU64::new(0));
-        let segments = SegmentGate::new(on_event.clone());
+        let segments = SegmentGate::new(on_event.clone(), stream_generation.clone());
 
         let playbin = build_playbin(
             &effects.lock().unwrap_or_else(PoisonError::into_inner),
@@ -180,6 +180,7 @@ impl Player {
             transition.clone(),
             stream_generation.clone(),
             pending_gain.clone(),
+            segments.clone(),
         )?;
         let bus_watch = attach_bus_watch(
             &playbin,
@@ -188,6 +189,7 @@ impl Player {
             crossfading.clone(),
             spectrum_enabled.clone(),
             cava_stream_generation.clone(),
+            segments.clone(),
         )?;
         let playbin = Arc::new(Mutex::new(playbin));
         let bus_watch = Arc::new(Mutex::new(bus_watch));
@@ -208,6 +210,7 @@ impl Player {
             spectrum_enabled: spectrum_enabled.clone(),
             cava_stream_generation: cava_stream_generation.clone(),
             stream_generation: stream_generation.clone(),
+            segments: segments.clone(),
         };
 
         // Position ticker: report position + duration every 500 ms while
@@ -357,7 +360,7 @@ impl Player {
         set_playbin_track_gain(&playbin, gain_db)?;
         playbin.set_property("uri", uri);
         if let Some(segment) = segment {
-            segment::start_segment(&playbin, &self.segments, segment)?;
+            segment::start_segment(&playbin, &self.segments, uri, segment)?;
         }
         playbin
             .set_state(gst::State::Playing)
@@ -415,6 +418,7 @@ impl Player {
             self.transition.clone(),
             self.stream_generation.clone(),
             self.pending_gain.clone(),
+            self.segments.clone(),
         )?;
         set_playbin_spectrum_messages(&new_playbin, self.spectrum_enabled.load(Ordering::SeqCst))?;
         let new_watch = attach_bus_watch(
@@ -424,6 +428,7 @@ impl Player {
             self.crossfading.clone(),
             self.spectrum_enabled.clone(),
             self.cava_stream_generation.clone(),
+            self.segments.clone(),
         )?;
 
         let mut playbin = self.playbin.lock().unwrap_or_else(PoisonError::into_inner);
@@ -629,7 +634,21 @@ impl PlaybackBackend for Player {
         {
             return;
         }
-        *self.next_uri.lock().unwrap_or_else(PoisonError::into_inner) = resolved;
+        // The next track of the same CUE file, starting where this one ends,
+        // plays through inside the file: the boundary probe hands over to it,
+        // so it never goes through the URI slot.
+        let armed = match (&resolved, item) {
+            (Some(queued), Some(item)) => {
+                self.segments
+                    .arm_next(&queued.uri, item.segment, queued.gain_db)
+            }
+            _ => {
+                self.segments.disarm();
+                false
+            }
+        };
+        let slot = resolved.filter(|_| !armed);
+        *self.next_uri.lock().unwrap_or_else(PoisonError::into_inner) = slot;
     }
 
     /// Stores the transition mode + crossfade overlap. Takes effect on the next

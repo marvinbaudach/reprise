@@ -27,6 +27,7 @@ use reprise_core::library::settings::TrackTransition;
 use reprise_core::playback::{AudioEffects, PlayerEvent};
 
 use crate::gapless::{HandoffFlag, NextUri, PendingGain, QueuedTrack};
+use crate::player::segment::SegmentHandle;
 use crate::player_pipeline::{attach_bus_watch, build_playbin, configure_download_buffering};
 
 /// Geteilter (Modus, Sekunden)-Zustand. Der Ticker liest ihn zur Trigger-
@@ -106,6 +107,9 @@ pub(crate) struct CrossfadeEngine {
     /// Bumped in `promote`, not when the secondary silently starts — see
     /// that method's doc comment for why the timing matters.
     pub(crate) stream_generation: Arc<AtomicU64>,
+    /// The CUE cut state (see `player/segment.rs`), handed to every pipeline
+    /// built here so a promoted secondary enforces a later track's end too.
+    pub(crate) segments: SegmentHandle,
 }
 
 impl CrossfadeEngine {
@@ -167,6 +171,7 @@ impl CrossfadeEngine {
             self.transition.clone(),
             self.stream_generation.clone(),
             self.pending_gain.clone(),
+            self.segments.clone(),
         ) {
             Ok(element) => element,
             Err(error) => {
@@ -252,6 +257,7 @@ impl CrossfadeEngine {
             self.crossfading.clone(),
             self.spectrum_enabled.clone(),
             self.cava_stream_generation.clone(),
+            self.segments.clone(),
         ) {
             Ok(watch) => watch,
             Err(error) => {

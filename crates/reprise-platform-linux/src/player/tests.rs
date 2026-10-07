@@ -11,6 +11,7 @@ mod crossfade_transition_tests;
 mod gain_alignment_tests;
 mod gain_refresh_tests;
 mod handoff_duration_tests;
+mod segment_boundary_tests;
 mod segment_clock_tests;
 mod segment_support;
 mod stream_generation_tests;

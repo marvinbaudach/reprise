@@ -5,16 +5,34 @@
 //! frontend is relative to it: the position ticker reports `position − start`
 //! against the cut's own length, and a seek lands at `start + position`.
 //!
-//! The cut shares one mutex with the position ticker, which computes and
-//! sends every tick under it, so a tick is always computed against the cut
-//! that is current when it is sent.
+//! The end of a cut is enforced by a buffer probe on the gain element's sink
+//! pad, behind the one-second playback queue, where a buffer is about to be
+//! heard. The first buffer whose stream time reaches the boundary either
+//! carries on into the armed contiguous successor — the next track of the same
+//! file, starting exactly where this one ends — with that track's gain, or,
+//! with nothing armed, is dropped together with everything after it, and the
+//! track is reported finished once.
+//!
+//! The last track of a file has no boundary when its end lies within
+//! [`OPEN_END_TOLERANCE_MS`] of the file's duration: it plays to the end of the
+//! file and finishes like a whole file does. The end a sheet gives its last
+//! track is only the probed metadata duration, and cutting the file's real
+//! tail off because of it would drop music.
+//!
+//! The cut, the armed successor and the hand-off share one mutex with the
+//! position ticker, which computes and sends every tick under it. The probe
+//! swaps the cut and sends `AdvancedToNext` under the same lock, so no tick
+//! computed against the old cut can follow the `AdvancedToNext` that ends it.
 
 use gstreamer as gst;
 use gstreamer::prelude::*;
+use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
 use std::time::Duration;
 
 use reprise_core::playback::{PlaybackError, PlayerEvent};
+
+use crate::player_effects::{linear_gain, TRACK_GAIN_NAME};
 
 /// An end this close to the file's duration means "to the end of the file".
 pub(crate) const OPEN_END_TOLERANCE_MS: i64 = 1000;
@@ -23,6 +41,8 @@ pub(crate) const OPEN_END_TOLERANCE_MS: i64 = 1000;
 /// the track's start. A local file prerolls in milliseconds; one that has not
 /// after this long counts as a failed attempt.
 const SEGMENT_PREROLL_TIMEOUT: Duration = Duration::from_secs(5);
+
+const NANOS_PER_MILLI: u64 = 1_000_000;
 
 /// The stretch of a file one CUE track covers.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -75,27 +95,48 @@ impl Cut {
         let last_ms = (self.length_ms(file_duration_ms) - 1).max(0);
         self.start_ms + position_ms.clamp(0, last_ms)
     }
+
+    fn boundary_ns(&self) -> Option<u64> {
+        (!self.open_end).then(|| self.end_ms.max(0) as u64 * NANOS_PER_MILLI)
+    }
+}
+
+#[derive(Clone, Copy, Debug)]
+struct ArmedNext {
+    cut: Cut,
+    gain_db: f64,
 }
 
 #[derive(Debug, Default)]
 struct CutState {
+    uri: String,
     active: Option<Cut>,
     file_duration_ms: Option<i64>,
+    armed: Option<ArmedNext>,
+    /// The boundary was reached with nothing armed: every later buffer is
+    /// dropped, and the file's own end-of-stream is not a second finish.
+    finished: bool,
 }
 
-/// The shared cut state and the event sink ticks are sent through.
+/// The shared cut state, the event sink ticks and boundaries are sent
+/// through, and the stream generation a hand-off bumps.
 pub(crate) struct SegmentGate {
     state: Mutex<CutState>,
     on_event: Arc<dyn Fn(PlayerEvent) + Send + Sync>,
+    stream_generation: Arc<AtomicU64>,
 }
 
 pub(crate) type SegmentHandle = Arc<SegmentGate>;
 
 impl SegmentGate {
-    pub(crate) fn new(on_event: Arc<dyn Fn(PlayerEvent) + Send + Sync>) -> SegmentHandle {
+    pub(crate) fn new(
+        on_event: Arc<dyn Fn(PlayerEvent) + Send + Sync>,
+        stream_generation: Arc<AtomicU64>,
+    ) -> SegmentHandle {
         Arc::new(Self {
             state: Mutex::new(CutState::default()),
             on_event,
+            stream_generation,
         })
     }
 
@@ -103,26 +144,64 @@ impl SegmentGate {
         self.state.lock().unwrap_or_else(PoisonError::into_inner)
     }
 
-    /// Forgets the cut. Every hard restart calls it: a cut is only valid for
+    /// Forgets the cut, the armed successor and every flag. Every hard
+    /// restart calls it: a cut is only valid for
     /// the stream it was set on.
     pub(crate) fn reset(&self) {
         *self.lock() = CutState::default();
     }
 
-    /// Makes `segment` the active cut. `file_duration_ms` is the
-    /// pipeline's answer after preroll, cached for an open end.
-    pub(crate) fn begin(&self, segment: (i64, i64), file_duration_ms: Option<i64>) {
+    /// Makes `segment` of `uri` the active cut. `file_duration_ms` is the
+    /// pipeline's answer after preroll, cached so neither the probe nor
+    /// `arm_next` ever has to query the pipeline.
+    pub(crate) fn begin(&self, uri: &str, segment: (i64, i64), file_duration_ms: Option<i64>) {
         *self.lock() = CutState {
+            uri: uri.to_owned(),
             active: Some(Cut::new(segment.0, segment.1, file_duration_ms)),
             file_duration_ms,
+            ..CutState::default()
         };
     }
 
+    /// Arms `segment` of `uri` as the successor the probe hands over to when
+    /// it is contiguous with the active cut — the same file, starting where
+    /// the active cut ends, which therefore has a boundary — and returns
+    /// whether it did. Anything else disarms: last write wins.
+    pub(crate) fn arm_next(&self, uri: &str, segment: Option<(i64, i64)>, gain_db: f64) -> bool {
+        let mut state = self.lock();
+        let contiguous = match (state.active, segment) {
+            (Some(active), Some((start_ms, _))) => {
+                state.uri == uri && !active.open_end && active.end_ms == start_ms
+            }
+            _ => false,
+        };
+        state.armed = segment
+            .filter(|_| contiguous)
+            .map(|(start_ms, end_ms)| ArmedNext {
+                cut: Cut::new(start_ms, end_ms, state.file_duration_ms),
+                gain_db,
+            });
+        contiguous
+    }
+
+    /// Drops the armed successor, if any.
+    pub(crate) fn disarm(&self) {
+        self.lock().armed = None;
+    }
+
+    /// Whether the active track already reported its end at the boundary, so
+    /// the file's end-of-stream must not report it again.
+    pub(crate) fn finished(&self) -> bool {
+        self.lock().finished
+    }
+
     /// The file position a seek to `position_ms` of the active CUE track goes
-    /// to, or `None` for a whole file.
+    /// to, or `None` for a whole file. A seek reopens a finished track: the
+    /// boundary fires again when playback reaches it.
     pub(crate) fn seek_target_ms(&self, position_ms: i64) -> Option<i64> {
-        let state = self.lock();
+        let mut state = self.lock();
         let cut = state.active?;
+        state.finished = false;
         Some(cut.seek_target_ms(position_ms, state.file_duration_ms))
     }
 
@@ -162,6 +241,7 @@ impl SegmentGate {
 pub(super) fn start_segment(
     playbin: &gst::Element,
     gate: &SegmentGate,
+    uri: &str,
     segment: (i64, i64),
 ) -> Result<(), PlaybackError> {
     playbin
@@ -182,11 +262,101 @@ pub(super) fn start_segment(
     let file_duration_ms = playbin
         .query_duration::<gst::ClockTime>()
         .map(|duration| duration.mseconds() as i64);
-    gate.begin(segment, file_duration_ms);
+    gate.begin(uri, segment, file_duration_ms);
     let start = gst::ClockTime::from_mseconds(segment.0.max(0) as u64);
     if let Err(error) = playbin.seek_simple(gst::SeekFlags::FLUSH | gst::SeekFlags::ACCURATE, start)
     {
         tracing::warn!(%error, start_ms = segment.0, "could not seek to the CUE track's start");
     }
     Ok(())
+}
+
+/// Installs the boundary probe on the gain element's sink pad of `playbin`'s
+/// filter. Every buffer passes untouched while no cut is active, which is why
+/// the crossfade secondary carries it too.
+pub(crate) fn install_segment_boundary(
+    playbin: &gst::Element,
+    gate: SegmentHandle,
+) -> Result<(), PlaybackError> {
+    let gain = playbin
+        .property::<Option<gst::Element>>("audio-filter")
+        .and_then(|filter| filter.downcast::<gst::Bin>().ok())
+        .and_then(|bin| bin.by_name(TRACK_GAIN_NAME))
+        .ok_or_else(|| PlaybackError::Backend("GStreamer: playbin has no track gain".into()))?;
+    let sink = gain
+        .static_pad("sink")
+        .ok_or_else(|| PlaybackError::Backend("GStreamer: track gain has no sink pad".into()))?;
+    // The segment belongs to this pad's stream, not to the shared gate: the
+    // crossfade secondary carries the same gate and must not overwrite it.
+    let stream_segment = Mutex::new(None::<gst::FormattedSegment<gst::ClockTime>>);
+    sink.add_probe(
+        gst::PadProbeType::BUFFER | gst::PadProbeType::EVENT_DOWNSTREAM,
+        move |_, info| match &info.data {
+            Some(gst::PadProbeData::Event(event)) => {
+                if let gst::EventView::Segment(segment) = event.view() {
+                    *stream_segment
+                        .lock()
+                        .unwrap_or_else(PoisonError::into_inner) =
+                        segment.segment().downcast_ref::<gst::ClockTime>().cloned();
+                }
+                gst::PadProbeReturn::Ok
+            }
+            Some(gst::PadProbeData::Buffer(buffer)) => {
+                let stream_time = buffer.pts().and_then(|pts| {
+                    match stream_segment
+                        .lock()
+                        .unwrap_or_else(PoisonError::into_inner)
+                        .as_ref()
+                    {
+                        Some(segment) => segment.to_stream_time(pts),
+                        None => Some(pts),
+                    }
+                });
+                gate.on_buffer(stream_time, &gain)
+            }
+            _ => gst::PadProbeReturn::Ok,
+        },
+    );
+    Ok(())
+}
+
+impl SegmentGate {
+    /// The probe's decision for one buffer about to reach the gain element —
+    /// see the module comment. Runs on the streaming thread; it takes only the
+    /// cut lock, never the `playbin` lock `try_play` holds across `Null`.
+    fn on_buffer(
+        &self,
+        stream_time: Option<gst::ClockTime>,
+        gain: &gst::Element,
+    ) -> gst::PadProbeReturn {
+        let mut state = self.lock();
+        let Some(cut) = state.active else {
+            return gst::PadProbeReturn::Ok;
+        };
+        if state.finished {
+            return gst::PadProbeReturn::Drop;
+        }
+        let (Some(boundary_ns), Some(stream_time)) = (cut.boundary_ns(), stream_time) else {
+            return gst::PadProbeReturn::Ok;
+        };
+        if stream_time.nseconds() < boundary_ns {
+            return gst::PadProbeReturn::Ok;
+        }
+        match state.armed.take() {
+            Some(next) => {
+                gain.set_property("volume", linear_gain(next.gain_db));
+                state.active = Some(next.cut);
+                self.stream_generation.fetch_add(1, Ordering::SeqCst);
+                tracing::debug!(boundary_ms = cut.end_ms, "cue: contiguous hand-off");
+                (self.on_event)(PlayerEvent::AdvancedToNext);
+                gst::PadProbeReturn::Ok
+            }
+            None => {
+                state.finished = true;
+                tracing::debug!(boundary_ms = cut.end_ms, "cue: track reached its end");
+                (self.on_event)(PlayerEvent::TrackFinished);
+                gst::PadProbeReturn::Drop
+            }
+        }
+    }
 }

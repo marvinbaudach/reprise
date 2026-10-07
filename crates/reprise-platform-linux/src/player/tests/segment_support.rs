@@ -61,6 +61,8 @@ pub(super) struct HeardBuffer {
     /// Stream time of the buffer's first sample, in the file's own clock.
     pub(super) start_ms: i64,
     pub(super) audible: bool,
+    /// The linear gain the element held while it processed the buffer.
+    pub(super) linear_gain: f64,
 }
 
 pub(super) fn gain_element(player: &Player) -> gst::Element {
@@ -84,6 +86,7 @@ pub(super) fn gain_element(player: &Player) -> gst::Element {
 pub(super) struct HeardLog {
     buffers: Arc<Mutex<Vec<HeardBuffer>>>,
     segments: Arc<std::sync::atomic::AtomicUsize>,
+    stream_starts: Arc<std::sync::atomic::AtomicUsize>,
 }
 
 impl HeardLog {
@@ -98,6 +101,11 @@ impl HeardLog {
         self.segments.load(Ordering::SeqCst)
     }
 
+    /// How many `STREAM_START` events left the gain element.
+    pub(super) fn stream_starts(&self) -> usize {
+        self.stream_starts.load(Ordering::SeqCst)
+    }
+
     /// Whether at least `segments` segment events arrived and a buffer
     /// followed the last of them.
     pub(super) fn heard_after(&self, segments: usize) -> bool {
@@ -105,10 +113,13 @@ impl HeardLog {
     }
 
     pub(super) fn first(&self) -> HeardBuffer {
-        *self
-            .buffers()
-            .first()
-            .expect("expected buffers to leave the gain element")
+        *self.buffers().first().unwrap_or_else(|| {
+            panic!(
+                "expected buffers to leave the gain element (segments {}, stream starts {})",
+                self.segments(),
+                self.stream_starts()
+            )
+        })
     }
 }
 
@@ -119,12 +130,17 @@ pub(super) fn record_heard(player: &Player) -> HeardLog {
     let recorded = heard.buffers.clone();
     let segments = heard.segments.clone();
     let gain = gain_element(player);
+    let element = gain.clone();
+    let stream_starts = heard.stream_starts.clone();
     let stream_segment = Mutex::new(None::<gst::FormattedSegment<gst::ClockTime>>);
     gain.static_pad("src").unwrap().add_probe(
         gst::PadProbeType::BUFFER | gst::PadProbeType::EVENT_DOWNSTREAM,
         move |pad, info| {
             match &info.data {
                 Some(gst::PadProbeData::Event(event)) => {
+                    if event.type_() == gst::EventType::StreamStart {
+                        stream_starts.fetch_add(1, Ordering::SeqCst);
+                    }
                     if let gst::EventView::Segment(event) = event.view() {
                         *stream_segment
                             .lock()
@@ -156,6 +172,7 @@ pub(super) fn record_heard(player: &Player) -> HeardLog {
                             .push(HeardBuffer {
                                 start_ms: stream_time.mseconds() as i64,
                                 audible: peak(buffer, format.as_deref()) >= AUDIBLE_PEAK,
+                                linear_gain: element.property::<f64>("volume"),
                             });
                     }
                 }
@@ -274,6 +291,14 @@ pub(super) fn ticks(events: &[PlayerEvent]) -> Vec<(i64, i64)> {
             _ => None,
         })
         .collect()
+}
+
+pub(super) fn count(events: &[PlayerEvent], wanted: fn(&PlayerEvent) -> bool) -> usize {
+    events.iter().filter(|event| wanted(event)).count()
+}
+
+pub(super) fn linear(gain_db: f64) -> f64 {
+    10_f64.powf(gain_db / 20.0)
 }
 
 pub(super) fn cue_item(path: &Path, segment: (i64, i64), gain_db: f64) -> PlaybackItem<'_> {
