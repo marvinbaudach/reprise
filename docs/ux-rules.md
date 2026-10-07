@@ -1354,7 +1354,8 @@ result.
   `mtp_66_a_cue_track_and_the_next_one_are_each_clipped_to_their_own_stretch`,
   `mtp_66_a_whole_file_is_not_clipped`,
   `mtp_66_late_metadata_completes_a_clip_in_place_and_keeps_its_stretch`,
-  `mtp_66_two_clips_of_one_file_each_play_at_their_own_gain`.
+  `mtp_66_two_clips_of_one_file_each_play_at_their_own_gain`,
+  `mtp_66_a_clipped_cue_track_that_gains_its_cover_is_updated_in_place`.
   The gap between two clips and each clip's gain on a real device are a
   manual check.
   <!-- REVIEW: rule proposal -->

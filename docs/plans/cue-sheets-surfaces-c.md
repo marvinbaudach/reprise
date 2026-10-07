@@ -213,6 +213,11 @@ they are core-only and c6 builds on all three):
   - Kotlin calls the new `push_pcm_i16_at` with `presentationTimeUs`. The old
     `push_pcm_i16` stays for a chunk without a time. MTP-67 is active.
 
+Checked after c6: a clipped item that gains its cover is updated in place by a real ExoPlayer
+(`mtp_66_a_clipped_cue_track_that_gains_its_cover_is_updated_in_place`), so a late cover does
+not re-prepare the clip. A CUE track has no sidecar to import: `register_sidecar` registers
+whole-file rows only (`segment_index = 0`), so the segmented compute always runs for it.
+
 Left open, by design or for a later change:
 - A foreground request for a track whose file the backfill is decoding under a sibling's id
   preempts the backfill and decodes the file again. This is documented in `segment_job.rs`
@@ -225,4 +230,7 @@ Left open, by design or for a later change:
   The device check shows whether this matters.
 - Post-merge device checks, as listed in the mother plan: the gap between two contiguous
   clips, each clip's own gain, the last track playing to EOF, and `presentationTimeUs`
-  placement on real decoders.
+  placement on real decoders. A decoder that repeats or does not advance
+  `presentationTimeUs` would have its buffers dropped as late (the earlier copy wins), so
+  the stored tracks come out short. To catch that, compare each stored track's frame count
+  with its duration.
