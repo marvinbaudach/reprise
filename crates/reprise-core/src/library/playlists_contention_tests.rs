@@ -64,3 +64,16 @@ fn creating_a_smart_playlist_survives_a_rival_commit_between_its_read_and_its_wr
     );
     assert!(list_smart(&db).unwrap().iter().any(|smart| smart.id == id));
 }
+
+#[test]
+fn ensuring_an_existing_role_playlist_never_waits_for_the_write_lock() {
+    let (directory, db) = contended_db();
+    db.conn().pragma_update(None, "busy_timeout", 0).unwrap();
+    let id = ensure_role_playlist(&db, "Conversion", "conversion").unwrap();
+    let holder = rusqlite::Connection::open(directory.path().join("reprise.db")).unwrap();
+    holder.execute_batch("BEGIN IMMEDIATE").unwrap();
+
+    let again = ensure_role_playlist(&db, "Conversion", "conversion").unwrap();
+
+    assert_eq!(again, id);
+}

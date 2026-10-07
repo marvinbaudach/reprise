@@ -311,6 +311,14 @@ pub(crate) fn ensure_role_playlist_in(
     name: &str,
     role: &str,
 ) -> Result<i64, rusqlite::Error> {
+    // An existing role playlist is the common case (this runs on every startup
+    // and every drop). Settle it before any transaction opens, so it never
+    // queues for the write lock behind another writer.
+    if conn.is_autocommit() {
+        if let Some(id) = find_role_playlist_in(conn, role)? {
+            return Ok(id);
+        }
+    }
     // IMMEDIATE: the role lookup and `MAX(position)` are read before the insert
     // (see `events::in_txn_immediate`).
     crate::events::in_txn_immediate(conn, |conn| {
