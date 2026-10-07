@@ -226,7 +226,7 @@ fn record_viewport(fixture: &Fixture) -> Rc<RefCell<Vec<f64>>> {
 
 /// Runs the same refresh a successful tag write triggers, with the anchor
 /// captured before the dialog opened (`finish_apply`'s `save_anchor`).
-fn save_refresh(fixture: &Fixture) {
+fn save_refresh(fixture: &Fixture) -> super::ReloadReceipt {
     let written = fixture
         .track_list
         .shared
@@ -240,13 +240,13 @@ fn save_refresh(fixture: &Fixture) {
         &[written.id],
         &[PathBuf::from(&written.path)],
         anchor,
-    );
+    )
 }
 
 /// Runs the same unchanged-order delta requested by a Genre save under a
 /// title sort. The full id projection is captured on both sides just as the
 /// real dialog completion does before it defers the GTK refresh.
-fn delta_save_refresh(fixture: &Fixture) {
+fn delta_save_refresh(fixture: &Fixture) -> super::ReloadReceipt {
     let before_ids = fixture.track_list.shared.current_view_ids();
     let written = fixture
         .track_list
@@ -264,7 +264,7 @@ fn delta_save_refresh(fixture: &Fixture) {
         anchor,
         &before_ids,
         after_ids,
-    );
+    )
 }
 
 fn year_resorting_library(alpha_count: i64, scroll_row: f64) -> (Fixture, Vec<i64>) {
@@ -602,6 +602,22 @@ fn assert_no_visible_jump(samples: &Rc<RefCell<Vec<f64>>>, reference: f64, what:
     );
 }
 
+/// Waits for the save reload to run and paint, then keeps sampling for
+/// `SETTLE`. Under load a full reload blocks the main loop for up to 815 ms,
+/// so a fixed `SETTLE` from the save could end with the reload itself, before
+/// the frame that rebinds the rows.
+fn settle_after_reload(fixture: &Fixture, receipt: &super::ReloadReceipt) {
+    let settled = crate::ui::test_settle::settle_until_painted_after(
+        &fixture.track_list.shared.column_view,
+        || receipt.get().is_some(),
+    );
+    assert!(
+        settled,
+        "precondition: the save reload must run and paint a frame"
+    );
+    crate::ui::test_settle::settle_for(SETTLE);
+}
+
 #[test]
 #[ignore = "requires a display; run via xvfb-run"]
 fn tag_1_tag_save_refresh_paints_no_frame_at_the_table_top() {
@@ -621,8 +637,8 @@ fn tag_1_tag_save_refresh_paints_no_frame_at_the_table_top() {
     // assertion below would then pass on an empty sample set. Write the tag
     // the real save writes.
     write_artist_to_db(&fixture);
-    delta_save_refresh(&fixture);
-    crate::ui::test_settle::settle_for(SETTLE);
+    let receipt = delta_save_refresh(&fixture);
+    settle_after_reload(&fixture, &receipt);
 
     let row_height = super::super::display_test_geometry::measured_row_height(
         &fixture.track_list.shared.column_view,
@@ -657,8 +673,8 @@ fn tag_1_save_refresh_shows_the_written_tag_on_screen() {
     );
 
     write_artist_to_db(&fixture);
-    delta_save_refresh(&fixture);
-    crate::ui::test_settle::settle_for(SETTLE);
+    let receipt = delta_save_refresh(&fixture);
+    settle_after_reload(&fixture, &receipt);
 
     let labels = visible_labels(&fixture);
     assert!(
@@ -685,8 +701,8 @@ fn tag_1_save_refresh_requeries_the_view_once() {
 
     write_artist_to_db(&fixture);
     fixture.queries.set(0);
-    save_refresh(&fixture);
-    crate::ui::test_settle::settle_for(SETTLE);
+    let receipt = save_refresh(&fixture);
+    settle_after_reload(&fixture, &receipt);
 
     assert_eq!(
         fixture.queries.get(),
@@ -697,99 +713,5 @@ fn tag_1_save_refresh_requeries_the_view_once() {
     fixture.window.close();
 }
 
-/// The Tag Editor restores keyboard focus through
-/// `TransientFocusGuard::capture`, which remembers *the widget* that had
-/// focus when the dialog opened. Opened from the track table, that widget is
-/// a `GtkColumnView` row — and those are recycled: after the save's
-/// `items_changed(0, old, new)` the very same widget is bound to a different
-/// row. Restoring focus onto it therefore scrolls wherever it now lives.
-#[test]
-#[ignore = "requires a display; run via xvfb-run"]
-fn tag_1_restoring_dialog_focus_after_a_save_keeps_the_viewport() {
-    let _main_context = crate::ui::test_main_context::lock_main_context();
-    let fixture = scrolled_library();
-    let before = fixture.adjustment.value();
-    assert!(
-        before > VISIBLE_JUMP_PX,
-        "precondition: the list must be scrolled well away from the top, got {before}"
-    );
-
-    // Opening the editor captures whatever the table had focused — the row
-    // the user clicked. Without that, this test would capture the window
-    // itself and prove nothing.
-    let focused = gtk4::prelude::GtkWindowExt::focus(&fixture.window)
-        .expect("precondition: something in the window must hold focus");
-    assert!(
-        focused.is_ancestor(&fixture.track_list.shared.column_view),
-        "precondition: focus must sit on a row inside the table, not on {}",
-        focused.type_()
-    );
-    let guard = crate::ui::transient_focus::TransientFocusGuard::capture(&fixture.window);
-    let samples = record_viewport(&fixture);
-
-    save_refresh(&fixture);
-    crate::ui::test_settle::settle_for(SETTLE);
-    let restored = fixture.adjustment.value();
-    assert!(
-        (restored - before).abs() < VISIBLE_JUMP_PX,
-        "precondition: the save refresh itself must have put the viewport back, \
-         before={before}, restored={restored}"
-    );
-
-    // The dialog finished closing: focus goes back to the captured widget.
-    guard.restore();
-    crate::ui::test_settle::settle_for(SETTLE);
-
-    assert_no_visible_jump(&samples, before, "the dialog's focus restore");
-    assert!(
-        (fixture.adjustment.value() - before).abs() < VISIBLE_JUMP_PX,
-        "restoring the dialog's focus moved the viewport: before={before}, after={}",
-        fixture.adjustment.value()
-    );
-    fixture.window.close();
-}
-
-/// The reported sequence: the dialog closes, GTK hands keyboard focus back to
-/// the table, and the table scrolls to whichever row it now considers
-/// focused. The save's `items_changed(0, old, new)` has meanwhile reset that
-/// focus row to the top, because the scroll restore deliberately scrolls
-/// without `ListScrollFlags::FOCUS`.
-#[test]
-#[ignore = "requires a display; run via xvfb-run"]
-fn tag_1_focus_returning_to_the_table_after_a_save_keeps_the_viewport() {
-    let _main_context = crate::ui::test_main_context::lock_main_context();
-    let fixture = scrolled_library();
-    let before = fixture.adjustment.value();
-    assert!(
-        before > VISIBLE_JUMP_PX,
-        "precondition: the list must be scrolled well away from the top, got {before}"
-    );
-
-    // The dialog is open: it, not the table, owns keyboard focus.
-    fixture.elsewhere.grab_focus();
-    save_refresh(&fixture);
-    crate::ui::test_settle::settle_for(SETTLE);
-    let restored = fixture.adjustment.value();
-    assert!(
-        (restored - before).abs() < VISIBLE_JUMP_PX,
-        "precondition: the save refresh itself must have put the viewport back, \
-         before={before}, restored={restored}"
-    );
-
-    let samples = record_viewport(&fixture);
-    // The dialog closes and focus returns to the library table.
-    fixture.track_list.shared.column_view.grab_focus();
-    crate::ui::test_settle::settle_for(SETTLE);
-
-    assert_no_visible_jump(
-        &samples,
-        restored,
-        "the focus handover after the dialog closed",
-    );
-    assert!(
-        (fixture.adjustment.value() - restored).abs() < VISIBLE_JUMP_PX,
-        "focus returning to the table moved the viewport: restored={restored}, after={}",
-        fixture.adjustment.value()
-    );
-    fixture.window.close();
-}
+#[path = "tag_mutation_refresh_focus_display_tests.rs"]
+mod focus_display_tests;
