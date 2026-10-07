@@ -70,13 +70,7 @@ fn measure_cue_file(
             Ok(pending) => pending
                 .into_iter()
                 .filter(|track| track.track_id != track_id)
-                .map(|track| {
-                    let bounds = SegmentBounds {
-                        start_ms: track.start_ms,
-                        end_ms: track.end_ms,
-                    };
-                    (track.track_id, bounds)
-                })
+                .map(|track| (track.track_id, track.bounds()))
                 .collect(),
             Err(error) => {
                 tracing::warn!(track_id, %error, "could not list the other tracks of the file");
@@ -113,21 +107,29 @@ fn measure_cue_file(
 }
 
 /// The stretch of its file a CUE track covers; `None` for a whole-file track.
-/// A CUE track without its stretch recorded cannot be measured at all.
+/// A CUE track without its stretch recorded cannot be measured at all. The
+/// file's last track (the highest segment index of its path) runs to the end
+/// of the decoded file.
 fn segment_bounds(db: &Db, track_id: i64) -> Result<Option<SegmentBounds>, WaveformError> {
-    let row: Option<(Option<i64>, Option<i64>)> = db
+    let row: Option<(Option<i64>, Option<i64>, bool)> = db
         .conn()
         .query_row(
-            "SELECT segment_start_ms, segment_end_ms FROM tracks \
-             WHERE id = ?1 AND segment_index > 0",
+            "SELECT segment_start_ms, segment_end_ms, \
+                    segment_index = (SELECT MAX(u.segment_index) FROM tracks u \
+                                     WHERE u.path = t.path) \
+             FROM tracks t WHERE id = ?1 AND segment_index > 0",
             [track_id],
-            |row| Ok((row.get(0)?, row.get(1)?)),
+            |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)),
         )
         .optional()
         .map_err(|error| WaveformError::DecodeFailed(error.to_string()))?;
     match row {
         None => Ok(None),
-        Some((Some(start_ms), Some(end_ms))) => Ok(Some(SegmentBounds { start_ms, end_ms })),
+        Some((Some(start_ms), Some(end_ms), last_in_file)) => Ok(Some(SegmentBounds {
+            start_ms,
+            end_ms,
+            last_in_file,
+        })),
         Some(_) => Err(WaveformError::DecodeFailed(
             "the track's stretch of its file is not recorded".into(),
         )),

@@ -534,10 +534,12 @@ mod tests {
             SegmentBounds {
                 start_ms: 0,
                 end_ms: 2_000,
+                last_in_file: false,
             },
             SegmentBounds {
                 start_ms: 2_000,
                 end_ms: 4_000,
+                last_in_file: false,
             },
         ];
 
@@ -594,10 +596,12 @@ mod tests {
             SegmentBounds {
                 start_ms: 0,
                 end_ms: 1_000,
+                last_in_file: false,
             },
             SegmentBounds {
                 start_ms: 5_000,
                 end_ms: 6_000,
+                last_in_file: false,
             },
         ];
 

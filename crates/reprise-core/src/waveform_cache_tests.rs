@@ -352,7 +352,8 @@ fn cue_9_playing_a_cue_track_stores_its_own_stretch_and_never_the_whole_file() {
         backend.cuts.lock().unwrap().as_slice(),
         [SegmentBounds {
             start_ms: 3_000,
-            end_ms: 8_000
+            end_ms: 8_000,
+            last_in_file: true,
         }]
     );
     assert_eq!(peaks[0], 5);
@@ -515,18 +516,22 @@ fn cue_9_playing_one_track_measures_the_rest_of_its_file_in_the_same_decode() {
         [
             SegmentBounds {
                 start_ms: 3_000,
-                end_ms: 8_000
+                end_ms: 8_000,
+                last_in_file: false,
             },
             SegmentBounds {
                 start_ms: 0,
-                end_ms: 3_000
+                end_ms: 3_000,
+                last_in_file: false,
             },
             SegmentBounds {
                 start_ms: 8_000,
-                end_ms: 9_000
+                end_ms: 9_000,
+                last_in_file: true,
             },
         ],
-        "the track that plays first, then its siblings in play order"
+        "the track that plays first, then its siblings in play order; the last \
+         runs to the end of the file"
     );
     for track_id in [1, 2, 3] {
         assert!(

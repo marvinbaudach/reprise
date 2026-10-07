@@ -18,10 +18,26 @@ use crate::render_data_session::{RenderDataSession, RenderDataSessionError};
 use crate::waveform::TrackRenderData;
 
 /// The part of a file one track covers, in milliseconds from its start.
+///
+/// `last_in_file` marks the file's last track. It plays and is analysed to the
+/// decoded end of the file whatever `end_ms` says, because that end is only
+/// the duration the file's metadata claims: a claim a few seconds short would
+/// drop the tail of the album, and one too long would wait for audio that
+/// never comes. `start_ms` and `end_ms` remain the cut the catalog records.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct SegmentBounds {
     pub start_ms: i64,
     pub end_ms: i64,
+    pub last_in_file: bool,
+}
+
+impl SegmentBounds {
+    /// Whether `other` is the same cut of the file, whatever either says about
+    /// being the last track.
+    #[must_use]
+    pub fn same_cut(&self, other: &Self) -> bool {
+        (self.start_ms, self.end_ms) == (other.start_ms, other.end_ms)
+    }
 }
 
 struct Track {
@@ -134,7 +150,11 @@ impl SegmentedRenderDataSession {
         let chunk_end = chunk_start + (frames - late);
         for track in &mut self.tracks {
             let from = frame_at(track.bounds.start_ms, sample_rate_hz).max(chunk_start);
-            let to = frame_at(track.bounds.end_ms, sample_rate_hz).min(chunk_end);
+            let to = if track.bounds.last_in_file {
+                chunk_end
+            } else {
+                frame_at(track.bounds.end_ms, sample_rate_hz).min(chunk_end)
+            };
             if from < to {
                 let first = ((from - chunk_start) as usize) * channels;
                 let last = ((to - chunk_start) as usize) * channels;
@@ -163,7 +183,8 @@ impl SegmentedRenderDataSession {
 
     /// Ends the stream and returns the render data of each segment, in the order
     /// the segments were given. A segment the stream never reached reads as an
-    /// empty stream; the others are unaffected.
+    /// empty stream; the others are unaffected. The file's last track is
+    /// complete with whatever the stream held up to its end.
     #[must_use]
     pub fn finish(self) -> Vec<Result<TrackRenderData, RenderDataSessionError>> {
         self.tracks

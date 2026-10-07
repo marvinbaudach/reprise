@@ -4,7 +4,8 @@ use std::sync::atomic::{AtomicBool, Ordering};
 
 use crate::db::{
     pending_render_data_tracks, pending_segment_render_data_files, set_segment_render_data,
-    set_track_render_data, Db, DbError, PendingSegmentFile, SpectrogramStoreOutcome,
+    set_track_render_data, Db, DbError, PendingSegmentFile, PendingSegmentTrack,
+    SpectrogramStoreOutcome,
 };
 use crate::render_data_segments::SegmentBounds;
 use crate::waveform::{
@@ -121,12 +122,13 @@ pub fn run_render_data_backfill(
         for (track, data) in file.tracks.iter().zip(&datas) {
             match data {
                 Ok(data) => {
-                    let bounds = SegmentBounds {
-                        start_ms: track.start_ms,
-                        end_ms: track.end_ms,
-                    };
-                    let outcome =
-                        set_segment_render_data(db, track.track_id, file.source, bounds, data)?;
+                    let outcome = set_segment_render_data(
+                        db,
+                        track.track_id,
+                        file.source,
+                        track.bounds(),
+                        data,
+                    )?;
                     count_store(outcome, &mut summary);
                 }
                 Err(error) => {
@@ -167,10 +169,7 @@ fn extract_file(
     let bounds: Vec<SegmentBounds> = file
         .tracks
         .iter()
-        .map(|track| SegmentBounds {
-            start_ms: track.start_ms,
-            end_ms: track.end_ms,
-        })
+        .map(PendingSegmentTrack::bounds)
         .collect();
     match backend.extract_segment_render_data_cancellable(
         std::path::Path::new(&file.path),
@@ -460,15 +459,18 @@ mod tests {
             [
                 SegmentBounds {
                     start_ms: 0,
-                    end_ms: 3_000
+                    end_ms: 3_000,
+                    last_in_file: false,
                 },
                 SegmentBounds {
                     start_ms: 3_000,
-                    end_ms: 8_000
+                    end_ms: 8_000,
+                    last_in_file: false,
                 },
                 SegmentBounds {
                     start_ms: 8_000,
-                    end_ms: 9_000
+                    end_ms: 9_000,
+                    last_in_file: true,
                 },
             ]
         );
@@ -525,7 +527,8 @@ mod tests {
             backend.bounds_seen.lock().unwrap().as_slice(),
             [vec![SegmentBounds {
                 start_ms: 3_000,
-                end_ms: 8_500
+                end_ms: 8_500,
+                last_in_file: false,
             }]]
         );
     }

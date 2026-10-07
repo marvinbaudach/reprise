@@ -21,10 +21,12 @@ fn two_track_stream() -> (Vec<i16>, [SegmentBounds; 2]) {
         SegmentBounds {
             start_ms: 0,
             end_ms: 2_000,
+            last_in_file: false,
         },
         SegmentBounds {
             start_ms: 2_000,
             end_ms: 4_000,
+            last_in_file: false,
         },
     ];
     (stream, bounds)
@@ -130,6 +132,7 @@ fn a_track_the_stream_never_reaches_is_empty_and_the_others_are_not() {
     let late = SegmentBounds {
         start_ms: 9_000,
         end_ms: 10_000,
+        last_in_file: false,
     };
     let mut session = SegmentedRenderDataSession::new(&[bounds[0], bounds[1], late], 100);
 
@@ -307,4 +310,63 @@ fn audio_stamped_before_the_start_of_the_stream_is_dropped() {
     for (left, right) in counted.iter().zip(session.finish()) {
         assert_same(left, &right.unwrap());
     }
+}
+
+/// A quiet 440 Hz track of two seconds, then a loud 1000 Hz one of four, the
+/// last of the file; `claimed_end_ms` is where the file's metadata ends it.
+fn album_with_a_last_track_ending_at(claimed_end_ms: i64) -> (Vec<i16>, [SegmentBounds; 2]) {
+    let mut stream = tone(440.0, 2, 0.1);
+    stream.extend(tone(1_000.0, 4, 0.5));
+    let bounds = [
+        SegmentBounds {
+            start_ms: 0,
+            end_ms: 2_000,
+            last_in_file: false,
+        },
+        SegmentBounds {
+            start_ms: 2_000,
+            end_ms: claimed_end_ms,
+            last_in_file: true,
+        },
+    ];
+    (stream, bounds)
+}
+
+#[test]
+fn the_last_track_runs_to_the_decoded_end_whatever_the_metadata_claims() {
+    for claimed_end_ms in [4_000, 6_000, 8_000] {
+        let (stream, bounds) = album_with_a_last_track_ending_at(claimed_end_ms);
+        let split = RATE as usize * 2 * 2;
+
+        let data = analyse(&stream, &bounds, 997);
+
+        for (index, part) in [&stream[..split], &stream[split..]].into_iter().enumerate() {
+            let mut alone = RenderDataSession::with_peak_count(100);
+            alone.push_pcm_i16(part, RATE, 2).unwrap();
+            assert_same(&data[index], &alone.finish().unwrap());
+        }
+        assert_eq!(
+            data[1].spectrogram.frame_count(),
+            80,
+            "claimed end {claimed_end_ms}"
+        );
+    }
+}
+
+#[test]
+fn only_the_cut_decides_whether_two_bounds_are_the_same_cut() {
+    let cut = SegmentBounds {
+        start_ms: 2_000,
+        end_ms: 6_000,
+        last_in_file: true,
+    };
+
+    assert!(cut.same_cut(&SegmentBounds {
+        last_in_file: false,
+        ..cut
+    }));
+    assert!(!cut.same_cut(&SegmentBounds {
+        end_ms: 6_001,
+        ..cut
+    }));
 }
