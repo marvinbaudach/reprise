@@ -195,7 +195,7 @@ fn show_card_menu(shared: &Rc<Shared>, card: &gtk4::Box, x: f64, y: f64, kind: &
 }
 
 fn show_menu(parent: &gtk4::Widget, menu: &gio::Menu, x: f64, y: f64) {
-    let popover = gtk4::PopoverMenu::from_model(Some(menu));
+    let popover = crate::ui::menu_a11y::popover_menu_from_model(menu);
     popover.set_parent(parent);
     popover.set_has_arrow(false);
     popover.set_pointing_to(Some(&gtk4::gdk::Rectangle::new(x as i32, y as i32, 1, 1)));

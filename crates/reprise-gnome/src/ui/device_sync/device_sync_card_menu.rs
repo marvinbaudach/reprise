@@ -106,7 +106,7 @@ fn show(root: &gtk4::Button, runtime: &Rc<DeviceSyncRuntime>, device_id: &str, x
     }
     root.insert_action_group(ACTION_GROUP, Some(&actions));
 
-    let popover = gtk4::PopoverMenu::from_model(Some(&menu));
+    let popover = crate::ui::menu_a11y::popover_menu_from_model(&menu);
     popover.set_parent(root);
     popover.set_has_arrow(false);
     popover.set_pointing_to(Some(&gtk4::gdk::Rectangle::new(x, y, 1, 1)));

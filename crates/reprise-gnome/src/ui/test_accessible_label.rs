@@ -6,6 +6,7 @@
 //! comparison, `gtk_test_accessible_check_property`, a variadic C function that
 //! cannot be called without `unsafe`. That is why this module is named on
 //! `check_frontend_allowlist`'s unsafe list in `scripts/check-architecture.sh`.
+//! [`has_labelled_by_relation`] needs no `unsafe`: gtk4-rs wraps that call.
 
 use gtk4::glib::translate::ToGlibPtr;
 use gtk4::prelude::*;
@@ -35,4 +36,11 @@ pub(crate) fn accessible_label_mismatch(
         gtk4::glib::ffi::g_free(actual.cast());
         Some(text)
     }
+}
+
+/// Whether GTK holds a labelled-by relation for `widget`. A name read through
+/// that relation wins over the label property, so a label that matches is no
+/// proof the widget is announced by it.
+pub(crate) fn has_labelled_by_relation(widget: &impl IsA<gtk4::Accessible>) -> bool {
+    gtk4::test_accessible_has_relation(widget, gtk4::AccessibleRelation::LabelledBy)
 }

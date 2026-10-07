@@ -38,7 +38,7 @@ pub(super) fn install(
         Some(&strings::text(strings::EXPLAIN_COLOR_SCALE)),
         Some(&format!("{SEEK_MENU_GROUP}.{ACTION_EXPLAIN_COLOR_SCALE}")),
     );
-    let popover = gtk4::PopoverMenu::from_model(Some(&model));
+    let popover = crate::ui::menu_a11y::popover_menu_from_model(&model);
     popover.set_parent(area);
     popover.set_has_arrow(false);
     popover.set_halign(gtk4::Align::Start);

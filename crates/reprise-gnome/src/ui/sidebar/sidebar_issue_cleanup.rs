@@ -98,7 +98,7 @@ fn show_context_menu(
         Some(&spec.label),
         Some(&format!("{ACTION_GROUP_NAME}.{}", spec.action)),
     );
-    let popover = gtk4::PopoverMenu::from_model(Some(&menu));
+    let popover = crate::ui::menu_a11y::popover_menu_from_model(&menu);
     popover.set_parent(row);
     popover.set_has_arrow(false);
     popover.set_pointing_to(Some(&gtk4::gdk::Rectangle::new(x as i32, y as i32, 1, 1)));

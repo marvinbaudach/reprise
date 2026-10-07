@@ -473,6 +473,7 @@ fn group_header_with_rebind(
         .icon_name("view-more-symbolic")
         .menu_model(&podcasts_context_menu::build_source(group))
         .build();
+    crate::ui::menu_a11y::name_menu_button_items(&menu);
     menu.add_css_class("flat");
     menu.set_tooltip_text(Some(&strings::text(strings::PODCAST_MORE_SOURCE_OPTIONS)));
     skeleton.trailing.append(&menu);

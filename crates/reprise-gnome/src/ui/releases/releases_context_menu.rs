@@ -58,7 +58,7 @@ pub(super) fn wire_cell(
         gesture.set_state(gtk4::EventSequenceState::Claimed);
         claim_row_for_menu(&shared, position);
         let menu = releases_menu::build(&releases_menu::summarize(&selected_entries(&shared)));
-        let popover = gtk4::PopoverMenu::from_model(Some(&menu));
+        let popover = crate::ui::menu_a11y::popover_menu_from_model(&menu);
         popover.set_has_arrow(false);
         popover.set_parent(&parent);
         popover.set_pointing_to(Some(&gtk4::gdk::Rectangle::new(x as i32, y as i32, 1, 1)));
@@ -137,7 +137,7 @@ pub(super) fn wire(column_view: &gtk4::ColumnView, shared: &Rc<Shared>) {
             return gtk4::glib::Propagation::Proceed;
         }
         let menu = releases_menu::build(&releases_menu::summarize(&entries));
-        let popover = gtk4::PopoverMenu::from_model(Some(&menu));
+        let popover = crate::ui::menu_a11y::popover_menu_from_model(&menu);
         present_keyboard_popover(&menu_parent, &popover);
         gtk4::glib::Propagation::Stop
     });

@@ -129,6 +129,7 @@ pub(super) fn install(
             strings::SHORTCUT_MAIN_MENU,
         ))
         .build();
+    crate::ui::menu_a11y::name_menu_button_items(&menu_button);
     header.pack_end(&menu_button);
 
     let open_primary_menu = {

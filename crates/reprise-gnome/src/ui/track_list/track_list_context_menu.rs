@@ -446,7 +446,7 @@ fn show_context_menu(
     }
 
     let menu_model = build_context_menu_model(shared);
-    let popover = gtk4::PopoverMenu::from_model(Some(&menu_model));
+    let popover = crate::ui::menu_a11y::popover_menu_from_model(&menu_model);
     popover.set_parent(column_view);
     popover.set_has_arrow(false);
 

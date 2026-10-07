@@ -169,12 +169,12 @@ pub(super) fn popup_for_row(
         }
     }
     let selected_ids = selection.borrow().selected_ids();
-    let popover = gtk4::PopoverMenu::from_model(Some(&build_for_selection(
+    let popover = crate::ui::menu_a11y::popover_menu_from_model(&build_for_selection(
         row,
         &selected_ids,
         unavailable_episode,
         paths,
-    )));
+    ));
     popover.set_has_arrow(false);
     popover.set_parent(parent);
     let (x, y) = at.unwrap_or_else(|| {

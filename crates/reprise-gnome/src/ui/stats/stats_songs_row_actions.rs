@@ -153,7 +153,7 @@ impl RowActions {
         actions.add_action(&open_album);
         row.insert_action_group("song", Some(&actions));
 
-        let popover = gtk4::PopoverMenu::from_model(Some(&menu));
+        let popover = crate::ui::menu_a11y::popover_menu_from_model(&menu);
         popover.set_parent(row);
         crate::ui::popover_lifecycle::unparent_after_actions(popover.upcast_ref());
         // input-parity: ACC-8 keyboard=menu-shift-f10
