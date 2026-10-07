@@ -7916,11 +7916,13 @@ derives for a synced CUE file on the device (CUE-15).
   named after the source file and its bytes are counted once. Beside it goes a
   sheet derived for the device, whose `FILE` line names the device file and
   which places every track of the file still in the library, also for a sheet
-  that was embedded in the file. Each selected track keeps its own row in the
-  device inventory; a track that leaves the selection while another still
-  needs the file only loses its row, and the file and its sheet go with the
-  last track that needs them. A newly selected track of a file already on the
-  device is recorded without a copy.
+  that was embedded in the file; a sheet edit on the desktop replaces it on
+  the next sync, even one that keeps its length. Each selected track keeps its
+  own row in the device inventory; a track that leaves the selection while
+  another still needs the file only loses its row, and the file and its sheet
+  go with the last track that needs them. A newly selected track of a file already on the
+  device is recorded without a copy, and a CUE file kept on the device by a
+  frozen smart playlist keeps its sheet.
   <!-- REVIEW: rule proposal -->
 - **CUE-16** [active] [core] — A sheet beside an audio file cuts it on the phone
   as on the desktop, through the document tree the phone's library lives in:

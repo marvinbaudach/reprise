@@ -136,7 +136,7 @@ impl CueGroups {
             let contents = derived_cue::render(&self.files[position], &desired.device_path);
             let size_bytes = contents.len() as u64;
             target_bytes = target_bytes.saturating_add(size_bytes);
-            let device_path = derived_cue::sheet_path(&desired.device_path);
+            let device_path = derived_cue::sheet_path(&desired.device_path, &contents);
             let existing_size_bytes = resident.get(device_path.as_str()).copied();
             if existing_size_bytes == Some(size_bytes) {
                 continue;
@@ -160,22 +160,25 @@ impl CueGroups {
     }
 
     /// The derived sheets this plan keeps: beside every CUE file it wants or
-    /// retains, so the orphan pass removes a sheet only with its file.
+    /// retains, so the orphan pass removes a sheet only with its file, or once
+    /// a changed sheet replaced it.
     pub(super) fn kept_sheet_paths(&self, plan: &MirrorPlan) -> Vec<String> {
         let wanted = plan
             .desired_files
             .iter()
-            .filter(|file| self.contains(file.track.id))
-            .map(|file| file.device_path.as_str());
+            .map(|file| (file.track.id, file.device_path.as_str()));
         let retained = plan
             .retained_unavailable
             .iter()
             .chain(&plan.retained_stable)
-            .filter(|file| self.contains(file.track_id))
-            .map(|file| file.device_path.as_str());
+            .map(|file| (file.track_id, file.device_path.as_str()));
         wanted
             .chain(retained)
-            .map(derived_cue::sheet_path)
+            .filter_map(|(track_id, device_path)| {
+                let file = &self.files[self.group_of(track_id)?];
+                let contents = derived_cue::render(file, device_path);
+                Some(derived_cue::sheet_path(device_path, &contents))
+            })
             .collect()
     }
 }

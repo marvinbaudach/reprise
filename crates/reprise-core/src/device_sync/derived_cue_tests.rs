@@ -29,8 +29,22 @@ fn album() -> CueSyncFile {
 
 #[test]
 fn cue_15_the_derived_sheet_sits_beside_its_device_file() {
-    assert_eq!(sheet_path("Band/Album/album.opus"), "Band/Album/album.cue");
-    assert_eq!(sheet_path("Band/Album.x/album"), "Band/Album.x/album.cue");
+    let path = sheet_path("Band/Album/album.opus", "FILE");
+    assert!(path.starts_with("Band/Album/album."), "{path}");
+    assert!(path.ends_with(".cue"));
+    assert!(describes(&path, "Band/Album/album.opus"));
+    assert!(!describes(&path, "Band/Album/other.opus"));
+    assert!(!describes("Band/Album/album.cue", "Band/Album/album.opus"));
+    assert!(sheet_path("Band/Album.x/album", "FILE").starts_with("Band/Album.x/album."));
+    assert_eq!(
+        sheet_path("a/b.opus", "FILE"),
+        sheet_path("a/b.opus", "FILE"),
+        "the name is stable"
+    );
+    assert_ne!(
+        sheet_path("a/b.opus", "FILE"),
+        sheet_path("a/b.opus", "FILF")
+    );
 }
 
 #[test]

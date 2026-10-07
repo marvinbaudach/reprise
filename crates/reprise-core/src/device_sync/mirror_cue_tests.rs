@@ -11,7 +11,6 @@ use super::{
 
 const SOURCE: &str = "/music/Band/Album/album.flac";
 const DEVICE_PATH: &str = "Band/Album/album.mp3";
-const SHEET_PATH: &str = "Band/Album/album.cue";
 const PROFILE: TransferProfile = TransferProfile::Mp3(Mp3Quality::Kbps256);
 const FINGERPRINT: &str = "mp3-cbr-256-v1";
 
@@ -99,6 +98,7 @@ fn row(id: i64) -> DeviceFileRecord {
 fn synced(ids: &[i64], rows: &[i64]) -> MirrorInput {
     let first = plan_mirror(input(ids));
     let sheet_bytes = first.cue_writes[0].size_bytes;
+    let sheet_path = first.cue_writes[0].device_path.clone();
     MirrorInput {
         inventory: rows.iter().map(|id| row(*id)).collect(),
         managed_files: vec![
@@ -107,7 +107,7 @@ fn synced(ids: &[i64], rows: &[i64]) -> MirrorInput {
                 size_bytes: 960_000,
             },
             ManagedDeviceFile {
-                relative_path: SHEET_PATH.into(),
+                relative_path: sheet_path,
                 size_bytes: sheet_bytes,
             },
         ],
@@ -160,7 +160,10 @@ fn cue_15_the_derived_sheet_names_the_device_file_and_every_track() {
 
     assert_eq!(plan.cue_writes.len(), 1);
     let write = &plan.cue_writes[0];
-    assert_eq!(write.device_path, SHEET_PATH);
+    assert!(super::derived_cue::describes(
+        &write.device_path,
+        DEVICE_PATH
+    ));
     assert_eq!(write.audio_device_path, DEVICE_PATH);
     let sheet = crate::cue::parse(write.contents.as_bytes()).unwrap();
     assert_eq!(sheet.files[0].name, "album.mp3");
@@ -190,6 +193,7 @@ fn cue_15_dropping_one_track_forgets_its_row_and_keeps_the_file() {
 #[test]
 fn cue_15_dropping_the_last_track_removes_the_file_and_its_sheet() {
     let mut mirror_input = synced(&[1], &[1]);
+    let sheet_path = mirror_input.managed_files[1].relative_path.clone();
     mirror_input.playlists[0].entries.clear();
 
     let plan = plan_mirror(mirror_input);
@@ -197,7 +201,7 @@ fn cue_15_dropping_the_last_track_removes_the_file_and_its_sheet() {
     assert!(plan.remove.contains(&ManagedRemoval::Inventory(row(1))));
     assert!(plan.remove.iter().any(|removal| matches!(
         removal,
-        ManagedRemoval::Orphan(file) if file.relative_path == SHEET_PATH
+        ManagedRemoval::Orphan(file) if file.relative_path == sheet_path
     )));
 }
 
@@ -295,4 +299,43 @@ fn cue_15_the_size_projection_counts_a_copied_cue_file_once() {
     );
 
     assert_eq!(projection.playlists[0].target_bytes, 3_000_000);
+}
+
+#[test]
+fn cue_15_a_sheet_edit_that_keeps_its_length_still_rewrites_the_derived_sheet() {
+    let synced_input = synced(&[1, 2], &[1, 2]);
+    let old_sheet = synced_input.managed_files[1].relative_path.clone();
+    let mut edited = synced_input;
+    // A start moved by a few frames keeps the sheet's length: MM:SS:FF is fixed-width.
+    edited.playlists[0].cue_files[0].tracks[1].start_ms = 10_040;
+    edited.playlists[0].cue_files[0].tracks[0].end_ms = 10_040;
+
+    let plan = plan_mirror(edited);
+
+    assert_eq!(plan.cue_writes.len(), 1, "the phone must get the new cut");
+    assert_ne!(plan.cue_writes[0].device_path, old_sheet);
+    assert!(plan.remove.iter().any(|removal| matches!(
+        removal,
+        ManagedRemoval::Orphan(file) if file.relative_path == old_sheet
+    )));
+}
+
+#[test]
+fn cue_15_a_frozen_cue_file_keeps_its_derived_sheet() {
+    let mut mirror_input = synced(&[1], &[1]);
+    let sheet_path = mirror_input.managed_files[1].relative_path.clone();
+    mirror_input.playlists[0].entries.clear();
+    let mut plan = plan_mirror(mirror_input);
+
+    super::apply_frozen_smart_playlist_policy(
+        &mut plan,
+        &std::collections::HashSet::from([SelectionSource::Smart(9)]),
+        &std::collections::HashSet::from([1]),
+    );
+
+    assert!(!plan.remove.iter().any(|removal| matches!(
+        removal,
+        ManagedRemoval::Orphan(file) if file.relative_path == sheet_path
+    )));
+    assert_eq!(plan.bytes_freed, 0);
 }

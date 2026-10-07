@@ -32,11 +32,24 @@ pub fn apply_frozen_smart_playlist_policy(
     }
     plan.playlist_writes
         .retain(|write| !frozen_sources.contains(&write.source));
+    // A frozen file stays, and so does the sheet derived for it (CUE-15).
+    let kept_paths: Vec<String> = plan
+        .remove
+        .iter()
+        .filter_map(|removal| match removal {
+            ManagedRemoval::Inventory(file) if frozen_track_ids.contains(&file.track_id) => {
+                Some(file.device_path.clone())
+            }
+            _ => None,
+        })
+        .collect();
     plan.remove.retain(|removal| match removal {
         ManagedRemoval::Inventory(file) | ManagedRemoval::Unshared(file) => {
             !frozen_track_ids.contains(&file.track_id)
         }
-        ManagedRemoval::Orphan(_) => true,
+        ManagedRemoval::Orphan(file) => !kept_paths
+            .iter()
+            .any(|audio| super::derived_cue::describes(&file.relative_path, audio)),
     });
     plan.bytes_freed = plan.remove.iter().fold(0_u64, |sum, removal| {
         let bytes = match removal {

@@ -16,13 +16,36 @@ const FRAMES_PER_SECOND: i64 = 75;
 const MS_PER_SECOND: i64 = 1_000;
 const SECONDS_PER_MINUTE: i64 = 60;
 
-/// The derived sheet's path beside `device_path`, the audio file it describes.
-pub fn sheet_path(device_path: &str) -> String {
+/// FNV-1a, 32 bits: stable across builds and platforms, unlike the standard
+/// library's hasher, which is all a name needs.
+const FNV_OFFSET: u32 = 0x811c_9dc5;
+const FNV_PRIME: u32 = 0x0100_0193;
+
+/// The derived sheet's path beside `device_path`, the audio it describes. The
+/// name carries a hash of `contents`: the device inventory knows a resident
+/// file only by its size, and a moved `INDEX` keeps a sheet's size, so a changed
+/// sheet gets a new name and the old one leaves as an orphan.
+pub fn sheet_path(device_path: &str, contents: &str) -> String {
+    let hash = contents.bytes().fold(FNV_OFFSET, |hash, byte| {
+        (hash ^ u32::from(byte)).wrapping_mul(FNV_PRIME)
+    });
+    format!("{}.{hash:08x}.cue", audio_stem(device_path))
+}
+
+/// Whether `path` is a sheet derived for the audio at `device_path`.
+pub fn describes(path: &str, device_path: &str) -> bool {
+    path.strip_prefix(audio_stem(device_path))
+        .and_then(|rest| rest.strip_prefix('.'))
+        .and_then(|rest| rest.strip_suffix(".cue"))
+        .is_some_and(|hash| hash.len() == 8 && hash.bytes().all(|byte| byte.is_ascii_hexdigit()))
+}
+
+fn audio_stem(device_path: &str) -> &str {
     let stem_end = device_path
         .rfind('.')
         .filter(|dot| !device_path[*dot..].contains('/'))
         .unwrap_or(device_path.len());
-    format!("{}.cue", &device_path[..stem_end])
+    &device_path[..stem_end]
 }
 
 /// The sheet for `file` on the device, where its audio is `device_path`.

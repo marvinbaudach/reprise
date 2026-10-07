@@ -207,7 +207,13 @@ All tasks committed, gate battery green on the worktree. The device proofs (post
   after the copy or against the resident file. A row no longer wanted whose file another row
   still needs is `ManagedRemoval::Unshared` (forget only). The derived sheet is
   `DerivedCueWrite`, written by `WriteDerivedCue` under the Copying step (no new `SyncStep`:
-  foreign matches); it is kept by `known_paths` and leaves as an orphan with its file. Analysis
+  foreign matches); it is kept by `known_paths` and leaves as an orphan with its file. Its
+  name carries an FNV-1a hash of its contents (`album.1a2b3c4d.cue`): the inventory knows
+  resident files only by size, and a moved `INDEX` keeps a sheet's size, so a changed sheet
+  gets a new name and the old one leaves as an orphan. A frozen smart playlist that keeps a
+  CUE file also keeps its sheet. Known gap: the sheet leaves only through the orphan pass, so
+  a run without a successful device inspection (`managed_files_scanned == false`) leaves it
+  behind when its file goes; the next inspected run removes it. Analysis
   sidecars are not planned for CUE files. Per-playlist and picker size estimates count a
   copied CUE file once. A playlist naming one CUE track still names the whole device file in
   its M3U, so the phone's import adds the whole album (CUE-6 behaviour), and a hidden track's
