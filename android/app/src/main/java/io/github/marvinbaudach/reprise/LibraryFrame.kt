@@ -13,6 +13,7 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.WindowInsetsSides
 import androidx.compose.foundation.layout.asPaddingValues
 import androidx.compose.foundation.layout.calculateStartPadding
 import androidx.compose.foundation.layout.fillMaxSize
@@ -20,11 +21,13 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.layout.only
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.layout.windowInsetsBottomHeight
+import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
@@ -182,6 +185,7 @@ internal fun LibraryBottomFrame(
         if (currentTrack != null) {
             MiniPlayer(
                 metrics = metrics,
+                insetSides = miniPlayerInsetSides(surfaceLayout),
                 track = currentTrack,
                 playback = playback,
                 progress = progress,
@@ -284,9 +288,24 @@ internal fun LibraryNavigationRail(
     }
 }
 
+/**
+ * The sides of the screen the mini-player keeps clear of the navigation bar.
+ *
+ * The Scaffold pads its content by the system bars but not its bottom bar, so
+ * a three-button navigation bar at the side of a landscape screen would be
+ * drawn over the player's controls. The rail of the wide-short layout already
+ * spends the start inset, so only the end is left to the player there.
+ */
+internal fun miniPlayerInsetSides(surfaceLayout: SurfaceLayout): WindowInsetsSides =
+    when (surfaceLayout) {
+        SurfaceLayout.STACKED -> WindowInsetsSides.Horizontal
+        SurfaceLayout.WIDE_SHORT -> WindowInsetsSides.End
+    }
+
 @Composable
 private fun MiniPlayer(
     metrics: LibraryFrameMetrics,
+    insetSides: WindowInsetsSides,
     track: LibraryTrack,
     playback: LibraryPlayback,
     progress: () -> Float,
@@ -301,6 +320,7 @@ private fun MiniPlayer(
     Surface(
         modifier = Modifier
             .fillMaxWidth()
+            .windowInsetsPadding(NavigationBarDefaults.windowInsets.only(insetSides))
             .heightIn(min = minimumHeight)
             .testTag("library-mini-player")
             .padding(horizontal = 12.dp)
