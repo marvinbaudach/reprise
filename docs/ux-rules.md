@@ -1358,13 +1358,23 @@ result.
   The gap between two clips and each clip's gain on a real device are a
   manual check.
   <!-- REVIEW: rule proposal -->
-- **MTP-67** [planned] [android] — **The phone analyses CUE tracks.** One
+- **MTP-67** [active] [android] — **The phone analyses CUE tracks.** One
   decode of a CUE file stores the seek-bar shape, spectrum and loudness of
   each of its tracks, each measured from its own stretch of the file, placed
   by the decoder's timestamps; the file's last track is measured to the
   decoded end of the file. While the playing track is still being decoded,
   its seek bar fills from its own start. A file that cannot be measured is
   remembered and not decoded again until it changes.
+  *Tests:* `mtp_67_one_decode_stores_each_track_of_the_file_from_its_own_stretch`,
+  `mtp_67_a_track_cut_from_a_file_is_given_only_its_own_stretch_of_it`,
+  `mtp_67_a_chunk_the_decoder_dropped_does_not_shift_the_later_tracks`,
+  `mtp_67_the_last_track_is_measured_to_the_decoded_end_of_its_file`,
+  `mtp_67_a_track_the_file_never_reaches_is_remembered_and_the_others_are_stored`,
+  `mtp_67_a_decode_that_fails_remembers_every_track_it_was_measuring`,
+  `mtp_67_the_seek_bar_of_a_later_track_fills_from_its_own_start`,
+  `mtp_67_the_backfill_measures_a_cue_file_in_one_decode_and_counts_each_track`,
+  `mtp_67_a_cue_tracks_seek_bar_reads_the_progress_of_its_own_stretch`.
+  The platform decoder's timestamps are verified on a device.
   <!-- REVIEW: rule proposal -->
 - **MTP-68** [active] [android] — **The last track of a file plays to its
   end on the phone.** The last track of a CUE file plays to the end of the

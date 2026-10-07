@@ -370,3 +370,24 @@ fn only_the_cut_decides_whether_two_bounds_are_the_same_cut() {
         ..cut
     }));
 }
+
+#[test]
+fn a_tracks_partial_picture_covers_only_its_own_stretch() {
+    let (stream, bounds) = two_track_stream();
+    let mut session = SegmentedRenderDataSession::new(&bounds, 100);
+    let three_seconds = RATE as usize * 3 * 2;
+
+    session
+        .push_pcm_i16(&stream[..three_seconds], RATE, 2, None)
+        .unwrap();
+
+    let first = session.partial_source(0).unwrap().render(40).unwrap();
+    let second = session.partial_source(1).unwrap().render(40).unwrap();
+    assert_eq!(first.covered_fraction, 1.0);
+    assert!(
+        (0.45..=0.55).contains(&second.covered_fraction),
+        "{}",
+        second.covered_fraction
+    );
+    assert!(session.partial_source(2).is_none());
+}

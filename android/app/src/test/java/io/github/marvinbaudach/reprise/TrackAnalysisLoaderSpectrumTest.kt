@@ -270,4 +270,36 @@ class TrackAnalysisLoaderSpectrumTest {
         const val NEGATIVE_PROOF_MS = 500L
         const val POLLS_PER_INTERVAL = 5
     }
+
+    @Test
+    fun mtp_67_a_cue_tracks_seek_bar_reads_the_progress_of_its_own_stretch() {
+        val delivered = CountDownLatch(1)
+        val asked = Collections.synchronizedList(mutableListOf<Long>())
+        val answers = Collections.synchronizedList(mutableListOf<PartialTrackAnalysis?>())
+        // Track 22 is the second track of a CUE file; the core answers for its
+        // own stretch, of which the decode has covered half.
+        val loader = TrackAnalysisLoader(
+            importAnalysis = { AndroidAnalysisOutcome.IMPORTED },
+            readBars = { _, _ -> null },
+            readProgress = { trackId, _ ->
+                asked += trackId
+                PartialTrackAnalysis(
+                    coveredFraction = if (trackId == 22L) 0.5f else 1.0f,
+                    bars = emptyList(),
+                    frames = SpectrogramFrames(2, 10, byteArrayOf()),
+                )
+            },
+            onMainThread = { work -> work() },
+        )
+
+        loader.loadProgress(22, 64) { answer ->
+            answers += answer
+            delivered.countDown()
+        }
+        assertTrue("the progress answer never arrived", delivered.await(2, TimeUnit.SECONDS))
+        loader.shutdownForTest()
+
+        assertEquals(listOf(22L), asked.toList())
+        assertEquals(0.5f, answers.single()?.coveredFraction)
+    }
 }

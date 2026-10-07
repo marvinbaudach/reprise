@@ -528,7 +528,7 @@ fn a_zero_sample_rate_chunk_is_refused_and_reported_as_decode_failed() {
 }
 
 #[test]
-fn a_track_cut_from_a_file_is_never_given_the_analysis_of_the_whole_file() {
+fn mtp_67_a_track_cut_from_a_file_is_given_only_its_own_stretch_of_it() {
     let (_directory, library, _whole, music) = library_with_one_track();
     std::fs::write(
         music.join("song.cue"),
@@ -550,7 +550,12 @@ fn a_track_cut_from_a_file_is_never_given_the_analysis_of_the_whole_file() {
         .unwrap()
         .rows
         .into_iter()
-        .find(|track| track.segment.is_some())
+        .find(|track| {
+            track
+                .segment
+                .as_ref()
+                .is_some_and(|segment| segment.index == 1)
+        })
         .expect("the sheet cut the file into tracks")
         .id
     };
@@ -559,19 +564,16 @@ fn a_track_cut_from_a_file_is_never_given_the_analysis_of_the_whole_file() {
 
     let outcome = library.import_track_analysis(cue_track).unwrap();
 
-    assert_eq!(outcome, AndroidAnalysisOutcome::DecodeFailed);
-    assert_eq!(
-        calls.load(Ordering::SeqCst),
-        0,
-        "the file is not decoded for it"
-    );
+    assert_eq!(outcome, AndroidAnalysisOutcome::Computed);
+    assert_eq!(calls.load(Ordering::SeqCst), 1);
+    // The decoder pushes one second, twenty spectrogram frames; the first
+    // track covers the first 40 CUE frames of it (about 0.53 s).
     let reader = library.reader().unwrap();
-    assert!(reprise_core::db::get_waveform_peaks(&reader, cue_track)
+    let frames = reprise_core::db::get_track_spectrogram(&reader, cue_track)
         .unwrap()
-        .is_none());
-    assert!(reprise_core::db::get_track_spectrogram(&reader, cue_track)
-        .unwrap()
-        .is_none());
+        .expect("the track is measured")
+        .frame_count();
+    assert!((10..=11).contains(&frames), "{frames} frames");
 }
 
 #[test]

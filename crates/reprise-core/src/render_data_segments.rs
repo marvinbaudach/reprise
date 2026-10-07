@@ -14,7 +14,7 @@
 //! what came earlier has already been measured. A chunk without a timestamp
 //! continues from the running frame count.
 
-use crate::render_data_session::{RenderDataSession, RenderDataSessionError};
+use crate::render_data_session::{PartialSource, RenderDataSession, RenderDataSessionError};
 use crate::waveform::TrackRenderData;
 
 /// The part of a file one track covers, in milliseconds from its start.
@@ -179,6 +179,16 @@ impl SegmentedRenderDataSession {
         } else {
             placed
         }
+    }
+
+    /// What has been decoded so far of the segment at `index`, in the order the
+    /// segments were given: the partial picture of one track while its file
+    /// is still being decoded. `None` for an index past the last segment.
+    #[must_use]
+    pub fn partial_source(&self, index: usize) -> Option<PartialSource> {
+        self.tracks
+            .get(index)
+            .map(|track| track.session.partial_source())
     }
 
     /// Ends the stream and returns the render data of each segment, in the order
