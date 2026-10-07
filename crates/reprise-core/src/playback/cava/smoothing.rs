@@ -65,6 +65,7 @@ impl Smoother {
         let gravity_mod = (self.noise_reduction > 0.1)
             .then(|| framerate_mod.powf(2.5) * 2.0 / self.noise_reduction);
         let mut measuring = false;
+        let mut pending_brake = None;
         if self.autosensitivity > 0 {
             let raw_peak = bars
                 .iter()
@@ -95,9 +96,7 @@ impl Smoother {
                     self.goal = Some(sensitivity.clamp(MIN_SENSITIVITY, MAX_SENSITIVITY));
                 }
                 Step::Brake { trigger, target } => {
-                    if self.sensitivity > trigger {
-                        self.brake_to(target);
-                    }
+                    pending_brake = Some((trigger, target));
                 }
                 Step::Done => {}
             }
@@ -115,6 +114,14 @@ impl Smoother {
                 if self.sensitivity >= goal {
                     self.goal = None;
                 }
+            }
+        }
+        if let Some((trigger, target)) = pending_brake {
+            // The pending goal can raise the gain in this same frame. Judge
+            // the brake against the gain that will actually draw it, or one
+            // risen frame can pass a check made at the old gain and overshoot.
+            if self.sensitivity > trigger {
+                self.brake_to(target);
             }
         }
 
