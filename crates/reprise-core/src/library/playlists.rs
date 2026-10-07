@@ -210,13 +210,15 @@ fn add_tracks_in(
         return Ok(0);
     }
 
-    let tx = conn.unchecked_transaction()?;
-    let inserted = append_tracks_rows(&tx, playlist_id, track_ids)?;
-    if inserted > 0 {
-        crate::events::record(&tx, "playlist", &playlist_id.to_string(), "add")?;
-    }
-    tx.commit()?;
-    Ok(inserted)
+    // IMMEDIATE: `append_tracks_rows` reads `MAX(position)` before it inserts
+    // (see `events::in_txn_immediate`).
+    crate::events::in_txn_immediate(conn, |conn| {
+        let inserted = append_tracks_rows(conn, playlist_id, track_ids)?;
+        if inserted > 0 {
+            crate::events::record(conn, "playlist", &playlist_id.to_string(), "add")?;
+        }
+        Ok(inserted)
+    })
 }
 
 /// Shared per-row append logic behind [`add_tracks`] and
@@ -267,11 +269,13 @@ fn create_with_tracks_in_db(
     name: &str,
     track_ids: &[i64],
 ) -> Result<i64, rusqlite::Error> {
-    let tx = conn.unchecked_transaction()?;
-    let playlist_id = create_with_tracks_in(&tx, name, track_ids)?;
-    crate::events::record(&tx, "playlist", &playlist_id.to_string(), "create")?;
-    tx.commit()?;
-    Ok(playlist_id)
+    // IMMEDIATE: `create_playlist_row` reads `MAX(position)` before it inserts
+    // (see `events::in_txn_immediate`).
+    crate::events::in_txn_immediate(conn, |conn| {
+        let playlist_id = create_with_tracks_in(conn, name, track_ids)?;
+        crate::events::record(conn, "playlist", &playlist_id.to_string(), "create")?;
+        Ok(playlist_id)
+    })
 }
 
 pub(crate) fn create_with_tracks_in(
@@ -478,50 +482,51 @@ fn move_position_in(
         return Ok(()); // no-op
     }
 
-    let tx = conn.unchecked_transaction()?;
-
-    // Fetch all (track_id, position) pairs in order.
-    let mut stmt = tx.prepare(
-        "SELECT track_id, position FROM playlist_tracks WHERE playlist_id = ?1 ORDER BY position",
-    )?;
-    let mut tracks: Vec<i64> = stmt
-        .query_map(params![playlist_id], |row| row.get(0))?
-        .collect::<Result<Vec<_>, _>>()?;
-    drop(stmt);
-
-    if from as usize >= tracks.len() {
-        tracing::warn!(
-            playlist_id = playlist_id,
-            from = from,
-            len = tracks.len(),
-            "move_position: from position out of range"
-        );
-        return Ok(());
-    }
-
-    // Remove track from its current position and insert at new position.
-    let track_id = tracks.remove(from as usize);
-    tracks.insert(to as usize, track_id);
-
-    // Delete all rows for this playlist and re-insert with new positions.
-    tx.execute(
-        "DELETE FROM playlist_tracks WHERE playlist_id = ?1",
-        params![playlist_id],
-    )?;
-
-    // Re-insert all tracks with updated positions.
-    {
-        let mut statement = tx.prepare_cached(
-            "INSERT INTO playlist_tracks (playlist_id, track_id, position) VALUES (?1, ?2, ?3)",
+    // IMMEDIATE: the playlist is read before it is rewritten (see
+    // `events::in_txn_immediate`).
+    crate::events::in_txn_immediate(conn, |conn| {
+        // Fetch all (track_id, position) pairs in order.
+        let mut stmt = conn.prepare(
+            "SELECT track_id, position FROM playlist_tracks WHERE playlist_id = ?1 ORDER BY position",
         )?;
-        for (new_pos, track_id_val) in tracks.iter().enumerate() {
-            statement.execute(params![playlist_id, track_id_val, new_pos as i64])?;
-        }
-    }
+        let mut tracks: Vec<i64> = stmt
+            .query_map(params![playlist_id], |row| row.get(0))?
+            .collect::<Result<Vec<_>, _>>()?;
+        drop(stmt);
 
-    crate::events::record(&tx, "playlist", &playlist_id.to_string(), "move")?;
-    tx.commit()?;
-    Ok(())
+        if from as usize >= tracks.len() {
+            tracing::warn!(
+                playlist_id = playlist_id,
+                from = from,
+                len = tracks.len(),
+                "move_position: from position out of range"
+            );
+            return Ok(());
+        }
+
+        // Remove track from its current position and insert at new position.
+        let track_id = tracks.remove(from as usize);
+        tracks.insert(to as usize, track_id);
+
+        // Delete all rows for this playlist and re-insert with new positions.
+        conn.execute(
+            "DELETE FROM playlist_tracks WHERE playlist_id = ?1",
+            params![playlist_id],
+        )?;
+
+        // Re-insert all tracks with updated positions.
+        {
+            let mut statement = conn.prepare_cached(
+                "INSERT INTO playlist_tracks (playlist_id, track_id, position) VALUES (?1, ?2, ?3)",
+            )?;
+            for (new_pos, track_id_val) in tracks.iter().enumerate() {
+                statement.execute(params![playlist_id, track_id_val, new_pos as i64])?;
+            }
+        }
+
+        crate::events::record(conn, "playlist", &playlist_id.to_string(), "move")?;
+        Ok(())
+    })
 }
 
 /// Converts smart playlist rules (JSON array of {field, op, value?}) into a

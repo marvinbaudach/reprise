@@ -39,14 +39,21 @@ pub fn record_scan_rates(
         return Ok(());
     }
     let conn = db.conn();
-    let transaction = conn.unchecked_transaction()?;
-    if let Some(rate) = measured_rate(checked_tracks, local_elapsed) {
-        crate::library::settings::set_setting_in(&transaction, LOCAL_RATE_KEY, &rate.to_string())?;
-    }
-    if let Some(rate) = remote_elapsed.and_then(|elapsed| measured_rate(checked_tracks, elapsed)) {
-        crate::library::settings::set_setting_in(&transaction, REMOTE_RATE_KEY, &rate.to_string())?;
-    }
-    transaction.commit()
+    // IMMEDIATE: each `set_setting_in` reads (its dedup check) before it
+    // writes, so a deferred transaction would fail the write-lock upgrade with
+    // `SQLITE_BUSY_SNAPSHOT` when a rival commits in between (see
+    // `events::in_txn_immediate`).
+    crate::events::in_txn_immediate(conn, |conn| {
+        if let Some(rate) = measured_rate(checked_tracks, local_elapsed) {
+            crate::library::settings::set_setting_in(conn, LOCAL_RATE_KEY, &rate.to_string())?;
+        }
+        if let Some(rate) =
+            remote_elapsed.and_then(|elapsed| measured_rate(checked_tracks, elapsed))
+        {
+            crate::library::settings::set_setting_in(conn, REMOTE_RATE_KEY, &rate.to_string())?;
+        }
+        Ok(())
+    })
 }
 
 fn stored_rate(conn: &rusqlite::Connection, key: &str) -> Result<Option<f64>, rusqlite::Error> {
@@ -75,14 +82,15 @@ pub fn remote_suggestion_preference(db: &Db) -> Result<RemoteSuggestionPreferenc
 
 pub fn accept_remote_suggestions(db: &Db) -> Result<(), rusqlite::Error> {
     let conn = db.conn();
-    let transaction = conn.unchecked_transaction()?;
-    crate::library::settings::set_setting_in(
-        &transaction,
-        REMOTE_CONSENT_VERSION_KEY,
-        &REMOTE_CONSENT_VERSION.to_string(),
-    )?;
-    crate::library::settings::set_bool_in(&transaction, REMOTE_ENABLED_KEY, true)?;
-    transaction.commit()
+    // IMMEDIATE for the same reason as `record_scan_rates`.
+    crate::events::in_txn_immediate(conn, |conn| {
+        crate::library::settings::set_setting_in(
+            conn,
+            REMOTE_CONSENT_VERSION_KEY,
+            &REMOTE_CONSENT_VERSION.to_string(),
+        )?;
+        crate::library::settings::set_bool_in(conn, REMOTE_ENABLED_KEY, true)
+    })
 }
 
 pub fn disable_remote_suggestions(db: &Db) -> Result<(), rusqlite::Error> {

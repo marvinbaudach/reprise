@@ -22,17 +22,43 @@ use rusqlite::Connection;
 /// flag the authorizer raises once the rival attempt has been made, so a test
 /// can prove the interleaving really happened.
 pub(crate) fn arm(writer: &Connection, path: &Path, table: &'static str) -> Arc<AtomicBool> {
+    arm_matching(
+        writer,
+        path,
+        move |action| matches!(action, AuthAction::Insert { table_name } if table_name == table),
+    )
+}
+
+/// Like [`arm`], but the rival attempt fires on the first insert, update or
+/// delete the writer prepares against `table`. A site whose write is an
+/// `UPDATE` or `DELETE` is invisible to [`arm`], so its test would pass
+/// without the fix and prove nothing.
+pub(crate) fn arm_on_first_write(
+    writer: &Connection,
+    path: &Path,
+    table: &'static str,
+) -> Arc<AtomicBool> {
+    arm_matching(writer, path, move |action| match action {
+        AuthAction::Insert { table_name } | AuthAction::Delete { table_name } => {
+            table_name == table
+        }
+        AuthAction::Update { table_name, .. } => table_name == table,
+        _ => false,
+    })
+}
+
+fn arm_matching(
+    writer: &Connection,
+    path: &Path,
+    watched: impl Fn(AuthAction<'_>) -> bool + Send + 'static,
+) -> Arc<AtomicBool> {
     let rival = Connection::open(path).unwrap();
     rival.pragma_update(None, "busy_timeout", 0).unwrap();
     let interleaved = Arc::new(AtomicBool::new(false));
     let hook_interleaved = Arc::clone(&interleaved);
     writer
         .authorizer(Some(move |context: AuthContext<'_>| {
-            let inserting = matches!(
-                context.action,
-                AuthAction::Insert { table_name } if table_name == table
-            );
-            if inserting && !hook_interleaved.swap(true, Ordering::SeqCst) {
+            if watched(context.action) && !hook_interleaved.swap(true, Ordering::SeqCst) {
                 let _ = rival.execute(
                     "INSERT OR REPLACE INTO settings (key, value) VALUES ('rival', '1')",
                     [],
