@@ -115,7 +115,6 @@ impl MusicLibrary {
             portrait_backfill: reprise_core::artist_portrait::PortraitBackfill::new(),
             pcm_decoder: Arc::new(Mutex::new(None)),
             analysis_in_flight: Arc::new(track_analysis::AnalysisInFlight::new()),
-            analysis_failed: Arc::new(Mutex::new(std::collections::HashSet::new())),
             analysis_backfill: track_analysis::TrackAnalysisBackfill::new(),
         })
     }

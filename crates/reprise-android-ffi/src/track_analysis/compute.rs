@@ -3,7 +3,7 @@
 //! when a sidecar import ends in `Missing`/`Invalid` (decision 5 of the
 //! mother plan).
 
-use std::collections::{HashMap, HashSet};
+use std::collections::HashMap;
 use std::sync::atomic::{AtomicBool, AtomicU8, Ordering};
 use std::sync::{Arc, Condvar, Mutex, PoisonError};
 
@@ -426,7 +426,6 @@ pub(crate) struct AnalysisContext<'a> {
     pub(crate) writer: &'a Mutex<Db>,
     pub(crate) decoder: &'a Mutex<Option<Arc<dyn TrackPcmDecoder>>>,
     pub(crate) in_flight: &'a AnalysisInFlight,
-    pub(crate) failed: &'a Mutex<HashSet<i64>>,
 }
 
 impl AnalysisContext<'_> {
@@ -574,19 +573,19 @@ impl AnalysisContext<'_> {
         }
         if let Err(error) = decode_result {
             tracing::debug!(track_id, %error, "track analysis decode failed");
-            self.mark_failed(track_id)?;
+            self.mark_failed(track_id, &error.to_string())?;
             return Ok(AndroidAnalysisOutcome::DecodeFailed);
         }
         if let Some(reason) = sink.refused_reason() {
             tracing::debug!(track_id, reason, "track analysis session refused a chunk");
-            self.mark_failed(track_id)?;
+            self.mark_failed(track_id, &reason)?;
             return Ok(AndroidAnalysisOutcome::DecodeFailed);
         }
         let data = match sink.finish() {
             Ok(data) => data,
             Err(reason) => {
                 tracing::debug!(track_id, reason, "track analysis produced no data");
-                self.mark_failed(track_id)?;
+                self.mark_failed(track_id, &reason)?;
                 return Ok(AndroidAnalysisOutcome::DecodeFailed);
             }
         };
@@ -606,9 +605,13 @@ impl AnalysisContext<'_> {
         }
     }
 
-    fn mark_failed(&self, track_id: i64) -> Result<(), LibraryError> {
-        self.failed.lock().map_err(poisoned)?.insert(track_id);
-        Ok(())
+    /// Remembers in the library that `track_id` could not be measured, so the
+    /// backfill leaves it alone until its file changes (finding C8). Called
+    /// only after the decoder has returned, never while it runs.
+    fn mark_failed(&self, track_id: i64, reason: &str) -> Result<(), LibraryError> {
+        let writer = self.writer.lock().map_err(poisoned)?;
+        reprise_core::spectrogram_backfill::record_render_data_failure(&writer, track_id, reason)
+            .map_err(database_error)
     }
 }
 

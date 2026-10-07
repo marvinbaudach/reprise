@@ -3,7 +3,6 @@
 //! of the mother plan; `ReprisePlaybackService.kt` starts and cancels this
 //! while playback runs (A5).
 
-use std::collections::HashSet;
 use std::sync::{Arc, Mutex, PoisonError};
 use std::thread::JoinHandle;
 
@@ -53,7 +52,6 @@ struct Handles {
     writer: Arc<Mutex<Db>>,
     decoder: Arc<Mutex<Option<Arc<dyn TrackPcmDecoder>>>>,
     in_flight: Arc<AnalysisInFlight>,
-    failed: Arc<Mutex<HashSet<i64>>>,
 }
 
 impl Handles {
@@ -63,7 +61,6 @@ impl Handles {
             writer: &self.writer,
             decoder: &self.decoder,
             in_flight: &self.in_flight,
-            failed: &self.failed,
         }
     }
 }
@@ -97,7 +94,6 @@ impl TrackAnalysisBackfill {
         writer: Arc<Mutex<Db>>,
         decoder: Arc<Mutex<Option<Arc<dyn TrackPcmDecoder>>>>,
         in_flight: Arc<AnalysisInFlight>,
-        failed: Arc<Mutex<HashSet<i64>>>,
         listener: Box<dyn TrackAnalysisProgressListener>,
     ) {
         let mut worker = self.worker.lock().unwrap_or_else(PoisonError::into_inner);
@@ -135,7 +131,6 @@ impl TrackAnalysisBackfill {
             writer,
             decoder,
             in_flight,
-            failed,
         };
         let listener: Arc<ProgressListener> =
             Arc::new(move |progress| listener.on_progress(progress));
@@ -261,20 +256,14 @@ fn run_worker(control: &Control, handles: &Handles, listener: &Arc<ProgressListe
                 Err(_) => break,
             }
         };
-        let failed_ids = handles
-            .failed
-            .lock()
-            .unwrap_or_else(PoisonError::into_inner)
-            .clone();
         // Recomputed every iteration rather than fixed at the start: a
         // track another caller (a foreground request) finishes while the
         // backfill is on a different item simply disappears from `pending`,
         // and the total shrinks with it rather than the backfill's own
-        // counters chasing a number that was never going to be reached.
-        let still_pending: Vec<_> = pending
-            .into_iter()
-            .filter(|track| !failed_ids.contains(&track.track_id))
-            .collect();
+        // counters chasing a number that was never going to be reached. A
+        // track whose decode failed is remembered in the library and is no
+        // longer pending at all (finding C8).
+        let still_pending = pending;
         let total = done + failed_count + still_pending.len() as u32;
 
         let Some(track) = still_pending
@@ -375,7 +364,6 @@ impl MusicLibrary {
             self.writer_handle(),
             Arc::clone(&self.pcm_decoder),
             Arc::clone(&self.analysis_in_flight),
-            Arc::clone(&self.analysis_failed),
             listener,
         );
     }

@@ -46,8 +46,9 @@ pub struct PendingSegmentFile {
 }
 
 /// Returns live whole-file tracks whose rendering data is absent or stale, in
-/// stable id order. The tracks of a CUE file are not among them: each is a
-/// stretch of a file, and [`pending_segment_render_data_files`] lists them.
+/// stable id order, leaving out those whose analysis is remembered as failed.
+/// The tracks of a CUE file are not among them: each is a stretch of a file,
+/// and [`pending_segment_render_data_files`] lists them.
 pub fn pending_render_data_tracks(db: &Db) -> Result<Vec<PendingRenderDataTrack>, DbError> {
     let mut statement = db.conn().prepare(&format!(
         "SELECT t.id, t.path, t.file_mtime, t.file_size, t.device, t.inode \
@@ -60,9 +61,11 @@ pub fn pending_render_data_tracks(db: &Db) -> Result<Vec<PendingRenderDataTrack>
            AND l.format_version = ?2 AND l.source_mtime = t.file_mtime \
            AND l.source_size = t.file_size AND l.source_device IS t.device \
            AND l.source_inode IS t.inode \
-         WHERE {} AND t.segment_index = 0 \
+         {} \
+         WHERE f.track_id IS NULL AND {} AND t.segment_index = 0 \
            AND (t.waveform_peaks IS NULL OR s.track_id IS NULL OR l.track_id IS NULL) \
          ORDER BY t.id",
+        super::failures::FAILURE_JOIN,
         crate::queries::PRESENT
     ))?;
     let tracks = statement
@@ -86,7 +89,8 @@ pub fn pending_render_data_tracks(db: &Db) -> Result<Vec<PendingRenderDataTrack>
 }
 
 /// Returns the CUE files with live tracks whose rendering data is absent or
-/// stale, each with just those tracks in play order, in stable path order.
+/// stale, each with just those tracks in play order, in stable path order. A
+/// track whose analysis is remembered as failed is left out.
 pub fn pending_segment_render_data_files(db: &Db) -> Result<Vec<PendingSegmentFile>, DbError> {
     pending_segment_files(db, None)
 }
@@ -115,11 +119,13 @@ fn pending_segment_files(db: &Db, path: Option<&str>) -> Result<Vec<PendingSegme
            AND l.format_version = ?2 AND l.source_mtime = t.file_mtime \
            AND l.source_size = t.file_size AND l.source_device IS t.device \
            AND l.source_inode IS t.inode \
-         WHERE {} AND t.segment_index > 0 \
+         {} \
+         WHERE f.track_id IS NULL AND {} AND t.segment_index > 0 \
            AND t.segment_start_ms IS NOT NULL AND t.segment_end_ms IS NOT NULL \
            AND (t.waveform_peaks IS NULL OR s.track_id IS NULL OR l.track_id IS NULL) \
            AND (?3 IS NULL OR t.path = ?3) \
          ORDER BY t.path, t.segment_index",
+        super::failures::FAILURE_JOIN,
         crate::queries::PRESENT
     ))?;
     let rows = statement.query_map(

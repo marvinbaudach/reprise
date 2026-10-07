@@ -12,6 +12,10 @@ use crate::render_data_segments::SegmentBounds;
 use crate::spectrogram::{TrackSourceFingerprint, TrackSpectrogram, SPECTROGRAM_FORMAT_VERSION};
 use crate::waveform::TrackRenderData;
 
+#[path = "db_render_data_failures.rs"]
+mod failures;
+pub use failures::{clear_render_data_failure, record_render_data_failure, render_data_failed};
+
 #[path = "db_spectrogram_pending.rs"]
 mod pending;
 pub use pending::{
@@ -126,6 +130,7 @@ fn store_render_data(
     )?;
     write_spectrogram(&transaction, track_id, source, &data.spectrogram)?;
     write_track_loudness(&transaction, track_id, source, data.loudness)?;
+    failures::clear_failure(&transaction, track_id)?;
     transaction.commit()?;
     Ok(SpectrogramStoreOutcome::Stored)
 }

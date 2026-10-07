@@ -1,6 +1,5 @@
 //! Owned library records and errors that form the Android FFI contract.
 
-use std::collections::HashSet;
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
 
@@ -42,9 +41,6 @@ pub struct MusicLibrary {
     /// Tracks currently being decoded, keyed by id, so two callers for the
     /// same track share one decode instead of racing two.
     pub(crate) analysis_in_flight: Arc<AnalysisInFlight>,
-    /// Tracks whose decode failed in this process; skipped by the backfill
-    /// until the next process start (decision 7 of the mother plan).
-    pub(crate) analysis_failed: Arc<Mutex<HashSet<i64>>>,
     pub(crate) analysis_backfill: TrackAnalysisBackfill,
 }
 
@@ -89,7 +85,6 @@ impl MusicLibrary {
             writer: &self.writer,
             decoder: &self.pcm_decoder,
             in_flight: &self.analysis_in_flight,
-            failed: &self.analysis_failed,
         }
     }
 }
