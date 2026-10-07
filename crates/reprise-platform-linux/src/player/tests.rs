@@ -13,6 +13,7 @@ mod gain_refresh_tests;
 mod handoff_duration_tests;
 mod segment_boundary_tests;
 mod segment_clock_tests;
+mod segment_prefeed_tests;
 mod segment_support;
 mod stream_generation_tests;
 

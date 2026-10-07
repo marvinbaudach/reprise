@@ -32,6 +32,7 @@ use std::time::Duration;
 
 use reprise_core::playback::{PlaybackError, PlayerEvent};
 
+use crate::gapless::QueuedTrack;
 use crate::player_effects::{linear_gain, TRACK_GAIN_NAME};
 
 /// An end this close to the file's duration means "to the end of the file".
@@ -96,6 +97,10 @@ impl Cut {
         self.start_ms + position_ms.clamp(0, last_ms)
     }
 
+    fn matches(&self, segment: (i64, i64)) -> bool {
+        (self.start_ms, self.end_ms) == segment
+    }
+
     fn boundary_ns(&self) -> Option<u64> {
         (!self.open_end).then(|| self.end_ms.max(0) as u64 * NANOS_PER_MILLI)
     }
@@ -113,6 +118,9 @@ struct CutState {
     active: Option<Cut>,
     file_duration_ms: Option<i64>,
     armed: Option<ArmedNext>,
+    /// The probe handed over to the armed successor and the frontend has not
+    /// fed a next track since: a re-feed of that track is the one playing.
+    handed_off: bool,
     /// The boundary was reached with nothing armed: every later buffer is
     /// dropped, and the file's own end-of-stream is not a second finish.
     finished: bool,
@@ -153,7 +161,7 @@ impl SegmentGate {
 
     /// Makes `segment` of `uri` the active cut. `file_duration_ms` is the
     /// pipeline's answer after preroll, cached so neither the probe nor
-    /// `arm_next` ever has to query the pipeline.
+    /// `route_next` ever has to query the pipeline.
     pub(crate) fn begin(&self, uri: &str, segment: (i64, i64), file_duration_ms: Option<i64>) {
         *self.lock() = CutState {
             uri: uri.to_owned(),
@@ -163,30 +171,36 @@ impl SegmentGate {
         };
     }
 
-    /// Arms `segment` of `uri` as the successor the probe hands over to when
-    /// it is contiguous with the active cut — the same file, starting where
-    /// the active cut ends, which therefore has a boundary — and returns
-    /// whether it did. Anything else disarms: last write wins.
-    pub(crate) fn arm_next(&self, uri: &str, segment: Option<(i64, i64)>, gain_db: f64) -> bool {
+    /// Routes the next track the frontend feeds and returns whether it may
+    /// go into the whole-file URI slot — only when neither it nor the playing
+    /// track is a CUE track. The next track of the same file, starting where
+    /// the active cut ends (which therefore has a boundary), is armed for the
+    /// probe instead; anything else disarms. Last write wins.
+    pub(crate) fn route_next(&self, next: Option<&QueuedTrack>) -> bool {
         let mut state = self.lock();
-        let contiguous = match (state.active, segment) {
-            (Some(active), Some((start_ms, _))) => {
-                state.uri == uri && !active.open_end && active.end_ms == start_ms
-            }
-            _ => false,
+        state.handed_off = false;
+        let armed = match (state.active, next) {
+            (Some(active), Some(next)) => next.segment.and_then(|(start_ms, end_ms)| {
+                let contiguous =
+                    state.uri == next.uri && !active.open_end && active.end_ms == start_ms;
+                contiguous.then(|| ArmedNext {
+                    cut: Cut::new(start_ms, end_ms, state.file_duration_ms),
+                    gain_db: next.gain_db,
+                })
+            }),
+            _ => None,
         };
-        state.armed = segment
-            .filter(|_| contiguous)
-            .map(|(start_ms, end_ms)| ArmedNext {
-                cut: Cut::new(start_ms, end_ms, state.file_duration_ms),
-                gain_db,
-            });
-        contiguous
+        state.armed = armed;
+        state.active.is_none() && next.is_some_and(|next| next.segment.is_none())
     }
 
-    /// Drops the armed successor, if any.
-    pub(crate) fn disarm(&self) {
-        self.lock().armed = None;
+    /// Whether the probe already handed over to `segment` of `uri` and the
+    /// frontend has not moved on since.
+    pub(crate) fn handed_off_to(&self, uri: &str, segment: (i64, i64)) -> bool {
+        let state = self.lock();
+        state.handed_off
+            && state.uri == uri
+            && state.active.is_some_and(|active| active.matches(segment))
     }
 
     /// Whether the active track already reported its end at the boundary, so
@@ -346,6 +360,7 @@ impl SegmentGate {
             Some(next) => {
                 gain.set_property("volume", linear_gain(next.gain_db));
                 state.active = Some(next.cut);
+                state.handed_off = true;
                 self.stream_generation.fetch_add(1, Ordering::SeqCst);
                 tracing::debug!(boundary_ms = cut.end_ms, "cue: contiguous hand-off");
                 (self.on_event)(PlayerEvent::AdvancedToNext);

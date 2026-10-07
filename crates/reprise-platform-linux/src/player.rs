@@ -22,6 +22,7 @@ use crate::player_pipeline::{
 use segment::{SegmentGate, SegmentHandle};
 
 pub(crate) mod segment;
+mod successor;
 
 /// Default playback volume before the user ever moves the slider — full scale,
 /// matching `playbin3`'s own `volume` property default. Also the value the
@@ -614,12 +615,19 @@ impl PlaybackBackend for Player {
     /// clears the slot (falling back to the ordinary `TrackFinished`-driven
     /// advance); an invalid path is logged, never panicked on. "Last write
     /// wins": the frontend re-feeds on every queue change.
+    ///
+    /// With a CUE track on either side only one pairing is prepared: the next
+    /// track of the same file, starting where the playing one ends, is armed
+    /// for the boundary probe (see `player/segment.rs`). Every other pairing
+    /// goes into no slot at all — the playing track finishes and the frontend
+    /// starts the next one with `play`, a short gap the plan accepts.
     fn set_next(&self, item: Option<PlaybackItem<'_>>) {
         let resolved = match item {
             Some(item) => match path_to_uri(item.path) {
                 Ok(uri) => Some(QueuedTrack {
                     uri,
                     gain_db: item.gain_db,
+                    segment: item.segment,
                 }),
                 Err(error) => {
                     tracing::warn!(%error, path = item.path, "set_next: invalid path; clearing gapless slot");
@@ -634,20 +642,8 @@ impl PlaybackBackend for Player {
         {
             return;
         }
-        // The next track of the same CUE file, starting where this one ends,
-        // plays through inside the file: the boundary probe hands over to it,
-        // so it never goes through the URI slot.
-        let armed = match (&resolved, item) {
-            (Some(queued), Some(item)) => {
-                self.segments
-                    .arm_next(&queued.uri, item.segment, queued.gain_db)
-            }
-            _ => {
-                self.segments.disarm();
-                false
-            }
-        };
-        let slot = resolved.filter(|_| !armed);
+        let prefeed = self.segments.route_next(resolved.as_ref());
+        let slot = resolved.filter(|_| prefeed);
         *self.next_uri.lock().unwrap_or_else(PoisonError::into_inner) = slot;
     }
 
@@ -668,51 +664,6 @@ impl PlaybackBackend for Player {
     fn current_generation(&self) -> StreamGeneration {
         StreamGeneration::from(self.stream_generation.load(Ordering::SeqCst))
     }
-}
-
-impl Player {
-    /// A re-fed `next` that names the track whose hand-off is already under way
-    /// (a live ReplayGain change re-feeds the unchanged next track) must update
-    /// the gain that hand-off will apply: the gapless gain pending for the next
-    /// stream start, or the gain of the pre-built crossfade secondary. Returns
-    /// `true` when it did, so the slot is not refilled with a track that is
-    /// already playing.
-    fn refresh_in_flight_gain(&self, queued: &QueuedTrack) -> bool {
-        let playbin = self
-            .playbin
-            .lock()
-            .unwrap_or_else(PoisonError::into_inner)
-            .clone();
-        {
-            let mut pending = self
-                .pending_gain
-                .lock()
-                .unwrap_or_else(PoisonError::into_inner);
-            if pending.is_some() && playbin_uri(&playbin).as_deref() == Some(&queued.uri) {
-                *pending = Some(queued.gain_db);
-                return true;
-            }
-        }
-        let incoming = self
-            .incoming
-            .lock()
-            .unwrap_or_else(PoisonError::into_inner)
-            .clone();
-        let Some(secondary) = incoming else {
-            return false;
-        };
-        if playbin_uri(&secondary).as_deref() != Some(&queued.uri) {
-            return false;
-        }
-        if let Err(error) = set_playbin_track_gain(&secondary, queued.gain_db) {
-            tracing::warn!(%error, "could not refresh the crossfade secondary's gain");
-        }
-        true
-    }
-}
-
-fn playbin_uri(playbin: &gst::Element) -> Option<String> {
-    playbin.property::<Option<String>>("uri")
 }
 
 #[cfg(test)]

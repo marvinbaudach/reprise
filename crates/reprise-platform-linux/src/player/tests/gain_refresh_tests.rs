@@ -122,3 +122,30 @@ fn play_20b_a_refed_gain_reaches_the_prebuilt_crossfade_secondary() {
     assert!((gain - linear_gain(REFRESHED_GAIN_DB)).abs() < 1e-6);
     assert_eq!(queued_uri(&player), None);
 }
+
+/// Two tracks of one CUE file share its URI. A segment of the file whose
+/// whole-file hand-off is in flight is not that hand-off: the URI alone
+/// cannot say so, the segment does.
+#[test]
+fn play_20a_a_cue_track_of_the_handed_off_file_leaves_the_pending_gain_alone() {
+    let _guard = AUDIO_SINK_TEST_LOCK
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner);
+    let player = quiet_player();
+    player
+        .playbin
+        .lock()
+        .unwrap_or_else(PoisonError::into_inner)
+        .set_property("uri", path_to_uri(NEXT_PATH).unwrap());
+    *player
+        .pending_gain
+        .lock()
+        .unwrap_or_else(PoisonError::into_inner) = Some(STALE_GAIN_DB);
+
+    player.set_next(Some(PlaybackItem {
+        segment: Some((60_000, 120_000)),
+        ..next_item(REFRESHED_GAIN_DB)
+    }));
+
+    assert_eq!(pending(&player), Some(STALE_GAIN_DB));
+}

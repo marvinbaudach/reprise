@@ -32,6 +32,10 @@ pub(crate) type NextUri = Arc<Mutex<Option<QueuedTrack>>>;
 pub(crate) struct QueuedTrack {
     pub(crate) uri: String,
     pub(crate) gain_db: f64,
+    /// The `(start_ms, end_ms)` of a CUE track — part of its identity, since
+    /// two tracks of one CUE file share the URI. Never set on a track in this
+    /// slot: a CUE track is never handed off through it (see `Player::set_next`).
+    pub(crate) segment: Option<(i64, i64)>,
 }
 
 pub(crate) type PendingGain = Arc<Mutex<Option<f64>>>;
