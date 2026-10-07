@@ -127,6 +127,13 @@ impl CrossfadeEngine {
         if mode != TrackTransition::Crossfade || self.crossfading.load(Ordering::SeqCst) {
             return;
         }
+        // Never out of a CUE track: the next track of its file plays through
+        // inside it, any other next one follows a hard change (see
+        // `player/segment.rs`). Never into one either — `set_next` keeps CUE
+        // tracks out of the slot read below.
+        if self.segments.cue_active() {
+            return;
+        }
         if duration_ms <= 0 {
             return;
         }

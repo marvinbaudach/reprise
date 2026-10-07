@@ -194,6 +194,11 @@ impl SegmentGate {
         state.active.is_none() && next.is_some_and(|next| next.segment.is_none())
     }
 
+    /// Whether a CUE track is playing.
+    pub(crate) fn cue_active(&self) -> bool {
+        self.lock().active.is_some()
+    }
+
     /// Whether the probe already handed over to `segment` of `uri` and the
     /// frontend has not moved on since.
     pub(crate) fn handed_off_to(&self, uri: &str, segment: (i64, i64)) -> bool {

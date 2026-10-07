@@ -646,6 +646,14 @@ result.
   track starts like any other. Every other change into or out of a CUE track
   may have a short gap. Proven by the GStreamer backend tests.
   <!-- REVIEW: rule proposal -->
+- **PLAY-24** [active] [core] — **No crossfade into or out of a CUE track.**
+  With the transition set to Crossfade, a change from a CUE track to any track
+  that does not follow on in the same file, and from any track to a CUE track,
+  is a hard change: the playing track finishes and the next one starts, with
+  no second pipeline fading between them. Two consecutive tracks of one file
+  play through instead (PLAY-23). Crossfades between whole files are
+  unchanged. Proven by the GStreamer backend tests.
+  <!-- REVIEW: rule proposal -->
 - **SEEK-1** [active] [gtk] — **The seek bar's colour is a reading, not a
   decoration, and it is averaged over time.** The spectral centroid swings
   from beat to beat: taken per bar it puts cyan next to magenta inside two
