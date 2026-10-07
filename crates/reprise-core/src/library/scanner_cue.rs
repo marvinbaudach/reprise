@@ -169,16 +169,22 @@ impl CueDirectories {
              WHERE cue_path IS NOT NULL AND cue_mtime IS NOT NULL AND cue_size IS NOT NULL \
                AND path LIKE ?1 ESCAPE '\\'",
         )?;
-        let rows = statement.query_map([pattern], |row| {
-            Ok((
-                row.get::<_, String>(0)?,
-                (row.get::<_, i64>(1)?, row.get::<_, i64>(2)?),
-                row.get::<_, String>(3)?,
-            ))
-        })?;
+        let mut rows = statement
+            .query_map([&pattern], |row| {
+                Ok((
+                    row.get::<_, String>(0)?,
+                    (row.get::<_, i64>(1)?, row.get::<_, i64>(2)?),
+                    row.get::<_, String>(3)?,
+                ))
+            })?
+            .collect::<Result<Vec<_>, _>>()?;
+        // A file whose every track is hidden has no row left to say which sheet
+        // cut it; its exclusions say it instead, and must agree with the rows.
+        rows.extend(crate::db_library_exclusions::applied_sheet_rows(
+            conn, &pattern,
+        )?);
         self.applied.clear();
-        for row in rows {
-            let (sheet, version, path) = row?;
+        for (sheet, version, path) in rows {
             let entry = self.applied.entry(sheet).or_insert(AppliedSheet {
                 version: Some(version),
                 files: HashSet::new(),

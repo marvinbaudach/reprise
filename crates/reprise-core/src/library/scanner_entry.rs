@@ -367,6 +367,9 @@ pub(super) fn classify_entry(
         }
         Cover::Unknown => None,
     };
+    if !known.exists && hidden_file_unchanged(scan, path, &facts, governing.as_ref())? {
+        return Ok(EntryPlan::Skip(EntryOutcome::Unchanged));
+    }
     if known.mtime == Some(facts.mtime)
         && known.tag_scan_version >= super::TAG_SCAN_VERSION
         && !known.untagged
@@ -403,6 +406,29 @@ pub(super) fn classify_entry(
         known,
         governing,
     })))
+}
+
+/// A CUE file whose every track the user removed has no row to be unchanged
+/// against; its exclusions stand in for the rows (see
+/// [`exclusions::hidden_file_unchanged`]).
+fn hidden_file_unchanged(
+    scan: &EntryScan<'_, '_, '_>,
+    path: &Path,
+    facts: &FileFacts,
+    governing: Option<&SheetRef>,
+) -> Result<bool, ScanError> {
+    let sheet_text = governing.map(SheetRef::path_text);
+    let governing = governing
+        .zip(sheet_text.as_deref())
+        .map(|(sheet, text)| (text, sheet.mtime, sheet.size));
+    Ok(exclusions::hidden_file_unchanged(
+        scan.tx,
+        path,
+        facts.device,
+        facts.inode,
+        facts.mtime,
+        governing,
+    )?)
 }
 
 fn read_import_meta(

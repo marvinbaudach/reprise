@@ -7883,6 +7883,14 @@ no tags of its own to write.
   selection) and through MCP alike: every proposal it makes is a tag write, and
   such a track has no tags of its own (CUE-5). A scope that holds only CUE
   tracks falls back like an empty one.
+  <!-- REVIEW: rule proposal -->
+- **CUE-18** [active] [core] — A CUE track removed from the library stays hidden
+  as the song it was across an edit of its sheet: it is recognised by its start
+  and title, then a unique title, then its start, then its position, as CUE-1b
+  keeps a song on its row. A track the edit moves into a hidden song's old
+  position stays visible, and removing that one too hides both. A CUE file whose
+  every track is hidden counts as unchanged on a rescan when neither the file
+  nor its sheet changed, so its sheet is not read again.
 
 ## AJ. Showroom (public site)
 
