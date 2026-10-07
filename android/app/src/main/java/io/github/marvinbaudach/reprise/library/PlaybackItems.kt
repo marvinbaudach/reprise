@@ -2,6 +2,7 @@ package io.github.marvinbaudach.reprise.library
 
 import android.net.Uri
 import android.util.Log
+import androidx.media3.common.C
 import androidx.media3.common.MediaItem
 import uniffi.reprise_android_ffi.AndroidPlaybackSegment
 
@@ -79,8 +80,23 @@ internal class PlaybackItems(
         return playbackMediaItem(uri, track?.copy(artworkUri = cover), track?.let { mediaIdOf(it.trackId) })
             .buildUpon()
             .setTag(request)
+            .setClippingConfiguration(request.segment.clipping())
             .build()
     }
+}
+
+/**
+ * The clip of its file a CUE track plays. Media3 then counts the item's
+ * position and duration from the clip's start. A segment without an end is its
+ * file's last track and plays to the end of the source, whatever duration the
+ * file's metadata claims; no segment plays the whole file.
+ */
+private fun AndroidPlaybackSegment?.clipping(): MediaItem.ClippingConfiguration {
+    if (this == null) return MediaItem.ClippingConfiguration.UNSET
+    return MediaItem.ClippingConfiguration.Builder()
+        .setStartPositionMs(startMs)
+        .setEndPositionMs(endMs ?: C.TIME_END_OF_SOURCE)
+        .build()
 }
 
 /** A small access-ordered map that forgets its least recently used entry. */
