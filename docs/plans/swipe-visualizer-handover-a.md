@@ -2,7 +2,7 @@
 slug: swipe-visualizer-handover-a
 worktree: /home/marvin/Projects/reprise-swipe-visualizer-handover-a
 branch: feature/swipe-visualizer-handover-a
-phase: refactored
+phase: shipped
 codex_session:
 created: 2026-10-07
 ---
