@@ -38,7 +38,7 @@ fn album(directory: &tempfile::TempDir, name: &str) -> std::path::PathBuf {
 }
 
 #[test]
-fn play_23_a_whole_file_after_a_cue_track_is_not_prefed() {
+fn play_23a_a_whole_file_after_a_cue_track_is_not_prefed() {
     let harness = Harness::new();
     let directory = tempfile::tempdir().unwrap();
     let cue_file = album(&directory, "album.wav");
@@ -54,7 +54,7 @@ fn play_23_a_whole_file_after_a_cue_track_is_not_prefed() {
 }
 
 #[test]
-fn play_23_a_cue_track_after_a_whole_file_is_not_prefed() {
+fn play_23a_a_cue_track_after_a_whole_file_is_not_prefed() {
     let harness = Harness::new();
     let directory = tempfile::tempdir().unwrap();
     let cue_file = album(&directory, "album.wav");
@@ -69,7 +69,7 @@ fn play_23_a_cue_track_after_a_whole_file_is_not_prefed() {
 }
 
 #[test]
-fn play_23_a_whole_file_after_a_whole_file_is_still_prefed() {
+fn play_23a_a_whole_file_after_a_whole_file_is_still_prefed() {
     let harness = Harness::new();
     let directory = tempfile::tempdir().unwrap();
     let first = album(&directory, "first.wav");
@@ -89,7 +89,7 @@ fn play_23_a_whole_file_after_a_whole_file_is_still_prefed() {
 /// is neither armed nor pre-fed: the playing track finishes at its end, once,
 /// and nothing takes over by itself — not even at the file's end.
 #[test]
-fn play_23_a_cue_track_that_does_not_follow_on_is_started_afresh() {
+fn play_23a_a_cue_track_that_does_not_follow_on_is_started_afresh() {
     let harness = Harness::new();
     let directory = tempfile::tempdir().unwrap();
     let cue_file = album(&directory, "album.wav");
@@ -113,7 +113,7 @@ fn play_23_a_cue_track_that_does_not_follow_on_is_started_afresh() {
 /// next. When the boundary probe has already handed over to it, the new gain
 /// must reach the track that is now playing.
 #[test]
-fn play_23_a_refed_gain_reaches_the_track_already_handed_over() {
+fn play_23a_a_refed_gain_reaches_the_track_already_handed_over() {
     const FIRST_GAIN_DB: f64 = -6.0;
     const STALE_GAIN_DB: f64 = 3.0;
     const REFRESHED_GAIN_DB: f64 = -2.0;

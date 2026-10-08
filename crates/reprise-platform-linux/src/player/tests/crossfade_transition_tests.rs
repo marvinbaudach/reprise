@@ -114,7 +114,7 @@ fn play_20b_crossfade_promotion_carries_the_next_gain_from_the_first_sample() {
 
 mod cue {
     //! No crossfade into or out of a CUE track (PLAY-24). Two tracks of one
-    //! file play through (PLAY-23, `segment_boundary_tests`); every other
+    //! file play through (PLAY-23a, `segment_boundary_tests`); every other
     //! change with a CUE track on either side is a hard change.
 
     use super::super::segment_support::{count, cue_item, write_regions_wav, Harness};
@@ -207,6 +207,83 @@ mod cue {
         assert!(!crossfaded, "no second pipeline may fade into a CUE track");
         assert_eq!(count(&events, finished), 1);
         assert_eq!(count(&events, advanced), 0);
+    }
+
+    /// The fade the promotion tests run: two seconds gives the 500 ms
+    /// position ticker four chances to start it even on a loaded machine.
+    const PROMOTION_FADE_SECONDS: u8 = 2;
+
+    /// Fades `first` into `second` and returns once the crossfade promoted
+    /// the pipeline playing `second`.
+    fn crossfade_into(harness: &Harness, first: &std::path::Path, second: &std::path::Path) {
+        harness
+            .player
+            .set_transition(TrackTransition::Crossfade, PROMOTION_FADE_SECONDS);
+        harness.player.play(item(first.to_str().unwrap())).unwrap();
+        harness
+            .player
+            .set_next(Some(item(second.to_str().unwrap())));
+        let events = harness.pump_until(HANG_GUARD, |events| count(events, advanced) > 0);
+        assert_eq!(count(&events, advanced), 1, "the crossfade must promote");
+        assert_eq!(count(&events, finished), 0);
+    }
+
+    /// The everyday path into a CUE track under Crossfade: the track a
+    /// crossfade promoted ends, finishes, and the CUE track after it starts
+    /// hard and plays to its own end.
+    #[test]
+    fn play_24_a_track_promoted_by_a_crossfade_finishes_and_hands_on_to_a_cue_track() {
+        let harness = Harness::new();
+        let directory = tempfile::tempdir().unwrap();
+        let first = tone(&directory, "first.wav", 4_000);
+        let second = tone(&directory, "second.wav", 3_000);
+        let album = tone(&directory, "album.wav", 4_000);
+        harness.player.set_spectrum_enabled(true).unwrap();
+        crossfade_into(&harness, &first, &second);
+
+        harness
+            .player
+            .set_next(Some(cue_item(&album, (1_000, 2_000), 0.0)));
+        let (events, crossfaded) = pump_to_finish(&harness);
+        assert_eq!(
+            count(&events, finished),
+            1,
+            "the promoted track must reach its end and finish"
+        );
+        assert!(!crossfaded, "no second pipeline may fade into a CUE track");
+        assert!(
+            count(&events, |event| matches!(event, PlayerEvent::Spectrum(_))) > 0,
+            "the promoted pipeline must feed the visualizer"
+        );
+
+        harness
+            .player
+            .play(cue_item(&album, (1_000, 2_000), 0.0))
+            .unwrap();
+        let (events, _) = pump_to_finish(&harness);
+        assert_eq!(
+            count(&events, finished),
+            1,
+            "the CUE track after it must start and finish"
+        );
+    }
+
+    /// Crossfades between whole files are unchanged: the last track, promoted
+    /// by a crossfade with nothing after it, still finishes.
+    #[test]
+    fn play_24_the_last_track_promoted_by_a_crossfade_finishes() {
+        let harness = Harness::new();
+        let directory = tempfile::tempdir().unwrap();
+        let first = tone(&directory, "first.wav", 4_000);
+        let second = tone(&directory, "second.wav", 3_000);
+        crossfade_into(&harness, &first, &second);
+
+        let (events, _) = pump_to_finish(&harness);
+        assert_eq!(
+            count(&events, finished),
+            1,
+            "the promoted last track must reach its end and finish"
+        );
     }
 
     /// The trigger itself refuses while a CUE track plays, even with a whole

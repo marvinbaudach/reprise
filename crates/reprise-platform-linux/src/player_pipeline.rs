@@ -298,23 +298,48 @@ pub(crate) fn build_playbin(
     Ok(playbin)
 }
 
-pub(crate) fn attach_cava_sink(
-    playbin: &gst::Element,
-    on_event: Arc<dyn Fn(PlayerEvent) + Send + Sync>,
-    enabled: Arc<AtomicBool>,
-    stream_generation: Arc<AtomicU64>,
-) -> Result<(), PlaybackError> {
+/// Gives a pipeline that plays before it has a CAVA processor — the crossfade
+/// secondary while it fades in — a consumer that discards every sample.
+///
+/// Without one its CAVA appsink (`drop`, at most a few queued buffers) fills
+/// up and stays full: the processor `attach_cava_sink` installs at promotion
+/// pulls one sample per new buffer, so the backlog never drains, and an
+/// appsink only lets end-of-stream through once its queue is empty. The
+/// promoted track then plays to its end and never finishes. Replacing these
+/// callbacks with the real ones at promotion leaves no buffer without a
+/// consumer.
+pub(crate) fn discard_cava_samples(playbin: &gst::Element) -> Result<(), PlaybackError> {
+    cava_sink(playbin)?.set_callbacks(
+        gst_app::AppSinkCallbacks::builder()
+            .new_sample(|sink| {
+                sink.pull_sample().map_err(|_| gst::FlowError::Eos)?;
+                Ok(gst::FlowSuccess::Ok)
+            })
+            .build(),
+    );
+    Ok(())
+}
+
+fn cava_sink(playbin: &gst::Element) -> Result<gst_app::AppSink, PlaybackError> {
     let filter = playbin
         .property::<Option<gst::Element>>("audio-filter")
         .ok_or_else(|| PlaybackError::Backend("GStreamer: playbin has no audio filter".into()))?;
     let bin = filter
         .downcast::<gst::Bin>()
         .map_err(|_| PlaybackError::Backend("GStreamer: audio filter is not a bin".into()))?;
-    let sink = bin
-        .by_name(CAVA_SINK_NAME)
+    bin.by_name(CAVA_SINK_NAME)
         .ok_or_else(|| PlaybackError::Backend("GStreamer: filter has no CAVA PCM sink".into()))?
         .downcast::<gst_app::AppSink>()
-        .map_err(|_| PlaybackError::Backend("GStreamer: CAVA sink is not an AppSink".into()))?;
+        .map_err(|_| PlaybackError::Backend("GStreamer: CAVA sink is not an AppSink".into()))
+}
+
+pub(crate) fn attach_cava_sink(
+    playbin: &gst::Element,
+    on_event: Arc<dyn Fn(PlayerEvent) + Send + Sync>,
+    enabled: Arc<AtomicBool>,
+    stream_generation: Arc<AtomicU64>,
+) -> Result<(), PlaybackError> {
+    let sink = cava_sink(playbin)?;
     let mut stage = CavaStage::new(
         CAVA_SAMPLE_RATE_HZ as u32,
         stream_generation.load(Ordering::Acquire),
@@ -404,6 +429,7 @@ pub(crate) fn attach_bus_watch(
                     );
                 } else {
                     tracing::debug!("playback reached end-of-stream");
+                    segments.complete_pending_handoff();
                     (*on_event)(PlayerEvent::TrackFinished);
                 }
             }

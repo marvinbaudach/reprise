@@ -243,6 +243,14 @@ const SINK_BACKLOG_NANOS: u64 = 400_000_000;
 /// end from one that was cut off while the sink still held its tail. What the
 /// returned log reports was rendered on the clock, not merely written.
 pub(super) fn slow_sink(player: &Player) -> RenderedLog {
+    let rendered = RenderedLog::default();
+    slow_sink_into(player, &rendered);
+    rendered
+}
+
+/// [`slow_sink`], reporting into a log the caller made beforehand — so an
+/// event observer built before the player can read it.
+pub(super) fn slow_sink_into(player: &Player, rendered: &RenderedLog) {
     let sink = gst::parse::bin_from_description(
         &format!(
             "queue max-size-time={SINK_BACKLOG_NANOS} max-size-buffers=0 max-size-bytes=0 \
@@ -251,7 +259,6 @@ pub(super) fn slow_sink(player: &Player) -> RenderedLog {
         true,
     )
     .unwrap();
-    let rendered = RenderedLog::default();
     let end_ms = rendered.end_ms.clone();
     sink.by_name("rendered")
         .unwrap()
@@ -268,7 +275,6 @@ pub(super) fn slow_sink(player: &Player) -> RenderedLog {
         .lock()
         .unwrap_or_else(PoisonError::into_inner)
         .set_property("audio-sink", &sink);
-    rendered
 }
 
 /// A headless player on `fakesink`, its events, and the sink lock held for
@@ -281,12 +287,20 @@ pub(super) struct Harness {
 
 impl Harness {
     pub(super) fn new() -> Self {
+        Self::observing(|_| {})
+    }
+
+    /// [`Self::new`], with `observe` called on every event at the instant the
+    /// player emits it — before the event pump, which can lag under load,
+    /// gets to it.
+    pub(super) fn observing(observe: impl Fn(&PlayerEvent) + Send + Sync + 'static) -> Self {
         let guard = AUDIO_SINK_TEST_LOCK
             .lock()
             .unwrap_or_else(PoisonError::into_inner);
         std::env::set_var(AUDIO_SINK_ENV_VAR, "fakesink");
         let (tx, events) = std::sync::mpsc::channel::<PlayerEvent>();
         let player = Player::new(Box::new(move |event| {
+            observe(&event);
             let _ = tx.send(event);
         }))
         .unwrap();

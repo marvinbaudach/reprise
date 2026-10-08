@@ -99,6 +99,16 @@ impl Playback {
         self.engine.current_bands()
     }
 
+    fn tick_silence(&mut self) -> Vec<f32> {
+        let pcm = vec![0; FRAMES_PER_TICK * 2 * size_of::<i16>()];
+        assert!(self
+            .engine
+            .ingest_pcm_i16(pcm.clone(), pcm.len() as u32, SAMPLE_RATE_HZ, 2));
+        self.clock.advance(TICK);
+        self.engine.tick();
+        self.engine.current_bands()
+    }
+
     fn warm_up(&mut self, seed: u64) {
         for _ in 0..WARM_TICKS {
             self.tick(seed);
@@ -126,6 +136,22 @@ fn frame_means_after_swipe(adopt: bool) -> Vec<f32> {
         .collect()
 }
 
+fn frame_means_and_boundary_after_swipe(adopt: bool) -> Vec<(f32, bool)> {
+    let mut playback = Playback::new();
+    playback.warm_up(1);
+    playback.swipe(adopt);
+    (0..MEASURED_TICKS)
+        .map(|_| {
+            let frame_mean = mean(&playback.tick(2));
+            let waiting = playback
+                .engine
+                .live_boundary_for_testing()
+                .is_some_and(|(waiting, _)| waiting);
+            (frame_mean, waiting)
+        })
+        .collect()
+}
+
 #[test]
 fn control_run_is_live_and_not_saturated() {
     let control = frame_means_after_swipe(false);
@@ -140,9 +166,15 @@ fn control_run_is_live_and_not_saturated() {
 #[test]
 fn a_swiped_track_change_does_not_pump_the_spectrum() {
     let control = frame_means_after_swipe(false);
-    let seeded = frame_means_after_swipe(true);
+    let seeded = frame_means_and_boundary_after_swipe(true);
 
-    for (index, (control_mean, seeded_mean)) in control.iter().zip(&seeded).enumerate() {
+    for (index, (control_mean, (seeded_mean, waiting))) in control.iter().zip(&seeded).enumerate() {
+        // AC-29 now deliberately holds the adopted shape while the first
+        // window decides. Once released, it must still join the control
+        // without pumping.
+        if *waiting {
+            continue;
+        }
         let deviation = (seeded_mean - control_mean).abs() / control_mean.max(1.0e-3);
         let jump = seeded_mean / control_mean.max(1.0e-3) - 1.0;
         assert!(
@@ -202,4 +234,233 @@ fn a_pending_seed_on_a_fresh_engine_continues_into_the_first_live_frames() {
              frame means={frames:.3?}"
         );
     }
+}
+
+#[test]
+fn ac_29_a_adopted_shape_holds_until_the_quiet_stream_decides_its_level() {
+    const HELD_LEVEL: f32 = 0.8;
+    const LEVEL_TOLERANCE: f32 = 0.02;
+
+    let mut control = Playback::new();
+    control.warm_up(2);
+    let settled_mean = mean(&control.engine.current_bands());
+
+    let mut handed_over = Playback::new();
+    handed_over.engine.note_track_changed();
+    handed_over
+        .engine
+        .adopt_shape(vec![HELD_LEVEL; SPECTRUM_BAND_COUNT]);
+
+    let mut released = false;
+    let mut reached_stream_level = false;
+    let mut waited = false;
+    let mut carried_gain = None;
+    for tick in 0..MEASURED_TICKS {
+        let displayed_mean = mean(&handed_over.tick(2));
+        let (waiting, gain) = handed_over
+            .engine
+            .live_boundary_for_testing()
+            .expect("the quiet stream created its live processor");
+
+        if waiting {
+            waited = true;
+            carried_gain.get_or_insert(gain);
+            assert!(
+                (displayed_mean - HELD_LEVEL).abs() <= LEVEL_TOLERANCE,
+                "tick {tick}: the adopted shape decayed while its boundary was waiting: {displayed_mean:.3}"
+            );
+            continue;
+        }
+
+        if !released {
+            released = true;
+            assert!(
+                (displayed_mean - HELD_LEVEL).abs() > LEVEL_TOLERANCE,
+                "the display stayed held after the first boundary decision"
+            );
+            if let Some(carried_gain) = carried_gain {
+                assert!(
+                    (gain / carried_gain - 1.0).abs() <= 0.03,
+                    "a boundary within the carry band changed gain from {carried_gain} to {gain}"
+                );
+            }
+        }
+        assert!(
+            displayed_mean + LEVEL_TOLERANCE >= settled_mean,
+            "tick {tick}: the handover dipped below the new stream: displayed={displayed_mean:.3}, settled={settled_mean:.3}"
+        );
+        if (displayed_mean - settled_mean).abs() <= LEVEL_TOLERANCE {
+            reached_stream_level = true;
+            break;
+        }
+    }
+
+    assert!(waited, "the adopted shape never entered the boundary hold");
+    assert!(released, "the hold outlived the first decided window");
+    assert!(
+        reached_stream_level,
+        "the handover did not reach the quiet stream's settled level"
+    );
+}
+
+#[test]
+fn ac_29_a_short_silent_lead_in_keeps_the_adopted_shape_until_the_quiet_stream_decides() {
+    const HELD_LEVEL: f32 = 0.8;
+    const LEVEL_TOLERANCE: f32 = 0.02;
+    const SILENT_LEAD_IN_TICKS: usize = 2;
+
+    let mut control = Playback::new();
+    control.warm_up(2);
+    let settled_mean = mean(&control.engine.current_bands());
+
+    let mut handed_over = Playback::new();
+    handed_over.engine.note_track_changed();
+    handed_over
+        .engine
+        .adopt_shape(vec![HELD_LEVEL; SPECTRUM_BAND_COUNT]);
+
+    for tick in 0..SILENT_LEAD_IN_TICKS {
+        let displayed_mean = mean(&handed_over.tick_silence());
+        assert!(
+            (displayed_mean - HELD_LEVEL).abs() <= LEVEL_TOLERANCE,
+            "silent lead-in tick {tick} released the adopted shape: {displayed_mean:.3}"
+        );
+    }
+
+    let mut released = false;
+    for tick in 0..MEASURED_TICKS {
+        let displayed_mean = mean(&handed_over.tick(2));
+        let (waiting, _) = handed_over
+            .engine
+            .live_boundary_for_testing()
+            .expect("the quiet stream created its live processor");
+        if waiting {
+            assert!(
+                (displayed_mean - HELD_LEVEL).abs() <= LEVEL_TOLERANCE,
+                "signal tick {tick} released the adopted shape before its boundary decided: \
+                 {displayed_mean:.3}"
+            );
+            continue;
+        }
+
+        released = true;
+        assert!(
+            (displayed_mean - HELD_LEVEL).abs() > LEVEL_TOLERANCE,
+            "the display stayed held after the quiet stream's boundary decision"
+        );
+        assert!(
+            displayed_mean + LEVEL_TOLERANCE >= settled_mean,
+            "the handover dipped below the quiet stream: displayed={displayed_mean:.3}, \
+             settled={settled_mean:.3}"
+        );
+        break;
+    }
+
+    assert!(
+        released,
+        "the quiet stream never released the adopted shape"
+    );
+}
+
+#[test]
+fn ac_29_a_signal_blip_then_silence_releases_the_adopted_shape_within_one_window() {
+    const HELD_LEVEL: f32 = 0.8;
+    const LEVEL_TOLERANCE: f32 = 0.01;
+    const BOUNDARY_WINDOW_TICKS: usize = 12;
+    const PCM_BUFFER_TAIL_TICKS: usize = 2;
+    const LONG_SILENCE_TICKS: usize = 120;
+
+    let mut handed_over = Playback::new();
+    handed_over.engine.note_track_changed();
+    handed_over
+        .engine
+        .adopt_shape(vec![HELD_LEVEL; SPECTRUM_BAND_COUNT]);
+
+    handed_over.tick(2);
+    let means: Vec<f32> = (0..LONG_SILENCE_TICKS)
+        .map(|_| mean(&handed_over.tick_silence()))
+        .collect();
+
+    assert!(
+        (means[0] - HELD_LEVEL).abs() <= LEVEL_TOLERANCE,
+        "the first silent frame released the adopted shape: {means:.3?}"
+    );
+    let released_at = means
+        .iter()
+        .position(|level| *level < HELD_LEVEL - LEVEL_TOLERANCE)
+        .expect("two seconds of silence after a signal blip must release the adopted shape");
+    assert!(
+        released_at < BOUNDARY_WINDOW_TICKS + PCM_BUFFER_TAIL_TICKS,
+        "the adopted shape outlived one boundary window after the signal blip: released at tick {released_at}"
+    );
+    assert!(
+        means.last().expect("the fixture produced silent frames") < &means[released_at],
+        "the bars did not continue their normal fall after silence released the hold: {means:.3?}"
+    );
+}
+
+#[test]
+fn ac_29_a_short_silent_gap_after_signal_keeps_the_adopted_shape() {
+    const HELD_LEVEL: f32 = 0.8;
+    const LEVEL_TOLERANCE: f32 = 0.01;
+    const SHORT_SILENT_GAP_TICKS: usize = 4;
+
+    let mut handed_over = Playback::new();
+    handed_over.engine.note_track_changed();
+    handed_over
+        .engine
+        .adopt_shape(vec![HELD_LEVEL; SPECTRUM_BAND_COUNT]);
+
+    handed_over.tick(2);
+    let gap_means: Vec<f32> = (0..SHORT_SILENT_GAP_TICKS)
+        .map(|_| mean(&handed_over.tick_silence()))
+        .collect();
+
+    assert!(
+        gap_means
+            .iter()
+            .all(|level| (*level - HELD_LEVEL).abs() <= LEVEL_TOLERANCE),
+        "a silent gap shorter than one boundary window released the adopted shape: {gap_means:.3?}"
+    );
+    let resumed_mean = mean(&handed_over.tick(2));
+    assert!(
+        (resumed_mean - HELD_LEVEL).abs() <= LEVEL_TOLERANCE,
+        "signal after the short gap did not keep the adopted shape: {resumed_mean:.3}"
+    );
+}
+
+#[test]
+fn ac_29_silent_lead_in_releases_the_adopted_shape_within_one_boundary_window() {
+    const HELD_LEVEL: f32 = 0.8;
+    const BOUNDARY_WINDOW_TICKS: usize = 12;
+    const LONG_SILENCE_TICKS: usize = 120;
+
+    let mut handed_over = Playback::new();
+    handed_over.engine.note_track_changed();
+    handed_over
+        .engine
+        .adopt_shape(vec![HELD_LEVEL; SPECTRUM_BAND_COUNT]);
+
+    let means: Vec<f32> = (0..LONG_SILENCE_TICKS)
+        .map(|_| mean(&handed_over.tick_silence()))
+        .collect();
+
+    assert!(
+        means[..2]
+            .iter()
+            .all(|level| (*level - HELD_LEVEL).abs() <= 0.01),
+        "the first silent frame released the adopted shape: {means:.3?}"
+    );
+    let released_at = means
+        .iter()
+        .position(|level| *level < HELD_LEVEL - 0.01)
+        .expect("two seconds of silence must release the adopted shape");
+    assert!(
+        released_at < BOUNDARY_WINDOW_TICKS,
+        "the adopted shape outlived one boundary window: released at tick {released_at}"
+    );
+    assert!(
+        means.last().expect("the fixture produced silent frames") < &means[0],
+        "the bars did not continue their normal fall after silence released the hold: {means:.3?}"
+    );
 }

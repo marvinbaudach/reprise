@@ -28,7 +28,9 @@ use reprise_core::playback::{AudioEffects, PlayerEvent};
 
 use crate::gapless::{HandoffFlag, NextUri, PendingGain, QueuedTrack};
 use crate::player::segment::SegmentHandle;
-use crate::player_pipeline::{attach_bus_watch, build_playbin, configure_download_buffering};
+use crate::player_pipeline::{
+    attach_bus_watch, build_playbin, configure_download_buffering, discard_cava_samples,
+};
 
 /// Geteilter (Modus, Sekunden)-Zustand. Der Ticker liest ihn zur Trigger-
 /// Entscheidung, `set_transition` schreibt ihn, und der `about-to-finish`-
@@ -187,6 +189,14 @@ impl CrossfadeEngine {
                 return;
             }
         };
+        // A consumer from the first buffer on, until promotion installs the
+        // real CAVA processor — see `discard_cava_samples`.
+        if let Err(error) = discard_cava_samples(&secondary) {
+            tracing::warn!(%error, "crossfade: could not give the secondary's CAVA sink a consumer; aborting fade");
+            let _ = secondary.set_state(gst::State::Null);
+            self.crossfading.store(false, Ordering::SeqCst);
+            return;
+        }
         if let Err(error) = crate::player_effects::set_playbin_spectrum_messages(
             &secondary,
             self.spectrum_enabled.load(Ordering::SeqCst),
