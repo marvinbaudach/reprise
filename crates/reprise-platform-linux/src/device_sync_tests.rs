@@ -2,7 +2,6 @@ use std::cell::{Cell, RefCell};
 use std::fs;
 use std::future::Future;
 use std::io::Write;
-use std::os::unix::fs::{MetadataExt, PermissionsExt};
 use std::rc::Rc;
 use std::sync::{Arc, Mutex};
 
@@ -576,21 +575,19 @@ fn cleanup_partials_silently_accepts_a_missing_managed_root() {
 #[test]
 fn cleanup_partials_uses_only_listed_paths_and_continues_after_a_delete_failure() {
     let (temp, storage) = fixture();
-    if fs::metadata(temp.path()).unwrap().uid() == 0 {
-        eprintln!("skipped permission-based test under a root test runner");
-        return;
-    }
     let root = temp.path().join("Music/Reprise");
     let protected = root.join("Protected");
     let writable = root.join("Deep/Writable");
-    let unreadable = root.join("Unreadable");
-    fs::create_dir_all(&protected).unwrap();
+    let unlisted = root.join("Unlisted");
+    // A non-empty directory under a `.part` name cannot be deleted by any user,
+    // root included, so the failure does not depend on a permission bit.
+    let undeletable = protected.join("left-behind.opus.part");
+    fs::create_dir_all(&undeletable).unwrap();
+    fs::write(undeletable.join("held.bin"), b"partial").unwrap();
     fs::create_dir_all(&writable).unwrap();
-    fs::create_dir_all(&unreadable).unwrap();
-    fs::write(protected.join("left-behind.opus.part"), b"partial").unwrap();
+    fs::create_dir_all(&unlisted).unwrap();
     fs::write(writable.join("removed.opus.part"), b"partial").unwrap();
-    fs::set_permissions(&protected, fs::Permissions::from_mode(0o500)).unwrap();
-    fs::set_permissions(&unreadable, fs::Permissions::from_mode(0o000)).unwrap();
+    fs::write(unlisted.join("stray.opus.part"), b"partial").unwrap();
 
     let listed = [
         "Protected/left-behind.opus.part".into(),
@@ -599,13 +596,16 @@ fn cleanup_partials_uses_only_listed_paths_and_continues_after_a_delete_failure(
     let (result, warnings) =
         capture_warnings(|| run(storage.cleanup_partials_in(None, "/Music/Reprise", &listed)));
 
-    fs::set_permissions(&protected, fs::Permissions::from_mode(0o700)).unwrap();
-    fs::set_permissions(&unreadable, fs::Permissions::from_mode(0o700)).unwrap();
     assert_eq!(result.as_ref().ok(), Some(&1));
-    assert!(protected.join("left-behind.opus.part").exists());
+    assert!(undeletable.join("held.bin").exists());
     assert!(!writable.join("removed.opus.part").exists());
+    assert!(
+        unlisted.join("stray.opus.part").exists(),
+        "a partial that was not listed must not be touched"
+    );
     assert!(warnings.contains("Protected/left-behind.opus.part"));
     assert!(warnings.contains("action=\"delete partial file\""));
+    assert!(!warnings.contains("Unlisted"), "{warnings}");
 }
 
 #[test]

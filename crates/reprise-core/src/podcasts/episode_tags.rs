@@ -103,9 +103,49 @@ pub fn write_episode_tags(path: &Path, tags: &EpisodeTagSet) -> Result<(), Episo
         .ok_or(EpisodeTagError::NoWritableTag)?;
     set_episode_tags(tag, tags);
     // Everything above this line only read. From here the file may change.
-    tag.save_to_path(path, WriteOptions::default())
-        .map_err(EpisodeTagError::Write)?;
+    save_tag(tag, path).map_err(EpisodeTagError::Write)?;
     Ok(())
+}
+
+fn save_tag(tag: &Tag, path: &Path) -> Result<(), lofty::error::FileEncodingError> {
+    #[cfg(test)]
+    if refused_saves::armed() {
+        return Err(std::io::Error::from(std::io::ErrorKind::PermissionDenied).into());
+    }
+    tag.save_to_path(path, WriteOptions::default())
+}
+
+/// Makes the next tag writes on this thread fail, as a full disk or a
+/// read-only file would. A permission bit cannot stand in for either: a
+/// process with root rights (CI) writes a read-only file all the same, and the
+/// test that relied on it would then prove nothing. Thread-local because
+/// libtest gives each test its own thread and the download runs on it.
+#[cfg(test)]
+pub(crate) mod refused_saves {
+    use std::cell::Cell;
+
+    thread_local! {
+        static ARMED: Cell<bool> = const { Cell::new(false) };
+    }
+
+    /// Disarms again when dropped, so an assertion that fails cannot leak the
+    /// refusal into the next test that runs on this thread.
+    pub(crate) struct Refusal;
+
+    impl Drop for Refusal {
+        fn drop(&mut self) {
+            ARMED.with(|armed| armed.set(false));
+        }
+    }
+
+    pub(crate) fn refuse() -> Refusal {
+        ARMED.with(|armed| armed.set(true));
+        Refusal
+    }
+
+    pub(super) fn armed() -> bool {
+        ARMED.with(Cell::get)
+    }
 }
 
 /// The cap sits here rather than at the one caller that builds an

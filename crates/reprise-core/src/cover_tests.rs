@@ -413,9 +413,12 @@ fn small_source_is_not_upscaled() {
 
 #[test]
 fn a_remembered_resolution_answers_without_touching_the_track_again() {
-    // Proof by denial: after the first resolution the track is made
-    // unreadable. Anything that still opens it would fail; the remembered
-    // answer does not need to.
+    // Proof by denial: after the first resolution the track's cover is
+    // destroyed in place while everything the index stamps (modification time,
+    // size, folder) stays as it was. Anything that still reads the file finds
+    // no cover; the remembered answer does not need to. The file is emptied of
+    // its content rather than locked with `chmod 000`, which a process with
+    // root rights (CI) reads straight through.
     let dir = tempfile::tempdir().unwrap();
     let album = format!("Remembered {}", fastrand::u64(..));
     let track = tagged_track_with_cover(dir.path(), "t.flac", &album, solid_png([9, 9, 9]));
@@ -423,14 +426,18 @@ fn a_remembered_resolution_answers_without_touching_the_track_again() {
     let first = thumbnail_for_track(&track, ThumbnailSize::List);
     assert!(first.is_some(), "the track has an embedded cover");
 
-    let mut locked = std::fs::metadata(&track).unwrap().permissions();
-    locked.set_readonly(true);
-    #[cfg(unix)]
-    {
-        use std::os::unix::fs::PermissionsExt;
-        locked.set_mode(0o000);
-    }
-    std::fs::set_permissions(&track, locked).unwrap();
+    let stamped = std::fs::metadata(&track).unwrap();
+    std::fs::write(&track, vec![0_u8; stamped.len() as usize]).unwrap();
+    std::fs::File::options()
+        .write(true)
+        .open(&track)
+        .unwrap()
+        .set_modified(stamped.modified().unwrap())
+        .unwrap();
+    assert!(
+        resolve_source(&track).is_none(),
+        "the denial must work: nothing can be read from the track any more"
+    );
 
     let second = thumbnail_for_track(&track, ThumbnailSize::List);
     assert_eq!(
@@ -438,13 +445,6 @@ fn a_remembered_resolution_answers_without_touching_the_track_again() {
         "a remembered resolution must answer from the index, not the file"
     );
 
-    #[cfg(unix)]
-    {
-        use std::os::unix::fs::PermissionsExt;
-        let mut open = std::fs::metadata(&track).unwrap().permissions();
-        open.set_mode(0o644);
-        std::fs::set_permissions(&track, open).ok();
-    }
     std::fs::remove_file(resolution_index_path(&track, ThumbnailSize::List)).ok();
     first.map(|path| std::fs::remove_file(path).ok());
 }

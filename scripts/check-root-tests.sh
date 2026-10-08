@@ -14,7 +14,13 @@
 # below, and a file that starts changing permissions without being listed fails
 # the gate instead of quietly escaping it. A test that skips itself as root
 # passes here without proving anything; prefer an injected failure, as
-# scanner_cue_exclusion_tests.rs does.
+# scanner_cue_exclusion_tests.rs and scanner_unreadable_dir_tests.rs do.
+#
+# A module stays listed after its tests were converted to injected failures
+# (cover_tests.rs, scanner_tests.rs, scanner_import_errors_tests.rs,
+# pipeline_tag_tests.rs and the two device-sync files): the list is what is
+# rerun as root, and those tests are exactly the ones that used to pass
+# vacuously there, so they keep being exercised as root before CI sees them.
 set -euo pipefail
 
 repo_root=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)

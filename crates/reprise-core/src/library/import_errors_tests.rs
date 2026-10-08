@@ -1,9 +1,10 @@
 //! `import_errors.rs`'s own unit-level test suite: the pieces that don't
 //! need a full `scan_folder` walk to exercise — `clear_error`'s return value
-//! and `classify_lofty`'s mapping. The integration-shaped cases (episode
-//! dedup across repeated scans, the dismiss-skip fast path, the directory
-//! `chmod` case) live in `scanner_import_errors_tests.rs` instead, since
-//! those need the real walk loop in `scan_folder_inner` to mean anything.
+//! and the `classify_lofty` and `classify_walk_io` mappings. The
+//! integration-shaped cases (episode dedup across repeated scans, the
+//! dismiss-skip fast path, the unreadable-directory case) live in
+//! `scanner_import_errors_tests.rs` instead, since those need the real walk
+//! loop in `scan_folder_inner` to mean anything.
 
 use rusqlite::Connection;
 
@@ -78,4 +79,22 @@ fn classify_lofty_detail_includes_the_typed_errors_source() {
         detail.contains("recognizable source detail"),
         "detail must retain the source omitted by FileParseError::Display: {detail}"
     );
+}
+
+/// The traversal classification keys off the `io::Error` behind a `walkdir`
+/// failure: a refusal is `PermissionDenied`, any other I/O failure is `Io`, and
+/// a failure with no I/O error behind it (a symlink loop) is `Unknown`.
+#[test]
+fn classify_walk_io_separates_refusal_from_other_io_and_loops() {
+    use std::io::{Error, ErrorKind};
+
+    assert_eq!(
+        classify_walk_io(Some(&Error::from(ErrorKind::PermissionDenied))),
+        ImportErrorKind::PermissionDenied
+    );
+    assert_eq!(
+        classify_walk_io(Some(&Error::from(ErrorKind::NotFound))),
+        ImportErrorKind::Io
+    );
+    assert_eq!(classify_walk_io(None), ImportErrorKind::Unknown);
 }

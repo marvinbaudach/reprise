@@ -150,6 +150,10 @@ async fn make_directory(
     directory: gio::File,
     cancellable: Option<&gio::Cancellable>,
 ) -> Result<(), gio::glib::Error> {
+    #[cfg(test)]
+    if let Some(error) = refused::injected_error(&directory) {
+        return Err(error);
+    }
     let (sender, receiver) = async_channel::bounded(1);
     directory.make_directory_async(gio::glib::Priority::DEFAULT, cancellable, move |result| {
         let _ = sender.try_send(result);
@@ -216,4 +220,49 @@ fn warn_unreadable_listing(desired: &str, error: &gio::glib::Error) {
         %error,
         "device sync: could not list the parent directory, so no resident spelling was adopted"
     );
+}
+
+/// Directory creations a test makes the device refuse.
+///
+/// A device that is case-insensitive refuses `Speaker of the Dead` beside a
+/// resident `Speaker Of The Dead` while its listing still works, and a local
+/// filesystem cannot behave that way: the only way to make `mkdir` fail on one
+/// is a permission bit, which a process with root rights ignores. Injecting the
+/// refusal keeps those tests meaningful when the tests run as root, as they do
+/// in CI. Thread-local, because libtest gives each test its own thread and
+/// `tests::run` drives the future on the calling one.
+#[cfg(test)]
+pub(super) mod refused {
+    use std::cell::RefCell;
+    use std::path::PathBuf;
+
+    use gio::prelude::*;
+
+    thread_local! {
+        static REFUSED: RefCell<Vec<PathBuf>> = const { RefCell::new(Vec::new()) };
+    }
+
+    /// Clears the refusals again when dropped, so an assertion that fails cannot
+    /// leak them into the next test that runs on this thread.
+    pub(in crate::device_sync) struct Refusal;
+
+    impl Drop for Refusal {
+        fn drop(&mut self) {
+            REFUSED.with(|refused| refused.borrow_mut().clear());
+        }
+    }
+
+    /// Makes creating `directory` fail the way libmtp does when it meets a
+    /// folder that differs only in case: not `Exists`, not `Cancelled`.
+    pub(in crate::device_sync) fn refuse(directory: impl Into<PathBuf>) -> Refusal {
+        REFUSED.with(|refused| refused.borrow_mut().push(directory.into()));
+        Refusal
+    }
+
+    pub(super) fn injected_error(directory: &gio::File) -> Option<gio::glib::Error> {
+        let path = directory.path()?;
+        REFUSED
+            .with(|refused| refused.borrow().contains(&path))
+            .then(|| gio::glib::Error::new(gio::IOErrorEnum::Failed, "Could not send object info"))
+    }
 }

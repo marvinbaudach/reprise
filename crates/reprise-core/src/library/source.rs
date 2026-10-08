@@ -465,25 +465,37 @@ impl LibrarySource for UnixLibrarySource {
                     is_file: entry.file_type().is_file(),
                     metadata: None,
                 }),
-                Err(error) => {
-                    let kind = match super::import_errors::classify_walkdir(&error) {
-                        crate::models::ImportErrorKind::PermissionDenied => {
-                            LibraryWalkErrorKind::PermissionDenied
-                        }
-                        crate::models::ImportErrorKind::Io => LibraryWalkErrorKind::Io,
-                        _ => LibraryWalkErrorKind::Unknown,
-                    };
-                    LibraryWalkItem::Error(LibraryWalkError {
-                        path: error.path().map(Path::to_path_buf),
-                        kind,
-                        detail: error.to_string(),
-                    })
-                }
+                Err(error) => LibraryWalkItem::Error(walk_error(
+                    error.path(),
+                    error.io_error(),
+                    error.to_string(),
+                )),
             };
             if visitor.visit(item) == LibraryWalkControl::Stop {
                 break;
             }
         }
+    }
+}
+
+/// The traversal failure [`UnixLibrarySource::walk`] reports for one `walkdir`
+/// error, split from the walk so a test can build the very same value from an
+/// `io::Error` it chose: `walkdir::Error` cannot be constructed, and a real
+/// directory only fails to open for a process without root rights.
+pub(crate) fn walk_error(
+    path: Option<&Path>,
+    io_error: Option<&io::Error>,
+    detail: String,
+) -> LibraryWalkError {
+    let kind = match super::import_errors::classify_walk_io(io_error) {
+        crate::models::ImportErrorKind::PermissionDenied => LibraryWalkErrorKind::PermissionDenied,
+        crate::models::ImportErrorKind::Io => LibraryWalkErrorKind::Io,
+        _ => LibraryWalkErrorKind::Unknown,
+    };
+    LibraryWalkError {
+        path: path.map(Path::to_path_buf),
+        kind,
+        detail,
     }
 }
 

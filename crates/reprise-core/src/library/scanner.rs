@@ -688,6 +688,10 @@ mod exclusion_tests;
 mod lease_tests;
 
 #[cfg(test)]
+#[path = "scanner_unreadable_dir_tests.rs"]
+mod unreadable_dir_tests;
+
+#[cfg(test)]
 #[path = "scanner_cue_tests.rs"]
 mod cue_tests;
 

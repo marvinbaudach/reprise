@@ -22,7 +22,7 @@
 //! chain, breaking `io::Error` down further by `kind()`, and keeps the
 //! original message only as `reason_detail` — a display payload this module
 //! never inspects again.
-//! [`classify_walkdir`] applies the same principle to directory-traversal
+//! [`classify_walk_io`] applies the same principle to directory-traversal
 //! failures.
 //!
 //! ## Hint rows (Task 1.8): a query-layer contract, not a stored flag
@@ -106,14 +106,18 @@ pub(crate) fn classify_lofty(e: &(dyn std::error::Error + 'static)) -> (ImportEr
     (kind, detail)
 }
 
-/// Maps a `walkdir` directory-traversal failure to a kind, the same
-/// classify-at-the-source principle [`classify_lofty`] applies to lofty
-/// errors. `err.io_error()` is `None` only for a symlink-loop error (no
-/// underlying `io::Error` exists for that case) — see `walkdir::Error`'s own
-/// doc comment — which this crate has no more specific bucket for than
-/// `Unknown`.
-pub(crate) fn classify_walkdir(err: &walkdir::Error) -> ImportErrorKind {
-    match err.io_error().map(std::io::Error::kind) {
+/// Maps the `io::Error` behind a `walkdir` directory-traversal failure to a
+/// kind, the same classify-at-the-source principle [`classify_lofty`] applies
+/// to lofty errors. `walkdir::Error::io_error()` is `None` only for a
+/// symlink-loop error (no underlying `io::Error` exists for that case) — see
+/// `walkdir::Error`'s own doc comment — which this crate has no more specific
+/// bucket for than `Unknown`.
+///
+/// Takes the `io::Error` rather than the `walkdir::Error` because the latter
+/// has no public constructor: a test could otherwise only reach this mapping by
+/// making a real directory unreadable, which a process with root rights cannot.
+pub(crate) fn classify_walk_io(io_error: Option<&std::io::Error>) -> ImportErrorKind {
+    match io_error.map(std::io::Error::kind) {
         Some(std::io::ErrorKind::PermissionDenied) => ImportErrorKind::PermissionDenied,
         Some(_) => ImportErrorKind::Io,
         None => ImportErrorKind::Unknown,

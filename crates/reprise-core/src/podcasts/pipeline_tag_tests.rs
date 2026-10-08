@@ -39,31 +39,8 @@ impl FeedFetcher for UntaggableFeed {
     }
 }
 
-/// Serves the FLAC fixture and then takes write permission away from it, so
-/// the tag write fails at the `open(O_RDWR)` that precedes lofty's truncate.
-struct ReadOnlyAudioFeed;
-
-impl FeedFetcher for ReadOnlyAudioFeed {
-    fn fetch(&self, _: &SubscriptionRow) -> Result<Response, PodcastError> {
-        unreachable!("download_episode never refreshes the feed")
-    }
-
-    fn download(&self, _: &str, destination: &Path) -> Result<(), PodcastError> {
-        std::fs::copy(fixture(), destination)
-            .map_err(|error| PodcastError::Body(error.to_string()))?;
-        set_read_only(destination);
-        Ok(())
-    }
-}
-
 fn fixture() -> PathBuf {
     Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/sine.flac")
-}
-
-fn set_read_only(path: &Path) {
-    use std::os::unix::fs::PermissionsExt;
-
-    std::fs::set_permissions(path, std::fs::Permissions::from_mode(0o444)).unwrap();
 }
 
 #[derive(Default)]
@@ -236,10 +213,12 @@ fn pod_17_an_untaggable_download_is_still_published_with_its_true_size() {
 /// being downloaded again. So the download has to fail, which deletes the
 /// `.part` and leaves the episode retryable.
 ///
-/// The failure is simulated with a read-only temporary, which lofty refuses
-/// at the `open(O_RDWR)` preceding its truncate. That leaves the file
-/// intact, unlike the full-disk case — but the two are the same error to
-/// every caller, so the rule cannot distinguish them either.
+/// The failure is injected into the tag write (`refused_saves`), not simulated
+/// with a read-only temporary: a permission bit stops nothing for a process
+/// with root rights, which is what CI runs as, and the test would then publish
+/// the episode and pass for no reason. The injected error leaves the file
+/// intact, unlike the full-disk case — but the two are the same error to every
+/// caller, so the rule cannot distinguish them either.
 #[test]
 fn pod_17_a_download_whose_tag_write_fails_is_never_published() {
     let db = conn();
@@ -249,23 +228,11 @@ fn pod_17_a_download_whose_tag_write_fails_is_never_published() {
         Some(1_785_225_600),
     );
     let directory = tempfile::tempdir().unwrap();
-    let probe = directory.path().join("probe");
-    std::fs::write(&probe, b"probe").unwrap();
-    set_read_only(&probe);
-    if std::fs::OpenOptions::new().write(true).open(&probe).is_ok() {
-        // File permissions are not enforced here (e.g. running as root in a
-        // container), so this failure cannot be simulated.
-        eprintln!(
-            "skipping pod_17_a_download_whose_tag_write_fails_is_never_published: \
-             file permissions are not enforced in this environment"
-        );
-        return;
-    }
-    std::fs::remove_file(&probe).unwrap();
+    let _refusal = crate::podcasts::episode_tags::refused_saves::refuse();
 
     let outcome = download_episode(
         &db,
-        &ReadOnlyAudioFeed,
+        &FixtureAudioFeed,
         &FakeYoutube,
         directory.path(),
         episode_id,
