@@ -5,6 +5,7 @@ from __future__ import annotations
 from typing import Any, Mapping
 
 from protocol import ActionGateway
+from ui_vocabulary import RETRY_WORDS
 from workload_audit import audit_action_workload
 
 
@@ -169,7 +170,7 @@ class FakeWorld:
             return
         if label.casefold().startswith("refresh"):
             return
-        if "retry" in label.casefold():
+        if any(word in label.casefold() for word in RETRY_WORDS):
             return
         if label == "Edit tags…":
             self.context_menu = False
@@ -205,7 +206,8 @@ class FakeWorld:
                     self._element(SOURCE_ROWS[self.section], self._row_role(), y=220)
                 )
             if self.connectivity == "offline" or "offline-status-stuck" in self.quirks:
-                elements.append(self._element("No connection · Retry", "button", y=120))
+                elements.append(self._element("You're offline", "label", y=100, actionable=False))
+                elements.append(self._element("Try again", "button", y=120))
             else:
                 elements.append(self._element("Refresh now", "button", y=120))
             return elements

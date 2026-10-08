@@ -22,7 +22,7 @@ from protocol import (
     EXTERNAL_TARGET_PHRASES,
 )
 from search_results import result_elements, source_cards
-from ui_vocabulary import BUSY_ROLES, BUSY_WORDS, is_row
+from ui_vocabulary import BUSY_ROLES, BUSY_WORDS, OFFLINE_STATUS_WORDS, is_row
 from workload_audit import ActionTrace, audit_action_workload
 
 
@@ -689,12 +689,22 @@ class AgentSession:
                     )
                 )
         if kind == "set-connectivity" and action.get("connectivity") == "online":
-            if any("no connection" in label.casefold() for label in after_labels):
+            if any(
+                word in label.casefold()
+                for label in after_labels
+                for word in OFFLINE_STATUS_WORDS
+            ):
                 self.add_note(
                     Note(
                         "agent-offline-status-stuck",
                         "Offline status remained visible after reconnect.",
-                        {"labels": [label for label in after_labels if "connection" in label.casefold()]},
+                        {
+                            "labels": [
+                                label
+                                for label in after_labels
+                                if any(word in label.casefold() for word in OFFLINE_STATUS_WORDS)
+                            ]
+                        },
                     )
                 )
         if kind == "activate" and action.get("target", {}).get("label") in {

@@ -8,7 +8,11 @@ from typing import Any, Mapping
 from agents.sequencer import Phase
 from agents.steps import Step
 from agents.vocabulary import BUTTON_MATCHER, LabelMatcher, ROW_MATCHER
-from ui_vocabulary import BUTTON_ROLES, ENTRY_ROLES, SEARCH_ENTRY_LABEL
+from ui_vocabulary import BUTTON_ROLES, ENTRY_ROLES, RETRY_WORDS, SEARCH_ENTRY_LABEL
+
+SOURCES_WITHOUT_REFRESH = ("Radio",)
+# The first ROW_MATCHER hit is the sidebar's "Music" row, not a result.
+RESULT_ROW_MATCHER = LabelMatcher(roles=ROW_MATCHER.roles, results_only=True)
 
 
 def _activate(
@@ -149,6 +153,9 @@ def plan_offline_transition(
     sources = list(workload.get("source_tokens", {}))
     online_sources = list(sources)
     rng.shuffle(online_sources)
+    # The refresh action sits in the Podcasts and YouTube footers only; the plan
+    # clicks it from the view it ends the online tour on, so Radio goes first.
+    online_sources.sort(key=lambda source: source not in SOURCES_WITHOUT_REFRESH)
     token_by_source = workload.get("source_tokens", {})
     steps = [
         _section_activate(
@@ -182,7 +189,7 @@ def plan_offline_transition(
         Step(
             "retry-offline",
             "activate",
-            LabelMatcher(contains=("retry",)),
+            LabelMatcher(contains=RETRY_WORDS),
             {"dispatch": "ax", "expect_effect": "required"},
         )
     )
@@ -211,7 +218,15 @@ def plan_batch_edit(workload: Mapping[str, Any], index: int, rng: random.Random)
         index,
         (
             *_search_type("find-writable-batch", "WRITABLE_BATCH"),
-            Step("focus-first-row", "activate", ROW_MATCHER, {"dispatch": "ax"}),
+            # Enter accepts the query and closes the popover; Escape would clear it.
+            # While the popover is open it swallows Ctrl+A and Shift+F10.
+            Step(
+                "accept-search",
+                "press",
+                LabelMatcher(exact=(SEARCH_ENTRY_LABEL,)),
+                {"key": "enter"},
+            ),
+            Step("focus-first-row", "activate", RESULT_ROW_MATCHER, {"dispatch": "ax"}),
             Step("anchor-down", "scroll", fields={"direction": "down", "amount": 1, "by": "page"}),
             Step("anchor-up-before-edit", "scroll", fields={"direction": "up", "amount": 1, "by": "page"}),
             Step("position-before-edit", "scroll", fields={"direction": "down", "amount": 1, "by": "page"}),
@@ -328,7 +343,16 @@ def plan_scroll_sweep(workload: Mapping[str, Any], index: int, rng: random.Rando
             "press",
             LabelMatcher(exact=(SEARCH_ENTRY_LABEL,)),
             {"key": "escape"},
-        )
+        ),
+        # A facet left active by the filter workload shrinks the list, and the
+        # sweep only counts pages that moved the rows.
+        Step(
+            "clear-filters-before-scroll",
+            "activate",
+            LabelMatcher(contains=("clear all",)),
+            {"dispatch": "ax"},
+            required=False,
+        ),
     ]
     pages = int(workload.get("pages", 0))
     for direction in workload.get("directions", []):
