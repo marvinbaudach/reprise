@@ -1376,7 +1376,12 @@ result.
   `mtp_66_late_metadata_completes_a_clip_in_place_and_keeps_its_stretch`,
   `mtp_66_a_clipped_cue_track_that_gains_its_cover_is_updated_in_place`,
   `mtp_66_a_track_whose_successor_is_only_excluded_still_plays_to_its_own_end`,
-  `mtp_66_a_track_whose_successor_is_only_excluded_keeps_its_own_end`.
+  `mtp_66_a_track_whose_successor_is_only_excluded_keeps_its_own_end`,
+  `mtp_66_the_titles_list_shows_both_tracks_of_a_cue_file`,
+  `mtp_66_the_wide_short_titles_grid_shows_both_tracks_of_a_cue_file`,
+  `mtp_66_an_opened_album_shows_both_tracks_of_a_cue_file`,
+  `mtp_66_the_queue_shows_both_tracks_of_a_cue_file`,
+  `mtp_66_an_artists_other_titles_show_both_tracks_of_a_cue_file`.
   The gap between two clips and each clip's own gain are proved only by the
   post-merge device check: no automated test drives the stream offsets a real
   player announces for clipped items.

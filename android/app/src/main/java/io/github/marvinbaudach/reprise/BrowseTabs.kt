@@ -463,7 +463,7 @@ private fun ArtistDetailSections(
                     trackContent,
                     key = { content ->
                         when (content) {
-                            is TrackListContent.Row -> "artist-track-${content.track.uri}"
+                            is TrackListContent.Row -> "artist-track-${content.track.id}"
                             is TrackListContent.Continuation ->
                                 "artist-tracks-load-${content.request.offset}"
                         }
