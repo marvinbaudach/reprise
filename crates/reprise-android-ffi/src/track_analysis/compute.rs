@@ -345,15 +345,13 @@ impl AnalysisContext<'_> {
         unreachable!("the compute loop always returns on its final round")
     }
 
+    /// Whether the track holds all its rendering data, by the test the
+    /// pending lists use: a track the backfill lists as pending must never be
+    /// answered "valid" here, or it is counted done, stays pending, and is
+    /// counted again for ever (#1198).
     pub(super) fn render_data_already_valid(&self, track_id: i64) -> Result<bool, LibraryError> {
         let reader = self.reader.lock().map_err(poisoned)?;
-        let has_spectrogram = reprise_core::db::get_track_spectrogram(&reader, track_id)
-            .map_err(database_error)?
-            .is_some();
-        let has_peaks = reprise_core::db::get_waveform_peaks(&reader, track_id)
-            .map_err(database_error)?
-            .is_some();
-        Ok(has_spectrogram && has_peaks)
+        reprise_core::db::track_render_data_complete(&reader, track_id).map_err(database_error)
     }
 
     fn decode_one(
