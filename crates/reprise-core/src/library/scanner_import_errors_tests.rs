@@ -1,12 +1,12 @@
 //! Task 1.7's integration-shaped test suite: the cases that need a real
 //! `scan_folder` walk (episode dedup across repeated scans, the dismiss-skip
-//! fast path and its reactivate-on-change behavior, and the directory
-//! `chmod` dedup case) rather than a unit-level call into `import_errors`
+//! fast path and its reactivate-on-change behavior, and the unreadable
+//! directory case) rather than a unit-level call into `import_errors`
 //! directly. Split from `scanner_tests.rs` for the usual 800-line reason —
 //! `scanner.rs` declares this via `#[cfg(test)] #[path =
 //! "scanner_import_errors_tests.rs"] mod import_errors_tests;`, so these are
-//! still crate-private scanner tests. The three purely unit-level cases
-//! (`clear_error`'s return value, `classify_lofty`'s mapping) live in
+//! still crate-private scanner tests. The purely unit-level cases
+//! (`clear_error`'s return value, the `classify_*` mappings) live in
 //! `import_errors_tests.rs` instead, next to the code they test directly.
 
 use rusqlite::OptionalExtension;
@@ -189,43 +189,23 @@ fn dismissed_file_with_changed_mtime_starts_a_new_episode() {
 /// Brief case 5: a directory walkdir cannot enter must produce exactly ONE
 /// `import_errors` row keyed by the DIRECTORY's own path — not the numeric
 /// index of the walk error, the pre-Task-1.7 bug this fixes — classified as
-/// `PermissionDenied`. Skipped when `chmod 000` doesn't actually block reads
-/// (e.g. running as root in a container), same guard as this file's sibling
-/// traversal test in `scanner_tests.rs`.
-#[cfg(unix)]
+/// `PermissionDenied`. The directory is refused by an injected source rather
+/// than by `chmod 000`, because a process with root rights (CI) reads a
+/// mode-000 directory all the same and the test would then prove nothing.
 #[test]
 fn locked_directory_produces_one_row_with_directory_path_and_permission_denied() {
-    use std::os::unix::fs::PermissionsExt;
-
     let tmp = tempfile::tempdir().unwrap();
     let locked = tmp.path().join("locked");
     std::fs::create_dir(&locked).unwrap();
     fixture_copy(&locked, "unreachable.flac");
 
-    let mut perms = std::fs::metadata(&locked).unwrap().permissions();
-    perms.set_mode(0o000);
-    std::fs::set_permissions(&locked, perms).unwrap();
-
-    if std::fs::read_dir(&locked).is_ok() {
-        let mut restore = std::fs::metadata(&locked).unwrap().permissions();
-        restore.set_mode(0o755);
-        std::fs::set_permissions(&locked, restore).unwrap();
-        eprintln!(
-            "skipping locked_directory_produces_one_row_with_directory_path_and_permission_denied: \
-             directory permissions are not enforced in this environment (likely running as root)"
-        );
-        return;
-    }
-
     let conn = crate::db::Db::open_in_memory().unwrap();
 
-    let scan_result = scan_folder(&conn, tmp.path());
-
-    // Always restore permissions before asserting, so tempdir cleanup
-    // succeeds even if the assertions below fail.
-    let mut restore = std::fs::metadata(&locked).unwrap().permissions();
-    restore.set_mode(0o755);
-    std::fs::set_permissions(&locked, restore).unwrap();
+    let scan_result = scan_folder_with_source(
+        &super::unreadable_dir_tests::UnreadableDirectorySource::new(&locked),
+        &conn,
+        tmp.path(),
+    );
 
     completed(scan_result.unwrap());
 

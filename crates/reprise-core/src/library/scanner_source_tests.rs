@@ -239,10 +239,11 @@ fn a_scan_runs_to_completion_through_a_non_filesystem_traversal() {
     assert_eq!(rows, 2, "the non-audio entry must not become a track");
 }
 
-/// The import-error plumbing is reached through the trait too. The existing
-/// permission-based test proves this on Unix but skips itself wherever
-/// directory permissions are not enforced (as root, or on some CI images);
-/// a scripted source proves the same path with no permissions involved.
+/// The import-error plumbing is reached through the trait too. This one hands
+/// the scanner a hand-written error from a source that has never seen
+/// `walkdir`; `scanner_unreadable_dir_tests.rs` does the same from the Unix
+/// walk's own error mapping. Neither involves a permission bit, so both mean
+/// the same thing for a process with root rights.
 #[test]
 fn a_traversal_error_from_a_foreign_source_is_recorded_and_the_walk_continues() {
     let tmp = tempfile::tempdir().unwrap();

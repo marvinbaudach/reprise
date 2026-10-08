@@ -714,45 +714,25 @@ fn move_detection_refreshes_mount_point_to_new_location() {
 // same reasoning as every other `_tests.rs` split in this module.
 
 /// walkdir traversal errors (e.g. a permission-denied subdirectory) must be
-/// recorded in `import_errors` and counted, never silently dropped. This test
-/// is skipped when running with elevated privileges (e.g. root in a
-/// container), where `chmod 000` does not actually block directory reads.
-#[cfg(unix)]
+/// recorded in `import_errors` and counted, never silently dropped. The
+/// directory is refused by an injected source rather than by `chmod 000`,
+/// because a process with root rights (CI) reads a mode-000 directory all the
+/// same and the test would then prove nothing.
 #[test]
 fn traversal_error_in_unreadable_dir_is_recorded_not_dropped() {
-    use std::os::unix::fs::PermissionsExt;
-
     let tmp = tempfile::tempdir().unwrap();
     fixture_copy(tmp.path(), "readable.flac");
     let locked = tmp.path().join("locked");
     std::fs::create_dir(&locked).unwrap();
     fixture_copy(&locked, "unreachable.flac");
 
-    let mut perms = std::fs::metadata(&locked).unwrap().permissions();
-    perms.set_mode(0o000);
-    std::fs::set_permissions(&locked, perms).unwrap();
-
-    if std::fs::read_dir(&locked).is_ok() {
-        // Permissions did not actually block reads (e.g. running as root).
-        let mut restore = std::fs::metadata(&locked).unwrap().permissions();
-        restore.set_mode(0o755);
-        std::fs::set_permissions(&locked, restore).unwrap();
-        eprintln!(
-            "skipping traversal_error_in_unreadable_dir_is_recorded_not_dropped: \
-             directory permissions are not enforced in this environment"
-        );
-        return;
-    }
-
     let conn = crate::db::Db::open_in_memory().unwrap();
 
-    let scan_result = scan_folder(&conn, tmp.path());
-
-    // Always restore permissions before asserting, so tempdir cleanup succeeds
-    // even if the assertions below fail.
-    let mut restore = std::fs::metadata(&locked).unwrap().permissions();
-    restore.set_mode(0o755);
-    std::fs::set_permissions(&locked, restore).unwrap();
+    let scan_result = scan_folder_with_source(
+        &super::unreadable_dir_tests::UnreadableDirectorySource::new(&locked),
+        &conn,
+        tmp.path(),
+    );
 
     let report = completed(scan_result.unwrap());
     assert!(report.errors >= 1, "expected traversal error to be counted");

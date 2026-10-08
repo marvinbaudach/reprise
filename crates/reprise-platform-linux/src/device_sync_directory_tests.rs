@@ -1,19 +1,17 @@
 use std::fs;
-use std::os::unix::fs::{MetadataExt, PermissionsExt};
 
+use super::directories::refused::refuse;
 use super::*;
 
 #[test]
 fn managed_write_names_destination_directory_creation_failures() {
     let (temp, storage) = fixture();
-    if fs::metadata(temp.path()).unwrap().uid() == 0 {
-        eprintln!("skipped permission-based test under a root test runner");
-        return;
-    }
+    // A regular file where the managed folder should be: creating anything
+    // beneath it fails with "not a directory" for every user, root included.
     let managed_root = temp.path().join("Music/Reprise");
-    fs::create_dir_all(&managed_root).unwrap();
+    fs::create_dir_all(managed_root.parent().unwrap()).unwrap();
+    fs::write(&managed_root, b"not a folder").unwrap();
     fs::write(temp.path().join("source.flac"), b"audio").unwrap();
-    fs::set_permissions(&managed_root, fs::Permissions::from_mode(0o500)).unwrap();
 
     let result = run(storage.replace_managed(
         None,
@@ -25,7 +23,6 @@ fn managed_write_names_destination_directory_creation_failures() {
         |_, _| {},
     ));
 
-    fs::set_permissions(&managed_root, fs::Permissions::from_mode(0o700)).unwrap();
     assert!(matches!(
         &result,
         Err(DeviceIoError::DuringWrite {
@@ -42,15 +39,11 @@ fn managed_write_names_destination_directory_creation_failures() {
 #[test]
 fn managed_write_adopts_a_resident_directory_that_only_differs_in_case() {
     let (temp, storage) = fixture();
-    if fs::metadata(temp.path()).unwrap().uid() == 0 {
-        eprintln!("skipped permission-based test under a root test runner");
-        return;
-    }
     let artist = temp.path().join("Music/Reprise/Emmure");
     let resident = artist.join("Speaker Of The Dead");
     fs::create_dir_all(&resident).unwrap();
     fs::write(temp.path().join("source.flac"), b"audio").unwrap();
-    fs::set_permissions(&artist, fs::Permissions::from_mode(0o500)).unwrap();
+    let _refusal = refuse(artist.join("Speaker of the Dead"));
 
     let outcome = run(storage.replace_managed(
         None,
@@ -62,7 +55,6 @@ fn managed_write_adopts_a_resident_directory_that_only_differs_in_case() {
         |_, _| {},
     ));
 
-    fs::set_permissions(&artist, fs::Permissions::from_mode(0o700)).unwrap();
     assert_eq!(
         outcome.unwrap(),
         CopyOutcome::Copied {
@@ -76,15 +68,11 @@ fn managed_write_adopts_a_resident_directory_that_only_differs_in_case() {
 #[test]
 fn managed_write_refuses_to_choose_between_two_fold_equal_directories() {
     let (temp, storage) = fixture();
-    if fs::metadata(temp.path()).unwrap().uid() == 0 {
-        eprintln!("skipped permission-based test under a root test runner");
-        return;
-    }
     let artist = temp.path().join("Music/Reprise/Emmure");
     fs::create_dir_all(artist.join("Speaker Of The Dead")).unwrap();
     fs::create_dir_all(artist.join("SPEAKER OF THE DEAD")).unwrap();
     fs::write(temp.path().join("source.flac"), b"audio").unwrap();
-    fs::set_permissions(&artist, fs::Permissions::from_mode(0o500)).unwrap();
+    let _refusal = refuse(artist.join("Speaker of the Dead"));
 
     let (result, warnings) = capture_warnings(|| {
         run(storage.replace_managed(
@@ -98,7 +86,6 @@ fn managed_write_refuses_to_choose_between_two_fold_equal_directories() {
         ))
     });
 
-    fs::set_permissions(&artist, fs::Permissions::from_mode(0o700)).unwrap();
     assert!(matches!(
         result,
         Err(DeviceIoError::DuringWrite {
@@ -123,19 +110,14 @@ fn managed_write_refuses_to_choose_between_two_fold_equal_directories() {
 #[test]
 fn playlist_write_follows_the_resident_spelling_of_its_target_folder() {
     let (temp, storage) = fixture();
-    if fs::metadata(temp.path()).unwrap().uid() == 0 {
-        eprintln!("skipped permission-based test under a root test runner");
-        return;
-    }
     let music = temp.path().join("Music");
     let resident = music.join("REPRISE");
     fs::create_dir_all(&resident).unwrap();
-    fs::set_permissions(&music, fs::Permissions::from_mode(0o500)).unwrap();
+    let _refusal = refuse(music.join("Reprise"));
 
     let result =
         run(storage.replace_playlist(None, "/Music/Reprise", "Road", b"#EXTM3U\n".to_vec()));
 
-    fs::set_permissions(&music, fs::Permissions::from_mode(0o700)).unwrap();
     result.unwrap();
     assert_eq!(
         fs::read_to_string(resident.join("Road.m3u8")).unwrap(),
@@ -179,14 +161,10 @@ fn pre_cancelled_copy_stops_before_touching_the_existing_target() {
 #[test]
 fn cancelled_directory_creation_returns_before_the_retry_delay() {
     let (temp, storage) = fixture();
-    if fs::metadata(temp.path()).unwrap().uid() == 0 {
-        eprintln!("skipped permission-based test under a root test runner");
-        return;
-    }
     let managed_root = temp.path().join("Music/Reprise");
     fs::create_dir_all(&managed_root).unwrap();
     fs::write(temp.path().join("source.flac"), b"audio").unwrap();
-    fs::set_permissions(&managed_root, fs::Permissions::from_mode(0o500)).unwrap();
+    let _refusal = refuse(managed_root.join("Blocked"));
     let cancellable = gio::Cancellable::new();
     cancellable.cancel();
     let started = std::time::Instant::now();
@@ -202,7 +180,6 @@ fn cancelled_directory_creation_returns_before_the_retry_delay() {
     ));
 
     let elapsed = started.elapsed();
-    fs::set_permissions(&managed_root, fs::Permissions::from_mode(0o700)).unwrap();
     assert!(matches!(
         &result,
         Err(DeviceIoError::DuringWrite {
