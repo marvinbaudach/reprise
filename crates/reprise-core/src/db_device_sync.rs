@@ -114,7 +114,7 @@ pub(crate) fn migrate_v36(conn: &Connection) -> Result<(), rusqlite::Error> {
     }
     let has_mp3_quality = has_column(conn, "device_settings", "mp3_quality")?;
     let has_explicit_inventory = has_column(conn, "device_files", "profile_fingerprint")?;
-    let transaction = conn.unchecked_transaction()?;
+    let transaction = crate::db_migrations::begin_step(conn)?;
     if !has_mp3_quality {
         transaction.execute_batch(ADD_MP3_QUALITY)?;
     }
@@ -133,7 +133,7 @@ pub(crate) fn migrate_v37(conn: &Connection) -> Result<(), rusqlite::Error> {
         return Ok(());
     }
     let has_transfer_profile = has_column(conn, "device_settings", "transfer_profile")?;
-    let transaction = conn.unchecked_transaction()?;
+    let transaction = crate::db_migrations::begin_step(conn)?;
     if !has_transfer_profile {
         transaction.execute_batch(ADD_TRANSFER_PROFILE)?;
         transaction.execute_batch(PRESERVE_EXISTING_MP3_BEHAVIOR)?;
@@ -148,7 +148,7 @@ pub(crate) fn migrate_v38(conn: &Connection) -> Result<(), rusqlite::Error> {
     if version >= 38 && has_last_sync {
         return Ok(());
     }
-    let transaction = conn.unchecked_transaction()?;
+    let transaction = crate::db_migrations::begin_step(conn)?;
     if !has_last_sync {
         transaction.execute_batch(ADD_PLAYLIST_LAST_SYNC)?;
     }
@@ -161,7 +161,7 @@ pub(crate) fn migrate_v42(conn: &Connection) -> Result<(), rusqlite::Error> {
     if version >= 42 {
         return Ok(());
     }
-    let transaction = conn.unchecked_transaction()?;
+    let transaction = crate::db_migrations::begin_step(conn)?;
     transaction.execute_batch(CREATE_DEVICE_SYNC_TARGETS)?;
     transaction.pragma_update(None, "user_version", 42)?;
     transaction.commit()
@@ -186,7 +186,7 @@ pub(crate) fn migrate_v44(conn: &Connection) -> Result<(), rusqlite::Error> {
     if version >= 44 && has_sync_automatically {
         return Ok(());
     }
-    let transaction = conn.unchecked_transaction()?;
+    let transaction = crate::db_migrations::begin_step(conn)?;
     if !has_sync_automatically {
         transaction.execute_batch(ADD_SYNC_AUTOMATICALLY)?;
     }
@@ -213,7 +213,7 @@ pub(crate) fn migrate_v46(conn: &Connection) -> Result<(), rusqlite::Error> {
     if version >= 46 && has_prepare_before_sync {
         return Ok(());
     }
-    let transaction = conn.unchecked_transaction()?;
+    let transaction = crate::db_migrations::begin_step(conn)?;
     if !has_prepare_before_sync {
         transaction.execute_batch(ADD_PREPARE_BEFORE_SYNC)?;
     }
@@ -257,7 +257,7 @@ pub(crate) fn migrate_v68(conn: &Connection) -> Result<(), rusqlite::Error> {
     let repairing_earlier_v68 = version >= 68 && !target_has_kind && !legacy_notice_exists;
     let inventory_has_path = has_column(conn, "device_files", "device_path")?;
     let episodes_have_wanted = has_column(conn, "podcast_episodes", "wanted_on_device")?;
-    let transaction = conn.unchecked_transaction()?;
+    let transaction = crate::db_migrations::begin_step(conn)?;
     transaction.execute_batch(
         "CREATE TABLE IF NOT EXISTS device_sync_legacy_notices (
            device_serial TEXT PRIMARY KEY,
@@ -345,7 +345,7 @@ pub(crate) fn migrate_v87(conn: &Connection) -> Result<(), rusqlite::Error> {
         return Ok(());
     }
     let has_sync_automatically = has_column(conn, "device_settings", "sync_automatically")?;
-    let transaction = conn.unchecked_transaction()?;
+    let transaction = crate::db_migrations::begin_step(conn)?;
     if has_sync_automatically {
         transaction.execute("UPDATE device_settings SET sync_automatically = 0", [])?;
     }

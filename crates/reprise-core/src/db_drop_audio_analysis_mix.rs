@@ -22,7 +22,7 @@ pub(crate) fn migrate_v27(conn: &Connection) -> Result<(), rusqlite::Error> {
     if version >= 27 {
         return Ok(());
     }
-    let transaction = conn.unchecked_transaction()?;
+    let transaction = crate::db_migrations::begin_step(conn)?;
     transaction.execute_batch(SCHEMA_V27)?;
     transaction.pragma_update(None, "user_version", 27)?;
     transaction.commit()

@@ -4,20 +4,26 @@
 //! cleanly, which could not be read (`poison_walk_failure`,
 //! `evidence_after_walk`). Afterwards it concludes: which rows the catalog
 //! still believes present are provably gone (`mark_vanished_with`), which
-//! were misclassified (`reclassify_missing_with`), and whether the root is
+//! were misclassified (`reclassify_missing_with`, both in `scanner_reconcile`),
+//! and whether the root is
 //! trustworthy enough for any of it (`guard_evidence_under_root`,
 //! `any_candidate_confirms_root_with`).
 
 use std::collections::HashSet;
 use std::path::{Path, PathBuf};
 
-use super::{now_unix, ScanError};
-use crate::library::source::{LibraryLinkMode, LibraryPathPresence, LibrarySource};
-use crate::models::MissingReason;
+use super::ScanError;
+use crate::library::source::LibrarySource;
 use crate::queries::PRESENT;
 
 #[cfg(test)]
+use super::reconcile::{mark_vanished_with, reclassify_missing_with};
+#[cfg(test)]
 use super::{scan_folder_with_source, ScanOutcome};
+#[cfg(test)]
+use crate::library::source::{LibraryLinkMode, LibraryPathPresence};
+#[cfg(test)]
+use crate::models::MissingReason;
 
 const MAX_ANCESTOR_CLIMB: usize = 64;
 
@@ -69,7 +75,7 @@ pub(super) fn poison_walk_failure(
 /// then decided by evidence: not in `observed` means the whole subtree from
 /// there down does not exist; an observed child leaves the result uncertain.
 /// Every uncertainty returns `false` and can never license a missing verdict.
-fn absence_confirmed_by_walk(
+pub(super) fn absence_confirmed_by_walk(
     source: &dyn LibrarySource,
     evidence: Option<&WalkEvidence>,
     path: &Path,
@@ -194,7 +200,7 @@ pub(super) fn guard_evidence_under_root(
 /// state. The scan walk has already healed any file that reappeared, so this
 /// list contains only unresolved state that is safe to re-probe after the root
 /// guard confirms the scan location itself is reachable.
-fn reclassification_candidates_under_root(
+pub(super) fn reclassification_candidates_under_root(
     tx: &rusqlite::Transaction,
     root: &Path,
 ) -> Result<Vec<(i64, String, Option<i64>)>, ScanError> {
@@ -227,140 +233,10 @@ pub(super) fn any_candidate_confirms_root_with(
         .any(|(_, _, stored)| matches!((stored, root_token), (Some(stored), Some(current)) if *stored == current))
 }
 
-/// The mark phase itself: for every `candidates` row whose file no longer
-/// exists at its source, sets `missing_since`/`missing_reason` (via
-/// [`LibrarySource::reachability`]) and returns the count newly marked. A row
-/// that's still
-/// present (e.g. the walk's own move-detection just relocated a different
-/// row onto this path, or the file genuinely never left) is left untouched
-/// — this is the same per-row presence check `mark_vanished_under_root` used
-/// before the fold, just running inside the walk's own `tx` now instead of a
-/// separate connection/transaction afterward. Paths already delivered by
-/// the current walk are known present and are skipped without another source
-/// query; only unseen candidates need a probe.
-pub(super) fn mark_vanished_with(
-    source: &dyn LibrarySource,
+pub(super) fn rearm_auto_clean_if_armed(
     tx: &rusqlite::Transaction,
-    root: &Path,
-    candidates: Vec<(i64, String, Option<i64>)>,
-    evidence: Option<&WalkEvidence>,
-) -> Result<u32, ScanError> {
-    let mut marked = 0u32;
-    for (id, path_str, device) in candidates {
-        let path = Path::new(&path_str);
-        if evidence.is_some_and(|evidence| evidence.observed.contains(path)) {
-            continue;
-        }
-        // This write needs confirmed absence. `Present` always keeps the row
-        // live. `Unknown` is not a verdict either, but the walk that just ran
-        // may hold the evidence the source itself could not produce.
-        let verdict = match source.probe(path, LibraryLinkMode::Follow) {
-            LibraryPathPresence::Absent => Some("probe"),
-            LibraryPathPresence::Present(_) => None,
-            LibraryPathPresence::Unknown
-                if absence_confirmed_by_walk(source, evidence, path, root) =>
-            {
-                Some("walk")
-            }
-            LibraryPathPresence::Unknown => None,
-        };
-        let Some(verdict) = verdict else {
-            continue;
-        };
-        let reason = source.reachability(path, device);
-        // `mount_point` is only ever read back for `unmounted` rows (see
-        // `queries::issues`' `query_unavailable_groups`, which binds the
-        // reason). Resolving it costs `mounts::mount_point_of` its own
-        // ancestor walk, on top of the one `reachability` just did, so it is
-        // resolved for the one reason that consumes it and left as-is
-        // otherwise — a `deleted` row keeps whatever the last successful
-        // scan recorded, which no query looks at.
-        if reason == MissingReason::Unmounted {
-            let mount_point = source
-                .mount_point(path)
-                .map(|mount| mount.to_string_lossy().into_owned());
-            tx.execute(
-                "UPDATE tracks SET missing_since = ?2, missing_reason = ?3, mount_point = ?4 \
-                 WHERE id = ?1",
-                rusqlite::params![id, now_unix(), reason.as_str(), mount_point],
-            )?;
-            tracing::info!(
-                path = %path_str,
-                reason = reason.as_str(),
-                mount_point = ?mount_point,
-                verdict,
-                "scan: marked vanished track missing (mount currently absent)"
-            );
-        } else {
-            tx.execute(
-                "UPDATE tracks SET missing_since = ?2, missing_reason = ?3 WHERE id = ?1",
-                rusqlite::params![id, now_unix(), reason.as_str()],
-            )?;
-            tracing::info!(
-                path = %path_str,
-                reason = reason.as_str(),
-                verdict,
-                "scan: marked vanished track missing"
-            );
-        }
-        marked += 1;
-    }
-    Ok(marked)
-}
-
-/// Corrects stale `unmounted`/`unknown` reasons only when current source
-/// evidence positively resolves the still-absent item as [`MissingReason::Deleted`].
-/// `missing_since` is deliberately left untouched because it is the user-facing
-/// first-absence time. If auto-clean was already armed, its global lower-bound
-/// clock is advanced to `now`, giving every corrected row the full configured
-/// grace period without changing that display timestamp.
-///
-/// That advance is what makes this function a *frequent* writer of
-/// `auto_clean_armed_at`, where before it moved only on a rare user action.
-/// `maintenance::remove_auto_clean_eligible_tracks` re-checks the deadline at
-/// delete time for exactly that reason — see its guard.
-pub(super) fn reclassify_missing_with(
-    source: &dyn LibrarySource,
-    tx: &rusqlite::Transaction,
-    root: &Path,
-    evidence: Option<&WalkEvidence>,
     now: i64,
-) -> Result<u32, ScanError> {
-    let candidates = reclassification_candidates_under_root(tx, root)?;
-    let mut corrected = 0u32;
-    for (id, path_str, device) in candidates {
-        let path = Path::new(&path_str);
-        let absent = match source.probe(path, LibraryLinkMode::Follow) {
-            LibraryPathPresence::Absent => true,
-            LibraryPathPresence::Present(_) => false,
-            LibraryPathPresence::Unknown => absence_confirmed_by_walk(source, evidence, path, root),
-        };
-        if !absent {
-            continue;
-        }
-        if source.reachability(path, device) != MissingReason::Deleted {
-            continue;
-        }
-        // No `mount_point` write here: this path only ever lands on
-        // `deleted`, and that column is read back exclusively for
-        // `unmounted` rows. Resolving it would buy a second ancestor walk
-        // per corrected row for a value nothing queries.
-        let changed = tx.execute(
-            "UPDATE tracks SET missing_reason = 'deleted' \
-             WHERE id = ?1 AND missing_since IS NOT NULL AND removed_at IS NULL AND \
-             (missing_reason IS NULL OR missing_reason <> 'deleted')",
-            rusqlite::params![id],
-        )?;
-        corrected = corrected.saturating_add(changed as u32);
-    }
-
-    if corrected > 0 {
-        rearm_auto_clean_if_armed(tx, now)?;
-    }
-    Ok(corrected)
-}
-
-fn rearm_auto_clean_if_armed(tx: &rusqlite::Transaction, now: i64) -> Result<(), rusqlite::Error> {
+) -> Result<(), rusqlite::Error> {
     // Goes through `settings`' own accessors rather than re-deriving "read
     // the key, parse it as i64" from the raw primitives: the parse fallback
     // is a decision (a corrupt value means "inert", not "armed at 0"), and

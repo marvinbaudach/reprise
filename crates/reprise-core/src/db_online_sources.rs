@@ -14,7 +14,7 @@ pub(crate) fn migrate_v50(
     if version >= 50 {
         return Ok(());
     }
-    let transaction = conn.unchecked_transaction()?;
+    let transaction = crate::db_migrations::begin_step(conn)?;
     crate::db_grandfather::grandfather_online_sources_gate(
         &transaction,
         existing_database,

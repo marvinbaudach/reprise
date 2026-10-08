@@ -35,7 +35,7 @@ pub(crate) fn migrate_v56(conn: &Connection) -> Result<(), rusqlite::Error> {
     if version >= 56 {
         return Ok(());
     }
-    let transaction = conn.unchecked_transaction()?;
+    let transaction = crate::db_migrations::begin_step(conn)?;
     if column_exists(&transaction, "new_releases", "fallback_accent")? {
         transaction.execute_batch("ALTER TABLE new_releases DROP COLUMN fallback_accent;")?;
     }

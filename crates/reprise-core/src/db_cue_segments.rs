@@ -108,7 +108,7 @@ pub(crate) fn migrate_v90(conn: &Connection) -> Result<(), rusqlite::Error> {
     // the copy lists only the columns the old table had and would drop every
     // segment on the way.
     if has_column(conn, "tracks", "segment_index")? {
-        let transaction = conn.unchecked_transaction()?;
+        let transaction = crate::db_migrations::begin_step(conn)?;
         if !has_column(&transaction, "library_exclusions", "segment_index")? {
             transaction.execute_batch(REBUILD_EXCLUSIONS)?;
         }
@@ -147,7 +147,7 @@ fn has_column(conn: &Connection, table: &str, column: &str) -> Result<bool, rusq
 }
 
 fn rebuild(conn: &Connection) -> Result<(), rusqlite::Error> {
-    let transaction = conn.unchecked_transaction()?;
+    let transaction = crate::db_migrations::begin_step(conn)?;
     let dangling_before = dangling_references(&transaction)?;
     let replay = schema_to_replay(&transaction)?;
     transaction.execute_batch(CREATE_TRACKS)?;

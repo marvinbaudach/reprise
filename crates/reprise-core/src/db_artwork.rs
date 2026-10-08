@@ -8,7 +8,7 @@ pub(crate) fn migrate_v71(conn: &Connection) -> Result<(), rusqlite::Error> {
         return Ok(());
     }
 
-    let transaction = conn.unchecked_transaction()?;
+    let transaction = crate::db_migrations::begin_step(conn)?;
     inherit_artwork_consent(&transaction)?;
     transaction.pragma_update(None, "user_version", 71)?;
     transaction.commit()
@@ -23,7 +23,7 @@ pub(crate) fn migrate_v72(conn: &Connection) -> Result<(), rusqlite::Error> {
         return Ok(());
     }
 
-    let transaction = conn.unchecked_transaction()?;
+    let transaction = crate::db_migrations::begin_step(conn)?;
     inherit_artwork_consent(&transaction)?;
     transaction.pragma_update(None, "user_version", 72)?;
     transaction.commit()

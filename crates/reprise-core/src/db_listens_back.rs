@@ -28,7 +28,7 @@ pub(crate) fn migrate_v63(conn: &Connection) -> Result<(), rusqlite::Error> {
         [],
         |row| row.get::<_, bool>(0),
     )?;
-    let transaction = conn.unchecked_transaction()?;
+    let transaction = crate::db_migrations::begin_step(conn)?;
     if !has_rated_at {
         transaction.execute(ADD_RATED_AT, [])?;
     }
@@ -45,7 +45,7 @@ pub(crate) fn migrate_v65(conn: &Connection) -> Result<(), rusqlite::Error> {
     let has_ratings_back = has_column(conn, "device_settings", "ratings_back")?;
     let has_listens_applied = has_column(conn, "sync_runs", "listens_applied")?;
     let has_ratings_applied = has_column(conn, "sync_runs", "ratings_applied")?;
-    let transaction = conn.unchecked_transaction()?;
+    let transaction = crate::db_migrations::begin_step(conn)?;
     if has_ratings_back {
         transaction.execute(DROP_RATINGS_BACK, [])?;
     }

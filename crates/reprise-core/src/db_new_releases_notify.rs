@@ -8,7 +8,7 @@ pub(crate) fn migrate_v74(conn: &Connection) -> Result<(), rusqlite::Error> {
         return Ok(());
     }
 
-    let transaction = conn.unchecked_transaction()?;
+    let transaction = crate::db_migrations::begin_step(conn)?;
     transaction.execute_batch(
         "ALTER TABLE new_releases
          ADD COLUMN notified_released_at INTEGER;",

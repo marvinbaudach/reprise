@@ -7,7 +7,7 @@ pub(crate) fn migrate_v85(conn: &Connection) -> Result<(), rusqlite::Error> {
     if version >= 85 {
         return Ok(());
     }
-    let transaction = conn.unchecked_transaction()?;
+    let transaction = crate::db_migrations::begin_step(conn)?;
     transaction.execute_batch(
         r#"
 UPDATE smart_playlists

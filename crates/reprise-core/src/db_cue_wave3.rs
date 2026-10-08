@@ -76,7 +76,7 @@ pub(crate) fn migrate_v91(conn: &Connection) -> Result<(), rusqlite::Error> {
     if version >= VERSION {
         return Ok(());
     }
-    let transaction = conn.unchecked_transaction()?;
+    let transaction = crate::db_migrations::begin_step(conn)?;
     // A version wound back over this schema (the repair path, and the tests
     // that rewind) already has the columns, and SQLite has no
     // `ADD COLUMN IF NOT EXISTS`.

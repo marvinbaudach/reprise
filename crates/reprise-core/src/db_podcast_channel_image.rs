@@ -21,7 +21,7 @@ pub(crate) fn migrate_v77(conn: &Connection) -> Result<(), rusqlite::Error> {
         return Ok(());
     }
 
-    let transaction = conn.unchecked_transaction()?;
+    let transaction = crate::db_migrations::begin_step(conn)?;
     transaction.execute(
         "UPDATE podcast_subscriptions
             SET image_url = NULL,

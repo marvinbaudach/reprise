@@ -27,7 +27,7 @@ CREATE INDEX IF NOT EXISTS idx_mix_drafts_expiry ON mix_drafts(status, expires_a
 pub(crate) fn migrate_v23(conn: &Connection) -> Result<(), rusqlite::Error> {
     let version: i64 = conn.query_row("PRAGMA user_version", [], |row| row.get(0))?;
     if version < 23 {
-        let tx = conn.unchecked_transaction()?;
+        let tx = crate::db_migrations::begin_step(conn)?;
         tx.execute_batch(SCHEMA_V23)?;
         tx.pragma_update(None, "user_version", 23)?;
         tx.commit()?;

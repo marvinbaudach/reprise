@@ -12,7 +12,7 @@ pub(crate) fn migrate_v53(conn: &Connection) -> Result<(), rusqlite::Error> {
     if version >= 53 {
         return Ok(());
     }
-    let transaction = conn.unchecked_transaction()?;
+    let transaction = crate::db_migrations::begin_step(conn)?;
     // `.ok()` here would have treated a genuine read failure exactly like "the
     // key is absent" while the unconditional DELETE below ran either way — a
     // stored value could be destroyed without ever having been looked at, with

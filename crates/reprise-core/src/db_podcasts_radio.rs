@@ -99,7 +99,7 @@ pub(crate) fn migrate_v32(conn: &Connection) -> Result<(), rusqlite::Error> {
     if version >= 32 {
         return Ok(());
     }
-    let transaction = conn.unchecked_transaction()?;
+    let transaction = crate::db_migrations::begin_step(conn)?;
     transaction.execute_batch(SCHEMA_V32)?;
     transaction.pragma_update(None, "user_version", 32)?;
     transaction.commit()
@@ -110,7 +110,7 @@ pub(crate) fn migrate_v33(conn: &Connection) -> Result<(), rusqlite::Error> {
     if version >= 33 {
         return Ok(());
     }
-    let transaction = conn.unchecked_transaction()?;
+    let transaction = crate::db_migrations::begin_step(conn)?;
     transaction.execute_batch(SCHEMA_V33)?;
     transaction.pragma_update(None, "user_version", 33)?;
     transaction.commit()
@@ -136,7 +136,7 @@ pub(crate) fn migrate_v34(conn: &Connection) -> Result<(), rusqlite::Error> {
     if version >= 34 && has_removed_at && has_dismissals {
         return Ok(());
     }
-    let transaction = conn.unchecked_transaction()?;
+    let transaction = crate::db_migrations::begin_step(conn)?;
     if !has_removed_at {
         transaction.execute(
             "ALTER TABLE podcast_episodes ADD COLUMN removed_at INTEGER",
@@ -169,7 +169,7 @@ pub(crate) fn migrate_v40(conn: &Connection) -> Result<(), rusqlite::Error> {
     if version >= 40 && (has_sync_to_phone || !wants_sync_to_phone) && has_downloaded_bytes {
         return Ok(());
     }
-    let transaction = conn.unchecked_transaction()?;
+    let transaction = crate::db_migrations::begin_step(conn)?;
     if !has_sync_to_phone && wants_sync_to_phone {
         transaction.execute(
             "ALTER TABLE podcast_subscriptions
@@ -192,7 +192,7 @@ pub(crate) fn migrate_v41(conn: &Connection) -> Result<(), rusqlite::Error> {
     if version >= 41 {
         return Ok(());
     }
-    let transaction = conn.unchecked_transaction()?;
+    let transaction = crate::db_migrations::begin_step(conn)?;
     transaction.execute_batch(SCHEMA_V41)?;
     transaction.pragma_update(None, "user_version", 41)?;
     transaction.commit()
@@ -210,7 +210,7 @@ pub(crate) fn migrate_v43(conn: &Connection) -> Result<(), rusqlite::Error> {
     if version >= 43 && has_wanted {
         return Ok(());
     }
-    let transaction = conn.unchecked_transaction()?;
+    let transaction = crate::db_migrations::begin_step(conn)?;
     if !has_wanted {
         transaction.execute(
             "ALTER TABLE podcast_episodes
@@ -241,7 +241,7 @@ pub(crate) fn migrate_v47(conn: &Connection) -> Result<(), rusqlite::Error> {
     if version >= 47 && has_latest_per_channel {
         return Ok(());
     }
-    let transaction = conn.unchecked_transaction()?;
+    let transaction = crate::db_migrations::begin_step(conn)?;
     if !has_latest_per_channel {
         transaction.execute(
             "ALTER TABLE podcast_subscriptions ADD COLUMN latest_per_channel INTEGER",
@@ -264,7 +264,7 @@ pub(crate) fn migrate_v48(conn: &Connection) -> Result<(), rusqlite::Error> {
     if version >= 48 && has_keep_downloaded {
         return Ok(());
     }
-    let transaction = conn.unchecked_transaction()?;
+    let transaction = crate::db_migrations::begin_step(conn)?;
     if !has_keep_downloaded {
         transaction.execute(
             "ALTER TABLE podcast_subscriptions ADD COLUMN keep_downloaded INTEGER",
@@ -281,7 +281,7 @@ pub(crate) fn migrate_v49(conn: &Connection) -> Result<(), rusqlite::Error> {
     if version >= 49 && has_image_url {
         return Ok(());
     }
-    let transaction = conn.unchecked_transaction()?;
+    let transaction = crate::db_migrations::begin_step(conn)?;
     if !has_image_url {
         transaction.execute("ALTER TABLE podcast_episodes ADD COLUMN image_url TEXT", [])?;
     }
@@ -298,7 +298,7 @@ pub(crate) fn migrate_v51(conn: &Connection) -> Result<(), rusqlite::Error> {
     if version >= 51 {
         return Ok(());
     }
-    let transaction = conn.unchecked_transaction()?;
+    let transaction = crate::db_migrations::begin_step(conn)?;
     transaction.execute(
         "DELETE FROM settings WHERE key = 'podcasts.filter.show'",
         [],
@@ -312,7 +312,7 @@ pub(crate) fn migrate_v52(conn: &Connection) -> Result<(), rusqlite::Error> {
     if version >= 52 {
         return Ok(());
     }
-    let transaction = conn.unchecked_transaction()?;
+    let transaction = crate::db_migrations::begin_step(conn)?;
     transaction.execute(
         "UPDATE podcast_subscriptions
          SET title = author
@@ -332,7 +332,7 @@ pub(crate) fn migrate_v59(conn: &Connection) -> Result<(), rusqlite::Error> {
     if version >= 59 && has_media_category {
         return Ok(());
     }
-    let transaction = conn.unchecked_transaction()?;
+    let transaction = crate::db_migrations::begin_step(conn)?;
     if !has_media_category {
         transaction.execute(
             "ALTER TABLE podcast_episodes ADD COLUMN media_category TEXT",

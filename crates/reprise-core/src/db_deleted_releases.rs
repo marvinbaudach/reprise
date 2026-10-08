@@ -29,7 +29,7 @@ pub(crate) fn migrate_v69(conn: &Connection) -> Result<(), rusqlite::Error> {
         return Ok(());
     }
 
-    let transaction = conn.unchecked_transaction()?;
+    let transaction = crate::db_migrations::begin_step(conn)?;
     transaction.execute_batch(SCHEMA_V69)?;
     transaction.pragma_update(None, "user_version", 69)?;
     transaction.commit()
@@ -43,7 +43,7 @@ pub(crate) fn migrate_v70(conn: &Connection) -> Result<(), rusqlite::Error> {
         return Ok(());
     }
 
-    let transaction = conn.unchecked_transaction()?;
+    let transaction = crate::db_migrations::begin_step(conn)?;
     if !has_memory_owner {
         transaction.execute_batch(SCHEMA_V70)?;
     }

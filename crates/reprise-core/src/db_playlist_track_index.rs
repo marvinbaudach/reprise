@@ -8,7 +8,7 @@ pub(crate) fn migrate_v88(conn: &Connection) -> Result<(), rusqlite::Error> {
     if version >= 88 {
         return Ok(());
     }
-    let transaction = conn.unchecked_transaction()?;
+    let transaction = crate::db_migrations::begin_step(conn)?;
     transaction.execute_batch(
         "CREATE INDEX IF NOT EXISTS idx_playlist_tracks_track
          ON playlist_tracks(track_id);",

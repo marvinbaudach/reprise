@@ -398,11 +398,12 @@ CREATE INDEX idx_track_audio_analysis_status_retry
 ///
 /// Stage-3 close-out fix: each version step's schema changes AND its
 /// `user_version` bump now run inside one transaction
-/// (`Connection::unchecked_transaction` — used rather than `Connection::
-/// transaction`, which needs `&mut Connection`, since this function only
-/// takes `&Connection` and every other caller in this codebase already
-/// treats a freshly-opened `Connection` as single-threaded/not concurrently
-/// borrowed, matching every other `unchecked_*` use's safety precondition).
+/// (`db_migrations::begin_step` — an unchecked IMMEDIATE transaction, used
+/// rather than `Connection::transaction`, which needs `&mut Connection`,
+/// since this function only takes `&Connection`). IMMEDIATE and the stale-read
+/// check in `begin_step` keep two processes that open an un-migrated database
+/// at once from both running the same step: the second finds the first's work
+/// and starts the step over with fresh reads.
 /// Before this fix, `execute_batch(SCHEMA_VN)` and `pragma_update(...,
 /// "user_version", N)` were two separate, non-atomic statements — a crash
 /// (power loss, OOM-kill) between them would commit the schema change but
@@ -420,27 +421,23 @@ pub(crate) fn migrate_baseline(
     cover_cache: &Path,
     portrait_cache: &Path,
 ) -> Result<(), rusqlite::Error> {
-    let version = if existing_database {
-        conn.query_row("PRAGMA user_version", [], |r| r.get(0))?
-    } else {
-        0
-    };
+    let version = crate::db_migrations::user_version_for_step(conn)?;
     if version < 1 {
-        let tx = conn.unchecked_transaction()?;
+        let tx = crate::db_migrations::begin_step(conn)?;
         tx.execute_batch(SCHEMA_V1)?;
         tx.pragma_update(None, "user_version", 1)?;
         tx.commit()?;
     }
-    let version: i64 = conn.query_row("PRAGMA user_version", [], |r| r.get(0))?;
+    let version = crate::db_migrations::user_version_for_step(conn)?;
     if version < 2 {
-        let tx = conn.unchecked_transaction()?;
+        let tx = crate::db_migrations::begin_step(conn)?;
         tx.execute_batch(SCHEMA_V2)?;
         tx.pragma_update(None, "user_version", 2)?;
         tx.commit()?;
     }
-    let version: i64 = conn.query_row("PRAGMA user_version", [], |r| r.get(0))?;
+    let version = crate::db_migrations::user_version_for_step(conn)?;
     if version < 3 {
-        let tx = conn.unchecked_transaction()?;
+        let tx = crate::db_migrations::begin_step(conn)?;
         tx.execute_batch(SCHEMA_V3)?;
         // Seed three default smart playlists (only if none exist — idempotent).
         // This check is defensive-only; it runs exactly once per DB by version gate
@@ -462,86 +459,86 @@ VALUES ('Recently added', '[]', 'added_at', 'desc', 50);
         tx.pragma_update(None, "user_version", 3)?;
         tx.commit()?;
     }
-    let version: i64 = conn.query_row("PRAGMA user_version", [], |r| r.get(0))?;
+    let version = crate::db_migrations::user_version_for_step(conn)?;
     if version < 4 {
-        let tx = conn.unchecked_transaction()?;
+        let tx = crate::db_migrations::begin_step(conn)?;
         tx.execute_batch(SCHEMA_V4)?;
         tx.pragma_update(None, "user_version", 4)?;
         tx.commit()?;
     }
-    let version: i64 = conn.query_row("PRAGMA user_version", [], |r| r.get(0))?;
+    let version = crate::db_migrations::user_version_for_step(conn)?;
     if version < 5 {
-        let tx = conn.unchecked_transaction()?;
+        let tx = crate::db_migrations::begin_step(conn)?;
         tx.execute_batch(SCHEMA_V5)?;
         tx.pragma_update(None, "user_version", 5)?;
         tx.commit()?;
     }
-    let version: i64 = conn.query_row("PRAGMA user_version", [], |r| r.get(0))?;
+    let version = crate::db_migrations::user_version_for_step(conn)?;
     if version < 6 {
-        let tx = conn.unchecked_transaction()?;
+        let tx = crate::db_migrations::begin_step(conn)?;
         tx.execute_batch(SCHEMA_V6)?;
         tx.pragma_update(None, "user_version", 6)?;
         tx.commit()?;
     }
-    let version: i64 = conn.query_row("PRAGMA user_version", [], |r| r.get(0))?;
+    let version = crate::db_migrations::user_version_for_step(conn)?;
     if version < 7 {
-        let tx = conn.unchecked_transaction()?;
+        let tx = crate::db_migrations::begin_step(conn)?;
         tx.execute_batch(SCHEMA_V7)?;
         tx.pragma_update(None, "user_version", 7)?;
         tx.commit()?;
     }
-    let version: i64 = conn.query_row("PRAGMA user_version", [], |r| r.get(0))?;
+    let version = crate::db_migrations::user_version_for_step(conn)?;
     if version < 8 {
-        let tx = conn.unchecked_transaction()?;
+        let tx = crate::db_migrations::begin_step(conn)?;
         tx.execute_batch(SCHEMA_V8)?;
         tx.pragma_update(None, "user_version", 8)?;
         tx.commit()?;
     }
-    let version: i64 = conn.query_row("PRAGMA user_version", [], |r| r.get(0))?;
+    let version = crate::db_migrations::user_version_for_step(conn)?;
     if version < 9 {
-        let tx = conn.unchecked_transaction()?;
+        let tx = crate::db_migrations::begin_step(conn)?;
         tx.execute_batch(SCHEMA_V9)?;
         tx.pragma_update(None, "user_version", 9)?;
         tx.commit()?;
     }
-    let version: i64 = conn.query_row("PRAGMA user_version", [], |r| r.get(0))?;
+    let version = crate::db_migrations::user_version_for_step(conn)?;
     if version < 10 {
-        let tx = conn.unchecked_transaction()?;
+        let tx = crate::db_migrations::begin_step(conn)?;
         tx.execute_batch(SCHEMA_V10)?;
         tx.pragma_update(None, "user_version", 10)?;
         tx.commit()?;
     }
-    let version: i64 = conn.query_row("PRAGMA user_version", [], |r| r.get(0))?;
+    let version = crate::db_migrations::user_version_for_step(conn)?;
     if version < 11 {
-        let tx = conn.unchecked_transaction()?;
+        let tx = crate::db_migrations::begin_step(conn)?;
         tx.execute_batch(SCHEMA_V11)?;
         tx.pragma_update(None, "user_version", 11)?;
         tx.commit()?;
     }
-    let version: i64 = conn.query_row("PRAGMA user_version", [], |r| r.get(0))?;
+    let version = crate::db_migrations::user_version_for_step(conn)?;
     if version < 12 {
-        let tx = conn.unchecked_transaction()?;
+        let tx = crate::db_migrations::begin_step(conn)?;
         tx.execute_batch(SCHEMA_V12)?;
         tx.pragma_update(None, "user_version", 12)?;
         tx.commit()?;
     }
-    let version: i64 = conn.query_row("PRAGMA user_version", [], |r| r.get(0))?;
+    let version = crate::db_migrations::user_version_for_step(conn)?;
     if version < 13 {
-        let tx = conn.unchecked_transaction()?;
+        let tx = crate::db_migrations::begin_step(conn)?;
         tx.execute_batch(SCHEMA_V13)?;
         tx.pragma_update(None, "user_version", 13)?;
         tx.commit()?;
     }
-    let version: i64 = conn.query_row("PRAGMA user_version", [], |r| r.get(0))?;
+    let version = crate::db_migrations::user_version_for_step(conn)?;
     if version < 14 {
-        let tx = conn.unchecked_transaction()?;
+        let tx = crate::db_migrations::begin_step(conn)?;
         tx.execute_batch(SCHEMA_V14)?;
         tx.pragma_update(None, "user_version", 14)?;
         tx.commit()?;
     }
-    let version: i64 = conn.query_row("PRAGMA user_version", [], |r| r.get(0))?;
+    let version = crate::db_migrations::user_version_for_step(conn)?;
     if version < 15 {
-        let tx = conn.unchecked_transaction()?;
+        let tx = crate::db_migrations::begin_step(conn)?;
         tx.execute_batch(SCHEMA_V15)?;
         tx.pragma_update(None, "user_version", 15)?;
         tx.commit()?;
@@ -558,23 +555,23 @@ VALUES ('Recently added', '[]', 'added_at', 'desc', 50);
     // indexes and disc number. Databases stamped by that earlier v13 are
     // repaired by v14's `DROP INDEX IF EXISTS` and reach the grandfathering
     // here, where `INSERT OR IGNORE` leaves their existing module rows alone.
-    let version: i64 = conn.query_row("PRAGMA user_version", [], |r| r.get(0))?;
+    let version = crate::db_migrations::user_version_for_step(conn)?;
     if version < 16 {
-        let tx = conn.unchecked_transaction()?;
+        let tx = crate::db_migrations::begin_step(conn)?;
         grandfather_network_features(&tx, existing_database, cover_cache, portrait_cache)?;
         tx.pragma_update(None, "user_version", 16)?;
         tx.commit()?;
     }
-    let version: i64 = conn.query_row("PRAGMA user_version", [], |r| r.get(0))?;
+    let version = crate::db_migrations::user_version_for_step(conn)?;
     if version < 17 {
-        let tx = conn.unchecked_transaction()?;
+        let tx = crate::db_migrations::begin_step(conn)?;
         tx.execute_batch(SCHEMA_V17)?;
         tx.pragma_update(None, "user_version", 17)?;
         tx.commit()?;
     }
-    let version: i64 = conn.query_row("PRAGMA user_version", [], |r| r.get(0))?;
+    let version = crate::db_migrations::user_version_for_step(conn)?;
     if version < 18 {
-        let tx = conn.unchecked_transaction()?;
+        let tx = crate::db_migrations::begin_step(conn)?;
         tx.execute_batch(SCHEMA_V18)?;
         tx.pragma_update(None, "user_version", 18)?;
         tx.commit()?;
