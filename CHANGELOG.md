@@ -4,7 +4,7 @@ Reprise release notes are curated from the changes that reached the stable
 branch. They describe user-visible changes rather than reproducing commit
 messages.
 
-## [0.1.265] - 2026-10-06
+## [0.1.293] - 2026-10-08
 
 ### Library
 
@@ -21,11 +21,24 @@ messages.
   tracks, removing one track from the library keeps its siblings, opening the
   file or an M3U line that names it adds all of its tracks in play order, and
   each track gets its own waveform, spectrogram and loudness measured from its
-  own stretch of the file. A track cut from a sheet is read-only in the tag
-  editor, and its lyrics come from the online sources and the cache, never
-  from a file beside the album. For now, playing such a track starts at the
-  beginning of its file, and deleting it or syncing it to a phone still acts on
-  the whole file.
+  own stretch of the file. A track cut from a sheet has no tags of its own, so
+  the tag editor leaves it out and says how many tracks it left out, and its
+  lyrics come from the online sources and the cache, never from a file beside
+  the album. Library Doctor does not check such a track. Move to Trash sends a
+  CUE file to the Trash only when every one of its tracks still in the library
+  is selected, and the sheet beside it goes along unless another file still
+  needs it; the selected tracks of a file whose other tracks stay are hidden
+  from the library instead, the confirmation counts both, and a hidden track
+  stays hidden across an edit of its sheet. A sheet that cannot be applied is
+  listed under Issues → Import errors. Device sync copies a CUE file once,
+  converted per the device profile like any file, with a sheet derived for the
+  device beside it; each selected track keeps its own entry, and the file and
+  its sheet leave the device with the last track that needs them. A phone's
+  listens and ratings count for the right track of the file.
+- Statistics and Library Doctor treat titles that differ only in the style of
+  a dash, apostrophe or quotation mark as one. "Guns N' Roses" and "Guns N’
+  Roses", or "Jay-Z" with a typographic hyphen, are no longer counted as two
+  artists, and Library Doctor no longer sets them in separate groups.
 
 ### Playback and presentation
 
@@ -44,8 +57,34 @@ messages.
   and a cold start swelled the whole frame and then dropped. The visualizer now
   measures the new song's level instead of carrying the old one. On the desktop,
   a track change or a seek lets the bars fall from their old heights instead of
-  collapsing. A song that opens with a long quiet intro or a fade-in can still
-  pin the bars after a track change (#1141).
+  collapsing. A song that opens with a long quiet intro or a fade-in no longer
+  pins the bars when its body arrives, and music that drops to digital silence
+  every fraction of a second, such as hard-gated electronic music, no longer
+  keeps the measurement running. A song that gets louder within its first
+  fourteen seconds is drawn a little dimmer for a few seconds instead.
+- A CUE track plays only its own stretch of the audio file. Its elapsed time
+  counts from zero, its duration is its own length, and a seek stays inside it,
+  so the seek bar, the scrobble length, Previous, the sleep timer and the lyrics
+  lookup all measure the track rather than its file. The last track of a file
+  plays to the end of the audio. With the transition set to Gapless or
+  Crossfade, consecutive tracks of one file play on without a gap or a reload,
+  each at its own loudness; any other change into or out of a CUE track is a
+  hard change with no crossfade, and may have a short gap. Starting a CUE track
+  no longer blocks the window while its file loads.
+
+### Browsing
+
+- A click on a column header sorts the music table. The header's click handling
+  was lost when the table was built, so a press did nothing: no sort, no arrow.
+- Back after a Quick Open jump from the Library Doctor returns to the Doctor,
+  where it used to land on the library.
+
+### Accessibility
+
+- Screen readers read the sidebar's section headings and its new-playlist
+  button, the rows of the Add filter and browse choosers, and the items of
+  every popover menu by name. Since GTK 4.18 popover menu items reached screen
+  readers without a name.
 
 ### Session
 
@@ -67,6 +106,27 @@ messages.
   to the next track were seeded far too high, so the whole spectrum jumped,
   sagged and crept back over several seconds. The seed now continues the shape
   on screen.
+- A CUE album plays on the phone track by track. Each track of a synced CUE
+  file is listed, played and analysed as its own stretch of the file: it starts
+  at its own start and ends at its own end, the last one at the end of the
+  audio, and the notification, the lock screen, Android Auto and the widget
+  show that track's own title and artist with the file's cover. One decode of
+  the file measures the seek-bar shape, spectrum and loudness of every track
+  in it, and a file that cannot be measured is remembered and not decoded
+  again until it changes.
+- A track the phone decodes itself fills its seek bar from the left while the
+  decode runs, instead of staying empty until the whole file is done, and a
+  track change stops the outgoing track's decode. Background analysis keeps
+  its running decode through a buffering blip or a pause of up to ten seconds.
+- Next on the last track, with Repeat off or Repeat one, does nothing and the
+  song keeps playing, as Previous does on the first track; the end of the last
+  track still ends playback.
+- In landscape the mini-player and the Now Playing transport clear the
+  navigation bar, so the gesture handle or a three-button bar at the side no
+  longer sits over the controls.
+- The phone's home-screen widgets load in the release build. The code shrinker
+  also stripped the constructor WorkManager uses for every job, so both
+  widgets stayed on their loading layout. One more keep rule restores it.
 - The phone's release build starts again. Since the home-screen widget landed,
   every release build crashed at start, because the code shrinker stripped the
   constructor of WorkManager's database. One keep rule restores it. Debug
