@@ -144,6 +144,26 @@ fn a_carried_gain_far_too_low_rises_to_the_measurement_by_bounded_steps() {
 }
 
 #[test]
+fn ac_29_a_gain_rise_never_draws_past_the_boundary_target() {
+    const BRAKE_TOLERANCE: f32 = 0.03;
+    let needed = measured_gain();
+    let mut smoother = carrying(needed / (CARRY_BAND * 5.0));
+    smoother.seed_shape(&[0.8; 64]);
+
+    gain_after(
+        &mut smoother,
+        STEADY_RAW,
+        FRAMES_BEFORE_THE_WINDOW_IS_FULL + 1,
+    );
+    let height = frame_max(&frame(&mut smoother, STEADY_RAW * 8.0));
+
+    assert!(
+        height <= TARGET_HEIGHT + BRAKE_TOLERANCE,
+        "the post-measurement gain rise overshot the target: {height:.3}"
+    );
+}
+
+#[test]
 fn a_carried_gain_far_too_high_is_replaced_before_the_window_is_full() {
     let needed = measured_gain();
     let mut smoother = carrying(needed * CARRY_BAND * 20.0);

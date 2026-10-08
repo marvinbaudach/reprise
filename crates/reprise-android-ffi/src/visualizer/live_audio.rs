@@ -33,6 +33,15 @@ pub(crate) struct PcmRingBuffer {
     pub(crate) capacity: usize,
 }
 
+pub(crate) struct AnalyzedLiveFrame {
+    pub(crate) frame: SpectrumFrame,
+    pub(crate) pressure: BassPressure,
+    pub(crate) boundary_waiting: bool,
+    pub(crate) signal_present: bool,
+    pub(crate) analyzed_samples: usize,
+    pub(crate) boundary_window_samples: usize,
+}
+
 impl PcmRingBuffer {
     fn new(sample_rate_hz: u32) -> Self {
         let capacity = sample_rate_hz as usize * LIVE_PCM_BUFFER_SECONDS;
@@ -101,10 +110,7 @@ impl LiveAudioState {
         self.pcm_buffer.append(&self.mono_samples);
     }
 
-    pub(crate) fn analyze_elapsed(
-        &mut self,
-        elapsed: Duration,
-    ) -> Option<(SpectrumFrame, BassPressure)> {
+    pub(crate) fn analyze_elapsed(&mut self, elapsed: Duration) -> Option<AnalyzedLiveFrame> {
         let target_samples = samples_for_duration(TARGET_PCM_BUFFER_DURATION, self.sample_rate_hz);
         let fill_samples = self.pcm_buffer.samples.len();
         if fill_samples > target_samples.saturating_mul(2) {
@@ -134,13 +140,18 @@ impl LiveAudioState {
         self.mono_samples.clear();
         self.mono_samples
             .extend(self.pcm_buffer.samples.drain(..consumed_samples));
-        self.processor
+        let signal_present = self
+            .processor
             .process_into(&self.mono_samples, &mut self.bands);
         let pressure = self.pressure_detector.observe(&self.mono_samples);
-        Some((
-            SpectrumFrame::from_cava_bars(self.bands).with_bass_pressure(pressure),
+        Some(AnalyzedLiveFrame {
+            frame: SpectrumFrame::from_cava_bars(self.bands).with_bass_pressure(pressure),
             pressure,
-        ))
+            boundary_waiting: self.processor.is_waiting_for_boundary(),
+            signal_present,
+            analyzed_samples: consumed_samples,
+            boundary_window_samples: self.processor.boundary_window_samples(),
+        })
     }
 
     /// A gap in the same stream (a pause, a buffering stall): the window and the

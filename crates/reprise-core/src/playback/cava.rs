@@ -149,24 +149,26 @@ impl CavaBarProcessor {
     /// Audio-thread integrations can retain this storage between buffers and
     /// avoid allocating one vector for every spectrum frame. Input larger than
     /// one FFT window is processed oldest-first in consecutive FFT-sized hops;
-    /// the final hop determines the returned bars.
-    pub fn process_into(&mut self, mono_samples: &[f32], bars: &mut [f32]) {
+    /// the final hop determines the returned bars. Returns whether any input
+    /// sample exceeded the processor's silence threshold.
+    pub fn process_into(&mut self, mono_samples: &[f32], bars: &mut [f32]) -> bool {
         assert_eq!(
             bars.len(),
             self.config.bar_count,
             "CAVA output must match its configured bar count"
         );
         if mono_samples.is_empty() {
-            self.process_chunk_into(mono_samples, bars);
-            return;
+            return self.process_chunk_into(mono_samples, bars);
         }
         let hop_size = self.main_fft.len();
+        let mut signal_present = false;
         for chunk in mono_samples.chunks(hop_size) {
-            self.process_chunk_into(chunk, bars);
+            signal_present |= self.process_chunk_into(chunk, bars);
         }
+        signal_present
     }
 
-    fn process_chunk_into(&mut self, mono_samples: &[f32], bars: &mut [f32]) {
+    fn process_chunk_into(&mut self, mono_samples: &[f32], bars: &mut [f32]) -> bool {
         let signal_present = self.push_samples(mono_samples);
         self.main_fft
             .process(&self.input_buffer[..self.main_fft.len()]);
@@ -191,6 +193,7 @@ impl CavaBarProcessor {
             self.config.sample_rate_hz,
             signal_present,
         );
+        signal_present
     }
 
     /// Clears buffered audio and the whole smoothing history: a hard restart
@@ -231,17 +234,31 @@ impl CavaBarProcessor {
     }
 
     /// Seeds the smoother with a shape already on screen — another
-    /// processor's last output — so the next frame continues it, without
-    /// touching the FFT input buffer or the pending sensitivity estimate. Used
-    /// to hand a freshly constructed processor a starting shape before its
-    /// first real audio block arrives, so its first frames fall from that
-    /// shape instead of climbing from zero.
+    /// processor's last output — so the next frame continues it. Arms a
+    /// carried-shape boundary estimate without touching the FFT input buffer:
+    /// the display can hold this shape until the new stream's first complete
+    /// window decides its gain. Used to hand a freshly constructed processor a
+    /// starting shape before its first real audio block arrives.
     ///
     /// "Continues" has one exception: while the boundary estimate is pending,
     /// a frame the held gain would draw as a wall is scaled down. A seed alone
     /// never is. See `Smoother::seed_shape`.
     pub fn seed_shape(&mut self, bars: &[f32]) {
+        self.smoother.rearm_boundary();
         self.smoother.seed_shape(bars);
+    }
+
+    /// Whether a carried shape is waiting for the new stream's first complete
+    /// level measurement.
+    #[doc(hidden)]
+    pub fn is_waiting_for_boundary(&self) -> bool {
+        self.smoother.is_waiting_for_boundary()
+    }
+
+    /// Number of analyzed stream samples in one boundary measurement window.
+    #[doc(hidden)]
+    pub fn boundary_window_samples(&self) -> usize {
+        self.input_buffer.len()
     }
 
     /// The smoother's gain, for tests that compare it with `cavacore`'s or watch

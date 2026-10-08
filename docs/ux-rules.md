@@ -5027,7 +5027,22 @@ STYLE-1).
 
   **Swipes on the phone.** On the phone, a swipe to another song hands the new
   song's bars the outgoing song's last live shape, never an already decayed
-  one.
+  one. A neighbour card shows that live shape while it is dragged and while it
+  settles. From release until the new song's bars take over, the shape never
+  dips below the new song's own level and never overshoots; the peak caps
+  follow the handover instead of remaining above its moving bars. *Amended
+  2026-10-08 (#1197): the swipe is one continuous handover rather than a
+  stored-frame preview followed by a gain correction. Tests:
+  `ac_29_a_stream_reset_before_the_track_flip_holds_the_last_live_shape`,
+  `ac_29_a_gain_rise_never_draws_past_the_boundary_target`,
+  `ac_29_a_adopted_shape_holds_until_the_quiet_stream_decides_its_level`,
+  `ac_29_a_short_silent_lead_in_keeps_the_adopted_shape_until_the_quiet_stream_decides`,
+  `ac_29_a_signal_blip_then_silence_releases_the_adopted_shape_within_one_window`,
+  `ac_29_a_short_silent_gap_after_signal_keeps_the_adopted_shape`,
+  `ac_29_silent_lead_in_releases_the_adopted_shape_within_one_boundary_window`,
+  `ac_29_handover_caps_stay_within_one_segment_of_the_morph`,
+  `ac_29_handover_caps_follow_a_real_gravity_fall_until_it_settles`, and
+  `normal_playback_caps_still_fall_by_peak_decay`.*
 
 - **AC-24** [active] [gtk] — The reactive light lives on the panel's blurred
   cover bloom, the cover in the player bar and the playhead, nowhere else; the

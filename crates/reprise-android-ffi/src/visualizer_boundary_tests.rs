@@ -113,6 +113,19 @@ impl Phone {
         seconds: f32,
         render: impl Fn(usize, usize) -> Vec<u8>,
     ) -> Vec<Frame> {
+        self.play_with_boundary_state(rate_hz, from_seconds, seconds, render)
+            .into_iter()
+            .map(|(frame, _)| frame)
+            .collect()
+    }
+
+    fn play_with_boundary_state(
+        &mut self,
+        rate_hz: u32,
+        from_seconds: f32,
+        seconds: f32,
+        render: impl Fn(usize, usize) -> Vec<u8>,
+    ) -> Vec<(Frame, bool)> {
         let rate = rate_hz as usize;
         let mut position = (from_seconds * rate as f32) as usize;
         let end = position + (seconds * rate as f32) as usize;
@@ -131,10 +144,33 @@ impl Phone {
                 next_burst += Duration::from_secs_f32((BURST_PERIOD_MS as f32 + wobble) / 1_000.0);
             }
             if let Some(frame) = self.tick_at(vsync) {
-                frames.push(frame);
+                let waiting = self
+                    .engine
+                    .live_boundary_for_testing()
+                    .is_some_and(|(waiting, _)| waiting);
+                frames.push((frame, waiting));
             }
         }
         frames
+    }
+
+    fn play_handover(
+        &mut self,
+        music: &SyntheticMusic,
+        from_seconds: f32,
+        seconds: f32,
+    ) -> HandoverRun {
+        let states = self.play_with_boundary_state(
+            music.rate_hz(),
+            from_seconds,
+            seconds,
+            |start, frames| music.stereo_i16_bytes(start, frames),
+        );
+        let held_frames = states.iter().take_while(|(_, waiting)| *waiting).count();
+        HandoverRun {
+            frames: states.into_iter().map(|(frame, _)| frame).collect(),
+            held_frames,
+        }
     }
 
     /// Vsyncs with no PCM arriving, as while paused.
@@ -253,6 +289,32 @@ fn after_track_change_at(
     next: &SyntheticMusic,
     offset_seconds: f32,
 ) -> Vec<Frame> {
+    after_track_change_at_with_hold(
+        previous,
+        previous_until_seconds,
+        next,
+        offset_seconds,
+    )
+    .frames
+}
+
+struct HandoverRun {
+    frames: Vec<Frame>,
+    held_frames: usize,
+}
+
+impl HandoverRun {
+    fn released(&self) -> &[Frame] {
+        &self.frames[self.held_frames..]
+    }
+}
+
+fn after_track_change_at_with_hold(
+    previous: &SyntheticMusic,
+    previous_until_seconds: f32,
+    next: &SyntheticMusic,
+    offset_seconds: f32,
+) -> HandoverRun {
     let mut phone = Phone::new();
     phone.play(
         previous,
@@ -260,9 +322,9 @@ fn after_track_change_at(
         WARM_SECONDS,
     );
     phone.change_track();
-    let frames = phone.play(next, boundary_at(offset_seconds), RECORDED_SECONDS);
-    assert!(frames.len() >= RECORDED_FRAMES);
-    frames
+    let run = phone.play_handover(next, boundary_at(offset_seconds), RECORDED_SECONDS);
+    assert!(run.frames.len() >= RECORDED_FRAMES);
+    run
 }
 
 fn after_track_change(
@@ -271,6 +333,14 @@ fn after_track_change(
     offset_seconds: f32,
 ) -> Vec<Frame> {
     after_track_change_at(previous, WARM_SECONDS, next, offset_seconds)
+}
+
+fn after_track_change_with_hold(
+    previous: &SyntheticMusic,
+    next: &SyntheticMusic,
+    offset_seconds: f32,
+) -> HandoverRun {
+    after_track_change_at_with_hold(previous, WARM_SECONDS, next, offset_seconds)
 }
 
 #[test]
@@ -324,12 +394,13 @@ fn ac_29_a_swiped_to_song_3_to_6_db_quieter_stays_above_the_dead_zone_floor() {
 #[test]
 fn ac_29_a_swiped_to_song_14_db_louder_does_not_hit_the_ceiling() {
     for offset in BOUNDARY_OFFSETS_SECONDS {
-        let frames = after_track_change(&quiet(), &loud(), offset);
+        let run = after_track_change_with_hold(&quiet(), &loud(), offset);
+        let reference = settled_reference(&loud(), offset);
 
         judge_boundary(
             &format!("quiet to loud at +{offset}"),
-            &frames,
-            &settled_reference(&loud(), offset),
+            run.released(),
+            &reference[run.held_frames..],
             Boundary::Different,
         );
     }
@@ -353,12 +424,13 @@ fn ac_29_a_swiped_to_song_14_db_quieter_is_not_left_dim() {
 fn ac_29_a_swiped_to_song_of_the_same_loudness_keeps_its_height() {
     let other_song = SyntheticMusic::new(2, SAMPLE_RATE_HZ, LOUD_GAIN);
     for offset in BOUNDARY_OFFSETS_SECONDS {
-        let frames = after_track_change(&other_song, &loud(), offset);
+        let run = after_track_change_with_hold(&other_song, &loud(), offset);
+        let reference = settled_reference(&loud(), offset);
 
         judge_boundary(
             &format!("same loudness at +{offset}"),
-            &frames,
-            &settled_reference(&loud(), offset),
+            run.released(),
+            &reference[run.held_frames..],
             Boundary::Continuing,
         );
     }
@@ -388,16 +460,25 @@ fn ac_29_a_sample_rate_change_is_measured_like_a_fresh_start() {
 #[test]
 fn ac_29_a_swipe_to_the_same_song_does_not_shrink_the_frame_it_continues() {
     for offset in BOUNDARY_OFFSETS_SECONDS {
-        let frames = after_track_change_at(&loud(), boundary_at(offset), &loud(), offset);
+        let run = after_track_change_at_with_hold(
+            &loud(),
+            boundary_at(offset),
+            &loud(),
+            offset,
+        );
         let reference = settled_reference(&loud(), offset);
 
         judge_boundary(
             &format!("same song at +{offset}"),
-            &frames,
-            &reference,
+            run.released(),
+            &reference[run.held_frames..],
             Boundary::Continuing,
         );
-        assert_no_dip(&format!("same song at +{offset}"), &frames, &reference);
+        assert_no_dip(
+            &format!("same song at +{offset}"),
+            run.released(),
+            &reference[run.held_frames..],
+        );
     }
 }
 
