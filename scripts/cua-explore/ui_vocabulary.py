@@ -70,7 +70,8 @@ BUTTON_ROLES = frozenset(
 SOFT_HOVER_ROLES = frozenset(
     {CANONICAL_ROW_ROLE, "cell", "tab", "chip", "cover tile"}
 )
-ENTRY_ROLES = frozenset({"entry", "search box", "text field"})
+# The driver spells a GTK text entry "text box"; the tag editor fields use it.
+ENTRY_ROLES = frozenset({"entry", "search box", "text field", "text box"})
 VALUE_BEARING_ROLES = frozenset({*ENTRY_ROLES, "slider", "spin button"})
 ACTIONABLE_ROLES = frozenset(
     {*BUTTON_ROLES, *SOFT_HOVER_ROLES, *ENTRY_ROLES, "switch"}
@@ -88,6 +89,10 @@ BUSY_WORDS = (
     "waiting",
 )
 OFFLINE_WORDS = ("offline", "no connection", "needs network", "queued offline")
+# The offline banner's action reads "Try again" (SOURCE_TRY_AGAIN); older copy said "Retry".
+RETRY_WORDS = ("retry", "try again")
+# The offline banner headline is SOURCE_OFFLINE; older copy said "No connection".
+OFFLINE_STATUS_WORDS = ("you're offline", "no connection")
 SEARCH_ENTRY_LABEL = "Search all fields"
 
 # Static labels mirrored from sidebar_rebuild.rs and its section headings.

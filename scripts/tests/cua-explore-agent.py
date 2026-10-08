@@ -26,14 +26,14 @@ from agents.assertions import assertion_codes, batch_selection_count  # noqa: E4
 from agents.plans import _activate, _search_type  # noqa: E402
 from agents.steps import step_is_satisfied, step_to_action  # noqa: E402
 from agent_adapter import ExternalAgent, MAX_RESPONSE_BYTES  # noqa: E402
-from agents.plans import PLANNERS, build_phases  # noqa: E402
+from agents.plans import PLANNERS, RESULT_ROW_MATCHER, build_phases  # noqa: E402
 from cua_explore_fake_world import FakeWorld, drive  # noqa: E402
 from driver import CuaExecutor  # noqa: E402
 from explorer import DeterministicExplorer  # noqa: E402
 from oracles import normalize_snapshot  # noqa: E402
 from protocol import ActionGateway, load_mission  # noqa: E402
 from runner import retain_agent_notes  # noqa: E402
-from workload_audit import audit_action_workload  # noqa: E402
+from workload_audit import ActionTrace, audit_action_workload  # noqa: E402
 
 
 class BudgetTests(unittest.TestCase):
@@ -701,6 +701,46 @@ class AgentAcceptanceTests(unittest.TestCase):
         action = session.next_action(agent_mission, world.observation(), [])
 
         self.assertNotEqual(action["kind"], "hover")
+
+    def test_offline_tour_ends_on_a_view_that_has_a_refresh_action(self) -> None:
+        mission = self._agent_mission(self._mission("offline-recovery"))
+        for seed in range(1, 25):
+            with self.subTest(seed=seed):
+                phase = build_phases(mission, seed)[0]
+                names = [step.name for step in phase.steps]
+                last_online = names[names.index("refresh-before-offline") - 1]
+                self.assertNotEqual(last_online, "online-Radio")
+
+    def test_try_again_counts_as_the_offline_retry(self) -> None:
+        mission = self._mission("offline-recovery")
+        traces = [
+            ActionTrace(action={"kind": "set-connectivity", "connectivity": "offline"}),
+            ActionTrace(action={"kind": "activate", "target_label": "Try again"}),
+            ActionTrace(action={"kind": "set-connectivity", "connectivity": "online"}),
+        ]
+
+        audit = audit_action_workload(0, mission.workloads[0], traces, mission.fixture_tokens)
+
+        self.assertTrue(audit["retry_while_offline"])
+
+    def test_the_batch_plan_focuses_a_result_row_and_not_a_sidebar_row(self) -> None:
+        observation = {
+            "actionable_labels": ["Music", "Go to album Writable Batch 0001"],
+            "elements": [
+                {"label": "Music", "role": "row", "actionable": True, "enabled": True, "result": False},
+                {
+                    "label": "Go to album Writable Batch 0001",
+                    "role": "row",
+                    "actionable": True,
+                    "enabled": True,
+                    "result": True,
+                },
+            ],
+        }
+
+        self.assertEqual(
+            RESULT_ROW_MATCHER.resolve(observation), "Go to album Writable Batch 0001"
+        )
 
     def _run(self, name, *, seed=11, quirks=frozenset()):
         mission = self._mission(name)
