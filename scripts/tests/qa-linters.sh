@@ -128,6 +128,8 @@ require_executable scripts/check-accessibility-semantics.sh
 require_executable scripts/check-input-parity.sh
 require_executable scripts/check-listen-report-parity.sh
 require_executable scripts/check-motion-tokens.sh
+require_executable scripts/check-newest-clippy.sh
+require_executable scripts/check-root-tests.sh
 require_executable scripts/check-android-theme.sh
 require_executable scripts/check-merge-readiness.sh
 require_executable scripts/check-project-quality.sh
@@ -226,6 +228,8 @@ require_pattern_order 'Verify worktree hygiene' 'Verify project source quality' 
 require_pattern_order 'Run the script self-tests' 'Verify project source quality' .github/workflows/ci.yml
 require_pattern_order 'Verify repository and workflow contracts' 'Verify project source quality' .github/workflows/ci.yml
 require_pattern 'check-motion-tokens.sh' scripts/check-merge-readiness.sh
+require_pattern 'check-newest-clippy.sh' scripts/check-merge-readiness.sh
+require_pattern 'check-root-tests.sh' scripts/check-merge-readiness.sh
 require_pattern 'scripts/check-display-tests\.sh --rule-named$' scripts/check-merge-readiness.sh
 reject_pattern 'scripts/check-display-tests\.sh$' scripts/check-merge-readiness.sh
 reject_pattern '--motion' scripts/check-display-tests.sh

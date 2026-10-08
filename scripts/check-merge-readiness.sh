@@ -123,6 +123,11 @@ gate "AI hygiene" -- scripts/check-ai-hygiene.sh
 gate "Motion tokens" -- scripts/check-motion-tokens.sh
 gate "Rust formatting" -- cargo fmt --check
 gate "Rust lint" -- cargo clippy --locked --all-targets --workspace -- -D warnings
+# CI lints with a newer rustc than a developer machine defaults to, and runs its
+# tests as root; the next gate and "Root tests" below close those two gaps. Each
+# skips itself with a notice where it has nothing to add (CI is one such place),
+# so neither needs an entry in the CI skip list.
+gate "Newest-toolchain lint" -- scripts/check-newest-clippy.sh
 gate "Rust documentation" -- env RUSTDOCFLAGS="-D warnings" cargo doc --locked --workspace --no-deps
 
 tmp_root=$(mktemp -d)
@@ -140,6 +145,8 @@ gate "Workspace tests" -- env XDG_DATA_HOME="$tmp_root/data" XDG_CACHE_HOME="$tm
 gate "Linux platform tests" -- env XDG_DATA_HOME="$tmp_root/data" XDG_CACHE_HOME="$tmp_root/cache" \
   REPRISE_AUDIO_SINK=fakesink \
   cargo test --locked -p reprise-platform-linux -- --test-threads=1
+
+gate "Root tests" -- scripts/check-root-tests.sh
 
 gate "Rule-owned display tests" -- scripts/check-display-tests.sh --rule-named
 

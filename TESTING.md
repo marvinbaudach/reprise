@@ -218,6 +218,18 @@ and Rustdoc with warnings denied, the isolated workspace tests, and
 `cargo audit` with no advisory beyond the explicitly accepted `paste`
 maintenance warning.
 
+Two gates keep a green local run from going red in CI. CI lints with Arch's
+rolling Rust and runs its tests as root, so `scripts/check-newest-clippy.sh`
+repeats the Clippy gate with the newest numbered rustup toolchain, and
+`scripts/check-root-tests.sh` reruns the tests that change file permissions
+inside `unshare -r`, where the caller is uid 0 and `chmod 000` stops hiding a
+file. Each skips itself with a notice where it has nothing to add: no rustup or
+no newer toolchain, already uid 0 (CI), or no user namespaces. A test that
+returns early as root passes the second gate without proving anything, so make
+the failure come from an injected source, not from permissions. A new file that
+calls `set_permissions`, `PermissionsExt` or `set_readonly` must be added to the
+list in `check-root-tests.sh`, and the gate fails until it is.
+
 Merge readiness runs `scripts/check-shell.sh` over every tracked `*.sh` file
 and `.githooks/*`. It rejects all warning-or-higher findings plus SC2251,
 SC2004, and SC2181 at style level, and requires every `shellcheck disable`
