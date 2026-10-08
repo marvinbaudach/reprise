@@ -373,7 +373,7 @@ impl AndroidVisualEngine {
         state.engine.set_has_track(true);
         let playing = state.playing;
         state.set_engine_playing(playing, now);
-        state.engine.ingest(&frame);
+        state.engine.adopt_shape(&frame);
         state.has_ingested = true;
         state.has_adopted_shape = true;
         state.awaiting_stream_after_reset = false;

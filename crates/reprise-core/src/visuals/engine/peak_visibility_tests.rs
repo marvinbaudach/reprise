@@ -29,6 +29,37 @@ fn largest_peak_gap(engine: &VisualEngine) -> f32 {
 }
 
 #[test]
+fn ac_29_handover_caps_stay_within_one_segment_of_the_morph() {
+    const SEGMENT_HEIGHT: f32 = 1.0 / 16.0;
+    let mut engine = VisualEngine::new();
+    engine.set_playing(true);
+    engine.adopt_shape(&SpectrumFrame::from_cava_bars([0.8; SPECTRUM_BAND_COUNT]));
+
+    for level in [0.6, 0.4, 0.2] {
+        engine.ingest(&SpectrumFrame::from_cava_bars([level; SPECTRUM_BAND_COUNT]));
+        assert!(
+            largest_peak_gap(&engine) <= SEGMENT_HEIGHT,
+            "a handover cap stayed {:.3} above its descending bar",
+            largest_peak_gap(&engine)
+        );
+    }
+}
+
+#[test]
+fn normal_playback_caps_still_fall_by_peak_decay() {
+    let mut engine = VisualEngine::new();
+    engine.set_playing(true);
+    engine.ingest(&SpectrumFrame::from_cava_bars([0.8; SPECTRUM_BAND_COUNT]));
+    engine.ingest(&SpectrumFrame::from_cava_bars([0.2; SPECTRUM_BAND_COUNT]));
+
+    assert!(
+        (engine.bands_peaks[0] - (0.8 - PEAK_DECAY)).abs() <= 0.0001,
+        "normal cap fall changed from PEAK_DECAY: {}",
+        engine.bands_peaks[0]
+    );
+}
+
+#[test]
 fn ac_29_first_visible_tick_has_no_peak_cap_backlog() {
     let mut hidden = VisualEngine::new();
     hidden.set_playing(true);
