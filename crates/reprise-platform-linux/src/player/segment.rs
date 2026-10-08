@@ -25,9 +25,12 @@
 //!
 //! A CUE track starts without waiting: [`start_segment`] sets the file's
 //! pipeline to paused and returns, and the bus's `ASYNC_DONE` — the preroll —
-//! calls [`SegmentGate::complete_start`], which learns the file's duration,
-//! seeks to the track's start and only then plays. `play` runs on the GTK main
-//! thread, and a file on a slow mount must not freeze it.
+//! calls [`SegmentGate::complete_start`], which learns the file's duration and
+//! seeks to a nonzero track start. A track beginning with its file needs no
+//! seek: flushing `flacparse` back to zero during its fresh preroll can fail the
+//! stream. A nonzero seek's own `ASYNC_DONE` then enters Playing, so playback
+//! does not overlap its flush either. `play` runs on the GTK main thread, and a
+//! file on a slow mount must not freeze it.
 //!
 //! The last track of a file has no boundary when its end lies within
 //! [`OPEN_END_TOLERANCE_MS`] of the file's duration: it plays to the end of the
@@ -145,8 +148,12 @@ struct CutState {
     file_duration_ms: Option<i64>,
     armed: Option<ArmedNext>,
     /// The file position the track's start-seek goes to once the file has
-    /// prerolled; `None` once it has run. A seek before then retargets it.
+    /// prerolled; `None` once it has landed. A seek before then retargets it.
     pending_start_ms: Option<i64>,
+    /// The target of the start-seek whose `ASYNC_DONE` is still pending. Kept
+    /// separately from `pending_start_ms`, because an early user seek may
+    /// retarget the desired start while this seek is in flight.
+    start_seek_ms: Option<i64>,
     /// The probe handed over to the armed successor and the frontend has not
     /// fed a next track since: a re-feed of that track is the one playing.
     handed_off: bool,
@@ -245,31 +252,59 @@ impl SegmentGate {
         });
     }
 
-    /// The start `ASYNC_DONE` of a CUE track's file calls: seeks —
-    /// flushing and sample-accurate — to the track's start, so the first sample
-    /// heard is the track's own, then plays. A refused seek is logged and the
-    /// track plays from where the file stands, because failing would mark a
-    /// playable file missing. Does nothing unless a start is pending and
-    /// `playbin` has really prerolled: a message left over from a pipeline that
-    /// has since been restarted arrives while the new one still prerolls, and a
-    /// later `ASYNC_DONE` (the seek's own) finds the start already run.
+    /// Each start `ASYNC_DONE` of a CUE track's file calls. The preroll one
+    /// issues a flushing, sample-accurate seek to a nonzero track start and
+    /// leaves the pipeline Paused. A zero start enters Playing directly: the
+    /// parser is already there, and a redundant flush back to zero is the
+    /// failure this path must avoid. A nonzero seek's own `ASYNC_DONE` enters
+    /// Playing, so the parser never has to stream while that flush is still in
+    /// flight. An early user seek that changed the desired start issues its
+    /// replacement here first. A refused seek is logged and the track plays
+    /// from where the file stands, because failing would mark a playable file
+    /// missing.
+    ///
+    /// Does nothing unless a start is pending and `playbin` has really
+    /// prerolled: a message left over from a pipeline that has since been
+    /// restarted arrives while the new one still prerolls.
     pub(crate) fn complete_start(&self, playbin: &gst::Element) {
         let (prerolled, _, _) = playbin.state(gst::ClockTime::ZERO);
         if matches!(prerolled, Ok(gst::StateChangeSuccess::Async) | Err(_)) {
             return;
         }
-        let Some(start_ms) = self.lock().pending_start_ms.take() else {
-            return;
+        let (next_seek_ms, learn_duration) = {
+            let mut state = self.lock();
+            let Some(pending_start_ms) = state.pending_start_ms else {
+                return;
+            };
+            let learn_duration = state.start_seek_ms.is_none();
+            if state.start_seek_ms == Some(pending_start_ms)
+                || (pending_start_ms <= 0 && state.start_seek_ms.is_none())
+            {
+                state.pending_start_ms = None;
+                state.start_seek_ms = None;
+                (None, learn_duration)
+            } else {
+                state.start_seek_ms = Some(pending_start_ms);
+                (Some(pending_start_ms), learn_duration)
+            }
         };
-        let file_duration_ms = playbin
-            .query_duration::<gst::ClockTime>()
-            .map(|duration| duration.mseconds() as i64);
-        self.learn_file_duration(file_duration_ms);
-        let start = gst::ClockTime::from_mseconds(start_ms.max(0) as u64);
-        if let Err(error) =
-            playbin.seek_simple(gst::SeekFlags::FLUSH | gst::SeekFlags::ACCURATE, start)
-        {
-            tracing::warn!(%error, start_ms, "could not seek to the CUE track's start");
+        if learn_duration {
+            let file_duration_ms = playbin
+                .query_duration::<gst::ClockTime>()
+                .map(|duration| duration.mseconds() as i64);
+            self.learn_file_duration(file_duration_ms);
+        }
+        if let Some(start_ms) = next_seek_ms {
+            let start = gst::ClockTime::from_mseconds(start_ms.max(0) as u64);
+            match playbin.seek_simple(gst::SeekFlags::FLUSH | gst::SeekFlags::ACCURATE, start) {
+                Ok(()) => return,
+                Err(error) => {
+                    let mut state = self.lock();
+                    state.pending_start_ms = None;
+                    state.start_seek_ms = None;
+                    tracing::warn!(%error, start_ms, "could not seek to the CUE track's start");
+                }
+            }
         }
         // Before `Playing`, so no event of the new stream carries the old one.
         self.stream_generation.fetch_add(1, Ordering::SeqCst);
