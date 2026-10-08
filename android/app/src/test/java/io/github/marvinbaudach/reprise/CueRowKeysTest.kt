@@ -38,6 +38,7 @@ class CueRowKeysTest {
         colorScheme = AndroidColorScheme.SYSTEM,
         dynamicAvailable = false,
     )
+    private val surfaceState = MobileSurfaceViewModel()
     private val application: ConfigurationTestApplication
         get() = RuntimeEnvironment.getApplication() as ConfigurationTestApplication
 
@@ -81,7 +82,7 @@ class CueRowKeysTest {
                 CompositionLocalProvider(LocalArtistTrackIds provides { emptyList() }) {
                     ArtistsTab(
                         surfaceLayout = SurfaceLayout.STACKED,
-                        surfaceState = MobileSurfaceViewModel(),
+                        surfaceState = surfaceState,
                         artists = LibraryWindow.empty(),
                         searchText = "",
                         selectedArtist = ArtistTrackList(
@@ -115,7 +116,7 @@ class CueRowKeysTest {
             RepriseTheme(theme, darkPalette = true) {
                 TrackRows(
                     surfaceLayout = layout,
-                    surfaceState = MobileSurfaceViewModel(),
+                    surfaceState = surfaceState,
                     listKey = listKey,
                     tracks = cueWindow(),
                     playback = PlaybackUiState().libraryPlayback(),
