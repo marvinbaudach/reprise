@@ -41,7 +41,7 @@ pub(crate) fn migrate_v89(conn: &Connection) -> Result<(), rusqlite::Error> {
     if version >= 89 && has_loudness_table {
         return Ok(());
     }
-    let transaction = conn.unchecked_transaction()?;
+    let transaction = crate::db_migrations::begin_step(conn)?;
     if version < 89 {
         for (column, declaration) in [
             ("rg_track_gain", "REAL"),

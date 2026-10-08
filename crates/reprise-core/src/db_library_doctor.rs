@@ -87,7 +87,7 @@ pub(crate) fn migrate_v19(conn: &Connection) -> Result<(), rusqlite::Error> {
     if version >= 19 {
         return Ok(());
     }
-    let transaction = conn.unchecked_transaction()?;
+    let transaction = crate::db_migrations::begin_step(conn)?;
     transaction.execute_batch(SCHEMA_V18)?;
     transaction.pragma_update(None, "user_version", 19)?;
     transaction.commit()
@@ -98,7 +98,7 @@ pub(crate) fn migrate_v58(conn: &Connection) -> Result<(), rusqlite::Error> {
     if version >= 58 {
         return Ok(());
     }
-    let transaction = conn.unchecked_transaction()?;
+    let transaction = crate::db_migrations::begin_step(conn)?;
     let reviewed_column_exists = transaction.query_row(
         "SELECT EXISTS(
            SELECT 1 FROM pragma_table_info('library_doctor_state')
@@ -128,7 +128,7 @@ pub(crate) fn migrate_v66(conn: &Connection) -> Result<(), rusqlite::Error> {
     if version >= 66 {
         return Ok(());
     }
-    let transaction = conn.unchecked_transaction()?;
+    let transaction = crate::db_migrations::begin_step(conn)?;
     let never_preselect_column_exists = transaction.query_row(
         "SELECT EXISTS(
            SELECT 1 FROM pragma_table_info('library_doctor_proposals')
@@ -159,7 +159,7 @@ pub(crate) fn migrate_v67(conn: &Connection) -> Result<(), rusqlite::Error> {
     if version >= 67 {
         return Ok(());
     }
-    let transaction = conn.unchecked_transaction()?;
+    let transaction = crate::db_migrations::begin_step(conn)?;
     let column_exists = transaction.query_row(
         "SELECT EXISTS(
            SELECT 1 FROM pragma_table_info('library_doctor_proposals')
@@ -190,7 +190,7 @@ pub(crate) fn migrate_v86(conn: &Connection) -> Result<(), rusqlite::Error> {
     if version >= 86 {
         return Ok(());
     }
-    let transaction = conn.unchecked_transaction()?;
+    let transaction = crate::db_migrations::begin_step(conn)?;
     transaction.execute(
         &format!(
             "UPDATE library_doctor_scan_tracks AS s

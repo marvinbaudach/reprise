@@ -1,4 +1,7 @@
-use {rusqlite::Connection, std::path::Path};
+use {
+    rusqlite::{Connection, Transaction},
+    std::{cell::Cell, path::Path},
+};
 
 struct MigrationContext<'a> {
     existing_database: bool,
@@ -120,9 +123,129 @@ pub(crate) fn run_migrations(
         portrait_cache,
     };
     for migration in MIGRATIONS {
-        (migration.run)(conn, &context)?;
+        run_step(conn, &context, migration)?;
     }
     Ok(())
+}
+
+/// How often one step is run again after contention with a rival connection:
+/// it committed between the step's reads and its write lock, or it still held
+/// the lock when `busy_timeout` ran out. A rival only ever moves the database
+/// forward, so a later attempt normally finds the step done.
+const MAX_STEP_ATTEMPTS: u32 = 5;
+
+/// What a step's reads were based on: `PRAGMA data_version`, which changes when
+/// another connection commits, and `user_version`. The second covers a
+/// connection that has not read the database yet, whose `data_version` stays
+/// put when a rival fills the empty file.
+#[derive(Clone, Copy, PartialEq, Eq)]
+struct ReadBasis {
+    data_version: i64,
+    user_version: i64,
+}
+
+impl ReadBasis {
+    fn of(conn: &Connection) -> Result<Self, rusqlite::Error> {
+        Ok(Self {
+            data_version: conn.query_row("PRAGMA data_version", [], |row| row.get(0))?,
+            user_version: conn.query_row("PRAGMA user_version", [], |row| row.get(0))?,
+        })
+    }
+}
+
+thread_local! {
+    /// The [`ReadBasis`] as the running step began reading. A step reads
+    /// `user_version` and its own preconditions in autocommit, so those reads
+    /// are only good while nobody else commits before the step holds the write
+    /// lock; [`begin_step`] compares against this to find out.
+    static STEP_BASIS: Cell<Option<ReadBasis>> = const { Cell::new(None) };
+}
+
+/// Records where the step about to read its preconditions starts. Call it
+/// before the reads: a commit by another connection after this point makes
+/// [`begin_step`] refuse, and [`with_contention_retry`] run the step again.
+pub(crate) fn note_step_start(conn: &Connection) -> Result<(), rusqlite::Error> {
+    let basis = ReadBasis::of(conn)?;
+    STEP_BASIS.with(|noted| noted.set(Some(basis)));
+    Ok(())
+}
+
+/// Reads `user_version` as the first read of a step: [`note_step_start`], then
+/// the version itself.
+pub(crate) fn user_version_for_step(conn: &Connection) -> Result<i64, rusqlite::Error> {
+    note_step_start(conn)?;
+    conn.query_row("PRAGMA user_version", [], |row| row.get(0))
+}
+
+/// Opens a step's transaction, taking the write lock before the step writes.
+///
+/// Every step reads before it writes — `user_version`, a `has_column` check, a
+/// dedupe `SELECT` — so a DEFERRED transaction would fail the lock upgrade with
+/// `SQLITE_BUSY_SNAPSHOT` when a rival commits in between, an error
+/// `busy_timeout` never retries. IMMEDIATE waits its turn instead. Waiting is
+/// not enough on its own: the reads that decided to run the step happened
+/// before the lock, and a rival that held it meanwhile may have run the step
+/// already. When the database changed since [`note_step_start`], this fails
+/// with `SQLITE_BUSY_SNAPSHOT` and [`with_contention_retry`] starts the step over
+/// with fresh reads. A step called directly, without a noted start, only takes
+/// the lock.
+pub(crate) fn begin_step(conn: &Connection) -> Result<Transaction<'_>, rusqlite::Error> {
+    let transaction = crate::events::immediate_transaction(conn)?;
+    // Taken, not just read: the basis belongs to this one step, whoever called
+    // it and however it was noted, and must not be compared against by the next.
+    if let Some(noted) = STEP_BASIS.with(Cell::take) {
+        if ReadBasis::of(&transaction)? != noted {
+            return Err(stale_reads());
+        }
+    }
+    Ok(transaction)
+}
+
+fn stale_reads() -> rusqlite::Error {
+    rusqlite::Error::SqliteFailure(
+        rusqlite::ffi::Error::new(rusqlite::ffi::SQLITE_BUSY_SNAPSHOT),
+        Some("a migration step's reads went stale before it took the write lock".into()),
+    )
+}
+
+/// Whether the step can simply be started again: its reads went stale, or a
+/// rival still held the write lock when `busy_timeout` ran out. A refused
+/// `BEGIN IMMEDIATE` holds nothing, and every step is one transaction, so
+/// neither leaves anything behind.
+fn is_contention(error: &rusqlite::Error) -> bool {
+    matches!(
+        error,
+        rusqlite::Error::SqliteFailure(failure, _)
+            if failure.code == rusqlite::ErrorCode::DatabaseBusy
+    )
+}
+
+/// Runs `attempt` again, up to [`MAX_STEP_ATTEMPTS`] times, while it fails
+/// because of contention (see [`is_contention`]). The noted start never
+/// outlives an attempt.
+pub(crate) fn with_contention_retry<T>(
+    mut attempt: impl FnMut() -> Result<T, rusqlite::Error>,
+) -> Result<T, rusqlite::Error> {
+    let mut attempts = 1;
+    loop {
+        let result = attempt();
+        STEP_BASIS.with(|noted| noted.set(None));
+        match result {
+            Err(error) if is_contention(&error) && attempts < MAX_STEP_ATTEMPTS => attempts += 1,
+            other => return other,
+        }
+    }
+}
+
+fn run_step(
+    conn: &Connection,
+    context: &MigrationContext<'_>,
+    migration: &Migration,
+) -> Result<(), rusqlite::Error> {
+    with_contention_retry(|| {
+        note_step_start(conn)?;
+        (migration.run)(conn, context)
+    })
 }
 
 #[cfg(test)]
@@ -151,7 +274,7 @@ pub(crate) fn run_migrations_through(
         .iter()
         .take_while(|migration| migration.version <= last_version)
     {
-        (migration.run)(conn, &context)?;
+        run_step(conn, &context, migration)?;
     }
     Ok(())
 }

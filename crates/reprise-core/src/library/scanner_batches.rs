@@ -122,8 +122,13 @@ fn process_batch<'source>(
         }
     }
     let mut prepared = Vec::with_capacity(items.len());
+    // Both batch leases read the catalog before they write it, so each opens
+    // IMMEDIATE (the second only when it has something to write): a rival
+    // commit between that read and the write would otherwise fail the lock
+    // upgrade with SQLITE_BUSY_SNAPSHOT, which `busy_timeout` never retries.
+    // Tag reads stay between the two leases.
     leases.run(writer, &mut |conn| {
-        let tx = conn.unchecked_transaction()?;
+        let tx = crate::events::immediate_transaction(conn)?;
         let mut scan = entry::EntryScan {
             source,
             tx: &tx,
@@ -176,8 +181,17 @@ fn process_batch<'source>(
     }
 
     let mut advanced_paths = Vec::new();
+    // A batch that only skips unchanged files writes nothing, so it keeps the
+    // deferred transaction that never takes the lock.
+    let writes = prepared
+        .iter()
+        .any(|item| !matches!(item.action, PreparedAction::Skip(_)));
     leases.run(writer, &mut |conn| {
-        let tx = conn.unchecked_transaction()?;
+        let tx = if writes {
+            crate::events::immediate_transaction(conn)?
+        } else {
+            conn.unchecked_transaction()?
+        };
         let mut scan = entry::EntryScan {
             source,
             tx: &tx,

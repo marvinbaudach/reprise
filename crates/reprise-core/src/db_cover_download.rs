@@ -7,7 +7,7 @@ pub(crate) fn migrate_v83(conn: &Connection) -> Result<(), rusqlite::Error> {
     if version >= 83 {
         return Ok(());
     }
-    let transaction = conn.unchecked_transaction()?;
+    let transaction = crate::db_migrations::begin_step(conn)?;
     transaction.execute(
         "DELETE FROM settings WHERE key = 'startup_tasks.completed.covers'",
         [],
@@ -21,7 +21,7 @@ pub(crate) fn migrate_v84(conn: &Connection) -> Result<(), rusqlite::Error> {
     if version >= 84 {
         return Ok(());
     }
-    let transaction = conn.unchecked_transaction()?;
+    let transaction = crate::db_migrations::begin_step(conn)?;
     transaction.execute(
         "DELETE FROM settings WHERE key = 'startup_tasks.completed.covers'",
         [],

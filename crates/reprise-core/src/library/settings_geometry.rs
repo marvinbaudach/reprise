@@ -80,7 +80,7 @@ pub(crate) fn migrate_v79(conn: &Connection) -> Result<(), SqlError> {
     if version >= 79 {
         return Ok(());
     }
-    let transaction = conn.unchecked_transaction()?;
+    let transaction = crate::db_migrations::begin_step(conn)?;
     for key in DEAD_ROW_HEIGHT_KEYS {
         transaction.execute(
             "DELETE FROM settings WHERE key = ?1",
@@ -102,7 +102,7 @@ pub(crate) fn migrate_v80(conn: &Connection) -> Result<(), SqlError> {
     if version >= 80 {
         return Ok(());
     }
-    let transaction = conn.unchecked_transaction()?;
+    let transaction = crate::db_migrations::begin_step(conn)?;
     for key in POISONED_GEOMETRY_KEYS {
         transaction.execute(
             "DELETE FROM settings WHERE key = ?1",

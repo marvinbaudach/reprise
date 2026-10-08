@@ -9,8 +9,8 @@ use super::ScanError;
 pub trait ScanWriter {
     /// Runs `work` with the writer connection, then gives it back. Batch and
     /// tail work opens and commits one transaction per lease; the separate
-    /// progress-estimate lease is read-only. A lease is never held across two
-    /// batches. Implementations call `work` at most once; a skipped call is
+    /// progress-estimate lease and the tail's first lease are read-only. A
+    /// lease is never held across two batches. Implementations call `work` at most once; a skipped call is
     /// reported by scanner entry points as an invariant error.
     fn lease(
         &self,

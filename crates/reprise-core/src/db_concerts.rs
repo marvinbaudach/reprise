@@ -56,7 +56,7 @@ pub(crate) fn migrate_v31(conn: &Connection) -> Result<(), rusqlite::Error> {
         return Ok(());
     }
 
-    let transaction = conn.unchecked_transaction()?;
+    let transaction = crate::db_migrations::begin_step(conn)?;
     transaction.execute_batch(SCHEMA_V31)?;
     transaction.pragma_update(None, "user_version", 31)?;
     transaction.commit()
@@ -68,7 +68,7 @@ pub(crate) fn migrate_v73(conn: &Connection) -> Result<(), rusqlite::Error> {
         return Ok(());
     }
 
-    let transaction = conn.unchecked_transaction()?;
+    let transaction = crate::db_migrations::begin_step(conn)?;
     transaction.execute_batch(
         "ALTER TABLE concert_events
          ADD COLUMN ticket_availability TEXT NOT NULL DEFAULT 'unknown';",
@@ -86,7 +86,7 @@ pub(crate) fn migrate_v75(conn: &Connection) -> Result<(), rusqlite::Error> {
     if version >= 75 {
         return Ok(());
     }
-    let transaction = conn.unchecked_transaction()?;
+    let transaction = crate::db_migrations::begin_step(conn)?;
     transaction.execute_batch(SCHEMA_V75)?;
     transaction.pragma_update(None, "user_version", 75)?;
     transaction.commit()
@@ -106,7 +106,7 @@ pub(crate) fn migrate_v76(conn: &Connection) -> Result<(), rusqlite::Error> {
         return Ok(());
     }
 
-    let transaction = conn.unchecked_transaction()?;
+    let transaction = crate::db_migrations::begin_step(conn)?;
     let listings = {
         let mut statement = transaction.prepare(
             "SELECT id, artist_key, date_key, city, provider, ticket_url

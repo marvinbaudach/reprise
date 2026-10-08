@@ -7,7 +7,7 @@ pub(crate) fn migrate_v35(conn: &Connection) -> Result<(), rusqlite::Error> {
     if version >= 35 {
         return Ok(());
     }
-    let transaction = conn.unchecked_transaction()?;
+    let transaction = crate::db_migrations::begin_step(conn)?;
     let has_role = {
         let mut statement = transaction.prepare("PRAGMA table_info(smart_playlists)")?;
         let columns = statement

@@ -40,7 +40,7 @@ pub(crate) fn migrate_v45(conn: &Connection) -> Result<(), rusqlite::Error> {
     if version >= 45 {
         return Ok(());
     }
-    let transaction = conn.unchecked_transaction()?;
+    let transaction = crate::db_migrations::begin_step(conn)?;
     transaction.execute_batch(CREATE_SYNC_LOG)?;
     transaction.pragma_update(None, "user_version", 45)?;
     transaction.commit()
@@ -60,13 +60,13 @@ pub(crate) fn migrate_v81(conn: &Connection) -> Result<(), rusqlite::Error> {
     )?;
     if supports_analysis_failed {
         if version < 81 {
-            let transaction = conn.unchecked_transaction()?;
+            let transaction = crate::db_migrations::begin_step(conn)?;
             transaction.pragma_update(None, "user_version", 81)?;
             transaction.commit()?;
         }
         return Ok(());
     }
-    let transaction = conn.unchecked_transaction()?;
+    let transaction = crate::db_migrations::begin_step(conn)?;
     transaction.execute_batch(
         "CREATE TABLE sync_events_v81 (
            run_id       INTEGER NOT NULL,

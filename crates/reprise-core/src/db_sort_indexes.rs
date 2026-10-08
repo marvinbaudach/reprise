@@ -7,7 +7,7 @@ pub(crate) fn migrate_v82(conn: &Connection) -> Result<(), rusqlite::Error> {
     if version >= 82 {
         return Ok(());
     }
-    let transaction = conn.unchecked_transaction()?;
+    let transaction = crate::db_migrations::begin_step(conn)?;
     transaction.execute_batch(
         "CREATE INDEX IF NOT EXISTS idx_tracks_present_artist_order
          ON tracks(artist COLLATE NOCASE, year, album COLLATE NOCASE, track_no)

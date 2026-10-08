@@ -102,12 +102,14 @@ pub(crate) fn migrate_with_cache_dirs(
             supported: SUPPORTED_SCHEMA_VERSION,
         });
     }
-    crate::db_schema_baseline::migrate_baseline(
-        conn,
-        initial_version > 0,
-        cover_cache,
-        portrait_cache,
-    )?;
+    crate::db_migrations::with_contention_retry(|| {
+        crate::db_schema_baseline::migrate_baseline(
+            conn,
+            initial_version > 0,
+            cover_cache,
+            portrait_cache,
+        )
+    })?;
     crate::db_migrations::run_migrations(conn, initial_version > 0, cover_cache, portrait_cache)?;
     Ok(())
 }
@@ -127,6 +129,10 @@ mod network_migration_tests;
 #[cfg(test)]
 #[path = "db_stats_migration_tests.rs"]
 mod stats_migration_tests;
+
+#[cfg(test)]
+#[path = "db_migration_contention_tests.rs"]
+mod migration_contention_tests;
 
 #[cfg(test)]
 #[path = "db_migration_repair_tests.rs"]

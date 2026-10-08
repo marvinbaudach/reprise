@@ -382,117 +382,6 @@ fn guard_root_before_walk(source: &dyn LibrarySource, root: &Path) -> Option<Sca
     None
 }
 
-/// The metadata a mobile sync left beside the audio, applied inside the atomic
-/// tail transaction together with sidecar registration and vanish decisions.
-fn apply_mobile_sync(
-    mobile_sync: &mobile_sync::MobileSyncDiscovery,
-    metadata: Option<&crate::device_sync::track_metadata_list::TrackMetadataList>,
-    tx: &rusqlite::Transaction,
-    report: &mut ScanReport,
-) -> Result<(), ScanError> {
-    report.updated = report
-        .updated
-        .saturating_add(mobile_sync.apply_metadata(metadata, tx)?);
-    mobile_sync.register_analysis_sidecars(tx)?;
-    mobile_sync.register_device_paths(tx)?;
-    Ok(())
-}
-
-/// What the reconcile phase is allowed to reason about: the rows the catalog
-/// still calls present under `root`, what the walk proved about the tree, and —
-/// only when the walk found no audio file at all — the wider evidence the root
-/// guard needs.
-struct VanishEvidence {
-    candidates: Vec<(i64, String, Option<i64>)>,
-    evidence: Option<vanish::WalkEvidence>,
-    guard_evidence: Option<Vec<(i64, String, Option<i64>)>>,
-}
-
-fn gather_vanish_evidence(
-    tx: &rusqlite::Transaction,
-    root: &Path,
-    trace: WalkTrace,
-) -> Result<VanishEvidence, ScanError> {
-    let WalkTrace {
-        audio_files_seen,
-        observed_paths,
-        dirs,
-        failed,
-    } = trace;
-    // `candidates` (`PRESENT`-only) feeds the mark phase below regardless of
-    // outcome. The guard's own evidence, `guard_evidence` (the wider
-    // `removed_at IS NULL` list — see `scanner_vanish::guard_evidence_under_
-    // root`'s doc comment for why it must NOT be `candidates`), is only
-    // queried when the walk found nothing, the same short-circuit
-    // `root_unavailable` used before this was split into two lists — so a
-    // scan that actually found audio files never pays for the extra query.
-    let candidates = vanish::present_candidates_under_root(tx, root)?;
-    // A walk that saw no audio file at all is exactly the situation Android
-    // cannot distinguish from lost storage. An empty walk is a question, not
-    // proof: layer 3 stays silent and only a real source `Absent` still marks.
-    let evidence = vanish::evidence_after_walk(audio_files_seen, observed_paths, &dirs, &failed);
-    let guard_evidence = if audio_files_seen == 0 {
-        Some(vanish::guard_evidence_under_root(tx, root)?)
-    } else {
-        None
-    };
-    Ok(VanishEvidence {
-        candidates,
-        evidence,
-        guard_evidence,
-    })
-}
-
-/// Root-Guard case (b) or the mark phase: decides whether this scan may say
-/// anything about the files it did not see, and returns the outcome the
-/// transaction will commit.
-fn decide_outcome(
-    source: &dyn LibrarySource,
-    tx: &rusqlite::Transaction,
-    root: &Path,
-    evidence: VanishEvidence,
-    mut report: ScanReport,
-) -> Result<ScanOutcome, ScanError> {
-    let root_unavailable = evidence.guard_evidence.as_ref().is_some_and(|guard| {
-        !guard.is_empty() && !vanish::any_candidate_confirms_root_with(source, guard, root)
-    });
-    if root_unavailable {
-        // Root-Guard case (b): see `scan_folder_inner`'s `## Root guard` doc
-        // section. Walk batches have already committed. This tail still
-        // commits the mobile-sync changes applied above; only the vanish and
-        // event-log phase is skipped.
-        tracing::warn!(
-            root = %root.display(),
-            candidate_count = evidence.guard_evidence.map_or(0, |e| e.len()),
-            "scan: walk found no audio files and no known track under root confirms the \
-             root's current device; reporting RootUnavailable instead of marking tracks missing"
-        );
-        return Ok(ScanOutcome::RootUnavailable {
-            root: root.to_path_buf(),
-        });
-    }
-    let reclassified =
-        vanish::reclassify_missing_with(source, tx, root, evidence.evidence.as_ref(), now_unix())?;
-    report.vanished = vanish::mark_vanished_with(
-        source,
-        tx,
-        root,
-        evidence.candidates,
-        evidence.evidence.as_ref(),
-    )?;
-    // T0.3: one collective change-log row per scan that actually touched
-    // the catalog (never per track, never for a no-op reconcile), inside
-    // the same tail transaction as the final scan decisions. Foreign scanners
-    // (`reprise-cli scan`)
-    // wake the running app through this; the app's own scans carry its
-    // writer token and are filtered out by its own consumer.
-    if scan_touched_library(&report) || reclassified > 0 {
-        crate::events::record(tx, "library", "", "scan")?;
-        crate::library::startup_tasks::advance_library_signature_in(tx)?;
-    }
-    Ok(ScanOutcome::Completed(report))
-}
-
 /// Walks `root`, committing bounded batches of observed entries, then
 /// reconciles whatever the complete walk did NOT find in one atomic tail
 /// transaction: rows the DB still believes are present under `root` whose file
@@ -630,21 +519,38 @@ fn scan_folder_inner(
         leases,
     )?;
     let synced_metadata = mobile_sync.read_metadata(source);
-    let mut outcome = None;
+    // Read lease, then the source's answers with no lease held, then the write
+    // lease: see `scanner_reconcile`'s module doc for why.
+    let mut facts = None;
     leases.run(writer, &mut |conn| {
         let tx = conn.unchecked_transaction()?;
-        apply_mobile_sync(
+        facts = Some(reconcile::read_facts(
+            &tx,
+            root,
+            std::mem::take(&mut state.trace),
+        )?);
+        tx.commit()?;
+        Ok(())
+    })?;
+    let facts = facts.ok_or(ScanError::InternalInvariant(
+        "the tail read lease skipped its work",
+    ))?;
+    let plan = reconcile::plan(source, root, facts);
+    let mut outcome = None;
+    leases.run(writer, &mut |conn| {
+        // IMMEDIATE: the rows are read again under the lock before they are
+        // marked (see `process_batch` for why a deferred lease cannot do that).
+        let tx = crate::events::immediate_transaction(conn)?;
+        reconcile::apply_mobile_sync(
             &mobile_sync,
             synced_metadata.as_ref(),
             &tx,
             &mut state.report,
         )?;
-        let evidence = gather_vanish_evidence(&tx, root, std::mem::take(&mut state.trace))?;
-        outcome = Some(decide_outcome(
-            source,
+        outcome = Some(reconcile::apply(
             &tx,
             root,
-            evidence,
+            &plan,
             std::mem::take(&mut state.report),
         )?);
         tx.commit()?;
@@ -696,6 +602,11 @@ mod mobile_sync;
 // is production code, always compiled.
 #[path = "scanner_vanish.rs"]
 mod vanish;
+
+// The scan's tail: the verdicts about files the walk did not find, asked of the
+// source before the write lock and applied under it. See `scanner_reconcile.rs`.
+#[path = "scanner_reconcile.rs"]
+mod reconcile;
 
 // Task 1.6: the mount_point memoization used above lives in its own file for
 // the same 800-line reason — see `scanner_mount.rs`'s own doc comment.
@@ -783,3 +694,7 @@ mod cue_tests;
 #[cfg(test)]
 #[path = "scanner_cue_files_tests.rs"]
 mod cue_files_tests;
+
+#[cfg(test)]
+#[path = "scanner_contention_tests.rs"]
+mod contention_tests;

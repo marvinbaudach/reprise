@@ -38,7 +38,7 @@ pub(crate) fn migrate_v30(conn: &Connection) -> Result<(), rusqlite::Error> {
     if version >= 30 {
         return Ok(());
     }
-    let transaction = conn.unchecked_transaction()?;
+    let transaction = crate::db_migrations::begin_step(conn)?;
     transaction.execute_batch(SCHEMA_V30)?;
     transaction.pragma_update(None, "user_version", 30)?;
     transaction.commit()
