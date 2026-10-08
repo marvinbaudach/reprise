@@ -222,33 +222,60 @@ pub fn get_track_spectrogram(db: &Db, track_id: i64) -> Result<Option<TrackSpect
         .transpose()
 }
 
+/// The tracks whose spectrogram, loudness and peaks are all present and match
+/// the file's current identity: the complement of what the backfill lists as
+/// pending (`pending_render_data_tracks`). Takes one `?3` track-id filter,
+/// `NULL` for every track.
+const COMPLETE_RENDER_DATA: &str = "SELECT t.id \
+     FROM tracks t \
+     JOIN track_spectrograms s ON s.track_id = t.id \
+       AND s.format_version = ?1 \
+       AND s.source_mtime = t.file_mtime \
+       AND s.source_size = t.file_size \
+       AND s.source_device IS t.device \
+       AND s.source_inode IS t.inode \
+     JOIN track_loudness l ON l.track_id = t.id \
+       AND l.format_version = ?2 \
+       AND l.source_mtime = t.file_mtime \
+       AND l.source_size = t.file_size \
+       AND l.source_device IS t.device \
+       AND l.source_inode IS t.inode \
+     WHERE t.waveform_peaks IS NOT NULL AND (?3 IS NULL OR t.id = ?3)";
+
 /// Returns the tracks whose complete, currently source-valid rendering data
 /// can be encoded as an analysis sidecar without loading either blob.
 pub fn complete_render_data_track_ids(db: &Db) -> Result<HashSet<i64>, DbError> {
-    let mut statement = db.conn().prepare(
-        "SELECT t.id \
-         FROM tracks t \
-         JOIN track_spectrograms s ON s.track_id = t.id \
-           AND s.format_version = ?1 \
-           AND s.source_mtime = t.file_mtime \
-           AND s.source_size = t.file_size \
-           AND s.source_device IS t.device \
-           AND s.source_inode IS t.inode \
-         JOIN track_loudness l ON l.track_id = t.id \
-           AND l.format_version = ?2 \
-           AND l.source_mtime = t.file_mtime \
-           AND l.source_size = t.file_size \
-           AND l.source_device IS t.device \
-           AND l.source_inode IS t.inode \
-         WHERE t.waveform_peaks IS NOT NULL",
-    )?;
+    let mut statement = db.conn().prepare(COMPLETE_RENDER_DATA)?;
     let track_ids = statement
         .query_map(
-            rusqlite::params![SPECTROGRAM_FORMAT_VERSION, LOUDNESS_FORMAT_VERSION],
+            rusqlite::params![
+                SPECTROGRAM_FORMAT_VERSION,
+                LOUDNESS_FORMAT_VERSION,
+                None::<i64>
+            ],
             |row| row.get(0),
         )?
         .collect::<Result<_, _>>()?;
     Ok(track_ids)
+}
+
+/// Whether `track_id` holds all of its rendering data for the file as it is
+/// now. The same test the pending lists apply, so a track answered "complete"
+/// here is never listed as pending, and a pending one is never skipped.
+pub fn track_render_data_complete(db: &Db, track_id: i64) -> Result<bool, DbError> {
+    Ok(db
+        .conn()
+        .query_row(
+            COMPLETE_RENDER_DATA,
+            rusqlite::params![
+                SPECTROGRAM_FORMAT_VERSION,
+                LOUDNESS_FORMAT_VERSION,
+                track_id
+            ],
+            |row| row.get::<_, i64>(0),
+        )
+        .optional()?
+        .is_some())
 }
 
 /// Rendering data lifted out before a rewrite that changes a file's metadata

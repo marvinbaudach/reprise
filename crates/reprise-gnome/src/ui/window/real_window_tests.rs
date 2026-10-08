@@ -449,9 +449,11 @@ fn fb_8_a_card_docked_behind_a_hidden_block_reserves_no_height() {
     let _main_context = crate::ui::test_main_context::lock_main_context();
     let (handles, db) = build_real_window_with_db(1280, 720, SidebarSeed::default());
     handles.window.set_size_request(1290, 730);
-    let sized = crate::ui::test_settle::settle_until(Duration::from_secs(5), || {
-        handles.window.width() == 1280 && handles.window.height() == 720
-    });
+    // The window already reports 1280x720 when the request is made, so a wait
+    // for that size holds before the request has done anything. The request
+    // reaches the window at its next layout: read the size after a frame.
+    let painted = crate::ui::test_settle::settle_until_painted_after(&handles.window, || true);
+    let sized = painted && handles.window.width() == 1280 && handles.window.height() == 720;
     assert!(
         sized,
         "the post-map fixture must remain 1280x720\n{}",

@@ -5,6 +5,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Any, Mapping
 
+from search_results import result_elements
 from ui_vocabulary import BUTTON_ROLES, ROW_ROLES, canonical_role
 
 
@@ -16,6 +17,8 @@ class LabelMatcher:
     require_actionable: bool = True
     require_enabled: bool = True
     strict_roles: bool = False
+    # Prefer the page's results over the sidebar rows that share the row role.
+    results_only: bool = False
 
     def candidates(self, observation: Mapping[str, Any]) -> tuple[str, ...]:
         candidates, _mismatch = self.candidates_with_role_fallback(observation)
@@ -43,6 +46,12 @@ class LabelMatcher:
         contains_folded = tuple(value.casefold() for value in self.contains)
         roles = {canonical_role(value) for value in self.roles}
         actionable = set(observation.get("actionable_labels", []))
+        # A page whose results cannot be told apart is matched like any other.
+        result_ids = (
+            {id(item) for item in result_elements(observation)}
+            if self.results_only
+            else set()
+        ) or None
         ranked = []
         for item in observation.get("elements", []):
             if not isinstance(item, dict):
@@ -50,6 +59,8 @@ class LabelMatcher:
             label = str(item.get("label") or "")
             folded = label.casefold()
             if not label:
+                continue
+            if result_ids is not None and id(item) not in result_ids:
                 continue
             exact = folded in exact_folded
             contains = any(value in folded for value in contains_folded)

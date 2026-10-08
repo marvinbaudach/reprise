@@ -19,9 +19,11 @@
 //! list in `scripts/check-architecture.sh`.
 
 use std::process::{Child, Command, Stdio};
-use std::time::{Duration, Instant};
+use std::time::Duration;
 
 use gtk4::prelude::*;
+
+use crate::ui::test_settle::{settle_until, DISPLAY_TEST_TIMEOUT};
 
 /// Starts `openbox` for the life of the guard and kills it on drop.
 ///
@@ -78,17 +80,22 @@ pub(crate) fn xdotool(args: &[&str]) -> String {
     String::from_utf8(output.stdout).unwrap()
 }
 
-/// Polls `condition` on the main loop until it holds, or panics after 3s.
+/// Waits on the main loop until `condition` holds, or panics after
+/// [`DISPLAY_TEST_TIMEOUT`].
 ///
 /// The window manager applies state changes asynchronously, so a test cannot
 /// just call `maximize()` or `windowmove` and check the result on the next
 /// line — it has to give both the X server and openbox a chance to round-trip
 /// the request first.
-pub(crate) fn wait_for_window_state(label: &str, mut condition: impl FnMut() -> bool) {
-    let deadline = Instant::now() + Duration::from_secs(3);
-    while !condition() && Instant::now() < deadline {
-        while gtk4::glib::MainContext::default().iteration(false) {}
-        std::thread::sleep(Duration::from_millis(10));
-    }
-    assert!(condition(), "window manager did not reach: {label}");
+///
+/// The wait is only as meaningful as its condition: one that already holds
+/// before the request was sent passes without waiting for anything. The test
+/// screen is 640 x 480, so a window's first map is clamped below any larger
+/// default size — compare against the size the test asked for, or against a
+/// snapshot taken just before the request, never against a default.
+pub(crate) fn wait_for_window_state(label: &str, condition: impl FnMut() -> bool) {
+    assert!(
+        settle_until(DISPLAY_TEST_TIMEOUT, condition),
+        "window manager did not reach: {label}"
+    );
 }
