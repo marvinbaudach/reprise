@@ -304,9 +304,14 @@ fn ac_29_a_adopted_shape_holds_until_the_quiet_stream_decides_its_level() {
 }
 
 #[test]
-fn ac_29_silent_lead_in_releases_the_adopted_shape_within_one_boundary_window() {
+fn ac_29_a_short_silent_lead_in_keeps_the_adopted_shape_until_the_quiet_stream_decides() {
     const HELD_LEVEL: f32 = 0.8;
-    const BOUNDARY_WINDOW_TICKS: usize = 12;
+    const LEVEL_TOLERANCE: f32 = 0.02;
+    const SILENT_LEAD_IN_TICKS: usize = 2;
+
+    let mut control = Playback::new();
+    control.warm_up(2);
+    let settled_mean = mean(&control.engine.current_bands());
 
     let mut handed_over = Playback::new();
     handed_over.engine.note_track_changed();
@@ -314,13 +319,78 @@ fn ac_29_silent_lead_in_releases_the_adopted_shape_within_one_boundary_window() 
         .engine
         .adopt_shape(vec![HELD_LEVEL; SPECTRUM_BAND_COUNT]);
 
-    let means: Vec<f32> = (0..BOUNDARY_WINDOW_TICKS)
+    for tick in 0..SILENT_LEAD_IN_TICKS {
+        let displayed_mean = mean(&handed_over.tick_silence());
+        assert!(
+            (displayed_mean - HELD_LEVEL).abs() <= LEVEL_TOLERANCE,
+            "silent lead-in tick {tick} released the adopted shape: {displayed_mean:.3}"
+        );
+    }
+
+    let mut released = false;
+    for tick in 0..MEASURED_TICKS {
+        let displayed_mean = mean(&handed_over.tick(2));
+        let (waiting, _) = handed_over
+            .engine
+            .live_boundary_for_testing()
+            .expect("the quiet stream created its live processor");
+        if waiting {
+            assert!(
+                (displayed_mean - HELD_LEVEL).abs() <= LEVEL_TOLERANCE,
+                "signal tick {tick} released the adopted shape before its boundary decided: \
+                 {displayed_mean:.3}"
+            );
+            continue;
+        }
+
+        released = true;
+        assert!(
+            (displayed_mean - HELD_LEVEL).abs() > LEVEL_TOLERANCE,
+            "the display stayed held after the quiet stream's boundary decision"
+        );
+        assert!(
+            displayed_mean + LEVEL_TOLERANCE >= settled_mean,
+            "the handover dipped below the quiet stream: displayed={displayed_mean:.3}, \
+             settled={settled_mean:.3}"
+        );
+        break;
+    }
+
+    assert!(
+        released,
+        "the quiet stream never released the adopted shape"
+    );
+}
+
+#[test]
+fn ac_29_silent_lead_in_releases_the_adopted_shape_within_one_boundary_window() {
+    const HELD_LEVEL: f32 = 0.8;
+    const BOUNDARY_WINDOW_TICKS: usize = 12;
+    const LONG_SILENCE_TICKS: usize = 120;
+
+    let mut handed_over = Playback::new();
+    handed_over.engine.note_track_changed();
+    handed_over
+        .engine
+        .adopt_shape(vec![HELD_LEVEL; SPECTRUM_BAND_COUNT]);
+
+    let means: Vec<f32> = (0..LONG_SILENCE_TICKS)
         .map(|_| mean(&handed_over.tick_silence()))
         .collect();
 
     assert!(
-        means.iter().any(|level| *level < HELD_LEVEL - 0.01),
-        "the adopted shape stayed frozen through a boundary window of silence: {means:.3?}"
+        means[..2]
+            .iter()
+            .all(|level| (*level - HELD_LEVEL).abs() <= 0.01),
+        "the first silent frame released the adopted shape: {means:.3?}"
+    );
+    let released_at = means
+        .iter()
+        .position(|level| *level < HELD_LEVEL - 0.01)
+        .expect("two seconds of silence must release the adopted shape");
+    assert!(
+        released_at < BOUNDARY_WINDOW_TICKS,
+        "the adopted shape outlived one boundary window: released at tick {released_at}"
     );
     assert!(
         means.last().expect("the fixture produced silent frames") < &means[0],

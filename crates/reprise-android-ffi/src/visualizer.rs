@@ -3,6 +3,7 @@
 //! The flat byte layout a scene is encoded into lives in [`scene_encoding`],
 //! whose module doc describes the record format the phone reads.
 
+mod adopted_shape_hold;
 mod live_audio;
 mod scene_encoding;
 
@@ -13,6 +14,7 @@ use std::time::{Duration, Instant};
 use reprise_core::playback::{BassPressure, BassPressureDetector, SPECTRUM_BAND_COUNT};
 use reprise_core::visuals::{spectrum_frame_from_bands, VisualEngine};
 
+use adopted_shape_hold::AdoptedShapeHold;
 pub(crate) use scene_encoding::encode_scene;
 
 #[cfg(test)]
@@ -90,7 +92,7 @@ struct VisualState {
     stream_generation: u64,
     has_ingested: bool,
     has_analysis: bool,
-    has_adopted_shape: bool,
+    adopted_shape_hold: AdoptedShapeHold,
     has_live_audio: bool,
     // Set by `reset_live_presentation` when it is called for a genuine
     // decoded-stream boundary (`reset_audio_stream`, `note_track_changed`, or
@@ -206,7 +208,7 @@ impl AndroidVisualEngine {
         }
         expire_stale_live_audio(&mut state, now);
         let has_audio = state.has_analysis
-            || state.has_adopted_shape
+            || state.adopted_shape_hold.is_active()
             || state.has_live_audio
             || state.awaiting_stream_after_reset;
         state.set_engine_playing(playing && has_audio, now);
@@ -375,7 +377,7 @@ impl AndroidVisualEngine {
         state.set_engine_playing(playing, now);
         state.engine.adopt_shape(&frame);
         state.has_ingested = true;
-        state.has_adopted_shape = true;
+        state.adopted_shape_hold.begin();
         state.awaiting_stream_after_reset = false;
     }
 
@@ -467,7 +469,7 @@ impl AndroidVisualEngine {
         // processor keeps its gain and shape and nothing is measured again.
         reset_live_history(&mut live_audio, stream_generation);
         state.stream_generation = stream_generation;
-        state.has_adopted_shape = false;
+        state.adopted_shape_hold.clear();
         state.last_live_audio_at = state.has_live_audio.then(|| self.clock.now());
         state.live_pressure = silent_pressure();
     }
@@ -522,24 +524,26 @@ impl AndroidVisualEngine {
         });
         let live_frame = live_frame.flatten();
         let mut ingested_live_frame = false;
-        let analyzed_live_frame = if let Some((frame, pressure, boundary_waiting, signal_present)) =
-            live_frame
-        {
+        let analyzed_live_frame = if let Some(live_frame) = live_frame {
             state.engine.set_retain_paused_live_shape(true);
             state.engine.set_has_track(true);
             let playing = state.playing;
             state.set_engine_playing(playing, now);
-            let hold_adopted_shape = state.has_adopted_shape && boundary_waiting && signal_present;
+            let hold_adopted_shape = state.adopted_shape_hold.should_hold(
+                live_frame.boundary_waiting,
+                live_frame.signal_present,
+                live_frame.analyzed_samples,
+                live_frame.boundary_window_samples,
+            );
             if !hold_adopted_shape {
-                state.engine.ingest(&frame);
+                state.engine.ingest(&live_frame.frame);
                 state.has_ingested = true;
-                state.has_adopted_shape = false;
                 ingested_live_frame = true;
             }
             state.awaiting_stream_after_reset = false;
             state.has_live_audio = true;
             state.last_live_audio_at = Some(now);
-            state.live_pressure = pressure;
+            state.live_pressure = live_frame.pressure;
             true
         } else {
             false
@@ -608,7 +612,7 @@ fn reset_live_presentation(
     holds_display: bool,
 ) {
     state.stream_generation = stream_generation;
-    state.has_adopted_shape = false;
+    state.adopted_shape_hold.clear();
     state.has_live_audio = false;
     state.last_live_audio_at = None;
     state.live_pressure = silent_pressure();
@@ -617,8 +621,9 @@ fn reset_live_presentation(
     // that lands while paused or stopped must let the resting projection show,
     // or a later resume would snap the old picture back on screen.
     state.awaiting_stream_after_reset = holds_display && state.playing;
-    let has_audio =
-        state.has_analysis || state.has_adopted_shape || state.awaiting_stream_after_reset;
+    let has_audio = state.has_analysis
+        || state.adopted_shape_hold.is_active()
+        || state.awaiting_stream_after_reset;
     state.set_engine_playing(state.playing && has_audio, now);
 }
 
@@ -658,7 +663,7 @@ impl AndroidVisualEngine {
                 stream_generation: 0,
                 has_ingested: false,
                 has_analysis: false,
-                has_adopted_shape: false,
+                adopted_shape_hold: AdoptedShapeHold::default(),
                 has_live_audio: false,
                 awaiting_stream_after_reset: false,
                 last_live_bands: None,

@@ -255,6 +255,12 @@ impl CavaBarProcessor {
         self.smoother.is_waiting_for_boundary()
     }
 
+    /// Number of analyzed stream samples in one boundary measurement window.
+    #[doc(hidden)]
+    pub fn boundary_window_samples(&self) -> usize {
+        self.input_buffer.len()
+    }
+
     /// The smoother's gain, for tests that compare it with `cavacore`'s or watch
     /// it move across a boundary. Debug builds only, like the other test seams.
     #[cfg(debug_assertions)]
