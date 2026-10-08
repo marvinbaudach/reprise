@@ -218,14 +218,11 @@ def plan_batch_edit(workload: Mapping[str, Any], index: int, rng: random.Random)
         index,
         (
             *_search_type("find-writable-batch", "WRITABLE_BATCH"),
-            # Enter accepts the query and closes the popover; Escape would clear it.
-            # While the popover is open it swallows Ctrl+A and Shift+F10.
-            Step(
-                "accept-search",
-                "press",
-                LabelMatcher(exact=(SEARCH_ENTRY_LABEL,)),
-                {"key": "enter"},
-            ),
+            # While the popover is open it swallows Ctrl+A and Shift+F10. Ctrl+F
+            # closes it and keeps the query (SEARCH-6); Escape would clear it, and
+            # a press aimed at the entry plays the focused row after its focus
+            # click has dismissed the popover.
+            Step("close-search", "hotkey", fields={"keys": ["ctrl", "f"]}),
             Step("focus-first-row", "activate", RESULT_ROW_MATCHER, {"dispatch": "ax"}),
             Step("anchor-down", "scroll", fields={"direction": "down", "amount": 1, "by": "page"}),
             Step("anchor-up-before-edit", "scroll", fields={"direction": "up", "amount": 1, "by": "page"}),

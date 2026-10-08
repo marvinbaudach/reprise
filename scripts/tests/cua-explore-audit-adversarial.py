@@ -446,7 +446,7 @@ class WorkloadEvidenceAdversarialTests(unittest.TestCase):
             ),
             ActionTrace(
                 action={"kind": "restart"},
-                before_labels=("You're offline", "Try again"),
+                before_labels=("Try again",),
                 after_labels=("Online",),
                 state_changed=True,
             ),
