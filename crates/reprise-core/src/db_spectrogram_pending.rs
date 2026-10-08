@@ -262,6 +262,41 @@ mod tests {
         assert_eq!(pending_render_data_tracks(&db).unwrap().len(), 1);
     }
 
+    /// The backfill's "already done" test and its pending list must be
+    /// complements (#1198): a track in one is never in the other.
+    #[test]
+    fn a_track_is_complete_exactly_when_it_is_not_pending() {
+        let db = Db::open_in_memory().unwrap();
+        db.conn()
+            .execute(
+                "INSERT INTO tracks (id, path, title, added_at, file_mtime, file_size, device, inode) \
+                 VALUES (1, '/old.flac', '', 0, 11, 22, 33, 44)",
+                [],
+            )
+            .unwrap();
+        set_track_spectrogram(&db, 1, source(), &TrackSpectrogram::empty()).unwrap();
+        set_waveform_peaks(&db, 1, &[9]).unwrap();
+
+        assert!(!crate::db::track_render_data_complete(&db, 1).unwrap());
+        assert_eq!(pending_render_data_tracks(&db).unwrap().len(), 1);
+
+        crate::db::set_track_render_data(
+            &db,
+            1,
+            source(),
+            &crate::waveform::TrackRenderData {
+                waveform_peaks: vec![9],
+                spectrogram: TrackSpectrogram::empty(),
+                loudness: None,
+            },
+        )
+        .unwrap();
+
+        assert!(crate::db::track_render_data_complete(&db, 1).unwrap());
+        assert!(pending_render_data_tracks(&db).unwrap().is_empty());
+        assert!(!crate::db::track_render_data_complete(&db, 2).unwrap());
+    }
+
     #[test]
     fn the_last_track_of_each_cue_file_is_marked_to_run_to_the_end() {
         let db = Db::open_in_memory().unwrap();

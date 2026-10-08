@@ -536,3 +536,46 @@ fn start_while_running_is_a_no_op() {
     set_flag(&release);
     library.cancel_track_analysis_backfill();
 }
+
+/// Issue #1198: a track analysed before loudness was measured holds a
+/// spectrogram and peaks but no loudness row. The backfill lists it as pending,
+/// so computing it must measure it rather than answer "already valid" — which
+/// counted it done without storing anything, left it pending, and grew `done`
+/// and `total` in lockstep for ever.
+#[test]
+fn a_track_analysed_before_loudness_existed_is_measured_and_drains() {
+    let (_directory, library, expected) = library_with_n_tracks(2);
+    let stale_id = expected[0].0;
+    {
+        let writer = library.writer_handle();
+        let writer = writer.lock().unwrap();
+        let source = reprise_core::db::track_source_fingerprint(&writer, stale_id)
+            .unwrap()
+            .unwrap();
+        reprise_core::db::set_track_spectrogram(
+            &writer,
+            stale_id,
+            source,
+            &reprise_core::spectrogram::TrackSpectrogram::empty(),
+        )
+        .unwrap();
+        reprise_core::db::set_waveform_peaks(&writer, stale_id, &[1]).unwrap();
+    }
+    let decodes = Arc::new(AtomicUsize::new(0));
+    library.register_track_pcm_decoder(Box::new(ClosureDecoder::new(
+        Arc::clone(&decodes),
+        move |_uri, sink| {
+            assert!(sink.push_pcm_i16(valid_pcm_bytes(), 32_000, 1));
+            Ok(())
+        },
+    )));
+
+    let progress = run_backfill_to_the_end(&library);
+
+    assert_eq!((progress.done, progress.failed, progress.total), (2, 0, 2));
+    assert_eq!(decodes.load(Ordering::SeqCst), 2);
+    let reader = library.reader().unwrap();
+    assert!(reprise_core::db::pending_render_data_tracks(&reader)
+        .unwrap()
+        .is_empty());
+}
