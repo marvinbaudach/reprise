@@ -112,9 +112,11 @@ const GATE_GROUP_ASSIGNMENTS: readonly GateGroupDefinition[] = [
       'Project quality',
       'Rust formatting',
       'Rust lint',
+      'Newest-toolchain lint',
       'Rust documentation',
       'Workspace tests',
       'Linux platform tests',
+      'Root tests',
     ],
   },
   {
