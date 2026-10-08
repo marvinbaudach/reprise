@@ -233,7 +233,9 @@ def plan_batch_edit(workload: Mapping[str, Any], index: int, rng: random.Random)
                 "edit-tags",
                 "activate",
                 LabelMatcher(contains=("edit tags",)),
-                {"dispatch": "ax"},
+                # The menu is a popup window; cua-driver has no bounds for its
+                # items, so its own click cannot be delivered (0.33.3 and 0.34.0).
+                {"dispatch": "px"},
                 alternates=(context_alternate,),
             ),
             _type("batch-genre", "Genre", str(fields.get("genre", "BATCH_GENRE"))),
