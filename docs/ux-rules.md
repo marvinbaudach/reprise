@@ -5064,8 +5064,14 @@ STYLE-1).
   `ac_29_a_short_silent_gap_after_signal_keeps_the_adopted_shape`,
   `ac_29_silent_lead_in_releases_the_adopted_shape_within_one_boundary_window`,
   `ac_29_handover_caps_stay_within_one_segment_of_the_morph`,
-  `ac_29_handover_caps_follow_a_real_gravity_fall_until_it_settles`, and
-  `normal_playback_caps_still_fall_by_peak_decay`.*
+  `ac_29_handover_caps_follow_a_real_gravity_fall_until_it_settles`,
+  `normal_playback_caps_still_fall_by_peak_decay`, and on the phone
+  `ac_29_the_new_live_panel_adopts_the_last_live_shape_not_the_decayed_display`,
+  `a_neighbour_with_a_spectrogram_mirrors_the_live_scene_through_the_transport_reset`
+  (`NowPlayingSceneEngineTest`), `a_stored_spectrogram_neighbour_is_eligible_to_mirror`,
+  `only_the_current_panel_owns_a_scene_engine` (`NowPlayingPanelsTest`) and
+  `a_neighbour_s_frozen_scene_survives_becoming_the_live_panel`
+  (`NowPlayingPanelFrozenSceneIdentityTest`).*
 
 - **AC-24** [active] [gtk] — The reactive light lives on the panel's blurred
   cover bloom, the cover in the player bar and the playhead, nowhere else; the
