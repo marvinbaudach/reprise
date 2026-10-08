@@ -8,6 +8,7 @@ from dataclasses import dataclass
 from typing import Any, Mapping, Sequence
 
 from section_handles import section_handle
+from ui_vocabulary import RETRY_WORDS
 
 
 # A selection marker is the count standing next to a selection noun, as in the
@@ -377,7 +378,10 @@ def _audit_offline(
     )
     retry_while_offline = any(
         trace.action.get("kind") == "activate"
-        and "retry" in _folded(trace.action.get("target_label"))
+        and any(
+            word in _folded(trace.action.get("target_label"))
+            for word in RETRY_WORDS
+        )
         and offline_at is not None
         and online_at is not None
         and offline_at < index < online_at

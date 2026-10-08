@@ -478,41 +478,58 @@ which ran the previous 1800 s out at action 190 with every section already visit
 host load 2-3 the same sweep takes about 20 minutes, so the larger budget only matters
 when the host is busy.
 
-## Known gaps on cua-driver 0.33
+## Known gaps on cua-driver 0.33 and 0.34
 
 The deck runs every mission to a finish instead of aborting. On the generated profiles
 `first-time-exploration`, `hover-affordance-sweep` and `section-search-isolation` reach
-`mission_complete`. `large-library-stress` does not, and what stops it is not the harness:
+`mission_complete`. `large-library-stress` does not. The rerun on 2026-10-08 (cua-driver
+0.34.0, release build of `dev` at `ea9513aa30`) completes `sort-cycle` and `scroll-sweep`
+and writes 512 of 512 files and database rows in `batch-edit`; what still stops it is
+listed below, and none of it is an app defect that is known today.
 
-- `sort-cycle` was blocked by an app defect, not by Xvfb or the harness (issue 1159,
-  fixed). The music table's header gestures keep only a weak reference to the column
-  editor model, and the main window built that model as a temporary that was dropped
-  right after the gestures were installed. Every header press then reached the sort
-  handler with no model and returned silently, so neither the order, the arrow nor the
-  query changed - under a real desktop as well. A plain `xdotool` click on a bare Xvfb
-  and openbox session reproduced it exactly, which is why pixel clicks seemed to land
-  (the header still took the hover wash). The table now owns its model; the
-  `style_13_a_pointer_click_on_a_track_list_header_sorts_by_that_column` display test
-  clicks the header through the X server and guards it. Re-run `large-library-stress`
-  to see whether anything else stops the mission.
-- `combined-filter` and `batch-edit` have to choose from popover lists, and a plain
-  `Atspi` walk of the same session (no driver) shows what the driver shows: the rows of
-  the Add filter popover are `list item`s with an empty name whose text sits in an
-  unindexed label child, and the nine items of the row context menu are `menu item`s with
-  an empty name and no label child at all, although the menu draws "Edit tags...". No label
-  can address either. The harness does not invent a name from a child's text: the missing
-  name is the finding (candidate GP-10 defect, a rule that is still `[planned]`).
-- The agent presses Ctrl+A and Shift+F10 while the search popover it opened for its
-  search still holds the keyboard focus, so the selection never reaches the list. That is
-  a plan defect of its own and stays open: fixing it alone cannot finish the workload,
-  because the menu it would open has nothing to address.
+- The three app blockers are gone: the Add filter rows and the context menu items carry
+  accessible names (issues 1157 and 1158), and a header click sorts (issue 1159). The
+  reasons the deck still ends incomplete are in the deck and the driver.
+- `sort-cycle` passes its audit, but only the Artist header is ever clicked. The agent
+  addresses the header row by its one label "Title Artist Album Year Length Rating", so every
+  click lands on the middle of the row (the same pixel 24 times) and the audit, which matches
+  a column name as a substring of that label, credits all five columns. The row order did
+  toggle on every click, so sorting works for Artist; Title, Album, Year and Rating are
+  untested. The column headers are `column header` nodes in the tree without an element
+  index, so the executor has nothing to aim at; the fix is a per-column pixel click from the
+  harness's own walk.
+- `batch-edit` stops after the write, in the audit and not in the app. `selection_observed`
+  looks for "512 tracks" in the indexed elements, but the dialog title "Edit 512 Tracks" is a
+  `label` node that cua-driver does not index; it appears only in `tree_markdown`.
+  `scroll_anchor_restored` compares row positions before and after the write; the written
+  rows come back with an empty Artist and Album and a length of 0:01 (most likely the
+  committed fixture FLAC carries no such tags, not measured), so the list sorted by Artist
+  reorders and no row keeps its position.
+- cua-driver cannot click an item of a popup menu through its own `click`: on 0.33.3 and
+  0.34.0 `Edit tags…` answers `element_bounds_unavailable` and the MPX fallback times out,
+  so the plan clicks it by pixel. The other items of that menu are not exercised.
+- `combined-filter` picks "Fixture Genre 00 (64)" for the label "Genre 00" because the
+  writable fixtures carry a genre of their own, and it clicks "1993 (1)" and the Rating value
+  by pixel although the list is scrolled and the row is outside the popover. The mission also
+  expects the chip label "Genre: Genre 00"; the app now exposes the chip as two unindexed
+  labels, "Genre" and the value. Two oracles misfire on the same popover:
+  `misrouted-click` reads the facet name that appears after "Add filter" as a different click,
+  and `invisible-actionable` flags rows of a scrolled popover list.
+- The plan opens the search popover and then fills the tag dialog by key. Ctrl+F closes the
+  popover and keeps the query; Escape clears it, and a `press` aimed at the search entry
+  clicks a point taken from the entry's untrusted geometry first, which dismisses the popover
+  and sends the key to the list (Enter played a track).
 
 Other gaps that are still open:
 
-- `offline-recovery` ends incomplete (`source_rows_single_and_retained` false for
-  Podcasts and YouTube, `refresh_before_loss` and `retry_while_offline` false). It ends
-  the same way, with the same audit, on the commit before this change; it is not
-  diagnosed.
+- `offline-recovery` ends incomplete. The 2026-10-08 rerun passes `restart`,
+  `refresh_before_loss` and `retry_while_offline`; the plan used to click Refresh from the
+  Radio view, which has none, and looked for "Retry" and "No connection" where the app says
+  "Try again" and "You're offline" (the banner heading is an unindexed label, so the restart
+  check reads the banner's "Try again" button instead). What still fails is
+  `source_rows_single_and_retained` for Podcasts and YouTube: those views list the show or
+  channel card ("Fixture Podcast", "Fixture Channel") and keep the episode that carries the
+  fixture needle behind the card's expander, so the audit never sees it.
 - A result shaped as a button that carries a click or an action is not counted as a result
   (`search_results.py`): the audit would read a list made of such buttons as empty. A source
   card, whose action is `activate`, is no result either, and is only checked for being
