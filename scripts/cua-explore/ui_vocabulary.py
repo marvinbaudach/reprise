@@ -70,7 +70,8 @@ BUTTON_ROLES = frozenset(
 SOFT_HOVER_ROLES = frozenset(
     {CANONICAL_ROW_ROLE, "cell", "tab", "chip", "cover tile"}
 )
-ENTRY_ROLES = frozenset({"entry", "search box", "text field"})
+# The driver spells a GTK text entry "text box"; the tag editor fields use it.
+ENTRY_ROLES = frozenset({"entry", "search box", "text field", "text box"})
 VALUE_BEARING_ROLES = frozenset({*ENTRY_ROLES, "slider", "spin button"})
 ACTIONABLE_ROLES = frozenset(
     {*BUTTON_ROLES, *SOFT_HOVER_ROLES, *ENTRY_ROLES, "switch"}

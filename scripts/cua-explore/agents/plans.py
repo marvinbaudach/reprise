@@ -241,7 +241,7 @@ def plan_batch_edit(workload: Mapping[str, Any], index: int, rng: random.Random)
             _type("batch-genre", "Genre", str(fields.get("genre", "BATCH_GENRE"))),
             _type("batch-year", "Year", str(fields.get("year", "BATCH_YEAR"))),
             Step("hover-save", "hover", LabelMatcher(contains=("save", "apply")), required=False),
-            Step("save-batch", "activate", LabelMatcher(contains=(f"save {count}", "apply")), {"dispatch": "ax"}),
+            Step("save-batch", "activate", LabelMatcher(contains=(f"save {count}", "save", "apply")), {"dispatch": "ax"}),
             Step("wait-for-write-1", "wait", fields={"duration_ms": 2_000, "expect_status": True}),
             Step("wait-for-write-2", "wait", fields={"duration_ms": 5_000, "expect_status": True}),
             Step("wait-for-write-3", "wait", fields={"duration_ms": 5_000, "expect_status": True}),
