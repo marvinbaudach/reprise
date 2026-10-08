@@ -1,6 +1,6 @@
 //! A CUE track ends at its own end (PLAY-22), the last track of a file plays
 //! to the file's end, and the next track of the same file takes over inside
-//! the file with its own gain (PLAY-23). Headless against a real `playbin3` on
+//! the file with its own gain (PLAY-23a). Headless against a real `playbin3` on
 //! `fakesink`, judged by what leaves the gain element and what the frontend
 //! receives.
 
@@ -233,14 +233,14 @@ fn play_22_the_last_track_of_a_file_plays_to_the_file_end() {
 }
 
 #[test]
-fn play_23_contiguous_tracks_of_one_file_hand_over_inside_it() {
+fn play_23a_contiguous_tracks_of_one_file_hand_over_inside_it() {
     assert_contiguous_hand_over(TrackTransition::Gapless);
 }
 
 /// Crossfade mode does not fade between two tracks of one file: they play
 /// through exactly as in Gapless mode.
 #[test]
-fn play_23_contiguous_tracks_play_through_in_crossfade_mode_too() {
+fn play_23a_contiguous_tracks_play_through_in_crossfade_mode_too() {
     assert_contiguous_hand_over(TrackTransition::Crossfade);
 }
 

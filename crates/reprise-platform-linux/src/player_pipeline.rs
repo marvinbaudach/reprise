@@ -429,6 +429,7 @@ pub(crate) fn attach_bus_watch(
                     );
                 } else {
                     tracing::debug!("playback reached end-of-stream");
+                    segments.complete_pending_handoff();
                     (*on_event)(PlayerEvent::TrackFinished);
                 }
             }

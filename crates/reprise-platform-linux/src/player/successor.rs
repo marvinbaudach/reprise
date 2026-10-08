@@ -17,8 +17,8 @@ impl Player {
     /// (a live ReplayGain change re-feeds the unchanged next track) must update
     /// the gain that hand-off will apply: the gapless gain pending for the next
     /// stream start, the gain of the pre-built crossfade secondary, or — for a
-    /// CUE track the boundary probe already handed over to — the gain playing
-    /// now. Returns `true` when it did, so the track is not queued again.
+    /// CUE track the boundary probe already handed over to, heard or not yet —
+    /// the gain playing now. Returns `true` when it did, so the track is not queued again.
     ///
     /// A track is identified by URI *and* segment: two tracks of one CUE file
     /// share the URI, and a whole-file hand-off is never one of them.
@@ -29,7 +29,10 @@ impl Player {
             .unwrap_or_else(PoisonError::into_inner)
             .clone();
         if let Some(segment) = queued.segment {
-            if !self.segments.handed_off_to(&queued.uri, segment) {
+            if !self
+                .segments
+                .refresh_in_flight_gain(&queued.uri, segment, queued.gain_db)
+            {
                 return false;
             }
             if let Err(error) = set_playbin_track_gain(&playbin, queued.gain_db) {
