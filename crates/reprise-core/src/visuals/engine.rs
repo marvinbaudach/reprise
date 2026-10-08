@@ -15,6 +15,8 @@ use super::scene::{Fill, Geom, Rgba, Scene, Shape};
 
 const PEAK_DECAY: f32 = 0.018;
 const HANDOVER_CAP_GAP: f32 = 1.0 / 16.0;
+/// Safety bound for a handover that rises or never develops a gravity fall.
+const HANDOVER_CAP_MAX_TICKS: f32 = 60.0;
 const NO_TRACK_RELEASE: f32 = 0.12;
 const SETTLE_EPSILON: f32 = 0.002;
 const FALLBACK_ACCENT2_HUE_SHIFT: f32 = 42.0;
@@ -99,6 +101,9 @@ pub struct VisualEngine {
     bands_current: [f32; SPECTRUM_BAND_COUNT],
     bands_peaks: [f32; SPECTRUM_BAND_COUNT],
     handover_caps: bool,
+    /// Prevents gravity's near-stationary first frames from ending the clamp.
+    handover_caps_saw_fast_fall: bool,
+    handover_cap_elapsed_ticks: f32,
     /// What the scene draws: the live bars, lifted by the idle wave whenever a
     /// track is loaded but not playing (AC-27).
     display_bands: [f32; SPECTRUM_BAND_COUNT],
@@ -129,6 +134,8 @@ impl VisualEngine {
             bands_current: [0.0; SPECTRUM_BAND_COUNT],
             bands_peaks: [0.0; SPECTRUM_BAND_COUNT],
             handover_caps: false,
+            handover_caps_saw_fast_fall: false,
+            handover_cap_elapsed_ticks: 0.0,
             display_bands: [0.0; SPECTRUM_BAND_COUNT],
             pressure: BassPressure::silent(),
             glow: 0.0,
@@ -162,6 +169,8 @@ impl VisualEngine {
             self.idle_amp = 0.0;
             self.idle_phase = 0.0;
             self.handover_caps = false;
+            self.handover_caps_saw_fast_fall = false;
+            self.handover_cap_elapsed_ticks = 0.0;
         }
         self.refresh_display_bands();
     }
@@ -253,6 +262,8 @@ impl VisualEngine {
         self.bands_current = [0.0; SPECTRUM_BAND_COUNT];
         self.bands_peaks = [0.0; SPECTRUM_BAND_COUNT];
         self.handover_caps = false;
+        self.handover_caps_saw_fast_fall = false;
+        self.handover_cap_elapsed_ticks = 0.0;
         self.pressure = BassPressure::silent();
         self.glow = 0.0;
         self.refresh_display_bands();
@@ -281,15 +292,28 @@ impl VisualEngine {
             self.bands_peaks = [0.0; SPECTRUM_BAND_COUNT];
         } else if self.playing {
             if self.handover_caps {
+                self.handover_cap_elapsed_ticks += elapsed_ticks;
                 for (peak, current) in self.bands_peaks.iter_mut().zip(self.bands_current.iter()) {
                     *peak = (*peak - PEAK_DECAY * elapsed_ticks)
                         .min(*current + HANDOVER_CAP_GAP)
                         .max(*current);
                 }
-                self.handover_caps = previous_bands
+                let falling_faster_than_caps = previous_bands
                     .iter()
                     .zip(self.bands_current)
-                    .any(|(previous, current)| (previous - current).abs() > HANDOVER_CAP_GAP);
+                    .any(|(previous, current)| previous - current > PEAK_DECAY * elapsed_ticks);
+                let morph_still_falling = previous_bands
+                    .iter()
+                    .zip(self.bands_current)
+                    .any(|(previous, current)| previous - current > SETTLE_EPSILON);
+                self.handover_caps_saw_fast_fall |= falling_faster_than_caps;
+                if (self.handover_caps_saw_fast_fall && !morph_still_falling)
+                    || self.handover_cap_elapsed_ticks >= HANDOVER_CAP_MAX_TICKS
+                {
+                    self.handover_caps = false;
+                    self.handover_caps_saw_fast_fall = false;
+                    self.handover_cap_elapsed_ticks = 0.0;
+                }
             } else {
                 for (peak, current) in self.bands_peaks.iter_mut().zip(self.bands_current.iter()) {
                     *peak = (*peak - PEAK_DECAY * elapsed_ticks).max(*current);
@@ -304,6 +328,8 @@ impl VisualEngine {
     /// stay within one rendered segment instead of trailing at normal speed.
     pub fn adopt_shape(&mut self, frame: &SpectrumFrame) {
         self.handover_caps = false;
+        self.handover_caps_saw_fast_fall = false;
+        self.handover_cap_elapsed_ticks = 0.0;
         self.ingest(frame);
         self.handover_caps = true;
     }

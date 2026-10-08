@@ -5037,7 +5037,8 @@ STYLE-1).
   `ac_29_a_gain_rise_never_draws_past_the_boundary_target`,
   `ac_29_a_adopted_shape_holds_until_the_quiet_stream_decides_its_level`,
   `ac_29_silent_lead_in_releases_the_adopted_shape_within_one_boundary_window`,
-  `ac_29_handover_caps_stay_within_one_segment_of_the_morph`, and
+  `ac_29_handover_caps_stay_within_one_segment_of_the_morph`,
+  `ac_29_handover_caps_follow_a_real_gravity_fall_until_it_settles`, and
   `normal_playback_caps_still_fall_by_peak_decay`.*
 
 - **AC-24** [active] [gtk] — The reactive light lives on the panel's blurred

@@ -1,6 +1,7 @@
 use std::time::Duration;
 
 use super::*;
+use crate::playback::{CavaBarProcessor, CavaConfig};
 
 const FRAME_ELAPSED: Duration = Duration::from_micros(16_667);
 const CLOSED_FRAMES: usize = 600;
@@ -43,6 +44,49 @@ fn ac_29_handover_caps_stay_within_one_segment_of_the_morph() {
             largest_peak_gap(&engine)
         );
     }
+}
+
+#[test]
+fn ac_29_handover_caps_follow_a_real_gravity_fall_until_it_settles() {
+    const SAMPLE_RATE_HZ: u32 = 48_000;
+    const SAMPLES_PER_FRAME: usize = 800;
+    const SEGMENT_HEIGHT: f32 = 1.0 / 16.0;
+    const MAX_GRAVITY_FRAMES: usize = 120;
+
+    let adopted = [0.8; SPECTRUM_BAND_COUNT];
+    let mut smoother = CavaBarProcessor::new(CavaConfig::new(SAMPLE_RATE_HZ, SPECTRUM_BAND_COUNT))
+        .expect("the production CAVA configuration is valid");
+    smoother.seed_shape(&adopted);
+
+    let mut engine = VisualEngine::new();
+    engine.set_playing(true);
+    engine.adopt_shape(&SpectrumFrame::from_cava_bars(adopted));
+
+    let silence = vec![0.0; SAMPLES_PER_FRAME];
+    let mut bars = [0.0; SPECTRUM_BAND_COUNT];
+    let mut settled = false;
+    for frame in 0..MAX_GRAVITY_FRAMES {
+        smoother.process_into(&silence, &mut bars);
+        engine.ingest(&SpectrumFrame::from_cava_bars(bars));
+        assert!(
+            largest_peak_gap(&engine) <= SEGMENT_HEIGHT + 0.0001,
+            "frame {frame}: a handover cap stayed {:.3} above its gravity-driven bar",
+            largest_peak_gap(&engine)
+        );
+        if bars.iter().all(|bar| *bar <= SETTLE_EPSILON) {
+            settled = true;
+            break;
+        }
+    }
+    assert!(settled, "the real smoother fixture never settled");
+
+    engine.ingest(&SpectrumFrame::from_cava_bars([0.8; SPECTRUM_BAND_COUNT]));
+    engine.ingest(&SpectrumFrame::from_cava_bars([0.2; SPECTRUM_BAND_COUNT]));
+    assert!(
+        (engine.bands_peaks[0] - (0.8 - PEAK_DECAY)).abs() <= 0.0001,
+        "normal PEAK_DECAY did not resume after the handover settled: {}",
+        engine.bands_peaks[0]
+    );
 }
 
 #[test]
