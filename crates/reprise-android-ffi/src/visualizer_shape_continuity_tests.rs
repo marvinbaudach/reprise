@@ -363,6 +363,73 @@ fn ac_29_a_short_silent_lead_in_keeps_the_adopted_shape_until_the_quiet_stream_d
 }
 
 #[test]
+fn ac_29_a_signal_blip_then_silence_releases_the_adopted_shape_within_one_window() {
+    const HELD_LEVEL: f32 = 0.8;
+    const LEVEL_TOLERANCE: f32 = 0.01;
+    const BOUNDARY_WINDOW_TICKS: usize = 12;
+    const PCM_BUFFER_TAIL_TICKS: usize = 2;
+    const LONG_SILENCE_TICKS: usize = 120;
+
+    let mut handed_over = Playback::new();
+    handed_over.engine.note_track_changed();
+    handed_over
+        .engine
+        .adopt_shape(vec![HELD_LEVEL; SPECTRUM_BAND_COUNT]);
+
+    handed_over.tick(2);
+    let means: Vec<f32> = (0..LONG_SILENCE_TICKS)
+        .map(|_| mean(&handed_over.tick_silence()))
+        .collect();
+
+    assert!(
+        (means[0] - HELD_LEVEL).abs() <= LEVEL_TOLERANCE,
+        "the first silent frame released the adopted shape: {means:.3?}"
+    );
+    let released_at = means
+        .iter()
+        .position(|level| *level < HELD_LEVEL - LEVEL_TOLERANCE)
+        .expect("two seconds of silence after a signal blip must release the adopted shape");
+    assert!(
+        released_at < BOUNDARY_WINDOW_TICKS + PCM_BUFFER_TAIL_TICKS,
+        "the adopted shape outlived one boundary window after the signal blip: released at tick {released_at}"
+    );
+    assert!(
+        means.last().expect("the fixture produced silent frames") < &means[released_at],
+        "the bars did not continue their normal fall after silence released the hold: {means:.3?}"
+    );
+}
+
+#[test]
+fn ac_29_a_short_silent_gap_after_signal_keeps_the_adopted_shape() {
+    const HELD_LEVEL: f32 = 0.8;
+    const LEVEL_TOLERANCE: f32 = 0.01;
+    const SHORT_SILENT_GAP_TICKS: usize = 4;
+
+    let mut handed_over = Playback::new();
+    handed_over.engine.note_track_changed();
+    handed_over
+        .engine
+        .adopt_shape(vec![HELD_LEVEL; SPECTRUM_BAND_COUNT]);
+
+    handed_over.tick(2);
+    let gap_means: Vec<f32> = (0..SHORT_SILENT_GAP_TICKS)
+        .map(|_| mean(&handed_over.tick_silence()))
+        .collect();
+
+    assert!(
+        gap_means
+            .iter()
+            .all(|level| (*level - HELD_LEVEL).abs() <= LEVEL_TOLERANCE),
+        "a silent gap shorter than one boundary window released the adopted shape: {gap_means:.3?}"
+    );
+    let resumed_mean = mean(&handed_over.tick(2));
+    assert!(
+        (resumed_mean - HELD_LEVEL).abs() <= LEVEL_TOLERANCE,
+        "signal after the short gap did not keep the adopted shape: {resumed_mean:.3}"
+    );
+}
+
+#[test]
 fn ac_29_silent_lead_in_releases_the_adopted_shape_within_one_boundary_window() {
     const HELD_LEVEL: f32 = 0.8;
     const BOUNDARY_WINDOW_TICKS: usize = 12;

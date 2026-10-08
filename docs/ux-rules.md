@@ -5037,6 +5037,8 @@ STYLE-1).
   `ac_29_a_gain_rise_never_draws_past_the_boundary_target`,
   `ac_29_a_adopted_shape_holds_until_the_quiet_stream_decides_its_level`,
   `ac_29_a_short_silent_lead_in_keeps_the_adopted_shape_until_the_quiet_stream_decides`,
+  `ac_29_a_signal_blip_then_silence_releases_the_adopted_shape_within_one_window`,
+  `ac_29_a_short_silent_gap_after_signal_keeps_the_adopted_shape`,
   `ac_29_silent_lead_in_releases_the_adopted_shape_within_one_boundary_window`,
   `ac_29_handover_caps_stay_within_one_segment_of_the_morph`,
   `ac_29_handover_caps_follow_a_real_gravity_fall_until_it_settles`, and

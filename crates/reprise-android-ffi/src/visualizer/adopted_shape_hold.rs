@@ -12,7 +12,9 @@ enum Phase {
     AwaitingSignal {
         silent_samples: usize,
     },
-    SignalArrived,
+    SignalArrived {
+        silent_samples: usize,
+    },
 }
 
 impl AdoptedShapeHold {
@@ -42,9 +44,21 @@ impl AdoptedShapeHold {
 
         match &mut self.phase {
             Phase::Inactive => false,
-            Phase::SignalArrived => true,
-            Phase::AwaitingSignal { silent_samples } if signal_present => {
-                self.phase = Phase::SignalArrived;
+            Phase::SignalArrived { silent_samples } if signal_present => {
+                *silent_samples = 0;
+                true
+            }
+            Phase::SignalArrived { silent_samples } => {
+                *silent_samples = silent_samples.saturating_add(analyzed_samples);
+                if *silent_samples > boundary_window_samples {
+                    self.clear();
+                    false
+                } else {
+                    true
+                }
+            }
+            Phase::AwaitingSignal { .. } if signal_present => {
+                self.phase = Phase::SignalArrived { silent_samples: 0 };
                 true
             }
             Phase::AwaitingSignal { silent_samples } => {
