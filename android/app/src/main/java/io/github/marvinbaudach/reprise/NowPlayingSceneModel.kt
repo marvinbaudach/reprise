@@ -144,19 +144,17 @@ internal fun panelHasVisualData(
  * Whether a neighbour *could* draw the live panel's scene instead of its own,
  * regardless of whether it is currently on screen.
  *
- * A neighbour without a stored spectrogram has no scene of its own — its
- * engine hears nothing — so once the swipe carries it onto the screen it
- * mirrors the live engine, tinted in its own accent. The panel that has just
- * lost the live slot is such a neighbour too: it slides out with the bars of
- * what is playing rather than a frozen picture of what was. A stored
- * spectrogram is the panel's own picture and wins; the live panel is the
- * source, not a mirror.
+ * Every neighbour mirrors the live engine once the swipe carries it onto the
+ * screen, tinted in its own accent. Its stored spectrogram must not win: that
+ * would draw the incoming song at the outgoing song's shared playhead before
+ * the transport answer changes the live panel. The panel that has just lost
+ * the live slot mirrors for the same reason, so the whole swipe carries one
+ * continuous live shape. The live panel is the source, not a mirror.
  */
 internal fun panelCanMirrorLiveScene(
     isLivePanel: Boolean,
-    storedFrameCount: Int,
     liveSceneAvailable: Boolean,
-): Boolean = !isLivePanel && storedFrameCount == 0 && liveSceneAvailable
+): Boolean = !isLivePanel && liveSceneAvailable
 
 /**
  * Whether a neighbour is actually drawing the live panel's scene right now.
@@ -169,25 +167,22 @@ internal fun panelCanMirrorLiveScene(
  */
 internal fun panelMirrorsLiveScene(
     isLivePanel: Boolean,
-    storedFrameCount: Int,
     near: Float,
     liveSceneAvailable: Boolean,
-): Boolean = panelCanMirrorLiveScene(isLivePanel, storedFrameCount, liveSceneAvailable) && near > 0f
+): Boolean = panelCanMirrorLiveScene(isLivePanel, liveSceneAvailable) && near > 0f
 
 /**
  * Whether a newly created live engine should adopt the outgoing live engine's
  * bar shape instead of starting from zero.
  *
- * Production gives each panel a new lease over one shared live engine (see
- * [visualSceneFactoryForPanel]). The explicit `noteTrackChanged()` call resets
- * that engine's CAVA history, which otherwise leaves a bare peak cap with no
- * bars underneath for one frame; the seed carries the displayed shape across
- * that reset. Only the panel taking over the live slot adopts anything — a
- * non-live panel's engine never scenes live audio, and a panel that keeps the
- * live slot across a recomposition has no `previous` to speak of (`created`
- * did not change). In production `previous !== created` is always true
- * because every `create()` returns a new lease; it only guards test doubles
- * that return the same engine instance.
+ * Production creates an engine only for the panel taking over the live slot
+ * (see [visualSceneFactoryForPanel]). The explicit `noteTrackChanged()` call
+ * resets that engine's CAVA history, which otherwise leaves a bare peak cap
+ * with no bars underneath for one frame; the seed carries the displayed shape
+ * across that reset. A panel that keeps the live slot across a recomposition
+ * has no `previous` to speak of (`created` did not change). In production
+ * `previous !== created` is always true because every `create()` returns a new
+ * lease; it only guards test doubles that return the same engine instance.
  */
 internal fun shouldAdoptLiveShape(
     live: Boolean,

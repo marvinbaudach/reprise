@@ -34,11 +34,9 @@ import org.robolectric.annotation.Config
  * `currentIndex - currentRow` relationship and remount the subtree; this
  * test says nothing about those paths.
  *
- * This test rebuilds the `key(...)`/`remember(...)` nesting locally rather
- * than rendering [NowPlayingScene] itself (that would require a live
- * `NativeVisualSceneEngine`, which needs the native library and is not
- * available to this JVM unit test for a non-live panel). It is therefore
- * evidence for the claim above, not a regression guard: a change to the real
+ * This test rebuilds the `key(...)`/`remember(...)` nesting locally to expose
+ * the remembered object's identity directly. It is therefore evidence for
+ * the claim above, not a regression guard: a change to the real
  * `key(panel.track.id, panel.index)` in `NowPlayingScene.kt` would not turn
  * this test red.
  */
@@ -67,8 +65,7 @@ class NowPlayingPanelFrozenSceneIdentityTest {
         }
         compose.waitForIdle()
 
-        // The neighbour drew a real, non-empty scene while it was still off to the side —
-        // exactly what a track with a stored spectrogram does before it ever becomes live.
+        // The neighbour mirrored a real, non-empty scene before it became live.
         val drawnWhileNeighbour = byteArrayOf(1, 2, 3, 4)
         val frozenWhileNeighbour = requireNotNull(neighbourFrozen)
         frozenWhileNeighbour.latestOrFrozen(drawnWhileNeighbour)

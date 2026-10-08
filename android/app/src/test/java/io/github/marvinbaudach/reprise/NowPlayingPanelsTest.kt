@@ -312,13 +312,12 @@ class NowPlayingPanelsTest {
         // render-cost question), not whether data is available.
         val eligible = panelCanMirrorLiveScene(
             isLivePanel = false,
-            storedFrameCount = 0,
             liveSceneAvailable = true,
         )
         assertTrue("eligibility to mirror does not depend on near", eligible)
         assertFalse(
             "at rest the mirror is not actually drawn",
-            panelMirrorsLiveScene(isLivePanel = false, storedFrameCount = 0, near = 0f, liveSceneAvailable = true),
+            panelMirrorsLiveScene(isLivePanel = false, near = 0f, liveSceneAvailable = true),
         )
         // The discriminator: feeding the OLD wiring (`near == 0` through
         // `panelMirrorsLiveScene`) into this same slot would report false --
@@ -333,21 +332,21 @@ class NowPlayingPanelsTest {
     @Test
     fun a_live_panel_is_never_eligible_to_mirror_itself() {
         assertFalse(
-            panelCanMirrorLiveScene(isLivePanel = true, storedFrameCount = 0, liveSceneAvailable = true),
+            panelCanMirrorLiveScene(isLivePanel = true, liveSceneAvailable = true),
         )
     }
 
     @Test
-    fun a_stored_spectrogram_is_not_eligible_to_mirror_either() {
-        assertFalse(
-            panelCanMirrorLiveScene(isLivePanel = false, storedFrameCount = 3, liveSceneAvailable = true),
+    fun a_stored_spectrogram_neighbour_is_eligible_to_mirror() {
+        assertTrue(
+            panelCanMirrorLiveScene(isLivePanel = false, liveSceneAvailable = true),
         )
     }
 
     @Test
     fun nothing_is_eligible_to_mirror_before_the_live_engine_exists() {
         assertFalse(
-            panelCanMirrorLiveScene(isLivePanel = false, storedFrameCount = 0, liveSceneAvailable = false),
+            panelCanMirrorLiveScene(isLivePanel = false, liveSceneAvailable = false),
         )
     }
 
@@ -364,11 +363,10 @@ class NowPlayingPanelsTest {
 
     @Test
     fun a_visible_neighbour_mirrors_the_live_scene_and_a_resting_one_does_not() {
-        assertTrue(panelMirrorsLiveScene(isLivePanel = false, storedFrameCount = 0, near = 0.4f, liveSceneAvailable = true))
-        assertFalse("at rest the neighbour is off the screen", panelMirrorsLiveScene(isLivePanel = false, storedFrameCount = 0, near = 0f, liveSceneAvailable = true))
-        assertFalse("a stored spectrogram is the panel's own scene", panelMirrorsLiveScene(isLivePanel = false, storedFrameCount = 3, near = 0.4f, liveSceneAvailable = true))
-        assertFalse("the live panel is the source, not a mirror", panelMirrorsLiveScene(isLivePanel = true, storedFrameCount = 0, near = 1f, liveSceneAvailable = true))
-        assertFalse("nothing to mirror before the live engine exists", panelMirrorsLiveScene(isLivePanel = false, storedFrameCount = 0, near = 0.4f, liveSceneAvailable = false))
+        assertTrue(panelMirrorsLiveScene(isLivePanel = false, near = 0.4f, liveSceneAvailable = true))
+        assertFalse("at rest the neighbour is off the screen", panelMirrorsLiveScene(isLivePanel = false, near = 0f, liveSceneAvailable = true))
+        assertFalse("the live panel is the source, not a mirror", panelMirrorsLiveScene(isLivePanel = true, near = 1f, liveSceneAvailable = true))
+        assertFalse("nothing to mirror before the live engine exists", panelMirrorsLiveScene(isLivePanel = false, near = 0.4f, liveSceneAvailable = false))
     }
 
     @Test
@@ -408,14 +406,11 @@ class NowPlayingPanelsTest {
     }
 
     @Test
-    fun only_the_current_panel_uses_the_live_audio_scene_factory() {
+    fun only_the_current_panel_owns_a_scene_engine() {
         val liveFactory = VisualSceneEngineFactory { error("not created by this unit test") }
 
         assertSame(liveFactory, visualSceneFactoryForPanel(live = true, liveFactory))
-        assertSame(
-            NativeVisualSceneEngineFactory,
-            visualSceneFactoryForPanel(live = false, liveFactory),
-        )
+        assertNull(visualSceneFactoryForPanel(live = false, liveFactory))
     }
 
     @Test
