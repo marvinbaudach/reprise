@@ -540,7 +540,10 @@ impl PlaybackBackend for Player {
                 flags,
                 gst::ClockTime::from_mseconds(target_ms.max(0) as u64),
             )
-            .map_err(|e| PlaybackError::Backend(format!("GStreamer: {e}")))
+            .map_err(|e| {
+                self.segments.seek_refused();
+                PlaybackError::Backend(format!("GStreamer: {e}"))
+            })
     }
 
     /// Sets the playback volume and remembers it as the crossfade ramp's target.

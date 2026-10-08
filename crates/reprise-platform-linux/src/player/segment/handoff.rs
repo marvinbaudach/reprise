@@ -66,11 +66,10 @@ impl SegmentGate {
         next: ArmedNext,
         outgoing_gain: f64,
     ) -> u64 {
-        // A staged hand-off still unheard when the next boundary is met has
-        // been played through: it is announced first, so none is lost.
-        if let Some(earlier) = state.pending.take() {
-            self.announce(state, earlier);
-        }
+        // Nothing arms a successor while one is staged: the frontend arms the
+        // next only after `AdvancedToNext`, and both `route_next` and a
+        // withdrawal clear the staged hand-off first.
+        debug_assert!(state.pending.is_none(), "a hand-off was staged twice");
         let epoch = self.handoff_epoch.fetch_add(1, Ordering::SeqCst) + 1;
         state.pending = Some(PendingHandOff {
             next,
@@ -104,13 +103,23 @@ impl SegmentGate {
         (self.on_event)(PlayerEvent::AdvancedToNext);
     }
 
-    /// Announces the staged hand-off `epoch` if it still stands.
-    fn complete_handoff(&self, epoch: u64) {
+    /// Announces the staged hand-off `epoch` if it still stands and no seek is
+    /// in flight. Returns whether the watcher is done with it — announced or
+    /// gone; `false` while a seek holds it, so the watcher looks again.
+    fn complete_handoff(&self, epoch: u64) -> bool {
         let mut state = self.lock();
-        if let Some(pending) = state.pending.filter(|pending| pending.epoch == epoch) {
-            state.pending = None;
-            self.announce(&mut state, pending);
+        let Some(pending) = state.pending.filter(|pending| pending.epoch == epoch) else {
+            return true;
+        };
+        // A hand-off staged by a buffer from before a seek: the seek's first
+        // buffer withdraws it, and announcing it now would show the next
+        // track while the seek lands back in the outgoing one.
+        if state.seek_in_flight {
+            return false;
         }
+        state.pending = None;
+        self.announce(&mut state, pending);
+        true
     }
 
     /// Announces any staged hand-off at once. The bus calls it before it
@@ -163,8 +172,9 @@ pub(super) fn watch_render(
                             unanswered + 1
                         };
                         let heard = position.is_some_and(|position| position >= boundary);
-                        if heard || unanswered > UNANSWERED_POLLS_TOLERATED {
-                            gate.complete_handoff(epoch);
+                        if (heard || unanswered > UNANSWERED_POLLS_TOLERATED)
+                            && gate.complete_handoff(epoch)
+                        {
                             return;
                         }
                         RENDER_POLL_PLAYING
@@ -178,6 +188,12 @@ pub(super) fn watch_render(
         });
     if let Err(error) = spawned {
         tracing::warn!(%error, "could not watch the CUE hand-off; announcing it now");
-        gate.complete_handoff(epoch);
+        // A seek in flight keeps it staged; the bus's end-of-stream then
+        // announces it at the latest.
+        let _ = gate.complete_handoff(epoch);
     }
 }
+
+#[cfg(test)]
+#[path = "handoff_tests.rs"]
+mod tests;

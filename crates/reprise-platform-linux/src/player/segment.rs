@@ -156,6 +156,10 @@ struct CutState {
     /// The linear gain the probe puts back with its next buffer, after a
     /// seek withdrew a staged hand-off.
     restore_gain: Option<f64>,
+    /// A flushing seek was asked for and its segment has not reached the
+    /// probe yet. Buffers until then predate the seek, and a hand-off they
+    /// stage must not be announced: the next post-seek buffer withdraws it.
+    seek_in_flight: bool,
 }
 
 impl CutState {
@@ -286,8 +290,12 @@ impl SegmentGate {
     /// A hand-off staged but not yet heard is withdrawn: the frontend still
     /// plays the outgoing track and has just named a different successor for
     /// it (a re-feed of the staged one never gets here, see
-    /// `Player::refresh_in_flight_gain`). With nothing armed the outgoing track
-    /// then ends at its boundary.
+    /// `Player::refresh_in_flight_gain`). With nothing armed the probe ends the
+    /// stream with its next buffer. What already lies downstream of the probe
+    /// cannot be recalled: up to a second of the withdrawn successor is still
+    /// heard, under the outgoing track's title and with its clock clamped at
+    /// its end, before `TrackFinished` lets the newly named track start
+    /// (PLAY-23a).
     pub(crate) fn route_next(&self, next: Option<&QueuedTrack>) -> bool {
         let mut state = self.lock();
         state.handed_off = false;
@@ -352,7 +360,20 @@ impl SegmentGate {
             state.pending_start_ms = Some(target_ms);
             return Some(CutSeek::Deferred);
         }
+        state.seek_in_flight = true;
         Some(CutSeek::Now(target_ms))
+    }
+
+    /// A seek [`Self::seek_target_ms`] asked for was refused: no flush will
+    /// come to end the wait it started.
+    pub(crate) fn seek_refused(&self) {
+        self.lock().seek_in_flight = false;
+    }
+
+    /// The flushing seek's new segment reached the probe: buffers from here
+    /// on are the seek's own.
+    fn seek_landed(&self) {
+        self.lock().seek_in_flight = false;
     }
 
     /// Computes the tick for the active cut — or `whole_file` for a whole
@@ -426,6 +447,7 @@ pub(crate) fn install_segment_boundary(
         move |pad, info| match &info.data {
             Some(gst::PadProbeData::Event(event)) => {
                 if let gst::EventView::Segment(segment) = event.view() {
+                    gate.seek_landed();
                     *stream_segment
                         .lock()
                         .unwrap_or_else(PoisonError::into_inner) =

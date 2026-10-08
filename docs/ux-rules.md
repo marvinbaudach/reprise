@@ -636,24 +636,42 @@ result.
   eligibility, Previous, the sleep timer and the lyrics lookup measure the
   track rather than its file.
   <!-- REVIEW: rule proposal -->
-- **PLAY-23** [active] [core] — **Consecutive tracks of one CUE file play
-  through without a gap or a reload, each with its own loudness gain.** When
-  the next track is the one that starts where the playing track ends in the
-  same file, playback carries on inside the file: no new stream starts and
-  nothing is reloaded. From the first buffer at the boundary on, the next
-  track's own gain applies (give or take that one buffer), and the moment the
-  next track takes over, its time and length are the ones shown — no tick of
-  the previous track arrives afterwards. This holds with the transition set to
-  Gapless or Crossfade; with transitions off nothing is pre-fed and the next
-  track starts like any other. Every other change into or out of a CUE track
-  may have a short gap. Proven by the GStreamer backend tests.
+- **PLAY-23** [replaced by PLAY-23a] [core] — **Consecutive tracks of one CUE
+  file play through without a gap or a reload, each with its own loudness
+  gain.** When the next track is the one that starts where the playing track
+  ends in the same file, playback carries on inside the file: no new stream
+  starts and nothing is reloaded. From the first buffer at the boundary on,
+  the next track's own gain applies (give or take that one buffer), and the
+  moment the next track takes over, its time and length are the ones shown.
+- **PLAY-23a** [active] [core] — **Consecutive tracks of one CUE file play
+  through without a gap or a reload, each with its own loudness gain, and the
+  next one is shown when it is heard.** When the next track is the one that
+  starts where the playing track ends in the same file, playback carries on
+  inside the file: no new stream starts and nothing is reloaded. From the
+  first buffer at the boundary on, the next track's own gain applies (give or
+  take that one buffer). The next track takes over in the UI when its first
+  sample is heard, not when the player reads it about a second earlier:
+  until then the previous track's time keeps counting to its end, and from
+  then on the next track's time and length are the ones shown — no tick of
+  the previous track arrives afterwards. This holds with the transition set
+  to Gapless or Crossfade; with transitions off nothing is pre-fed and the
+  next track starts like any other. Every other change into or out of a CUE
+  track may have a short gap. Two limits follow from the player reading
+  ahead of what is heard, by about a second plus the audio device's own
+  latency: a track shorter than that hands over into the track after it
+  with a short gap and a reload instead of playing through — it still
+  takes over and then finishes once each, in that order; and a different
+  next track chosen while the boundary is already read but not yet heard
+  lets up to that much of the previously queued track play under the
+  previous title before the newly chosen one starts. Proven by the
+  GStreamer backend tests.
   <!-- REVIEW: rule proposal -->
 - **PLAY-24** [active] [core] — **No crossfade into or out of a CUE track.**
   With the transition set to Crossfade, a change from a CUE track to any track
   that does not follow on in the same file, and from any track to a CUE track,
   is a hard change: the playing track finishes and the next one starts, with
   no second pipeline fading between them. Two consecutive tracks of one file
-  play through instead (PLAY-23). Crossfades between whole files are
+  play through instead (PLAY-23a). Crossfades between whole files are
   unchanged. Proven by the GStreamer backend tests.
   <!-- REVIEW: rule proposal -->
 - **SEEK-1** [active] [gtk] — **The seek bar's colour is a reading, not a

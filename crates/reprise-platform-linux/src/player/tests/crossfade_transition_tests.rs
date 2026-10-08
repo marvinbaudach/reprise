@@ -114,7 +114,7 @@ fn play_20b_crossfade_promotion_carries_the_next_gain_from_the_first_sample() {
 
 mod cue {
     //! No crossfade into or out of a CUE track (PLAY-24). Two tracks of one
-    //! file play through (PLAY-23, `segment_boundary_tests`); every other
+    //! file play through (PLAY-23a, `segment_boundary_tests`); every other
     //! change with a CUE track on either side is a hard change.
 
     use super::super::segment_support::{count, cue_item, write_regions_wav, Harness};
