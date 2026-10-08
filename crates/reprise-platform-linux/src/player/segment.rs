@@ -6,16 +6,22 @@
 //! against the cut's own length, and a seek lands at `start + position`.
 //!
 //! The end of a cut is enforced by a buffer probe on the gain element's sink
-//! pad, behind the one-second playback queue, where a buffer is about to be
-//! heard. The first buffer whose stream time reaches the boundary either
-//! carries on into the armed contiguous successor — the next track of the same
-//! file, starting exactly where this one ends — with that track's gain. With
-//! nothing armed it is dropped and an end-of-stream goes in its place: the
-//! audio sink has not played what it was already handed, and only an
-//! end-of-stream drains it. The pad refuses everything after that, the file's
-//! own end-of-stream included, so the bus sees exactly one end-of-stream and
-//! it is the track's `TrackFinished` — which the frontend answers with the next
+//! pad, behind the filter's playback queue. That is where the gain changes,
+//! but not where a buffer is heard: `playbin`'s sink queue and the audio sink's
+//! own buffer still lie downstream, and together they hold about a second.
+//! The first buffer whose stream time reaches the boundary either carries on
+//! into the armed contiguous successor — the next track of the same file,
+//! starting exactly where this one ends — with that track's gain, or, with
+//! nothing armed, is dropped and an end-of-stream goes in its place: the audio
+//! sink has not played what it was already handed, and only an end-of-stream
+//! drains it. The pad refuses everything after that, the file's own
+//! end-of-stream included, so the bus sees exactly one end-of-stream and it is
+//! the track's `TrackFinished` — which the frontend answers with the next
 //! `play()`, so it must not arrive before the tail has been heard.
+//!
+//! For the same reason a carry-on is only staged at the probe and announced
+//! once the sink renders the boundary (see [`handoff`]): until then the
+//! frontend keeps the outgoing track, its time and its length.
 //!
 //! A CUE track starts without waiting: [`start_segment`] sets the file's
 //! pipeline to paused and returns, and the bus's `ASYNC_DONE` — the preroll —
@@ -30,9 +36,11 @@
 //! tail off because of it would drop music.
 //!
 //! The cut, the armed successor and the hand-off share one mutex with the
-//! position ticker, which computes and sends every tick under it. The probe
+//! position ticker, which computes and sends every tick under it. The hand-off
 //! swaps the cut and sends `AdvancedToNext` under the same lock, so no tick
 //! computed against the old cut can follow the `AdvancedToNext` that ends it.
+
+mod handoff;
 
 use gstreamer as gst;
 use gstreamer::prelude::*;
@@ -43,6 +51,7 @@ use reprise_core::playback::{PlaybackError, PlaybackState, PlayerEvent};
 
 use crate::gapless::QueuedTrack;
 use crate::player_effects::{linear_gain, TRACK_GAIN_NAME};
+use handoff::{watch_render, PendingHandOff};
 
 /// An end this close to the file's duration means "to the end of the file".
 pub(crate) const OPEN_END_TOLERANCE_MS: i64 = 1000;
@@ -105,6 +114,10 @@ impl Cut {
         (self.start_ms, self.end_ms) == segment
     }
 
+    fn start_ns(&self) -> u64 {
+        self.start_ms.max(0) as u64 * NANOS_PER_MILLI
+    }
+
     fn boundary_ns(&self) -> Option<u64> {
         (!self.open_end).then(|| self.end_ms.max(0) as u64 * NANOS_PER_MILLI)
     }
@@ -137,6 +150,20 @@ struct CutState {
     /// The probe handed over to the armed successor and the frontend has not
     /// fed a next track since: a re-feed of that track is the one playing.
     handed_off: bool,
+    /// The hand-off the stream has made and the sink not yet rendered; the
+    /// stream is in its cut while `active` stays the outgoing track's.
+    pending: Option<PendingHandOff>,
+    /// The linear gain the probe puts back with its next buffer, after a
+    /// seek withdrew a staged hand-off.
+    restore_gain: Option<f64>,
+}
+
+impl CutState {
+    /// The cut the stream at the probe is in: a staged successor's, or the
+    /// active one.
+    fn streaming(&self) -> Option<Cut> {
+        self.pending.map(|pending| pending.next.cut).or(self.active)
+    }
 }
 
 /// The shared cut state, the event sink ticks and boundaries are sent
@@ -145,6 +172,8 @@ pub(crate) struct SegmentGate {
     state: Mutex<CutState>,
     on_event: Arc<dyn Fn(PlayerEvent) + Send + Sync>,
     stream_generation: Arc<AtomicU64>,
+    /// Counts staged hand-offs, so a watcher never announces a later one.
+    handoff_epoch: AtomicU64,
 }
 
 pub(crate) type SegmentHandle = Arc<SegmentGate>;
@@ -158,6 +187,7 @@ impl SegmentGate {
             state: Mutex::new(CutState::default()),
             on_event,
             stream_generation,
+            handoff_epoch: AtomicU64::new(0),
         })
     }
 
@@ -252,9 +282,16 @@ impl SegmentGate {
     /// track is a CUE track. The next track of the same file, starting where
     /// the active cut ends (which therefore has a boundary), is armed for the
     /// probe instead; anything else disarms. Last write wins.
+    ///
+    /// A hand-off staged but not yet heard is withdrawn: the frontend still
+    /// plays the outgoing track and has just named a different successor for
+    /// it (a re-feed of the staged one never gets here, see
+    /// `Player::refresh_in_flight_gain`). With nothing armed the outgoing track
+    /// then ends at its boundary.
     pub(crate) fn route_next(&self, next: Option<&QueuedTrack>) -> bool {
         let mut state = self.lock();
         state.handed_off = false;
+        state.pending = None;
         let armed = match (state.active, next) {
             (Some(active), Some(next)) => next.segment.and_then(|(start_ms, end_ms)| {
                 let contiguous =
@@ -275,13 +312,27 @@ impl SegmentGate {
         self.lock().active.is_some()
     }
 
-    /// Whether the probe already handed over to `segment` of `uri` and the
-    /// frontend has not moved on since.
-    pub(crate) fn handed_off_to(&self, uri: &str, segment: (i64, i64)) -> bool {
-        let state = self.lock();
-        state.handed_off
-            && state.uri == uri
-            && state.active.is_some_and(|active| active.matches(segment))
+    /// Whether `segment` of `uri` is the track a hand-off is staged for or has
+    /// already gone to, the frontend not having moved on since. If so, its gain
+    /// becomes `gain_db` and the caller applies it to the pipeline.
+    pub(crate) fn refresh_in_flight_gain(
+        &self,
+        uri: &str,
+        segment: (i64, i64),
+        gain_db: f64,
+    ) -> bool {
+        let mut state = self.lock();
+        if state.uri != uri {
+            return false;
+        }
+        if let Some(pending) = state.pending.as_mut() {
+            if pending.next.cut.matches(segment) {
+                pending.next.gain_db = gain_db;
+                return true;
+            }
+            return false;
+        }
+        state.handed_off && state.active.is_some_and(|active| active.matches(segment))
     }
 
     /// Where a seek to `position_ms` of the active CUE track goes, or `None`
@@ -289,9 +340,13 @@ impl SegmentGate {
     /// seek in: the seek only retargets the start-seek that is still to come.
     /// Otherwise the flush it sends clears the end-of-stream the boundary
     /// pushed, so the boundary fires again when playback reaches it.
+    ///
+    /// The seek is in the track the frontend shows, so a hand-off staged but
+    /// not yet heard is withdrawn before the watcher can announce it.
     pub(crate) fn seek_target_ms(&self, position_ms: i64) -> Option<CutSeek> {
         let mut state = self.lock();
         let cut = state.active?;
+        Self::withdraw_handoff(&mut state);
         let target_ms = cut.seek_target_ms(position_ms, state.file_duration_ms);
         if state.pending_start_ms.is_some() {
             state.pending_start_ms = Some(target_ms);
@@ -361,6 +416,8 @@ pub(crate) fn install_segment_boundary(
     let sink = gain
         .static_pad("sink")
         .ok_or_else(|| PlaybackError::Backend("GStreamer: track gain has no sink pad".into()))?;
+    // Weak: the probe lives inside the pipeline it watches.
+    let watched = playbin.downgrade();
     // The segment belongs to this pad's stream, not to the shared gate: the
     // crossfade secondary carries the same gate and must not overwrite it.
     let stream_segment = Mutex::new(None::<gst::FormattedSegment<gst::ClockTime>>);
@@ -389,6 +446,10 @@ pub(crate) fn install_segment_boundary(
                 });
                 match gate.on_buffer(stream_time, &gain) {
                     BoundaryVerdict::Pass => gst::PadProbeReturn::Ok,
+                    BoundaryVerdict::HandOff(epoch) => {
+                        watch_render(&gate, watched.clone(), epoch);
+                        gst::PadProbeReturn::Ok
+                    }
                     BoundaryVerdict::EndOfTrack => {
                         // Outside the cut lock: the event blocks this
                         // streaming thread until the sink has drained.
@@ -406,6 +467,9 @@ pub(crate) fn install_segment_boundary(
 /// What the probe does with a buffer.
 enum BoundaryVerdict {
     Pass,
+    /// The next track starts with this buffer: pass it and watch for the
+    /// staged hand-off with this epoch to be heard.
+    HandOff(u64),
     /// The track ends before this buffer: drop it and end the stream.
     EndOfTrack,
 }
@@ -420,10 +484,27 @@ impl SegmentGate {
         gain: &gst::Element,
     ) -> BoundaryVerdict {
         let mut state = self.lock();
-        let Some(cut) = state.active else {
+        if let Some(outgoing_gain) = state.restore_gain.take() {
+            gain.set_property("volume", outgoing_gain);
+        }
+        let Some(stream_time) = stream_time else {
             return BoundaryVerdict::Pass;
         };
-        let (Some(boundary_ns), Some(stream_time)) = (cut.boundary_ns(), stream_time) else {
+        // A buffer before the staged successor's start: a flushing seek went
+        // back into the outgoing track, which is playing on.
+        if state
+            .pending
+            .is_some_and(|pending| stream_time.nseconds() < pending.next.cut.start_ns())
+        {
+            Self::withdraw_handoff(&mut state);
+            if let Some(outgoing_gain) = state.restore_gain.take() {
+                gain.set_property("volume", outgoing_gain);
+            }
+        }
+        let Some(cut) = state.streaming() else {
+            return BoundaryVerdict::Pass;
+        };
+        let Some(boundary_ns) = cut.boundary_ns() else {
             return BoundaryVerdict::Pass;
         };
         if stream_time.nseconds() < boundary_ns {
@@ -431,13 +512,10 @@ impl SegmentGate {
         }
         match state.armed.take() {
             Some(next) => {
+                let outgoing_gain = gain.property::<f64>("volume");
                 gain.set_property("volume", linear_gain(next.gain_db));
-                state.active = Some(next.cut);
-                state.handed_off = true;
-                self.stream_generation.fetch_add(1, Ordering::SeqCst);
-                tracing::debug!(boundary_ms = cut.end_ms, "cue: contiguous hand-off");
-                (self.on_event)(PlayerEvent::AdvancedToNext);
-                BoundaryVerdict::Pass
+                tracing::debug!(boundary_ms = cut.end_ms, "cue: contiguous hand-off staged");
+                BoundaryVerdict::HandOff(self.stage_handoff(&mut state, next, outgoing_gain))
             }
             None => {
                 tracing::debug!(boundary_ms = cut.end_ms, "cue: track reached its end");
