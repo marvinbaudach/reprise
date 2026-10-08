@@ -1365,9 +1365,7 @@ result.
   Each track plays at its own gain. The phone never crossfades, so no
   transition into or out of a CUE track is a crossfade. A track whose
   successors in the sheet are only removed from the library keeps its own
-  end. Every list of library tracks, the queue included, shows each track of
-  a CUE file as a row of its own: the tracks share the file's uri, so no list
-  identifies its rows by it.
+  end.
   *Tests:* `mtp_66_each_track_of_a_cue_file_is_its_own_row_and_the_last_runs_to_the_end`,
   `mtp_66_a_cue_track_starts_as_its_own_stretch_and_the_next_one_is_fed_as_its_own`,
   `mtp_66_two_tracks_of_one_cue_file_each_carry_their_own_metadata`,
