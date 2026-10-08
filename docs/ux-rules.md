@@ -5036,6 +5036,7 @@ STYLE-1).
   `ac_29_a_stream_reset_before_the_track_flip_holds_the_last_live_shape`,
   `ac_29_a_gain_rise_never_draws_past_the_boundary_target`,
   `ac_29_a_adopted_shape_holds_until_the_quiet_stream_decides_its_level`,
+  `ac_29_silent_lead_in_releases_the_adopted_shape_within_one_boundary_window`,
   `ac_29_handover_caps_stay_within_one_segment_of_the_morph`, and
   `normal_playback_caps_still_fall_by_peak_decay`.*
 

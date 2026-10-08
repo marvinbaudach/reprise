@@ -99,6 +99,16 @@ impl Playback {
         self.engine.current_bands()
     }
 
+    fn tick_silence(&mut self) -> Vec<f32> {
+        let pcm = vec![0; FRAMES_PER_TICK * 2 * size_of::<i16>()];
+        assert!(self
+            .engine
+            .ingest_pcm_i16(pcm.clone(), pcm.len() as u32, SAMPLE_RATE_HZ, 2));
+        self.clock.advance(TICK);
+        self.engine.tick();
+        self.engine.current_bands()
+    }
+
     fn warm_up(&mut self, seed: u64) {
         for _ in 0..WARM_TICKS {
             self.tick(seed);
@@ -290,5 +300,30 @@ fn ac_29_a_adopted_shape_holds_until_the_quiet_stream_decides_its_level() {
     assert!(
         reached_stream_level,
         "the handover did not reach the quiet stream's settled level"
+    );
+}
+
+#[test]
+fn ac_29_silent_lead_in_releases_the_adopted_shape_within_one_boundary_window() {
+    const HELD_LEVEL: f32 = 0.8;
+    const BOUNDARY_WINDOW_TICKS: usize = 12;
+
+    let mut handed_over = Playback::new();
+    handed_over.engine.note_track_changed();
+    handed_over
+        .engine
+        .adopt_shape(vec![HELD_LEVEL; SPECTRUM_BAND_COUNT]);
+
+    let means: Vec<f32> = (0..BOUNDARY_WINDOW_TICKS)
+        .map(|_| mean(&handed_over.tick_silence()))
+        .collect();
+
+    assert!(
+        means.iter().any(|level| *level < HELD_LEVEL - 0.01),
+        "the adopted shape stayed frozen through a boundary window of silence: {means:.3?}"
+    );
+    assert!(
+        means.last().expect("the fixture produced silent frames") < &means[0],
+        "the bars did not continue their normal fall after silence released the hold: {means:.3?}"
     );
 }

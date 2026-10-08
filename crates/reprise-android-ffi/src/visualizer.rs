@@ -522,12 +522,14 @@ impl AndroidVisualEngine {
         });
         let live_frame = live_frame.flatten();
         let mut ingested_live_frame = false;
-        let analyzed_live_frame = if let Some((frame, pressure, boundary_waiting)) = live_frame {
+        let analyzed_live_frame = if let Some((frame, pressure, boundary_waiting, signal_present)) =
+            live_frame
+        {
             state.engine.set_retain_paused_live_shape(true);
             state.engine.set_has_track(true);
             let playing = state.playing;
             state.set_engine_playing(playing, now);
-            let hold_adopted_shape = state.has_adopted_shape && boundary_waiting;
+            let hold_adopted_shape = state.has_adopted_shape && boundary_waiting && signal_present;
             if !hold_adopted_shape {
                 state.engine.ingest(&frame);
                 state.has_ingested = true;

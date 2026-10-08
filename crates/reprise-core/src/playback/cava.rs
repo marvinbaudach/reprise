@@ -149,24 +149,26 @@ impl CavaBarProcessor {
     /// Audio-thread integrations can retain this storage between buffers and
     /// avoid allocating one vector for every spectrum frame. Input larger than
     /// one FFT window is processed oldest-first in consecutive FFT-sized hops;
-    /// the final hop determines the returned bars.
-    pub fn process_into(&mut self, mono_samples: &[f32], bars: &mut [f32]) {
+    /// the final hop determines the returned bars. Returns whether any input
+    /// sample exceeded the processor's silence threshold.
+    pub fn process_into(&mut self, mono_samples: &[f32], bars: &mut [f32]) -> bool {
         assert_eq!(
             bars.len(),
             self.config.bar_count,
             "CAVA output must match its configured bar count"
         );
         if mono_samples.is_empty() {
-            self.process_chunk_into(mono_samples, bars);
-            return;
+            return self.process_chunk_into(mono_samples, bars);
         }
         let hop_size = self.main_fft.len();
+        let mut signal_present = false;
         for chunk in mono_samples.chunks(hop_size) {
-            self.process_chunk_into(chunk, bars);
+            signal_present |= self.process_chunk_into(chunk, bars);
         }
+        signal_present
     }
 
-    fn process_chunk_into(&mut self, mono_samples: &[f32], bars: &mut [f32]) {
+    fn process_chunk_into(&mut self, mono_samples: &[f32], bars: &mut [f32]) -> bool {
         let signal_present = self.push_samples(mono_samples);
         self.main_fft
             .process(&self.input_buffer[..self.main_fft.len()]);
@@ -191,6 +193,7 @@ impl CavaBarProcessor {
             self.config.sample_rate_hz,
             signal_present,
         );
+        signal_present
     }
 
     /// Clears buffered audio and the whole smoothing history: a hard restart
