@@ -73,7 +73,8 @@ old behaviour 0.5 s late.
 and `reset_live_presentation` clear `AdoptedShapeHold`. If the grace lived in the hold's
 phase, a reset arriving after `adopt_shape` and before the first PCM would let the stored
 frames back through, which is the same bug in a different order. The grace is therefore
-its own deadline, `stored_frame_grace_until: Option<Duration>`:
+its own deadline, held with the latest blocked frame in
+`StoredFrameGrace { until, remembered }` (`visualizer/stored_frame_grace.rs`):
 - `adopt_shape` sets it to `now + grace`;
 - it is cleared only by the first analysed live PCM, by `note_track_changed`, and by its own
   expiry;

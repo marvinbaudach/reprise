@@ -479,7 +479,9 @@ impl AndroidVisualEngine {
     /// Advances the portable presentation state by monotonic elapsed time.
     ///
     /// A newly analyzed live-audio frame always reports `true`, even when the
-    /// portable engine would otherwise report a settled presentation.
+    /// portable engine would otherwise report a settled presentation. So does
+    /// the stored frame that the adopted-shape grace held back, on the first
+    /// tick after the grace expires.
     pub fn tick(&self) -> bool {
         // Keep the same lock order as live PCM ingestion: audio before display.
         let mut live_audio_slot = self.lock_live_audio();
