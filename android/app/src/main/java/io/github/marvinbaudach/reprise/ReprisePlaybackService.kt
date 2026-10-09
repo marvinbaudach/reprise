@@ -29,6 +29,7 @@ import io.github.marvinbaudach.reprise.library.BrowseQueue
 import io.github.marvinbaudach.reprise.library.CurrentTrackArtwork
 import io.github.marvinbaudach.reprise.library.MediaBrowseLibrary
 import io.github.marvinbaudach.reprise.library.MediaBrowseTree
+import io.github.marvinbaudach.reprise.library.OpenEndedMediaSourceFactory
 import io.github.marvinbaudach.reprise.library.PlaybackKey
 import io.github.marvinbaudach.reprise.library.TrackMetadata
 import io.github.marvinbaudach.reprise.library.TrackMetadataResolver
@@ -228,6 +229,7 @@ open class ReprisePlaybackService : MediaLibraryService() {
             this,
             renderersFactory,
         )
+            .setMediaSourceFactory(OpenEndedMediaSourceFactory(this))
             // Media3 defaults both of these off, and the device confirms it:
             // while a track was playing, the system's audio focus stack was
             // empty. Without focus the app talks over other players, keeps
