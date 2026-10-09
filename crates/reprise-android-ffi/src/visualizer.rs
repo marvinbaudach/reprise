@@ -4,18 +4,23 @@
 //! whose module doc describes the record format the phone reads.
 
 mod adopted_shape_hold;
+mod clock;
 mod live_audio;
 mod scene_encoding;
+mod stored_frame_grace;
 
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, Mutex, MutexGuard, PoisonError, TryLockError};
-use std::time::{Duration, Instant};
+use std::time::Duration;
 
 use reprise_core::playback::{BassPressure, BassPressureDetector, SPECTRUM_BAND_COUNT};
 use reprise_core::visuals::{spectrum_frame_from_bands, VisualEngine};
 
 use adopted_shape_hold::AdoptedShapeHold;
+pub(crate) use clock::MonotonicClock;
+use clock::SystemMonotonicClock;
 pub(crate) use scene_encoding::encode_scene;
+use stored_frame_grace::StoredFrameGrace;
 
 #[cfg(test)]
 pub(crate) use live_audio::TARGET_PCM_BUFFER_DURATION;
@@ -34,28 +39,6 @@ const TRANSPORT_ANSWER_GRACE: Duration = Duration::from_millis(1_500);
 /// viewer saw fall away long ago, which must not pop back on screen.
 pub(crate) const ADOPTABLE_SHAPE_MAX_AGE: Duration =
     LIVE_AUDIO_STALE_AFTER.saturating_add(TRANSPORT_ANSWER_GRACE);
-
-pub(crate) trait MonotonicClock: Send + Sync {
-    fn now(&self) -> Duration;
-}
-
-struct SystemMonotonicClock {
-    started_at: Instant,
-}
-
-impl SystemMonotonicClock {
-    fn new() -> Self {
-        Self {
-            started_at: Instant::now(),
-        }
-    }
-}
-
-impl MonotonicClock for SystemMonotonicClock {
-    fn now(&self) -> Duration {
-        self.started_at.elapsed()
-    }
-}
 
 #[derive(Debug, Clone, Copy, uniffi::Record)]
 pub struct AndroidBassPressure {
@@ -93,6 +76,9 @@ struct VisualState {
     has_ingested: bool,
     has_analysis: bool,
     adopted_shape_hold: AdoptedShapeHold,
+    // Own deadline, independent of the PCM hold phase, so a stream reset cannot
+    // end it; also holds the latest stored frame it blocked.
+    stored_frame_grace: StoredFrameGrace,
     has_live_audio: bool,
     // Set by `reset_live_presentation` when it is called for a genuine
     // decoded-stream boundary (`reset_audio_stream`, `note_track_changed`, or
@@ -260,6 +246,8 @@ impl AndroidVisualEngine {
         state.last_visual_tick_at = now;
         state.has_ingested = false;
         state.has_analysis = false;
+        // Kotlin adopts the shape after this, which re-arms the grace.
+        state.stored_frame_grace.clear();
         reset_live_presentation(&mut state, stream_generation, now, true);
     }
 
@@ -269,8 +257,6 @@ impl AndroidVisualEngine {
         reason = "UniFFI cannot export borrowed slices"
     )]
     pub fn ingest_bands(&self, bands: Vec<f32>) {
-        let has_analysis = !bands.is_empty();
-        let frame = spectrum_frame_from_bands(&bands);
         let mut state = self.lock();
         let stream_generation = self.current_stream_generation();
         let now = self.clock.now();
@@ -279,19 +265,10 @@ impl AndroidVisualEngine {
         if state.has_live_audio {
             return;
         }
-        state.engine.set_retain_paused_live_shape(false);
-        state.engine.set_has_track(true);
-        let playing = state.playing;
-        state.set_engine_playing(playing && has_analysis, now);
-        state.engine.ingest(&frame);
-        state.has_ingested = true;
-        state.has_analysis = has_analysis;
-        // The new stream has spoken, even when all it said was "nothing": an
-        // empty frame must not leave the post-reset hold pinning the old picture.
-        state.awaiting_stream_after_reset = false;
-        if has_analysis {
-            state.last_live_bands = None;
+        if state.stored_frame_grace.hold(&bands, now) {
+            return;
         }
+        state.ingest_stored_frame(&bands, now);
     }
 
     /// The engine's currently displayed bar values — what is actually on
@@ -378,6 +355,7 @@ impl AndroidVisualEngine {
         state.engine.adopt_shape(&frame);
         state.has_ingested = true;
         state.adopted_shape_hold.begin();
+        state.stored_frame_grace.begin(now);
         state.awaiting_stream_after_reset = false;
     }
 
@@ -501,7 +479,9 @@ impl AndroidVisualEngine {
     /// Advances the portable presentation state by monotonic elapsed time.
     ///
     /// A newly analyzed live-audio frame always reports `true`, even when the
-    /// portable engine would otherwise report a settled presentation.
+    /// portable engine would otherwise report a settled presentation. So does
+    /// the stored frame that the adopted-shape grace held back, on the first
+    /// tick after the grace expires.
     pub fn tick(&self) -> bool {
         // Keep the same lock order as live PCM ingestion: audio before display.
         let mut live_audio_slot = self.lock_live_audio();
@@ -525,6 +505,7 @@ impl AndroidVisualEngine {
         let live_frame = live_frame.flatten();
         let mut ingested_live_frame = false;
         let analyzed_live_frame = if let Some(live_frame) = live_frame {
+            state.stored_frame_grace.clear();
             state.engine.set_retain_paused_live_shape(true);
             state.engine.set_has_track(true);
             let playing = state.playing;
@@ -549,11 +530,14 @@ impl AndroidVisualEngine {
             false
         };
 
+        let ingested_stored_frame =
+            !analyzed_live_frame && state.ingest_remembered_stored_frame(now);
+
         let advanced = state.engine.advance_by(elapsed);
         if ingested_live_frame {
             state.last_live_bands = Some((now, *state.engine.current_bands()));
         }
-        advanced || analyzed_live_frame
+        advanced || analyzed_live_frame || ingested_stored_frame
     }
 
     /// Returns the scene in the flat format documented by this module.
@@ -664,6 +648,7 @@ impl AndroidVisualEngine {
                 has_ingested: false,
                 has_analysis: false,
                 adopted_shape_hold: AdoptedShapeHold::default(),
+                stored_frame_grace: StoredFrameGrace::default(),
                 has_live_audio: false,
                 awaiting_stream_after_reset: false,
                 last_live_bands: None,

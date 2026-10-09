@@ -154,6 +154,9 @@ mod shape_continuity_tests;
 #[path = "visualizer_swipe_hold_tests.rs"]
 mod swipe_hold_tests;
 
+#[path = "visualizer_stored_frame_hold_tests.rs"]
+mod stored_frame_hold_tests;
+
 #[derive(Default)]
 struct FakeMonotonicClock {
     now_nanos: AtomicU64,

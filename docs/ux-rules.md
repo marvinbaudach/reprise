@@ -5076,7 +5076,9 @@ STYLE-1).
   dips below the new song's own level and never overshoots; the peak caps
   follow the handover instead of remaining above its moving bars. *Amended
   2026-10-08 (#1197): the swipe is one continuous handover rather than a
-  stored-frame preview followed by a gain correction. Tests:
+  stored-frame preview followed by a gain correction. The new song's stored
+  frames do not replace the handed-over shape before its own audio speaks,
+  bounded by 0.5 s. Tests:
   `ac_29_a_stream_reset_before_the_track_flip_holds_the_last_live_shape`,
   `ac_29_a_gain_rise_never_draws_past_the_boundary_target`,
   `ac_29_a_adopted_shape_holds_until_the_quiet_stream_decides_its_level`,
@@ -5086,7 +5088,17 @@ STYLE-1).
   `ac_29_silent_lead_in_releases_the_adopted_shape_within_one_boundary_window`,
   `ac_29_handover_caps_stay_within_one_segment_of_the_morph`,
   `ac_29_handover_caps_follow_a_real_gravity_fall_until_it_settles`,
-  `normal_playback_caps_still_fall_by_peak_decay`, and on the phone
+  `normal_playback_caps_still_fall_by_peak_decay`,
+  `ac_29_stored_frames_wait_for_the_adopted_shape_until_the_stream_speaks`,
+  `ac_29_stored_frames_take_over_once_the_grace_expires`,
+  `stored_frames_without_an_adoption_ingest_at_once`,
+  `the_stored_frame_grace_lasts_exactly_half_a_second`,
+  `a_second_adoption_rearms_the_stored_frame_grace`,
+  `a_pause_blip_does_not_end_the_stored_frame_grace`,
+  `a_track_change_ends_the_stored_frame_grace`,
+  `a_frame_blocked_by_the_grace_is_drawn_by_the_first_tick_after_it_expires`,
+  `ac_29_a_stream_reset_after_the_adoption_keeps_stored_frames_waiting`,
+  `live_pcm_after_the_adoption_keeps_the_pcm_hold_rules`, and on the phone
   `ac_29_the_new_live_panel_adopts_the_last_live_shape_not_the_decayed_display`,
   `a_neighbour_with_a_spectrogram_mirrors_the_live_scene_through_the_transport_reset`
   (`NowPlayingSceneEngineTest`), `a_stored_spectrogram_neighbour_is_eligible_to_mirror`,
