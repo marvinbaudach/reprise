@@ -87,6 +87,36 @@ pub(super) struct HeardLog {
     buffers: Arc<Mutex<Vec<HeardBuffer>>>,
     segments: Arc<std::sync::atomic::AtomicUsize>,
     stream_starts: Arc<std::sync::atomic::AtomicUsize>,
+    landings: Arc<Mutex<Landings>>,
+}
+
+/// Where each distinct seek of the stream first became audible.
+///
+/// One flushing seek can reach the gain element as several `SEGMENT` events
+/// with the same seqnum, a few milliseconds apart — the seek went to more than
+/// one sink of `playbin3`'s bin and each copy restarted the stream. They are
+/// one seek, so `segments` and `buffers` (which restart on every copy) cannot
+/// tell a test whether a new seek has landed; the seqnum can.
+#[derive(Default)]
+struct Landings {
+    last_seqnum: Option<gst::Seqnum>,
+    awaiting_buffer: bool,
+    heard: Vec<HeardBuffer>,
+}
+
+impl Landings {
+    fn segment(&mut self, seqnum: gst::Seqnum) {
+        if self.last_seqnum != Some(seqnum) {
+            self.last_seqnum = Some(seqnum);
+            self.awaiting_buffer = true;
+        }
+    }
+
+    fn buffer(&mut self, buffer: HeardBuffer) {
+        if std::mem::take(&mut self.awaiting_buffer) {
+            self.heard.push(buffer);
+        }
+    }
 }
 
 impl HeardLog {
@@ -112,14 +142,31 @@ impl HeardLog {
         self.segments() >= segments && !self.buffers().is_empty()
     }
 
-    pub(super) fn first(&self) -> HeardBuffer {
-        *self.buffers().first().unwrap_or_else(|| {
-            panic!(
-                "expected buffers to leave the gain element (segments {}, stream starts {})",
-                self.segments(),
-                self.stream_starts()
-            )
-        })
+    /// How many distinct seeks (the file's own start counts as one) have a
+    /// buffer heard behind them.
+    pub(super) fn landings(&self) -> usize {
+        self.landings
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .heard
+            .len()
+    }
+
+    /// The first buffer heard after the most recent distinct seek.
+    pub(super) fn latest_landing(&self) -> HeardBuffer {
+        *self
+            .landings
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .heard
+            .last()
+            .unwrap_or_else(|| {
+                panic!(
+                    "expected a seek to land at the gain element (segments {}, stream starts {})",
+                    self.segments(),
+                    self.stream_starts()
+                )
+            })
     }
 }
 
@@ -132,6 +179,7 @@ pub(super) fn record_heard(player: &Player) -> HeardLog {
     let gain = gain_element(player);
     let element = gain.clone();
     let stream_starts = heard.stream_starts.clone();
+    let landings = heard.landings.clone();
     let stream_segment = Mutex::new(None::<gst::FormattedSegment<gst::ClockTime>>);
     gain.static_pad("src").unwrap().add_probe(
         gst::PadProbeType::BUFFER | gst::PadProbeType::EVENT_DOWNSTREAM,
@@ -151,6 +199,10 @@ pub(super) fn record_heard(player: &Player) -> HeardLog {
                             .unwrap_or_else(PoisonError::into_inner)
                             .clear();
                         segments.fetch_add(1, Ordering::SeqCst);
+                        landings
+                            .lock()
+                            .unwrap_or_else(PoisonError::into_inner)
+                            .segment(event.seqnum());
                     }
                 }
                 Some(gst::PadProbeData::Buffer(buffer)) => {
@@ -166,14 +218,19 @@ pub(super) fn record_heard(player: &Player) -> HeardLog {
                             .and_then(|structure| structure.get::<String>("format").ok())
                     });
                     if let Some(stream_time) = stream_time {
+                        let heard = HeardBuffer {
+                            start_ms: stream_time.mseconds() as i64,
+                            audible: peak(buffer, format.as_deref()) >= AUDIBLE_PEAK,
+                            linear_gain: element.property::<f64>("volume"),
+                        };
                         recorded
                             .lock()
                             .unwrap_or_else(PoisonError::into_inner)
-                            .push(HeardBuffer {
-                                start_ms: stream_time.mseconds() as i64,
-                                audible: peak(buffer, format.as_deref()) >= AUDIBLE_PEAK,
-                                linear_gain: element.property::<f64>("volume"),
-                            });
+                            .push(heard);
+                        landings
+                            .lock()
+                            .unwrap_or_else(PoisonError::into_inner)
+                            .buffer(heard);
                     }
                 }
                 _ => {}
@@ -277,6 +334,13 @@ pub(super) fn slow_sink_into(player: &Player, rendered: &RenderedLog) {
         .set_property("audio-sink", &sink);
 }
 
+/// How long a pipeline may sit in READY with its first state change pending
+/// before the start counts as hung. A healthy start leaves READY within
+/// milliseconds, so this is far beyond any load.
+const HUNG_START_PATIENCE: Duration = Duration::from_secs(5);
+/// Starts tried before a test gives up; every one of them hanging is not luck.
+const START_ATTEMPTS: usize = 5;
+
 /// A headless player on `fakesink`, its events, and the sink lock held for
 /// the harness's whole life.
 pub(super) struct Harness {
@@ -309,6 +373,46 @@ impl Harness {
             events,
             _guard: guard,
         }
+    }
+
+    /// Runs `begin` — the `play` of a track and whatever the test does at once
+    /// after it — and starts it over if the pipeline hangs in READY.
+    ///
+    /// GStreamer 1.28's `playbin3` sometimes never leaves READY on a start:
+    /// the stream arrives while `decodebin3` is still being brought up and the
+    /// state change then never completes, whatever the file (a bare `playbin3`
+    /// on a `fakesink` does it too, one start in 20 to 100 here). Nothing a
+    /// test could wait for ends that, so a start that has not left READY after
+    /// [`HUNG_START_PATIENCE`] is begun again from `Null`, which `play` does.
+    pub(super) fn start(&self, begin: impl Fn()) {
+        for attempt in 1..=START_ATTEMPTS {
+            begin();
+            if self.leaves_ready(HUNG_START_PATIENCE) {
+                return;
+            }
+            eprintln!("the pipeline hung in READY on start {attempt}; starting over");
+        }
+        panic!("playbin3 hung in READY on all {START_ATTEMPTS} starts");
+    }
+
+    /// Whether the pipeline gets past READY within `patience`.
+    fn leaves_ready(&self, patience: Duration) -> bool {
+        let main_context = gst::glib::MainContext::default();
+        let deadline = Instant::now() + patience;
+        while Instant::now() < deadline {
+            let playbin = self
+                .player
+                .playbin
+                .lock()
+                .unwrap_or_else(PoisonError::into_inner)
+                .clone();
+            if playbin.current_state() != gst::State::Ready {
+                return true;
+            }
+            main_context.iteration(false);
+            std::thread::sleep(Duration::from_millis(5));
+        }
+        false
     }
 
     /// Pumps the main context (which dispatches the bus watch) and collects
