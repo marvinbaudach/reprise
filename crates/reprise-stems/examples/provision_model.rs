@@ -4,11 +4,16 @@
 //! a target model directory, printing download progress.
 //!
 //! ```sh
-//! # Into the default <XDG data>/reprise/models:
-//! cargo run -p reprise-stems --example provision_model --features ort --release
-//! # Into an explicit directory (e.g. a scratch XDG for a smoke test):
+//! # Into the app's real model directory (always pass the directory explicitly):
+//! cargo run -p reprise-stems --example provision_model --features ort --release -- "$HOME/.local/share/reprise/models"
+//! # Into any other directory (e.g. a scratch XDG for a smoke test):
 //! cargo run -p reprise-stems --example provision_model --features ort --release -- /path/to/models
 //! ```
+//!
+//! Examples are built with dev-dependencies, which turn on `reprise-core`'s
+//! `test-private-dirs` feature. The default model directory then points into a
+//! private temporary tree the app never reads, so the directory argument is
+//! mandatory in that build.
 //!
 //! A present, checksum-valid model is not re-downloaded — the run just verifies
 //! it and (re)writes the licence notice, so it is safe to re-run. Requires the
@@ -26,6 +31,14 @@ use reprise_stems::provision::{
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     let model_dir: PathBuf = match std::env::args().nth(1) {
         Some(dir) => PathBuf::from(dir),
+        None if reprise_core::data_root::is_isolated() => {
+            return Err(
+                "no models directory given: examples are built with dev-dependencies, \
+                 so the default directory is a private temporary one the app never reads; \
+                 pass the target explicitly, e.g. \"$HOME/.local/share/reprise/models\""
+                    .into(),
+            );
+        }
         None => default_model_dir()?,
     };
     println!(
