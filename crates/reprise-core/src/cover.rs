@@ -208,7 +208,7 @@ pub fn cache_dir() -> PathBuf {
 }
 
 fn default_cache_root() -> PathBuf {
-    dirs::cache_dir().unwrap_or_else(std::env::temp_dir)
+    crate::cache_root::user_cache_root()
 }
 
 /// The cover cache directory below a cache root supplied by the platform.

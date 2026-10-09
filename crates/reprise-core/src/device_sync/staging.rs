@@ -25,8 +25,7 @@ static SEQUENCE: AtomicU64 = AtomicU64::new(1);
 /// The device id is sanitized before it becomes part of a filename, because a
 /// GVfs device identifier is free-form and may carry separators.
 pub fn staging_dir() -> PathBuf {
-    dirs::cache_dir()
-        .unwrap_or_else(std::env::temp_dir)
+    crate::cache_root::user_cache_root()
         .join("reprise")
         .join("device-sync")
 }

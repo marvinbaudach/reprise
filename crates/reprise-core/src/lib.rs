@@ -31,6 +31,7 @@ mod artist_news_scope;
 mod artist_news_view;
 pub mod artist_portrait;
 pub mod browser;
+pub mod cache_root;
 pub mod concerts;
 pub mod connectivity;
 pub mod cover;
