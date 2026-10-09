@@ -10,20 +10,22 @@
 //! to remember to set; the Codex sandbox, where `~/.cache` is read-only, did
 //! not set it.
 //!
-//! Crates that link `reprise-core` as an ordinary dependency (the Android
-//! binding) get the same isolation by enabling the `test-cache-root` feature
-//! in their `[dev-dependencies]`.
+//! Crates that link `reprise-core` as an ordinary dependency (the frontends,
+//! the CLI, the MCP server, the stems backend and the Android binding) get the
+//! same isolation by enabling the `test-private-dirs` feature in their
+//! `[dev-dependencies]`. The same feature isolates [`crate::data_root`], the
+//! counterpart for `~/.local/share/reprise`.
 
 use std::path::PathBuf;
 
 /// The directory the cache subdirectories hang below.
 #[must_use]
 pub fn user_cache_root() -> PathBuf {
-    #[cfg(any(test, feature = "test-cache-root"))]
+    #[cfg(any(test, feature = "test-private-dirs"))]
     {
         isolated_root().to_path_buf()
     }
-    #[cfg(not(any(test, feature = "test-cache-root")))]
+    #[cfg(not(any(test, feature = "test-private-dirs")))]
     {
         // The single sanctioned lookup; `clippy.toml` forbids every other.
         #[allow(
@@ -38,10 +40,10 @@ pub fn user_cache_root() -> PathBuf {
 /// Whether [`user_cache_root`] is the process-private test directory.
 #[must_use]
 pub const fn is_isolated() -> bool {
-    cfg!(any(test, feature = "test-cache-root"))
+    cfg!(any(test, feature = "test-private-dirs"))
 }
 
-#[cfg(any(test, feature = "test-cache-root"))]
+#[cfg(any(test, feature = "test-private-dirs"))]
 fn isolated_root() -> &'static std::path::Path {
     static ROOT: std::sync::OnceLock<PathBuf> = std::sync::OnceLock::new();
     ROOT.get_or_init(|| {

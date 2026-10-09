@@ -45,8 +45,8 @@ uniffi = { version = "0.32", features = ["build"] }
 
 [dev-dependencies]
 tempfile = "3"
-# The ffi tests must not read or write the user's real `~/.cache/reprise`.
-reprise-core = { path = "../reprise-core", features = ["test-cache-root"] }
+# The ffi tests must not read or write the user's real `~/.cache/reprise` or `~/.local/share/reprise`.
+reprise-core = { path = "../reprise-core", features = ["test-private-dirs"] }
 
 [lints]
 workspace = true

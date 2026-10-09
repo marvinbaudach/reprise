@@ -40,6 +40,7 @@ pub mod cover_writeback;
 pub mod cue;
 #[cfg(test)]
 mod cue_lookup_tests;
+pub mod data_root;
 pub mod db;
 mod db_ai_jobs;
 mod db_artist_news_fetch;
