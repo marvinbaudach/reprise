@@ -25,18 +25,18 @@ private class Rig {
     fun startTwoTracks(currentGainDb: Double, nextGainDb: Double?) {
         sink.startPlaylist(currentGainDb, nextGainDb)
         sink.setOutputStreamOffsetUs(0)
-        nextGainDb?.let { sink.setOutputStreamOffsetUs(BOUNDARY_US) }
     }
 }
 
 class TrackGainAudioSinkTest {
     @Test
-    fun play_20c_gain_switches_when_the_first_buffer_reaches_the_queued_stream_offset() {
+    fun play_20c_gain_switches_at_the_first_buffer_after_the_stream_announcement() {
         val rig = Rig()
         rig.startTwoTracks(HALF_DB, DOUBLE_DB)
 
         assertEquals(listOf(5_000, -5_000), rig.offer(0, 10_000, -10_000))
         assertEquals(5_000, rig.scaledAt(BOUNDARY_US - 1))
+        rig.sink.setOutputStreamOffsetUs(BOUNDARY_US)
         assertEquals(20_000, rig.scaledAt(BOUNDARY_US))
     }
 
@@ -52,15 +52,19 @@ class TrackGainAudioSinkTest {
     }
 
     @Test
-    fun aRepeatedOffsetForTheSameStreamKeepsTheQueuedNextGain() {
+    fun play_20c_an_announcement_before_any_buffer_is_not_a_stream_change() {
         val rig = Rig()
         rig.sink.startPlaylist(0.0, DOUBLE_DB)
         rig.sink.setOutputStreamOffsetUs(0)
         rig.sink.setOutputStreamOffsetUs(0)
+        assertEquals(10_000, rig.scaledAt(0))
 
         rig.sink.setOutputStreamOffsetUs(BOUNDARY_US)
-
         assertEquals(20_000, rig.scaledAt(BOUNDARY_US))
+
+        rig.sink.flush()
+        rig.sink.setOutputStreamOffsetUs(2 * BOUNDARY_US)
+        assertEquals(10_000, rig.scaledAt(2 * BOUNDARY_US))
     }
 
     @Test
@@ -100,13 +104,13 @@ class TrackGainAudioSinkTest {
     fun play_20c_a_next_track_replaced_after_its_offset_was_announced_plays_with_the_new_gain() {
         val rig = Rig()
         rig.startTwoTracks(0.0, DOUBLE_DB)
-
-        // The next track is replaced; Media3 re-reads it and announces the
-        // same offset again, which must not be mistaken for the old stream.
-        rig.sink.setNextGain(HALF_DB)
+        assertEquals(10_000, rig.scaledAt(BOUNDARY_US - 1))
         rig.sink.setOutputStreamOffsetUs(BOUNDARY_US)
 
-        assertEquals(10_000, rig.scaledAt(BOUNDARY_US - 1))
+        // The next track is replaced after Media3 announced it. The active
+        // item keeps its identity and takes the replacement gain in place.
+        rig.sink.setNextGain(HALF_DB)
+
         assertEquals(5_000, rig.scaledAt(BOUNDARY_US))
     }
 
@@ -114,14 +118,15 @@ class TrackGainAudioSinkTest {
     fun play_20c_a_backward_seek_across_the_boundary_plays_the_earlier_track_with_its_own_gain() {
         val rig = Rig()
         rig.startTwoTracks(HALF_DB, DOUBLE_DB)
+        assertEquals(5_000, rig.scaledAt(BOUNDARY_US - 1))
+        rig.sink.setOutputStreamOffsetUs(BOUNDARY_US)
         assertEquals(20_000, rig.scaledAt(BOUNDARY_US))
 
         // The seek flushes the sink and Media3 announces the first stream again.
         rig.sink.flush()
         rig.sink.setOutputStreamOffsetUs(0)
-        rig.sink.setOutputStreamOffsetUs(BOUNDARY_US)
-
         assertEquals(5_000, rig.scaledAt(500_000))
+        rig.sink.setOutputStreamOffsetUs(BOUNDARY_US)
         assertEquals(20_000, rig.scaledAt(BOUNDARY_US))
     }
 
@@ -129,6 +134,8 @@ class TrackGainAudioSinkTest {
     fun aFlushWithoutANewAnnouncementDoesNotLeaveTheNextTracksGainBehind() {
         val rig = Rig()
         rig.startTwoTracks(HALF_DB, DOUBLE_DB)
+        rig.scaledAt(BOUNDARY_US - 1)
+        rig.sink.setOutputStreamOffsetUs(BOUNDARY_US)
         assertEquals(20_000, rig.scaledAt(BOUNDARY_US))
 
         rig.sink.flush()
@@ -140,17 +147,18 @@ class TrackGainAudioSinkTest {
     fun afterTheAutomaticTransitionTheNextTrackIsTheCurrentOne() {
         val rig = Rig()
         rig.startTwoTracks(HALF_DB, DOUBLE_DB)
+        rig.scaledAt(BOUNDARY_US - 1)
+        rig.sink.setOutputStreamOffsetUs(BOUNDARY_US)
         assertEquals(20_000, rig.scaledAt(BOUNDARY_US))
 
         rig.sink.advanceToNext()
         rig.sink.setNextGain(HALF_DB)
-        rig.sink.setOutputStreamOffsetUs(BOUNDARY_US)
-        rig.sink.setOutputStreamOffsetUs(2 * BOUNDARY_US)
 
-        // A seek inside the track that is now current keeps its gain, and the
-        // newly fed track takes over at its own offset.
+        // A seek inside the track that is now current keeps its gain. Media3
+        // announces the newly fed stream only after the current stream writes.
         rig.sink.flush()
         assertEquals(20_000, rig.scaledAt(BOUNDARY_US + 1))
+        rig.sink.setOutputStreamOffsetUs(2 * BOUNDARY_US)
         assertEquals(5_000, rig.scaledAt(2 * BOUNDARY_US))
     }
 
@@ -163,6 +171,7 @@ class TrackGainAudioSinkTest {
         rig.sink.setGains(HALF_DB, DOUBLE_DB)
 
         assertEquals(5_000, rig.scaledAt(100))
+        rig.sink.setOutputStreamOffsetUs(BOUNDARY_US)
         assertEquals(20_000, rig.scaledAt(BOUNDARY_US))
     }
 
@@ -172,6 +181,8 @@ class TrackGainAudioSinkTest {
         rig.startTwoTracks(0.0, DOUBLE_DB)
 
         rig.sink.setNextGain(null)
+        rig.scaledAt(BOUNDARY_US - 1)
+        rig.sink.setOutputStreamOffsetUs(BOUNDARY_US)
 
         assertEquals(10_000, rig.scaledAt(BOUNDARY_US))
     }
@@ -298,36 +309,51 @@ class TrackGainAudioSinkTest {
     }
 
     @Test
-    fun play_20c_a_current_track_announced_again_at_a_smaller_offset_keeps_its_own_gain() {
+    fun play_20c_two_clips_of_one_file_announced_at_the_same_offset_each_play_with_their_own_gain() {
         val rig = Rig()
-        rig.startTwoTracks(0.0, DOUBLE_DB)
+        val sameOffsetUs = 1_000_000_000_000L
+        rig.sink.startPlaylist(HALF_DB, DOUBLE_DB)
+        rig.sink.setOutputStreamOffsetUs(sameOffsetUs)
+
+        assertEquals(5_000, rig.scaledAt(sameOffsetUs))
+        rig.sink.setOutputStreamOffsetUs(sameOffsetUs)
+        assertEquals(20_000, rig.scaledAt(sameOffsetUs))
+
         rig.sink.advanceToNext()
         rig.sink.setNextGain(HALF_DB)
-        rig.sink.setOutputStreamOffsetUs(3 * BOUNDARY_US)
-        assertEquals(5_000, rig.scaledAt(3 * BOUNDARY_US))
-
-        // A seek resets the playing track's offset to a smaller value than it
-        // had; the offsets of the tracks after it are announced anew.
-        rig.sink.flush()
-        rig.sink.setOutputStreamOffsetUs(0)
-        assertEquals(20_000, rig.scaledAt(500_000))
-        rig.sink.setOutputStreamOffsetUs(2 * BOUNDARY_US)
-
-        assertEquals(20_000, rig.scaledAt(2 * BOUNDARY_US - 1))
-        assertEquals(5_000, rig.scaledAt(2 * BOUNDARY_US))
+        rig.sink.setOutputStreamOffsetUs(sameOffsetUs)
+        assertEquals(5_000, rig.scaledAt(sameOffsetUs))
     }
 
     @Test
-    fun play_20c_a_smaller_offset_for_the_current_track_does_not_bind_the_unannounced_next() {
+    fun play_20c_a_stream_announced_at_a_smaller_offset_than_its_predecessor_gets_its_own_gain() {
         val rig = Rig()
-        rig.startTwoTracks(0.0, DOUBLE_DB)
+        val baseOffsetUs = 1_000_000_000_000L
+        rig.sink.startPlaylist(HALF_DB, DOUBLE_DB)
+        rig.sink.setOutputStreamOffsetUs(baseOffsetUs)
+        assertEquals(5_000, rig.scaledAt(baseOffsetUs))
+
+        rig.sink.setOutputStreamOffsetUs(baseOffsetUs + 6_000_000L)
+        assertEquals(20_000, rig.scaledAt(baseOffsetUs + 9_000_000L))
         rig.sink.advanceToNext()
         rig.sink.setNextGain(HALF_DB)
 
-        rig.sink.flush()
-        rig.sink.setOutputStreamOffsetUs(0)
+        rig.sink.setOutputStreamOffsetUs(baseOffsetUs + 3_000_000L)
+        assertEquals(5_000, rig.scaledAt(baseOffsetUs + 9_000_000L))
+    }
 
-        assertEquals(20_000, rig.scaledAt(500_000))
-        assertEquals(20_000, rig.scaledAt(5 * BOUNDARY_US))
+    @Test
+    fun play_20c_the_next_tracks_gain_is_applied_before_the_transition_event_fires() {
+        val rig = Rig()
+        val sameOffsetUs = 1_000_000_000_000L
+        rig.sink.startPlaylist(HALF_DB, DOUBLE_DB)
+        rig.sink.setOutputStreamOffsetUs(sameOffsetUs)
+        assertEquals(5_000, rig.scaledAt(sameOffsetUs))
+
+        rig.sink.setOutputStreamOffsetUs(sameOffsetUs)
+        assertEquals(20_000, rig.scaledAt(sameOffsetUs))
+
+        rig.sink.advanceToNext()
+        assertEquals(20_000, rig.scaledAt(sameOffsetUs + 1))
     }
 }

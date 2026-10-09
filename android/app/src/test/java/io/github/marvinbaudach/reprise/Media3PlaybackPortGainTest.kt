@@ -7,6 +7,7 @@ import org.junit.Test
 import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
 import org.robolectric.annotation.Config
+import uniffi.reprise_android_ffi.AndroidPlaybackSegment
 
 @RunWith(RobolectricTestRunner::class)
 @Config(sdk = [36])
@@ -23,28 +24,27 @@ class Media3PlaybackPortGainTest {
     }
 
     @Test
-    fun theAutomaticTransitionMakesTheNextTracksGainTheCurrentOne() {
+    fun mtp_66_each_clip_of_a_cue_file_plays_at_its_own_gain_before_the_transition_event() {
         val fake = CallbackPlayer(playbackState = Player.STATE_IDLE, playWhenReady = false)
         val sink = TrackGainAudioSink(probe.sink)
         val port = Media3PlaybackPort(fake.player, trackGainSink = sink) {}
-        port.setNext(playbackItem("/music/b.flac", doubleDb))
-        port.playPath(playbackItem("/music/a.flac", halfDb))
-        sink.setOutputStreamOffsetUs(0)
-        sink.setOutputStreamOffsetUs(boundaryUs)
+        val cueFile = "/music/album.flac"
+        val sameOffsetUs = 1_000_000_000_000L
+        val firstClip = AndroidPlaybackSegment(startMs = 0, endMs = 3_000)
+        val secondClip = AndroidPlaybackSegment(startMs = 3_000, endMs = 6_000)
+        port.setNext(playbackItem(cueFile, doubleDb, segment = secondClip))
+        port.playPath(playbackItem(cueFile, halfDb, segment = firstClip))
+        sink.setOutputStreamOffsetUs(sameOffsetUs)
+        assertEquals(5_000, scaledAt(sink, sameOffsetUs))
+
+        sink.setOutputStreamOffsetUs(sameOffsetUs)
         assertEquals(20_000, scaledAt(sink, boundaryUs))
 
         fake.listener.onMediaItemTransition(
-            MediaItem.fromUri("/music/b.flac"),
+            MediaItem.fromUri(cueFile),
             Player.MEDIA_ITEM_TRANSITION_REASON_AUTO,
         )
-        port.setNext(playbackItem("/music/c.flac", halfDb))
-        sink.setOutputStreamOffsetUs(boundaryUs)
-        sink.setOutputStreamOffsetUs(2 * boundaryUs)
-        sink.flush()
-
-        // A seek back inside the track now playing keeps that track's gain.
         assertEquals(20_000, scaledAt(sink, boundaryUs + 1))
-        assertEquals(5_000, scaledAt(sink, 2 * boundaryUs))
         port.release()
     }
 
@@ -56,12 +56,12 @@ class Media3PlaybackPortGainTest {
         port.setNext(playbackItem("/music/b.flac", 0.0))
         port.playPath(playbackItem("/music/a.flac", 0.0))
         sink.setOutputStreamOffsetUs(0)
-        sink.setOutputStreamOffsetUs(boundaryUs)
         val queued = fake.mediaItems.toList()
 
         port.setGains(halfDb, doubleDb)
 
         assertEquals(5_000, scaledAt(sink, 100))
+        sink.setOutputStreamOffsetUs(boundaryUs)
         assertEquals(20_000, scaledAt(sink, boundaryUs))
         assertEquals(queued, fake.mediaItems)
 
