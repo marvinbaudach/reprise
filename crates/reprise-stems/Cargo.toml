@@ -22,7 +22,6 @@ reprise-core = { path = "../reprise-core" }
 # WITHOUT onnxruntime, so `cargo test -p reprise-stems` needs no model, no
 # network and no native lib. All tiny pure-Rust crates.
 sha2 = "0.11"
-dirs = "7"
 thiserror = "2"
 
 # --- REAL BACKEND (behind the `ort` feature). onnxruntime is dlopened at
@@ -83,6 +82,8 @@ optional = true
 
 [dev-dependencies]
 tempfile = "3"
+# Tests must not read or write the user's real `~/.local/share/reprise` or `~/.cache/reprise`.
+reprise-core = { path = "../reprise-core", features = ["test-private-dirs"] }
 
 [features]
 default = []

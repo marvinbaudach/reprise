@@ -25,3 +25,14 @@ fn an_allocated_row_ends_the_healthy_probe() {
         }
     );
 }
+
+#[test]
+fn the_dump_directory_hangs_below_the_isolated_data_root() {
+    assert!(reprise_core::data_root::is_isolated());
+    let root = reprise_core::data_root::user_data_root().expect("an isolated data root");
+
+    assert_eq!(
+        super::diagnostics_directory(),
+        root.join("reprise/diagnostics")
+    );
+}

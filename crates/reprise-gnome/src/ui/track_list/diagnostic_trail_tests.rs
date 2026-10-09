@@ -330,7 +330,7 @@ const THROWAWAY_MARKER: &str = ".reprise-throwaway-data-root";
 /// Why `data_root` may not host the reload measurement, or `None` when it may.
 ///
 /// The measurement migrates and writes the database at
-/// `reprise_core::db::default_path()`. Run by hand without isolation that is
+/// `$XDG_DATA_HOME/reprise/reprise.db`. Run by hand without isolation that is
 /// the owner's real library. Ruling out the default location is not enough:
 /// an owner whose library lives under a custom `XDG_DATA_HOME` (say `~/data`
 /// exported from a shell profile) passes every check on the path alone, and
@@ -536,7 +536,11 @@ fn measure_generated_library_reload_latency() {
 
     let _main_context = crate::ui::test_main_context::lock_main_context();
     gtk4::init().unwrap();
-    let db_path = reprise_core::db::default_path();
+    // The validated `XDG_DATA_HOME` hosts the library. `default_path()` would
+    // resolve the test build's private directory instead, which is empty.
+    let db_path = xdg_data_home
+        .expect("validated above")
+        .join("reprise/reprise.db");
     let conn = reprise_core::db::Db::open_ready(&db_path).unwrap();
     let track_list = super::super::TrackList::new(
         Rc::new(conn),

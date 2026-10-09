@@ -233,6 +233,25 @@ fn main() -> glib::ExitCode {
     exit_code
 }
 
+/// A binary built for the test suites keeps its data in a process-private
+/// directory, so it opens an empty library instead of the user's. Say so once,
+/// loudly, rather than let a stale `target/debug/reprise` look like data loss.
+fn warn_if_test_build() {
+    if let Some(root) = test_build_data_root() {
+        tracing::warn!(
+            data_root = %root.display(),
+            "this is a test build: its data lives in a private directory, not the user's library; use `cargo build` / `cargo run` for a real session"
+        );
+    }
+}
+
+/// The private data root when this binary was built with the test isolation.
+fn test_build_data_root() -> Option<std::path::PathBuf> {
+    reprise_core::data_root::is_isolated()
+        .then(reprise_core::data_root::user_data_root)
+        .flatten()
+}
+
 fn run() -> glib::ExitCode {
     register_app_resources();
     ui::track_list::diagnostic_trail::mark_process_start();
@@ -244,6 +263,7 @@ fn run() -> glib::ExitCode {
     crate::ui::date_format::init();
     i18n::smoke_report();
     tracing::info!(version = env!("CARGO_PKG_VERSION"), "starting Reprise");
+    warn_if_test_build();
 
     let app = adw::Application::builder()
         .application_id(APP_ID)
@@ -471,6 +491,13 @@ mod app_identity_tests {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_test_build_reports_its_private_data_root() {
+        assert!(reprise_core::data_root::is_isolated());
+        let root = test_build_data_root().expect("a test build has a private data root");
+        assert!(root.starts_with(std::env::temp_dir()), "{root:?}");
+    }
 
     #[test]
     fn database_open_failure_becomes_a_presentable_message() {

@@ -2981,7 +2981,6 @@ dependencies = [
 name = "reprise-stems"
 version = "0.1.303"
 dependencies = [
- "dirs",
  "flacenc",
  "ort",
  "reprise-core",
