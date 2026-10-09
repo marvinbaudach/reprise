@@ -602,17 +602,20 @@ result.
   carries the gain of the incoming track, never the outgoing track's.
 - **PLAY-20c** [active] [android] — **A track's gain changes at its first sample
   on the phone.** The audio sink applies a track's gain to the buffers of that
-  track's stream, chosen by the stream offset Media3 announces: the first buffer
-  at the next track's offset gets the next track's gain, and not a buffer
-  earlier. The gain belongs to the media item, so replacing the next track after
-  its offset was announced, seeking back across the boundary, and a flush all
-  leave every buffer with its own track's gain. The sink scales into a buffer of
-  its own and never writes into Media3's (which may be read-only), a buffer the
-  output stage takes only in part is retried from the same scaled copy, and at
-  exactly unity gain the buffer passes through untouched. Proven by JVM tests
-  that put a recording sink behind the gain sink and read what the output stage
-  receives; they do not run Media3's `DefaultAudioSink` or a device. Android has
-  no crossfade; if it gains one, this rule needs a sibling.
+  track's stream, chosen by the order in which Media3 announces streams: the
+  first buffer after the stream-change announcement gets the next track's gain,
+  and not a buffer earlier. This also holds for clips of one CUE file whose
+  announced offset values are equal or fall. The later media-item transition
+  only retires the previous item. The gain belongs to the media item, so
+  replacing the next track after it was announced, seeking back across the
+  boundary, and a flush all leave every buffer with its own track's gain. The
+  sink scales into a buffer of its own and never writes into Media3's (which may
+  be read-only), a buffer the output stage takes only in part is retried from
+  the same scaled copy, and at exactly unity gain the buffer passes through
+  untouched. Proven by JVM tests that put a recording sink behind the gain sink
+  and read what the output stage receives; they do not run Media3's
+  `DefaultAudioSink` or a device. Android has no crossfade; if it gains one,
+  this rule needs a sibling.
 - **PLAY-21** [active] [android] — Volume normalisation is offered in the
   phone's playback settings with the same three modes as on the desktop,
   **Off**, **Per Track** and **Per Album**, in a row titled "Volume
@@ -1373,6 +1376,7 @@ result.
   `mtp_66_the_widget_names_a_cue_track_by_its_row_not_by_its_file`,
   `mtp_66_a_cue_track_and_the_next_one_are_each_clipped_to_their_own_stretch`,
   `mtp_66_a_cue_clip_opens_without_a_renderer_restarting_discontinuity`,
+  `mtp_66_each_clip_of_a_cue_file_plays_at_its_own_gain_before_the_transition_event`,
   `mtp_66_a_whole_file_is_not_clipped`,
   `mtp_66_late_metadata_completes_a_clip_in_place_and_keeps_its_stretch`,
   `mtp_66_a_clipped_cue_track_that_gains_its_cover_is_updated_in_place`,
@@ -1384,10 +1388,10 @@ result.
   `mtp_66_the_queue_shows_both_tracks_of_a_cue_file`,
   `mtp_66_an_artists_other_titles_show_both_tracks_of_a_cue_file`.
   Unit tests prove each clip opens without the initial discontinuity that caused
-  a 330 ms gap at every boundary of an Opus file (issue #1222). The gap itself
-  and each clip's own gain are still proved only by the post-merge device check,
-  because no automated test drives the stream offsets or decoder a real player
-  uses.
+  a 330 ms gap at every boundary of an Opus file (issue #1222), and the gain test
+  drives the measured stream-offset announcement ordering directly. The gap
+  itself is still proved only by the post-merge device check, because no
+  automated test drives the decoder a real player uses.
   <!-- REVIEW: rule proposal -->
 - **MTP-67** [active] [android] — **The phone analyses CUE tracks.** One
   decode of a CUE file stores the seek-bar shape, spectrum and loudness of

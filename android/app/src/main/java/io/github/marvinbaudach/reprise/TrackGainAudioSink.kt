@@ -10,7 +10,9 @@ import kotlin.math.roundToInt
 
 /**
  * Applies Core's per-track gain to signed 16-bit PCM, choosing the gain of the
- * item a buffer belongs to by the stream offsets Media3 announces.
+ * stream Media3 announces by announcement order. The announcement itself marks
+ * the boundary before the new stream's first buffer; the later media-item
+ * transition only retires the previous item from the bookkeeping.
  *
  * `LivePcmRenderersFactory` refuses float output and keeps offload off, so every
  * buffer this sink sees is 16-bit PCM; `configure` is final in the base class,
@@ -41,13 +43,15 @@ internal class TrackGainAudioSink(delegate: AudioSink) : ForwardingAudioSink(del
             }
     }
 
-    /** One media item in playlist order: its gain and, once known, its stream offset. */
-    private class Stream(var gainDb: Double, var offsetUs: Long? = null)
+    /** One media item in playlist order. */
+    private class Stream(var gainDb: Double)
 
     // The current media item first, then the pre-fed next one. Gains belong to
     // the item, never to a position in a queue, so replacing the next item,
     // seeking back across a boundary and flushing all leave the right gain.
     private val streams = ArrayList<Stream>(MAX_STREAMS)
+    private var activeIndex = 0
+    private var wroteSinceStreamStart = false
 
     // The scaled copy that is forwarded, and the input it was made from. A
     // buffer the output stage only partly takes is offered again by the
@@ -65,21 +69,24 @@ internal class TrackGainAudioSink(delegate: AudioSink) : ForwardingAudioSink(del
         streams.clear()
         streams.add(Stream(currentGainDb))
         nextGainDb?.let { streams.add(Stream(it)) }
+        resetStreamPosition()
         clearPendingBuffer()
     }
 
     /**
      * Declares the gain of the item after the current one, or that there is none.
      *
-     * A next item that was already announced keeps its offset and takes the new
-     * gain: Media3 re-reads a replaced item and repeats the same offset, which
-     * [setOutputStreamOffsetUs] treats as already known.
+     * A next item that was already announced stays active and takes the new
+     * gain in place.
      */
     @Synchronized
     fun setNextGain(gainDb: Double?) {
         if (streams.isEmpty()) return
         when {
-            gainDb == null -> while (streams.size > 1) streams.removeAt(streams.lastIndex)
+            gainDb == null -> {
+                while (streams.size > 1) streams.removeAt(streams.lastIndex)
+                activeIndex = minOf(activeIndex, streams.lastIndex)
+            }
             streams.size > 1 -> streams[1].gainDb = gainDb
             else -> streams.add(Stream(gainDb))
         }
@@ -97,68 +104,40 @@ internal class TrackGainAudioSink(delegate: AudioSink) : ForwardingAudioSink(del
     @Synchronized
     fun advanceToNext() {
         if (streams.size > 1) streams.removeAt(0)
+        activeIndex = maxOf(0, activeIndex - 1)
     }
 
     @Synchronized
     fun clearPlaylist() {
         streams.clear()
+        resetStreamPosition()
         clearPendingBuffer()
     }
 
     override fun reset() {
-        synchronized(this) { clearPendingBuffer() }
+        synchronized(this) {
+            resetStreamPosition()
+            clearPendingBuffer()
+        }
         super.reset()
     }
 
     override fun flush() {
-        synchronized(this) { clearPendingBuffer() }
+        synchronized(this) {
+            resetStreamPosition()
+            clearPendingBuffer()
+        }
         super.flush()
     }
 
     override fun setOutputStreamOffsetUs(outputStreamOffsetUs: Long) {
-        synchronized(this) { bindOffset(outputStreamOffsetUs) }
-        super.setOutputStreamOffsetUs(outputStreamOffsetUs)
-    }
-
-    /**
-     * Binds an announced offset to an item. Offsets rise along the queue, which
-     * holds whatever Media3 does with them internally:
-     *  - an offset an item already has is a repeat and changes nothing;
-     *  - one below the current item's is the current item coming back with a new
-     *    offset after a seek reset it, and the later items' offsets are stale
-     *    until they are announced again;
-     *  - otherwise it belongs to the first item without an offset.
-     */
-    private fun bindOffset(offsetUs: Long) {
-        if (streams.isEmpty() || streams.any { it.offsetUs == offsetUs }) return
-        val current = streams[0]
-        val currentOffset = current.offsetUs
-        if (currentOffset != null && offsetUs < currentOffset) {
-            current.offsetUs = offsetUs
-            for (index in 1 until streams.size) streams[index].offsetUs = null
-            return
-        }
-        val unbound = streams.firstOrNull { it.offsetUs == null }
-        if (unbound != null) {
-            unbound.offsetUs = offsetUs
-        } else {
-            // Every item already has an offset and this is a new, larger one:
-            // the latest announcement describes the last item.
-            streams.last().offsetUs = offsetUs
-        }
-    }
-
-    /** The gain of the item whose stream a buffer at [presentationTimeUs] belongs to. */
-    private fun gainDbAt(presentationTimeUs: Long): Double {
-        var best: Stream? = null
-        for (index in streams.indices) {
-            val stream = streams[index]
-            val offset = stream.offsetUs ?: continue
-            if (offset <= presentationTimeUs && (best == null || offset >= best.offsetUs!!)) {
-                best = stream
+        synchronized(this) {
+            if (streams.isNotEmpty() && wroteSinceStreamStart) {
+                wroteSinceStreamStart = false
+                if (activeIndex + 1 < streams.size) activeIndex += 1
             }
         }
-        return (best ?: streams.firstOrNull())?.gainDb ?: 0.0
+        super.setOutputStreamOffsetUs(outputStreamOffsetUs)
     }
 
     override fun handleBuffer(
@@ -200,7 +179,8 @@ internal class TrackGainAudioSink(delegate: AudioSink) : ForwardingAudioSink(del
      * read-only, and nothing downstream should see it change under it.
      */
     private fun beginOffer(input: ByteBuffer, presentationTimeUs: Long) {
-        val gain = linearGain(gainDbAt(presentationTimeUs))
+        val gain = linearGain(streams.getOrNull(activeIndex)?.gainDb ?: 0.0)
+        wroteSinceStreamStart = true
         pendingInput = input
         pendingPresentationTimeUs = presentationTimeUs
         pendingInputStart = input.position()
@@ -236,5 +216,10 @@ internal class TrackGainAudioSink(delegate: AudioSink) : ForwardingAudioSink(del
         pendingPresentationTimeUs = Long.MIN_VALUE
         pendingInputStart = 0
         pendingBypass = false
+    }
+
+    private fun resetStreamPosition() {
+        activeIndex = 0
+        wroteSinceStreamStart = false
     }
 }

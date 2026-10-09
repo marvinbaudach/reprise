@@ -106,12 +106,10 @@ class Media3PlaybackPortClippingTest {
         assertEquals(10_000L to 20_000L, clipOf(fake.items.single()))
     }
 
-    // The gain sink keys on the stream offsets it is told about. The offsets
-    // ExoPlayer announces for two clipped items of one file are not produced
-    // here, so this proves the sink and the port, not the clips; that is the
-    // device check named in MTP-66.
+    // This proves the sink and the port together. The real player's ordering
+    // of clipped-stream announcements remains part of the device check.
     @Test
-    fun two_queued_items_of_one_uri_each_play_at_the_gain_of_their_own_offset() {
+    fun two_queued_items_of_one_uri_each_play_at_the_gain_of_their_own_announcement() {
         val probe = RecordingAudioSink()
         val sink = TrackGainAudioSink(probe.sink)
         val fake = CallbackPlayer(playbackState = Player.STATE_IDLE, playWhenReady = false)
@@ -120,10 +118,10 @@ class Media3PlaybackPortClippingTest {
         port.setNext(playbackItem(ALBUM, gainDb = 6.020599913, trackId = 22, segment = segment(10_000, 20_000)))
         port.playPath(playbackItem(ALBUM, gainDb = -6.020599913, trackId = 21, segment = segment(0, 10_000)))
         sink.setOutputStreamOffsetUs(0)
-        sink.setOutputStreamOffsetUs(boundaryUs)
 
         sink.handleBuffer(pcm16(10_000), 0, 1)
         val first = probe.offers.last().samples.single()
+        sink.setOutputStreamOffsetUs(boundaryUs)
         sink.handleBuffer(pcm16(10_000), boundaryUs, 1)
         val second = probe.offers.last().samples.single()
 
