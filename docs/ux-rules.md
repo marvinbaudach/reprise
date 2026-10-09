@@ -1372,6 +1372,7 @@ result.
   `mtp_66_the_files_cover_reaches_each_of_its_tracks_without_swapping_them`,
   `mtp_66_the_widget_names_a_cue_track_by_its_row_not_by_its_file`,
   `mtp_66_a_cue_track_and_the_next_one_are_each_clipped_to_their_own_stretch`,
+  `mtp_66_a_cue_clip_opens_without_a_renderer_restarting_discontinuity`,
   `mtp_66_a_whole_file_is_not_clipped`,
   `mtp_66_late_metadata_completes_a_clip_in_place_and_keeps_its_stretch`,
   `mtp_66_a_clipped_cue_track_that_gains_its_cover_is_updated_in_place`,
@@ -1382,9 +1383,11 @@ result.
   `mtp_66_an_opened_album_shows_both_tracks_of_a_cue_file`,
   `mtp_66_the_queue_shows_both_tracks_of_a_cue_file`,
   `mtp_66_an_artists_other_titles_show_both_tracks_of_a_cue_file`.
-  The gap between two clips and each clip's own gain are proved only by the
-  post-merge device check: no automated test drives the stream offsets a real
-  player announces for clipped items.
+  Unit tests prove each clip opens without the initial discontinuity that caused
+  a 330 ms gap at every boundary of an Opus file (issue #1222). The gap itself
+  and each clip's own gain are still proved only by the post-merge device check,
+  because no automated test drives the stream offsets or decoder a real player
+  uses.
   <!-- REVIEW: rule proposal -->
 - **MTP-67** [active] [android] — **The phone analyses CUE tracks.** One
   decode of a CUE file stores the seek-bar shape, spectrum and loudness of
@@ -1410,7 +1413,8 @@ result.
   and is analysed and played to its own end.
   *Tests:* `mtp_68_a_single_row_of_the_last_track_has_no_end_either`,
   `mtp_68_the_last_track_of_a_cue_file_is_handed_over_without_an_end`,
-  `mtp_68_the_last_track_of_a_file_is_clipped_at_its_start_only`.
+  `mtp_68_the_last_track_of_a_file_is_clipped_at_its_start_only`,
+  `mtp_68_the_last_track_clip_opens_without_a_renderer_restarting_discontinuity`.
   <!-- REVIEW: rule proposal -->
 
 ## F. Settings & modals

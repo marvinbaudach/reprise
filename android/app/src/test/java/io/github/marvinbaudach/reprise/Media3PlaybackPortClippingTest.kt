@@ -10,6 +10,7 @@ import io.github.marvinbaudach.reprise.library.TrackMetadataResolver
 import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
+import org.junit.Assert.assertTrue
 import org.junit.Test
 import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
@@ -63,10 +64,25 @@ class Media3PlaybackPortClippingTest {
     }
 
     @Test
+    fun mtp_66_a_cue_clip_opens_without_a_renderer_restarting_discontinuity() {
+        port.playPath(playbackItem(ALBUM, trackId = 21, segment = segment(0, 10_000)))
+        port.setNext(playbackItem(ALBUM, trackId = 22, segment = segment(10_000, 20_000)))
+
+        assertTrue(fake.items.all { it.clippingConfiguration.startsAtKeyFrame })
+    }
+
+    @Test
     fun mtp_68_the_last_track_of_a_file_is_clipped_at_its_start_only() {
         port.playPath(playbackItem(ALBUM, trackId = 23, segment = segment(20_000, null)))
 
         assertEquals(20_000L to C.TIME_END_OF_SOURCE, clipOf(fake.items.single()))
+    }
+
+    @Test
+    fun mtp_68_the_last_track_clip_opens_without_a_renderer_restarting_discontinuity() {
+        port.playPath(playbackItem(ALBUM, trackId = 23, segment = segment(20_000, null)))
+
+        assertTrue(fake.items.all { it.clippingConfiguration.startsAtKeyFrame })
     }
 
     @Test

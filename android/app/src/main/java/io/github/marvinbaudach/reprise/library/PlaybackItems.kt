@@ -89,13 +89,19 @@ internal class PlaybackItems(
  * The clip of its file a CUE track plays. Media3 then counts the item's
  * position and duration from the clip's start. A segment without an end is its
  * file's last track and plays to the end of the source, whatever duration the
- * file's metadata claims; no segment plays the whole file.
+ * file's metadata claims; no segment plays the whole file. Every segment claims
+ * a key-frame start because Media3 otherwise reports an initial discontinuity
+ * for formats it does not classify as all-sync, including Opus, which restarts
+ * the renderer and leaves an audible gap. At a seamless boundary Media3 does
+ * not trim the Opus packet that straddles the cut, so up to one packet (about
+ * 20 ms) may be repeated or cut.
  */
 private fun AndroidPlaybackSegment?.clipping(): MediaItem.ClippingConfiguration {
     if (this == null) return MediaItem.ClippingConfiguration.UNSET
     return MediaItem.ClippingConfiguration.Builder()
         .setStartPositionMs(startMs)
         .setEndPositionMs(endMs ?: C.TIME_END_OF_SOURCE)
+        .setStartsAtKeyFrame(true)
         .build()
 }
 
