@@ -1418,7 +1418,20 @@ result.
   *Tests:* `mtp_68_a_single_row_of_the_last_track_has_no_end_either`,
   `mtp_68_the_last_track_of_a_cue_file_is_handed_over_without_an_end`,
   `mtp_68_the_last_track_of_a_file_is_clipped_at_its_start_only`,
-  `mtp_68_the_last_track_clip_opens_without_a_renderer_restarting_discontinuity`.
+  `mtp_68_the_last_track_clip_opens_without_a_renderer_restarting_discontinuity`,
+  `mtp_68_an_open_ended_clip_is_not_cut_at_the_header_duration`,
+  `mtp_68_an_open_ended_clip_lets_the_queue_move_on_to_the_next_item`,
+  `mtp_68_generated_no_seektable_flac_prepares_on_the_default_factory`,
+  `mtp_68_open_ended_seek_cost_stays_close_to_the_bounded_baseline`,
+  `mtp_68_bounded_segments_and_whole_files_keep_their_timeline_durations`,
+  `mtp_68_an_open_ended_source_keeps_the_item_updatable_in_place`,
+  `mtp_68_flac_total_samples_is_masked_through_every_read_path`,
+  `mtp_68_unknown_length_keeps_the_declared_total_samples`,
+  `mtp_68_invalid_streaminfo_fields_keep_the_declared_total_samples`,
+  `mtp_68_the_estimate_never_lowers_the_declared_total_samples`,
+  `mtp_68_a_non_flac_stream_passes_through_byte_identical`,
+  `mtp_68_the_port_reports_the_row_duration_when_the_player_cannot_know_it`,
+  `mtp_68_a_known_player_duration_wins_over_the_row_duration`.
   <!-- REVIEW: rule proposal -->
 
 ## F. Settings & modals

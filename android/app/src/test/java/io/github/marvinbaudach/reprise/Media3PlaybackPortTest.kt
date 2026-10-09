@@ -4,6 +4,7 @@ import android.os.Looper
 import android.util.Log
 import androidx.media3.common.C
 import androidx.media3.common.MediaItem
+import androidx.media3.common.MediaMetadata
 import androidx.media3.common.PlaybackException
 import androidx.media3.common.Player
 import java.io.FileNotFoundException
@@ -26,6 +27,46 @@ import uniffi.reprise_android_ffi.PlaybackEventBridge
 @RunWith(RobolectricTestRunner::class)
 @Config(sdk = [36])
 class Media3PlaybackPortTest {
+    @Test
+    fun mtp_68_the_port_reports_the_row_duration_when_the_player_cannot_know_it() {
+        val fake = CallbackPlayer(
+            playbackState = Player.STATE_READY,
+            playWhenReady = true,
+            isPlaying = true,
+            duration = C.TIME_UNSET,
+        )
+        fake.mediaItems += itemWithDuration(120_000L)
+        val durations = mutableListOf<Long>()
+        val port = Media3PlaybackPort(fake.player) {}
+        port.setEventBridge(positionDurationBridge(durations))
+
+        fake.listener.onIsPlayingChanged(true)
+        shadowOf(Looper.getMainLooper()).idle()
+
+        assertEquals(listOf(120_000L), durations)
+        port.release()
+    }
+
+    @Test
+    fun mtp_68_a_known_player_duration_wins_over_the_row_duration() {
+        val fake = CallbackPlayer(
+            playbackState = Player.STATE_READY,
+            playWhenReady = true,
+            isPlaying = true,
+            duration = 80_000L,
+        )
+        fake.mediaItems += itemWithDuration(120_000L)
+        val durations = mutableListOf<Long>()
+        val port = Media3PlaybackPort(fake.player) {}
+        port.setEventBridge(positionDurationBridge(durations))
+
+        fake.listener.onIsPlayingChanged(true)
+        shadowOf(Looper.getMainLooper()).idle()
+
+        assertEquals(listOf(80_000L), durations)
+        port.release()
+    }
+
     @Test
     fun playbackFaultEmitsItsCauseSummaryAndLogsTheThrowableOnce() {
         val fake = CallbackPlayer(playbackState = Player.STATE_IDLE, playWhenReady = false)
@@ -177,6 +218,17 @@ class Media3PlaybackPortTest {
     }
 }
 
+private fun itemWithDuration(durationMs: Long): MediaItem = MediaItem.Builder()
+    .setMediaMetadata(MediaMetadata.Builder().setDurationMs(durationMs).build())
+    .build()
+
+private fun positionDurationBridge(durations: MutableList<Long>) =
+    object : PlaybackEventBridge(NoHandle) {
+        override fun emit(generation: ULong, event: AndroidPlayerEvent) {
+            if (event is AndroidPlayerEvent.Position) durations += event.durationMs
+        }
+    }
+
 internal class CallbackPlayer(
     var playbackState: Int,
     var playWhenReady: Boolean,
@@ -201,6 +253,7 @@ internal class CallbackPlayer(
             "getPlaybackState" -> playbackState
             "getCurrentPosition" -> currentPosition
             "getDuration" -> duration
+            "getCurrentMediaItem" -> mediaItems.firstOrNull()
             "setMediaItem" -> {
                 mediaItems.clear()
                 mediaItems += arguments!!.single() as MediaItem

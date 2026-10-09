@@ -148,7 +148,7 @@ internal class Media3PlaybackPort(
                 emit(
                     AndroidPlayerEvent.Position(
                         positionMs = player.currentPosition.coerceAtLeast(0),
-                        durationMs = player.duration.knownDuration(),
+                        durationMs = player.knownDuration(),
                     ),
                 )
             }
@@ -491,4 +491,7 @@ private fun Looper.dispatch(handler: Handler): ApplicationLooperDispatch =
         post = { command -> handler.post(command) },
     )
 
-private fun Long.knownDuration(): Long = if (this == C.TIME_UNSET) 0 else coerceAtLeast(0)
+private fun Player.knownDuration(): Long {
+    if (duration != C.TIME_UNSET) return duration.coerceAtLeast(0)
+    return currentMediaItem?.mediaMetadata?.durationMs?.coerceAtLeast(0) ?: 0
+}
