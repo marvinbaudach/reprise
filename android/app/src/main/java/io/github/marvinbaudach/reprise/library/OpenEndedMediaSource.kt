@@ -25,7 +25,7 @@ internal class OpenEndedMediaSourceFactory(
     private val normalDelegate = DefaultMediaSourceFactory(dataSourceFactory)
     private val lenientDelegate = DefaultMediaSourceFactory(
         dataSourceFactory,
-        UnknownDurationExtractorsFactory(DefaultExtractorsFactory(), reportUnknownDuration),
+        UnknownDurationExtractorsFactory(DefaultExtractorsFactory(), reportUnknownDuration, dataSourceFactory),
     )
 
     override fun setDrmSessionManagerProvider(

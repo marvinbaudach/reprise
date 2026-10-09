@@ -1431,7 +1431,12 @@ result.
   `mtp_68_the_estimate_never_lowers_the_declared_total_samples`,
   `mtp_68_a_non_flac_stream_passes_through_byte_identical`,
   `mtp_68_the_port_reports_the_row_duration_when_the_player_cannot_know_it`,
-  `mtp_68_a_known_player_duration_wins_over_the_row_duration`.
+  `mtp_68_a_known_player_duration_wins_over_the_row_duration`,
+  `mtp_68_a_highly_compressible_understated_flac_plays_to_its_true_end`,
+  `mtp_68_the_last_frame_header_gives_the_samples_a_file_really_holds`,
+  `mtp_68_a_tail_that_cannot_be_read_gives_no_sample_count`,
+  `mtp_68_a_tail_without_a_frame_header_gives_no_sample_count`,
+  `mtp_68_the_masked_total_is_what_the_last_frame_says_not_a_guess_from_the_file_length`.
   <!-- REVIEW: rule proposal -->
 
 ## F. Settings & modals

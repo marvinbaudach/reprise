@@ -18,6 +18,14 @@ internal object TestFlacFile {
         return writeFile(file, BLOCK_SIZE, 1_172, TRUE_SAMPLES)
     }
 
+    /**
+     * The same ten minutes as [writeTenMinuteUnderstated], but every frame is a CONSTANT
+     * subframe, so the file compresses about 800:1 the way a pure tone or silence does.
+     */
+    fun writeTenMinuteCompressibleUnderstated(file: File): File {
+        return writeFile(file, BLOCK_SIZE, 1_172, DECLARED_SAMPLES, compressible = true)
+    }
+
     fun withMetadataPadding(source: ByteArray, paddingSize: Int): ByteArray {
         var offset = 4
         while (offset + 4 <= source.size) {
@@ -48,22 +56,30 @@ internal object TestFlacFile {
         blockSize: Int,
         frameCount: Int,
         declaredSamples: Long,
+        compressible: Boolean = false,
     ): File {
         BufferedOutputStream(FileOutputStream(file)).use { output ->
             output.write("fLaC".encodeToByteArray())
             output.write(byteArrayOf(0x80.toByte(), 0, 0, 34))
-            val minFrameSize = frameSize(blockSize, frameNumberBytes = 1)
-            val maxFrameSize = frameSize(blockSize, frameNumberBytes = if (frameCount > 128) 2 else 1)
+            val subframeBytes = if (compressible) CONSTANT_SUBFRAME_BYTES else blockSize * 2 + 1
+            val minFrameSize = frameSize(blockSize, frameNumberBytes = 1, subframeBytes)
+            val maxFrameSize = frameSize(
+                blockSize,
+                frameNumberBytes = if (frameCount > 128) 2 else 1,
+                subframeBytes,
+            )
             output.write(streamInfo(blockSize, minFrameSize, maxFrameSize, declaredSamples))
 
             var noise = 0x6D2B79F5.toInt()
             repeat(frameCount) { frameNumber ->
                 val header = frameHeader(frameNumber, blockSize)
-                val frame = ByteArray(header.size + 1 + blockSize * 2)
+                val frame = ByteArray(header.size + subframeBytes)
                 header.copyInto(frame)
-                frame[header.size] = 0x02 // VERBATIM subframe, no wasted bits.
+                // CONSTANT (0x00) or VERBATIM (0x02) subframe, no wasted bits.
+                frame[header.size] = if (compressible) 0x00 else 0x02
                 var offset = header.size + 1
-                repeat(blockSize) {
+                if (compressible) frame[offset + 1] = 0x40 // One constant 16-bit sample value.
+                repeat(if (compressible) 0 else blockSize) {
                     noise = noise xor (noise shl 13)
                     noise = noise xor (noise ushr 17)
                     noise = noise xor (noise shl 5)
@@ -162,8 +178,10 @@ internal object TestFlacFile {
         this[offset + 2] = value.toByte()
     }
 
-    private fun frameSize(blockSize: Int, frameNumberBytes: Int): Int {
+    private fun frameSize(blockSize: Int, frameNumberBytes: Int, subframeBytes: Int): Int {
         val blockSizeExtraBytes = if (blockSize == BLOCK_SIZE) 0 else 2
-        return 4 + frameNumberBytes + blockSizeExtraBytes + 1 + 1 + blockSize * 2 + 2
+        return 4 + frameNumberBytes + blockSizeExtraBytes + 1 + subframeBytes + 2
     }
+
+    private const val CONSTANT_SUBFRAME_BYTES = 3 // Subframe header plus one 16-bit sample.
 }

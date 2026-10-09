@@ -12,9 +12,11 @@ import androidx.media3.common.Timeline
 import androidx.media3.common.util.UnstableApi
 import androidx.media3.datasource.DefaultDataSource
 import androidx.media3.exoplayer.ExoPlayer
+import androidx.media3.exoplayer.RenderersFactory
 import androidx.media3.exoplayer.source.DefaultMediaSourceFactory
 import androidx.media3.exoplayer.source.MediaSource
 import androidx.media3.test.utils.FakeClock
+import androidx.media3.test.utils.FakeRenderer
 import androidx.media3.test.utils.robolectric.TestPlayerRunHelper
 import androidx.test.core.app.ApplicationProvider
 import io.github.marvinbaudach.reprise.library.PlaybackKey
@@ -106,6 +108,30 @@ class Mtp68OpenEndedMediaSourceTest {
         assertTrue("observed durations: $observedDurations", observedDurations.contains(C.TIME_UNSET))
         assertNotEquals(500_000L, openEndedDurationUs)
         assertTrue("observed header-derived duration: $observedDurations", 500_000L !in observedDurations)
+    }
+
+    @Test
+    fun mtp_68_a_highly_compressible_understated_flac_plays_to_its_true_end() {
+        // Constant subframes compress about 800:1, far past any file-length-based guess: the
+        // 13 KB file would estimate to about 26,000 samples, so only the audio itself can tell
+        // the open-ended clip that it runs on to ten minutes instead of the declared minute.
+        val generated = TestFlacFile.writeTenMinuteCompressibleUnderstated(
+            File(context.cacheDir, "mtp-68-compressible-understated.flac"),
+        )
+        val startMs = 30_000L
+
+        val learnedDurationUs = preparedKnownDurationUs(
+            OpenEndedMediaSourceFactory(context),
+            listOf(cueItem(generated, startMs, endMs = null)),
+        )
+
+        val trueDurationUs = TestFlacFile.TRUE_SAMPLES * ONE_SECOND_US / TestFlacFile.SAMPLE_RATE
+        val expectedUs = trueDurationUs - startMs * 1_000L
+        assertTrue(
+            "expected about ${expectedUs / ONE_SECOND_US} s after the clip start, " +
+                "got ${learnedDurationUs / ONE_SECOND_US} s",
+            learnedDurationUs in (expectedUs - ONE_SECOND_US)..(expectedUs + ONE_SECOND_US),
+        )
     }
 
     @Test
@@ -208,7 +234,13 @@ class Mtp68OpenEndedMediaSourceTest {
         items: List<MediaItem>,
         observedDurations: MutableList<Long> = mutableListOf(),
     ): Long {
-        val player = ExoPlayer.Builder(context)
+        // Robolectric has no audio decoder, and a player with no enabled renderer ends as soon as
+        // its source has no known duration, which can be before the load that would reveal it.
+        // A renderer that consumes the samples keeps playback running until the end of the audio.
+        val player = ExoPlayer.Builder(
+            context,
+            RenderersFactory { _, _, _, _, _ -> arrayOf(FakeRenderer(C.TRACK_TYPE_AUDIO)) },
+        )
             .setMediaSourceFactory(factory)
             .setClock(FakeClock(true))
             .build()
