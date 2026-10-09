@@ -8,7 +8,7 @@ import androidx.media3.extractor.ForwardingExtractorInput
 import java.io.EOFException
 
 private const val STREAM_MARKER_SIZE = 4
-private const val STREAM_INFO_FIELDS_END = 26
+internal const val STREAM_INFO_FIELDS_END = 26
 private const val TOTAL_SAMPLES_FIRST_BYTE = 21L
 private const val TOTAL_SAMPLES_LAST_BYTE = 25L
 private const val ASSUMED_COMPRESSION_RATIO = 0.25
@@ -19,16 +19,19 @@ private const val MAX_36_BIT = (1L shl 36) - 1L
  *
  * Media3 rejects frames beyond the declared total. For FLAC without a SEEKTABLE,
  * it also uses that total as the interpolation seeker's ceiling. MTP-68 therefore
- * raises an understated count to a conservative estimate from the file length,
- * while preserving every other byte and never lowering the declared count.
+ * raises an understated count to the one the file really holds, read from its last
+ * frame header through [tailReader], while preserving every other byte and never
+ * lowering the declared count. An exact ceiling keeps the interpolation seeker as
+ * cheap as it is for an honest header.
  *
- * The 4:1 compression assumption keeps the ceiling above typical audio without
- * making interpolation impractical. Audio compressing better than 4:1 can still
- * end beyond the estimate when its header is understated.
+ * Without a readable tail the count falls back to an estimate from the file length at
+ * 4:1 compression. That keeps the ceiling above typical audio, but audio compressing
+ * better than 4:1 (a pure tone, silence) can still end beyond it.
  */
 @OptIn(UnstableApi::class)
 internal class FlacStreamInfoMaskingExtractorInput(
     private val source: ExtractorInput,
+    private val tailReader: FlacTailReader? = null,
 ) : ForwardingExtractorInput(source) {
     private var inspectedStreamInfo = false
     private var totalSamplesToPresent: Long? = null
@@ -135,10 +138,10 @@ internal class FlacStreamInfoMaskingExtractorInput(
         if (!streamInfoRead || !streamInfo.copyOf(STREAM_MARKER_SIZE).contentEquals(FLAC_MARKER)) {
             return null
         }
-        return estimatedTotalSamples(streamInfo).also { totalSamplesToPresent = it }
+        return presentedTotalSamples(streamInfo).also { totalSamplesToPresent = it }
     }
 
-    private fun estimatedTotalSamples(streamInfo: ByteArray): Long {
+    private fun presentedTotalSamples(streamInfo: ByteArray): Long {
         val declared = ((streamInfo[21].toLong() and 0x0F) shl 32) or
             ((streamInfo[22].toLong() and 0xFF) shl 24) or
             ((streamInfo[23].toLong() and 0xFF) shl 16) or
@@ -156,6 +159,8 @@ internal class FlacStreamInfoMaskingExtractorInput(
         ) {
             return declared
         }
+        val fromLastFrame = tailReader?.let { flacSamplesFromLastFrame(streamInfo, fileLength, it) }
+        if (fromLastFrame != null) return maxOf(declared, minOf(MAX_36_BIT, fromLastFrame))
 
         val bytesPerSampleFrame = channels * bitsPerSample / 8.0
         val estimate = fileLength / (ASSUMED_COMPRESSION_RATIO * bytesPerSampleFrame)

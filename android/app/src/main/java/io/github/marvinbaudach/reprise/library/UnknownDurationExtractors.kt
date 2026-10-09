@@ -4,6 +4,7 @@ import android.net.Uri
 import androidx.annotation.OptIn
 import androidx.media3.common.C
 import androidx.media3.common.util.UnstableApi
+import androidx.media3.datasource.DataSource
 import androidx.media3.extractor.Extractor
 import androidx.media3.extractor.ExtractorInput
 import androidx.media3.extractor.ExtractorOutput
@@ -17,19 +18,25 @@ import androidx.media3.extractor.TrackOutput
 internal class UnknownDurationExtractorsFactory(
     private val delegate: ExtractorsFactory,
     private val reportUnknownDuration: Boolean = true,
+    private val dataSourceFactory: DataSource.Factory? = null,
 ) : ExtractorsFactory {
-    override fun createExtractors(): Array<Extractor> = delegate.createExtractors().wrapped(reportUnknownDuration)
+    override fun createExtractors(): Array<Extractor> =
+        delegate.createExtractors().wrapped(reportUnknownDuration, tailReader = null)
 
     override fun createExtractors(
         uri: Uri,
         responseHeaders: Map<String, List<String>>,
-    ): Array<Extractor> = delegate.createExtractors(uri, responseHeaders).wrapped(reportUnknownDuration)
+    ): Array<Extractor> = delegate.createExtractors(uri, responseHeaders).wrapped(
+        reportUnknownDuration,
+        tailReader = dataSourceFactory?.let { DataSourceFlacTailReader(it, uri) },
+    )
 }
 
 @OptIn(UnstableApi::class)
 private class UnknownDurationExtractor(
     private val delegate: Extractor,
     private val reportUnknownDuration: Boolean,
+    private val tailReader: FlacTailReader?,
 ) : Extractor {
     private var maskingInput: FlacStreamInfoMaskingExtractorInput? = null
 
@@ -53,7 +60,7 @@ private class UnknownDurationExtractor(
     private fun ExtractorInput.maskedStreamInfo(): ExtractorInput {
         val current = maskingInput
         if (current != null && current.wraps(this)) return current
-        return FlacStreamInfoMaskingExtractorInput(this).also { maskingInput = it }
+        return FlacStreamInfoMaskingExtractorInput(this, tailReader).also { maskingInput = it }
     }
 }
 
@@ -82,5 +89,8 @@ private class UnknownDurationSeekMap(
 }
 
 @OptIn(UnstableApi::class)
-private fun Array<Extractor>.wrapped(reportUnknownDuration: Boolean): Array<Extractor> =
-    Array(size) { index -> UnknownDurationExtractor(this[index], reportUnknownDuration) }
+private fun Array<Extractor>.wrapped(
+    reportUnknownDuration: Boolean,
+    tailReader: FlacTailReader?,
+): Array<Extractor> =
+    Array(size) { index -> UnknownDurationExtractor(this[index], reportUnknownDuration, tailReader) }
