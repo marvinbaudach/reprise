@@ -52,13 +52,22 @@ PCM-path hold.
 - First live PCM: the existing PCM-path hold (`should_hold`) takes over unchanged, and
   `has_live_audio` then blocks stored frames as before.
 - The grace expires: stored frames take over, so a device without PCM still falls back
-  as before.
-- A pause (`set_playing(false)`): this clears the stored-frame grace, so a paused panel
-  shows its normal paused projection.
+  as before. The latest frame the grace blocked is remembered, and the first `tick` after
+  the expiry ingests it unless analysed live PCM arrived meanwhile. `SceneDriver` resends a
+  stored frame only when the playhead moves, so without this a stalled playhead would keep
+  the adopted shape past the expiry.
+- A track change (`note_track_changed`) clears the grace and the remembered frame. Kotlin
+  calls it before `adoptShape`, which re-arms both.
+- A pause does **not** end the grace (review 2026-10-09, M1). `NowPlayingScene` calls
+  `setPlaying(visualizerActive)` on every recomposition, and a transient `setPlaying(false)`
+  through the item change is documented (`VisualizerEdgeLog.kt`); ending the grace there
+  would let the stored frame overwrite the adopted shape again. The 500 ms expiry and the
+  first analysed live PCM bound the grace on their own.
 
-**Grace value.** `ADOPTED_SHAPE_STORED_FRAME_GRACE = 500 ms`, equal to
-`LIVE_AUDIO_STALE_AFTER`. The measured first-PCM delay is ~200 ms; 500 ms covers slower
-buffering. A device without PCM gets the old behaviour 0.5 s late.
+**Grace value.** `ADOPTED_SHAPE_STORED_FRAME_GRACE = 500 ms`, its own literal in
+`visualizer/stored_frame_grace.rs` (not an alias of `LIVE_AUDIO_STALE_AFTER`). The measured
+first-PCM delay is ~200 ms; 500 ms covers slower buffering. A device without PCM gets the
+old behaviour 0.5 s late.
 
 **A stream reset after the adoption does not end the grace.** `reconcile_stream_generation`
 and `reset_live_presentation` clear `AdoptedShapeHold`. If the grace lived in the hold's
@@ -66,7 +75,8 @@ phase, a reset arriving after `adopt_shape` and before the first PCM would let t
 frames back through, which is the same bug in a different order. The grace is therefore
 its own deadline, `stored_frame_grace_until: Option<Duration>`:
 - `adopt_shape` sets it to `now + grace`;
-- it is cleared only by the first live PCM, by `set_playing(false)`, and by its own expiry;
+- it is cleared only by the first analysed live PCM, by `note_track_changed`, and by its own
+  expiry;
 - a stream reset leaves it alone.
 
 **No JVM test (grill 2026-10-09).** The Kotlin tests drive a fake engine
@@ -91,8 +101,9 @@ phase is still `AwaitingSignal` (no PCM has arrived) and the grace has not passe
      stored frame.
    - `stored_frames_without_an_adoption_ingest_at_once`: guards the regression. Without
      `adopt_shape`, `ingest_bands` behaves as today.
-   - `a_pause_ends_the_stored_frame_grace`: adopt, `set_playing(false)`, then
-     `ingest_bands` → the frame is ingested as today.
+   - `a_pause_blip_does_not_end_the_stored_frame_grace` (replaces
+     `a_pause_ends_the_stored_frame_grace`): adopt, `set_playing(false)`,
+     `set_playing(true)`, then `ingest_bands` → the adopted shape is still drawn.
    - `ac_29_a_stream_reset_after_the_adoption_keeps_stored_frames_waiting`: adopt, then
      `reset_audio_stream`, then `ingest_bands(near-floor)` within the grace → the adopted
      shape is still drawn.
@@ -106,7 +117,7 @@ phase is still `AwaitingSignal` (no PCM has arrived) and the grace has not passe
    - `ingest_bands` gets an early return after `expire_stale_live_audio` and the
      `has_live_audio` check;
    - `adopt_shape` passes `now`;
-   - `set_playing(false)` clears the grace.
+   - `note_track_changed` clears the grace.
 
    `visualizer.rs` is at 792 lines. The net change must keep it under 800. If it does
    not, move the logic into `adopted_shape_hold.rs`, not the comments.
@@ -138,5 +149,12 @@ worktree. Single strand, slug `swipe-visualizer-handover-c`.
 Implemented on 2026-10-09. The first red run passed the four regression guards and failed
 the two AC-29 cases that prove an immediate stored frame and a post-reset stored frame
 replaced the adopted `0.8` shape with the `0.01` frame. The independent 500 ms deadline now
-survives stream resets and is cleared by analyzed live PCM, a pause, or expiry; all six tests
-pass without a JVM test.
+survives stream resets and is cleared by analyzed live PCM, a track change, or expiry; all six
+tests pass without a JVM test.
+
+Review fixes applied on 2026-10-09: a pause no longer ends the grace (M1); the tests assert
+on the encoded scene, on `awaiting_stream_after_reset` and `has_analysis`, on the 499/500 ms
+boundary and on a second adoption re-arming the deadline (M2); `note_track_changed` clears
+the grace (L1); the latest blocked frame is remembered and ingested by the first tick after
+the expiry unless live PCM arrived (L2). The deadline and the remembered frame live in
+`visualizer/stored_frame_grace.rs`.

@@ -7,6 +7,7 @@ mod adopted_shape_hold;
 mod clock;
 mod live_audio;
 mod scene_encoding;
+mod stored_frame_grace;
 
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, Mutex, MutexGuard, PoisonError, TryLockError};
@@ -15,10 +16,11 @@ use std::time::Duration;
 use reprise_core::playback::{BassPressure, BassPressureDetector, SPECTRUM_BAND_COUNT};
 use reprise_core::visuals::{spectrum_frame_from_bands, VisualEngine};
 
-use adopted_shape_hold::{AdoptedShapeHold, ADOPTED_SHAPE_STORED_FRAME_GRACE};
+use adopted_shape_hold::AdoptedShapeHold;
 pub(crate) use clock::MonotonicClock;
 use clock::SystemMonotonicClock;
 pub(crate) use scene_encoding::encode_scene;
+use stored_frame_grace::StoredFrameGrace;
 
 #[cfg(test)]
 pub(crate) use live_audio::TARGET_PCM_BUFFER_DURATION;
@@ -74,8 +76,9 @@ struct VisualState {
     has_ingested: bool,
     has_analysis: bool,
     adopted_shape_hold: AdoptedShapeHold,
-    // Independent of the PCM hold phase so a stream reset cannot end it.
-    stored_frame_grace_until: Option<Duration>,
+    // Own deadline, independent of the PCM hold phase, so a stream reset cannot
+    // end it; also holds the latest stored frame it blocked.
+    stored_frame_grace: StoredFrameGrace,
     has_live_audio: bool,
     // Set by `reset_live_presentation` when it is called for a genuine
     // decoded-stream boundary (`reset_audio_stream`, `note_track_changed`, or
@@ -115,21 +118,6 @@ struct VisualState {
 }
 
 impl VisualState {
-    fn begin_adopted_shape_hold(&mut self, now: Duration) {
-        self.adopted_shape_hold.begin();
-        self.stored_frame_grace_until = Some(now.saturating_add(ADOPTED_SHAPE_STORED_FRAME_GRACE));
-    }
-
-    fn blocks_stored_frame(&mut self, now: Duration) -> bool {
-        let blocks = self
-            .stored_frame_grace_until
-            .is_some_and(|deadline| now < deadline);
-        if !blocks {
-            self.stored_frame_grace_until = None;
-        }
-        blocks
-    }
-
     fn set_engine_playing(&mut self, playing: bool, now: Duration) {
         if self.engine_playing != playing {
             self.engine_playing = playing;
@@ -203,7 +191,6 @@ impl AndroidVisualEngine {
             // is coming, so the normal paused/idle projection must take over
             // instead of holding the pre-reset picture forever.
             state.awaiting_stream_after_reset = false;
-            state.stored_frame_grace_until = None;
         }
         expire_stale_live_audio(&mut state, now);
         let has_audio = state.has_analysis
@@ -259,6 +246,8 @@ impl AndroidVisualEngine {
         state.last_visual_tick_at = now;
         state.has_ingested = false;
         state.has_analysis = false;
+        // Kotlin adopts the shape after this, which re-arms the grace.
+        state.stored_frame_grace.clear();
         reset_live_presentation(&mut state, stream_generation, now, true);
     }
 
@@ -268,8 +257,6 @@ impl AndroidVisualEngine {
         reason = "UniFFI cannot export borrowed slices"
     )]
     pub fn ingest_bands(&self, bands: Vec<f32>) {
-        let has_analysis = !bands.is_empty();
-        let frame = spectrum_frame_from_bands(&bands);
         let mut state = self.lock();
         let stream_generation = self.current_stream_generation();
         let now = self.clock.now();
@@ -278,22 +265,10 @@ impl AndroidVisualEngine {
         if state.has_live_audio {
             return;
         }
-        if state.blocks_stored_frame(now) {
+        if state.stored_frame_grace.hold(&bands, now) {
             return;
         }
-        state.engine.set_retain_paused_live_shape(false);
-        state.engine.set_has_track(true);
-        let playing = state.playing;
-        state.set_engine_playing(playing && has_analysis, now);
-        state.engine.ingest(&frame);
-        state.has_ingested = true;
-        state.has_analysis = has_analysis;
-        // The new stream has spoken, even when all it said was "nothing": an
-        // empty frame must not leave the post-reset hold pinning the old picture.
-        state.awaiting_stream_after_reset = false;
-        if has_analysis {
-            state.last_live_bands = None;
-        }
+        state.ingest_stored_frame(&bands, now);
     }
 
     /// The engine's currently displayed bar values — what is actually on
@@ -379,7 +354,8 @@ impl AndroidVisualEngine {
         state.set_engine_playing(playing, now);
         state.engine.adopt_shape(&frame);
         state.has_ingested = true;
-        state.begin_adopted_shape_hold(now);
+        state.adopted_shape_hold.begin();
+        state.stored_frame_grace.begin(now);
         state.awaiting_stream_after_reset = false;
     }
 
@@ -527,7 +503,7 @@ impl AndroidVisualEngine {
         let live_frame = live_frame.flatten();
         let mut ingested_live_frame = false;
         let analyzed_live_frame = if let Some(live_frame) = live_frame {
-            state.stored_frame_grace_until = None;
+            state.stored_frame_grace.clear();
             state.engine.set_retain_paused_live_shape(true);
             state.engine.set_has_track(true);
             let playing = state.playing;
@@ -552,11 +528,14 @@ impl AndroidVisualEngine {
             false
         };
 
+        let ingested_stored_frame =
+            !analyzed_live_frame && state.ingest_remembered_stored_frame(now);
+
         let advanced = state.engine.advance_by(elapsed);
         if ingested_live_frame {
             state.last_live_bands = Some((now, *state.engine.current_bands()));
         }
-        advanced || analyzed_live_frame
+        advanced || analyzed_live_frame || ingested_stored_frame
     }
 
     /// Returns the scene in the flat format documented by this module.
@@ -667,7 +646,7 @@ impl AndroidVisualEngine {
                 has_ingested: false,
                 has_analysis: false,
                 adopted_shape_hold: AdoptedShapeHold::default(),
-                stored_frame_grace_until: None,
+                stored_frame_grace: StoredFrameGrace::default(),
                 has_live_audio: false,
                 awaiting_stream_after_reset: false,
                 last_live_bands: None,

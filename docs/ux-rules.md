@@ -5092,7 +5092,11 @@ STYLE-1).
   `ac_29_stored_frames_wait_for_the_adopted_shape_until_the_stream_speaks`,
   `ac_29_stored_frames_take_over_once_the_grace_expires`,
   `stored_frames_without_an_adoption_ingest_at_once`,
-  `a_pause_ends_the_stored_frame_grace`,
+  `the_stored_frame_grace_lasts_exactly_half_a_second`,
+  `a_second_adoption_rearms_the_stored_frame_grace`,
+  `a_pause_blip_does_not_end_the_stored_frame_grace`,
+  `a_track_change_ends_the_stored_frame_grace`,
+  `a_frame_blocked_by_the_grace_is_drawn_by_the_first_tick_after_it_expires`,
   `ac_29_a_stream_reset_after_the_adoption_keeps_stored_frames_waiting`,
   `live_pcm_after_the_adoption_keeps_the_pcm_hold_rules`, and on the phone
   `ac_29_the_new_live_panel_adopts_the_last_live_shape_not_the_decayed_display`,
