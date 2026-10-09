@@ -132,3 +132,11 @@ phase is still `AwaitingSignal` (no PCM has arrived) and the grace has not passe
 Not cut. All of it is one Rust change in `adopted_shape_hold.rs` and `visualizer.rs` with
 its tests, and one AC-29 sentence. There is no disjoint second file group worth its own
 worktree. Single strand, slug `swipe-visualizer-handover-c`.
+
+## Outcome
+
+Implemented on 2026-10-09. The first red run passed the four regression guards and failed
+the two AC-29 cases that prove an immediate stored frame and a post-reset stored frame
+replaced the adopted `0.8` shape with the `0.01` frame. The independent 500 ms deadline now
+survives stream resets and is cleared by analyzed live PCM, a pause, or expiry; all six tests
+pass without a JVM test.

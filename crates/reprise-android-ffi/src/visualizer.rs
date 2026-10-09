@@ -4,17 +4,20 @@
 //! whose module doc describes the record format the phone reads.
 
 mod adopted_shape_hold;
+mod clock;
 mod live_audio;
 mod scene_encoding;
 
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, Mutex, MutexGuard, PoisonError, TryLockError};
-use std::time::{Duration, Instant};
+use std::time::Duration;
 
 use reprise_core::playback::{BassPressure, BassPressureDetector, SPECTRUM_BAND_COUNT};
 use reprise_core::visuals::{spectrum_frame_from_bands, VisualEngine};
 
-use adopted_shape_hold::AdoptedShapeHold;
+use adopted_shape_hold::{AdoptedShapeHold, ADOPTED_SHAPE_STORED_FRAME_GRACE};
+pub(crate) use clock::MonotonicClock;
+use clock::SystemMonotonicClock;
 pub(crate) use scene_encoding::encode_scene;
 
 #[cfg(test)]
@@ -34,28 +37,6 @@ const TRANSPORT_ANSWER_GRACE: Duration = Duration::from_millis(1_500);
 /// viewer saw fall away long ago, which must not pop back on screen.
 pub(crate) const ADOPTABLE_SHAPE_MAX_AGE: Duration =
     LIVE_AUDIO_STALE_AFTER.saturating_add(TRANSPORT_ANSWER_GRACE);
-
-pub(crate) trait MonotonicClock: Send + Sync {
-    fn now(&self) -> Duration;
-}
-
-struct SystemMonotonicClock {
-    started_at: Instant,
-}
-
-impl SystemMonotonicClock {
-    fn new() -> Self {
-        Self {
-            started_at: Instant::now(),
-        }
-    }
-}
-
-impl MonotonicClock for SystemMonotonicClock {
-    fn now(&self) -> Duration {
-        self.started_at.elapsed()
-    }
-}
 
 #[derive(Debug, Clone, Copy, uniffi::Record)]
 pub struct AndroidBassPressure {
@@ -93,6 +74,8 @@ struct VisualState {
     has_ingested: bool,
     has_analysis: bool,
     adopted_shape_hold: AdoptedShapeHold,
+    // Independent of the PCM hold phase so a stream reset cannot end it.
+    stored_frame_grace_until: Option<Duration>,
     has_live_audio: bool,
     // Set by `reset_live_presentation` when it is called for a genuine
     // decoded-stream boundary (`reset_audio_stream`, `note_track_changed`, or
@@ -132,6 +115,21 @@ struct VisualState {
 }
 
 impl VisualState {
+    fn begin_adopted_shape_hold(&mut self, now: Duration) {
+        self.adopted_shape_hold.begin();
+        self.stored_frame_grace_until = Some(now.saturating_add(ADOPTED_SHAPE_STORED_FRAME_GRACE));
+    }
+
+    fn blocks_stored_frame(&mut self, now: Duration) -> bool {
+        let blocks = self
+            .stored_frame_grace_until
+            .is_some_and(|deadline| now < deadline);
+        if !blocks {
+            self.stored_frame_grace_until = None;
+        }
+        blocks
+    }
+
     fn set_engine_playing(&mut self, playing: bool, now: Duration) {
         if self.engine_playing != playing {
             self.engine_playing = playing;
@@ -205,6 +203,7 @@ impl AndroidVisualEngine {
             // is coming, so the normal paused/idle projection must take over
             // instead of holding the pre-reset picture forever.
             state.awaiting_stream_after_reset = false;
+            state.stored_frame_grace_until = None;
         }
         expire_stale_live_audio(&mut state, now);
         let has_audio = state.has_analysis
@@ -277,6 +276,9 @@ impl AndroidVisualEngine {
         reconcile_stream_generation(&mut state, stream_generation, now);
         expire_stale_live_audio(&mut state, now);
         if state.has_live_audio {
+            return;
+        }
+        if state.blocks_stored_frame(now) {
             return;
         }
         state.engine.set_retain_paused_live_shape(false);
@@ -377,7 +379,7 @@ impl AndroidVisualEngine {
         state.set_engine_playing(playing, now);
         state.engine.adopt_shape(&frame);
         state.has_ingested = true;
-        state.adopted_shape_hold.begin();
+        state.begin_adopted_shape_hold(now);
         state.awaiting_stream_after_reset = false;
     }
 
@@ -525,6 +527,7 @@ impl AndroidVisualEngine {
         let live_frame = live_frame.flatten();
         let mut ingested_live_frame = false;
         let analyzed_live_frame = if let Some(live_frame) = live_frame {
+            state.stored_frame_grace_until = None;
             state.engine.set_retain_paused_live_shape(true);
             state.engine.set_has_track(true);
             let playing = state.playing;
@@ -664,6 +667,7 @@ impl AndroidVisualEngine {
                 has_ingested: false,
                 has_analysis: false,
                 adopted_shape_hold: AdoptedShapeHold::default(),
+                stored_frame_grace_until: None,
                 has_live_audio: false,
                 awaiting_stream_after_reset: false,
                 last_live_bands: None,

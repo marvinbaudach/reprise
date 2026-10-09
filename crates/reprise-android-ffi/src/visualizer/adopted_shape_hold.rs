@@ -1,5 +1,8 @@
 //! Bounds how long an adopted visualizer shape waits for a new stream to speak.
 
+pub(crate) const ADOPTED_SHAPE_STORED_FRAME_GRACE: std::time::Duration =
+    super::LIVE_AUDIO_STALE_AFTER;
+
 #[derive(Default)]
 pub(crate) struct AdoptedShapeHold {
     phase: Phase,
