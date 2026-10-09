@@ -86,7 +86,14 @@ fn play_22_a_seek_lands_inside_the_cue_track() {
         .player
         .play(cue_item(&album, (TRACK_START_MS, TRACK_END_MS), 0.0))
         .unwrap();
-    harness.pump_until(SETTLE, |_| heard.heard_after(SEGMENTS_AFTER_START));
+    // A seek before the start-seek's own `ASYNC_DONE` only retargets that
+    // start, so the cases below begin once the track is really playing.
+    harness.pump_until(SETTLE, |events| {
+        heard.heard_after(SEGMENTS_AFTER_START)
+            && events
+                .iter()
+                .any(|event| matches!(event, PlayerEvent::StateChanged(PlaybackState::Playing)))
+    });
 
     let cases = [
         (1_000, TRACK_START_MS + 1_000),
