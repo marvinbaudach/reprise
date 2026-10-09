@@ -2,9 +2,13 @@
 # Headless capture of the Updates popover, with a contrast measurement.
 #
 # Usage:
-#   cargo build -p reprise-gnome
 #   scripts/shoot-updates-popover.sh
 #   scripts/measure-contrast.py "$OUT/01-updates-popover.png" --regions regions.tsv
+#
+# It builds `reprise-gnome` first, unless REPRISE_BIN names a binary. A
+# `target/debug/reprise` left behind by `cargo test` is a test build whose data
+# lives in a private directory, so it would show an empty library instead of the
+# one this script seeds.
 #
 # Env: REPRISE_BIN, REPRISE_SHOT_DIR, UPDATES_CLICK_X / UPDATES_CLICK_Y.
 #
@@ -23,6 +27,14 @@
 set -euo pipefail
 
 WORKTREE="$(cd "$(dirname "$0")/.." && pwd)"
+if [ -z "${REPRISE_BIN:-}" ]; then
+  build=(cargo build --manifest-path "$WORKTREE/Cargo.toml" -p reprise-gnome --bin reprise)
+  if command -v heavy-run >/dev/null 2>&1; then
+    heavy-run medium -- "${build[@]}"
+  else
+    "${build[@]}"
+  fi
+fi
 BIN="${REPRISE_BIN:-$WORKTREE/target/debug/reprise}"
 OUT_DIR="${REPRISE_SHOT_DIR:-/tmp/reprise-updates-shots}"
 mkdir -p "$OUT_DIR"

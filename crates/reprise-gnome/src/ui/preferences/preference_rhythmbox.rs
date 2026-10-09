@@ -65,6 +65,10 @@ fn option_title(option: RhythmboxOption) -> String {
     })
 }
 
+#[allow(
+    clippy::disallowed_methods,
+    reason = "reads Rhythmbox's own data, not Reprise's"
+)]
 fn default_rhythmdb_path() -> PathBuf {
     std::env::var_os(RHYTHMDB_PATH_ENV).map_or_else(
         || glib::user_data_dir().join("rhythmbox/rhythmdb.xml"),
