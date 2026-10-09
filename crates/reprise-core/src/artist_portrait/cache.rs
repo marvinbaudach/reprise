@@ -28,9 +28,7 @@ impl CacheVerdict {
 }
 
 pub(crate) fn cache_dir() -> PathBuf {
-    dirs::cache_dir()
-        .unwrap_or_else(std::env::temp_dir)
-        .join("reprise/artist-portraits")
+    crate::cache_root::user_cache_root().join("reprise/artist-portraits")
 }
 
 pub(crate) fn key_for(name: &str) -> String {

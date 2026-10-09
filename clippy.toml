@@ -1,0 +1,3 @@
+disallowed-methods = [
+    { path = "dirs::cache_dir", reason = "resolve the cache through reprise_core::cache_root::user_cache_root so test builds never touch the user's real ~/.cache/reprise" },
+]

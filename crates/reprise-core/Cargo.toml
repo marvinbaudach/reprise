@@ -10,6 +10,9 @@ license.workspace = true
 [features]
 default = []
 test-fixtures = []
+# Makes `cache_root::user_cache_root` resolve a process-private directory, for
+# the test suites of crates that link this one as an ordinary dependency.
+test-cache-root = []
 
 [dependencies]
 rusqlite = { version = "0.40", features = ["bundled"] }

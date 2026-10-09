@@ -208,9 +208,7 @@ pub(super) fn cache_file(cache_dir: &Path, query: &LyricsQuery) -> PathBuf {
 }
 
 pub(super) fn cache_dir() -> PathBuf {
-    dirs::cache_dir()
-        .unwrap_or_else(std::env::temp_dir)
-        .join("reprise/lyrics")
+    crate::cache_root::user_cache_root().join("reprise/lyrics")
 }
 
 fn is_fresh(timestamp: i64, now: i64) -> bool {
