@@ -250,6 +250,10 @@ Left open, by design or for a later change:
 - Media3 clipping with a start above 0 needs a seekable source (FLAC with a seek table or
   binary search, WAV, CBR or Xing MP3). An unseekable file fails to play its later tracks.
   The device check shows whether this matters.
+- Opus is not an all-sync format, so Media3 restarted the renderer at every contiguous clip
+  boundary, producing 314–358 ms of silence; `startsAtKeyFrame` prevents that restart, while
+  FLAC was unaffected. A boundary may still repeat or cut one Opus packet (about 20 ms), which
+  has not yet been measured.
 - Post-merge device checks, as listed in the mother plan: the gap between two contiguous
   clips, each clip's own gain, the last track playing to EOF, and `presentationTimeUs`
   placement on real decoders. A decoder that repeats or does not advance
