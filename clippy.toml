@@ -1,3 +1,6 @@
 disallowed-methods = [
     { path = "dirs::cache_dir", reason = "resolve the cache through reprise_core::cache_root::user_cache_root so test builds never touch the user's real ~/.cache/reprise" },
+    { path = "dirs::data_dir", reason = "resolve the data directory through reprise_core::data_root::user_data_root so test builds never touch the user's real ~/.local/share/reprise" },
+    { path = "dirs::data_local_dir", reason = "resolve the data directory through reprise_core::data_root::user_data_root so test builds never touch the user's real ~/.local/share/reprise" },
+    { path = "glib::user_data_dir", reason = "resolve the data directory through reprise_core::data_root::user_data_root so test builds never touch the user's real ~/.local/share/reprise" },
 ]

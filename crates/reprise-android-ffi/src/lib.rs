@@ -14,9 +14,9 @@ mod artist_portrait;
 mod artwork_tests;
 mod browse;
 #[cfg(test)]
-mod cache_isolation_tests;
-#[cfg(test)]
 mod cue_album_test_support;
+#[cfg(test)]
+mod dir_isolation_tests;
 mod fallback_cover;
 mod filtered_browse;
 mod library_listen_report;

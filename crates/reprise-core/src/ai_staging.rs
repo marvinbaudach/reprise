@@ -24,7 +24,7 @@ use rusqlite::Connection;
 /// [`crate::db::default_path`], so app, CLI and MCP agree on where renders
 /// live.
 pub fn default_staging_dir() -> PathBuf {
-    dirs::data_dir()
+    crate::data_root::user_data_root()
         .unwrap_or_else(|| PathBuf::from("."))
         .join("reprise/staging")
 }

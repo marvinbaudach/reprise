@@ -70,15 +70,17 @@ pub(crate) fn open_migrated(path: Option<&Path>) -> Result<Connection, DbError> 
     Ok(conn)
 }
 
-/// The on-disk database path (honors `XDG_DATA_HOME` via `dirs::data_dir`,
-/// which is how headless E2E runs point the app at a scratch database
-/// without touching `~/.local/share/reprise`). Lives in `reprise-core` so
+/// The on-disk database path. A production build honors `XDG_DATA_HOME` (via
+/// [`crate::data_root::user_data_root`]), which is how headless E2E runs point
+/// the app at a scratch database without touching `~/.local/share/reprise`. A
+/// test build ignores it and resolves a process-private directory instead, see
+/// [`crate::data_root`]. Lives in `reprise-core` so
 /// every frontend — GNOME today, a future KDE/Qt or macOS client — resolves
 /// the *same* library database. Frontends also hand this path to scan-worker
 /// threads: each worker opens its own [`Db`] over it rather than sharing the
 /// UI's handle across threads.
 pub fn default_path() -> std::path::PathBuf {
-    dirs::data_dir()
+    crate::data_root::user_data_root()
         .unwrap_or_else(|| std::path::PathBuf::from("."))
         .join("reprise/reprise.db")
 }

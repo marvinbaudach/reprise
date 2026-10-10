@@ -150,7 +150,7 @@ pub(crate) fn downloaded_paths_for_subscription_in(
 
 #[must_use]
 pub fn default_download_root() -> PathBuf {
-    dirs::data_dir()
+    crate::data_root::user_data_root()
         .unwrap_or_else(|| PathBuf::from("."))
         .join("reprise/podcasts")
 }

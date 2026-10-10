@@ -25,8 +25,8 @@
 //!   (f32→integer PCM), [`separate`] (the cancel/progress/stitch orchestration,
 //!   generic over an inference fn), [`model`] (the pinned weights + identity),
 //!   and [`provision`] (checksummed download + licence notice + onnxruntime
-//!   library resolution, the network fetch injected). Dependencies: `sha2`,
-//!   `dirs` — both tiny and pure-Rust.
+//!   library resolution, the network fetch injected). Dependencies: `sha2` (tiny,
+//!   pure-Rust) and `reprise-core`, whose `data_root` resolves the data directory.
 //! * **`provision-http`**: the blocking `ureq` model fetcher without inference.
 //! * **`ort`**: the real `OrtStemBackend` plus audio
 //!   decode/resample/encode; it also enables `provision-http`. Pulls `ort`,

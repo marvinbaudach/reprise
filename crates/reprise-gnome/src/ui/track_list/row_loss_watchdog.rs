@@ -126,7 +126,7 @@ fn run_tick(
             "track-list row loss confirmed; writing diagnostic dump"
         );
         let now = chrono::Local::now();
-        let directory = gtk4::glib::user_data_dir().join("reprise/diagnostics");
+        let directory = diagnostics_directory();
         match write_dump_file(
             &directory,
             &now.format("%Y%m%d-%H%M%S").to_string(),
@@ -189,6 +189,15 @@ fn run_tick(
         );
         *dump_path = None;
     }
+}
+
+/// Where a confirmed row loss writes its dump. It hangs below the same data
+/// root as the database, so a test build writes into its private directory,
+/// never into the user's `~/.local/share/reprise`.
+fn diagnostics_directory() -> PathBuf {
+    reprise_core::data_root::user_data_root()
+        .unwrap_or_else(std::env::temp_dir)
+        .join("reprise/diagnostics")
 }
 
 fn stack_page(shared: &Shared) -> String {

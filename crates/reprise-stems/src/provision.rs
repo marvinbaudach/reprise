@@ -89,7 +89,7 @@ pub type Fetcher<'a> = dyn Fn(&str) -> Result<Vec<u8>, String> + 'a;
 /// a `dlopen` candidate an attacker who controls the working directory could
 /// plant (see [`onnxruntime_location`]).
 pub fn default_model_dir() -> Result<PathBuf, ProvisionError> {
-    model_dir_from_data(dirs::data_dir())
+    model_dir_from_data(reprise_core::data_root::user_data_root())
 }
 
 /// Pure inner logic of [`default_model_dir`], with the platform data dir
@@ -708,6 +708,13 @@ mod tests {
     #[test]
     fn default_model_dir_lives_under_reprise() {
         assert!(default_model_dir().unwrap().ends_with("reprise/models"));
+    }
+
+    #[test]
+    fn default_model_dir_hangs_below_the_isolated_data_root() {
+        let root = reprise_core::data_root::user_data_root().expect("an isolated data root");
+        assert!(reprise_core::data_root::is_isolated());
+        assert!(default_model_dir().unwrap().starts_with(root));
     }
 
     #[test]

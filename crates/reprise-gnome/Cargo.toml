@@ -52,6 +52,8 @@ chrono = { version = "0.4", default-features = false, features = ["clock"] }
 # can ignore the time a loaded runner keeps the thread off the core.
 rustix = { version = "1", default-features = false, features = ["std", "time"] }
 tempfile = "3"
+# Tests must not read or write the user's real `~/.local/share/reprise` or `~/.cache/reprise`.
+reprise-core = { path = "../reprise-core", features = ["test-private-dirs"] }
 
 [lints]
 workspace = true

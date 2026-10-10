@@ -70,7 +70,8 @@ reprise-runtime-protocol = { path = "../reprise-runtime-protocol", optional = tr
 # These mirror existing normal dependencies (a binary crate's tests otherwise
 # cannot name them), so they add no new edge to `cargo tree` beyond tempfile.
 tempfile = "3"
-reprise-core = { path = "../reprise-core" }
+# The test-built binary must not read or write the user's real `~/.local/share/reprise`.
+reprise-core = { path = "../reprise-core", features = ["test-private-dirs"] }
 rusqlite = { version = "0.40", features = ["bundled"] }
 serde_json = "1.0"
 
