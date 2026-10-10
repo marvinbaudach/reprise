@@ -25,6 +25,9 @@ class LabelMatcher:
     # Put the middle candidate first. A wheel turned over the top row of a popover
     # list can land on the search entry above it once the list has moved.
     prefer_middle: bool = False
+    # Match only while no popup is open. A popover swallows the click that
+    # dismisses it, so whatever that click was aimed at never happens.
+    no_popup: bool = False
     roles: tuple[str, ...] = ()
     require_actionable: bool = True
     require_enabled: bool = True
@@ -67,6 +70,8 @@ class LabelMatcher:
         popups = [
             popup for popup in observation.get("popups", []) if isinstance(popup, dict)
         ]
+        if self.no_popup and popups:
+            return ()
         roles = {canonical_role(value) for value in self.roles}
         actionable = set(observation.get("actionable_labels", []))
         # A page whose results cannot be told apart is matched like any other.

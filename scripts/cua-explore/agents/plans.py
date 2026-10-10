@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import dataclasses
 import random
 import re
 from typing import Any, Mapping
@@ -58,6 +59,28 @@ def _sort_by(name: str, column: str) -> Step:
         {"dispatch": "auto", "expect_effect": "required"},
         missing_code=f"agent-column-header-missing:{column}",
     )
+
+
+def _sort_after_dismissing_popover(name: str, column: str) -> list[Step]:
+    """Sort by a column, first spending a click on the popover that may still be open.
+
+    Ctrl+F did not close the search popover in the deck's runs (the first click that
+    followed did), and that click is swallowed: a sort click sent straight after it
+    leaves the order alone. While a popup is open the header is clicked once to
+    dismiss it, and the sort that counts follows.
+    """
+    sort = _sort_by(name, column)
+    return [
+        Step(
+            f"dismiss-popover-before-{name}",
+            "activate",
+            sort.matcher,
+            sort.fields,
+            required=False,
+            skip_when=dataclasses.replace(sort.matcher, no_popup=True),
+        ),
+        sort,
+    ]
 
 
 def _type(name: str, label: str, token: str) -> Step:
@@ -268,7 +291,9 @@ def plan_batch_edit(workload: Mapping[str, Any], index: int, rng: random.Random)
             # reorder by design and the scroll anchor could not tell that from a
             # lost position, so sort by a column the edit leaves alone first.
             *(
-                [_sort_by("sort-before-edit", str(workload["sort_by"]))]
+                _sort_after_dismissing_popover(
+                    "sort-before-edit", str(workload["sort_by"])
+                )
                 if workload.get("sort_by")
                 else []
             ),
@@ -390,13 +415,8 @@ def plan_combined_filter(
             ]
         )
     if workload.get("include_search"):
-        steps.append(
-            _type(
-                "combined-filter-search",
-                SEARCH_ENTRY_LABEL,
-                str(workload.get("search_token")),
-            )
-        )
+        # The box lives in a popover that Escape and Ctrl+F leave closed.
+        steps.extend(_search_type("combined-filter-search", str(workload.get("search_token"))))
     return Phase("combined-filter", index, tuple(steps), order_locked=True)
 
 

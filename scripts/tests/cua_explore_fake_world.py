@@ -60,6 +60,9 @@ class FakeWorld:
         self.year = ""
         self.saved = False
         self.unfolded: set[str] = set()
+        # The search box lives in a popover. Ctrl+F leaves it open in the real app
+        # (measured on 2026-10-10); the next click only closes it and is lost.
+        self.search_popover = False
         self.popover_offset = 0
 
     def observation(self) -> dict[str, Any]:
@@ -116,6 +119,8 @@ class FakeWorld:
             )
         if self.saving:
             elements.append(self._element("Saving complete", "status", y=740, actionable=False))
+        if self.search_popover:
+            popups.append({"x": 700.0, "y": 20.0, "width": 392.0, "height": 111.0})
         actionable = [item["label"] for item in elements if item["actionable"]]
         return {
             "schema_version": 1,
@@ -132,12 +137,15 @@ class FakeWorld:
     def apply(self, action: Mapping[str, Any]) -> None:
         kind = action.get("kind")
         target = action.get("target", {}).get("label")
-        if kind == "activate":
+        if kind == "activate" and self.search_popover and target != "Search all fields":
+            self.search_popover = False  # the click that dismisses a popover is swallowed
+        elif kind == "activate":
             self._activate(str(target))
         elif kind == "type":
             value = self.tokens.get(str(action.get("fixture_token")), "")
             if target == "Search all fields":
                 self.search = value
+                self.search_popover = True
                 if "chip-dropped-by-search" in self.quirks:
                     self.chips.clear()
             elif target == "Genre":
@@ -146,6 +154,7 @@ class FakeWorld:
                 self.year = value
         elif kind == "press" and action.get("key") == "escape":
             self.search = ""
+            self.search_popover = False
             self.context_menu = False
         elif kind == "press" and action.get("key") == "f10":
             self.context_menu = True

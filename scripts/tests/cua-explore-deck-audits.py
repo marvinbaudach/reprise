@@ -22,6 +22,7 @@ REPO_ROOT = pathlib.Path(__file__).resolve().parents[2]
 EXPLORE_ROOT = REPO_ROOT / "scripts" / "cua-explore"
 FIXTURES = REPO_ROOT / "scripts" / "tests" / "fixtures"
 sys.path.insert(0, str(EXPLORE_ROOT))
+sys.path.insert(0, str(REPO_ROOT / "scripts" / "tests"))
 
 from agents.plans import POPOVER_SCROLL_STEPS, POPOVER_SCROLL_TICKS, build_phases  # noqa: E402
 from agents.vocabulary import LabelMatcher  # noqa: E402
@@ -420,6 +421,59 @@ class PlanTests(unittest.TestCase):
         value = next(s for s in steps if s.name == "choose-value-rating")
 
         self.assertEqual(value.matcher.candidates(_listed(("0 (1,658)", "2 (1,658)", "4 (1,658)"))), ("4 (1,658)",))
+
+
+class SwallowedClickTests(unittest.TestCase):
+    """Ctrl+F leaves the search popover open, and the click that dismisses it is lost."""
+
+    def run_stress(self, *, dismiss: bool):
+        import agents.plans as plans
+        from agents.agent_core import AgentSession
+        from cua_explore_fake_world import FakeWorld, drive
+
+        original = plans._sort_after_dismissing_popover
+        if not dismiss:
+            plans._sort_after_dismissing_popover = lambda name, column: [plans._sort_by(name, column)]
+        try:
+            world = FakeWorld(profile=MISSION.profile, tokens=MISSION.fixture_tokens)
+            session = AgentSession(seed=11, probe_ratio=1.0)
+            drive(session, world, MISSION, max_actions=MISSION.budgets.actions)
+        finally:
+            plans._sort_after_dismissing_popover = original
+        return session
+
+    def test_a_sort_click_sent_straight_after_ctrl_f_is_lost(self) -> None:
+        session = self.run_stress(dismiss=False)
+
+        batch = session.workload_audits[0]
+        self.assertFalse(batch["sorted_by_unedited_column"], batch)
+        self.assertFalse(batch["complete"])
+
+    def test_the_plan_spends_one_click_on_the_popover_and_the_next_sorts(self) -> None:
+        session = self.run_stress(dismiss=True)
+
+        batch = session.workload_audits[0]
+        self.assertTrue(batch["sorted_by_unedited_column"], batch)
+        self.assertTrue(batch["complete"], batch)
+
+    def test_the_dismissing_click_is_skipped_when_no_popover_is_open(self) -> None:
+        steps = {s.name: s for s in build_phases(_agent_mission(MISSION), seed=11)[0].steps}
+        dismiss = steps["dismiss-popover-before-sort-before-edit"]
+        header = column_header_label("title")
+        closed = {"actionable_labels": [header], "popups": [],
+                  "elements": [{"label": header, "role": COLUMN_HEADER_ROLE, "actionable": True, "enabled": True}]}
+        opened = {**closed, "popups": [{"x": 700.0, "y": 20.0, "width": 392.0, "height": 111.0}]}
+
+        self.assertEqual(dismiss.skip_when.resolve(closed), header)
+        self.assertIsNone(dismiss.skip_when.resolve(opened))
+        self.assertEqual(dismiss.matcher.resolve(opened), header)
+
+    def test_the_filter_plan_opens_the_search_box_before_typing_into_it(self) -> None:
+        names = [s.name for s in build_phases(_agent_mission(MISSION), seed=11)[2].steps]
+
+        self.assertLess(
+            names.index("open-combined-filter-search"), names.index("combined-filter-search")
+        )
 
 
 class ChipTests(unittest.TestCase):
