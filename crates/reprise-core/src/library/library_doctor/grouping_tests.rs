@@ -145,6 +145,13 @@ fn doc_9b_album_level_change_collapses_into_one_row_over_all_tracks() {
             track_count: 2,
         } if row_ids.len() == 2
     ));
+    // The collapsed row carries the ids of the rows it stands for, not just
+    // their number: the lookup that finds them must return that group's rows.
+    let DoctorReviewDisplayRow::AllTracks { row_ids, .. } = &albums[0].rows[0] else {
+        panic!("the album-level change must collapse");
+    };
+    let session_ids = session.rows().iter().map(|row| row.id).collect::<Vec<_>>();
+    assert_eq!(row_ids, &session_ids);
 }
 
 #[test]
