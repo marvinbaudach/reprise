@@ -40,7 +40,9 @@ use super::podcasts_selection::{PodcastSelection, SelectMode};
 use super::podcasts_sync_state::{
     clear_failed_syncs_that_recovered, remove_subscription_sync_if_owned, SyncRowState, SyncStep,
 };
-use super::podcasts_view_data::{episode_ids_in_rendered_order, last_updated_text};
+use super::podcasts_view_data::{
+    episode_ids_in_rendered_order, last_checked_age, last_updated_text,
+};
 use super::podcasts_worker::{
     podcasts_response_channel, request_generation, PodcastsOperation, PodcastsRequest,
     PodcastsRuntime, PodcastsWorkerResult,

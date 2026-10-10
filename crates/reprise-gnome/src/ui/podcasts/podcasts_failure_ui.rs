@@ -154,7 +154,7 @@ impl PodcastsView {
         let collected_support = collected_failure_support(&notice.source_titles, cached_items);
         self.fetch_failure.replace(Some(error.clone()));
         let occurred_at = chrono::Utc::now().to_rfc3339();
-        let last_checked = super::last_updated_text(&self.conn);
+        let last_checked = super::last_checked_age(&self.conn);
         let subscription_id = notice.subscription_id;
         let weak = Rc::downgrade(self);
         let dismiss_weak = weak.clone();
@@ -193,7 +193,7 @@ impl PodcastsView {
                 } else if let Some(support) = collected_support {
                     support
                 } else {
-                    strings::source_cached_episodes_still_work(cached_items, &last_checked)
+                    strings::source_cached_items_still_work(self.kind, cached_items, &last_checked)
                 };
                 self.error_banner.show(
                     &presentation,

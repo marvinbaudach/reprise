@@ -50,6 +50,7 @@ pub enum FailureSurface {
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum FailureHeadline {
     CouldNotCheckChannel,
+    CouldNotCheckPodcast,
     CouldNotReachYoutube,
     CouldNotReachSource,
     PodcastMovedOrEnded,
@@ -154,7 +155,11 @@ fn failure_copy(
             FailureHeadline::CouldNotReachYoutube,
             vec![FailureAction::TryAgain],
         ),
-        (SourceSurface::Podcast | SourceSurface::Youtube, _, FailureSurface::Banner) => (
+        (SourceSurface::Podcast, _, FailureSurface::Banner) => (
+            FailureHeadline::CouldNotCheckPodcast,
+            vec![FailureAction::TryAgain],
+        ),
+        (SourceSurface::Youtube, _, FailureSurface::Banner) => (
             FailureHeadline::CouldNotCheckChannel,
             vec![FailureAction::TryAgain],
         ),
@@ -567,6 +572,22 @@ mod tests {
                 super::FailureAction::TryAgain,
                 super::FailureAction::FindNewUrl,
             ]
+        );
+    }
+
+    #[test]
+    fn net_3_a_cached_podcast_failure_has_its_own_podcast_headline() {
+        let presentation = super::source_failure_presentation(
+            super::SourceSurface::Podcast,
+            &SourceErrorKind::Unreachable,
+            10,
+            1,
+        );
+
+        assert_eq!(presentation.surface, super::FailureSurface::Banner);
+        assert_eq!(
+            presentation.headline,
+            super::FailureHeadline::CouldNotCheckPodcast
         );
     }
 

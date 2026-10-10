@@ -10,11 +10,21 @@ pub(super) fn episode_ids_in_rendered_order(groups: &[SourceGroup]) -> Vec<i64> 
         .collect()
 }
 
-pub(super) fn last_updated_text(conn: &Db) -> String {
-    let last = podcasts::store::active_subscriptions(conn)
+fn last_fetch_at(conn: &Db) -> Option<i64> {
+    podcasts::store::active_subscriptions(conn)
         .ok()
-        .and_then(|rows| rows.into_iter().filter_map(|row| row.last_fetch_at).max());
-    super::podcasts_presentation::updated_ago(last, chrono::Utc::now().timestamp())
+        .and_then(|rows| rows.into_iter().filter_map(|row| row.last_fetch_at).max())
+}
+
+/// The footer label: "Updated 2 minutes ago".
+pub(super) fn last_updated_text(conn: &Db) -> String {
+    super::podcasts_presentation::updated_ago(last_fetch_at(conn), chrono::Utc::now().timestamp())
+}
+
+/// The bare age ("2 minutes ago") that sentences such as the cached-content
+/// banner embed; never carries the "Updated" label.
+pub(super) fn last_checked_age(conn: &Db) -> String {
+    super::podcasts_presentation::age_phrase(last_fetch_at(conn), chrono::Utc::now().timestamp())
 }
 
 #[cfg(test)]

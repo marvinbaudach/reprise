@@ -476,3 +476,89 @@ fn resume_position_patch_rerenders_only_for_a_changed_display_key() {
     assert!(!update_resume_position(&mut episode, 120_000));
     assert_eq!(episode.position_ms, 120_000);
 }
+
+const NOW: i64 = 1_800_000_000;
+const MINUTE: i64 = 60;
+const HOUR: i64 = 60 * MINUTE;
+const DAY: i64 = 24 * HOUR;
+
+fn age_after(seconds: i64) -> String {
+    age_phrase(Some(NOW - seconds), NOW)
+}
+
+#[test]
+fn source_banner_age_phrase_switches_buckets_exactly_at_the_edges() {
+    assert_eq!(age_after(0), "just now");
+    assert_eq!(age_after(59), "just now");
+    assert_eq!(age_after(MINUTE), "1 minute ago");
+    assert_eq!(age_after(2 * MINUTE), "2 minutes ago");
+    assert_eq!(age_after(HOUR - MINUTE), "59 minutes ago");
+    assert_eq!(age_after(HOUR - 1), "59 minutes ago");
+    assert_eq!(age_after(HOUR), "1 hour ago");
+    assert_eq!(age_after(23 * HOUR), "23 hours ago");
+    assert_eq!(age_after(DAY - 1), "23 hours ago");
+    assert_eq!(age_after(DAY), "1 day ago");
+    assert_eq!(age_after(3 * DAY), "3 days ago");
+}
+
+#[test]
+fn source_banner_age_phrase_treats_a_future_or_missing_timestamp_as_just_now() {
+    assert_eq!(age_phrase(Some(NOW + 500), NOW), "just now");
+    assert_eq!(age_phrase(None, NOW), "just now");
+}
+
+#[test]
+fn updated_ago_is_updated_plus_the_shared_age_phrase() {
+    assert_eq!(updated_ago(None, NOW), "Updated just now");
+    assert_eq!(
+        updated_ago(Some(NOW - 2 * MINUTE), NOW),
+        "Updated 2 minutes ago"
+    );
+    assert_eq!(updated_ago(Some(NOW - 3 * DAY), NOW), "Updated 3 days ago");
+}
+
+#[test]
+fn source_banner_sentences_read_cleanly_with_the_real_age_phrase() {
+    let ages = [
+        (0, "just now"),
+        (2 * MINUTE, "2 minutes ago"),
+        (3 * DAY, "3 days ago"),
+    ];
+    for (seconds, phrase) in ages {
+        let time = age_after(seconds);
+        assert_eq!(time, phrase);
+        let sentences = [
+            (
+                PodcastKind::Rss,
+                1,
+                format!("Showing the episode from {phrase}. Downloads play as usual."),
+            ),
+            (
+                PodcastKind::Rss,
+                2,
+                format!("Showing the 2 episodes from {phrase}. Downloads play as usual."),
+            ),
+            (
+                PodcastKind::Youtube,
+                1,
+                format!("Showing the video from {phrase}. Downloads play as usual."),
+            ),
+            (
+                PodcastKind::Youtube,
+                2,
+                format!("Showing the 2 videos from {phrase}. Downloads play as usual."),
+            ),
+        ];
+        for (kind, count, expected) in sentences {
+            let actual = strings::source_cached_items_still_work(kind, count, &time);
+            assert_eq!(actual, expected);
+            assert!(!actual.contains("Updated"), "{actual}");
+        }
+        let offline = strings::source_offline_description(&time);
+        assert_eq!(
+            offline,
+            format!("Showing downloaded content. Last checked {phrase}.")
+        );
+        assert!(!offline.contains("Updated"), "{offline}");
+    }
+}

@@ -31,6 +31,9 @@ pub(super) fn headline_text(headline: FailureHeadline) -> String {
         FailureHeadline::CouldNotCheckChannel => {
             strings::text(strings::SOURCE_COULD_NOT_CHECK_CHANNEL)
         }
+        FailureHeadline::CouldNotCheckPodcast => {
+            strings::text(strings::SOURCE_COULD_NOT_CHECK_PODCAST)
+        }
         FailureHeadline::CouldNotReachYoutube => {
             strings::text(strings::SOURCE_COULD_NOT_REACH_YOUTUBE)
         }
@@ -183,6 +186,7 @@ impl SourceErrorBanner {
 
 #[cfg(test)]
 mod tests {
+    use reprise_core::podcasts::PodcastKind;
     use reprise_core::source_error::{source_failure_presentation, SourceErrorKind, SourceSurface};
 
     use super::*;
@@ -207,6 +211,10 @@ mod tests {
             "Couldn't check this channel for new uploads"
         );
         assert_eq!(
+            headline_text(FailureHeadline::CouldNotCheckPodcast),
+            "Couldn't check this podcast for new episodes"
+        );
+        assert_eq!(
             headline_text(FailureHeadline::YoutubeRateLimited),
             "YouTube is limiting requests right now — try again in a few minutes"
         );
@@ -224,7 +232,7 @@ mod tests {
     #[test]
     fn net_3_cached_and_empty_support_copy_names_episodes_and_the_channel() {
         assert_eq!(
-            strings::source_cached_episodes_still_work(10, "4 hours ago"),
+            strings::source_cached_items_still_work(PodcastKind::Rss, 10, "4 hours ago"),
             "Showing the 10 episodes from 4 hours ago. Downloads play as usual."
         );
         assert_eq!(
