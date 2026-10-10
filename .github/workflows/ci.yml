@@ -85,7 +85,7 @@ jobs:
     timeout-minutes: 15
     steps:
       - name: Install contract dependencies
-        run: sudo apt-get update && sudo apt-get install --yes ripgrep shellcheck
+        run: sudo apt-get update && sudo apt-get install --yes flac ripgrep shellcheck
 
       - name: Check out the tested revision
         uses: actions/checkout@v7
