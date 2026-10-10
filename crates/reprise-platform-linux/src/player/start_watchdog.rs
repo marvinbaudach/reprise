@@ -112,7 +112,7 @@ fn source_position(playbin: &gst::Element) -> Option<u64> {
         {
             return element
                 .query_position::<gst::format::Bytes>()
-                .map(|bytes| bytes.into());
+                .map(Into::into);
         }
     }
     None
