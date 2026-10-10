@@ -5177,6 +5177,24 @@ STYLE-1).
   `a_neighbour_s_frozen_scene_survives_becoming_the_live_panel`
   (`NowPlayingPanelFrozenSceneIdentityTest`).*
 
+  **Fresh start on the phone.** Pressing play on an engine that has no live
+  audio yet and no adopted shape to continue (a cold start, or a resume after
+  the stream was reset while paused) draws no stored-analysis frame before its
+  first PCM block. The stored frame is normalised on its own scale, about twice
+  the live engine's settled level, so drawing it for the first-PCM delay was a
+  one-frame flash of every bar, and the peak caps it raised outlived it. The
+  scene stays on its resting projection until the live audio speaks, and
+  falls back to the stored frames after the same 0.5 s as a swipe when no PCM
+  comes; a pause ends the wait, a warm resume (the live stream still current)
+  never starts it, and a track with no stored analysis shows its resting scene
+  at once. *Amended 2026-10-10 (#1181): this rule gains the fresh-start record above. Tests:
+  `a_fresh_start_does_not_draw_the_stored_frame_before_the_first_pcm`,
+  `a_fresh_start_leaves_no_trace_of_the_stored_frame_once_live_audio_speaks`,
+  `stored_frames_draw_after_half_a_second_without_pcm`,
+  `a_stored_frame_ingested_before_play_draws_when_no_pcm_comes`,
+  `pausing_ends_the_fresh_start_hold`, `a_warm_resume_is_not_held`,
+  `an_adoption_before_play_keeps_its_own_grace`.*
+
 - **AC-24** [active] [gtk] — The reactive light lives on the panel's blurred
   cover bloom, the cover in the player bar and the playhead, nowhere else; the
   panel cover itself deliberately keeps variant 4b's static shadow. The bloom

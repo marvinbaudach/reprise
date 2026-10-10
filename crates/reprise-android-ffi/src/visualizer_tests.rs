@@ -113,8 +113,10 @@ fn flat_scene_layout_round_trips_every_supported_geometry() {
 
 #[test]
 fn bars_scene_buffer_round_trips_to_finite_sane_shapes_at_phone_and_desktop_sizes() {
-    let engine = AndroidVisualEngine::new();
+    let clock = Arc::new(FakeMonotonicClock::default());
+    let engine = AndroidVisualEngine::with_clock(clock.clone());
     engine.set_playing(true);
+    clock.advance(Duration::from_millis(500));
     engine.set_accent(0.2, 0.7, 0.7);
     engine.ingest_bands(vec![0.72; 24]);
 
@@ -378,3 +380,6 @@ fn assert_shape_eq(actual: &Shape, expected: &Shape) {
         _ => panic!("geometry changed kind across the flat scene boundary"),
     }
 }
+
+#[path = "visualizer_fresh_start_tests.rs"]
+mod fresh_start_tests;

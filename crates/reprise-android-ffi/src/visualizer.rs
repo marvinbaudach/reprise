@@ -182,7 +182,8 @@ impl AndroidVisualEngine {
         let stream_generation = self.current_stream_generation();
         let now = self.clock.now();
         reconcile_stream_generation(&mut state, stream_generation, now);
-        if state.playing != playing {
+        let edge = state.playing != playing;
+        if edge {
             state.last_visual_tick_at = now;
         }
         state.playing = playing;
@@ -191,12 +192,13 @@ impl AndroidVisualEngine {
             // is coming, so the normal paused/idle projection must take over
             // instead of holding the pre-reset picture forever.
             state.awaiting_stream_after_reset = false;
+            state.stored_frame_grace.end_fresh_start();
         }
         expire_stale_live_audio(&mut state, now);
-        let has_audio = state.has_analysis
-            || state.adopted_shape_hold.is_active()
-            || state.has_live_audio
-            || state.awaiting_stream_after_reset;
+        if edge && playing {
+            state.begin_fresh_start_hold(now);
+        }
+        let has_audio = state.has_audio(now);
         state.set_engine_playing(playing && has_audio, now);
     }
 
@@ -530,8 +532,9 @@ impl AndroidVisualEngine {
             false
         };
 
-        let ingested_stored_frame =
-            !analyzed_live_frame && state.ingest_remembered_stored_frame(now);
+        let ingested_stored_frame = !analyzed_live_frame
+            && (state.ingest_remembered_stored_frame(now)
+                || state.release_expired_fresh_start_hold(now));
 
         let advanced = state.engine.advance_by(elapsed);
         if ingested_live_frame {
@@ -605,9 +608,7 @@ fn reset_live_presentation(
     // that lands while paused or stopped must let the resting projection show,
     // or a later resume would snap the old picture back on screen.
     state.awaiting_stream_after_reset = holds_display && state.playing;
-    let has_audio = state.has_analysis
-        || state.adopted_shape_hold.is_active()
-        || state.awaiting_stream_after_reset;
+    let has_audio = state.has_audio(now);
     state.set_engine_playing(state.playing && has_audio, now);
 }
 

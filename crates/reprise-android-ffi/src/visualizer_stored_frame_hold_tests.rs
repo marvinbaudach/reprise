@@ -86,10 +86,12 @@ fn a_second_adoption_rearms_the_stored_frame_grace() {
 }
 
 #[test]
-fn stored_frames_without_an_adoption_ingest_at_once() {
-    let engine = AndroidVisualEngine::new();
+fn stored_frames_without_an_adoption_ingest_once_a_fresh_start_gave_up_waiting() {
+    let clock = Arc::new(FakeMonotonicClock::default());
+    let engine = AndroidVisualEngine::with_clock(clock.clone());
     engine.set_playing(true);
 
+    clock.advance(Duration::from_millis(500));
     engine.ingest_bands(stored_frame());
 
     assert_bands_near(&engine.current_bands(), STORED_LEVEL);
