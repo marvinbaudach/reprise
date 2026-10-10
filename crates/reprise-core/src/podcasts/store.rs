@@ -372,6 +372,7 @@ pub(crate) fn update_fetch_success_in(
     conn.execute(
         "UPDATE podcast_subscriptions SET
            last_fetch_at = ?2,
+           last_success_at = ?2,
            last_outcome = 'ok',
            etag = COALESCE(?3, etag),
            last_modified = COALESCE(?4, last_modified),
@@ -399,11 +400,24 @@ pub(crate) fn update_fetch_not_modified_in(
 ) -> Result<(), rusqlite::Error> {
     conn.execute(
         "UPDATE podcast_subscriptions
-         SET last_fetch_at = ?2, last_outcome = 'not_modified'
+         SET last_fetch_at = ?2, last_success_at = ?2, last_outcome = 'not_modified'
          WHERE id = ?1",
         params![id, now],
     )?;
     Ok(())
+}
+
+/// When a subscription of `kind` was last fetched successfully, or `None`
+/// when none ever was. Unlike `last_fetch_at`, which schedules refreshes and
+/// moves on a failure too, this is the age of what the cache holds.
+pub fn last_successful_fetch_at(db: &Db, kind: PodcastKind) -> Result<Option<i64>, CoreError> {
+    Ok(db.conn().query_row(
+        "SELECT MAX(last_success_at)
+         FROM podcast_subscriptions
+         WHERE removed_at IS NULL AND kind = ?1",
+        [kind_setting(kind)],
+        |row| row.get(0),
+    )?)
 }
 
 pub(crate) fn update_fetch_failed_in(

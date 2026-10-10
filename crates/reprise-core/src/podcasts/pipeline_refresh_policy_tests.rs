@@ -246,3 +246,87 @@ fn stale_for_respects_an_open_retry_backoff() {
     assert_eq!(waiting.attempted, 0);
     assert_eq!(retried.attempted, 1);
 }
+
+const THREE_DAYS: i64 = 3 * 24 * 60 * 60;
+
+#[test]
+fn a_forced_failure_moves_the_refresh_clock_but_not_the_last_success() {
+    let conn = conn();
+    add_subscription(&conn, PodcastKind::Rss, "https://example.test/feed");
+    let feed = FakeFeed {
+        responses: RefCell::new(vec![
+            Ok(feed_response()),
+            Err(PodcastError::Transport("offline".to_owned())),
+        ]),
+    };
+    let directory = tempfile::tempdir().unwrap();
+    let request = RefreshRequest::force().with_kind(Some(PodcastKind::Rss));
+
+    refresh_to_root(
+        &conn,
+        &feed,
+        &CountingYoutube::default(),
+        1_000,
+        request,
+        directory.path(),
+    )
+    .unwrap();
+    let failed = refresh_to_root(
+        &conn,
+        &feed,
+        &CountingYoutube::default(),
+        1_000 + THREE_DAYS,
+        request,
+        directory.path(),
+    )
+    .unwrap();
+
+    assert_eq!(failed.failures.len(), 1);
+    let stored = store::active_subscriptions(&conn).unwrap().remove(0);
+    assert_eq!(stored.last_outcome.as_deref(), Some("failed"));
+    assert_eq!(stored.last_fetch_at, Some(1_000 + THREE_DAYS));
+    assert_eq!(
+        store::last_successful_fetch_at(&conn, PodcastKind::Rss).unwrap(),
+        Some(1_000)
+    );
+}
+
+#[test]
+fn the_last_success_is_scoped_to_the_kind_and_empty_before_any_success() {
+    let conn = conn();
+    let rss = add_subscription(&conn, PodcastKind::Rss, "https://example.test/feed");
+    let youtube = add_subscription(&conn, PodcastKind::Youtube, "https://www.youtube.com/@a");
+    let other_youtube = add_subscription(&conn, PodcastKind::Youtube, "https://www.youtube.com/@b");
+    assert_eq!(
+        store::last_successful_fetch_at(&conn, PodcastKind::Rss).unwrap(),
+        None
+    );
+
+    let success = |id, now| {
+        store::update_fetch_success(
+            &conn,
+            id,
+            now,
+            store::FetchSuccess {
+                etag: None,
+                last_modified: None,
+                title: None,
+                author: None,
+                image_url: None,
+            },
+        )
+        .unwrap();
+    };
+    success(rss, 100);
+    success(youtube, 500);
+    success(other_youtube, 300);
+
+    assert_eq!(
+        store::last_successful_fetch_at(&conn, PodcastKind::Rss).unwrap(),
+        Some(100)
+    );
+    assert_eq!(
+        store::last_successful_fetch_at(&conn, PodcastKind::Youtube).unwrap(),
+        Some(500)
+    );
+}
