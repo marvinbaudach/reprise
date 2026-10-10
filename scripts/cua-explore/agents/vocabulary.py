@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import re
 from dataclasses import dataclass
 from typing import Any, Mapping
 
@@ -13,12 +14,33 @@ from ui_vocabulary import BUTTON_ROLES, ROW_ROLES, canonical_role
 class LabelMatcher:
     exact: tuple[str, ...] = ()
     contains: tuple[str, ...] = ()
+    # Regular expressions the whole folded label must match; for a label that
+    # carries a count, such as the value "1993 (106)" in a filter popover, where
+    # `contains` would also take a track row that happens to hold the digits.
+    patterns: tuple[str, ...] = ()
+    # Only elements whose centre lies inside an open popup. A popover list is
+    # longer than its window, and the tree reports the rows below the fold at the
+    # positions they would have; a click there lands on whatever is underneath.
+    in_popup: bool = False
+    # Put the middle candidate first. A wheel turned over the top row of a popover
+    # list can land on the search entry above it once the list has moved.
+    prefer_middle: bool = False
+    # Match only while no popup is open. A popover swallows the click that
+    # dismisses it, so whatever that click was aimed at never happens.
+    no_popup: bool = False
     roles: tuple[str, ...] = ()
     require_actionable: bool = True
     require_enabled: bool = True
     strict_roles: bool = False
     # Prefer the page's results over the sidebar rows that share the row role.
     results_only: bool = False
+    # Stricter than `results_only`: only an element the driver marked a result,
+    # with no fallback to every element when the page shows none. For "is
+    # anything listed yet", where an empty page has to answer no.
+    results_strict: bool = False
+    # Only a source card (a show or a channel, listed once and opened with its
+    # `activate` action). The episodes of a collapsed card are not in the tree.
+    source_cards_only: bool = False
 
     def candidates(self, observation: Mapping[str, Any]) -> tuple[str, ...]:
         candidates, _mismatch = self.candidates_with_role_fallback(observation)
@@ -44,6 +66,12 @@ class LabelMatcher:
     ) -> tuple[str, ...]:
         exact_folded = {value.casefold() for value in self.exact}
         contains_folded = tuple(value.casefold() for value in self.contains)
+        patterns = tuple(re.compile(value, re.IGNORECASE) for value in self.patterns)
+        popups = [
+            popup for popup in observation.get("popups", []) if isinstance(popup, dict)
+        ]
+        if self.no_popup and popups:
+            return ()
         roles = {canonical_role(value) for value in self.roles}
         actionable = set(observation.get("actionable_labels", []))
         # A page whose results cannot be told apart is matched like any other.
@@ -62,9 +90,17 @@ class LabelMatcher:
                 continue
             if result_ids is not None and id(item) not in result_ids:
                 continue
-            exact = folded in exact_folded
+            if self.results_strict and not item.get("result"):
+                continue
+            if self.source_cards_only and not item.get("source_card"):
+                continue
+            exact = folded in exact_folded or any(
+                pattern.fullmatch(label) for pattern in patterns
+            )
             contains = any(value in folded for value in contains_folded)
-            if (self.exact or self.contains) and not (exact or contains):
+            if (self.exact or self.contains or self.patterns) and not (exact or contains):
+                continue
+            if self.in_popup and popups and not _centre_in_any(item, popups):
                 continue
             if self.require_actionable and (
                 item.get("actionable") is not True or label not in actionable
@@ -77,7 +113,27 @@ class LabelMatcher:
             frame = item.get("frame", {})
             y = float(frame.get("y", 0)) if isinstance(frame, dict) else 0.0
             ranked.append((0 if exact else 1, y, label.casefold(), label))
-        return tuple(item[-1] for item in sorted(ranked))
+        ordered = tuple(item[-1] for item in sorted(ranked))
+        if self.prefer_middle and len(ordered) > 2:
+            middle = len(ordered) // 2
+            return (ordered[middle], *ordered[:middle], *ordered[middle + 1 :])
+        return ordered
+
+
+def _centre_in_any(item: Mapping[str, Any], rectangles: list[dict[str, Any]]) -> bool:
+    frame = item.get("frame")
+    if not isinstance(frame, dict):
+        return False
+    try:
+        x = float(frame.get("x", 0)) + float(frame.get("width", frame.get("w", 0))) / 2
+        y = float(frame.get("y", 0)) + float(frame.get("height", frame.get("h", 0))) / 2
+        return any(
+            float(r["x"]) <= x <= float(r["x"]) + float(r["width"])
+            and float(r["y"]) <= y <= float(r["y"]) + float(r["height"])
+            for r in rectangles
+        )
+    except (KeyError, TypeError, ValueError):
+        return False
 
 
 BUTTON_MATCHER = LabelMatcher(roles=tuple(sorted(BUTTON_ROLES)))

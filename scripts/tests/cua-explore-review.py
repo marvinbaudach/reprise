@@ -283,7 +283,7 @@ class WorkloadCompletionReviewTests(unittest.TestCase):
         empty = audit_action_workload(1, workload, [])
         one_column = [
             ActionTrace(
-                action={"kind": "activate", "target_label": "Album"},
+                action={"kind": "activate", "target_label": "Album column header"},
                 before_labels=("Title",),
                 after_labels=("Title",),
                 before_rows=(("Before", 100.0),),
@@ -295,7 +295,10 @@ class WorkloadCompletionReviewTests(unittest.TestCase):
         columns = ["Title", "Artist", "Album", "Year", "Rating"]
         traces = [
             ActionTrace(
-                action={"kind": "activate", "target_label": columns[index % 5]},
+                action={
+                    "kind": "activate",
+                    "target_label": f"{columns[index % 5]} column header",
+                },
                 before_rows=((f"Before {index}", 100.0),),
                 after_rows=((f"After {index}", 100.0),),
                 state_changed=True,
@@ -501,75 +504,6 @@ class WorkloadCompletionReviewTests(unittest.TestCase):
         self.assertFalse(
             audit_action_workload(
                 1, workload, [stale], mission.fixture_tokens
-            )["complete"]
-        )
-
-    def test_batch_checkpoint_exercises_progress_selection_and_anchor_contract(self) -> None:
-        workload = self.mission.workloads[0]
-        weak = audit_action_workload(0, workload, [])
-        traces = [
-            ActionTrace(
-                action={"kind": "scroll", "direction": "down", "amount": 1, "by": "page"},
-                before_rows=(("Anchor", 100.0),),
-                after_rows=(("Anchor", 80.0),),
-                state_changed=True,
-            ),
-            ActionTrace(
-                action={"kind": "activate", "target_label": "Edit Tags"},
-                after_labels=("512 tracks selected",),
-                state_changed=True,
-            ),
-            ActionTrace(
-                action={"kind": "type", "target_label": "Genre", "fixture_token": "BATCH_GENRE"},
-                state_changed=True,
-            ),
-            ActionTrace(
-                action={"kind": "type", "target_label": "Year", "fixture_token": "BATCH_YEAR"},
-                state_changed=True,
-            ),
-            ActionTrace(
-                action={"kind": "activate", "target_label": "Apply Changes"},
-                after_labels=("512 tracks selected",),
-                state_changed=True,
-            ),
-            ActionTrace(
-                action={"kind": "wait", "expect_status": True},
-                finding_codes=("missing-waiting-feedback",),
-            ),
-            ActionTrace(
-                action={"kind": "scroll", "direction": "up", "amount": 1, "by": "page"},
-                before_rows=(("Anchor", 80.0),),
-                after_rows=(("Anchor", 100.0),),
-                state_changed=True,
-            ),
-        ]
-
-        self.assertFalse(weak["complete"])
-        self.assertTrue(
-            audit_action_workload(0, workload, traces, self.mission.fixture_tokens)[
-                "complete"
-            ]
-        )
-        broken_anchor = list(traces)
-        broken_anchor[-1] = ActionTrace(
-            action=traces[-1].action,
-            before_rows=traces[-1].before_rows,
-            after_rows=(("Anchor", 180.0),),
-            state_changed=True,
-        )
-        self.assertFalse(
-            audit_action_workload(
-                0, workload, broken_anchor, self.mission.fixture_tokens
-            )["complete"]
-        )
-        lost_selection = list(traces)
-        lost_selection[4] = ActionTrace(
-            action=traces[4].action,
-            state_changed=True,
-        )
-        self.assertFalse(
-            audit_action_workload(
-                0, workload, lost_selection, self.mission.fixture_tokens
             )["complete"]
         )
 

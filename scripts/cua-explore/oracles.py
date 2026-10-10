@@ -22,6 +22,7 @@ from ui_vocabulary import (
 )
 from search_results import page_items
 from stall_attribution import response_gap_findings
+from tree_labels import unindexed_labels
 
 
 GEOMETRY_EPSILON_PX = 6.0
@@ -128,6 +129,12 @@ class Snapshot:
     window_frame: Frame | None = None
     geometry_trusted: bool = True
     screenshot_available: bool = True
+    # Labels of the nodes the driver lists in `tree_markdown` without indexing
+    # them, in tree order (see tree_labels).
+    tree_labels: tuple[str, ...] = ()
+    # Rectangles of the popups the driver reports open, in the same space as
+    # element frames; a popover is its own window and its list can outgrow it.
+    popups: tuple[Frame, ...] = ()
 
     @property
     def viewport(self) -> Frame | None:
@@ -266,6 +273,25 @@ def _root_window_frame(
     return None
 
 
+def _popup_frames(popups: Any) -> tuple[Frame, ...]:
+    if not isinstance(popups, list):
+        return ()
+    frames = []
+    for popup in popups:
+        bounds = popup.get("bounds") if isinstance(popup, dict) else None
+        if not isinstance(bounds, dict):
+            continue
+        frame = Frame(
+            _number(bounds.get("x")),
+            _number(bounds.get("y")),
+            _number(bounds.get("width", bounds.get("w"))),
+            _number(bounds.get("height", bounds.get("h"))),
+        )
+        if frame.has_area:
+            frames.append(frame)
+    return tuple(frames)
+
+
 def normalize_snapshot(
     raw: Mapping[str, Any], *, state_id: str, captured_ms: int
 ) -> Snapshot:
@@ -337,6 +363,10 @@ def normalize_snapshot(
         window_frame=_root_window_frame(root_candidates),
         geometry_trusted=raw.get("geometry_trusted") is not False,
         screenshot_available=raw.get("screenshot_available") is not False,
+        tree_labels=unindexed_labels(
+            structured.get("tree_markdown", raw.get("tree_markdown"))
+        ),
+        popups=_popup_frames(structured.get("popups", raw.get("popups"))),
     )
 
 

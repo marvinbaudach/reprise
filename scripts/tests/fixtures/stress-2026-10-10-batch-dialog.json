@@ -1,0 +1,80 @@
+{
+ "_note": "Verbatim lines of the tag dialog from the large-library-stress rerun on 7a866310b0 (cua-driver 0.34.0, seed 11), step-0015-before.json. The first line is the list's own counter, the rest is the dialog from its first node to the Save button; unindexed nodes (`- label = \"...\"`) carry the dialog title.",
+ "tree_markdown": "                                            - label = \"512 of 100,000 tracks\"\n    - [270] dialog \"\" [actions=[default.activate]]\n        - [271] generic \"\" [actions=[sheet.close]]\n                            - label = \"512 covers\"\n                            - [272] list item \"Title Title\" (description \"Per-track field — edit tracks individually\") value=\"—\" [actions=[]]\n                                  - label = \"Title\"\n                                  - label = \"Title\"\n                                  - [273] text box \"Title\" value=\"—\" [actions=[text.undo,text.redo,menu.popup,misc.toggle-visibility,misc.toggle-direction]]\n                                  - label = \"per track\"\n                            - [274] list item \"Artist Artist\" [actions=[]]\n                                  - label = \"Artist\"\n                                  - label = \"Artist\"\n                                  - [275] text box \"Artist\" [actions=[text.undo,text.redo,clipboard.copy,selection.delete,text.clear,clipboard.paste,misc.insert-emoji,clipboard.cut,menu.popup,misc.toggle-visibility,misc.toggle-direction,selection.select-all]]\n                                    - label = \"Mixed — 32 different values\"\n                                  - label = \"32 values\"\n                            - [276] list item \"Album Album\" [actions=[]]\n                                  - label = \"Album\"\n                                  - label = \"Album\"\n                                  - [277] text box \"Album\" [actions=[text.undo,text.redo,clipboard.copy,selection.delete,text.clear,clipboard.paste,misc.insert-emoji,clipboard.cut,menu.popup,misc.toggle-visibility,misc.toggle-direction,selection.select-all]]\n                                    - label = \"Mixed — 64 different values\"\n                                  - label = \"64 values\"\n                          - [278] list item \"Album artist Album artist\" [actions=[]]\n                                - label = \"Album artist\"\n                                - label = \"Album artist\"\n                                - [279] text box \"Album artist\" [actions=[text.undo,text.redo,clipboard.copy,selection.delete,text.clear,clipboard.paste,misc.insert-emoji,clipboard.cut,menu.popup,misc.toggle-visibility,misc.toggle-direction,selection.select-all]]\n                                  - label = \"Mixed — 32 different values\"\n                                - label = \"32 values\"\n                          - [280] list item \"Genre Genre\" value=\"Exploratory Batch Genre\" [actions=[]]\n                                - label = \"Genre\"\n                                - label = \"Genre\"\n                                - [281] text box \"Genre\" value=\"Exploratory Batch Genre\" [actions=[text.undo,text.redo,clipboard.copy,selection.delete,text.clear,clipboard.paste,misc.insert-emoji,clipboard.cut,menu.popup,misc.toggle-visibility,misc.toggle-direction,selection.select-all]]\n                                - label = \"will be applied to all 512\"\n                                - [282] button \"Revert\" [actions=[click]]\n                            - [283] generic \"\" [actions=[default.activate]]\n                                        - [284] list item \"\" [actions=[]]\n                                          - label = \"Use “Exploratory Batch Genre” as new genre…\"\n                          - label = \"was: 8 different values\"\n                          - [285] list item \"Year Year\" value=\"2042\" [actions=[]]\n                                - label = \"Year\"\n                                - label = \"Year\"\n                                - [286] text box \"Year\" value=\"2042\" [actions=[text.undo,text.redo,clipboard.copy,selection.delete,text.clear,clipboard.paste,misc.insert-emoji,clipboard.cut,menu.popup,misc.toggle-visibility,misc.toggle-direction,selection.select-all]]\n                                - label = \"will be applied to all 512\"\n                                - [287] button \"Revert\" [actions=[click]]\n                          - label = \"was: 45 different values\"\n                          - [288] list item \"Track number Track number\" (description \"Per-track field — edit tracks individually\") value=\"—\" [actions=[]]\n                                - label = \"Track number\"\n                                - label = \"Track number\"\n                                - [289] text box \"Track number\" value=\"—\" [actions=[text.undo,text.redo,menu.popup,misc.toggle-visibility,misc.toggle-direction]]\n                                - label = \"per track\"\n                          - label = \"Rating\"\n                          - label = \"6 values\"\n                          - [290] button \"☆\" [actions=[click]]\n                            - label = \"☆\"\n                          - [291] button \"☆\" [actions=[click]]\n                            - label = \"☆\"\n                          - [292] button \"☆\" [actions=[click]]\n                            - label = \"☆\"\n                          - [293] button \"☆\" [actions=[click]]\n                            - label = \"☆\"\n                          - [294] button \"☆\" [actions=[click]]\n                            - label = \"☆\"\n                        - label = \"2 fields · 512 tracks affected\"\n                        - [295] button \"Review changes\" [actions=[activate]]\n                              - label = \"Review changes\"\n                  - [296] scroll bar \"\" value=\"0.0\" [actions=[]] (unlabelled scroll bar; 2nd of 2 scroll bars in this window)\n                    - [297] generic \"\" value=\"0.0\" [actions=[]]\n                                - [298] button \"Cancel\" [actions=[click]]\n                                  - label = \"Cancel\"\n                                  - label = \"Edit 512 Tracks\"\n                                  - label = \"Only changed fields will be written to all selected tracks\"\n                                - [299] button \"Save 512\" [actions=[click]]\n                                  - label = \"Save 512\"\n",
+ "elements": [
+  {
+   "actions": [
+    "default.activate"
+   ],
+   "depth": 2,
+   "element_index": 270,
+   "element_token": "s0000004a:270",
+   "enabled": true,
+   "frame": {
+    "h": 990.0,
+    "w": 1590.0,
+    "x": 240.0,
+    "y": 150.0
+   },
+   "geometry_trusted": true,
+   "parent_index": 0,
+   "role": "dialog",
+   "screenshot_frame": {
+    "h": 839,
+    "w": 1348,
+    "x": 0,
+    "y": 0
+   }
+  },
+  {
+   "actions": [
+    "click"
+   ],
+   "depth": 16,
+   "element_index": 298,
+   "element_token": "s0000004a:298",
+   "enabled": true,
+   "frame": {
+    "h": 34.0,
+    "w": 85.0,
+    "x": 753.0,
+    "y": 377.0
+   },
+   "geometry_trusted": true,
+   "label": "Cancel",
+   "parent_index": 271,
+   "role": "button",
+   "screenshot_frame": {
+    "h": 29,
+    "w": 72,
+    "x": 0,
+    "y": 0
+   }
+  },
+  {
+   "actions": [
+    "click"
+   ],
+   "depth": 16,
+   "element_index": 299,
+   "element_token": "s0000004a:299",
+   "enabled": true,
+   "frame": {
+    "h": 34.0,
+    "w": 98.0,
+    "x": 1203.0,
+    "y": 377.0
+   },
+   "geometry_trusted": true,
+   "label": "Save 512",
+   "parent_index": 271,
+   "role": "button",
+   "screenshot_frame": {
+    "h": 29,
+    "w": 83,
+    "x": 0,
+    "y": 0
+   }
+  }
+ ]
+}

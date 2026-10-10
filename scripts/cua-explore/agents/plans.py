@@ -2,15 +2,29 @@
 
 from __future__ import annotations
 
+import dataclasses
 import random
+import re
 from typing import Any, Mapping
 
 from agents.sequencer import Phase
 from agents.steps import Step
 from agents.vocabulary import BUTTON_MATCHER, LabelMatcher, ROW_MATCHER
-from ui_vocabulary import BUTTON_ROLES, ENTRY_ROLES, RETRY_WORDS, SEARCH_ENTRY_LABEL
+from ui_vocabulary import (
+    BUTTON_ROLES,
+    COLUMN_HEADER_ROLE,
+    ENTRY_ROLES,
+    RETRY_WORDS,
+    SEARCH_ENTRY_LABEL,
+    column_header_label,
+)
 
 SOURCES_WITHOUT_REFRESH = ("Radio",)
+# How often a facet popover is scrolled while its wanted value is below the fold,
+# and by how many wheel ticks. One tick moved the Year list by 34 px, a bit less than
+# one of its rows (measured on cua-driver 0.34.1), and 1993 is the 14th of 47.
+POPOVER_SCROLL_STEPS = 6
+POPOVER_SCROLL_TICKS = 3
 # The first ROW_MATCHER hit is the sidebar's "Music" row, not a result.
 RESULT_ROW_MATCHER = LabelMatcher(roles=ROW_MATCHER.roles, results_only=True)
 
@@ -30,6 +44,43 @@ def _activate(
         atomic_with_next=atomic,
         token_hint=token_hint,
     )
+
+
+def _sort_by(name: str, column: str) -> Step:
+    """Click one column header, which the harness lends to the observation."""
+    return Step(
+        name,
+        "activate",
+        LabelMatcher(
+            exact=(column_header_label(column),),
+            roles=(COLUMN_HEADER_ROLE,),
+            strict_roles=True,
+        ),
+        {"dispatch": "auto", "expect_effect": "required"},
+        missing_code=f"agent-column-header-missing:{column}",
+    )
+
+
+def _sort_after_dismissing_popover(name: str, column: str) -> list[Step]:
+    """Sort by a column, first spending a click on the popover that may still be open.
+
+    Ctrl+F did not close the search popover in the deck's runs (the first click that
+    followed did), and that click is swallowed: a sort click sent straight after it
+    leaves the order alone. While a popup is open the header is clicked once to
+    dismiss it, and the sort that counts follows.
+    """
+    sort = _sort_by(name, column)
+    return [
+        Step(
+            f"dismiss-popover-before-{name}",
+            "activate",
+            sort.matcher,
+            sort.fields,
+            required=False,
+            skip_when=dataclasses.replace(sort.matcher, no_popup=True),
+        ),
+        sort,
+    ]
 
 
 def _type(name: str, label: str, token: str) -> Step:
@@ -147,6 +198,30 @@ def plan_restart(workload: Mapping[str, Any], index: int, rng: random.Random) ->
     return Phase("restart", index, tuple(steps), order_locked=True)
 
 
+def _source_visit(
+    name: str, source: str, token_hint: str
+) -> tuple[Step, Step]:
+    """Open a source and, if its episodes are folded away, unfold its card.
+
+    Podcasts and YouTube list a show or a channel as one card and keep its
+    episodes behind it; the cached episode is only on screen once the card is
+    open. The app keeps a card open across visits, so the card is clicked only
+    while the page lists nothing (a second click would fold it again). Radio
+    lists its stations directly and needs no click.
+    """
+    return (
+        _section_activate(name, source, token_hint=token_hint),
+        Step(
+            f"unfold-{name}",
+            "activate",
+            LabelMatcher(source_cards_only=True),
+            {"dispatch": "ax", "expect_effect": "required"},
+            required=False,
+            skip_when=LabelMatcher(results_strict=True, require_actionable=False),
+        ),
+    )
+
+
 def plan_offline_transition(
     workload: Mapping[str, Any], index: int, rng: random.Random
 ) -> Phase:
@@ -157,14 +232,17 @@ def plan_offline_transition(
     # clicks it from the view it ends the online tour on, so Radio goes first.
     online_sources.sort(key=lambda source: source not in SOURCES_WITHOUT_REFRESH)
     token_by_source = workload.get("source_tokens", {})
-    steps = [
-        _section_activate(
-            f"online-{source}",
-            source,
-            token_hint=str(token_by_source.get(source, "")),
-        )
-        for source in online_sources
-    ]
+
+    def visits(prefix: str, order: list[str]) -> list[Step]:
+        return [
+            step
+            for source in order
+            for step in _source_visit(
+                f"{prefix}-{source}", source, str(token_by_source.get(source, ""))
+            )
+        ]
+
+    steps = visits("online", online_sources)
     steps.append(
         Step(
             "refresh-before-offline",
@@ -177,14 +255,7 @@ def plan_offline_transition(
     steps.append(
         Step("go-offline", "set-connectivity", fields={"connectivity": "offline"})
     )
-    steps.extend(
-        _section_activate(
-            f"offline-{source}",
-            source,
-            token_hint=str(token_by_source.get(source, "")),
-        )
-        for source in sources
-    )
+    steps.extend(visits("offline", sources))
     steps.append(
         Step(
             "retry-offline",
@@ -196,14 +267,7 @@ def plan_offline_transition(
     steps.append(
         Step("go-online", "set-connectivity", fields={"connectivity": "online"})
     )
-    steps.extend(
-        _section_activate(
-            f"recovery-{source}",
-            source,
-            token_hint=str(token_by_source.get(source, "")),
-        )
-        for source in sources
-    )
+    steps.extend(visits("recovery", sources))
     return Phase("offline-transition", index, tuple(steps), order_locked=False)
 
 
@@ -223,6 +287,16 @@ def plan_batch_edit(workload: Mapping[str, Any], index: int, rng: random.Random)
             # a press aimed at the entry plays the focused row after its focus
             # click has dismissed the popover.
             Step("close-search", "hotkey", fields={"keys": ["ctrl", "f"]}),
+            # The edit rewrites genre and year. A list sorted by either would
+            # reorder by design and the scroll anchor could not tell that from a
+            # lost position, so sort by a column the edit leaves alone first.
+            *(
+                _sort_after_dismissing_popover(
+                    "sort-before-edit", str(workload["sort_by"])
+                )
+                if workload.get("sort_by")
+                else []
+            ),
             Step("focus-first-row", "activate", RESULT_ROW_MATCHER, {"dispatch": "ax"}),
             Step("anchor-down", "scroll", fields={"direction": "down", "amount": 1, "by": "page"}),
             Step("anchor-up-before-edit", "scroll", fields={"direction": "up", "amount": 1, "by": "page"}),
@@ -280,12 +354,7 @@ def plan_sort_cycle(workload: Mapping[str, Any], index: int, rng: random.Random)
             {"key": "escape"},
         ),
         *[
-            Step(
-                f"sort-{number}-{column}",
-                "activate",
-                LabelMatcher(contains=(column,)),
-                {"dispatch": "ax", "expect_effect": "required"},
-            )
+            _sort_by(f"sort-{number}-{column}", column)
             for number, column in enumerate(cycle)
         ],
     ]
@@ -307,6 +376,16 @@ def plan_combined_filter(
     for facet in workload.get("facets", []):
         value = str(active.get(facet, ""))
         option = value.split(":", maxsplit=1)[-1].strip()
+        # A value is listed with its count ("1993 (106)"). The popover list is
+        # taller than the popover, so a value below the fold is first scrolled
+        # into it; a click aimed at the position the tree reports for it lands
+        # on whatever lies under the popover instead.
+        listed_value = LabelMatcher(
+            patterns=(rf"{re.escape(option)}(?: \(\d[\d,]*\))?",), in_popup=True
+        )
+        any_listed_value = LabelMatcher(
+            patterns=(r".+ \(\d[\d,]*\)",), in_popup=True, prefer_middle=True
+        )
         steps.extend(
             [
                 _activate(f"add-filter-{facet}", "Add filter"),
@@ -316,22 +395,28 @@ def plan_combined_filter(
                     LabelMatcher(exact=(str(facet).title(),), contains=(str(facet),)),
                     {"dispatch": "ax"},
                 ),
+                *[
+                    Step(
+                        f"scroll-{facet}-values-{number}",
+                        "scroll",
+                        any_listed_value,
+                        {"direction": "down", "amount": POPOVER_SCROLL_TICKS, "by": "page"},
+                        required=False,
+                        skip_when=listed_value,
+                    )
+                    for number in range(POPOVER_SCROLL_STEPS)
+                ],
                 Step(
                     f"choose-value-{facet}",
                     "activate",
-                    LabelMatcher(exact=(option,), contains=(option,)),
+                    listed_value,
                     {"dispatch": "ax"},
                 ),
             ]
         )
     if workload.get("include_search"):
-        steps.append(
-            _type(
-                "combined-filter-search",
-                SEARCH_ENTRY_LABEL,
-                str(workload.get("search_token")),
-            )
-        )
+        # The box lives in a popover that Escape and Ctrl+F leave closed.
+        steps.extend(_search_type("combined-filter-search", str(workload.get("search_token"))))
     return Phase("combined-filter", index, tuple(steps), order_locked=True)
 
 
