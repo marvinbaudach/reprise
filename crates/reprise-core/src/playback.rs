@@ -131,6 +131,9 @@ impl From<u64> for PlaybackSessionId {
 pub enum PlaybackFailureKind {
     Other,
     HttpStatus(u16),
+    /// The backend started the track over until it ran out of attempts and it
+    /// still never began playing. Not a fault of the file: the pipeline hung.
+    StartNeverFinished,
 }
 
 /// One backend playback failure with its display text, typed cause, and

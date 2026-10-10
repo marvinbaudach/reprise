@@ -194,6 +194,8 @@ pub const YOUTUBE_BROWSER_RECOVERY: &str =
 pub const YOUTUBE_STREAM_FORBIDDEN: &str = N_!(
     "YouTube refused this audio stream — retry playback or choose a signed-in browser in Plugins"
 );
+pub const PLAYBACK_START_NEVER_FINISHED: &str =
+    N_!("This audio did not start — play it again in a moment");
 pub const PODCAST_YTDLP: &str = N_!("yt-dlp");
 pub const PODCAST_YTDLP_UPDATE: &str = N_!("Update");
 pub const PODCAST_YTDLP_CHECKING: &str = N_!("Checking installed version…");

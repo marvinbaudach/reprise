@@ -47,12 +47,14 @@ fn external_error_presentation(
 ) -> ExternalErrorPresentation {
     let unavailable_episode = matches!(failure.kind(), PlaybackFailureKind::HttpStatus(404 | 410));
     let safe_message = redact_local_stream_proxy_urls(failure.message());
-    let message = if failure.kind() == PlaybackFailureKind::HttpStatus(403)
-        && podcast_kind == Some(PodcastKind::Youtube)
-    {
-        strings::text(strings::YOUTUBE_STREAM_FORBIDDEN)
-    } else {
-        safe_message.into_owned()
+    let message = match failure.kind() {
+        PlaybackFailureKind::HttpStatus(403) if podcast_kind == Some(PodcastKind::Youtube) => {
+            strings::text(strings::YOUTUBE_STREAM_FORBIDDEN)
+        }
+        PlaybackFailureKind::StartNeverFinished => {
+            strings::text(strings::PLAYBACK_START_NEVER_FINISHED)
+        }
+        _ => safe_message.into_owned(),
     };
     ExternalErrorPresentation {
         message,
@@ -545,6 +547,24 @@ mod spectrum_coalescing_tests {
         assert!(not_found.unavailable_episode);
         assert_eq!(not_found.message, "Not Found");
         assert!(gone.unavailable_episode);
+    }
+
+    #[test]
+    fn a_start_that_never_finished_is_worded_for_the_listener() {
+        let hung = external_error_presentation(
+            &PlaybackFailure::new(
+                "The track did not start: the pipeline never left READY",
+                PlaybackFailureKind::StartNeverFinished,
+                PlaybackSessionId::from(11),
+            ),
+            None,
+        );
+
+        assert_eq!(
+            hung.message,
+            "This audio did not start — play it again in a moment"
+        );
+        assert!(!hung.unavailable_episode);
     }
 
     #[test]
