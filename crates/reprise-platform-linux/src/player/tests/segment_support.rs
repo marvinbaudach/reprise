@@ -393,6 +393,39 @@ const HUNG_START_PATIENCE: Duration = Duration::from_secs(5);
 /// Starts tried before a test gives up; every one of them hanging is not luck.
 const START_ATTEMPTS: usize = 5;
 
+/// [`Harness::start`] for a test that builds its own [`Player`]: runs `begin`
+/// and starts it over, up to [`START_ATTEMPTS`] times, while the pipeline
+/// hangs in READY.
+pub(super) fn start_over_when_hung(player: &Player, begin: impl Fn()) {
+    for attempt in 1..=START_ATTEMPTS {
+        begin();
+        if leaves_ready(player, HUNG_START_PATIENCE) {
+            return;
+        }
+        eprintln!("the pipeline hung in READY on start {attempt}; starting over");
+    }
+    panic!("playbin3 hung in READY on all {START_ATTEMPTS} starts");
+}
+
+/// Whether the player's pipeline gets past READY within `patience`.
+fn leaves_ready(player: &Player, patience: Duration) -> bool {
+    let main_context = gst::glib::MainContext::default();
+    let deadline = Instant::now() + patience;
+    while Instant::now() < deadline {
+        let playbin = player
+            .playbin
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .clone();
+        if playbin.current_state() != gst::State::Ready {
+            return true;
+        }
+        main_context.iteration(false);
+        std::thread::sleep(Duration::from_millis(5));
+    }
+    false
+}
+
 /// A headless player on `fakesink`, its events, and the sink lock held for
 /// the harness's whole life.
 pub(super) struct Harness {
@@ -437,34 +470,7 @@ impl Harness {
     /// test could wait for ends that, so a start that has not left READY after
     /// [`HUNG_START_PATIENCE`] is begun again from `Null`, which `play` does.
     pub(super) fn start(&self, begin: impl Fn()) {
-        for attempt in 1..=START_ATTEMPTS {
-            begin();
-            if self.leaves_ready(HUNG_START_PATIENCE) {
-                return;
-            }
-            eprintln!("the pipeline hung in READY on start {attempt}; starting over");
-        }
-        panic!("playbin3 hung in READY on all {START_ATTEMPTS} starts");
-    }
-
-    /// Whether the pipeline gets past READY within `patience`.
-    fn leaves_ready(&self, patience: Duration) -> bool {
-        let main_context = gst::glib::MainContext::default();
-        let deadline = Instant::now() + patience;
-        while Instant::now() < deadline {
-            let playbin = self
-                .player
-                .playbin
-                .lock()
-                .unwrap_or_else(PoisonError::into_inner)
-                .clone();
-            if playbin.current_state() != gst::State::Ready {
-                return true;
-            }
-            main_context.iteration(false);
-            std::thread::sleep(Duration::from_millis(5));
-        }
-        false
+        start_over_when_hung(&self.player, begin);
     }
 
     /// Pumps the main context (which dispatches the bus watch) and collects

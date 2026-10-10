@@ -54,13 +54,15 @@ fn harness_noting_the_render_at_hand_off() -> (Harness, Arc<AtomicI64>) {
 }
 
 fn play_two_contiguous_tracks(harness: &Harness, album: &std::path::Path) {
-    harness
-        .player
-        .play(cue_item(album, FIRST, FIRST_GAIN_DB))
-        .unwrap();
-    harness
-        .player
-        .set_next(Some(cue_item(album, SECOND, SECOND_GAIN_DB)));
+    harness.start(|| {
+        harness
+            .player
+            .play(cue_item(album, FIRST, FIRST_GAIN_DB))
+            .unwrap();
+        harness
+            .player
+            .set_next(Some(cue_item(album, SECOND, SECOND_GAIN_DB)));
+    });
 }
 
 #[test]
@@ -239,13 +241,15 @@ fn play_23a_a_successor_shorter_than_the_sink_lead_takes_over_then_finishes() {
         let album = directory.path().join("album.wav");
         write_regions_wav(&album, &[(7_000, true)]);
         let short = (SECOND.0, SECOND.0 + short_ms);
-        harness
-            .player
-            .play(cue_item(&album, FIRST, FIRST_GAIN_DB))
-            .unwrap();
-        harness
-            .player
-            .set_next(Some(cue_item(&album, short, SECOND_GAIN_DB)));
+        harness.start(|| {
+            harness
+                .player
+                .play(cue_item(&album, FIRST, FIRST_GAIN_DB))
+                .unwrap();
+            harness
+                .player
+                .set_next(Some(cue_item(&album, short, SECOND_GAIN_DB)));
+        });
 
         let mut events = harness.pump_until(HANG_GUARD, |events| count(events, finished) > 0);
         events.extend(harness.pump_for(Duration::from_millis(600)));

@@ -18,6 +18,7 @@
 
 use std::path::Path;
 
+use super::segment_support::start_over_when_hung;
 use super::*;
 use crate::player_pipeline::AUDIO_SINK_ENV_VAR;
 
@@ -87,8 +88,10 @@ fn gapless_handoff_never_reports_a_duration_that_moves_the_playhead_backwards() 
     }))
     .unwrap();
 
-    player.play(item(first.to_str().unwrap())).unwrap();
-    player.set_next(Some(item(second.to_str().unwrap())));
+    start_over_when_hung(&player, || {
+        player.play(item(first.to_str().unwrap())).unwrap();
+        player.set_next(Some(item(second.to_str().unwrap())));
+    });
 
     // Same pump-until-resolved pattern as `gapless_handoff_advances_without_
     // pipeline_restart`: the bus watch that turns `StreamStart` into
