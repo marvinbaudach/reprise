@@ -103,9 +103,13 @@ fn run_with_db(
         Command::Instrumental { action } => run_instrumental(&db, staging_dir, action, json),
         Command::Jobs { action } => run_jobs(&db, staging_dir, action, json),
         // `run` dispatches playback before the database is opened, so this arm
-        // is not reached; it still does the right thing if it ever were.
+        // is not reached. Were it reached, `db_open::open` above would already
+        // have opened and migrated the database, which playback must never do,
+        // so it is reported as an internal error instead of being run.
         #[cfg(feature = "mpris")]
-        Command::Playback { action } => run_playback(action, json),
+        Command::Playback { .. } => Err(CliError::InvalidInput(
+            "playback is dispatched before the database is opened".to_owned(),
+        )),
     }
 }
 
