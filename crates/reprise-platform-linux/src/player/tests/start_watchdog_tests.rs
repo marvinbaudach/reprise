@@ -10,7 +10,9 @@
 
 use std::sync::atomic::AtomicUsize;
 
-use super::segment_support::{gain_element, write_regions_wav, Harness};
+use std::path::Path;
+
+use super::segment_support::{cue_item, gain_element, write_regions_wav, Harness};
 use super::*;
 
 /// The watchdog's deadline where the test only waits for it.
@@ -158,27 +160,31 @@ fn a_hung_start_the_user_stopped_is_left_stopped() {
     assert_eq!(state_of(&harness.player).0, gst::State::Null);
 }
 
+/// The watchdog does not cover CUE starts, so nothing re-arms it when one
+/// replaces a hung local start: the old watch has to be cancelled by the play.
 #[test]
-fn a_hung_start_that_another_track_replaced_is_not_started_over() {
+fn a_hung_start_that_a_cue_start_replaced_is_not_started_over_by_the_old_watch() {
+    const CUE_TRACK: (i64, i64) = (500, 1_500);
     let harness = harness_with_deadline(ROOMY_DEADLINE);
     let dir = tempfile::tempdir().unwrap();
     let path = local_track(&dir);
-    let reached = hang_starts(&harness.player, 1);
+    let reached = hang_starts(&harness.player, usize::MAX);
     harness.player.play(item(&path)).unwrap();
     harness.pump_until(PATIENCE, |_| reached.load(Ordering::SeqCst) >= 1);
 
-    // The user starts the track again by hand; that start is not hung.
-    harness.player.play(item(&path)).unwrap();
-    let events = harness.pump_until(PATIENCE, |_| {
-        state_of(&harness.player).0 == gst::State::Playing
-    });
-    let later = harness.pump_for(QUIET_FOR);
+    // The CUE start hangs as well, in READY with PAUSED pending. Were the
+    // first start's watch still running, it would find that and start over.
+    harness
+        .player
+        .play(cue_item(Path::new(&path), CUE_TRACK, 0.0))
+        .unwrap();
+    harness.pump_until(PATIENCE, |_| reached.load(Ordering::SeqCst) >= 2);
+    let events = harness.pump_for(QUIET_FOR);
 
-    assert_eq!(state_of(&harness.player).0, gst::State::Playing);
+    assert_eq!(errors(&events), 0, "events: {events:?}");
     assert_eq!(
         reached.load(Ordering::SeqCst),
         2,
-        "the old watch started nothing"
+        "the first play's watch started the CUE start over"
     );
-    assert_eq!(errors(&events) + errors(&later), 0);
 }
