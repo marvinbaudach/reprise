@@ -546,8 +546,9 @@ What is still open:
   flags the rows of a scrolled popover list, which the tree reports below the window. Neither
   is an app finding.
 - Ctrl+F did not close the search popover in any of the 2026-10-10 runs, although SEARCH-6
-  says it toggles it. That was the app, not the injected key: the popover is its own native
-  surface, so the window's `<Control>f` accelerator never saw a key pressed in its entry. The
+  says it toggles it. That was the app, not the injected key: a real X11 key did not close it
+  either, because the window's `<Control>f` accelerator did not fire while the popover's entry
+  had the focus (likely because the popover is its own native surface). The
   search popover now closes itself on Ctrl+F (`search_6_ctrl_f_closes_the_open_popover_while_its_entry_has_focus`,
   a real X11 key through xdotool, with the same key opening the closed popover as its
   control). The plan still spends one click on the header it is about to sort by
