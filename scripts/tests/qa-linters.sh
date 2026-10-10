@@ -297,7 +297,7 @@ require_pattern 'frontend workers must open ready-to-use databases through the c
 require_pattern 'must use the shared one-shot task helper' scripts/check-architecture.sh
 require_pattern 'check-accessibility-semantics.sh' scripts/check-architecture.sh
 require_pattern 'check-crate-layers.sh' scripts/check-architecture.sh
-require_pattern '^panic_lint_budget=[0-9]+$' scripts/check-crate-layers.sh
+require_pattern "^panic_lint_budgets='([a-z0-9-]+=[0-9]+ ?)*'$" scripts/check-crate-layers.sh
 require_pattern 'check-input-parity.sh' scripts/check-architecture.sh
 require_pattern 'check-listen-report-parity.sh' scripts/check-architecture.sh
 require_pattern 'check-android-theme.sh' scripts/check-architecture.sh
