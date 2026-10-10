@@ -144,9 +144,8 @@ impl SessionState {
         } else {
             AndroidPlaybackState::Stopped
         };
-        let resume_ms = resume
-            .filter(|point| Some(point.track_id) == restored.queue.current())
-            .map_or(0, |point| point.position_ms.max(0));
+        let resume = resume.filter(|point| Some(point.track_id) == restored.queue.current());
+        let resume_ms = resume.map_or(0, |point| point.position_ms.max(0));
         let duration_ms = if current_index.is_some() {
             restored.current_duration_ms
         } else {
@@ -177,7 +176,7 @@ impl SessionState {
             consecutive_faults: 0,
             fault_skip_limit: None,
             max_position_ms: 0,
-            play_recorded: false,
+            play_recorded: resume.is_some_and(|point| point.play_recorded),
             pending_start_ms: resume_ms,
         }
     }
@@ -387,7 +386,7 @@ impl SessionInner {
 
     fn start_current(&self) -> Result<(), AndroidPlaybackError> {
         let backend = self.backend()?;
-        let (track_id, uri, next, history_entry, start_ms) = {
+        let (track_id, uri, next, history_entry, start_ms, play_recorded) = {
             let mut state = self.lock()?;
             let track_id =
                 state
@@ -405,7 +404,14 @@ impl SessionInner {
             // `play_uri` may synchronously publish this stream's first event.
             state.current_loaded = true;
             let start_ms = std::mem::take(&mut state.pending_start_ms);
-            (track_id, uri, next, history_entry, start_ms)
+            (
+                track_id,
+                uri,
+                next,
+                history_entry,
+                start_ms,
+                state.play_recorded,
+            )
         };
         if let Err(error) = backend.play_item(self.playback_item(track_id, uri)) {
             let detail = error.to_string();
@@ -417,22 +423,23 @@ impl SessionInner {
             self.notify();
             return Err(AndroidPlaybackError::Backend { detail });
         }
+        if start_ms > 0 {
+            // The song was restored or seeked while paused, so Media3 starts it
+            // at 0:00 until told otherwise. The seek follows `play_item` at once, before
+            // the player reaches READY.
+            if let Err(error) = backend.seek_to(start_ms) {
+                tracing::warn!(%error, start_ms, "could not start the song at its restored position");
+            }
+        }
         {
             let mut state = self.lock()?;
             state.note_playback_started(history_entry);
             state.stream = backend.current_generation();
         }
-        if start_ms > 0 {
-            // The song was restored or seeked while paused, so Media3 starts it
-            // at 0:00 until told otherwise. The seek lands before the player is
-            // prepared, which is the same moment `play_item` returned.
-            if let Err(error) = backend.seek_to(start_ms) {
-                tracing::warn!(%error, start_ms, "could not start the song at its restored position");
-            }
-        }
         self.remember_position(Some(resume_position::ResumePoint {
             track_id,
             position_ms: start_ms,
+            play_recorded,
         }));
         self.feed_next(next)?;
         self.notify();

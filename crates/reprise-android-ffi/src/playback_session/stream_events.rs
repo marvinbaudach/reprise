@@ -88,6 +88,10 @@ impl SessionInner {
                     }
                     state.max_position_ms = state.max_position_ms.max(position_ms.max(0));
                     let play = state.play_to_record(false);
+                    if play.is_some() {
+                        // A kill from here on must not count this listen twice.
+                        resume_to_save = state.resume_point();
+                    }
                     (FollowUp::None, play, None)
                 }
                 PlayerEvent::TrackFinished => {

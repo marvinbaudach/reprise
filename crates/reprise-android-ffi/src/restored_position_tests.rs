@@ -158,3 +158,60 @@ fn a_pause_reported_by_media3_is_remembered_for_the_next_restore() {
 
     assert_eq!(again.snapshot().unwrap().position_ms, PAUSED_AT_MS);
 }
+
+#[test]
+fn resuming_a_song_that_already_counted_as_played_does_not_count_it_again() {
+    use reprise_core::device_sync::listen_report::ListenReport;
+
+    let directory = tempfile::tempdir().unwrap();
+    let tracks = seed_tracks(directory.path(), &["Counted"]);
+    let (session, _, bridge) = session_with_controls(directory.path());
+    session
+        .play_tracks(vec![tracks[0].id], vec![tracks[0].path.clone()], 0)
+        .unwrap();
+    // Far enough into the song that Core counts it as played.
+    pause_at(&session, &bridge, 600, 1_000);
+    drop(session);
+
+    let (restored, _, bridge) = session_with_controls(directory.path());
+    restored.toggle_pause().unwrap();
+    bridge.lock().unwrap().clone().unwrap().emit(
+        GENERATION,
+        AndroidPlayerEvent::Position {
+            position_ms: 650,
+            duration_ms: 1_000,
+        },
+    );
+    drop(restored);
+
+    let library = library_in(directory.path());
+    let report = ListenReport::decode(&library.prepare_listen_report(None).unwrap()).unwrap();
+    assert_eq!(
+        report.listens.len(),
+        1,
+        "the song was counted before the pause; resuming it is the same listen",
+    );
+}
+
+#[test]
+fn a_song_that_played_to_its_end_does_not_come_back_mid_song() {
+    let directory = tempfile::tempdir().unwrap();
+    let tracks = seed_tracks(directory.path(), &["Finished"]);
+    let (session, _, bridge) = session_with_controls(directory.path());
+    session
+        .play_tracks(vec![tracks[0].id], vec![tracks[0].path.clone()], 0)
+        .unwrap();
+    pause_at(&session, &bridge, PAUSED_AT_MS, 200_000);
+    session.toggle_pause().unwrap();
+    bridge
+        .lock()
+        .unwrap()
+        .clone()
+        .unwrap()
+        .emit(GENERATION, AndroidPlayerEvent::TrackFinished);
+    drop(session);
+
+    let again = session_in(directory.path());
+
+    assert_eq!(again.snapshot().unwrap().position_ms, 0);
+}

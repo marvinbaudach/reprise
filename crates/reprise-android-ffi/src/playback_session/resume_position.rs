@@ -2,7 +2,7 @@
 //!
 //! The queue snapshot knows which song is current but not how far in it was.
 //! This single-slot file holds that: the track and its playhead in
-//! milliseconds. It is written whenever the song starts, pauses or is
+//! milliseconds and whether that listen already counted as a play. It is written whenever the song starts, pauses or is
 //! seeked while paused, and read once when the session is restored. It is
 //! keyed by track id, so a stale record for a song that is no longer current
 //! is ignored rather than applied to the wrong one.
@@ -30,6 +30,9 @@ const TEMP_FILE_NAME: &str = ".android-resume-position.v1.tmp";
 pub(super) struct ResumePoint {
     pub(super) track_id: i64,
     pub(super) position_ms: i64,
+    /// Whether this listen already counted as a play. Resuming seeks past the
+    /// threshold at once, which would otherwise count the same listen again.
+    pub(super) play_recorded: bool,
 }
 
 pub(super) struct ResumePositionFile {
@@ -91,6 +94,7 @@ impl SessionState {
         Some(ResumePoint {
             track_id: self.queue.current()?,
             position_ms: self.snapshot.position_ms.max(0),
+            play_recorded: self.play_recorded,
         })
     }
 }
