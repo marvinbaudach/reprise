@@ -67,7 +67,7 @@ type BufferingUpdate = (u8, Option<i64>);
 
 static NEXT_PLAYBACK_SESSION_ID: AtomicU64 = AtomicU64::new(1);
 
-fn next_playback_session_id() -> PlaybackSessionId {
+pub(crate) fn next_playback_session_id() -> PlaybackSessionId {
     PlaybackSessionId::from(NEXT_PLAYBACK_SESSION_ID.fetch_add(1, Ordering::Relaxed))
 }
 

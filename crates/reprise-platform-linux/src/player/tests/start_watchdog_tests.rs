@@ -136,6 +136,14 @@ fn a_start_that_keeps_hanging_is_given_up_on_after_three_starts() {
     harness.player.play(item(&path)).unwrap();
     let events = harness.pump_until(PATIENCE, |events| errors(events) > 0);
     assert_eq!(errors(&events), 1, "events: {events:?}");
+    assert!(
+        events.iter().any(|event| matches!(
+            event,
+            PlayerEvent::Error(failure)
+                if failure.kind() == PlaybackFailureKind::StartNeverFinished
+        )),
+        "the frontend words the give-up from its kind: {events:?}"
+    );
     assert_eq!(reached.load(Ordering::SeqCst), 3, "three starts, no fourth");
 
     let later = harness.pump_for(QUIET_FOR);
@@ -187,4 +195,180 @@ fn a_hung_start_that_a_cue_start_replaced_is_not_started_over_by_the_old_watch()
         2,
         "the first play's watch started the CUE start over"
     );
+}
+
+/// Makes the file source slow rather than stuck: each of its first `slowed`
+/// reads takes `delay`, so the start stays in READY for a long while but the
+/// source keeps moving. Returns how many file sources the pipeline created —
+/// a start that is begun over builds a new one.
+fn slow_source(player: &Player, slowed: usize, delay: Duration) -> Arc<AtomicUsize> {
+    let sources = Arc::new(AtomicUsize::new(0));
+    let created = sources.clone();
+    let reads = Arc::new(AtomicUsize::new(0));
+    let playbin = player
+        .playbin
+        .lock()
+        .unwrap_or_else(PoisonError::into_inner)
+        .clone()
+        .downcast::<gst::Bin>()
+        .unwrap();
+    playbin.connect("deep-element-added", false, move |values| {
+        let element = values[2].get::<gst::Element>().unwrap();
+        if element.factory().is_some_and(|f| f.name() == "filesrc") {
+            created.fetch_add(1, Ordering::SeqCst);
+            let reads = reads.clone();
+            element.static_pad("src").unwrap().add_probe(
+                gst::PadProbeType::PULL | gst::PadProbeType::BUFFER,
+                move |_, _| {
+                    if reads.fetch_add(1, Ordering::SeqCst) < slowed {
+                        std::thread::sleep(delay);
+                    }
+                    gst::PadProbeReturn::Ok
+                },
+            );
+        }
+        None
+    });
+    sources
+}
+
+/// A slow disk or share keeps a healthy start in READY for longer than the
+/// deadline. As long as the source delivers, that is a start in progress.
+#[test]
+fn a_slow_start_that_keeps_reading_is_left_alone() {
+    const SLOW_READS: usize = 12;
+    const READ_TIME: Duration = Duration::from_millis(100);
+    // Each read is well inside the deadline; all of them together are far past it.
+    let harness = harness_with_deadline(Duration::from_millis(400));
+    let dir = tempfile::tempdir().unwrap();
+    let path = local_track(&dir);
+    let sources = slow_source(&harness.player, SLOW_READS, READ_TIME);
+
+    harness.player.play(item(&path)).unwrap();
+    let events = harness.pump_until(PATIENCE, |_| {
+        state_of(&harness.player).0 == gst::State::Playing
+    });
+
+    assert_eq!(state_of(&harness.player).0, gst::State::Playing);
+    assert_eq!(errors(&events), 0, "events: {events:?}");
+    assert_eq!(
+        sources.load(Ordering::SeqCst),
+        1,
+        "the slow start was begun over although its source kept reading"
+    );
+}
+
+/// A disk that has spun down answers its first reads with long waits, not a
+/// trickle. The source stands still for a whole deadline, so the first attempt
+/// is started over — but the next one is allowed longer, and the track plays
+/// instead of being skipped as unplayable.
+#[test]
+fn a_start_stuck_on_one_long_read_plays_after_a_restart_instead_of_being_skipped() {
+    let deadline = Duration::from_millis(400);
+    let harness = harness_with_deadline(deadline);
+    let dir = tempfile::tempdir().unwrap();
+    let path = local_track(&dir);
+    // The first reads each outlast a deadline, as the ones from a cold disk do.
+    slow_source(&harness.player, 3, deadline * 5 / 4);
+
+    harness.player.play(item(&path)).unwrap();
+    let events = harness.pump_until(PATIENCE, |_| {
+        state_of(&harness.player).0 == gst::State::Playing
+    });
+
+    assert_eq!(state_of(&harness.player).0, gst::State::Playing);
+    assert_eq!(errors(&events), 0, "events: {events:?}");
+}
+
+/// Control for the test above: a source that is stuck is still started over.
+#[test]
+fn a_start_whose_source_stopped_reading_is_still_started_over() {
+    let harness = harness_with_deadline(TEST_DEADLINE);
+    let dir = tempfile::tempdir().unwrap();
+    let path = local_track(&dir);
+    let sources = slow_source(&harness.player, 0, Duration::ZERO);
+    let reached = hang_starts(&harness.player, 1);
+
+    harness.player.play(item(&path)).unwrap();
+    harness.pump_until(PATIENCE, |_| {
+        state_of(&harness.player).0 == gst::State::Playing
+    });
+
+    assert_eq!(reached.load(Ordering::SeqCst), 2);
+    assert_eq!(sources.load(Ordering::SeqCst), 2, "one source per start");
+}
+
+/// Every start that is given up on is its own session, so the frontend's
+/// first-cause gate cannot take a later give-up for a repeat of an earlier one.
+#[test]
+fn each_give_up_carries_the_session_of_its_own_start() {
+    let harness = harness_with_deadline(TEST_DEADLINE);
+    let dir = tempfile::tempdir().unwrap();
+    let path = local_track(&dir);
+    hang_starts(&harness.player, usize::MAX);
+
+    let mut sessions = Vec::new();
+    for _ in 0..2 {
+        harness.player.play(item(&path)).unwrap();
+        let events = harness.pump_until(PATIENCE, |events| errors(events) > 0);
+        sessions.extend(events.iter().filter_map(|event| match event {
+            PlayerEvent::Error(failure) => Some(failure.session_id()),
+            _ => None,
+        }));
+    }
+
+    assert_eq!(sessions.len(), 2);
+    assert!(
+        sessions.iter().all(|&id| id != PlaybackSessionId::UNSCOPED),
+        "{sessions:?}"
+    );
+    assert_ne!(sessions[0], sessions[1]);
+}
+
+/// A podcast resumes by seeking right after the start, and the frontend keeps
+/// that seek pending until it is accepted. The player refuses a seek while the
+/// start has not prerolled — a hung one included — and never queues it, so
+/// nothing is lost when `Null` throws a hung start away: the seek is made again
+/// once the new start has prerolled.
+#[test]
+fn a_seek_during_a_hung_start_is_refused_and_works_once_the_start_is_over() {
+    const RESUME_MS: i64 = 1_000;
+    let harness = harness_with_deadline(TEST_DEADLINE);
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("long.wav");
+    write_regions_wav(&path, &[(30_000, true)]);
+    let reached = hang_starts(&harness.player, 1);
+
+    harness.player.play(item(path.to_str().unwrap())).unwrap();
+    assert!(
+        harness.player.seek_to(RESUME_MS).is_err(),
+        "a seek on a start that has not prerolled must be refused, so its caller keeps it"
+    );
+    harness.pump_until(PATIENCE, |_| {
+        state_of(&harness.player).0 == gst::State::Playing
+    });
+    assert_eq!(
+        reached.load(Ordering::SeqCst),
+        2,
+        "the start was begun over"
+    );
+
+    harness.player.seek_to(RESUME_MS).unwrap();
+    harness.pump_for(Duration::from_millis(300));
+    assert!(
+        position_ms(&harness.player) >= RESUME_MS - 100,
+        "plays from {} ms",
+        position_ms(&harness.player)
+    );
+}
+
+fn position_ms(player: &Player) -> i64 {
+    let playbin = player
+        .playbin
+        .lock()
+        .unwrap_or_else(PoisonError::into_inner)
+        .clone();
+    playbin
+        .query_position::<gst::ClockTime>()
+        .map_or(-1, |position| position.mseconds() as i64)
 }
