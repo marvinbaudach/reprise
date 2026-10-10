@@ -606,16 +606,49 @@ result.
   first buffer after the stream-change announcement gets the next track's gain,
   and not a buffer earlier. This also holds for clips of one CUE file whose
   announced offset values are equal or fall. The later media-item transition
-  only retires the previous item. The gain belongs to the media item, so
+  only retires the previous item. Media3 hands over such a clip at the first
+  decoded buffer that starts before the cut, and that buffer runs past it with
+  the next track's first samples, so when the next item continues the same file
+  exactly where the current one ends, the sink switches gain inside that buffer,
+  at the sample the cut falls on: no sample of the next track plays at the
+  previous track's gain. Where a new decoder starts for the next stream (a
+  file or codec change), Media3 configures the sink for the next item's period
+  and offers its first buffer before it announces the stream; the sink treats
+  that configuration as the start of the next stream as well. The gain belongs to the media item, so
   replacing the next track after it was announced, seeking back across the
   boundary, and a flush all leave every buffer with its own track's gain. The
   sink scales into a buffer of its own and never writes into Media3's (which may
   be read-only), a buffer the output stage takes only in part is retried from
-  the same scaled copy, and at exactly unity gain the buffer passes through
-  untouched. Proven by JVM tests that put a recording sink behind the gain sink
-  and read what the output stage receives; they do not run Media3's
-  `DefaultAudioSink` or a device. Android has no crossfade; if it gains one,
-  this rule needs a sibling.
+  the same scaled copy, and a buffer whose gain is exactly unity on both sides
+  of the cut passes through untouched. Proven by JVM tests that put a recording
+  sink behind the gain sink and read what the output stage receives, and by one
+  that plays two clips of a WAV file through a real Media3 player and the
+  production sink chain; they do not run a device decoder. Android has no
+  crossfade; if it gains one, this rule needs a sibling.
+  *Tests:* `play_20c_gain_switches_at_the_first_buffer_after_the_stream_announcement`,
+  `play_20c_an_announcement_before_any_buffer_is_not_a_stream_change`,
+  `play_20c_a_next_track_replaced_after_its_offset_was_announced_plays_with_the_new_gain`,
+  `play_20c_a_backward_seek_across_the_boundary_plays_the_earlier_track_with_its_own_gain`,
+  `play_20c_a_read_only_input_buffer_is_scaled_without_being_written_into`,
+  `play_20c_a_partially_consumed_buffer_is_retried_from_the_same_scaled_copy`,
+  `play_20c_two_clips_of_one_file_announced_at_the_same_offset_each_play_with_their_own_gain`,
+  `play_20c_a_stream_announced_at_a_smaller_offset_than_its_predecessor_gets_its_own_gain`,
+  `play_20c_the_next_tracks_gain_is_applied_before_the_transition_event_fires`,
+  `play_20c_a_buffer_holding_the_cut_switches_gain_at_the_cut_sample`,
+  `play_20c_a_buffer_that_starts_at_the_cut_has_the_next_tracks_gain_throughout`,
+  `play_20c_a_buffer_that_ends_at_the_cut_keeps_the_current_tracks_gain`,
+  `play_20c_the_buffer_after_the_announcement_keeps_the_next_tracks_gain`,
+  `play_20c_a_next_track_that_does_not_continue_the_file_is_not_split_into_a_buffer`,
+  `play_20c_a_stream_whose_format_is_unknown_is_not_split`,
+  `play_20c_a_live_gain_change_keeps_where_the_next_track_continues`,
+  `play_20c_a_split_buffer_the_output_takes_in_part_is_retried_from_the_same_copy`,
+  `play_20c_unity_gain_on_both_sides_of_the_cut_passes_the_buffer_through`,
+  `play_20c_a_configuration_for_another_period_starts_the_next_stream_before_its_announcement`,
+  `play_20c_a_configuration_for_the_same_period_or_for_none_does_not_change_the_gain`,
+  `play_20c_a_flush_keeps_the_period_so_the_next_one_still_starts_the_next_stream`,
+  `play_20c_a_seek_back_into_the_first_period_keeps_the_first_tracks_gain`,
+  `play_20c_the_port_tells_the_sink_where_the_next_cue_track_continues_the_file`,
+  `play_20c_only_a_track_that_starts_where_the_current_one_ends_in_the_same_file_continues_it`.
 - **PLAY-21** [active] [android] — Volume normalisation is offered in the
   phone's playback settings with the same three modes as on the desktop,
   **Off**, **Per Track** and **Per Album**, in a row titled "Volume
@@ -1377,6 +1410,7 @@ result.
   `mtp_66_a_cue_track_and_the_next_one_are_each_clipped_to_their_own_stretch`,
   `mtp_66_a_cue_clip_opens_without_a_renderer_restarting_discontinuity`,
   `mtp_66_each_clip_of_a_cue_file_plays_at_its_own_gain_before_the_transition_event`,
+  `mtp_66_a_cue_cut_inside_a_decoded_buffer_still_switches_gain_at_the_cut_sample`,
   `mtp_66_a_whole_file_is_not_clipped`,
   `mtp_66_late_metadata_completes_a_clip_in_place_and_keeps_its_stretch`,
   `mtp_66_a_clipped_cue_track_that_gains_its_cover_is_updated_in_place`,
@@ -1389,7 +1423,9 @@ result.
   `mtp_66_an_artists_other_titles_show_both_tracks_of_a_cue_file`.
   Unit tests prove each clip opens without the initial discontinuity that caused
   a 330 ms gap at every boundary of an Opus file (issue #1222), and the gain test
-  drives the measured stream-offset announcement ordering directly. The gap
+  drives the measured stream-offset announcement ordering directly, and a
+  real-player test cuts a WAV file inside one of the extractor's chunks and
+  reads every sample the output stage receives. The gap
   itself is still proved only by the post-merge device check, because no
   automated test drives the decoder a real player uses.
   <!-- REVIEW: rule proposal -->

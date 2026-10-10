@@ -1,5 +1,10 @@
 package io.github.marvinbaudach.reprise
 
+import androidx.media3.common.C
+import androidx.media3.common.Format
+import androidx.media3.common.MimeTypes
+import androidx.media3.exoplayer.audio.AudioSink
+import androidx.media3.exoplayer.source.MediaSource
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNotSame
 import org.junit.Assert.assertSame
@@ -8,6 +13,9 @@ import org.junit.Test
 private const val HALF_DB = -6.020599913
 private const val DOUBLE_DB = 6.020599913
 private const val BOUNDARY_US = 1_000_000L
+private const val OFFSET_US = 1_000_000_000_000L
+private const val CUT_US = 3_000_000L
+private const val FRAME_US = 1_000L
 
 /** A gain sink in front of a recording delegate: what it forwards is what plays. */
 private class Rig {
@@ -26,6 +34,43 @@ private class Rig {
         sink.startPlaylist(currentGainDb, nextGainDb)
         sink.setOutputStreamOffsetUs(0)
     }
+
+    /**
+     * Two tracks cut from one file, the second starting at [CUT_US] into it, on a
+     * mono 1 kHz stream (one frame per millisecond) whose timestamps Media3 shifted
+     * by [OFFSET_US].
+     */
+    fun startTwoCueTracks(configured: Boolean = true) {
+        sink.startPlaylist(HALF_DB, DOUBLE_DB, CUT_US)
+        if (configured) {
+            val format = Format.Builder()
+                .setSampleMimeType(MimeTypes.AUDIO_RAW)
+                .setPcmEncoding(C.ENCODING_PCM_16BIT)
+                .setSampleRate(1_000)
+                .setChannelCount(1)
+                .build()
+            sink.configure(AudioSink.AudioSinkConfig.Builder(format).build())
+        }
+        sink.setOutputStreamOffsetUs(OFFSET_US)
+    }
+
+    /** Configures the sink for a stream of the period [periodUid], or of none. */
+    fun configureFor(periodUid: Any?) {
+        val format = Format.Builder()
+            .setSampleMimeType(MimeTypes.AUDIO_RAW)
+            .setPcmEncoding(C.ENCODING_PCM_16BIT)
+            .setSampleRate(1_000)
+            .setChannelCount(1)
+            .build()
+        val config = AudioSink.AudioSinkConfig.Builder(format)
+            .setMediaPeriodId(periodUid?.let { MediaSource.MediaPeriodId(it) })
+            .build()
+        sink.configure(config)
+    }
+
+    /** Offers [frames] frames of 10 000 starting [fileUs] into the file. */
+    fun offerFromFile(fileUs: Long, frames: Int): List<Int> =
+        offer(OFFSET_US + fileUs, *IntArray(frames) { 10_000 })
 }
 
 class TrackGainAudioSinkTest {
@@ -355,5 +400,164 @@ class TrackGainAudioSinkTest {
 
         rig.sink.advanceToNext()
         assertEquals(20_000, rig.scaledAt(sameOffsetUs + 1))
+    }
+
+    @Test
+    fun play_20c_a_buffer_holding_the_cut_switches_gain_at_the_cut_sample() {
+        val rig = Rig()
+        rig.startTwoCueTracks()
+
+        // 100 frames from 2.95 s: the cut at 3.0 s is the 51st frame.
+        val out = rig.offerFromFile(CUT_US - 50 * FRAME_US, 100)
+
+        assertEquals(List(50) { 5_000 } + List(50) { 20_000 }, out)
+    }
+
+    @Test
+    fun play_20c_a_buffer_that_starts_at_the_cut_has_the_next_tracks_gain_throughout() {
+        val rig = Rig()
+        rig.startTwoCueTracks()
+
+        assertEquals(List(10) { 20_000 }, rig.offerFromFile(CUT_US, 10))
+    }
+
+    @Test
+    fun play_20c_a_buffer_that_ends_at_the_cut_keeps_the_current_tracks_gain() {
+        val rig = Rig()
+        rig.startTwoCueTracks()
+
+        assertEquals(List(10) { 5_000 }, rig.offerFromFile(CUT_US - 10 * FRAME_US, 10))
+    }
+
+    @Test
+    fun play_20c_the_buffer_after_the_announcement_keeps_the_next_tracks_gain() {
+        val rig = Rig()
+        rig.startTwoCueTracks()
+        rig.offerFromFile(CUT_US - 50 * FRAME_US, 100)
+
+        rig.sink.setOutputStreamOffsetUs(OFFSET_US)
+
+        assertEquals(List(10) { 20_000 }, rig.offerFromFile(CUT_US + 50 * FRAME_US, 10))
+    }
+
+    @Test
+    fun play_20c_a_next_track_that_does_not_continue_the_file_is_not_split_into_a_buffer() {
+        val rig = Rig()
+        rig.startTwoCueTracks()
+        rig.sink.setNextGain(DOUBLE_DB, null)
+
+        assertEquals(List(100) { 5_000 }, rig.offerFromFile(CUT_US - 50 * FRAME_US, 100))
+    }
+
+    @Test
+    fun play_20c_a_stream_whose_format_is_unknown_is_not_split() {
+        val rig = Rig()
+        rig.startTwoCueTracks(configured = false)
+
+        assertEquals(List(100) { 5_000 }, rig.offerFromFile(CUT_US - 50 * FRAME_US, 100))
+    }
+
+    @Test
+    fun play_20c_a_live_gain_change_keeps_where_the_next_track_continues() {
+        val rig = Rig()
+        rig.startTwoCueTracks()
+
+        rig.sink.setGains(DOUBLE_DB, HALF_DB)
+
+        assertEquals(
+            List(50) { 20_000 } + List(50) { 5_000 },
+            rig.offerFromFile(CUT_US - 50 * FRAME_US, 100),
+        )
+    }
+
+    @Test
+    fun play_20c_a_split_buffer_the_output_takes_in_part_is_retried_from_the_same_copy() {
+        val rig = Rig()
+        rig.startTwoCueTracks()
+        rig.probe.consumeBytesPerCall = 60 * Short.SIZE_BYTES
+        val input = pcm16(*IntArray(100) { 10_000 })
+        val presentationTimeUs = OFFSET_US + CUT_US - 50 * FRAME_US
+
+        assertEquals(false, rig.sink.handleBuffer(input, presentationTimeUs, 1))
+        rig.sink.setGains(HALF_DB, HALF_DB)
+        assertEquals(true, rig.sink.handleBuffer(input, presentationTimeUs, 1))
+
+        val offers = rig.probe.offers
+        assertEquals(List(50) { 5_000 } + List(50) { 20_000 }, offers[0].samples)
+        assertEquals(List(40) { 20_000 }, offers[1].samples)
+    }
+
+    @Test
+    fun play_20c_unity_gain_on_both_sides_of_the_cut_passes_the_buffer_through() {
+        val rig = Rig()
+        rig.startTwoCueTracks()
+        rig.sink.setGains(0.0, 0.0)
+        val input = pcm16(*IntArray(100) { 10_000 })
+
+        rig.sink.handleBuffer(input, OFFSET_US + CUT_US - 50 * FRAME_US, 1)
+
+        assertSame(input, rig.probe.offers.single().buffer)
+    }
+
+    @Test
+    fun play_20c_a_configuration_for_another_period_starts_the_next_stream_before_its_announcement() {
+        val rig = Rig()
+        rig.sink.startPlaylist(HALF_DB, DOUBLE_DB)
+        rig.configureFor("first")
+        rig.sink.setOutputStreamOffsetUs(OFFSET_US)
+        assertEquals(5_000, rig.scaledAt(OFFSET_US + 100))
+
+        // A new decoder starts for the next file: the sink is configured for its
+        // period and offered its first buffer before the offset is announced.
+        rig.configureFor("second")
+        assertEquals(20_000, rig.scaledAt(OFFSET_US + 200))
+        rig.sink.setOutputStreamOffsetUs(OFFSET_US + 1_000)
+        assertEquals(20_000, rig.scaledAt(OFFSET_US + 300))
+    }
+
+    @Test
+    fun play_20c_a_configuration_for_the_same_period_or_for_none_does_not_change_the_gain() {
+        val rig = Rig()
+        rig.sink.startPlaylist(HALF_DB, DOUBLE_DB)
+        rig.configureFor("first")
+        rig.sink.setOutputStreamOffsetUs(OFFSET_US)
+        assertEquals(5_000, rig.scaledAt(OFFSET_US + 100))
+
+        rig.configureFor("first")
+        rig.configureFor(null)
+        assertEquals(5_000, rig.scaledAt(OFFSET_US + 200))
+    }
+
+    @Test
+    fun play_20c_a_flush_keeps_the_period_so_the_next_one_still_starts_the_next_stream() {
+        val rig = Rig()
+        rig.sink.startPlaylist(HALF_DB, DOUBLE_DB)
+        rig.configureFor("first")
+        rig.sink.setOutputStreamOffsetUs(OFFSET_US)
+        assertEquals(5_000, rig.scaledAt(OFFSET_US + 100))
+
+        // A seek inside the period flushes the sink and configures nothing anew.
+        rig.sink.flush()
+        rig.sink.setOutputStreamOffsetUs(OFFSET_US)
+        assertEquals(5_000, rig.scaledAt(OFFSET_US + 50))
+
+        rig.configureFor("second")
+        assertEquals(20_000, rig.scaledAt(OFFSET_US + 200))
+    }
+
+    @Test
+    fun play_20c_a_seek_back_into_the_first_period_keeps_the_first_tracks_gain() {
+        val rig = Rig()
+        rig.sink.startPlaylist(HALF_DB, DOUBLE_DB)
+        rig.configureFor("first")
+        rig.sink.setOutputStreamOffsetUs(OFFSET_US)
+        rig.scaledAt(OFFSET_US + 100)
+        rig.configureFor("second")
+        assertEquals(20_000, rig.scaledAt(OFFSET_US + 200))
+
+        rig.sink.flush()
+        rig.sink.setOutputStreamOffsetUs(OFFSET_US)
+        rig.configureFor("first")
+        assertEquals(5_000, rig.scaledAt(OFFSET_US + 100))
     }
 }
