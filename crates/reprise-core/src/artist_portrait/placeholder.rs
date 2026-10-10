@@ -127,6 +127,11 @@ const OCEANO_PLACEHOLDER: [u8; PIXEL_COUNT] = [
 pub(super) const REFERENCE_THUMBNAILS: [[u8; PIXEL_COUNT]; 2] =
     [EMPTY_MD5_PLACEHOLDER, OCEANO_PLACEHOLDER];
 
+// The distance below is the minimum over this set; an empty set would make
+// every image look infinitely far from a placeholder, so the set is proven
+// non-empty at compile time instead of being trusted at run time.
+const _: () = assert!(!REFERENCE_THUMBNAILS.is_empty());
+
 pub(super) const PLACEHOLDER_RMSE_MAX: f64 = 0.0025;
 pub(super) const PLACEHOLDER_WARNING_RMSE_MAX: f64 = 0.05;
 
@@ -135,8 +140,6 @@ pub(super) fn placeholder_distance(image: &DynamicImage) -> f64 {
     REFERENCE_THUMBNAILS
         .iter()
         .map(|reference| normalized_rmse(&thumbnail, reference))
-        // An empty reference set would read as "infinitely far from every
-        // placeholder", which is the safe answer.
         .fold(f64::INFINITY, f64::min)
 }
 

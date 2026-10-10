@@ -149,8 +149,7 @@ impl RenderDataSession {
             .chunks_exact(channels)
             .map(|frame| downmix_frame(frame, |sample| f32::from(sample) / 32_768.0))
             .collect();
-        self.push_mono(&mono);
-        Ok(())
+        self.push_mono(&mono)
     }
 
     /// Measures interleaved floating-point PCM before downmixing, then feeds
@@ -172,8 +171,7 @@ impl RenderDataSession {
             .chunks_exact(channels)
             .map(|frame| downmix_frame(frame, |sample| sample))
             .collect::<Vec<_>>();
-        self.push_mono(&mono);
-        Ok(())
+        self.push_mono(&mono)
     }
 
     fn ensure_config(
@@ -214,11 +212,12 @@ impl RenderDataSession {
         Ok(channel_count as usize)
     }
 
-    fn push_mono(&mut self, mono: &[f32]) {
-        // The resampler is set together with the config; samples that arrive
-        // before either exists have no rate to be resampled from and are dropped.
+    fn push_mono(&mut self, mono: &[f32]) -> Result<(), RenderDataSessionError> {
+        // The resampler is set together with the config, and both pushers call
+        // `ensure_config` first. Samples with no rate to be resampled from are
+        // an error rather than silently dropped from the analysis.
         let Some(resampler) = self.resampler.as_mut() else {
-            return;
+            return Err(RenderDataSessionError::InvalidStreamConfig);
         };
         let mut resampled = Vec::with_capacity(mono.len());
         resampler.push(mono, &mut resampled);
@@ -227,6 +226,7 @@ impl RenderDataSession {
             self.spectrogram.push(&resampled);
         }
         self.accumulate_waveform_frames(&resampled);
+        Ok(())
     }
 
     fn accumulate_waveform_frames(&mut self, resampled: &[f32]) {

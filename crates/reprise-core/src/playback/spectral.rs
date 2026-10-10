@@ -181,6 +181,8 @@ pub(crate) struct FftWorkspace {
     scratch: Vec<Complex32>,
     hann: Vec<f32>,
     hann_square_sum: f32,
+    /// A failing transform repeats on every frame; it is reported once.
+    failure_logged: bool,
 }
 
 impl FftWorkspace {
@@ -203,6 +205,7 @@ impl FftWorkspace {
             scratch,
             hann,
             hann_square_sum,
+            failure_logged: false,
         }
     }
 
@@ -221,13 +224,22 @@ impl FftWorkspace {
             *target = sample * multiplier;
         }
         // The buffers are allocated by the plan itself, so this only fails if
-        // that sizing is broken; a silent spectrum is the honest result then.
-        if self
-            .plan
-            .process_with_scratch(&mut self.input, &mut self.spectrum, &mut self.scratch)
-            .is_err()
+        // that sizing is broken. The spectrum then reads as silence, which
+        // would be stored as a real measurement, so the failure is logged
+        // (once, because it repeats every frame).
+        if let Err(error) =
+            self.plan
+                .process_with_scratch(&mut self.input, &mut self.spectrum, &mut self.scratch)
         {
             self.spectrum.fill(Complex32::new(0.0, 0.0));
+            if !self.failure_logged {
+                self.failure_logged = true;
+                tracing::error!(
+                    fft_len = self.input.len(),
+                    %error,
+                    "FFT failed; the spectrum is reported as silence from here on"
+                );
+            }
         }
     }
 

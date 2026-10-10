@@ -43,6 +43,8 @@ pub(crate) struct CavaStage {
     pressure_detector: BassPressureDetector,
     was_enabled: bool,
     seen_stream_generation: u64,
+    /// A wrong bar count repeats on every buffer; it is reported once.
+    bar_mismatch_logged: bool,
 }
 
 impl CavaStage {
@@ -55,6 +57,7 @@ impl CavaStage {
             pressure_detector: BassPressureDetector::new(sample_rate_hz),
             was_enabled: false,
             seen_stream_generation: stream_generation,
+            bar_mismatch_logged: false,
         })
     }
 
@@ -86,12 +89,21 @@ impl CavaStage {
         self.was_enabled = true;
         self.seen_stream_generation = stream_generation;
         // The processor returns its configured bar count; a frame of any other
-        // width is shown as silence rather than aborting the audio thread.
-        let bands: [f32; SPECTRUM_BAND_COUNT] = self
-            .processor
-            .process(pcm)
-            .try_into()
-            .unwrap_or([0.0; SPECTRUM_BAND_COUNT]);
+        // width is shown as silence rather than aborting the audio thread, and
+        // logged once so the silent visualizer has a cause on record.
+        let bars = self.processor.process(pcm);
+        let bar_count = bars.len();
+        let bands: [f32; SPECTRUM_BAND_COUNT] = bars.try_into().unwrap_or_else(|_| {
+            if !self.bar_mismatch_logged {
+                self.bar_mismatch_logged = true;
+                tracing::error!(
+                    bar_count,
+                    expected = SPECTRUM_BAND_COUNT,
+                    "the CAVA processor returned the wrong number of bars; the spectrum shows silence"
+                );
+            }
+            [0.0; SPECTRUM_BAND_COUNT]
+        });
         let pressure = self.pressure_detector.observe(pcm);
         SpectrumFrame::from_cava_bars(bands).with_bass_pressure(pressure)
     }
