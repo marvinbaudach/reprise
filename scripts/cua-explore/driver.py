@@ -463,7 +463,7 @@ class CuaExecutor(MeasuredGeometry):
             }
             if target_label is not None:
                 target = self._target(before_raw, target_label)
-                payload.update(self._address(before_raw, target, "ax"))
+                payload.update(self._scroll_address(before_raw, target))
             return self.transport.call("scroll", payload)
         if isinstance(accepted, ResizeAction):
             return self.transport.resize_window(self.window_id, accepted.width, accepted.height)
@@ -498,7 +498,7 @@ class CuaExecutor(MeasuredGeometry):
             }
             if evidence.target_label is not None:
                 target = self._target(before_raw, evidence.target_label)
-                payload.update(self._address(before_raw, target, "ax"))
+                payload.update(self._scroll_address(before_raw, target))
             return self.transport.call("scroll", payload)
         if evidence.kind == "set-connectivity" and evidence.connectivity_state:
             return self.transport.set_connectivity(evidence.connectivity_state)
@@ -673,6 +673,26 @@ class CuaExecutor(MeasuredGeometry):
             # here keeps its 5 s background wait out of the measured action.
             payload["delivery_mode"] = RAW_INPUT_DELIVERY_MODE
         return payload
+
+    def _scroll_address(
+        self, snapshot: Mapping[str, Any], target: Mapping[str, Any]
+    ) -> Mapping[str, Any]:
+        """Where a scroll aimed at an element goes.
+
+        By element the driver injects the wheel into the main window, and a popover
+        is a window of its own: the wheel never reached it (measured on 0.34.1, three
+        scrolls on the Year facet list left every row where it was). By pixel the
+        driver moves the real pointer onto the target and the window under it takes
+        the wheel, as it does for a click, so a measured target is aimed at by pixel.
+        """
+        origin = self.window_origin or self.hover_geometry
+        if (
+            origin is not None
+            and target.get("geometry_trusted") is True
+            and isinstance(target.get("frame"), dict)
+        ):
+            return self._address(snapshot, target, "px")
+        return self._address(snapshot, target, "ax")
 
     def _address(
         self,

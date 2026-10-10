@@ -25,7 +25,7 @@ sys.path.insert(0, str(EXPLORE_ROOT))
 
 from agents.plans import POPOVER_SCROLL_STEPS, build_phases  # noqa: E402
 from agents.vocabulary import LabelMatcher  # noqa: E402
-from atspi_geometry import GeometryNode, column_header_elements  # noqa: E402
+from atspi_geometry import GeometryNode, column_header_elements, measured_role  # noqa: E402
 from driver import CuaExecutor  # noqa: E402
 from hover_geometry import WindowGeometry  # noqa: E402
 from oracles import ActionEvidence, normalize_snapshot  # noqa: E402
@@ -158,6 +158,38 @@ class ColumnHeaderElementTests(unittest.TestCase):
             self.assertNotEqual(column_header_label(name), name)
 
 
+class MeasuredRoleTests(unittest.TestCase):
+    """What Atspi.get_role_name() answers for a GTK4 column header (measured 2026-10-10)."""
+
+    ROW = "Title Artist Album Year Length Rating"
+
+    def test_a_filler_named_after_a_column_in_the_header_row_is_a_header(self) -> None:
+        for name in ("Title", "Artist", "Album", "Year", "Length", "Rating"):
+            self.assertEqual(measured_role("filler", name, "table row", self.ROW), COLUMN_HEADER_ROLE)
+
+    def test_the_unnamed_spacer_in_front_of_the_headers_is_not_one(self) -> None:
+        self.assertEqual(measured_role("filler", "", "table row", self.ROW), "filler")
+
+    def test_a_filler_elsewhere_keeps_its_role(self) -> None:
+        self.assertEqual(measured_role("filler", "Title", "list item", self.ROW), "filler")
+        self.assertEqual(measured_role("filler", "Title", "table row", "Go to album A Track 1"), "filler")
+
+    def test_the_spelling_the_driver_uses_is_still_a_header(self) -> None:
+        self.assertEqual(measured_role("column header", "Title", "table row", self.ROW), "column header")
+
+    def test_a_walk_of_that_shape_yields_one_clickable_element_per_column(self) -> None:
+        nodes = [FRAME]
+        for index, name in enumerate(("", "Title", "Artist", "Album", "Year", "Length", "Rating")):
+            role = measured_role("filler", name, "table row", self.ROW)
+            nodes.append(node(role, name, 40 + index * 150, 99, 150, 30))
+
+        labels = [item["label"] for item in column_header_elements(nodes, ORIGIN)]
+
+        self.assertEqual(
+            labels, [column_header_label(c) for c in ("Title", "Artist", "Album", "Year", "Length", "Rating")]
+        )
+
+
 class DriverColumnHeaderTests(unittest.TestCase):
     NODES = [FRAME, *HEADERS]
 
@@ -278,6 +310,45 @@ class MatcherTests(unittest.TestCase):
         }
 
         self.assertEqual(self.value("Genre 00", in_popup=False).candidates(observation), ("Genre 00 (4,974)",))
+
+
+class ScrollRouteTests(unittest.TestCase):
+    """A scroll aimed at an item of a popover must reach the popover's own window."""
+
+    def setUp(self) -> None:
+        popover = fixture("stress-2026-10-10-year-popover.json")
+        raw = {"elements": popover["elements"], "popups": popover["popups"], "snapshot_id": "s0000010d"}
+        self.transport = _Transport(raw, flat=True)
+        self.executor = CuaExecutor(
+            self.transport,
+            pid=1,
+            window_id=2,
+            session="t",
+            settle_delays=(),
+            window_origin=WindowGeometry(240, 150, 1600, 1000),
+        )
+
+    def scroll_payload(self, label: str) -> dict:
+        from actions import ScrollAction
+
+        self.executor.execute(
+            ScrollAction(state_id="s", target_label=label, direction="down", amount=1, by="page")
+        )
+        return next(payload for tool, payload in self.transport.calls if tool == "scroll")
+
+    def test_a_measured_item_is_aimed_at_by_pixel_not_by_element(self) -> None:
+        payload = self.scroll_payload("1980 (106)")
+
+        self.assertNotIn("element_token", payload)
+        self.assertNotIn("element_index", payload)
+        # Centre of the item, window-local: (577 + 142, 315 + 18.5) minus the origin (240, 150).
+        self.assertEqual((payload["x"], payload["y"]), (479.0, 183.5))
+
+    def test_an_unmeasured_item_keeps_the_element_address(self) -> None:
+        payload = self.scroll_payload("2004 (105)")
+
+        self.assertIn("element_token", payload)
+        self.assertNotIn("x", payload)
 
 
 class PlanTests(unittest.TestCase):
@@ -568,14 +639,15 @@ class ProtocolTests(unittest.TestCase):
 class _Transport:
     """Answers get_window_state with one fixed snapshot and records every call."""
 
-    def __init__(self, raw):
+    def __init__(self, raw, *, flat=False):
         self.raw = raw
+        self.flat = flat
         self.calls = []
 
     def call(self, tool, payload):
         self.calls.append((tool, payload))
         if tool == "get_window_state":
-            return {"structuredContent": dict(self.raw)}
+            return dict(self.raw) if self.flat else {"structuredContent": dict(self.raw)}
         return {"effect": "confirmed", "summary": "Clicked", "verified": True}
 
     def resize_window(self, *args):
