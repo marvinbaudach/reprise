@@ -56,6 +56,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalLayoutDirection
@@ -346,13 +347,17 @@ private fun MiniPlayer(
                     decorative = true,
                 )
                 Spacer(Modifier.width(12.dp))
-                Column(modifier = Modifier.weight(1f)) {
+                Column(
+                    modifier = Modifier.weight(1f).testTag("library-mini-player-text"),
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                ) {
                     if (needsTextClearance) {
                         Spacer(Modifier.height(8.dp))
                     }
                     Text(
                         text = track.title,
                         style = MaterialTheme.typography.titleMedium,
+                        textAlign = TextAlign.Center,
                         maxLines = 1,
                         overflow = TextOverflow.Ellipsis,
                     )
@@ -360,6 +365,7 @@ private fun MiniPlayer(
                         text = track.artist.ifBlank { "Unknown artist" },
                         style = MaterialTheme.typography.bodyMedium,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        textAlign = TextAlign.Center,
                         maxLines = 1,
                         overflow = TextOverflow.Ellipsis,
                     )
