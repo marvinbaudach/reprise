@@ -13,7 +13,7 @@ SECTIONS = ("Music", "Queue", "Playlists", "Podcasts", "YouTube", "Radio", "My S
 COLUMNS = ("Title", "Artist", "Album", "Year", "Rating")
 # The facet popover shows this many values at once and its list is longer.
 POPOVER_VISIBLE_ITEMS = 6
-POPOVER_SCROLL_ITEMS_PER_PAGE = 4
+POPOVER_SCROLL_ITEMS_PER_TICK = 1
 POPOVER_ITEM_PITCH = 37
 POPOVER_TOP = 290
 FACET_VALUES = {
@@ -158,7 +158,7 @@ class FakeWorld:
                 self.context_menu = "context-menu-missing" not in self.quirks
                 self.context_menu_alternate = False
         elif kind == "scroll" and self.menu_stage and self.menu_stage.startswith("value:"):
-            step = POPOVER_SCROLL_ITEMS_PER_PAGE * int(action.get("amount", 1))
+            step = POPOVER_SCROLL_ITEMS_PER_TICK * int(action.get("amount", 1))
             last = max(0, len(FACET_VALUES[self.menu_stage.split(":", 1)[1]]) - POPOVER_VISIBLE_ITEMS)
             sign = 1 if action.get("direction") == "down" else -1
             self.popover_offset = min(last, max(0, self.popover_offset + sign * step))

@@ -22,6 +22,9 @@ class LabelMatcher:
     # longer than its window, and the tree reports the rows below the fold at the
     # positions they would have; a click there lands on whatever is underneath.
     in_popup: bool = False
+    # Put the middle candidate first. A wheel turned over the top row of a popover
+    # list can land on the search entry above it once the list has moved.
+    prefer_middle: bool = False
     roles: tuple[str, ...] = ()
     require_actionable: bool = True
     require_enabled: bool = True
@@ -105,7 +108,11 @@ class LabelMatcher:
             frame = item.get("frame", {})
             y = float(frame.get("y", 0)) if isinstance(frame, dict) else 0.0
             ranked.append((0 if exact else 1, y, label.casefold(), label))
-        return tuple(item[-1] for item in sorted(ranked))
+        ordered = tuple(item[-1] for item in sorted(ranked))
+        if self.prefer_middle and len(ordered) > 2:
+            middle = len(ordered) // 2
+            return (ordered[middle], *ordered[:middle], *ordered[middle + 1 :])
+        return ordered
 
 
 def _centre_in_any(item: Mapping[str, Any], rectangles: list[dict[str, Any]]) -> bool:

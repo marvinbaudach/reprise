@@ -19,8 +19,11 @@ from ui_vocabulary import (
 )
 
 SOURCES_WITHOUT_REFRESH = ("Radio",)
-# How often a facet popover is scrolled while its wanted value is below the fold.
+# How often a facet popover is scrolled while its wanted value is below the fold,
+# and by how many wheel ticks. One tick moved the Year list by 34 px, a bit less than
+# one of its rows (measured on cua-driver 0.34.1), and 1993 is the 14th of 47.
 POPOVER_SCROLL_STEPS = 6
+POPOVER_SCROLL_TICKS = 3
 # The first ROW_MATCHER hit is the sidebar's "Music" row, not a result.
 RESULT_ROW_MATCHER = LabelMatcher(roles=ROW_MATCHER.roles, results_only=True)
 
@@ -355,7 +358,9 @@ def plan_combined_filter(
         listed_value = LabelMatcher(
             patterns=(rf"{re.escape(option)}(?: \(\d[\d,]*\))?",), in_popup=True
         )
-        any_listed_value = LabelMatcher(patterns=(r".+ \(\d[\d,]*\)",), in_popup=True)
+        any_listed_value = LabelMatcher(
+            patterns=(r".+ \(\d[\d,]*\)",), in_popup=True, prefer_middle=True
+        )
         steps.extend(
             [
                 _activate(f"add-filter-{facet}", "Add filter"),
@@ -370,7 +375,7 @@ def plan_combined_filter(
                         f"scroll-{facet}-values-{number}",
                         "scroll",
                         any_listed_value,
-                        {"direction": "down", "amount": 1, "by": "page"},
+                        {"direction": "down", "amount": POPOVER_SCROLL_TICKS, "by": "page"},
                         required=False,
                         skip_when=listed_value,
                     )

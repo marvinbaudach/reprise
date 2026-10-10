@@ -23,7 +23,7 @@ EXPLORE_ROOT = REPO_ROOT / "scripts" / "cua-explore"
 FIXTURES = REPO_ROOT / "scripts" / "tests" / "fixtures"
 sys.path.insert(0, str(EXPLORE_ROOT))
 
-from agents.plans import POPOVER_SCROLL_STEPS, build_phases  # noqa: E402
+from agents.plans import POPOVER_SCROLL_STEPS, POPOVER_SCROLL_TICKS, build_phases  # noqa: E402
 from agents.vocabulary import LabelMatcher  # noqa: E402
 from atspi_geometry import GeometryNode, column_header_elements, measured_role  # noqa: E402
 from driver import CuaExecutor  # noqa: E402
@@ -285,6 +285,16 @@ class MatcherTests(unittest.TestCase):
     def test_a_value_inside_the_popup_is_picked_with_its_count(self) -> None:
         self.assertEqual(self.value("1985").candidates(self.observation), ("1985 (106)",))
 
+    def test_the_scroll_target_is_the_middle_of_the_visible_items(self) -> None:
+        # The first row can sit under the popover's search entry once the list has
+        # moved, and a wheel turned there never reaches the list.
+        visible = LabelMatcher(patterns=(r".+ \(\d[\d,]*\)",), in_popup=True, prefer_middle=True)
+
+        self.assertEqual(
+            visible.candidates(self.observation),
+            ("1983 (106)", "1980 (106)", "1981 (106)", "1982 (106)", "1984 (105)", "1985 (106)"),
+        )
+
     def test_a_placeholder_frame_never_counts_as_inside_a_popup(self) -> None:
         # 2004 (105) is unresolved and carries the window origin as its position.
         self.assertEqual(self.value("2004").candidates(self.observation), ())
@@ -398,6 +408,8 @@ class PlanTests(unittest.TestCase):
         self.assertLess(names.index(scrolls[-1].name), names.index("choose-value-year"))
         for scroll in scrolls:
             self.assertEqual(scroll.kind, "scroll")
+            self.assertEqual(scroll.fields["amount"], POPOVER_SCROLL_TICKS)
+            self.assertTrue(scroll.matcher.prefer_middle)
             self.assertFalse(scroll.required)
             # Once the wanted value is on screen the scrolling stops.
             self.assertEqual(scroll.skip_when, year.matcher)
