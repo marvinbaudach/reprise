@@ -2,7 +2,7 @@
 slug: never-crash-lints-and-crate-layers
 worktree: /home/marvin/Projects/reprise-never-crash-lints-and-crate-layers
 branch: feature/never-crash-lints-and-crate-layers
-phase: reviewed
+phase: refactored
 codex_session:
 created: 2026-10-10
 ---
