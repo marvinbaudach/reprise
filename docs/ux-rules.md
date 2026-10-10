@@ -413,7 +413,9 @@ result.
   `nav_21_a_small_phone_at_double_font_scale_keeps_every_block_apart`,
   `nav_21_a_small_phone_at_normal_font_scale_keeps_every_block_apart`,
   `nav_21_a_tall_phone_at_double_font_scale_keeps_every_block_apart`,
-  `nav_21_a_tall_phone_at_normal_font_scale_keeps_its_fractional_positions`.
+  `nav_21_a_tall_phone_at_normal_font_scale_keeps_its_fractional_positions`,
+  `nav_21_the_cover_and_seek_bar_do_not_move_from_a_long_title_to_a_short_one`,
+  `nav_21_a_phone_too_short_for_two_title_lines_holds_the_title_to_one`.
 
 ## C. Playback, queue, shuffle, filter
 

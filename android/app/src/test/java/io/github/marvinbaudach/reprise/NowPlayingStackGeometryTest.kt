@@ -63,15 +63,6 @@ class NowPlayingStackGeometryTest {
     }
 
     @Test
-    fun theReservedRoomDoesNotDependOnTheTrack() {
-        // Nothing about the track is an input: two tracks get one geometry.
-        assertEquals(
-            nowPlayingStackGeometry(inputs(heightDp = 598f)),
-            nowPlayingStackGeometry(inputs(heightDp = 598f)),
-        )
-    }
-
-    @Test
     fun aScreenTooShortForAnyLayoutStillReturnsASaneCover() {
         val geometry = nowPlayingStackGeometry(inputs(heightDp = 300f, seekLabelDp = 32f))
 

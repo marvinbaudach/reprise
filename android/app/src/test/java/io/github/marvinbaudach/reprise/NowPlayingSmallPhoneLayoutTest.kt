@@ -5,6 +5,7 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
 import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.testTag
@@ -46,6 +47,8 @@ class NowPlayingSmallPhoneLayoutTest {
     @get:Rule
     val compose = createAndroidComposeRule<ComponentActivity>()
 
+    private val trackTitle = mutableStateOf(LONG_TITLE)
+
     @Test
     @Config(sdk = [36], qualifiers = "w360dp-h640dp-port-xxhdpi")
     fun nav_21_a_small_phone_at_double_font_scale_keeps_every_block_apart() {
@@ -54,6 +57,35 @@ class NowPlayingSmallPhoneLayoutTest {
         assertBlocksDoNotOverlap()
         assertTransportStaysPut()
         assertCoverKeepsMostOfItsSize()
+    }
+
+    @Test
+    @Config(sdk = [36], qualifiers = "w360dp-h640dp-port-xxhdpi")
+    fun nav_21_the_cover_and_seek_bar_do_not_move_from_a_long_title_to_a_short_one() {
+        showSheet(fontScale = 2f)
+        val coverWithLongTitle = bounds("now-playing-scene-cover")
+        val seekWithLongTitle = bounds("now-playing-seek")
+
+        trackTitle.value = SHORT_TITLE
+        compose.waitForIdle()
+
+        assertEquals(coverWithLongTitle, bounds("now-playing-scene-cover"))
+        assertEquals(seekWithLongTitle, bounds("now-playing-seek"))
+    }
+
+    @Test
+    @Config(sdk = [36], qualifiers = "w360dp-h600dp-port-xxhdpi")
+    fun nav_21_a_phone_too_short_for_two_title_lines_holds_the_title_to_one() {
+        showSheet(fontScale = 2f)
+
+        assertBlocksDoNotOverlap()
+        assertTransportStaysPut()
+        assertCoverKeepsMostOfItsSize()
+        val title = bounds("now-playing-title")
+        assertTrue(
+            "the long title must be held to one line: $title",
+            (title.bottom - title.top).value < ONE_LINE_AT_DOUBLE_SCALE_LIMIT_DP,
+        )
     }
 
     @Test
@@ -75,7 +107,7 @@ class NowPlayingSmallPhoneLayoutTest {
     @Test
     @Config(sdk = [36], qualifiers = "w412dp-h916dp-port")
     fun nav_21_a_tall_phone_at_normal_font_scale_keeps_its_fractional_positions() {
-        showSheet(fontScale = 1f, title = SHORT_TITLE)
+        showSheet(fontScale = 1f, openingTitle = SHORT_TITLE)
 
         assertFractionalPositions()
         assertBlocksDoNotOverlap()
@@ -156,7 +188,8 @@ class NowPlayingSmallPhoneLayoutTest {
 
     private fun bounds(tag: String): DpRect = compose.onNodeWithTag(tag).getUnclippedBoundsInRoot()
 
-    private fun showSheet(fontScale: Float, title: String = LONG_TITLE) {
+    private fun showSheet(fontScale: Float, openingTitle: String = LONG_TITLE) {
+        trackTitle.value = openingTitle
         compose.setContent {
             RepriseTheme(theme, darkPalette = true) {
                 val density = LocalDensity.current
@@ -166,7 +199,7 @@ class NowPlayingSmallPhoneLayoutTest {
                 ) {
                     Box(Modifier.fillMaxSize().padding(top = STATUS_BAR_DP.dp).testTag("frame-root")) {
                         NowPlayingSheet(
-                            track = configurationTestTrack(1190, title),
+                            track = configurationTestTrack(1190, trackTitle.value),
                             playback = PlaybackUiState(),
                             surfaceLayout = SurfaceLayout.STACKED,
                             close = {},
@@ -196,6 +229,9 @@ class NowPlayingSmallPhoneLayoutTest {
         const val LONG_TITLE =
             "Everything That Happens Will Happen Today (Extended Remaster Version)"
         const val SHORT_TITLE = "Gesture zone"
+
+        /** One title line at 2.0 is about 43 dp (29 sp, scaled nonlinearly); two are about 86. */
+        const val ONE_LINE_AT_DOUBLE_SCALE_LIMIT_DP = 60f
         const val STATUS_BAR_DP = 42
         const val NAVIGATION_BAR_DP = 24f
         const val TOLERANCE_DP = 1f
