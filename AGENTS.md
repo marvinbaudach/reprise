@@ -260,13 +260,16 @@ exist.)
   `reprise-runtime-protocol`, `reprise-stems`, `reprise-android-ffi`, `reprise-platform-linux`,
   `reprise-cli` and `reprise-mcp` — every crate whose layer-table row says `deny`;
   `reprise-gnome` is still `pending` — may not call `unwrap`, `expect`, `panic!`, `todo!`,
-  `unimplemented!` or `unreachable!`. Each lib and bin root carries the same
-  `#![cfg_attr(not(test), deny(...))]` for those six `clippy::` lints; test builds are
-  exempt. Return an error instead. A genuine, documented invariant is the only exception, as
-  `#[expect(clippy::<lint>, reason = "…")]` at its site, never `#[allow]` (an allow never goes
-  stale, and the gate rejects it). The exact suppression count is `panic_lint_budget` in
-  `scripts/check-crate-layers.sh`; it fails when it grows and when it shrinks without the
-  budget being lowered.
+  `unimplemented!` or `unreachable!`. Those six calls are all the lints remove: panics from
+  `[]` indexing and slicing are out of scope (`clippy::indexing_slicing` is not in the set).
+  Each lib and bin root carries the same `#![cfg_attr(not(test), deny(...))]` naming exactly
+  those six `clippy::` lints; test builds are exempt, and so are examples and integration
+  tests, which the gate does not scan. Return an error instead. A genuine, documented
+  invariant is the only exception, as `#[expect(clippy::<lint>, reason = "…")]` at its site,
+  never `#[allow]` (an allow never goes stale, and the gate rejects it, as it does an allow or
+  expect of `clippy::restriction`). The exact suppression count of each crate is its entry in
+  `panic_lint_budgets` in `scripts/check-crate-layers.sh`; it fails when a crate's count grows
+  and when it shrinks without that crate's budget being lowered.
 - **RefCell discipline** (the #1 recurring panic class): never hold a `Ref`/`RefMut` across a
   call that can re-enter GTK/callbacks — clone/copy the value out in its own statement first.
 - GTK cell widgets with per-row async work use a **generation token** so a recycled row never

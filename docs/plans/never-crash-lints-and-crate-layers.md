@@ -2,7 +2,7 @@
 slug: never-crash-lints-and-crate-layers
 worktree: /home/marvin/Projects/reprise-never-crash-lints-and-crate-layers
 branch: feature/never-crash-lints-and-crate-layers
-phase: planned
+phase: reviewed
 codex_session:
 created: 2026-10-10
 ---
@@ -13,7 +13,9 @@ Two hardening measures adapted from PhotoCraft (github.com/storytold/photocraft)
 1. **Never-crash lints.** Production code in eight of the nine workspace crates may
    not call `unwrap`, `expect`, `panic!`, `todo!`, `unimplemented!` or
    `unreachable!`. Clippy enforces this. Every remaining exception is a counted
-   `#[expect(…, reason)]` at its site.
+   `#[expect(…, reason)]` at its site. Those six calls are what the lints remove;
+   panics from `[]` indexing and slicing, `assert!` and `RefCell` borrows remain and are
+   out of scope (see the non-goals).
 2. **A table-driven crate layer check.** `scripts/check-architecture.sh` delegates to a new `scripts/check-crate-layers.sh` with one
    table that names every workspace crate. Each row lists the crate's allowed direct
    workspace edges and its banned dependency families. The gate fails on a crate the
@@ -54,14 +56,15 @@ The work starts from `origin/dev` at `ad74ee08c9`.
   None holds a multi-step invariant across a lock. A panic on one proxy thread
   therefore must not cascade into every later lock. Recovery goes through
   `PoisonError::into_inner`, as Task 2 specifies.
-- **Ratchet.** An exact suppression budget in `scripts/check-crate-layers.sh`, modelled on the
+- **Ratchet.** An exact suppression budget, kept per crate (`panic_lint_budgets`) in
+  `scripts/check-crate-layers.sh`, modelled on the
   existing `too_many_arguments_budget` block (origin/dev lines 312–330):
   - It fails when the count grows.
   - It fails when the count shrinks without the budget being lowered.
   - A stale `#[expect]` already fails by itself, through
     `unfulfilled_lint_expectations` under `-D warnings`.
 - **Non-goals:**
-  - `clippy::indexing_slicing` (core 245, view 14)
+  - `clippy::indexing_slicing` (core 245, view 14): index and slice panics stay possible
   - `assert!` in production code
   - `RefCell` borrow panics
   - `reprise-gnome`
