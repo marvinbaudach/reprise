@@ -232,11 +232,11 @@ fn drain_snapshots(
         if shutting_down.load(Ordering::Relaxed) {
             return;
         }
-        let mut committed = false;
+        let mut committed = None;
         for wait in RETRY_BACKOFFS {
             match try_commit_latest(writer, &latest, flush_state) {
-                CommitOutcome::Committed => {
-                    committed = true;
+                CommitOutcome::Committed(sequence) => {
+                    committed = Some(sequence);
                     break;
                 }
                 CommitOutcome::RetryableFailure => {}
@@ -252,25 +252,21 @@ fn drain_snapshots(
                 return;
             }
         }
-        if !committed {
+        if committed.is_none() {
             match try_commit_latest(writer, &latest, flush_state) {
-                CommitOutcome::Committed => committed = true,
+                CommitOutcome::Committed(sequence) => committed = Some(sequence),
                 CommitOutcome::RetryableFailure => {}
                 CommitOutcome::PermanentFailure => return,
             }
         }
-        if committed {
-            // A successful commit consumes the snapshot that was committed, and
-            // `try_commit_latest` never reports one without a snapshot. Should
-            // that ever break, flush waiters are woken instead of left blocked.
+        if let Some(sequence) = committed {
+            // The commit reports the sequence it wrote, so flush waiters are
+            // released by that sequence whatever `latest` holds. The committed
+            // snapshot is the one `latest` still holds.
             debug_assert!(latest.is_some(), "a commit succeeded without a snapshot");
-            match latest.take() {
-                Some(snapshot) => {
-                    snapshot_file.remove_if_sequence(snapshot.sequence);
-                    mark_committed(flush_state, snapshot.sequence);
-                }
-                None => wake_flush_waiters(flush_state),
-            }
+            latest = None;
+            snapshot_file.remove_if_sequence(sequence);
+            mark_committed(flush_state, sequence);
             continue;
         }
         match queued.recv_timeout(RETRY_WAKEUP) {
@@ -298,7 +294,8 @@ fn keep_newest(latest: &mut Option<PendingSnapshot>, candidate: PendingSnapshot)
 }
 
 enum CommitOutcome {
-    Committed,
+    /// The snapshot with this sequence is in the database.
+    Committed(u64),
     RetryableFailure,
     PermanentFailure,
 }
@@ -330,7 +327,7 @@ fn try_commit(writer: &Mutex<Db>, snapshot: &PendingSnapshot) -> CommitOutcome {
         }
     };
     match queue_persistence::save(&database, &snapshot.queue) {
-        Ok(()) => CommitOutcome::Committed,
+        Ok(()) => CommitOutcome::Committed(snapshot.sequence),
         Err(error) => {
             tracing::warn!(
                 %error,
@@ -367,10 +364,6 @@ fn mark_committed(flush_state: &Arc<(Mutex<FlushState>, Condvar)>, sequence: u64
         state.successful_commits += 1;
     }
     changed.notify_all();
-}
-
-fn wake_flush_waiters(flush_state: &Arc<(Mutex<FlushState>, Condvar)>) {
-    flush_state.1.notify_all();
 }
 
 fn mark_worker_stopped(flush_state: &Arc<(Mutex<FlushState>, Condvar)>) {
