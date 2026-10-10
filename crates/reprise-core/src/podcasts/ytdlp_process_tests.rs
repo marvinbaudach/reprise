@@ -4,12 +4,12 @@ use std::{
     fs::{self, OpenOptions},
     os::unix::fs::PermissionsExt,
     path::{Path, PathBuf},
-    process::Command,
+    process::{Command, Stdio},
     time::{Duration, Instant},
 };
 
 use super::test_support::{fake_binary, short_timeouts, CapturedLogs};
-use super::{collect_output, spawn_retrying_busy, YtDlp, YtDlpTimeouts};
+use super::{collect_output, spawn_retrying_busy, take_pipes, YtDlp, YtDlpTimeouts};
 
 #[test]
 fn missing_binary_and_failed_process_are_readable() {
@@ -350,3 +350,35 @@ fn zombie_process_state_counts_as_exited() {
 
 #[cfg(not(target_os = "linux"))]
 fn assert_process_exits(_pid: u32) {}
+
+#[test]
+fn a_child_without_pipes_is_killed_and_reported() {
+    let mut child = Command::new("sleep")
+        .arg("30")
+        .stdin(Stdio::null())
+        .stdout(Stdio::null())
+        .stderr(Stdio::null())
+        .spawn()
+        .unwrap();
+    let started = Instant::now();
+
+    let error = take_pipes(&mut child, "probe");
+
+    assert!(error.is_err(), "a child without pipes cannot be supervised");
+    let status = child.wait().unwrap();
+    assert!(!status.success(), "the child must have been killed");
+    assert!(started.elapsed() < Duration::from_secs(10));
+}
+
+#[test]
+fn a_child_with_both_pipes_hands_them_over() {
+    let mut child = Command::new("true")
+        .stdin(Stdio::null())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()
+        .unwrap();
+
+    assert!(take_pipes(&mut child, "probe").is_ok());
+    child.wait().unwrap();
+}

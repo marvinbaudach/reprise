@@ -11,7 +11,8 @@ use std::{
 
 use super::{
     activate, constant_time_eq, register, register_resolved_with_refresh, register_with_refresh,
-    revoke, revoke_active, StreamProxyError, StreamSource, CLIENT_WRITE_TIMEOUT,
+    revoke, revoke_active, running_server, StreamProxyError, StreamSource, ACTIVE_TOKEN,
+    CLIENT_WRITE_TIMEOUT,
 };
 use crate::podcasts::ytdlp::ResolvedAudio;
 
@@ -524,6 +525,34 @@ fn activating_a_new_session_revokes_the_previous_token() {
     assert_eq!(request(&second_url, None).body, data);
     revoke_active();
     assert_eq!(request(&second_url, None).status, 404);
+}
+
+#[test]
+fn poisoned_proxy_locks_do_not_stop_registration_or_revocation() {
+    let data = fixture_bytes(16);
+    let origin = FakeOrigin::new(data.clone());
+    let server = running_server().unwrap();
+    let registrations = Arc::clone(&server.registrations);
+    let poisoned_registrations = thread::spawn(move || {
+        let _guard = registrations.lock().unwrap();
+        panic!("poison the registrations lock");
+    })
+    .join();
+    let poisoned_active = thread::spawn(|| {
+        let _guard = ACTIVE_TOKEN.lock().unwrap();
+        panic!("poison the active-token lock");
+    })
+    .join();
+    assert!(poisoned_registrations.is_err() && poisoned_active.is_err());
+    assert!(server.registrations.is_poisoned() && ACTIVE_TOKEN.is_poisoned());
+
+    // Revoking only looks at the token's own id, so it leaves a session another
+    // test may have activated alone.
+    let token = register(origin.url(), data.len() as u64).unwrap();
+    let url = token.playback_url.clone();
+    assert_eq!(request(&url, None).body, data);
+    revoke(&token);
+    assert_eq!(request(&url, None).status, 404);
 }
 
 #[test]
