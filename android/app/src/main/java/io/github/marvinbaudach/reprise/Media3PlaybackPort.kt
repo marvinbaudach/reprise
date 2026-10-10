@@ -36,6 +36,7 @@ private const val POSITION_INTERVAL_MS = 500L
 private const val MAX_PLAYBACK_ERROR_CAUSES = 3
 private const val MAX_PLAYBACK_ERROR_SUMMARY_LENGTH = 1_024
 private const val TAG = "ReprisePlayback"
+private const val MICROS_PER_MILLI = 1_000L
 
 internal fun playbackErrorSummary(errorCodeName: String, error: Throwable): String {
     val detail = error.message ?: errorCodeName
@@ -227,7 +228,7 @@ internal class Media3PlaybackPort(
     private fun startWithGain(request: PlaybackRequest, gainDb: Double) {
         ensureKnown(request.key)
         dispatch.call {
-            trackGainSink?.startPlaylist(gainDb, next?.let { nextGainDb })
+            trackGainSink?.startPlaylist(gainDb, next?.let { nextGainDb }, continuationUs(request, next))
             start(itemFor(request))
         }
     }
@@ -303,7 +304,7 @@ internal class Media3PlaybackPort(
         dispatch.call {
             next = request
             nextGainDb = item?.gainDb ?: 0.0
-            trackGainSink?.setNextGain(item?.gainDb)
+            trackGainSink?.setNextGain(item?.gainDb, continuationUs(currentRequest(), request))
             applyNextItem()
         }
     }
@@ -335,6 +336,10 @@ internal class Media3PlaybackPort(
     }
 
     /** The item for [request], with its playable URI read by [playbackUri] so a colon in a local path stays a path. */
+    /** What the player is playing now, as the port asked for it. */
+    private fun currentRequest(): PlaybackRequest? =
+        player.currentMediaItem?.localConfiguration?.tag as? PlaybackRequest
+
     private fun itemFor(request: PlaybackRequest): MediaItem {
         val item = items.build(request)
         return item.buildUpon().setUri(playbackUri(request.key.uri)).build()
@@ -479,6 +484,17 @@ private object CoreEqualizerCurveProjector : EqualizerCurveProjector {
             )
         },
     ).map { projected -> projected.gainDb }
+}
+
+/**
+ * Where in its file [next] picks up where [current] ends, when it does so
+ * without a gap: two tracks cut from one file by a CUE sheet. The gain sink
+ * switches gain at that position inside the buffer that holds it.
+ */
+internal fun continuationUs(current: PlaybackRequest?, next: PlaybackRequest?): Long? {
+    val end = current?.segment?.endMs ?: return null
+    val start = next?.segment?.startMs ?: return null
+    return if (current.key.uri == next.key.uri && end == start) start * MICROS_PER_MILLI else null
 }
 
 /** Who [this] item is and which stretch of its file it plays; its gain travels apart. */
