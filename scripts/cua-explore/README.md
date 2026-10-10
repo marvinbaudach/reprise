@@ -501,10 +501,13 @@ listed below, and none of it is an app defect that is known today.
 - `batch-edit` stops after the write, in the audit and not in the app. `selection_observed`
   looks for "512 tracks" in the indexed elements, but the dialog title "Edit 512 Tracks" is a
   `label` node that cua-driver does not index; it appears only in `tree_markdown`.
-  `scroll_anchor_restored` compares row positions before and after the write; the written
-  rows come back with an empty Artist and Album and a length of 0:01 (most likely the
-  committed fixture FLAC carries no such tags, not measured), so the list sorted by Artist
-  reorders and no row keeps its position.
+  `scroll_anchor_restored` compares row positions before and after the write. On the
+  2026-10-08 rerun the written rows came back with an empty Artist and Album and a length
+  of 0:01, because the copied fixture FLAC carried no tags, so the list sorted by Artist
+  reordered and no row kept its position. That cause is removed in the fixture: each copy
+  is now tagged with the values of its database row and the row stores the audio's real
+  length, so a re-read no longer changes Artist, Album or Length. The mission has not been
+  rerun since, so whether `scroll_anchor_restored` now holds is not measured.
 - cua-driver cannot click an item of a popup menu through its own `click`: on 0.33.3 and
   0.34.0 `Edit tags…` answers `element_bounds_unavailable` and the MPX fallback times out,
   so the plan clicks it by pixel. The other items of that menu are not exercised.
@@ -657,7 +660,12 @@ D-Bus session, AT-SPI registry, CUA daemon, XDG data/cache/config roots, and a
 fake audio sink. It never launches on the live Wayland session.
 
 All catalog rows are generated. Writable tag targets are independent copies of
-the committed sine-wave FLAC fixture inside a disposable, disk-backed profile
+the committed sine-wave FLAC fixture, each tagged in place with `metaflac` (title,
+artist, album, album artist, genre, year and track number) from the same values that
+fill its database row, so the application reads back what the database says. The
+launcher therefore requires `metaflac`, and the manifest records one sha256 per copy
+(`writable_audio_sha256_by_file`) as the baseline `batch-edit` is audited against.
+They live inside a disposable, disk-backed profile
 under `~/.cache/reprise-scratch` or the ignored worktree scratch root. Fixture
 creation rejects existing paths and every path outside those two approved
 scratch roots, including the real Reprise data and Music directories. The 100,000-row
