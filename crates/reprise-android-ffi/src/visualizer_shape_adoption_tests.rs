@@ -2,8 +2,11 @@ use super::*;
 
 #[test]
 fn current_bands_reports_the_engines_displayed_bars() {
-    let engine = AndroidVisualEngine::new();
+    let clock = Arc::new(FakeMonotonicClock::default());
+    let engine = AndroidVisualEngine::with_clock(clock.clone());
     engine.set_playing(true);
+    // Past a fresh start's wait for the first PCM.
+    clock.advance(Duration::from_millis(500));
     engine.ingest_bands(vec![0.4; 24]);
 
     let bands = engine.current_bands();

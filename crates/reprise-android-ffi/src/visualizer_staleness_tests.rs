@@ -214,8 +214,10 @@ fn stale_live_pcm_reopens_the_stored_spectrogram_fallback() {
 
     let stored_bands = vec![0.35; 24];
     engine.ingest_bands(stored_bands.clone());
-    let fallback = AndroidVisualEngine::with_clock(clock);
+    let fallback = AndroidVisualEngine::with_clock(clock.clone());
     fallback.set_playing(true);
+    // Past a fresh start's wait for the first PCM.
+    clock.advance(Duration::from_millis(500));
     fallback.ingest_bands(stored_bands);
 
     let stale_scene = decode_scene(&engine.scene(272.0, 272.0));

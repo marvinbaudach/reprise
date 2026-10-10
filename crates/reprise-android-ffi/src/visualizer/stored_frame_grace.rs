@@ -29,6 +29,10 @@ pub(crate) const ADOPTED_SHAPE_STORED_FRAME_GRACE: Duration = Duration::from_mil
 pub(crate) struct StoredFrameGrace {
     until: Option<Duration>,
     remembered: Option<Vec<f32>>,
+    // Whether the deadline guards a fresh start rather than an adopted shape:
+    // the engine then also stays on its resting projection, and a pause ends
+    // the grace.
+    fresh_start: bool,
 }
 
 impl StoredFrameGrace {
@@ -36,17 +40,49 @@ impl StoredFrameGrace {
     pub(crate) fn begin(&mut self, now: Duration) {
         self.until = Some(now.saturating_add(ADOPTED_SHAPE_STORED_FRAME_GRACE));
         self.remembered = None;
+        self.fresh_start = false;
+    }
+
+    /// Arms the deadline for a fresh start: stored frames wait for the first
+    /// PCM, and the engine keeps its resting projection until then.
+    pub(crate) fn begin_fresh_start(&mut self, now: Duration) {
+        self.begin(now);
+        self.fresh_start = true;
     }
 
     /// Ends the grace and forgets the remembered frame.
     pub(crate) fn clear(&mut self) {
         self.until = None;
         self.remembered = None;
+        self.fresh_start = false;
+    }
+
+    /// Ends a fresh start's grace, and only that: a swipe's grace survives the
+    /// pause blip of an item change.
+    pub(crate) fn end_fresh_start(&mut self) {
+        if self.fresh_start {
+            self.clear();
+        }
+    }
+
+    /// Whether the deadline of a fresh start's grace is still ahead.
+    pub(crate) fn holds_fresh_start(&self, now: Duration) -> bool {
+        self.fresh_start && self.until.is_some_and(|deadline| now < deadline)
+    }
+
+    /// Whether the grace is running, whatever it guards.
+    pub(crate) fn is_running(&self, now: Duration) -> bool {
+        self.until.is_some_and(|deadline| now < deadline)
     }
 
     /// Holds `bands` back and remembers them (latest only) while the grace
     /// runs; returns whether the caller must leave the display alone.
     pub(crate) fn hold(&mut self, bands: &[f32], now: Duration) -> bool {
+        // A track with no stored analysis has no frame to flash: its resting
+        // scene shows at once instead of the cover waiting out the grace.
+        if self.fresh_start && bands.is_empty() {
+            return false;
+        }
         if self.until.is_some_and(|deadline| now < deadline) {
             self.remembered = Some(bands.to_vec());
             return true;
@@ -70,6 +106,48 @@ impl StoredFrameGrace {
 }
 
 impl VisualState {
+    /// Whether anything gives the engine a picture to play: stored analysis
+    /// (not while a fresh start still waits for the first PCM), an adopted
+    /// shape, live audio, or a reset that holds the display.
+    pub(super) fn has_audio(&self, now: Duration) -> bool {
+        if self.stored_frame_grace.holds_fresh_start(now) {
+            return false;
+        }
+        self.has_analysis
+            || self.adopted_shape_hold.is_active()
+            || self.has_live_audio
+            || self.awaiting_stream_after_reset
+    }
+
+    /// Called on the edge into playing. A stream with no audio of its own yet
+    /// and no adopted shape to continue would otherwise draw the stored frame
+    /// at its own normalisation for the first-PCM delay, then drop to the live
+    /// level (#1181). Waits like a swipe's adopted shape does, bounded by the
+    /// same grace.
+    pub(super) fn begin_fresh_start_hold(&mut self, now: Duration) {
+        if self.has_live_audio
+            || self.adopted_shape_hold.is_active()
+            || self.stored_frame_grace.is_running(now)
+        {
+            return;
+        }
+        self.stored_frame_grace.begin_fresh_start(now);
+        self.set_engine_playing(self.playing && self.has_audio(now), now);
+    }
+
+    /// Hands the screen back to the stored analysis once a fresh start's grace
+    /// has run out with no PCM and no frame left to ingest. Returns whether
+    /// the engine started playing.
+    pub(super) fn release_expired_fresh_start_hold(&mut self, now: Duration) -> bool {
+        if !self.stored_frame_grace.fresh_start || self.stored_frame_grace.is_running(now) {
+            return false;
+        }
+        self.stored_frame_grace.clear();
+        let was_playing = self.engine_playing;
+        self.set_engine_playing(self.playing && self.has_audio(now), now);
+        self.engine_playing != was_playing
+    }
+
     /// Installs one stored-analysis frame as the displayed shape.
     pub(super) fn ingest_stored_frame(&mut self, bands: &[f32], now: Duration) {
         let has_analysis = !bands.is_empty();
@@ -101,6 +179,7 @@ impl VisualState {
             return false;
         };
         self.ingest_stored_frame(&bands, now);
+        self.stored_frame_grace.clear();
         true
     }
 }
