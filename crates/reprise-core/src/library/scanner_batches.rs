@@ -16,17 +16,28 @@ use super::{
 
 pub(super) const SCAN_LEASE_ITEMS: usize = 16;
 
-struct PreparedItem {
+struct PreparedItem<Action> {
     observed: Option<(PathBuf, bool)>,
-    action: PreparedAction,
+    action: Action,
 }
 
+/// What the first lease decided for one walk item; an import has not had its
+/// tags read yet.
 enum PreparedAction {
+    Error(LibraryWalkError),
+    Skip(EntryOutcome),
+    Import { plan: Box<ImportPlan> },
+}
+
+/// The same decision once the tags between the two leases are read. An import
+/// cannot reach the second lease without its metadata, so the write lease never
+/// has to read a file.
+enum ReadyAction {
     Error(LibraryWalkError),
     Skip(EntryOutcome),
     Import {
         plan: Box<ImportPlan>,
-        meta: Box<Option<Result<super::track_meta::MetaOutcome, ScanError>>>,
+        meta: Box<Result<super::track_meta::MetaOutcome, ScanError>>,
     },
 }
 
@@ -151,10 +162,7 @@ fn process_batch<'source>(
                     let action = if is_file {
                         match entry::classify_entry(&mut scan, &path, metadata)? {
                             EntryPlan::Skip(outcome) => PreparedAction::Skip(outcome),
-                            EntryPlan::Import(plan) => PreparedAction::Import {
-                                plan,
-                                meta: Box::new(None),
-                            },
+                            EntryPlan::Import(plan) => PreparedAction::Import { plan },
                         }
                     } else {
                         PreparedAction::Skip(EntryOutcome::Directory)
@@ -170,22 +178,34 @@ fn process_batch<'source>(
         Ok(())
     })?;
 
-    for item in &mut prepared {
-        if let PreparedAction::Import { plan, meta } = &mut item.action {
-            let path = plan.path();
-            if let Some(sheet) = plan.governing() {
-                cues.ensure_parsed(source, sheet, path);
+    let mut prepared = prepared
+        .into_iter()
+        .map(|item| {
+            let action = match item.action {
+                PreparedAction::Error(error) => ReadyAction::Error(error),
+                PreparedAction::Skip(outcome) => ReadyAction::Skip(outcome),
+                PreparedAction::Import { plan } => {
+                    let path = plan.path();
+                    if let Some(sheet) = plan.governing() {
+                        cues.ensure_parsed(source, sheet, path);
+                    }
+                    let meta = Box::new(super::track_meta::read_meta_with_fallback(source, path));
+                    ReadyAction::Import { plan, meta }
+                }
+            };
+            PreparedItem {
+                observed: item.observed,
+                action,
             }
-            **meta = Some(super::track_meta::read_meta_with_fallback(source, path));
-        }
-    }
+        })
+        .collect::<Vec<_>>();
 
     let mut advanced_paths = Vec::new();
     // A batch that only skips unchanged files writes nothing, so it keeps the
     // deferred transaction that never takes the lock.
     let writes = prepared
         .iter()
-        .any(|item| !matches!(item.action, PreparedAction::Skip(_)));
+        .any(|item| !matches!(item.action, ReadyAction::Skip(_)));
     leases.run(writer, &mut |conn| {
         let tx = if writes {
             crate::events::immediate_transaction(conn)?
@@ -206,22 +226,17 @@ fn process_batch<'source>(
                 }
             }
             let (path, outcome) = match item.action {
-                PreparedAction::Error(error) => (
+                ReadyAction::Error(error) => (
                     None,
                     record_walk_error(source, &tx, &mut state.trace.failed, root, &error)?,
                 ),
-                PreparedAction::Skip(outcome) => (
+                ReadyAction::Skip(outcome) => (
                     item.observed.as_ref().map(|(path, _)| path.as_path()),
                     outcome,
                 ),
-                PreparedAction::Import { plan, meta } => {
+                ReadyAction::Import { plan, meta } => {
                     let path = item.observed.as_ref().map(|(path, _)| path.as_path());
-                    // The read loop above fills `meta` for every import before
-                    // the second lease; reading here is only the safety net for
-                    // an item that loop somehow skipped.
-                    let meta = (*meta).unwrap_or_else(|| {
-                        super::track_meta::read_meta_with_fallback(source, plan.path())
-                    });
+                    let meta = *meta;
                     let outcome = entry::apply_entry(&mut scan, &plan, meta)?;
                     (path, outcome)
                 }
