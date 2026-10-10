@@ -28,6 +28,8 @@ python3 scripts/tests/cua-explore-outcome.py
 python3 scripts/tests/cua-explore-aggregate.py
 python3 scripts/tests/cua-explore-search-results.py
 python3 scripts/tests/cua-explore-section-handles.py
+python3 scripts/tests/cua-explore-deck-audits.py
+python3 scripts/tests/cua-explore-batch-sort-audits.py
 python3 scripts/cua-explore/protocol.py validate-mission \
   scripts/cua-explore/missions/first-time-exploration.json >/dev/null
 

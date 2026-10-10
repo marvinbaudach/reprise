@@ -257,7 +257,7 @@ checks additionally require each cached source row exactly once during the
 offline visit and after reconnect. The batch checkpoint is audited
 independently: exactly 512 private database rows must carry the pinned genre and
 year, exactly 512 disposable FLAC copies must have changed, and no other row may
-carry those values. Reprise does not show a selection count outside the tag dialog; the batch audit therefore accepts the dialog title as evidence—the missing display is an open UX finding, not a harness property. Exhausting the action budget without an explicit `finish`
+carry those values. Reprise does not show a selection count outside the tag dialog; the batch audit therefore accepts the dialog title, read from the tree labels, as evidence—the missing display is an open UX finding, not a harness property. Exhausting the action budget without an explicit `finish`
 is a failed run. Arbitrary text,
 shell commands, destructive targets, stale element indices, unknown actions,
 URLs, and exhausted budgets fail closed. The agent process receives only a
@@ -304,6 +304,46 @@ links marks none and every consumer falls back to its rows. The trace projection
 duplicate-row checks all read the same list. The mission file lists routes in one order
 and the agent, which reads it with sorted keys, walks them in another, so the
 `section-search` audit looks each route up on its own.
+
+## What the harness adds to the driver's tree
+
+`get_window_state` indexes the nodes a client can act on. Four things the audits and the
+plans need are not among them, and the harness reads them itself.
+
+- **Unindexed labels.** A dialog title, the two halves of a filter chip ("Genre", "Genre 00")
+  and the list's own counter ("4,974 of 100,000 tracks") appear only in `tree_markdown`, on
+  lines that read `- label = "..."`. `tree_labels.py` parses them, in tree order, and the
+  observation carries them as `tree_labels`; `ActionTrace` keeps them before and after each
+  action. The batch audit reads the tag dialog title ("Edit 512 Tracks") there, the filter audit
+  reads a chip as the facet name followed directly by its value, and a facet counts as applied
+  when its chip is new and the rows or the counter changed (sorted by artist, the first page
+  can be identical before and after a genre filter).
+- **Column headers.** The headers are `column header` nodes in `tree_markdown` with no element
+  index, and the header row is one `row` labelled with all six names, so a click addressed to
+  it lands on the middle of the row. A mission that sorts (`sort-cycle`, or a batch edit with
+  `sort_by`) asks the executor for the headers: it adds one element per header from its own
+  walk, labelled `<Name> column header` (the bare name is also a facet in the Add filter popover
+  and a field in the tag dialog), with the walk's rectangle and no AT-SPI action, so a click goes
+  by pixel inside that header. The sort audit credits a column only for a click on its own header.
+- **Popups.** The driver reports an open popover as its own window (`popups`), and the tree lists
+  every row of a scrolled list at the position it would have, below the popover. The observation
+  carries the popup rectangles, a matcher can ask for elements `in_popup`, and the filter plan
+  scrolls the value list (`POPOVER_SCROLL_STEPS` pages at most, aimed at an item that is visible)
+  until the wanted value is inside the popover before it clicks. A value is matched by pattern
+  against its count ("1993 (106)"), because `contains` also takes a track row that holds the digits.
+
+- **Source cards.** Podcasts and YouTube list a show or a channel as one card, a
+  `gtk::Expander` whose header is a button with an `activate` action, and keep the episode
+  behind it; the cached episode is in the tree only once the card is open. The offline plan
+  therefore opens a card after it opens its section, while the page lists no result (the app
+  keeps a card open across visits, and a second click would fold it again), and the offline
+  audit reads the whole visit, from the section click to the next section, connectivity
+  change or restart, instead of the state right after the section click.
+
+The batch workload names its anchor: `anchor_title_pattern` picks the title cell out of a row label
+(a row label is every cell, and the edit rewrites the year), and `sort_by` sorts by a column the
+edit leaves alone first. The scroll anchor holds only when at least five rows are on both sides and
+every one of them kept its position; a few rows that happen to keep theirs prove nothing.
 
 ## Evidence
 
@@ -480,78 +520,60 @@ when the host is busy.
 
 ## Known gaps on cua-driver 0.33 and 0.34
 
-The deck runs every mission to a finish instead of aborting. On the generated profiles
-`first-time-exploration`, `hover-affordance-sweep` and `section-search-isolation` reach
-`mission_complete`. `large-library-stress` does not. The rerun on 2026-10-08 (cua-driver
-0.34.0, release build of `dev` at `ea9513aa30`) completes `sort-cycle` and `scroll-sweep`
-and writes 512 of 512 files and database rows in `batch-edit`; what still stops it is
-listed below, and none of it is an app defect that is known today.
+The deck runs every mission to a finish instead of aborting. `offline-recovery`,
+`large-library-stress` and `section-search-isolation` reach `mission_complete` on cua-driver 0.34.1
+(every `run-manifest.txt` records the driver version); `first-time-exploration` and
+`hover-affordance-sweep` were last measured on 0.33.3. The reruns on
+2026-10-10 (`dev` at `bfebd274bb` plus this branch, seed 11, release build) ended with all four
+stress workloads complete and both offline workloads complete. Four things stopped them before,
+and all four were in the deck rather than in the app: the sort audit credited five columns for
+24 clicks that all hit one pixel of the header row; the batch audit keyed its scroll anchor on a
+label that holds the year the edit rewrites, on a list sorted by that year, and looked for the
+dialog title among nodes the driver does not index; the filter plan clicked a value below the
+fold of its popover; and the offline audit looked for an episode that a podcast card keeps
+folded. What each of them needed is under "What the harness adds to the driver's tree" above.
 
-- The three app blockers are gone: the Add filter rows and the context menu items carry
-  accessible names (issues 1157 and 1158), and a header click sorts (issue 1159). The
-  reasons the deck still ends incomplete are in the deck and the driver.
-- `sort-cycle` passes its audit, but only the Artist header is ever clicked. The agent
-  addresses the header row by its one label "Title Artist Album Year Length Rating", so every
-  click lands on the middle of the row (the same pixel 24 times) and the audit, which matches
-  a column name as a substring of that label, credits all five columns. The row order did
-  toggle on every click, so sorting works for Artist; Title, Album, Year and Rating are
-  untested. The column headers are `column header` nodes in the tree without an element
-  index, so the executor has nothing to aim at; the fix is a per-column pixel click from the
-  harness's own walk.
-- `batch-edit` stops after the write, in the audit and not in the app. `selection_observed`
-  looks for "512 tracks" in the indexed elements, but the dialog title "Edit 512 Tracks" is a
-  `label` node that cua-driver does not index; it appears only in `tree_markdown`.
-  `scroll_anchor_restored` compares row positions before and after the write. On the
-  2026-10-08 rerun the written rows came back with an empty Artist and Album and a length
-  of 0:01, because the copied fixture FLAC carried no tags, so the list sorted by Artist
-  reordered and no row kept its position. That cause is removed in the fixture: each copy
-  is now tagged with the values of its database row and the row stores the audio's real
-  length, so a re-read no longer changes Artist, Album or Length. The mission has not been
-  rerun since, so whether `scroll_anchor_restored` now holds is not measured.
+What is still open:
+
 - cua-driver cannot click an item of a popup menu through its own `click`: on 0.33.3 and
   0.34.0 `Edit tags…` answers `element_bounds_unavailable` and the MPX fallback times out,
-  so the plan clicks it by pixel. The other items of that menu are not exercised.
-- `combined-filter` picks "Fixture Genre 00 (64)" for the label "Genre 00" because the
-  writable fixtures carry a genre of their own, and it clicks "1993 (1)" and the Rating value
-  by pixel although the list is scrolled and the row is outside the popover. The mission also
-  expects the chip label "Genre: Genre 00"; the app now exposes the chip as two unindexed
-  labels, "Genre" and the value. Two oracles misfire on the same popover:
-  `misrouted-click` reads the facet name that appears after "Add filter" as a different click,
-  and `invisible-actionable` flags rows of a scrolled popover list.
-- The plan opens the search popover and then fills the tag dialog by key. Ctrl+F closes the
-  popover and keeps the query; Escape clears it, and a `press` aimed at the search entry
-  clicks a point taken from the entry's untrusted geometry first, which dismisses the popover
-  and sends the key to the list (Enter played a track).
-
-Other gaps that are still open:
-
-- `offline-recovery` ends incomplete. The 2026-10-08 rerun passes `restart`,
-  `refresh_before_loss` and `retry_while_offline`; the plan used to click Refresh from the
-  Radio view, which has none, and looked for "Retry" and "No connection" where the app says
-  "Try again" and "You're offline" (the banner heading is an unindexed label, so the restart
-  check reads the banner's "Try again" button instead). What still fails is
-  `source_rows_single_and_retained` for Podcasts and YouTube: those views list the show or
-  channel card ("Fixture Podcast", "Fixture Channel") and keep the episode that carries the
-  fixture needle behind the card's expander, so the audit never sees it.
+  so the plan clicks it by pixel. The other items of that menu are not exercised, and the
+  pixel click has not been compared with the driver's own on 0.34.1.
+- Two oracles misfire on the Add filter popover, three times each per run. Both file their
+  finding as an error that blocks the gate (`blocks_gate: true`); the deck itself is advisory
+  (`automatic_gate` is always false) and the mission completes. `misrouted-click` reads the
+  facet name that appears after "Add filter" as a different click, and `invisible-actionable`
+  flags the rows of a scrolled popover list, which the tree reports below the window. Neither
+  is an app finding.
+- Ctrl+F did not close the search popover in any of the 2026-10-10 runs, although SEARCH-6
+  says it toggles it: the popover is still listed as open before the next click, and that
+  click only dismisses it. The plan therefore spends one click on the header it is about to
+  sort by (`dismiss-popover-before-sort-before-edit`) and opens the search box with its
+  opener before typing into it. Whether the app breaks SEARCH-6 or the injected key does not
+  reach the popover's window has not been established; issue 1261 asks a person with a real
+  keyboard to try it.
+- The sort audit counts every click on a column header that moved the rows, so the one that
+  sorts the batch edit's list by Title is counted as well (25 matching of 24 required in the
+  last run). A sort-cycle that missed one of its own clicks would not be noticed.
 - A result shaped as a button that carries a click or an action is not counted as a result
   (`search_results.py`): the audit would read a list made of such buttons as empty. A source
   card, whose action is `activate`, is no result either, and is only checked for being
   listed once (`agent-duplicate-cached-row`). Every result seen on 0.33 is a data row or a
   text-only button.
-- The sidebar headings (LIBRARY, PLAYLISTS, SMART) and the new-playlist button are not in
-  the accessibility tree at all - not in cua-driver's walk and not in a plain `Atspi`
-  walk of the same session - although the screenshot draws them. The hover sweep
-  therefore reaches the Playlists section through the playlist the generated profile
-  carries (`section_handles`) instead of the audit skipping the section; the missing
-  heading and button are a candidate NAV-11 defect.
-- The bundled agent's plans address rows and the column-header row with `dispatch: ax`.
-  Neither offers an AT-SPI click, and the driver refuses to aim at them by element. The
-  executor therefore sends such a click by pixel (`dispatch: px`, with the
-  `frame_scale`-corrected point, no accessibility probe afterwards) and records the
-  reroute as `dispatch_rerouted` in the step response. Only when there is no window
-  origin or frame to aim at does the click stay undelivered; it is then a
-  `driver-action-undelivered` note at confidence 0.3 with `blocks_gate: false`, never an
-  app finding. `no-accessible-action` is reserved for a click that was delivered and did
+- The sidebar headings (LIBRARY, PLAYLISTS, SMART) and the new-playlist button used to be
+  missing from the accessibility tree - from cua-driver's walk and from a plain `Atspi`
+  walk of the same session - although the screenshot drew them. On `bfebd274bb` they are
+  there (`heading "PLAYLISTS"`, `button "New playlist"`, indexed), so the candidate NAV-11
+  defect no longer holds on the `large-library-stress` profile. The hover sweep still
+  reaches the Playlists section through the playlist the generated profile carries
+  (`section_handles`); it has not been rerun against the heading since.
+- The bundled agent's plans address list rows with `dispatch: ax`. A row offers no AT-SPI
+  click, and the driver refuses to aim at it by element. The executor therefore sends such a
+  click by pixel (`dispatch: px`, with the `frame_scale`-corrected point, no accessibility
+  probe afterwards) and records the reroute as `dispatch_rerouted` in the step response. Only
+  when there is no window origin or frame to aim at does the click stay undelivered; it is
+  then a `driver-action-undelivered` note at confidence 0.3 with `blocks_gate: false`, never
+  an app finding. `no-accessible-action` is reserved for a click that was delivered and did
   nothing.
 
 ## Semantic dispatch fallback

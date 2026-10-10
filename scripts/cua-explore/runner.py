@@ -36,7 +36,11 @@ from report import RunReport
 from oracles import Finding
 from search_results import result_elements
 from ui_vocabulary import BUSY_ROLES, BUSY_WORDS
-from workload_audit import ActionTrace, audit_action_workload
+from workload_audit import (
+    ActionTrace,
+    audit_action_workload,
+    workloads_click_column_headers,
+)
 from launch import (
     AppLifecycle,
     HoverSmokeComplete,
@@ -216,6 +220,11 @@ def _observation_labels(observation: Mapping[str, Any]) -> tuple[str, ...]:
     )
 
 
+def _observation_tree_labels(observation: Mapping[str, Any]) -> tuple[str, ...]:
+    labels = observation.get("tree_labels", [])
+    return tuple(str(label) for label in labels) if isinstance(labels, list) else ()
+
+
 def _trace_from_observations(
     action: Mapping[str, Any],
     before: Mapping[str, Any],
@@ -278,6 +287,8 @@ def _trace_from_observations(
             for item in after_elements
             if item.get("label")
         ),
+        before_tree_labels=_observation_tree_labels(before),
+        after_tree_labels=_observation_tree_labels(after),
         finding_codes=tuple(finding_codes),
         state_changed=before.get("state_signature") != after.get("state_signature"),
         after_busy=any(
@@ -362,6 +373,7 @@ def launch_executor(
         window_origin=window_origin,
         generation=generation,
         geometry_measurements=geometry_measurements,
+        column_headers=workloads_click_column_headers(mission.workloads),
     )
     return pid, window_id, generation, window_origin, executor
 

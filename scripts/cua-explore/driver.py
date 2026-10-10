@@ -29,6 +29,7 @@ from click_routing import (
     route_actionless_click,
     undelivered_finding,
 )
+from driver_geometry import MeasuredGeometry
 from driver_transport import (
     RAW_INPUT_DELIVERY_MODE,
     CliTransport,
@@ -96,7 +97,7 @@ class StepResult:
     findings: tuple[Finding, ...]
 
 
-class CuaExecutor:
+class CuaExecutor(MeasuredGeometry):
     """Resolves every action from a fresh snapshot and verifies it afterward."""
 
     def __init__(
@@ -116,6 +117,7 @@ class CuaExecutor:
         window_origin: Any | None = None,
         generation: int | None = None,
         geometry_measurements: list[dict[str, Any]] | None = None,
+        column_headers: bool = False,
     ) -> None:
         self.transport = transport
         self.pid = pid
@@ -133,6 +135,9 @@ class CuaExecutor:
         # The driver's own frames carry no usable position under X11/Xvfb, so
         # the geometry provider walks the accessibility tree for us.
         self.geometry_provider = geometry_provider
+        # Lend the walk's column headers to the observation, which the driver
+        # does not index; only the missions that sort ask for them.
+        self.column_headers = column_headers
         self.window_origin = window_origin
         self.generation = generation
         self.geometry_measurements = geometry_measurements if geometry_measurements is not None else []
@@ -306,25 +311,31 @@ class CuaExecutor:
             and before.state_signature == after.state_signature
         ):
             target = self._target(after_raw, evidence.target_label)
-            probe_response = self.transport.call(
-                "click",
-                {
-                    "pid": self.pid,
-                    "window_id": self.window_id,
-                    "session": self.session,
-                    **self._address(after_raw, target, "ax"),
-                },
-            )
-            response = {**response, "ax_probe": probe_response}
-            _probe_raw, probe = self._snapshot(
-                f"step-{self._step_counter:04}-ax-probe"
-            )
-            # A probe the driver could not deliver proves nothing about the
-            # target, whatever the snapshot after it looks like.
-            ax_probe_changed = response_dispatched(probe_response) and (
-                after.state_signature != probe.state_signature
-            )
-            settled.append(probe)
+            # An element the harness lent to the observation (a column header)
+            # has no index the driver could be asked to click.
+            if (
+                isinstance(target.get("element_token"), str)
+                or isinstance(target.get("element_index"), int)
+            ):
+                probe_response = self.transport.call(
+                    "click",
+                    {
+                        "pid": self.pid,
+                        "window_id": self.window_id,
+                        "session": self.session,
+                        **self._address(after_raw, target, "ax"),
+                    },
+                )
+                response = {**response, "ax_probe": probe_response}
+                _probe_raw, probe = self._snapshot(
+                    f"step-{self._step_counter:04}-ax-probe"
+                )
+                # A probe the driver could not deliver proves nothing about the
+                # target, whatever the snapshot after it looks like.
+                ax_probe_changed = response_dispatched(probe_response) and (
+                    after.state_signature != probe.state_signature
+                )
+                settled.append(probe)
         sample_gaps = []
         for index, delay in enumerate(self.settle_delays, start=1):
             time.sleep(delay)
@@ -452,7 +463,7 @@ class CuaExecutor:
             }
             if target_label is not None:
                 target = self._target(before_raw, target_label)
-                payload.update(self._address(before_raw, target, "ax"))
+                payload.update(self._scroll_address(before_raw, target))
             return self.transport.call("scroll", payload)
         if isinstance(accepted, ResizeAction):
             return self.transport.resize_window(self.window_id, accepted.width, accepted.height)
@@ -487,7 +498,7 @@ class CuaExecutor:
             }
             if evidence.target_label is not None:
                 target = self._target(before_raw, evidence.target_label)
-                payload.update(self._address(before_raw, target, "ax"))
+                payload.update(self._scroll_address(before_raw, target))
             return self.transport.call("scroll", payload)
         if evidence.kind == "set-connectivity" and evidence.connectivity_state:
             return self.transport.set_connectivity(evidence.connectivity_state)
@@ -522,114 +533,6 @@ class CuaExecutor:
             json_path.write_text(json.dumps(raw, indent=2, sort_keys=True) + "\n", encoding="utf-8")
         return raw, normalize_snapshot(raw, state_id=state_id, captured_ms=captured_ms)
 
-    def with_measured_geometry(
-        self, raw: Mapping[str, Any], *, state_id: str
-    ) -> Mapping[str, Any]:
-        """Replace the driver's placeholder positions with measured ones."""
-        origin = self.window_origin or self.hover_geometry
-        if self.geometry_provider is None or origin is None:
-            return raw
-        from atspi_geometry import GeometryError, resolve_driver_geometry
-
-        structured = raw.get("structuredContent")
-        container = structured if isinstance(structured, dict) else raw
-        elements = container.get("elements")
-        if not isinstance(elements, list):
-            failure = "snapshot carries no element list"
-            self.geometry_failures.append(failure)
-            self._record_geometry(state_id, trusted=False, failure=failure)
-            return self._untrusted(raw, failure)
-        try:
-            resolution = resolve_driver_geometry(
-                elements, self.geometry_provider(), origin
-            )
-        except GeometryError as error:
-            failure = str(error)
-            self.geometry_failures.append(failure)
-            self._record_geometry(state_id, trusted=False, failure=failure)
-            return self._untrusted(raw, failure)
-        self.geometry_calibration = resolution.calibration
-        self.geometry_resolution = resolution.as_record()
-        frames = resolution.frames
-        if not resolution.trusted:
-            failure = (
-                "no element could be matched to a measured position "
-                f"({resolution.driver_elements} driver elements, "
-                f"{resolution.walk_nodes} walk nodes)"
-            )
-            self.geometry_failures.append(failure)
-            self._record_geometry(
-                state_id,
-                trusted=False,
-                failure=failure,
-                resolution=self.geometry_resolution,
-                calibration=self.geometry_calibration,
-            )
-            return self._untrusted(raw, "no element resolved")
-        self._record_geometry(
-            state_id,
-            trusted=True,
-            resolution=self.geometry_resolution,
-            calibration=self.geometry_calibration,
-        )
-        rebuilt = []
-        for index, element in enumerate(elements):
-            if not isinstance(element, dict):
-                rebuilt.append(element)
-                continue
-            rect = frames.get(int(element.get("element_index", index)))
-            if rect is None:
-                rebuilt.append({**element, "geometry_trusted": False})
-                continue
-            rebuilt.append(
-                {
-                    **element,
-                    "geometry_trusted": True,
-                    "actions": list(resolution.actions.get(
-                        int(element.get("element_index", index)), ()
-                    )),
-                    "frame": {
-                        "x": rect[0],
-                        "y": rect[1],
-                        "w": rect[2],
-                        "h": rect[3],
-                    },
-                }
-            )
-        if container is raw:
-            return {**raw, "elements": rebuilt, "geometry_trusted": True}
-        return {
-            **raw,
-            "structuredContent": {**structured, "elements": rebuilt},
-            "geometry_trusted": True,
-        }
-
-    def _record_geometry(
-        self,
-        state_id: str,
-        *,
-        trusted: bool,
-        failure: str | None = None,
-        resolution: Mapping[str, Any] | None = None,
-        calibration: Mapping[str, Any] | None = None,
-    ) -> None:
-        record: dict[str, Any] = {
-            "generation": self.generation,
-            "state_id": state_id,
-            "trusted": trusted,
-        }
-        if failure is not None:
-            record["failure"] = failure
-        if resolution is not None:
-            record["resolution"] = dict(resolution)
-        if calibration is not None:
-            record["calibration"] = dict(calibration)
-        self.geometry_measurements.append(record)
-
-    @staticmethod
-    def _untrusted(raw: Mapping[str, Any], note: str) -> Mapping[str, Any]:
-        return {**raw, "geometry_trusted": False, "geometry_note": note}
-
     def _observation(self, state: Snapshot) -> dict[str, Any]:
         return {
             "schema_version": SCHEMA_VERSION,
@@ -639,6 +542,8 @@ class CuaExecutor:
             "degraded": state.degraded,
             "geometry_trusted": state.geometry_trusted,
             "actionable_labels": list(state.actionable_labels),
+            "tree_labels": list(state.tree_labels),
+            "popups": [dataclasses.asdict(frame) for frame in state.popups],
             "elements": [
                 {
                     "key": element.stable_key,
@@ -768,6 +673,26 @@ class CuaExecutor:
             # here keeps its 5 s background wait out of the measured action.
             payload["delivery_mode"] = RAW_INPUT_DELIVERY_MODE
         return payload
+
+    def _scroll_address(
+        self, snapshot: Mapping[str, Any], target: Mapping[str, Any]
+    ) -> Mapping[str, Any]:
+        """Where a scroll aimed at an element goes.
+
+        By element the driver injects the wheel into the main window, and a popover
+        is a window of its own: the wheel never reached it (measured on 0.34.1, three
+        scrolls on the Year facet list left every row where it was). By pixel the
+        driver moves the real pointer onto the target and the window under it takes
+        the wheel, as it does for a click, so a measured target is aimed at by pixel.
+        """
+        origin = self.window_origin or self.hover_geometry
+        if (
+            origin is not None
+            and target.get("geometry_trusted") is True
+            and isinstance(target.get("frame"), dict)
+        ):
+            return self._address(snapshot, target, "px")
+        return self._address(snapshot, target, "ax")
 
     def _address(
         self,

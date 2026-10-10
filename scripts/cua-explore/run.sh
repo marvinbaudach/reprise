@@ -221,6 +221,7 @@ session_id="reprise-explore-$$"
   printf 'ordinary_ci=false\n'
   printf 'app_network_namespace=true\n'
   printf 'gtk_animations=%s\n' "$gtk_animations"
+  printf 'cua_driver=%s\n' "$("$CUA_DRIVER_BIN" --version)"
 } >"$output_dir/run-manifest.txt"
 
 cua_common_start_display "$output_dir" "$scratch_root" "1920x1200x24"

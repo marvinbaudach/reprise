@@ -18,7 +18,12 @@ from collections import Counter
 from dataclasses import dataclass
 from typing import Any, Mapping, Sequence
 
-from ui_vocabulary import WINDOW_ROLES, canonical_role
+from ui_vocabulary import (
+    COLUMN_HEADER_ROLE,
+    WINDOW_ROLES,
+    canonical_role,
+    column_header_label,
+)
 
 
 # The frame node is the CSD window including its shadow border, so children can
@@ -383,6 +388,67 @@ def resolve_driver_geometry(
     )
 
 
+# The role name AT-SPI itself reports for a GTK4 ColumnView header: cua-driver prints
+# `column header`, but `Atspi.Accessible.get_role_name()` of the same node answers
+# `filler` (measured on Reprise, GTK 4.22, 2026-10-10: each header is a `filler`
+# named after its column, a child of the `table row` that is named with all of them
+# and holds nothing else). The node has the Action interface but no action.
+HEADER_FILLER_ROLE = "filler"
+HEADER_ROW_ROLES = frozenset({"table row", "tablerow"})
+
+
+def measured_role(role: str, label: str, parent_role: str, parent_label: str) -> str:
+    """The role the harness files a walked node under.
+
+    A `filler` that sits directly in a table row and carries one of the words the
+    row is named by is a column header, whatever AT-SPI calls it; every other node
+    keeps the role it was walked with.
+    """
+    if (
+        canonical_role(role) == HEADER_FILLER_ROLE
+        and parent_role.strip().casefold() in HEADER_ROW_ROLES
+        and label.strip()
+        and label.strip() in parent_label
+    ):
+        return COLUMN_HEADER_ROLE
+    return role
+
+
+def column_header_elements(
+    nodes: Sequence[GeometryNode], origin: Any
+) -> list[dict[str, Any]]:
+    """One element per column header the walk found, in the driver's element shape.
+
+    cua-driver lists a `column header` node in `tree_markdown` but gives it no
+    element index, so no agent could aim at it and a header row clicked as one
+    label always lands on the middle of the row. The walk has the node's own
+    rectangle, so the harness lends it to the observation: a label of its own
+    (`ui_vocabulary.column_header_label`), no AT-SPI action - which routes a
+    click to the pointer - and the rectangle measured the same way element
+    geometry is. A header that is not inside the window is left out.
+    """
+    elements = []
+    for node in normalize_to_frame(nodes):
+        if canonical_role(node.role) != COLUMN_HEADER_ROLE or not node.label.strip():
+            continue
+        rect = (origin.x + node.x, origin.y + node.y, node.width, node.height)
+        if node.width <= 1 or node.height <= 1 or not _inside(rect, origin):
+            continue
+        elements.append(
+            {
+                "role": COLUMN_HEADER_ROLE,
+                "label": column_header_label(node.label),
+                "column": node.label.strip(),
+                "actions": [],
+                "enabled": True,
+                "geometry_trusted": True,
+                "synthetic": "atspi-walk",
+                "frame": {"x": rect[0], "y": rect[1], "w": rect[2], "h": rect[3]},
+            }
+        )
+    return elements
+
+
 def _inside(rect: tuple[float, float, float, float], origin: Any) -> bool:
     slack = WINDOW_BOUNDS_TOLERANCE_PX
     return not (
@@ -474,7 +540,7 @@ def walk_window_nodes(
 
     nodes: list[GeometryNode] = []
 
-    def visit(node: Any, depth: int) -> None:
+    def visit(node: Any, depth: int, parent_role: str = "", parent_label: str = "") -> None:
         if len(nodes) >= MAX_WALK_NODES or depth > MAX_WALK_DEPTH:
             return
         try:
@@ -493,7 +559,7 @@ def walk_window_nodes(
             raise GeometryError(f"node {len(nodes)} exposes no component interface")
         nodes.append(
             GeometryNode(
-                role=role,
+                role=measured_role(role, label, parent_role, parent_label),
                 label=label,
                 x=float(extents.x),
                 y=float(extents.y),
@@ -509,7 +575,7 @@ def walk_window_nodes(
         for index in range(count):
             child = node.get_child_at_index(index)
             if child is not None:
-                visit(child, depth + 1)
+                visit(child, depth + 1, role, label)
 
     visit(frame, 0)
     return nodes

@@ -18,7 +18,7 @@
   },
   "oracles": ["clean-runtime", "feedback", "waiting-state", "layout-shift", "pointer-reachability", "scroll-direction", "main-loop-stall", "accessibility", "hover-affordance"],
   "workloads": [
-    {"kind": "batch-edit", "selection_count": 512, "field_tokens": {"genre": "BATCH_GENRE", "year": "BATCH_YEAR"}, "verify": ["progress", "atomic-result", "selection", "scroll-anchor"]},
+    {"kind": "batch-edit", "selection_count": 512, "field_tokens": {"genre": "BATCH_GENRE", "year": "BATCH_YEAR"}, "sort_by": "title", "anchor_title_pattern": "Writable Batch \\d+", "verify": ["progress", "atomic-result", "selection", "scroll-anchor"]},
     {"kind": "sort-cycle", "columns": ["title", "artist", "album", "year", "rating"], "repetitions": 24},
     {"kind": "combined-filter", "facets": ["genre", "year", "rating"], "active_labels": {"genre": "Genre: Genre 00", "year": "Year: 1993", "rating": "Rating: 4"}, "include_search": true, "search_token": "SEARCH_NEEDLE"},
     {"kind": "scroll-sweep", "directions": ["down", "up"], "pages": 40}

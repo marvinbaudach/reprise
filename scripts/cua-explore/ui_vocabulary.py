@@ -73,8 +73,14 @@ SOFT_HOVER_ROLES = frozenset(
 # The driver spells a GTK text entry "text box"; the tag editor fields use it.
 ENTRY_ROLES = frozenset({"entry", "search box", "text field", "text box"})
 VALUE_BEARING_ROLES = frozenset({*ENTRY_ROLES, "slider", "spin button"})
+# A column header is not in cua-driver's element list at all. The harness adds
+# one element per header from its own accessibility walk (see
+# `atspi_geometry.column_header_elements`), and a header click sorts the list, so
+# it is an action target although the hover sweep has no contract for it.
+COLUMN_HEADER_ROLE = "column header"
+COLUMN_HEADER_LABEL_SUFFIX = " column header"
 ACTIONABLE_ROLES = frozenset(
-    {*BUTTON_ROLES, *SOFT_HOVER_ROLES, *ENTRY_ROLES, "switch"}
+    {*BUTTON_ROLES, *SOFT_HOVER_ROLES, *ENTRY_ROLES, "switch", COLUMN_HEADER_ROLE}
 )
 WINDOW_ROLES = frozenset({"window", "frame", "dialog", "application"})
 BUSY_ROLES = frozenset({"progress bar", "spinner", "status", "statusbar"})
@@ -110,6 +116,17 @@ KNOWN_SECTION_LABELS = (
     "Missing Files",
     "Library Doctor",
 )
+
+
+def column_header_label(column: str) -> str:
+    """The label the harness gives a column header, distinct from every other node.
+
+    The tree's own name for the header is the bare column name, which is also the
+    name of the facet "Year" in the Add filter popover and of the "Title" field in
+    the tag dialog. A target is resolved by label, so the bare name would be
+    ambiguous exactly when two of them are on screen.
+    """
+    return f"{str(column).strip()}{COLUMN_HEADER_LABEL_SUFFIX}"
 
 
 def canonical_role(role: str) -> str:
