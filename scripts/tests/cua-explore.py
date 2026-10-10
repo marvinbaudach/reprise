@@ -418,7 +418,7 @@ class FixtureAudioTagTests(unittest.TestCase):
             with self.assertRaisesRegex(FixtureError, "metaflac"):
                 self.write_tracks()
 
-        self.assertEqual(list(self.music.glob("*.flac")), [])
+        self.assertFalse(self.music.exists())
 
     def test_audit_counts_a_file_against_its_own_baseline(self) -> None:
         self.write_tracks()
