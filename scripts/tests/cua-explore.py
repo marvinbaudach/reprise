@@ -1,7 +1,9 @@
 #!/usr/bin/env python3
 
+import dataclasses
 import json
 import pathlib
+import shutil
 import sqlite3
 import subprocess
 import sys
@@ -419,6 +421,109 @@ class FixtureAudioTagTests(unittest.TestCase):
                 self.write_tracks()
 
         self.assertFalse(self.music.exists())
+
+    def metaflac_stub(self, total_samples: str, sample_rate: str, stderr: str = "") -> str:
+        """A directory holding a metaflac that answers only the two stream-info flags."""
+        stub_dir = self.root / "stub-bin"
+        stub_dir.mkdir()
+        stub = stub_dir / "metaflac"
+        stub.write_text(
+            "#!/bin/sh\n"
+            f"echo '{stderr}' >&2\n"
+            'case "$1" in\n'
+            f"  --show-total-samples) echo {total_samples} ;;\n"
+            f"  --show-sample-rate) echo {sample_rate} ;;\n"
+            "esac\n",
+            encoding="utf-8",
+        )
+        stub.chmod(0o755)
+        return str(stub_dir)
+
+    def test_unknown_total_samples_is_a_fixture_error_not_a_zero_length(self) -> None:
+        stub_dir = self.metaflac_stub("0", "44100", stderr="stream info is damaged")
+        with mock.patch.dict("os.environ", {"PATH": stub_dir}):
+            with self.assertRaisesRegex(FixtureError, "total samples"):
+                self.write_tracks()
+
+        self.assertFalse(self.music.exists())
+
+    def test_a_failing_stream_info_read_reports_what_metaflac_said(self) -> None:
+        stub_dir = self.metaflac_stub("not-a-number", "44100", stderr="stream info is damaged")
+        with mock.patch.dict("os.environ", {"PATH": stub_dir}):
+            with self.assertRaisesRegex(FixtureError, "stream info is damaged"):
+                self.write_tracks()
+
+    def test_manifest_audio_bytes_is_the_sum_of_the_tagged_copies(self) -> None:
+        plan = dataclasses.replace(
+            build_plan("writable-512"),
+            profile="tagged-test",
+            track_count=self.TRACKS,
+            writable_track_count=self.TRACKS,
+        )
+        profile_root = self.root.parent / f"{fixtures.SCRATCH_PREFIX}manifest-bytes"
+        self.addCleanup(shutil.rmtree, profile_root, ignore_errors=True)
+
+        def seed(_binary: pathlib.Path, db_path: pathlib.Path, count: int) -> dict:
+            with sqlite3.connect(db_path) as conn:
+                conn.execute(
+                    "CREATE TABLE tracks (id INTEGER PRIMARY KEY, path TEXT, title TEXT, "
+                    "artist TEXT, album TEXT, album_artist TEXT, genre TEXT, year INTEGER, "
+                    "track_no INTEGER, rating INTEGER, duration_ms INTEGER)"
+                )
+                conn.executemany(
+                    "INSERT INTO tracks (id, path, title, duration_ms) VALUES (?, '', '', 0)",
+                    [(index + 1,) for index in range(count)],
+                )
+            return {"generated_tracks": count}
+
+        with mock.patch.dict(fixtures.PLANS, {"tagged-test": plan}), mock.patch.object(
+            fixtures, "_seed_database", side_effect=seed
+        ):
+            fixtures.prepare_profile("tagged-test", profile_root, pathlib.Path("unused"))
+
+        manifest = json.loads((profile_root / "fixture-manifest.json").read_text())
+        on_disk = sum(path.stat().st_size for path in (profile_root / "music").glob("*.flac"))
+        self.assertGreater(on_disk, fixtures.SOURCE_FIXTURE.stat().st_size * self.TRACKS)
+        self.assertEqual(manifest["writable_audio_bytes"], on_disk)
+
+    def test_audit_reports_a_file_without_baseline_instead_of_aborting(self) -> None:
+        self.write_tracks()
+        self.conn.execute("UPDATE tracks SET genre = 'Batch Genre', year = 2042")
+        self.conn.commit()
+        baseline = fixtures._audio_baseline(self.music)
+        extra = f"Writable Batch {self.TRACKS + 1:04}.flac"
+        shutil.copyfile(self.music / "Writable Batch 0001.flac", self.music / extra)
+        (self.root / "fixture-manifest.json").write_text(
+            json.dumps(
+                {
+                    "writable_track_count": self.TRACKS + 1,
+                    "writable_audio_sha256_by_file": baseline,
+                }
+            ),
+            encoding="utf-8",
+        )
+        self.conn.execute(
+            "INSERT INTO tracks (id, path, title, genre, year, duration_ms) "
+            "VALUES (?, '', 'Writable Batch 0004', 'Batch Genre', 2042, 0)",
+            (self.TRACKS + 1,),
+        )
+        self.conn.commit()
+        for path in sorted(self.music.glob("*.flac")):
+            subprocess.run(
+                ["metaflac", "--set-tag=GENRE=Batch Genre", str(path)], check=True
+            )
+        workload = {
+            "kind": "batch-edit",
+            "selection_count": self.TRACKS + 1,
+            "field_tokens": {"genre": "BATCH_GENRE", "year": "BATCH_YEAR"},
+        }
+        tokens = {"BATCH_GENRE": "Batch Genre", "BATCH_YEAR": "2042"}
+
+        audit = fixtures.audit_batch_edit(self.root, workload, tokens)
+
+        self.assertEqual(audit["audio_files_without_baseline"], [extra])
+        self.assertEqual(audit["audio_files_found"], self.TRACKS + 1)
+        self.assertFalse(audit["complete"])
 
     def test_audit_counts_a_file_against_its_own_baseline(self) -> None:
         self.write_tracks()

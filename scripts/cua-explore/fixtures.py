@@ -86,12 +86,18 @@ def _flac_stream_info(metaflac: str, path: pathlib.Path, flag: str) -> int:
     try:
         return int(completed.stdout.strip())
     except ValueError as error:
-        raise FixtureError(f"metaflac {flag} failed for {path.name}") from error
+        raise FixtureError(
+            f"metaflac {flag} failed for {path.name}: {completed.stderr.strip()[:200]}"
+        ) from error
 
 
 def _source_duration_ms(metaflac: str) -> int:
     samples = _flac_stream_info(metaflac, SOURCE_FIXTURE, "--show-total-samples")
     rate = _flac_stream_info(metaflac, SOURCE_FIXTURE, "--show-sample-rate")
+    # metaflac prints 0 when the stream does not record its length, and a zero
+    # here would seed every database row with a silent 0 ms duration.
+    if samples <= 0:
+        raise FixtureError("committed audio fixture reports no total samples")
     if rate <= 0:
         raise FixtureError("committed audio fixture reports no sample rate")
     return samples * 1000 // rate
@@ -305,6 +311,11 @@ def _audio_baseline(music_root: pathlib.Path) -> dict[str, str]:
     }
 
 
+def _audio_bytes(music_root: pathlib.Path) -> int:
+    """Combined size of every writable copy as it stands; tagged copies outgrow the source."""
+    return sum(path.stat().st_size for path in music_root.glob("Writable Batch *.flac"))
+
+
 def _seed_source_rows(conn: sqlite3.Connection) -> None:
     for key in (
         "online-sources-enabled",
@@ -415,19 +426,19 @@ def audit_batch_edit(
             (genre, year),
         ).fetchone()[0]
     audio_files = sorted(music_root.glob("Writable Batch *.flac"))
+    # A copy the manifest never saw cannot be compared, but it is not unchanged
+    # either: it is reported, and it keeps the audit from claiming completeness.
     unbaselined = [path.name for path in audio_files if path.name not in baseline_by_file]
-    if unbaselined:
-        raise FixtureError(
-            f"batch audit has no baseline for {len(unbaselined)} audio files, e.g. {unbaselined[0]}"
-        )
     audio_files_changed = sum(
-        _sha256(path) != baseline_by_file[path.name] for path in audio_files
+        path.name not in baseline_by_file or _sha256(path) != baseline_by_file[path.name]
+        for path in audio_files
     )
     complete = (
         database_rows_updated == expected
         and all_matching_rows == expected
         and len(audio_files) == expected
         and audio_files_changed == expected
+        and not unbaselined
     )
     return {
         "kind": "batch-edit",
@@ -436,6 +447,7 @@ def audit_batch_edit(
         "database_rows_with_values": all_matching_rows,
         "audio_files_found": len(audio_files),
         "audio_files_changed": audio_files_changed,
+        "audio_files_without_baseline": unbaselined,
         "complete": complete,
     }
 
@@ -480,9 +492,7 @@ def prepare_profile(
         "private_xdg": True,
         "real_library_access": False,
         "writable_audio_bytes": (
-            SOURCE_FIXTURE.stat().st_size * plan.writable_track_count
-            if plan.writable_track_count
-            else 0
+            _audio_bytes(music_root) if plan.writable_track_count else 0
         ),
         "writable_audio_sha256_by_file": (
             _audio_baseline(music_root) if plan.writable_track_count else {}
