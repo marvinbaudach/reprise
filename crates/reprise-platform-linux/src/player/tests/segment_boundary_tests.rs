@@ -34,10 +34,12 @@ fn play_22_a_cue_track_is_not_heard_past_its_end() {
     write_regions_wav(&album, &[(1_000, false), (3_000, true)]);
     let heard = record_heard(&harness.player);
 
-    harness
-        .player
-        .play(cue_item(&album, (START_MS, END_MS), 0.0))
-        .unwrap();
+    harness.start(|| {
+        harness
+            .player
+            .play(cue_item(&album, (START_MS, END_MS), 0.0))
+            .unwrap();
+    });
     let mut events = harness.pump_until(HANG_GUARD, |events| count(events, finished) > 0);
     events.extend(harness.pump_for(PAST_THE_FILE_END));
 
@@ -76,10 +78,12 @@ fn play_22_a_cue_track_finishes_only_once_its_tail_has_been_rendered() {
     write_regions_wav(&album, &[(1_000, false), (3_000, true)]);
     let rendered = slow_sink(&harness.player);
 
-    harness
-        .player
-        .play(cue_item(&album, (START_MS, END_MS), 0.0))
-        .unwrap();
+    harness.start(|| {
+        harness
+            .player
+            .play(cue_item(&album, (START_MS, END_MS), 0.0))
+            .unwrap();
+    });
     let events = harness.pump_until(HANG_GUARD, |events| count(events, finished) > 0);
 
     assert_eq!(count(&events, finished), 1, "the track must finish");
@@ -104,10 +108,12 @@ fn play_22_a_seek_after_the_end_reopens_the_track() {
     write_regions_wav(&album, &[(1_000, false), (3_000, true)]);
     let heard = record_heard(&harness.player);
 
-    harness
-        .player
-        .play(cue_item(&album, (START_MS, END_MS), 0.0))
-        .unwrap();
+    harness.start(|| {
+        harness
+            .player
+            .play(cue_item(&album, (START_MS, END_MS), 0.0))
+            .unwrap();
+    });
     let first = harness.pump_until(HANG_GUARD, |events| count(events, finished) > 0);
     assert_eq!(count(&first, finished), 1);
 
@@ -205,10 +211,12 @@ fn play_22_the_last_track_of_a_file_plays_to_the_file_end() {
     write_regions_wav(&album, &[(FILE_MS as u32, true)]);
     let heard = record_heard(&harness.player);
 
-    harness
-        .player
-        .play(cue_item(&album, (START_MS, END_MS), 0.0))
-        .unwrap();
+    harness.start(|| {
+        harness
+            .player
+            .play(cue_item(&album, (START_MS, END_MS), 0.0))
+            .unwrap();
+    });
     let mut events = harness.pump_until(HANG_GUARD, |events| count(events, finished) > 0);
     events.extend(harness.pump_for(Duration::from_millis(500)));
 
@@ -257,13 +265,15 @@ fn assert_contiguous_hand_over(transition: TrackTransition) {
     write_regions_wav(&album, &[(7_000, true)]);
     let heard = record_heard(&harness.player);
 
-    harness
-        .player
-        .play(cue_item(&album, FIRST, FIRST_GAIN_DB))
-        .unwrap();
-    harness
-        .player
-        .set_next(Some(cue_item(&album, SECOND, SECOND_GAIN_DB)));
+    harness.start(|| {
+        harness
+            .player
+            .play(cue_item(&album, FIRST, FIRST_GAIN_DB))
+            .unwrap();
+        harness
+            .player
+            .set_next(Some(cue_item(&album, SECOND, SECOND_GAIN_DB)));
+    });
     let mut events = harness.pump_until(HANG_GUARD, |_| heard.heard_after(2));
     let stream_starts = heard.stream_starts();
     let already_advanced = count(&events, advanced) > 0;
