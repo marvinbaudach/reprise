@@ -426,3 +426,6 @@ mod persistence_tests;
 
 #[path = "queue_boundary_reorder_tests.rs"]
 mod reorder_tests;
+
+#[path = "restored_position_tests.rs"]
+mod restored_position_tests;

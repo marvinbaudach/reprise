@@ -18,6 +18,9 @@ pub(super) struct RestoredQueue {
     pub(super) track_ids: Vec<i64>,
     pub(super) uris: Vec<String>,
     pub(super) snapshot_sequence: Option<u64>,
+    /// The library's length of the current track, so the seek bar has a range
+    /// before Media3 has loaded anything. Zero when there is no current track.
+    pub(super) current_duration_ms: i64,
 }
 
 #[derive(Debug, thiserror::Error)]
@@ -54,6 +57,7 @@ pub(super) fn restore(
         .map(QueueItem::Track)
         .collect::<Vec<_>>();
     let mut paths = HashMap::new();
+    let mut durations = HashMap::new();
     for offset in (0..items.len()).step_by(RESTORE_WINDOW_LIMIT as usize) {
         let window =
             queries::query_queue_item_window(db, &items, offset as i64, RESTORE_WINDOW_LIMIT)
@@ -62,6 +66,7 @@ pub(super) fn restore(
                 })?;
         for metadata in window {
             if let QueueItemMetadata::Track(track) = metadata {
+                durations.entry(track.id).or_insert(track.duration_ms);
                 paths.entry(track.id).or_insert(track.path);
             }
         }
@@ -81,11 +86,17 @@ pub(super) fn restore(
         .iter()
         .filter_map(|id| paths.get(id).cloned())
         .collect();
+    let current_duration_ms = queue
+        .current()
+        .and_then(|track_id| durations.get(&track_id).copied())
+        .unwrap_or(0)
+        .max(0);
     Ok(RestoredQueue {
         queue,
         track_ids,
         uris,
         snapshot_sequence,
+        current_duration_ms,
     })
 }
 
