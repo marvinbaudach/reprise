@@ -2,7 +2,7 @@
 slug: data-root-isolation
 worktree: /home/marvin/Projects/reprise-data-root-isolation
 branch: feature/data-root-isolation
-phase: refactored
+phase: shipped
 codex_session:
 created: 2026-10-09
 ---
