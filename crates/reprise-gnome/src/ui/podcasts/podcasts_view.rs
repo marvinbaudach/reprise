@@ -40,7 +40,9 @@ use super::podcasts_selection::{PodcastSelection, SelectMode};
 use super::podcasts_sync_state::{
     clear_failed_syncs_that_recovered, remove_subscription_sync_if_owned, SyncRowState, SyncStep,
 };
-use super::podcasts_view_data::{episode_ids_in_rendered_order, last_updated_text};
+use super::podcasts_view_data::{
+    episode_ids_in_rendered_order, last_checked_age, last_updated_text,
+};
 use super::podcasts_worker::{
     podcasts_response_channel, request_generation, PodcastsOperation, PodcastsRequest,
     PodcastsRuntime, PodcastsWorkerResult,
@@ -378,7 +380,10 @@ impl PodcastsView {
                     .replace(refreshed_download_states(&rows, &previous));
                 self.groups.replace(groups);
                 self.rows.replace(rows);
-                let last_updated = last_updated_text(&self.conn);
+                // No successful fetch yet: leave the label empty rather than
+                // claim an age. It is shared with transient status (refreshing,
+                // queued offline), so it is cleared, not hidden.
+                let last_updated = last_updated_text(&self.conn, self.kind).unwrap_or_default();
                 self.footer_status.set_text(&last_updated);
                 self.waiting_for_model.set(false);
                 self.render();

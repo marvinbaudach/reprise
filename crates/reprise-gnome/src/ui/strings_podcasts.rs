@@ -197,7 +197,6 @@ pub const YOUTUBE_STREAM_FORBIDDEN: &str = N_!(
 pub const PODCAST_YTDLP: &str = N_!("yt-dlp");
 pub const PODCAST_YTDLP_UPDATE: &str = N_!("Update");
 pub const PODCAST_YTDLP_CHECKING: &str = N_!("Checking installed version…");
-pub const PODCAST_UPDATED_JUST_NOW: &str = N_!("Updated just now");
 pub const PODCAST_SUBSCRIBERS: &str = N_!("{count} subscribers");
 
 pub fn podcast_episode_count(count: usize) -> String {
@@ -556,13 +555,6 @@ pub fn podcast_youtube_channel_matches(count: usize) -> String {
         "{count} matching videos · audio only",
         count,
         &[("count", &count_text)],
-    )
-}
-
-pub fn podcast_updated_minutes_ago(minutes: i64) -> String {
-    formatted(
-        N_!("Updated {minutes} min ago"),
-        &[("minutes", &minutes.to_string())],
     )
 }
 

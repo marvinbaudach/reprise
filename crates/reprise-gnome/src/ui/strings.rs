@@ -19,6 +19,10 @@ pub(super) fn formatted(message: &str, values: &[(&str, &str)]) -> String {
     crate::i18n::format_message(&text(message), values)
 }
 
+pub(super) fn pgettext(context: &str, message: &str) -> String {
+    crate::i18n::pgettext(context, message)
+}
+
 pub(super) fn plural(
     singular: &str,
     plural: &str,

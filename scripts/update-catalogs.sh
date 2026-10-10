@@ -17,7 +17,7 @@ cd "$repo_root"
 
 extract() {
   xgettext --directory=. --files-from=po/POTFILES.in --output="$1" \
-    --from-code=UTF-8 --language=Rust '--keyword=N_!:1' --keyword=plural:1,2 \
+    --from-code=UTF-8 --language=Rust '--keyword=N_!:1' --keyword=plural:1,2 '--keyword=pgettext:1c,2' \
     '--keyword=history_plural:1c,2,3' '--keyword=history_outcome:1c,2' \
     --package-name=Reprise --package-version=0.1.1 \
     --msgid-bugs-address='Marvin Baudach' --copyright-holder='Marvin Baudach'

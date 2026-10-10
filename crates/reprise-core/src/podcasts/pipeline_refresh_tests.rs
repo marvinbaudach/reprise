@@ -188,6 +188,11 @@ fn conditional_cycle_stores_headers_then_only_bumps_not_modified_state() {
     assert_eq!(stored.last_fetch_at, Some(20));
     assert_eq!(stored.last_outcome.as_deref(), Some("not_modified"));
     assert_eq!(stored.etag.as_deref(), Some("\"v1\""));
+    assert_eq!(
+        store::last_successful_fetch_at(&conn, PodcastKind::Rss).unwrap(),
+        Some(20),
+        "an unchanged feed is a successful check: the cache is current"
+    );
 }
 
 #[test]
