@@ -16,6 +16,8 @@ use crate::waveform::GstreamerWaveformBackend;
 pub enum BackfillWorkerError {
     Database(DbError),
     Panicked,
+    /// The handle holds no worker thread, so there is no summary to give.
+    WorkerMissing,
 }
 
 impl From<DbError> for BackfillWorkerError {
@@ -29,6 +31,7 @@ impl std::fmt::Display for BackfillWorkerError {
         match self {
             Self::Database(error) => error.fmt(formatter),
             Self::Panicked => formatter.write_str("spectrogram backfill worker panicked"),
+            Self::WorkerMissing => formatter.write_str("spectrogram backfill has no worker"),
         }
     }
 }
@@ -91,11 +94,10 @@ impl SpectrogramBackfillHandle {
 
     pub fn join(mut self) -> Result<BackfillSummary, BackfillWorkerError> {
         // `join` consumes the handle, so the worker is present; a handle
-        // without one has no summary to give and is reported like a worker
-        // that ended without one.
+        // without one has no summary to give, which is not a panic.
         self.worker
             .take()
-            .ok_or(BackfillWorkerError::Panicked)?
+            .ok_or(BackfillWorkerError::WorkerMissing)?
             .join()
             .map_err(|_| BackfillWorkerError::Panicked)?
             .map_err(Into::into)

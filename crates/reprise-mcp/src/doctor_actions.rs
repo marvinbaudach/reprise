@@ -4,9 +4,10 @@ use std::path::Path;
 use reprise_core::library::{TagWriteLock, TagWriteLockAttempt};
 use reprise_core::library_doctor::{
     group_review_rows, scan_summary, DoctorError, DoctorReviewDisplayRow, DoctorReviewFilter,
-    DoctorReviewSession, DoctorScan, DoctorScanOptions, DoctorScanOutcome, DoctorScanRequest,
-    DoctorScopeRequest, DoctorValue, DoctorViewSnapshot, DoctorWriteControl, DoctorWriteReport,
-    DoctorWriteRow, DoctorWriteRowState, LibraryDoctor, ProblemClass, ProposalSource, ScanControl,
+    DoctorReviewRowState, DoctorReviewSession, DoctorScan, DoctorScanOptions, DoctorScanOutcome,
+    DoctorScanRequest, DoctorScopeRequest, DoctorValue, DoctorViewSnapshot, DoctorWriteControl,
+    DoctorWriteReport, DoctorWriteRow, DoctorWriteRowState, LibraryDoctor, ProblemClass,
+    ProposalSource, ScanControl,
 };
 
 use crate::data::{self, DataError};
@@ -412,19 +413,51 @@ fn album_dto(
     session: &DoctorReviewSession,
     album: reprise_core::library_doctor::DoctorReviewAlbum,
 ) -> DoctorAlbumDto {
-    let rows = album
+    let listed = album.rows.len();
+    let rows: Vec<DoctorReviewRowDto> = album
         .rows
         .into_iter()
         .filter_map(|display| review_row_dto(scan, session, display))
         .collect();
+    // Rows the session no longer holds are left out, and the counts follow the
+    // rows that are shown so the album never advertises more than it lists.
+    let (track_count, change_count) = if rows.len() == listed {
+        (album.track_count, album.change_count)
+    } else {
+        tracing::warn!(
+            album = %album.key,
+            dropped = listed - rows.len(),
+            "doctor review album lists rows the session no longer holds; counting the rest"
+        );
+        surviving_counts(session, &rows)
+    };
     DoctorAlbumDto {
         album_key: album.key,
         title: album.title,
         artist: album.artist,
-        track_count: album.track_count,
-        change_count: album.change_count,
+        track_count,
+        change_count,
         rows,
     }
+}
+
+/// The distinct tracks the listed rows touch and how many of those rows are
+/// selected, ready changes.
+fn surviving_counts(session: &DoctorReviewSession, rows: &[DoctorReviewRowDto]) -> (usize, usize) {
+    let tracks = rows
+        .iter()
+        .flat_map(|row| row.track_ids.iter().copied())
+        .collect::<HashSet<_>>();
+    let changes = rows
+        .iter()
+        .flat_map(|row| row.row_ids.iter())
+        .filter(|id| {
+            session.rows().iter().any(|row| {
+                row.id.raw() == **id && row.selected && row.state == DoctorReviewRowState::Ready
+            })
+        })
+        .count();
+    (tracks.len(), changes)
 }
 
 fn review_row_dto(
