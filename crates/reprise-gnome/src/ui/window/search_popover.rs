@@ -220,10 +220,19 @@ fn handle_search_key(
         }
         gtk4::gdk::Key::Escape => return gtk4::glib::Propagation::Proceed,
         gtk4::gdk::Key::Return | gtk4::gdk::Key::KP_Enter => {}
+        // SEARCH-6: the popover is its own native surface, so the window's
+        // `<Control>f` accelerator never sees a key pressed in its entry.
+        // The entry says the toggle's closing half itself; the query stays.
+        gtk4::gdk::Key::f | gtk4::gdk::Key::F if is_plain_control(modifiers) => {}
         _ => return gtk4::glib::Propagation::Proceed,
     }
     close_popover(popover);
     gtk4::glib::Propagation::Stop
+}
+
+/// Control and nothing else, ignoring lock states such as NumLock.
+fn is_plain_control(modifiers: gtk4::gdk::ModifierType) -> bool {
+    modifiers & gtk4::accelerator_get_default_mod_mask() == gtk4::gdk::ModifierType::CONTROL_MASK
 }
 
 /// Escape uses the active section's clear path when the shell has installed

@@ -546,12 +546,14 @@ What is still open:
   flags the rows of a scrolled popover list, which the tree reports below the window. Neither
   is an app finding.
 - Ctrl+F did not close the search popover in any of the 2026-10-10 runs, although SEARCH-6
-  says it toggles it: the popover is still listed as open before the next click, and that
-  click only dismisses it. The plan therefore spends one click on the header it is about to
-  sort by (`dismiss-popover-before-sort-before-edit`) and opens the search box with its
-  opener before typing into it. Whether the app breaks SEARCH-6 or the injected key does not
-  reach the popover's window has not been established; issue 1261 asks a person with a real
-  keyboard to try it.
+  says it toggles it. That was the app, not the injected key: a real X11 key did not close it
+  either, because the window's `<Control>f` accelerator did not fire while the popover's entry
+  had the focus (likely because the popover is its own native surface). The
+  search popover now closes itself on Ctrl+F (`search_6_ctrl_f_closes_the_open_popover_while_its_entry_has_focus`,
+  a real X11 key through xdotool, with the same key opening the closed popover as its
+  control). The plan still spends one click on the header it is about to sort by
+  (`dismiss-popover-before-sort-before-edit`) and opens the search box with its opener before
+  typing into it, so it does not depend on the key; the deck has not been rerun on the fix.
 - The sort audit counts every click on a column header that moved the rows, so the one that
   sorts the batch edit's list by Title is counted as well (25 matching of 24 required in the
   last run). A sort-cycle that missed one of its own clicks would not be noticed.

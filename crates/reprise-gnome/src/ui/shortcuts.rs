@@ -53,6 +53,10 @@ use super::window::search_popover::{SearchPopover, WeakSearchPopover};
 #[path = "shortcuts_lifecycle_tests.rs"]
 mod lifecycle_tests;
 
+#[cfg(test)]
+#[path = "shortcuts_search_close_tests.rs"]
+mod search_close_tests;
+
 /// Bare `gio::SimpleAction` names in the window's `"win"` action group —
 /// internal identifiers, not user-facing text.
 const ACTION_TOGGLE_PLAY_PAUSE: &str = "toggle-play-pause";
