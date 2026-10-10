@@ -20,8 +20,10 @@ use crate::player_pipeline::{
     validated_playback_uri,
 };
 use segment::{CutSeek, SegmentGate, SegmentHandle};
+use start_watchdog::StartWatchdog;
 
 pub(crate) mod segment;
+mod start_watchdog;
 mod successor;
 
 /// Default playback volume before the user ever moves the slider — full scale,
@@ -114,6 +116,9 @@ pub struct Player {
     /// The stretch of the file a CUE track covers, while one plays — see
     /// `player/segment.rs`. Shared with the position ticker.
     segments: SegmentHandle,
+    /// Starts a local file over when `playbin3` hangs in READY — see
+    /// `player/start_watchdog.rs`.
+    start_watchdog: StartWatchdog,
 }
 
 impl Player {
@@ -194,6 +199,8 @@ impl Player {
         )?;
         let playbin = Arc::new(Mutex::new(playbin));
         let bus_watch = Arc::new(Mutex::new(bus_watch));
+        let start_watchdog =
+            StartWatchdog::new(playbin.clone(), stream_generation.clone(), on_event.clone());
 
         let engine = CrossfadeEngine {
             playbin: playbin.clone(),
@@ -277,6 +284,7 @@ impl Player {
             cava_stream_generation,
             stream_generation,
             segments,
+            start_watchdog,
         })
     }
 
@@ -384,7 +392,8 @@ impl Player {
         // A manual jump invalidates every gapless/crossfade transition. This
         // applies equally to local paths and external media.
         self.reset_transition();
-        match self.try_play(uri, live, gain_db, segment) {
+        self.start_watchdog.disarm();
+        let started = match self.try_play(uri, live, gain_db, segment) {
             Ok(()) => Ok(()),
             Err(error) => {
                 tracing::warn!(
@@ -395,7 +404,12 @@ impl Player {
                 self.rebuild_playbin()?;
                 self.try_play(uri, live, gain_db, segment)
             }
+        };
+        if started.is_ok() && start_watchdog::covers(uri, live, segment) {
+            self.start_watchdog
+                .arm(self.stream_generation.load(Ordering::SeqCst));
         }
+        started
     }
 
     /// Discards the current playbin element and replaces it with a freshly
@@ -605,6 +619,7 @@ impl PlaybackBackend for Player {
         // A full stop tears down everything: abort any crossfade (silencing and
         // dropping the incoming pipeline) and clear the gapless slot.
         self.reset_transition();
+        self.start_watchdog.disarm();
         let playbin = self.playbin.lock().unwrap_or_else(PoisonError::into_inner);
         playbin
             .set_state(gst::State::Null)

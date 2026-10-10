@@ -148,10 +148,12 @@ fn play_22_a_cue_track_is_not_announced_playing_until_its_start_seek_lands() {
         });
 
     let album = fixture("sine.flac");
-    harness
-        .player
-        .play(cue_item(&album, SEEKED_CUE, 0.0))
-        .unwrap();
+    harness.start(|| {
+        harness
+            .player
+            .play(cue_item(&album, SEEKED_CUE, 0.0))
+            .unwrap();
+    });
     let events = run_to_finish_or_error(&harness);
 
     assert!(

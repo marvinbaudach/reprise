@@ -1,3 +1,4 @@
+use super::segment_support::start_over_when_hung;
 use super::*;
 use crate::player_effects::{build_audio_filter, set_spectrum_messages};
 use crate::player_pipeline::AUDIO_SINK_ENV_VAR;
@@ -138,7 +139,7 @@ fn ac_29_enabled_player_emits_live_cava_frames() {
     .unwrap();
     player.set_spectrum_enabled(true).unwrap();
     let path = concat!(env!("CARGO_MANIFEST_DIR"), "/tests/fixtures/sine.flac");
-    player.play(item(path)).unwrap();
+    start_over_when_hung(&player, || player.play(item(path)).unwrap());
 
     let frame = wait_for_spectrum_frame(&rx);
 
@@ -217,7 +218,7 @@ fn ac_26_enabled_uri_playback_emits_live_cava_frames() {
     player.set_spectrum_enabled(true).unwrap();
     let path = concat!(env!("CARGO_MANIFEST_DIR"), "/tests/fixtures/sine.flac");
     let uri = gst::glib::filename_to_uri(path, None).unwrap();
-    player.play_uri(uri.as_str()).unwrap();
+    start_over_when_hung(&player, || player.play_uri(uri.as_str()).unwrap());
 
     let frame = wait_for_spectrum_frame(&rx);
     assert!(frame.bands().iter().any(|value| *value > 0.0));
@@ -239,7 +240,7 @@ fn ac_29_enabled_player_measures_absolute_bass_pressure() {
     .unwrap();
     player.set_spectrum_enabled(true).unwrap();
     let path = concat!(env!("CARGO_MANIFEST_DIR"), "/tests/fixtures/sine.flac");
-    player.play(item(path)).unwrap();
+    start_over_when_hung(&player, || player.play(item(path)).unwrap());
 
     // The first frames may arrive before a full analysis window has closed, so
     // wait for one that carries a real measurement rather than silence.
@@ -291,7 +292,7 @@ fn ac_29_filter_replacement_reattaches_the_cava_processor() {
         })
         .unwrap();
     let path = concat!(env!("CARGO_MANIFEST_DIR"), "/tests/fixtures/sine.flac");
-    player.play(item(path)).unwrap();
+    start_over_when_hung(&player, || player.play(item(path)).unwrap());
 
     let deadline = std::time::Instant::now() + Duration::from_secs(2);
     let frame = loop {
