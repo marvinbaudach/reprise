@@ -260,10 +260,16 @@ fn drain_snapshots(
             }
         }
         if committed {
-            // A successful commit consumes the snapshot that was committed.
-            if let Some(snapshot) = latest.take() {
-                snapshot_file.remove_if_sequence(snapshot.sequence);
-                mark_committed(flush_state, snapshot.sequence);
+            // A successful commit consumes the snapshot that was committed, and
+            // `try_commit_latest` never reports one without a snapshot. Should
+            // that ever break, flush waiters are woken instead of left blocked.
+            debug_assert!(latest.is_some(), "a commit succeeded without a snapshot");
+            match latest.take() {
+                Some(snapshot) => {
+                    snapshot_file.remove_if_sequence(snapshot.sequence);
+                    mark_committed(flush_state, snapshot.sequence);
+                }
+                None => wake_flush_waiters(flush_state),
             }
             continue;
         }
@@ -361,6 +367,10 @@ fn mark_committed(flush_state: &Arc<(Mutex<FlushState>, Condvar)>, sequence: u64
         state.successful_commits += 1;
     }
     changed.notify_all();
+}
+
+fn wake_flush_waiters(flush_state: &Arc<(Mutex<FlushState>, Condvar)>) {
+    flush_state.1.notify_all();
 }
 
 fn mark_worker_stopped(flush_state: &Arc<(Mutex<FlushState>, Condvar)>) {

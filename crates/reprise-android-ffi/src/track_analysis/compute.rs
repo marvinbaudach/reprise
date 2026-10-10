@@ -343,7 +343,9 @@ impl AnalysisContext<'_> {
             }
         }
         // Every round but the last may `continue`, so the loop ends here only
-        // when no round was left to run: retryable, never final.
+        // when no round was left to run. That cannot happen while the loop
+        // runs at least once; `Cancelled` is retryable, never final.
+        debug_assert!(false, "the compute loop ended without a round to run");
         Ok(AndroidAnalysisOutcome::Cancelled)
     }
 
@@ -465,12 +467,18 @@ impl AnalysisContext<'_> {
                 tracing::debug!(track_id, reason, "track analysis produced no data");
                 return self.mark_failed(fingerprint, &measured, &reason);
             }
-            // Only a CUE track's job makes a segmented sink; one without a job
-            // has no segments to store, so it fails like an empty analysis.
+            // Only a CUE track's job makes a segmented sink, and a sink is
+            // finished once. Both arms are bugs in this file, not facts about
+            // the track, so neither is remembered as a failed analysis: that
+            // would keep a healthy track out of every later backfill.
             (FinishedAnalysis::Segmented(_), None) => {
-                let reason = "a segmented analysis finished without its CUE job";
-                tracing::debug!(track_id, reason, "track analysis produced no data");
-                return self.mark_failed(fingerprint, &measured, reason);
+                debug_assert!(false, "a segmented analysis finished without its CUE job");
+                return Err(query_error(
+                    "a segmented analysis finished without its CUE job",
+                ));
+            }
+            (FinishedAnalysis::AlreadyFinished, _) => {
+                return Err(query_error("the analysis session was already finished"));
             }
         };
 
