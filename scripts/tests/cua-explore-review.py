@@ -679,7 +679,10 @@ class WorkloadCompletionReviewTests(unittest.TestCase):
                 json.dumps(
                     {
                         "writable_track_count": 2,
-                        "writable_audio_sha256": baseline_hash,
+                        "writable_audio_sha256_by_file": {
+                            f"Writable Batch {index + 1:04}.flac": baseline_hash
+                            for index in range(2)
+                        },
                     }
                 ),
                 encoding="utf-8",

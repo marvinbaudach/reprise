@@ -164,7 +164,7 @@ if [[ -n $(git -C "$repo_root" status --porcelain) ]]; then
   echo "exploratory pre-main runs require a clean Git worktree" >&2
   exit 2
 fi
-for command in cargo cua-driver Xvfb openbox dbus-run-session jq python3 rg timeout unshare wmctrl; do
+for command in cargo cua-driver Xvfb openbox dbus-run-session jq metaflac python3 rg timeout unshare wmctrl; do
   required_command "$command"
 done
 for executable in /usr/lib/at-spi-bus-launcher /usr/lib/at-spi2-registryd; do
