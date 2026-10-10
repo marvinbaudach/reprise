@@ -605,3 +605,6 @@ pub(super) mod unknown;
 
 #[path = "scanner_cue_issue_tests.rs"]
 mod issue_tests;
+
+#[path = "scanner_cue_duration_tests.rs"]
+mod duration_tests;

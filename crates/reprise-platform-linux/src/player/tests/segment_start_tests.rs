@@ -3,7 +3,7 @@
 //! These exercise the actual `playbin3`/`flacparse` path. An error here is
 //! the backend event that makes the frontend skip an existing track.
 
-use super::segment_support::{cue_item, gain_element, write_regions_wav, Harness};
+use super::segment_support::{cue_item, encode_flac, gain_element, write_regions_wav, Harness};
 use super::*;
 use std::sync::atomic::AtomicUsize;
 
@@ -68,52 +68,7 @@ fn write_cue_flac(directory: &tempfile::TempDir) -> std::path::PathBuf {
     let flac = directory.path().join("album.flac");
     write_regions_wav(&wav, &[(32_000, true)]);
 
-    let pipeline = gst::Pipeline::new();
-    let source = gst::ElementFactory::make("filesrc")
-        .property("location", wav.to_str().unwrap())
-        .build()
-        .unwrap();
-    let wav_parse = gst::ElementFactory::make("wavparse").build().unwrap();
-    let convert = gst::ElementFactory::make("audioconvert").build().unwrap();
-    let caps_filter = gst::ElementFactory::make("capsfilter")
-        .property(
-            "caps",
-            gst::Caps::builder("audio/x-raw")
-                .field("format", "S16LE")
-                .field("channels", 2_i32)
-                .build(),
-        )
-        .build()
-        .unwrap();
-    let encoder = gst::ElementFactory::make("flacenc")
-        .property("seekpoints", 0_i32)
-        .property("blocksize", 4_096_u32)
-        .property("padding", 8_192_u32)
-        .build()
-        .unwrap();
-    let sink = gst::ElementFactory::make("filesink")
-        .property("location", flac.to_str().unwrap())
-        .build()
-        .unwrap();
-    pipeline
-        .add_many([&source, &wav_parse, &convert, &caps_filter, &encoder, &sink])
-        .unwrap();
-    gst::Element::link_many([&source, &wav_parse, &convert, &caps_filter, &encoder, &sink])
-        .unwrap();
-
-    pipeline.set_state(gst::State::Playing).unwrap();
-    let message = pipeline
-        .bus()
-        .unwrap()
-        .timed_pop_filtered(
-            gst::ClockTime::from_seconds(20),
-            &[gst::MessageType::Eos, gst::MessageType::Error],
-        )
-        .expect("FLAC fixture encoding must finish");
-    if let gst::MessageView::Error(error) = message.view() {
-        panic!("FLAC fixture encoding failed: {error:?}");
-    }
-    pipeline.set_state(gst::State::Null).unwrap();
+    encode_flac(&wav, &flac);
     flac
 }
 

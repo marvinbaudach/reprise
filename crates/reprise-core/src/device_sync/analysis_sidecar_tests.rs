@@ -107,6 +107,7 @@ fn analysis_sidecar_for_track_uses_the_database_source_fingerprint() {
             integrated_lufs: -19.0,
             true_peak: 0.8,
         }),
+        decoded_end_ms: None,
     };
     crate::db_spectrogram::set_waveform_peaks(&db, 7, &render_data.waveform_peaks).unwrap();
     crate::db_spectrogram::set_track_spectrogram(&db, 7, source(), &render_data.spectrogram)
@@ -148,6 +149,7 @@ fn cue_10_no_analysis_sidecar_is_made_for_a_track_cut_from_a_file() {
             integrated_lufs: -19.0,
             true_peak: 0.8,
         }),
+        decoded_end_ms: None,
     };
     for track_id in [7, 8] {
         crate::db_spectrogram::set_track_render_data(&db, track_id, source(), &render_data)

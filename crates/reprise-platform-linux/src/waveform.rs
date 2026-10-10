@@ -572,6 +572,37 @@ mod tests {
     }
 
     #[test]
+    fn cue_19_the_last_track_of_a_file_reports_where_the_decode_really_ended() {
+        let directory = tempfile::tempdir().unwrap();
+        let path = directory.path().join("long.wav");
+        write_wav(&path, &vec![8_000; SAMPLE_RATE as usize * 3]);
+        // The sheet and the metadata claim 2 s; the file holds 3 s.
+        let segments = [
+            SegmentBounds {
+                start_ms: 0,
+                end_ms: 1_000,
+                last_in_file: false,
+            },
+            SegmentBounds {
+                start_ms: 1_000,
+                end_ms: 2_000,
+                last_in_file: true,
+            },
+        ];
+
+        let data = GstreamerWaveformBackend
+            .extract_segment_render_data_cancellable(&path, &segments, 100, &AtomicBool::new(false))
+            .unwrap();
+
+        assert_eq!(data[0].as_ref().unwrap().decoded_end_ms, None);
+        let decoded_end_ms = data[1].as_ref().unwrap().decoded_end_ms.unwrap();
+        assert!(
+            (2_980..=3_020).contains(&decoded_end_ms),
+            "decoded end was {decoded_end_ms}"
+        );
+    }
+
+    #[test]
     fn a_decoded_buffer_is_placed_by_its_presentation_time() {
         gst::init().unwrap();
         let caps = gst::Caps::builder("audio/x-raw").build();

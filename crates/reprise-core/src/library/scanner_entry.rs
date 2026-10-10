@@ -567,6 +567,11 @@ fn apply_move(
     Ok(EntryOutcome::Moved { healed })
 }
 
+// A track cut from a file (`segment_index > 0`) keeps the `duration_ms` it
+// has while its file and its cut are the ones the scan reads again: for the
+// file's last track that is the length the analysis decoded (CUE-19), which a
+// scan of the metadata must not take back. Anything that moved falls back to
+// the metadata's length, and the analysis learns the rest again.
 const UPSERT_TRACK_SQL: &str =
     "INSERT INTO tracks (path, title, artist, album, album_artist, artist_mbid,
                            year, track_no, disc_no, genre, duration_ms, bitrate_kbps, added_at,
@@ -581,7 +586,11 @@ const UPSERT_TRACK_SQL: &str =
                            artist_mbid=COALESCE(?6, artist_mbid),
                            artist_mbid_negative=CASE WHEN ?6 IS NOT NULL THEN 0 ELSE artist_mbid_negative END,
                            year=?7, track_no=?8, disc_no=?9, genre=?10,
-                           duration_ms=?11, bitrate_kbps=?12, file_mtime=?14,
+                           duration_ms=CASE WHEN ?25 > 0 AND segment_start_ms IS ?26
+                                             AND segment_end_ms IS ?27 AND file_mtime IS ?14
+                                             AND file_size IS ?15
+                                            THEN duration_ms ELSE ?11 END,
+                           bitrate_kbps=?12, file_mtime=?14,
                            missing_since=NULL, missing_reason=NULL, removed_at=NULL,
                            file_size=?15, device=?16, inode=?17, mount_point=?18,
                            untagged=?19, rg_track_gain=?20, rg_track_peak=?21,

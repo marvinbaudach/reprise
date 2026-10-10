@@ -185,6 +185,7 @@ fn nav_15d_progress_is_none_once_final_data_is_stored() {
                 ])
                 .unwrap(),
                 loudness: None,
+                decoded_end_ms: None,
             },
         )
         .unwrap();

@@ -354,6 +354,32 @@ fn the_last_track_runs_to_the_decoded_end_whatever_the_metadata_claims() {
 }
 
 #[test]
+fn cue_19_the_last_track_reports_where_the_decoded_stream_ended() {
+    // The file holds 6 s; the metadata claims 4 s. Only the last track says
+    // where the audio really ended, and only it can differ from its cut.
+    let (stream, bounds) = album_with_a_last_track_ending_at(4_000);
+
+    let data = analyse(&stream, &bounds, 997);
+
+    assert_eq!(data[0].decoded_end_ms, None);
+    assert_eq!(data[1].decoded_end_ms, Some(6_000));
+}
+
+#[test]
+fn cue_19_a_decoded_end_does_not_depend_on_how_the_stream_was_chunked() {
+    let (stream, bounds) = album_with_a_last_track_ending_at(4_000);
+
+    for chunk_frames in [997, 4_410, 100_000] {
+        let data = analyse(&stream, &bounds, chunk_frames);
+        assert_eq!(
+            data[1].decoded_end_ms,
+            Some(6_000),
+            "chunks of {chunk_frames}"
+        );
+    }
+}
+
+#[test]
 fn only_the_cut_decides_whether_two_bounds_are_the_same_cut() {
     let cut = SegmentBounds {
         start_ms: 2_000,

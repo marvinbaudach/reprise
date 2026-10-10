@@ -199,3 +199,31 @@ fn a_cut_ending_near_the_file_end_is_open_and_runs_to_it() {
     assert!(!Cut::new(50_000, 58_900, Some(60_000)).open_end);
     assert!(!Cut::new(50_000, 59_600, None).open_end);
 }
+
+#[test]
+fn cue_19_an_open_cut_lasts_to_its_own_end_when_the_header_says_less() {
+    // The catalog learned that the file holds 20 s; its header still says 14 s.
+    let cut = Cut::new(8_000, 20_000, Some(14_000));
+    assert!(cut.open_end);
+    assert_eq!(cut.length_ms(Some(14_000)), 12_000);
+    assert_eq!(cut.relative(15_000, Some(14_000)), (7_000, 12_000));
+    assert_eq!(cut.relative(19_500, Some(14_000)), (11_500, 12_000));
+    assert_eq!(cut.seek_target_ms(10_000, Some(14_000)), 18_000);
+    assert_eq!(cut.seek_target_ms(99_999, Some(14_000)), 19_999);
+}
+
+#[test]
+fn cue_19_an_open_cut_still_runs_to_the_file_when_the_file_is_longer_than_it_knows() {
+    let cut = Cut::new(8_000, 14_000, Some(20_000));
+    assert!(!cut.open_end);
+    let cut = Cut::new(8_000, 19_600, Some(20_000));
+    assert!(cut.open_end);
+    assert_eq!(cut.length_ms(Some(20_000)), 12_000);
+}
+
+#[test]
+fn cue_19_a_cut_the_catalog_learned_ends_before_its_headers_end_is_cut_there() {
+    let cut = Cut::new(8_000, 11_500, Some(14_000));
+    assert!(!cut.open_end);
+    assert_eq!(cut.length_ms(Some(14_000)), 3_500);
+}

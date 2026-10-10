@@ -48,6 +48,11 @@ pub struct TrackRenderData {
     pub waveform_peaks: Vec<u8>,
     pub spectrogram: TrackSpectrogram,
     pub loudness: Option<MeasuredLoudness>,
+    /// Where the decoded stream ended, in milliseconds from the start of the
+    /// file: the length the file really has, whatever its metadata claims.
+    /// Set only for the one track an analysis runs to the end of the file for,
+    /// the last track of a CUE file; `None` for every other.
+    pub decoded_end_ms: Option<i64>,
 }
 
 impl TrackRenderData {
@@ -56,6 +61,7 @@ impl TrackRenderData {
             waveform_peaks: Vec::new(),
             spectrogram: TrackSpectrogram::empty(),
             loudness: None,
+            decoded_end_ms: None,
         }
     }
 }

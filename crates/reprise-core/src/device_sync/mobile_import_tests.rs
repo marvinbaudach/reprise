@@ -94,6 +94,7 @@ fn render(cell: u8, peak: u8) -> TrackRenderData {
             integrated_lufs: -19.0,
             true_peak: 0.75,
         }),
+        decoded_end_ms: None,
     }
 }
 

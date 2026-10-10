@@ -265,6 +265,7 @@ impl RenderDataSession {
             waveform_peaks,
             spectrogram,
             loudness,
+            decoded_end_ms: None,
         })
     }
 

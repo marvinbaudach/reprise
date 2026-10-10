@@ -73,6 +73,7 @@ fn a_tag_write_keeps_the_rendering_data_it_did_not_invalidate() {
                 integrated_lufs: -18.0,
                 true_peak: 0.8,
             }),
+            decoded_end_ms: None,
         },
     )
     .unwrap();
@@ -125,6 +126,7 @@ fn a_tail_failure_after_reconciliation_keeps_rendering_data() {
                 integrated_lufs: -18.0,
                 true_peak: 0.8,
             }),
+            decoded_end_ms: None,
         },
     )
     .unwrap();

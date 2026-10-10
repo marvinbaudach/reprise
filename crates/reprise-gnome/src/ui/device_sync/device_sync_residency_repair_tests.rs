@@ -56,6 +56,7 @@ fn seed_analysis(conn: &Db) {
             waveform_peaks: vec![3; 4],
             spectrogram: TrackSpectrogram::from_cells(vec![7; 24]).unwrap(),
             loudness: None,
+            decoded_end_ms: None,
         },
     )
     .unwrap();
@@ -340,6 +341,7 @@ fn doubtful_count_includes_sidecars_only_for_tracks_with_complete_analysis() {
                         spectrogram: TrackSpectrogram::from_cells(vec![track_id as u8; 24])
                             .unwrap(),
                         loudness: None,
+                        decoded_end_ms: None,
                     },
                 )
                 .unwrap();

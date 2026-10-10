@@ -122,11 +122,43 @@ fn store_render_data(
         "UPDATE tracks SET waveform_peaks = ?1 WHERE id = ?2",
         rusqlite::params![data.waveform_peaks, track_id],
     )?;
+    if let Some(bounds) = bounds {
+        learn_last_track_duration(&transaction, track_id, bounds, data)?;
+    }
     write_spectrogram(&transaction, track_id, source, &data.spectrogram)?;
     write_track_loudness(&transaction, track_id, source, data.loudness)?;
     failures::clear_failure(&transaction, track_id)?;
     transaction.commit()?;
     Ok(SpectrogramStoreOutcome::Stored)
+}
+
+/// The last track of a CUE file is measured to the decoded end of its file, and
+/// that end, not the length the file's metadata claims, is how long the track
+/// lasts (CUE-19). Only `duration_ms` takes it: the recorded cut stays what the
+/// sheet and the metadata said, since a scan, the move detection and the
+/// trigger that drops a re-cut track's analysis all know the track by it.
+/// Nothing is learned from an end that is not after the track's start, nor for
+/// a track that is no longer its file's last.
+fn learn_last_track_duration(
+    conn: &Connection,
+    track_id: i64,
+    bounds: SegmentBounds,
+    data: &TrackRenderData,
+) -> Result<(), rusqlite::Error> {
+    let Some(decoded_end_ms) = data.decoded_end_ms else {
+        return Ok(());
+    };
+    if !bounds.last_in_file
+        || decoded_end_ms <= bounds.start_ms
+        || !pending::is_last_in_file(conn, track_id)?
+    {
+        return Ok(());
+    }
+    conn.execute(
+        "UPDATE tracks SET duration_ms = ?1 WHERE id = ?2",
+        rusqlite::params![decoded_end_ms - bounds.start_ms, track_id],
+    )?;
+    Ok(())
 }
 
 /// Whether `track_id` is still the track a decode that began on `source`, cut
@@ -534,6 +566,7 @@ mod tests {
                         integrated_lufs: -18.0,
                         true_peak: 0.9,
                     }),
+                    decoded_end_ms: None,
                 },
             )
             .unwrap(),
@@ -615,6 +648,7 @@ mod tests {
             waveform_peaks: vec![4],
             spectrogram: TrackSpectrogram::empty(),
             loudness: None,
+            decoded_end_ms: None,
         };
         let bounds = SegmentBounds {
             start_ms: 3_000,
@@ -642,3 +676,7 @@ mod tests {
         );
     }
 }
+
+#[cfg(test)]
+#[path = "db_spectrogram_duration_tests.rs"]
+mod duration_tests;

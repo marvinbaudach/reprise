@@ -8122,6 +8122,52 @@ derives for a synced CUE file on the device (CUE-15).
   position stays visible, and removing that one too hides both. A CUE file whose
   every track is hidden counts as unchanged on a rescan when neither the file
   nor its sheet changed, so its sheet is not read again.
+- **CUE-19** [planned] [core] — **The last track of a CUE file lasts as long as
+  its audio, not as long as the file's metadata claims.** The analysis decodes
+  the last track to the end of its file (Decision 3 of the CUE sheets surfaces
+  plan); where that decode ends becomes the track's duration, so a file whose
+  header understates its length (a 20 s file declaring 14 s, its last track
+  starting at 8 s) lists, plays and seeks 12 s on every surface that reads the
+  catalog: the list and Now Playing, the seek bar and its waveform, MPRIS, and
+  the phone's list. The recorded cut (`segment_end_ms`) stays what the sheet and
+  the metadata said, because a scan, move detection and the invalidation of a
+  re-cut track's analysis know the track by it. A scan of an unchanged file and
+  cut keeps the learned duration; a changed file or cut gives back the length
+  the metadata claims until the next analysis. Only the file's true last track
+  learns: one whose successor was only removed from the library does not. A
+  track whose analysis is not done yet shows the metadata's length until it is,
+  and a track playing when its analysis finishes keeps the length it started
+  with until it is played again. The whole-file row of an ordinary file is not
+  corrected.
+  *Tests:* `cue_19_the_last_track_reports_where_the_decoded_stream_ended`,
+  `cue_19_a_decoded_end_does_not_depend_on_how_the_stream_was_chunked`,
+  `cue_19_the_last_track_of_a_file_reports_where_the_decode_really_ended`,
+  `cue_19_the_decoded_end_becomes_the_last_tracks_duration`,
+  `cue_19_the_recorded_cut_and_the_stored_analysis_stay_as_they_were`,
+  `cue_19_a_shorter_decoded_end_than_the_header_claims_is_stored_too`,
+  `cue_19_a_track_that_is_not_the_last_keeps_its_duration`,
+  `cue_19_a_track_whose_successor_was_only_removed_keeps_its_duration`,
+  `cue_19_an_analysis_of_a_changed_file_teaches_nothing`,
+  `cue_19_a_decoded_end_before_the_tracks_start_teaches_nothing`,
+  `cue_19_an_analysis_that_reports_no_end_leaves_the_duration_alone`,
+  `cue_19_playing_the_last_track_of_a_file_teaches_the_library_its_real_length`,
+  `cue_19_a_scan_that_rewrites_the_rows_keeps_the_learned_length`,
+  `cue_19_a_replaced_file_gives_back_the_length_its_metadata_claims`,
+  `cue_19_a_cut_the_sheet_moved_gives_back_the_length_its_metadata_claims`,
+  `cue_19_a_track_the_sheet_ends_where_it_says_is_cut_there`,
+  `cue_19_a_track_longer_than_its_recorded_cut_is_cut_at_its_own_length`,
+  `cue_19_a_track_shorter_than_its_recorded_cut_is_cut_at_its_own_length`,
+  `cue_19_a_track_without_a_duration_is_cut_where_the_sheet_ends_it`,
+  `cue_19_a_whole_file_track_has_no_cut`,
+  `cue_19_an_open_cut_lasts_to_its_own_end_when_the_header_says_less`,
+  `cue_19_an_open_cut_still_runs_to_the_file_when_the_file_is_longer_than_it_knows`,
+  `cue_19_a_cut_the_catalog_learned_ends_before_its_headers_end_is_cut_there`,
+  `cue_19_a_track_longer_than_its_header_reports_and_plays_its_whole_length`,
+  `cue_19_the_second_half_of_a_track_longer_than_its_header_can_be_sought`.
+  The last two run a real `playbin3` on a FLAC whose header understates the
+  file by two seconds. Rows analysed before this rule keep the metadata's
+  length until they are analysed again.
+  <!-- REVIEW: rule proposal -->
 
 ## AJ. Showroom (public site)
 
