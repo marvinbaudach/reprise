@@ -27,11 +27,13 @@ use super::tag_edit::{TagBatchReport, TrackEditPatch};
 use super::tag_edit_write_report::{apply_rating_only, push_failure};
 use super::tag_file_write_pool::parallel_file_writes;
 use super::tag_mutation::{
-    prepare_tag_mutation, validate_registered_track, PreparedTagMutation, WriteErrorKind,
+    prepare_tag_mutation, validate_registered_track, PreparedTagMutation, TagMutationFailure,
+    WriteErrorKind,
 };
 use super::tag_write_job::{
     begin_tag_write_file, complete_tag_write_file, finish_tag_write_job,
-    prepare_tag_write_job_with_lock, validate_tag_write_file, TagWriteJobSpec,
+    prepare_tag_write_job_with_lock, validate_tag_write_file, JournaledTagMutation,
+    TagWriteJobSpec,
 };
 
 /// One track's write request: the effective patch to apply plus enough
@@ -129,40 +131,49 @@ pub(super) fn apply_track_writes_inner_with_lock(
         }
     };
 
-    let mut file_results = job
+    let mut file_states = job
         .as_ref()
-        .map(|job| (0..job.files.len()).map(|_| None).collect::<Vec<_>>())
+        .map(|job| {
+            job.files
+                .iter()
+                .map(|_| FileState::default())
+                .collect::<Vec<_>>()
+        })
         .unwrap_or_default();
-    let mut file_claimed = vec![false; file_results.len()];
-    let mut file_progress_reported = vec![false; file_results.len()];
-    let mut active_file_indices = Vec::new();
     let mut completed = 0;
     if let Some(job) = &job {
-        for (file_index, file) in job.files.iter().enumerate() {
+        let mut active_files = Vec::new();
+        for (file_index, (file, state)) in job.files.iter().zip(file_states.iter_mut()).enumerate()
+        {
             match begin_tag_write_file(conn, job.id, file, before_save) {
                 Ok(()) => {
-                    file_claimed[file_index] = true;
+                    state.claimed = true;
                     match validate_tag_write_file(conn, file) {
-                        Ok(()) => active_file_indices.push(file_index),
-                        Err(failure) => file_results[file_index] = Some(Err(failure)),
+                        Ok(()) => active_files.push((file_index, file)),
+                        Err(failure) => state.result = Some(Err(failure)),
                     }
                 }
-                Err(failure) => file_results[file_index] = Some(Err(failure)),
+                Err(failure) => state.result = Some(Err(failure)),
             }
         }
-        let active_files = active_file_indices
+        let files_to_write = active_files
             .iter()
-            .map(|index| &job.files[*index])
+            .map(|(_, file)| *file)
             .collect::<Vec<_>>();
         let mut report_file_completion = || {
             completed += 1;
             progress(completed, total);
         };
         for (active_index, result) in
-            parallel_file_writes(&active_files, &mut report_file_completion)
+            parallel_file_writes(&files_to_write, &mut report_file_completion)
         {
-            file_progress_reported[active_file_indices[active_index]] = true;
-            file_results[active_file_indices[active_index]] = Some(result);
+            let state = active_files
+                .get(active_index)
+                .and_then(|(file_index, _)| file_states.get_mut(*file_index));
+            if let Some(state) = state {
+                state.progress_reported = true;
+                state.result = Some(result);
+            }
         }
     }
 
@@ -180,31 +191,15 @@ pub(super) fn apply_track_writes_inner_with_lock(
                 .find(|(_, file)| file.position == index)
         });
         if let Some((file_index, file)) = journaled {
-            let Some(result) = file_results[file_index].take() else {
-                // Every claimed file ends with a result; a missing one is
-                // reported as this track's failure instead of aborting the batch.
-                push_failure(
-                    &mut report,
-                    write.id,
-                    &write.path,
-                    WriteErrorKind::Io,
-                    "the tag-write file finished without a result".into(),
-                );
-                if !file_progress_reported[file_index] {
-                    completed += 1;
-                    progress(completed, total);
-                }
-                continue;
+            let (claimed, progress_reported, recorded) = match file_states.get_mut(file_index) {
+                Some(state) => (state.claimed, state.progress_reported, state.result.take()),
+                None => (false, false, None),
             };
-            let result = if file_claimed[file_index] {
-                complete_tag_write_file(conn, file, result)
-            } else {
-                result
-            };
+            let result = settle_file_result(conn, file, recorded, claimed);
             if let Err(failure) = result {
                 let (kind, error, _) = failure.into_parts();
                 push_failure(&mut report, write.id, &write.path, kind, error);
-                if !file_progress_reported[file_index] {
+                if !progress_reported {
                     completed += 1;
                     progress(completed, total);
                 }
@@ -215,7 +210,7 @@ pub(super) fn apply_track_writes_inner_with_lock(
             } else {
                 report.updated_ids.push(write.id);
             }
-            if file_progress_reported[file_index] {
+            if progress_reported {
                 continue;
             }
         } else {
@@ -227,7 +222,9 @@ pub(super) fn apply_track_writes_inner_with_lock(
     if let Some(job) = job {
         if let Err(error) = finish_tag_write_job(conn, job.id) {
             for file in job.files {
-                let write = &writes[file.position];
+                let Some(write) = writes.get(file.position) else {
+                    continue;
+                };
                 if !report.failures.iter().any(|failure| failure.id == write.id) {
                     report.updated_ids.retain(|id| *id != write.id);
                     push_failure(
@@ -242,6 +239,39 @@ pub(super) fn apply_track_writes_inner_with_lock(
         }
     }
     report
+}
+
+/// What one journaled file's write ended in: the outcome of its write and
+/// reconcile, whether this run claimed its journal row, and whether the write
+/// pool already reported its progress.
+#[derive(Default)]
+struct FileState {
+    result: Option<Result<(), TagMutationFailure>>,
+    claimed: bool,
+    progress_reported: bool,
+}
+
+/// Every claimed file ends with a result. A missing one is that file's failure,
+/// and a claimed file still goes through completion so its journal row ends
+/// terminal instead of staying claimed for startup recovery to replay or revert.
+pub(super) fn settle_file_result(
+    conn: &Connection,
+    file: &JournaledTagMutation,
+    result: Option<Result<(), TagMutationFailure>>,
+    claimed: bool,
+) -> Result<(), TagMutationFailure> {
+    let result = result.unwrap_or_else(|| {
+        Err(TagMutationFailure {
+            kind: WriteErrorKind::Io,
+            error: "the tag-write file finished without a result".into(),
+            file_written: false,
+        })
+    });
+    if claimed {
+        complete_tag_write_file(conn, file, result)
+    } else {
+        result
+    }
 }
 
 #[cfg(test)]

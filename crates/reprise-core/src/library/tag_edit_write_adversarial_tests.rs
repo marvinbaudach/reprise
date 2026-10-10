@@ -176,3 +176,41 @@ fn rating_revalidates_id_path_after_progress_callback() {
         .unwrap();
     assert_eq!(second_rating, 0);
 }
+
+#[test]
+fn a_claimed_file_without_a_result_is_failed_through_completion() {
+    use super::tag_edit_write_pipeline::settle_file_result;
+    use super::tag_mutation::{prepare_tag_mutation, WriteErrorKind};
+    use super::tag_write_job::{begin_tag_write_file, prepare_tag_write_job, TagWriteJobSpec};
+
+    let dir = tempfile::tempdir().unwrap();
+    let (db, id, path) = seeded_track(dir.path(), "no-result.flac");
+    let patch = TagPatch {
+        title: Some("New title".into()),
+        ..TagPatch::default()
+    };
+    let mutation = prepare_tag_mutation(db.conn(), id, &path, &patch)
+        .unwrap()
+        .expect("the title differs, so there is a mutation");
+    let job =
+        prepare_tag_write_job(db.conn(), TagWriteJobSpec::tag_editor(), &[(0, mutation)]).unwrap();
+    let file = job.files.first().expect("one journaled file");
+    begin_tag_write_file(db.conn(), job.id, file, &mut |_, _, _| {}).unwrap();
+
+    let failure = settle_file_result(db.conn(), file, None, true).unwrap_err();
+
+    assert_eq!(failure.kind, WriteErrorKind::Io);
+    assert!(!failure.file_written);
+    let (state, outcomes): (String, i64) = db
+        .conn()
+        .query_row(
+            "SELECT f.state, \
+               (SELECT COUNT(*) FROM tag_write_journal WHERE file_id=f.id AND outcome='failed') \
+             FROM tag_write_job_files f WHERE f.id=?1",
+            [file.file_id],
+            |row| Ok((row.get(0)?, row.get(1)?)),
+        )
+        .unwrap();
+    assert_eq!(state, "failed", "the claimed row must not stay running");
+    assert_eq!(outcomes, 1);
+}
