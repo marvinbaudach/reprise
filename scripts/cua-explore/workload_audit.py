@@ -3,6 +3,7 @@
 
 from __future__ import annotations
 
+import re
 from typing import Any, Mapping, Sequence
 
 from audit_traces import ActionTrace, folded as _folded, header_clicks as _header_clicks
@@ -59,6 +60,26 @@ def _audit_sort(workload: Mapping[str, Any], traces: Sequence[ActionTrace]) -> d
     }
 
 
+# The list's own counter, "100,000 tracks · 265 d 3 h" or "4,974 of 100,000 tracks".
+RESULT_COUNTER = re.compile(r"^[\d,]+(?: of [\d,]+)? tracks?\b", re.IGNORECASE)
+
+
+def _results_changed(trace: ActionTrace) -> bool:
+    """Whether the action changed what the list shows, by its rows or its counter.
+
+    A filter can leave the visible rows alone: with the list sorted by artist, the
+    hundred rows of "Artist 0000" all pass a genre filter, and the first page is
+    the same before and after. The counter ("4,974 of 100,000 tracks") still moves.
+    """
+
+    def counters(labels: Sequence[str]) -> frozenset[str]:
+        return frozenset(label for label in labels if RESULT_COUNTER.match(label))
+
+    return _row_labels(trace.before_rows) != _row_labels(trace.after_rows) or counters(
+        trace.before_tree_labels
+    ) != counters(trace.after_tree_labels)
+
+
 def chip_shown(
     labels: Sequence[str], tree_labels: Sequence[str], expected: str
 ) -> bool:
@@ -109,8 +130,7 @@ def _audit_filter(
                     for index in range(facet_cursor, len(traces))
                     if traces[index].action.get("kind") == "activate"
                     and traces[index].state_changed
-                    and _row_labels(traces[index].before_rows)
-                    != _row_labels(traces[index].after_rows)
+                    and _results_changed(traces[index])
                     and chip_shown(
                         traces[index].after_labels,
                         traces[index].after_tree_labels,

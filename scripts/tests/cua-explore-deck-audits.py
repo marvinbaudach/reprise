@@ -9,6 +9,7 @@ adds to it is built here.
 
 from __future__ import annotations
 
+import dataclasses
 import json
 import pathlib
 import random
@@ -383,6 +384,30 @@ class ChipTests(unittest.TestCase):
             )
         )
         return traces
+
+    def test_a_facet_that_leaves_the_first_page_alone_is_credited_by_the_counter(self) -> None:
+        # Sorted by artist, the hundred "Artist 0000" rows all pass the genre
+        # filter: the visible rows are identical before and after, and the
+        # counter in the filter bar is what moved (replayed from the 2026-10-10 run).
+        workload = MISSION.workloads[2]
+        traces = self._filter_traces(chip_after=True)
+        same_rows = [
+            dataclasses.replace(
+                trace,
+                after_rows=trace.before_rows,
+                before_tree_labels=(*trace.before_tree_labels, "100,000 tracks \u00b7 265 d 3 h"),
+                after_tree_labels=(*trace.after_tree_labels, f"{4974 - index} of 100,000 tracks"),
+            )
+            for index, trace in enumerate(traces[:3])
+        ]
+
+        done = audit_action_workload(2, workload, [*same_rows, traces[3]], MISSION.fixture_tokens)
+        frozen = audit_action_workload(2, workload, [
+            dataclasses.replace(trace, after_rows=trace.before_rows) for trace in traces[:3]
+        ] + [traces[3]], MISSION.fixture_tokens)
+
+        self.assertTrue(done["facets_complete"], done)
+        self.assertFalse(frozen["facets_complete"])
 
     def test_the_filter_audit_reads_the_chips_from_the_tree(self) -> None:
         workload = MISSION.workloads[2]
