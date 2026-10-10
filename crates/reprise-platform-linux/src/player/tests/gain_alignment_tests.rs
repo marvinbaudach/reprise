@@ -8,6 +8,7 @@
 
 use std::path::Path;
 
+use super::segment_support::start_over_when_hung;
 use super::*;
 use crate::player_pipeline::AUDIO_SINK_ENV_VAR;
 
@@ -117,18 +118,20 @@ fn play_20a_every_buffer_of_each_track_carries_that_tracks_gain() {
     let (first, second) = write_wavs(directory.path());
     let samples = record_gain_per_buffer(&gain_element(&player));
 
-    player
-        .play(PlaybackItem {
+    start_over_when_hung(&player, || {
+        player
+            .play(PlaybackItem {
+                segment: None,
+                path: first.to_str().unwrap(),
+                gain_db: FIRST_GAIN_DB,
+            })
+            .unwrap();
+        player.set_next(Some(PlaybackItem {
             segment: None,
-            path: first.to_str().unwrap(),
-            gain_db: FIRST_GAIN_DB,
-        })
-        .unwrap();
-    player.set_next(Some(PlaybackItem {
-        segment: None,
-        path: second.to_str().unwrap(),
-        gain_db: SECOND_GAIN_DB,
-    }));
+            path: second.to_str().unwrap(),
+            gain_db: SECOND_GAIN_DB,
+        }));
+    });
     pump_until_finished(&rx);
 
     let samples = samples.lock().unwrap_or_else(PoisonError::into_inner);

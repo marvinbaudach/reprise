@@ -94,13 +94,15 @@ fn play_23a_a_cue_track_that_does_not_follow_on_is_started_afresh() {
     let directory = tempfile::tempdir().unwrap();
     let cue_file = album(&directory, "album.wav");
 
-    harness
-        .player
-        .play(cue_item(&cue_file, FIRST, 0.0))
-        .unwrap();
-    harness
-        .player
-        .set_next(Some(cue_item(&cue_file, ELSEWHERE, 0.0)));
+    harness.start(|| {
+        harness
+            .player
+            .play(cue_item(&cue_file, FIRST, 0.0))
+            .unwrap();
+        harness
+            .player
+            .set_next(Some(cue_item(&cue_file, ELSEWHERE, 0.0)));
+    });
     assert!(queued(&harness.player).is_none());
     let mut events = harness.pump_until(HANG_GUARD, |events| count(events, finished) > 0);
     events.extend(harness.pump_for(PAST_THE_FILE_END));
@@ -121,13 +123,15 @@ fn play_23a_a_refed_gain_reaches_the_track_already_handed_over() {
     let directory = tempfile::tempdir().unwrap();
     let cue_file = album(&directory, "album.wav");
 
-    harness
-        .player
-        .play(cue_item(&cue_file, FIRST, FIRST_GAIN_DB))
-        .unwrap();
-    harness
-        .player
-        .set_next(Some(cue_item(&cue_file, FOLLOWING, STALE_GAIN_DB)));
+    harness.start(|| {
+        harness
+            .player
+            .play(cue_item(&cue_file, FIRST, FIRST_GAIN_DB))
+            .unwrap();
+        harness
+            .player
+            .set_next(Some(cue_item(&cue_file, FOLLOWING, STALE_GAIN_DB)));
+    });
     let events = harness.pump_until(HANG_GUARD, |events| count(events, advanced) > 0);
     assert_eq!(count(&events, advanced), 1, "expected the hand-off");
 
