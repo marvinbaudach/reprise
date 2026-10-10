@@ -8161,7 +8161,12 @@ derives for a synced CUE file on the device (CUE-15).
   `cue_19_a_whole_file_track_has_no_cut`,
   `cue_19_an_open_cut_lasts_to_its_own_end_when_the_header_says_less`,
   `cue_19_an_open_cut_still_runs_to_the_file_when_the_file_is_longer_than_it_knows`,
-  `cue_19_a_cut_the_catalog_learned_ends_before_its_headers_end_is_cut_there`.
+  `cue_19_a_cut_the_catalog_learned_ends_before_its_headers_end_is_cut_there`,
+  `cue_19_a_track_longer_than_its_header_reports_and_plays_its_whole_length`,
+  `cue_19_the_second_half_of_a_track_longer_than_its_header_can_be_sought`.
+  The last two run a real `playbin3` on a FLAC whose header understates the
+  file by two seconds. Rows analysed before this rule keep the metadata's
+  length until they are analysed again.
   <!-- REVIEW: rule proposal -->
 
 ## AJ. Showroom (public site)

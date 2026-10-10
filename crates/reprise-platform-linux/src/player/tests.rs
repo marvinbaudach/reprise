@@ -17,6 +17,7 @@ mod segment_handoff_tests;
 mod segment_prefeed_tests;
 mod segment_start_tests;
 mod segment_support;
+mod segment_understated_tests;
 mod stream_generation_tests;
 
 fn item(path: &str) -> PlaybackItem<'_> {
