@@ -47,6 +47,16 @@ internal class LivePcmBufferSink : TeeAudioProcessor.AudioBufferSink, Player.Lis
     @Volatile
     private var playbackIntended: Boolean? = null
 
+    /**
+     * A seek happened and the stream has not been reset for it yet. Media3 reports a seek as
+     * `onIsPlayingChanged(false)` (buffering) *before* the audio sink flushes, so [flush] sees
+     * "not playing" and skips its reset, and the resume would otherwise read as a stall. Written
+     * on the application thread by [onPositionDiscontinuity] and cleared by whichever reset
+     * covers the seek, so it is a volatile flag rather than state under the render monitor.
+     */
+    @Volatile
+    private var seekPending = false
+
     fun attach(consumer: LivePcmConsumer) {
         this.consumer = consumer
         playbackIntended?.let { updatePlaybackIntentSafely(consumer, it) }
@@ -70,7 +80,10 @@ internal class LivePcmBufferSink : TeeAudioProcessor.AudioBufferSink, Player.Lis
         this.sampleRateHz = sampleRateHz
         this.channelCount = channelCount
         this.encoding = encoding
-        if (playing) consumer?.let(::resetSafely)
+        if (playing) {
+            seekPending = false
+            consumer?.let(::resetSafely)
+        }
     }
 
     @Synchronized
@@ -88,13 +101,28 @@ internal class LivePcmBufferSink : TeeAudioProcessor.AudioBufferSink, Player.Lis
         }
     }
 
+    /**
+     * A seek is a decoded-stream boundary: the new passage can be far quieter or louder than the
+     * one the gain was measured on, so the stream is measured again when playback resumes.
+     * Other discontinuities are not seeks; a song change is announced to the visualizer by its
+     * own call, and resetting the stream here too would undo the shape a swipe hands over.
+     */
+    override fun onPositionDiscontinuity(
+        oldPosition: Player.PositionInfo,
+        newPosition: Player.PositionInfo,
+        reason: Int,
+    ) {
+        if (reason == Player.DISCONTINUITY_REASON_SEEK) seekPending = true
+    }
+
     override fun onIsPlayingChanged(isPlaying: Boolean) {
         if (playing == isPlaying) return
         if (!isPlaying) {
             playing = false
             return
         }
-        consumer?.let(::resetHistorySafely)
+        consumer?.let { if (seekPending) resetSafely(it) else resetHistorySafely(it) }
+        seekPending = false
         // Volatile publication opens ingest only after the reset returned.
         playing = true
     }
