@@ -5,11 +5,22 @@ from __future__ import annotations
 from typing import Any, Mapping
 
 from protocol import ActionGateway
-from ui_vocabulary import RETRY_WORDS
+from ui_vocabulary import COLUMN_HEADER_ROLE, RETRY_WORDS, column_header_label
 from workload_audit import audit_action_workload
 
 
 SECTIONS = ("Music", "Queue", "Playlists", "Podcasts", "YouTube", "Radio", "My Stats")
+COLUMNS = ("Title", "Artist", "Album", "Year", "Rating")
+# The facet popover shows this many values at once and its list is longer.
+POPOVER_VISIBLE_ITEMS = 6
+POPOVER_SCROLL_ITEMS_PER_PAGE = 4
+POPOVER_ITEM_PITCH = 37
+POPOVER_TOP = 290
+FACET_VALUES = {
+    "genre": ("Genre 00 (4,974)", "Genre 01 (4,974)", "Genre 02 (4,974)"),
+    "year": tuple(f"{year} (106)" for year in range(1980, 2000)),
+    "rating": ("0 (1,658)", "2 (1,658)", "4 (1,658)"),
+}
 SOURCE_ROWS = {
     "Podcasts": "Fixture Podcast Needle",
     "YouTube": "Fixture YouTube Needle",
@@ -44,6 +55,8 @@ class FakeWorld:
         self.chips: list[str] = []
         self.genre = ""
         self.year = ""
+        self.saved = False
+        self.popover_offset = 0
 
     def observation(self) -> dict[str, Any]:
         elements = []
@@ -65,10 +78,13 @@ class FakeWorld:
             if "entry-has-no-value" in self.quirks:
                 value = None
             elements.append(self._element("Search all fields", "entry", y=10, value=value))
+        tree_labels: list[str] = []
+        popups: list[dict[str, float]] = []
         if self.dialog:
+            # The dialog title is an unindexed label: only the tree holds it.
+            tree_labels.extend(["512 of 100,000 tracks", "Edit 512 Tracks"])
             elements.extend(
                 [
-                    self._element("Edit 512 Tracks", "dialog", y=80, actionable=False),
                     self._element("Genre", "entry", y=120, value=self.genre),
                     self._element("Year", "entry", y=160, value=self.year),
                     self._element("Save 512", "button", y=210),
@@ -78,14 +94,16 @@ class FakeWorld:
             if "context-menu-missing" not in self.quirks or self.context_menu_alternate:
                 elements.append(self._element("Edit tags…", "menu item", y=300))
         elif self.menu_stage == "facet":
+            popups.append(self._popup(3))
             for index, facet in enumerate(("Genre", "Year", "Rating")):
-                elements.append(self._element(facet, "menu item", y=260 + index * 30))
+                elements.append(self._element(facet, "menu item", y=300 + index * 30, x=180))
         elif self.menu_stage and self.menu_stage.startswith("value:"):
-            facet = self.menu_stage.split(":", 1)[1]
-            options = {"genre": "Genre 00", "year": "1993", "rating": "4"}
-            elements.append(self._element(options[facet], "menu item", y=300))
+            popups.append(self._popup(POPOVER_VISIBLE_ITEMS))
+            for label, y in self._value_items():
+                elements.append(self._element(label, "list item", y=y, x=180))
         else:
             elements.extend(self._surface_elements())
+            tree_labels.extend(self._chip_labels())
         if self.selected_count and "no-selection-count" not in self.quirks and not self.dialog:
             elements.append(
                 self._element(
@@ -102,6 +120,8 @@ class FakeWorld:
             "window": {"width": 1200, "height": 800},
             "degraded": False,
             "actionable_labels": actionable,
+            "tree_labels": tree_labels,
+            "popups": popups,
             "elements": elements,
         }
 
@@ -133,6 +153,11 @@ class FakeWorld:
             elif keys == ["shift", "f10"]:
                 self.context_menu = "context-menu-missing" not in self.quirks
                 self.context_menu_alternate = False
+        elif kind == "scroll" and self.menu_stage and self.menu_stage.startswith("value:"):
+            step = POPOVER_SCROLL_ITEMS_PER_PAGE * int(action.get("amount", 1))
+            last = max(0, len(FACET_VALUES[self.menu_stage.split(":", 1)[1]]) - POPOVER_VISIBLE_ITEMS)
+            sign = 1 if action.get("direction") == "down" else -1
+            self.popover_offset = min(last, max(0, self.popover_offset + sign * step))
         elif kind == "scroll":
             amount = int(action.get("amount", 1))
             if action.get("direction") == "down":
@@ -179,20 +204,26 @@ class FakeWorld:
         if label.startswith("Save"):
             self.dialog = True
             self.saving = True
+            self.saved = True
             return
         if label == "Add filter":
             self.menu_stage = "facet"
             return
         if self.menu_stage == "facet" and label in {"Genre", "Year", "Rating"}:
             self.menu_stage = f"value:{label.casefold()}"
+            self.popover_offset = 0
             return
         if self.menu_stage and self.menu_stage.startswith("value:"):
             facet = self.menu_stage.split(":", 1)[1]
-            chip = {"genre": "Genre: Genre 00", "year": "Year: 1993", "rating": "Rating: 4"}[facet]
-            self.chips.append(chip)
+            visible = dict(self._value_items(visible_only=True))
+            # A click below the fold lands under the popover: it closes, and no
+            # filter is applied.
             self.menu_stage = None
+            if label in visible:
+                chip = {"genre": "Genre: Genre 00", "year": "Year: 1993", "rating": "Rating: 4"}[facet]
+                self.chips.append(chip)
             return
-        if any(column in label.casefold() for column in ("title", "artist", "album", "year", "rating")):
+        if label.endswith(column_header_label("")):
             self.sort_flip = not self.sort_flip
 
     def _surface_elements(self) -> list[dict[str, Any]]:
@@ -213,11 +244,13 @@ class FakeWorld:
             return elements
         if self.section != "Music":
             return elements
-        for index, column in enumerate(("Title", "Artist", "Album", "Year", "Rating")):
-            elements.append(self._element(column, "button", y=80, x=160 + index * 100))
+        for index, column in enumerate(COLUMNS):
+            elements.append(
+                self._element(
+                    column_header_label(column), COLUMN_HEADER_ROLE, y=80, x=160 + index * 100
+                )
+            )
         elements.append(self._element("Add filter", "button", y=120))
-        for chip_index, chip in enumerate(self.chips):
-            elements.append(self._element(chip, "button", y=140 + chip_index * 20))
         rows = self._music_rows()
         for index, label in enumerate(rows):
             elements.append(
@@ -225,12 +258,44 @@ class FakeWorld:
             )
         return elements
 
+    def _chip_labels(self) -> list[str]:
+        """A chip is two unindexed labels: the facet name and its value."""
+        labels: list[str] = []
+        for chip in self.chips:
+            facet, _separator, value = chip.partition(": ")
+            labels.extend([facet, value])
+        return labels
+
+    def _value_items(self, *, visible_only: bool = False) -> list[tuple[str, float]]:
+        facet = (self.menu_stage or "value:genre").split(":", 1)[1]
+        items = []
+        for index, label in enumerate(FACET_VALUES[facet]):
+            y = POPOVER_TOP + (index - self.popover_offset) * POPOVER_ITEM_PITCH
+            inside = POPOVER_TOP <= y <= POPOVER_TOP + (POPOVER_VISIBLE_ITEMS - 1) * POPOVER_ITEM_PITCH
+            if inside or not visible_only:
+                items.append((label, y))
+        return items
+
+    def _popup(self, items: int) -> dict[str, float]:
+        return {
+            "x": 150.0,
+            "y": POPOVER_TOP - 10.0,
+            "width": 300.0,
+            "height": items * POPOVER_ITEM_PITCH + 10.0,
+        }
+
     def _music_rows(self) -> list[str]:
         if self.search:
             if self.search == self.tokens.get("WRITABLE_BATCH"):
-                return [
-                    f"Writable Batch {self.offset * 8 + index:04}" for index in range(8)
+                # The whole label is every cell, the year among them; the batch
+                # edit rewrites it, the title stays.
+                year = 2042 if self.saved else 1980
+                rows = [
+                    f"Go to album Fixture Album 00 Writable Batch {self.offset * 8 + index + 1:04} "
+                    f"Fixture Artist 00 Fixture Album 00 {year} 0:01 \u2014"
+                    for index in range(8)
                 ]
+                return rows[::-1] if self.sort_flip else rows
             expected = self.search
             rows = [expected]
             if "search-leaks-music" in self.quirks:

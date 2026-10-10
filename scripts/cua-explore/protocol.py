@@ -243,7 +243,14 @@ def _validate_workloads(
         if kind not in ALLOWED_WORKLOADS:
             raise ContractError(f"unknown workload kind: {kind}")
         allowed_fields = {
-            "batch-edit": {"kind", "selection_count", "field_tokens", "verify"},
+            "batch-edit": {
+                "kind",
+                "selection_count",
+                "field_tokens",
+                "verify",
+                "sort_by",
+                "anchor_title_pattern",
+            },
             "sort-cycle": {"kind", "columns", "repetitions"},
             "combined-filter": {
                 "kind",
@@ -284,6 +291,16 @@ def _validate_workloads(
             for token in fields.values():
                 if token not in fixture_tokens:
                     raise ContractError(f"unknown batch field token: {token}")
+            if "sort_by" in workload:
+                _string(workload["sort_by"], "batch-edit sort_by")
+            if "anchor_title_pattern" in workload:
+                pattern = _string(workload["anchor_title_pattern"], "anchor_title_pattern")
+                try:
+                    re.compile(pattern)
+                except re.error as error:
+                    raise ContractError(
+                        f"batch-edit anchor_title_pattern is not a regex: {error}"
+                    ) from error
         elif kind == "sort-cycle":
             _integer(workload.get("repetitions"), "repetitions", 1, 200)
         elif kind == "combined-filter":

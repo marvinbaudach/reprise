@@ -1,0 +1,410 @@
+{
+ "_note": "Verbatim elements and popup of the Year facet popover from the large-library-stress rerun on 7a866310b0 (cua-driver 0.34.0, seed 11), step-0054-before.json: the popup spans y 252-540 while 1993 (106) sits at y=796, below the fold; items from 2004 on carry the driver's placeholder frame. The row is a track row whose label holds the digits 04.",
+ "popups": [
+  {
+   "bounds": {
+    "height": 288,
+    "width": 318,
+    "x": 568,
+    "y": 252
+   },
+   "pid": 1923759,
+   "title": "reprise",
+   "window_id": 4198304
+  }
+ ],
+ "window_bounds": {
+  "height": 1000,
+  "width": 1600,
+  "x": 240,
+  "y": 150
+ },
+ "frame_scale": 0.8475,
+ "elements": [
+  {
+   "actions": [],
+   "depth": 23,
+   "element_index": 3,
+   "element_token": "s0000010d:3",
+   "enabled": true,
+   "frame": {
+    "h": 38.0,
+    "w": 100.0,
+    "x": 666.0,
+    "y": 203.0
+   },
+   "geometry_trusted": true,
+   "label": "Add filter",
+   "parent_index": 1,
+   "role": "button",
+   "screenshot_frame": {
+    "h": 32,
+    "w": 85,
+    "x": 0,
+    "y": 0
+   }
+  },
+  {
+   "actions": [
+    "click"
+   ],
+   "depth": 24,
+   "element_index": 4,
+   "element_token": "s0000010d:4",
+   "enabled": true,
+   "frame": {
+    "h": 38.0,
+    "w": 100.0,
+    "x": 666.0,
+    "y": 203.0
+   },
+   "geometry_trusted": true,
+   "label": "Add filter",
+   "parent_index": 3,
+   "role": "toggle button",
+   "screenshot_frame": {
+    "h": 32,
+    "w": 85,
+    "x": 0,
+    "y": 0
+   }
+  },
+  {
+   "actions": [
+    "default.activate"
+   ],
+   "depth": 24,
+   "element_index": 5,
+   "element_token": "s0000010d:5",
+   "enabled": true,
+   "frame": {
+    "h": 288,
+    "w": 318,
+    "x": 240,
+    "y": 150
+   },
+   "geometry_trusted": false,
+   "parent_index": 3,
+   "role": "generic",
+   "screenshot_frame": {
+    "h": 244,
+    "w": 270,
+    "x": 0,
+    "y": 0
+   }
+  },
+  {
+   "actions": [
+    "click"
+   ],
+   "depth": 30,
+   "element_index": 6,
+   "element_token": "s0000010d:6",
+   "enabled": true,
+   "frame": {
+    "h": 34.0,
+    "w": 34.0,
+    "x": 577.0,
+    "y": 273.0
+   },
+   "geometry_trusted": true,
+   "label": "Back",
+   "parent_index": 5,
+   "role": "button",
+   "screenshot_frame": {
+    "h": 29,
+    "w": 29,
+    "x": 0,
+    "y": 0
+   }
+  },
+  {
+   "actions": [
+    "activate"
+   ],
+   "depth": 30,
+   "element_index": 7,
+   "element_token": "s0000010d:7",
+   "enabled": true,
+   "frame": {
+    "h": 34,
+    "w": 244,
+    "x": 240,
+    "y": 150
+   },
+   "geometry_trusted": false,
+   "parent_index": 5,
+   "role": "search box",
+   "screenshot_frame": {
+    "h": 29,
+    "w": 207,
+    "x": 0,
+    "y": 0
+   }
+  },
+  {
+   "actions": [],
+   "depth": 32,
+   "element_index": 8,
+   "element_token": "s0000010d:8",
+   "enabled": true,
+   "frame": {
+    "h": 37.0,
+    "w": 284.0,
+    "x": 577.0,
+    "y": 315.0
+   },
+   "geometry_trusted": true,
+   "label": "1980 (106)",
+   "parent_index": 5,
+   "role": "list item",
+   "screenshot_frame": {
+    "h": 31,
+    "w": 241,
+    "x": 0,
+    "y": 0
+   },
+   "selected": false
+  },
+  {
+   "actions": [],
+   "depth": 32,
+   "element_index": 9,
+   "element_token": "s0000010d:9",
+   "enabled": true,
+   "frame": {
+    "h": 37.0,
+    "w": 284.0,
+    "x": 577.0,
+    "y": 352.0
+   },
+   "geometry_trusted": true,
+   "label": "1981 (106)",
+   "parent_index": 5,
+   "role": "list item",
+   "screenshot_frame": {
+    "h": 31,
+    "w": 241,
+    "x": 0,
+    "y": 0
+   },
+   "selected": false
+  },
+  {
+   "actions": [],
+   "depth": 32,
+   "element_index": 10,
+   "element_token": "s0000010d:10",
+   "enabled": true,
+   "frame": {
+    "h": 37.0,
+    "w": 284.0,
+    "x": 577.0,
+    "y": 389.0
+   },
+   "geometry_trusted": true,
+   "label": "1982 (106)",
+   "parent_index": 5,
+   "role": "list item",
+   "screenshot_frame": {
+    "h": 31,
+    "w": 241,
+    "x": 0,
+    "y": 0
+   },
+   "selected": false
+  },
+  {
+   "actions": [],
+   "depth": 32,
+   "element_index": 11,
+   "element_token": "s0000010d:11",
+   "enabled": true,
+   "frame": {
+    "h": 37.0,
+    "w": 284.0,
+    "x": 577.0,
+    "y": 426.0
+   },
+   "geometry_trusted": true,
+   "label": "1983 (106)",
+   "parent_index": 5,
+   "role": "list item",
+   "screenshot_frame": {
+    "h": 31,
+    "w": 241,
+    "x": 0,
+    "y": 0
+   },
+   "selected": false
+  },
+  {
+   "actions": [],
+   "depth": 32,
+   "element_index": 12,
+   "element_token": "s0000010d:12",
+   "enabled": true,
+   "frame": {
+    "h": 37.0,
+    "w": 284.0,
+    "x": 577.0,
+    "y": 463.0
+   },
+   "geometry_trusted": true,
+   "label": "1984 (105)",
+   "parent_index": 5,
+   "role": "list item",
+   "screenshot_frame": {
+    "h": 31,
+    "w": 241,
+    "x": 0,
+    "y": 0
+   },
+   "selected": false
+  },
+  {
+   "actions": [],
+   "depth": 32,
+   "element_index": 13,
+   "element_token": "s0000010d:13",
+   "enabled": true,
+   "frame": {
+    "h": 37.0,
+    "w": 284.0,
+    "x": 577.0,
+    "y": 500.0
+   },
+   "geometry_trusted": true,
+   "label": "1985 (106)",
+   "parent_index": 5,
+   "role": "list item",
+   "screenshot_frame": {
+    "h": 31,
+    "w": 241,
+    "x": 0,
+    "y": 0
+   },
+   "selected": false
+  },
+  {
+   "actions": [],
+   "depth": 32,
+   "element_index": 14,
+   "element_token": "s0000010d:14",
+   "enabled": true,
+   "frame": {
+    "h": 37.0,
+    "w": 284.0,
+    "x": 577.0,
+    "y": 537.0
+   },
+   "geometry_trusted": true,
+   "label": "1986 (106)",
+   "parent_index": 5,
+   "role": "list item",
+   "screenshot_frame": {
+    "h": 31,
+    "w": 241,
+    "x": 0,
+    "y": 0
+   },
+   "selected": false
+  },
+  {
+   "actions": [],
+   "depth": 32,
+   "element_index": 21,
+   "element_token": "s0000010d:21",
+   "enabled": true,
+   "frame": {
+    "h": 37.0,
+    "w": 284.0,
+    "x": 577.0,
+    "y": 796.0
+   },
+   "geometry_trusted": true,
+   "label": "1993 (106)",
+   "parent_index": 5,
+   "role": "list item",
+   "screenshot_frame": {
+    "h": 31,
+    "w": 241,
+    "x": 0,
+    "y": 0
+   },
+   "selected": false
+  },
+  {
+   "actions": [],
+   "depth": 32,
+   "element_index": 22,
+   "element_token": "s0000010d:22",
+   "enabled": true,
+   "frame": {
+    "h": 37.0,
+    "w": 284.0,
+    "x": 577.0,
+    "y": 833.0
+   },
+   "geometry_trusted": true,
+   "label": "1994 (106)",
+   "parent_index": 5,
+   "role": "list item",
+   "screenshot_frame": {
+    "h": 31,
+    "w": 241,
+    "x": 0,
+    "y": 0
+   },
+   "selected": false
+  },
+  {
+   "depth": 32,
+   "element_index": 32,
+   "element_token": "s0000010d:32",
+   "enabled": true,
+   "frame": {
+    "h": 37,
+    "w": 284,
+    "x": 240,
+    "y": 150
+   },
+   "geometry_trusted": false,
+   "label": "2004 (105)",
+   "parent_index": 5,
+   "role": "list item",
+   "screenshot_frame": {
+    "h": 31,
+    "w": 241,
+    "x": 0,
+    "y": 0
+   },
+   "selected": false
+  },
+  {
+   "actions": [
+    "listitem.scroll-to"
+   ],
+   "depth": 27,
+   "element_index": 61,
+   "element_token": "s0000010d:61",
+   "enabled": true,
+   "frame": {
+    "h": 45.0,
+    "w": 1350.0,
+    "x": 480.0,
+    "y": 290.0
+   },
+   "geometry_trusted": true,
+   "label": "Go to album Album 04000 Track 094000 Artist 0000 Album 04000 1980 4:34 Rate 1 star Rate 2 stars Rate 3 stars Rate 4 stars Rate 5 stars",
+   "parent_index": 60,
+   "role": "row",
+   "screenshot_frame": {
+    "h": 38,
+    "w": 1144,
+    "x": 0,
+    "y": 0
+   }
+  }
+ ]
+}

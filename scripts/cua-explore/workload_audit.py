@@ -3,58 +3,21 @@
 
 from __future__ import annotations
 
-import re
-from dataclasses import dataclass
 from typing import Any, Mapping, Sequence
 
+from audit_traces import ActionTrace, folded as _folded, header_clicks as _header_clicks
+from batch_audit import (  # noqa: F401 - the names other modules import from here
+    SCROLL_ANCHOR_MIN_SHARED_ROWS,
+    SCROLL_ANCHOR_TOLERANCE_PX,
+    SELECTION_MARKER_NOUNS,
+    SELECTION_MARKER_VERBS,
+    anchor_rows,
+    audit_batch as _audit_batch,
+    label_shows_selection_count,
+    selection_marker_pattern,
+)
 from section_handles import section_handle
 from ui_vocabulary import RETRY_WORDS
-
-
-# A selection marker is the count standing next to a selection noun, as in the
-# tag dialog title "Edit 512 Tracks" or a status line "512 selected". The count
-# merely occurring somewhere inside a longer string is not evidence: the 100k
-# fixture names its rows "Track NNNNNN", so "Track 005128" would otherwise pass.
-SELECTION_MARKER_NOUNS = ("tracks", "track", "songs", "song", "items", "item", "selected")
-SELECTION_MARKER_VERBS = ("selected", "selection", "select")
-
-
-def selection_marker_pattern(selection_count: int) -> re.Pattern[str]:
-    """Match the count immediately adjacent to a selection noun, either order."""
-    nouns = "|".join(re.escape(noun) for noun in SELECTION_MARKER_NOUNS)
-    verbs = "|".join(re.escape(verb) for verb in SELECTION_MARKER_VERBS)
-    count = re.escape(str(selection_count))
-    return re.compile(
-        rf"(?<!\d){count}(?!\d)[\s\u00a0]*(?:{nouns})\b"
-        rf"|\b(?:{verbs})[\s:\u00a0]*(?<!\d){count}(?!\d)",
-        re.IGNORECASE,
-    )
-
-
-def label_shows_selection_count(label: str, selection_count: int) -> bool:
-    return selection_marker_pattern(selection_count).search(label) is not None
-
-
-@dataclass(frozen=True)
-class ActionTrace:
-    action: Mapping[str, Any]
-    before_labels: tuple[str, ...] = ()
-    after_labels: tuple[str, ...] = ()
-    before_rows: tuple[tuple[str, float], ...] = ()
-    after_rows: tuple[tuple[str, float], ...] = ()
-    before_selected_labels: tuple[str, ...] = ()
-    after_selected_labels: tuple[str, ...] = ()
-    after_actionable_labels: tuple[str, ...] = ()
-    before_values: tuple[tuple[str, str], ...] = ()
-    after_values: tuple[tuple[str, str], ...] = ()
-    after_roles: tuple[tuple[str, str], ...] = ()
-    finding_codes: tuple[str, ...] = ()
-    state_changed: bool = False
-    after_busy: bool = False
-
-
-def _folded(value: object) -> str:
-    return str(value or "").casefold()
 
 
 def _actions(traces: Sequence[ActionTrace], kind: str) -> list[Mapping[str, Any]]:
@@ -79,31 +42,46 @@ def _row_labels(rows: Sequence[tuple[str, float]]) -> tuple[str, ...]:
 
 
 def _audit_sort(workload: Mapping[str, Any], traces: Sequence[ActionTrace]) -> dict[str, Any]:
-    columns = tuple(_folded(item) for item in workload.get("columns", []))
+    columns = tuple(str(item) for item in workload.get("columns", []))
     repetitions = int(workload.get("repetitions", 0))
-    successful = [
-        trace
-        for trace in traces
-        if trace.action.get("kind") == "activate"
-        and any(
-            column in _folded(trace.action.get("target_label"))
-            for column in columns
-        )
-        and trace.state_changed
-        and trace.before_rows != trace.after_rows
-    ]
-    covered = {
-        column
-        for column in columns
-        if any(column in _folded(trace.action.get("target_label")) for trace in successful)
-    }
+    successful = _header_clicks(columns, traces)
+    covered = {column for column, _trace in successful}
     matching = len(successful)
     return {
-        "complete": matching >= repetitions and covered == set(columns),
+        "complete": matching >= repetitions and covered == {_folded(c) for c in columns},
         "matching_actions": matching,
         "required_actions": repetitions,
         "covered_columns": sorted(covered),
+        "clicks_per_column": {
+            column: sum(1 for item, _trace in successful if item == _folded(column))
+            for column in columns
+        },
     }
+
+
+def chip_shown(
+    labels: Sequence[str], tree_labels: Sequence[str], expected: str
+) -> bool:
+    """Whether the filter chip "Facet: value" is on screen.
+
+    A chip used to be one label and is now two unindexed ones in a row, the facet
+    name and its value ("Genre", "Genre 00"), so the tree labels are read as
+    consecutive pairs. A value may carry a suffix ("4 stars"). The filter popover
+    lists the same values as items with a count, so a value on its own proves
+    nothing; the facet name has to stand right before it.
+    """
+    folded = _folded(expected)
+    if any(folded in _folded(label) for label in labels):
+        return True
+    facet, separator, value = folded.partition(":")
+    if not separator:
+        return False
+    facet, value = facet.strip(), value.strip()
+    tree = [_folded(label) for label in tree_labels]
+    return any(
+        first == facet and (second == value or second.startswith(f"{value} "))
+        for first, second in zip(tree, tree[1:])
+    )
 
 
 def _audit_filter(
@@ -133,13 +111,15 @@ def _audit_filter(
                     and traces[index].state_changed
                     and _row_labels(traces[index].before_rows)
                     != _row_labels(traces[index].after_rows)
-                    and any(
-                        expected in _folded(label)
-                        for label in traces[index].after_labels
+                    and chip_shown(
+                        traces[index].after_labels,
+                        traces[index].after_tree_labels,
+                        expected,
                     )
-                    and not any(
-                        expected in _folded(label)
-                        for label in traces[index].before_labels
+                    and not chip_shown(
+                        traces[index].before_labels,
+                        traces[index].before_tree_labels,
+                        expected,
                     )
                 ),
                 None,
@@ -172,7 +152,11 @@ def _audit_filter(
         search_traces
         and set(active_labels) == set(facets)
         and all(
-            any(expected in _folded(label) for label in search_traces[-1].after_labels)
+            chip_shown(
+                search_traces[-1].after_labels,
+                search_traces[-1].after_tree_labels,
+                expected,
+            )
             for expected in active_labels.values()
         )
     )
@@ -474,138 +458,6 @@ def _audit_restart(
     }
 
 
-def _audit_batch(
-    workload: Mapping[str, Any],
-    traces: Sequence[ActionTrace],
-) -> dict[str, Any]:
-    field_tokens = workload.get("field_tokens", {})
-    selection_count = int(workload.get("selection_count", 0))
-    selection_pattern = selection_marker_pattern(selection_count)
-
-    def has_selection_marker(trace: ActionTrace) -> bool:
-        return any(selection_pattern.search(label) for label in trace.after_labels)
-
-    edit_index = next(
-        (
-            index
-            for index, trace in enumerate(traces)
-            if trace.action.get("kind") == "activate"
-            and "edit" in _folded(trace.action.get("target_label"))
-            and trace.state_changed
-        ),
-        None,
-    )
-    apply_index = next(
-        (
-            index
-            for index, trace in enumerate(traces)
-            if edit_index is not None
-            and index > edit_index
-            and trace.action.get("kind") == "activate"
-            and any(
-                word in _folded(trace.action.get("target_label"))
-                for word in ("apply", "save")
-            )
-            and trace.state_changed
-        ),
-        None,
-    )
-    edit_opened = edit_index is not None
-    edit_applied = apply_index is not None
-    typed_tokens = {
-        trace.action.get("fixture_token")
-        for index, trace in enumerate(traces)
-        if edit_index is not None
-        and apply_index is not None
-        and edit_index < index < apply_index
-        and trace.action.get("kind") == "type"
-        and trace.state_changed
-        and any(
-            token == trace.action.get("fixture_token")
-            and field in _folded(trace.action.get("target_label"))
-            for field, token in field_tokens.items()
-        )
-    }
-    selection_observed = bool(
-        edit_index is not None
-        and apply_index is not None
-        and has_selection_marker(traces[edit_index])
-        and has_selection_marker(traces[apply_index])
-    )
-    progress_probed = any(
-        trace.action.get("kind") == "wait"
-        and trace.action.get("expect_status") is True
-        and (
-            trace.after_busy
-            or "missing-waiting-feedback" in trace.finding_codes
-        )
-        for index, trace in enumerate(traces)
-        if apply_index is not None and index > apply_index
-    )
-    first_down_entry = next(
-        (
-            (index, trace)
-            for index, trace in enumerate(traces)
-            if edit_index is not None
-            and index < edit_index
-            if trace.action.get("kind") == "scroll"
-            and trace.action.get("direction") == "down"
-            and trace.state_changed
-            and trace.before_rows != trace.after_rows
-        ),
-        None,
-    )
-    last_up_entry = next(
-        (
-            (index, trace)
-            for index, trace in reversed(list(enumerate(traces)))
-            if apply_index is not None
-            and index > apply_index
-            and trace.action.get("kind") == "scroll"
-            and trace.action.get("direction") == "up"
-            and trace.state_changed
-            and trace.before_rows != trace.after_rows
-        ),
-        None,
-    )
-    first_down = first_down_entry[1] if first_down_entry else None
-    last_up = last_up_entry[1] if last_up_entry else None
-    before_anchor = dict(first_down.before_rows) if first_down else {}
-    after_anchor = dict(last_up.after_rows) if last_up else {}
-    shared_anchors = set(before_anchor) & set(after_anchor)
-    scroll_anchor_restored = any(
-        abs(before_anchor[label] - after_anchor[label]) <= 6.0
-        for label in shared_anchors
-    )
-    return {
-        "complete": (
-            set(field_tokens.values()).issubset(typed_tokens)
-            and selection_observed
-            and edit_opened
-            and edit_applied
-            and progress_probed
-            and first_down is not None
-            and last_up is not None
-            and scroll_anchor_restored
-        ),
-        "field_tokens_typed": sorted(typed_tokens & set(field_tokens.values())),
-        "selection_observed": selection_observed,
-        "edit_opened": edit_opened,
-        "edit_applied": edit_applied,
-        "progress_probed": progress_probed,
-        "scroll_anchor_probe_directions": [
-            direction
-            for direction, present in (
-                ("down", first_down is not None),
-                ("up", last_up is not None),
-            )
-            if present
-        ],
-        "scroll_anchor_restored": scroll_anchor_restored,
-        "requires_fixture_audit": True,
-    }
-
-
 def _audit_hover_sweep(
     workload: Mapping[str, Any],
     traces: Sequence[ActionTrace],
@@ -659,6 +511,14 @@ def _audit_hover_sweep(
         "measured_per_section": measured,
         "hover_findings": hover_findings,
     }
+
+
+def workloads_click_column_headers(workloads: Sequence[Mapping[str, Any]]) -> bool:
+    """Whether any workload sorts, so the observation must carry the headers."""
+    return any(
+        workload.get("kind") == "sort-cycle" or workload.get("sort_by")
+        for workload in workloads
+    )
 
 
 def audit_action_workload(

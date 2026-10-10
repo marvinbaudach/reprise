@@ -3,14 +3,24 @@
 from __future__ import annotations
 
 import random
+import re
 from typing import Any, Mapping
 
 from agents.sequencer import Phase
 from agents.steps import Step
 from agents.vocabulary import BUTTON_MATCHER, LabelMatcher, ROW_MATCHER
-from ui_vocabulary import BUTTON_ROLES, ENTRY_ROLES, RETRY_WORDS, SEARCH_ENTRY_LABEL
+from ui_vocabulary import (
+    BUTTON_ROLES,
+    COLUMN_HEADER_ROLE,
+    ENTRY_ROLES,
+    RETRY_WORDS,
+    SEARCH_ENTRY_LABEL,
+    column_header_label,
+)
 
 SOURCES_WITHOUT_REFRESH = ("Radio",)
+# How often a facet popover is scrolled while its wanted value is below the fold.
+POPOVER_SCROLL_STEPS = 6
 # The first ROW_MATCHER hit is the sidebar's "Music" row, not a result.
 RESULT_ROW_MATCHER = LabelMatcher(roles=ROW_MATCHER.roles, results_only=True)
 
@@ -29,6 +39,21 @@ def _activate(
         {"dispatch": "auto", "expect_effect": "required"},
         atomic_with_next=atomic,
         token_hint=token_hint,
+    )
+
+
+def _sort_by(name: str, column: str) -> Step:
+    """Click one column header, which the harness lends to the observation."""
+    return Step(
+        name,
+        "activate",
+        LabelMatcher(
+            exact=(column_header_label(column),),
+            roles=(COLUMN_HEADER_ROLE,),
+            strict_roles=True,
+        ),
+        {"dispatch": "auto", "expect_effect": "required"},
+        missing_code=f"agent-column-header-missing:{column}",
     )
 
 
@@ -223,6 +248,14 @@ def plan_batch_edit(workload: Mapping[str, Any], index: int, rng: random.Random)
             # a press aimed at the entry plays the focused row after its focus
             # click has dismissed the popover.
             Step("close-search", "hotkey", fields={"keys": ["ctrl", "f"]}),
+            # The edit rewrites genre and year. A list sorted by either would
+            # reorder by design and the scroll anchor could not tell that from a
+            # lost position, so sort by a column the edit leaves alone first.
+            *(
+                [_sort_by("sort-before-edit", str(workload["sort_by"]))]
+                if workload.get("sort_by")
+                else []
+            ),
             Step("focus-first-row", "activate", RESULT_ROW_MATCHER, {"dispatch": "ax"}),
             Step("anchor-down", "scroll", fields={"direction": "down", "amount": 1, "by": "page"}),
             Step("anchor-up-before-edit", "scroll", fields={"direction": "up", "amount": 1, "by": "page"}),
@@ -280,12 +313,7 @@ def plan_sort_cycle(workload: Mapping[str, Any], index: int, rng: random.Random)
             {"key": "escape"},
         ),
         *[
-            Step(
-                f"sort-{number}-{column}",
-                "activate",
-                LabelMatcher(contains=(column,)),
-                {"dispatch": "ax", "expect_effect": "required"},
-            )
+            _sort_by(f"sort-{number}-{column}", column)
             for number, column in enumerate(cycle)
         ],
     ]
@@ -307,19 +335,42 @@ def plan_combined_filter(
     for facet in workload.get("facets", []):
         value = str(active.get(facet, ""))
         option = value.split(":", maxsplit=1)[-1].strip()
+        # A value is listed with its count ("1993 (106)"). The popover list is
+        # taller than the popover, so a value below the fold is first scrolled
+        # into it; a click aimed at the position the tree reports for it lands
+        # on whatever lies under the popover instead.
+        listed_value = LabelMatcher(
+            patterns=(rf"{re.escape(option)}(?: \(\d[\d,]*\))?",), in_popup=True
+        )
+        any_listed_value = LabelMatcher(patterns=(r".+ \(\d[\d,]*\)",), in_popup=True)
         steps.extend(
             [
                 _activate(f"add-filter-{facet}", "Add filter"),
                 Step(
                     f"choose-facet-{facet}",
                     "activate",
-                    LabelMatcher(exact=(str(facet).title(),), contains=(str(facet),)),
+                    LabelMatcher(
+                        exact=(str(facet).title(),),
+                        contains=(str(facet),),
+                        in_popup=True,
+                    ),
                     {"dispatch": "ax"},
                 ),
+                *[
+                    Step(
+                        f"scroll-{facet}-values-{number}",
+                        "scroll",
+                        any_listed_value,
+                        {"direction": "down", "amount": 1, "by": "page"},
+                        required=False,
+                        skip_when=listed_value,
+                    )
+                    for number in range(POPOVER_SCROLL_STEPS)
+                ],
                 Step(
                     f"choose-value-{facet}",
                     "activate",
-                    LabelMatcher(exact=(option,), contains=(option,)),
+                    listed_value,
                     {"dispatch": "ax"},
                 ),
             ]

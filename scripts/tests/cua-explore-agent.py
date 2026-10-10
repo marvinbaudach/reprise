@@ -836,6 +836,8 @@ class FakeWorldTests(unittest.TestCase):
                 "window",
                 "degraded",
                 "actionable_labels",
+                "tree_labels",
+                "popups",
                 "elements",
             },
         )
