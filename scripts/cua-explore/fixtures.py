@@ -31,6 +31,96 @@ class FixtureError(ValueError):
 
 
 @dataclass(frozen=True)
+class FixtureTrack:
+    """One writable track, as the database row and the FLAC tags must both state it."""
+
+    title: str
+    artist: str
+    album: str
+    album_artist: str
+    genre: str
+    year: int
+    track_no: int
+    rating: int
+
+    def vorbis_tags(self) -> tuple[str, ...]:
+        return (
+            f"TITLE={self.title}",
+            f"ARTIST={self.artist}",
+            f"ALBUM={self.album}",
+            f"ALBUMARTIST={self.album_artist}",
+            f"GENRE={self.genre}",
+            f"DATE={self.year}",
+            f"TRACKNUMBER={self.track_no}",
+        )
+
+
+def fixture_track(index: int) -> FixtureTrack:
+    """The values of writable track `index`; the only place they are decided."""
+    return FixtureTrack(
+        title=f"Writable Batch {index + 1:04}",
+        artist=f"Fixture Artist {index % 32:02}",
+        album=f"Fixture Album {index % 64:02}",
+        album_artist=f"Fixture Artist {index % 32:02}",
+        genre=f"Fixture Genre {index % 8:02}",
+        year=1980 + index % 45,
+        track_no=index % 12 + 1,
+        rating=index % 6,
+    )
+
+
+def _require_metaflac() -> str:
+    binary = shutil.which("metaflac")
+    if binary is None:
+        raise FixtureError(
+            "metaflac is required to tag the writable audio fixtures; "
+            "install the flac package"
+        )
+    return binary
+
+
+def _flac_stream_info(metaflac: str, path: pathlib.Path, flag: str) -> int:
+    completed = subprocess.run(
+        [metaflac, flag, str(path)], check=False, capture_output=True, text=True
+    )
+    try:
+        return int(completed.stdout.strip())
+    except ValueError as error:
+        raise FixtureError(
+            f"metaflac {flag} failed for {path.name}: {completed.stderr.strip()[:200]}"
+        ) from error
+
+
+def _source_duration_ms(metaflac: str) -> int:
+    samples = _flac_stream_info(metaflac, SOURCE_FIXTURE, "--show-total-samples")
+    rate = _flac_stream_info(metaflac, SOURCE_FIXTURE, "--show-sample-rate")
+    # metaflac prints 0 when the stream does not record its length, and a zero
+    # here would seed every database row with a silent 0 ms duration.
+    if samples <= 0:
+        raise FixtureError("committed audio fixture reports no total samples")
+    if rate <= 0:
+        raise FixtureError("committed audio fixture reports no sample rate")
+    return samples * 1000 // rate
+
+
+def _tag_flac(metaflac: str, path: pathlib.Path, track: FixtureTrack) -> None:
+    """Replace every tag of the copy in place; the audio frames are not re-encoded."""
+    completed = subprocess.run(
+        [
+            metaflac,
+            "--remove-all-tags",
+            *(f"--set-tag={tag}" for tag in track.vorbis_tags()),
+            str(path),
+        ],
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+    if completed.returncode != 0:
+        raise FixtureError(f"metaflac could not tag {path.name}: {completed.stderr.strip()[:200]}")
+
+
+@dataclass(frozen=True)
 class FixturePlan:
     profile: str
     track_count: int
@@ -162,21 +252,27 @@ def _write_disposable_tracks(
 ) -> None:
     if not SOURCE_FIXTURE.is_file():
         raise FixtureError(f"committed audio fixture is missing: {SOURCE_FIXTURE}")
+    metaflac = _require_metaflac()
+    duration_ms = _source_duration_ms(metaflac)
     music_root.mkdir(parents=True)
     updates = []
     for index in range(count):
         path = music_root / f"Writable Batch {index + 1:04}.flac"
+        track = fixture_track(index)
         shutil.copyfile(SOURCE_FIXTURE, path)
+        _tag_flac(metaflac, path, track)
         updates.append(
             (
                 str(path),
-                f"Writable Batch {index + 1:04}",
-                f"Fixture Artist {index % 32:02}",
-                f"Fixture Album {index % 64:02}",
-                f"Fixture Artist {index % 32:02}",
-                f"Fixture Genre {index % 8:02}",
-                1980 + index % 45,
-                index % 6,
+                track.title,
+                track.artist,
+                track.album,
+                track.album_artist,
+                track.genre,
+                track.year,
+                track.track_no,
+                track.rating,
+                duration_ms,
                 index + 1,
             )
         )
@@ -184,7 +280,7 @@ def _write_disposable_tracks(
         """
         UPDATE tracks
         SET path = ?, title = ?, artist = ?, album = ?, album_artist = ?,
-            genre = ?, year = ?, rating = ?
+            genre = ?, year = ?, track_no = ?, rating = ?, duration_ms = ?
         WHERE id = ?
         """,
         updates,
@@ -205,6 +301,19 @@ def _sha256(path: pathlib.Path) -> str:
         for chunk in iter(lambda: source.read(1024 * 1024), b""):
             digest.update(chunk)
     return digest.hexdigest()
+
+
+def _audio_baseline(music_root: pathlib.Path) -> dict[str, str]:
+    """File name to sha256 of every writable copy as it stands, tags included."""
+    return {
+        path.name: _sha256(path)
+        for path in sorted(music_root.glob("Writable Batch *.flac"))
+    }
+
+
+def _audio_bytes(music_root: pathlib.Path) -> int:
+    """Combined size of every writable copy as it stands; tagged copies outgrow the source."""
+    return sum(path.stat().st_size for path in music_root.glob("Writable Batch *.flac"))
 
 
 def _seed_source_rows(conn: sqlite3.Connection) -> None:
@@ -296,7 +405,7 @@ def audit_batch_edit(
         field_tokens = workload["field_tokens"]
         genre = str(fixture_tokens[field_tokens["genre"]])
         year = int(fixture_tokens[field_tokens["year"]])
-        baseline_sha = str(manifest["writable_audio_sha256"])
+        baseline_by_file = dict(manifest["writable_audio_sha256_by_file"])
     except (OSError, KeyError, TypeError, ValueError, json.JSONDecodeError) as error:
         raise FixtureError(f"batch audit contract is incomplete: {error}") from error
     if manifest.get("writable_track_count") != expected:
@@ -317,12 +426,19 @@ def audit_batch_edit(
             (genre, year),
         ).fetchone()[0]
     audio_files = sorted(music_root.glob("Writable Batch *.flac"))
-    audio_files_changed = sum(_sha256(path) != baseline_sha for path in audio_files)
+    # A copy the manifest never saw cannot be compared, but it is not unchanged
+    # either: it is reported, and it keeps the audit from claiming completeness.
+    unbaselined = [path.name for path in audio_files if path.name not in baseline_by_file]
+    audio_files_changed = sum(
+        path.name not in baseline_by_file or _sha256(path) != baseline_by_file[path.name]
+        for path in audio_files
+    )
     complete = (
         database_rows_updated == expected
         and all_matching_rows == expected
         and len(audio_files) == expected
         and audio_files_changed == expected
+        and not unbaselined
     )
     return {
         "kind": "batch-edit",
@@ -331,6 +447,7 @@ def audit_batch_edit(
         "database_rows_with_values": all_matching_rows,
         "audio_files_found": len(audio_files),
         "audio_files_changed": audio_files_changed,
+        "audio_files_without_baseline": unbaselined,
         "complete": complete,
     }
 
@@ -375,12 +492,10 @@ def prepare_profile(
         "private_xdg": True,
         "real_library_access": False,
         "writable_audio_bytes": (
-            SOURCE_FIXTURE.stat().st_size * plan.writable_track_count
-            if plan.writable_track_count
-            else 0
+            _audio_bytes(music_root) if plan.writable_track_count else 0
         ),
-        "writable_audio_sha256": (
-            _sha256(SOURCE_FIXTURE) if plan.writable_track_count else None
+        "writable_audio_sha256_by_file": (
+            _audio_baseline(music_root) if plan.writable_track_count else {}
         ),
     }
     (root / "fixture-manifest.json").write_text(

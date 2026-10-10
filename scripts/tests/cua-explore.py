@@ -1,7 +1,11 @@
 #!/usr/bin/env python3
 
+import dataclasses
 import json
 import pathlib
+import shutil
+import sqlite3
+import subprocess
 import sys
 import tempfile
 import time
@@ -317,6 +321,245 @@ def driver_element(index, label, role, x, y, w, h, *, depth=3, parent_index=0, e
         "role": role,
         "value": "",
     }
+
+
+def exported_tags(path: pathlib.Path) -> dict[str, str]:
+    """The Vorbis comments of one FLAC, upper-cased keys, as metaflac prints them."""
+    completed = subprocess.run(
+        ["metaflac", "--export-tags-to=-", str(path)],
+        check=True,
+        capture_output=True,
+        text=True,
+    )
+    tags = {}
+    for line in completed.stdout.splitlines():
+        key, _, value = line.partition("=")
+        tags[key.upper()] = value
+    return tags
+
+
+def real_duration_ms() -> int:
+    """The length the committed sine fixture really has, read from its stream info."""
+
+    def stream_info(flag: str) -> int:
+        completed = subprocess.run(
+            ["metaflac", flag, str(fixtures.SOURCE_FIXTURE)],
+            check=True,
+            capture_output=True,
+            text=True,
+        )
+        return int(completed.stdout.strip())
+
+    return stream_info("--show-total-samples") * 1000 // stream_info("--show-sample-rate")
+
+
+class FixtureAudioTagTests(unittest.TestCase):
+    """The writable copies are tagged, so a re-read after the batch edit keeps every row."""
+
+    TRACKS = 3
+
+    def setUp(self) -> None:
+        # Scratch lives on disk under the approved base, never in the RAM-backed /tmp.
+        fixtures.CACHE_SCRATCH_BASE.mkdir(parents=True, exist_ok=True)
+        holder = tempfile.TemporaryDirectory(
+            prefix=fixtures.SCRATCH_PREFIX, dir=fixtures.CACHE_SCRATCH_BASE
+        )
+        self.addCleanup(holder.cleanup)
+        self.root = pathlib.Path(holder.name)
+        self.music = self.root / "music"
+        db_root = self.root / "data" / "reprise"
+        db_root.mkdir(parents=True)
+        self.conn = sqlite3.connect(db_root / "reprise.db")
+        self.addCleanup(self.conn.close)
+        self.conn.execute(
+            """
+            CREATE TABLE tracks (
+                id INTEGER PRIMARY KEY, path TEXT, title TEXT, artist TEXT,
+                album TEXT, album_artist TEXT, genre TEXT, year INTEGER,
+                track_no INTEGER, rating INTEGER, duration_ms INTEGER
+            )
+            """
+        )
+        self.conn.executemany(
+            "INSERT INTO tracks (id, path, title, duration_ms) VALUES (?, '', '', 0)",
+            [(index + 1,) for index in range(self.TRACKS)],
+        )
+
+    def write_tracks(self) -> None:
+        fixtures._write_disposable_tracks(self.conn, self.music, self.TRACKS, "test")
+
+    def test_each_copy_carries_the_values_its_database_row_holds(self) -> None:
+        self.write_tracks()
+
+        rows = self.conn.execute(
+            "SELECT path, title, artist, album, album_artist, genre, year, track_no "
+            "FROM tracks ORDER BY id"
+        ).fetchall()
+        self.assertEqual(len(rows), self.TRACKS)
+        for path, title, artist, album, album_artist, genre, year, track_no in rows:
+            with self.subTest(path=path):
+                tags = exported_tags(pathlib.Path(path))
+                self.assertEqual(tags["TITLE"], title)
+                self.assertEqual(tags["ARTIST"], artist)
+                self.assertEqual(tags["ALBUM"], album)
+                self.assertEqual(tags["ALBUMARTIST"], album_artist)
+                self.assertEqual(tags["GENRE"], genre)
+                self.assertEqual(tags["DATE"], str(year))
+                self.assertEqual(tags["TRACKNUMBER"], str(track_no))
+                self.assertTrue(artist and album and genre and track_no)
+
+    def test_database_length_is_the_length_of_the_audio_so_a_reread_keeps_it(self) -> None:
+        self.write_tracks()
+
+        lengths = {row[0] for row in self.conn.execute("SELECT duration_ms FROM tracks")}
+        self.assertEqual(lengths, {real_duration_ms()})
+        self.assertGreater(real_duration_ms(), 0)
+
+    def test_a_missing_metaflac_is_a_fixture_error_not_untagged_files(self) -> None:
+        with mock.patch.object(fixtures.shutil, "which", return_value=None):
+            with self.assertRaisesRegex(FixtureError, "metaflac"):
+                self.write_tracks()
+
+        self.assertFalse(self.music.exists())
+
+    def metaflac_stub(self, total_samples: str, sample_rate: str, stderr: str = "") -> str:
+        """A directory holding a metaflac that answers only the two stream-info flags."""
+        stub_dir = self.root / "stub-bin"
+        stub_dir.mkdir()
+        stub = stub_dir / "metaflac"
+        stub.write_text(
+            "#!/bin/sh\n"
+            f"echo '{stderr}' >&2\n"
+            'case "$1" in\n'
+            f"  --show-total-samples) echo {total_samples} ;;\n"
+            f"  --show-sample-rate) echo {sample_rate} ;;\n"
+            "esac\n",
+            encoding="utf-8",
+        )
+        stub.chmod(0o755)
+        return str(stub_dir)
+
+    def test_unknown_total_samples_is_a_fixture_error_not_a_zero_length(self) -> None:
+        stub_dir = self.metaflac_stub("0", "44100", stderr="stream info is damaged")
+        with mock.patch.dict("os.environ", {"PATH": stub_dir}):
+            with self.assertRaisesRegex(FixtureError, "total samples"):
+                self.write_tracks()
+
+        self.assertFalse(self.music.exists())
+
+    def test_a_failing_stream_info_read_reports_what_metaflac_said(self) -> None:
+        stub_dir = self.metaflac_stub("not-a-number", "44100", stderr="stream info is damaged")
+        with mock.patch.dict("os.environ", {"PATH": stub_dir}):
+            with self.assertRaisesRegex(FixtureError, "stream info is damaged"):
+                self.write_tracks()
+
+    def test_manifest_audio_bytes_is_the_sum_of_the_tagged_copies(self) -> None:
+        plan = dataclasses.replace(
+            build_plan("writable-512"),
+            profile="tagged-test",
+            track_count=self.TRACKS,
+            writable_track_count=self.TRACKS,
+        )
+        profile_root = self.root.parent / f"{fixtures.SCRATCH_PREFIX}manifest-bytes"
+        self.addCleanup(shutil.rmtree, profile_root, ignore_errors=True)
+
+        def seed(_binary: pathlib.Path, db_path: pathlib.Path, count: int) -> dict:
+            with sqlite3.connect(db_path) as conn:
+                conn.execute(
+                    "CREATE TABLE tracks (id INTEGER PRIMARY KEY, path TEXT, title TEXT, "
+                    "artist TEXT, album TEXT, album_artist TEXT, genre TEXT, year INTEGER, "
+                    "track_no INTEGER, rating INTEGER, duration_ms INTEGER)"
+                )
+                conn.executemany(
+                    "INSERT INTO tracks (id, path, title, duration_ms) VALUES (?, '', '', 0)",
+                    [(index + 1,) for index in range(count)],
+                )
+            return {"generated_tracks": count}
+
+        with mock.patch.dict(fixtures.PLANS, {"tagged-test": plan}), mock.patch.object(
+            fixtures, "_seed_database", side_effect=seed
+        ):
+            fixtures.prepare_profile("tagged-test", profile_root, pathlib.Path("unused"))
+
+        manifest = json.loads((profile_root / "fixture-manifest.json").read_text())
+        on_disk = sum(path.stat().st_size for path in (profile_root / "music").glob("*.flac"))
+        self.assertGreater(on_disk, fixtures.SOURCE_FIXTURE.stat().st_size * self.TRACKS)
+        self.assertEqual(manifest["writable_audio_bytes"], on_disk)
+
+    def test_audit_reports_a_file_without_baseline_instead_of_aborting(self) -> None:
+        self.write_tracks()
+        self.conn.execute("UPDATE tracks SET genre = 'Batch Genre', year = 2042")
+        self.conn.commit()
+        baseline = fixtures._audio_baseline(self.music)
+        extra = f"Writable Batch {self.TRACKS + 1:04}.flac"
+        shutil.copyfile(self.music / "Writable Batch 0001.flac", self.music / extra)
+        (self.root / "fixture-manifest.json").write_text(
+            json.dumps(
+                {
+                    "writable_track_count": self.TRACKS + 1,
+                    "writable_audio_sha256_by_file": baseline,
+                }
+            ),
+            encoding="utf-8",
+        )
+        self.conn.execute(
+            "INSERT INTO tracks (id, path, title, genre, year, duration_ms) "
+            "VALUES (?, '', 'Writable Batch 0004', 'Batch Genre', 2042, 0)",
+            (self.TRACKS + 1,),
+        )
+        self.conn.commit()
+        for path in sorted(self.music.glob("*.flac")):
+            subprocess.run(
+                ["metaflac", "--set-tag=GENRE=Batch Genre", str(path)], check=True
+            )
+        workload = {
+            "kind": "batch-edit",
+            "selection_count": self.TRACKS + 1,
+            "field_tokens": {"genre": "BATCH_GENRE", "year": "BATCH_YEAR"},
+        }
+        tokens = {"BATCH_GENRE": "Batch Genre", "BATCH_YEAR": "2042"}
+
+        audit = fixtures.audit_batch_edit(self.root, workload, tokens)
+
+        self.assertEqual(audit["audio_files_without_baseline"], [extra])
+        self.assertEqual(audit["audio_files_found"], self.TRACKS + 1)
+        self.assertFalse(audit["complete"])
+
+    def test_audit_counts_a_file_against_its_own_baseline(self) -> None:
+        self.write_tracks()
+        self.conn.execute("UPDATE tracks SET genre = 'Batch Genre', year = 2042")
+        self.conn.commit()
+        baseline = fixtures._audio_baseline(self.music)
+        (self.root / "fixture-manifest.json").write_text(
+            json.dumps(
+                {
+                    "writable_track_count": self.TRACKS,
+                    "writable_audio_sha256_by_file": baseline,
+                }
+            ),
+            encoding="utf-8",
+        )
+        workload = {
+            "kind": "batch-edit",
+            "selection_count": self.TRACKS,
+            "field_tokens": {"genre": "BATCH_GENRE", "year": "BATCH_YEAR"},
+        }
+        tokens = {"BATCH_GENRE": "Batch Genre", "BATCH_YEAR": "2042"}
+
+        fresh = fixtures.audit_batch_edit(self.root, workload, tokens)
+        for path in sorted(self.music.glob("*.flac")):
+            subprocess.run(
+                ["metaflac", "--set-tag=GENRE=Batch Genre", str(path)], check=True
+            )
+        rewritten = fixtures.audit_batch_edit(self.root, workload, tokens)
+
+        self.assertEqual(
+            sorted(baseline), [f"Writable Batch {n:04}.flac" for n in (1, 2, 3)]
+        )
+        self.assertEqual(fresh["audio_files_changed"], 0)
+        self.assertFalse(fresh["complete"])
+        self.assertEqual(rewritten["audio_files_changed"], self.TRACKS)
+        self.assertTrue(rewritten["complete"])
 
 
 class DriverFieldSetTests(unittest.TestCase):
