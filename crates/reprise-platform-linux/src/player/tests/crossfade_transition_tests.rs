@@ -1,3 +1,4 @@
+use super::segment_support::start_over_when_hung;
 use super::*;
 use reprise_core::library::settings::TrackTransition;
 
@@ -21,12 +22,14 @@ fn play_20b_crossfade_promotion_carries_the_next_gain_from_the_first_sample() {
 
     let first = concat!(env!("CARGO_MANIFEST_DIR"), "/tests/fixtures/sine.flac");
     let second = concat!(env!("CARGO_MANIFEST_DIR"), "/tests/fixtures/blip.flac");
-    player.play(item(first)).unwrap();
-    player.set_next(Some(PlaybackItem {
-        segment: None,
-        path: second,
-        gain_db: 6.0,
-    }));
+    start_over_when_hung(&player, || {
+        player.play(item(first)).unwrap();
+        player.set_next(Some(PlaybackItem {
+            segment: None,
+            path: second,
+            gain_db: 6.0,
+        }));
+    });
 
     let main_context = gst::glib::MainContext::default();
     let deadline = std::time::Instant::now() + Duration::from_secs(15);
@@ -163,13 +166,15 @@ mod cue {
         let album = tone(&directory, "album.wav", 6_000);
         let single = tone(&directory, "single.wav", 3_000);
 
-        harness
-            .player
-            .play(cue_item(&album, (1_000, 3_000), 0.0))
-            .unwrap();
-        harness
-            .player
-            .set_next(Some(item(single.to_str().unwrap())));
+        harness.start(|| {
+            harness
+                .player
+                .play(cue_item(&album, (1_000, 3_000), 0.0))
+                .unwrap();
+            harness
+                .player
+                .set_next(Some(item(single.to_str().unwrap())));
+        });
         let (events, crossfaded) = pump_to_finish(&harness);
 
         assert!(
@@ -198,10 +203,12 @@ mod cue {
         let single = tone(&directory, "single.wav", 2_500);
         let album = tone(&directory, "album.wav", 6_000);
 
-        harness.player.play(item(single.to_str().unwrap())).unwrap();
-        harness
-            .player
-            .set_next(Some(cue_item(&album, (1_000, 3_000), 0.0)));
+        harness.start(|| {
+            harness.player.play(item(single.to_str().unwrap())).unwrap();
+            harness
+                .player
+                .set_next(Some(cue_item(&album, (1_000, 3_000), 0.0)));
+        });
         let (events, crossfaded) = pump_to_finish(&harness);
 
         assert!(!crossfaded, "no second pipeline may fade into a CUE track");
@@ -219,10 +226,12 @@ mod cue {
         harness
             .player
             .set_transition(TrackTransition::Crossfade, PROMOTION_FADE_SECONDS);
-        harness.player.play(item(first.to_str().unwrap())).unwrap();
-        harness
-            .player
-            .set_next(Some(item(second.to_str().unwrap())));
+        harness.start(|| {
+            harness.player.play(item(first.to_str().unwrap())).unwrap();
+            harness
+                .player
+                .set_next(Some(item(second.to_str().unwrap())));
+        });
         let events = harness.pump_until(HANG_GUARD, |events| count(events, advanced) > 0);
         assert_eq!(count(&events, advanced), 1, "the crossfade must promote");
         assert_eq!(count(&events, finished), 0);
@@ -256,10 +265,12 @@ mod cue {
             "the promoted pipeline must feed the visualizer"
         );
 
-        harness
-            .player
-            .play(cue_item(&album, (1_000, 2_000), 0.0))
-            .unwrap();
+        harness.start(|| {
+            harness
+                .player
+                .play(cue_item(&album, (1_000, 2_000), 0.0))
+                .unwrap();
+        });
         let (events, _) = pump_to_finish(&harness);
         assert_eq!(
             count(&events, finished),
@@ -298,10 +309,12 @@ mod cue {
         let directory = tempfile::tempdir().unwrap();
         let album = tone(&directory, "album.wav", 6_000);
         let single = tone(&directory, "single.wav", 3_000);
-        harness
-            .player
-            .play(cue_item(&album, (1_000, 3_000), 0.0))
-            .unwrap();
+        harness.start(|| {
+            harness
+                .player
+                .play(cue_item(&album, (1_000, 3_000), 0.0))
+                .unwrap();
+        });
         *harness
             .player
             .next_uri
