@@ -349,11 +349,7 @@ def plan_combined_filter(
                 Step(
                     f"choose-facet-{facet}",
                     "activate",
-                    LabelMatcher(
-                        exact=(str(facet).title(),),
-                        contains=(str(facet),),
-                        in_popup=True,
-                    ),
+                    LabelMatcher(exact=(str(facet).title(),), contains=(str(facet),)),
                     {"dispatch": "ax"},
                 ),
                 *[
