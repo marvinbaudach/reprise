@@ -520,19 +520,18 @@ when the host is busy.
 
 ## Known gaps on cua-driver 0.33 and 0.34
 
-The deck runs every mission to a finish instead of aborting, and on cua-driver 0.34.1
-(every `run-manifest.txt` records the driver version) the generated profiles
-`first-time-exploration`, `hover-affordance-sweep`, `section-search-isolation`,
-`offline-recovery` and `large-library-stress` reach `mission_complete`. The reruns on
-2026-10-10 (`dev` at `bfebd274bb` plus this branch, seed 11, release build) ended with
-all four stress workloads complete and both offline workloads complete. Four things
-stopped them before, and all four were in the deck rather than in the app: the sort audit
-credited five columns for 24 clicks that all hit one pixel of the header row; the batch
-audit keyed its scroll anchor on a label that holds the year the edit rewrites, on a list
-sorted by that year, and looked for the dialog title among nodes the driver does not
-index; the filter plan clicked a value below the fold of its popover; and the offline audit
-looked for an episode that a podcast card keeps folded. What each of them needed is under
-"What the harness adds to the driver's tree" above.
+The deck runs every mission to a finish instead of aborting. `offline-recovery`,
+`large-library-stress` and `section-search-isolation` reach `mission_complete` on cua-driver 0.34.1
+(every `run-manifest.txt` records the driver version); `first-time-exploration` and
+`hover-affordance-sweep` were last measured on 0.33.3. The reruns on
+2026-10-10 (`dev` at `bfebd274bb` plus this branch, seed 11, release build) ended with all four
+stress workloads complete and both offline workloads complete. Four things stopped them before,
+and all four were in the deck rather than in the app: the sort audit credited five columns for
+24 clicks that all hit one pixel of the header row; the batch audit keyed its scroll anchor on a
+label that holds the year the edit rewrites, on a list sorted by that year, and looked for the
+dialog title among nodes the driver does not index; the filter plan clicked a value below the
+fold of its popover; and the offline audit looked for an episode that a podcast card keeps
+folded. What each of them needed is under "What the harness adds to the driver's tree" above.
 
 What is still open:
 
@@ -540,18 +539,19 @@ What is still open:
   0.34.0 `Edit tags…` answers `element_bounds_unavailable` and the MPX fallback times out,
   so the plan clicks it by pixel. The other items of that menu are not exercised, and the
   pixel click has not been compared with the driver's own on 0.34.1.
-- Two oracles misfire on the Add filter popover, three times each per run, and they block
-  the automatic gate (`automatic_gate` stays false) although the mission completes.
-  `misrouted-click` reads the facet name that appears after "Add filter" as a different
-  click, and `invisible-actionable` flags the rows of a scrolled popover list, which the tree
-  reports below the window. Neither is an app finding.
+- Two oracles misfire on the Add filter popover, three times each per run. Both file their
+  finding as an error that blocks the gate (`blocks_gate: true`); the deck itself is advisory
+  (`automatic_gate` is always false) and the mission completes. `misrouted-click` reads the
+  facet name that appears after "Add filter" as a different click, and `invisible-actionable`
+  flags the rows of a scrolled popover list, which the tree reports below the window. Neither
+  is an app finding.
 - Ctrl+F did not close the search popover in any of the 2026-10-10 runs, although SEARCH-6
   says it toggles it: the popover is still listed as open before the next click, and that
   click only dismisses it. The plan therefore spends one click on the header it is about to
   sort by (`dismiss-popover-before-sort-before-edit`) and opens the search box with its
   opener before typing into it. Whether the app breaks SEARCH-6 or the injected key does not
-  reach the popover's window has not been established; a person with a real keyboard can
-  tell in one try.
+  reach the popover's window has not been established; issue 1261 asks a person with a real
+  keyboard to try it.
 - The sort audit counts every click on a column header that moved the rows, so the one that
   sorts the batch edit's list by Title is counted as well (25 matching of 24 required in the
   last run). A sort-cycle that missed one of its own clicks would not be noticed.
@@ -560,12 +560,13 @@ What is still open:
   card, whose action is `activate`, is no result either, and is only checked for being
   listed once (`agent-duplicate-cached-row`). Every result seen on 0.33 is a data row or a
   text-only button.
-- The sidebar headings (LIBRARY, PLAYLISTS, SMART) and the new-playlist button are not in
-  the accessibility tree at all - not in cua-driver's walk and not in a plain `Atspi`
-  walk of the same session - although the screenshot draws them. The hover sweep
-  therefore reaches the Playlists section through the playlist the generated profile
-  carries (`section_handles`) instead of the audit skipping the section; the missing
-  heading and button are a candidate NAV-11 defect.
+- The sidebar headings (LIBRARY, PLAYLISTS, SMART) and the new-playlist button used to be
+  missing from the accessibility tree - from cua-driver's walk and from a plain `Atspi`
+  walk of the same session - although the screenshot drew them. On `bfebd274bb` they are
+  there (`heading "PLAYLISTS"`, `button "New playlist"`, indexed), so the candidate NAV-11
+  defect no longer holds on the `large-library-stress` profile. The hover sweep still
+  reaches the Playlists section through the playlist the generated profile carries
+  (`section_handles`); it has not been rerun against the heading since.
 - The bundled agent's plans address list rows with `dispatch: ax`. A row offers no AT-SPI
   click, and the driver refuses to aim at it by element. The executor therefore sends such a
   click by pixel (`dispatch: px`, with the `frame_scale`-corrected point, no accessibility
