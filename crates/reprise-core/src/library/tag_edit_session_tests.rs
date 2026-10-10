@@ -2,6 +2,7 @@
 //! crate's 800-line-per-file rule (mirroring `scanner_tests.rs`).
 
 use super::*;
+use crate::library::tag_edit::TagPatch;
 use std::path::PathBuf;
 
 fn track(id: i64, artist: &str, album: &str, genre: &str) -> SessionTrack {

@@ -26,7 +26,7 @@ use std::collections::HashMap;
 use std::collections::HashSet;
 use std::path::PathBuf;
 
-use super::tag_edit::{EditableTags, TagPatch, TrackEditPatch};
+use super::tag_edit::{EditableTags, TrackEditPatch};
 use super::tag_edit_write::TrackWrite;
 
 /// A field's placeholder text for an empty string / absent number, used
@@ -49,16 +49,6 @@ pub enum TagField {
     TrackNo,
     Rating,
 }
-
-const ALL_TAG_FIELDS: [TagField; 7] = [
-    TagField::Title,
-    TagField::Artist,
-    TagField::Album,
-    TagField::AlbumArtist,
-    TagField::Genre,
-    TagField::Year,
-    TagField::TrackNo,
-];
 
 const ALL_FIELDS: [TagField; 8] = [
     TagField::Title,
@@ -396,19 +386,15 @@ impl TagEditSession {
 
     fn effective_patch_for_track(&self, track: &SessionTrack) -> TrackEditPatch {
         let mut patch = TrackEditPatch::default();
-        for &field in &ALL_TAG_FIELDS {
-            let old = self.original_value(track, field);
-            let new = self.effective_value(track, field);
-            if old == new {
-                continue;
-            }
-            set_tag_patch_value(&mut patch.tags, field, new);
-        }
-        let old_rating = self.original_value(track, TagField::Rating);
-        let new_rating = self.effective_value(track, TagField::Rating);
-        if old_rating != new_rating {
-            if let FieldValue::Rating(rating) = new_rating {
-                patch.rating = Some(rating);
+        // A field whose effective value differs from the original can only
+        // differ because the track has a pending value for it, so the patch
+        // copies that pending field and no value is ever re-paired with a field.
+        let Some(pending) = self.pending.get(&track.id) else {
+            return patch;
+        };
+        for &field in &ALL_FIELDS {
+            if self.original_value(track, field) != self.effective_value(track, field) {
+                copy_pending_value(&mut patch, pending, field);
             }
         }
         patch
@@ -481,24 +467,19 @@ fn clear_pending_value(patch: &mut TrackEditPatch, field: TagField) {
     }
 }
 
-fn set_tag_patch_value(tags: &mut TagPatch, field: TagField, value: FieldValue) {
-    match (field, value) {
-        (TagField::Title, FieldValue::Text(value)) => tags.title = Some(value),
-        (TagField::Artist, FieldValue::Text(value)) => tags.artist = Some(value),
-        (TagField::Album, FieldValue::Text(value)) => tags.album = Some(value),
-        (TagField::AlbumArtist, FieldValue::Text(value)) => tags.album_artist = Some(value),
-        (TagField::Genre, FieldValue::Text(value)) => tags.genre = Some(value),
-        (TagField::Year, FieldValue::Number(value)) => tags.year = Some(value),
-        (TagField::TrackNo, FieldValue::Number(value)) => tags.track_no = Some(value),
-        // Every caller pairs a field with the value kind it reads back, so a
-        // mismatch is a bug; the edit is dropped rather than applied wrongly.
-        (field, value) => {
-            tracing::warn!(
-                ?field,
-                ?value,
-                "dropping a tag edit whose value does not fit its field"
-            );
-        }
+fn copy_pending_value(target: &mut TrackEditPatch, pending: &TrackEditPatch, field: TagField) {
+    match field {
+        TagField::Title => target.tags.title.clone_from(&pending.tags.title),
+        TagField::Artist => target.tags.artist.clone_from(&pending.tags.artist),
+        TagField::Album => target.tags.album.clone_from(&pending.tags.album),
+        TagField::AlbumArtist => target
+            .tags
+            .album_artist
+            .clone_from(&pending.tags.album_artist),
+        TagField::Genre => target.tags.genre.clone_from(&pending.tags.genre),
+        TagField::Year => target.tags.year = pending.tags.year,
+        TagField::TrackNo => target.tags.track_no = pending.tags.track_no,
+        TagField::Rating => target.rating = pending.rating,
     }
 }
 
