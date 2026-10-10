@@ -72,7 +72,7 @@ pub fn search(terms: &str, order: SearchOrder) -> Result<Vec<StationCandidate>, 
         return Ok(Vec::new());
     }
     super::servers::try_servers(|server| {
-        let body = super::http::get(&search_url(server, terms, order))?;
+        let body = super::http::get(&search_url(server, terms, order)?)?;
         parse_candidates(&body)
     })
 }
@@ -97,7 +97,7 @@ pub fn search_by(
     order: SearchOrder,
 ) -> Result<Vec<StationCandidate>, RadioError> {
     super::servers::try_servers(|server| {
-        let body = super::http::get(&criteria_url(server, criteria, order))?;
+        let body = super::http::get(&criteria_url(server, criteria, order)?)?;
         parse_candidates(&body)
     })
 }
@@ -107,34 +107,28 @@ pub fn find_by_url(stream_url: &str) -> Result<Option<StationCandidate>, RadioEr
         return Ok(None);
     }
     super::servers::try_servers(|server| {
-        let body = super::http::get(&by_url_url(server, stream_url))?;
+        let body = super::http::get(&by_url_url(server, stream_url)?)?;
         Ok(parse_candidates(&body)?.into_iter().next())
     })
 }
 
-#[must_use]
-pub fn search_url(server: &str, terms: &str, order: SearchOrder) -> String {
-    let mut url = url::Url::parse(&format!(
-        "{}/json/stations/search",
-        server.trim_end_matches('/')
-    ))
-    .expect("radio-browser server URLs are normalized");
+pub fn search_url(server: &str, terms: &str, order: SearchOrder) -> Result<String, RadioError> {
+    let mut url = endpoint(server, "json/stations/search")?;
     url.query_pairs_mut()
         .append_pair("name", terms.trim())
         .append_pair("order", order.query_value())
         .append_pair("reverse", "true")
         .append_pair("limit", "50")
         .append_pair("hidebroken", "true");
-    url.into()
+    Ok(url.into())
 }
 
-#[must_use]
-pub fn criteria_url(server: &str, criteria: &SearchCriteria, order: SearchOrder) -> String {
-    let mut url = url::Url::parse(&format!(
-        "{}/json/stations/search",
-        server.trim_end_matches('/')
-    ))
-    .expect("radio-browser server URLs are normalized");
+pub fn criteria_url(
+    server: &str,
+    criteria: &SearchCriteria,
+    order: SearchOrder,
+) -> Result<String, RadioError> {
+    let mut url = endpoint(server, "json/stations/search")?;
     {
         let mut pairs = url.query_pairs_mut();
         if let Some(tag) = criteria.tag.as_deref() {
@@ -149,18 +143,21 @@ pub fn criteria_url(server: &str, criteria: &SearchCriteria, order: SearchOrder)
             .append_pair("limit", "50")
             .append_pair("hidebroken", "true");
     }
-    url.into()
+    Ok(url.into())
 }
 
-#[must_use]
-pub fn by_url_url(server: &str, stream_url: &str) -> String {
-    let mut url = url::Url::parse(&format!(
-        "{}/json/stations/byurl",
-        server.trim_end_matches('/')
-    ))
-    .expect("radio-browser server URLs are normalized");
+pub fn by_url_url(server: &str, stream_url: &str) -> Result<String, RadioError> {
+    let mut url = endpoint(server, "json/stations/byurl")?;
     url.query_pairs_mut().append_pair("url", stream_url.trim());
-    url.into()
+    Ok(url.into())
+}
+
+/// A radio-browser endpoint under `server`. A server name that does not form a
+/// URL is an unavailable server (the next one is tried), not a panic.
+fn endpoint(server: &str, path: &str) -> Result<url::Url, RadioError> {
+    url::Url::parse(&format!("{}/{path}", server.trim_end_matches('/'))).map_err(|error| {
+        RadioError::Unavailable(format!("radio-browser server URL is invalid: {error}").into())
+    })
 }
 
 pub fn parse_candidates(json: &str) -> Result<Vec<StationCandidate>, RadioError> {
@@ -296,7 +293,7 @@ mod tests {
     #[test]
     fn search_url_encodes_the_term_and_selected_order() {
         assert_eq!(
-            search_url("https://de1.example", "deep house", SearchOrder::Clicks),
+            search_url("https://de1.example", "deep house", SearchOrder::Clicks).unwrap(),
             "https://de1.example/json/stations/search?name=deep+house&order=clickcount&reverse=true&limit=50&hidebroken=true"
         );
     }
@@ -318,7 +315,8 @@ mod tests {
                     country_code: Some("DE".into()),
                 },
                 SearchOrder::Votes
-            ),
+            )
+            .unwrap(),
             "https://de1.example/json/stations/search?tag=metal&countrycode=DE&order=votes&reverse=true&limit=50&hidebroken=true"
         );
     }
@@ -329,7 +327,8 @@ mod tests {
     #[test]
     fn rad_5_criteria_url_with_no_filter_still_queries_the_whole_catalog() {
         assert_eq!(
-            criteria_url("https://de1.example", &SearchCriteria::default(), SearchOrder::Votes),
+            criteria_url("https://de1.example", &SearchCriteria::default(), SearchOrder::Votes)
+                .unwrap(),
             "https://de1.example/json/stations/search?order=votes&reverse=true&limit=50&hidebroken=true"
         );
     }
@@ -365,9 +364,16 @@ mod tests {
     }
 
     #[test]
+    fn a_server_name_that_is_not_a_url_is_an_unavailable_server_not_a_panic() {
+        assert!(search_url("not a url", "deep house", SearchOrder::Clicks).is_err());
+        assert!(criteria_url("not a url", &SearchCriteria::default(), SearchOrder::Votes).is_err());
+        assert!(by_url_url("not a url", "https://radio.example/live").is_err());
+    }
+
+    #[test]
     fn by_url_lookup_encodes_the_stream_as_one_query_value() {
         assert_eq!(
-            by_url_url("https://de1.example", "https://radio.example/live?a=1&b=2"),
+            by_url_url("https://de1.example", "https://radio.example/live?a=1&b=2").unwrap(),
             "https://de1.example/json/stations/byurl?url=https%3A%2F%2Fradio.example%2Flive%3Fa%3D1%26b%3D2"
         );
     }

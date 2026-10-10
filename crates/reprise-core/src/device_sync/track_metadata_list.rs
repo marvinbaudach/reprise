@@ -156,6 +156,14 @@ impl<'a> Reader<'a> {
         Ok(head)
     }
 
+    /// Takes exactly `N` bytes as an array, so a fixed-width field needs no
+    /// fallible slice-to-array conversion at its call site.
+    fn take_array<const N: usize>(&mut self) -> Result<[u8; N], TrackMetadataListError> {
+        self.take(N)?
+            .try_into()
+            .map_err(|_| TrackMetadataListError::UnexpectedEnd)
+    }
+
     fn path(&mut self) -> Result<String, TrackMetadataListError> {
         let path_len = self.u32()? as usize;
         std::str::from_utf8(self.take(path_len)?)
@@ -164,29 +172,19 @@ impl<'a> Reader<'a> {
     }
 
     fn u16(&mut self) -> Result<u16, TrackMetadataListError> {
-        Ok(u16::from_le_bytes(
-            self.take(2)?.try_into().expect("two bytes were requested"),
-        ))
+        Ok(u16::from_le_bytes(self.take_array()?))
     }
 
     fn u32(&mut self) -> Result<u32, TrackMetadataListError> {
-        Ok(u32::from_le_bytes(
-            self.take(4)?.try_into().expect("four bytes were requested"),
-        ))
+        Ok(u32::from_le_bytes(self.take_array()?))
     }
 
     fn i32(&mut self) -> Result<i32, TrackMetadataListError> {
-        Ok(i32::from_le_bytes(
-            self.take(4)?.try_into().expect("four bytes were requested"),
-        ))
+        Ok(i32::from_le_bytes(self.take_array()?))
     }
 
     fn i64(&mut self) -> Result<i64, TrackMetadataListError> {
-        Ok(i64::from_le_bytes(
-            self.take(8)?
-                .try_into()
-                .expect("eight bytes were requested"),
-        ))
+        Ok(i64::from_le_bytes(self.take_array()?))
     }
 
     fn is_empty(&self) -> bool {

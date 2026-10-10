@@ -581,7 +581,7 @@ impl DoctorReviewSession {
         self.groups
             .iter_mut()
             .find(|group| group.id == group_id)
-            .expect("validated group must remain present")
+            .ok_or(DoctorReviewError::UnknownGroup)?
             .chosen = Some(candidate.clone());
         self.rows.retain(
             |row| !matches!(row.origin, DoctorReviewRowOrigin::ManualGroup(id) if id == group_id),

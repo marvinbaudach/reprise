@@ -106,7 +106,11 @@ pub(in crate::library) fn set_equalizer_curve_in(
     conn: &Connection,
     curve: &crate::equalizer::EqualizerCurve,
 ) -> Result<(), rusqlite::Error> {
-    set_setting_in(conn, EQUALIZER_CURVE_KEY, &curve.serialize())
+    set_setting_in(
+        conn,
+        EQUALIZER_CURVE_KEY,
+        &crate::db_equalizer::curve_to_sql(curve)?,
+    )
 }
 
 pub(in crate::library) fn get_replay_gain_mode_in(conn: &Connection) -> ReplayGainMode {
@@ -145,8 +149,9 @@ pub(in crate::library) fn audio_effects_are_stored_in(
     conn: &Connection,
     effects: &crate::playback::AudioEffects,
 ) -> Result<bool, rusqlite::Error> {
-    let curve = crate::equalizer::EqualizerCurve::from_gstreamer_levels(effects.equalizer_bands)
-        .serialize();
+    let curve = crate::db_equalizer::curve_to_sql(
+        &crate::equalizer::EqualizerCurve::from_gstreamer_levels(effects.equalizer_bands),
+    )?;
     Ok(
         get_bool_in(conn, EQUALIZER_ENABLED_KEY, !effects.equalizer_enabled)?
             == effects.equalizer_enabled

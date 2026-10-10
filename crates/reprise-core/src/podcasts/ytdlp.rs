@@ -4,7 +4,7 @@ use std::{
     ffi::{OsStr, OsString},
     io::Read,
     path::{Path, PathBuf},
-    process::{Child, Command, ExitStatus, Stdio},
+    process::{Child, ChildStderr, ChildStdout, Command, ExitStatus, Stdio},
     sync::mpsc::{self, Receiver, RecvTimeoutError},
     thread,
     time::{Duration, Instant},
@@ -261,8 +261,9 @@ impl YtDlp {
         .map_err(|error| logged_spawn_error(operation, &error))?;
 
         let process_group = child.id();
-        let stdout = read_in_background(child.stdout.take().expect("piped stdout"));
-        let stderr = read_in_background(child.stderr.take().expect("piped stderr"));
+        let (stdout, stderr) = take_pipes(&mut child, operation)?;
+        let stdout = read_in_background(stdout);
+        let stderr = read_in_background(stderr);
         let deadline = Instant::now() + timeout;
 
         let status = loop {
@@ -407,6 +408,26 @@ pub(super) fn configure_process_group(command: &mut Command) {
 
 #[cfg(not(unix))]
 pub(super) fn configure_process_group(_command: &mut Command) {}
+
+/// Takes the two pipes the command asked for. A spawned child without them
+/// cannot be supervised, so it is killed and reported through the same error
+/// path as any other monitoring failure.
+pub(super) fn take_pipes(
+    child: &mut Child,
+    operation: &'static str,
+) -> Result<(ChildStdout, ChildStderr), PodcastError> {
+    match (child.stdout.take(), child.stderr.take()) {
+        (Some(stdout), Some(stderr)) => Ok((stdout, stderr)),
+        _ => {
+            terminate_process_tree(child);
+            Err(runtime_error(
+                "pipe_missing",
+                operation,
+                &std::io::Error::other("the child process has no piped stdout or stderr"),
+            ))
+        }
+    }
+}
 
 pub(super) fn terminate_process_tree(child: &mut Child) {
     terminate_process_group(child.id());

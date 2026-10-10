@@ -293,10 +293,14 @@ fn relink_from_folder_with_source(
                     &remaining,
                 )?
             };
-            if let Some(candidate) = candidate {
-                let expected_path = expected_paths
+            // Candidates are restricted to the remaining target ids, so every
+            // one has an expected path; one that does not is no match.
+            let candidate = candidate.and_then(|candidate| {
+                expected_paths
                     .get(&candidate.id)
-                    .expect("move candidates are restricted to remaining target ids");
+                    .map(|expected_path| (candidate, expected_path))
+            });
+            if let Some((candidate, expected_path)) = candidate {
                 let path_is_gone = source.probe(expected_path, LibraryLinkMode::Follow)
                     == LibraryPathPresence::Absent;
                 let (device, inode) =

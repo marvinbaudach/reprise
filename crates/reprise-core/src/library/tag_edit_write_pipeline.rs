@@ -180,9 +180,22 @@ pub(super) fn apply_track_writes_inner_with_lock(
                 .find(|(_, file)| file.position == index)
         });
         if let Some((file_index, file)) = journaled {
-            let result = file_results[file_index]
-                .take()
-                .expect("every claimed tag-write file has a terminal file result");
+            let Some(result) = file_results[file_index].take() else {
+                // Every claimed file ends with a result; a missing one is
+                // reported as this track's failure instead of aborting the batch.
+                push_failure(
+                    &mut report,
+                    write.id,
+                    &write.path,
+                    WriteErrorKind::Io,
+                    "the tag-write file finished without a result".into(),
+                );
+                if !file_progress_reported[file_index] {
+                    completed += 1;
+                    progress(completed, total);
+                }
+                continue;
+            };
             let result = if file_claimed[file_index] {
                 complete_tag_write_file(conn, file, result)
             } else {

@@ -138,12 +138,18 @@ impl AnalysisPcmSink {
     /// Takes the session out and finishes it. Only ever called once, after
     /// the decode call has returned and cancellation has been ruled out.
     pub(super) fn finish(&self) -> FinishedAnalysis {
-        let session = self
+        // `finish` is called at most once per sink; a second call finds no
+        // session and reports it as an analysis that produced nothing.
+        let Some(session) = self
             .session
             .lock()
             .unwrap_or_else(PoisonError::into_inner)
             .take()
-            .expect("finish is called at most once per sink");
+        else {
+            return FinishedAnalysis::Whole(
+                Err("the analysis session was already finished".into()),
+            );
+        };
         match session {
             SinkSession::Whole(session) => {
                 FinishedAnalysis::Whole(session.finish().map_err(|error| error.to_string()))

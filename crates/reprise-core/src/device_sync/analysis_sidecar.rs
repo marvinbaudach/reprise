@@ -231,32 +231,28 @@ impl<'a> Reader<'a> {
         Ok(head)
     }
 
+    /// Takes exactly `N` bytes as an array, so a fixed-width field needs no
+    /// fallible slice-to-array conversion at its call site.
+    fn take_array<const N: usize>(&mut self) -> Result<[u8; N], AnalysisSidecarError> {
+        self.take(N)?
+            .try_into()
+            .map_err(|_| AnalysisSidecarError::UnexpectedEnd)
+    }
+
     fn u16(&mut self) -> Result<u16, AnalysisSidecarError> {
-        Ok(u16::from_le_bytes(
-            self.take(2)?.try_into().expect("two bytes were requested"),
-        ))
+        Ok(u16::from_le_bytes(self.take_array()?))
     }
 
     fn u32(&mut self) -> Result<u32, AnalysisSidecarError> {
-        Ok(u32::from_le_bytes(
-            self.take(4)?.try_into().expect("four bytes were requested"),
-        ))
+        Ok(u32::from_le_bytes(self.take_array()?))
     }
 
     fn i64(&mut self) -> Result<i64, AnalysisSidecarError> {
-        Ok(i64::from_le_bytes(
-            self.take(8)?
-                .try_into()
-                .expect("eight bytes were requested"),
-        ))
+        Ok(i64::from_le_bytes(self.take_array()?))
     }
 
     fn f64(&mut self) -> Result<f64, AnalysisSidecarError> {
-        Ok(f64::from_le_bytes(
-            self.take(8)?
-                .try_into()
-                .expect("eight bytes were requested"),
-        ))
+        Ok(f64::from_le_bytes(self.take_array()?))
     }
 
     fn optional_i64(&mut self) -> Result<Option<i64>, AnalysisSidecarError> {

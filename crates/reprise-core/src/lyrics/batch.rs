@@ -212,24 +212,19 @@ fn run_batch_with_services(
         let needs = decision
             .as_ref()
             .map_or(NeedsFetch::Skip, CacheDecision::classification);
-        let outcome = if needs == NeedsFetch::Skip {
-            BatchItemOutcome::Skipped
-        } else if !network_allowed() {
-            return BatchRunStatus::Cancelled;
-        } else if (services.all_breakers_open)() {
-            let _ = on_progress(progress.fail());
-            return BatchRunStatus::Finished;
-        } else {
-            item_outcome(
+        // A fetch needs the cache decision that classified it, so a missing
+        // decision and a `Skip` classification are the same thing: skipped.
+        let outcome = match decision.as_ref().filter(|_| needs != NeedsFetch::Skip) {
+            None => BatchItemOutcome::Skipped,
+            Some(_) if !network_allowed() => return BatchRunStatus::Cancelled,
+            Some(_) if (services.all_breakers_open)() => {
+                let _ = on_progress(progress.fail());
+                return BatchRunStatus::Finished;
+            }
+            Some(decision) => item_outcome(
                 needs,
-                &(services.online)(
-                    &track.query,
-                    track.path.as_deref(),
-                    decision
-                        .as_ref()
-                        .expect("a non-skipped cache decision should exist"),
-                ),
-            )
+                &(services.online)(&track.query, track.path.as_deref(), decision),
+            ),
         };
         progress = progress.advance(outcome);
         if matches!(outcome, BatchItemOutcome::Failed) && (services.all_breakers_open)() {

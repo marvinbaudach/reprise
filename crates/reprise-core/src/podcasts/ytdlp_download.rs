@@ -84,8 +84,15 @@ pub(super) fn download(
         .spawn()
         .map_err(|error| super::ytdlp::logged_spawn_error("download", &error))?;
     let process_group = child.id();
-    let stdout = read_lines(child.stdout.take().expect("piped stdout"));
-    let stderr = super::ytdlp::read_in_background(child.stderr.take().expect("piped stderr"));
+    let (stdout, stderr) = match super::ytdlp::take_pipes(&mut child, "download") {
+        Ok(pipes) => pipes,
+        Err(error) => {
+            cleanup_artifacts(output);
+            return Err(error);
+        }
+    };
+    let stdout = read_lines(stdout);
+    let stderr = super::ytdlp::read_in_background(stderr);
     let deadline = Instant::now() + timeout;
     let mut output_lines = Vec::new();
     let mut received_bytes = 0;

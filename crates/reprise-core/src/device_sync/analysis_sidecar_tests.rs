@@ -159,3 +159,36 @@ fn cue_10_no_analysis_sidecar_is_made_for_a_track_cut_from_a_file() {
     assert_eq!(AnalysisSidecar::for_track(&db, 7).unwrap(), None);
     assert!(AnalysisSidecar::for_track(&db, 8).unwrap().is_some());
 }
+
+#[test]
+fn analysis_sidecar_decode_rejects_every_truncation_without_panicking() {
+    let encoded = AnalysisSidecar::new(
+        source(),
+        TrackSpectrogram::from_cells(vec![7; 48]).unwrap(),
+        vec![3, 5, 8, 13],
+        Some(MeasuredLoudness {
+            integrated_lufs: -17.25,
+            true_peak: 0.91,
+        }),
+    )
+    .encode()
+    .unwrap();
+
+    for length in 0..encoded.len() {
+        assert!(
+            AnalysisSidecar::decode(&encoded[..length]).is_err(),
+            "a {length}-byte prefix of {} bytes must be an error",
+            encoded.len()
+        );
+    }
+}
+
+#[test]
+fn analysis_sidecar_decode_rejects_garbage_after_a_valid_header() {
+    let mut garbage = b"RPA-SIDE".to_vec();
+    garbage.extend_from_slice(&FORMAT_VERSION.to_le_bytes());
+    garbage.extend_from_slice(&[0xFF; 64]);
+
+    assert!(AnalysisSidecar::decode(&garbage).is_err());
+    assert!(AnalysisSidecar::decode(&[0xFF; 64]).is_err());
+}

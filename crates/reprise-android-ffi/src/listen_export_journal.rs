@@ -313,7 +313,7 @@ fn read_array<const N: usize>(bytes: &[u8], at: &mut usize) -> io::Result<[u8; N
         .get(*at..end)
         .ok_or_else(|| io::Error::new(io::ErrorKind::UnexpectedEof, "truncated journal"))?
         .try_into()
-        .expect("slice length was checked");
+        .map_err(|_| io::Error::new(io::ErrorKind::UnexpectedEof, "truncated journal"))?;
     *at = end;
     Ok(value)
 }

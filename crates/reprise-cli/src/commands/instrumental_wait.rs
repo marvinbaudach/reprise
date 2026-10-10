@@ -145,8 +145,13 @@ fn settle_done(
         SaveMode::Stage => Ok(Some(WaitResult::Staged)),
         SaveMode::Save => {
             let now = now_unix();
-            // `config` is always `Some` in save+wait mode (checked up front).
-            let config = config.expect("promotion config present in save+wait mode");
+            // `config` is always `Some` in save+wait mode (checked up front); a
+            // missing one is reported as missing configuration.
+            let config = config.ok_or_else(|| {
+                CliError::InvalidInput(
+                    "saving a waited instrumental needs a promotion configuration".into(),
+                )
+            })?;
             match ai_promotion::promote(db, store, config, job.id, now) {
                 Ok(promotion) => Ok(Some(WaitResult::Saved {
                     result_track_id: promotion.result_track_id,

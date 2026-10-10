@@ -415,7 +415,7 @@ fn album_dto(
     let rows = album
         .rows
         .into_iter()
-        .map(|display| review_row_dto(scan, session, display))
+        .filter_map(|display| review_row_dto(scan, session, display))
         .collect();
     DoctorAlbumDto {
         album_key: album.key,
@@ -431,7 +431,7 @@ fn review_row_dto(
     scan: &DoctorScan,
     session: &DoctorReviewSession,
     display: DoctorReviewDisplayRow,
-) -> DoctorReviewRowDto {
+) -> Option<DoctorReviewRowDto> {
     let (row_ids, track_ids, applies_to_tracks) = match display {
         DoctorReviewDisplayRow::Track { row_id, track_id } => (vec![row_id], vec![track_id], 1),
         DoctorReviewDisplayRow::AllTracks {
@@ -446,11 +446,9 @@ fn review_row_dto(
             (row_ids, track_ids, track_count)
         }
     };
-    let row = session
-        .rows()
-        .iter()
-        .find(|row| row.id == row_ids[0])
-        .expect("grouped review row must belong to the session");
+    // A grouped row that no longer belongs to the session has nothing to show.
+    let first_row_id = row_ids.first()?;
+    let row = session.rows().iter().find(|row| row.id == *first_row_id)?;
     let track_title = (track_ids.len() == 1).then(|| {
         scan.tracks
             .iter()
@@ -459,7 +457,7 @@ fn review_row_dto(
             .map(|tags| tags.title.clone())
             .unwrap_or_default()
     });
-    DoctorReviewRowDto {
+    Some(DoctorReviewRowDto {
         row_ids: row_ids
             .into_iter()
             .map(reprise_core::library_doctor::DoctorReviewRowId::raw)
@@ -471,7 +469,7 @@ fn review_row_dto(
         current: row.current.clone(),
         proposed: row.proposed.clone(),
         source: proposal_source(row.source),
-    }
+    })
 }
 
 const fn proposal_source(source: ProposalSource) -> &'static str {

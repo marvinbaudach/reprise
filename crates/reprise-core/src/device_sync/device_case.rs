@@ -45,9 +45,9 @@ pub(super) fn adopt_resident_spelling(
     };
     match spelling {
         DirectorySpelling::Resident(directory) if directory != desired_prefix => {
-            let suffix = desired_directory
-                .strip_prefix(desired_prefix)
-                .expect("matched directory prefix");
+            let Some(suffix) = desired_directory.strip_prefix(desired_prefix) else {
+                return ResidentSpelling::Keep;
+            };
             ResidentSpelling::Adopt(format!("{directory}{suffix}/{file_name}"))
         }
         DirectorySpelling::Resident(_) => ResidentSpelling::Keep,
@@ -86,7 +86,11 @@ pub(super) fn rewrite_desired_paths(
             &resident_paths,
             &spellings,
         ) {
-            ResidentSpelling::Adopt(path) => desired.get_mut(&track_id).unwrap().device_path = path,
+            ResidentSpelling::Adopt(path) => {
+                if let Some(file) = desired.get_mut(&track_id) {
+                    file.device_path = path;
+                }
+            }
             ResidentSpelling::Keep => {}
             ResidentSpelling::Ambiguous => {
                 if let Some(resident_path) = own_path {
@@ -96,7 +100,9 @@ pub(super) fn rewrite_desired_paths(
                         resident_path,
                         "ambiguous device directory spelling; keeping the track's inventory path"
                     );
-                    desired.get_mut(&track_id).unwrap().device_path = resident_path.to_owned();
+                    if let Some(file) = desired.get_mut(&track_id) {
+                        file.device_path = resident_path.to_owned();
+                    }
                 } else {
                     let (first_spelling, second_spelling) =
                         ambiguous_spellings(&desired_path, &spellings)

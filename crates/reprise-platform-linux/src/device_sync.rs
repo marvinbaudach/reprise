@@ -408,21 +408,18 @@ impl DeviceStorage {
         P: FnMut(u64, u64) + 'static,
     {
         let components = safe_relative_components(relative_path)?;
+        let Some((target_name, parent_components)) = components.split_last() else {
+            return Err(DeviceIoError::InvalidRelativePath);
+        };
         let storage = self
             .resolve_target_storage(storage_id)
             .await
             .map_err(|error| error.during(WriteStep::ResolveStorage))?;
         let directories = self
-            .ensure_managed_directories(
-                &storage,
-                target_path,
-                &components[..components.len() - 1],
-                Some(cancellable),
-            )
+            .ensure_managed_directories(&storage, target_path, parent_components, Some(cancellable))
             .await
             .map_err(|error| error.during(WriteStep::CreateDirectories))?;
         let directory = child_of(&storage, &directories.components);
-        let target_name = components.last().expect("validated nonempty path");
         let target = directory.child(target_name);
         let mut resolved_path = directories.relative;
         resolved_path.push(target_name.clone());

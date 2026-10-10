@@ -135,8 +135,9 @@ pub(super) fn placeholder_distance(image: &DynamicImage) -> f64 {
     REFERENCE_THUMBNAILS
         .iter()
         .map(|reference| normalized_rmse(&thumbnail, reference))
-        .reduce(f64::min)
-        .expect("the placeholder reference set must not be empty")
+        // An empty reference set would read as "infinitely far from every
+        // placeholder", which is the safe answer.
+        .fold(f64::INFINITY, f64::min)
 }
 
 #[cfg(test)]
@@ -159,9 +160,14 @@ pub(super) fn thumbnail(image: &DynamicImage) -> [u8; PIXEL_COUNT] {
         )
         .into_raw()
     };
-    pixels
-        .try_into()
-        .expect("the portrait thumbnail dimensions must match PIXEL_COUNT")
+    // Both sides derive from the same dimension constants, so the copy fills
+    // the array exactly; a mismatch would leave the tail black rather than
+    // abort a cover fetch.
+    let mut thumbnail = [0_u8; PIXEL_COUNT];
+    for (slot, pixel) in thumbnail.iter_mut().zip(pixels) {
+        *slot = pixel;
+    }
+    thumbnail
 }
 
 fn normalized_rmse(left: &[u8; PIXEL_COUNT], right: &[u8; PIXEL_COUNT]) -> f64 {

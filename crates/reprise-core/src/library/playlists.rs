@@ -640,7 +640,7 @@ pub fn smart_rules_to_sql(
             "is-null" => {
                 format!("{} IS NULL", rule.field)
             }
-            _ => unreachable!(),
+            other => return Err(SmartRulesError::UnknownOperator(other.to_string())),
         };
 
         where_parts.push(where_frag);

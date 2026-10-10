@@ -64,3 +64,38 @@ fn cue_17_the_list_carries_each_cue_track_with_its_start() {
     assert_eq!(decoded, list);
     assert_eq!(decoded.segments[0].segment_start_ms, 10_013);
 }
+
+#[test]
+fn track_metadata_list_decode_rejects_every_truncation_without_panicking() {
+    let encoded = TrackMetadataList::new(vec![TrackMetadataEntry {
+        device_path: "Artist/Album/01 Song.opus".into(),
+        rating: 4,
+        play_count: 27,
+    }])
+    .with_segments(vec![SegmentMetadataEntry {
+        device_path: "Artist/Album/Cut.flac".into(),
+        segment_start_ms: 61_000,
+        rating: 3,
+        play_count: 2,
+    }])
+    .encode()
+    .unwrap();
+
+    for length in 0..encoded.len() {
+        assert!(
+            TrackMetadataList::decode(&encoded[..length]).is_err(),
+            "a {length}-byte prefix of {} bytes must be an error",
+            encoded.len()
+        );
+    }
+}
+
+#[test]
+fn track_metadata_list_decode_rejects_garbage_after_a_valid_header() {
+    let mut garbage = b"RPT-LIST".to_vec();
+    garbage.extend_from_slice(&FORMAT_VERSION.to_le_bytes());
+    garbage.extend_from_slice(&[0xFF; 64]);
+
+    assert!(TrackMetadataList::decode(&garbage).is_err());
+    assert!(TrackMetadataList::decode(&[0xFF; 64]).is_err());
+}

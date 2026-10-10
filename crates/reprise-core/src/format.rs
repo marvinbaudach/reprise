@@ -267,9 +267,20 @@ impl DatePattern {
     /// to [`Self::ISO`] when it carries anything this renderer will not
     /// print.
     pub fn from_platform(raw: &str) -> Self {
-        Self::parse(raw).unwrap_or_else(|| {
-            Self::parse(Self::ISO).expect("the ISO pattern is renderable by construction")
-        })
+        Self::parse(raw).unwrap_or_else(Self::iso)
+    }
+
+    /// The [`Self::ISO`] pattern built field by field, so the fallback never
+    /// has to be parsed (and so never has a failure path of its own).
+    fn iso() -> Self {
+        Self {
+            prefix: String::new(),
+            fields: vec![
+                (DateField::Year, "-".to_owned()),
+                (DateField::Month, "-".to_owned()),
+                (DateField::Day, String::new()),
+            ],
+        }
     }
 
     fn parse(raw: &str) -> Option<Self> {
@@ -558,6 +569,14 @@ mod tests {
     #[test]
     fn format_remaining_with_hours() {
         assert_eq!(format_remaining(0, 3_753_000), "\u{2212}1:02:33");
+    }
+
+    #[test]
+    fn the_iso_fallback_equals_the_parsed_iso_pattern() {
+        assert_eq!(
+            DatePattern::parse(DatePattern::ISO),
+            Some(DatePattern::iso())
+        );
     }
 
     #[test]

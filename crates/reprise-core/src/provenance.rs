@@ -196,12 +196,10 @@ pub fn write_ai_tags(path: &Path, tags: &AiTagSet) -> Result<(), ProvenanceTagEr
     let mut reader = std::fs::File::open(path)?;
     let mut flac = FlacFile::read_from(&mut reader, ParseOptions::new())?;
     drop(reader);
-    if flac.vorbis_comments().is_none() {
-        flac.set_vorbis_comments(VorbisComments::new());
-    }
-    let comments = flac
-        .vorbis_comments_mut()
-        .expect("vorbis comments just ensured present");
+    let mut comments = flac
+        .vorbis_comments()
+        .cloned()
+        .unwrap_or_else(VorbisComments::new);
     comments.insert(TAG_AI.to_string(), tags.kind.clone());
     comments.insert(TAG_AI_MODEL.to_string(), tags.model.clone());
     if let Some(source_text) = &tags.source_text {
@@ -211,6 +209,7 @@ pub fn write_ai_tags(path: &Path, tags: &AiTagSet) -> Result<(), ProvenanceTagEr
         comments.insert(TAG_AI_SOURCE_MBID.to_string(), source_mbid.clone());
     }
     comments.insert(TAG_COMMENT.to_string(), human_comment(&tags.kind));
+    flac.set_vorbis_comments(comments);
     flac.save_to_path(path, WriteOptions::default())?;
     Ok(())
 }

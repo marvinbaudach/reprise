@@ -216,11 +216,13 @@ fn process_batch<'source>(
                 ),
                 PreparedAction::Import { plan, meta } => {
                     let path = item.observed.as_ref().map(|(path, _)| path.as_path());
-                    let outcome = entry::apply_entry(
-                        &mut scan,
-                        &plan,
-                        (*meta).expect("metadata is read before the second lease"),
-                    )?;
+                    // The read loop above fills `meta` for every import before
+                    // the second lease; reading here is only the safety net for
+                    // an item that loop somehow skipped.
+                    let meta = (*meta).unwrap_or_else(|| {
+                        super::track_meta::read_meta_with_fallback(source, plan.path())
+                    });
+                    let outcome = entry::apply_entry(&mut scan, &plan, meta)?;
                     (path, outcome)
                 }
             };

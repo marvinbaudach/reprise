@@ -80,9 +80,9 @@ pub fn manage_episodes(
             "at most {MAX_EPISODE_IDS} episode_ids per call"
         )));
     }
-    let action: &'static str = match params.action.as_str() {
-        "download" => "download",
-        "remove" => "remove",
+    let action = match params.action.as_str() {
+        "download" => EpisodeAction::Download,
+        "remove" => EpisodeAction::Remove,
         other => {
             return Err(DataError::InvalidInput(format!(
                 "unknown episode action '{other}'"
@@ -97,13 +97,32 @@ pub fn manage_episodes(
         .episode_ids
         .iter()
         .map(|&episode_id| match action {
-            "download" => download_one(&db, &download_root, episode_id),
-            "remove" => remove_one(&db, episode_id),
-            _ => unreachable!("episode action was validated above"),
+            EpisodeAction::Download => download_one(&db, &download_root, episode_id),
+            EpisodeAction::Remove => remove_one(&db, episode_id),
         })
         .collect();
 
-    Ok(ManageEpisodesResult { action, outcomes })
+    Ok(ManageEpisodesResult {
+        action: action.name(),
+        outcomes,
+    })
+}
+
+/// The two episode actions a caller may name; anything else is rejected
+/// before any work starts.
+#[derive(Clone, Copy)]
+enum EpisodeAction {
+    Download,
+    Remove,
+}
+
+impl EpisodeAction {
+    const fn name(self) -> &'static str {
+        match self {
+            Self::Download => "download",
+            Self::Remove => "remove",
+        }
+    }
 }
 
 fn download_one(

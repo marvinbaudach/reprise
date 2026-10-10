@@ -90,9 +90,12 @@ impl SpectrogramBackfillHandle {
     }
 
     pub fn join(mut self) -> Result<BackfillSummary, BackfillWorkerError> {
+        // `join` consumes the handle, so the worker is present; a handle
+        // without one has no summary to give and is reported like a worker
+        // that ended without one.
         self.worker
             .take()
-            .expect("backfill worker is joined at most once")
+            .ok_or(BackfillWorkerError::Panicked)?
             .join()
             .map_err(|_| BackfillWorkerError::Panicked)?
             .map_err(Into::into)

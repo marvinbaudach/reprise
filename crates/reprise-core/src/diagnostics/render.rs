@@ -6,6 +6,8 @@ use super::redact::redact_log_message;
 const RENDERED_EVENT_LIMIT: usize = 10;
 const UNKNOWN: &str = "unknown";
 
+// Writing into a `String` cannot fail, so the `fmt::Result` of every `write!`
+// below carries no information and is discarded with `let _ =`.
 pub fn render_report(
     facts: &DiagnosticFacts,
     log: &DiagnosticLog,
@@ -15,8 +17,8 @@ pub fn render_report(
     let version = optional(&facts.version);
     let git_sha = optional(&facts.git_sha);
     let profile = optional(&facts.build_profile);
-    writeln!(report, "reprise {version} ({git_sha}, {profile})").unwrap();
-    writeln!(report, "{}", package_line(facts.package.as_ref())).unwrap();
+    let _ = writeln!(report, "reprise {version} ({git_sha}, {profile})");
+    let _ = writeln!(report, "{}", package_line(facts.package.as_ref()));
     let os_name = optional(&facts.os_name);
     let os_version = facts
         .os_version
@@ -25,43 +27,38 @@ pub fn render_report(
         .map_or_else(String::new, |version| format!(" {version}"));
     let gnome_version = optional(&facts.gnome_version);
     let display_server = optional(&facts.display_server);
-    writeln!(
+    let _ = writeln!(
         report,
         "os {os_name}{os_version} · gnome {gnome_version} · {display_server}"
-    )
-    .unwrap();
-    writeln!(
+    );
+    let _ = writeln!(
         report,
         "gtk {} · libadwaita {}",
         optional(&facts.gtk_version),
         optional(&facts.libadwaita_version)
-    )
-    .unwrap();
-    writeln!(
+    );
+    let _ = writeln!(
         report,
         "rust {} · gstreamer {} ({})",
         optional(&facts.rust_version),
         optional(&facts.gstreamer_version),
         optional(&facts.audio_backend)
-    )
-    .unwrap();
-    writeln!(report, "locale {}", optional(&facts.locale)).unwrap();
-    writeln!(
+    );
+    let _ = writeln!(report, "locale {}", optional(&facts.locale));
+    let _ = writeln!(
         report,
         "db schema {} · {} · {} tracks · {}",
         optional_display(facts.db_schema),
         optional(&facts.db_journal_mode),
         optional_display(facts.track_count),
         database_size(facts.db_size_bytes)
-    )
-    .unwrap();
-    write!(
+    );
+    let _ = write!(
         report,
         "mtp gvfs {} · {}",
         optional(&facts.gvfs_version),
         remembered_devices(facts.remembered_device_count)
-    )
-    .unwrap();
+    );
 
     if !log.is_empty() {
         report.push_str("\n\nlast warnings\n");
@@ -79,11 +76,10 @@ pub fn render_report(
             };
             let message = redact_log_message(&event.message, redaction);
             let _level = event.level;
-            write!(
+            let _ = write!(
                 report,
                 "{hours:02}:{minutes:02}:{seconds:02} {target}{message}"
-            )
-            .unwrap();
+            );
             if index + 1 < log.len().min(RENDERED_EVENT_LIMIT) {
                 report.push('\n');
             }
@@ -93,7 +89,9 @@ pub fn render_report(
 }
 
 fn final_target_segment(target: &str) -> &str {
-    target.rsplit("::").next().unwrap()
+    target
+        .rsplit_once("::")
+        .map_or(target, |(_, segment)| segment)
 }
 
 fn optional(value: &Option<String>) -> &str {

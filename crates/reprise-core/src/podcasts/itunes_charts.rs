@@ -113,7 +113,9 @@ fn fetch_step<T>(
     fetch: &mut dyn FnMut(&str) -> Result<super::http::Response, PodcastError>,
     parse: impl Fn(&str) -> Result<T, PodcastError>,
 ) -> Result<T, PodcastError> {
-    for attempt in 1..=ATTEMPTS_PER_REQUEST {
+    // The last attempt never retries, so it always returns from inside the loop.
+    let mut attempt = 1;
+    loop {
         match fetch(url).and_then(|response| parse(&response.body)) {
             Ok(value) => return Ok(value),
             Err(error) => {
@@ -130,10 +132,10 @@ fn fetch_step<T>(
                 if !retrying {
                     return Err(error);
                 }
+                attempt += 1;
             }
         }
     }
-    unreachable!("a chart request always has at least one attempt")
 }
 
 fn is_transient(error: &PodcastError) -> bool {

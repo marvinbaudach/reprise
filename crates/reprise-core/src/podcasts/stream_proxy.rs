@@ -1,5 +1,6 @@
 //! Loopback transport for yt-dlp-resolved Googlevideo audio streams.
 
+use crate::sync::lock_unpoisoned;
 use std::{
     collections::HashMap,
     io::{ErrorKind, Read, Write},
@@ -86,7 +87,7 @@ impl StreamToken {
 /// Replacing it invalidates the previous session before returning its URL.
 pub fn activate(token: StreamToken) -> String {
     let playback_url = token.playback_url.clone();
-    let previous = ACTIVE_TOKEN.lock().unwrap().replace(token);
+    let previous = lock_unpoisoned(&ACTIVE_TOKEN).replace(token);
     if let Some(previous) = previous {
         revoke_registration(&previous);
     }
@@ -95,7 +96,7 @@ pub fn activate(token: StreamToken) -> String {
 
 /// Invalidates the process's current YouTube playback session, if any.
 pub fn revoke_active() {
-    let token = ACTIVE_TOKEN.lock().unwrap().take();
+    let token = lock_unpoisoned(&ACTIVE_TOKEN).take();
     if let Some(token) = token {
         revoke_registration(&token);
     }
@@ -221,7 +222,7 @@ fn register_inner(
         // Request-specific transport policy is applied in `fetch_once`.
         agent: server.agent.clone(),
     });
-    let mut registrations = server.registrations.lock().unwrap();
+    let mut registrations = lock_unpoisoned(&server.registrations);
     let id = loop {
         let candidate = generate_token_id()?;
         if !registrations.contains_key(&candidate) {
@@ -252,7 +253,7 @@ fn generate_token_id() -> Result<String, StreamProxyError> {
 /// window boundary; later requests receive 404 immediately.
 pub fn revoke(token: &StreamToken) {
     {
-        let mut active = ACTIVE_TOKEN.lock().unwrap();
+        let mut active = lock_unpoisoned(&ACTIVE_TOKEN);
         if active.as_ref().is_some_and(|active| active.id == token.id) {
             active.take();
         }
@@ -261,18 +262,18 @@ pub fn revoke(token: &StreamToken) {
 }
 
 fn revoke_registration(token: &StreamToken) {
-    let server = SERVER.lock().unwrap().clone();
+    let server = lock_unpoisoned(&SERVER).clone();
     let Some(server) = server else {
         return;
     };
-    let registration = server.registrations.lock().unwrap().remove(&token.id);
+    let registration = lock_unpoisoned(&server.registrations).remove(&token.id);
     if let Some(registration) = registration {
         registration.active.store(false, Ordering::Release);
     }
 }
 
 fn running_server() -> Result<Arc<Server>, StreamProxyError> {
-    let mut slot = SERVER.lock().unwrap();
+    let mut slot = lock_unpoisoned(&SERVER);
     if let Some(server) = slot.as_ref() {
         return Ok(Arc::clone(server));
     }
@@ -353,7 +354,7 @@ fn serve_client(
         write_empty_response(&mut stream, 404, &[]);
         return;
     };
-    let registration = find_registration(&registrations.lock().unwrap(), id);
+    let registration = find_registration(&lock_unpoisoned(registrations), id);
     let Some(registration) = registration else {
         write_empty_response(&mut stream, 404, &[]);
         return;
@@ -610,7 +611,7 @@ fn fetch_once(
     end: u64,
     expected: usize,
 ) -> Result<Vec<u8>, FetchFailure> {
-    let source_url = registration.source_url.lock().unwrap().clone();
+    let source_url = lock_unpoisoned(&registration.source_url).clone();
     let separator = if source_url.contains('?') { '&' } else { '?' };
     let url = format!("{source_url}{separator}range={start}-{end}");
     let response = registration
@@ -650,7 +651,7 @@ fn refresh_source(
     registration: &Registration,
     observed_version: u64,
 ) -> Result<(), StreamProxyError> {
-    let mut source_url = registration.source_url.lock().unwrap();
+    let mut source_url = lock_unpoisoned(&registration.source_url);
     if registration.source_version.load(Ordering::Acquire) != observed_version {
         return Ok(());
     }

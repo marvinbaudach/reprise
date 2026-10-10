@@ -85,11 +85,13 @@ impl CavaStage {
         }
         self.was_enabled = true;
         self.seen_stream_generation = stream_generation;
+        // The processor returns its configured bar count; a frame of any other
+        // width is shown as silence rather than aborting the audio thread.
         let bands: [f32; SPECTRUM_BAND_COUNT] = self
             .processor
             .process(pcm)
             .try_into()
-            .expect("the CAVA processor returns its configured bar count");
+            .unwrap_or([0.0; SPECTRUM_BAND_COUNT]);
         let pressure = self.pressure_detector.observe(pcm);
         SpectrumFrame::from_cava_bars(bands).with_bass_pressure(pressure)
     }

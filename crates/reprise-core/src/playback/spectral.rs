@@ -220,9 +220,15 @@ impl FftWorkspace {
         {
             *target = sample * multiplier;
         }
-        self.plan
+        // The buffers are allocated by the plan itself, so this only fails if
+        // that sizing is broken; a silent spectrum is the honest result then.
+        if self
+            .plan
             .process_with_scratch(&mut self.input, &mut self.spectrum, &mut self.scratch)
-            .expect("real FFT buffers are allocated by their plan");
+            .is_err()
+        {
+            self.spectrum.fill(Complex32::new(0.0, 0.0));
+        }
     }
 
     /// Linear one-sided magnitude sum over a band. The live renderer measures

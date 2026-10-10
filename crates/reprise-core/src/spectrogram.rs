@@ -238,6 +238,10 @@ pub struct SpectrogramAccumulator {
 }
 
 impl SpectrogramAccumulator {
+    #[expect(
+        clippy::expect_used,
+        reason = "the spectrogram format constants always form a valid band plan; every spectrogram test builds one"
+    )]
     pub fn new() -> Self {
         Self {
             band_plan: BandPlan::new(

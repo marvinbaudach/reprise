@@ -7,6 +7,14 @@ use crate::equalizer::EqualizerCurve;
 pub(crate) const LEGACY_EQUALIZER_BANDS_KEY: &str = "playback.equalizer_bands";
 pub(crate) const EQUALIZER_CURVE_KEY: &str = "playback.equalizer_curve";
 
+/// Serializes a curve for a bound parameter; the one failure is reported as a
+/// failed conversion instead of a panic.
+pub(crate) fn curve_to_sql(curve: &EqualizerCurve) -> Result<String, rusqlite::Error> {
+    curve
+        .serialize()
+        .map_err(|error| rusqlite::Error::ToSqlConversionFailure(Box::new(error)))
+}
+
 pub(crate) fn migrate_v53(conn: &Connection) -> Result<(), rusqlite::Error> {
     let version: i64 = conn.query_row("PRAGMA user_version", [], |row| row.get(0))?;
     if version >= 53 {
@@ -30,7 +38,7 @@ pub(crate) fn migrate_v53(conn: &Connection) -> Result<(), rusqlite::Error> {
         let curve = EqualizerCurve::from_gstreamer_levels(parse_legacy_levels(&value));
         transaction.execute(
             "INSERT OR IGNORE INTO settings (key, value) VALUES (?1, ?2)",
-            rusqlite::params![EQUALIZER_CURVE_KEY, curve.serialize()],
+            rusqlite::params![EQUALIZER_CURVE_KEY, curve_to_sql(&curve)?],
         )?;
     }
     transaction.execute(

@@ -41,10 +41,10 @@ fn redact_uris(input: &str) -> String {
         };
         let separator = cursor + relative;
         let scheme_start = input[..separator]
-            .rfind(|ch: char| !is_scheme_char(ch))
-            .map_or(0, |index| {
-                index + input[index..].chars().next().unwrap().len_utf8()
-            });
+            .char_indices()
+            .rev()
+            .find(|(_, ch)| !is_scheme_char(*ch))
+            .map_or(0, |(index, ch)| index + ch.len_utf8());
         let scheme = &input[scheme_start..separator];
         if !valid_scheme(scheme) {
             output.push_str(&input[cursor..separator + 3]);
@@ -135,13 +135,14 @@ fn redact_sensitive_assignments(input: &str) -> String {
 }
 
 fn redact_sensitive_token(token: &str) -> String {
-    let Some(separator) = token.find(['=', ':']) else {
+    let Some((separator, separator_char)) =
+        token.char_indices().find(|(_, ch)| matches!(ch, '=' | ':'))
+    else {
         return token.to_string();
     };
     let key = token[..separator]
         .trim_matches(|ch: char| !ch.is_ascii_alphanumeric() && ch != '_')
         .to_ascii_lowercase();
-    let separator_char = token[separator..].chars().next().unwrap();
     let sensitive = if separator_char == '=' {
         !is_safe_structured_field(&key)
     } else {

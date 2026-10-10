@@ -286,6 +286,8 @@ pub enum StartupTaskError {
     Database(#[from] rusqlite::Error),
     #[error("invalid library signature: {0}")]
     InvalidLibrarySignature(String),
+    #[error("task record could not be serialized: {0}")]
+    Serialization(#[from] serde_json::Error),
 }
 
 pub fn exact_signature_decision(
@@ -401,7 +403,7 @@ pub fn record_completed_at(
         completed_at,
         signature: current_signature_in(db.conn())?,
     };
-    let value = serde_json::to_string(&record).expect("TaskRecord serialization cannot fail");
+    let value = serde_json::to_string(&record)?;
     set_internal_setting_in(db.conn(), &task.key(), &value)?;
     Ok(())
 }
@@ -420,7 +422,7 @@ fn record_pass_completed(
         completed_at,
         signature: started_signature,
     };
-    let value = serde_json::to_string(&record).expect("TaskRecord serialization cannot fail");
+    let value = serde_json::to_string(&record)?;
     set_internal_setting_in(&tx, &task.key(), &value)?;
     tx.commit()?;
     Ok(true)

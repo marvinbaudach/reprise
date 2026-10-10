@@ -490,8 +490,14 @@ fn set_tag_patch_value(tags: &mut TagPatch, field: TagField, value: FieldValue) 
         (TagField::Genre, FieldValue::Text(value)) => tags.genre = Some(value),
         (TagField::Year, FieldValue::Number(value)) => tags.year = Some(value),
         (TagField::TrackNo, FieldValue::Number(value)) => tags.track_no = Some(value),
+        // Every caller pairs a field with the value kind it reads back, so a
+        // mismatch is a bug; the edit is dropped rather than applied wrongly.
         (field, value) => {
-            unreachable!("field {field:?} paired with mismatched value {value:?}")
+            tracing::warn!(
+                ?field,
+                ?value,
+                "dropping a tag edit whose value does not fit its field"
+            );
         }
     }
 }

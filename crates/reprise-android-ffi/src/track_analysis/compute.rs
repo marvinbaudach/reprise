@@ -342,7 +342,9 @@ impl AnalysisContext<'_> {
                 }
             }
         }
-        unreachable!("the compute loop always returns on its final round")
+        // Every round but the last may `continue`, so the loop ends here only
+        // when no round was left to run: retryable, never final.
+        Ok(AndroidAnalysisOutcome::Cancelled)
     }
 
     /// Whether the track holds all its rendering data, by the test the
@@ -463,8 +465,12 @@ impl AnalysisContext<'_> {
                 tracing::debug!(track_id, reason, "track analysis produced no data");
                 return self.mark_failed(fingerprint, &measured, &reason);
             }
+            // Only a CUE track's job makes a segmented sink; one without a job
+            // has no segments to store, so it fails like an empty analysis.
             (FinishedAnalysis::Segmented(_), None) => {
-                unreachable!("only a CUE track's job makes a segmented sink")
+                let reason = "a segmented analysis finished without its CUE job";
+                tracing::debug!(track_id, reason, "track analysis produced no data");
+                return self.mark_failed(fingerprint, &measured, reason);
             }
         };
 

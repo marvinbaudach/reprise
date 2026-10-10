@@ -124,6 +124,7 @@ pub mod source_error;
 pub mod spectrogram;
 pub mod spectrogram_backfill;
 pub mod stem_separation;
+pub(crate) mod sync;
 pub mod up_next;
 pub mod updates;
 pub mod view_source;

@@ -215,11 +215,13 @@ impl RenderDataSession {
     }
 
     fn push_mono(&mut self, mono: &[f32]) {
+        // The resampler is set together with the config; samples that arrive
+        // before either exists have no rate to be resampled from and are dropped.
+        let Some(resampler) = self.resampler.as_mut() else {
+            return;
+        };
         let mut resampled = Vec::with_capacity(mono.len());
-        self.resampler
-            .as_mut()
-            .expect("resampler is set together with config")
-            .push(mono, &mut resampled);
+        resampler.push(mono, &mut resampled);
 
         if self.full_analysis {
             self.spectrogram.push(&resampled);

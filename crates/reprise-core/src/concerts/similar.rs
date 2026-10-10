@@ -3,7 +3,7 @@ use std::collections::{HashMap, HashSet};
 
 use rusqlite::{Connection, OptionalExtension};
 use serde_json::Value;
-use url::Url;
+use url::form_urlencoded;
 
 use super::candidates::{ArtistCandidate, SeedArtist};
 use super::config::SimilarConfig;
@@ -23,23 +23,22 @@ pub struct SimilarArtist {
 }
 
 pub fn listenbrainz_similar_url(mbid: &str) -> String {
-    let mut url =
-        Url::parse("https://labs.api.listenbrainz.org/similar-artists/json").expect("valid URL");
-    url.query_pairs_mut()
+    let query = form_urlencoded::Serializer::new(String::new())
         .append_pair("artist_mbids", mbid)
-        .append_pair("algorithm", LB_SIMILAR_ALGORITHM);
-    url.into()
+        .append_pair("algorithm", LB_SIMILAR_ALGORITHM)
+        .finish();
+    format!("https://labs.api.listenbrainz.org/similar-artists/json?{query}")
 }
 
 pub fn lastfm_similar_url(name: &str, api_key: &str, limit: usize) -> String {
-    let mut url = Url::parse("https://ws.audioscrobbler.com/2.0/").expect("valid URL");
-    url.query_pairs_mut()
+    let query = form_urlencoded::Serializer::new(String::new())
         .append_pair("method", "artist.getsimilar")
         .append_pair("artist", name)
         .append_pair("api_key", api_key)
         .append_pair("format", "json")
-        .append_pair("limit", &limit.to_string());
-    url.into()
+        .append_pair("limit", &limit.to_string())
+        .finish();
+    format!("https://ws.audioscrobbler.com/2.0/?{query}")
 }
 
 pub fn parse_listenbrainz_similar(body: &str) -> Result<Vec<SimilarArtist>, ProviderError> {

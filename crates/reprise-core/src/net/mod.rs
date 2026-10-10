@@ -10,9 +10,4 @@ pub(crate) mod client;
 pub(crate) mod fixtures;
 pub(crate) mod rate;
 
-/// Locks a mutex and recovers a poisoned one: a panic elsewhere must not take the limiter with it.
-pub(crate) fn lock_unpoisoned<T>(mutex: &std::sync::Mutex<T>) -> std::sync::MutexGuard<'_, T> {
-    mutex
-        .lock()
-        .unwrap_or_else(std::sync::PoisonError::into_inner)
-}
+pub(crate) use crate::sync::lock_unpoisoned;

@@ -236,23 +236,26 @@ impl DeviceSyncMachine {
             (Awaiting::RecordFile(index), Event::FileRecorded(result)) => {
                 match result {
                     Ok(()) => {
-                        let operation = &self.transfers[index];
-                        let recorded_path = self
-                            .copied_device_path
-                            .take()
-                            .expect("recording follows a successful copy");
-                        if let Some(previous) = &operation.previous {
-                            if previous.device_path != recorded_path {
-                                self.deferred_replacements.push((
-                                    previous.device_path.clone(),
-                                    operation.desired.track.id,
-                                ));
+                        // Recording follows a successful copy, which stored the
+                        // path; a missing path is a transfer that cannot be
+                        // trusted, so the track fails instead of the run.
+                        if let Some(recorded_path) = self.copied_device_path.take() {
+                            let operation = &self.transfers[index];
+                            if let Some(previous) = &operation.previous {
+                                if previous.device_path != recorded_path {
+                                    self.deferred_replacements.push((
+                                        previous.device_path.clone(),
+                                        operation.desired.track.id,
+                                    ));
+                                }
                             }
+                            self.copied_files.insert(
+                                operation.desired.track.id,
+                                (self.copied_bytes.unwrap_or_default(), recorded_path),
+                            );
+                        } else {
+                            self.fail_transfer(index);
                         }
-                        self.copied_files.insert(
-                            operation.desired.track.id,
-                            (self.copied_bytes.unwrap_or_default(), recorded_path),
-                        );
                     }
                     Err(_) => {
                         self.copied_device_path = None;

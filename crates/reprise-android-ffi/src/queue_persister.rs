@@ -260,12 +260,11 @@ fn drain_snapshots(
             }
         }
         if committed {
-            let sequence = latest
-                .take()
-                .expect("a successful commit consumes the snapshot that was committed")
-                .sequence;
-            snapshot_file.remove_if_sequence(sequence);
-            mark_committed(flush_state, sequence);
+            // A successful commit consumes the snapshot that was committed.
+            if let Some(snapshot) = latest.take() {
+                snapshot_file.remove_if_sequence(snapshot.sequence);
+                mark_committed(flush_state, snapshot.sequence);
+            }
             continue;
         }
         match queued.recv_timeout(RETRY_WAKEUP) {
@@ -303,9 +302,11 @@ fn try_commit_latest(
     latest: &Option<PendingSnapshot>,
     flush_state: &Arc<(Mutex<FlushState>, Condvar)>,
 ) -> CommitOutcome {
-    let snapshot = latest
-        .as_ref()
-        .expect("the worker receives or retains a snapshot before every commit attempt");
+    // The worker receives or retains a snapshot before every commit attempt;
+    // with none there is nothing to commit, so it waits for the next one.
+    let Some(snapshot) = latest.as_ref() else {
+        return CommitOutcome::RetryableFailure;
+    };
     mark_attempted(flush_state, snapshot.sequence);
     try_commit(writer, snapshot)
 }

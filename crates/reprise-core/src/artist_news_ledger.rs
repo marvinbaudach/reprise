@@ -67,8 +67,9 @@ pub(crate) fn record_attempt(
             // Every call site passes either a literal `0` (failed/unmatched
             // attempts) or the length of a MusicBrainz response. Refuse to
             // substitute a bogus count if an unsupported platform could not
-            // represent that length.
-            i64::try_from(releases_found).expect("MusicBrainz release count must fit in i64"),
+            // represent that length: the write fails instead.
+            i64::try_from(releases_found)
+                .map_err(|error| rusqlite::Error::ToSqlConversionFailure(Box::new(error)))?,
         ],
     )?;
     Ok(())

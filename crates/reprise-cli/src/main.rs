@@ -85,10 +85,10 @@ fn run_with_db(
         },
         Command::Instrumental { action } => run_instrumental(&db, staging_dir, action, json),
         Command::Jobs { action } => run_jobs(&db, staging_dir, action, json),
+        // `run` dispatches playback before the database is opened, so this arm
+        // is not reached; it still does the right thing if it ever were.
         #[cfg(feature = "mpris")]
-        Command::Playback { .. } => {
-            unreachable!("playback is dispatched before opening the database")
-        }
+        Command::Playback { action } => run_playback(action, json),
     }
 }
 

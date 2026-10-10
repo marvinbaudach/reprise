@@ -618,20 +618,20 @@ fn resolve_selection_track_ids_in(
     conn: &Connection,
     selection: &DeviceSelection,
 ) -> Result<Vec<i64>, rusqlite::Error> {
-    if selection == &DeviceSelection::EntireLibrary {
-        let source = ViewSource::Library;
-        let view = crate::queries::TrackViewQuery::new(&source);
-        return crate::queries::query_track_ids_in(
-            conn,
-            &view,
-            crate::queries::TrackSort {
-                field: "title",
-                dir: "asc",
-            },
-        );
-    }
-    let DeviceSelection::Sources(sources) = selection else {
-        unreachable!("the entire-library case returned above");
+    let sources = match selection {
+        DeviceSelection::EntireLibrary => {
+            let source = ViewSource::Library;
+            let view = crate::queries::TrackViewQuery::new(&source);
+            return crate::queries::query_track_ids_in(
+                conn,
+                &view,
+                crate::queries::TrackSort {
+                    field: "title",
+                    dir: "asc",
+                },
+            );
+        }
+        DeviceSelection::Sources(sources) => sources,
     };
     let mut seen = HashSet::new();
     let mut selected = Vec::new();

@@ -169,31 +169,27 @@ fn album_from_seed(seed: AlbumSeed, album_rows: &[&DoctorReviewRow]) -> Option<D
                 .collect::<HashSet<_>>()
                 == seed.track_ids
         })
-        .map(|group| (group.field, group.current.clone(), group.proposed.clone()))
+        .map(|group| {
+            (
+                (group.field, group.current.clone(), group.proposed.clone()),
+                group.rows.iter().map(|row| row.id).collect::<Vec<_>>(),
+            )
+        })
         .collect::<Vec<_>>();
     let mut emitted = Vec::<(DoctorField, DoctorValue, DoctorValue)>::new();
     let mut rows = Vec::new();
     for &row in album_rows {
         let identity = (row.field, row.current.clone(), row.proposed.clone());
-        if collapsed.contains(&identity) {
+        if let Some((_, row_ids)) = collapsed
+            .iter()
+            .find(|(collapsed_identity, _)| collapsed_identity == &identity)
+        {
             if emitted.contains(&identity) {
                 continue;
             }
             emitted.push(identity.clone());
-            let row_ids = matching
-                .iter()
-                .find(|group| {
-                    group.field == identity.0
-                        && group.current == &identity.1
-                        && group.proposed == &identity.2
-                })
-                .expect("collapsed identity came from a matching group")
-                .rows
-                .iter()
-                .map(|row| row.id)
-                .collect();
             rows.push(DoctorReviewDisplayRow::AllTracks {
-                row_ids,
+                row_ids: row_ids.clone(),
                 track_count: seed.track_ids.len(),
             });
         } else {

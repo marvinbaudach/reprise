@@ -164,13 +164,11 @@ fn append_planes(channels: &mut Vec<Vec<f32>>, planes: &[Vec<f32>]) -> Result<()
 /// Collapses arbitrary channel counts to stereo: mono is duplicated, stereo is
 /// kept, and more than two channels keeps the front L/R pair.
 fn to_stereo(mut planar: Vec<Vec<f32>>) -> Vec<Vec<f32>> {
-    match planar.len() {
-        0 => vec![Vec::new(), Vec::new()],
-        1 => {
-            let mono = planar.pop().unwrap();
-            vec![mono.clone(), mono]
-        }
-        _ => {
+    match planar.pop() {
+        None => vec![Vec::new(), Vec::new()],
+        Some(mono) if planar.is_empty() => vec![mono.clone(), mono],
+        Some(last) => {
+            planar.push(last);
             planar.truncate(STEREO);
             planar
         }
