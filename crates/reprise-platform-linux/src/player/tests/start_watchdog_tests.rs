@@ -258,6 +258,28 @@ fn a_slow_start_that_keeps_reading_is_left_alone() {
     );
 }
 
+/// A disk that has spun down answers its first reads with long waits, not a
+/// trickle. The source stands still for a whole deadline, so the first attempt
+/// is started over — but the next one is allowed longer, and the track plays
+/// instead of being skipped as unplayable.
+#[test]
+fn a_start_stuck_on_one_long_read_plays_after_a_restart_instead_of_being_skipped() {
+    let deadline = Duration::from_millis(400);
+    let harness = harness_with_deadline(deadline);
+    let dir = tempfile::tempdir().unwrap();
+    let path = local_track(&dir);
+    // The first reads each outlast a deadline, as the ones from a cold disk do.
+    slow_source(&harness.player, 3, deadline * 5 / 4);
+
+    harness.player.play(item(&path)).unwrap();
+    let events = harness.pump_until(PATIENCE, |_| {
+        state_of(&harness.player).0 == gst::State::Playing
+    });
+
+    assert_eq!(state_of(&harness.player).0, gst::State::Playing);
+    assert_eq!(errors(&events), 0, "events: {events:?}");
+}
+
 /// Control for the test above: a source that is stuck is still started over.
 #[test]
 fn a_start_whose_source_stopped_reading_is_still_started_over() {
