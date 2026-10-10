@@ -345,33 +345,55 @@ def _audit_offline(
         None,
     )
     source_tokens = workload.get("source_tokens", {})
+    section_names = {_folded(source) for source in source_tokens}
+
+    def visit(start: int) -> Sequence[ActionTrace]:
+        """The traces of one visit: the section activation and what follows it.
+
+        A visit ends at the next section, a connectivity change or a restart.
+        Podcasts and YouTube keep the cached episode behind a card, so the
+        episode is on screen after the click that unfolds the card, not after the
+        click that opened the section.
+        """
+        for index in range(start + 1, len(traces)):
+            action = traces[index].action
+            if action.get("kind") in {"set-connectivity", "restart"} or (
+                action.get("kind") == "activate"
+                and _folded(action.get("target_label")) in section_names
+            ):
+                return traces[start:index]
+        return traces[start:]
+
+    def listed_once(window: Sequence[ActionTrace], expected_row: str) -> bool:
+        shown = [trace for trace in window if expected_row in trace.after_labels]
+        return bool(shown) and shown[-1].after_labels.count(expected_row) == 1
+
     source_checks: dict[str, bool] = {}
     for source, token_name in source_tokens.items():
         expected_row = fixture_tokens.get(str(token_name), "")
         source_folded = _folded(source)
-        offline_visits = [
-            trace
+        starts = [
+            index
             for index, trace in enumerate(traces)
+            if trace.action.get("kind") == "activate"
+            and _folded(trace.action.get("target_label")) == source_folded
+        ]
+        offline_starts = [
+            index
+            for index in starts
             if offline_at is not None
             and online_at is not None
             and offline_at < index < online_at
-            and trace.action.get("kind") == "activate"
-            and _folded(trace.action.get("target_label")) == source_folded
         ]
-        recovery_visits = [
-            trace
-            for index, trace in enumerate(traces)
-            if online_at is not None
-            and index > online_at
-            and trace.action.get("kind") == "activate"
-            and _folded(trace.action.get("target_label")) == source_folded
+        recovery_starts = [
+            index for index in starts if online_at is not None and index > online_at
         ]
         source_checks[str(source)] = bool(
             expected_row
-            and offline_visits
-            and recovery_visits
-            and offline_visits[-1].after_labels.count(expected_row) == 1
-            and recovery_visits[-1].after_labels.count(expected_row) == 1
+            and offline_starts
+            and recovery_starts
+            and listed_once(visit(offline_starts[-1]), expected_row)
+            and listed_once(visit(recovery_starts[-1]), expected_row)
         )
     refresh_before_loss = bool(
         offline_at

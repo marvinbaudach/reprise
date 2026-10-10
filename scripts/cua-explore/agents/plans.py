@@ -172,6 +172,30 @@ def plan_restart(workload: Mapping[str, Any], index: int, rng: random.Random) ->
     return Phase("restart", index, tuple(steps), order_locked=True)
 
 
+def _source_visit(
+    name: str, source: str, token_hint: str
+) -> tuple[Step, Step]:
+    """Open a source and, if its episodes are folded away, unfold its card.
+
+    Podcasts and YouTube list a show or a channel as one card and keep its
+    episodes behind it; the cached episode is only on screen once the card is
+    open. The app keeps a card open across visits, so the card is clicked only
+    while the page lists nothing (a second click would fold it again). Radio
+    lists its stations directly and needs no click.
+    """
+    return (
+        _section_activate(name, source, token_hint=token_hint),
+        Step(
+            f"unfold-{name}",
+            "activate",
+            LabelMatcher(source_cards_only=True),
+            {"dispatch": "ax", "expect_effect": "required"},
+            required=False,
+            skip_when=LabelMatcher(results_strict=True, require_actionable=False),
+        ),
+    )
+
+
 def plan_offline_transition(
     workload: Mapping[str, Any], index: int, rng: random.Random
 ) -> Phase:
@@ -182,14 +206,17 @@ def plan_offline_transition(
     # clicks it from the view it ends the online tour on, so Radio goes first.
     online_sources.sort(key=lambda source: source not in SOURCES_WITHOUT_REFRESH)
     token_by_source = workload.get("source_tokens", {})
-    steps = [
-        _section_activate(
-            f"online-{source}",
-            source,
-            token_hint=str(token_by_source.get(source, "")),
-        )
-        for source in online_sources
-    ]
+
+    def visits(prefix: str, order: list[str]) -> list[Step]:
+        return [
+            step
+            for source in order
+            for step in _source_visit(
+                f"{prefix}-{source}", source, str(token_by_source.get(source, ""))
+            )
+        ]
+
+    steps = visits("online", online_sources)
     steps.append(
         Step(
             "refresh-before-offline",
@@ -202,14 +229,7 @@ def plan_offline_transition(
     steps.append(
         Step("go-offline", "set-connectivity", fields={"connectivity": "offline"})
     )
-    steps.extend(
-        _section_activate(
-            f"offline-{source}",
-            source,
-            token_hint=str(token_by_source.get(source, "")),
-        )
-        for source in sources
-    )
+    steps.extend(visits("offline", sources))
     steps.append(
         Step(
             "retry-offline",
@@ -221,14 +241,7 @@ def plan_offline_transition(
     steps.append(
         Step("go-online", "set-connectivity", fields={"connectivity": "online"})
     )
-    steps.extend(
-        _section_activate(
-            f"recovery-{source}",
-            source,
-            token_hint=str(token_by_source.get(source, "")),
-        )
-        for source in sources
-    )
+    steps.extend(visits("recovery", sources))
     return Phase("offline-transition", index, tuple(steps), order_locked=False)
 
 

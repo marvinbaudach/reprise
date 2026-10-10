@@ -257,7 +257,7 @@ checks additionally require each cached source row exactly once during the
 offline visit and after reconnect. The batch checkpoint is audited
 independently: exactly 512 private database rows must carry the pinned genre and
 year, exactly 512 disposable FLAC copies must have changed, and no other row may
-carry those values. Reprise does not show a selection count outside the tag dialog; the batch audit therefore accepts the dialog title as evidence—the missing display is an open UX finding, not a harness property. Exhausting the action budget without an explicit `finish`
+carry those values. Reprise does not show a selection count outside the tag dialog; the batch audit therefore accepts the dialog title, read from the tree labels, as evidence—the missing display is an open UX finding, not a harness property. Exhausting the action budget without an explicit `finish`
 is a failed run. Arbitrary text,
 shell commands, destructive targets, stale element indices, unknown actions,
 URLs, and exhausted budgets fail closed. The agent process receives only a
@@ -304,6 +304,38 @@ links marks none and every consumer falls back to its rows. The trace projection
 duplicate-row checks all read the same list. The mission file lists routes in one order
 and the agent, which reads it with sorted keys, walks them in another, so the
 `section-search` audit looks each route up on its own.
+
+## What the harness adds to the driver's tree
+
+`get_window_state` indexes the nodes a client can act on. Three things the audits and the
+plans need are not among them, and the harness reads them itself.
+
+- **Unindexed labels.** A dialog title, the two halves of a filter chip ("Genre", "Genre 00")
+  and the list's own counter ("4,974 of 100,000 tracks") appear only in `tree_markdown`, on
+  lines that read `- label = "..."`. `tree_labels.py` parses them, in tree order, and the
+  observation carries them as `tree_labels`; `ActionTrace` keeps them before and after each
+  action. The batch audit reads the tag dialog title ("Edit 512 Tracks") there, the filter audit
+  reads a chip as the facet name followed directly by its value, and a facet counts as applied
+  when its chip is new and the rows or the counter changed (sorted by artist, the first page
+  can be identical before and after a genre filter).
+- **Column headers.** The headers are `column header` nodes in `tree_markdown` with no element
+  index, and the header row is one `row` labelled with all six names, so a click addressed to
+  it lands on the middle of the row. A mission that sorts (`sort-cycle`, or a batch edit with
+  `sort_by`) asks the executor for the headers: it adds one element per header from its own
+  walk, labelled `<Name> column header` (the bare name is also a facet in the Add filter popover
+  and a field in the tag dialog), with the walk's rectangle and no AT-SPI action, so a click goes
+  by pixel inside that header. The sort audit credits a column only for a click on its own header.
+- **Popups.** The driver reports an open popover as its own window (`popups`), and the tree lists
+  every row of a scrolled list at the position it would have, below the popover. The observation
+  carries the popup rectangles, a matcher can ask for elements `in_popup`, and the filter plan
+  scrolls the value list (`POPOVER_SCROLL_STEPS` pages at most, aimed at an item that is visible)
+  until the wanted value is inside the popover before it clicks. A value is matched by pattern
+  against its count ("1993 (106)"), because `contains` also takes a track row that holds the digits.
+
+The batch workload names its anchor: `anchor_title_pattern` picks the title cell out of a row label
+(a row label is every cell, and the edit rewrites the year), and `sort_by` sorts by a column the
+edit leaves alone first. The scroll anchor holds only when at least five rows are on both sides and
+every one of them kept its position; a few rows that happen to keep theirs prove nothing.
 
 ## Evidence
 

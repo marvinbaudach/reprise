@@ -28,6 +28,13 @@ class LabelMatcher:
     strict_roles: bool = False
     # Prefer the page's results over the sidebar rows that share the row role.
     results_only: bool = False
+    # Stricter than `results_only`: only an element the driver marked a result,
+    # with no fallback to every element when the page shows none. For "is
+    # anything listed yet", where an empty page has to answer no.
+    results_strict: bool = False
+    # Only a source card (a show or a channel, listed once and opened with its
+    # `activate` action). The episodes of a collapsed card are not in the tree.
+    source_cards_only: bool = False
 
     def candidates(self, observation: Mapping[str, Any]) -> tuple[str, ...]:
         candidates, _mismatch = self.candidates_with_role_fallback(observation)
@@ -74,6 +81,10 @@ class LabelMatcher:
             if not label:
                 continue
             if result_ids is not None and id(item) not in result_ids:
+                continue
+            if self.results_strict and not item.get("result"):
+                continue
+            if self.source_cards_only and not item.get("source_card"):
                 continue
             exact = folded in exact_folded or any(
                 pattern.fullmatch(label) for pattern in patterns

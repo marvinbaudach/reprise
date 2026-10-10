@@ -421,6 +421,126 @@ class ChipTests(unittest.TestCase):
         self.assertFalse(missing["facets_complete"])
 
 
+OFFLINE = load_mission(EXPLORE_ROOT / "missions" / "offline-recovery.json")
+NEEDLES = {
+    "Podcasts": OFFLINE.fixture_tokens["PODCAST_ONLY_NEEDLE"],
+    "YouTube": OFFLINE.fixture_tokens["YOUTUBE_ONLY_NEEDLE"],
+    "Radio": OFFLINE.fixture_tokens["RADIO_ONLY_NEEDLE"],
+}
+CARDS = {"Podcasts": "Fixture Podcast", "YouTube": "Fixture Channel"}
+
+
+def _offline_traces(*, unfold: bool, double_when_offline: bool = False):
+    """The offline tour: each source opened, its card unfolded or not, three times."""
+
+    def visit(source: str, offline: bool):
+        listed = (NEEDLES[source],) * (2 if offline and double_when_offline else 1)
+        opened = (
+            ActionTrace(
+                action={"kind": "activate", "target_label": source},
+                after_labels=(CARDS[source],) if source in CARDS else listed,
+            ),
+        )
+        if source not in CARDS or not unfold:
+            return opened
+        return (
+            *opened,
+            ActionTrace(
+                action={"kind": "activate", "target_label": CARDS[source]},
+                before_labels=(CARDS[source],),
+                after_labels=(CARDS[source], *listed),
+            ),
+        )
+
+    tour = ("Radio", "Podcasts", "YouTube")
+    traces = [t for source in tour for t in visit(source, False)]
+    traces.append(ActionTrace(action={"kind": "activate", "target_label": "Refresh now"}))
+    traces.append(ActionTrace(action={"kind": "set-connectivity", "connectivity": "offline"}))
+    traces.extend(t for source in tour for t in visit(source, True))
+    traces.append(ActionTrace(action={"kind": "activate", "target_label": "Try again"}))
+    traces.append(ActionTrace(action={"kind": "set-connectivity", "connectivity": "online"}))
+    traces.extend(t for source in tour for t in visit(source, False))
+    return traces
+
+
+class OfflineVisitTests(unittest.TestCase):
+    def audit(self, traces):
+        return audit_action_workload(0, OFFLINE.workloads[0], traces, OFFLINE.fixture_tokens)
+
+    def test_a_folded_card_hides_the_cached_episode_so_the_source_is_not_listed(self) -> None:
+        result = self.audit(_offline_traces(unfold=False))
+
+        self.assertEqual(
+            result["source_rows_single_and_retained"],
+            {"Podcasts": False, "YouTube": False, "Radio": True},
+        )
+        self.assertFalse(result["complete"])
+
+    def test_the_episode_counts_once_the_card_is_unfolded_within_the_visit(self) -> None:
+        result = self.audit(_offline_traces(unfold=True))
+
+        self.assertTrue(all(result["source_rows_single_and_retained"].values()), result)
+        self.assertTrue(result["complete"], result)
+
+    def test_a_duplicated_cached_episode_while_offline_is_still_caught(self) -> None:
+        result = self.audit(_offline_traces(unfold=True, double_when_offline=True))
+
+        self.assertFalse(result["source_rows_single_and_retained"]["Podcasts"])
+        self.assertFalse(result["complete"])
+
+    def test_an_episode_seen_in_an_earlier_visit_does_not_count_for_a_later_one(self) -> None:
+        traces = _offline_traces(unfold=True)
+        # The recovery visit of YouTube is opened but its card never unfolded.
+        cut = max(
+            index
+            for index, trace in enumerate(traces)
+            if trace.action.get("target_label") == CARDS["YouTube"]
+        )
+        result = self.audit(traces[:cut])
+
+        self.assertFalse(result["source_rows_single_and_retained"]["YouTube"])
+
+    def test_the_plan_unfolds_a_card_only_while_the_page_lists_nothing(self) -> None:
+        phase = next(p for p in build_phases(_agent_mission(OFFLINE), seed=11))
+        unfolds = [s for s in phase.steps if s.name.startswith("unfold-")]
+        names = [s.name for s in phase.steps]
+
+        self.assertEqual(len(unfolds), 9)
+        for step in unfolds:
+            self.assertTrue(step.matcher.source_cards_only)
+            self.assertFalse(step.required)
+            # A second click on an open card would fold it again.
+            self.assertTrue(step.skip_when.results_strict)
+            self.assertEqual(
+                names[names.index(step.name) - 1], step.name.removeprefix("unfold-")
+            )
+
+    def test_a_strict_result_matcher_finds_nothing_on_a_page_with_no_result(self) -> None:
+        folded = {
+            "elements": [
+                {"label": "Fixture Podcast", "role": "button", "actionable": True,
+                 "enabled": True, "result": False, "source_card": True},
+                {"label": "Podcasts", "role": "button", "actionable": True, "enabled": True},
+            ],
+            "actionable_labels": ["Fixture Podcast", "Podcasts"],
+        }
+        unfolded = {
+            **folded,
+            "elements": [
+                *folded["elements"],
+                {"label": "Fixture Podcast Needle", "role": "button", "actionable": True,
+                 "enabled": True, "result": True},
+            ],
+            "actionable_labels": [*folded["actionable_labels"], "Fixture Podcast Needle"],
+        }
+        listed = LabelMatcher(results_strict=True, require_actionable=False)
+        card = LabelMatcher(source_cards_only=True)
+
+        self.assertIsNone(listed.resolve(folded))
+        self.assertEqual(listed.resolve(unfolded), "Fixture Podcast Needle")
+        self.assertEqual(card.resolve(folded), "Fixture Podcast")
+
+
 class ProtocolTests(unittest.TestCase):
     def _load(self, mutate):
         data = json.loads((EXPLORE_ROOT / "missions" / "large-library-stress.json").read_text(encoding="utf-8"))

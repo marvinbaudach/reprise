@@ -21,6 +21,9 @@ FACET_VALUES = {
     "year": tuple(f"{year} (106)" for year in range(1980, 2000)),
     "rating": ("0 (1,658)", "2 (1,658)", "4 (1,658)"),
 }
+# Podcasts and YouTube list a show or a channel as one card and keep its episode
+# behind it; Radio lists its station directly.
+SOURCE_CARDS = {"Podcasts": "Fixture Podcast", "YouTube": "Fixture Channel"}
 SOURCE_ROWS = {
     "Podcasts": "Fixture Podcast Needle",
     "YouTube": "Fixture YouTube Needle",
@@ -56,6 +59,7 @@ class FakeWorld:
         self.genre = ""
         self.year = ""
         self.saved = False
+        self.unfolded: set[str] = set()
         self.popover_offset = 0
 
     def observation(self) -> dict[str, Any]:
@@ -201,6 +205,9 @@ class FakeWorld:
             self.context_menu = False
             self.dialog = True
             return
+        if label in SOURCE_CARDS.values():
+            self.unfolded ^= {self.section}
+            return
         if label.startswith("Save"):
             self.dialog = True
             self.saving = True
@@ -229,13 +236,27 @@ class FakeWorld:
     def _surface_elements(self) -> list[dict[str, Any]]:
         elements = []
         if self.section in SOURCE_ROWS:
-            elements.append(
-                self._element(SOURCE_ROWS[self.section], self._row_role(), y=180)
-            )
-            if self.connectivity == "offline" and "duplicate-cached-row" in self.quirks:
+            if self.section in SOURCE_CARDS:
+                card = self._element(SOURCE_CARDS[self.section], "button", y=140)
+                elements.append({**card, "source_card": True, "result": False})
+                episodes = 2 if (
+                    self.connectivity == "offline" and "duplicate-cached-row" in self.quirks
+                ) else 1
+                # A query opens every card: the app unfolds them for the search.
+                if self.section in self.unfolded or self.search:
+                    for number in range(episodes):
+                        row = self._element(
+                            SOURCE_ROWS[self.section], "button", y=180 + number * 40
+                        )
+                        elements.append({**row, "result": True})
+            else:
                 elements.append(
-                    self._element(SOURCE_ROWS[self.section], self._row_role(), y=220)
+                    self._element(SOURCE_ROWS[self.section], self._row_role(), y=180)
                 )
+                if self.connectivity == "offline" and "duplicate-cached-row" in self.quirks:
+                    elements.append(
+                        self._element(SOURCE_ROWS[self.section], self._row_role(), y=220)
+                    )
             if self.connectivity == "offline" or "offline-status-stuck" in self.quirks:
                 elements.append(self._element("You're offline", "label", y=100, actionable=False))
                 elements.append(self._element("Try again", "button", y=120))
