@@ -394,6 +394,28 @@ result.
 - **NAV-20** [active] [gtk] — The navigation list never yields below its
   LIBRARY block. DEVICES scrolls with the places. ISSUES and running cards stay
   pinned and hold exactly the height they paint.
+- **NAV-21** [active] [android] — **The stacked Now Playing sheet keeps its
+  blocks apart on a small phone at a large font.** The cover, the title, the
+  artist line, the seek bar with its two time labels and the transport row do
+  not overlap, at about 360x640 dp with font scale 2.0 as at normal size and
+  with a title that wraps. The transport row keeps its place above the bottom
+  edge and the navigation bar (FB-18 floats the Undo snackbar over its top).
+  Everything above it is placed by its measured height: where the screen has
+  room the cover stays centred on 34 % of the height, the title block 156 dp
+  below that centre and the seek bar at 69 %; where it has not, the seek
+  block rises first, then the title block, then the cover, which rises and
+  only then shrinks. Text and touch targets never shrink to make room. The
+  room is reserved for a two-line title whatever the track is called, so the
+  cover does not change size from one song to the next; only when that would
+  cost the cover more than 30 % of its size is the title held to one line.
+  <!-- REVIEW: rule proposal -->
+  *Tests:*
+  `nav_21_a_small_phone_at_double_font_scale_keeps_every_block_apart`,
+  `nav_21_a_small_phone_at_normal_font_scale_keeps_every_block_apart`,
+  `nav_21_a_tall_phone_at_double_font_scale_keeps_every_block_apart`,
+  `nav_21_a_tall_phone_at_normal_font_scale_keeps_its_fractional_positions`,
+  `nav_21_the_cover_and_seek_bar_do_not_move_from_a_long_title_to_a_short_one`,
+  `nav_21_a_phone_too_short_for_two_title_lines_holds_the_title_to_one`.
 
 ## C. Playback, queue, shuffle, filter
 

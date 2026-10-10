@@ -4,7 +4,7 @@ import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 
 /** The Now Playing scene's own padding above and below its transport row. */
-private val SCENE_TRANSPORT_PADDING = 18.dp
+private val SCENE_TRANSPORT_PADDING = SCENE_TRANSPORT_PADDING_DP.dp
 
 /** The wide-short sheet's padding around its content column. */
 private val WIDE_SHORT_SHEET_PADDING = 8.dp
