@@ -72,7 +72,8 @@ import kotlin.math.min
 internal const val COVER_SIZE_DP = 272
 private const val COVER_RADIUS_DP = 18f
 internal const val PLAYED_CENTRE_FRACTION = 0.34f
-private const val TITLE_TO_ARTIST_GAP_DP = 6
+private const val TITLE_LINE_HEIGHT_SP = 29
+private const val ARTIST_LINE_HEIGHT_SP = 16
 private const val MAXIMUM_COLOR_CHANNEL = 255
 
 private val SATURATION_FILTERS by lazy {
@@ -128,17 +129,23 @@ internal fun NowPlayingScene(
         val widthPx = with(density) { maxWidth.toPx() }
         val currentTransform = nowPlayingPanelTransform(currentIndex, positionPx, widthPx)
         val progressTransform = nowPlayingProgressTransform(currentIndex, positionPx, widthPx)
-        val coverTop = maxHeight * PLAYED_CENTRE_FRACTION - (COVER_SIZE_DP / 2).dp
-        val titleTop = maxHeight * PLAYED_CENTRE_FRACTION + 156.dp
+        val sceneHeight = maxHeight
+        val geometry = rememberNowPlayingStackGeometry(sceneHeight)
+        val coverScale = geometry.coverScale
+        val coverCentreY = geometry.coverCentreYDp.dp
+        // The panel is laid out at its full size and scaled about its centre, so
+        // everything that draws inside it keeps drawing in COVER_SIZE_DP units.
+        val coverTop = coverCentreY - (COVER_SIZE_DP / 2).dp
+        val titleTop = geometry.titleTopDp.dp
         val displayWidth = maxWidth
         val titleWidth = maxWidth * TITLE_PANEL_WIDTH_RATIO
         val reportedCoverBounds = with(density) {
             playedCoverRect(
                 center = Offset(
                     maxWidth.toPx() / 2f + currentTransform.translationX,
-                    maxHeight.toPx() * PLAYED_CENTRE_FRACTION,
+                    coverCentreY.toPx(),
                 ),
-                side = COVER_SIZE_DP.dp.toPx(),
+                side = COVER_SIZE_DP.dp.toPx() * coverScale,
             )
         }
         SideEffect { onCoverBounds(reportedCoverBounds) }
@@ -146,7 +153,13 @@ internal fun NowPlayingScene(
             // Drawn first so every panel rides on top of it: the fog no longer
             // belongs to any one panel's canvas (see NowPlayingPanelLayer below),
             // it is one stationary layer the live panel publishes into.
-            NowPlayingFogLayer(liveScene, motion, visualizerLight)
+            NowPlayingFogLayer(
+                liveScene,
+                motion,
+                visualizerLight,
+                coverCentreFraction = geometry.coverCentreYDp / sceneHeight.value,
+                coverScale = coverScale,
+            )
             panels.forEach { panel ->
                 key(panel.track.id, panel.index) {
                     NowPlayingPanelLayer(
@@ -158,11 +171,13 @@ internal fun NowPlayingScene(
                         motion = motion,
                         visualizerOpacity = visualizerOpacity,
                         coverTop = coverTop,
+                        coverScale = coverScale,
                         liveScene = liveScene,
                     )
                     SceneTitle(
                         track = panel.track,
                         displayWidth = displayWidth,
+                        maxTitleLines = geometry.titleMaxLines,
                         modifier = Modifier
                             .align(Alignment.TopStart)
                             .offset(y = titleTop)
@@ -184,15 +199,15 @@ internal fun NowPlayingScene(
         Box(
             modifier = Modifier
                 .align(Alignment.TopCenter)
-                .offset(y = coverTop - ((nowPlayingMetrics.coverSizeDp - COVER_SIZE_DP) / 2).dp)
-                .size(nowPlayingMetrics.coverSizeDp.dp)
+                .offset(y = coverCentreY - (nowPlayingMetrics.coverSizeDp * coverScale / 2f).dp)
+                .size((nowPlayingMetrics.coverSizeDp * coverScale).dp)
                 .graphicsLayer { translationX = currentTransform.translationX }
                 .testTag("now-playing-cover"),
             contentAlignment = Alignment.Center,
         ) {
             Box(
                 Modifier
-                    .size(COVER_SIZE_DP.dp)
+                    .size((COVER_SIZE_DP * coverScale).dp)
                     .testTag("now-playing-scene-cover"),
             )
         }
@@ -209,7 +224,7 @@ internal fun NowPlayingScene(
             onSeekBounds = onSeekBounds,
             modifier = Modifier
                 .align(Alignment.TopCenter)
-                .offset(y = maxHeight * 0.69f),
+                .offset(y = geometry.seekTopDp.dp),
         )
 
         SceneTransport(
@@ -226,6 +241,29 @@ internal fun NowPlayingScene(
     }
 }
 
+/**
+ * The stacked scene's vertical layout for a scene [height] tall, with the text
+ * heights it will really draw at the current font scale and the navigation bar
+ * the transport row clears.
+ */
+@Composable
+private fun rememberNowPlayingStackGeometry(height: Dp): NowPlayingStackGeometry {
+    val density = LocalDensity.current
+    val labelStyle = MaterialTheme.typography.labelMedium
+    val navigationInset = sheetNavigationBarBottomInset()
+    return with(density) {
+        nowPlayingStackGeometry(
+            NowPlayingStackInputs(
+                heightDp = height.value,
+                navigationInsetDp = navigationInset.value,
+                titleLineDp = TITLE_LINE_HEIGHT_SP.sp.toDp().value,
+                artistLineDp = ARTIST_LINE_HEIGHT_SP.sp.toDp().value,
+                seekLabelDp = labelStyle.lineHeight.toDp().value,
+            ),
+        )
+    }
+}
+
 @Composable
 private fun NowPlayingPanelLayer(
     panel: PlayPanel,
@@ -236,6 +274,7 @@ private fun NowPlayingPanelLayer(
     motion: AmbientMotionController,
     visualizerOpacity: Float,
     coverTop: androidx.compose.ui.unit.Dp,
+    coverScale: Float,
     liveScene: LiveSceneHandle,
 ) {
     val artwork = rememberTrackArtworkVisual(
@@ -339,8 +378,8 @@ private fun NowPlayingPanelLayer(
             .height(COVER_SIZE_DP.dp)
             .graphicsLayer {
                 translationX = transform.translationX
-                scaleX = transform.scale
-                scaleY = transform.scale
+                scaleX = transform.scale * coverScale
+                scaleY = transform.scale * coverScale
                 transform.rotationForLayer?.let { rotationZ = it }
                 alpha = transform.opacity
                 colorFilter = saturationFilter
@@ -611,6 +650,7 @@ private fun PlayedHeader(
 private fun SceneTitle(
     track: LibraryTrack,
     displayWidth: Dp,
+    maxTitleLines: Int,
     modifier: Modifier,
 ) {
     // The block this sits in is deliberately wider than the display — that
@@ -626,30 +666,34 @@ private fun SceneTitle(
                 .padding(horizontal = 28.dp),
             horizontalAlignment = Alignment.CenterHorizontally,
         ) {
-            // The title takes the height it needs rather than always reserving
-            // two lines: the reservation left a visible hole under every
-            // one-line title, and it was buying less than it looked. Everything
-            // below this block — seek bar, transport — is placed against the
-            // screen height, so a title growing to a second line moves the
-            // artist line and nothing else.
+            // The title takes the height it needs rather than always drawing two
+            // lines: the reservation left a visible hole under every one-line
+            // title. The room above the seek bar is reserved for [maxTitleLines]
+            // lines by nowPlayingStackGeometry whatever this track is called, so
+            // a title growing to a second line moves the artist line and nothing
+            // else.
             Text(
                 text = track.title,
                 modifier = Modifier.testTag("now-playing-title"),
                 style = TextStyle(
                     fontSize = 24.sp,
-                    lineHeight = 29.sp,
+                    lineHeight = TITLE_LINE_HEIGHT_SP.sp,
                     fontWeight = FontWeight.SemiBold,
                 ),
                 color = NowPlayingOnBackdrop,
                 textAlign = TextAlign.Center,
-                maxLines = 2,
+                maxLines = maxTitleLines,
                 overflow = TextOverflow.Ellipsis,
             )
             Spacer(Modifier.height(TITLE_TO_ARTIST_GAP_DP.dp))
             Text(
                 text = track.artist.ifBlank { "Unknown artist" },
                 modifier = Modifier.testTag("now-playing-artist"),
-                style = TextStyle(fontSize = 13.sp, fontWeight = FontWeight.Light),
+                style = TextStyle(
+                    fontSize = 13.sp,
+                    lineHeight = ARTIST_LINE_HEIGHT_SP.sp,
+                    fontWeight = FontWeight.Light,
+                ),
                 color = NowPlayingOnBackdrop.copy(alpha = 0.62f),
                 textAlign = TextAlign.Center,
                 maxLines = 1,
