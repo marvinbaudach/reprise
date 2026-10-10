@@ -306,6 +306,39 @@ mod tests {
         assert!(status.success(), "xdotool could not send Escape");
     }
 
+    fn ctrl_f_fixture() -> (
+        adw::ApplicationWindow,
+        gtk4::ToggleButton,
+        gtk4::SearchEntry,
+        SearchPopover,
+    ) {
+        gtk4::init().unwrap();
+        let app = adw::Application::builder()
+            .application_id("io.github.marvinbaudach.Reprise.SearchCtrlFCloseTest")
+            .flags(gio::ApplicationFlags::NON_UNIQUE)
+            .build();
+        app.register(None::<&gio::Cancellable>).unwrap();
+        let window = adw::ApplicationWindow::new(&app);
+        let entry = gtk4::SearchEntry::new();
+        let lens = gtk4::ToggleButton::new();
+        let search = SearchPopover::new(&lens, &entry);
+        let content = gtk4::Box::new(gtk4::Orientation::Vertical, 0);
+        content.append(&lens);
+        window.set_content(Some(&content));
+        wire_focus_search(&app, &window, search.downgrade(), Rc::new(|| true));
+        window.present();
+        while gtk4::glib::MainContext::default().iteration(false) {}
+        (window, lens, entry, search)
+    }
+
+    fn send_ctrl_f_key() {
+        let status = std::process::Command::new("xdotool")
+            .args(["key", "--clearmodifiers", "ctrl+f"])
+            .status()
+            .expect("xdotool is required by the X11 display test");
+        assert!(status.success(), "xdotool could not send Ctrl+F");
+    }
+
     fn settle_until(label: &str, condition: impl Fn() -> bool) {
         let deadline = std::time::Instant::now() + std::time::Duration::from_secs(5);
         while !condition() {
@@ -355,6 +388,30 @@ mod tests {
 
         assert!(search.is_open());
         assert!(widget_contains_focus(&window, entry.upcast_ref()));
+        window.close();
+    }
+
+    #[test]
+    #[ignore = "requires a display; run via xvfb-run"]
+    fn search_6_ctrl_f_closes_the_open_popover_while_its_entry_has_focus() {
+        let _main_context = crate::ui::test_main_context::lock_main_context();
+        let (window, lens, entry, search) = ctrl_f_fixture();
+        // Control arm: the same real key opens the closed popover from the
+        // lens, so a failure below is the popover swallowing the accelerator,
+        // not the key failing to arrive.
+        lens.grab_focus();
+        send_ctrl_f_key();
+        settle_until("a real Ctrl+F opens the closed popover", || {
+            search.is_open()
+        });
+        entry.set_text("falling");
+        settle_until("the entry holds the keyboard focus", || {
+            widget_contains_focus(&window, entry.upcast_ref())
+        });
+
+        send_ctrl_f_key();
+        settle_until("a real Ctrl+F closes the popover", || !search.is_open());
+        assert_eq!(entry.text(), "falling", "closing keeps the query");
         window.close();
     }
 
