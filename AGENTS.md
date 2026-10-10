@@ -34,11 +34,11 @@ successor. **Nine-crate** Cargo workspace:
 - `crates/reprise-stems` — the removable ML stem-separation backend behind the experimental
   instrumental jobs.
 
-`scripts/check-architecture.sh` enforces the dependency direction, but not for all nine. It
-names seven — `reprise-core`, `reprise-view`, `reprise-android-ffi`, `reprise-cli`,
-`reprise-mcp`, `reprise-stems` and `reprise-gnome`. `reprise-platform-linux` and
-`reprise-runtime-protocol` do not appear in the script at all, so they are covered only
-incidentally, as entries in other crates' dependency trees.
+`scripts/check-architecture.sh` enforces the dependency direction for all nine through
+`scripts/check-crate-layers.sh`. One table in that script names every workspace crate with
+its allowed direct workspace edges, its banned dependency families and its panic policy. A
+workspace crate the table does not name fails the gate, and so does a row whose crate no
+longer exists, so a new crate cannot slip in unregistered.
 
 ## Where we are RIGHT NOW
 
@@ -256,6 +256,17 @@ exist.)
 ## Key conventions to match
 
 - Immutable data, small focused files, early returns, named constants. See existing modules.
+- **Never-crash lints.** Production code in `reprise-core`, `reprise-view`,
+  `reprise-runtime-protocol`, `reprise-stems`, `reprise-android-ffi`, `reprise-platform-linux`,
+  `reprise-cli` and `reprise-mcp` — every crate whose layer-table row says `deny`;
+  `reprise-gnome` is still `pending` — may not call `unwrap`, `expect`, `panic!`, `todo!`,
+  `unimplemented!` or `unreachable!`. Each lib and bin root carries the same
+  `#![cfg_attr(not(test), deny(...))]` for those six `clippy::` lints; test builds are
+  exempt. Return an error instead. A genuine, documented invariant is the only exception, as
+  `#[expect(clippy::<lint>, reason = "…")]` at its site, never `#[allow]` (an allow never goes
+  stale, and the gate rejects it). The exact suppression count is `panic_lint_budget` in
+  `scripts/check-crate-layers.sh`; it fails when it grows and when it shrinks without the
+  budget being lowered.
 - **RefCell discipline** (the #1 recurring panic class): never hold a `Ref`/`RefMut` across a
   call that can re-enter GTK/callbacks — clone/copy the value out in its own statement first.
 - GTK cell widgets with per-row async work use a **generation token** so a recycled row never

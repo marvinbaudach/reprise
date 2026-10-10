@@ -12,6 +12,23 @@
 //! implementations live in per-OS platform crates (Linux: GStreamer and
 //! MPRIS in `reprise-platform-linux`).
 
+// Production code must not panic on bad input or broken invariants: every
+// fallible step returns an error instead. A genuine, documented invariant is
+// suppressed at its site with `#[expect(clippy::<lint>, reason = "…")]`, and
+// scripts/check-crate-layers.sh counts those suppressions against a budget.
+// Test builds are exempt; test doubles legitimately use unreachable!/expect.
+#![cfg_attr(
+    not(test),
+    deny(
+        clippy::unwrap_used,
+        clippy::expect_used,
+        clippy::panic,
+        clippy::todo,
+        clippy::unimplemented,
+        clippy::unreachable
+    )
+)]
+
 pub mod agent_device_sync;
 pub mod ai_conversion;
 pub mod ai_jobs;

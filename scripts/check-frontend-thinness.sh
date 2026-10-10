@@ -63,7 +63,8 @@ shared_view=crates/reprise-view/src
 # no longer silenced anything, removed one attribute line and lowered it by one.
 # Quick Open's result model and the sleep timer's decisions moved into
 # `reprise-view::{quick_open,sleep_timer}` (GNOME UX wave 1): +334 lines.
-view_floor=2515
+# The never-crash `cfg_attr` deny block at the crate root: +11 production lines.
+view_floor=2526
 
 echo "== Frontend thinness =="
 

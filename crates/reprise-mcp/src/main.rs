@@ -7,6 +7,23 @@
 //! D19 leak matrix (never a path, XDG/cache/db path, lyric, serial, credential
 //! or raw listen event).
 
+// Production code must not panic on bad input or broken invariants: every
+// fallible step returns an error instead. A genuine, documented invariant is
+// suppressed at its site with `#[expect(clippy::<lint>, reason = "…")]`, and
+// scripts/check-crate-layers.sh counts those suppressions against a budget.
+// Test builds are exempt; test doubles legitimately use unreachable!/expect.
+#![cfg_attr(
+    not(test),
+    deny(
+        clippy::unwrap_used,
+        clippy::expect_used,
+        clippy::panic,
+        clippy::todo,
+        clippy::unimplemented,
+        clippy::unreachable
+    )
+)]
+
 mod capability;
 mod catalog_resources;
 mod channel_detail;

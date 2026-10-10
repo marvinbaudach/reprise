@@ -115,6 +115,7 @@ require_pattern_order() {
 }
 
 require_executable scripts/check-architecture.sh
+require_executable scripts/check-crate-layers.sh
 require_executable scripts/check-shell.sh
 [[ -f scripts/lib/extract-workflow-run-blocks.awk ]] || {
   echo "scripts/lib/extract-workflow-run-blocks.awk must exist" >&2
@@ -165,6 +166,7 @@ require_executable scripts/weekly-portfolio-sync.sh
 require_executable scripts/tests/worktree-gc.sh
 require_executable scripts/tests/worktree-gc-schedule.sh
 require_executable scripts/tests/architecture-size-limits.sh
+require_executable scripts/tests/crate-layers.sh
 require_executable scripts/tests/cua-explore.sh
 require_executable scripts/tests/check-android-suite.sh
 require_executable .github/tests/release-metadata.sh
@@ -294,6 +296,8 @@ require_pattern 'productive GNOME code must use core database facades' scripts/c
 require_pattern 'frontend workers must open ready-to-use databases through the core facade' scripts/check-architecture.sh
 require_pattern 'must use the shared one-shot task helper' scripts/check-architecture.sh
 require_pattern 'check-accessibility-semantics.sh' scripts/check-architecture.sh
+require_pattern 'check-crate-layers.sh' scripts/check-architecture.sh
+require_pattern '^panic_lint_budget=[0-9]+$' scripts/check-crate-layers.sh
 require_pattern 'check-input-parity.sh' scripts/check-architecture.sh
 require_pattern 'check-listen-report-parity.sh' scripts/check-architecture.sh
 require_pattern 'check-android-theme.sh' scripts/check-architecture.sh
@@ -338,6 +342,7 @@ scripts/tests/input-parity.sh
 scripts/tests/android-theme.sh
 scripts/tests/shared-literal-comment-stripping.sh
 scripts/tests/duration-format-parity.sh
+scripts/tests/crate-layers.sh
 # The merge gate has no other call for these two, and the CI base job skips them
 # on pull requests, so the tail is their only pre-merge run.
 scripts/tests/github-flow.sh
