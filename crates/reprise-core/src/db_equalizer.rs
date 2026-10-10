@@ -71,3 +71,28 @@ fn parse_legacy_levels(value: &str) -> [f64; 10] {
         [0.0; 10]
     })
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::equalizer::EqualizerPreset;
+
+    #[test]
+    fn curve_to_sql_text_reads_back_as_the_same_curve() {
+        for preset in EqualizerPreset::ALL {
+            let curve = preset.curve();
+            let text = curve_to_sql(&curve).unwrap();
+            assert_eq!(EqualizerCurve::parse(&text).unwrap(), curve, "{preset:?}");
+        }
+    }
+
+    #[test]
+    fn legacy_levels_that_cannot_be_read_become_the_flat_curve() {
+        assert_eq!(parse_legacy_levels("not,numbers"), [0.0; 10]);
+        assert_eq!(parse_legacy_levels("1.0,2.0"), [0.0; 10]);
+        assert_eq!(
+            parse_legacy_levels("1,2,3,4,5,6,7,8,9,10"),
+            [1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0, 9.0, 10.0]
+        );
+    }
+}
