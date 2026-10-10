@@ -2,7 +2,7 @@
 slug: stress-fixture-tags
 worktree: /home/marvin/Projects/reprise-stress-fixture-tags
 branch: feature/stress-fixture-tags
-phase: reviewed
+phase: refactored
 codex_session:
 created: 2026-10-10
 ---
