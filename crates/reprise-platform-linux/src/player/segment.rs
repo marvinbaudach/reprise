@@ -84,10 +84,14 @@ impl Cut {
         }
     }
 
-    /// The cut's length: to its end, or to the end of the file when open.
+    /// The cut's length: to its end, or to the end of the file when open. An
+    /// open cut never lasts less than its own end: the file's duration is the
+    /// pipeline's reading of a header that may understate the file, while the
+    /// end of the cut can be a length the library measured by decoding it
+    /// (CUE-19).
     pub(crate) fn length_ms(&self, file_duration_ms: Option<i64>) -> i64 {
         let end_ms = match file_duration_ms {
-            Some(duration_ms) if self.open_end && duration_ms > 0 => duration_ms,
+            Some(duration_ms) if self.open_end && duration_ms > 0 => duration_ms.max(self.end_ms),
             _ => self.end_ms,
         };
         (end_ms - self.start_ms).max(0)

@@ -129,6 +129,7 @@ fn clearing_or_a_successful_store_forgets_the_failure() {
             waveform_peaks: vec![1],
             spectrogram: TrackSpectrogram::empty(),
             loudness: None,
+            decoded_end_ms: None,
         },
     )
     .unwrap();

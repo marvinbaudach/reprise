@@ -30,6 +30,7 @@ impl RenderDataBackend for CountingBackend {
             waveform_peaks: vec![7; buckets],
             spectrogram: TrackSpectrogram::from_cells(vec![9; 48]).unwrap(),
             loudness: None,
+            decoded_end_ms: None,
         })
     }
 }
@@ -272,6 +273,8 @@ struct CuttingBackend {
     whole_file_decodes: AtomicUsize,
     file_decodes: AtomicUsize,
     cuts: std::sync::Mutex<Vec<SegmentBounds>>,
+    /// Where the decoded file ends, which the last track of it reports.
+    file_ends_ms: Option<i64>,
 }
 
 impl WaveformBackend for CuttingBackend {
@@ -291,6 +294,7 @@ impl RenderDataBackend for CuttingBackend {
             waveform_peaks: vec![255; buckets],
             spectrogram: TrackSpectrogram::from_cells(vec![9; 48]).unwrap(),
             loudness: None,
+            decoded_end_ms: None,
         })
     }
 
@@ -308,11 +312,12 @@ impl RenderDataBackend for CuttingBackend {
         self.cuts.lock().unwrap().extend_from_slice(segments);
         Ok(segments
             .iter()
-            .map(|_| {
+            .map(|bounds| {
                 Ok(TrackRenderData {
                     waveform_peaks: vec![5; buckets],
                     spectrogram: TrackSpectrogram::from_cells(vec![9; 48]).unwrap(),
                     loudness: None,
+                    decoded_end_ms: self.file_ends_ms.filter(|_| bounds.last_in_file),
                 })
             })
             .collect())
@@ -599,4 +604,34 @@ fn cue_9_a_track_whose_successor_is_only_excluded_is_measured_to_its_own_end() {
         }),
         "the excluded fourth track's audio is not part of the third"
     );
+}
+
+#[test]
+fn cue_19_playing_the_last_track_of_a_file_teaches_the_library_its_real_length() {
+    // The file holds 20 s; its metadata, and so the track's recorded cut, say 8 s.
+    let db = database_with_a_cue_track();
+    let backend = CuttingBackend {
+        file_ends_ms: Some(20_000),
+        ..CuttingBackend::default()
+    };
+
+    peaks_for_playback(
+        &db,
+        2,
+        Path::new("/live.flac"),
+        &backend,
+        &AtomicBool::new(false),
+    )
+    .unwrap();
+
+    let (duration_ms, end_ms): (i64, i64) = db
+        .conn()
+        .query_row(
+            "SELECT duration_ms, segment_end_ms FROM tracks WHERE id = 2",
+            [],
+            |row| Ok((row.get(0)?, row.get(1)?)),
+        )
+        .unwrap();
+    assert_eq!(duration_ms, 17_000);
+    assert_eq!(end_ms, 8_000, "the recorded cut is left as it was");
 }

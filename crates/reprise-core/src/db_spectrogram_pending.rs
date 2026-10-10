@@ -123,8 +123,16 @@ const LAST_IN_FILE: &str = "t.segment_index >= MAX( \
 /// Whether `track_id` is the last track of its file, see `LAST_IN_FILE`; a
 /// track that does not exist is not.
 pub fn track_is_last_in_file(db: &Db, track_id: i64) -> Result<bool, DbError> {
-    let last: Option<bool> = db
-        .conn()
+    Ok(is_last_in_file(db.conn(), track_id)?)
+}
+
+/// [`track_is_last_in_file`] on a connection or transaction a caller already
+/// holds, so a store can check it under the lock it writes under.
+pub(crate) fn is_last_in_file(
+    conn: &rusqlite::Connection,
+    track_id: i64,
+) -> Result<bool, rusqlite::Error> {
+    let last: Option<bool> = conn
         .query_row(
             &format!("SELECT {LAST_IN_FILE} FROM tracks t WHERE t.id = ?1"),
             [track_id],
@@ -288,6 +296,7 @@ mod tests {
                 waveform_peaks: vec![9],
                 spectrogram: TrackSpectrogram::empty(),
                 loudness: None,
+                decoded_end_ms: None,
             },
         )
         .unwrap();

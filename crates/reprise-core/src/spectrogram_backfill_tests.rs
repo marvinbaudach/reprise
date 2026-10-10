@@ -52,6 +52,7 @@ impl RenderDataBackend for FakeBackend {
             waveform_peaks: vec![call as u8 + 1; buckets],
             spectrogram: TrackSpectrogram::from_cells(vec![call as u8 + 1; 24]).unwrap(),
             loudness: None,
+            decoded_end_ms: None,
         })
     }
 }
@@ -173,6 +174,7 @@ impl RenderDataBackend for CuePerTrackBackend {
             waveform_peaks: vec![200; buckets],
             spectrogram: TrackSpectrogram::from_cells(vec![9; 24]).unwrap(),
             loudness: None,
+            decoded_end_ms: None,
         })
     }
 
@@ -196,6 +198,7 @@ impl RenderDataBackend for CuePerTrackBackend {
                     waveform_peaks: vec![(segment.start_ms / 1_000) as u8; buckets],
                     spectrogram: TrackSpectrogram::from_cells(vec![1; 24]).unwrap(),
                     loudness: None,
+                    decoded_end_ms: None,
                 })
             })
             .collect())

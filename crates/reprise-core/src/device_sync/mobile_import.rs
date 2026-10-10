@@ -120,6 +120,7 @@ pub fn import_analysis_bytes_for_track(
         waveform_peaks: sidecar.waveform_peaks,
         spectrogram: sidecar.spectrogram,
         loudness: sidecar.loudness,
+        decoded_end_ms: None,
     };
     if crate::db_spectrogram::set_track_render_data(db, track_id, phone_source, &data)?
         == crate::db_spectrogram::SpectrogramStoreOutcome::SourceChanged

@@ -223,6 +223,7 @@ mod tests {
                 waveform_peaks: vec![0, u8::MAX],
                 spectrogram: TrackSpectrogram::from_cells(stored_spectrogram_cells()).unwrap(),
                 loudness: None,
+                decoded_end_ms: None,
             },
         )
         .unwrap();

@@ -60,6 +60,7 @@ fn measure_loudness(directory: &Path, track_id: i64, integrated_lufs: f64) {
                 integrated_lufs,
                 true_peak: 0.5,
             }),
+            decoded_end_ms: None,
         },
     )
     .unwrap();

@@ -194,14 +194,32 @@ impl SegmentedRenderDataSession {
     /// Ends the stream and returns the render data of each segment, in the order
     /// the segments were given. A segment the stream never reached reads as an
     /// empty stream; the others are unaffected. The file's last track is
-    /// complete with whatever the stream held up to its end.
+    /// complete with whatever the stream held up to its end, and says where
+    /// that end was ([`TrackRenderData::decoded_end_ms`]).
     #[must_use]
     pub fn finish(self) -> Vec<Result<TrackRenderData, RenderDataSessionError>> {
+        let decoded_end_ms = self
+            .config
+            .map(|(sample_rate_hz, _)| end_ms_of(self.frames_seen, sample_rate_hz));
         self.tracks
             .into_iter()
-            .map(|track| track.session.finish())
+            .map(|track| {
+                let last_in_file = track.bounds.last_in_file;
+                track.session.finish().map(|data| TrackRenderData {
+                    decoded_end_ms: decoded_end_ms.filter(|_| last_in_file),
+                    ..data
+                })
+            })
             .collect()
     }
+}
+
+/// The millisecond nearest to the end of the first `frames` frames of a stream
+/// at `sample_rate_hz`.
+fn end_ms_of(frames: u64, sample_rate_hz: u32) -> i64 {
+    let rate = u128::from(sample_rate_hz.max(1));
+    let milliseconds = (u128::from(frames) * 1_000 + rate / 2) / rate;
+    i64::try_from(milliseconds).unwrap_or(i64::MAX)
 }
 
 /// The first frame at or after `milliseconds` of a stream at `sample_rate_hz`.
