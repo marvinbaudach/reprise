@@ -380,7 +380,10 @@ impl PodcastsView {
                     .replace(refreshed_download_states(&rows, &previous));
                 self.groups.replace(groups);
                 self.rows.replace(rows);
-                let last_updated = last_updated_text(&self.conn);
+                // No successful fetch yet: leave the label empty rather than
+                // claim an age. It is shared with transient status (refreshing,
+                // queued offline), so it is cleared, not hidden.
+                let last_updated = last_updated_text(&self.conn, self.kind).unwrap_or_default();
                 self.footer_status.set_text(&last_updated);
                 self.waiting_for_model.set(false);
                 self.render();

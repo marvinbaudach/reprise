@@ -6,7 +6,7 @@ macro_rules! N_ {
 
 use reprise_core::podcasts::PodcastKind;
 
-use super::{formatted, plural};
+use super::{formatted, pgettext, plural, text};
 
 pub const SOURCE_ADD: &str = N_!("Add");
 pub const SOURCE_ADDED: &str = N_!("Added");
@@ -43,7 +43,6 @@ pub const SOURCE_COLLECTED_FAILURES_EMPTY: &str = N_!(
 pub const SOURCE_COLLECTED_FAILURES_EMPTY_MORE: &str = N_!(
     "Affected: {sources}, and {count} more. Nothing is downloaded from these sources yet; your other sources and music are unaffected."
 );
-pub const SOURCE_AGE_JUST_NOW: &str = N_!("just now");
 pub const SOURCE_UPDATED_AGO: &str = N_!("Updated {time}");
 pub const SOURCE_YOUTUBE_EMPTY_FAILURE_DESCRIPTION: &str = N_!(
     "Nothing is downloaded from this channel yet, so there's nothing to show. Your other channels and your music are unaffected."
@@ -53,6 +52,7 @@ pub const SOURCE_PODCAST_EMPTY_FAILURE_DESCRIPTION: &str = N_!(
 );
 pub const SOURCE_OFFLINE_DESCRIPTION: &str =
     N_!("Showing downloaded content. Last checked {time}.");
+pub const SOURCE_OFFLINE_DESCRIPTION_UNDATED: &str = N_!("Showing downloaded content.");
 pub const SOURCE_ACTION_FAILED: &str = N_!("This action couldn't be completed. Try again.");
 pub const SOURCE_NOTHING_FOUND: &str =
     N_!("Nothing found for '{query}' — try pasting a feed/channel URL instead");
@@ -91,25 +91,52 @@ pub fn source_collected_failures(
 }
 
 /// `NET-3`: the cached-content banner names what is on screen (episodes or
-/// videos, by kind) and how old it is. `time` is a bare phrase such as
-/// "2 minutes ago", never a full "Updated ..." label.
-pub fn source_cached_items_still_work(kind: PodcastKind, count: usize, time: &str) -> String {
+/// videos, by kind) and, when one is known, how old it is. `time` is a bare
+/// phrase such as "2 minutes ago", never a full "Updated ..." label; `None`
+/// (no fetch ever succeeded) drops the age clause instead of inventing one.
+pub fn source_cached_items_still_work(
+    kind: PodcastKind,
+    count: usize,
+    time: Option<&str>,
+) -> String {
     let count_text = count.to_string();
-    let values = [("count", count_text.as_str()), ("time", time)];
-    match kind {
-        PodcastKind::Rss => plural(
+    let values = [
+        ("count", count_text.as_str()),
+        ("time", time.unwrap_or_default()),
+    ];
+    match (kind, time) {
+        (PodcastKind::Rss, Some(_)) => plural(
             "Showing the episode from {time}. Downloads play as usual.",
             "Showing the {count} episodes from {time}. Downloads play as usual.",
             count,
             &values,
         ),
-        PodcastKind::Youtube => plural(
+        (PodcastKind::Rss, None) => plural(
+            "Showing the episode. Downloads play as usual.",
+            "Showing the {count} episodes. Downloads play as usual.",
+            count,
+            &values,
+        ),
+        (PodcastKind::Youtube, Some(_)) => plural(
             "Showing the video from {time}. Downloads play as usual.",
             "Showing the {count} videos from {time}. Downloads play as usual.",
             count,
             &values,
         ),
+        (PodcastKind::Youtube, None) => plural(
+            "Showing the video. Downloads play as usual.",
+            "Showing the {count} videos. Downloads play as usual.",
+            count,
+            &values,
+        ),
     }
+}
+
+/// The age of a source that was just refreshed. It has its own context
+/// because the device-sync status line shares the English words but not the
+/// slot they sit in.
+pub fn source_age_just_now() -> String {
+    pgettext("source age", "just now")
 }
 
 /// Bare, plural-aware ages such as "2 minutes ago". The literals sit in the
@@ -152,8 +179,11 @@ pub fn source_updated_ago(time: &str) -> String {
     formatted(SOURCE_UPDATED_AGO, &[("time", time)])
 }
 
-pub fn source_offline_description(time: &str) -> String {
-    formatted(SOURCE_OFFLINE_DESCRIPTION, &[("time", time)])
+pub fn source_offline_description(time: Option<&str>) -> String {
+    match time {
+        Some(time) => formatted(SOURCE_OFFLINE_DESCRIPTION, &[("time", time)]),
+        None => text(SOURCE_OFFLINE_DESCRIPTION_UNDATED),
+    }
 }
 
 pub fn source_nothing_found(query: &str) -> String {

@@ -232,7 +232,7 @@ mod tests {
     #[test]
     fn net_3_cached_and_empty_support_copy_names_episodes_and_the_channel() {
         assert_eq!(
-            strings::source_cached_items_still_work(PodcastKind::Rss, 10, "4 hours ago"),
+            strings::source_cached_items_still_work(PodcastKind::Rss, 10, Some("4 hours ago")),
             "Showing the 10 episodes from 4 hours ago. Downloads play as usual."
         );
         assert_eq!(

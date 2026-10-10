@@ -512,25 +512,26 @@ const HOURS_PER_DAY: i64 = 24;
 
 /// A bare age phrase ("just now", "2 minutes ago", "3 days ago") shared by
 /// the list label and the cached-content banners, so both use one set of
-/// buckets. A missing or future timestamp reads as "just now".
-pub(super) fn age_phrase(timestamp: Option<i64>, now: i64) -> String {
-    let seconds = timestamp.map_or(0, |timestamp| now.saturating_sub(timestamp).max(0));
+/// buckets. A future timestamp (clock skew) reads as "just now"; no timestamp
+/// has no age, and the callers leave the age out instead of claiming one.
+pub(super) fn age_phrase(timestamp: Option<i64>, now: i64) -> Option<String> {
+    let seconds = now.saturating_sub(timestamp?).max(0);
     let minutes = seconds / SECONDS_PER_MINUTE;
     let hours = minutes / MINUTES_PER_HOUR;
     let days = hours / HOURS_PER_DAY;
-    if days > 0 {
+    Some(if days > 0 {
         strings::source_age_days(days)
     } else if hours > 0 {
         strings::source_age_hours(hours)
     } else if minutes > 0 {
         strings::source_age_minutes(minutes)
     } else {
-        strings::text(strings::SOURCE_AGE_JUST_NOW)
-    }
+        strings::source_age_just_now()
+    })
 }
 
-pub(super) fn updated_ago(timestamp: Option<i64>, now: i64) -> String {
-    strings::source_updated_ago(&age_phrase(timestamp, now))
+pub(super) fn updated_ago(timestamp: Option<i64>, now: i64) -> Option<String> {
+    age_phrase(timestamp, now).map(|age| strings::source_updated_ago(&age))
 }
 
 #[cfg(test)]

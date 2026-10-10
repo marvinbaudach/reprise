@@ -4,7 +4,7 @@ use std::sync::OnceLock;
 
 use gettextrs::{
     bind_textdomain_codeset, bindtextdomain, gettext as gettext_message,
-    ngettext as ngettext_message, textdomain,
+    ngettext as ngettext_message, pgettext as pgettext_message, textdomain,
 };
 use reprise_core::format::initialize_system_locale;
 
@@ -104,6 +104,12 @@ fn is_source_locale(locale: &str) -> bool {
 
 pub fn gettext(message: &str) -> String {
     gettext_message(message)
+}
+
+/// A message whose translation depends on `context`, for a source string that
+/// several places share but that reads differently in each.
+pub fn pgettext(context: &str, message: &str) -> String {
+    pgettext_message(context, message)
 }
 
 pub fn ngettext(singular: &str, plural: &str, count: u32) -> String {

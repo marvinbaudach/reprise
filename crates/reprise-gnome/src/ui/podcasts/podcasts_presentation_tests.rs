@@ -483,7 +483,7 @@ const HOUR: i64 = 60 * MINUTE;
 const DAY: i64 = 24 * HOUR;
 
 fn age_after(seconds: i64) -> String {
-    age_phrase(Some(NOW - seconds), NOW)
+    age_phrase(Some(NOW - seconds), NOW).expect("a known timestamp has an age")
 }
 
 #[test]
@@ -502,19 +502,25 @@ fn source_banner_age_phrase_switches_buckets_exactly_at_the_edges() {
 }
 
 #[test]
-fn source_banner_age_phrase_treats_a_future_or_missing_timestamp_as_just_now() {
-    assert_eq!(age_phrase(Some(NOW + 500), NOW), "just now");
-    assert_eq!(age_phrase(None, NOW), "just now");
+fn source_banner_age_phrase_reads_a_future_timestamp_as_just_now_and_a_missing_one_as_unknown() {
+    assert_eq!(
+        age_phrase(Some(NOW + 500), NOW).as_deref(),
+        Some("just now")
+    );
+    assert_eq!(age_phrase(None, NOW), None);
 }
 
 #[test]
-fn updated_ago_is_updated_plus_the_shared_age_phrase() {
-    assert_eq!(updated_ago(None, NOW), "Updated just now");
+fn updated_ago_is_updated_plus_the_shared_age_phrase_and_absent_without_an_age() {
+    assert_eq!(updated_ago(None, NOW), None);
     assert_eq!(
-        updated_ago(Some(NOW - 2 * MINUTE), NOW),
-        "Updated 2 minutes ago"
+        updated_ago(Some(NOW - 2 * MINUTE), NOW).as_deref(),
+        Some("Updated 2 minutes ago")
     );
-    assert_eq!(updated_ago(Some(NOW - 3 * DAY), NOW), "Updated 3 days ago");
+    assert_eq!(
+        updated_ago(Some(NOW - 3 * DAY), NOW).as_deref(),
+        Some("Updated 3 days ago")
+    );
 }
 
 #[test]
@@ -550,15 +556,51 @@ fn source_banner_sentences_read_cleanly_with_the_real_age_phrase() {
             ),
         ];
         for (kind, count, expected) in sentences {
-            let actual = strings::source_cached_items_still_work(kind, count, &time);
+            let actual = strings::source_cached_items_still_work(kind, count, Some(&time));
             assert_eq!(actual, expected);
             assert!(!actual.contains("Updated"), "{actual}");
         }
-        let offline = strings::source_offline_description(&time);
+        let offline = strings::source_offline_description(Some(&time));
         assert_eq!(
             offline,
             format!("Showing downloaded content. Last checked {phrase}.")
         );
         assert!(!offline.contains("Updated"), "{offline}");
     }
+}
+
+#[test]
+fn source_banner_sentences_drop_the_age_clause_when_no_fetch_ever_succeeded() {
+    let cached = [
+        (
+            PodcastKind::Rss,
+            1,
+            "Showing the episode. Downloads play as usual.",
+        ),
+        (
+            PodcastKind::Rss,
+            2,
+            "Showing the 2 episodes. Downloads play as usual.",
+        ),
+        (
+            PodcastKind::Youtube,
+            1,
+            "Showing the video. Downloads play as usual.",
+        ),
+        (
+            PodcastKind::Youtube,
+            2,
+            "Showing the 2 videos. Downloads play as usual.",
+        ),
+    ];
+    for (kind, count, expected) in cached {
+        assert_eq!(
+            strings::source_cached_items_still_work(kind, count, None),
+            expected
+        );
+    }
+    assert_eq!(
+        strings::source_offline_description(None),
+        "Showing downloaded content."
+    );
 }
