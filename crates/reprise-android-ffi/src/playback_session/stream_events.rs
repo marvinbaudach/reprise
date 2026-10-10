@@ -57,6 +57,7 @@ impl SessionInner {
             None
         };
 
+        let mut resume_to_save = None;
         let (follow_up, play_to_record, queue_to_save) = {
             let Ok(mut state) = self.state.lock() else {
                 return;
@@ -72,6 +73,9 @@ impl SessionInner {
                         state.snapshot.error = None;
                     }
                     state.snapshot.state = playback.into();
+                    if playback == PlaybackState::Paused {
+                        resume_to_save = state.resume_point();
+                    }
                     (FollowUp::None, None, None)
                 }
                 PlayerEvent::Position {
@@ -84,6 +88,10 @@ impl SessionInner {
                     }
                     state.max_position_ms = state.max_position_ms.max(position_ms.max(0));
                     let play = state.play_to_record(false);
+                    if play.is_some() {
+                        // A kill from here on must not count this listen twice.
+                        resume_to_save = state.resume_point();
+                    }
                     (FollowUp::None, play, None)
                 }
                 PlayerEvent::TrackFinished => {
@@ -112,6 +120,7 @@ impl SessionInner {
                         if let Some(history_entry) = history_entry {
                             state.note_playback_started(history_entry);
                         }
+                        resume_to_save = state.resume_point();
                         (
                             FollowUp::Feed(state.next_track()),
                             play,
@@ -183,6 +192,8 @@ impl SessionInner {
                 tracing::warn!(%error, "could not persist automatic Android queue advance");
             }
         }
+
+        self.remember_position(resume_to_save);
 
         // Queued, not written: this runs on Media3's application thread, and
         // `FollowUp::Start` below is the gapless transition into the next

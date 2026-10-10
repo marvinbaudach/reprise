@@ -22,6 +22,7 @@ mod history;
 mod next_at_end;
 mod queue_boundary;
 pub(crate) mod queue_persistence;
+mod resume_position;
 mod stream_events;
 mod trash_boundary;
 
@@ -85,6 +86,9 @@ struct SessionState {
     fault_skip_limit: Option<usize>,
     max_position_ms: i64,
     play_recorded: bool,
+    /// Where the next `start_current` begins: a restored or seeked-while-paused
+    /// playhead that Media3 has not been told about because nothing is loaded.
+    pending_start_ms: i64,
 }
 
 impl SessionState {
@@ -116,10 +120,14 @@ impl SessionState {
             fault_skip_limit: None,
             max_position_ms: 0,
             play_recorded: false,
+            pending_start_ms: 0,
         }
     }
 
-    fn from_restored(restored: queue_persistence::RestoredQueue) -> Self {
+    fn from_restored(
+        restored: queue_persistence::RestoredQueue,
+        resume: Option<resume_position::ResumePoint>,
+    ) -> Self {
         let repeat = match restored.queue.repeat() {
             Repeat::Off => AndroidRepeatMode::Off,
             Repeat::All => AndroidRepeatMode::All,
@@ -136,14 +144,21 @@ impl SessionState {
         } else {
             AndroidPlaybackState::Stopped
         };
+        let resume = resume.filter(|point| Some(point.track_id) == restored.queue.current());
+        let resume_ms = resume.map_or(0, |point| point.position_ms.max(0));
+        let duration_ms = if current_index.is_some() {
+            restored.current_duration_ms
+        } else {
+            0
+        };
         Self {
             snapshot: AndroidPlaybackSnapshot {
                 state,
                 current_index,
                 current_track_id: None,
                 current_track_uri: None,
-                position_ms: 0,
-                duration_ms: 0,
+                position_ms: resume_ms,
+                duration_ms,
                 automatic_advance_count: 0,
                 shuffled: restored.queue.is_shuffled(),
                 repeat,
@@ -161,7 +176,8 @@ impl SessionState {
             consecutive_faults: 0,
             fault_skip_limit: None,
             max_position_ms: 0,
-            play_recorded: false,
+            play_recorded: resume.is_some_and(|point| point.play_recorded),
+            pending_start_ms: resume_ms,
         }
     }
 
@@ -205,6 +221,7 @@ impl SessionState {
             .and_then(|index| u64::try_from(index).ok());
         self.snapshot.position_ms = 0;
         self.snapshot.duration_ms = 0;
+        self.pending_start_ms = 0;
         self.current_loaded = false;
         self.snapshot.state = AndroidPlaybackState::Playing;
         self.max_position_ms = 0;
@@ -229,6 +246,7 @@ impl SessionState {
         self.snapshot.current_index = None;
         self.snapshot.position_ms = 0;
         self.snapshot.duration_ms = 0;
+        self.pending_start_ms = 0;
         self.current_loaded = false;
     }
 
@@ -331,6 +349,7 @@ struct SessionInner {
     backend: OnceLock<AndroidPlaybackBackend>,
     listener: Arc<dyn AndroidPlaybackListener>,
     queue: QueuePersister,
+    resume: resume_position::ResumePositionFile,
     plays: PlayRecorder,
     listen_exports: ListenExportRecorder,
 }
@@ -367,7 +386,7 @@ impl SessionInner {
 
     fn start_current(&self) -> Result<(), AndroidPlaybackError> {
         let backend = self.backend()?;
-        let (track_id, uri, next, history_entry) = {
+        let (track_id, uri, next, history_entry, start_ms, play_recorded) = {
             let mut state = self.lock()?;
             let track_id =
                 state
@@ -384,7 +403,15 @@ impl SessionInner {
             let history_entry = state.history_entry_for_started(track_id, uri.clone());
             // `play_uri` may synchronously publish this stream's first event.
             state.current_loaded = true;
-            (track_id, uri, next, history_entry)
+            let start_ms = std::mem::take(&mut state.pending_start_ms);
+            (
+                track_id,
+                uri,
+                next,
+                history_entry,
+                start_ms,
+                state.play_recorded,
+            )
         };
         if let Err(error) = backend.play_item(self.playback_item(track_id, uri)) {
             let detail = error.to_string();
@@ -396,11 +423,24 @@ impl SessionInner {
             self.notify();
             return Err(AndroidPlaybackError::Backend { detail });
         }
+        if start_ms > 0 {
+            // The song was restored or seeked while paused, so Media3 starts it
+            // at 0:00 until told otherwise. The seek follows `play_item` at once, before
+            // the player reaches READY.
+            if let Err(error) = backend.seek_to(start_ms) {
+                tracing::warn!(%error, start_ms, "could not start the song at its restored position");
+            }
+        }
         {
             let mut state = self.lock()?;
             state.note_playback_started(history_entry);
             state.stream = backend.current_generation();
         }
+        self.remember_position(Some(resume_position::ResumePoint {
+            track_id,
+            position_ms: start_ms,
+            play_recorded,
+        }));
         self.feed_next(next)?;
         self.notify();
         Ok(())
@@ -447,6 +487,13 @@ impl AndroidPlaybackSession {
                     detail: format!("could not restore the playback queue: {error}"),
                 }
             })?;
+        let resume =
+            resume_position::ResumePositionFile::new(&library.database_path).map_err(|error| {
+                AndroidPlaybackError::Backend {
+                    detail: format!("could not locate the playback resume position: {error}"),
+                }
+            })?;
+        let restored_resume = resume.read();
         let restored_queue = restored.queue.clone();
         let restored_snapshot_sequence = restored.snapshot_sequence;
         let playback_settings = crate::AndroidPlaybackSettings::load(&database);
@@ -476,11 +523,12 @@ impl AndroidPlaybackSession {
             );
         }
         let inner = Arc::new(SessionInner {
-            state: Mutex::new(SessionState::from_restored(restored)),
+            state: Mutex::new(SessionState::from_restored(restored, restored_resume)),
             library: Arc::clone(&library),
             backend: OnceLock::new(),
             listener,
             queue,
+            resume,
             plays: PlayRecorder::spawn(
                 library.database_path.clone(),
                 library.writer_handle(),
@@ -572,7 +620,14 @@ impl AndroidPlaybackSession {
                 detail: error.to_string(),
             }
         })?;
-        self.inner.lock()?.snapshot.state = playback.into();
+        let resume_point = {
+            let mut state = self.inner.lock()?;
+            state.snapshot.state = playback.into();
+            (state.snapshot.state == AndroidPlaybackState::Paused)
+                .then(|| state.resume_point())
+                .flatten()
+        };
+        self.inner.remember_position(resume_point);
         self.inner.notify();
         Ok(())
     }
@@ -618,9 +673,13 @@ impl AndroidPlaybackSession {
     }
 
     pub fn seek_to(&self, position_ms: i64) -> Result<(), AndroidPlaybackError> {
+        let position_ms = position_ms.max(0);
+        if self.inner.seek_paused(position_ms)? {
+            return Ok(());
+        }
         self.inner
             .backend()?
-            .seek_to(position_ms.max(0))
+            .seek_to(position_ms)
             .map_err(|error| AndroidPlaybackError::Backend {
                 detail: error.to_string(),
             })
