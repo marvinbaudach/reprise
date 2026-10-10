@@ -4,7 +4,7 @@
 //! renders it: everything downstream of the gain element — `playbin`'s own
 //! sink queue and the sink's ring buffer — still holds the outgoing track's
 //! tail. The probe therefore only *stages* the hand-off: it switches the gain,
-//! because the very next buffer is the new track's, and records a
+//! because the very next frame is the new track's, and records a
 //! [`PendingHandOff`]. The cut the frontend sees stays the outgoing one, so
 //! its clock keeps counting to its end.
 //!

@@ -683,9 +683,13 @@ result.
   through without a gap or a reload, each with its own loudness gain, and the
   next one is shown when it is heard.** When the next track is the one that
   starts where the playing track ends in the same file, playback carries on
-  inside the file: no new stream starts and nothing is reloaded. From the
-  first buffer at the boundary on, the next track's own gain applies (give or
-  take that one buffer). The next track takes over in the UI when its first
+  inside the file: no new stream starts and nothing is reloaded. The next
+  track's own gain applies from the exact sample the boundary falls on, the
+  nearest sample when it falls between two: no sample of the next track plays
+  at the previous track's gain, and none of the previous track's at the next
+  one's, even when the boundary lies inside a buffer. The player cuts that one
+  buffer in two at the boundary and switches the gain between the parts. The
+  next track takes over in the UI when its first
   sample is heard, not when the player reads it about a second earlier:
   until then the previous track's time keeps counting to its end, and from
   then on the next track's time and length are the ones shown — no tick of
@@ -700,7 +704,11 @@ result.
   next track chosen while the boundary is already read but not yet heard
   lets up to that much of the previously queued track play under the
   previous title before the newly chosen one starts. Proven by the
-  GStreamer backend tests.
+  GStreamer backend tests, which read every sample leaving the gain element
+  of a file at a constant level and find the frame where the gain steps.
+  *Tests:*
+  `play_23a_the_next_tracks_gain_applies_from_the_exact_sample_of_each_boundary`,
+  `play_23a_the_exact_sample_holds_for_a_stereo_file`.
   <!-- REVIEW: rule proposal -->
 - **PLAY-24** [active] [core] — **No crossfade into or out of a CUE track.**
   With the transition set to Crossfade, a change from a CUE track to any track
