@@ -5,42 +5,33 @@ multi-ecosystem-groups:
     schedule:
       interval: weekly
       day: monday
+    target-branch: dev
+    commit-message:
+      prefix: "chore"
     labels:
       - dependencies
 
 updates:
   - package-ecosystem: github-actions
     directory: /
-    target-branch: dev
     multi-ecosystem-group: all-dependencies
     patterns:
       - "*"
-    commit-message:
-      prefix: "chore"
 
   - package-ecosystem: cargo
     directory: /
-    target-branch: dev
     multi-ecosystem-group: all-dependencies
     patterns:
       - "*"
-    commit-message:
-      prefix: "chore"
 
   - package-ecosystem: gradle
     directory: /android
-    target-branch: dev
     multi-ecosystem-group: all-dependencies
     patterns:
       - "*"
-    commit-message:
-      prefix: "chore"
 
   - package-ecosystem: npm
     directory: /showroom
-    target-branch: dev
     multi-ecosystem-group: all-dependencies
     patterns:
       - "*"
-    commit-message:
-      prefix: "chore"
