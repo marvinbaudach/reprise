@@ -5,8 +5,10 @@
 //! cached episodes are. `last_success_at` moves only when a fetch succeeded, an
 //! unchanged feed (`not_modified`) included, because then the cache is current.
 //!
-//! Rows whose last attempt succeeded start from that attempt's time. A row
-//! whose last attempt failed has lost the earlier success and stays NULL.
+//! Rows whose last attempt succeeded start from that attempt's time. Every
+//! other row stays NULL. That includes a row in a retryable failure, whose
+//! `last_fetch_at` may still hold the last success; the schema cannot tell it
+//! apart from a failure that moved the clock, so the backfill does not guess.
 
 use rusqlite::Connection;
 
