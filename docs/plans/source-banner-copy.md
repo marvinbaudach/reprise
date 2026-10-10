@@ -2,7 +2,7 @@
 slug: source-banner-copy
 worktree: /home/marvin/Projects/reprise-source-banner-copy
 branch: feature/source-banner-copy
-phase: refactored
+phase: shipped
 codex_session:
 created: 2026-10-10
 ---
