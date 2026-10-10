@@ -187,9 +187,8 @@ fn play_23a_a_seek_before_the_boundary_is_heard_keeps_the_playing_track() {
         })
         .collect();
     assert!(
-        wrong_gain.len() <= 1,
-        "after the seek every buffer carries its own track's gain, give or take \
-         the one at the boundary: {wrong_gain:?}"
+        wrong_gain.is_empty(),
+        "after the seek every buffer carries its own track's gain: {wrong_gain:?}"
     );
 }
 

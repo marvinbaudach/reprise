@@ -9,10 +9,12 @@
 //! pad, behind the filter's playback queue. That is where the gain changes,
 //! but not where a buffer is heard: `playbin`'s sink queue and the audio sink's
 //! own buffer still lie downstream, and together they hold about a second.
-//! The first buffer whose stream time reaches the boundary either carries on
-//! into the armed contiguous successor — the next track of the same file,
-//! starting exactly where this one ends — with that track's gain, or, with
-//! nothing armed, is dropped and an end-of-stream goes in its place: the audio
+//! The buffer that holds the boundary carries on into the armed contiguous
+//! successor — the next track of the same file, starting exactly where this
+//! one ends — with that track's gain from the exact frame of the boundary: a
+//! boundary inside a buffer cuts it in two (see [`split`]). With nothing armed,
+//! the first buffer whose stream time reaches the boundary is dropped and an
+//! end-of-stream goes in its place: the audio
 //! sink has not played what it was already handed, and only an end-of-stream
 //! drains it. The pad refuses everything after that, the file's own
 //! end-of-stream included, so the bus sees exactly one end-of-stream and it is
@@ -44,6 +46,7 @@
 //! computed against the old cut can follow the `AdvancedToNext` that ends it.
 
 mod handoff;
+mod split;
 
 use gstreamer as gst;
 use gstreamer::prelude::*;
@@ -55,6 +58,7 @@ use reprise_core::playback::{PlaybackError, PlaybackState, PlayerEvent};
 use crate::gapless::QueuedTrack;
 use crate::player_effects::{linear_gain, TRACK_GAIN_NAME};
 use handoff::{watch_render, PendingHandOff};
+use split::{split_at_boundary, PartsInFlight, Split};
 
 /// An end this close to the file's duration means "to the end of the file".
 pub(crate) const OPEN_END_TOLERANCE_MS: i64 = 1000;
@@ -481,6 +485,7 @@ pub(crate) fn install_segment_boundary(
     // The segment belongs to this pad's stream, not to the shared gate: the
     // crossfade secondary carries the same gate and must not overwrite it.
     let stream_segment = Mutex::new(None::<gst::FormattedSegment<gst::ClockTime>>);
+    let parts = PartsInFlight::new();
     sink.add_probe(
         gst::PadProbeType::BUFFER | gst::PadProbeType::EVENT_DOWNSTREAM,
         move |pad, info| match &info.data {
@@ -494,6 +499,7 @@ pub(crate) fn install_segment_boundary(
                 }
                 gst::PadProbeReturn::Ok
             }
+            Some(gst::PadProbeData::Buffer(_)) if parts.is_a_part() => gst::PadProbeReturn::Ok,
             Some(gst::PadProbeData::Buffer(buffer)) => {
                 let stream_time = buffer.pts().and_then(|pts| {
                     match stream_segment
@@ -506,7 +512,22 @@ pub(crate) fn install_segment_boundary(
                     }
                 });
                 match gate.on_buffer(stream_time, &gain) {
-                    BoundaryVerdict::Pass => gst::PadProbeReturn::Ok,
+                    BoundaryVerdict::Pass => {
+                        // A boundary inside this buffer switches the gain at its frame.
+                        match stream_time.and_then(|stream_time| {
+                            split_at_boundary(&gate, &gain, pad, buffer, stream_time, &parts)
+                        }) {
+                            Some(Split::Parts { epoch }) => {
+                                watch_render(&gate, watched.clone(), epoch);
+                                gst::PadProbeReturn::Handled
+                            }
+                            Some(Split::Whole { epoch }) => {
+                                watch_render(&gate, watched.clone(), epoch);
+                                gst::PadProbeReturn::Ok
+                            }
+                            None => gst::PadProbeReturn::Ok,
+                        }
+                    }
                     BoundaryVerdict::HandOff(epoch) => {
                         watch_render(&gate, watched.clone(), epoch);
                         gst::PadProbeReturn::Ok

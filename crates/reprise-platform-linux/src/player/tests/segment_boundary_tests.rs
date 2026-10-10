@@ -305,9 +305,8 @@ fn assert_contiguous_hand_over(transition: TrackTransition) {
         })
         .collect();
     assert!(
-        wrong_gain.len() <= 1,
-        "every buffer must carry its own track's gain, give or take the one at the \
-         boundary: {wrong_gain:?}"
+        wrong_gain.is_empty(),
+        "every buffer must carry its own track's gain: {wrong_gain:?}"
     );
 
     let handoff = events.iter().position(advanced).unwrap();
