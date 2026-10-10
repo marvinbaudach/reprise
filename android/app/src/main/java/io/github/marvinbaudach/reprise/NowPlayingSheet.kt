@@ -680,6 +680,7 @@ internal fun SpectralSeekSlider(
             )
             Text(
                 text = remainingLabel(displayed, durationMs, trackDurationMs),
+                modifier = Modifier.testTag("now-playing-remaining"),
                 style = MaterialTheme.typography.labelMedium,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )

@@ -33,6 +33,11 @@ internal fun NowPlayingFogLayer(
     motion: AmbientMotionController,
     visualizerLight: Float,
     modifier: Modifier = Modifier,
+    // Where the live cover sits and how much of its full size it has kept: the
+    // cover rises and shrinks on a screen too short for the whole stack (see
+    // nowPlayingStackGeometry), and the fog follows it.
+    coverCentreFraction: Float = PLAYED_CENTRE_FRACTION,
+    coverScale: Float = 1f,
 ) {
     val arrival = remember { Animatable(1f) }
     var handover by remember { mutableStateOf(FogHandover.EMPTY) }
@@ -75,8 +80,9 @@ internal fun NowPlayingFogLayer(
             state = state,
             clocks = clocks.offsets,
             visualizerLight = visualizerLight,
-            center = Offset(size.width / 2f, size.height * PLAYED_CENTRE_FRACTION),
+            center = Offset(size.width / 2f, size.height * coverCentreFraction),
             rotationsEnabled = motion.sceneRenderPower().fogRotates,
+            coverDiameterDp = COVER_SIZE_DP * coverScale,
         )
         clocks.rememberShown(state)
     }
@@ -149,6 +155,7 @@ internal fun DrawScope.drawNowPlayingFogLayer(
     visualizerLight: Float,
     center: Offset,
     rotationsEnabled: Boolean,
+    coverDiameterDp: Float = COVER_SIZE_DP.toFloat(),
 ) {
     drawNowPlayingFog(
         // Behind the spectrum there is no artwork to read a palette from, so
@@ -171,6 +178,7 @@ internal fun DrawScope.drawNowPlayingFogLayer(
         swell = state.fogLevel,
         alpha = handover.outgoingDiscAlpha(arrival),
         rotationsEnabled = rotationsEnabled,
+        coverDiameterDp = coverDiameterDp,
     )
     drawFogDisc(
         fog = handover.incoming,
@@ -179,6 +187,7 @@ internal fun DrawScope.drawNowPlayingFogLayer(
         swell = state.fogLevel,
         alpha = handover.incomingDiscAlpha(arrival),
         rotationsEnabled = rotationsEnabled,
+        coverDiameterDp = coverDiameterDp,
     )
 }
 
@@ -190,12 +199,13 @@ private fun DrawScope.drawFogDisc(
     swell: Float,
     alpha: Float,
     rotationsEnabled: Boolean,
+    coverDiameterDp: Float,
 ) {
     if (fog == null || alpha <= 0f) return
     drawNowPlayingShimmer(
         fog = fog,
         center = center,
-        coverDiameterDp = COVER_SIZE_DP.toFloat(),
+        coverDiameterDp = coverDiameterDp,
         elapsedSeconds = elapsedSeconds,
         swell = swell,
         opacity = alpha,
