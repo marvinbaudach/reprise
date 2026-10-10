@@ -237,23 +237,39 @@ pub struct SpectrogramAccumulator {
     cells: Vec<u8>,
 }
 
+// `BandPlan::new` fails only when a rate, band count or cutoff is zero or out of
+// order, a cutoff lies above Nyquist, an FFT is too small, or there are more
+// bands than bins. The format constants are fixed, so that is checked at compile
+// time and the `expect` in `SpectrogramAccumulator::new` cannot fire.
+const _: () = assert!(
+    SPECTROGRAM_SAMPLE_RATE_HZ != 0
+        && SPECTROGRAM_BAND_COUNT != 0
+        && SPECTROGRAM_LOW_HZ != 0
+        && SPECTROGRAM_LOW_HZ < SPECTROGRAM_HIGH_HZ
+        && SPECTROGRAM_HIGH_HZ <= SPECTROGRAM_SAMPLE_RATE_HZ / 2
+        && MAIN_FFT_SIZE >= 2
+        && BASS_FFT_SIZE >= MAIN_FFT_SIZE
+        && SPECTROGRAM_BAND_COUNT <= MAIN_FFT_SIZE / 2 + 1
+);
+
 impl SpectrogramAccumulator {
-    #[expect(
-        clippy::expect_used,
-        reason = "the spectrogram format constants always form a valid band plan; every spectrogram test builds one"
-    )]
     pub fn new() -> Self {
+        #[expect(
+            clippy::expect_used,
+            reason = "BandPlan::new rejects only the configurations the const assertion above this impl rules out for the fixed format"
+        )]
+        let band_plan = BandPlan::new(
+            SPECTROGRAM_SAMPLE_RATE_HZ,
+            SPECTROGRAM_BAND_COUNT,
+            SPECTROGRAM_LOW_HZ,
+            SPECTROGRAM_HIGH_HZ,
+            MAIN_FFT_SIZE,
+            BASS_FFT_SIZE,
+            BASS_SPLIT_HZ,
+        )
+        .expect("the fixed spectrogram format has a valid band plan");
         Self {
-            band_plan: BandPlan::new(
-                SPECTROGRAM_SAMPLE_RATE_HZ,
-                SPECTROGRAM_BAND_COUNT,
-                SPECTROGRAM_LOW_HZ,
-                SPECTROGRAM_HIGH_HZ,
-                MAIN_FFT_SIZE,
-                BASS_FFT_SIZE,
-                BASS_SPLIT_HZ,
-            )
-            .expect("the fixed spectrogram format has a valid band plan"),
+            band_plan,
             main_fft: FftWorkspace::new(MAIN_FFT_SIZE),
             bass_fft: FftWorkspace::new(BASS_FFT_SIZE),
             history: vec![0.0; BASS_FFT_SIZE],

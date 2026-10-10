@@ -238,7 +238,9 @@ impl DeviceSyncMachine {
                     Ok(()) => {
                         // Recording follows a successful copy, which stored the
                         // path; a missing path is a transfer that cannot be
-                        // trusted, so the track fails instead of the run.
+                        // trusted, so the track fails instead of the run. The
+                        // file is already on the device but not accounted for,
+                        // so it is treated as unpublished like any failed copy.
                         if let Some(recorded_path) = self.copied_device_path.take() {
                             let operation = &self.transfers[index];
                             if let Some(previous) = &operation.previous {
@@ -254,7 +256,7 @@ impl DeviceSyncMachine {
                                 (self.copied_bytes.unwrap_or_default(), recorded_path),
                             );
                         } else {
-                            self.fail_transfer(index);
+                            self.fail_unpublished_transfer(index);
                         }
                     }
                     Err(_) => {
