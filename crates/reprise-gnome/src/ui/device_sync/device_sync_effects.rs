@@ -104,7 +104,10 @@ pub(super) async fn perform(
     match effect {
         Effect::Finished(_) => {
             invariant_broken!("the driver handles Finished before calling perform");
-            Event::Cancel
+            // `Cancel` would mark the run cancelled. A zero-byte progress
+            // report is the one event the machine ignores in every state
+            // that is not a copy or write in flight.
+            Event::CopyProgress { copied: 0 }
         }
         Effect::CleanPartials(partial_paths) => {
             let result = runtime
