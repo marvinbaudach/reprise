@@ -57,19 +57,20 @@ private val SQUARE_PLAY = 48.dp
 internal fun isWide(size: DpSize): Boolean = size.width >= 180.dp && size.height < 100.dp
 
 /**
- * The widget's content. [covers] are already decoded and downscaled to their
- * slots: Glance turns a bitmap into a RemoteViews payload that crosses a
- * binder, which has a hard size limit.
+ * The widget's content. The [cover] is already decoded and downscaled (see
+ * [decodeWidgetCover]): Glance turns a bitmap into a RemoteViews payload that
+ * crosses a binder, which has a hard size limit. Both layouts get this same
+ * instance, so it is copied once per redraw, not once per layout.
  */
 @Composable
-internal fun RepriseWidgetContent(state: WidgetNowPlaying, covers: WidgetCovers) {
+internal fun RepriseWidgetContent(state: WidgetNowPlaying, cover: Bitmap?) {
     val context = LocalContext.current
     val openApp = actionStartActivity(Intent(context, MainActivity::class.java))
     val size = LocalSize.current
     when {
         state.isEmpty -> EmptyWidget(context, openApp)
-        isWide(size) -> WideWidget(context, state, covers.forSize(size), openApp)
-        else -> SquareWidget(context, state, covers.forSize(size), openApp)
+        isWide(size) -> WideWidget(context, state, cover, openApp)
+        else -> SquareWidget(context, state, cover, openApp)
     }
 }
 

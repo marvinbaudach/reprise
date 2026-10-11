@@ -3,8 +3,8 @@ package io.github.marvinbaudach.reprise.widget
 import android.content.Context
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory
+import android.os.Build
 import androidx.compose.ui.unit.Dp
-import androidx.compose.ui.unit.DpSize
 import androidx.core.graphics.scale
 import androidx.glance.GlanceId
 import androidx.glance.appwidget.GlanceAppWidget
@@ -34,8 +34,8 @@ internal class RepriseWidget : GlanceAppWidget() {
     override suspend fun provideGlance(context: Context, id: GlanceId) {
         val state = WidgetStateStore(context).load()
         val density = context.resources.displayMetrics.density
-        val covers = withContext(Dispatchers.IO) { state.artworkPath?.let { decodeCovers(it, density) } }
-        provideContent { RepriseWidgetContent(state, covers ?: WidgetCovers.None) }
+        val cover = withContext(Dispatchers.IO) { state.artworkPath?.let { decodeWidgetCover(it, density) } }
+        provideContent { RepriseWidgetContent(state, cover) }
     }
 }
 
@@ -49,20 +49,36 @@ internal class RepriseSquareWidgetReceiver : GlanceAppWidgetReceiver() {
     override val glanceAppWidget = RepriseWidget()
 }
 
-/** The cover decoded for each layout, each no larger than its slot needs. */
-internal data class WidgetCovers(val wide: Bitmap?, val square: Bitmap?) {
-    fun forSize(size: DpSize): Bitmap? = if (isWide(size)) wide else square
+/**
+ * Decodes [path] once for every layout, ready to be handed to `RemoteViews`.
+ *
+ * The widget is responsive, so each redraw composes both layouts, and
+ * `RemoteViews` copies a bitmap into shared memory on the main thread once for
+ * each layout it appears in unless it is already immutable and shared (a
+ * simpleperf run on a Pixel put that copy, `Bitmap_copyAshmem`, at 24-124 ms
+ * per redraw). So the cover is one bitmap, at the larger (square) slot's size,
+ * that both layouts use by identity, and it is made shared here on the IO
+ * thread: the wide layout only scales it down, and the launcher gets one
+ * smaller payload instead of two.
+ *
+ * `SizeMode.Exact` would not avoid the second layout: on Android 12 and later
+ * it composes one per size the launcher reports (portrait and landscape), and
+ * it recomposes on every resize.
+ */
+internal fun decodeWidgetCover(path: String, density: Float): Bitmap? =
+    decodeCover(path, coverPx(SQUARE_SIZE.width, density))?.let(::shared)
 
-    companion object {
-        val None = WidgetCovers(wide = null, square = null)
-    }
+/**
+ * [bitmap] as an immutable bitmap in shared memory, which `RemoteViews` hands
+ * on without copying (`Bitmap.asShared` exists from Android 12; before that
+ * `RemoteViews` makes the copy itself). Recycles [bitmap] when a copy was made.
+ */
+private fun shared(bitmap: Bitmap): Bitmap {
+    if (Build.VERSION.SDK_INT < Build.VERSION_CODES.S) return bitmap
+    val sharedBitmap = bitmap.asShared()
+    if (sharedBitmap !== bitmap) bitmap.recycle()
+    return sharedBitmap
 }
-
-/** Decodes [path] for both layouts at the screen's [density]. */
-internal fun decodeCovers(path: String, density: Float): WidgetCovers = WidgetCovers(
-    wide = decodeCover(path, coverPx(COVER_WIDE, density)),
-    square = decodeCover(path, coverPx(SQUARE_SIZE.width, density)),
-)
 
 /** Pixels a [slot] needs at [density], never more than [WIDGET_COVER_MAX_PX]. */
 internal fun coverPx(slot: Dp, density: Float): Int =

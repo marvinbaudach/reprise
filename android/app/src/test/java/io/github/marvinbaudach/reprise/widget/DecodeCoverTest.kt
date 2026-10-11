@@ -4,6 +4,7 @@ import android.graphics.Bitmap
 import androidx.compose.ui.unit.dp
 import java.io.File
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Rule
@@ -50,25 +51,40 @@ class DecodeCoverTest {
     }
 
     @Test
-    fun aCoverIsDecodedNoLargerThanItsSlotNeeds() {
+    fun oneCoverServesBothLayoutsAtTheLargerSlotsSize() {
         val file = png(1_092, 1_092)
 
-        val wide = decodeCovers(file.path, density = 2f).wide!!
-        val square = decodeCovers(file.path, density = 2f).square!!
+        val cover = decodeWidgetCover(file.path, density = 2f)!!
 
-        assertTrue("${wide.width}px", wide.width <= 112)
-        assertTrue("${square.width}px", square.width <= WIDGET_COVER_MAX_PX)
-        assertTrue(wide.width < square.width)
+        // The square slot is the larger one; the wide layout scales it down.
+        assertEquals(coverPx(SQUARE_SIZE.width, 2f), cover.width)
     }
 
     @Test
     fun aDenseScreenNeverGetsMoreThanTheCap() {
-        val file = png(1_092, 1_092)
+        val cover = decodeWidgetCover(png(1_092, 1_092).path, density = 4f)!!
 
-        val covers = decodeCovers(file.path, density = 4f)
+        assertTrue(cover.width <= WIDGET_COVER_MAX_PX)
+    }
 
-        assertTrue(covers.wide!!.width <= WIDGET_COVER_MAX_PX)
-        assertTrue(covers.square!!.width <= WIDGET_COVER_MAX_PX)
+    /**
+     * `RemoteViews` copies a mutable bitmap into shared memory on the main
+     * thread, again for each layout; one that is already immutable and shared
+     * is only handed on. Measured on a Pixel: that copy was 24-124 ms per
+     * redraw.
+     */
+    @Test
+    fun theCoverIsReadyToCrossTheBinderWithoutACopyOnTheMainThread() {
+        val scaled = decodeWidgetCover(png(1_092, 1_092).path, density = 2f)!!
+        val small = decodeWidgetCover(png(100, 100).path, density = 2f)!!
+
+        assertFalse("a downscaled cover is mutable", scaled.isMutable)
+        assertFalse("an untouched cover is mutable", small.isMutable)
+    }
+
+    @Test
+    fun aMissingFileIsNoWidgetCover() {
+        assertNull(decodeWidgetCover("/no/such/file.png", density = 2f))
     }
 
     @Test
@@ -76,17 +92,6 @@ class DecodeCoverTest {
         assertEquals(113, coverPx(56.dp, 2.01f))
         assertEquals(WIDGET_COVER_MAX_PX, coverPx(110.dp, 3f))
         assertEquals(1, coverPx(0.dp, 3f))
-    }
-
-    @Test
-    fun theWideLayoutGetsItsOwnBitmapAndTheSquareItsOwn() {
-        val covers = WidgetCovers(
-            wide = Bitmap.createBitmap(10, 10, Bitmap.Config.ARGB_8888),
-            square = Bitmap.createBitmap(20, 20, Bitmap.Config.ARGB_8888),
-        )
-
-        assertEquals(10, covers.forSize(WIDE_SIZE)!!.width)
-        assertEquals(20, covers.forSize(SQUARE_SIZE)!!.width)
     }
 
     @Test
