@@ -362,6 +362,37 @@ fn lyr_2_an_identical_online_fallback_keeps_the_rendered_local_line() {
 }
 
 #[test]
+#[ignore = "requires a display; run via xvfb-run"]
+fn a_dead_lyrics_runtime_ends_in_the_error_state_without_an_online_retry() {
+    let _main_context = crate::ui::test_main_context::lock_main_context();
+    gtk4::init().unwrap();
+    let logs = crate::ui::test_log_capture::CapturedLogs::default();
+    let lyrics = PlayerLyrics::setup_with_runtime(LyricsRuntime::dead(), true);
+    let view = LyricsView::new();
+    view.set_tab_open(true);
+    lyrics.set_view(&view);
+
+    logs.capture(|| {
+        lyrics.set_track(Some(lyrics_track("Orphan")));
+        drive_main_context_until(|| view.visible_state_name().as_deref() == Some("status"));
+        // A second request would be issued from the same main context, so
+        // give it the chance to appear before counting.
+        drive_main_context_for(std::time::Duration::from_millis(100));
+    });
+
+    assert_eq!(
+        logs.text().matches("lyrics request dropped").count(),
+        1,
+        "InvalidResponse must not send the requester on an online retry"
+    );
+    assert_eq!(view.visible_state_name().as_deref(), Some("status"));
+    assert_eq!(
+        view.status_text(),
+        super::lyrics_strings::text(super::lyrics_strings::LYRICS_UNAVAILABLE)
+    );
+}
+
+#[test]
 fn successful_backend_start_builds_one_exact_lyrics_query() {
     let backend = FakePlayback::succeeding();
     let db = crate::test_db::open().unwrap();

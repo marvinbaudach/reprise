@@ -42,6 +42,15 @@ impl LyricsRuntime {
         Self::from_lookup(lookup)
     }
 
+    /// A runtime whose worker is already gone: the receiver is dropped, so
+    /// every `request` takes the closed-channel path.
+    #[cfg(test)]
+    pub(in crate::ui) fn dead() -> Rc<Self> {
+        let (sender, receiver) = async_channel::unbounded::<LyricsRequest>();
+        drop(receiver);
+        Rc::new(Self { sender })
+    }
+
     fn from_lookup(lookup: Lookup) -> Rc<Self> {
         let (sender, receiver) = async_channel::unbounded::<LyricsRequest>();
         // A thread that cannot start drops the receiver with its closure, so
