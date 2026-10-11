@@ -16,15 +16,13 @@ set -euo pipefail
 #                          `cargo tree` runs
 #   ARCH_LINT_PANIC_BUDGETS  a whitespace-separated `crate=N` list replacing the
 #                          suppression budgets below
-#   ARCH_LINT_PENDING_CRATES  a whitespace-separated list replacing the crates
-#                          that may carry the `pending` policy
 repo_root=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)
 cd "$repo_root"
 
 # Field 1: crate. Fields 2 and 3: direct workspace edges of the default build and
 # of the all-features build (`-` for none). Field 4: dependency families banned
 # from the full normal tree on every target, either one list for both builds or
-# `default=<list> all=<list>`. Field 5: panic policy, `deny` or `pending`.
+# `default=<list> all=<list>`. Field 5: panic policy, always `deny`.
 #
 # `@gtk` and `@glib` in the fourth field expand to the family lists below, so a
 # `-sys` crate cannot slip past a ban on the crate it wraps.
@@ -43,7 +41,7 @@ reprise-android-ffi | reprise-core reprise-view | reprise-core reprise-view | @g
 reprise-cli | reprise-core | reprise-core reprise-runtime-protocol reprise-stems | default=@gtk @glib zbus all=@gtk @glib | deny
 reprise-mcp | reprise-core | reprise-core reprise-runtime-protocol | default=@gtk @glib zbus all=@gtk @glib | deny
 reprise-platform-linux | reprise-core reprise-runtime-protocol | reprise-core reprise-runtime-protocol | @gtk | deny
-reprise-gnome | reprise-core reprise-view reprise-platform-linux | reprise-core reprise-view reprise-platform-linux | - | pending
+reprise-gnome | reprise-core reprise-view reprise-platform-linux | reprise-core reprise-view reprise-platform-linux | - | deny
 '
 # layer_table_end
 
@@ -51,13 +49,6 @@ reprise-gnome | reprise-core reprise-view reprise-platform-linux | reprise-core 
 # native library as the crate it wraps, so it is banned with it.
 gtk_families='gtk4 libadwaita gdk4 pango gtk4-sys libadwaita-sys gdk4-sys pango-sys'
 glib_families='glib gio gstreamer glib-sys gobject-sys gio-sys gstreamer-sys'
-
-# Only these crates may carry the `pending` panic policy. A row cannot be flipped
-# to `pending` to escape the never-crash lints.
-pending_allowed='reprise-gnome'
-if [[ -n ${ARCH_LINT_PENDING_CRATES:-} ]]; then
-  pending_allowed=$ARCH_LINT_PENDING_CRATES
-fi
 
 # The exact number of never-crash lint suppressions (`#[expect(clippy::unwrap_used
 # ...)]` and its five siblings) in each `deny` crate; a crate not listed has a
@@ -142,16 +133,12 @@ while IFS='|' read -r crate edges_default edges_all banned policy extra; do
   crate=$(trim "$crate")
   [[ -z $crate || $crate == '#'* ]] && continue
   policy=$(trim "${policy:-}")
-  if [[ -n ${extra:-} || -z $policy || ! $policy =~ ^(deny|pending)$ ]]; then
-    fail "layer table row for $crate must have five fields ending in deny or pending"
+  if [[ -n ${extra:-} || -z $policy || ! $policy =~ ^deny$ ]]; then
+    fail "layer table row for $crate must have five fields ending in deny"
     continue
   fi
   if [[ -n ${row_policy[$crate]:-} ]]; then
     fail "layer table names $crate twice"
-    continue
-  fi
-  if [[ $policy == pending && " $pending_allowed " != *" $crate "* ]]; then
-    fail "layer table marks $crate pending; only $pending_allowed may be pending, so every other crate stays under the never-crash lints"
     continue
   fi
   table_crates+=("$crate")
@@ -523,10 +510,6 @@ suppression_total=0
 allow_total=0
 restriction_total=0
 for crate in "${table_crates[@]}"; do
-  if [[ ${row_policy[$crate]} == pending ]]; then
-    echo "  $crate: panic policy pending"
-    continue
-  fi
   roots=$(crate_roots "$crate") || exit 1
   if [[ -z $roots ]]; then
     fail "$crate has a deny row but no lib or bin root was found"
