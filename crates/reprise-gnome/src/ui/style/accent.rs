@@ -69,19 +69,7 @@ pub(in crate::ui) fn is_dark() -> bool {
 }
 
 pub(in crate::ui) fn window_background_rgb() -> [u8; 3] {
-    use super::color_math::parse_hex_rgb;
-
-    if !gtk4::is_initialized_main_thread() {
-        return default_window_background_rgb();
-    }
-
-    let theme = super::CURRENT_THEME.with(Cell::get);
-    let palette = if is_dark() {
-        theme.palette()
-    } else {
-        theme.light_palette()
-    };
-    parse_hex_rgb(palette.window_bg).unwrap_or_else(default_window_background_rgb)
+    active_palette().window_bg_rgb()
 }
 
 /// The panel ground, for anything painting its own fade back to it.
@@ -90,29 +78,22 @@ pub(in crate::ui) fn window_background_rgb() -> [u8; 3] {
 /// mixed from [`window_background_rgb`] would sit a shade off the surface it is
 /// supposed to disappear into.
 pub(in crate::ui) fn sidebar_background_rgb() -> [u8; 3] {
-    use super::color_math::parse_hex_rgb;
+    active_palette().sidebar_bg_rgb()
+}
 
+/// The palette in force: the default theme's before GTK is up, otherwise the
+/// current theme's palette for the current light/dark appearance.
+fn active_palette() -> super::theme::Palette {
     if !gtk4::is_initialized_main_thread() {
-        return default_sidebar_background_rgb();
+        return super::theme::Theme::DEFAULT.palette();
     }
 
     let theme = super::CURRENT_THEME.with(Cell::get);
-    let palette = if is_dark() {
+    if is_dark() {
         theme.palette()
     } else {
         theme.light_palette()
-    };
-    parse_hex_rgb(palette.sidebar_bg).unwrap_or_else(default_sidebar_background_rgb)
-}
-
-fn default_sidebar_background_rgb() -> [u8; 3] {
-    super::color_math::parse_hex_rgb(super::theme::Theme::DEFAULT.palette().sidebar_bg)
-        .unwrap_or_default()
-}
-
-fn default_window_background_rgb() -> [u8; 3] {
-    super::color_math::parse_hex_rgb(super::theme::Theme::DEFAULT.palette().window_bg)
-        .unwrap_or_default()
+    }
 }
 
 /// The AA threshold every accent foreground must clear (CONTRAST-5).

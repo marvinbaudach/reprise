@@ -107,9 +107,19 @@ impl Palette {
         self.fg_rgb
     }
 
+    /// The window surface, decoded.
+    pub(in crate::ui) const fn window_bg_rgb(&self) -> [u8; 3] {
+        self.surfaces[0]
+    }
+
     /// The view surface, decoded.
     pub(in crate::ui) const fn view_bg_rgb(&self) -> [u8; 3] {
         self.surfaces[1]
+    }
+
+    /// The sidebar surface, decoded.
+    pub(in crate::ui) const fn sidebar_bg_rgb(&self) -> [u8; 3] {
+        self.surfaces[4]
     }
 
     /// The surface an accent foreground contrasts *worst* against: the
@@ -424,6 +434,21 @@ pub(in crate::ui) fn theme_css(
 mod tests {
     use super::*;
     use crate::ui::style::accent::{AccentSource, APP_ACCENT};
+
+    #[test]
+    fn the_contrast_alpha_tokens_decode_to_what_the_standard_parser_reads() {
+        use crate::ui::style::tokens::{
+            ACCENT_TINT_CEILING, DIALOG_CARD_ALPHA, DIALOG_HEADER_TINT_ALPHA,
+        };
+
+        for (decoded, token) in [
+            (HEAVIEST_ACCENT_TINT, ACCENT_TINT_CEILING),
+            (DIALOG_HEADER_TINT, DIALOG_HEADER_TINT_ALPHA),
+            (DIALOG_CARD_TINT, DIALOG_CARD_ALPHA),
+        ] {
+            assert_eq!(decoded, token.parse::<f64>().unwrap(), "token {token:?}");
+        }
+    }
 
     #[test]
     fn default_theme_is_listed() {
