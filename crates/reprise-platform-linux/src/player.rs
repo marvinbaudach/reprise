@@ -456,6 +456,16 @@ impl Player {
             tracing::debug!(%error, "old playbin refused Null transition during rebuild (already broken; dropping anyway)");
         }
 
+        // A fresh playbin starts at its factory volume (1.0), so carry the
+        // user's volume over. Read under the playbin lock: a concurrent
+        // `set_volume` has then either already stored its value (seen here) or
+        // applies it to the new element after the swap. Lock order playbin ->
+        // user_volume is safe; no path nests them the other way round.
+        let user_volume = *self
+            .user_volume
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner);
+        new_playbin.set_property("volume", user_volume);
         *playbin = new_playbin;
         drop(playbin);
 
