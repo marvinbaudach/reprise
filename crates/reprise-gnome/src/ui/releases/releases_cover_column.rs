@@ -35,10 +35,13 @@ pub(super) fn append(
         else {
             return;
         };
-        let Some(object) = item.item().and_downcast::<ReleaseObject>() else {
+        let Some(entry) = item
+            .item()
+            .and_downcast::<ReleaseObject>()
+            .and_then(|object| object.entry())
+        else {
             return;
         };
-        let entry = object.entry();
         cover.set_release(&entry.release_group_mbid, &entry.artist_name);
     });
     factory.connect_unbind(move |_, object| {

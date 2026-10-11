@@ -35,9 +35,10 @@ fn anchored_at(shared: &Shared, position: u32) -> Option<Anchored<String>> {
         .store()
         .item(position)
         .and_downcast::<super::releases_model::ReleaseObject>()
-        .map(|object| Anchored {
+        .and_then(|object| object.entry())
+        .map(|entry| Anchored {
             position,
-            id: object.entry().release_group_mbid,
+            id: entry.release_group_mbid,
         })
 }
 

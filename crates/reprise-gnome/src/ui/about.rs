@@ -225,7 +225,7 @@ mod tests {
     #[ignore = "requires a display; run via xvfb-run"]
     fn dialog_exposes_application_identity_author_and_license() {
         gtk4::init().expect("GTK display must be available");
-        crate::register_app_resources();
+        crate::register_app_resources().expect("the compiled resources register");
         let db = test_db();
         let dialog = build_dialog(&db, std::path::Path::new("/missing/reprise.db"));
 
@@ -246,7 +246,7 @@ mod tests {
     #[ignore = "requires a display; run via xvfb-run"]
     fn dialog_without_a_matching_release_opens_without_release_notes() {
         gtk4::init().expect("GTK display must be available");
-        crate::register_app_resources();
+        crate::register_app_resources().expect("the compiled resources register");
         let db = test_db();
         let dialog =
             build_dialog_for_version(&db, std::path::Path::new("/missing/reprise.db"), "999.0.0");
@@ -258,7 +258,7 @@ mod tests {
     #[ignore = "requires a display; run via xvfb-run"]
     fn dialog_omits_the_dead_website_and_links_the_issue_tracker() {
         gtk4::init().expect("GTK display must be available");
-        crate::register_app_resources();
+        crate::register_app_resources().expect("the compiled resources register");
         let db = test_db();
         let dialog = build_dialog(&db, std::path::Path::new("/missing/reprise.db"));
 
@@ -270,7 +270,7 @@ mod tests {
     #[ignore = "requires a display; run via xvfb-run"]
     fn dialog_carries_a_fresh_nonempty_debug_report() {
         gtk4::init().expect("GTK display must be available");
-        crate::register_app_resources();
+        crate::register_app_resources().expect("the compiled resources register");
         let db = test_db();
         let dialog = build_dialog(&db, std::path::Path::new("/missing/reprise.db"));
 

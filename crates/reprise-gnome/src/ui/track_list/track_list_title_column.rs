@@ -9,7 +9,6 @@ use std::rc::Rc;
 
 use gtk4::glib;
 use gtk4::prelude::*;
-use reprise_core::models::Track;
 use reprise_core::queries::QueueItemMetadata;
 
 use super::now_playing_marker;
@@ -112,8 +111,7 @@ pub(in crate::ui) fn append_title_column(
         };
         let metadata = boxed.borrow::<QueueItemMetadata>();
         let track = queue_item_presentation::track(&metadata);
-        if track.is_some_and(Track::is_missing) {
-            let track = track.expect("checked above");
+        if let Some(track) = track.filter(|track| track.is_missing()) {
             label.set_text(&track.title);
             apply_missing_title(&label, &missing_tooltip, track);
         } else if let Some(track) = track {

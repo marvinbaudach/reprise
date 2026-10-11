@@ -246,7 +246,9 @@ impl LibraryDoctorLauncher {
     }
 
     fn with_review(&self, apply: impl FnOnce(&Rc<LibraryDoctorReviewPage>)) {
-        let coordinator = self.coordinator.get();
+        let Some(coordinator) = self.coordinator.get() else {
+            return;
+        };
         let review = coordinator.review.borrow().clone();
         if let Some(review) = review.as_ref() {
             apply(review);
@@ -254,19 +256,27 @@ impl LibraryDoctorLauncher {
     }
 
     pub(in crate::ui) fn open(&self) {
-        self.coordinator.get().open();
+        if let Some(coordinator) = self.coordinator.get() {
+            coordinator.open();
+        }
     }
 
     pub(in crate::ui) fn open_findings(&self) {
-        self.coordinator.get().open_findings();
+        if let Some(coordinator) = self.coordinator.get() {
+            coordinator.open_findings();
+        }
     }
 
     pub(in crate::ui) fn open_for_selection(&self, ids: Vec<i64>) {
-        self.coordinator.get().open_for_selection(ids);
+        if let Some(coordinator) = self.coordinator.get() {
+            coordinator.open_for_selection(ids);
+        }
     }
 
     pub(in crate::ui) fn observe_tag_write_start(&self) {
-        self.coordinator.get().observe_tag_write_start();
+        if let Some(coordinator) = self.coordinator.get() {
+            coordinator.observe_tag_write_start();
+        }
     }
 
     pub(in crate::ui) fn observe_tag_writes_from(self: &Rc<Self>, track_list: &TrackList) {

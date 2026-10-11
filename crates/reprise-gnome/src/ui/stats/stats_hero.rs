@@ -179,9 +179,13 @@ impl StatsHero {
             .comparison_presentation
             .and_then(|presentation| strings::comparison_copy(presentation, period));
         if snapshot.hero.comparison_presentation == Some(ComparisonPresentation::New) {
-            let copy = copy.expect("a new comparison period always has copy");
-            header.show_new_badge(&strings::stats_new_badge(), &copy.tooltip);
             self.kpis.trend.hide();
+            let Some(copy) = copy else {
+                invariant_broken!("a new comparison period always has copy");
+                header.hide_new_badge();
+                return;
+            };
+            header.show_new_badge(&strings::stats_new_badge(), &copy.tooltip);
             return;
         }
         header.hide_new_badge();

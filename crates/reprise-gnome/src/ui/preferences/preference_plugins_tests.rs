@@ -97,7 +97,7 @@ fn network_plugin_deep_link_highlight_is_transient() {
 fn all_network_plugin_rows_expose_privacy_copy() {
     let descriptors = plugin_ids_for_group(PluginGroup::Online)
         .iter()
-        .map(|id| descriptor(id))
+        .map(|id| descriptor(id).expect("every Plugins capability id is a module"))
         .collect::<Vec<_>>();
     assert_eq!(descriptors.len(), ONLINE_PLUGIN_IDS.len());
     for descriptor in descriptors {

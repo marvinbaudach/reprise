@@ -2,7 +2,11 @@ use gtk4::prelude::*;
 
 use super::*;
 
-pub(super) fn wire_clear_all(w: &RuntimeWiring<'_>, scratch: &WiringScratch) {
+pub(super) fn wire_clear_all(
+    w: &RuntimeWiring<'_>,
+    scratch: &WiringScratch,
+    section_search: &Rc<section_search_ui::SectionSearch>,
+) {
     let RuntimeWiring {
         window,
         track_list,
@@ -33,7 +37,7 @@ pub(super) fn wire_clear_all(w: &RuntimeWiring<'_>, scratch: &WiringScratch) {
     } = *w;
     let clear_all = gtk4::gio::SimpleAction::new("clear-all-filters", None);
     {
-        let section_search = scratch.section_search().clone();
+        let section_search = section_search.clone();
         clear_all.connect_activate(move |_, _| {
             // FIL-2a: the current view only — its query and its facets.
             section_search.clear_all();
@@ -41,7 +45,7 @@ pub(super) fn wire_clear_all(w: &RuntimeWiring<'_>, scratch: &WiringScratch) {
     }
     window.add_action(&clear_all);
     {
-        let section_search = scratch.section_search().clone();
+        let section_search = section_search.clone();
         track_list.set_on_search_cleared(move || {
             section_search.clear_active_query();
         });
@@ -100,19 +104,15 @@ pub(super) fn wire_clear_all(w: &RuntimeWiring<'_>, scratch: &WiringScratch) {
         window_title,
         show_content_if_collapsed,
         &scratch.active_content_focus,
-        scratch.section_search(),
+        section_search,
     );
     {
         let track_list = track_list.clone();
-        scratch
-            .section_search()
-            .observe(content_stack, window_title, move || {
-                track_list.current_source()
-            });
+        section_search.observe(content_stack, window_title, move || {
+            track_list.current_source()
+        });
     }
-    scratch
-        .section_search()
-        .observe_doctor_review(library_doctor_navigation);
+    section_search.observe_doctor_review(library_doctor_navigation);
     podcasts_view.on_materialized({
         let conn = conn.clone();
         let db_path = db_path.to_path_buf();

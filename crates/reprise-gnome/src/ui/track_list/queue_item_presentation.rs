@@ -114,10 +114,6 @@ pub(in crate::ui) fn is_now_playing(
     is_now_playing_key(NowPlayingKey::from(item), playing_track_id, playing_episode)
 }
 
-pub(in crate::ui) fn rating_track_id(item: &QueueItemMetadata) -> Option<i64> {
-    track(item).map(|track| track.id)
-}
-
 pub(in crate::ui) fn rating_write_target(item: QueueItem) -> Option<i64> {
     item.track_id()
 }
@@ -131,8 +127,8 @@ mod tests {
     use reprise_core::models::Track;
 
     use super::{
-        cell_text, is_now_playing, is_now_playing_key, rating_track_id, rating_write_target,
-        source_icon, title, NowPlayingKey,
+        cell_text, is_now_playing, is_now_playing_key, rating_write_target, source_icon, title,
+        NowPlayingKey,
     };
 
     fn episode(kind: PodcastKind) -> QueueItemMetadata {
@@ -186,7 +182,7 @@ mod tests {
             source_icon(&episode(PodcastKind::Youtube)),
             Some("video-x-generic-symbolic")
         );
-        assert_eq!(rating_track_id(&rss), None);
+        assert!(super::track(&rss).is_none());
         assert_eq!(rating_write_target(QueueItem::Episode(7)), None);
         assert_eq!(rating_write_target(QueueItem::Track(7)), Some(7));
     }

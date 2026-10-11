@@ -108,12 +108,11 @@ fn draw_initials(
 
     let accent_rgb = rgba_rgb(accent);
     let ground = crate::ui::style::color_math::composite(accent_rgb, appearance.surface, top_alpha);
-    let text = crate::ui::style::accent::accent_text_color(accent_rgb, ground, appearance.is_dark);
-    let text = gtk4::gdk::RGBA::parse(&text).expect("the derived accent text color is valid");
+    let text = crate::ui::style::accent::accent_text_rgb(accent_rgb, ground, appearance.is_dark);
     context.set_source_rgb(
-        f64::from(text.red()),
-        f64::from(text.green()),
-        f64::from(text.blue()),
+        f64::from(text[0]) / 255.0,
+        f64::from(text[1]) / 255.0,
+        f64::from(text[2]) / 255.0,
     );
     let (ink, _) = layout.pixel_extents();
     let x = (width - f64::from(ink.width())) / 2.0 - f64::from(ink.x());

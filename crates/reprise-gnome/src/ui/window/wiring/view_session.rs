@@ -1,6 +1,10 @@
 use super::*;
 
-pub(super) fn wire_view_session(w: &RuntimeWiring<'_>, scratch: &WiringScratch) {
+pub(super) fn wire_view_session(
+    w: &RuntimeWiring<'_>,
+    scratch: &WiringScratch,
+    section_search: &Rc<section_search_ui::SectionSearch>,
+) {
     let RuntimeWiring {
         search_entry,
         track_list,
@@ -17,7 +21,7 @@ pub(super) fn wire_view_session(w: &RuntimeWiring<'_>, scratch: &WiringScratch) 
         // SEARCH-8a: the track list answers to the header entry only while a
         // track section is the visible one. A query typed in Podcasts must
         // not silently re-filter Music behind the user's back.
-        let section_search = scratch.section_search().clone();
+        let section_search = section_search.clone();
         super::view_session_ui::wire_search(
             search_entry,
             track_list.clone(),
@@ -45,7 +49,7 @@ pub(super) fn wire_view_session(w: &RuntimeWiring<'_>, scratch: &WiringScratch) 
         search,
         super::shortcuts::ShortcutHooks::for_section_search(
             focus_active_content,
-            scratch.section_search().clone(),
+            section_search.clone(),
         ),
         player.clone(),
     );

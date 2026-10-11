@@ -166,7 +166,10 @@ fn comparison_value(presentation: ComparisonPresentation, period: &str) -> Strin
                 &[("factor", &comparison_factor(value)), ("period", period)],
             )
         }
-        ComparisonPresentation::New => unreachable!("new comparisons use period-specific copy"),
+        ComparisonPresentation::New => {
+            invariant_broken!("new comparisons use period-specific copy");
+            String::new()
+        }
     }
 }
 

@@ -8,6 +8,10 @@ use std::cell::Cell;
 /// startup, long before anything may touch the filesystem.
 pub(in crate::ui) const APP_ACCENT: &str = env!("REPRISE_APP_ACCENT");
 
+/// [`APP_ACCENT`] as channels, decoded at compile time so that a malformed
+/// brand palette fails the build instead of a runtime reader.
+pub(in crate::ui) const APP_ACCENT_RGB: [u8; 3] = super::color_math::rgb_literal(APP_ACCENT);
+
 /// Dark foreground for text and glyphs on [`APP_ACCENT`]. Its 11.16:1 WCAG
 /// contrast ratio is comfortably above the 4.5:1 AA requirement for text.
 const APP_ACCENT_FG: &str = "#04140f";
@@ -55,8 +59,7 @@ pub(in crate::ui) fn current() -> AccentSource {
 /// The effective color for every Rust-side accent reader.
 pub(in crate::ui) fn accent_rgba() -> gtk4::gdk::RGBA {
     match current() {
-        AccentSource::App => gtk4::gdk::RGBA::parse(APP_ACCENT)
-            .expect("the compile-time Reprise accent must be valid #RRGGBB"),
+        AccentSource::App => super::color_math::rgba_from_rgb(APP_ACCENT_RGB),
         AccentSource::System => libadwaita::StyleManager::default().accent_color_rgba(),
     }
 }
@@ -66,19 +69,7 @@ pub(in crate::ui) fn is_dark() -> bool {
 }
 
 pub(in crate::ui) fn window_background_rgb() -> [u8; 3] {
-    use super::color_math::parse_hex_rgb;
-
-    if !gtk4::is_initialized_main_thread() {
-        return default_window_background_rgb();
-    }
-
-    let theme = super::CURRENT_THEME.with(Cell::get);
-    let palette = if is_dark() {
-        theme.palette()
-    } else {
-        theme.light_palette()
-    };
-    parse_hex_rgb(palette.window_bg).unwrap_or_else(default_window_background_rgb)
+    active_palette().window_bg_rgb()
 }
 
 /// The panel ground, for anything painting its own fade back to it.
@@ -87,35 +78,32 @@ pub(in crate::ui) fn window_background_rgb() -> [u8; 3] {
 /// mixed from [`window_background_rgb`] would sit a shade off the surface it is
 /// supposed to disappear into.
 pub(in crate::ui) fn sidebar_background_rgb() -> [u8; 3] {
-    use super::color_math::parse_hex_rgb;
+    active_palette().sidebar_bg_rgb()
+}
 
+/// The palette in force: the default theme's before GTK is up, otherwise the
+/// current theme's palette for the current light/dark appearance.
+fn active_palette() -> super::theme::Palette {
     if !gtk4::is_initialized_main_thread() {
-        return default_sidebar_background_rgb();
+        return super::theme::Theme::DEFAULT.palette();
     }
 
     let theme = super::CURRENT_THEME.with(Cell::get);
-    let palette = if is_dark() {
+    if is_dark() {
         theme.palette()
     } else {
         theme.light_palette()
-    };
-    parse_hex_rgb(palette.sidebar_bg).unwrap_or_else(default_sidebar_background_rgb)
-}
-
-fn default_sidebar_background_rgb() -> [u8; 3] {
-    super::color_math::parse_hex_rgb(super::theme::Theme::DEFAULT.palette().sidebar_bg)
-        .unwrap_or_default()
-}
-
-fn default_window_background_rgb() -> [u8; 3] {
-    super::color_math::parse_hex_rgb(super::theme::Theme::DEFAULT.palette().window_bg)
-        .unwrap_or_default()
+    }
 }
 
 /// The AA threshold every accent foreground must clear (CONTRAST-5).
 pub(in crate::ui::style) const ACCENT_TEXT_MINIMUM_RATIO: f64 = 4.5;
 
-fn accent_text_rgb(accent: [u8; 3], background: [u8; 3], is_dark: bool) -> [u8; 3] {
+pub(in crate::ui) fn accent_text_rgb(
+    accent: [u8; 3],
+    background: [u8; 3],
+    is_dark: bool,
+) -> [u8; 3] {
     use super::color_math::{ensure_contrast_by_lightness, max_contrast_monochrome};
 
     // A sufficiently saturated accent cannot always reach the ratio by
@@ -132,12 +120,8 @@ fn rgb_hex(color: [u8; 3]) -> String {
 /// The accent actually in force, as RGB. Both the theme's tinted surfaces and
 /// the derived text colour need it, and they must agree on one value.
 pub(in crate::ui::style) fn effective_accent_rgb(source: AccentSource) -> [u8; 3] {
-    use super::color_math::parse_hex_rgb;
-
     match source {
-        AccentSource::App => {
-            parse_hex_rgb(APP_ACCENT).expect("the compile-time Reprise accent is valid #RRGGBB")
-        }
+        AccentSource::App => APP_ACCENT_RGB,
         AccentSource::System if gtk4::is_initialized_main_thread() => {
             let rgba = libadwaita::StyleManager::default().accent_color_rgba();
             [
@@ -149,9 +133,7 @@ pub(in crate::ui::style) fn effective_accent_rgb(source: AccentSource) -> [u8; 3
         // `theme_css` is also a headless pure-test seam. Installed theme CSS
         // is only built after GTK initialization, where the branch above reads
         // the actual system RGBA and tracks later change notifications.
-        AccentSource::System => {
-            parse_hex_rgb(APP_ACCENT).expect("the compile-time Reprise accent is valid #RRGGBB")
-        }
+        AccentSource::System => APP_ACCENT_RGB,
     }
 }
 
@@ -308,8 +290,7 @@ mod tests {
                     let critical = palette.critical_accent_surface(is_dark, accent_rgb);
                     let derived = accent_text_rgb(accent_rgb, critical, is_dark);
 
-                    for surface in palette.surfaces() {
-                        let plain = parse_hex_rgb(surface).expect("palette surface is valid hex");
+                    for plain in palette.surfaces() {
                         // Both the bare surface and the loudest accent-tinted
                         // fill that can sit on it. The role is painted app-wide;
                         // the critical surface is only the worst case it must
@@ -327,7 +308,7 @@ mod tests {
                             assert!(
                                 ratio >= ACCENT_TEXT_MINIMUM_RATIO,
                                 "{theme:?} {}: {accent} derived against {critical:?} \
-                                 reaches only {ratio:.2}:1 on {background:?} (from {surface})",
+                                 reaches only {ratio:.2}:1 on {background:?} (from {plain:?})",
                                 if is_dark { "dark" } else { "light" }
                             );
                         }

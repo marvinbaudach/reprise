@@ -20,6 +20,8 @@
 //!   composition root only (controller construction); everything else goes
 //!   through `reprise_core::playback` / `reprise_core::media_integration`.
 
+#[macro_use]
+mod invariant;
 mod about;
 #[cfg(test)]
 mod accessibility_semantics;
@@ -69,6 +71,7 @@ mod list_geometry_changed;
 mod list_geometry_content;
 mod list_geometry_header;
 mod list_geometry_layout;
+mod list_geometry_row_height;
 mod list_store_delta;
 pub(in crate::ui) mod location_broadcast;
 mod lyrics;

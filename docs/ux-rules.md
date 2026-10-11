@@ -7967,9 +7967,12 @@ Reprise submittable to Flathub and, later, to GNOME Circle.
   The grep gate catches explicit `#[strong]` captures. An unannotated capture
   is implicitly strong and must be checked in review because the gate cannot
   parse Rust macro arguments reliably. Source: gtk4-rs book.
-- **GP-4** [planned] [gtk] — No `unwrap()` in UI paths: signal handlers,
-  property access, channel receives. Either `expect()` with context or the
-  error is propagated.
+- **GP-4** [active] [gtk] — Production code of the GTK frontend does not call
+  `unwrap`, `expect`, `panic!`, `todo!`, `unimplemented!` or `unreachable!`;
+  clippy enforces it from the crate root. A panic inside a signal handler
+  unwinds into C and aborts the whole application, so an impossible state is
+  logged, trips a debug assertion and takes a neutral path instead
+  (`invariant_broken!`).
 - **GP-5** [planned] [gtk] — Widgets that hold state, override virtual
   functions, or expose properties or signals are GObject subclasses, not
   ad-hoc structs. Source: gtk4-rs book, GObject subclassing.

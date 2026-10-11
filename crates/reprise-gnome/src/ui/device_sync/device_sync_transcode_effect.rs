@@ -71,8 +71,10 @@ async fn inline(
     entry: &DesiredManagedFile,
     action: TransferAction,
 ) -> Result<TranscodedFile, String> {
-    let profile =
-        transcode_profile(action).expect("a transcode effect must name a transcode action");
+    let Some(profile) = transcode_profile(action) else {
+        invariant_broken!("a transcode effect must name a transcode action");
+        return Err("the sync plan asked for a transcode without a transcode action".into());
+    };
     let extension = match profile {
         TranscodeProfile::Opus160 => "opus",
         TranscodeProfile::Mp3(_) => "mp3",

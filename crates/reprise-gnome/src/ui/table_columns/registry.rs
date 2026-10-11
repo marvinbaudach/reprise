@@ -55,16 +55,22 @@ pub(in crate::ui) fn preferred_visibility(column: &gtk4::ColumnViewColumn) -> Op
     })
 }
 
+/// Reads each column's key from its widget id. A binding that does not match
+/// the declared keys is reported as a broken invariant and degrades to **no
+/// columns**: the registry built from that still exists and still persists, but
+/// manages no column, so layout edits never reach the table and it keeps its
+/// built layout.
 pub(in crate::ui) fn bind_columns_by_id<K: ColumnKey>(
     view: &gtk4::ColumnView,
 ) -> Vec<(K, gtk4::ColumnViewColumn)> {
     let model = view.columns();
     let columns = (0..model.n_items())
-        .map(|index| {
-            model
-                .item(index)
-                .and_downcast::<gtk4::ColumnViewColumn>()
-                .unwrap_or_else(|| panic!("column view item {index} is not a ColumnViewColumn"))
+        .filter_map(|index| {
+            let column = model.item(index).and_downcast::<gtk4::ColumnViewColumn>();
+            if column.is_none() {
+                invariant_broken!("column view item {index} is not a ColumnViewColumn");
+            }
+            column
         })
         .collect::<Vec<_>>();
     let ids = columns
@@ -72,12 +78,16 @@ pub(in crate::ui) fn bind_columns_by_id<K: ColumnKey>(
         .map(|column| column.id().map(|id| id.to_string()))
         .collect::<Vec<_>>();
     let id_refs = ids.iter().map(Option::as_deref).collect::<Vec<_>>();
-    let keys = bind_view_column_keys::<K>(&id_refs).unwrap_or_else(|error| {
-        panic!(
-            "invalid {} column binding: {error}",
-            std::any::type_name::<K>()
-        )
-    });
+    let keys = match bind_view_column_keys::<K>(&id_refs) {
+        Ok(keys) => keys,
+        Err(error) => {
+            invariant_broken!(
+                "invalid {} column binding: {error}",
+                std::any::type_name::<K>()
+            );
+            return Vec::new();
+        }
+    };
     keys.into_iter().zip(columns).collect()
 }
 

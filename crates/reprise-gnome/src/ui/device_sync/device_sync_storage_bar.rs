@@ -72,10 +72,9 @@ impl StorageBar {
                 return;
             };
             let foreground = widget.color();
-            let music = gtk4::gdk::RGBA::parse(crate::ui::style::category_colors::music_color(
+            let music = crate::ui::style::category_colors::music_rgba(
                 libadwaita::StyleManager::default().is_dark(),
-            ))
-            .expect("category colors must be valid #RRGGBB literals");
+            );
             let accent = crate::ui::style::accent::accent_rgba();
             let width = f64::from(width.max(0));
             let height = f64::from(height.max(0));

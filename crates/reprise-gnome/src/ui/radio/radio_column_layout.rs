@@ -11,6 +11,9 @@ use crate::ui::table_columns::registry::{bind_columns_by_id, ColumnRegistry, Tab
 use crate::ui::table_columns::{width_persistence, EditorModel};
 
 pub(super) fn registry(view: &gtk4::ColumnView, conn: Rc<Db>) -> Rc<ColumnRegistry<RadioColumn>> {
+    // An invalid binding is reported inside and yields no columns; the registry
+    // still exists and still persists, but manages no column, so layout edits
+    // never reach the table (see `bind_columns_by_id`).
     let columns = bind_columns_by_id::<RadioColumn>(view);
     let registry = ColumnRegistry::new(
         view,

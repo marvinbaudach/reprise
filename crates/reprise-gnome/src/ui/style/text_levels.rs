@@ -44,7 +44,7 @@ mod tests {
 
     #[test]
     fn contrast_3_the_global_dim_label_level_clears_aa_on_every_surface() {
-        use super::super::color_math::{composite, contrast_ratio, parse_hex_rgb};
+        use super::super::color_math::{composite, contrast_ratio};
         use super::super::theme::Theme;
 
         // `.dim-label` is an opacity over whatever colour it inherits, so the
@@ -60,14 +60,13 @@ mod tests {
             for (appearance, palette) in
                 [("dark", theme.palette()), ("light", theme.light_palette())]
             {
-                let foreground = parse_hex_rgb(palette.fg).expect("palette fg is valid hex");
-                for surface in palette.surfaces() {
-                    let background = parse_hex_rgb(surface).expect("palette surface is valid hex");
+                let foreground = palette.fg_rgb();
+                for background in palette.surfaces() {
                     let rendered = composite(foreground, background, level);
                     let ratio = contrast_ratio(rendered, background);
                     assert!(
                         ratio >= 4.5,
-                        "{theme:?} {appearance}: dim-label reaches only {ratio:.2}:1 on {surface}"
+                        "{theme:?} {appearance}: dim-label reaches only {ratio:.2}:1 on {background:?}"
                     );
                 }
             }

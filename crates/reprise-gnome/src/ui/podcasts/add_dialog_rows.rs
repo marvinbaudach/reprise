@@ -56,11 +56,11 @@ pub(super) fn append_candidate(
         candidate.image_url.as_deref(),
         images_allowed(conn),
     );
-    let row = handle
-        .root
-        .clone()
-        .downcast::<gtk4::Box>()
-        .expect("candidate rows are boxes");
+    let Ok(row) = handle.root.clone().downcast::<gtk4::Box>() else {
+        invariant_broken!("candidate rows are boxes");
+        parent.append(&handle.root);
+        return handle;
+    };
     // SRC-7: the same compact action every discovery row uses.
     let title = candidate.title.clone();
     let button = source_add_action::add_button(source_add_action::AddActionKind::Subscribe, &title);

@@ -110,10 +110,13 @@ fn artist_column(view: &gtk4::ColumnView, query: &crate::ui::search_highlight::Q
         let Some(caption) = artist.next_sibling().and_downcast::<gtk4::Label>() else {
             return;
         };
-        let Some(object) = item.item().and_downcast::<ConcertObject>() else {
+        let Some(row) = item
+            .item()
+            .and_downcast::<ConcertObject>()
+            .and_then(|object| object.row())
+        else {
             return;
         };
-        let row = object.row();
         crate::ui::search_highlight::apply(&artist, &row.artist_name, &query());
         let text = similar_caption(&row);
         caption.set_text(text.as_deref().unwrap_or_default());
@@ -215,10 +218,13 @@ fn text_column(
         let Some(label) = item.child().and_downcast::<gtk4::Label>() else {
             return;
         };
-        let Some(object) = item.item().and_downcast::<ConcertObject>() else {
+        let Some(row) = item
+            .item()
+            .and_downcast::<ConcertObject>()
+            .and_then(|object| object.row())
+        else {
             return;
         };
-        let row = object.row();
         let text = render(&row);
         if let Some(query) = query.as_ref() {
             crate::ui::search_highlight::apply(&label, &text, &query());

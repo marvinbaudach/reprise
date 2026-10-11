@@ -38,17 +38,25 @@ pub(super) fn install(
                 subscription_id,
                 episode_id,
                 kind: SourceKind::Podcasts,
-            } => podcasts_view
-                .materialize()
-                .request_reveal(subscription_id, episode_id),
+            } => {
+                if let Some(view) = podcasts_view.materialize() {
+                    view.request_reveal(subscription_id, episode_id);
+                }
+            }
             SourceTarget::Episode {
                 subscription_id,
                 episode_id,
                 kind: SourceKind::Youtube,
-            } => youtube_view
-                .materialize()
-                .request_reveal(subscription_id, episode_id),
-            SourceTarget::Station { .. } => radio_view.materialize().request_reveal_connected(),
+            } => {
+                if let Some(view) = youtube_view.materialize() {
+                    view.request_reveal(subscription_id, episode_id);
+                }
+            }
+            SourceTarget::Station { .. } => {
+                if let Some(view) = radio_view.materialize() {
+                    view.request_reveal_connected();
+                }
+            }
         }
     });
 

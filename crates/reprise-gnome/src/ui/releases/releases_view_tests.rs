@@ -48,6 +48,7 @@ fn release_titles(view: &ReleasesView) -> Vec<String> {
                 .and_downcast::<ReleaseObject>()
                 .expect("the Releases model stores release objects")
                 .entry()
+                .expect("a published release object has its entry")
                 .title
         })
         .collect()
@@ -432,7 +433,7 @@ fn nr_32_deleted_release_memory_is_reflected_in_releases_view() {
         .item(0)
         .and_downcast::<ReleaseObject>()
         .unwrap();
-    assert_eq!(visible.entry().release_group_mbid, "control");
+    assert_eq!(visible.entry().unwrap().release_group_mbid, "control");
     assert_eq!(
         reprise_core::artist_news::hidden_release_count(&conn).unwrap(),
         1

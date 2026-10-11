@@ -19,10 +19,15 @@ pub(super) fn wire(view: &gtk4::ColumnView, model: &Rc<ConcertsModel>, on_open: 
         let model = model.clone();
         let on_open = on_open.clone();
         view.connect_activate(move |_, position| {
-            let Some(object) = model.store().item(position).and_downcast::<ConcertObject>() else {
+            let Some(row) = model
+                .store()
+                .item(position)
+                .and_downcast::<ConcertObject>()
+                .and_then(|object| object.row())
+            else {
                 return;
             };
-            activate_row(&object.row(), &on_open);
+            activate_row(&row, &on_open);
         });
     }
     let model = model.clone();
@@ -32,10 +37,15 @@ pub(super) fn wire(view: &gtk4::ColumnView, model: &Rc<ConcertsModel>, on_open: 
             return gtk4::glib::Propagation::Proceed;
         }
         let position = model.selection().selected();
-        let Some(object) = model.store().item(position).and_downcast::<ConcertObject>() else {
+        let Some(row) = model
+            .store()
+            .item(position)
+            .and_downcast::<ConcertObject>()
+            .and_then(|object| object.row())
+        else {
             return gtk4::glib::Propagation::Proceed;
         };
-        if !activate_row(&object.row(), &on_open) {
+        if !activate_row(&row, &on_open) {
             return gtk4::glib::Propagation::Proceed;
         }
         gtk4::glib::Propagation::Stop

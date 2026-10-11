@@ -14,6 +14,8 @@
 //! are deliberately approximate; a later pass tunes them against the exact
 //! canonical palettes (Perpetual Rain, Night Terrain, …).
 
+use super::color_math::{decimal_fraction, rgb_literal};
+
 /// Settings key persisting the selected theme's [`Theme::id`].
 pub(in crate::ui) const THEME_SETTING_KEY: &str = "ui.theme";
 
@@ -28,6 +30,12 @@ pub(in crate::ui) enum Theme {
 
 /// The color values a theme maps onto libadwaita's named colors. Every field
 /// is emitted by [`theme_css`] — keep them in sync so no value is dead.
+///
+/// The hex strings feed the generated CSS. The measured colours are decoded
+/// from those same literals when the palette `const` is evaluated, so a
+/// malformed literal fails the build and no contrast measurement has to cope
+/// with one at runtime.
+#[derive(Clone, Copy)]
 pub(in crate::ui) struct Palette {
     pub(in crate::ui) window_bg: &'static str,
     pub(in crate::ui) view_bg: &'static str,
@@ -38,20 +46,80 @@ pub(in crate::ui) struct Palette {
     pub(in crate::ui) dialog_bg: &'static str,
     pub(in crate::ui) fg: &'static str,
     pub(in crate::ui) dim_fg: &'static str,
+    surfaces: [[u8; 3]; 7],
+    fg_rgb: [u8; 3],
 }
 
+/// The hex literals a [`Palette`] is written as, before they are decoded.
+#[derive(Clone, Copy)]
+struct PaletteHex {
+    window_bg: &'static str,
+    view_bg: &'static str,
+    card_bg: &'static str,
+    headerbar_bg: &'static str,
+    sidebar_bg: &'static str,
+    popover_bg: &'static str,
+    dialog_bg: &'static str,
+    fg: &'static str,
+    dim_fg: &'static str,
+}
+
+// The alpha tokens the contrast measurement models, decoded at compile time
+// from the very strings the CSS is generated from.
+const HEAVIEST_ACCENT_TINT: f64 = decimal_fraction(super::tokens::ACCENT_TINT_CEILING);
+const DIALOG_HEADER_TINT: f64 = decimal_fraction(super::tokens::DIALOG_HEADER_TINT_ALPHA);
+const DIALOG_CARD_TINT: f64 = decimal_fraction(super::tokens::DIALOG_CARD_ALPHA);
+
 impl Palette {
+    /// Decodes the literals. `const` so that it only ever runs in the `const`
+    /// palette items below, at compile time.
+    const fn from_hex(hex: PaletteHex) -> Self {
+        Self {
+            window_bg: hex.window_bg,
+            view_bg: hex.view_bg,
+            card_bg: hex.card_bg,
+            headerbar_bg: hex.headerbar_bg,
+            sidebar_bg: hex.sidebar_bg,
+            popover_bg: hex.popover_bg,
+            dialog_bg: hex.dialog_bg,
+            fg: hex.fg,
+            dim_fg: hex.dim_fg,
+            surfaces: [
+                rgb_literal(hex.window_bg),
+                rgb_literal(hex.view_bg),
+                rgb_literal(hex.card_bg),
+                rgb_literal(hex.headerbar_bg),
+                rgb_literal(hex.sidebar_bg),
+                rgb_literal(hex.popover_bg),
+                rgb_literal(hex.dialog_bg),
+            ],
+            fg_rgb: rgb_literal(hex.fg),
+        }
+    }
+
     /// Every surface a widget can sit on, in no particular order.
-    pub(in crate::ui::style) fn surfaces(&self) -> [&'static str; 7] {
-        [
-            self.window_bg,
-            self.view_bg,
-            self.card_bg,
-            self.headerbar_bg,
-            self.sidebar_bg,
-            self.popover_bg,
-            self.dialog_bg,
-        ]
+    pub(in crate::ui::style) const fn surfaces(&self) -> [[u8; 3]; 7] {
+        self.surfaces
+    }
+
+    /// The text colour, decoded.
+    pub(in crate::ui) const fn fg_rgb(&self) -> [u8; 3] {
+        self.fg_rgb
+    }
+
+    /// The window surface, decoded.
+    pub(in crate::ui) const fn window_bg_rgb(&self) -> [u8; 3] {
+        self.surfaces[0]
+    }
+
+    /// The view surface, decoded.
+    pub(in crate::ui) const fn view_bg_rgb(&self) -> [u8; 3] {
+        self.surfaces[1]
+    }
+
+    /// The sidebar surface, decoded.
+    pub(in crate::ui) const fn sidebar_bg_rgb(&self) -> [u8; 3] {
+        self.surfaces[4]
     }
 
     /// The surface an accent foreground contrasts *worst* against: the
@@ -72,35 +140,25 @@ impl Palette {
     /// toggle fills brighter than a chip, and its label measured 2.97:1 in the
     /// dark palettes while this function reported the palette safe.
     pub(in crate::ui) fn critical_accent_surface(&self, is_dark: bool, accent: [u8; 3]) -> [u8; 3] {
-        use super::color_math::{composite, parse_hex_rgb, relative_luminance};
+        use super::color_math::{composite, relative_luminance};
 
         const WHITE: [u8; 3] = [255, 255, 255];
 
-        let fraction = |token: &str| -> f64 {
-            token
-                .parse()
-                .expect("surface alpha tokens are decimal fractions")
-        };
-        let heaviest_tint = fraction(super::tokens::ACCENT_TINT_CEILING);
         // The elevation ladder is painted in white over the surface below it,
         // so a dialog card is lighter than `dialog_bg_color` ever is on its
         // own, and an accent tint on that card is lighter again. Leaving the
         // rungs out repeated the very blind spot the tint ceiling closed, one
         // storey up: accent text on a tinted dialog card measured 3.90:1.
-        let rungs = [
-            0.0,
-            fraction(super::tokens::DIALOG_HEADER_TINT_ALPHA),
-            fraction(super::tokens::DIALOG_CARD_ALPHA),
-        ];
+        const RUNGS: [f64; 3] = [0.0, DIALOG_HEADER_TINT, DIALOG_CARD_TINT];
 
         self.surfaces()
             .into_iter()
-            .flat_map(|hex| {
-                let surface = parse_hex_rgb(hex).expect("palette colour must use #RRGGBB");
-                rungs.map(|rung| composite(WHITE, surface, rung))
-            })
-            .flat_map(|ground| [ground, composite(accent, ground, heaviest_tint)])
-            .reduce(|worst, surface| {
+            .flat_map(|surface| RUNGS.map(|rung| composite(WHITE, surface, rung)))
+            .flat_map(|ground| [ground, composite(accent, ground, HEAVIEST_ACCENT_TINT)])
+            // Seeded with a surface that is itself a candidate (rung 0.0 leaves
+            // it unchanged), so the palette's fixed size leaves nothing to fall
+            // back from.
+            .fold(self.surfaces[0], |worst, surface| {
                 let take_surface = if is_dark {
                     relative_luminance(surface) > relative_luminance(worst)
                 } else {
@@ -112,7 +170,6 @@ impl Palette {
                     worst
                 }
             })
-            .expect("the palette always has surfaces")
     }
 }
 
@@ -151,80 +208,92 @@ impl Theme {
 
     pub(in crate::ui) fn palette(self) -> Palette {
         match self {
-            Theme::PerpetualRain => Palette {
-                window_bg: "#16181b",
-                view_bg: "#1b1e22",
-                card_bg: "#272d33",
-                headerbar_bg: "#262b31",
-                sidebar_bg: "#22262b",
-                popover_bg: "#2f353d",
-                dialog_bg: "#353b44",
-                fg: "#e7e9ec",
-                dim_fg: "#9198a0",
-            },
-            Theme::NightTerrain => Palette {
-                window_bg: "#13161c",
-                view_bg: "#191d25",
-                card_bg: "#252b37",
-                headerbar_bg: "#242a35",
-                sidebar_bg: "#20252f",
-                popover_bg: "#2d3441",
-                dialog_bg: "#333a48",
-                fg: "#e4e7ec",
-                dim_fg: "#8b93a1",
-            },
-            Theme::MutedBloom => Palette {
-                window_bg: "#1a1518",
-                view_bg: "#201a1e",
-                card_bg: "#2d252c",
-                headerbar_bg: "#2c242c",
-                sidebar_bg: "#282027",
-                popover_bg: "#362e37",
-                dialog_bg: "#3a343c",
-                fg: "#ece6ea",
-                dim_fg: "#a2949c",
-            },
+            Theme::PerpetualRain => PERPETUAL_RAIN_DARK,
+            Theme::NightTerrain => NIGHT_TERRAIN_DARK,
+            Theme::MutedBloom => MUTED_BLOOM_DARK,
         }
     }
 
     pub(in crate::ui) fn light_palette(self) -> Palette {
         match self {
-            Theme::PerpetualRain => Palette {
-                window_bg: "#f4f5f7",
-                view_bg: "#fafbfc",
-                card_bg: "#ffffff",
-                headerbar_bg: "#e8eaed",
-                sidebar_bg: "#eceef1",
-                popover_bg: "#ffffff",
-                dialog_bg: "#f0f2f5",
-                fg: "#1a1c1f",
-                dim_fg: "#6b7280",
-            },
-            Theme::NightTerrain => Palette {
-                window_bg: "#f2f4f8",
-                view_bg: "#f8f9fc",
-                card_bg: "#ffffff",
-                headerbar_bg: "#e4e8ef",
-                sidebar_bg: "#e8ecf2",
-                popover_bg: "#ffffff",
-                dialog_bg: "#edf0f6",
-                fg: "#181b22",
-                dim_fg: "#636d7e",
-            },
-            Theme::MutedBloom => Palette {
-                window_bg: "#f6f3f5",
-                view_bg: "#fbf9fa",
-                card_bg: "#ffffff",
-                headerbar_bg: "#ede8eb",
-                sidebar_bg: "#f0ebee",
-                popover_bg: "#ffffff",
-                dialog_bg: "#f2eef1",
-                fg: "#1f1a1d",
-                dim_fg: "#7a6e75",
-            },
+            Theme::PerpetualRain => PERPETUAL_RAIN_LIGHT,
+            Theme::NightTerrain => NIGHT_TERRAIN_LIGHT,
+            Theme::MutedBloom => MUTED_BLOOM_LIGHT,
         }
     }
 }
+
+const PERPETUAL_RAIN_DARK: Palette = Palette::from_hex(PaletteHex {
+    window_bg: "#16181b",
+    view_bg: "#1b1e22",
+    card_bg: "#272d33",
+    headerbar_bg: "#262b31",
+    sidebar_bg: "#22262b",
+    popover_bg: "#2f353d",
+    dialog_bg: "#353b44",
+    fg: "#e7e9ec",
+    dim_fg: "#9198a0",
+});
+
+const NIGHT_TERRAIN_DARK: Palette = Palette::from_hex(PaletteHex {
+    window_bg: "#13161c",
+    view_bg: "#191d25",
+    card_bg: "#252b37",
+    headerbar_bg: "#242a35",
+    sidebar_bg: "#20252f",
+    popover_bg: "#2d3441",
+    dialog_bg: "#333a48",
+    fg: "#e4e7ec",
+    dim_fg: "#8b93a1",
+});
+
+const MUTED_BLOOM_DARK: Palette = Palette::from_hex(PaletteHex {
+    window_bg: "#1a1518",
+    view_bg: "#201a1e",
+    card_bg: "#2d252c",
+    headerbar_bg: "#2c242c",
+    sidebar_bg: "#282027",
+    popover_bg: "#362e37",
+    dialog_bg: "#3a343c",
+    fg: "#ece6ea",
+    dim_fg: "#a2949c",
+});
+
+const PERPETUAL_RAIN_LIGHT: Palette = Palette::from_hex(PaletteHex {
+    window_bg: "#f4f5f7",
+    view_bg: "#fafbfc",
+    card_bg: "#ffffff",
+    headerbar_bg: "#e8eaed",
+    sidebar_bg: "#eceef1",
+    popover_bg: "#ffffff",
+    dialog_bg: "#f0f2f5",
+    fg: "#1a1c1f",
+    dim_fg: "#6b7280",
+});
+
+const NIGHT_TERRAIN_LIGHT: Palette = Palette::from_hex(PaletteHex {
+    window_bg: "#f2f4f8",
+    view_bg: "#f8f9fc",
+    card_bg: "#ffffff",
+    headerbar_bg: "#e4e8ef",
+    sidebar_bg: "#e8ecf2",
+    popover_bg: "#ffffff",
+    dialog_bg: "#edf0f6",
+    fg: "#181b22",
+    dim_fg: "#636d7e",
+});
+
+const MUTED_BLOOM_LIGHT: Palette = Palette::from_hex(PaletteHex {
+    window_bg: "#f6f3f5",
+    view_bg: "#fbf9fa",
+    card_bg: "#ffffff",
+    headerbar_bg: "#ede8eb",
+    sidebar_bg: "#f0ebee",
+    popover_bg: "#ffffff",
+    dialog_bg: "#f2eef1",
+    fg: "#1f1a1d",
+    dim_fg: "#7a6e75",
+});
 
 /// Produces the `@define-color` overrides that map `theme`'s palette onto the
 /// libadwaita named colors, plus the `reprise_player_accent` alias the app's
@@ -365,6 +434,21 @@ pub(in crate::ui) fn theme_css(
 mod tests {
     use super::*;
     use crate::ui::style::accent::{AccentSource, APP_ACCENT};
+
+    #[test]
+    fn the_contrast_alpha_tokens_decode_to_what_the_standard_parser_reads() {
+        use crate::ui::style::tokens::{
+            ACCENT_TINT_CEILING, DIALOG_CARD_ALPHA, DIALOG_HEADER_TINT_ALPHA,
+        };
+
+        for (decoded, token) in [
+            (HEAVIEST_ACCENT_TINT, ACCENT_TINT_CEILING),
+            (DIALOG_HEADER_TINT, DIALOG_HEADER_TINT_ALPHA),
+            (DIALOG_CARD_TINT, DIALOG_CARD_ALPHA),
+        ] {
+            assert_eq!(decoded, token.parse::<f64>().unwrap(), "token {token:?}");
+        }
+    }
 
     #[test]
     fn default_theme_is_listed() {

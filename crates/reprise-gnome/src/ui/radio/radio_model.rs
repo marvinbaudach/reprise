@@ -37,15 +37,22 @@ impl RadioObject {
         object
     }
 
-    pub(super) fn row(&self) -> StationRow {
+    /// The row this object was built with, without a word if it has none.
+    /// For readers that already cope with `None` and report it themselves.
+    pub(super) fn stored_row(&self) -> Option<StationRow> {
         use glib::subclass::prelude::ObjectSubclassIsExt;
 
-        self.imp()
-            .row
-            .borrow()
-            .as_ref()
-            .expect("RadioObject is initialized before publication")
-            .clone()
+        self.imp().row.borrow().clone()
+    }
+
+    /// The row this object was built with. `None` only for an object that
+    /// was never given one, which `new` rules out.
+    pub(super) fn row(&self) -> Option<StationRow> {
+        let row = self.stored_row();
+        if row.is_none() {
+            invariant_broken!("a RadioObject was published without its row");
+        }
+        row
     }
 }
 
@@ -80,13 +87,7 @@ impl RadioModel {
         crate::ui::list_store_delta::replace(
             &self.store,
             rows,
-            |object| {
-                object
-                    .clone()
-                    .downcast::<RadioObject>()
-                    .expect("radio store contains only station objects")
-                    .row()
-            },
+            |object| object.downcast_ref::<RadioObject>()?.stored_row(),
             |row| row.id,
             |row| RadioObject::new(row).upcast(),
         );
@@ -101,7 +102,7 @@ impl RadioModel {
                 self.store
                     .item(position)
                     .and_then(|object| object.downcast::<RadioObject>().ok())
-                    .map(|object| object.row())
+                    .and_then(|object| object.row())
             })
             .collect()
     }
@@ -157,6 +158,7 @@ mod tests {
                 .downcast::<RadioObject>()
                 .unwrap()
                 .row()
+                .unwrap()
                 .id,
             3
         );

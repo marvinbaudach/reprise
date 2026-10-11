@@ -17,11 +17,14 @@ pub(super) fn sidebar_root_order() -> [SidebarRootChild; 2] {
 
 /// Assembles the scrolling navigation above the issues and running-job region.
 /// Resting device state is already part of `scrolled` (NAV-20).
+///
+/// Returns the root together with the pinned issues scroller, which is the
+/// last child of the root.
 pub(super) fn build_root(
     scrolled: &gtk4::ScrolledWindow,
     activity_slot: &SidebarActivitySlot,
     issues_listbox: &gtk4::ListBox,
-) -> gtk4::Box {
+) -> (gtk4::Box, gtk4::ScrolledWindow) {
     let root = gtk4::Box::new(gtk4::Orientation::Vertical, 0);
     root.set_vexpand(true);
     let issues_section = build_scrollable_issues_section(activity_slot, issues_listbox);
@@ -31,5 +34,5 @@ pub(super) fn build_root(
             SidebarRootChild::Issues => root.append(&issues_section),
         }
     }
-    root
+    (root, issues_section)
 }

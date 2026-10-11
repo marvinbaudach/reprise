@@ -27,18 +27,21 @@ pub(crate) struct Deferred<T> {
 impl<T> Deferred<T> {
     /// Returns the shared value, constructing it synchronously when startup's
     /// automatic quiet-point callback has not done so yet.
-    pub(crate) fn get(&self) -> Rc<T> {
+    ///
+    /// `None` only when the initializer asks for its own value while it is
+    /// still running, which no correct initializer does.
+    pub(crate) fn get(&self) -> Option<Rc<T>> {
         if let Some(value) = self.value.borrow().clone() {
-            return value;
+            return Some(value);
         }
-        let initializer = self
-            .initializer
-            .borrow_mut()
-            .take()
-            .expect("deferred startup value is already being initialized");
+        let initializer = self.initializer.borrow_mut().take();
+        let Some(initializer) = initializer else {
+            invariant_broken!("deferred startup value is already being initialized");
+            return None;
+        };
         let value = initializer();
         self.value.borrow_mut().replace(value.clone());
-        value
+        Some(value)
     }
 }
 
@@ -209,11 +212,11 @@ mod tests {
         });
 
         assert_eq!(explicit_builds.get(), 0);
-        let first = explicit.get();
+        let first = explicit.get().unwrap();
         assert_eq!(explicit_builds.get(), 1);
         super::release();
         assert_eq!(explicit_builds.get(), 1);
-        assert!(Rc::ptr_eq(&first, &explicit.get()));
+        assert!(Rc::ptr_eq(&first, &explicit.get().unwrap()));
 
         super::reset_for_test();
         let automatic_builds = Rc::new(Cell::new(0));
@@ -226,7 +229,7 @@ mod tests {
         assert_eq!(automatic_builds.get(), 0);
         super::release();
         assert_eq!(automatic_builds.get(), 1);
-        assert_eq!(*automatic.get(), "doctor");
+        assert_eq!(*automatic.get().unwrap(), "doctor");
         assert_eq!(automatic_builds.get(), 1);
     }
 }

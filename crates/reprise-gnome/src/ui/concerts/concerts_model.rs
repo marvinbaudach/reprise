@@ -37,15 +37,22 @@ impl ConcertObject {
         object
     }
 
-    pub(super) fn row(&self) -> ConcertRow {
+    /// The row this object was built with, without a word if it has none.
+    /// For readers that already cope with `None` and report it themselves.
+    pub(super) fn stored_row(&self) -> Option<ConcertRow> {
         use glib::subclass::prelude::ObjectSubclassIsExt;
 
-        self.imp()
-            .row
-            .borrow()
-            .as_ref()
-            .expect("ConcertObject is initialized before publication")
-            .clone()
+        self.imp().row.borrow().clone()
+    }
+
+    /// The row this object was built with. `None` only for an object that
+    /// was never given one, which `new` rules out.
+    pub(super) fn row(&self) -> Option<ConcertRow> {
+        let row = self.stored_row();
+        if row.is_none() {
+            invariant_broken!("a ConcertObject was published without its row");
+        }
+        row
     }
 }
 
@@ -65,13 +72,7 @@ impl ConcertsModel {
         crate::ui::list_store_delta::replace(
             &self.store,
             rows,
-            |object| {
-                object
-                    .clone()
-                    .downcast::<ConcertObject>()
-                    .expect("concerts store contains only concert objects")
-                    .row()
-            },
+            |object| object.downcast_ref::<ConcertObject>()?.stored_row(),
             |row| row.id,
             |row| ConcertObject::new(row).upcast(),
         );
@@ -129,7 +130,7 @@ mod tests {
             .unwrap()
             .downcast::<ConcertObject>()
             .unwrap();
-        assert_eq!(first.row().id, 1);
+        assert_eq!(first.row().unwrap().id, 1);
 
         model.replace(vec![row(3)]);
         assert_eq!(model.store().n_items(), 1);
@@ -141,6 +142,7 @@ mod tests {
                 .downcast::<ConcertObject>()
                 .unwrap()
                 .row()
+                .unwrap()
                 .id,
             3
         );

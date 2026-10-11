@@ -413,7 +413,10 @@ fn apply_empty_state(shared: &Shared, state: ReleasesEmptyState, total: usize) {
             strings::text(strings::RELEASES_EMPTY_TITLE),
             strings::text(strings::FETCH_NOW),
         ),
-        ReleasesEmptyState::List => unreachable!("list state returns before status mutation"),
+        ReleasesEmptyState::List => {
+            invariant_broken!("list state returns before status mutation");
+            return;
+        }
     };
     shared.status.set_icon_name(Some(icon));
     shared.status.set_title(&title);
@@ -426,15 +429,15 @@ fn set_hidden(shared: &Rc<Shared>, mbid: &str, hidden: bool) {
 }
 
 fn activate_position(shared: &Rc<Shared>, position: u32) {
-    let Some(object) = shared
+    let Some(entry) = shared
         .model
         .store()
         .item(position)
         .and_downcast::<ReleaseObject>()
+        .and_then(|object| object.entry())
     else {
         return;
     };
-    let entry = object.entry();
     match releases_row_action(&entry, Local::now().date_naive()) {
         ReleasesRowAction::Restore => set_hidden(shared, &entry.release_group_mbid, false),
         ReleasesRowAction::OpenAnnouncement(url) => {

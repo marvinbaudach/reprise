@@ -219,8 +219,7 @@ fn cover_link_presentation(item: &QueueItemMetadata) -> CoverLinkPresentation {
             &[("album", &track.album)],
         ),
         target: Some(CoverAlbumTarget {
-            track_id: super::queue_item_presentation::rating_track_id(item)
-                .expect("a track album link has a track id"),
+            track_id: track.id,
             album: track.album.clone(),
             album_artist: track.album_artist.clone(),
         }),

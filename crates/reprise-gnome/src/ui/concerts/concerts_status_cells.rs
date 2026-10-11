@@ -92,10 +92,13 @@ pub(super) fn ticket_column(view: &gtk4::ColumnView) {
         let Some(label) = item.child().and_downcast::<gtk4::Label>() else {
             return;
         };
-        let Some(object) = item.item().and_downcast::<ConcertObject>() else {
+        let Some(row) = item
+            .item()
+            .and_downcast::<ConcertObject>()
+            .and_then(|object| object.row())
+        else {
             return;
         };
-        let row = object.row();
         let presentation = ticket_presentation(row.availability);
         for class in ["on-sale", "off-sale", "unknown"] {
             label.remove_css_class(class);
@@ -153,10 +156,13 @@ pub(super) fn source_column(view: &gtk4::ColumnView) {
         let Some(label) = item.child().and_downcast::<gtk4::Label>() else {
             return;
         };
-        let Some(object) = item.item().and_downcast::<ConcertObject>() else {
+        let Some(row) = item
+            .item()
+            .and_downcast::<ConcertObject>()
+            .and_then(|object| object.row())
+        else {
             return;
         };
-        let row = object.row();
         label.set_label(source_name(&row));
         let presentation = row_link_presentation(&row);
         tooltips_for_bind.set_text(item, &label, Some(presentation.tooltip.clone()));
@@ -225,10 +231,13 @@ pub(super) fn distance_column(
         let Some(label) = item.child().and_downcast::<gtk4::Label>() else {
             return;
         };
-        let Some(object) = item.item().and_downcast::<ConcertObject>() else {
+        let Some(row) = item
+            .item()
+            .and_downcast::<ConcertObject>()
+            .and_then(|object| object.row())
+        else {
             return;
         };
-        let row = object.row();
         label.set_label(&super::concerts_presentation::format_distance_km(
             row.distance_km,
         ));

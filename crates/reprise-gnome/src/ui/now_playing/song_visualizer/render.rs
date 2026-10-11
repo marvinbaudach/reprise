@@ -36,15 +36,16 @@ impl SceneRenderer {
         width: i32,
         height: i32,
     ) -> Result<&gtk4::cairo::ImageSurface, gtk4::cairo::Error> {
-        if self.surface.is_none() || self.surface_size != (width, height) {
-            self.surface = Some(gtk4::cairo::ImageSurface::create(
-                gtk4::cairo::Format::ARgb32,
-                width,
-                height,
-            )?);
-            self.surface_size = (width, height);
-        }
-        Ok(self.surface.as_ref().expect("surface was just initialized"))
+        let surface = match self.surface.take() {
+            Some(surface) if self.surface_size == (width, height) => surface,
+            _ => {
+                let surface =
+                    gtk4::cairo::ImageSurface::create(gtk4::cairo::Format::ARgb32, width, height)?;
+                self.surface_size = (width, height);
+                surface
+            }
+        };
+        Ok(&*self.surface.insert(surface))
     }
 
     pub(super) fn draw(

@@ -42,18 +42,48 @@ impl LyricsRuntime {
         Self::from_lookup(lookup)
     }
 
+    /// A runtime whose worker is already gone: the receiver is dropped, so
+    /// every `request` takes the closed-channel path.
+    #[cfg(test)]
+    pub(in crate::ui) fn dead() -> Rc<Self> {
+        let (sender, receiver) = async_channel::unbounded::<LyricsRequest>();
+        drop(receiver);
+        Rc::new(Self { sender })
+    }
+
     fn from_lookup(lookup: Lookup) -> Rc<Self> {
         let (sender, receiver) = async_channel::unbounded::<LyricsRequest>();
-        std::thread::Builder::new()
+        // A thread that cannot start drops the receiver with its closure, so
+        // every later `request` finds the channel closed and answers with a
+        // permanent error instead of waiting for a worker.
+        if let Err(error) = std::thread::Builder::new()
             .name("reprise-lyrics".into())
             .spawn(move || run(&receiver, &lookup))
-            .expect("lyrics worker thread should start");
+        {
+            tracing::error!(%error, "lyrics worker thread failed to start");
+        }
         Rc::new(Self { sender })
     }
 
     pub(in crate::ui) fn request(&self, request: LyricsRequest) {
         if let Err(error) = self.sender.try_send(request) {
             tracing::warn!(%error, "lyrics request dropped: worker is gone");
+            let request = error.into_inner();
+            let unavailable = LyricsResponse {
+                generation: request.generation,
+                options: request.options,
+                // `Temporary` would send the requester on an online retry
+                // through this same dead worker. `InvalidResponse` shows the
+                // same "unavailable" status with a manual retry and nothing
+                // automatic.
+                result: Err(LyricsError::InvalidResponse),
+            };
+            if request.response.try_send(unavailable).is_err() {
+                tracing::debug!(
+                    generation = request.generation,
+                    "lyrics unavailable answer dropped: requester is gone"
+                );
+            }
         }
     }
 }
@@ -120,6 +150,20 @@ mod tests {
             options: LookupOptions::default(),
             response,
         }
+    }
+
+    #[test]
+    fn a_dead_worker_answers_with_invalid_response_instead_of_temporary() {
+        let (sender, receiver) = async_channel::unbounded::<LyricsRequest>();
+        drop(receiver);
+        let runtime = LyricsRuntime { sender };
+        let (response_tx, response_rx) = async_channel::bounded(1);
+
+        runtime.request(request(3, "Orphan", response_tx));
+
+        let answer = response_rx.recv_blocking().unwrap();
+        assert_eq!(answer.generation, 3);
+        assert_eq!(answer.result, Err(LyricsError::InvalidResponse));
     }
 
     #[test]

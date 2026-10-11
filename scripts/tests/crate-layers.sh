@@ -2,8 +2,8 @@
 # Proves scripts/check-crate-layers.sh fails for every rule it states, with the
 # message that names the problem, and passes on a clean tree and on the real
 # workspace. It drives the script through its test seams (ARCH_LINT_LAYER_TABLE,
-# ARCH_LINT_LAYER_MEMBERS, ARCH_LINT_PANIC_ROOT, ARCH_LINT_PANIC_BUDGETS,
-# ARCH_LINT_PENDING_CRATES) and never through check-architecture.sh, so an
+# ARCH_LINT_LAYER_MEMBERS, ARCH_LINT_PANIC_ROOT, ARCH_LINT_PANIC_BUDGETS) and
+# never through check-architecture.sh, so an
 # unrelated red cannot hide the message a case is waiting for. The seams only
 # redirect input; the cases below are what show that none of them makes the gate
 # blind. Every failure case asserts a non-zero exit AND the expected message.
@@ -64,12 +64,12 @@ expect_success() {
   fi
 }
 
-# A three-crate workspace: two held to the never-crash lints and one pending.
+# A three-crate workspace, every crate held to the never-crash lints.
 fixture_table=$scratch/table.txt
 cat >"$fixture_table" <<'TABLE'
 fixture-lib | - | - | - | deny
 fixture-cli | fixture-lib | fixture-lib | - | deny
-fixture-ui | fixture-lib | fixture-lib | - | pending
+fixture-ui | fixture-lib | fixture-lib | - | deny
 TABLE
 fixture_members='fixture-lib fixture-cli fixture-ui'
 
@@ -85,7 +85,7 @@ make_fixture() {
   printf '%s\n\nmod extra;\n' "$attribute" >"$dir/crates/fixture-lib/src/lib.rs"
   printf '%s\n\nfn main() {}\n' "$attribute" >"$dir/crates/fixture-cli/src/main.rs"
   printf '%s\n\nfn main() {}\n' "$attribute" >"$dir/crates/fixture-cli/src/bin/extra.rs"
-  printf 'fn main() {}\n' >"$dir/crates/fixture-ui/src/main.rs"
+  printf '%s\n\nfn main() {}\n' "$attribute" >"$dir/crates/fixture-ui/src/main.rs"
   : >"$dir/crates/fixture-lib/src/extra.rs"
   for ((index = 0; index < expects; index++)); do
     # Alternate the plain form with one that lists another lint first, which the
@@ -123,7 +123,6 @@ load_fixture_env() {
     "ARCH_LINT_LAYER_TABLE=$fixture_table"
     "ARCH_LINT_LAYER_MEMBERS=$fixture_members"
     "ARCH_LINT_PANIC_ROOT=$1"
-    "ARCH_LINT_PENDING_CRATES=fixture-ui"
     "ARCH_LINT_PANIC_BUDGETS=fixture-lib=${2:-$fixture_budget}"
   )
 }
@@ -134,7 +133,7 @@ clean=$scratch/clean
 make_fixture "$clean" "$fixture_budget" 0
 load_fixture_env "$clean"
 expect_success "clean fixture" "panic-lint suppressions: $fixture_budget (at budget)" "${fixture_env_lines[@]}"
-expect_success "clean fixture, pending crate" "fixture-ui: panic policy pending" "${fixture_env_lines[@]}"
+expect_success "clean fixture, every crate deny" "fixture-ui: panic policy deny" "${fixture_env_lines[@]}"
 
 # Comments and string literals never count: a commented-out suppression, a lint
 # name in a reason, and a commented-out attribute are all noise, not policy.
@@ -159,7 +158,7 @@ expect_failure "member without a row" "workspace crate fixture-rogue has no row 
 expect_failure "row without a member" "layer table row fixture-ui names no workspace crate" \
   "${fixture_env_lines[@]}" "ARCH_LINT_LAYER_MEMBERS=fixture-lib fixture-cli"
 
-# --- the table itself: duplicate, malformed, pending ----------------------------
+# --- the table itself: duplicate, malformed, unknown policy ---------------------
 
 duplicate_table=$scratch/duplicate-table.txt
 { cat "$fixture_table"; echo 'fixture-lib | - | - | - | deny'; } >"$duplicate_table"
@@ -169,25 +168,25 @@ expect_failure "a duplicate table row" "layer table names fixture-lib twice" \
 malformed_table=$scratch/malformed-table.txt
 { cat "$fixture_table"; echo 'fixture-rogue | - | - | deny'; } >"$malformed_table"
 expect_failure "a malformed table row" \
-  "layer table row for fixture-rogue must have five fields ending in deny or pending" \
+  "layer table row for fixture-rogue must have five fields ending in deny" \
   "${fixture_env_lines[@]}" "ARCH_LINT_LAYER_TABLE=$malformed_table"
 
 unknown_policy_table=$scratch/unknown-policy-table.txt
 sed 's/^fixture-lib | - | - | - | deny$/fixture-lib | - | - | - | allow/' "$fixture_table" >"$unknown_policy_table"
 expect_failure "an unknown panic policy" \
-  "layer table row for fixture-lib must have five fields ending in deny or pending" \
+  "layer table row for fixture-lib must have five fields ending in deny" \
   "${fixture_env_lines[@]}" "ARCH_LINT_LAYER_TABLE=$unknown_policy_table"
 
-# Only the pinned crate may be pending; a flipped row must not escape the lints.
-flipped_table=$scratch/flipped-table.txt
-sed 's/^fixture-lib | - | - | - | deny$/fixture-lib | - | - | - | pending/' "$fixture_table" >"$flipped_table"
-expect_failure "a row flipped to pending" \
-  "layer table marks fixture-lib pending; only fixture-ui may be pending" \
-  "${fixture_env_lines[@]}" "ARCH_LINT_LAYER_TABLE=$flipped_table"
+# `pending` is gone: no row may use it to escape the lints.
+pending_table=$scratch/pending-table.txt
+sed 's/^fixture-lib | - | - | - | deny$/fixture-lib | - | - | - | pending/' "$fixture_table" >"$pending_table"
+expect_failure "a row marked pending" \
+  "layer table row for fixture-lib must have five fields ending in deny" \
+  "${fixture_env_lines[@]}" "ARCH_LINT_LAYER_TABLE=$pending_table"
 
-expect_failure "a budget for a crate that is not deny" \
-  "panic-lint budget names fixture-ui, which is not a deny crate in the layer table" \
-  "${fixture_env_lines[@]}" "ARCH_LINT_PANIC_BUDGETS=fixture-ui=1"
+expect_failure "a budget for a crate that is not in the table" \
+  "panic-lint budget names fixture-ghost, which is not a deny crate in the layer table" \
+  "${fixture_env_lines[@]}" "ARCH_LINT_PANIC_BUDGETS=fixture-ghost=1"
 
 # --- 4. a deny crate root without the attribute ------------------------------
 
@@ -355,13 +354,6 @@ expect_failure "a banned family in the all-features build" \
   "reprise-mcp (all build) must not depend on: zbus" \
   "ARCH_LINT_LAYER_TABLE=$banned_all_table"
 
-# Any crate other than reprise-gnome flipped to pending.
-real_flipped_table=$scratch/real-flipped-table.txt
-sed 's/^reprise-core \(.*\) | deny$/reprise-core \1 | pending/' "$real_table" >"$real_flipped_table"
-expect_failure "reprise-core flipped to pending" \
-  "layer table marks reprise-core pending; only reprise-gnome may be pending" \
-  "ARCH_LINT_LAYER_TABLE=$real_flipped_table"
-
 # --- the tools the gate depends on ---------------------------------------------
 
 # `cargo metadata` failing must fail the gate, not read as an empty workspace.
@@ -398,8 +390,8 @@ for crate in reprise-runtime-protocol reprise-core reprise-view reprise-stems \
     die "the real run names $crate $named times, expected once" "$output"
   fi
 done
-grep -qF "reprise-gnome: panic policy pending" <<<"$output" \
-  || die "the real run does not show reprise-gnome as pending" "$output"
+grep -qF "reprise-gnome: panic policy deny" <<<"$output" \
+  || die "the real run does not show reprise-gnome under the deny policy" "$output"
 grep -qF "panic-lint suppressions: $real_budget_total (at budget)" <<<"$output" \
   || die "the real run is not at the pinned budget of $real_budget_total" "$output"
 

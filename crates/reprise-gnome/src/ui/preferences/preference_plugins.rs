@@ -120,18 +120,25 @@ fn apply_collapsed_group(
     }
 }
 
-fn descriptor(id: &str) -> &'static ModuleDescriptor {
-    reprise_core::modules::ALL_MODULES
+/// The module descriptor for a Plugins capability id. The ids come from the
+/// closed lists in this module, so an unknown one is a broken invariant; the
+/// caller skips that capability's row.
+fn descriptor(id: &str) -> Option<&'static ModuleDescriptor> {
+    let found = reprise_core::modules::ALL_MODULES
         .iter()
         .copied()
-        .find(|descriptor| descriptor.id == id)
-        .unwrap_or_else(|| panic!("unknown Plugins capability: {id}"))
+        .find(|descriptor| descriptor.id == id);
+    if found.is_none() {
+        invariant_broken!("unknown Plugins capability: {id}");
+    }
+    found
 }
 
 fn sidebar_plugin_names() -> Vec<String> {
     SIDEBAR_PLUGIN_IDS
         .iter()
-        .map(|id| plugin_title(descriptor(id)))
+        .filter_map(|id| descriptor(id))
+        .map(plugin_title)
         .collect()
 }
 
@@ -380,7 +387,10 @@ fn settings_plugin_row(
             rows.add_to(&row);
             Rc::new(move |enabled| rows.set_sensitive(enabled))
         }
-        id => panic!("capability {id} has no Plugins child-row builder"),
+        id => {
+            invariant_broken!("capability {id} has no Plugins child-row builder");
+            Rc::new(|_| {})
+        }
     };
     register_plugin_row(context, descriptor, &row);
 
@@ -553,7 +563,9 @@ impl PreferencesContext {
             .build();
         let no_op: Rc<dyn Fn()> = Rc::new(|| {});
         for id in plugin_ids_for_group(PluginGroup::Local) {
-            let descriptor = descriptor(id);
+            let Some(descriptor) = descriptor(id) else {
+                continue;
+            };
             if plugin_uses_expander(id) {
                 let (row, _) = settings_plugin_row(self, descriptor, &no_op);
                 local_group.add(&row);
@@ -607,7 +619,9 @@ impl PreferencesContext {
 
         let mut children = Vec::with_capacity(ONLINE_PLUGIN_IDS.len());
         for id in plugin_ids_for_group(PluginGroup::Online) {
-            let descriptor = descriptor(id);
+            let Some(descriptor) = descriptor(id) else {
+                continue;
+            };
             let child = if plugin_uses_expander(id) {
                 let (row, child) = settings_plugin_row(self, descriptor, &on_child_changed);
                 card.add(&row);
@@ -631,12 +645,15 @@ impl PreferencesContext {
         connected_group.add(&connected_disclosure);
         let connected_rows = plugin_ids_for_group(PluginGroup::Connected)
             .iter()
-            .map(|id| match *id {
+            .filter_map(|id| match *id {
                 "scrobbling" => {
                     let row = super::preference_scrobbling::build(self);
-                    row.upcast::<gtk4::Widget>()
+                    Some(row.upcast::<gtk4::Widget>())
                 }
-                id => panic!("connected capability {id} has no Plugins row builder"),
+                id => {
+                    invariant_broken!("connected capability {id} has no Plugins row builder");
+                    None
+                }
             })
             .collect::<Vec<_>>();
         for row in &connected_rows {

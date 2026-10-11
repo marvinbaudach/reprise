@@ -2,7 +2,10 @@ use gtk4::prelude::*;
 
 use super::*;
 
-pub(super) fn wire_menu(w: &RuntimeWiring<'_>, scratch: &WiringScratch) {
+pub(super) fn wire_menu(
+    w: &RuntimeWiring<'_>,
+    library_doctor: &Rc<library_doctor_ui::LibraryDoctorLauncher>,
+) {
     let RuntimeWiring {
         minimal_view,
         preferences,
@@ -24,8 +27,8 @@ pub(super) fn wire_menu(w: &RuntimeWiring<'_>, scratch: &WiringScratch) {
     } = *w;
     let minimal_toggle = minimal_view.clone();
     let menu_preferences = preferences.clone();
-    let findings_library_doctor = scratch.library_doctor().clone();
-    let menu_library_doctor = scratch.library_doctor().clone();
+    let findings_library_doctor = library_doctor.clone();
+    let menu_library_doctor = library_doctor.clone();
     let stop_player = player.as_ref().map(|player| {
         let player = Rc::downgrade(player);
         Rc::new(move || {

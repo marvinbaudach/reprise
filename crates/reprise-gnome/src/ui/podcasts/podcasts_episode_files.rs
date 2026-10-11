@@ -19,25 +19,25 @@ pub(super) fn file_reveal(paths: &[Option<PathBuf>]) -> FileReveal {
     if paths.iter().any(Option::is_none) {
         return FileReveal::Hidden;
     }
-    match paths {
-        [Some(path)] => FileReveal::Reveal(path.clone()),
-        [Some(first), rest @ ..] => {
-            let Some(parent) = first
-                .parent()
-                .filter(|parent| !parent.as_os_str().is_empty())
-            else {
-                return FileReveal::Hidden;
-            };
-            if rest
-                .iter()
-                .all(|path| path.as_ref().and_then(|path| path.parent()) == Some(parent))
-            {
-                return FileReveal::OpenFolder(parent.to_path_buf());
-            }
-            FileReveal::Hidden
-        }
-        _ => unreachable!("empty and None paths returned before matching"),
+    let [Some(first), rest @ ..] = paths else {
+        return FileReveal::Hidden;
+    };
+    if rest.is_empty() {
+        return FileReveal::Reveal(first.clone());
     }
+    let Some(parent) = first
+        .parent()
+        .filter(|parent| !parent.as_os_str().is_empty())
+    else {
+        return FileReveal::Hidden;
+    };
+    if rest
+        .iter()
+        .all(|path| path.as_ref().and_then(|path| path.parent()) == Some(parent))
+    {
+        return FileReveal::OpenFolder(parent.to_path_buf());
+    }
+    FileReveal::Hidden
 }
 
 /// The downloaded files of the episodes a render knows about, taken when the

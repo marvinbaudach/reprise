@@ -7,10 +7,22 @@ use std::ops::Range;
 use gtk4::prelude::*;
 use gtk4::{gio, glib};
 
+/// `u32` for a list-store position or count. A bounded store never reaches the
+/// limit, so saturating only decides which wrong answer an impossible overflow
+/// gives. As a position, `u32::MAX` is past the end of every store; as a
+/// removal count it is only the largest request there is, which a store
+/// refuses rather than clamps.
+pub(crate) fn saturating_u32(count: usize) -> u32 {
+    u32::try_from(count).unwrap_or(u32::MAX)
+}
+
+/// Reconciles `store` with `rows`. `row_for_object` reads a published object
+/// back as its row; when it cannot (a foreign object in the store), the delta
+/// has no trustworthy baseline and the store is rebuilt from `rows` instead.
 pub(crate) fn replace<R, K>(
     store: &gio::ListStore,
     rows: Vec<R>,
-    row_for_object: impl Fn(&glib::Object) -> R,
+    row_for_object: impl Fn(&glib::Object) -> Option<R>,
     key_for_row: impl Fn(&R) -> K,
     object_for_row: impl Fn(R) -> glib::Object,
 ) where
@@ -20,12 +32,23 @@ pub(crate) fn replace<R, K>(
     let rows = rows.into_boxed_slice();
     let old_rows = (0..store.n_items())
         .map(|position| {
-            let object = store
+            store
                 .item(position)
-                .expect("a published list-store position has an object");
-            row_for_object(&object)
+                .and_then(|object| row_for_object(&object))
         })
-        .collect::<Vec<_>>();
+        .collect::<Option<Vec<_>>>();
+    let Some(old_rows) = old_rows else {
+        // Rebuild before reporting: a debug build panics inside the report,
+        // and the store must already be right by then.
+        let objects = rows
+            .iter()
+            .cloned()
+            .map(&object_for_row)
+            .collect::<Vec<_>>();
+        store.splice(0, store.n_items(), &objects);
+        invariant_broken!("a published list-store position holds no readable row");
+        return;
+    };
     let old_keys = old_rows.iter().map(&key_for_row).collect::<Vec<_>>();
     let new_keys = rows.iter().map(&key_for_row).collect::<Vec<_>>();
     let anchors = longest_common_subsequence(&old_keys, &new_keys);
@@ -42,8 +65,7 @@ pub(crate) fn replace<R, K>(
             rows.as_ref(),
             &object_for_row,
         );
-        position += u32::try_from(new_anchor - new_cursor)
-            .expect("bounded list-store delta length fits u32");
+        position += saturating_u32(new_anchor - new_cursor);
 
         if old_rows[old_anchor] != rows[new_anchor] {
             store.splice(position, 1, &[object_for_row(rows[new_anchor].clone())]);
@@ -75,7 +97,7 @@ fn splice_gap<R>(
     if old.is_empty() && new.is_empty() {
         return;
     }
-    let removed = u32::try_from(old.len()).expect("bounded list-store delta length fits u32");
+    let removed = saturating_u32(old.len());
     let additions = rows[new]
         .iter()
         .cloned()
@@ -163,12 +185,43 @@ mod tests {
         );
     }
 
-    fn boxed_i32(object: &gtk4::glib::Object) -> i32 {
-        *object
-            .clone()
-            .downcast::<gtk4::glib::BoxedAnyObject>()
-            .expect("test store contains boxed integers")
-            .borrow::<i32>()
+    #[test]
+    fn an_unreadable_row_rebuilds_the_store_from_the_rows() {
+        let store = gtk4::gio::ListStore::new::<gtk4::glib::Object>();
+        store.append(&gtk4::glib::Object::new::<gtk4::glib::Object>());
+        store.append(&boxed_object(9));
+
+        // Debug builds also trip the invariant assertion; release builds only
+        // degrade. Either way the store has to end up equal to `rows`.
+        let outcome = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+            replace(
+                &store,
+                vec![1_i32, 2, 3],
+                |object| {
+                    object
+                        .downcast_ref::<gtk4::glib::BoxedAnyObject>()
+                        .map(|boxed| *boxed.borrow::<i32>())
+                },
+                |value| *value,
+                boxed_object,
+            );
+        }));
+
+        assert_eq!(outcome.is_err(), cfg!(debug_assertions));
+        let contents = (0..store.n_items())
+            .map(|position| boxed_i32(&store.item(position).expect("position is in range")))
+            .collect::<Vec<_>>();
+        assert_eq!(contents, [Some(1), Some(2), Some(3)]);
+    }
+
+    fn boxed_i32(object: &gtk4::glib::Object) -> Option<i32> {
+        Some(
+            *object
+                .clone()
+                .downcast::<gtk4::glib::BoxedAnyObject>()
+                .expect("test store contains boxed integers")
+                .borrow::<i32>(),
+        )
     }
 
     fn boxed_object(value: i32) -> gtk4::glib::Object {

@@ -515,8 +515,7 @@ mod tests {
                 ))
                 .expect("the derived accent text is valid hex");
 
-                for surface in palette.surfaces() {
-                    let plain = parse_hex_rgb(surface).expect("palette surface is valid hex");
+                for plain in palette.surfaces() {
                     // Walk the elevation ladder, not just the bare surface: the
                     // dialog rungs are white over the ground below them, and an
                     // accent tint on a dialog *card* is lighter than the same
@@ -536,7 +535,7 @@ mod tests {
                             assert!(
                                 ratio >= ACCENT_TEXT_MINIMUM_RATIO,
                                 "{theme:?} {appearance}: accent text on the {rung} rung of \
-                                 {surface} under the {name} tint reaches only {ratio:.2}:1"
+                                 {plain:?} under the {name} tint reaches only {ratio:.2}:1"
                             );
                         }
                     }
@@ -563,8 +562,7 @@ mod tests {
                 [("dark", theme.palette()), ("light", theme.light_palette())]
             {
                 let foreground = parse_hex_rgb(palette.fg).expect("palette fg is valid hex");
-                for surface in palette.surfaces() {
-                    let plain = parse_hex_rgb(surface).expect("palette surface is valid hex");
+                for plain in palette.surfaces() {
                     // `color` is set on the same rule, so `currentColor` in the
                     // fill is the already-translucent secondary level.
                     let ground = composite(foreground, plain, SECONDARY_TEXT_ALPHA * fill);
@@ -572,7 +570,7 @@ mod tests {
                     let ratio = contrast_ratio(label, ground);
                     assert!(
                         ratio >= 4.5,
-                        "{theme:?} {appearance}: the disabled primary label on {surface} \
+                        "{theme:?} {appearance}: the disabled primary label on {plain:?} \
                          reaches only {ratio:.2}:1"
                     );
                 }
@@ -625,8 +623,7 @@ mod tests {
                 .expect("token is a fraction");
                 let flat_tint = if is_dark { accent } else { foreground };
 
-                for surface in palette.surfaces() {
-                    let plain = parse_hex_rgb(surface).expect("palette surface is valid hex");
+                for plain in palette.surfaces() {
                     for (what, tint, alpha) in [
                         ("row hover", foreground, ROW_HOVER_ALPHA),
                         ("button hover", foreground, button),
@@ -641,7 +638,7 @@ mod tests {
                             let ratio = contrast_ratio(rendered, hovered);
                             assert!(
                                 ratio >= 4.5,
-                                "{theme:?} {appearance}: {name} text on {surface} under \
+                                "{theme:?} {appearance}: {name} text on {plain:?} under \
                                  {what} reaches only {ratio:.2}:1"
                             );
                         }

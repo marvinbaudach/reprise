@@ -9,10 +9,9 @@ use crate::ui::list_geometry::{
 };
 
 fn minimum_height() -> RowHeight {
-    RowHeight::new(f64::from(
-        crate::ui::style::tokens::SECTION_HEADER_MIN_HEIGHT,
-    ))
-    .expect("the section-header minimum is positive")
+    const MINIMUM: RowHeight =
+        RowHeight::from_authored_pixels(crate::ui::style::tokens::SECTION_HEADER_MIN_HEIGHT);
+    MINIMUM
 }
 
 pub(in crate::ui) fn measurement_from_widget_heights(

@@ -268,15 +268,16 @@ impl RadioView {
                 let Some(shared) = weak.upgrade() else {
                     return;
                 };
-                let Some(object) = shared
+                let Some(row) = shared
                     .model
                     .store()
                     .item(position)
                     .and_downcast::<RadioObject>()
+                    .and_then(|object| object.row())
                 else {
                     return;
                 };
-                activate_station(&shared, &object.row());
+                activate_station(&shared, &row);
             });
         }
         {
@@ -531,7 +532,7 @@ fn try_play_station(shared: &Shared, controller: &Rc<PlayerController>, station:
                 "radio play skipped: no connection, showing retry instead of connecting"
             );
         }
-        connectivity::ActionOutcome::QueuedOffline => unreachable!(
+        connectivity::ActionOutcome::QueuedOffline => invariant_broken!(
             "live_stream_action_outcome never returns QueuedOffline — a live stream cannot be deferred"
         ),
     }

@@ -175,10 +175,11 @@ impl MinimalView {
             overlay.set_child(Some(compact.handle()));
             overlay
         });
-        let compact_window = compact_root.as_ref().map(|compact_root| {
-            let app = window
-                .application()
-                .expect("the Library window belongs to the application");
+        let compact_window = compact_root.as_ref().and_then(|compact_root| {
+            let Some(app) = window.application() else {
+                invariant_broken!("the Library window belongs to the application");
+                return None;
+            };
             let compact_window = adw::ApplicationWindow::builder()
                 .application(&app)
                 .title(strings::text(strings::APP_NAME))
@@ -222,7 +223,7 @@ impl MinimalView {
                 }
                 gtk4::glib::Propagation::Proceed
             });
-            compact_window
+            Some(compact_window)
         });
         Rc::new(Self {
             library_window: window.clone(),

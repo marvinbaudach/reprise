@@ -95,7 +95,10 @@ impl super::ReviewState {
                         crate::ui::strings::doctor_category_no_match_title(category),
                         crate::ui::strings::doctor_category_no_match_description(hidden, category),
                     ),
-                    (true, None) => unreachable!("the no-match page requires an active filter"),
+                    (true, None) => {
+                        invariant_broken!("the no-match page requires an active filter");
+                        (String::new(), String::new())
+                    }
                 };
                 page.set_title(&title);
                 page.set_description(Some(&description));

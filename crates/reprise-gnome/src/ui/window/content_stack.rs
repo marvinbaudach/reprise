@@ -65,27 +65,30 @@ impl<T: 'static> DeferredPage<T> {
         page
     }
 
-    pub(in crate::ui) fn materialize(&self) -> Rc<T> {
+    /// The page's value, building it first when nobody has asked yet.
+    ///
+    /// `None` only when the factory itself asks for the page it is building,
+    /// which no correct factory does.
+    pub(in crate::ui) fn materialize(&self) -> Option<Rc<T>> {
         if let Some(value) = self.inner.value.get() {
-            return value.clone();
+            return Some(value.clone());
         }
-        let factory = self
-            .inner
-            .factory
-            .borrow_mut()
-            .take()
-            .expect("deferred page factory missing before materialization");
+        let factory = self.inner.factory.borrow_mut().take();
+        let Some(factory) = factory else {
+            invariant_broken!("deferred page factory missing before materialization");
+            return None;
+        };
         let (value, widget) = factory();
-        self.inner
-            .value
-            .set(value.clone())
-            .unwrap_or_else(|_| panic!("deferred page materialized more than once"));
+        if self.inner.value.set(value.clone()).is_err() {
+            invariant_broken!("deferred page materialized more than once");
+            return self.inner.value.get().cloned();
+        }
         let wiring = std::mem::take(&mut *self.inner.wiring.borrow_mut());
         for wire in wiring {
             wire(&value);
         }
         adw::prelude::BinExt::set_child(&self.inner.holder, Some(&widget));
-        value
+        Some(value)
     }
 
     pub(in crate::ui) fn on_materialized(&self, wire: impl FnOnce(&Rc<T>) + 'static) {

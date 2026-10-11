@@ -349,16 +349,12 @@ impl PreferencesContext {
         }
 
         let smoke = std::env::var(SMOKE_ENV).ok();
-        let smoke_page = match smoke.as_deref() {
-            Some("columns") => Some("layout"),
-            Some(page) if super::preferences_window::page_index_by_name(page).is_some() => {
-                Some(page)
-            }
-            _ => None,
-        };
-        if let Some(page) = smoke_page {
-            let index = super::preferences_window::page_index_by_name(page)
-                .expect("smoke page was normalized to a known page");
+        // An unknown smoke page leaves the dialog on its first page.
+        let smoke_page_index = smoke.as_deref().and_then(|page| {
+            let page = if page == "columns" { "layout" } else { page };
+            super::preferences_window::page_index_by_name(page)
+        });
+        if let Some(index) = smoke_page_index {
             shell
                 .sidebar
                 .select_row(shell.sidebar.row_at_index(index).as_ref());

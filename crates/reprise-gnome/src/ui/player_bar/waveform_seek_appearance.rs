@@ -4,7 +4,7 @@
 //! roles and replaces the fallback renderer's white coming bars with the
 //! current appearance foreground.
 
-use crate::ui::style::color_math::{ensure_contrast_by_lightness, parse_hex_rgb};
+use crate::ui::style::color_math::ensure_contrast_by_lightness;
 use crate::ui::style::theme::Theme;
 
 const SPECTRAL_MINIMUM_CONTRAST: f64 = 3.0;
@@ -61,6 +61,7 @@ impl WaveformAppearance {
                 spectral_background: None,
             }
         } else {
+            let light = theme.light_palette();
             Self {
                 unplayed_alpha: LIGHT_UNPLAYED_ALPHA,
                 hover_preview_alpha: LIGHT_HOVER_PREVIEW_ALPHA,
@@ -68,8 +69,8 @@ impl WaveformAppearance {
                 section_mark_alpha: LIGHT_SECTION_MARK_ALPHA,
                 ghost_alpha: LIGHT_GHOST_ALPHA,
                 playhead_alpha: LIGHT_PLAYHEAD_ALPHA,
-                fallback_unplayed: rgb_fraction(theme.light_palette().fg),
-                spectral_background: parse_hex_rgb(theme.light_palette().view_bg),
+                fallback_unplayed: rgb_fraction(light.fg_rgb()),
+                spectral_background: Some(light.view_bg_rgb()),
             }
         }
     }
@@ -98,8 +99,7 @@ impl WaveformAppearance {
     }
 }
 
-fn rgb_fraction(hex: &str) -> (f64, f64, f64) {
-    let rgb = parse_hex_rgb(hex).expect("theme foreground must be valid #RRGGBB");
+fn rgb_fraction(rgb: [u8; 3]) -> (f64, f64, f64) {
     (
         f64::from(rgb[0]) / 255.0,
         f64::from(rgb[1]) / 255.0,

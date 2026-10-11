@@ -138,7 +138,7 @@ mod tests {
 
     #[test]
     fn private_symbolics_are_embedded_at_icon_theme_paths() {
-        crate::register_app_resources();
+        crate::register_app_resources().expect("the compiled resources register");
         for name in [
             super::LYRICS,
             super::VISUAL_BARS,
@@ -168,7 +168,7 @@ mod tests {
     #[test]
     #[ignore = "requires a display; run via xvfb-run"]
     fn every_icon_name_the_app_asks_for_can_be_drawn() {
-        crate::register_app_resources();
+        crate::register_app_resources().expect("the compiled resources register");
         if gtk4::init().is_err() {
             return;
         }
@@ -197,7 +197,7 @@ mod tests {
     #[test]
     #[ignore = "requires a display; run via xvfb-run"]
     fn every_guarded_name_falls_back_to_one_that_exists() {
-        crate::register_app_resources();
+        crate::register_app_resources().expect("the compiled resources register");
         if gtk4::init().is_err() {
             return;
         }

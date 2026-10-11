@@ -87,16 +87,93 @@ pub(in crate::ui::style) fn oklab_to_linear_rgb(
 
 /// Parses a `#RRGGBB` string. Palette and accent values are authored as hex,
 /// so every consumer of those needs this.
-pub(in crate::ui) fn parse_hex_rgb(hex: &str) -> Option<[u8; 3]> {
-    let hex = hex.strip_prefix('#')?;
-    if hex.len() != 6 {
+///
+/// A `const fn` so that a literal known at compile time is decoded at compile
+/// time too (see [`rgb_literal`]).
+pub(in crate::ui) const fn parse_hex_rgb(hex: &str) -> Option<[u8; 3]> {
+    const fn digit(byte: u8) -> Option<u8> {
+        match byte {
+            b'0'..=b'9' => Some(byte - b'0'),
+            b'a'..=b'f' => Some(byte - b'a' + 10),
+            b'A'..=b'F' => Some(byte - b'A' + 10),
+            _ => None,
+        }
+    }
+    const fn pair(high: u8, low: u8) -> Option<u8> {
+        match (digit(high), digit(low)) {
+            (Some(high), Some(low)) => Some(high * 16 + low),
+            _ => None,
+        }
+    }
+
+    let bytes = hex.as_bytes();
+    if bytes.len() != 7 || bytes[0] != b'#' {
         return None;
     }
-    Some([
-        u8::from_str_radix(&hex[0..2], 16).ok()?,
-        u8::from_str_radix(&hex[2..4], 16).ok()?,
-        u8::from_str_radix(&hex[4..6], 16).ok()?,
-    ])
+    match (
+        pair(bytes[1], bytes[2]),
+        pair(bytes[3], bytes[4]),
+        pair(bytes[5], bytes[6]),
+    ) {
+        (Some(red), Some(green), Some(blue)) => Some([red, green, blue]),
+        _ => None,
+    }
+}
+
+/// Decodes a `#RRGGBB` literal that is known at compile time.
+///
+/// For `const` items only. The `assert!` is the compile-time check: evaluated
+/// in a `const` item, a malformed literal fails the build, so no runtime path
+/// has to cope with one. Called at runtime it would panic on the same input,
+/// so runtime text goes through [`parse_hex_rgb`] and its `Option` instead.
+pub(in crate::ui) const fn rgb_literal(hex: &str) -> [u8; 3] {
+    assert!(
+        parse_hex_rgb(hex).is_some(),
+        "a compile-time colour must be a #RRGGBB literal"
+    );
+    match parse_hex_rgb(hex) {
+        Some(rgb) => rgb,
+        None => [0; 3],
+    }
+}
+
+/// Decodes a plain decimal fraction such as `"0.26"` that is known at compile
+/// time.
+///
+/// For `const` items only, like [`rgb_literal`]: the `assert!`s turn a token
+/// that is not digits with at most one `.` into a build failure.
+pub(in crate::ui) const fn decimal_fraction(token: &str) -> f64 {
+    let bytes = token.as_bytes();
+    assert!(!bytes.is_empty(), "a fraction token must not be empty");
+    let mut mantissa: u64 = 0;
+    let mut scale: u64 = 1;
+    let mut seen_point = false;
+    let mut index = 0;
+    while index < bytes.len() {
+        let byte = bytes[index];
+        if byte == b'.' {
+            assert!(!seen_point, "a fraction token has at most one point");
+            seen_point = true;
+        } else {
+            assert!(byte.is_ascii_digit(), "a fraction token is decimal digits");
+            mantissa = mantissa * 10 + (byte - b'0') as u64;
+            if seen_point {
+                scale *= 10;
+            }
+        }
+        index += 1;
+    }
+    mantissa as f64 / scale as f64
+}
+
+/// An opaque [`gdk::RGBA`](gtk4::gdk::RGBA) from 8-bit channels.
+pub(in crate::ui) fn rgba_from_rgb(rgb: [u8; 3]) -> gtk4::gdk::RGBA {
+    gtk4::gdk::RGBA::new(
+        f32::from(rgb[0]) / 255.0,
+        f32::from(rgb[1]) / 255.0,
+        f32::from(rgb[2]) / 255.0,
+        1.0,
+    )
 }
 
 /// Flattens `foreground` at `alpha` over an opaque `background`, the way GTK
@@ -258,6 +335,14 @@ mod tests {
         for malformed in ["4FDBD4", "#4FD", "#4FDBD", "#4FDBD44", "#GGGGGG", ""] {
             assert_eq!(parse_hex_rgb(malformed), None, "accepted {malformed:?}");
         }
+    }
+
+    #[test]
+    fn a_decimal_fraction_token_decodes_to_the_nearest_double() {
+        const CEILING: f64 = decimal_fraction("0.26");
+        assert_eq!(CEILING, "0.26".parse::<f64>().unwrap_or(f64::NAN));
+        assert_eq!(decimal_fraction("1"), 1.0);
+        assert_eq!(decimal_fraction("0.04"), 0.04);
     }
 
     #[test]

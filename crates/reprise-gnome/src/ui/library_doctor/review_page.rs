@@ -33,6 +33,7 @@ use super::review_snapshot::{review_ready_count, splice_selection_rows, ReviewSn
 use super::review_summary::review_footer_summary;
 #[cfg(test)]
 use super::review_summary::review_header_counts;
+use crate::ui::list_store_delta::saturating_u32;
 use crate::ui::strings;
 
 type OnEdit = Rc<dyn Fn(&[i64])>;
@@ -110,11 +111,8 @@ impl ReviewState {
         let old_row_count = self.snapshot.borrow().rows.len();
         *self.snapshot.borrow_mut() = snapshot;
         let splice_started = Instant::now();
-        self.store.splice(
-            0,
-            u32::try_from(old_row_count).expect("review row count fits u32"),
-            &objects,
-        );
+        self.store
+            .splice(0, saturating_u32(old_row_count), &objects);
         tracing::debug!(
             stage = "store.splice",
             elapsed_us = splice_started.elapsed().as_micros(),
@@ -345,8 +343,7 @@ impl ReviewState {
                 .collect::<Vec<_>>()
         };
         let fingerprint = ReviewConflictsSlot::fingerprint(&groups);
-        let row_count =
-            u32::try_from(self.snapshot.borrow().rows.len()).expect("review row count fits u32");
+        let row_count = saturating_u32(self.snapshot.borrow().rows.len());
         let panel_present = self.store.n_items() == row_count + 1
             && self
                 .store
