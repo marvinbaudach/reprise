@@ -195,11 +195,10 @@ impl StatsBandCard {
         *self.current_artist.borrow_mut() = leader.label.clone();
         *self.current_key.borrow_mut() = leader.key.clone();
         *self.current_candidates.borrow_mut() = ranked.cover_candidates.clone();
-        self.name_button
-            .child()
-            .and_downcast::<gtk4::Label>()
-            .expect("band name button owns a label")
-            .set_label(&leader.label);
+        match self.name_button.child().and_downcast::<gtk4::Label>() {
+            Some(label) => label.set_label(&leader.label),
+            None => invariant_broken!("band name button owns a label"),
+        }
         self.fallback.set_label(&initials(&leader.label));
         self.fallback.set_visible(true);
         self.picture.set_visible(false);

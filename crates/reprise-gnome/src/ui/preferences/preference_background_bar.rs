@@ -289,10 +289,13 @@ impl BackgroundBar {
     /// Publishes one owner's state. Each owner writes only its own slot, so two
     /// jobs can never take each other's place.
     pub(in crate::ui) fn publish(&self, owner: JobOwner, job: Option<JobRowState>) {
-        let index = JobOwner::ORDER
+        let Some(index) = JobOwner::ORDER
             .iter()
             .position(|candidate| *candidate == owner)
-            .expect("every job owner is listed in the row order");
+        else {
+            invariant_broken!("every job owner is listed in the row order");
+            return;
+        };
         {
             let mut jobs = self.inner.jobs.borrow_mut();
             if jobs[index] == job {

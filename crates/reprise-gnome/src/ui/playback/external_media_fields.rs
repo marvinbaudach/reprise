@@ -2,9 +2,11 @@
 
 use super::external_media_state::{EpisodeSource, ExternalMedia};
 
+/// The podcast half of `media`, or `None` for radio media, which a podcast
+/// caller never passes.
 pub(super) fn podcast_fields(
     media: &ExternalMedia,
-) -> (String, String, EpisodeSource, i64, Option<i64>) {
+) -> Option<(String, String, EpisodeSource, i64, Option<i64>)> {
     let ExternalMedia::Podcast {
         title,
         show,
@@ -14,15 +16,16 @@ pub(super) fn podcast_fields(
         ..
     } = media
     else {
-        unreachable!("podcast fields requested from radio media")
+        invariant_broken!("podcast fields requested from radio media");
+        return None;
     };
-    (
+    Some((
         title.clone(),
         show.clone(),
         source.clone(),
         *resume_ms,
         *duration_ms,
-    )
+    ))
 }
 
 pub(super) fn session_id(media: &ExternalMedia) -> i64 {
@@ -32,7 +35,9 @@ pub(super) fn session_id(media: &ExternalMedia) -> i64 {
     }
 }
 
-pub(super) fn radio_fields(media: &ExternalMedia) -> (String, String, Option<String>) {
+/// The radio half of `media`, or `None` for podcast media, which a radio
+/// caller never passes.
+pub(super) fn radio_fields(media: &ExternalMedia) -> Option<(String, String, Option<String>)> {
     let ExternalMedia::Radio {
         name,
         stream_url,
@@ -40,7 +45,8 @@ pub(super) fn radio_fields(media: &ExternalMedia) -> (String, String, Option<Str
         ..
     } = media
     else {
-        unreachable!("radio fields requested from podcast media")
+        invariant_broken!("radio fields requested from podcast media");
+        return None;
     };
-    (name.clone(), stream_url.clone(), uuid.clone())
+    Some((name.clone(), stream_url.clone(), uuid.clone()))
 }

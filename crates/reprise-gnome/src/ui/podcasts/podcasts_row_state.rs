@@ -29,17 +29,15 @@ pub(super) fn update_network_state(
         } else {
             0.55
         });
-    if presentation == EpisodeNetworkPresentation::Normal {
-        return;
-    }
+    let message = match presentation {
+        EpisodeNetworkPresentation::Normal => return,
+        EpisodeNetworkPresentation::NeedsNetwork => strings::PODCAST_NEEDS_NETWORK,
+        EpisodeNetworkPresentation::UnavailableNow => strings::PODCAST_UNAVAILABLE_NOW,
+    };
     while let Some(child) = widgets.status.first_child() {
         widgets.status.remove(&child);
     }
-    let label = gtk4::Label::new(Some(&strings::text(match presentation {
-        EpisodeNetworkPresentation::NeedsNetwork => strings::PODCAST_NEEDS_NETWORK,
-        EpisodeNetworkPresentation::UnavailableNow => strings::PODCAST_UNAVAILABLE_NOW,
-        EpisodeNetworkPresentation::Normal => unreachable!(),
-    })));
+    let label = gtk4::Label::new(Some(&strings::text(message)));
     label.add_css_class("caption");
     label.add_css_class("dim-label");
     widgets.status.append(&label);
@@ -72,9 +70,6 @@ pub(super) fn download_status(state: &DownloadState) -> gtk4::Widget {
     let root = gtk4::Box::new(gtk4::Orientation::Vertical, 3);
     root.set_size_request(crate::ui::source_row::SIZE_SLOT_WIDTH, -1);
     root.add_css_class("reprise-source-row-size");
-    if matches!(state, DownloadState::NotDownloaded) {
-        return root.upcast();
-    }
     let failure = download_failure_presentation(state);
     let localized_tooltip = failure
         .as_ref()
@@ -91,7 +86,7 @@ pub(super) fn download_status(state: &DownloadState) -> gtk4::Widget {
     label.add_css_class("caption");
     label.add_css_class("dim-label");
     match state {
-        DownloadState::NotDownloaded => unreachable!(),
+        DownloadState::NotDownloaded => return root.upcast(),
         DownloadState::Queued => label.set_text(&strings::text(strings::PODCAST_DOWNLOAD_QUEUED)),
         DownloadState::Downloading {
             received_bytes,

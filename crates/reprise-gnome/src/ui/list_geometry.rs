@@ -15,68 +15,11 @@ pub(in crate::ui) use crate::ui::list_geometry_content::{
     content_height, rows_content_height, sectioned_content_height, ContentHeight,
 };
 use crate::ui::list_geometry_layout::ListLayout;
+pub(in crate::ui) use crate::ui::list_geometry_row_height::{
+    RowHeight, RowHeightSource, TrustedRowHeight,
+};
 
 pub(in crate::ui) const ROW_HEIGHT_AGREEMENT_EPSILON: f64 = 0.5;
-
-#[derive(Clone, Copy, Debug, PartialEq)]
-pub(in crate::ui) struct RowHeight(f64);
-
-impl RowHeight {
-    pub(in crate::ui) fn new(value: f64) -> Option<Self> {
-        (value.is_finite() && value > 0.0).then_some(Self(value))
-    }
-
-    pub(in crate::ui) fn pixels(self) -> f64 {
-        self.0
-    }
-}
-
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub(in crate::ui) enum RowHeightSource {
-    Assumed,
-    Measured,
-}
-
-#[derive(Clone, Copy, Debug, PartialEq)]
-pub(in crate::ui) struct TrustedRowHeight {
-    pub(in crate::ui) height: RowHeight,
-    pub(in crate::ui) source: RowHeightSource,
-}
-
-impl TrustedRowHeight {
-    pub(in crate::ui) fn assumed(height: RowHeight) -> Self {
-        Self {
-            height,
-            source: RowHeightSource::Assumed,
-        }
-    }
-
-    pub(in crate::ui) fn measured(height: RowHeight) -> Self {
-        Self {
-            height,
-            source: RowHeightSource::Measured,
-        }
-    }
-
-    pub(in crate::ui) fn from_cache(value: f64) -> Option<Self> {
-        if value == 0.0 {
-            return None;
-        }
-        let source = if value.is_sign_negative() {
-            RowHeightSource::Assumed
-        } else {
-            RowHeightSource::Measured
-        };
-        RowHeight::new(value.abs()).map(|height| Self { height, source })
-    }
-
-    pub(in crate::ui) fn cache_value(self) -> f64 {
-        match self.source {
-            RowHeightSource::Assumed => -self.height.pixels(),
-            RowHeightSource::Measured => self.height.pixels(),
-        }
-    }
-}
 
 pub(in crate::ui) fn remember_preferred_height(cache: &Cell<f64>, candidate: TrustedRowHeight) {
     let existing = TrustedRowHeight::from_cache(cache.get());
@@ -453,8 +396,9 @@ impl ListGeometry {
     }
 
     fn minimum_row_height(&self) -> RowHeight {
-        RowHeight::new(f64::from(crate::ui::style::tokens::ROW_MIN_HEIGHT))
-            .expect("the authored row minimum is positive")
+        const MINIMUM: RowHeight =
+            RowHeight::from_authored_pixels(crate::ui::style::tokens::ROW_MIN_HEIGHT);
+        MINIMUM
     }
 
     pub(in crate::ui) fn row_height(
@@ -492,14 +436,11 @@ impl ListGeometry {
             remembered_row_height,
             section_header_height,
         );
-        if section_starts.is_empty() {
-            ListLayout::rows_only(row_height)
-        } else {
-            ListLayout::sectioned(
-                row_height,
-                section_header_height.expect("sectioned layout has a header height"),
-                section_starts,
-            )
+        match section_header_height {
+            Some(section_header_height) if !section_starts.is_empty() => {
+                ListLayout::sectioned(row_height, section_header_height, section_starts)
+            }
+            _ => ListLayout::rows_only(row_height),
         }
     }
 

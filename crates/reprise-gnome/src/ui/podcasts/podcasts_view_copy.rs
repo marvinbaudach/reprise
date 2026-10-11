@@ -88,7 +88,8 @@ pub(super) fn status_copy(state: PodcastsEmptyState) -> (String, String, String)
         | PodcastsEmptyState::Empty
         | PodcastsEmptyState::ModuleOff
         | PodcastsEmptyState::FetchFailed => {
-            unreachable!("status_copy is only called for the three status-page states")
+            invariant_broken!("status_copy is only called for the three status-page states");
+            (String::new(), String::new(), String::new())
         }
     }
 }

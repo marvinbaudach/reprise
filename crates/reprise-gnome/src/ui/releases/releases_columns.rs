@@ -49,10 +49,14 @@ fn text_column(
         let Some(label) = cell_surface::child::<gtk4::Label>(item) else {
             return;
         };
-        let Some(object) = item.item().and_downcast::<ReleaseObject>() else {
+        let Some(entry) = item
+            .item()
+            .and_downcast::<ReleaseObject>()
+            .and_then(|object| object.entry())
+        else {
             return;
         };
-        let text = render(&object.entry());
+        let text = render(&entry);
         if let Some(query) = query.as_ref() {
             crate::ui::search_highlight::apply(&label, &text, &query());
         } else {
@@ -101,10 +105,13 @@ fn status_column(view: &gtk4::ColumnView, on_wire_cell: &OnWireCell) {
         let Some(label) = cell_surface::child::<gtk4::Label>(item) else {
             return;
         };
-        let Some(object) = item.item().and_downcast::<ReleaseObject>() else {
+        let Some(entry) = item
+            .item()
+            .and_downcast::<ReleaseObject>()
+            .and_then(|object| object.entry())
+        else {
             return;
         };
-        let entry = object.entry();
         for class in [
             "reprise-release-pill-owned",
             "reprise-release-pill-upcoming",
@@ -160,10 +167,14 @@ fn link_column(view: &gtk4::ColumnView, on_open: &OnOpenTarget, on_wire_cell: &O
             let Some(item) = item_weak.upgrade() else {
                 return;
             };
-            let Some(object) = item.item().and_downcast::<ReleaseObject>() else {
+            let Some(entry) = item
+                .item()
+                .and_downcast::<ReleaseObject>()
+                .and_then(|object| object.entry())
+            else {
                 return;
             };
-            if let Some(link) = release_link(&object.entry()) {
+            if let Some(link) = release_link(&entry) {
                 on_open(link.target().to_owned());
             }
         });
@@ -182,10 +193,13 @@ fn link_column(view: &gtk4::ColumnView, on_open: &OnOpenTarget, on_wire_cell: &O
         let Some(button) = cell.first_child().and_downcast::<gtk4::Button>() else {
             return;
         };
-        let Some(object) = item.item().and_downcast::<ReleaseObject>() else {
+        let Some(entry) = item
+            .item()
+            .and_downcast::<ReleaseObject>()
+            .and_then(|object| object.entry())
+        else {
             return;
         };
-        let entry = object.entry();
         if let Some(link) = release_link(&entry) {
             let label = link.label();
             button.set_label(&label);

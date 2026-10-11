@@ -7,6 +7,7 @@ use reprise_core::library_doctor::{DoctorReviewRowId, DoctorReviewRowState, Doct
 use reprise_view::search_scope::matches_any;
 
 use super::review_model::ReviewRowModel;
+use crate::ui::list_store_delta::saturating_u32;
 
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub(super) struct AlbumCounts {
@@ -39,7 +40,7 @@ impl ReviewSnapshot {
     pub(super) fn from_rows(rows: Vec<ReviewRowModel>, query: &str) -> Self {
         let mut index = HashMap::new();
         for (position, row) in rows.iter().enumerate() {
-            let position = u32::try_from(position).expect("review row count fits u32");
+            let position = saturating_u32(position);
             for row_id in &row.row_ids {
                 if let Some(first_position) = index.get(row_id).copied() {
                     tracing::error!(
@@ -145,12 +146,15 @@ impl ReviewSnapshot {
                 let mut changed = cached.clone();
                 changed.selected_change_count = selected_change_count;
                 changed.row.selected = selected;
-                let position = cached
+                let Some(position) = cached
                     .row_ids
                     .first()
                     .and_then(|row_id| self.index.get(row_id))
                     .copied()
-                    .expect("every cached review row has an indexed row id");
+                else {
+                    invariant_broken!("every cached review row has an indexed row id");
+                    return None;
+                };
                 Some((position, changed))
             })
             .collect()
@@ -158,35 +162,40 @@ impl ReviewSnapshot {
 
     pub(super) fn with_selection(mut self, changed: &[(u32, ReviewRowModel)]) -> Self {
         for (position, replacement) in changed {
-            let position = usize::try_from(*position).expect("review row position fits usize");
-            let cached = self
-                .rows
-                .get(position)
-                .expect("selection diff points inside the cached review rows");
+            // A position that does not fit `usize` is past the end of the rows.
+            let position = usize::try_from(*position).unwrap_or(usize::MAX);
+            let Some(cached) = self.rows.get(position) else {
+                invariant_broken!("selection diff points inside the cached review rows");
+                continue;
+            };
             debug_assert_eq!(cached.album_key, replacement.album_key);
             if !self.visible[position] {
                 self.rows[position] = replacement.clone();
                 continue;
             }
-            let album = self
-                .albums
-                .get_mut(&cached.album_key)
-                .expect("every cached review row belongs to a cached album");
-            album.selected = album
-                .selected
-                .checked_sub(cached.selected_change_count)
-                .expect("cached album selection includes its row")
+            let Some(album) = self.albums.get_mut(&cached.album_key) else {
+                invariant_broken!("every cached review row belongs to a cached album");
+                self.rows[position] = replacement.clone();
+                continue;
+            };
+            album.selected = without_row(album.selected, cached.selected_change_count, "album")
                 + replacement.selected_change_count;
-            self.totals.selected = self
-                .totals
-                .selected
-                .checked_sub(cached.selected_change_count)
-                .expect("cached page selection includes its row")
-                + replacement.selected_change_count;
+            self.totals.selected =
+                without_row(self.totals.selected, cached.selected_change_count, "page")
+                    + replacement.selected_change_count;
             self.rows[position] = replacement.clone();
         }
         self
     }
+}
+
+/// `total` without a row's `part`. A part larger than its total means the
+/// cached counts have drifted from the rows; report it and count nothing.
+fn without_row(total: usize, part: usize, owner: &str) -> usize {
+    total.checked_sub(part).unwrap_or_else(|| {
+        invariant_broken!("cached {owner} selection includes its row");
+        0
+    })
 }
 
 pub(super) fn splice_selection_rows(
@@ -196,14 +205,14 @@ pub(super) fn splice_selection_rows(
 ) {
     debug_assert_store_layout(store, row_count);
     debug_assert!(changed.windows(2).all(|pair| pair[0].0 < pair[1].0));
-    let row_count = u32::try_from(row_count).expect("review row count fits u32");
+    let row_count = saturating_u32(row_count);
     let mut run_start = 0;
     while run_start < changed.len() {
         let first_position = changed[run_start].0;
         let mut run_end = run_start + 1;
         while run_end < changed.len()
             && changed[run_end].0
-                == first_position + u32::try_from(run_end - run_start).expect("run length fits u32")
+                == first_position.saturating_add(saturating_u32(run_end - run_start))
         {
             run_end += 1;
         }
@@ -214,11 +223,7 @@ pub(super) fn splice_selection_rows(
             .iter()
             .map(|(_, row)| glib::BoxedAnyObject::new(row.clone()).upcast::<glib::Object>())
             .collect::<Vec<_>>();
-        store.splice(
-            first_position,
-            u32::try_from(objects.len()).expect("selection splice length fits u32"),
-            &objects,
-        );
+        store.splice(first_position, saturating_u32(objects.len()), &objects);
         run_start = run_end;
     }
 }
@@ -232,7 +237,7 @@ pub(super) fn review_ready_count(session: &DoctorReviewSession) -> usize {
 }
 
 fn debug_assert_store_layout(store: &gio::ListStore, row_count: usize) {
-    let row_count = u32::try_from(row_count).expect("review row count fits u32");
+    let row_count = saturating_u32(row_count);
     debug_assert!(matches!(
         store.n_items().checked_sub(row_count),
         Some(0 | 1)

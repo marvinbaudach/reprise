@@ -27,7 +27,7 @@ fn npp_14_built_in_tabs_have_distinct_semantic_icons() {
 #[ignore = "requires a display; run via xvfb-run"]
 fn npp_14_tabs_are_always_icon_only_with_installed_labeled_symbols() {
     let _main_context = crate::ui::test_main_context::lock_main_context();
-    crate::register_app_resources();
+    crate::register_app_resources().expect("the compiled resources register");
     gtk4::init().unwrap();
     crate::install_app_icon_resource_path();
     let content = gtk4::Box::new(gtk4::Orientation::Vertical, 0);

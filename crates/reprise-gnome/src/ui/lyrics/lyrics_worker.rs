@@ -44,16 +44,33 @@ impl LyricsRuntime {
 
     fn from_lookup(lookup: Lookup) -> Rc<Self> {
         let (sender, receiver) = async_channel::unbounded::<LyricsRequest>();
-        std::thread::Builder::new()
+        // A thread that cannot start drops the receiver with its closure, so
+        // every later `request` finds the channel closed and answers with the
+        // "temporarily unavailable" error instead of waiting for a worker.
+        if let Err(error) = std::thread::Builder::new()
             .name("reprise-lyrics".into())
             .spawn(move || run(&receiver, &lookup))
-            .expect("lyrics worker thread should start");
+        {
+            tracing::error!(%error, "lyrics worker thread failed to start");
+        }
         Rc::new(Self { sender })
     }
 
     pub(in crate::ui) fn request(&self, request: LyricsRequest) {
         if let Err(error) = self.sender.try_send(request) {
             tracing::warn!(%error, "lyrics request dropped: worker is gone");
+            let request = error.into_inner();
+            let unavailable = LyricsResponse {
+                generation: request.generation,
+                options: request.options,
+                result: Err(LyricsError::Temporary),
+            };
+            if request.response.try_send(unavailable).is_err() {
+                tracing::debug!(
+                    generation = request.generation,
+                    "lyrics unavailable answer dropped: requester is gone"
+                );
+            }
         }
     }
 }

@@ -1,6 +1,7 @@
 //! Fixed identity for music in the device-sync storage bar.
 
-use super::accent::APP_ACCENT;
+use super::accent::{APP_ACCENT, APP_ACCENT_RGB};
+use super::color_math::{rgb_literal, rgba_from_rgb};
 
 /// Music's dark-surface tone is the fixed Reprise teal. Its lowest contrast
 /// against the three dark card surfaces is 8.23:1.
@@ -8,6 +9,7 @@ const MUSIC_DARK: &str = APP_ACCENT;
 /// The brand teal itself is only 1.69:1 against the light card surface, so its
 /// fixed light-mode counterpart is darkened to 5.02:1.
 const MUSIC_LIGHT: &str = "#147C78";
+const MUSIC_LIGHT_RGB: [u8; 3] = rgb_literal(MUSIC_LIGHT);
 
 /// Returns music's fixed identity tone for the current appearance.
 ///
@@ -19,6 +21,16 @@ pub(in crate::ui) fn music_color(is_dark: bool) -> &'static str {
     } else {
         MUSIC_LIGHT
     }
+}
+
+/// [`music_color`] as a drawable colour, built from channels decoded at
+/// compile time.
+pub(in crate::ui) fn music_rgba(is_dark: bool) -> gtk4::gdk::RGBA {
+    rgba_from_rgb(if is_dark {
+        APP_ACCENT_RGB
+    } else {
+        MUSIC_LIGHT_RGB
+    })
 }
 
 pub(in crate::ui) const fn music_css_class() -> &'static str {

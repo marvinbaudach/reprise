@@ -70,7 +70,8 @@ impl PlayerController {
                         ..
                     } = &session.media
                     else {
-                        unreachable!("podcast session contains radio media")
+                        invariant_broken!("podcast session contains radio media");
+                        return;
                     };
                     ExternalMprisProjection {
                         external_ref: format!("podcast/{episode_id}"),
@@ -95,7 +96,8 @@ impl PlayerController {
                         station_id, name, ..
                     } = &session.media
                     else {
-                        unreachable!("radio session contains podcast media")
+                        invariant_broken!("radio session contains podcast media");
+                        return;
                     };
                     ExternalMprisProjection {
                         external_ref: format!("radio/{station_id}"),

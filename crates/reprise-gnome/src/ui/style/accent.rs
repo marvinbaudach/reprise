@@ -8,6 +8,10 @@ use std::cell::Cell;
 /// startup, long before anything may touch the filesystem.
 pub(in crate::ui) const APP_ACCENT: &str = env!("REPRISE_APP_ACCENT");
 
+/// [`APP_ACCENT`] as channels, decoded at compile time so that a malformed
+/// brand palette fails the build instead of a runtime reader.
+pub(in crate::ui) const APP_ACCENT_RGB: [u8; 3] = super::color_math::rgb_literal(APP_ACCENT);
+
 /// Dark foreground for text and glyphs on [`APP_ACCENT`]. Its 11.16:1 WCAG
 /// contrast ratio is comfortably above the 4.5:1 AA requirement for text.
 const APP_ACCENT_FG: &str = "#04140f";
@@ -55,8 +59,7 @@ pub(in crate::ui) fn current() -> AccentSource {
 /// The effective color for every Rust-side accent reader.
 pub(in crate::ui) fn accent_rgba() -> gtk4::gdk::RGBA {
     match current() {
-        AccentSource::App => gtk4::gdk::RGBA::parse(APP_ACCENT)
-            .expect("the compile-time Reprise accent must be valid #RRGGBB"),
+        AccentSource::App => super::color_math::rgba_from_rgb(APP_ACCENT_RGB),
         AccentSource::System => libadwaita::StyleManager::default().accent_color_rgba(),
     }
 }
@@ -132,12 +135,8 @@ fn rgb_hex(color: [u8; 3]) -> String {
 /// The accent actually in force, as RGB. Both the theme's tinted surfaces and
 /// the derived text colour need it, and they must agree on one value.
 pub(in crate::ui::style) fn effective_accent_rgb(source: AccentSource) -> [u8; 3] {
-    use super::color_math::parse_hex_rgb;
-
     match source {
-        AccentSource::App => {
-            parse_hex_rgb(APP_ACCENT).expect("the compile-time Reprise accent is valid #RRGGBB")
-        }
+        AccentSource::App => APP_ACCENT_RGB,
         AccentSource::System if gtk4::is_initialized_main_thread() => {
             let rgba = libadwaita::StyleManager::default().accent_color_rgba();
             [
@@ -149,9 +148,7 @@ pub(in crate::ui::style) fn effective_accent_rgb(source: AccentSource) -> [u8; 3
         // `theme_css` is also a headless pure-test seam. Installed theme CSS
         // is only built after GTK initialization, where the branch above reads
         // the actual system RGBA and tracks later change notifications.
-        AccentSource::System => {
-            parse_hex_rgb(APP_ACCENT).expect("the compile-time Reprise accent is valid #RRGGBB")
-        }
+        AccentSource::System => APP_ACCENT_RGB,
     }
 }
 

@@ -1,6 +1,9 @@
 use super::*;
 
-pub(super) fn wire_section_search(w: &RuntimeWiring<'_>, scratch: &WiringScratch) {
+pub(super) fn wire_section_search(
+    w: &RuntimeWiring<'_>,
+    library_doctor: &Rc<library_doctor_ui::LibraryDoctorLauncher>,
+) -> Rc<section_search_ui::SectionSearch> {
     let RuntimeWiring {
         search_entry,
         search,
@@ -26,11 +29,8 @@ pub(super) fn wire_section_search(w: &RuntimeWiring<'_>, scratch: &WiringScratch
             radio_view,
             releases_view,
             concerts_view,
-            library_doctor: scratch.library_doctor(),
+            library_doctor,
         },
     );
-    assert!(
-        scratch.section_search.set(section_search).is_ok(),
-        "section search wiring must run once"
-    );
+    section_search
 }

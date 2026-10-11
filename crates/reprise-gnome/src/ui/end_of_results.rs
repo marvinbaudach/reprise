@@ -54,7 +54,10 @@ fn presentation(input: &EndOfResultsInput, unit: ResultsUnit) -> Option<Presenta
         (false, false) => crate::ui::strings::end_of_results_hidden_by_search(unit, hidden, query),
         (true, true) => crate::ui::strings::end_of_results_hidden_by_filters(unit, hidden),
         (false, true) => crate::ui::strings::end_of_results_hidden_by_both(unit, hidden),
-        (true, false) => unreachable!("the unrestricted case returns above"),
+        (true, false) => {
+            invariant_broken!("the unrestricted case returns above");
+            return None;
+        }
     };
     Some(Presentation {
         line,

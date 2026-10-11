@@ -289,11 +289,7 @@ impl Sidebar {
 
         let activity_slot = SidebarActivitySlot::new();
         let scrolled = build_navigation_scroller(&listbox, activity_slot.widget());
-        let root = build_root(&scrolled, &activity_slot, &issues_listbox);
-        let pinned_scroller = root
-            .last_child()
-            .and_downcast::<gtk4::ScrolledWindow>()
-            .expect("the sidebar ends in its pinned scroller");
+        let (root, pinned_scroller) = build_root(&scrolled, &activity_slot, &issues_listbox);
 
         let shared = Rc::new(Shared {
             conn,

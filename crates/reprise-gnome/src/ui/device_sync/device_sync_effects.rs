@@ -102,7 +102,10 @@ pub(super) async fn perform(
     effect: Effect,
 ) -> Event {
     match effect {
-        Effect::Finished(_) => unreachable!("the driver handles Finished before calling perform"),
+        Effect::Finished(_) => {
+            invariant_broken!("the driver handles Finished before calling perform");
+            Event::Cancel
+        }
         Effect::CleanPartials(partial_paths) => {
             let result = runtime
                 .backend
@@ -124,7 +127,9 @@ pub(super) async fn perform(
             source,
             bytes,
         } => {
-            let entry = transfer(work, index).desired.clone();
+            let Some(entry) = transfer(work, index).map(|operation| operation.desired) else {
+                return Event::TrackCopied(Err(INVALID_TRANSFER_INDEX.into()));
+            };
             let (path, temporary) = match source {
                 TransferSource::Original => (entry.track.source_path.clone(), false),
                 TransferSource::Transcoded => match work.transcoded.remove(&index) {
@@ -182,7 +187,9 @@ pub(super) async fn perform(
             if !work.persist_device_state {
                 return Event::FileRecorded(Ok(()));
             }
-            let entry = transfer(work, index).desired.clone();
+            let Some(entry) = transfer(work, index).map(|operation| operation.desired) else {
+                return Event::FileRecorded(Err(INVALID_TRANSFER_INDEX.into()));
+            };
             let record = DeviceFileRecord {
                 device_serial: work.device_id.clone(),
                 track_id: entry.track.id,
@@ -722,9 +729,14 @@ fn replacement_keeps_lyrics_sidecar(work: &PlannedWork, replaced_path: &str) -> 
         .is_some_and(|desired_sidecar| desired_sidecar == replaced_sidecar)
 }
 
-fn transfer(work: &PlannedWork, index: usize) -> TransferOperation {
-    work.transfer(index)
-        .expect("the sync machine emitted an invalid transfer index")
+const INVALID_TRANSFER_INDEX: &str = "the sync machine emitted an invalid transfer index";
+
+fn transfer(work: &PlannedWork, index: usize) -> Option<TransferOperation> {
+    let operation = work.transfer(index);
+    if operation.is_none() {
+        invariant_broken!("{INVALID_TRANSFER_INDEX}: {index}");
+    }
+    operation
 }
 
 fn playlist_write(work: &PlannedWork, index: usize) -> reprise_core::device_sync::PlaylistWrite {

@@ -34,7 +34,7 @@ pub(super) fn selected_entries(shared: &Rc<Shared>) -> Vec<HistoryEntry> {
                 .item(position)
                 .and_downcast::<ReleaseObject>()
         })
-        .map(|object| object.entry())
+        .filter_map(|object| object.entry())
         .collect()
 }
 

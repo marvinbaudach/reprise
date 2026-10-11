@@ -36,10 +36,12 @@ pub(super) struct ConcertsEmptyStatePresentation {
     pub action: Option<String>,
 }
 
+/// What the status page shows for `state`; `None` for the list state, which
+/// shows the list instead.
 pub(super) fn concerts_empty_state_presentation(
     state: ConcertsEmptyState,
     total: usize,
-) -> ConcertsEmptyStatePresentation {
+) -> Option<ConcertsEmptyStatePresentation> {
     let (icon, title, description, action) = match state {
         ConcertsEmptyState::NoCredentials => (
             "x-office-calendar-symbolic",
@@ -65,14 +67,14 @@ pub(super) fn concerts_empty_state_presentation(
             String::new(),
             None,
         ),
-        ConcertsEmptyState::List => unreachable!("list state has no status presentation"),
+        ConcertsEmptyState::List => return None,
     };
-    ConcertsEmptyStatePresentation {
+    Some(ConcertsEmptyStatePresentation {
         icon,
         title,
         description,
         action,
-    }
+    })
 }
 
 #[cfg(test)]
@@ -105,7 +107,8 @@ mod tests {
 
     #[test]
     fn missing_credentials_have_no_key_entry_prompt() {
-        let presentation = concerts_empty_state_presentation(ConcertsEmptyState::NoCredentials, 0);
+        let presentation = concerts_empty_state_presentation(ConcertsEmptyState::NoCredentials, 0)
+            .expect("missing credentials have a status presentation");
 
         assert_eq!(
             presentation.title,

@@ -57,19 +57,24 @@ mod imp {
 
         fn set_property(&self, _id: usize, value: &glib::Value, pspec: &glib::ParamSpec) {
             match pspec.name() {
-                "reveal-fraction" => {
-                    self.reveal_fraction
-                        .set(value.get().expect("reveal-fraction must be an f32"));
-                    self.obj().queue_draw();
-                }
-                name => unreachable!("unknown HorizontalReveal property {name}"),
+                "reveal-fraction" => match value.get::<f32>() {
+                    Ok(fraction) => {
+                        self.reveal_fraction.set(fraction);
+                        self.obj().queue_draw();
+                    }
+                    Err(error) => invariant_broken!("reveal-fraction must be an f32: {error}"),
+                },
+                name => invariant_broken!("unknown HorizontalReveal property {name}"),
             }
         }
 
         fn property(&self, _id: usize, pspec: &glib::ParamSpec) -> glib::Value {
             match pspec.name() {
                 "reveal-fraction" => self.reveal_fraction.get().to_value(),
-                name => unreachable!("unknown HorizontalReveal property {name}"),
+                name => {
+                    invariant_broken!("unknown HorizontalReveal property {name}");
+                    pspec.default_value().clone()
+                }
             }
         }
 

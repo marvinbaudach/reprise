@@ -94,7 +94,10 @@ fn apply_empty_state(shared: &Shared, state: ConcertsEmptyState, total: usize) {
         return;
     }
 
-    let presentation = concerts_empty_state_presentation(state, total);
+    let Some(presentation) = concerts_empty_state_presentation(state, total) else {
+        invariant_broken!("the list state was handled above and has no status presentation");
+        return;
+    };
     shared.status.set_icon_name(Some(presentation.icon));
     shared.status.set_title(&presentation.title);
     shared

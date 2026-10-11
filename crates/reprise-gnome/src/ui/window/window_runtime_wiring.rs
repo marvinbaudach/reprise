@@ -148,17 +148,17 @@ pub(in crate::ui) fn wire(args: RuntimeWiring<'_>) {
     // This order is load-bearing: listeners precede session restore, and close
     // wiring follows view-session wiring.
     deferred_sources::wire_deferred_sources(&args);
-    library_doctor::wire_library_doctor(&args, &scratch);
+    let library_doctor = library_doctor::wire_library_doctor(&args);
     compact_mode::wire_compact_mode(&args);
-    menu::wire_menu(&args, &scratch);
+    menu::wire_menu(&args, &library_doctor);
     playing_source::wire_playing_source(&args);
     sleep_timer::wire_sleep_timer(&args);
     nav_back::wire_nav_back(&args, &scratch);
-    section_search::wire_section_search(&args, &scratch);
-    quick_open_wiring::wire_quick_open(&args, &scratch);
-    clear_all::wire_clear_all(&args, &scratch);
+    let section_search = section_search::wire_section_search(&args, &library_doctor);
+    quick_open_wiring::wire_quick_open(&args, &section_search);
+    clear_all::wire_clear_all(&args, &scratch, &section_search);
     listeners::wire_listeners(&args);
-    view_session::wire_view_session(&args, &scratch);
+    view_session::wire_view_session(&args, &scratch, &section_search);
     close::wire_close(&args);
     session_restore::wire_session_restore(&args, &scratch);
     deep_link::wire_deep_link(&args, &scratch);

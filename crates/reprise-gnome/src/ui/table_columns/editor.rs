@@ -179,10 +179,10 @@ fn build_sort_section(model: &Rc<dyn EditorModel>) -> Option<gtk4::Box> {
         .iter()
         .any(|(_, choice)| choice.is_active())
     {
-        first
-            .as_ref()
-            .expect("a non-empty descriptor list has a first choice")
-            .set_active(true);
+        match first.as_ref() {
+            Some(first) => first.set_active(true),
+            None => invariant_broken!("a non-empty descriptor list has a first choice"),
+        }
     }
 
     let ascending = radio_choice(&strings::text(strings::SORT_ASCENDING));

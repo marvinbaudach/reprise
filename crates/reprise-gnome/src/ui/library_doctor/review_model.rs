@@ -43,35 +43,33 @@ pub(super) fn confidence_presentation(
     source: ProposalSource,
     confidence: u8,
 ) -> ConfidencePresentation {
-    match source {
-        ProposalSource::Local => ConfidencePresentation {
-            label: strings::text(strings::DOCTOR_SOURCE_LOCAL),
-            tone: ConfidenceTone::Accent,
-            warning: false,
-        },
-        ProposalSource::MusicBrainz | ProposalSource::AcoustId => {
-            let source = strings::text(match source {
-                ProposalSource::MusicBrainz => strings::DOCTOR_SOURCE_MUSICBRAINZ,
-                ProposalSource::AcoustId => strings::DOCTOR_SOURCE_ACOUSTID,
-                ProposalSource::Local => unreachable!(),
-            });
-            let low = confidence < 50;
-            ConfidencePresentation {
-                label: if low {
-                    strings::doctor_low_confidence(&source, confidence)
-                } else {
-                    strings::doctor_remote_confidence(&source, confidence)
-                },
-                tone: if confidence >= 85 {
-                    ConfidenceTone::Normal
-                } else if confidence >= 50 {
-                    ConfidenceTone::Warning
-                } else {
-                    ConfidenceTone::Error
-                },
-                warning: low,
-            }
+    let remote_source = match source {
+        ProposalSource::Local => {
+            return ConfidencePresentation {
+                label: strings::text(strings::DOCTOR_SOURCE_LOCAL),
+                tone: ConfidenceTone::Accent,
+                warning: false,
+            };
         }
+        ProposalSource::MusicBrainz => strings::DOCTOR_SOURCE_MUSICBRAINZ,
+        ProposalSource::AcoustId => strings::DOCTOR_SOURCE_ACOUSTID,
+    };
+    let source = strings::text(remote_source);
+    let low = confidence < 50;
+    ConfidencePresentation {
+        label: if low {
+            strings::doctor_low_confidence(&source, confidence)
+        } else {
+            strings::doctor_remote_confidence(&source, confidence)
+        },
+        tone: if confidence >= 85 {
+            ConfidenceTone::Normal
+        } else if confidence >= 50 {
+            ConfidenceTone::Warning
+        } else {
+            ConfidenceTone::Error
+        },
+        warning: low,
     }
 }
 

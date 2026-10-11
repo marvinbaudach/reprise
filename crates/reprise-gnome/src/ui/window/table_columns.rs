@@ -58,9 +58,9 @@ pub(super) fn active_table(
             } else {
                 match page.as_str() {
                     "library" => Some(music.clone()),
-                    "concerts" => Some(concerts.materialize().column_model()),
+                    "concerts" => concerts.materialize().map(|view| view.column_model()),
                     "releases" => Some(releases.clone()),
-                    "radio" => Some(radio.materialize().column_model()),
+                    "radio" => radio.materialize().map(|view| view.column_model()),
                     _ => None,
                 }
             };

@@ -154,7 +154,10 @@ impl PlayerController {
                 resume_ms,
                 ..
             } => (title.clone(), show.clone(), (*resume_ms).max(0)),
-            ExternalMedia::Radio { .. } => unreachable!("restored episode contains radio media"),
+            ExternalMedia::Radio { .. } => {
+                invariant_broken!("restored episode contains radio media");
+                return false;
+            }
         };
 
         // Queue restoration runs first and may have armed a random track

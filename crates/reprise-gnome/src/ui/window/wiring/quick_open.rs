@@ -10,7 +10,7 @@ use reprise_view::quick_open::{rank_and_group, QuickOpenRecents, QuickOpenRow};
 
 use super::quick_open_actions::{dispatch_item, show_all, RuntimeDispatch};
 use super::quick_open_data::{load_candidates, CandidateSnapshot};
-use super::{quick_open::QuickOpenPanel, RuntimeWiring, WiringScratch};
+use super::{quick_open::QuickOpenPanel, section_search_ui, RuntimeWiring};
 
 type QueryCallback = Rc<dyn Fn(&str, u64, bool)>;
 type ActivateCallback = Rc<dyn Fn(QuickOpenRow, bool)>;
@@ -86,7 +86,10 @@ pub(super) fn wire_quick_open_shortcut(
     app.set_accels_for_action("win.quick-open", &["<Control>k"]);
 }
 
-pub(super) fn wire_quick_open(w: &RuntimeWiring<'_>, scratch: &WiringScratch) {
+pub(super) fn wire_quick_open(
+    w: &RuntimeWiring<'_>,
+    section_search: &Rc<section_search_ui::SectionSearch>,
+) {
     let panel = Rc::new(QuickOpenPanel::new());
     let load = SnapshotLoadState::new();
     let pending_query = Rc::new(RefCell::new((String::new(), 0u64)));
@@ -136,7 +139,7 @@ pub(super) fn wire_quick_open(w: &RuntimeWiring<'_>, scratch: &WiringScratch) {
     let player = w.player.clone();
     let conn = w.conn.clone();
     let navigator = w.metadata_navigator.clone();
-    let section_search = scratch.section_search().clone();
+    let section_search = section_search.clone();
     let activate: ActivateCallback = Rc::new(move |row, play_next| match row {
         QuickOpenRow::Item(item) => {
             recents.borrow_mut().remember(item.clone());

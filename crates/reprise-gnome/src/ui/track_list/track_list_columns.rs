@@ -213,14 +213,20 @@ fn cover_link_presentation(item: &QueueItemMetadata) -> CoverLinkPresentation {
         };
     }
 
+    let Some(track_id) = super::queue_item_presentation::rating_track_id(item) else {
+        invariant_broken!("a track album link has a track id");
+        return CoverLinkPresentation {
+            accessible_label: track.title.clone(),
+            target: None,
+        };
+    };
     CoverLinkPresentation {
         accessible_label: crate::ui::strings::formatted(
             crate::ui::strings::GO_TO_ALBUM_NAMED,
             &[("album", &track.album)],
         ),
         target: Some(CoverAlbumTarget {
-            track_id: super::queue_item_presentation::rating_track_id(item)
-                .expect("a track album link has a track id"),
+            track_id,
             album: track.album.clone(),
             album_artist: track.album_artist.clone(),
         }),

@@ -52,6 +52,7 @@ fn model_row_ids(view: &ConcertsView) -> Vec<i64> {
                 .and_downcast::<super::super::concerts_model::ConcertObject>()
                 .expect("Concerts model rows use ConcertObject")
                 .row()
+                .expect("a published concert object has its row")
                 .id
         })
         .collect()

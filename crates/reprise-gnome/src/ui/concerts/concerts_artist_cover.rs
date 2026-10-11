@@ -42,10 +42,14 @@ pub(super) fn cover_column(view: &gtk4::ColumnView, image: &Rc<ConcertsArtistIma
         let Some(tile) = LazyReleaseCover::from_widget(&root) else {
             return;
         };
-        let Some(object) = item.item().and_downcast::<ConcertObject>() else {
+        let Some(row) = item
+            .item()
+            .and_downcast::<ConcertObject>()
+            .and_then(|object| object.row())
+        else {
             return;
         };
-        tile.set_artist_key(&object.row().artist_name);
+        tile.set_artist_key(&row.artist_name);
         bind_image.show(&tile);
     });
     factory.connect_unbind(move |_, object| {

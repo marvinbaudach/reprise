@@ -15,7 +15,12 @@ pub(super) struct OnlineModuleTestHandles {
 
 impl OnlineModuleTestHandles {
     pub(super) fn radio(&self) -> crate::ui::radio::RadioTestHandle {
-        crate::ui::radio::RadioTestHandle::new(&self.radio.materialize())
+        crate::ui::radio::RadioTestHandle::new(
+            &self
+                .radio
+                .materialize()
+                .expect("the radio page materializes"),
+        )
     }
 
     pub(super) fn materialize_artwork_surfaces(&self) {

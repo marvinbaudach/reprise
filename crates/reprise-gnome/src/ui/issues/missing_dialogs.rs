@@ -241,7 +241,11 @@ fn continue_folder_search(context: LocateContext, folder: PathBuf, targets: Vec<
     let Some(window) = context.window.upgrade() else {
         return;
     };
-    let warning = warning_copy(None, true).expect("outside-library selection always warns");
+    let Some(warning) = warning_copy(None, true) else {
+        invariant_broken!("outside-library selection always warns");
+        show_toast(&context, strings::MISSING_RELINK_FAILED);
+        return;
+    };
     let dialog = adw::AlertDialog::builder()
         .heading(warning.heading)
         .body(warning.body)

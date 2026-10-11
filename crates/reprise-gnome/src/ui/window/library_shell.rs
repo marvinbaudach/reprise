@@ -149,16 +149,19 @@ pub(in crate::ui) fn wire_source_routing(
                 &content_stack,
                 "stats",
             );
-            let stats_view = stats_view.materialize();
-            stats_view.prepare_entrance();
-            stats_view.refresh(&conn);
+            if let Some(stats_view) = stats_view.materialize() {
+                stats_view.prepare_entrance();
+                stats_view.refresh(&conn);
+            }
         } else if matches!(source, ViewSource::Concerts) {
             super::window_navigation::show_content_page(
                 &content_navigation,
                 &content_stack,
                 "concerts",
             );
-            concerts_view.materialize().refresh();
+            if let Some(concerts_view) = concerts_view.materialize() {
+                concerts_view.refresh();
+            }
         } else if matches!(source, ViewSource::Releases) {
             releases_view.refresh();
             super::window_navigation::show_content_page(
@@ -172,25 +175,29 @@ pub(in crate::ui) fn wire_source_routing(
                 &content_stack,
                 "podcasts",
             );
-            let podcasts_view = podcasts_view.materialize();
-            podcasts_view.refresh();
-            podcasts_view.request_tab_open_refresh();
+            if let Some(podcasts_view) = podcasts_view.materialize() {
+                podcasts_view.refresh();
+                podcasts_view.request_tab_open_refresh();
+            }
         } else if matches!(source, ViewSource::Youtube) {
             super::window_navigation::show_content_page(
                 &content_navigation,
                 &content_stack,
                 "youtube",
             );
-            let youtube_view = youtube_view.materialize();
-            youtube_view.refresh();
-            youtube_view.request_tab_open_refresh();
+            if let Some(youtube_view) = youtube_view.materialize() {
+                youtube_view.refresh();
+                youtube_view.request_tab_open_refresh();
+            }
         } else if matches!(source, ViewSource::Radio) {
             super::window_navigation::show_content_page(
                 &content_navigation,
                 &content_stack,
                 "radio",
             );
-            radio_view.materialize().refresh();
+            if let Some(radio_view) = radio_view.materialize() {
+                radio_view.refresh();
+            }
         } else {
             super::window_navigation::show_content_page(
                 &content_navigation,

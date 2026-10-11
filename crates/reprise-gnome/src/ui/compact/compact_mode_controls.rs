@@ -69,18 +69,19 @@ fn set_always_on_top(window: &adw::ApplicationWindow, above: bool) {
     let Some(surface) = window.surface() else {
         return;
     };
-    if surface.downcast_ref::<gdk4_x11::X11Surface>().is_none() {
+    // Wayland is the normal case, so a non-X11 surface is not a fault.
+    let Some(x11_surface) = surface.downcast_ref::<gdk4_x11::X11Surface>() else {
+        tracing::debug!("always-on-top applies to X11 surfaces only; skipping");
         return;
-    }
+    };
 
     // GDK4 X11: the toplevel state API does not expose _NET_WM_STATE_ABOVE
     // directly, but we can send the client message via the X11 surface.
     // For now, use the Xlib-level API through gdk4-x11.
-    let x11_surface: &gdk4_x11::X11Surface = surface.downcast_ref().unwrap();
-    let xdisplay = x11_surface
-        .display()
-        .downcast::<gdk4_x11::X11Display>()
-        .unwrap();
+    let Ok(xdisplay) = x11_surface.display().downcast::<gdk4_x11::X11Display>() else {
+        tracing::debug!("an X11 surface on a non-X11 display; skipping always-on-top");
+        return;
+    };
 
     unsafe {
         let xlib_display = gdk4_x11::ffi::gdk_x11_display_get_xdisplay(xdisplay.as_ptr() as *mut _);

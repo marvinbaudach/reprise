@@ -63,15 +63,16 @@ impl SettingsSearch {
         let page_entries = PAGE_ORDER
             .iter()
             .enumerate()
-            .map(|(index, page)| {
-                let row = sidebar
-                    .row_at_index(index as i32)
-                    .expect("every Preferences page has one sidebar row");
-                SidebarPageEntry {
+            .filter_map(|(index, page)| {
+                let Some(row) = sidebar.row_at_index(index as i32) else {
+                    invariant_broken!("every Preferences page has one sidebar row");
+                    return None;
+                };
+                Some(SidebarPageEntry {
                     page: *page,
                     count: add_non_measuring_count(&row),
                     row,
-                }
+                })
             })
             .collect();
         let (all_results_row, all_results_count) = result_sidebar_row();
@@ -164,16 +165,12 @@ impl SettingsSearch {
         search.weak_self.replace(Rc::downgrade(&search));
         search.connect_signals();
         {
-            let search = Rc::downgrade(&search);
-            search
-                .upgrade()
-                .expect("Settings search is alive during installation")
-                .end_of_results
-                .connect_recover(move || {
-                    if let Some(search) = search.upgrade() {
-                        search.entry.set_text("");
-                    }
-                });
+            let weak = Rc::downgrade(&search);
+            search.end_of_results.connect_recover(move || {
+                if let Some(search) = weak.upgrade() {
+                    search.entry.set_text("");
+                }
+            });
         }
         search
     }
@@ -512,10 +509,14 @@ impl SettingsSearch {
 }
 
 fn add_non_measuring_count(row: &gtk4::ListBoxRow) -> gtk4::Label {
-    let child = row.child().expect("Preferences sidebar rows have content");
-    row.set_child(None::<&gtk4::Widget>);
     let overlay = gtk4::Overlay::new();
-    overlay.set_child(Some(&child));
+    match row.child() {
+        Some(child) => {
+            row.set_child(None::<&gtk4::Widget>);
+            overlay.set_child(Some(&child));
+        }
+        None => invariant_broken!("Preferences sidebar rows have content"),
+    }
     let count = gtk4::Label::new(None);
     count.add_css_class("caption");
     count.add_css_class("dim-label");

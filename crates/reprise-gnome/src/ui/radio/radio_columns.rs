@@ -112,10 +112,13 @@ fn text_column(
         let Some(label) = surface.first_child().and_downcast::<gtk4::Label>() else {
             return;
         };
-        let Some(object) = item.item().and_downcast::<RadioObject>() else {
+        let Some(row) = item
+            .item()
+            .and_downcast::<RadioObject>()
+            .and_then(|object| object.row())
+        else {
             return;
         };
-        let row = object.row();
         // The live half of this cell, re-runnable on its own: registering it
         // is what lets a playback change reach an already-bound cell without
         // a model signal (see `radio_live_cells`).
@@ -222,10 +225,14 @@ fn state_column(
         let Some(icon) = marker.next_sibling().and_downcast::<gtk4::Image>() else {
             return;
         };
-        let Some(object) = item.item().and_downcast::<RadioObject>() else {
+        let Some(row) = item
+            .item()
+            .and_downcast::<RadioObject>()
+            .and_then(|object| object.row())
+        else {
             return;
         };
-        let station_id = object.row().id;
+        let station_id = row.id;
         let apply = {
             let live_state = live_state.clone();
             Rc::new(move || {
@@ -301,10 +308,13 @@ fn artwork_column(
         let Some(cell) = surface.first_child().and_downcast::<gtk4::Box>() else {
             return;
         };
-        let Some(object) = item.item().and_downcast::<RadioObject>() else {
+        let Some(row) = item
+            .item()
+            .and_downcast::<RadioObject>()
+            .and_then(|object| object.row())
+        else {
             return;
         };
-        let row = object.row();
         let images_allowed = images_allowed.clone();
         let apply = Rc::new(move || {
             while let Some(child) = cell.first_child() {

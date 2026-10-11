@@ -2,7 +2,9 @@ use std::sync::Arc;
 
 use super::*;
 
-pub(super) fn wire_library_doctor(w: &RuntimeWiring<'_>, scratch: &WiringScratch) {
+pub(super) fn wire_library_doctor(
+    w: &RuntimeWiring<'_>,
+) -> Rc<library_doctor_ui::LibraryDoctorLauncher> {
     let RuntimeWiring {
         conn,
         db_path,
@@ -54,8 +56,5 @@ pub(super) fn wire_library_doctor(w: &RuntimeWiring<'_>, scratch: &WiringScratch
             });
         });
     }
-    assert!(
-        scratch.library_doctor.set(library_doctor).is_ok(),
-        "library doctor wiring must run once"
-    );
+    library_doctor
 }

@@ -84,7 +84,7 @@ struct CoverLiftWidgets {
 
 #[derive(Clone)]
 pub(in crate::ui) struct CoverLift {
-    root: Option<gtk4::Overlay>,
+    root: gtk4::Overlay,
     widgets: Option<CoverLiftWidgets>,
     swell: Rc<Cell<f64>>,
 }
@@ -109,7 +109,7 @@ impl CoverLift {
         root.add_overlay(cover);
         let widgets = CoverLiftWidgets { near, far };
         Self {
-            root: Some(root),
+            root,
             widgets: Some(widgets),
             swell: Rc::new(Cell::new(0.0)),
         }
@@ -126,16 +126,14 @@ impl CoverLift {
         cover.set_valign(gtk4::Align::Center);
         root.set_child(Some(cover));
         Self {
-            root: Some(root),
+            root,
             widgets: None,
             swell: Rc::new(Cell::new(0.0)),
         }
     }
 
     pub(in crate::ui) fn widget(&self) -> &gtk4::Overlay {
-        self.root
-            .as_ref()
-            .expect("production cover lift has a root widget")
+        &self.root
     }
 
     /// The player bar's entry point: it derives no pressure of its own and its

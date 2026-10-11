@@ -99,7 +99,11 @@ impl WaveformAppearance {
 }
 
 fn rgb_fraction(hex: &str) -> (f64, f64, f64) {
-    let rgb = parse_hex_rgb(hex).expect("theme foreground must be valid #RRGGBB");
+    let Some(rgb) = parse_hex_rgb(hex) else {
+        invariant_broken!("theme foreground {hex:?} must be valid #RRGGBB");
+        // The dark appearance's fallback: a visible unplayed bar either way.
+        return (1.0, 1.0, 1.0);
+    };
     (
         f64::from(rgb[0]) / 255.0,
         f64::from(rgb[1]) / 255.0,

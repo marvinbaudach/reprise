@@ -87,16 +87,62 @@ pub(in crate::ui::style) fn oklab_to_linear_rgb(
 
 /// Parses a `#RRGGBB` string. Palette and accent values are authored as hex,
 /// so every consumer of those needs this.
-pub(in crate::ui) fn parse_hex_rgb(hex: &str) -> Option<[u8; 3]> {
-    let hex = hex.strip_prefix('#')?;
-    if hex.len() != 6 {
+///
+/// A `const fn` so that a literal known at compile time is decoded at compile
+/// time too (see [`rgb_literal`]).
+pub(in crate::ui) const fn parse_hex_rgb(hex: &str) -> Option<[u8; 3]> {
+    const fn digit(byte: u8) -> Option<u8> {
+        match byte {
+            b'0'..=b'9' => Some(byte - b'0'),
+            b'a'..=b'f' => Some(byte - b'a' + 10),
+            b'A'..=b'F' => Some(byte - b'A' + 10),
+            _ => None,
+        }
+    }
+    const fn pair(high: u8, low: u8) -> Option<u8> {
+        match (digit(high), digit(low)) {
+            (Some(high), Some(low)) => Some(high * 16 + low),
+            _ => None,
+        }
+    }
+
+    let bytes = hex.as_bytes();
+    if bytes.len() != 7 || bytes[0] != b'#' {
         return None;
     }
-    Some([
-        u8::from_str_radix(&hex[0..2], 16).ok()?,
-        u8::from_str_radix(&hex[2..4], 16).ok()?,
-        u8::from_str_radix(&hex[4..6], 16).ok()?,
-    ])
+    match (
+        pair(bytes[1], bytes[2]),
+        pair(bytes[3], bytes[4]),
+        pair(bytes[5], bytes[6]),
+    ) {
+        (Some(red), Some(green), Some(blue)) => Some([red, green, blue]),
+        _ => None,
+    }
+}
+
+/// Decodes a `#RRGGBB` literal that is known at compile time.
+///
+/// Meant for `const` items only: a malformed literal then fails the build, so
+/// no runtime path has to cope with one.
+pub(in crate::ui) const fn rgb_literal(hex: &str) -> [u8; 3] {
+    assert!(
+        parse_hex_rgb(hex).is_some(),
+        "a compile-time colour must be a #RRGGBB literal"
+    );
+    match parse_hex_rgb(hex) {
+        Some(rgb) => rgb,
+        None => [0; 3],
+    }
+}
+
+/// An opaque [`gdk::RGBA`](gtk4::gdk::RGBA) from 8-bit channels.
+pub(in crate::ui) fn rgba_from_rgb(rgb: [u8; 3]) -> gtk4::gdk::RGBA {
+    gtk4::gdk::RGBA::new(
+        f32::from(rgb[0]) / 255.0,
+        f32::from(rgb[1]) / 255.0,
+        f32::from(rgb[2]) / 255.0,
+        1.0,
+    )
 }
 
 /// Flattens `foreground` at `alpha` over an opaque `background`, the way GTK

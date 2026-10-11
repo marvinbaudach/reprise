@@ -38,7 +38,10 @@ pub(in crate::ui) fn arm_episode_play(
     };
     // The smoke hook is an explicit request for this source. Route it through
     // the same synchronous materializer as sidebar navigation.
-    let view = Rc::downgrade(&page.materialize());
+    let Some(page_view) = page.materialize() else {
+        return;
+    };
+    let view = Rc::downgrade(&page_view);
     glib::idle_add_local_once(move || {
         let Some(view) = view.upgrade() else {
             return;

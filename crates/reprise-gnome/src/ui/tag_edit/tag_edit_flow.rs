@@ -522,8 +522,7 @@ fn finish_apply(
         if !tag_changed_paths.is_empty() {
             reload_deferred = true;
             let tag_changed_ids = tag_save_refresh::tag_changed_ids(writes, &report.updated_ids);
-            if has_pre_save_view {
-                let after_ids = after_ids.expect("pre-save view has a matching current view");
+            if let Some(after_ids) = after_ids {
                 let generation = shared.model.generation();
                 let model_change = tag_save_refresh::tag_save_model_change(
                     &live_reload.view_ids,

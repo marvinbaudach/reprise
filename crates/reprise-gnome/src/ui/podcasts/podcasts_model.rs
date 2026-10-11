@@ -64,10 +64,8 @@ impl PodcastsModel {
             rows,
             |object| {
                 object
-                    .clone()
-                    .downcast::<PodcastEpisodeObject>()
-                    .expect("podcasts store contains only episode objects")
-                    .row()
+                    .downcast_ref::<PodcastEpisodeObject>()
+                    .map(PodcastEpisodeObject::row)
             },
             |row| row.id,
             |row| PodcastEpisodeObject::new(row).upcast(),

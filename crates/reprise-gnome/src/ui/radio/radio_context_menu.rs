@@ -123,13 +123,13 @@ pub(super) fn wire_gesture(
     let gesture = crate::ui::source_context_surface::secondary_click();
     let item = item.clone();
     gesture.connect_pressed(move |gesture, _, x, y| {
-        let Some(object) = item
+        let Some(row) = item
             .item()
             .and_downcast::<super::radio_model::RadioObject>()
+            .and_then(|object| object.row())
         else {
             return;
         };
-        let row = object.row();
         let Some(parent) = gesture.widget() else {
             return;
         };
@@ -161,13 +161,13 @@ pub(super) fn wire_keyboard(
         if !crate::ui::source_context_surface::is_context_menu_shortcut(key, modifiers) {
             return gtk4::glib::Propagation::Proceed;
         }
-        let Some(object) = selection
+        let Some(row) = selection
             .selected_item()
             .and_downcast::<super::radio_model::RadioObject>()
+            .and_then(|object| object.row())
         else {
             return gtk4::glib::Propagation::Proceed;
         };
-        let row = object.row();
         let popover = crate::ui::menu_a11y::popover_menu_from_model(&build(
             &row,
             is_playing(row.id),

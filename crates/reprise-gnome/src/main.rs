@@ -23,25 +23,33 @@ use tracing_subscriber::{EnvFilter, Layer};
 /// packaging mirror this value, with focused tests guarding critical mirrors.
 pub const APP_ID: &str = "io.github.marvinbaudach.Reprise";
 
-static APP_RESOURCES_REGISTERED: OnceLock<()> = OnceLock::new();
+static APP_RESOURCES_REGISTERED: OnceLock<Result<(), String>> = OnceLock::new();
 const APP_ICON_RESOURCE_PATH: &str = "/io/github/marvinbaudach/Reprise/icons";
 
 /// Registers app-private icons once for both the production application and
 /// display-backed tests. The resource prefix follows `APP_ID`, allowing
 /// `GtkApplication` to expose its `icons` subtree through the active theme.
-pub(crate) fn register_app_resources() {
-    APP_RESOURCES_REGISTERED.get_or_init(|| {
-        gio::resources_register_include!("reprise.gresource")
-            .expect("the compiled Reprise resources must register");
-    });
+///
+/// The error is the text of the registration failure, kept so every later call
+/// reports the same outcome as the first.
+pub(crate) fn register_app_resources() -> Result<(), String> {
+    APP_RESOURCES_REGISTERED
+        .get_or_init(|| {
+            gio::resources_register_include!("reprise.gresource").map_err(|error| error.to_string())
+        })
+        .clone()
 }
 
 /// Adds the registered private icon subtree to the theme for the active
 /// display. `GtkApplication` also derives this path from `APP_ID`; doing it
 /// explicitly keeps the contract testable and independent of startup order.
 pub(crate) fn install_app_icon_resource_path() {
-    let display = gtk4::gdk::Display::default()
-        .expect("the icon resource path requires an initialized GTK display");
+    let Some(display) = gtk4::gdk::Display::default() else {
+        // GTK cannot open a window without a display either, so the app is
+        // already unusable; there is no icon theme to extend.
+        tracing::error!("the icon resource path requires an initialized GTK display");
+        return;
+    };
     gtk4::IconTheme::for_display(&display).add_resource_path(APP_ICON_RESOURCE_PATH);
 }
 
@@ -253,7 +261,12 @@ fn test_build_data_root() -> Option<std::path::PathBuf> {
 }
 
 fn run() -> glib::ExitCode {
-    register_app_resources();
+    if let Err(error) = register_app_resources() {
+        // Logging is not initialised yet, so a `tracing` event alone would be lost.
+        eprintln!("the compiled Reprise resources must register: {error}");
+        tracing::error!(%error, "the compiled Reprise resources must register");
+        return glib::ExitCode::FAILURE;
+    }
     ui::track_list::diagnostic_trail::mark_process_start();
     init_logging();
     install_panic_hook();

@@ -39,15 +39,16 @@ impl ReleaseObject {
         object
     }
 
-    pub(super) fn entry(&self) -> HistoryEntry {
+    /// The entry this object was built with. `None` only for an object that
+    /// was never given one, which `new` rules out.
+    pub(super) fn entry(&self) -> Option<HistoryEntry> {
         use glib::subclass::prelude::ObjectSubclassIsExt;
 
-        self.imp()
-            .entry
-            .borrow()
-            .as_ref()
-            .expect("ReleaseObject is initialized before publication")
-            .clone()
+        let entry = self.imp().entry.borrow().clone();
+        if entry.is_none() {
+            invariant_broken!("a ReleaseObject was published without its entry");
+        }
+        entry
     }
 }
 
@@ -70,13 +71,7 @@ impl ReleasesModel {
         crate::ui::list_store_delta::replace(
             &self.store,
             rows,
-            |object| {
-                object
-                    .clone()
-                    .downcast::<ReleaseObject>()
-                    .expect("releases store contains only release objects")
-                    .entry()
-            },
+            |object| object.downcast_ref::<ReleaseObject>()?.entry(),
             |entry| entry.release_group_mbid.clone(),
             |entry| ReleaseObject::new(entry).upcast(),
         );
@@ -96,7 +91,8 @@ impl ReleasesModel {
             self.store
                 .item(*position)
                 .and_downcast::<ReleaseObject>()
-                .is_some_and(|object| object.entry().release_group_mbid == mbid)
+                .and_then(|object| object.entry())
+                .is_some_and(|entry| entry.release_group_mbid == mbid)
         })
     }
 
@@ -104,7 +100,8 @@ impl ReleasesModel {
         (0..self.store.n_items())
             .filter(|position| self.selection.is_selected(*position))
             .filter_map(|position| self.store.item(position).and_downcast::<ReleaseObject>())
-            .map(|object| object.entry().release_group_mbid)
+            .filter_map(|object| object.entry())
+            .map(|entry| entry.release_group_mbid)
             .collect()
     }
 
@@ -161,7 +158,7 @@ mod tests {
             .unwrap()
             .downcast::<ReleaseObject>()
             .unwrap();
-        assert_eq!(first.entry().release_group_mbid, "one");
+        assert_eq!(first.entry().unwrap().release_group_mbid, "one");
 
         model.replace(vec![entry("three")]);
         assert_eq!(model.store().n_items(), 1);

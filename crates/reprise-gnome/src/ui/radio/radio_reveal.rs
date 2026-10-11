@@ -97,7 +97,7 @@ fn visible_rows(model: &RadioModel) -> Vec<StationRow> {
                 .store()
                 .item(position)
                 .and_downcast::<RadioObject>()
-                .map(|object| object.row())
+                .and_then(|object| object.row())
         })
         .collect()
 }

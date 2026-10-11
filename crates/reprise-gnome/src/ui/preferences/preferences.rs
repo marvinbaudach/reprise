@@ -357,11 +357,14 @@ impl PreferencesContext {
             _ => None,
         };
         if let Some(page) = smoke_page {
-            let index = super::preferences_window::page_index_by_name(page)
-                .expect("smoke page was normalized to a known page");
-            shell
-                .sidebar
-                .select_row(shell.sidebar.row_at_index(index).as_ref());
+            // The smoke harness reads the log; an unknown page is reported
+            // there and the dialog keeps its first page.
+            match super::preferences_window::page_index_by_name(page) {
+                Some(index) => shell
+                    .sidebar
+                    .select_row(shell.sidebar.row_at_index(index).as_ref()),
+                None => tracing::error!(page, "preferences smoke page is not a known page"),
+            }
         }
         let initial_focus =
             super::preferences_window::selected_sidebar_focus_target(&shell.sidebar);

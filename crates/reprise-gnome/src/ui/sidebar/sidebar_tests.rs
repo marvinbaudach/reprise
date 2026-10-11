@@ -195,7 +195,7 @@ fn fb_8_a_visible_progress_card_no_longer_hides_the_issues_block() {
     activity.set_scan_card(&scanner);
     let issues = gtk4::ListBox::new();
     issues.append(&gtk4::Label::new(Some("Missing files")));
-    let root = build_root(&scrolled, &activity, &issues);
+    let (root, _) = build_root(&scrolled, &activity, &issues);
     let window = gtk4::Window::builder()
         .default_width(300)
         .default_height(900)
@@ -273,7 +273,7 @@ fn acc_3_sidebar_uses_the_available_page_height_before_scrolling() {
     let scrolled = build_navigation_scroller(&list, activity.widget());
     let issues = gtk4::ListBox::new();
     issues.set_visible(false);
-    let root = build_root(&scrolled, &activity, &issues);
+    let (root, _) = build_root(&scrolled, &activity, &issues);
     let page = adw::NavigationPage::builder()
         .title("Library")
         .child(&root)
@@ -323,7 +323,7 @@ fn acc_3_short_sidebar_keeps_navigation_rows_scrollable() {
     let scrolled = build_navigation_scroller(&list, activity.widget());
     let issues = gtk4::ListBox::new();
     issues.set_visible(false);
-    let root = build_root(&scrolled, &activity, &issues);
+    let (root, _) = build_root(&scrolled, &activity, &issues);
     let page = adw::NavigationPage::builder()
         .title("Library")
         .child(&root)

@@ -63,14 +63,14 @@ pub(super) fn cached_scrim(
     };
     let mut cache = cache.borrow_mut();
     if scrim_cache_needs_rebuild(cache.as_ref().map(|cached| cached.key), key) {
-        *cache = Some(ScrimCache {
-            key,
-            vertical: build_scrim(f64::from(tokens::NOW_PLAYING_ARTWORK_BAND)),
-            left: build_left_fade(width),
-        });
+        *cache = None;
     }
-    let cache = cache.as_ref().expect("scrim cache was populated");
-    (cache.vertical.clone(), cache.left.clone())
+    let cached = cache.get_or_insert_with(|| ScrimCache {
+        key,
+        vertical: build_scrim(f64::from(tokens::NOW_PLAYING_ARTWORK_BAND)),
+        left: build_left_fade(width),
+    });
+    (cached.vertical.clone(), cached.left.clone())
 }
 
 /// Builds the fade back to the panel in the current panel colour.

@@ -267,7 +267,11 @@ impl PlayerController {
         let published_at = row.and_then(|episode| episode.published_at);
         let media_category = row.and_then(|episode| episode.media_category.clone());
         let (art_url, fallback_art_url) = row.map_or((None, None), episode_artwork_urls);
-        let (title, show, source, resume_ms, duration_ms) = podcast_fields(&media);
+        let Some((title, show, source, resume_ms, duration_ms)) = podcast_fields(&media) else {
+            return Err(PlaybackError::Backend(
+                "podcast playback was started with radio media".into(),
+            ));
+        };
         let needs_ytdlp = podcast_source_requires_resolution(kind, &source);
         let phase = if needs_ytdlp {
             PodcastPhase::Resolving
@@ -351,7 +355,8 @@ impl PlayerController {
             // arrive asynchronously. Keep the advance chain until playback
             // actually moves in `handle_external_position`.
             let ExternalMedia::Podcast { resume_ms, .. } = &session.media else {
-                unreachable!("podcast session contains radio media");
+                invariant_broken!("podcast session contains radio media");
+                return Ok(());
             };
             *resume_ms
         };
@@ -376,7 +381,9 @@ impl PlayerController {
             .ok()
             .flatten()
             .and_then(|station| station.favicon_url);
-        let (name, stream_url, uuid) = radio_fields(&media);
+        let Some((name, stream_url, uuid)) = radio_fields(&media) else {
+            return;
+        };
         let session = RadioSession {
             media,
             art_url,

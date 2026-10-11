@@ -76,10 +76,13 @@ impl Palette {
 
         const WHITE: [u8; 3] = [255, 255, 255];
 
+        // A token that is not a decimal fraction adds no tint, which leaves the
+        // plain surface to be measured instead of a wrong one.
         let fraction = |token: &str| -> f64 {
-            token
-                .parse()
-                .expect("surface alpha tokens are decimal fractions")
+            token.parse().unwrap_or_else(|_| {
+                invariant_broken!("surface alpha token {token:?} is not a decimal fraction");
+                0.0
+            })
         };
         let heaviest_tint = fraction(super::tokens::ACCENT_TINT_CEILING);
         // The elevation ladder is painted in white over the surface below it,
@@ -96,8 +99,13 @@ impl Palette {
         self.surfaces()
             .into_iter()
             .flat_map(|hex| {
-                let surface = parse_hex_rgb(hex).expect("palette colour must use #RRGGBB");
-                rungs.map(|rung| composite(WHITE, surface, rung))
+                let surface = parse_hex_rgb(hex);
+                if surface.is_none() {
+                    invariant_broken!("palette colour {hex:?} must use #RRGGBB");
+                }
+                surface
+                    .into_iter()
+                    .flat_map(move |surface| rungs.map(|rung| composite(WHITE, surface, rung)))
             })
             .flat_map(|ground| [ground, composite(accent, ground, heaviest_tint)])
             .reduce(|worst, surface| {
@@ -112,7 +120,10 @@ impl Palette {
                     worst
                 }
             })
-            .expect("the palette always has surfaces")
+            .unwrap_or_else(|| {
+                invariant_broken!("the palette always has surfaces");
+                accent
+            })
     }
 }
 

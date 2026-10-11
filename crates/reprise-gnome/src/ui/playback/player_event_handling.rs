@@ -327,7 +327,10 @@ impl PlayerController {
                     }
                     PlaybackMode::Queue => {}
                     PlaybackMode::Podcast | PlaybackMode::QueuedEpisode | PlaybackMode::Radio => {
-                        unreachable!("external errors returned above")
+                        invariant_broken!("external errors returned above");
+                        tracing::error!(%message, "player error during external playback");
+                        self.reset_to_stopped();
+                        return;
                     }
                 }
                 match self.current_track.get() {

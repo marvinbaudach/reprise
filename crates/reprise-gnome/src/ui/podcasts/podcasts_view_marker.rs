@@ -84,21 +84,20 @@ impl PodcastsView {
 
         let filter = self.filter_bar.filter();
         let adjusted = match request {
-            RevealRequest::Episode(episode_id) => {
-                let episode = groups
-                    .iter()
-                    .flat_map(|group| group.episodes.iter())
-                    .find(|episode| episode.id == episode_id)
-                    .expect("reveal_outcome accepted an episode that is present");
-                filter_without_hiding(episode, &filter)
-            }
-            RevealRequest::Channel(subscription_id) => {
-                let group = groups
-                    .iter()
-                    .find(|group| group.subscription_id == subscription_id)
-                    .expect("reveal_outcome accepted a channel that is present");
-                filter_without_hiding_group(group, &filter)
-            }
+            RevealRequest::Episode(episode_id) => groups
+                .iter()
+                .flat_map(|group| group.episodes.iter())
+                .find(|episode| episode.id == episode_id)
+                .map(|episode| filter_without_hiding(episode, &filter)),
+            RevealRequest::Channel(subscription_id) => groups
+                .iter()
+                .find(|group| group.subscription_id == subscription_id)
+                .map(|group| filter_without_hiding_group(group, &filter)),
+        };
+        let Some(adjusted) = adjusted else {
+            invariant_broken!("reveal_outcome accepted a target that is not present");
+            self.show_reveal_not_listed();
+            return;
         };
         if adjusted != filter {
             self.filter_bar.apply_filter(adjusted);
