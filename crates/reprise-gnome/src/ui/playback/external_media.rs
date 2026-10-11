@@ -255,9 +255,11 @@ impl PlayerController {
         // the stream that is still playing, and the UI that shows it, alone.
         let Some((title, show, source, base_resume_ms, duration_ms)) = podcast_fields(&media)
         else {
-            return Err(PlaybackError::Backend(
-                "podcast playback was started with radio media".into(),
-            ));
+            // `podcast_fields` has already recorded the broken invariant. The
+            // caller may toast this error, so it must not name internals.
+            return Err(PlaybackError::Backend(crate::ui::strings::text(
+                crate::ui::strings::PLAYBACK_START_NEVER_FINISHED,
+            )));
         };
         let episode_id = session_id(&media);
         let mut media = media;
