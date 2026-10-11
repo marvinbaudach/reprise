@@ -12,7 +12,7 @@ use reprise_core::up_next::QueueItem;
 use crate::ui::player_controller::PlayerController;
 
 pub(super) use super::external_media_fields::session_id;
-use super::external_media_fields::{podcast_fields, radio_fields};
+use super::external_media_fields::podcast_fields;
 use super::external_media_state::{
     episode_artwork_urls, podcast_source_requires_resolution, AutomaticAdvance, ExternalSession,
     NeighbourContext, PodcastOrigin, PodcastSession, RadioCommand, RadioSession, ResumePolicy,
@@ -158,21 +158,19 @@ impl PlayerController {
         origin: PodcastOrigin,
     ) -> Result<(), PlaybackError> {
         match media {
-            mut media @ ExternalMedia::Podcast { episode_id, .. } => {
+            media @ ExternalMedia::Podcast { episode_id, .. } => {
                 let row = reprise_core::podcasts::store::episode(&self.conn, episode_id)
                     .map_err(|error| PlaybackError::Backend(error.to_string()))?;
-                let start_position_ms =
-                    self.prepare_external_playback(Some(QueueItem::Episode(episode_id)));
-                if let (Some(position_ms), ExternalMedia::Podcast { resume_ms, .. }) =
-                    (start_position_ms, &mut media)
-                {
-                    *resume_ms = position_ms;
-                }
                 self.begin_podcast(media, row.as_ref(), neighbours, automatic_advance, origin)
             }
-            media @ ExternalMedia::Radio { station_id, .. } => {
+            ExternalMedia::Radio {
+                station_id,
+                name,
+                stream_url,
+                uuid,
+            } => {
                 self.prepare_external_playback(None);
-                self.begin_radio(media, station_id);
+                self.begin_radio(station_id, name, stream_url, uuid);
                 Ok(())
             }
         }
@@ -185,14 +183,7 @@ impl PlayerController {
         automatic_advance: AutomaticAdvance,
         origin: PodcastOrigin,
     ) -> Result<(), PlaybackError> {
-        let mut media = media_from_episode(episode);
-        let start_position_ms =
-            self.prepare_external_playback(Some(QueueItem::Episode(episode.id)));
-        if let (Some(position_ms), ExternalMedia::Podcast { resume_ms, .. }) =
-            (start_position_ms, &mut media)
-        {
-            *resume_ms = position_ms;
-        }
+        let media = media_from_episode(episode);
         self.begin_podcast(
             media,
             Some(episode),
@@ -260,18 +251,32 @@ impl PlayerController {
         automatic_advance: Option<AutomaticAdvance>,
         origin: PodcastOrigin,
     ) -> Result<(), PlaybackError> {
+        // Read the fields before the first side effect: a refusal must leave
+        // the stream that is still playing, and the UI that shows it, alone.
+        let Some((title, show, source, base_resume_ms, duration_ms)) = podcast_fields(&media)
+        else {
+            return Err(PlaybackError::Backend(
+                "podcast playback was started with radio media".into(),
+            ));
+        };
         let episode_id = session_id(&media);
+        let mut media = media;
+        let start_position_ms =
+            self.prepare_external_playback(Some(QueueItem::Episode(episode_id)));
+        let resume_ms = start_position_ms.unwrap_or(base_resume_ms);
+        if let ExternalMedia::Podcast {
+            resume_ms: media_resume_ms,
+            ..
+        } = &mut media
+        {
+            *media_resume_ms = resume_ms;
+        }
         self.note_playback_started(QueueItem::Episode(episode_id), true);
         let kind = row.map_or(PodcastKind::Rss, |episode| episode.kind);
         let subscription_id = row.map_or(0, |episode| episode.subscription_id);
         let published_at = row.and_then(|episode| episode.published_at);
         let media_category = row.and_then(|episode| episode.media_category.clone());
         let (art_url, fallback_art_url) = row.map_or((None, None), episode_artwork_urls);
-        let Some((title, show, source, resume_ms, duration_ms)) = podcast_fields(&media) else {
-            return Err(PlaybackError::Backend(
-                "podcast playback was started with radio media".into(),
-            ));
-        };
         let needs_ytdlp = podcast_source_requires_resolution(kind, &source);
         let phase = if needs_ytdlp {
             PodcastPhase::Resolving
@@ -354,11 +359,15 @@ impl PlayerController {
             // `play_uri` only accepts the local URI; transport failures still
             // arrive asynchronously. Keep the advance chain until playback
             // actually moves in `handle_external_position`.
-            let ExternalMedia::Podcast { resume_ms, .. } = &session.media else {
-                invariant_broken!("podcast session contains radio media");
-                return Ok(());
-            };
-            *resume_ms
+            // Playback has started by now, so a broken session still goes on
+            // to publish its state; it just has no position to resume from.
+            match &session.media {
+                ExternalMedia::Podcast { resume_ms, .. } => *resume_ms,
+                ExternalMedia::Radio { .. } => {
+                    invariant_broken!("podcast session contains radio media");
+                    0
+                }
+            }
         };
         if resume_ms > 0 {
             let succeeded = self.player.seek_to(resume_ms).is_ok();
@@ -376,13 +385,22 @@ impl PlayerController {
         Ok(())
     }
 
-    fn begin_radio(self: &Rc<Self>, media: ExternalMedia, station_id: i64) {
+    fn begin_radio(
+        self: &Rc<Self>,
+        station_id: i64,
+        name: String,
+        stream_url: String,
+        uuid: Option<String>,
+    ) {
         let art_url = reprise_core::radio::station::get(&self.conn, station_id)
             .ok()
             .flatten()
             .and_then(|station| station.favicon_url);
-        let Some((name, stream_url, uuid)) = radio_fields(&media) else {
-            return;
+        let media = ExternalMedia::Radio {
+            station_id,
+            name: name.clone(),
+            stream_url: stream_url.clone(),
+            uuid: uuid.clone(),
         };
         let session = RadioSession {
             media,

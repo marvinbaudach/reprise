@@ -34,19 +34,3 @@ pub(super) fn session_id(media: &ExternalMedia) -> i64 {
         ExternalMedia::Radio { station_id, .. } => *station_id,
     }
 }
-
-/// The radio half of `media`, or `None` for podcast media, which a radio
-/// caller never passes.
-pub(super) fn radio_fields(media: &ExternalMedia) -> Option<(String, String, Option<String>)> {
-    let ExternalMedia::Radio {
-        name,
-        stream_url,
-        uuid,
-        ..
-    } = media
-    else {
-        invariant_broken!("radio fields requested from podcast media");
-        return None;
-    };
-    Some((name.clone(), stream_url.clone(), uuid.clone()))
-}
