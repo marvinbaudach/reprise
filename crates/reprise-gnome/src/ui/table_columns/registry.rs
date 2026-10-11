@@ -57,8 +57,9 @@ pub(in crate::ui) fn preferred_visibility(column: &gtk4::ColumnViewColumn) -> Op
 
 /// Reads each column's key from its widget id. A binding that does not match
 /// the declared keys is reported as a broken invariant and degrades to **no
-/// columns**: the registry built from that manages nothing, so the table keeps
-/// its built layout and stops persisting order, visibility and widths.
+/// columns**: the registry built from that still exists and still persists, but
+/// manages no column, so layout edits never reach the table and it keeps its
+/// built layout.
 pub(in crate::ui) fn bind_columns_by_id<K: ColumnKey>(
     view: &gtk4::ColumnView,
 ) -> Vec<(K, gtk4::ColumnViewColumn)> {

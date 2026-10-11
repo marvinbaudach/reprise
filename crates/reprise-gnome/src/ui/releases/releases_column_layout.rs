@@ -15,8 +15,9 @@ pub(super) fn column_contract() -> Vec<String> {
 }
 
 pub(super) fn registry(view: &gtk4::ColumnView, conn: Rc<Db>) -> Rc<ColumnRegistry<ReleaseColumn>> {
-    // An invalid binding is reported inside and yields no columns; the table
-    // then runs without layout or width persistence (see `bind_columns_by_id`).
+    // An invalid binding is reported inside and yields no columns; the registry
+    // still exists and still persists, but manages no column, so layout edits
+    // never reach the table (see `bind_columns_by_id`).
     let columns = bind_columns_by_id::<ReleaseColumn>(view);
     let registry = ColumnRegistry::new(
         view,
