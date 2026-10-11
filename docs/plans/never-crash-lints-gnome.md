@@ -2,7 +2,7 @@
 slug: never-crash-lints-gnome
 worktree: /home/marvin/Projects/reprise-never-crash-lints-gnome
 branch: feature/never-crash-lints-gnome
-phase: reviewed
+phase: refactored
 codex_session:
 created: 2026-10-11
 ---
