@@ -188,7 +188,7 @@ mod tests {
     #[test]
     fn an_unreadable_row_rebuilds_the_store_from_the_rows() {
         let store = gtk4::gio::ListStore::new::<gtk4::glib::Object>();
-        store.append(&gtk4::StringObject::new("foreign"));
+        store.append(&gtk4::glib::Object::new::<gtk4::glib::Object>());
         store.append(&boxed_object(9));
 
         // Debug builds also trip the invariant assertion; release builds only

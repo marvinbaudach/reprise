@@ -170,7 +170,7 @@ impl PlayerController {
                 uuid,
             } => {
                 self.prepare_external_playback(None);
-                self.begin_radio(station_id, name, stream_url, uuid);
+                self.begin_radio(station_id, &name, stream_url, uuid);
                 Ok(())
             }
         }
@@ -388,7 +388,7 @@ impl PlayerController {
     fn begin_radio(
         self: &Rc<Self>,
         station_id: i64,
-        name: String,
+        name: &str,
         stream_url: String,
         uuid: Option<String>,
     ) {
@@ -398,7 +398,7 @@ impl PlayerController {
             .and_then(|station| station.favicon_url);
         let media = ExternalMedia::Radio {
             station_id,
-            name: name.clone(),
+            name: name.to_owned(),
             stream_url: stream_url.clone(),
             uuid: uuid.clone(),
         };
@@ -416,7 +416,7 @@ impl PlayerController {
             .external
             .borrow_mut()
             .begin_session(ExternalSession::Radio(session));
-        self.sync_track(&name, "", "", None);
+        self.sync_track(name, "", "", None);
         self.sync_cover("");
         self.update_mpris_position(0);
         self.update_external_mpris(MprisPlaybackStatus::Playing);

@@ -51,6 +51,7 @@ pub(in crate::ui) struct Palette {
 }
 
 /// The hex literals a [`Palette`] is written as, before they are decoded.
+#[derive(Clone, Copy)]
 struct PaletteHex {
     window_bg: &'static str,
     view_bg: &'static str,
