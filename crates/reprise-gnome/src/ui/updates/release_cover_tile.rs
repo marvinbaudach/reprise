@@ -108,11 +108,7 @@ fn draw_initials(
 
     let accent_rgb = rgba_rgb(accent);
     let ground = crate::ui::style::color_math::composite(accent_rgb, appearance.surface, top_alpha);
-    let text = crate::ui::style::accent::accent_text_color(accent_rgb, ground, appearance.is_dark);
-    let Some(text) = crate::ui::style::color_math::parse_hex_rgb(&text) else {
-        invariant_broken!("the derived accent text colour {text:?} is valid");
-        return;
-    };
+    let text = crate::ui::style::accent::accent_text_rgb(accent_rgb, ground, appearance.is_dark);
     context.set_source_rgb(
         f64::from(text[0]) / 255.0,
         f64::from(text[1]) / 255.0,
