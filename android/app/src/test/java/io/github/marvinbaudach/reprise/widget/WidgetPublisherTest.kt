@@ -83,6 +83,19 @@ class WidgetPublisherTest {
     }
 
     @Test
+    fun aBufferingBlipBetweenPlayingStatesOfOneTrackRedrawsNothing() {
+        publisher.onSnapshot(snapshot(AndroidPlaybackState.PLAYING, 3))
+        drain()
+
+        publisher.onSnapshot(snapshot(AndroidPlaybackState.BUFFERING, 3))
+        publisher.onSnapshot(snapshot(AndroidPlaybackState.PLAYING, 3, positionMs = 400))
+        drain()
+
+        assertEquals(1, refreshes)
+        assertEquals(true, store.load().isPlaying)
+    }
+
+    @Test
     fun aLibraryThatFailsLeavesTheWidgetAsItWasAndDoesNotThrow() {
         failMetadata = true
 

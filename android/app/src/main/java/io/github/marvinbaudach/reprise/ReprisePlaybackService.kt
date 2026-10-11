@@ -34,6 +34,7 @@ import io.github.marvinbaudach.reprise.library.PlaybackKey
 import io.github.marvinbaudach.reprise.library.TrackMetadata
 import io.github.marvinbaudach.reprise.library.TrackMetadataResolver
 import io.github.marvinbaudach.reprise.widget.RepriseWidget
+import io.github.marvinbaudach.reprise.widget.WidgetUpdateSettle
 import io.github.marvinbaudach.reprise.widget.WidgetPublisher
 import io.github.marvinbaudach.reprise.widget.WidgetStateStore
 import androidx.glance.appwidget.updateAll
@@ -146,6 +147,10 @@ open class ReprisePlaybackService : MediaLibraryService() {
             },
         )
     }
+    private val widgetHandler = Handler(Looper.getMainLooper())
+    private val widgetSettle by lazy {
+        WidgetUpdateSettle(widgetHandler, deliver = widgetPublisher::onSnapshot)
+    }
     private val analysisTrack = AnalysisTrackGate()
     private val analysisTrackId: Long?
         get() = analysisTrack.current
@@ -186,7 +191,7 @@ open class ReprisePlaybackService : MediaLibraryService() {
         override fun onPlaybackChanged(snapshot: AndroidPlaybackSnapshot) {
             mutablePlaybackSnapshots.value = snapshot
             currentTrackArtwork.onCurrentTrack(snapshot.currentTrackUri)
-            widgetPublisher.onSnapshot(snapshot)
+            widgetSettle.onSnapshot(snapshot)
             if (::sleepTimer.isInitialized) sleepTimer.onPlaybackSnapshot(snapshot)
             if (Looper.myLooper() == Looper.getMainLooper()) {
                 handleTrackAnalysis(snapshot)
@@ -400,6 +405,8 @@ open class ReprisePlaybackService : MediaLibraryService() {
         // After the Core session: closing it can still report a last snapshot,
         // and that reaches the artwork and widget work queued on this executor.
         artworkExecutor.shutdownNow()
+        // Its last snapshot may have scheduled a widget redraw.
+        widgetHandler.removeCallbacksAndMessages(null)
         mediaSession?.let { session ->
             // Unsubscribe Media3 before releasing: it holds this session in its
             // own map and would otherwise be left with a released one.

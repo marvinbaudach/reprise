@@ -1,9 +1,9 @@
 package io.github.marvinbaudach.reprise.widget
 
+import io.github.marvinbaudach.reprise.hasPlayIntent
 import io.github.marvinbaudach.reprise.library.PlaybackKey
 import io.github.marvinbaudach.reprise.library.TrackMetadata
 import uniffi.reprise_android_ffi.AndroidPlaybackSnapshot
-import uniffi.reprise_android_ffi.AndroidPlaybackState
 
 /**
  * Everything the home-screen widget draws, and nothing it has to compute.
@@ -39,11 +39,15 @@ internal data class WidgetNowPlaying(
     }
 }
 
-/** What decides whether the widget has to be drawn again. */
+/**
+ * What decides whether the widget has to be drawn again. Buffering counts as
+ * playing: the play/pause icon would only flicker through it, and a track change
+ * passes PLAYING -> BUFFERING -> PLAYING, which must stay one key change.
+ */
 internal data class WidgetStateKey(val trackId: Long?, val isPlaying: Boolean)
 
 internal fun AndroidPlaybackSnapshot?.widgetKey(): WidgetStateKey =
-    WidgetStateKey(this?.currentTrackId, this?.state == AndroidPlaybackState.PLAYING)
+    WidgetStateKey(this?.currentTrackId, this?.state?.hasPlayIntent == true)
 
 /**
  * The widget's state after [snapshot].
@@ -60,7 +64,7 @@ internal fun widgetNowPlaying(
 ): WidgetNowPlaying {
     val trackId = snapshot?.currentTrackId
     val trackUri = snapshot?.currentTrackUri
-    val playing = snapshot?.state == AndroidPlaybackState.PLAYING
+    val playing = snapshot?.state?.hasPlayIntent == true
     if (trackId == null || trackUri == null) {
         return previous.copy(isPlaying = false, canResume = false)
     }

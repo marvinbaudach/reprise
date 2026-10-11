@@ -34,8 +34,10 @@ class WidgetNowPlayingTest {
     }
 
     @Test
-    fun buffering_and_stopped_do_not_count_as_playing() {
-        assertFalse(map(snapshot(AndroidPlaybackState.BUFFERING, 5)).isPlaying)
+    fun buffering_counts_as_playing_and_stopped_does_not() {
+        // The key treats buffering as playing, so the drawing must too: a
+        // buffering snapshot that was drawn as paused would never be corrected.
+        assertTrue(map(snapshot(AndroidPlaybackState.BUFFERING, 5)).isPlaying)
         assertFalse(map(snapshot(AndroidPlaybackState.STOPPED, 5)).isPlaying)
     }
 
@@ -149,6 +151,14 @@ class WidgetNowPlayingTest {
         assertEquals(playing, snapshot(AndroidPlaybackState.PLAYING, 5, positionMs = 9_000).widgetKey())
         assertFalse(playing == snapshot(AndroidPlaybackState.PAUSED, 5).widgetKey())
         assertFalse(playing == snapshot(AndroidPlaybackState.PLAYING, 6).widgetKey())
+    }
+
+    @Test
+    fun bufferingKeepsTheKeyOfPlayingBecauseTheIconDoesNotFlicker() {
+        val playing = snapshot(AndroidPlaybackState.PLAYING, 5).widgetKey()
+
+        assertEquals(playing, snapshot(AndroidPlaybackState.BUFFERING, 5).widgetKey())
+        assertTrue(map(snapshot(AndroidPlaybackState.BUFFERING, 5)).isPlaying)
     }
 
     @Test
