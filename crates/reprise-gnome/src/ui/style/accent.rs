@@ -118,7 +118,11 @@ fn default_window_background_rgb() -> [u8; 3] {
 /// The AA threshold every accent foreground must clear (CONTRAST-5).
 pub(in crate::ui::style) const ACCENT_TEXT_MINIMUM_RATIO: f64 = 4.5;
 
-pub(in crate::ui) fn accent_text_rgb(accent: [u8; 3], background: [u8; 3], is_dark: bool) -> [u8; 3] {
+pub(in crate::ui) fn accent_text_rgb(
+    accent: [u8; 3],
+    background: [u8; 3],
+    is_dark: bool,
+) -> [u8; 3] {
     use super::color_math::{ensure_contrast_by_lightness, max_contrast_monochrome};
 
     // A sufficiently saturated accent cannot always reach the ratio by

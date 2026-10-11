@@ -11,8 +11,8 @@ use reprise_core::up_next::QueueItem;
 
 use crate::ui::player_controller::PlayerController;
 
-pub(super) use super::external_media_fields::session_id;
 use super::external_media_fields::podcast_fields;
+pub(super) use super::external_media_fields::session_id;
 use super::external_media_state::{
     episode_artwork_urls, podcast_source_requires_resolution, AutomaticAdvance, ExternalSession,
     NeighbourContext, PodcastOrigin, PodcastSession, RadioCommand, RadioSession, ResumePolicy,
