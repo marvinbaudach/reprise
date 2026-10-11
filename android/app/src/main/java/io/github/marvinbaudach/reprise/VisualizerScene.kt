@@ -1,6 +1,5 @@
 package io.github.marvinbaudach.reprise
 
-import android.graphics.Matrix
 import android.graphics.Paint
 import android.graphics.RadialGradient
 import android.graphics.Shader
@@ -19,6 +18,7 @@ import androidx.compose.ui.graphics.drawscope.clipPath
 import androidx.compose.ui.graphics.nativeCanvas
 import androidx.compose.ui.graphics.toArgb
 import androidx.compose.runtime.staticCompositionLocalOf
+import androidx.core.graphics.withTranslation
 import io.github.marvinbaudach.reprise.ui.theme.AmbientTrueBlack
 import io.github.marvinbaudach.reprise.ui.theme.spectralColour
 import java.nio.ByteBuffer
@@ -323,9 +323,8 @@ private fun DrawScope.drawFlatRadialGlow(
     painter.draw(drawContext.canvas.nativeCanvas, center, radius, header.color)
 }
 
-private class RadialGlowPainter {
+internal class RadialGlowPainter {
     private val paint = Paint(Paint.ANTI_ALIAS_FLAG)
-    private val matrix = Matrix()
     // Insertion-order eviction is safe while bars is the only mode emitting radial glows: its RGB
     // comes only from the bar index, for at most BAR_COUNT (currently 64) bit-identical keys. A future
     // mode with continuously varying glow colours would make the eviction policy matter.
@@ -334,16 +333,20 @@ private class RadialGlowPainter {
     fun draw(canvas: android.graphics.Canvas, center: Offset, radius: Float, color: Color) {
         val argb = color.toArgb()
         val rgb = argb and RGB_MASK
-        val shader = shaderFor(rgb)
-        matrix.setScale(radius, radius)
-        matrix.postTranslate(center.x, center.y)
-        shader.setLocalMatrix(matrix)
-        paint.shader = shader
+        // The gradient lives in the unit circle and the canvas places it. Shader.setLocalMatrix
+        // discards the native shader, so positioning it per draw made Paint.getNativeInstance
+        // rebuild it every frame: simpleperf on a Pixel (release, spectrum visualizer playing)
+        // put RadialGradient_create at 2.8 % of the main thread, about 4 % with the Skia
+        // gradient setup. The shader now stays at its identity matrix and is built once per colour.
+        paint.shader = shaderFor(rgb)
         paint.alpha = argb ushr ALPHA_SHIFT
-        canvas.drawCircle(center.x, center.y, radius, paint)
+        canvas.withTranslation(center.x, center.y) {
+            scale(radius, radius)
+            drawCircle(0f, 0f, 1f, paint)
+        }
     }
 
-    private fun shaderFor(rgb: Int): RadialGradient {
+    internal fun shaderFor(rgb: Int): RadialGradient {
         shaders[rgb]?.let { return it }
         if (shaders.size == MAX_CACHED_GLOW_COLOURS) {
             val oldest = shaders.entries.iterator()
