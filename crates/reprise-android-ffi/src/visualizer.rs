@@ -5,6 +5,7 @@
 
 mod adopted_shape_hold;
 mod clock;
+mod frame;
 mod live_audio;
 mod scene_encoding;
 mod stored_frame_grace;
@@ -19,6 +20,7 @@ use reprise_core::visuals::{spectrum_frame_from_bands, VisualEngine};
 use adopted_shape_hold::AdoptedShapeHold;
 pub(crate) use clock::MonotonicClock;
 use clock::SystemMonotonicClock;
+pub use frame::AndroidVisualFrame;
 pub(crate) use scene_encoding::encode_scene;
 use stored_frame_grace::StoredFrameGrace;
 
