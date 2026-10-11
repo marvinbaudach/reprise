@@ -16,7 +16,17 @@ const SIX_LINTS: [&str; 6] = [
 
 /// The text of the crate-root `#![cfg_attr(…)]` attribute, if there is one.
 fn root_attribute() -> Option<&'static str> {
-    let start = CRATE_ROOT.find("#![cfg_attr(")?;
+    // Only an attribute that opens its own line counts: a commented-out one
+    // or one quoted in prose has other text before it.
+    let start = CRATE_ROOT
+        .match_indices("#![cfg_attr(")
+        .map(|(at, _)| at)
+        .find(|&at| {
+            let line_start = CRATE_ROOT[..at]
+                .rfind('\n')
+                .map_or(0, |newline| newline + 1);
+            CRATE_ROOT[line_start..at].trim().is_empty()
+        })?;
     let rest = &CRATE_ROOT[start..];
     let end = rest.find(")]")?;
     Some(&rest[..end + ")]".len()])
