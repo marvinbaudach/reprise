@@ -1,4 +1,25 @@
+// Production code must not panic on bad input or broken invariants: a panic
+// inside a GTK signal handler unwinds into C and aborts the whole application.
+// A state that cannot happen goes through `invariant_broken!` instead (log,
+// assert in debug builds, degrade). A genuine, documented invariant is
+// suppressed at its site with `#[expect(clippy::<lint>, reason = "…")]`, and
+// scripts/check-crate-layers.sh counts those suppressions against a budget.
+// Test builds are exempt.
+#![cfg_attr(
+    not(test),
+    deny(
+        clippy::unwrap_used,
+        clippy::expect_used,
+        clippy::panic,
+        clippy::todo,
+        clippy::unimplemented,
+        clippy::unreachable
+    )
+)]
+
 mod i18n;
+#[cfg(test)]
+mod panic_policy_tests;
 #[cfg(test)]
 mod test_db;
 mod ui;
