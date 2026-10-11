@@ -10,7 +10,6 @@ internal data class NowPlayingPanelTransform(
     val scale: Float,
     val rotationDegrees: Float,
     val opacity: Float,
-    val blurPx: Float,
     val saturation: Float,
 ) {
     val rotationForLayer: Float?
@@ -22,9 +21,9 @@ internal fun nowPlayingPanelTransform(
     positionPx: Float,
     widthPx: Float,
 ): NowPlayingPanelTransform {
-    if (widthPx <= 0f) return NowPlayingPanelTransform(0f, 1f, 0f, 1f, 0f, 1f)
+    if (widthPx <= 0f) return NowPlayingPanelTransform(0f, 1f, 0f, 1f, 1f)
     if (positionPx == panelIndex * widthPx) {
-        return NowPlayingPanelTransform(0f, 1f, 0f, 1f, 0f, 1f)
+        return NowPlayingPanelTransform(0f, 1f, 0f, 1f, 1f)
     }
     val fractionalIndex = positionPx / widthPx
     val delta = panelIndex - fractionalIndex
@@ -35,7 +34,6 @@ internal fun nowPlayingPanelTransform(
         scale = 1f - distance * 0.13f,
         rotationDegrees = delta.coerceIn(-1f, 1f) * -3.5f,
         opacity = max(0f, 1f - distance * 0.75f),
-        blurPx = (1f - near) * 5f,
         saturation = 0.4f + near * 0.6f,
     )
 }

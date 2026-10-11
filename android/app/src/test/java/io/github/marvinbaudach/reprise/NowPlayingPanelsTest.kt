@@ -155,7 +155,6 @@ class NowPlayingPanelsTest {
         assertEquals(1f.toRawBits(), rest.scale.toRawBits())
         assertEquals(0f.toRawBits(), rest.rotationDegrees.toRawBits())
         assertEquals(1f.toRawBits(), rest.opacity.toRawBits())
-        assertEquals(0f.toRawBits(), rest.blurPx.toRawBits())
         assertEquals(1f.toRawBits(), rest.saturation.toRawBits())
         assertNull(rest.rotationForLayer)
 
@@ -163,7 +162,6 @@ class NowPlayingPanelsTest {
         assertEquals(0.87f, next.scale, 0f)
         assertEquals(-3.5f, next.rotationDegrees, 0f)
         assertEquals(0.25f, next.opacity, 0f)
-        assertEquals(5f, next.blurPx, 0f)
         assertEquals(0.4f, next.saturation, 0f)
     }
 

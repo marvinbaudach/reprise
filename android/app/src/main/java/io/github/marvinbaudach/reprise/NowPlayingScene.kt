@@ -31,7 +31,6 @@ import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.blur
 import androidx.compose.ui.geometry.CornerRadius
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Rect
@@ -366,7 +365,6 @@ private fun NowPlayingPanelLayer(
     val barsOpacity = blend.barsOpacity
     val barHeight = 0.3f + near * 0.7f
     val coverShadow = rememberCoverShadowBitmap()
-    val density = LocalDensity.current
     val saturationFilter = cachedSaturationFilter(transform.saturation)
 
     // The panel now draws only its own cover box and bars; the fog is
@@ -376,6 +374,11 @@ private fun NowPlayingPanelLayer(
             .offset(y = coverTop)
             .fillMaxWidth()
             .height(COVER_SIZE_DP.dp)
+            // No blur here on purpose: a blur radius that changes every frame
+            // forces an offscreen re-render of every panel, bars included, on
+            // each frame of the drag. Measured as the main GPU cost of the
+            // swipe (docs/plans/the-whole-screen-moves-with-the-swipe.md), and
+            // FX-1 in docs/ux-rules.md asks for GPU-cheap effects without live blur.
             .graphicsLayer {
                 translationX = transform.translationX
                 scaleX = transform.scale * coverScale
@@ -383,14 +386,7 @@ private fun NowPlayingPanelLayer(
                 transform.rotationForLayer?.let { rotationZ = it }
                 alpha = transform.opacity
                 colorFilter = saturationFilter
-            }
-            .then(
-                if (transform.blurPx.toRawBits() == 0f.toRawBits()) {
-                    Modifier
-                } else {
-                    Modifier.blur(with(density) { transform.blurPx.toDp() })
-                },
-            ),
+            },
         contentAlignment = Alignment.Center,
     ) {
         Canvas(Modifier.size(COVER_SIZE_DP.dp)) {
