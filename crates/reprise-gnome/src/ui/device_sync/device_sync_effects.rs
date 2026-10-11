@@ -106,7 +106,10 @@ pub(super) async fn perform(
             invariant_broken!("the driver handles Finished before calling perform");
             // `Cancel` would mark the run cancelled. A zero-byte progress
             // report is the one event the machine ignores in every state
-            // that is not a copy or write in flight.
+            // that is not a copy or write in flight. The degrade is not a
+            // finish: the driver's loop then finds no pending effect and
+            // ends the run without a published outcome, because
+            // `finish_sync` is never reached.
             Event::CopyProgress { copied: 0 }
         }
         Effect::CleanPartials(partial_paths) => {
