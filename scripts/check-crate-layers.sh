@@ -133,7 +133,7 @@ while IFS='|' read -r crate edges_default edges_all banned policy extra; do
   crate=$(trim "$crate")
   [[ -z $crate || $crate == '#'* ]] && continue
   policy=$(trim "${policy:-}")
-  if [[ -n ${extra:-} || -z $policy || ! $policy =~ ^deny$ ]]; then
+  if [[ -n ${extra:-} || -z $policy || $policy != deny ]]; then
     fail "layer table row for $crate must have five fields ending in deny"
     continue
   fi
