@@ -144,7 +144,7 @@ mod tests {
     }
 
     #[test]
-    fn a_dead_worker_answers_with_an_error_that_is_not_retried_online() {
+    fn a_dead_worker_answers_with_invalid_response_instead_of_temporary() {
         let (sender, receiver) = async_channel::unbounded::<LyricsRequest>();
         drop(receiver);
         let runtime = LyricsRuntime { sender };

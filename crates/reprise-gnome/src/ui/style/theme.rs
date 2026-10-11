@@ -145,7 +145,10 @@ impl Palette {
             .into_iter()
             .flat_map(|surface| RUNGS.map(|rung| composite(WHITE, surface, rung)))
             .flat_map(|ground| [ground, composite(accent, ground, HEAVIEST_ACCENT_TINT)])
-            .reduce(|worst, surface| {
+            // Seeded with a surface that is itself a candidate (rung 0.0 leaves
+            // it unchanged), so the palette's fixed size leaves nothing to fall
+            // back from.
+            .fold(self.surfaces[0], |worst, surface| {
                 let take_surface = if is_dark {
                     relative_luminance(surface) > relative_luminance(worst)
                 } else {
@@ -156,10 +159,6 @@ impl Palette {
                 } else {
                     worst
                 }
-            })
-            .unwrap_or_else(|| {
-                invariant_broken!("the palette always has surfaces");
-                accent
             })
     }
 }

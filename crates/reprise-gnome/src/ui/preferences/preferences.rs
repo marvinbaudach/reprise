@@ -349,8 +349,7 @@ impl PreferencesContext {
         }
 
         let smoke = std::env::var(SMOKE_ENV).ok();
-        // The smoke harness reads the log; an unknown page leaves the dialog
-        // on its first page.
+        // An unknown smoke page leaves the dialog on its first page.
         let smoke_page_index = smoke.as_deref().and_then(|page| {
             let page = if page == "columns" { "layout" } else { page };
             super::preferences_window::page_index_by_name(page)
