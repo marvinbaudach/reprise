@@ -314,8 +314,7 @@ impl SegmentGate {
                 }
             }
         }
-        // Before `Playing`, so no event of the new stream carries the old one.
-        self.stream_generation.fetch_add(1, Ordering::SeqCst);
+        // The generation moved when the start was issued (`start_segment`).
         if let Err(error) = playbin.set_state(gst::State::Playing) {
             // GStreamer posts the failure on the bus as well.
             tracing::warn!(%error, "CUE track's file would not start playing");
@@ -462,6 +461,16 @@ pub(super) fn start_segment(
     playbin
         .set_state(gst::State::Paused)
         .map_err(|e| PlaybackError::Backend(format!("GStreamer: {e}")))?;
+    // The start is a stream start from here on, like a whole file's: the file
+    // only enters `Playing` once it has prerolled, and a fault of the stream
+    // before it that the frontend has not yet read must not carry the
+    // generation this one is current under. Bumped under `Player::try_play`'s
+    // `playbin` lock, so the events the bus and the start itself emit afterwards
+    // carry the new generation. Not every event can promise it: the position
+    // ticker looks at the pipeline's state outside that lock, and spectrum
+    // frames come from a streaming thread, so one that was already under way
+    // can still carry the previous generation.
+    gate.stream_generation.fetch_add(1, Ordering::SeqCst);
     Ok(())
 }
 

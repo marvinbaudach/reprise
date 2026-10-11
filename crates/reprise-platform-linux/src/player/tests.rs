@@ -15,6 +15,7 @@ mod rebuild_tests;
 mod segment_boundary_tests;
 mod segment_clock_tests;
 mod segment_gain_step_tests;
+mod segment_generation_tests;
 mod segment_handoff_tests;
 mod segment_prefeed_tests;
 mod segment_start_tests;

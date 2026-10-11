@@ -348,9 +348,13 @@ impl Player {
     /// `segment` is set paused and returns at once: the bus's `ASYNC_DONE`
     /// seeks to its start and enters `Playing` (see `segment::start_segment`).
     ///
-    /// Bumps `stream_generation` only once `Playing` is entered (a failed
-    /// attempt never emits an event, nothing to mislabel), still under the
-    /// `playbin` lock so no event — `StateChanged` below included — sees stale.
+    /// Bumps `stream_generation` once the start is accepted (a failed attempt
+    /// never emits an event, nothing to mislabel), still under the `playbin`
+    /// lock: a whole file after `Playing` is entered, a CUE track when its
+    /// paused start is issued (`segment::start_segment`) rather than at
+    /// preroll, so the `StateChanged` below and the bus events that follow
+    /// carry the new one. A position tick already in flight, or a spectrum
+    /// frame from a streaming thread, can still carry the previous generation.
     fn try_play(
         &self,
         uri: &str,
