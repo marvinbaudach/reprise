@@ -401,14 +401,12 @@ result.
   with a title that wraps. The transport row keeps its place above the bottom
   edge and the navigation bar (FB-18 floats the Undo snackbar over its top).
   Everything above it is placed by its measured height: where the screen has
-  room the cover stays centred on 34 % of the height, the title block 156 dp
-  below that centre and the seek bar at 69 %; where it has not, the seek
+  room the layout is the same as on a tall phone; where it has not, the seek
   block rises first, then the title block, then the cover, which rises and
   only then shrinks. Text and touch targets never shrink to make room. The
   room is reserved for a two-line title whatever the track is called, so the
   cover does not change size from one song to the next; only when that would
-  cost the cover more than 30 % of its size is the title held to one line.
-  <!-- REVIEW: rule proposal -->
+  shrink the cover substantially is the title held to one line.
   *Tests:*
   `nav_21_a_small_phone_at_double_font_scale_keeps_every_block_apart`,
   `nav_21_a_small_phone_at_normal_font_scale_keeps_every_block_apart`,
