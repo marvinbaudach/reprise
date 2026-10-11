@@ -52,7 +52,7 @@ internal class NowPlayingPositionReconciler {
         // frame later, or the other way round. In the first window the
         // reconciler saw the same track at the settle's own target index, fell
         // through to SNAP, and that snap cancelled the running settle through
-        // the Animatable's mutex: the 480 ms slide never rendered and the track
+        // the Animatable's mutex: the settle slide never rendered and the track
         // simply cut. In the second window it saw a new track id at the index
         // the swipe had just left and ANIMATEd back there, which is the card
         // visibly returning to the centre before the cut.

@@ -147,7 +147,7 @@ internal fun NowPlayingSheet(
     }
     // The film palette rides its own, slower clock: the cover and the bars
     // still cross-fade in VISUALIZER_CROSSFADE_MS, but a light that cuts in
-    // 220 ms while the fog underneath it takes a full second reads as the
+    // 220 ms while the fog underneath it takes twice as long reads as the
     // picture answering before the light does. FOG_CROSSFADE_MS is the same
     // constant NowPlayingFogLayer's own crossfade runs on (see
     // NowPlayingFogHandover.kt), so a cover-to-visualizer switch and a track
@@ -450,7 +450,7 @@ internal fun NowPlayingSheet(
  * Keeps a committed swipe on its target card until the transport has spoken.
  *
  * `next()` is fire-and-forget and its answer -- the new index in the playback
- * snapshot -- can land later than the 480 ms settle on a loaded phone. Snapping
+ * snapshot -- can land later than the settle ([NOW_PLAYING_SETTLE_MS]) on a loaded phone. Snapping
  * back the moment the slide ended without an answer read a late transport as
  * a refusing one: the card slid in, jumped back, and slid in again when the
  * answer arrived. So the card now waits for [answered] to turn true -- the
@@ -486,7 +486,7 @@ internal suspend fun settleNowPlayingPosition(
 }
 
 internal const val VISUALIZER_CROSSFADE_MS = 220
-internal const val NOW_PLAYING_SETTLE_MS = 480
+internal const val NOW_PLAYING_SETTLE_MS = 300
 internal const val NOW_PLAYING_ANSWER_GRACE_MS = 1_500
 internal val NOW_PLAYING_SETTLE_EASING = CubicBezierEasing(0.22f, 1.06f, 0.32f, 1f)
 private const val NOW_PLAYING_VISUALIZER_TAG = VISUALIZER_LOG_TAG

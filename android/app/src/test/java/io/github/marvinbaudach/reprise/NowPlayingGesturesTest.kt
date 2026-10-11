@@ -254,7 +254,7 @@ class NowPlayingGesturesTest {
 
     private fun committedSwipeWithoutAnswerHoldsThenReturns(framesBeforeRelease: Int) {
         // The transport answers a `next()` asynchronously and, on a loaded phone,
-        // later than the 480 ms settle. The settled card used to snap back to
+        // later than the settle. The settled card used to snap back to
         // the old track the moment the slide ended without an answer, and slide
         // forward again when the answer came: slide in, jump back, slide in.
         val controls = GestureRecordingControls(
@@ -407,7 +407,7 @@ class NowPlayingGesturesTest {
 
     @Test
     fun fogCrossfadeUsesTheAcceptedDuration() {
-        assertEquals(1000, FOG_CROSSFADE_MS)
+        assertEquals(500, FOG_CROSSFADE_MS)
     }
 
     @Test

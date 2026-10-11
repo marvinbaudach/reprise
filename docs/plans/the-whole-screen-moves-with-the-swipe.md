@@ -10,6 +10,8 @@ merge_order: a,b
 ---
 # The whole screen moves with the swipe
 
+> 2026-10-11: the panel blur was removed after measurement on a 120 Hz Pixel, where it pushed the GPU over budget while panels were dragged; the settle is now 300 ms and the fog crossfade 500 ms.
+
 Mother plan. The work lives in `-a.md` (neighbour data) and `-b.md` (the whole
 Compose surface). Read this file first: it carries every number, every decision
 and the checks no strand can make alone.
@@ -102,7 +104,7 @@ everything below is a factor on that displacement.
 | box rotation | `clamp(i - f, -1, 1) * -3.5°` | 0° | ∓3.5° |
 | box opacity | `max(0, 1 - dist * 0.75)` | 1.0 | 0.25 |
 | title opacity | `max(0, 1 - dist * 1.35)` | 1.0 | 0 at dist 0.74 |
-| blur | `(1 - near) * 5` px | 0 | 5 |
+| ~~blur~~ | removed 2026-10-11: it cost the swipe its frame budget (see below) | — | — |
 | saturation | `0.4 + near * 0.6` | 1.0 | 0.4 |
 | glow opacity | `max(0, 1 - |i - f| * 1.1)` | 1.0 | 0 at dist 0.91 |
 
@@ -153,7 +155,7 @@ saw.
 - Otherwise spring back to the current index.
 - Velocity is `|d| / max(60ms, Δt)`. The 60 ms floor is deliberate: it defuses
   very short flicks. Keep it.
-- Settle: `480 ms`, `cubic-bezier(.22, 1.06, .32, 1)` — slight overshoot.
+- Settle: `300 ms` (was 480 ms until 2026-10-11), `cubic-bezier(.22, 1.06, .32, 1)` — slight overshoot.
   Opacity settles at `420 ms` ease. During the drag: **no transition at all.**
 - At the ends of the list: rubber band, movement damped to `0.3`, no hard stop.
   Beyond the first panel `pos *= 0.3`; beyond the last
@@ -306,7 +308,7 @@ the accessibility semantics. Removing it would silently drop TalkBack support.
 not visually a different event from pressing next — the prose already requires
 that the previous/next buttons take the same path as the swipe, and end-of-track
 belongs on that path too. `pos` animates to `index * screenWidth` with the same
-480 ms curve.
+300 ms curve.
 
 There is no way to distinguish an automatic advance from a user-initiated one at
 the Compose layer, and none is needed: both arrive as a new `currentTrackId` in
@@ -417,7 +419,7 @@ accepted, not overlooked.
 
 **G3 — one Compose element per panel, not one canvas for everything.**
 Each panel is its own `Box` carrying `graphicsLayer` (scale, rotation, alpha),
-`Modifier.blur` and a saturation `ColorFilter`, with the cover or visualizer
+a saturation `ColorFilter` (and, until 2026-10-11, `Modifier.blur`), with the cover or visualizer
 drawn inside it. This is the larger restructure — cover, visualizer and fog draw
 routines must be re-hosted per panel — but it is the only shape that yields the
 design's blur and saturation without hand-rolling them.
@@ -440,7 +442,7 @@ that leaves the current track alone re-seats silently.** See "Auto-advance".
 
 **Decided without asking, both with existing precedent in the codebase:**
 
-- *Blur is API 31+ and `minSdk` is 26* (`android/app/build.gradle.kts:56`;
+- *(Superseded: the blur was removed on 2026-10-11.) Blur is API 31+ and `minSdk` is 26* (`android/app/build.gradle.kts:56`;
   `targetSdk = 37` at `:57`). `Modifier.blur` is silently inert below 31;
   `OilFilmPalette.kt:58` already records this boundary and `AmbientSurface.kt:178`
   already lives with it. Accepted: on API 26-30 neighbours stay sharp but are

@@ -2,6 +2,7 @@
 
 **Date:** 2026-09-18
 **Scope:** Android now-playing scene only. Desktop is the reference, not a target.
+**Update 2026-10-11:** `FOG_CROSSFADE_MS` is now 500 and the swipe settle 300 ms; the 1000 ms and 480 ms figures below are the values as first designed.
 
 ## Problem
 

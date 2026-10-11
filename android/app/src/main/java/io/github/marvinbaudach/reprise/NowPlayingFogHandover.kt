@@ -149,7 +149,7 @@ internal fun continuedFogClocks(
  * pair would both be part-way out at the midpoint and the light would dip
  * there — a crossfade wants its two halves to sum to 1, not to ease.
  */
-internal const val FOG_CROSSFADE_MS = 1000
+internal const val FOG_CROSSFADE_MS = 500
 
 /**
  * How long one shimmer rotation takes, mirrored from the private constant of
