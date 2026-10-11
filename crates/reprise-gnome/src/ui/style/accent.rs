@@ -305,8 +305,7 @@ mod tests {
                     let critical = palette.critical_accent_surface(is_dark, accent_rgb);
                     let derived = accent_text_rgb(accent_rgb, critical, is_dark);
 
-                    for surface in palette.surfaces() {
-                        let plain = parse_hex_rgb(surface).expect("palette surface is valid hex");
+                    for plain in palette.surfaces() {
                         // Both the bare surface and the loudest accent-tinted
                         // fill that can sit on it. The role is painted app-wide;
                         // the critical surface is only the worst case it must
@@ -324,7 +323,7 @@ mod tests {
                             assert!(
                                 ratio >= ACCENT_TEXT_MINIMUM_RATIO,
                                 "{theme:?} {}: {accent} derived against {critical:?} \
-                                 reaches only {ratio:.2}:1 on {background:?} (from {surface})",
+                                 reaches only {ratio:.2}:1 on {background:?} (from {plain:?})",
                                 if is_dark { "dark" } else { "light" }
                             );
                         }

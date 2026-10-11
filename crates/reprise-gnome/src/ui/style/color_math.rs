@@ -122,8 +122,10 @@ pub(in crate::ui) const fn parse_hex_rgb(hex: &str) -> Option<[u8; 3]> {
 
 /// Decodes a `#RRGGBB` literal that is known at compile time.
 ///
-/// Meant for `const` items only: a malformed literal then fails the build, so
-/// no runtime path has to cope with one.
+/// For `const` items only. The `assert!` is the compile-time check: evaluated
+/// in a `const` item, a malformed literal fails the build, so no runtime path
+/// has to cope with one. Called at runtime it would panic on the same input,
+/// so runtime text goes through [`parse_hex_rgb`] and its `Option` instead.
 pub(in crate::ui) const fn rgb_literal(hex: &str) -> [u8; 3] {
     assert!(
         parse_hex_rgb(hex).is_some(),
@@ -133,6 +135,35 @@ pub(in crate::ui) const fn rgb_literal(hex: &str) -> [u8; 3] {
         Some(rgb) => rgb,
         None => [0; 3],
     }
+}
+
+/// Decodes a plain decimal fraction such as `"0.26"` that is known at compile
+/// time.
+///
+/// For `const` items only, like [`rgb_literal`]: the `assert!`s turn a token
+/// that is not digits with at most one `.` into a build failure.
+pub(in crate::ui) const fn decimal_fraction(token: &str) -> f64 {
+    let bytes = token.as_bytes();
+    assert!(!bytes.is_empty(), "a fraction token must not be empty");
+    let mut mantissa: u64 = 0;
+    let mut scale: u64 = 1;
+    let mut seen_point = false;
+    let mut index = 0;
+    while index < bytes.len() {
+        let byte = bytes[index];
+        if byte == b'.' {
+            assert!(!seen_point, "a fraction token has at most one point");
+            seen_point = true;
+        } else {
+            assert!(byte.is_ascii_digit(), "a fraction token is decimal digits");
+            mantissa = mantissa * 10 + (byte - b'0') as u64;
+            if seen_point {
+                scale *= 10;
+            }
+        }
+        index += 1;
+    }
+    mantissa as f64 / scale as f64
 }
 
 /// An opaque [`gdk::RGBA`](gtk4::gdk::RGBA) from 8-bit channels.
@@ -304,6 +335,14 @@ mod tests {
         for malformed in ["4FDBD4", "#4FD", "#4FDBD", "#4FDBD44", "#GGGGGG", ""] {
             assert_eq!(parse_hex_rgb(malformed), None, "accepted {malformed:?}");
         }
+    }
+
+    #[test]
+    fn a_decimal_fraction_token_decodes_to_the_nearest_double() {
+        const CEILING: f64 = decimal_fraction("0.26");
+        assert_eq!(CEILING, "0.26".parse::<f64>().unwrap_or(f64::NAN));
+        assert_eq!(decimal_fraction("1"), 1.0);
+        assert_eq!(decimal_fraction("0.04"), 0.04);
     }
 
     #[test]
