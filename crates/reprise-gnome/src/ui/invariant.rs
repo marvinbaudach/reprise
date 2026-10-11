@@ -4,7 +4,7 @@
 //! A panic inside a GTK signal handler unwinds into C and aborts the whole
 //! application, so the frontend denies `unwrap`, `expect`, `panic!` and their
 //! relatives from the crate root. A genuinely impossible state still needs an
-//! answer, and [`invariant_broken!`] is it: log the broken invariant, trip a
+//! answer, and `invariant_broken!` is it: log the broken invariant, trip a
 //! debug assertion, and let the caller take its neutral path.
 //!
 //! - Release builds (the Flatpak) never crash. They log at `error` level and
