@@ -121,8 +121,10 @@ impl PlayerController {
     /// handle failure" sequence exists exactly once (DRY). Ends the previous
     /// track's listening session first
     /// (`evaluate_play_tracking`) — a queue step is still a track switch. On
-    /// success, resets `consecutive_skips` to 0 (a good track breaks any skip
-    /// chain). On a `Player::play` failure, hands off to `playback_faults.rs`'s
+    /// success, resets `consecutive_skips` to 0 unless the skip loop itself made
+    /// the start (`failure_advance_in_flight`): `play` returns `Ok` before an
+    /// asynchronous fault is reported, so only a moving playhead breaks a skip
+    /// chain there (`note_playback_progress`). On a `Player::play` failure, hands off to `playback_faults.rs`'s
     /// `handle_unplayable_track` (diagnose missing-vs-corrupt, mark/toast, then
     /// auto-skip) rather than resetting outright. A missing DB row or query
     /// failure has no title/path to toast from, so those just log and go

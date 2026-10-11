@@ -17,6 +17,16 @@
 //!   bound.
 //! - the fixed-bound skip loop, consulting Core's `should_stop_skipping` rule.
 //!
+//! ## When the skip count resets
+//!
+//! `Player::play` returns `Ok` before an asynchronous fault (a start that
+//! never leaves READY, a sink that never opens) has had its say, so a start is
+//! no evidence that anything works. The count therefore survives the starts the
+//! skip loop makes itself (`failure_advance_in_flight`) and resets only when a
+//! position tick shows the playhead moving (`note_playback_progress`), when the
+//! user starts something (`play_track_id`), or when the run ends. Otherwise a
+//! wedged sink would skip a repeating queue for ever, one fault per start.
+//!
 //! ## Seam: `pub(in crate::ui)`
 //!
 //! Sibling of `player_controller` under `ui` — same reasoning as `mpris_
@@ -178,7 +188,21 @@ impl PlayerController {
             return;
         }
 
+        let outer = self.failure_advance_in_flight.replace(true);
         self.advance_playback(AdvanceReason::Manual);
+        self.failure_advance_in_flight.set(outer);
+    }
+
+    /// Playback demonstrably moved (a position tick past zero): whatever
+    /// skipping led here is over, so the next fault starts a fresh run. Until
+    /// then every asynchronous fault counts towards `should_stop_skipping` —
+    /// otherwise a sink that stalls every start would skip a repeating queue
+    /// for ever.
+    pub(in crate::ui) fn note_playback_progress(&self, position_ms: i64) {
+        if position_ms > 0 {
+            self.consecutive_skips.set(0);
+            self.failure_skip_limit.set(0);
+        }
     }
 }
 

@@ -8,12 +8,13 @@ use crate::ui::strings;
 use reprise_core::media_integration::MprisPlaybackStatus;
 use reprise_core::playback::{
     redact_local_stream_proxy_urls, PlaybackFailure, PlaybackFailureKind, PlaybackSessionId,
-    PlaybackState, PlayerEvent, SpectrumFrame,
+    PlaybackState, PlayerEvent, SpectrumFrame, StreamEvent,
 };
 use reprise_core::podcasts::PodcastKind;
 
 use super::external_media_state::ExternalSession;
 use super::preview::PlaybackMode;
+use super::stale_events::deliver_burst;
 
 /// Prevent one busy drain iteration from starving the rest of GTK's main loop.
 const MAX_PLAYER_EVENT_BURST: usize = 64;
@@ -84,38 +85,40 @@ fn external_error_dispatch(
 
 /// Collapses consecutive analyzer frames without moving them across semantic
 /// playback events. This keeps transport/state ordering exact while making
-/// spectrum delivery latest-wins under GTK render load.
-pub(super) fn coalesce_player_event_burst(
-    events: impl IntoIterator<Item = PlayerEvent>,
-) -> Vec<PlayerEvent> {
+/// spectrum delivery latest-wins under GTK render load. Events carry a tag
+/// (the stream generation they were produced under); a merged frame keeps the
+/// tag of the newest frame it absorbed.
+pub(super) fn coalesce_tagged<T>(
+    events: impl IntoIterator<Item = (T, PlayerEvent)>,
+) -> Vec<(T, PlayerEvent)> {
     let mut coalesced = Vec::new();
-    let mut pending_spectrum: Option<SpectrumFrame> = None;
+    let mut pending_spectrum: Option<(T, SpectrumFrame)> = None;
 
-    for event in events {
+    for (tag, event) in events {
         match event {
             PlayerEvent::Spectrum(frame) => {
                 pending_spectrum = Some(match pending_spectrum {
-                    Some(previous) => previous.coalesce_latest(frame),
-                    None => frame,
+                    Some((_, previous)) => (tag, previous.coalesce_latest(frame)),
+                    None => (tag, frame),
                 });
             }
             event => {
-                if let Some(frame) = pending_spectrum.take() {
-                    coalesced.push(PlayerEvent::Spectrum(frame));
+                if let Some((spectrum_tag, frame)) = pending_spectrum.take() {
+                    coalesced.push((spectrum_tag, PlayerEvent::Spectrum(frame)));
                 }
-                coalesced.push(event);
+                coalesced.push((tag, event));
             }
         }
     }
-    if let Some(frame) = pending_spectrum {
-        coalesced.push(PlayerEvent::Spectrum(frame));
+    if let Some((tag, frame)) = pending_spectrum {
+        coalesced.push((tag, PlayerEvent::Spectrum(frame)));
     }
     coalesced
 }
 
 pub(super) fn spawn_event_drain(
     controller: &Rc<PlayerController>,
-    receiver: async_channel::Receiver<PlayerEvent>,
+    receiver: async_channel::Receiver<StreamEvent>,
 ) {
     let weak = Rc::downgrade(controller);
     gtk4::glib::spawn_future_local(async move {
@@ -131,9 +134,11 @@ pub(super) fn spawn_event_drain(
                 };
                 burst.push(event);
             }
-            for event in coalesce_player_event_burst(burst) {
-                controller.apply_event(event);
-            }
+            deliver_burst(
+                burst,
+                || controller.player.current_generation(),
+                |event| controller.apply_event(event),
+            );
         }
     });
 }
@@ -189,6 +194,7 @@ impl PlayerController {
                     duration_ms,
                     "player bar: applying position tick"
                 );
+                self.note_playback_progress(position_ms);
                 self.max_position_ms
                     .set(self.max_position_ms.get().max(position_ms));
                 self.sync_position(position_ms, duration_ms);
@@ -418,6 +424,15 @@ mod spectrum_coalescing_tests {
         PlaybackFailure, PlaybackFailureKind, PlaybackSessionId, SpectrumFrame, SPECTRUM_BAND_COUNT,
     };
     use reprise_core::podcasts::PodcastKind;
+
+    fn coalesce_player_event_burst(
+        events: impl IntoIterator<Item = PlayerEvent>,
+    ) -> Vec<PlayerEvent> {
+        coalesce_tagged(events.into_iter().map(|event| ((), event)))
+            .into_iter()
+            .map(|(_, event)| event)
+            .collect()
+    }
 
     fn spectrum(value: f32) -> PlayerEvent {
         PlayerEvent::Spectrum(SpectrumFrame::from_cava_bars([value; SPECTRUM_BAND_COUNT]))

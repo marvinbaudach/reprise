@@ -319,14 +319,20 @@ pub struct PlayerController {
     /// Supplies the current view's ids when an exhausted queue needs refill.
     pub(in crate::ui) view_refill_ids: RefCell<Option<ViewRefillIds>>,
     /// How many *consecutive* auto-skips (Stage 2 Task 5) have happened since
-    /// the last successful playback start. Reset to 0 in `play_track_id` on
-    /// every `Player::play` success; incremented by `playback_faults.rs`'s
+    /// playback last demonstrably progressed. Reset to 0 when a position tick
+    /// shows the playhead moving (`note_playback_progress`) and when the user
+    /// starts something themselves in `play_track_id` — but not by the starts
+    /// of the skip loop itself, whose `Player::play` returns `Ok` before an
+    /// asynchronous fault has had its say. Incremented by `playback_faults.rs`'s
     /// `skip_after_failure` (`pub(in crate::ui)` so that sibling module can reach
     /// it), which consults `should_stop_skipping` against this value and the
     /// queue's length to bound the skip chain. See the module's `## Fault
     /// tolerance` doc section.
     pub(in crate::ui) consecutive_skips: Cell<usize>,
     pub(in crate::ui) failure_skip_limit: Cell<usize>,
+    /// `true` while `skip_after_failure` is starting the next candidate, so
+    /// `play_track_id` can tell the skip loop's starts from the user's.
+    pub(in crate::ui) failure_advance_in_flight: Cell<bool>,
     pub(in crate::ui) consecutive_episode_skips: Cell<usize>,
     /// Shared with `mpris.rs`'s D-Bus thread — see the module's `## MPRIS`
     /// doc section. Written by `mpris_mirror.rs`'s `update_mpris_mirror`,
@@ -544,8 +550,15 @@ impl PlayerController {
                         let ((), elapsed_ms) =
                             super::instrumentation::timed(|| self.notify_queue_changed());
                         queue_notify_ms += elapsed_ms;
-                        self.consecutive_skips.set(0);
-                        self.failure_skip_limit.set(0);
+                        // A start the skip loop made itself proves nothing: `play`
+                        // returns `Ok` before an asynchronous fault is reported.
+                        // Playback progressing resets the count instead.
+                        if matches!(start, StartPlayback::No)
+                            || !self.failure_advance_in_flight.get()
+                        {
+                            self.consecutive_skips.set(0);
+                            self.failure_skip_limit.set(0);
+                        }
                         self.flush_episode_skip_toast();
                         // `reset_to_stopped` disables prev/next, and MPRIS
                         // can resume from Stopped through this arm without

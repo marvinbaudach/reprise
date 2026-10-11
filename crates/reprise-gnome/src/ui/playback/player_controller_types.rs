@@ -6,7 +6,7 @@ use std::sync::Arc;
 
 use reprise_core::db::Db;
 use reprise_core::media_integration::MediaIntegrationHandles;
-use reprise_core::playback::{PlaybackBackend, PlayerEvent};
+use reprise_core::playback::{PlaybackBackend, StreamEvent};
 use reprise_core::waveform::RenderDataBackend;
 
 /// The visible track view as the playback paths see it.
@@ -51,7 +51,7 @@ pub(in crate::ui) enum StartPlayback {
 /// Feature modules consume this bundle without naming a concrete OS backend.
 pub(in crate::ui) struct PlayerControllerBackends {
     pub(in crate::ui) playback: Box<dyn PlaybackBackend>,
-    pub(in crate::ui) playback_events: async_channel::Receiver<PlayerEvent>,
+    pub(in crate::ui) playback_events: async_channel::Receiver<StreamEvent>,
     pub(in crate::ui) media: MediaIntegrationHandles,
     pub(in crate::ui) waveform: Arc<dyn RenderDataBackend>,
 }

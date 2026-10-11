@@ -107,6 +107,7 @@ impl PlayerController {
             view_refill_ids: RefCell::new(None),
             consecutive_skips: Cell::new(0),
             failure_skip_limit: Cell::new(0),
+            failure_advance_in_flight: Cell::new(false),
             consecutive_episode_skips: Cell::new(0),
             mpris_state,
             agent_queue_state,

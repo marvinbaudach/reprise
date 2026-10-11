@@ -76,7 +76,7 @@ mod tests {
 
     use gtk4::prelude::*;
     use reprise_core::playback::{
-        AudioEffects, PlaybackBackend, PlaybackError, PlaybackState, PlayerEvent,
+        AudioEffects, PlaybackBackend, PlaybackError, PlaybackState, StreamEvent,
     };
     use reprise_core::waveform::{RenderDataBackend, WaveformBackend, WaveformError};
 
@@ -139,7 +139,7 @@ mod tests {
         let app = libadwaita::Application::builder()
             .application_id("io.github.marvinbaudach.Reprise.ExternalArtworkTest")
             .build();
-        let (_event_sender, playback_events) = async_channel::unbounded::<PlayerEvent>();
+        let (_event_sender, playback_events) = async_channel::unbounded::<StreamEvent>();
         let listenbrainz = ScrobbleRuntime::new(
             PathBuf::from("unused-listenbrainz-test.db"),
             reprise_core::scrobbling::ScrobbleProvider::ListenBrainz,

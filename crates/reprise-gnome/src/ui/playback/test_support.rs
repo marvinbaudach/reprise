@@ -4,7 +4,7 @@ use std::path::Path;
 use std::rc::Rc;
 use std::sync::Arc;
 
-use reprise_core::playback::{PlaybackBackend, PlayerEvent};
+use reprise_core::playback::{PlaybackBackend, StreamEvent};
 use reprise_core::waveform::{RenderDataBackend, WaveformBackend, WaveformError};
 
 use super::player_controller::{PlayerController, PlayerControllerBackends};
@@ -25,10 +25,20 @@ pub(in crate::ui) fn controller_with_db(
     conn: Rc<reprise_core::db::Db>,
     playback: Box<dyn PlaybackBackend>,
 ) -> Rc<PlayerController> {
+    controller_with_events(test_root, conn, playback).0
+}
+
+/// [`controller_with_db`], also returning the sender of the channel the
+/// controller drains its player events from.
+pub(in crate::ui) fn controller_with_events(
+    test_root: &Path,
+    conn: Rc<reprise_core::db::Db>,
+    playback: Box<dyn PlaybackBackend>,
+) -> (Rc<PlayerController>, async_channel::Sender<StreamEvent>) {
     let app = libadwaita::Application::builder()
         .application_id("io.github.marvinbaudach.Reprise.PlaybackTest")
         .build();
-    let (_event_sender, playback_events) = async_channel::unbounded::<PlayerEvent>();
+    let (event_sender, playback_events) = async_channel::unbounded::<StreamEvent>();
     let listenbrainz = ScrobbleRuntime::new(
         test_root.join("listenbrainz.db"),
         reprise_core::scrobbling::ScrobbleProvider::ListenBrainz,
@@ -39,7 +49,7 @@ pub(in crate::ui) fn controller_with_db(
         reprise_core::scrobbling::ScrobbleProvider::LastFm,
         "Last.fm",
     );
-    PlayerController::new(
+    let controller = PlayerController::new(
         conn,
         crate::ui::cover_download_worker::setup_for_test(),
         listenbrainz,
@@ -51,5 +61,6 @@ pub(in crate::ui) fn controller_with_db(
             waveform: Arc::new(TestWaveform),
         },
         &app,
-    )
+    );
+    (controller, event_sender)
 }

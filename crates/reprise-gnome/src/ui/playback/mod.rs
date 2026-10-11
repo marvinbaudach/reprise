@@ -18,6 +18,8 @@ pub(in crate::ui) mod library_continuation;
 pub(crate) mod now_playing_wiring;
 pub(crate) mod play_origin;
 pub(in crate::ui) mod play_tracking;
+#[cfg(test)]
+mod playback_fault_progress_tests;
 pub(crate) mod playback_faults;
 pub(in crate::ui) mod playback_history_transport;
 pub(crate) mod player_callbacks;
@@ -43,6 +45,7 @@ mod session_player_tests;
 mod sleep_timer_display_tests;
 pub(in crate::ui) mod sleep_timer_hooks;
 pub(in crate::ui) mod source_item_identity;
+mod stale_events;
 #[cfg(test)]
 pub(in crate::ui) mod test_support;
 pub(in crate::ui) mod up_next_transport;

@@ -15,7 +15,7 @@
 
 use std::sync::Arc;
 
-use reprise_core::playback::{PlaybackError, PlayerEvent};
+use reprise_core::playback::{PlaybackError, StreamEvent};
 use reprise_core::waveform::RenderDataBackend;
 use reprise_platform_linux::player::Player;
 
@@ -25,8 +25,11 @@ pub(super) fn build(
     waveform: Arc<dyn RenderDataBackend>,
     media: reprise_core::media_integration::MediaIntegrationHandles,
 ) -> Result<PlayerControllerBackends, PlaybackError> {
-    let (sender, playback_events) = async_channel::unbounded::<PlayerEvent>();
-    let player = Player::new(Box::new(move |event| {
+    let (sender, playback_events) = async_channel::unbounded::<StreamEvent>();
+    // Tagged with the stream generation each event was produced under, so the
+    // drain can tell an event that predates the user's latest start from one
+    // that does not (see `stale_events::deliver_burst`).
+    let player = Player::new_with_generation(Box::new(move |event| {
         if let Err(error) = sender.try_send(event) {
             tracing::warn!(%error, "player event dropped: UI receiver is gone");
         }
