@@ -161,8 +161,9 @@
             android:name="com.google.android.gms.car.application"
             android:resource="@xml/automotive_app_desc" />
         <!-- Lets simpleperf and Perfetto sample a release build from adb. Shell
-             only: no app or user can attach, and nothing is made debuggable. -->
-        <profileable android:shell="true" />
+             only: no app or user can attach, and nothing is made debuggable.
+             Older systems ignore the attribute, so the minSdk of 26 is fine. -->
+        <profileable android:shell="true" tools:targetApi="q" />
     </application>
 
 </manifest>
