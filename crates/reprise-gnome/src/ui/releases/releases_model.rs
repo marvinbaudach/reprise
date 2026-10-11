@@ -39,12 +39,18 @@ impl ReleaseObject {
         object
     }
 
+    /// The entry this object was built with, without a word if it has none.
+    /// For readers that already cope with `None` and report it themselves.
+    pub(super) fn stored_entry(&self) -> Option<HistoryEntry> {
+        use glib::subclass::prelude::ObjectSubclassIsExt;
+
+        self.imp().entry.borrow().clone()
+    }
+
     /// The entry this object was built with. `None` only for an object that
     /// was never given one, which `new` rules out.
     pub(super) fn entry(&self) -> Option<HistoryEntry> {
-        use glib::subclass::prelude::ObjectSubclassIsExt;
-
-        let entry = self.imp().entry.borrow().clone();
+        let entry = self.stored_entry();
         if entry.is_none() {
             invariant_broken!("a ReleaseObject was published without its entry");
         }
@@ -71,7 +77,7 @@ impl ReleasesModel {
         crate::ui::list_store_delta::replace(
             &self.store,
             rows,
-            |object| object.downcast_ref::<ReleaseObject>()?.entry(),
+            |object| object.downcast_ref::<ReleaseObject>()?.stored_entry(),
             |entry| entry.release_group_mbid.clone(),
             |entry| ReleaseObject::new(entry).upcast(),
         );

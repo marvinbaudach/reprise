@@ -37,12 +37,18 @@ impl ConcertObject {
         object
     }
 
-    /// The row this object was built with. `None` only for an object that was
-    /// never given one, which `new` rules out.
-    pub(super) fn row(&self) -> Option<ConcertRow> {
+    /// The row this object was built with, without a word if it has none.
+    /// For readers that already cope with `None` and report it themselves.
+    pub(super) fn stored_row(&self) -> Option<ConcertRow> {
         use glib::subclass::prelude::ObjectSubclassIsExt;
 
-        let row = self.imp().row.borrow().clone();
+        self.imp().row.borrow().clone()
+    }
+
+    /// The row this object was built with. `None` only for an object that
+    /// was never given one, which `new` rules out.
+    pub(super) fn row(&self) -> Option<ConcertRow> {
+        let row = self.stored_row();
         if row.is_none() {
             invariant_broken!("a ConcertObject was published without its row");
         }
@@ -66,7 +72,7 @@ impl ConcertsModel {
         crate::ui::list_store_delta::replace(
             &self.store,
             rows,
-            |object| object.downcast_ref::<ConcertObject>()?.row(),
+            |object| object.downcast_ref::<ConcertObject>()?.stored_row(),
             |row| row.id,
             |row| ConcertObject::new(row).upcast(),
         );

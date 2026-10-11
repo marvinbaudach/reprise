@@ -9,7 +9,9 @@ use gtk4::{gio, glib};
 
 /// `u32` for a list-store position or count. A bounded store never reaches the
 /// limit, so saturating only decides which wrong answer an impossible overflow
-/// gives, and `u32::MAX` is past the end of every store.
+/// gives. As a position, `u32::MAX` is past the end of every store; as a
+/// removal count it is only the largest request there is, which a store
+/// refuses rather than clamps.
 pub(crate) fn saturating_u32(count: usize) -> u32 {
     u32::try_from(count).unwrap_or(u32::MAX)
 }
@@ -36,13 +38,15 @@ pub(crate) fn replace<R, K>(
         })
         .collect::<Option<Vec<_>>>();
     let Some(old_rows) = old_rows else {
-        invariant_broken!("a published list-store position holds no readable row");
+        // Rebuild before reporting: a debug build panics inside the report,
+        // and the store must already be right by then.
         let objects = rows
             .iter()
             .cloned()
             .map(&object_for_row)
             .collect::<Vec<_>>();
         store.splice(0, store.n_items(), &objects);
+        invariant_broken!("a published list-store position holds no readable row");
         return;
     };
     let old_keys = old_rows.iter().map(&key_for_row).collect::<Vec<_>>();
@@ -179,6 +183,35 @@ mod tests {
             changes.borrow().as_slice(),
             [(0, 0, 1), (2, 1, 0), (4, 0, 1)]
         );
+    }
+
+    #[test]
+    fn an_unreadable_row_rebuilds_the_store_from_the_rows() {
+        let store = gtk4::gio::ListStore::new::<gtk4::glib::Object>();
+        store.append(&gtk4::StringObject::new("foreign"));
+        store.append(&boxed_object(9));
+
+        // Debug builds also trip the invariant assertion; release builds only
+        // degrade. Either way the store has to end up equal to `rows`.
+        let outcome = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+            replace(
+                &store,
+                vec![1_i32, 2, 3],
+                |object| {
+                    object
+                        .downcast_ref::<gtk4::glib::BoxedAnyObject>()
+                        .map(|boxed| *boxed.borrow::<i32>())
+                },
+                |value| *value,
+                boxed_object,
+            );
+        }));
+
+        assert_eq!(outcome.is_err(), cfg!(debug_assertions));
+        let contents = (0..store.n_items())
+            .map(|position| boxed_i32(&store.item(position).expect("position is in range")))
+            .collect::<Vec<_>>();
+        assert_eq!(contents, [Some(1), Some(2), Some(3)]);
     }
 
     fn boxed_i32(object: &gtk4::glib::Object) -> Option<i32> {
