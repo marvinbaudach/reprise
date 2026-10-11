@@ -45,8 +45,8 @@ impl LyricsRuntime {
     fn from_lookup(lookup: Lookup) -> Rc<Self> {
         let (sender, receiver) = async_channel::unbounded::<LyricsRequest>();
         // A thread that cannot start drops the receiver with its closure, so
-        // every later `request` finds the channel closed and answers with the
-        // "temporarily unavailable" error instead of waiting for a worker.
+        // every later `request` finds the channel closed and answers with a
+        // permanent error instead of waiting for a worker.
         if let Err(error) = std::thread::Builder::new()
             .name("reprise-lyrics".into())
             .spawn(move || run(&receiver, &lookup))
@@ -63,7 +63,11 @@ impl LyricsRuntime {
             let unavailable = LyricsResponse {
                 generation: request.generation,
                 options: request.options,
-                result: Err(LyricsError::Temporary),
+                // `Temporary` would send the requester on an online retry
+                // through this same dead worker. `InvalidResponse` shows the
+                // same "unavailable" status with a manual retry and nothing
+                // automatic.
+                result: Err(LyricsError::InvalidResponse),
             };
             if request.response.try_send(unavailable).is_err() {
                 tracing::debug!(
@@ -137,6 +141,20 @@ mod tests {
             options: LookupOptions::default(),
             response,
         }
+    }
+
+    #[test]
+    fn a_dead_worker_answers_with_an_error_that_is_not_retried_online() {
+        let (sender, receiver) = async_channel::unbounded::<LyricsRequest>();
+        drop(receiver);
+        let runtime = LyricsRuntime { sender };
+        let (response_tx, response_rx) = async_channel::bounded(1);
+
+        runtime.request(request(3, "Orphan", response_tx));
+
+        let answer = response_rx.recv_blocking().unwrap();
+        assert_eq!(answer.generation, 3);
+        assert_eq!(answer.result, Err(LyricsError::InvalidResponse));
     }
 
     #[test]

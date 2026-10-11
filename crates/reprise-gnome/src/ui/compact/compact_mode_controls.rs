@@ -79,7 +79,7 @@ fn set_always_on_top(window: &adw::ApplicationWindow, above: bool) {
     // directly, but we can send the client message via the X11 surface.
     // For now, use the Xlib-level API through gdk4-x11.
     let Ok(xdisplay) = x11_surface.display().downcast::<gdk4_x11::X11Display>() else {
-        tracing::debug!("an X11 surface on a non-X11 display; skipping always-on-top");
+        invariant_broken!("an X11 surface must belong to an X11 display");
         return;
     };
 
