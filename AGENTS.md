@@ -259,20 +259,20 @@ exist.)
 - **Never-crash lints.** Production code in `reprise-core`, `reprise-view`,
   `reprise-runtime-protocol`, `reprise-stems`, `reprise-android-ffi`, `reprise-platform-linux`,
   `reprise-cli`, `reprise-mcp` and `reprise-gnome` — all nine crates, every one whose layer-table
-  row says `deny` — may not call `unwrap`, `expect`, `panic!`, `todo!`,
-  `unimplemented!` or `unreachable!`. Those six calls are all the lints remove: panics from
-  `[]` indexing and slicing are out of scope (`clippy::indexing_slicing` is not in the set).
-  Each lib and bin root carries the same `#![cfg_attr(not(test), deny(...))]` naming exactly
-  those six `clippy::` lints; test builds are exempt, and so are examples and integration
-  tests, which the gate does not scan, and so is a crate's `build.rs`, where a panic fails the
-  build loudly, which is what a build script should do. Return an error instead. In
-  `reprise-gnome`, where a panic inside a signal handler aborts the whole application, a state
-  that cannot happen goes through `invariant_broken!` (log, assert in debug builds, degrade).
-  A genuine, documented invariant is the only exception, as `#[expect(clippy::<lint>, reason = "…")]` at its site,
-  never `#[allow]` (an allow never goes stale, and the gate rejects it, as it does an allow or
-  expect of `clippy::restriction`). The exact suppression count of each crate is its entry in
-  `panic_lint_budgets` in `scripts/check-crate-layers.sh`; it fails when a crate's count grows
-  and when it shrinks without that crate's budget being lowered.
+  row says `deny` — may not call `unwrap`, `expect`, `panic!`, `todo!`, `unimplemented!` or
+  `unreachable!`. Those six calls are all the lints remove: panics from `[]` indexing and slicing
+  are out of scope (`clippy::indexing_slicing` is not in the set). Each lib and bin root carries the
+  same `#![cfg_attr(not(test), deny(...))]` naming exactly those six `clippy::` lints; test builds
+  are exempt, and so are examples and integration tests, which the gate does not scan, and so is a
+  crate's `build.rs`, where a panic fails the build loudly, which is what a build script should do.
+  Return an error instead. In `reprise-gnome`, where a panic inside a signal handler aborts the
+  whole application, a state that cannot happen goes through `invariant_broken!` (log, assert in
+  debug builds, degrade). A genuine, documented invariant is the only exception, as
+  `#[expect(clippy::<lint>, reason = "…")]` at its site, never `#[allow]` (an allow never goes
+  stale, and the gate rejects it, as it does an allow or expect of `clippy::restriction`). The exact
+  suppression count of each crate is its entry in `panic_lint_budgets` in
+  `scripts/check-crate-layers.sh`; it fails when a crate's count grows and when it shrinks without
+  that crate's budget being lowered.
 - **RefCell discipline** (the #1 recurring panic class): never hold a `Ref`/`RefMut` across a
   call that can re-enter GTK/callbacks — clone/copy the value out in its own statement first.
 - GTK cell widgets with per-row async work use a **generation token** so a recycled row never
