@@ -12,6 +12,10 @@ use reprise_core::podcasts;
 mod lanes;
 use lanes::{lane_for, spawn_lane, LaneExecutor, PodcastsLane};
 
+#[path = "podcasts_response_channel.rs"]
+mod response_channel;
+pub(in crate::ui) use response_channel::{podcasts_response_channel, PodcastsResponseChannel};
+
 #[derive(Clone, Debug)]
 pub(in crate::ui) enum PodcastsOperation {
     Refresh {
@@ -68,33 +72,6 @@ pub(super) struct QueuedRequest {
 pub(in crate::ui) struct PodcastsResponse {
     pub generation: u64,
     pub result: Result<PodcastsWorkerResult, String>,
-}
-
-#[derive(Debug)]
-pub(in crate::ui) struct PodcastsResponseChannel {
-    sender: async_channel::Sender<PodcastsResponse>,
-}
-
-pub(in crate::ui) fn podcasts_response_channel() -> (
-    PodcastsResponseChannel,
-    async_channel::Receiver<PodcastsResponse>,
-) {
-    let (sender, receiver) = async_channel::bounded(1);
-    (PodcastsResponseChannel { sender }, receiver)
-}
-
-impl PodcastsResponseChannel {
-    fn publish_latest(&self, response: PodcastsResponse) {
-        if let Err(error) = self.sender.force_send(response) {
-            tracing::debug!(%error, "podcast worker response receiver is unavailable");
-        }
-    }
-
-    fn publish_terminal(&self, response: PodcastsResponse) {
-        if let Err(error) = self.sender.force_send(response) {
-            tracing::debug!(%error, "podcast worker response receiver is unavailable");
-        }
-    }
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]

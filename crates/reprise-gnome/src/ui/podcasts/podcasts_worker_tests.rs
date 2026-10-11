@@ -366,6 +366,51 @@ fn pod_7_response_channel_coalesces_progress_but_never_drops_terminal_state() {
 }
 
 #[test]
+fn pod_7_a_fill_up_delivers_every_episodes_terminal_state_before_the_next_episode_starts() {
+    let (response, receiver) = podcasts_response_channel();
+    let state = |episode_id, state| PodcastsResponse {
+        generation: 3,
+        result: Ok(PodcastsWorkerResult::DownloadState { episode_id, state }),
+    };
+
+    // One fill-up job reports several episodes over one channel. The UI may
+    // not have read episode 1's completion when episode 2 starts.
+    response.publish_terminal(state(1, DownloadState::Downloaded { bytes: 61 }));
+    response.publish_latest(state(2, DownloadState::Queued));
+    response.publish_latest(state(
+        2,
+        DownloadState::Downloading {
+            received_bytes: 5,
+            total_bytes: Some(70),
+        },
+    ));
+    response.publish_terminal(PodcastsResponse {
+        generation: 3,
+        result: Ok(PodcastsWorkerResult::Filled(Default::default())),
+    });
+
+    let delivered: Vec<_> = std::iter::from_fn(|| receiver.try_recv().ok())
+        .map(|response| response.result.unwrap())
+        .collect();
+    assert_eq!(
+        delivered,
+        vec![
+            PodcastsWorkerResult::DownloadState {
+                episode_id: 1,
+                state: DownloadState::Downloaded { bytes: 61 },
+            },
+            PodcastsWorkerResult::DownloadState {
+                episode_id: 2,
+                state: DownloadState::Downloading {
+                    received_bytes: 5,
+                    total_bytes: Some(70),
+                },
+            },
+            PodcastsWorkerResult::Filled(Default::default()),
+        ]
+    );
+}
+#[test]
 fn terminal_publication_returns_when_the_ui_drops_a_buffered_response_channel() {
     let (response, receiver) = podcasts_response_channel();
     response.publish_latest(PodcastsResponse {
