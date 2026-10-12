@@ -563,7 +563,7 @@ fn cancel_device_run(device: &mut DeviceState) {
 #[path = "device_sync_agent.rs"]
 mod agent;
 #[path = "device_sync_compact.rs"]
-mod compact;
+pub(super) mod compact;
 #[path = "device_sync_device_list.rs"]
 mod device_list;
 #[path = "device_sync_memory.rs"]

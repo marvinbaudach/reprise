@@ -295,7 +295,34 @@ fn inventory_identities_match(
     saved == inspected
 }
 
-fn desktop_analysis_sizes(
+/// Sidecar failures of one planning pass, kept as a count and one example so a
+/// large selection logs a single warning instead of one line per track.
+#[derive(Default)]
+struct SidecarFailures {
+    failed: usize,
+    example: Option<(i64, String)>,
+}
+
+impl SidecarFailures {
+    fn record(&mut self, track_id: i64, error: &dyn std::fmt::Display) {
+        self.failed += 1;
+        self.example
+            .get_or_insert_with(|| (track_id, error.to_string()));
+    }
+
+    fn warn(&self, message: &str) {
+        if let Some((example_track_id, example_error)) = &self.example {
+            tracing::warn!(
+                failed = self.failed,
+                example_track_id,
+                example_error = %example_error,
+                "{message}"
+            );
+        }
+    }
+}
+
+pub(in crate::ui::device_sync) fn desktop_analysis_sizes(
     conn: &Db,
     selected: &[SelectionSource],
     playlists: &[reprise_core::device_sync::MirrorPlaylistSnapshot],
@@ -311,28 +338,31 @@ fn desktop_analysis_sizes(
         .collect::<Vec<_>>();
     track_ids.sort_unstable();
     track_ids.dedup();
+    let selected_tracks = track_ids.len();
     let mut analyses = Vec::new();
+    let mut unanalysed = 0_usize;
+    let mut load_failures = SidecarFailures::default();
+    let mut encode_failures = SidecarFailures::default();
     for track_id in track_ids {
         let sidecar = match reprise_core::device_sync::analysis_sidecar::AnalysisSidecar::for_track(
             conn, track_id,
         ) {
             Ok(Some(sidecar)) => sidecar,
+            // Not an error: the track is not analysed yet, or it is cut from a
+            // CUE file and by design never gets a sidecar of its own.
             Ok(None) => {
-                tracing::warn!(
-                    track_id,
-                    "analysis sidecar data is unavailable during planning"
-                );
+                unanalysed += 1;
                 continue;
             }
             Err(error) => {
-                tracing::warn!(track_id, %error, "could not load analysis sidecar data");
+                load_failures.record(track_id, &error);
                 continue;
             }
         };
         let bytes = match sidecar.encode() {
             Ok(bytes) => bytes,
             Err(error) => {
-                tracing::warn!(track_id, %error, "could not encode analysis sidecar data");
+                encode_failures.record(track_id, &error);
                 continue;
             }
         };
@@ -342,6 +372,13 @@ fn desktop_analysis_sizes(
                 .map_err(|_| "analysis sidecar length does not fit u64".to_string())?,
         });
     }
+    if unanalysed > 0 {
+        tracing::debug!(
+            "{unanalysed} of {selected_tracks} selected tracks have no analysis sidecar yet"
+        );
+    }
+    load_failures.warn("could not load analysis sidecar data");
+    encode_failures.warn("could not encode analysis sidecar data");
     Ok(analyses)
 }
 
