@@ -79,14 +79,42 @@ impl DeviceSyncRuntime {
         self.update_settings(settings)
     }
 
+    /// Saves the "sync automatically on connect" switch.
+    ///
+    /// `MTP-30` reads it only when a phone connects, so it has no bearing on a
+    /// running sync or on the planned delta. It therefore skips the busy check
+    /// and the delta recomputation of `update_settings`, and leaves the sync
+    /// phase and any sync error untouched.
     pub fn set_sync_automatically(
         self: &Rc<Self>,
         device_id: &str,
         sync_automatically: bool,
     ) -> Result<(), String> {
-        let mut settings = self.settings_for_update(device_id)?;
+        let (mut settings, rememberable) = {
+            let devices = self.device_states.borrow();
+            let device = devices
+                .iter()
+                .find(|device| device.descriptor.id == device_id)
+                .ok_or_else(|| "device is not connected".to_string())?;
+            (
+                device.settings.clone(),
+                device.descriptor.persistent_id.is_some(),
+            )
+        };
         settings.sync_automatically = sync_automatically;
-        self.update_settings(settings)
+        if rememberable {
+            save_settings(&self.conn, &settings).map_err(|error| error.to_string())?;
+        }
+        {
+            let mut devices = self.device_states.borrow_mut();
+            let device = devices
+                .iter_mut()
+                .find(|device| device.descriptor.id == device_id)
+                .ok_or_else(|| "device is not connected".to_string())?;
+            device.settings.sync_automatically = sync_automatically;
+        }
+        self.notify();
+        Ok(())
     }
 
     pub fn selection_options(&self) -> Result<Vec<DeviceSelectionOption>, String> {

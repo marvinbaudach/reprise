@@ -99,6 +99,67 @@ fn settings_updates_are_rejected_before_persistence_while_syncing() {
 }
 
 #[test]
+fn mtp_69_the_automatic_sync_switch_is_saved_while_a_sync_is_running() {
+    run(async {
+        let (_temp, conn) = fixture();
+        select_road_playlist(&conn, &[1]);
+        let backend = Rc::new(FakeBackend::new(vec![descriptor("a", true)], 40));
+        let runtime = DeviceSyncRuntime::with_backend(&conn, backend);
+        gtk4::glib::timeout_future(Duration::from_millis(2)).await;
+        runtime.sync_now("a").unwrap();
+        let before = runtime.devices()[0].clone();
+        assert!(!before.settings.sync_automatically);
+        assert!(matches!(
+            before.sync_phase,
+            PlannedSyncPhase::Syncing { .. }
+        ));
+
+        let result = runtime.set_sync_automatically("a", true);
+
+        assert_eq!(result, Ok(()));
+        let after = runtime.devices()[0].clone();
+        assert!(after.settings.sync_automatically);
+        assert_eq!(after.settings.opus_bitrate, before.settings.opus_bitrate);
+        assert_eq!(
+            after.settings.remove_deleted,
+            before.settings.remove_deleted
+        );
+        assert!(
+            matches!(after.sync_phase, PlannedSyncPhase::Syncing { .. }),
+            "the running sync must not be reset: {:?}",
+            after.sync_phase
+        );
+        let persisted =
+            reprise_core::device_sync::settings::load_or_create_settings(&conn, "a", "Phone a")
+                .unwrap();
+        assert!(persisted.sync_automatically);
+        runtime.cancel_current("a");
+        settle().await;
+    });
+}
+
+#[test]
+fn mtp_69_the_remove_deleted_switch_stays_locked_while_a_sync_is_running() {
+    run(async {
+        let (_temp, conn) = fixture();
+        select_road_playlist(&conn, &[1]);
+        let backend = Rc::new(FakeBackend::new(vec![descriptor("a", true)], 40));
+        let runtime = DeviceSyncRuntime::with_backend(&conn, backend);
+        gtk4::glib::timeout_future(Duration::from_millis(2)).await;
+        runtime.sync_now("a").unwrap();
+
+        let before = runtime.devices()[0].settings.remove_deleted;
+
+        let result = runtime.set_remove_deleted("a", !before);
+
+        assert_eq!(result, Err("device synchronization is active".into()));
+        assert_eq!(runtime.devices()[0].settings.remove_deleted, before);
+        runtime.cancel_current("a");
+        settle().await;
+    });
+}
+
+#[test]
 fn unrelated_presence_events_do_not_reproject_a_device_mid_transfer() {
     run(async {
         let (_temp, conn) = fixture();

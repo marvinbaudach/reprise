@@ -86,6 +86,9 @@ pub const CHOOSE_PLAYLISTS: &str = N_!("Choose playlists");
 const PLAYLIST_SELECTION_LOCKED: &str = N_!(
     "Playlist selection is locked while this device is synchronizing; wait for synchronization to finish before changing it."
 );
+const REMOVE_FROM_PHONE_LOCKED: &str = N_!(
+    "This setting is locked while this device is synchronizing, because it changes what the running synchronization removes; wait for synchronization to finish before changing it."
+);
 pub const CHOOSE_PLAYLIST_FOLDER: &str = N_!("Choose folder for Playlists");
 pub const CHANGE_FOLDER: &str = N_!("Change folder…");
 pub const PLAYLISTS: &str = N_!("Playlists");
@@ -104,6 +107,10 @@ pub const TRACKS: &str = N_!("{count} tracks");
 
 pub fn playlist_selection_locked_reason() -> String {
     text(PLAYLIST_SELECTION_LOCKED)
+}
+
+pub fn remove_from_phone_locked_reason() -> String {
+    text(REMOVE_FROM_PHONE_LOCKED)
 }
 
 pub fn available_space(bytes: Option<u64>) -> String {

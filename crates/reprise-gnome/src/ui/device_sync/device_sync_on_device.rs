@@ -273,6 +273,16 @@ impl OnDeviceSection {
             device.keep_smart_playlists_updated,
         ));
         set_switch(&self.remove_deleted_switch, device.settings.remove_deleted);
+        // `MTP-33`: this switch shapes the running sync's plan, so it locks
+        // with the rest of the plan-shaping controls. The automatic-sync
+        // switch is read only on connect and stays editable.
+        let editable = device.page.controls.editable;
+        self.remove_deleted_switch.set_sensitive(editable);
+        self.remove_deleted_switch.set_tooltip_text(
+            (!editable)
+                .then(device_sync_strings::remove_from_phone_locked_reason)
+                .as_deref(),
+        );
         set_switch(
             &self.sync_automatically_switch,
             device.settings.sync_automatically,

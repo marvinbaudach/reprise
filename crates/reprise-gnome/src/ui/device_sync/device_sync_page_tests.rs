@@ -657,3 +657,6 @@ mod external_changes_display_tests;
 
 #[path = "device_sync_playlist_rows_display_tests.rs"]
 mod playlist_rows_display_tests;
+
+#[path = "device_sync_on_device_busy_display_tests.rs"]
+mod on_device_busy_display_tests;
