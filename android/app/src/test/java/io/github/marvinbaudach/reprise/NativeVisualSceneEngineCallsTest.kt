@@ -181,6 +181,59 @@ class NativeVisualSceneEngineCallsTest {
         assertEquals(0.81f, state.bassPressure, 0f)
     }
 
+    @Test
+    fun aClosedEngineAnswersEveryDrawAndTickCallWithoutTouchingTheDestroyedNativeObject() {
+        // The service destroys the shared native engine while the stopped activity's composition
+        // still holds a lease; the next draw on return must not reach the destroyed UniFFI object.
+        native.frame = liveFrame(kick = 0.81f)
+        engine.tick()
+        engine.close()
+        native.calls.clear()
+        native.failAfterClose = true
+
+        engine.tick()
+        val scene = engine.sceneBytes(100f, 100f)
+        val tinted = engine.sceneBytesTinted(100f, 100f, 0.1f, 0.2f, 0.3f)
+        val audible = engine.hasLiveAudio()
+        val pressure = engine.bassPressure()
+
+        assertEquals(0, scene.size)
+        assertEquals(0, tinted.size)
+        assertFalse(audible)
+        assertEquals(VisualBassPressure.SILENT, pressure)
+        assertEquals(emptyList<String>(), native.calls)
+    }
+
+    @Test
+    fun aClosedEngineIgnoresEveryOtherCallInsteadOfThrowing() {
+        engine.close()
+        native.calls.clear()
+        native.failAfterClose = true
+
+        engine.setAccent(0.1f, 0.2f, 0.3f)
+        engine.setPlaying(true)
+        engine.noteTrackChanged()
+        engine.ingestBands(floatArrayOf(0.5f))
+        engine.adoptShape(floatArrayOf(0.5f))
+        engine.setPlaybackIntent(true)
+        engine.ingestPcm16(ByteArray(4), 4, 44_100, 2)
+        engine.resetAudioStream()
+        engine.resetAudioHistory()
+
+        assertEquals(0, engine.currentBands().size)
+        assertEquals(0, engine.adoptableBands().size)
+        assertFalse(engine.adoptableBandsAreLive())
+        assertEquals(emptyList<String>(), native.calls)
+    }
+
+    @Test
+    fun closingTwiceClosesTheNativeEngineOnce() {
+        engine.close()
+        engine.close()
+
+        assertEquals(listOf("close"), native.calls)
+    }
+
     private fun liveFrame(kick: Float) = AndroidVisualFrame(
         advanced = true,
         hasLiveAudio = true,
@@ -209,6 +262,9 @@ private class CountingNative {
     var frame: AndroidVisualFrame? = null
     var hasLiveAudio = false
     var onFrame: () -> Unit = {}
+
+    /** Mirrors UniFFI: once `close` was called, any other call throws. */
+    var failAfterClose = false
     var pressure = AndroidBassPressure(-140f, -140f, 0f, 0f, 0f, 0f)
 
     val proxy: AndroidVisualEngineInterface = Proxy.newProxyInstance(
@@ -224,6 +280,9 @@ private class CountingNative {
             name
         }
         calls += label
+        check(!(failAfterClose && name != "close")) {
+            "AndroidVisualEngine object has already been destroyed"
+        }
         return when (name) {
             "frame" -> frame.also { onFrame() }
             "hasLiveAudio" -> hasLiveAudio

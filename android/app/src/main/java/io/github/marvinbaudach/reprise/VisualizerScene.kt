@@ -23,6 +23,7 @@ import io.github.marvinbaudach.reprise.ui.theme.AmbientTrueBlack
 import io.github.marvinbaudach.reprise.ui.theme.spectralColour
 import java.nio.ByteBuffer
 import java.nio.ByteOrder
+import java.util.concurrent.atomic.AtomicBoolean
 import java.util.concurrent.atomic.AtomicInteger
 import uniffi.reprise_android_ffi.AndroidBassPressure
 import uniffi.reprise_android_ffi.AndroidVisualEngine
@@ -142,13 +143,25 @@ internal class NativeVisualSceneEngine(
     @Volatile private var sentPlaying: Boolean? = null
     @Volatile private var sentAccent: SentAccent? = null
 
+    // Once set, no call reaches [native] again. The service destroys this engine in onDestroy,
+    // which can run while the stopped activity's composition still holds a lease over it and no
+    // frame has run to dispose that lease; the first draw on return would otherwise hit a
+    // destroyed UniFFI object ("AndroidVisualEngine object has already been destroyed").
+    // The draw/tick calls run on the UI thread, but PCM and the stream resets arrive from the
+    // audio thread, hence an atomic. A call that passed the check just before close() is still
+    // safe: UniFFI frees the object only after its in-flight calls return, and the PCM sink
+    // discards the exception of a call that loses the race.
+    private val closed = AtomicBoolean(false)
+
     override fun setAccent(red: Float, green: Float, blue: Float) {
+        if (closed.get()) return
         if (sentAccent?.matches(red, green, blue) == true) return
         native.setAccent(red, green, blue)
         sentAccent = SentAccent(red, green, blue)
     }
 
     override fun setPlaying(playing: Boolean) {
+        if (closed.get()) return
         if (sentPlaying == playing) return
         native.setPlaying(playing)
         sentPlaying = playing
@@ -157,26 +170,35 @@ internal class NativeVisualSceneEngine(
     }
 
     override fun noteTrackChanged() {
+        if (closed.get()) return
         forgetSampledState()
         native.noteTrackChanged()
         forgetSampledState()
     }
 
-    override fun ingestBands(bands: FloatArray) = native.ingestBands(bands.asList())
+    override fun ingestBands(bands: FloatArray) {
+        if (closed.get()) return
+        native.ingestBands(bands.asList())
+    }
 
-    override fun currentBands(): FloatArray = native.currentBands().toFloatArray()
+    override fun currentBands(): FloatArray =
+        if (closed.get()) FloatArray(0) else native.currentBands().toFloatArray()
 
-    override fun adoptableBands(): FloatArray = native.adoptableBands().toFloatArray()
+    override fun adoptableBands(): FloatArray =
+        if (closed.get()) FloatArray(0) else native.adoptableBands().toFloatArray()
 
-    override fun adoptableBandsAreLive(): Boolean = native.adoptableBandsAreLive()
+    override fun adoptableBandsAreLive(): Boolean =
+        !closed.get() && native.adoptableBandsAreLive()
 
     override fun adoptShape(bands: FloatArray) {
+        if (closed.get()) return
         forgetSampledState()
         native.adoptShape(bands.asList())
         forgetSampledState()
     }
 
     override fun setPlaybackIntent(playbackIntended: Boolean) {
+        if (closed.get()) return
         forgetSampledFrame()
         native.setPlaybackIntended(playbackIntended)
         forgetSampledFrame()
@@ -188,6 +210,7 @@ internal class NativeVisualSceneEngine(
         sampleRateHz: Int,
         channelCount: Int,
     ) {
+        if (closed.get()) return
         native.ingestPcmI16(
             bytes,
             byteCount.toUInt(),
@@ -197,6 +220,7 @@ internal class NativeVisualSceneEngine(
     }
 
     override fun resetAudioStream() {
+        if (closed.get()) return
         VisualizerEdgeLog.resetAudioStream()
         forgetSampledState()
         native.resetAudioStream()
@@ -204,18 +228,25 @@ internal class NativeVisualSceneEngine(
     }
 
     override fun resetAudioHistory() {
+        if (closed.get()) return
         forgetSampledFrame()
         native.resetAudioHistory()
         forgetSampledFrame()
     }
 
-    override fun hasLiveAudio(): Boolean =
-        freshSampledFrame()?.frame?.hasLiveAudio ?: native.hasLiveAudio()
+    override fun hasLiveAudio(): Boolean {
+        if (closed.get()) return false
+        return freshSampledFrame()?.frame?.hasLiveAudio ?: native.hasLiveAudio()
+    }
 
-    override fun bassPressure(): VisualBassPressure =
-        (freshSampledFrame()?.frame?.bassPressure ?: native.bassPressure()).toVisualBassPressure()
+    override fun bassPressure(): VisualBassPressure {
+        if (closed.get()) return VisualBassPressure.SILENT
+        return (freshSampledFrame()?.frame?.bassPressure ?: native.bassPressure())
+            .toVisualBassPressure()
+    }
 
     override fun tick() {
+        if (closed.get()) return
         val epoch = boundaryEpoch.get()
         sampledFrame = SampledFrame(native.frame(), nanoClock(), epoch)
     }
@@ -240,8 +271,10 @@ internal class NativeVisualSceneEngine(
         sampledFrame = null
     }
 
-    override fun sceneBytes(width: Float, height: Float): ByteArray =
-        native.scene(width, height).also { logDroppedAudioFrames() }
+    override fun sceneBytes(width: Float, height: Float): ByteArray {
+        if (closed.get()) return EMPTY_SCENE
+        return native.scene(width, height).also { logDroppedAudioFrames() }
+    }
 
     override fun sceneBytesTinted(
         width: Float,
@@ -249,7 +282,10 @@ internal class NativeVisualSceneEngine(
         red: Float,
         green: Float,
         blue: Float,
-    ): ByteArray = native.sceneTinted(width, height, red, green, blue)
+    ): ByteArray {
+        if (closed.get()) return EMPTY_SCENE
+        return native.sceneTinted(width, height, red, green, blue)
+    }
 
     private fun logDroppedAudioFrames() {
         if (sceneCallsUntilCounterLog > 0) {
@@ -262,6 +298,8 @@ internal class NativeVisualSceneEngine(
     }
 
     override fun close() {
+        if (!closed.compareAndSet(false, true)) return
+        forgetSampledFrame()
         (native as? AutoCloseable)?.close()
     }
 
@@ -285,6 +323,9 @@ internal class NativeVisualSceneEngine(
          * asks the native engine again, whose live-audio window is 500 ms.
          */
         const val FRAME_ANSWER_MAX_AGE_NANOS = 50_000_000L
+
+        /** What a closed engine draws: [drawVisualizerScene] paints nothing for an empty buffer. */
+        val EMPTY_SCENE = ByteArray(0)
     }
 }
 
