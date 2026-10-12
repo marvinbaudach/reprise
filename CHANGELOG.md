@@ -4,6 +4,153 @@ Reprise release notes are curated from the changes that reached the stable
 branch. They describe user-visible changes rather than reproducing commit
 messages.
 
+## [0.1.316] - 2026-10-12
+
+### Library
+
+- A library scan or a schema migration no longer fails when Reprise writes
+  something else at the same moment. While a scan ran, the window kept saving
+  settings, ratings and the listen journal on its own connection, and a commit
+  from there could make the scan's own write fail without a retry. Scans and
+  migrations now take the database's write lock before they write. A scan of a
+  folder emptied of its music no longer fails the same way when it marks the
+  tracks as missing, and checking a slow share for vanished files no longer
+  holds the lock while it waits.
+- The last track of a CUE file lasts as long as its audio, not as long as the
+  file's header claims. Where the analysis of that track ends becomes its
+  duration, so a file whose header understates its length shows the real
+  length of its last track, and the desktop plays it to that end. A sheet edit
+  that renames a title keeps the length already learned. The first play, before
+  the analysis has finished, still uses the header's length.
+
+### Playback and presentation
+
+- A track whose start hangs is started over instead of staying silent.
+  GStreamer's playbin3 sometimes never leaves its ready state on a local file.
+  Reprise now watches how long the file source stands still, restarts the
+  start after 4 seconds, then 8, then 12, and only then gives up, so a slow disk
+  or share that keeps reading is waited for. A start that never finishes is
+  reported ("This audio did not start — play it again in a moment" for
+  external audio) and skipped. A player that never manages to start a track
+  also stops skipping: the skip count used to go back to zero after every
+  skip, so a broken audio sink could skip through the whole queue for ever with
+  Repeat All. Skipping now ends after at most one pass through the queue.
+- Events from a stream already left no longer reach the next one. An error that
+  arrived just before Next was pressed used to skip the new, healthy track (or
+  mark it missing), and a late position tick of the old track was credited to
+  the new one.
+- A rebuilt player pipeline plays at your volume. When a start fails, Reprise
+  rebuilds the pipeline and tries once more, and the fresh pipeline used to
+  play at full volume: a listener at 30 % suddenly heard the retried track at
+  100 %.
+- A CUE track starts reliably instead of being skipped. A track at the start
+  of its file got a redundant seek that sometimes made the FLAC parser fail
+  under load, and Reprise took that for a broken file. A track that starts at
+  zero now plays straight from its preroll, and any other start waits for its
+  seek to land before it plays.
+- A CUE track's gain steps at the exact sample of the boundary. The buffer
+  that held the boundary used to play whole at the previous track's gain, up to
+  tens of milliseconds of the next track at a gain that could be several dB
+  off. That buffer is now cut in two at the boundary frame.
+- The next CUE track is shown when it is heard, not about a second before. The
+  hand-over was announced when the track passed the pipeline's gain stage,
+  ahead of the audio still buffered behind it; it now waits until the audio
+  reaches the output.
+- A track promoted by a crossfade ends and hands on to the next one. The
+  crossfade's second pipeline had no consumer on its spectrum output during the
+  fade, the queue behind it filled, and the promoted track never reported its
+  end, so the queue never moved on from it.
+
+### Browsing
+
+- Ctrl+F closes the open search popover while its entry has the focus. The
+  shortcut did nothing there; it closed the popover only when the focus was
+  elsewhere. Closing keeps the query and returns the focus to the list.
+
+### Podcasts and online sources
+
+- Downloads from an automatic fill-up no longer stay "Downloading". Episode
+  rows showed "Downloading" with a full progress bar for ever although the files
+  were on disk, because the worker's answers shared one slot and a finished
+  episode's answer could be overwritten by the next episode's. Every
+  episode's final state is now delivered, and a refresh lets a file on disk win
+  over an in-flight state that was held.
+- The cached and offline banners of the Podcasts and YouTube views read as
+  sentences. They used to embed the footer's label as if it were a bare time
+  ("Last checked Updated 2 min ago"), and the Podcasts banner said "channel".
+  The banners now say how old the cache is ("just now", "3 hours ago"), count
+  episodes or videos in singular and plural, and drop the age clause when it is
+  not known. The age is the last successful check of that view's own kind, so a
+  failed "Try again" no longer makes a three-day-old cache read "from just
+  now", and a YouTube fetch no longer dates the podcasts. German and Spanish
+  are translated.
+
+### Android
+
+- A fresh start no longer flashes every bar of the visualizer before the live
+  audio speaks. With no live audio yet, the engine drew the stored
+  spectrogram's frame, which sits at about twice the live level, and the peak
+  caps it raised outlived the flash. The bars now wait for the first live audio
+  for up to half a second, showing the resting wave meanwhile.
+- A swipe hands the visualizer over without empty cards or jumps. The
+  neighbour card mirrors the live spectrum for the whole drag and settle
+  instead of drawing the incoming song's stored frame at the outgoing song's
+  playhead. A stream reset keeps the last live shape, the adopted shape is
+  held until the new stream has decided its level, and a swiped-in panel keeps
+  that shape until its own audio arrives, instead of showing an empty card or a
+  stored-frame hill while it waits for it. A rise in gain brakes before it
+  can draw one over-tall frame.
+- A seek measures the visualizer's gain again. A seek into a much quieter or
+  louder passage kept the gain of the passage that was left; the stream is now
+  measured again when playback resumes after a seek.
+- The song swipe settles faster and drops fewer frames. The home-screen widget
+  used to redraw several times on a track change, right inside the settle
+  animation. It now redraws once, about a second later, and buffering counts as
+  playing. The panel blur is off during the swipe, the settle takes 300 ms
+  instead of 480 and the fog crossfade 500 ms instead of 1000. On a Pixel 10
+  Pro XL release build, late frames in the first 300 ms of a swipe fell from
+  8.1 % to 2.4 %.
+- The song swipe and Now Playing do less main-thread work per frame. The
+  home-screen widget copies its cover once per redraw instead of once per
+  layout, the visualizer glow builds its gradient once instead of every frame,
+  and the visualizer crosses into the core twice per frame instead of six
+  times. This reduces load; no gain in smoothness has been measured.
+- A song restored after a cold start keeps its paused position and answers a
+  seek before the first play. The playhead was never stored, a restored song
+  had no duration until the player loaded it so the waveform did nothing when
+  tapped, and a seek before the first play was dropped. The position is now
+  remembered when a song starts, pauses or is seeked while paused, and the
+  first play starts at it. A force-stop while a song plays resumes from the
+  last of those, not from the live playhead.
+- The Now Playing seek labels, artist line and transport row keep apart on a
+  small phone at a large font. The cover, title and seek bar used to sit at
+  fixed fractions of the screen height, so on a 360 x 640 dp phone at font
+  scale 2.0 the time labels ran into the shuffle and repeat buttons and the
+  title into the seek bar. The layout is now computed from measured heights:
+  the transport row stays where the navigation bar puts it, and the seek bar,
+  the title and the cover give way in that order only when there is no room.
+  Text and touch targets never shrink.
+- The mini player centres the playing title and its artist in the text column
+  beside the cover.
+- A CUE album lists, plays and analyses correctly on the phone. Listing one no
+  longer crashes the library tab: the lists keyed their rows by the file's uri,
+  which every track of the file shares. Consecutive Opus tracks of one file
+  play on without the renderer restarting. Each gapless track gets its own gain
+  from its first sample, where it used to get the previous track's until the
+  hand-over, and the gain steps at the exact sample of the cut. The last track
+  of a file plays to the end of the audio even when the FLAC header
+  understates its length, however well the file compresses.
+- The track-analysis backfill finishes on a library analysed before loudness
+  was measured. It listed a track without a current loudness as pending, then
+  counted it done without decoding it, and listed it again, so done and total
+  grew together for ever. Such a track is now decoded and stored like any other.
+
+### Tools, packaging, and reliability
+
+- The GTK frontend's production code can no longer panic. A panic in a signal
+  handler aborts the whole application, so a broken internal assumption is now
+  logged, asserts in debug builds, and takes a neutral path in release builds.
+
 ## [0.1.293] - 2026-10-08
 
 ### Library
