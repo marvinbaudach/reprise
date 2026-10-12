@@ -4,6 +4,17 @@ Reprise release notes are curated from the changes that reached the stable
 branch. They describe user-visible changes rather than reproducing commit
 messages.
 
+## [0.1.317] - 2026-10-12
+
+### Android
+
+- Bringing the app back from the background no longer crashes it. When the
+  playback service was ended while the app sat in the background, the Now
+  Playing visualizer kept a reference to the service's closed visualizer
+  engine, and the first frame drawn on return tried to use it. The engine now
+  stays harmless once closed, and the visualizer picks up a fresh one when the
+  app reconnects.
+
 ## [0.1.316] - 2026-10-12
 
 ### Library

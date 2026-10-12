@@ -139,6 +139,12 @@
     <!-- One entry per promoted release, not per merge into dev. Every merge
          raises the workspace version; only a promotion to main ships one.
          See docs/agents/branching.md and RELEASING.md. -->
+    <release version="0.1.317" date="2026-10-12" type="stable">
+      <description>
+        <p>Stops the Android app from crashing when it is brought back from the background. The Now Playing visualizer could still hold the closed visualizer of a playback service that had ended in the meantime; it now stays harmless once closed and picks up a fresh one when the app reconnects.</p>
+        <p xml:lang="de">Verhindert, dass die Android-App abstürzt, wenn sie aus dem Hintergrund zurückgeholt wird. Die Visualisierung der Wiedergabeansicht konnte noch die geschlossene Visualisierung eines inzwischen beendeten Wiedergabedienstes halten; sie bleibt jetzt nach dem Schließen harmlos und holt sich beim erneuten Verbinden eine neue.</p>
+      </description>
+    </release>
     <release version="0.1.316" date="2026-10-12" type="stable">
       <description>
         <p>Starts a track over when its start hangs, instead of leaving it silent. A local file whose playback never leaves the ready state is restarted after the file source has stood still for a while, up to three starts, while a slow disk or share that keeps reading is waited for. A start that never finishes is reported and skipped, skipping now ends after one pass through the queue instead of running for ever with Repeat All, and an error from a stream you have already left no longer skips the next track.</p>
