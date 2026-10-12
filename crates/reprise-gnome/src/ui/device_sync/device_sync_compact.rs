@@ -299,30 +299,19 @@ fn inventory_identities_match(
 /// large selection logs a single warning instead of one line per track.
 #[derive(Default)]
 struct SidecarFailures {
-    failed: usize,
+    failed_tracks: usize,
     example: Option<(i64, String)>,
 }
 
 impl SidecarFailures {
     fn record(&mut self, track_id: i64, error: &dyn std::fmt::Display) {
-        self.failed += 1;
+        self.failed_tracks += 1;
         self.example
             .get_or_insert_with(|| (track_id, error.to_string()));
     }
-
-    fn warn(&self, message: &str) {
-        if let Some((example_track_id, example_error)) = &self.example {
-            tracing::warn!(
-                failed = self.failed,
-                example_track_id,
-                example_error = %example_error,
-                "{message}"
-            );
-        }
-    }
 }
 
-pub(in crate::ui::device_sync) fn desktop_analysis_sizes(
+pub(super) fn desktop_analysis_sizes(
     conn: &Db,
     selected: &[SelectionSource],
     playlists: &[reprise_core::device_sync::MirrorPlaylistSnapshot],
@@ -339,47 +328,67 @@ pub(in crate::ui::device_sync) fn desktop_analysis_sizes(
     track_ids.sort_unstable();
     track_ids.dedup();
     let selected_tracks = track_ids.len();
-    let mut analyses = Vec::new();
     let mut unanalysed = 0_usize;
     let mut load_failures = SidecarFailures::default();
     let mut encode_failures = SidecarFailures::default();
-    for track_id in track_ids {
-        let sidecar = match reprise_core::device_sync::analysis_sidecar::AnalysisSidecar::for_track(
-            conn, track_id,
-        ) {
-            Ok(Some(sidecar)) => sidecar,
-            // Not an error: the track is not analysed yet, or it is cut from a
-            // CUE file and by design never gets a sidecar of its own.
-            Ok(None) => {
-                unanalysed += 1;
-                continue;
-            }
-            Err(error) => {
-                load_failures.record(track_id, &error);
-                continue;
-            }
-        };
-        let bytes = match sidecar.encode() {
-            Ok(bytes) => bytes,
-            Err(error) => {
-                encode_failures.record(track_id, &error);
-                continue;
-            }
-        };
-        analyses.push(reprise_core::device_sync::DesktopAnalysis {
-            track_id,
-            size_bytes: u64::try_from(bytes.len())
-                .map_err(|_| "analysis sidecar length does not fit u64".to_string())?,
-        });
-    }
+    let result = (|| {
+        let mut analyses = Vec::new();
+        for track_id in track_ids {
+            let sidecar =
+                match reprise_core::device_sync::analysis_sidecar::AnalysisSidecar::for_track(
+                    conn, track_id,
+                ) {
+                    Ok(Some(sidecar)) => sidecar,
+                    // Not an error: the track is not analysed, or it is cut from
+                    // a CUE file and by design never gets a sidecar of its own.
+                    Ok(None) => {
+                        unanalysed += 1;
+                        continue;
+                    }
+                    Err(error) => {
+                        load_failures.record(track_id, &error);
+                        continue;
+                    }
+                };
+            let bytes = match sidecar.encode() {
+                Ok(bytes) => bytes,
+                Err(error) => {
+                    encode_failures.record(track_id, &error);
+                    continue;
+                }
+            };
+            analyses.push(reprise_core::device_sync::DesktopAnalysis {
+                track_id,
+                size_bytes: u64::try_from(bytes.len())
+                    .map_err(|_| "analysis sidecar length does not fit u64".to_string())?,
+            });
+        }
+        Ok(analyses)
+    })();
     if unanalysed > 0 {
         tracing::debug!(
-            "{unanalysed} of {selected_tracks} selected tracks have no analysis sidecar yet"
+            unanalysed,
+            selected_tracks,
+            "selected tracks have no analysis sidecar"
         );
     }
-    load_failures.warn("could not load analysis sidecar data");
-    encode_failures.warn("could not encode analysis sidecar data");
-    Ok(analyses)
+    if let Some((example_track_id, example_error)) = &load_failures.example {
+        tracing::warn!(
+            failed_tracks = load_failures.failed_tracks,
+            example_track_id,
+            example_error = %example_error,
+            "could not load analysis sidecar data"
+        );
+    }
+    if let Some((example_track_id, example_error)) = &encode_failures.example {
+        tracing::warn!(
+            failed_tracks = encode_failures.failed_tracks,
+            example_track_id,
+            example_error = %example_error,
+            "could not encode analysis sidecar data"
+        );
+    }
+    result
 }
 
 pub(super) fn is_verified_track_file(file: &reprise_core::device_sync::ManagedDeviceFile) -> bool {

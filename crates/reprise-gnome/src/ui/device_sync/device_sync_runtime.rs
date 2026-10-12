@@ -563,7 +563,7 @@ fn cancel_device_run(device: &mut DeviceState) {
 #[path = "device_sync_agent.rs"]
 mod agent;
 #[path = "device_sync_compact.rs"]
-pub(super) mod compact;
+mod compact;
 #[path = "device_sync_device_list.rs"]
 mod device_list;
 #[path = "device_sync_memory.rs"]
@@ -577,6 +577,14 @@ mod planned;
 #[path = "device_sync_target_actions.rs"]
 mod target_actions;
 
+#[cfg(test)]
+pub(super) fn desktop_analysis_sizes_for_test(
+    conn: &Db,
+    selected: &[SelectionSource],
+    playlists: &[reprise_core::device_sync::MirrorPlaylistSnapshot],
+) -> Result<Vec<reprise_core::device_sync::DesktopAnalysis>, String> {
+    compact::desktop_analysis_sizes(conn, selected, playlists)
+}
 pub(super) use picker::*;
 #[cfg(test)]
 pub(super) use planned::{
