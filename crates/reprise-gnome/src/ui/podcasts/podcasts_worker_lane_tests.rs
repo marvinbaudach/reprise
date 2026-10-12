@@ -1,3 +1,4 @@
+use super::response_channel::PodcastsResponseReceiver;
 use super::*;
 
 use std::sync::{Arc, Condvar, Mutex};
@@ -23,7 +24,7 @@ impl Drop for ReleaseGate {
 }
 
 fn response_within(
-    receiver: &async_channel::Receiver<PodcastsResponse>,
+    receiver: &PodcastsResponseReceiver,
     deadline: Duration,
     failure: &'static str,
 ) -> PodcastsResponse {
@@ -44,9 +45,7 @@ fn response_within(
     }
 }
 
-fn request(
-    operation: PodcastsOperation,
-) -> (PodcastsRequest, async_channel::Receiver<PodcastsResponse>) {
+fn request(operation: PodcastsOperation) -> (PodcastsRequest, PodcastsResponseReceiver) {
     let (response, receiver) = podcasts_response_channel();
     (
         PodcastsRequest {

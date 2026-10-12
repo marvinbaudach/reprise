@@ -79,20 +79,21 @@ pub(super) fn refreshed_download_states(
 ) -> BTreeMap<i64, DownloadState> {
     rows.iter()
         .map(|row| {
+            let on_disk = download_state::on_disk_bytes(row.downloaded_path.as_deref());
+            let persisted = download_state::from_persisted(
+                row.downloaded_path.as_deref(),
+                row.downloaded_bytes.or(on_disk),
+                on_disk.is_some(),
+            );
+            // A persisted file is final: an in-flight state still held for it
+            // only means its terminal update never reached this view.
             let state = match previous.get(&row.id) {
                 Some(
                     state @ (DownloadState::Queued
                     | DownloadState::Downloading { .. }
                     | DownloadState::Failed { .. }),
-                ) => state.clone(),
-                _ => {
-                    let on_disk = download_state::on_disk_bytes(row.downloaded_path.as_deref());
-                    download_state::from_persisted(
-                        row.downloaded_path.as_deref(),
-                        row.downloaded_bytes.or(on_disk),
-                        on_disk.is_some(),
-                    )
-                }
+                ) if !matches!(persisted, DownloadState::Downloaded { .. }) => state.clone(),
+                _ => persisted,
             };
             (row.id, state)
         })
@@ -128,6 +129,33 @@ mod tests {
             is_new: false,
             media_category: None,
         }
+    }
+
+    #[test]
+    fn pod_7_a_refresh_replaces_a_stale_download_in_progress_with_the_persisted_file() {
+        let directory = tempfile::tempdir().unwrap();
+        let file = directory.path().join("video.opus");
+        std::fs::write(&file, b"0123456789").unwrap();
+        let finished = EpisodeRow {
+            downloaded_path: Some(file.to_string_lossy().into_owned()),
+            downloaded_bytes: Some(10),
+            ..episode(1)
+        };
+        let previous = BTreeMap::from([
+            (
+                1,
+                DownloadState::Downloading {
+                    received_bytes: 10,
+                    total_bytes: Some(10),
+                },
+            ),
+            (2, DownloadState::Queued),
+        ]);
+
+        let refreshed = refreshed_download_states(&[finished, episode(2)], &previous);
+
+        assert_eq!(refreshed[&1], DownloadState::Downloaded { bytes: 10 });
+        assert_eq!(refreshed[&2], DownloadState::Queued);
     }
 
     #[test]
