@@ -2,7 +2,7 @@ msgid ""
 msgstr ""
 "Project-Id-Version: Reprise 0.1.1\n"
 "Report-Msgid-Bugs-To: Marvin Baudach\n"
-"POT-Creation-Date: 2026-10-13 01:39+0200\n"
+"POT-Creation-Date: 2026-10-13 04:07+0200\n"
 "PO-Revision-Date: 2026-07-26 14:47+0200\n"
 "Last-Translator: Reprise contributors\n"
 "Language-Team: Spanish\n"
@@ -1228,6 +1228,15 @@ msgstr "No se pudo crear la lista de reproducción «{name}»"
 #: crates/reprise-gnome/src/ui/strings_artist.rs:7
 msgid "Reprise"
 msgstr "Reprise"
+
+#: crates/reprise-gnome/src/ui/strings_artist.rs:8
+#, rust-format
+msgid "Photo: {author} · {license} · Wikimedia Commons"
+msgstr "Foto: {author} · {license} · Wikimedia Commons"
+
+#: crates/reprise-gnome/src/ui/strings_artist.rs:9
+msgid "Open image source"
+msgstr "Abrir fuente de la imagen"
 
 #: crates/reprise-gnome/src/ui/strings_issues.rs:10
 msgid "Show 1 more"

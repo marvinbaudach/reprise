@@ -863,6 +863,10 @@ result.
   muted credit line beneath it on the phone's artist page — "Photo: <author> · <licence> ·
   Wikimedia Commons" — that opens the file page; it scrolls with the head (ART-3). A Deezer
   portrait shows no line, and small avatars never carry one.
+- **ART-5** [active] [gtk] — On the desktop, a Commons portrait shown large (the Releases
+  column and the Stats artist card) carries the same credit as its tooltip and accessible
+  description, and its context menu offers "Open image source", which opens the file page.
+  A Deezer portrait has neither.
 - **FX-1** [planned] [manual] — All effects respect
   `gtk-enable-animations=false` (hard switch) and only run GPU-cheap
   (opacity/transform, pre-rendered glows). No live blurs in lists.

@@ -11,6 +11,7 @@ use reprise_core::library::stats_screen::RankedGroup;
 use reprise_core::library::stats_snapshot::SortBy;
 
 use super::stats_artist_image::{ArtistImageRequest, StatsArtistImage};
+use crate::ui::artist_portrait_tiles::{apply_credit, load_credit, PortraitCreditResolver};
 use crate::ui::strings;
 
 type StringCallback = Rc<RefCell<Option<Rc<dyn Fn(String)>>>>;
@@ -34,6 +35,7 @@ pub(in crate::ui) struct StatsBandCard {
     current_artist: Rc<RefCell<String>>,
     current_key: Rc<RefCell<String>>,
     artist_image: Rc<RefCell<Option<Rc<StatsArtistImage>>>>,
+    credit_resolver: Rc<RefCell<PortraitCreditResolver>>,
     current_candidates: Rc<RefCell<Vec<String>>>,
     cover_generation: Rc<Cell<u64>>,
     #[cfg_attr(
@@ -168,6 +170,7 @@ impl StatsBandCard {
             current_artist,
             current_key,
             artist_image: Rc::new(RefCell::new(None)),
+            credit_resolver: Rc::new(RefCell::new(portrait_credit_resolver())),
             current_candidates: Rc::new(RefCell::new(Vec::new())),
             cover_generation: Rc::new(Cell::new(0)),
             image_loaded: Rc::new(Cell::new(None)),
@@ -244,6 +247,7 @@ impl StatsBandCard {
         self.picture.set_visible(false);
         self.fallback.set_visible(true);
         self.image_loaded.set(None);
+        apply_credit(&self.root, None);
         let image = self.artist_image.borrow().clone();
         let Some(image) = image else {
             return;
@@ -252,6 +256,9 @@ impl StatsBandCard {
         let fallback = self.fallback.clone();
         let generation = self.cover_generation.clone();
         let image_loaded = self.image_loaded.clone();
+        let root = self.root.clone();
+        let credit_resolver = self.credit_resolver.borrow().clone();
+        let credit_artist = artist.to_string();
         image.load(
             &self.picture,
             ArtistImageRequest {
@@ -267,6 +274,21 @@ impl StatsBandCard {
                     picture.set_visible(loaded);
                     fallback.set_visible(!loaded);
                     image_loaded.set(Some(loaded));
+                    if loaded {
+                        let generation = generation.clone();
+                        let root = root.clone();
+                        load_credit(
+                            credit_artist.clone(),
+                            credit_resolver.clone(),
+                            move |credit| {
+                                if generation.get() == token {
+                                    apply_credit(&root, credit.as_ref());
+                                }
+                            },
+                        );
+                    } else {
+                        apply_credit(&root, None);
+                    }
                 }),
             },
         );
@@ -274,6 +296,11 @@ impl StatsBandCard {
 
     pub(in crate::ui) fn set_artist_image(&self, image: Rc<StatsArtistImage>) {
         *self.artist_image.borrow_mut() = Some(image);
+    }
+
+    #[cfg(test)]
+    fn set_credit_resolver_for_test(&self, resolver: PortraitCreditResolver) {
+        *self.credit_resolver.borrow_mut() = resolver;
     }
 
     pub(in crate::ui) fn clear_data(&self) {
@@ -289,6 +316,7 @@ impl StatsBandCard {
         self.current_artist.borrow_mut().clear();
         self.current_key.borrow_mut().clear();
         self.current_candidates.borrow_mut().clear();
+        apply_credit(&self.root, None);
     }
 
     #[cfg(test)]
@@ -304,6 +332,17 @@ impl StatsBandCard {
     #[cfg(test)]
     pub(super) fn summary_text(&self) -> String {
         self.summary.text().to_string()
+    }
+}
+
+fn portrait_credit_resolver() -> PortraitCreditResolver {
+    #[cfg(not(test))]
+    {
+        std::sync::Arc::new(reprise_core::artist_portrait::load_cached_credit)
+    }
+    #[cfg(test)]
+    {
+        std::sync::Arc::new(|_| None)
     }
 }
 
@@ -449,6 +488,38 @@ mod tests {
         assert_eq!(requests.load(Ordering::SeqCst), 0);
         assert!(card.picture.is_visible());
         assert!(!card.fallback.is_visible());
+    }
+
+    #[test]
+    #[ignore = "requires a display; run via xvfb-run"]
+    fn art_5_the_stats_card_reads_the_cached_portrait_credit() {
+        let _main_context = crate::ui::test_main_context::lock_main_context();
+        gtk4::init().unwrap();
+        let cache = tempfile::tempdir().unwrap();
+        cache_portrait(cache.path(), "Lorna Shore");
+        let (runtime, _) = portrait_runtime(true, cache.path());
+        let card = StatsBandCard::new();
+        card.set_credit_resolver_for_test(std::sync::Arc::new(|artist| {
+            (artist == "Lorna Shore").then(|| reprise_core::artist_portrait::PortraitCredit {
+                author: "Photographer".into(),
+                license: "CC BY-SA 4.0".into(),
+                license_url: "https://creativecommons.org/licenses/by-sa/4.0/".into(),
+                file_page_url: "https://commons.wikimedia.org/wiki/File:Portrait.jpg".into(),
+            })
+        }));
+        let loader = CoverLoader::new(crate::ui::cover_download_worker::setup_for_test());
+        card.set_artist_image(artist_image(loader, runtime, cache.path()));
+
+        card.set_data(&fixture(1), 60, SortBy::Time);
+
+        assert!(crate::ui::test_settle::settle_until(
+            crate::ui::test_settle::DISPLAY_TEST_TIMEOUT,
+            || card.widget().tooltip_text().is_some(),
+        ));
+        assert_eq!(
+            card.widget().tooltip_text().as_deref(),
+            Some("Photo: Photographer · CC BY-SA 4.0 · Wikimedia Commons")
+        );
     }
 
     #[test]
