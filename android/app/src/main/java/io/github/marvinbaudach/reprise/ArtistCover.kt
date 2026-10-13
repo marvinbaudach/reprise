@@ -1,6 +1,9 @@
 package io.github.marvinbaudach.reprise
 
+import android.content.ActivityNotFoundException
+import android.content.Context
 import android.content.Intent
+import android.util.Log
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -8,6 +11,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
+import androidx.compose.material3.minimumInteractiveComponentSize
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.getValue
@@ -18,6 +22,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.unit.dp
 import androidx.core.net.toUri
 import uniffi.reprise_android_ffi.AndroidArtworkSize
@@ -25,6 +30,10 @@ import uniffi.reprise_android_ffi.AndroidPortraitCredit
 
 internal const val ARTIST_PORTRAIT_DIAMETER_DP = 210
 internal const val ARTIST_PORTRAIT_BOTTOM_GAP_DP = 16
+
+/** The only host a credit link may point at: the Commons file page of the portrait. */
+private const val COMMONS_HOST = "commons.wikimedia.org"
+private const val CREDIT_TAG = "RepriseArtistCover"
 
 @Composable
 internal fun rememberArtistArtworkVisual(
@@ -97,17 +106,14 @@ internal fun ArtistPortraitHeader(
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                 style = MaterialTheme.typography.bodySmall,
                 modifier = Modifier
-                    .padding(horizontal = 24.dp, vertical = 8.dp)
                     .testTag("artist-portrait-credit")
-                    .clickable(enabled = isHttpsCreditUrl(value.filePageUrl)) {
-                        if (isHttpsCreditUrl(value.filePageUrl)) {
-                            runCatching {
-                                context.startActivity(
-                                    Intent(Intent.ACTION_VIEW, value.filePageUrl.toUri()),
-                                )
-                            }
-                        }
-                    },
+                    .minimumInteractiveComponentSize()
+                    .clickable(
+                        enabled = isHttpsCreditUrl(value.filePageUrl),
+                        onClickLabel = "Open image source",
+                        role = Role.Button,
+                    ) { openCreditPage(context, value.filePageUrl) }
+                    .padding(horizontal = 24.dp, vertical = 8.dp),
             )
         }
     }
@@ -118,8 +124,19 @@ internal fun artistPortraitCreditText(credit: AndroidPortraitCredit): String =
 
 internal fun isHttpsCreditUrl(url: String): Boolean =
     url.toUri().let { uri ->
-        uri.scheme.equals("https", ignoreCase = true) && !uri.host.isNullOrBlank()
+        uri.scheme.equals("https", ignoreCase = true) &&
+            uri.host.equals(COMMONS_HOST, ignoreCase = true) &&
+            uri.userInfo == null
     }
+
+private fun openCreditPage(context: Context, url: String) {
+    if (!isHttpsCreditUrl(url)) return
+    try {
+        context.startActivity(Intent(Intent.ACTION_VIEW, url.toUri()))
+    } catch (error: ActivityNotFoundException) {
+        Log.w(CREDIT_TAG, "No app can open the portrait credit page", error)
+    }
+}
 
 private fun artistArtworkRequest(
     name: String,

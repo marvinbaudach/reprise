@@ -275,6 +275,7 @@ class MainActivity : ComponentActivity() {
                     ) {
                         CompositionLocalProvider(
                             LocalTrackArtwork provides surface.artwork(),
+                            LocalArtistPortraitCredits provides session.artistPortraitCredits,
                             LocalPlaybackControls provides surface.playbackControls,
                             LocalAlbumTrackIds provides { album -> session.albumTrackIds(album) },
                             LocalArtistTrackIds provides { artist -> session.artistTrackIds(artist) },

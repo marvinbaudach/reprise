@@ -140,7 +140,7 @@ internal fun ArtistDetailHead(
     modifier: Modifier = Modifier,
     onPlayAreaSizeChanged: (Int) -> Unit = {},
 ) {
-    val credits by artistPortraitCreditsState().collectAsState()
+    val credits by LocalArtistPortraitCredits.current.collectAsState()
     Column(modifier = modifier.fillMaxWidth()) {
         Column(modifier = Modifier.onSizeChanged { onPlayAreaSizeChanged(it.height) }) {
             ArtistPlayButton(
@@ -154,7 +154,9 @@ internal fun ArtistDetailHead(
         }
         ArtistPortraitHeader(
             visual = visual,
-            credit = credits[artist.name.trim()],
+            // A portrait that failed to decode leaves the generated cover; a
+            // credit beneath that would describe a photo nobody is looking at.
+            credit = credits[artist.name.trim()].takeIf { visual?.generated == false },
         )
     }
 }

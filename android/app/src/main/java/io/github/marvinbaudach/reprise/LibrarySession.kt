@@ -3,6 +3,8 @@ package io.github.marvinbaudach.reprise
 import androidx.compose.runtime.staticCompositionLocalOf
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.update
 import uniffi.reprise_android_ffi.AndroidArtworkSize
 import uniffi.reprise_android_ffi.AndroidPortraitCredit
 
@@ -97,6 +99,9 @@ internal class LibrarySession(
     private val nowMillis: () -> Long = System::currentTimeMillis,
     private val scanMonitor: Any = Any(),
 ) {
+    private val portraitCredits =
+        MutableStateFlow<Map<String, AndroidPortraitCredit?>>(emptyMap())
+
     private val artworkPaths =
         object : LinkedHashMap<ArtworkCacheKey, String?>(64, 0.75f, true) {
         override fun removeEldestEntry(
@@ -329,14 +334,36 @@ internal class LibrarySession(
         port.artistPortraitCached(name, size)
 
     fun artistPortraitFetched(name: String, size: AndroidArtworkSize): String? {
-        publishArtistPortraitCredit(name, null)
         val path = port.artistPortraitFetched(name, size)
         publishArtistPortraitCredit(name, artistPortraitCredit(name))
         return path
     }
 
+    /**
+     * The credit of each fetched artist portrait, by trimmed artist name. A name
+     * is absent until its first fetch finishes, so a page never shows a line that
+     * a slower fetch is about to retract. This session's own state: nothing is
+     * shared with another session or process.
+     */
+    val artistPortraitCredits: StateFlow<Map<String, AndroidPortraitCredit?>> =
+        portraitCredits.asStateFlow()
+
     fun artistPortraitCredit(name: String): AndroidPortraitCredit? =
         port.artistPortraitCredit(name)
+
+    private fun publishArtistPortraitCredit(name: String, credit: AndroidPortraitCredit?) {
+        val key = name.trim()
+        if (key.isEmpty()) return
+        portraitCredits.update { current ->
+            val updated = (current - key) + (key to credit)
+            if (updated.size <= REMEMBERED_PORTRAIT_CREDITS) {
+                updated
+            } else {
+                updated.entries.drop(updated.size - REMEMBERED_PORTRAIT_CREDITS)
+                    .associate { it.key to it.value }
+            }
+        }
+    }
 
     private fun scanTree(
         treeUri: String,
@@ -385,26 +412,14 @@ internal class LibrarySession(
         )
 }
 
-private val artistPortraitCreditEntries = LinkedHashMap<String, AndroidPortraitCredit?>()
-private val artistPortraitCreditMonitor = Any()
-private val artistPortraitCredits = MutableStateFlow<Map<String, AndroidPortraitCredit?>>(emptyMap())
-
-internal fun artistPortraitCreditsState(): StateFlow<Map<String, AndroidPortraitCredit?>> =
-    artistPortraitCredits
-
-private fun publishArtistPortraitCredit(name: String, credit: AndroidPortraitCredit?) {
-    val key = name.trim()
-    if (key.isEmpty()) return
-    synchronized(artistPortraitCreditMonitor) {
-        artistPortraitCreditEntries.remove(key)
-        artistPortraitCreditEntries[key] = credit
-        while (artistPortraitCreditEntries.size > REMEMBERED_PORTRAIT_CREDITS) {
-            val oldest = artistPortraitCreditEntries.keys.firstOrNull() ?: break
-            artistPortraitCreditEntries.remove(oldest)
-        }
-        artistPortraitCredits.value = artistPortraitCreditEntries.toMap()
+/**
+ * The session's portrait credits, for the artist page. The default is an empty
+ * map, so a preview or a test that provides no session shows no credit.
+ */
+internal val LocalArtistPortraitCredits =
+    staticCompositionLocalOf<StateFlow<Map<String, AndroidPortraitCredit?>>> {
+        MutableStateFlow(emptyMap())
     }
-}
 
 private fun countOnlyLibraryWindow() =
     LibraryWindowRange(offset = 0, limit = COUNT_ONLY_WINDOW_SIZE)

@@ -149,7 +149,9 @@ internal class AndroidLibrarySessionPort(
             .getOrNull()
 
     override fun artistPortraitCredit(name: String): AndroidPortraitCredit? =
-        library.artistPortraitCredit(name)
+        runCatching { library.artistPortraitCredit(name) }
+            .onFailure { error -> Log.w(TAG, "Could not read artist portrait credit", error) }
+            .getOrNull()
 
     override fun artistsMissingPortraits(limit: UInt): List<String> =
         runCatching { library.artistsMissingPortraits(limit) }
