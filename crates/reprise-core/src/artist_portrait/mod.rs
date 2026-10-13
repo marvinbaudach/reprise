@@ -6,7 +6,14 @@ pub mod backfill;
 mod cache;
 pub mod cover_backfill;
 pub(crate) mod deezer;
+mod fetch;
 mod placeholder;
+mod release_cover;
+mod sidecar;
+mod wikimedia;
+
+#[cfg(test)]
+mod source_tests;
 
 #[cfg(test)]
 mod placeholder_measurement;
@@ -22,6 +29,7 @@ pub use cache::{verdict, CacheVerdict};
 pub use cover_backfill::{
     CoverBackfill, CoverBackfillFetch, CoverBackfillListener, CoverBackfillProgress,
 };
+pub use sidecar::PortraitCredit;
 
 use std::path::{Path, PathBuf};
 
@@ -40,7 +48,7 @@ pub enum PortraitOutcome {
 pub enum PortraitError {
     #[error(transparent)]
     Fetch(#[from] FetchError),
-    #[error("Deezer response was invalid")]
+    #[error("Artist portrait source response was invalid")]
     InvalidResponse,
 }
 
@@ -65,13 +73,45 @@ pub fn load_or_fetch(name: &str) -> Result<PortraitOutcome, PortraitError> {
 }
 
 pub fn load_or_fetch_in(name: &str, dir: &Path) -> Result<PortraitOutcome, PortraitError> {
+    load_or_fetch_in_with_hint(name, None, dir)
+}
+
+pub fn load_or_fetch_in_with_hint(
+    name: &str,
+    mbid_hint: Option<&str>,
+    dir: &Path,
+) -> Result<PortraitOutcome, PortraitError> {
     let now = chrono::Utc::now().timestamp();
-    load_or_fetch_with(
-        name,
-        now,
-        dir,
-        &mut deezer::search,
-        &mut deezer::download_image,
+    let mut image = |url: &str| {
+        if wikimedia::is_download_url(url) {
+            wikimedia::download_image(url)
+        } else {
+            deezer::download_image(url)
+        }
+    };
+    let mut fetchers = fetch::Fetchers {
+        deezer_text: &mut deezer::search,
+        musicbrainz_text: &mut crate::musicbrainz::get,
+        wikimedia_text: &mut wikimedia::get,
+        image: &mut image,
+    };
+    fetch::load_or_fetch(name, mbid_hint, now, dir, &mut fetchers)
+}
+
+pub fn load_cached_credit(name: &str) -> Option<PortraitCredit> {
+    load_cached_credit_from(name, &cache::cache_dir())
+}
+
+pub fn load_cached_credit_from(name: &str, dir: &Path) -> Option<PortraitCredit> {
+    sidecar::load_credit(dir, name.trim())
+}
+
+pub fn artist_mbid_hint(db: &crate::db::Db, name: &str) -> Result<Option<String>, rusqlite::Error> {
+    db.conn().query_row(
+        "SELECT MAX(artist_mbid) FROM tracks \
+         WHERE lower(trim(artist)) = lower(trim(?1))",
+        [name],
+        |row| row.get(0),
     )
 }
 
@@ -108,6 +148,7 @@ pub fn store_fixture_image(
     cache::store_image(dir, name, bytes, extension)
 }
 
+#[cfg(test)]
 pub(crate) fn load_or_fetch_with<S, D>(
     name: &str,
     now: i64,
@@ -119,82 +160,22 @@ where
     S: FnMut(&str) -> Result<String, FetchError>,
     D: FnMut(&str) -> Result<Vec<u8>, FetchError>,
 {
-    let name = name.trim();
-    if name.is_empty() {
-        return Ok(PortraitOutcome::NotFound);
-    }
-
-    let cached_path = match cache::verdict(dir, name, now) {
-        cache::CacheVerdict::FreshPortrait(path) => return Ok(PortraitOutcome::Found(path)),
-        cache::CacheVerdict::FreshNegative => return Ok(PortraitOutcome::NotFound),
-        cache::CacheVerdict::NeedsFetch { stale_portrait } => stale_portrait,
-    };
-
-    let body = match search(&deezer::search_url(name)) {
-        Ok(body) => body,
-        Err(error) => return stale_or(cached_path, error.into()),
-    };
-    let Some(artist) = deezer::parse_best_artist(&body, name) else {
-        cache::write_negative(dir, name);
-        return Ok(PortraitOutcome::NotFound);
-    };
-    let Some(url) = artist.picture_url else {
-        cache::write_negative(dir, name);
-        return Ok(PortraitOutcome::NotFound);
-    };
-    let bytes = match download(&url) {
-        Ok(bytes) => bytes,
-        Err(error) => return stale_or(cached_path, error.into()),
-    };
-    let decoded_image = crate::cover_download::decode_image(&bytes);
-    let placeholder_distance = decoded_image
-        .as_ref()
-        .map(|decoded| placeholder::placeholder_distance(decoded.image()));
-    if let Some(distance) =
-        placeholder_distance.filter(|distance| *distance <= placeholder::PLACEHOLDER_RMSE_MAX)
-    {
-        let image_identifier = deezer::image_identifier(&url).unwrap_or_else(|| "unknown".into());
-        tracing::warn!(
-            artist = name,
-            image_identifier,
-            placeholder_distance = distance,
-            "artist portrait rejected as a known Deezer placeholder"
-        );
-        if let Some(path) = cached_path.as_ref().filter(|path| path.exists()) {
-            let refreshed = cache::refresh_image(dir, name, path).unwrap_or_else(|| {
-                tracing::warn!(
-                    artist = name,
-                    cached_path = %path.display(),
-                    "artist portrait could not refresh the cached image after placeholder rejection"
-                );
-                path.clone()
-            });
-            return Ok(PortraitOutcome::Found(refreshed));
+    let mut deezer_text = |url: &str| {
+        if url.contains("/albums?") {
+            Ok(r#"{"data":[]}"#.to_owned())
+        } else {
+            search(url)
         }
-        cache::write_negative(dir, name);
-        return Ok(PortraitOutcome::NotFound);
-    }
-    let Some(extension) = decoded_image
-        .as_ref()
-        .and_then(crate::cover_download::DecodedImage::validated_extension)
-    else {
-        cache::write_negative(dir, name);
-        return Ok(PortraitOutcome::NotFound);
     };
-    if let Some(distance) = placeholder_distance
-        .filter(|distance| *distance < placeholder::PLACEHOLDER_WARNING_RMSE_MAX)
-    {
-        let image_identifier = deezer::image_identifier(&url).unwrap_or_else(|| "unknown".into());
-        tracing::warn!(
-            artist = name,
-            image_identifier,
-            placeholder_distance = distance,
-            "artist portrait accepted near the placeholder threshold"
-        );
-    }
-    cache::store_image(dir, name, &bytes, extension)
-        .map(PortraitOutcome::Found)
-        .map_or_else(|| stale_or(cached_path, PortraitError::InvalidResponse), Ok)
+    let mut no_musicbrainz = |_: &str| Ok(r#"{"artists":[]}"#.to_owned());
+    let mut no_wikimedia = |_: &str| Err(FetchError::Transport);
+    let mut fetchers = fetch::Fetchers {
+        deezer_text: &mut deezer_text,
+        musicbrainz_text: &mut no_musicbrainz,
+        wikimedia_text: &mut no_wikimedia,
+        image: download,
+    };
+    fetch::load_or_fetch(name, None, now, dir, &mut fetchers)
 }
 
 pub(crate) fn normalize(value: &str) -> String {

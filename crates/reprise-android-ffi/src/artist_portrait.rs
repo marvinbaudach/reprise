@@ -6,9 +6,9 @@ use std::sync::{Mutex, OnceLock, PoisonError};
 
 use reprise_core::artist_portrait::cover_backfill::ChainedCoverStart;
 use reprise_core::artist_portrait::{
-    load_cached_from, verdict, CoverBackfillFetch, CoverBackfillListener, CoverBackfillProgress,
-    PortraitBackfillListener as CorePortraitBackfillListener, PortraitBackfillProgress,
-    PortraitBackfillState, PortraitOutcome,
+    load_cached_credit_from, load_cached_from, verdict, CoverBackfillFetch, CoverBackfillListener,
+    CoverBackfillProgress, PortraitBackfillListener as CorePortraitBackfillListener,
+    PortraitBackfillProgress, PortraitBackfillState, PortraitOutcome,
 };
 use reprise_core::cover::{self, CoverSource};
 use reprise_core::cover_download::{self, CoverFetchOutcome};
@@ -117,24 +117,60 @@ impl MusicLibrary {
         name: &str,
         size: AndroidArtworkSize,
     ) -> Result<Option<String>, crate::LibraryError> {
-        let allowed = {
+        let (allowed, mbid_hint) = {
             let reader = self.reader()?;
-            reprise_core::online_sources::network_allowed_or_off(
+            let allowed = reprise_core::online_sources::network_allowed_or_off(
                 &reader,
                 &reprise_core::modules::ARTWORK_MODULE,
-            )
+            );
+            let mbid = reprise_core::artist_portrait::artist_mbid_hint(&reader, name)
+                .ok()
+                .flatten();
+            (allowed, mbid)
         };
         if !allowed {
             return Ok(None);
         }
 
-        match (self.portrait_fetch)(name, &self.portrait_dir()) {
+        let fetched = if let Some(mbid) = mbid_hint.as_deref() {
+            reprise_core::artist_portrait::load_or_fetch_in_with_hint(
+                name,
+                Some(mbid),
+                &self.portrait_dir(),
+            )
+        } else {
+            (self.portrait_fetch)(name, &self.portrait_dir())
+        };
+        match fetched {
             Ok(PortraitOutcome::Found(path)) => Ok(self.reduced_portrait_path(&path, size)),
             Ok(PortraitOutcome::NotFound) => Ok(None),
             Err(error) => {
                 tracing::debug!(%error, "artist portrait request failed");
                 Ok(None)
             }
+        }
+    }
+
+    pub fn artist_portrait_credit(&self, name: &str) -> Option<AndroidPortraitCredit> {
+        load_cached_credit_from(name, &self.portrait_dir()).map(Into::into)
+    }
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, uniffi::Record)]
+pub struct AndroidPortraitCredit {
+    pub author: String,
+    pub license: String,
+    pub license_url: String,
+    pub file_page_url: String,
+}
+
+impl From<reprise_core::artist_portrait::PortraitCredit> for AndroidPortraitCredit {
+    fn from(credit: reprise_core::artist_portrait::PortraitCredit) -> Self {
+        Self {
+            author: credit.author,
+            license: credit.license,
+            license_url: credit.license_url,
+            file_page_url: credit.file_page_url,
         }
     }
 }

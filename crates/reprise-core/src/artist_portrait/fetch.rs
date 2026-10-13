@@ -1,0 +1,220 @@
+//! Source orchestration for the artist-portrait cache.
+
+use std::path::{Path, PathBuf};
+
+use crate::artist_news::{artist_search_url, parse_artist_mbid, ArtistMatch};
+use crate::musicbrainz::FetchError;
+
+use super::sidecar::PortraitRecord;
+use super::{cache, deezer, placeholder, release_cover, wikimedia};
+use super::{PortraitError, PortraitOutcome};
+
+pub(crate) struct Fetchers<'a> {
+    pub deezer_text: &'a mut dyn FnMut(&str) -> Result<String, FetchError>,
+    pub musicbrainz_text: &'a mut dyn FnMut(&str) -> Result<String, FetchError>,
+    pub wikimedia_text: &'a mut dyn FnMut(&str) -> Result<String, FetchError>,
+    pub image: &'a mut dyn FnMut(&str) -> Result<Vec<u8>, FetchError>,
+}
+
+pub(crate) fn load_or_fetch(
+    name: &str,
+    mbid_hint: Option<&str>,
+    now: i64,
+    dir: &Path,
+    fetchers: &mut Fetchers<'_>,
+) -> Result<PortraitOutcome, PortraitError> {
+    let name = name.trim();
+    if name.is_empty() {
+        return Ok(PortraitOutcome::NotFound);
+    }
+    let stale = match cache::verdict(dir, name, now) {
+        cache::CacheVerdict::FreshPortrait(path) => return Ok(PortraitOutcome::Found(path)),
+        cache::CacheVerdict::FreshNegative => return Ok(PortraitOutcome::NotFound),
+        cache::CacheVerdict::NeedsFetch { stale_portrait } => stale_portrait,
+    };
+
+    let search_body = match (fetchers.deezer_text)(&deezer::search_url(name)) {
+        Ok(body) => body,
+        Err(error) => return super::stale_or(stale, error.into()),
+    };
+    if !deezer::has_data_array(&search_body) {
+        return super::stale_or(stale, PortraitError::InvalidResponse);
+    }
+    if let Some(artist) = deezer::parse_best_artist(&search_body, name) {
+        if let Some(url) = artist.picture_url {
+            let albums = match (fetchers.deezer_text)(&release_cover::albums_url(artist.id)) {
+                Ok(body) => body,
+                Err(error) => return super::stale_or(stale, error.into()),
+            };
+            let Some(covers) = release_cover::parse_release_cover_identifiers(&albums) else {
+                return super::stale_or(stale, PortraitError::InvalidResponse);
+            };
+            if release_cover::is_release_cover(&url, &covers) {
+                cache::remove_portrait(dir, name);
+                return fetch_commons(name, mbid_hint, None, dir, fetchers);
+            }
+            if let Some(outcome) = fetch_deezer_image(name, &url, stale.clone(), dir, fetchers)? {
+                return Ok(outcome);
+            }
+        }
+    }
+
+    fetch_commons(name, mbid_hint, stale, dir, fetchers)
+}
+
+fn fetch_deezer_image(
+    name: &str,
+    url: &str,
+    stale: Option<PathBuf>,
+    dir: &Path,
+    fetchers: &mut Fetchers<'_>,
+) -> Result<Option<PortraitOutcome>, PortraitError> {
+    let bytes = match (fetchers.image)(url) {
+        Ok(bytes) => bytes,
+        Err(error) => return super::stale_or(stale, error.into()).map(Some),
+    };
+    let decoded = crate::cover_download::decode_image(&bytes);
+    let distance = decoded
+        .as_ref()
+        .map(|image| placeholder::placeholder_distance(image.image()));
+    if let Some(distance) = distance.filter(|value| *value <= placeholder::PLACEHOLDER_RMSE_MAX) {
+        warn_placeholder(
+            name,
+            url,
+            distance,
+            "artist portrait rejected as a known Deezer placeholder",
+        );
+        if let Some(path) = stale.as_ref().filter(|path| path.exists()) {
+            let refreshed = cache::refresh_image(dir, name, path).unwrap_or_else(|| {
+                tracing::warn!(
+                    artist = name,
+                    cached_path = %path.display(),
+                    "artist portrait could not refresh the cached image after placeholder rejection"
+                );
+                path.clone()
+            });
+            return Ok(Some(PortraitOutcome::Found(refreshed)));
+        }
+        cache::write_negative(dir, name);
+        return Ok(Some(PortraitOutcome::NotFound));
+    }
+    let Some(extension) = decoded
+        .as_ref()
+        .and_then(crate::cover_download::DecodedImage::validated_extension)
+    else {
+        return Ok(None);
+    };
+    if let Some(distance) =
+        distance.filter(|value| *value < placeholder::PLACEHOLDER_WARNING_RMSE_MAX)
+    {
+        warn_placeholder(
+            name,
+            url,
+            distance,
+            "artist portrait accepted near the placeholder threshold",
+        );
+    }
+    let outcome = cache::store_portrait(dir, name, &bytes, extension, &PortraitRecord::deezer())
+        .map(PortraitOutcome::Found)
+        .ok_or(PortraitError::InvalidResponse)?;
+    Ok(Some(outcome))
+}
+
+fn fetch_commons(
+    name: &str,
+    mbid_hint: Option<&str>,
+    stale: Option<PathBuf>,
+    dir: &Path,
+    fetchers: &mut Fetchers<'_>,
+) -> Result<PortraitOutcome, PortraitError> {
+    let mbid = match mbid_hint.map(str::trim).filter(|value| !value.is_empty()) {
+        Some(mbid) => Some(mbid.to_owned()),
+        None => {
+            let body = match (fetchers.musicbrainz_text)(&artist_search_url(name)) {
+                Ok(body) => body,
+                Err(error) => return super::stale_or(stale, error.into()),
+            };
+            if !musicbrainz_search_answered(&body) {
+                return super::stale_or(stale, PortraitError::InvalidResponse);
+            }
+            match parse_artist_mbid(&body, name) {
+                ArtistMatch::Found(mbid) => Some(mbid),
+                ArtistMatch::Ambiguous | ArtistMatch::NotFound => None,
+            }
+        }
+    };
+    let Some(mbid) = mbid else {
+        return cache_miss(dir, name);
+    };
+
+    let relations = match (fetchers.musicbrainz_text)(&wikimedia::musicbrainz_relations_url(&mbid))
+    {
+        Ok(body) => body,
+        Err(error) => return super::stale_or(stale, error.into()),
+    };
+    let qid =
+        wikimedia::parse_wikidata_qid(&relations).map_err(|()| PortraitError::InvalidResponse)?;
+    let Some(qid) = qid else {
+        return cache_miss(dir, name);
+    };
+    let claims = match (fetchers.wikimedia_text)(&wikimedia::wikidata_claims_url(&qid)) {
+        Ok(body) => body,
+        Err(error) => return super::stale_or(stale, error.into()),
+    };
+    let filename = wikimedia::parse_p18_filename(&claims, &qid)
+        .map_err(|()| PortraitError::InvalidResponse)?;
+    let Some(filename) = filename else {
+        return cache_miss(dir, name);
+    };
+    let info = match (fetchers.wikimedia_text)(&wikimedia::commons_imageinfo_url(&filename)) {
+        Ok(body) => body,
+        Err(error) => return super::stale_or(stale, error.into()),
+    };
+    let image =
+        wikimedia::parse_commons_imageinfo(&info).map_err(|()| PortraitError::InvalidResponse)?;
+    let Some(image) = image else {
+        return cache_miss(dir, name);
+    };
+    if !wikimedia::is_download_url(&image.thumbnail_url) {
+        return super::stale_or(stale, PortraitError::InvalidResponse);
+    }
+    let bytes = match (fetchers.image)(&image.thumbnail_url) {
+        Ok(bytes) => bytes,
+        Err(error) => return super::stale_or(stale, error.into()),
+    };
+    let extension = crate::cover_download::decode_image(&bytes)
+        .as_ref()
+        .and_then(crate::cover_download::DecodedImage::validated_extension)
+        .ok_or(PortraitError::InvalidResponse)?;
+    cache::store_portrait(
+        dir,
+        name,
+        &bytes,
+        extension,
+        &PortraitRecord::commons(image.credit),
+    )
+    .map(PortraitOutcome::Found)
+    .ok_or(PortraitError::InvalidResponse)
+}
+
+fn cache_miss(dir: &Path, name: &str) -> Result<PortraitOutcome, PortraitError> {
+    cache::write_negative(dir, name);
+    Ok(PortraitOutcome::NotFound)
+}
+
+fn musicbrainz_search_answered(json: &str) -> bool {
+    serde_json::from_str::<serde_json::Value>(json)
+        .ok()
+        .and_then(|value| value.get("artists").cloned())
+        .is_some_and(|artists| artists.is_array())
+}
+
+fn warn_placeholder(name: &str, url: &str, distance: f64, message: &'static str) {
+    let image_identifier = deezer::image_identifier(url).unwrap_or_else(|| "unknown".into());
+    tracing::warn!(
+        artist = name,
+        image_identifier,
+        placeholder_distance = distance,
+        message
+    );
+}

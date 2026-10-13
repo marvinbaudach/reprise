@@ -142,6 +142,18 @@ impl PortraitBackfill {
         let prepare_cache = cache_dir.clone();
         let prepare_database = database_path.clone();
         let consent_database = database_path;
+        let hint_database = prepare_database.clone();
+        let fallback_fetch = fetch;
+        let hinted_fetch: Arc<PortraitBackfillFetch> = Arc::new(move |name, cache_dir| {
+            let mbid = Db::open_ready(&hint_database)
+                .ok()
+                .and_then(|db| super::artist_mbid_hint(&db, name).ok().flatten());
+            if let Some(mbid) = mbid.as_deref() {
+                super::load_or_fetch_in_with_hint(name, Some(mbid), cache_dir)
+            } else {
+                fallback_fetch(name, cache_dir)
+            }
+        });
         self.launch(
             Box::new(move || {
                 let db = Db::open_ready(&prepare_database).map_err(|error| error.to_string())?;
@@ -149,7 +161,7 @@ impl PortraitBackfill {
                 pending_artists(&db, &prepare_cache, now).map_err(|error| error.to_string())
             }),
             cache_dir,
-            fetch,
+            hinted_fetch,
             listener,
             Arc::new(Control::wait),
             Arc::new(move || {

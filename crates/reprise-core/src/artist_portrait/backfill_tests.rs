@@ -25,6 +25,26 @@ fn artist_names(count: usize) -> Vec<String> {
         .collect()
 }
 
+#[test]
+fn net_9_backfill_uses_the_max_tagged_artist_mbid_as_its_hint() {
+    let names = ["Band".to_owned(), "Band".to_owned()];
+    let db = artists_db(&names);
+    db.conn()
+        .execute(
+            "UPDATE tracks SET artist_mbid = CASE path \
+             WHEN '/0.flac' THEN 'mbid-a' ELSE 'mbid-z' END",
+            [],
+        )
+        .unwrap();
+
+    assert_eq!(
+        crate::artist_portrait::artist_mbid_hint(&db, " band ")
+            .unwrap()
+            .as_deref(),
+        Some("mbid-z")
+    );
+}
+
 fn no_wait() -> Arc<WaitForRetry> {
     Arc::new(|control, _| control.cancelled())
 }

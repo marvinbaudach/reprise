@@ -12,7 +12,7 @@ use crate::net::rate::{wait_for_slot, RateLimitKey};
 
 const HTTP_TIMEOUT: Duration = Duration::from_secs(15);
 const MAX_IMAGE_BYTES: u64 = 20 * 1024 * 1024;
-const MAX_SEARCH_RESPONSE_BYTES: u64 = 4 * 1024 * 1024;
+pub(crate) const MAX_SEARCH_RESPONSE_BYTES: u64 = 4 * 1024 * 1024;
 const MISSING_IMAGE_IDENTIFIERS: &[&str] = &[
     "",
     // Deezer puts MD5 of the empty string into its image URL when no artist
@@ -23,6 +23,7 @@ const MISSING_IMAGE_IDENTIFIERS: &[&str] = &[
 static AGENT: OnceLock<ureq::Agent> = OnceLock::new();
 
 pub(crate) struct DeezerArtist {
+    pub id: u64,
     pub picture_url: Option<String>,
 }
 
@@ -31,6 +32,13 @@ pub(crate) fn search_url(name: &str) -> String {
         "https://api.deezer.com/search/artist?q={}&limit=10",
         musicbrainz::urlencode(name.trim())
     )
+}
+
+pub(crate) fn has_data_array(json: &str) -> bool {
+    serde_json::from_str::<serde_json::Value>(json)
+        .ok()
+        .and_then(|value| value.get("data").cloned())
+        .is_some_and(|data| data.is_array())
 }
 
 /// Returns the most popular pictured exact-name match, preserving response
@@ -42,7 +50,9 @@ pub(crate) fn parse_best_artist(json: &str, name: &str) -> Option<DeezerArtist> 
     data.iter()
         .filter_map(|candidate| {
             let candidate_name = candidate.get("name")?.as_str()?;
+            let id = candidate.get("id").and_then(serde_json::Value::as_u64)?;
             (super::normalize(candidate_name) == wanted).then(|| Candidate {
+                id,
                 picture_url: candidate_picture_url(candidate),
                 fan_count: candidate
                     .get("nb_fan")
@@ -55,11 +65,13 @@ pub(crate) fn parse_best_artist(json: &str, name: &str) -> Option<DeezerArtist> 
             _ => Some(candidate),
         })
         .map(|candidate| DeezerArtist {
+            id: candidate.id,
             picture_url: candidate.picture_url,
         })
 }
 
 struct Candidate {
+    id: u64,
     picture_url: Option<String>,
     fan_count: u64,
 }
@@ -236,6 +248,7 @@ mod tests {
     #[test]
     fn parse_falls_back_to_real_big_when_xl_is_missing() {
         let json = r#"{"data":[{
+          "id":1,
           "name":"Band",
           "nb_album":1,
           "nb_fan":1,
@@ -256,6 +269,7 @@ mod tests {
         // Deezer has not been observed to emit different image identifiers for
         // these fields, but field selection must not decide image availability.
         let json = r#"{"data":[{
+          "id":1,
           "name":"Band",
           "nb_album":1,
           "nb_fan":1,

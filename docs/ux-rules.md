@@ -3897,6 +3897,18 @@ property is set and yet nothing happens.
   refresh interval. A successful fetch removes the banner silently; cached
   content is never replaced, and three or more failures become one collected
   notice.
+- **NET-8** [active] [core] — An artist portrait that is one of the artist's own release
+  covers counts as no portrait. The fetch compares the Deezer picture's identifier with the
+  `md5_image` of the artist's Deezer releases; on a match it drops any stale portrait for
+  that artist and moves on to the next source. When the comparison cannot be made
+  (transport failure or a Deezer error object), nothing is cached and the fetch is retried
+  later.
+- **NET-9** [active] [core] — Without a usable Deezer photo, the portrait comes from
+  Wikimedia Commons: the artist's MusicBrainz id (from tags, else an exact-name MusicBrainz
+  search) leads through its Wikidata relation to the P18 image. The portrait is stored
+  with its source, author, licence, licence URL and file-page URL; a cached image without
+  that record counts as stale. A miss is recorded only when every source has answered
+  without a photo.
 - **LYR-1** [active] [core] — Local embedded lyrics and `.lrc` sidecars
   are shown independently of the Online Lyrics module. Sidecars take
   precedence over embedded tags; synchronized text takes precedence over

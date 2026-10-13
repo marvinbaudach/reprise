@@ -21,6 +21,7 @@ pub(crate) enum RateLimitKey {
     Lrclib,
     Netease,
     Deezer,
+    Wikimedia,
 }
 
 impl RateLimitKey {
@@ -33,6 +34,7 @@ impl RateLimitKey {
             Self::AcoustId => Duration::from_millis(334),
             Self::Lrclib | Self::Netease => Duration::from_millis(250),
             Self::Deezer => Duration::from_millis(300),
+            Self::Wikimedia => Duration::from_millis(500),
         }
     }
 
@@ -46,9 +48,14 @@ const SLICE: Duration = Duration::from_millis(50);
 
 // One mutex per key: no cross-provider contention, and a poisoned slot stays isolated.
 static SLOTS: [Mutex<Option<Instant>>; KEY_COUNT] = [const { Mutex::new(None) }; KEY_COUNT];
+static WIKIMEDIA_SLOT: Mutex<Option<Instant>> = Mutex::new(None);
 
 fn slot(key: RateLimitKey) -> &'static Mutex<Option<Instant>> {
-    &SLOTS[key.index()]
+    if key == RateLimitKey::Wikimedia {
+        &WIKIMEDIA_SLOT
+    } else {
+        &SLOTS[key.index()]
+    }
 }
 
 /// How long a request sent at `now` must wait. A future `previous` (a reservation) adds the
@@ -133,3 +140,24 @@ fn give_back(slot: &Mutex<Option<Instant>>, previous: Option<Instant>, reserved:
 #[cfg(test)]
 #[path = "rate_tests.rs"]
 mod tests;
+
+#[cfg(test)]
+mod wikimedia_tests {
+    use super::*;
+
+    #[test]
+    fn net_9_wikimedia_has_a_polite_distinct_slot() {
+        assert_eq!(
+            RateLimitKey::Wikimedia.interval(),
+            Duration::from_millis(500)
+        );
+        assert_ne!(
+            RateLimitKey::Wikimedia.index(),
+            RateLimitKey::Deezer.index()
+        );
+        assert!(!std::ptr::eq(
+            slot(RateLimitKey::Wikimedia),
+            slot(RateLimitKey::Deezer)
+        ));
+    }
+}
