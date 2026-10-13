@@ -2,7 +2,7 @@
 slug: artist-portrait-fixes-b
 worktree: /home/marvin/Projects/reprise-artist-portrait-fixes-b
 branch: feature/artist-portrait-fixes-b
-phase: planned
+phase: shipped
 codex_session:
 created: 2026-10-12
 ---
