@@ -121,11 +121,14 @@ pub(crate) fn store_portrait(
         let _ = std::fs::remove_file(&record_temporary);
         return None;
     }
-    if std::fs::rename(&record_temporary, &record_output).is_err()
-        || std::fs::rename(&temporary, &output).is_err()
-    {
+    if std::fs::rename(&temporary, &output).is_err() {
         let _ = std::fs::remove_file(&temporary);
         let _ = std::fs::remove_file(&record_temporary);
+        return None;
+    }
+    if std::fs::rename(&record_temporary, &record_output).is_err() {
+        let _ = std::fs::remove_file(&record_temporary);
+        let _ = std::fs::remove_file(&record_output);
         return None;
     }
     for old_extension in IMAGE_EXTS {
@@ -140,7 +143,8 @@ pub(crate) fn store_portrait(
 pub(crate) fn refresh_image(dir: &Path, name: &str, path: &Path) -> Option<PathBuf> {
     let bytes = std::fs::read(path).ok()?;
     let extension = path.extension()?.to_str()?;
-    let record = super::sidecar::read(dir, name)?;
+    let record =
+        super::sidecar::read(dir, name).unwrap_or_else(super::sidecar::PortraitRecord::deezer);
     store_portrait(dir, name, &bytes, extension, &record)
 }
 
@@ -306,5 +310,42 @@ mod tests {
         assert!(!old.exists());
         assert!(!negative_marker_path(&dir, "Band").exists());
         std::fs::remove_dir_all(&dir).ok();
+    }
+
+    #[test]
+    fn net_9_store_publishes_the_image_before_replacing_its_sidecar() {
+        let dir = tempfile::tempdir().unwrap();
+        let original = super::super::sidecar::PortraitRecord::deezer();
+        store_portrait(dir.path(), "Band", b"old", "jpg", &original).unwrap();
+        let blocked_output = dir.path().join(format!("{}.png", key_for("Band")));
+        std::fs::create_dir(&blocked_output).unwrap();
+        let replacement =
+            super::super::sidecar::PortraitRecord::commons(super::super::sidecar::PortraitCredit {
+                author: "Photographer".to_owned(),
+                license: "CC0".to_owned(),
+                license_url: "https://creativecommons.org/publicdomain/zero/1.0".to_owned(),
+                file_page_url: "https://commons.wikimedia.org/wiki/File:Band.png".to_owned(),
+            });
+
+        assert!(store_portrait(dir.path(), "Band", b"new", "png", &replacement).is_none());
+        assert_eq!(
+            super::super::sidecar::read(dir.path(), "Band"),
+            Some(original)
+        );
+    }
+
+    #[test]
+    fn net_9_refresh_with_an_unreadable_sidecar_records_deezer_provenance() {
+        let dir = tempfile::tempdir().unwrap();
+        let image = store_image(dir.path(), "Band", b"image", "jpg").unwrap();
+        std::fs::write(super::super::sidecar::path(dir.path(), "Band"), b"not json").unwrap();
+
+        let refreshed = refresh_image(dir.path(), "Band", &image).unwrap();
+
+        assert_eq!(refreshed, image);
+        assert_eq!(
+            super::super::sidecar::read(dir.path(), "Band"),
+            Some(super::super::sidecar::PortraitRecord::deezer())
+        );
     }
 }

@@ -12,6 +12,23 @@ fn png_bytes() -> Vec<u8> {
     buffer.into_inner()
 }
 
+fn placeholder_png() -> Vec<u8> {
+    let reference =
+        image::GrayImage::from_raw(32, 32, super::placeholder::REFERENCE_THUMBNAILS[0].to_vec())
+            .unwrap();
+    let mut buffer = std::io::Cursor::new(Vec::new());
+    image::DynamicImage::from(reference)
+        .write_to(&mut buffer, image::ImageFormat::Png)
+        .unwrap();
+    buffer.into_inner()
+}
+
+const COMMONS_RELATIONS: &str =
+    r#"{"relations":[{"url":{"resource":"https://www.wikidata.org/wiki/Q42"}}]}"#;
+const COMMONS_CLAIMS: &str =
+    r#"{"claims":{"P18":[{"mainsnak":{"datavalue":{"value":"Portrait.jpg"}}}]}}"#;
+const COMMONS_INFO: &str = r#"{"query":{"pages":{"1":{"imageinfo":[{"thumburl":"https://upload.wikimedia.org/portrait.jpg","descriptionurl":"https://commons.wikimedia.org/wiki/File:Portrait.jpg","extmetadata":{"Artist":{"value":"Photo Name"},"LicenseShortName":{"value":"CC BY 4.0"},"LicenseUrl":{"value":"https://creativecommons.org/licenses/by/4.0"}}}]}}}}"#;
+
 fn stale_portrait(dir: &std::path::Path) -> std::path::PathBuf {
     cache::store_image(dir, "Band", b"stale", "jpg").unwrap()
 }
@@ -29,6 +46,88 @@ fn net_8_will_ramos_release_cover_is_recognized() {
         artist.picture_url.as_deref().unwrap(),
         &covers,
     ));
+}
+
+#[test]
+fn net_8_will_ramos_release_cover_falls_through_to_commons_with_credit() {
+    let dir = tempfile::tempdir().unwrap();
+    let search = r#"{"data":[{"id":12773623,"name":" Will   Ramos ","nb_fan":12,"picture_xl":"https://cdn-images.dzcdn.net/images/artist/6c36703da072ad07d31351b20208acf8/1000x1000.jpg"}]}"#;
+    let albums = r#"{"data":[{"title":"Rain","md5_image":"6c36703da072ad07d31351b20208acf8"}]}"#;
+    let mut deezer_text = |url: &str| {
+        Ok(if url.contains("/albums?") {
+            albums
+        } else {
+            search
+        }
+        .to_owned())
+    };
+    let mut musicbrainz = |_: &str| Ok(COMMONS_RELATIONS.to_owned());
+    let mut wikimedia_text = |url: &str| {
+        Ok(if url.contains("wbgetclaims") {
+            COMMONS_CLAIMS
+        } else {
+            COMMONS_INFO
+        }
+        .to_owned())
+    };
+    let mut image = |url: &str| {
+        assert_eq!(url, "https://upload.wikimedia.org/portrait.jpg");
+        Ok(png_bytes())
+    };
+    let mut fetchers = fetch::Fetchers {
+        deezer_text: &mut deezer_text,
+        musicbrainz_text: &mut musicbrainz,
+        wikimedia_text: &mut wikimedia_text,
+        image: &mut image,
+    };
+
+    let outcome = fetch::load_or_fetch(
+        "Will Ramos",
+        Some("will-mbid"),
+        1_000,
+        dir.path(),
+        &mut fetchers,
+    )
+    .unwrap();
+
+    assert!(matches!(outcome, PortraitOutcome::Found(_)));
+    assert_eq!(
+        sidecar::load_credit(dir.path(), "Will Ramos")
+            .unwrap()
+            .author,
+        "Photo Name"
+    );
+}
+
+#[test]
+fn net_8_deezer_transport_failure_never_writes_a_negative_marker() {
+    let dir = tempfile::tempdir().unwrap();
+    let mut deezer_text = |_: &str| Err(FetchError::Transport);
+    let mut musicbrainz = |_: &str| panic!("Deezer transport failure stops the chain");
+    let mut wikimedia_text = |_: &str| panic!("Deezer transport failure stops the chain");
+    let mut image = |_: &str| panic!("Deezer transport failure downloads nothing");
+    let mut fetchers = fetch::Fetchers {
+        deezer_text: &mut deezer_text,
+        musicbrainz_text: &mut musicbrainz,
+        wikimedia_text: &mut wikimedia_text,
+        image: &mut image,
+    };
+
+    let result = fetch::load_or_fetch("Band", None, 1_000, dir.path(), &mut fetchers);
+
+    assert!(matches!(
+        result,
+        Err(super::PortraitError::Fetch(FetchError::Transport))
+    ));
+    assert!(!cache::negative_marker_path(dir.path(), "Band").exists());
+}
+
+#[test]
+fn net_8_paginated_album_response_cannot_reject_or_accept_the_portrait() {
+    assert!(release_cover::parse_release_cover_identifiers(
+        r#"{"data":[],"next":"https://api.deezer.com/artist/7/albums?index=1000"}"#,
+    )
+    .is_none());
 }
 
 #[test]
@@ -174,6 +273,175 @@ fn net_9_commons_credit_strips_html_from_the_author() {
 
     assert_eq!(image.credit.author, "Photo Name");
     assert_eq!(image.credit.license, "CC BY-SA 4.0");
+}
+
+#[test]
+fn net_9_deezer_placeholder_without_stale_falls_through_to_commons() {
+    let dir = tempfile::tempdir().unwrap();
+    let mut deezer_text = |url: &str| {
+        Ok(if url.contains("/albums?") {
+            r#"{"data":[]}"#
+        } else {
+            PHOTO_SEARCH
+        }
+        .to_owned())
+    };
+    let mut musicbrainz = |_: &str| Ok(COMMONS_RELATIONS.to_owned());
+    let mut wikimedia_text = |url: &str| {
+        Ok(if url.contains("wbgetclaims") {
+            COMMONS_CLAIMS
+        } else {
+            COMMONS_INFO
+        }
+        .to_owned())
+    };
+    let mut image = |url: &str| {
+        if url.contains("dzcdn.net") {
+            Ok(placeholder_png())
+        } else {
+            Ok(png_bytes())
+        }
+    };
+    let mut fetchers = fetch::Fetchers {
+        deezer_text: &mut deezer_text,
+        musicbrainz_text: &mut musicbrainz,
+        wikimedia_text: &mut wikimedia_text,
+        image: &mut image,
+    };
+
+    let outcome =
+        fetch::load_or_fetch("Band", Some("mbid"), 1_000, dir.path(), &mut fetchers).unwrap();
+
+    assert!(matches!(outcome, PortraitOutcome::Found(_)));
+    assert_eq!(
+        sidecar::load_credit(dir.path(), "Band").unwrap().author,
+        "Photo Name"
+    );
+    assert!(!cache::negative_marker_path(dir.path(), "Band").exists());
+}
+
+#[test]
+fn net_9_malformed_commons_steps_preserve_a_stale_portrait() {
+    for malformed_step in ["relations", "claims", "imageinfo", "image"] {
+        let dir = tempfile::tempdir().unwrap();
+        let stale = stale_portrait(dir.path());
+        let now = cache::file_epoch_secs(&stale) + 31 * 24 * 60 * 60;
+        let mut deezer_text = |_: &str| Ok(r#"{"data":[]}"#.to_owned());
+        let mut musicbrainz = |_: &str| {
+            Ok(if malformed_step == "relations" {
+                "not json"
+            } else {
+                COMMONS_RELATIONS
+            }
+            .to_owned())
+        };
+        let mut wikimedia_text = |url: &str| {
+            Ok(if url.contains("wbgetclaims") {
+                if malformed_step == "claims" {
+                    "not json"
+                } else {
+                    COMMONS_CLAIMS
+                }
+            } else if malformed_step == "imageinfo" {
+                "not json"
+            } else {
+                COMMONS_INFO
+            }
+            .to_owned())
+        };
+        let mut image = |_: &str| {
+            Ok(if malformed_step == "image" {
+                b"not an image".to_vec()
+            } else {
+                png_bytes()
+            })
+        };
+        let mut fetchers = fetch::Fetchers {
+            deezer_text: &mut deezer_text,
+            musicbrainz_text: &mut musicbrainz,
+            wikimedia_text: &mut wikimedia_text,
+            image: &mut image,
+        };
+
+        let outcome =
+            fetch::load_or_fetch("Band", Some("mbid"), now, dir.path(), &mut fetchers).unwrap();
+
+        assert!(matches!(outcome, PortraitOutcome::Found(path) if path == stale));
+        assert!(!cache::negative_marker_path(dir.path(), "Band").exists());
+    }
+}
+
+#[test]
+fn net_9_tag_mbid_404_falls_back_to_exact_name_search() {
+    let dir = tempfile::tempdir().unwrap();
+    let urls = std::cell::RefCell::new(Vec::new());
+    let mut deezer_text = |_: &str| Ok(r#"{"data":[]}"#.to_owned());
+    let mut musicbrainz = |url: &str| {
+        urls.borrow_mut().push(url.to_owned());
+        if url.contains("/artist/stale-tag-mbid?") {
+            Err(FetchError::HttpStatus(404))
+        } else if url.contains("query=") {
+            Ok(r#"{"artists":[{"id":"exact-mbid","name":"Band","score":100}]}"#.to_owned())
+        } else {
+            Ok(r#"{"relations":[]}"#.to_owned())
+        }
+    };
+    let mut wikimedia_text = |_: &str| panic!("missing relation stops the chain");
+    let mut image = |_: &str| panic!("missing relation has no image");
+    let mut fetchers = fetch::Fetchers {
+        deezer_text: &mut deezer_text,
+        musicbrainz_text: &mut musicbrainz,
+        wikimedia_text: &mut wikimedia_text,
+        image: &mut image,
+    };
+
+    let outcome = fetch::load_or_fetch(
+        "Band",
+        Some("stale-tag-mbid"),
+        1_000,
+        dir.path(),
+        &mut fetchers,
+    )
+    .unwrap();
+
+    assert!(matches!(outcome, PortraitOutcome::NotFound));
+    assert_eq!(urls.borrow().len(), 3);
+    assert!(urls.borrow()[1].contains("query=artist%3A%22Band%22"));
+    assert!(urls.borrow()[2].contains("/artist/exact-mbid?"));
+    assert!(cache::negative_marker_path(dir.path(), "Band").exists());
+}
+
+#[test]
+fn net_9_tag_mbid_404_and_empty_exact_search_is_a_cached_miss() {
+    let dir = tempfile::tempdir().unwrap();
+    let mut deezer_text = |_: &str| Ok(r#"{"data":[]}"#.to_owned());
+    let mut musicbrainz = |url: &str| {
+        if url.contains("query=") {
+            Ok(r#"{"artists":[]}"#.to_owned())
+        } else {
+            Err(FetchError::HttpStatus(404))
+        }
+    };
+    let mut wikimedia_text = |_: &str| panic!("no MBID stops the chain");
+    let mut image = |_: &str| panic!("no MBID has no image");
+    let mut fetchers = fetch::Fetchers {
+        deezer_text: &mut deezer_text,
+        musicbrainz_text: &mut musicbrainz,
+        wikimedia_text: &mut wikimedia_text,
+        image: &mut image,
+    };
+
+    let outcome = fetch::load_or_fetch(
+        "Band",
+        Some("stale-tag-mbid"),
+        1_000,
+        dir.path(),
+        &mut fetchers,
+    )
+    .unwrap();
+
+    assert!(matches!(outcome, PortraitOutcome::NotFound));
+    assert!(cache::negative_marker_path(dir.path(), "Band").exists());
 }
 
 #[test]

@@ -14,6 +14,9 @@ pub(crate) fn albums_url(artist_id: u64) -> String {
 /// its HTTP-200 error objects. An empty `data` array is a successful comparison.
 pub(crate) fn parse_release_cover_identifiers(json: &str) -> Option<HashSet<String>> {
     let value: serde_json::Value = serde_json::from_str(json).ok()?;
+    if value.get("next").is_some_and(|next| !next.is_null()) {
+        return None;
+    }
     let releases = value.get("data")?.as_array()?;
     Some(
         releases

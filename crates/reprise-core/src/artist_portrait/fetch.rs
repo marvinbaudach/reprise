@@ -95,8 +95,7 @@ fn fetch_deezer_image(
             });
             return Ok(Some(PortraitOutcome::Found(refreshed)));
         }
-        cache::write_negative(dir, name);
-        return Ok(Some(PortraitOutcome::NotFound));
+        return Ok(None);
     }
     let Some(extension) = decoded
         .as_ref()
@@ -127,21 +126,13 @@ fn fetch_commons(
     dir: &Path,
     fetchers: &mut Fetchers<'_>,
 ) -> Result<PortraitOutcome, PortraitError> {
-    let mbid = match mbid_hint.map(str::trim).filter(|value| !value.is_empty()) {
+    let hinted_mbid = mbid_hint.map(str::trim).filter(|value| !value.is_empty());
+    let mbid = match hinted_mbid {
         Some(mbid) => Some(mbid.to_owned()),
-        None => {
-            let body = match (fetchers.musicbrainz_text)(&artist_search_url(name)) {
-                Ok(body) => body,
-                Err(error) => return super::stale_or(stale, error.into()),
-            };
-            if !musicbrainz_search_answered(&body) {
-                return super::stale_or(stale, PortraitError::InvalidResponse);
-            }
-            match parse_artist_mbid(&body, name) {
-                ArtistMatch::Found(mbid) => Some(mbid),
-                ArtistMatch::Ambiguous | ArtistMatch::NotFound => None,
-            }
-        }
+        None => match exact_name_mbid(name, fetchers.musicbrainz_text) {
+            Ok(mbid) => mbid,
+            Err(error) => return super::stale_or(stale, error),
+        },
     };
     let Some(mbid) = mbid else {
         return cache_miss(dir, name);
@@ -150,10 +141,26 @@ fn fetch_commons(
     let relations = match (fetchers.musicbrainz_text)(&wikimedia::musicbrainz_relations_url(&mbid))
     {
         Ok(body) => body,
+        Err(FetchError::HttpStatus(404)) if hinted_mbid.is_some() => {
+            let fallback_mbid = match exact_name_mbid(name, fetchers.musicbrainz_text) {
+                Ok(mbid) => mbid,
+                Err(error) => return super::stale_or(stale, error),
+            };
+            let Some(fallback_mbid) = fallback_mbid else {
+                return cache_miss(dir, name);
+            };
+            match (fetchers.musicbrainz_text)(&wikimedia::musicbrainz_relations_url(&fallback_mbid))
+            {
+                Ok(body) => body,
+                Err(error) => return super::stale_or(stale, error.into()),
+            }
+        }
         Err(error) => return super::stale_or(stale, error.into()),
     };
-    let qid =
-        wikimedia::parse_wikidata_qid(&relations).map_err(|()| PortraitError::InvalidResponse)?;
+    let qid = match wikimedia::parse_wikidata_qid(&relations) {
+        Ok(qid) => qid,
+        Err(()) => return super::stale_or(stale, PortraitError::InvalidResponse),
+    };
     let Some(qid) = qid else {
         return cache_miss(dir, name);
     };
@@ -161,8 +168,10 @@ fn fetch_commons(
         Ok(body) => body,
         Err(error) => return super::stale_or(stale, error.into()),
     };
-    let filename = wikimedia::parse_p18_filename(&claims, &qid)
-        .map_err(|()| PortraitError::InvalidResponse)?;
+    let filename = match wikimedia::parse_p18_filename(&claims, &qid) {
+        Ok(filename) => filename,
+        Err(()) => return super::stale_or(stale, PortraitError::InvalidResponse),
+    };
     let Some(filename) = filename else {
         return cache_miss(dir, name);
     };
@@ -170,8 +179,10 @@ fn fetch_commons(
         Ok(body) => body,
         Err(error) => return super::stale_or(stale, error.into()),
     };
-    let image =
-        wikimedia::parse_commons_imageinfo(&info).map_err(|()| PortraitError::InvalidResponse)?;
+    let image = match wikimedia::parse_commons_imageinfo(&info) {
+        Ok(image) => image,
+        Err(()) => return super::stale_or(stale, PortraitError::InvalidResponse),
+    };
     let Some(image) = image else {
         return cache_miss(dir, name);
     };
@@ -182,19 +193,36 @@ fn fetch_commons(
         Ok(bytes) => bytes,
         Err(error) => return super::stale_or(stale, error.into()),
     };
-    let extension = crate::cover_download::decode_image(&bytes)
+    let Some(extension) = crate::cover_download::decode_image(&bytes)
         .as_ref()
         .and_then(crate::cover_download::DecodedImage::validated_extension)
-        .ok_or(PortraitError::InvalidResponse)?;
-    cache::store_portrait(
+    else {
+        return super::stale_or(stale, PortraitError::InvalidResponse);
+    };
+    let Some(path) = cache::store_portrait(
         dir,
         name,
         &bytes,
         extension,
         &PortraitRecord::commons(image.credit),
-    )
-    .map(PortraitOutcome::Found)
-    .ok_or(PortraitError::InvalidResponse)
+    ) else {
+        return super::stale_or(stale, PortraitError::InvalidResponse);
+    };
+    Ok(PortraitOutcome::Found(path))
+}
+
+fn exact_name_mbid(
+    name: &str,
+    musicbrainz_text: &mut dyn FnMut(&str) -> Result<String, FetchError>,
+) -> Result<Option<String>, PortraitError> {
+    let body = musicbrainz_text(&artist_search_url(name))?;
+    if !musicbrainz_search_answered(&body) {
+        return Err(PortraitError::InvalidResponse);
+    }
+    Ok(match parse_artist_mbid(&body, name) {
+        ArtistMatch::Found(mbid) => Some(mbid),
+        ArtistMatch::Ambiguous | ArtistMatch::NotFound => None,
+    })
 }
 
 fn cache_miss(dir: &Path, name: &str) -> Result<PortraitOutcome, PortraitError> {
