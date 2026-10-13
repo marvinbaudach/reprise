@@ -38,6 +38,21 @@ pub(super) fn selected_entries(shared: &Rc<Shared>) -> Vec<HistoryEntry> {
         .collect()
 }
 
+/// The row menu for the current selection. ART-5: a single row whose portrait
+/// is a credited Commons photo also offers "Open image source".
+pub(super) fn selection_menu(shared: &Rc<Shared>) -> gio::Menu {
+    let entries = selected_entries(shared);
+    let has_credit = match entries.as_slice() {
+        [entry] => shared
+            .artist_image
+            .credit_links()
+            .url_for(&entry.artist_name)
+            .is_some(),
+        _ => false,
+    };
+    releases_menu::build(&releases_menu::summarize(&entries).with_credit(has_credit))
+}
+
 pub(super) fn wire_cell(
     widget: &impl IsA<gtk4::Widget>,
     item: &gtk4::ListItem,
@@ -57,7 +72,7 @@ pub(super) fn wire_cell(
         };
         gesture.set_state(gtk4::EventSequenceState::Claimed);
         claim_row_for_menu(&shared, position);
-        let menu = releases_menu::build(&releases_menu::summarize(&selected_entries(&shared)));
+        let menu = selection_menu(&shared);
         let popover = crate::ui::menu_a11y::popover_menu_from_model(&menu);
         popover.set_has_arrow(false);
         popover.set_parent(&parent);
@@ -123,6 +138,23 @@ pub(super) fn wire(column_view: &gtk4::ColumnView, shared: &Rc<Shared>) {
         });
         group.add_action(&action);
     }
+    {
+        let shared = shared.clone();
+        let action = gio::SimpleAction::new(releases_menu::ACTION_OPEN_IMAGE_SOURCE, None);
+        action.connect_activate(move |_, _| {
+            let Some(entry) = single_selected_entry(&shared) else {
+                return;
+            };
+            if let Some(url) = shared
+                .artist_image
+                .credit_links()
+                .url_for(&entry.artist_name)
+            {
+                crate::ui::artist_portrait_credit::open_credit_url(&url);
+            }
+        });
+        group.add_action(&action);
+    }
     column_view.insert_action_group(releases_menu::ACTION_GROUP, Some(&group));
 
     let keys = crate::ui::source_context_surface::context_keys();
@@ -136,7 +168,7 @@ pub(super) fn wire(column_view: &gtk4::ColumnView, shared: &Rc<Shared>) {
         if entries.is_empty() {
             return gtk4::glib::Propagation::Proceed;
         }
-        let menu = releases_menu::build(&releases_menu::summarize(&entries));
+        let menu = selection_menu(&shared);
         let popover = crate::ui::menu_a11y::popover_menu_from_model(&menu);
         present_keyboard_popover(&menu_parent, &popover);
         gtk4::glib::Propagation::Stop

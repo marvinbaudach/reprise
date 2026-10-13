@@ -11,7 +11,8 @@ use reprise_core::library::stats_screen::RankedGroup;
 use reprise_core::library::stats_snapshot::SortBy;
 
 use super::stats_artist_image::{ArtistImageRequest, StatsArtistImage};
-use crate::ui::artist_portrait_tiles::{apply_credit, load_credit, PortraitCreditResolver};
+use crate::ui::artist_portrait_credit::{apply_credit_with_menu, load_credit};
+use crate::ui::artist_portrait_tiles::PortraitCreditResolver;
 use crate::ui::strings;
 
 type StringCallback = Rc<RefCell<Option<Rc<dyn Fn(String)>>>>;
@@ -247,7 +248,7 @@ impl StatsBandCard {
         self.picture.set_visible(false);
         self.fallback.set_visible(true);
         self.image_loaded.set(None);
-        apply_credit(&self.root, None);
+        apply_credit_with_menu(&self.root, None);
         let image = self.artist_image.borrow().clone();
         let Some(image) = image else {
             return;
@@ -282,12 +283,12 @@ impl StatsBandCard {
                             credit_resolver.clone(),
                             move |credit| {
                                 if generation.get() == token {
-                                    apply_credit(&root, credit.as_ref());
+                                    apply_credit_with_menu(&root, credit.as_ref());
                                 }
                             },
                         );
                     } else {
-                        apply_credit(&root, None);
+                        apply_credit_with_menu(&root, None);
                     }
                 }),
             },
@@ -316,7 +317,7 @@ impl StatsBandCard {
         self.current_artist.borrow_mut().clear();
         self.current_key.borrow_mut().clear();
         self.current_candidates.borrow_mut().clear();
-        apply_credit(&self.root, None);
+        apply_credit_with_menu(&self.root, None);
     }
 
     #[cfg(test)]

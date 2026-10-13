@@ -148,6 +148,9 @@ impl LazyReleaseCover {
         self.tile.queue_draw();
         self.picture.set_filename(None::<&std::path::Path>);
         self.picture.set_visible(false);
+        // A recycled cell must not carry the previous artist's portrait credit
+        // onto a release cover that never asks the portrait tiles for one.
+        crate::ui::artist_portrait_credit::apply_credit(&self.root, None);
         if release_group_mbid.is_empty() {
             return;
         }
@@ -194,6 +197,7 @@ impl LazyReleaseCover {
         self.tile.queue_draw();
         self.picture.set_paintable(None::<&gtk4::gdk::Paintable>);
         self.picture.set_visible(false);
+        crate::ui::artist_portrait_credit::apply_credit(&self.root, None);
     }
 
     pub(in crate::ui) fn artist_key(&self) -> String {

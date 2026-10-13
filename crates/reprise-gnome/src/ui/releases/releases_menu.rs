@@ -10,6 +10,7 @@ pub(super) const ACTION_HIDE: &str = "hide";
 pub(super) const ACTION_RESTORE: &str = "restore";
 pub(super) const ACTION_GO_TO_ARTIST: &str = "go-to-artist";
 pub(super) const ACTION_GO_TO_ALBUM: &str = "go-to-album";
+pub(super) const ACTION_OPEN_IMAGE_SOURCE: &str = "open-image-source";
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(super) struct MenuSelection {
@@ -17,6 +18,17 @@ pub(super) struct MenuSelection {
     pub all_hidden: bool,
     pub single_artist: Option<String>,
     pub single_is_local: bool,
+    /// ART-5: the single row's portrait is a credited Commons photo.
+    pub single_has_credit: bool,
+}
+
+impl MenuSelection {
+    pub(super) fn with_credit(self, has_credit: bool) -> Self {
+        Self {
+            single_has_credit: has_credit && self.single_artist.is_some(),
+            ..self
+        }
+    }
 }
 
 pub(super) fn summarize(entries: &[HistoryEntry]) -> MenuSelection {
@@ -26,6 +38,7 @@ pub(super) fn summarize(entries: &[HistoryEntry]) -> MenuSelection {
         all_hidden: !entries.is_empty() && entries.iter().all(|entry| entry.hidden),
         single_artist: single.map(|entry| entry.artist_name.clone()),
         single_is_local: single.is_some_and(|entry| entry.local_track_count > 0),
+        single_has_credit: false,
     }
 }
 
@@ -65,6 +78,14 @@ pub(super) fn build(selection: &MenuSelection) -> gio::Menu {
             );
         }
         menu.append_section(None, &navigation);
+    }
+    if selection.single_has_credit {
+        let credit = gio::Menu::new();
+        credit.append(
+            Some(&strings::text(strings::ARTIST_PORTRAIT_OPEN_SOURCE)),
+            Some(&format!("{ACTION_GROUP}.{ACTION_OPEN_IMAGE_SOURCE}")),
+        );
+        menu.append_section(None, &credit);
     }
     menu
 }
@@ -158,5 +179,24 @@ mod tests {
             ["Hide", "Go to artist", "Go to album"],
             "one visible local release has one primary action and both unambiguous routes"
         );
+    }
+
+    #[test]
+    fn art_5_a_credited_single_row_offers_the_image_source_and_a_multi_selection_does_not() {
+        let single = build(&summarize(&[entry("one", false, 0)]).with_credit(true));
+        assert!(labels(&single)
+            .iter()
+            .any(|label| label == "Open image source"));
+
+        let uncredited = build(&summarize(&[entry("one", false, 0)]).with_credit(false));
+        assert!(!labels(&uncredited)
+            .iter()
+            .any(|label| label == "Open image source"));
+
+        let many =
+            build(&summarize(&[entry("one", false, 0), entry("two", false, 0)]).with_credit(true));
+        assert!(!labels(&many)
+            .iter()
+            .any(|label| label == "Open image source"));
     }
 }

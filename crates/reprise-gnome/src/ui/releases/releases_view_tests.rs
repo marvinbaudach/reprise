@@ -586,3 +586,109 @@ fn descendant_button_with_tooltip(widget: &gtk4::Widget, tooltip: &str) -> Optio
     }
     None
 }
+
+fn credited_portrait() -> reprise_core::artist_portrait::PortraitCredit {
+    reprise_core::artist_portrait::PortraitCredit {
+        author: "Photographer".into(),
+        license: "CC BY-SA 4.0".into(),
+        license_url: "https://creativecommons.org/licenses/by-sa/4.0/".into(),
+        file_page_url: "https://commons.wikimedia.org/wiki/File:Portrait.jpg".into(),
+    }
+}
+
+fn menu_model_has_action(model: &gtk4::gio::MenuModel, expected: &str) -> bool {
+    (0..model.n_items()).any(|item| {
+        model
+            .item_attribute_value(item, "action", Some(glib::VariantTy::STRING))
+            .and_then(|value| value.get::<String>())
+            .as_deref()
+            == Some(expected)
+            || model
+                .item_link(item, "section")
+                .is_some_and(|section| menu_model_has_action(&section, expected))
+    })
+}
+
+fn popover_menu_in(widget: &gtk4::Widget) -> Option<gtk4::PopoverMenu> {
+    let mut child = widget.first_child();
+    while let Some(current) = child {
+        if let Ok(popover) = current.clone().downcast::<gtk4::PopoverMenu>() {
+            return Some(popover);
+        }
+        if let Some(found) = popover_menu_in(&current) {
+            return Some(found);
+        }
+        child = current.next_sibling();
+    }
+    None
+}
+
+/// Selects the only row, the way a click does, then presses Shift+F10 on every
+/// key controller of the table and returns the menu that opened.
+fn keyboard_row_menu(credit: Option<&reprise_core::artist_portrait::PortraitCredit>) -> bool {
+    let conn = Rc::new(crate::test_db::open().unwrap());
+    insert_release(&conn, "credited", "Credited Album");
+    crate::test_db::connection(&conn)
+        .execute(
+            "INSERT INTO tracks (id, path, title, artist, album_artist, album, added_at)
+             VALUES (1, '/music/a.flac', 'Song', 'Artist', 'Artist', 'Credited Album', 0)",
+            [],
+        )
+        .unwrap();
+    let view = ReleasesView::new(conn, PathBuf::new());
+    let window = gtk4::Window::new();
+    window.set_default_size(900, 600);
+    window.set_child(Some(view.root()));
+    window.present();
+    view.refresh();
+    crate::ui::source_context_surface::settle_layout();
+    view.shared
+        .artist_image
+        .credit_links()
+        .remember("Artist", credit);
+    view.shared.model.selection().select_range(0, 1, true);
+
+    let column_view = view.shared.column_view.clone();
+    let controllers = column_view.observe_controllers();
+    let consumed = (0..controllers.n_items())
+        .filter_map(|index| {
+            controllers
+                .item(index)?
+                .downcast::<gtk4::EventControllerKey>()
+                .ok()
+        })
+        .any(|keys| {
+            keys.emit_by_name::<bool>(
+                "key-pressed",
+                &[
+                    &gtk4::gdk::Key::F10,
+                    &0u32,
+                    &gtk4::gdk::ModifierType::SHIFT_MASK,
+                ],
+            )
+        });
+    assert!(consumed, "the table must claim the context-menu shortcut");
+    let popover = popover_menu_in(column_view.upcast_ref()).expect("the row menu opened");
+    let model = popover
+        .menu_model()
+        .expect("the popover shows a menu model");
+    menu_model_has_action(&model, "releases.open-image-source")
+}
+
+#[test]
+#[ignore = "requires a display; run via xvfb-run"]
+fn art_5_the_releases_row_menu_offers_the_image_source_of_a_commons_portrait_by_keyboard() {
+    let _main_context = crate::ui::test_main_context::lock_main_context();
+    gtk4::init().unwrap();
+
+    assert!(keyboard_row_menu(Some(&credited_portrait())));
+}
+
+#[test]
+#[ignore = "requires a display; run via xvfb-run"]
+fn art_5_the_releases_row_menu_has_no_image_source_for_a_deezer_portrait() {
+    let _main_context = crate::ui::test_main_context::lock_main_context();
+    gtk4::init().unwrap();
+
+    assert!(!keyboard_row_menu(None));
+}
