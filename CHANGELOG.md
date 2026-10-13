@@ -4,6 +4,42 @@ Reprise release notes are curated from the changes that reached the stable
 branch. They describe user-visible changes rather than reproducing commit
 messages.
 
+## [0.1.321] - 2026-10-13
+
+### Discovery
+
+- An artist's portrait is never one of their own release covers any more.
+  Deezer sometimes offers an album cover as an artist's picture; Reprise now
+  compares it with the artist's releases and drops it, including a copy it had
+  already cached. Without a usable Deezer photo, the portrait comes from
+  Wikimedia Commons, found through MusicBrainz and Wikidata, and is stored with
+  its photographer's credit and licence. Artists without either keep their
+  generated avatar.
+- A Commons portrait credits its photographer. On the desktop, the portrait in
+  the Releases column and on the Stats artist card shows the credit as its
+  tooltip, and "Open image source" opens the photo's page on Wikimedia
+  Commons. Deezer portraits carry no credit.
+
+### Device sync
+
+- "Sync automatically when this phone connects" can be switched while a sync is
+  running. The switch used to snap back. "Remove from phone when removed from a
+  playlist" shapes the running sync, so it is now locked until the sync ends
+  and says why, instead of snapping back.
+- Planning a sync no longer fills the system journal. Every update of the sync
+  page logged one warning for each selected track that had not been analysed
+  yet, thousands of lines on a large selection. Unanalysed tracks are expected
+  and are no longer reported; real failures are summarised once per pass.
+
+### Android
+
+- The artist page's portrait and Play button scroll away together. The portrait
+  used to be cut off at an invisible edge under the Play button. The title row
+  stays pinned and takes the surface colour once content passes beneath it.
+- A Commons portrait carries a credit line beneath it on the artist page,
+  naming the photographer and licence. Tapping it opens the photo's page on
+  Wikimedia Commons.
+
 ## [0.1.317] - 2026-10-12
 
 ### Android

@@ -139,6 +139,12 @@
     <!-- One entry per promoted release, not per merge into dev. Every merge
          raises the workspace version; only a promotion to main ships one.
          See docs/agents/branching.md and RELEASING.md. -->
+    <release version="0.1.321" date="2026-10-13" type="stable">
+      <description>
+        <p>Keeps release covers out of artist portraits. A Deezer artist picture that is one of the artist's own covers is dropped, and without a usable Deezer photo the portrait comes from Wikimedia Commons, with its photographer credited in a tooltip and "Open image source" in Releases and on the Stats artist card. The automatic-sync switch can now be changed while a device sync runs, and sync planning no longer floods the system journal with a warning for every unanalysed track.</p>
+        <p xml:lang="de">Hält Release-Cover aus Künstlerporträts heraus. Ein Deezer-Künstlerbild, das eines der eigenen Cover des Künstlers ist, wird verworfen, und ohne brauchbares Deezer-Foto kommt das Porträt von Wikimedia Commons, mit dem Fotografen als Tooltip und „Bildquelle öffnen“ in den Veröffentlichungen und auf der Künstlerkarte in „Meine Statistiken“. Der Schalter für automatisches Synchronisieren lässt sich jetzt während einer laufenden Gerätesynchronisierung umstellen, und die Synchronisierungsplanung füllt das Systemjournal nicht mehr mit einer Warnung für jeden noch nicht analysierten Titel.</p>
+      </description>
+    </release>
     <release version="0.1.317" date="2026-10-12" type="stable">
       <description>
         <p>Stops the Android app from crashing when it is brought back from the background. The Now Playing visualizer could still hold the closed visualizer of a playback service that had ended in the meantime; it now stays harmless once closed and picks up a fresh one when the app reconnects.</p>
