@@ -22,7 +22,6 @@ import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.drawBehind
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.testTag
@@ -73,7 +72,8 @@ internal fun ArtistDetailTitleRow(
 ) {
     val contextMenu = rememberTrackContextMenuAnchorState()
     val containerColor = animateColorAsState(
-        targetValue = if (scrolled) MaterialTheme.colorScheme.surfaceContainer else Color.Transparent,
+        // Fading the container's own colour out keeps the token as the only source.
+        targetValue = MaterialTheme.colorScheme.surfaceContainer.copy(alpha = if (scrolled) 1f else 0f),
         animationSpec = if (scrolled) snap() else tween(),
         label = "artist title container",
     )
