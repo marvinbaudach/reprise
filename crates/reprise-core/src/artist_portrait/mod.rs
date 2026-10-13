@@ -14,6 +14,8 @@ mod wikimedia;
 
 #[cfg(test)]
 mod source_tests;
+#[cfg(test)]
+mod wikimedia_tests;
 
 #[cfg(test)]
 mod placeholder_measurement;

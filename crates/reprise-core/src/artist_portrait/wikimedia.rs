@@ -42,7 +42,9 @@ pub(crate) fn parse_wikidata_qid(json: &str) -> Result<Option<String>, ()> {
             .then(|| url.path_segments()?.next_back().map(str::to_owned))
             .flatten()
             .filter(|qid| {
-                qid.starts_with('Q') && qid[1..].bytes().all(|byte| byte.is_ascii_digit())
+                qid.len() > 1
+                    && qid.starts_with('Q')
+                    && qid[1..].bytes().all(|byte| byte.is_ascii_digit())
             })
     }))
 }
@@ -120,26 +122,30 @@ pub(crate) fn parse_commons_imageinfo(json: &str) -> Result<Option<CommonsImage>
     else {
         return Ok(None);
     };
-    let Some(license) = field("LicenseShortName") else {
+    let Some(license) = field("LicenseShortName")
+        .map(|value| strip_html(&value))
+        .filter(|value| !value.is_empty())
+    else {
         return Ok(None);
     };
-    let Some(license_url) = field("LicenseUrl") else {
-        return Ok(None);
-    };
+    let license_url = field("LicenseUrl").unwrap_or_default();
     let Some(file_page_url) = info
         .get("descriptionurl")
         .and_then(serde_json::Value::as_str)
     else {
         return Ok(None);
     };
+    let Some(credit) = super::sidecar::validated_credit(PortraitCredit {
+        author,
+        license,
+        license_url,
+        file_page_url: file_page_url.to_owned(),
+    }) else {
+        return Ok(None);
+    };
     Ok(Some(CommonsImage {
-        thumbnail_url: thumbnail_url.to_owned(),
-        credit: PortraitCredit {
-            author,
-            license,
-            license_url,
-            file_page_url: file_page_url.to_owned(),
-        },
+        thumbnail_url: super::sidecar::bounded_url(thumbnail_url),
+        credit,
     }))
 }
 
@@ -193,20 +199,76 @@ fn is_metadata_url(value: &str) -> bool {
 
 fn strip_html(value: &str) -> String {
     let mut output = String::new();
-    let mut in_tag = false;
-    for character in value.chars() {
-        match character {
-            '<' => in_tag = true,
-            '>' => in_tag = false,
-            _ if !in_tag => output.push(character),
-            _ => {}
+    let mut remaining = value;
+    while let Some(open) = remaining.find('<') {
+        output.push_str(&remaining[..open]);
+        let after_open = &remaining[open + 1..];
+        let Some(close) = after_open.find('>') else {
+            output.push_str(&remaining[open..]);
+            remaining = "";
+            break;
+        };
+        remaining = &after_open[close + 1..];
+    }
+    output.push_str(remaining);
+    super::sidecar::bounded_text(&decode_html_entities(&output))
+}
+
+fn decode_html_entities(value: &str) -> String {
+    let mut output = String::with_capacity(value.len());
+    let mut remaining = value;
+    while let Some(ampersand) = remaining.find('&') {
+        output.push_str(&remaining[..ampersand]);
+        let entity_start = &remaining[ampersand + 1..];
+        let Some(semicolon) = entity_start.find(';').filter(|index| *index <= 12) else {
+            output.push('&');
+            remaining = entity_start;
+            continue;
+        };
+        let entity = &entity_start[..semicolon];
+        if let Some(decoded) = decode_entity(entity) {
+            output.push(decoded);
+            remaining = &entity_start[semicolon + 1..];
+        } else {
+            output.push('&');
+            remaining = entity_start;
         }
     }
-    output.trim().to_owned()
+    output.push_str(remaining);
+    output
+}
+
+fn decode_entity(entity: &str) -> Option<char> {
+    match entity {
+        "amp" => Some('&'),
+        "lt" => Some('<'),
+        "gt" => Some('>'),
+        "quot" => Some('"'),
+        "#39" => Some('\''),
+        numeric if numeric.starts_with("#x") || numeric.starts_with("#X") => {
+            u32::from_str_radix(&numeric[2..], 16)
+                .ok()
+                .and_then(char::from_u32)
+        }
+        numeric if numeric.starts_with('#') => {
+            numeric[1..].parse::<u32>().ok().and_then(char::from_u32)
+        }
+        _ => None,
+    }
 }
 
 fn agent() -> &'static ureq::Agent {
-    AGENT.get_or_init(|| build_agent(AgentPolicy::strict(HTTP_TIMEOUT)))
+    AGENT.get_or_init(|| build_agent(agent_policy()))
+}
+
+pub(crate) const fn agent_policy() -> AgentPolicy {
+    AgentPolicy {
+        timeout: HTTP_TIMEOUT,
+        status_as_error: true,
+        https_only: true,
+        max_redirects: Some(0),
+        proxy_from_env: true,
+    }
 }
 
 fn read_bounded(

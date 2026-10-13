@@ -24,6 +24,10 @@ fn every_key_keeps_its_interval() {
     assert_eq!(RateLimitKey::Lrclib.interval(), Duration::from_millis(250));
     assert_eq!(RateLimitKey::Netease.interval(), Duration::from_millis(250));
     assert_eq!(RateLimitKey::Deezer.interval(), Duration::from_millis(300));
+    assert_eq!(
+        RateLimitKey::Wikimedia.interval(),
+        Duration::from_millis(500)
+    );
 }
 
 #[test]
@@ -37,6 +41,7 @@ fn every_key_owns_a_distinct_slot() {
         RateLimitKey::Lrclib,
         RateLimitKey::Netease,
         RateLimitKey::Deezer,
+        RateLimitKey::Wikimedia,
     ];
     assert_eq!(keys.len(), KEY_COUNT);
     let mut indexes = keys.map(RateLimitKey::index).to_vec();
