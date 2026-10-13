@@ -1,10 +1,13 @@
 package io.github.marvinbaudach.reprise
 
+import android.content.Intent
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.getValue
@@ -13,9 +16,12 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.unit.dp
+import androidx.core.net.toUri
 import uniffi.reprise_android_ffi.AndroidArtworkSize
+import uniffi.reprise_android_ffi.AndroidPortraitCredit
 
 internal const val ARTIST_PORTRAIT_DIAMETER_DP = 210
 internal const val ARTIST_PORTRAIT_BOTTOM_GAP_DP = 16
@@ -68,7 +74,9 @@ internal fun ArtistAvatar(
 @Composable
 internal fun ArtistPortraitHeader(
     visual: ArtworkVisual?,
+    credit: AndroidPortraitCredit?,
 ) {
+    val context = LocalContext.current
     Column(
         modifier = Modifier
             .fillMaxWidth()
@@ -83,8 +91,35 @@ internal fun ArtistPortraitHeader(
             shape = MaterialTheme.shapes.extraLarge,
             decorative = true,
         )
+        credit?.let { value ->
+            Text(
+                text = artistPortraitCreditText(value),
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                style = MaterialTheme.typography.bodySmall,
+                modifier = Modifier
+                    .padding(horizontal = 24.dp, vertical = 8.dp)
+                    .testTag("artist-portrait-credit")
+                    .clickable(enabled = isHttpsCreditUrl(value.filePageUrl)) {
+                        if (isHttpsCreditUrl(value.filePageUrl)) {
+                            runCatching {
+                                context.startActivity(
+                                    Intent(Intent.ACTION_VIEW, value.filePageUrl.toUri()),
+                                )
+                            }
+                        }
+                    },
+            )
+        }
     }
 }
+
+internal fun artistPortraitCreditText(credit: AndroidPortraitCredit): String =
+    "Photo: ${credit.author} · ${credit.license} · Wikimedia Commons"
+
+internal fun isHttpsCreditUrl(url: String): Boolean =
+    url.toUri().let { uri ->
+        uri.scheme.equals("https", ignoreCase = true) && !uri.host.isNullOrBlank()
+    }
 
 private fun artistArtworkRequest(
     name: String,

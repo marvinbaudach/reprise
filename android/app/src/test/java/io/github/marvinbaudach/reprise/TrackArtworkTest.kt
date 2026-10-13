@@ -524,6 +524,7 @@ private class QueuedDispatcher : CoroutineDispatcher() {
 internal fun fakeLibrarySessionPort(
     artworkFor: (String, AndroidArtworkSize) -> String? = { _, _ -> null },
     artworkFetched: (String, AndroidArtworkSize) -> String? = { _, _ -> null },
+    artistPortraitCredit: (String) -> uniffi.reprise_android_ffi.AndroidPortraitCredit? = { null },
 ): LibrarySessionPort = object : LibrarySessionPort {
     override fun rememberedTreeUri(): String? = null
     override fun rememberTreeUri(treeUri: String) = Unit
@@ -552,6 +553,7 @@ internal fun fakeLibrarySessionPort(
         artworkFetched(trackUri, size)
     override fun artistPortraitCached(name: String, size: AndroidArtworkSize): String? = null
     override fun artistPortraitFetched(name: String, size: AndroidArtworkSize): String? = null
+    override fun artistPortraitCredit(name: String) = artistPortraitCredit(name)
     override fun artistsMissingPortraits(limit: UInt): List<String> = emptyList()
     override fun setFavourite(trackId: Long, favourite: Boolean) = Unit
 }

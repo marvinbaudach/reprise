@@ -859,6 +859,10 @@ result.
   rests at the top, it takes the surface-container colour as soon as content passes beneath
   it, so nothing is ever cut at an edge that is not drawn. The glow behind the portrait moves
   with the head and fades as it leaves.
+- **ART-4** [active] [android] — A portrait that comes from Wikimedia Commons carries a
+  muted credit line beneath it on the phone's artist page — "Photo: <author> · <licence> ·
+  Wikimedia Commons" — that opens the file page; it scrolls with the head (ART-3). A Deezer
+  portrait shows no line, and small avatars never carry one.
 - **FX-1** [planned] [manual] — All effects respect
   `gtk-enable-animations=false` (hard switch) and only run GPU-cheap
   (opacity/transform, pre-rendered glows). No live blurs in lists.

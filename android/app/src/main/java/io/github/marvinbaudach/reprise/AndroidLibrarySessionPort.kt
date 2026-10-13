@@ -8,6 +8,7 @@ import android.util.Log
 import androidx.core.content.edit
 import uniffi.reprise_android_ffi.AlbumRow
 import uniffi.reprise_android_ffi.AndroidArtworkSize
+import uniffi.reprise_android_ffi.AndroidPortraitCredit
 import uniffi.reprise_android_ffi.AlbumWindow as FfiAlbumWindow
 import uniffi.reprise_android_ffi.ArtistRow
 import uniffi.reprise_android_ffi.ArtistWindow as FfiArtistWindow
@@ -146,6 +147,9 @@ internal class AndroidLibrarySessionPort(
         runCatching { library.artistPortraitFetch(name, size) }
             .onFailure { error -> Log.w(TAG, "Could not fetch artist portrait", error) }
             .getOrNull()
+
+    override fun artistPortraitCredit(name: String): AndroidPortraitCredit? =
+        library.artistPortraitCredit(name)
 
     override fun artistsMissingPortraits(limit: UInt): List<String> =
         runCatching { library.artistsMissingPortraits(limit) }

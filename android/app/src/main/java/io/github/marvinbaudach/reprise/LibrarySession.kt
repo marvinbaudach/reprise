@@ -1,7 +1,10 @@
 package io.github.marvinbaudach.reprise
 
 import androidx.compose.runtime.staticCompositionLocalOf
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.StateFlow
 import uniffi.reprise_android_ffi.AndroidArtworkSize
+import uniffi.reprise_android_ffi.AndroidPortraitCredit
 
 /**
  * How many resolved cover paths one session remembers. Large enough that
@@ -9,6 +12,7 @@ import uniffi.reprise_android_ffi.AndroidArtworkSize
  * the map stays a rounding error next to the rows it describes.
  */
 private const val REMEMBERED_ARTWORK_PATHS = 512
+private const val REMEMBERED_PORTRAIT_CREDITS = 64
 private const val COUNT_ONLY_WINDOW_SIZE = 1L
 internal const val AUTOMATIC_SCAN_INTERVAL_MS = 5 * 60 * 1_000L
 
@@ -73,6 +77,8 @@ internal interface LibrarySessionPort {
     fun artistPortraitCached(name: String, size: AndroidArtworkSize): String?
 
     fun artistPortraitFetched(name: String, size: AndroidArtworkSize): String?
+
+    fun artistPortraitCredit(name: String): AndroidPortraitCredit? = null
 
     fun artistsMissingPortraits(limit: UInt): List<String>
 
@@ -322,8 +328,15 @@ internal class LibrarySession(
     fun artistPortraitCached(name: String, size: AndroidArtworkSize): String? =
         port.artistPortraitCached(name, size)
 
-    fun artistPortraitFetched(name: String, size: AndroidArtworkSize): String? =
-        port.artistPortraitFetched(name, size)
+    fun artistPortraitFetched(name: String, size: AndroidArtworkSize): String? {
+        publishArtistPortraitCredit(name, null)
+        val path = port.artistPortraitFetched(name, size)
+        publishArtistPortraitCredit(name, artistPortraitCredit(name))
+        return path
+    }
+
+    fun artistPortraitCredit(name: String): AndroidPortraitCredit? =
+        port.artistPortraitCredit(name)
 
     private fun scanTree(
         treeUri: String,
@@ -370,6 +383,27 @@ internal class LibrarySession(
             folderUri = port.rememberedTreeUri(),
             loadedTabs = selectedTab?.let(::setOf) ?: BrowseTab.entries.toSet(),
         )
+}
+
+private val artistPortraitCreditEntries = LinkedHashMap<String, AndroidPortraitCredit?>()
+private val artistPortraitCreditMonitor = Any()
+private val artistPortraitCredits = MutableStateFlow<Map<String, AndroidPortraitCredit?>>(emptyMap())
+
+internal fun artistPortraitCreditsState(): StateFlow<Map<String, AndroidPortraitCredit?>> =
+    artistPortraitCredits
+
+private fun publishArtistPortraitCredit(name: String, credit: AndroidPortraitCredit?) {
+    val key = name.trim()
+    if (key.isEmpty()) return
+    synchronized(artistPortraitCreditMonitor) {
+        artistPortraitCreditEntries.remove(key)
+        artistPortraitCreditEntries[key] = credit
+        while (artistPortraitCreditEntries.size > REMEMBERED_PORTRAIT_CREDITS) {
+            val oldest = artistPortraitCreditEntries.keys.firstOrNull() ?: break
+            artistPortraitCreditEntries.remove(oldest)
+        }
+        artistPortraitCredits.value = artistPortraitCreditEntries.toMap()
+    }
 }
 
 private fun countOnlyLibraryWindow() =

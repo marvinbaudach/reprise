@@ -1,5 +1,8 @@
 package io.github.marvinbaudach.reprise
 
+import android.content.Intent
+import android.graphics.Bitmap
+import android.os.Looper
 import androidx.activity.ComponentActivity
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Box
@@ -36,8 +39,10 @@ import org.junit.Rule
 import org.junit.Test
 import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
+import org.robolectric.Shadows.shadowOf
 import org.robolectric.annotation.Config
 import uniffi.reprise_android_ffi.AndroidColorScheme
+import uniffi.reprise_android_ffi.AndroidPortraitCredit
 import java.util.concurrent.CountDownLatch
 import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicInteger
@@ -80,6 +85,7 @@ class ArtistDetailHeadTest {
             controls = controls,
         )
 
+        compose.onNodeWithText("Wikimedia Commons", substring = true).assertDoesNotExist()
         compose.onNodeWithText(ARTIST_NAME).performClick()
         compose.onNodeWithTag("artist-detail-play").performClick()
         assertTrue(lookupStarted.await(5, TimeUnit.SECONDS))
@@ -171,9 +177,50 @@ class ArtistDetailHeadTest {
         assertEquals(1, tapsBehind.get())
     }
 
+    @Test
+    fun art_4_aCommonsPortraitShowsItsCreditBeneathIt() {
+        showLongArtistFromTheList(
+            portraitCredit = AndroidPortraitCredit(
+                author = "Jane Photographer",
+                license = "CC BY-SA 4.0",
+                licenseUrl = "https://creativecommons.org/licenses/by-sa/4.0/",
+                filePageUrl = "https://commons.wikimedia.org/wiki/File:Portrait.jpg",
+            ),
+        )
+
+        compose.onNodeWithText(ARTIST_NAME).performClick()
+        val credit = "Photo: Jane Photographer · CC BY-SA 4.0 · Wikimedia Commons"
+        compose.onNodeWithText(credit).assertIsDisplayed().performClick()
+
+        val launched = shadowOf(compose.activity).nextStartedActivity
+        assertEquals(Intent.ACTION_VIEW, launched.action)
+        assertEquals(
+            "https://commons.wikimedia.org/wiki/File:Portrait.jpg",
+            launched.dataString,
+        )
+    }
+
+    @Test
+    fun art_4_aDeezerPortraitShowsNoCredit() {
+        showLongArtistFromTheList(portraitCredit = null)
+
+        compose.onNodeWithText(ARTIST_NAME).performClick()
+
+        compose.onNodeWithText("Wikimedia Commons", substring = true).assertDoesNotExist()
+    }
+
+    @Test
+    fun artistPortraitCreditRefusesNonHttpsSources() {
+        assertTrue(isHttpsCreditUrl("https://commons.wikimedia.org/wiki/File:Portrait.jpg"))
+        assertTrue(!isHttpsCreditUrl("http://commons.wikimedia.org/wiki/File:Portrait.jpg"))
+        assertTrue(!isHttpsCreditUrl("javascript:alert(1)"))
+        assertTrue(!isHttpsCreditUrl("https:commons.wikimedia.org/wiki/File:Portrait.jpg"))
+    }
+
     private fun showLongArtistFromTheList(
         artistTrackIds: (LibraryArtist) -> List<Long> = { emptyList() },
         controls: PlaybackControls = DisconnectedPlaybackControls,
+        portraitCredit: AndroidPortraitCredit? = null,
     ) {
         val albums = (1..20).map { index ->
             LibraryAlbum(
@@ -197,11 +244,25 @@ class ArtistDetailHeadTest {
             untaggedTracks = LibraryWindow.empty(),
         )
         val surfaceState = MobileSurfaceViewModel()
+        val session = LibrarySession(
+            fakeLibrarySessionPort(
+                artistPortraitCredit = {
+                    check(Looper.myLooper() != Looper.getMainLooper())
+                    portraitCredit
+                },
+            ),
+        )
+        val artwork = TrackArtwork(
+            resolve = session::artworkFor,
+            resolveArtistPortraitFetched = session::artistPortraitFetched,
+            fallback = { _, _, _ -> Bitmap.createBitmap(1, 1, Bitmap.Config.ARGB_8888) },
+        )
         compose.setContent {
             RepriseTheme(THEME, darkPalette = true) {
                 CompositionLocalProvider(
                     LocalArtistTrackIds provides artistTrackIds,
                     LocalPlaybackControls provides controls,
+                    LocalTrackArtwork provides artwork,
                 ) {
                     var selected by remember { mutableStateOf<ArtistTrackList?>(null) }
                     ArtistsTab(
