@@ -1,32 +1,37 @@
 package io.github.marvinbaudach.reprise
 
 import androidx.compose.animation.animateColorAsState
-import androidx.compose.foundation.background
+import androidx.compose.animation.core.snap
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ColumnScope
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.width
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.getValue
-import androidx.compose.runtime.key
-import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.remember
-import androidx.compose.runtime.rememberCoroutineScope
-import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.semantics.SemanticsPropertyKey
 import androidx.compose.ui.semantics.SemanticsPropertyReceiver
+import androidx.compose.ui.semantics.isTraversalGroup
 import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.traversalIndex
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
+import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.launch
 
 internal data class ArtistHeadShimmerTransform(
@@ -61,19 +66,36 @@ internal fun ArtistDetailTitleRow(
     scrolled: Boolean,
     modifier: Modifier = Modifier,
     withMenu: Boolean = true,
+    reportStatusInset: Boolean = true,
     below: @Composable ColumnScope.() -> Unit = {},
 ) {
     val contextMenu = rememberTrackContextMenuAnchorState()
-    val containerColor by animateColorAsState(
+    val containerColor = animateColorAsState(
         targetValue = if (scrolled) MaterialTheme.colorScheme.surfaceContainer else Color.Transparent,
+        animationSpec = if (scrolled) snap() else tween(),
         label = "artist title container",
     )
+    val tapShield = if (scrolled) {
+        Modifier.pointerInput(Unit) { detectTapGestures(onTap = {}) }
+    } else {
+        Modifier
+    }
+    val statusModifier = if (reportStatusInset) {
+        Modifier.reportLibraryStatusTopInset("artist-detail-header")
+    } else {
+        Modifier.testTag("artist-detail-header")
+    }
     Column(
         modifier = modifier
             .fillMaxWidth()
-            .background(containerColor)
-            .semantics { artistHeaderScrolled = scrolled }
-            .reportLibraryStatusTopInset("artist-detail-header"),
+            .drawBehind { drawRect(containerColor.value) }
+            .then(tapShield)
+            .semantics {
+                artistHeaderScrolled = scrolled
+                isTraversalGroup = true
+                traversalIndex = -1f
+            }
+            .then(statusModifier),
     ) {
         Row(verticalAlignment = Alignment.CenterVertically) {
             Row(
@@ -108,12 +130,38 @@ internal fun ArtistDetailTitleRow(
 internal fun ArtistDetailHead(
     artist: LibraryArtist,
     visual: ArtworkVisual?,
+    scope: CoroutineScope,
+    resolving: Boolean,
+    message: TransientMessage?,
+    onResolvingChanged: (Boolean) -> Unit,
+    onMessageChanged: (TransientMessage?) -> Unit,
     modifier: Modifier = Modifier,
+    onPlayAreaSizeChanged: (Int) -> Unit = {},
 ) {
     Column(modifier = modifier.fillMaxWidth()) {
-        ArtistPlayButton(artist)
+        Column(modifier = Modifier.onSizeChanged { onPlayAreaSizeChanged(it.height) }) {
+            ArtistPlayButton(
+                artist = artist,
+                scope = scope,
+                resolving = resolving,
+                message = message,
+                onResolvingChanged = onResolvingChanged,
+                onMessageChanged = onMessageChanged,
+            )
+        }
         ArtistPortraitHeader(visual)
     }
+}
+
+/** Reports the moving clearance without adding space to the overlaid title row. */
+@Composable
+internal fun ArtistDetailStatusInset(height: Dp, modifier: Modifier = Modifier) {
+    Box(
+        modifier = modifier
+            .width(0.dp)
+            .height(height)
+            .reportLibraryStatusTopInset("artist-detail-status-inset"),
+    )
 }
 
 /**
@@ -122,35 +170,37 @@ internal fun ArtistDetailHead(
  * second tap cannot queue the same question twice.
  */
 @Composable
-private fun ArtistPlayButton(artist: LibraryArtist) = key(artist.name) {
+private fun ArtistPlayButton(
+    artist: LibraryArtist,
+    scope: CoroutineScope,
+    resolving: Boolean,
+    message: TransientMessage?,
+    onResolvingChanged: (Boolean) -> Unit,
+    onMessageChanged: (TransientMessage?) -> Unit,
+) {
     val artistTrackIds = LocalArtistTrackIds.current
     val controls = LocalPlaybackControls.current
-    // The key ties the scope to the artist: a play still resolving when the
-    // page moves to another artist is cancelled, as it is when the page closes.
-    // It is the name, not the row, because the ids are looked up by name and a
-    // refresh after a delete rebuilds the row with new counts mid-resolution.
-    val scope = rememberCoroutineScope()
-    var resolving by remember { mutableStateOf(false) }
-    var message by remember { mutableStateOf<TransientMessage?>(null) }
     ListPlayButton(
         description = "Play ${artist.name}",
         enabled = !resolving,
         modifier = Modifier.testTag("artist-detail-play"),
         onClick = {
-            resolving = true
+            onResolvingChanged(true)
             scope.launch {
                 try {
                     resolveOffMain { artistTrackIds(artist) }.fold(
                         onSuccess = { ids -> controls.playTrackIds(ids, 0) },
                         onFailure = { error ->
-                            message = TransientMessage(couldNotLoadTracks(error)).after(message)
+                            onMessageChanged(
+                                TransientMessage(couldNotLoadTracks(error)).after(message),
+                            )
                         },
                     )
                 } finally {
-                    resolving = false
+                    onResolvingChanged(false)
                 }
             }
         },
     )
-    TransientMessageText(message) { message = null }
+    TransientMessageText(message) { onMessageChanged(null) }
 }

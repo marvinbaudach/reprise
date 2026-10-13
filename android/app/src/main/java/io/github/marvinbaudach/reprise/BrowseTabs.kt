@@ -29,8 +29,12 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -44,6 +48,11 @@ import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.unit.dp
 import uniffi.reprise_android_ffi.AndroidArtworkSize
 import uniffi.reprise_android_ffi.AndroidPlaybackState
+
+private const val ARTIST_TITLE_ROW_SEED_DP = 48
+private const val ARTIST_PLAY_AREA_SEED_DP = 48
+private const val ARTIST_HEAD_SEED_DP =
+    ARTIST_PLAY_AREA_SEED_DP + ARTIST_PORTRAIT_DIAMETER_DP + ARTIST_PORTRAIT_BOTTOM_GAP_DP
 
 internal fun BrowseTab.emptyMessage(searchText: String): String = if (searchText.isNotBlank()) {
     "No matching ${label.lowercase()}."
@@ -354,6 +363,44 @@ private fun ArtistDetailSections(
     loadMoreAlbums: suspend (LibraryWindowRange) -> Unit,
     loadMoreTracks: suspend (LibraryWindowRange) -> Unit,
 ) {
+    key(artist.name) {
+        ArtistDetailSectionsKeyed(
+            surfaceLayout = surfaceLayout,
+            surfaceState = surfaceState,
+            artist = artist,
+            albums = albums,
+            untaggedTracks = untaggedTracks,
+            playback = playback,
+            albumsRequestedOffset = albumsRequestedOffset,
+            tracksRequestedOffset = tracksRequestedOffset,
+            openAlbum = openAlbum,
+            closeArtist = closeArtist,
+            play = play,
+            loadMoreAlbums = loadMoreAlbums,
+            loadMoreTracks = loadMoreTracks,
+        )
+    }
+}
+
+@Composable
+private fun ArtistDetailSectionsKeyed(
+    surfaceLayout: SurfaceLayout,
+    surfaceState: MobileSurfaceViewModel,
+    artist: LibraryArtist,
+    albums: LibraryWindow<LibraryAlbum>,
+    untaggedTracks: LibraryWindow<LibraryTrack>,
+    playback: LibraryPlayback,
+    albumsRequestedOffset: Long?,
+    tracksRequestedOffset: Long?,
+    openAlbum: (LibraryAlbum) -> Unit,
+    closeArtist: () -> Unit,
+    play: (Int) -> Unit,
+    loadMoreAlbums: suspend (LibraryWindowRange) -> Unit,
+    loadMoreTracks: suspend (LibraryWindowRange) -> Unit,
+) {
+    val scope = rememberCoroutineScope()
+    var resolving by remember { mutableStateOf(false) }
+    var message by remember { mutableStateOf<TransientMessage?>(null) }
     val key = LibraryListKey.ARTIST_ALBUMS
     val owner = artist.name
     val head = rememberArtistArtworkVisual(
@@ -373,8 +420,15 @@ private fun ArtistDetailSections(
     ObserveLibraryListAnchor(key, listState, surfaceState, owner)
     val metrics = libraryFrameMetrics(surfaceLayout)
     val density = LocalDensity.current
-    var titleHeightPx by remember(artist.name) { mutableIntStateOf(0) }
-    var headHeightPx by remember(artist.name) { mutableIntStateOf(0) }
+    var titleHeightPx by rememberSaveable(artist.name) {
+        mutableIntStateOf(with(density) { ARTIST_TITLE_ROW_SEED_DP.dp.roundToPx() })
+    }
+    var headHeightPx by rememberSaveable(artist.name) {
+        mutableIntStateOf(with(density) { ARTIST_HEAD_SEED_DP.dp.roundToPx() })
+    }
+    var playAreaHeightPx by rememberSaveable(artist.name) {
+        mutableIntStateOf(with(density) { ARTIST_PLAY_AREA_SEED_DP.dp.roundToPx() })
+    }
     val scrolled by remember(listState) {
         derivedStateOf {
             listState.firstVisibleItemIndex > 0 || listState.firstVisibleItemScrollOffset > 0
@@ -382,6 +436,9 @@ private fun ArtistDetailSections(
     }
     BoxWithConstraints(modifier = Modifier.fillMaxSize()) {
         val titleHeightDp = with(density) { titleHeightPx.toDp() }
+        val statusInsetHeightDp = with(density) {
+            (titleHeightPx + if (scrolled) 0 else playAreaHeightPx).toDp()
+        }
         val headHeightDp = with(density) { headHeightPx.toDp() }
         val portraitCenterDp = titleHeightDp.value + headHeightDp.value -
             ARTIST_PORTRAIT_BOTTOM_GAP_DP.toFloat() - ARTIST_PORTRAIT_DIAMETER_DP / 2f
@@ -416,7 +473,13 @@ private fun ArtistDetailSections(
                 ArtistDetailHead(
                     artist = artist,
                     visual = head,
+                    scope = scope,
+                    resolving = resolving,
+                    message = message,
+                    onResolvingChanged = { resolving = it },
+                    onMessageChanged = { message = it },
                     modifier = Modifier.onSizeChanged { headHeightPx = it.height },
+                    onPlayAreaSizeChanged = { playAreaHeightPx = it },
                 )
             }
             if (albums.rows.isNotEmpty()) {
@@ -459,10 +522,15 @@ private fun ArtistDetailSections(
                 }
             }
         }
+        ArtistDetailStatusInset(
+            height = statusInsetHeightDp,
+            modifier = Modifier.align(Alignment.TopStart),
+        )
         ArtistDetailTitleRow(
             artist = artist,
             closeArtist = closeArtist,
             scrolled = scrolled,
+            reportStatusInset = false,
             modifier = Modifier
                 .align(Alignment.TopStart)
                 .onSizeChanged { titleHeightPx = it.height },
