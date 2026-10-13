@@ -30,6 +30,22 @@ fn rule_switches(section: &OnDeviceSection) -> Vec<gtk4::Switch> {
     found
 }
 
+fn labels(section: &OnDeviceSection) -> Vec<gtk4::Label> {
+    fn collect(widget: &gtk4::Widget, found: &mut Vec<gtk4::Label>) {
+        if let Ok(label) = widget.clone().downcast::<gtk4::Label>() {
+            found.push(label);
+        }
+        let mut child = widget.first_child();
+        while let Some(current) = child {
+            collect(&current, found);
+            child = current.next_sibling();
+        }
+    }
+    let mut found = Vec::new();
+    collect(section.root().upcast_ref(), &mut found);
+    found
+}
+
 fn busy_device() -> DeviceView {
     let mut busy = device();
     busy.sync_phase = PlannedSyncPhase::Finishing;
@@ -46,11 +62,13 @@ fn mtp_69_the_remove_deleted_switch_is_locked_while_a_sync_runs() {
     surface.update(&busy_device());
 
     let switches = rule_switches(&surface.on_device);
+    let reason = device_sync_strings::remove_from_phone_locked_reason();
     assert_eq!(switches.len(), 2);
     assert!(!switches[0].is_sensitive(), "remove-deleted must lock");
-    assert!(switches[0]
-        .tooltip_text()
-        .is_some_and(|tip| tip.contains("locked")));
+    assert_eq!(switches[0].tooltip_text().as_deref(), Some(reason.as_str()));
+    assert!(labels(&surface.on_device)
+        .iter()
+        .any(|label| label.text() == reason && label.is_visible()));
 }
 
 #[test]
@@ -79,6 +97,10 @@ fn mtp_69_the_remove_deleted_switch_unlocks_when_the_sync_ends() {
     surface.update(&device());
 
     let switches = rule_switches(&surface.on_device);
+    let reason = device_sync_strings::remove_from_phone_locked_reason();
     assert!(switches[0].is_sensitive());
     assert!(switches[0].tooltip_text().is_none());
+    assert!(labels(&surface.on_device)
+        .iter()
+        .any(|label| label.text() == reason && !label.is_visible()));
 }

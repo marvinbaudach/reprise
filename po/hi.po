@@ -7,7 +7,7 @@ msgid ""
 msgstr ""
 "Project-Id-Version: Reprise 0.1.0\n"
 "Report-Msgid-Bugs-To: Marvin Baudach\n"
-"POT-Creation-Date: 2026-10-12 22:44+0200\n"
+"POT-Creation-Date: 2026-10-13 01:39+0200\n"
 "PO-Revision-Date: 2026-07-20 11:38+0200\n"
 "Last-Translator: Reprise contributors\n"
 "Language-Team: Hindi\n"
@@ -5444,9 +5444,8 @@ msgstr ""
 
 #: crates/reprise-gnome/src/ui/device_sync/device_sync_strings.rs:90
 msgid ""
-"This setting is locked while this device is synchronizing, because it "
-"changes what the running synchronization removes; wait for synchronization "
-"to finish before changing it."
+"This setting applies to the next synchronization and is locked while this "
+"phone is synchronizing."
 msgstr ""
 
 #: crates/reprise-gnome/src/ui/device_sync/device_sync_strings.rs:92

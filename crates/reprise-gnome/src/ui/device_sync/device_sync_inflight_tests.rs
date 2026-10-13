@@ -139,6 +139,65 @@ fn mtp_69_the_automatic_sync_switch_is_saved_while_a_sync_is_running() {
 }
 
 #[test]
+fn mtp_69_a_non_rememberable_device_updates_automatic_sync_in_memory_while_busy() {
+    run(async {
+        let (_temp, conn) = fixture();
+        let backend = Rc::new(FakeBackend::new(vec![descriptor("a", false)], 40));
+        let runtime = DeviceSyncRuntime::with_backend(&conn, backend);
+        gtk4::glib::timeout_future(Duration::from_millis(2)).await;
+        let mut settings = runtime.devices()[0].settings.clone();
+        settings.selection = DeviceSelection::EntireLibrary;
+        runtime.update_settings(settings).unwrap();
+        runtime.sync_now("a").unwrap();
+
+        let result = runtime.set_sync_automatically("a", true);
+
+        assert_eq!(result, Ok(()));
+        let device = runtime.devices().remove(0);
+        assert!(device.settings.sync_automatically);
+        assert!(matches!(
+            device.sync_phase,
+            PlannedSyncPhase::Syncing { .. }
+        ));
+        let persisted: i64 = crate::test_db::connection(&conn)
+            .query_row(
+                "SELECT COUNT(*) FROM device_settings WHERE device_serial = 'a'",
+                [],
+                |row| row.get(0),
+            )
+            .unwrap();
+        assert_eq!(persisted, 0);
+        runtime.cancel_current("a");
+        settle().await;
+    });
+}
+
+#[test]
+fn mtp_69_a_failed_automatic_sync_save_notifies_the_stored_value() {
+    run(async {
+        let (_temp, conn) = fixture();
+        let backend = Rc::new(FakeBackend::new(vec![descriptor("a", true)], 0));
+        let runtime = DeviceSyncRuntime::with_backend(&conn, backend);
+        gtk4::glib::timeout_future(Duration::from_millis(2)).await;
+        let notifications = Rc::new(Cell::new(0));
+        let _subscription = runtime.subscribe({
+            let notifications = notifications.clone();
+            Rc::new(move |_| notifications.set(notifications.get() + 1))
+        });
+        assert_eq!(notifications.get(), 1);
+        crate::test_db::connection(&conn)
+            .execute("DROP TABLE device_settings", [])
+            .unwrap();
+
+        let result = runtime.set_sync_automatically("a", true);
+
+        assert!(result.is_err());
+        assert!(!runtime.devices()[0].settings.sync_automatically);
+        assert_eq!(notifications.get(), 2);
+    });
+}
+
+#[test]
 fn mtp_69_the_remove_deleted_switch_stays_locked_while_a_sync_is_running() {
     run(async {
         let (_temp, conn) = fixture();

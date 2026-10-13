@@ -95,6 +95,7 @@ pub(super) struct OnDeviceSection {
     balance: gtk4::Label,
     policy: gtk4::Label,
     remove_deleted_switch: gtk4::Switch,
+    remove_deleted_locked_reason: gtk4::Label,
     sync_automatically_switch: gtk4::Switch,
     updating: Rc<Cell<bool>>,
 }
@@ -198,6 +199,12 @@ impl OnDeviceSection {
                 }
             },
         );
+        let remove_deleted_locked_reason = label(
+            &device_sync_strings::remove_from_phone_locked_reason(),
+            "dim-label",
+        );
+        remove_deleted_locked_reason.set_wrap(true);
+        remove_deleted_locked_reason.set_visible(false);
 
         let content = gtk4::Box::new(gtk4::Orientation::Vertical, 14);
         content.set_margin_top(16);
@@ -212,6 +219,7 @@ impl OnDeviceSection {
         content.append(&gtk4::Separator::new(gtk4::Orientation::Horizontal));
         content.append(&rules_title);
         content.append(&switch_row(&remove_deleted.0, &remove_deleted.1));
+        content.append(&remove_deleted_locked_reason);
         content.append(&switch_row(&sync_automatically.0, &sync_automatically.1));
         let card = libadwaita::Bin::builder().child(&content).build();
         card.add_css_class("card");
@@ -230,6 +238,7 @@ impl OnDeviceSection {
             balance,
             policy,
             remove_deleted_switch: remove_deleted.1,
+            remove_deleted_locked_reason,
             sync_automatically_switch: sync_automatically.1,
             updating,
         }
@@ -273,16 +282,15 @@ impl OnDeviceSection {
             device.keep_smart_playlists_updated,
         ));
         set_switch(&self.remove_deleted_switch, device.settings.remove_deleted);
-        // `MTP-33`: this switch shapes the running sync's plan, so it locks
-        // with the rest of the plan-shaping controls. The automatic-sync
-        // switch is read only on connect and stays editable.
+        // `MTP-33`: this setting applies to the next sync, so it locks while
+        // the current sync is running. The automatic-sync switch is read only
+        // on connect and stays editable.
         let editable = device.page.controls.editable;
+        let locked_reason = (!editable).then(device_sync_strings::remove_from_phone_locked_reason);
         self.remove_deleted_switch.set_sensitive(editable);
-        self.remove_deleted_switch.set_tooltip_text(
-            (!editable)
-                .then(device_sync_strings::remove_from_phone_locked_reason)
-                .as_deref(),
-        );
+        self.remove_deleted_switch
+            .set_tooltip_text(locked_reason.as_deref());
+        self.remove_deleted_locked_reason.set_visible(!editable);
         set_switch(
             &self.sync_automatically_switch,
             device.settings.sync_automatically,

@@ -103,7 +103,10 @@ impl DeviceSyncRuntime {
         };
         settings.sync_automatically = sync_automatically;
         if rememberable {
-            save_settings(&self.conn, &settings).map_err(|error| error.to_string())?;
+            if let Err(error) = save_settings(&self.conn, &settings) {
+                self.notify();
+                return Err(error.to_string());
+            }
         }
         {
             let mut devices = self.device_states.borrow_mut();

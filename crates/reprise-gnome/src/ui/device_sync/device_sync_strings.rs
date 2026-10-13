@@ -87,7 +87,7 @@ const PLAYLIST_SELECTION_LOCKED: &str = N_!(
     "Playlist selection is locked while this device is synchronizing; wait for synchronization to finish before changing it."
 );
 const REMOVE_FROM_PHONE_LOCKED: &str = N_!(
-    "This setting is locked while this device is synchronizing, because it changes what the running synchronization removes; wait for synchronization to finish before changing it."
+    "This setting applies to the next synchronization and is locked while this phone is synchronizing."
 );
 pub const CHOOSE_PLAYLIST_FOLDER: &str = N_!("Choose folder for Playlists");
 pub const CHANGE_FOLDER: &str = N_!("Change folder…");
