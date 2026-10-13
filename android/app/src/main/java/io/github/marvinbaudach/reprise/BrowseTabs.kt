@@ -6,6 +6,7 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ColumnScope
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -26,20 +27,21 @@ import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.key
-import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.remember
-import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
+import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.layout.onSizeChanged
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.unit.dp
-import kotlinx.coroutines.launch
 import uniffi.reprise_android_ffi.AndroidArtworkSize
 import uniffi.reprise_android_ffi.AndroidPlaybackState
 
@@ -223,57 +225,19 @@ private fun AlbumDetailHeader(
 @Composable
 private fun ArtistLoadingPage(artist: LibraryArtist, closeArtist: () -> Unit) {
     Column(modifier = Modifier.fillMaxSize()) {
-        ArtistDetailHeader(artist, closeArtist, withMenu = false)
+        ArtistDetailTitleRow(
+            artist = artist,
+            closeArtist = closeArtist,
+            scrolled = false,
+            withMenu = false,
+        )
         LoadingWindowRow()
-    }
-}
-
-/**
- * The artist page's title row. Its overflow opens the same menu a long press
- * on the artist in the list does, so the whole artist can be played, queued or
- * deleted from the page too. The loading page shows the row without it: the
- * artist is not open yet.
- */
-@Composable
-private fun ArtistDetailHeader(
-    artist: LibraryArtist,
-    closeArtist: () -> Unit,
-    withMenu: Boolean = true,
-    below: @Composable ColumnScope.() -> Unit = {},
-) {
-    val contextMenu = rememberTrackContextMenuAnchorState()
-    Column(modifier = Modifier.reportLibraryStatusTopInset("artist-detail-header")) {
-        Row(verticalAlignment = Alignment.CenterVertically) {
-            Row(
-                modifier = Modifier
-                    .weight(1f)
-                    .clickable(onClick = closeArtist)
-                    .padding(horizontal = 16.dp, vertical = 8.dp),
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
-                MaterialSymbol("arrow_back", "Back to artists")
-                Text(artist.name, style = MaterialTheme.typography.titleLarge)
-            }
-            if (withMenu) {
-                Box {
-                    IconButton(
-                        onClick = { contextMenu.expanded = true },
-                        modifier = Modifier.testTag("artist-detail-overflow"),
-                    ) {
-                        MaterialSymbol("more_vert", "More actions")
-                    }
-                    TrackContextMenu(anchor = contextMenu, target = artistMenuTarget(artist))
-                }
-            }
-        }
-        TrackContextMenuMessage(contextMenu)
-        below()
     }
 }
 
 /** Every track by [artist], resolved unwindowed when a menu item needs it. */
 @Composable
-private fun artistMenuTarget(artist: LibraryArtist): LibraryTrackMenuTarget {
+internal fun artistMenuTarget(artist: LibraryArtist): LibraryTrackMenuTarget {
     val artistTrackIds = LocalArtistTrackIds.current
     val controls = LocalPlaybackControls.current
     return LibraryTrackMenuTarget(
@@ -332,48 +296,29 @@ internal fun ArtistsTab(
         return
     }
     if (selectedArtist != null) {
-        Column(modifier = Modifier.fillMaxSize()) {
-            val hasAlbums = selectedArtist.albums.rows.isNotEmpty()
-            val hasOtherTitles = selectedArtist.untaggedTracks.rows.isNotEmpty()
-            ArtistDetailHeader(selectedArtist.artist, closeArtist) {
-                if (!hasAlbums && !hasOtherTitles) {
-                    Text("No tracks by this artist.", modifier = Modifier.padding(16.dp))
-                } else {
-                    ArtistPlayButton(selectedArtist.artist)
-                }
+        val hasAlbums = selectedArtist.albums.rows.isNotEmpty()
+        val hasOtherTitles = selectedArtist.untaggedTracks.rows.isNotEmpty()
+        if (!hasAlbums && !hasOtherTitles) {
+            ArtistDetailTitleRow(selectedArtist.artist, closeArtist, scrolled = false) {
+                Text("No tracks by this artist.", modifier = Modifier.padding(16.dp))
             }
-            if (hasAlbums) {
-                ArtistDetailSections(
-                    surfaceLayout = surfaceLayout,
-                    surfaceState = surfaceState,
-                    artist = selectedArtist.artist,
-                    albums = selectedArtist.albums,
-                    untaggedTracks = selectedArtist.untaggedTracks,
-                    playback = playback,
-                    albumsRequestedOffset = artistAlbumsRequestedOffset,
-                    tracksRequestedOffset = artistRequestedOffset,
-                    openAlbum = openAlbum,
-                    play = play,
-                    loadMoreAlbums = loadMoreArtistAlbums,
-                    loadMoreTracks = loadMoreArtistTracks,
-                )
-            } else if (hasOtherTitles) {
-                ArtistDetailSections(
-                    surfaceLayout = surfaceLayout,
-                    surfaceState = surfaceState,
-                    artist = selectedArtist.artist,
-                    albums = LibraryWindow.empty(),
-                    untaggedTracks = selectedArtist.untaggedTracks,
-                    playback = playback,
-                    albumsRequestedOffset = artistAlbumsRequestedOffset,
-                    tracksRequestedOffset = artistRequestedOffset,
-                    openAlbum = openAlbum,
-                    play = play,
-                    loadMoreAlbums = loadMoreArtistAlbums,
-                    loadMoreTracks = loadMoreArtistTracks,
-                )
-            }
+            return
         }
+        ArtistDetailSections(
+            surfaceLayout = surfaceLayout,
+            surfaceState = surfaceState,
+            artist = selectedArtist.artist,
+            albums = selectedArtist.albums,
+            untaggedTracks = selectedArtist.untaggedTracks,
+            playback = playback,
+            albumsRequestedOffset = artistAlbumsRequestedOffset,
+            tracksRequestedOffset = artistRequestedOffset,
+            openAlbum = openAlbum,
+            closeArtist = closeArtist,
+            play = play,
+            loadMoreAlbums = loadMoreArtistAlbums,
+            loadMoreTracks = loadMoreArtistTracks,
+        )
         return
     }
 
@@ -404,6 +349,7 @@ private fun ArtistDetailSections(
     albumsRequestedOffset: Long?,
     tracksRequestedOffset: Long?,
     openAlbum: (LibraryAlbum) -> Unit,
+    closeArtist: () -> Unit,
     play: (Int) -> Unit,
     loadMoreAlbums: suspend (LibraryWindowRange) -> Unit,
     loadMoreTracks: suspend (LibraryWindowRange) -> Unit,
@@ -426,9 +372,21 @@ private fun ArtistDetailSections(
     val listState = rememberLibraryListState(anchor)
     ObserveLibraryListAnchor(key, listState, surfaceState, owner)
     val metrics = libraryFrameMetrics(surfaceLayout)
+    val density = LocalDensity.current
+    var titleHeightPx by remember(artist.name) { mutableIntStateOf(0) }
+    var headHeightPx by remember(artist.name) { mutableIntStateOf(0) }
+    val scrolled by remember(listState) {
+        derivedStateOf {
+            listState.firstVisibleItemIndex > 0 || listState.firstVisibleItemScrollOffset > 0
+        }
+    }
     BoxWithConstraints(modifier = Modifier.fillMaxSize()) {
+        val titleHeightDp = with(density) { titleHeightPx.toDp() }
+        val headHeightDp = with(density) { headHeightPx.toDp() }
+        val portraitCenterDp = titleHeightDp.value + headHeightDp.value -
+            ARTIST_PORTRAIT_BOTTOM_GAP_DP.toFloat() - ARTIST_PORTRAIT_DIAMETER_DP / 2f
         val portraitCenterFraction = if (maxHeight.value > 0f) {
-            (ARTIST_PORTRAIT_DIAMETER_DP.toFloat() / 2f / maxHeight.value).coerceIn(0f, 1f)
+            (portraitCenterDp / maxHeight.value).coerceIn(0f, 1f)
         } else {
             0f
         }
@@ -437,13 +395,30 @@ private fun ArtistDetailSections(
             playing = playback.state == AndroidPlaybackState.PLAYING,
             coverDiameterDp = ARTIST_PORTRAIT_DIAMETER_DP.toFloat(),
             centerFraction = portraitCenterFraction,
-            modifier = Modifier.fillMaxSize(),
+            modifier = Modifier
+                .fillMaxSize()
+                .graphicsLayer {
+                    val transform = artistHeadShimmerTransform(
+                        firstVisibleIndex = listState.firstVisibleItemIndex,
+                        offsetPx = listState.firstVisibleItemScrollOffset,
+                        headHeightPx = headHeightPx,
+                    )
+                    translationY = transform.translationY
+                    alpha = transform.alpha
+                },
         )
         LazyColumn(
             state = listState,
+            contentPadding = PaddingValues(top = titleHeightDp),
             modifier = Modifier.fillMaxSize().testTag(key.testTag()),
         ) {
-            item(key = "artist-portrait-head") { ArtistPortraitHeader(head) }
+            item(key = "artist-portrait-head") {
+                ArtistDetailHead(
+                    artist = artist,
+                    visual = head,
+                    modifier = Modifier.onSizeChanged { headHeightPx = it.height },
+                )
+            }
             if (albums.rows.isNotEmpty()) {
                 item(key = "artist-albums-heading") { SectionHeading("Albums") }
                 items(
@@ -484,6 +459,14 @@ private fun ArtistDetailSections(
                 }
             }
         }
+        ArtistDetailTitleRow(
+            artist = artist,
+            closeArtist = closeArtist,
+            scrolled = scrolled,
+            modifier = Modifier
+                .align(Alignment.TopStart)
+                .onSizeChanged { titleHeightPx = it.height },
+        )
     }
 }
 
@@ -496,47 +479,8 @@ private fun SectionHeading(text: String) {
     )
 }
 
-/**
- * Plays every track the artist has, however few of them the page has loaded.
- * The ids come off the main thread; until they arrive the button is off, so a
- * second tap cannot queue the same question twice.
- */
 @Composable
-private fun ArtistPlayButton(artist: LibraryArtist) = key(artist.name) {
-    val artistTrackIds = LocalArtistTrackIds.current
-    val controls = LocalPlaybackControls.current
-    // The key ties the scope to the artist: a play still resolving when the
-    // page moves to another artist is cancelled, as it is when the page closes.
-    // It is the name, not the row, because the ids are looked up by name and a
-    // refresh after a delete rebuilds the row with new counts mid-resolution.
-    val scope = rememberCoroutineScope()
-    var resolving by remember { mutableStateOf(false) }
-    var message by remember { mutableStateOf<TransientMessage?>(null) }
-    ListPlayButton(
-        description = "Play ${artist.name}",
-        enabled = !resolving,
-        modifier = Modifier.testTag("artist-detail-play"),
-        onClick = {
-            resolving = true
-            scope.launch {
-                try {
-                    resolveOffMain { artistTrackIds(artist) }.fold(
-                        onSuccess = { ids -> controls.playTrackIds(ids, 0) },
-                        onFailure = { error ->
-                            message = TransientMessage(couldNotLoadTracks(error)).after(message)
-                        },
-                    )
-                } finally {
-                    resolving = false
-                }
-            }
-        },
-    )
-    TransientMessageText(message) { message = null }
-}
-
-@Composable
-private fun ListPlayButton(
+internal fun ListPlayButton(
     description: String,
     onClick: () -> Unit,
     modifier: Modifier = Modifier,

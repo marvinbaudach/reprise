@@ -854,6 +854,11 @@ result.
   Tracks"). "Show all N tracks ›" → Tracks mode in the artist place; its
   visible place pill, which leaves the place on click, is already active
   via FIL-1c.
+- **ART-3** [active] [android] — On the phone's artist page the Play button and the portrait
+  scroll away together as one head. The title row stays pinned: transparent while the list
+  rests at the top, it takes the surface-container colour as soon as content passes beneath
+  it, so nothing is ever cut at an edge that is not drawn. The glow behind the portrait moves
+  with the head and fades as it leaves.
 - **FX-1** [planned] [manual] — All effects respect
   `gtk-enable-animations=false` (hard switch) and only run GPU-cheap
   (opacity/transform, pre-rendered glows). No live blurs in lists.

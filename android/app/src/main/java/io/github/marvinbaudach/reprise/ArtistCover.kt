@@ -18,7 +18,7 @@ import androidx.compose.ui.unit.dp
 import uniffi.reprise_android_ffi.AndroidArtworkSize
 
 internal const val ARTIST_PORTRAIT_DIAMETER_DP = 210
-private const val ARTIST_PORTRAIT_BOTTOM_GAP_DP = 16
+internal const val ARTIST_PORTRAIT_BOTTOM_GAP_DP = 16
 
 @Composable
 internal fun rememberArtistArtworkVisual(

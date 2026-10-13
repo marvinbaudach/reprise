@@ -148,11 +148,11 @@ class LibraryStatusChromeTest {
         compose.runOnIdle {
             harness.browse.value = harness.browse.value.copy(message = "Browse failed")
         }
-        assertStatusBelowPlay("library-status-error", "artist")
+        assertStatusBelowHeader("library-status-error", "artist")
 
         compose.onNodeWithContentDescription("Dismiss").performClick()
         compose.runOnIdle { viewModel.begin("Deleting 13 tracks…") }
-        assertStatusBelowPlay("deletion-message-line", "artist")
+        assertStatusBelowHeader("deletion-message-line", "artist")
 
         assertEquals(
             true,
@@ -218,7 +218,7 @@ class LibraryStatusChromeTest {
     }
 
     @Test
-    fun onAnArtistPlayFailureTheStatusSitsBelowTheMessage() {
+    fun onAnArtistPlayFailureTheStatusSitsBelowThePinnedTitle() {
         val viewModel = MobileSurfaceViewModel()
         val harness = showArtists(viewModel, artistTrackIds = { error("catalog unavailable") })
         compose.onNodeWithText(FIRST_ARTIST).performClick()
@@ -229,11 +229,7 @@ class LibraryStatusChromeTest {
             harness.browse.value = harness.browse.value.copy(message = "Browse failed")
         }
 
-        assertStatusBelowElement(
-            statusTag = "library-status-error",
-            page = "artist",
-            elementBottom = textBottomInPixels(failure),
-        )
+        assertStatusBelowHeader("library-status-error", "artist")
     }
 
     @Test
@@ -391,6 +387,13 @@ class LibraryStatusChromeTest {
 
     private fun assertStatusBelowPlay(statusTag: String, page: String) {
         assertStatusBelowElement(statusTag, page, bottomInPixels("$page-detail-play"))
+    }
+
+    private fun assertStatusBelowHeader(statusTag: String, page: String) {
+        assertEquals(
+            bottomInPixels("$page-detail-header") + 8f.toPixels(),
+            topInPixels(statusTag),
+        )
     }
 
     private fun assertStatusBelowElement(statusTag: String, page: String, elementBottom: Int) {
