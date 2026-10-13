@@ -26,7 +26,7 @@ fn artist_names(count: usize) -> Vec<String> {
 }
 
 #[test]
-fn net_9_backfill_uses_the_max_tagged_artist_mbid_as_its_hint() {
+fn net_9_pending_backfill_work_carries_the_max_tagged_artist_mbid() {
     let names = ["Band".to_owned(), "Band".to_owned()];
     let db = artists_db(&names);
     db.conn()
@@ -37,12 +37,11 @@ fn net_9_backfill_uses_the_max_tagged_artist_mbid_as_its_hint() {
         )
         .unwrap();
 
-    assert_eq!(
-        crate::artist_portrait::artist_mbid_hint(&db, " band ")
-            .unwrap()
-            .as_deref(),
-        Some("mbid-z")
-    );
+    let pending = pending_artists_with_hints(&db, Path::new("/missing-cache"), 1_000).unwrap();
+
+    assert_eq!(pending.len(), 1);
+    assert_eq!(pending[0].name, "Band");
+    assert_eq!(pending[0].mbid_hint.as_deref(), Some("mbid-z"));
 }
 
 fn no_wait() -> Arc<WaitForRetry> {
@@ -148,7 +147,7 @@ fn a_completed_run_leaves_no_work_or_second_request() {
     let db = artists_db(&names);
     let calls = Arc::new(AtomicUsize::new(0));
     let counted = Arc::clone(&calls);
-    let fetch: Arc<PortraitBackfillFetch> = Arc::new(move |name, directory| {
+    let fetch: Arc<PortraitBackfillFetch> = Arc::new(move |name, _, directory| {
         counted.fetch_add(1, Ordering::Relaxed);
         Ok(PortraitOutcome::Found(
             cache::store_image(directory, name, b"image", "jpg").unwrap(),
@@ -185,7 +184,7 @@ fn one_hundred_fast_steps_are_throttled_but_complete_is_always_reported() {
     let (updates, listener) = updates();
     let backfill = PortraitBackfill::new();
     let fetch: Arc<PortraitBackfillFetch> =
-        Arc::new(|name, directory| Ok(PortraitOutcome::Found(directory.join(name))));
+        Arc::new(|name, _, directory| Ok(PortraitOutcome::Found(directory.join(name))));
 
     backfill.start_prepared(
         artist_names(100),
@@ -210,7 +209,7 @@ fn an_empty_worklist_publishes_no_progress() {
     let cache_dir = tempfile::tempdir().unwrap();
     let (updates, listener) = updates();
     let backfill = PortraitBackfill::new();
-    let fetch: Arc<PortraitBackfillFetch> = Arc::new(|_, _| panic!("empty work must not fetch"));
+    let fetch: Arc<PortraitBackfillFetch> = Arc::new(|_, _, _| panic!("empty work must not fetch"));
 
     assert!(backfill.start_prepared(
         Vec::new(),
@@ -231,7 +230,7 @@ fn a_non_empty_worklist_still_publishes_preparing_first() {
     let (updates, listener) = updates();
     let backfill = PortraitBackfill::new();
     let fetch: Arc<PortraitBackfillFetch> =
-        Arc::new(|name, directory| Ok(PortraitOutcome::Found(directory.join(name))));
+        Arc::new(|name, _, directory| Ok(PortraitOutcome::Found(directory.join(name))));
 
     assert!(backfill.start_prepared(
         vec!["Band".to_owned()],
@@ -253,7 +252,7 @@ fn reported_done_never_moves_backwards() {
     let cache_dir = tempfile::tempdir().unwrap();
     let (updates, listener) = updates();
     let backfill = PortraitBackfill::new();
-    let fetch: Arc<PortraitBackfillFetch> = Arc::new(|name, directory| {
+    let fetch: Arc<PortraitBackfillFetch> = Arc::new(|name, _, directory| {
         std::thread::sleep(REPORT_INTERVAL);
         Ok(PortraitOutcome::Found(directory.join(name)))
     });
@@ -274,7 +273,7 @@ fn reported_done_never_moves_backwards() {
 fn three_transport_errors_pause_and_the_first_ok_resumes() {
     let calls = Arc::new(AtomicUsize::new(0));
     let counted = Arc::clone(&calls);
-    let fetch: Arc<PortraitBackfillFetch> = Arc::new(move |name, directory| {
+    let fetch: Arc<PortraitBackfillFetch> = Arc::new(move |name, _, directory| {
         if counted.fetch_add(1, Ordering::Relaxed) < 3 {
             Err(PortraitError::Fetch(
                 crate::musicbrainz::FetchError::Transport,
@@ -312,7 +311,7 @@ fn three_transport_errors_pause_and_the_first_ok_resumes() {
 fn transport_errors_are_retried_without_counts_or_negative_marker() {
     let calls = Arc::new(AtomicUsize::new(0));
     let counted = Arc::clone(&calls);
-    let fetch: Arc<PortraitBackfillFetch> = Arc::new(move |_, _| {
+    let fetch: Arc<PortraitBackfillFetch> = Arc::new(move |_, _, _| {
         counted.fetch_add(1, Ordering::Relaxed);
         Err(PortraitError::Fetch(
             crate::musicbrainz::FetchError::Transport,
@@ -350,7 +349,7 @@ fn cancelling_from_another_thread_after_fetch_allows_a_fresh_run() {
     let release = Arc::new((Mutex::new(false), Condvar::new()));
     let fetch_entered = Arc::clone(&entered);
     let fetch_release = Arc::clone(&release);
-    let fetch: Arc<PortraitBackfillFetch> = Arc::new(move |name, directory| {
+    let fetch: Arc<PortraitBackfillFetch> = Arc::new(move |name, _, directory| {
         let (entered_lock, entered_wake) = &*fetch_entered;
         *entered_lock.lock().unwrap() = true;
         entered_wake.notify_all();
@@ -387,7 +386,7 @@ fn cancelling_from_another_thread_after_fetch_allows_a_fresh_run() {
     assert!(backfill.start_prepared(
         Vec::new(),
         cache_dir.path().to_owned(),
-        Arc::new(|_, _| panic!("empty restart must not fetch")),
+        Arc::new(|_, _, _| panic!("empty restart must not fetch")),
         listener,
         no_wait(),
     ));
@@ -397,7 +396,7 @@ fn cancelling_from_another_thread_after_fetch_allows_a_fresh_run() {
 fn cancellation_interrupts_the_production_retry_wait() {
     let attempts = Arc::new(AtomicUsize::new(0));
     let counted = Arc::clone(&attempts);
-    let fetch: Arc<PortraitBackfillFetch> = Arc::new(move |_, _| {
+    let fetch: Arc<PortraitBackfillFetch> = Arc::new(move |_, _, _| {
         counted.fetch_add(1, Ordering::Relaxed);
         Err(PortraitError::Fetch(
             crate::musicbrainz::FetchError::Transport,
@@ -438,7 +437,7 @@ fn a_panicking_worker_is_logged_and_does_not_block_the_next_run() {
     assert!(backfill.start_prepared(
         vec!["Panic".to_owned()],
         cache_dir.path().to_owned(),
-        Arc::new(|_, _| panic!("intentional fetch panic")),
+        Arc::new(|_, _, _| panic!("intentional fetch panic")),
         listener,
         no_wait(),
     ));
@@ -450,7 +449,7 @@ fn a_panicking_worker_is_logged_and_does_not_block_the_next_run() {
         backfill.start_prepared(
             Vec::new(),
             cache_dir.path().to_owned(),
-            Arc::new(|_, _| panic!("empty restart must not fetch")),
+            Arc::new(|_, _, _| panic!("empty restart must not fetch")),
             listener,
             no_wait(),
         )
@@ -471,7 +470,7 @@ fn run_ids_grow_and_a_second_start_does_not_create_a_worker() {
     let waiting = Arc::clone(&gate);
     let calls = Arc::new(AtomicUsize::new(0));
     let counted = Arc::clone(&calls);
-    let fetch: Arc<PortraitBackfillFetch> = Arc::new(move |name, directory| {
+    let fetch: Arc<PortraitBackfillFetch> = Arc::new(move |name, _, directory| {
         counted.fetch_add(1, Ordering::Relaxed);
         let (lock, wake) = &*waiting;
         let mut open = lock.lock().unwrap();
@@ -527,7 +526,7 @@ fn the_fetch_closure_delivers_transport_errors_to_the_state_machine() {
     });
     let attempts = Arc::new(AtomicUsize::new(0));
     let tried = Arc::clone(&attempts);
-    let fetch: Arc<PortraitBackfillFetch> = Arc::new(move |name, directory| {
+    let fetch: Arc<PortraitBackfillFetch> = Arc::new(move |name, _, directory| {
         if tried.fetch_add(1, Ordering::Relaxed) < 3 {
             Err(PortraitError::Fetch(
                 crate::musicbrainz::FetchError::Transport,
@@ -555,7 +554,7 @@ fn the_fetch_closure_delivers_transport_errors_to_the_state_machine() {
 #[test]
 fn one_broken_artist_does_not_block_the_others() {
     let cache_dir = tempfile::tempdir().unwrap();
-    let fetch: Arc<PortraitBackfillFetch> = Arc::new(|name, directory| {
+    let fetch: Arc<PortraitBackfillFetch> = Arc::new(|name, _, directory| {
         if name == "Bad" {
             Err(PortraitError::InvalidResponse)
         } else {
@@ -581,7 +580,7 @@ fn one_broken_artist_does_not_block_the_others() {
 #[test]
 fn a_run_of_only_broken_artists_still_finishes() {
     let cache_dir = tempfile::tempdir().unwrap();
-    let fetch: Arc<PortraitBackfillFetch> = Arc::new(|_, _| Err(PortraitError::InvalidResponse));
+    let fetch: Arc<PortraitBackfillFetch> = Arc::new(|_, _, _| Err(PortraitError::InvalidResponse));
     let (updates, listener) = updates();
     let backfill = PortraitBackfill::new();
     backfill.start_prepared(
@@ -607,7 +606,7 @@ fn a_run_of_only_broken_artists_still_finishes() {
 fn a_broken_artist_never_pauses_the_run() {
     let cache_dir = tempfile::tempdir().unwrap();
     let (updates, listener) = updates();
-    let fetch: Arc<PortraitBackfillFetch> = Arc::new(|name, directory| {
+    let fetch: Arc<PortraitBackfillFetch> = Arc::new(|name, _, directory| {
         if name == "Bad" {
             Err(PortraitError::InvalidResponse)
         } else {
@@ -639,7 +638,7 @@ fn a_dropped_artist_gets_no_negative_marker() {
     let cache_path = cache_dir.path().to_owned();
     let call_count = Arc::new(AtomicU32::new(0));
     let counted = Arc::clone(&call_count);
-    let fetch: Arc<PortraitBackfillFetch> = Arc::new(move |name, _| {
+    let fetch: Arc<PortraitBackfillFetch> = Arc::new(move |name, _, _| {
         if name == "Bad" {
             counted.fetch_add(1, Ordering::Relaxed);
             Err(PortraitError::InvalidResponse)
@@ -674,7 +673,7 @@ fn a_total_outage_spends_no_attempt_budget() {
     let failure_calls = super::MAX_ATTEMPTS_PER_ARTIST + 1;
     let artist_calls = Arc::new(AtomicU32::new(0));
     let counted = Arc::clone(&artist_calls);
-    let fetch: Arc<PortraitBackfillFetch> = Arc::new(move |name, directory| {
+    let fetch: Arc<PortraitBackfillFetch> = Arc::new(move |name, _, directory| {
         if name == "A" && counted.fetch_add(1, Ordering::Relaxed) < failure_calls {
             Err(PortraitError::Fetch(
                 crate::musicbrainz::FetchError::Transport,

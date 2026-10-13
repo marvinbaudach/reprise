@@ -159,6 +159,28 @@ impl MusicLibrary {
         Self::open_with_portrait_fetcher(
             app_private_directory,
             app_cache_directory,
+            Arc::new(move |name, _, dir| fetch(name, dir)),
+        )
+    }
+
+    #[cfg(test)]
+    pub(crate) fn open_with_hinted_portrait_fetch(
+        app_private_directory: &str,
+        app_cache_directory: &str,
+        fetch: impl Fn(
+                &str,
+                Option<&str>,
+                &Path,
+            ) -> Result<
+                reprise_core::artist_portrait::PortraitOutcome,
+                reprise_core::artist_portrait::PortraitError,
+            > + Send
+            + Sync
+            + 'static,
+    ) -> Result<Self, LibraryError> {
+        Self::open_with_portrait_fetcher(
+            app_private_directory,
+            app_cache_directory,
             Arc::new(fetch),
         )
     }
@@ -175,7 +197,7 @@ impl MusicLibrary {
         Self::open_with_portrait_fetcher(
             app_private_directory,
             app_cache_directory,
-            Arc::new(reprise_core::artist_portrait::load_or_fetch_in),
+            Arc::new(reprise_core::artist_portrait::load_or_fetch_in_with_hint),
         )
     }
 

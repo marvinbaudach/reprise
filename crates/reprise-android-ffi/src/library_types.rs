@@ -15,7 +15,7 @@ use crate::track_analysis::{
 pub(crate) const DATABASE_FILE_NAME: &str = "reprise.db";
 
 pub(crate) type PortraitFetch =
-    dyn Fn(&str, &Path) -> Result<PortraitOutcome, PortraitError> + Send + Sync;
+    dyn Fn(&str, Option<&str>, &Path) -> Result<PortraitOutcome, PortraitError> + Send + Sync;
 
 pub(crate) struct ConfiguredTree {
     pub(crate) uri: PathBuf,

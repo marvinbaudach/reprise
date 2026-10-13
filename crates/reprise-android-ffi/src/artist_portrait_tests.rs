@@ -520,6 +520,54 @@ fn backfill_receives_transport_errors_without_counting_or_marking_them() {
 }
 
 #[test]
+fn net_9_android_backfill_fetch_seam_receives_the_tagged_mbid_hint() {
+    let _guard = album_cover::reset_album_cover_state_for_tests();
+    let directory = tempfile::tempdir().unwrap();
+    let hints = Arc::new(Mutex::new(Vec::new()));
+    let captured = Arc::clone(&hints);
+    let library = MusicLibrary::open_with_hinted_portrait_fetch(
+        directory.path().to_str().unwrap(),
+        directory.path().join("cache").to_str().unwrap(),
+        move |name, hint, dir| {
+            captured
+                .lock()
+                .unwrap()
+                .push((name.to_owned(), hint.map(str::to_owned)));
+            Ok(reprise_core::artist_portrait::PortraitOutcome::Found(
+                store_portrait_fixture_in(dir, name),
+            ))
+        },
+    )
+    .unwrap();
+    scan_artists(directory.path(), &library, &["Hinted Band"]);
+    assert_eq!(
+        reprise_core::artist_portrait::set_fixture_artist_mbid(
+            &library.writer().unwrap(),
+            "Hinted Band",
+            "tagged-mbid",
+        )
+        .unwrap(),
+        1
+    );
+    open_gate(&library);
+    let updates = Arc::new(Mutex::new(Vec::new()));
+
+    library.start_artist_portrait_backfill(Box::new(CapturingProgress(updates)));
+    for _ in 0..5_000 {
+        let progress = library.artist_portrait_backfill_progress();
+        if progress.run_id != 0 && progress.state == ArtistPortraitProgressState::Complete {
+            break;
+        }
+        std::thread::sleep(std::time::Duration::from_millis(1));
+    }
+
+    assert_eq!(
+        *hints.lock().unwrap(),
+        vec![("Hinted Band".to_owned(), Some("tagged-mbid".to_owned()))]
+    );
+}
+
+#[test]
 fn revoking_artwork_consent_stops_the_worker_before_the_next_artist() {
     // This test asserts `covers_done`/`covers_total` are `0` at the end —
     // a concurrently running cover pass from another test shares the same

@@ -132,15 +132,7 @@ impl MusicLibrary {
             return Ok(None);
         }
 
-        let fetched = if let Some(mbid) = mbid_hint.as_deref() {
-            reprise_core::artist_portrait::load_or_fetch_in_with_hint(
-                name,
-                Some(mbid),
-                &self.portrait_dir(),
-            )
-        } else {
-            (self.portrait_fetch)(name, &self.portrait_dir())
-        };
+        let fetched = (self.portrait_fetch)(name, mbid_hint.as_deref(), &self.portrait_dir());
         match fetched {
             Ok(PortraitOutcome::Found(path)) => Ok(self.reduced_portrait_path(&path, size)),
             Ok(PortraitOutcome::NotFound) => Ok(None),

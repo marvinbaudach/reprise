@@ -57,11 +57,17 @@ impl PortraitBackfillProgress {
 }
 
 pub type PortraitBackfillFetch =
-    dyn Fn(&str, &Path) -> Result<PortraitOutcome, PortraitError> + Send + Sync;
+    dyn Fn(&str, Option<&str>, &Path) -> Result<PortraitOutcome, PortraitError> + Send + Sync;
 pub type PortraitBackfillListener = dyn Fn(PortraitBackfillProgress) + Send + Sync;
 
-type PrepareWork = dyn FnOnce() -> Result<Vec<String>, String> + Send;
+type PrepareWork = dyn FnOnce() -> Result<Vec<PendingArtist>, String> + Send;
 type WaitForRetry = dyn Fn(&Control, Duration) -> bool + Send + Sync;
+
+#[derive(Debug, PartialEq, Eq)]
+struct PendingArtist {
+    name: String,
+    mbid_hint: Option<String>,
+}
 
 struct Shared {
     active: bool,
@@ -142,26 +148,15 @@ impl PortraitBackfill {
         let prepare_cache = cache_dir.clone();
         let prepare_database = database_path.clone();
         let consent_database = database_path;
-        let hint_database = prepare_database.clone();
-        let fallback_fetch = fetch;
-        let hinted_fetch: Arc<PortraitBackfillFetch> = Arc::new(move |name, cache_dir| {
-            let mbid = Db::open_ready(&hint_database)
-                .ok()
-                .and_then(|db| super::artist_mbid_hint(&db, name).ok().flatten());
-            if let Some(mbid) = mbid.as_deref() {
-                super::load_or_fetch_in_with_hint(name, Some(mbid), cache_dir)
-            } else {
-                fallback_fetch(name, cache_dir)
-            }
-        });
         self.launch(
             Box::new(move || {
                 let db = Db::open_ready(&prepare_database).map_err(|error| error.to_string())?;
                 let now = chrono::Utc::now().timestamp();
-                pending_artists(&db, &prepare_cache, now).map_err(|error| error.to_string())
+                pending_artists_with_hints(&db, &prepare_cache, now)
+                    .map_err(|error| error.to_string())
             }),
             cache_dir,
-            hinted_fetch,
+            fetch,
             listener,
             Arc::new(Control::wait),
             Arc::new(move || {
@@ -307,7 +302,15 @@ impl PortraitBackfill {
         wait: Arc<WaitForRetry>,
     ) -> bool {
         self.launch(
-            Box::new(move || Ok(artists)),
+            Box::new(move || {
+                Ok(artists
+                    .into_iter()
+                    .map(|name| PendingArtist {
+                        name,
+                        mbid_hint: None,
+                    })
+                    .collect())
+            }),
             cache_dir,
             fetch,
             listener,
@@ -372,6 +375,20 @@ pub fn pending_artists(
     }
 }
 
+fn pending_artists_with_hints(
+    db: &Db,
+    cache_dir: &Path,
+    now: i64,
+) -> Result<Vec<PendingArtist>, rusqlite::Error> {
+    pending_artists(db, cache_dir, now)?
+        .into_iter()
+        .map(|name| {
+            let mbid_hint = super::artist_mbid_hint(db, &name)?;
+            Ok(PendingArtist { name, mbid_hint })
+        })
+        .collect()
+}
+
 /// Classifies a portrait fetch error as network-shaped or artist-shaped.
 ///
 /// Network-shaped errors indicate the connection is the problem; every artist would
@@ -394,14 +411,15 @@ fn is_network_shaped_error(error: &PortraitError) -> bool {
 fn run_worker(
     control: &Control,
     preparing: PortraitBackfillProgress,
-    artists: Vec<String>,
+    artists: Vec<PendingArtist>,
     cache_dir: &Path,
     fetch: &PortraitBackfillFetch,
     wait: &WaitForRetry,
     consent_allowed: &(dyn Fn() -> bool + Send + Sync),
 ) {
     let total = u32::try_from(artists.len()).unwrap_or(u32::MAX);
-    let mut queue: VecDeque<(String, u32)> = artists.into_iter().map(|a| (a, 0)).collect();
+    let mut queue: VecDeque<(PendingArtist, u32)> =
+        artists.into_iter().map(|artist| (artist, 0)).collect();
     let mut progress = PortraitBackfillProgress {
         state: PortraitBackfillState::Running,
         total,
@@ -420,14 +438,14 @@ fn run_worker(
         if !consent_allowed() {
             return finish_cancelled(control);
         }
-        match fetch(&artist, cache_dir) {
+        match fetch(&artist.name, artist.mbid_hint.as_deref(), cache_dir) {
             Ok(PortraitOutcome::Found(_)) => {
                 progress.done = progress.done.saturating_add(1);
                 consecutive_errors = 0;
                 progress.state = PortraitBackfillState::Running;
             }
             Ok(PortraitOutcome::NotFound) => {
-                cache::write_negative(cache_dir, &artist);
+                cache::write_negative(cache_dir, &artist.name);
                 progress.failed = progress.failed.saturating_add(1);
                 consecutive_errors = 0;
                 progress.state = PortraitBackfillState::Running;

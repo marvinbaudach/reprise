@@ -115,6 +115,19 @@ pub fn artist_mbid_hint(db: &crate::db::Db, name: &str) -> Result<Option<String>
     )
 }
 
+#[cfg(debug_assertions)]
+#[doc(hidden)]
+pub fn set_fixture_artist_mbid(
+    db: &crate::db::Db,
+    name: &str,
+    mbid: &str,
+) -> Result<usize, rusqlite::Error> {
+    db.conn().execute(
+        "UPDATE tracks SET artist_mbid = ?1 WHERE lower(trim(artist)) = lower(trim(?2))",
+        [mbid, name],
+    )
+}
+
 /// Resolves only an already-downloaded portrait and never contacts Deezer.
 pub fn load_cached(name: &str) -> PortraitOutcome {
     load_cached_from(name, &cache::cache_dir())
