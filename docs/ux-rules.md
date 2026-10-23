@@ -6304,7 +6304,7 @@ means deterministic and high-confidence, never „without review".
   reveal the station row. These jumps always land in the source list, never a
   detail page; an open channel detail page closes for the jump.
 
-- **BROWSE-4a** [planned] [gtk] — **The point of origin is the page that is
+- **BROWSE-4a** [active] [gtk] — **The point of origin is the page that is
   visible, not the last track-list place.** Every navigation that records an
   origin — a metadata jump from a link or from Quick Open, a sidebar click,
   Back, and Forward — reads it from the content page on screen when it starts.
@@ -6319,7 +6319,6 @@ means deterministic and high-confidence, never „without review".
   the saved last destination (BROWSE-12): when it is current at quit, the place
   behind it is saved. A page that names no place of its own — the opened device
   card — leaves history as before; covering it is not part of this rule.
-  <!-- REVIEW: rule proposal -->
 
 - **BROWSE-5** [replaced by BROWSE-12] — Session restore previously retained
   sorting and playback origin but always opened the library root.
