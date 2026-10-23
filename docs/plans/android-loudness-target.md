@@ -2,7 +2,7 @@
 slug: android-loudness-target
 worktree: /home/marvin/Projects/reprise-android-loudness-target
 branch: feature/android-loudness-target
-phase: planned
+phase: refactored
 codex_session:
 created: 2026-10-23
 ---
