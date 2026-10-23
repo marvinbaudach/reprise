@@ -18,6 +18,7 @@ impl LoudnessTarget {
     /// headroom to make up the difference.
     pub const STREAMING: Self = Self(-14.0);
 
+    /// The level this target aims at, in LUFS.
     pub fn lufs(self) -> f64 {
         self.0
     }
@@ -87,13 +88,14 @@ pub fn resolve_gain(inputs: GainInputs) -> ResolvedGain {
         return no_gain();
     }
 
+    let measured_peak = inputs.measured.map(|measured| measured.true_peak);
     let track = || {
         inputs
             .tags
             .track_gain_db
             .map(|gain| {
-                let raised = gain + inputs.target.offset_db();
-                resolved(raised, inputs.tags.track_peak, GainSource::Tag)
+                let peaks = [inputs.tags.track_peak, measured_peak];
+                raised_tag_gain(gain, inputs.target, &peaks)
             })
             .or_else(|| measured_gain(inputs.measured, inputs.target))
     };
@@ -105,8 +107,15 @@ pub fn resolve_gain(inputs: GainInputs) -> ResolvedGain {
             .tags
             .album_gain_db
             .map(|gain| {
-                let raised = gain + inputs.target.offset_db();
-                resolved(raised, inputs.tags.album_peak, GainSource::Tag)
+                // A heuristic bound, not the album's true peak: a tagger that
+                // omits the album peak usually omits it for the tracks too, and
+                // a track peak is the closest known bound on the album's.
+                let peaks = [
+                    inputs.tags.album_peak,
+                    inputs.tags.track_peak,
+                    measured_peak,
+                ];
+                raised_tag_gain(gain, inputs.target, &peaks)
             })
             .or_else(|| {
                 inputs
@@ -123,6 +132,32 @@ pub fn resolve_gain(inputs: GainInputs) -> ResolvedGain {
             .or_else(track)
             .unwrap_or_else(no_gain),
     }
+}
+
+/// A tag gain is relative to the ReplayGain reference, so it is raised by the
+/// target's offset, then held below the first usable peak in `peaks`. Without
+/// one (Opus `R128_TRACK_GAIN` never carries a peak) the raise may bring an
+/// attenuation up to unity but never amplifies beyond what the tag asked for.
+fn raised_tag_gain(
+    tag_gain_db: f64,
+    target: LoudnessTarget,
+    peaks: &[Option<f64>],
+) -> ResolvedGain {
+    let raised = tag_gain_db + target.offset_db();
+    let peak = peaks
+        .iter()
+        .flatten()
+        .copied()
+        .find(|peak| usable_peak(*peak));
+    let bounded = match peak {
+        Some(_) => raised,
+        None => raised.min(tag_gain_db.max(0.0)),
+    };
+    resolved(bounded, peak, GainSource::Tag)
+}
+
+fn usable_peak(peak: f64) -> bool {
+    peak.is_finite() && peak > 0.0
 }
 
 fn measured_gain(
@@ -142,7 +177,7 @@ fn measured_gain(
 
 fn resolved(gain_db: f64, peak: Option<f64>, source: GainSource) -> ResolvedGain {
     let peak_cap = peak
-        .filter(|peak| peak.is_finite() && *peak > 0.0)
+        .filter(|peak| usable_peak(*peak))
         .map(|peak| -20.0 * peak.log10());
     let capped = peak_cap.map_or(gain_db, |cap| gain_db.min(cap));
     ResolvedGain {

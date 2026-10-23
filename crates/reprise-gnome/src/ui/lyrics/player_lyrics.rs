@@ -379,7 +379,7 @@ pub(in crate::ui) fn start_track_for_lyrics(
             db,
             track_id,
             mode,
-            reprise_core::library::loudness::LoudnessTarget::REPLAYGAIN,
+            crate::ui::audio_effects::DESKTOP_LOUDNESS_TARGET,
         ),
         segment: summary.playback_segment(),
     })?;

@@ -277,3 +277,156 @@ fn play_25_album_mode_raises_album_tags_and_measurements() {
     });
     assert_eq!(off.gain_db, 0.0);
 }
+
+fn tag_only(mode: ReplayGainMode, tags: ReplayGainTags, target: LoudnessTarget) -> GainInputs {
+    GainInputs {
+        tags,
+        target,
+        ..inputs(mode)
+    }
+}
+
+fn track_tag(gain_db: f64) -> ReplayGainTags {
+    ReplayGainTags {
+        track_gain_db: Some(gain_db),
+        ..ReplayGainTags::default()
+    }
+}
+
+#[test]
+fn play_25_a_tag_without_a_peak_is_capped_by_the_measured_peak() {
+    let result = resolve_gain(GainInputs {
+        measured: Some(MeasuredLoudness {
+            integrated_lufs: -20.0,
+            true_peak: 0.9,
+        }),
+        ..tag_only(
+            ReplayGainMode::Track,
+            track_tag(-3.0),
+            LoudnessTarget::STREAMING,
+        )
+    });
+
+    // -3.0 + 4.0 = +1.0 dB would clip the measured 0.9 peak.
+    assert_gain(result, -20.0 * 0.9_f64.log10());
+    assert_eq!(result.source, GainSource::Tag);
+}
+
+#[test]
+fn play_25_a_tag_without_any_known_peak_is_raised_at_most_to_unity() {
+    let at = |gain_db| {
+        resolve_gain(tag_only(
+            ReplayGainMode::Track,
+            track_tag(gain_db),
+            LoudnessTarget::STREAMING,
+        ))
+    };
+
+    assert_gain(at(-3.0), 0.0);
+    assert_gain(at(-9.0), -5.0);
+    assert_gain(at(2.0), 2.0);
+    assert_eq!(at(-3.0).source, GainSource::Tag);
+}
+
+#[test]
+fn play_25_the_desktop_target_leaves_a_peakless_tag_exactly_as_tagged() {
+    for gain_db in [-3.0, -9.0, 2.0] {
+        let result = resolve_gain(tag_only(
+            ReplayGainMode::Track,
+            track_tag(gain_db),
+            LoudnessTarget::REPLAYGAIN,
+        ));
+        assert_eq!(result.gain_db, gain_db);
+    }
+}
+
+#[test]
+fn play_25_an_album_tag_without_a_peak_falls_back_to_the_track_peak() {
+    let album_tag = |track_peak, measured| {
+        resolve_gain(GainInputs {
+            measured,
+            ..tag_only(
+                ReplayGainMode::Album,
+                ReplayGainTags {
+                    album_gain_db: Some(-3.0),
+                    track_peak,
+                    ..ReplayGainTags::default()
+                },
+                LoudnessTarget::STREAMING,
+            )
+        })
+    };
+    let measured = Some(MeasuredLoudness {
+        integrated_lufs: -20.0,
+        true_peak: 0.95,
+    });
+
+    // The track tag's peak wins over the measured one, and both bound the raise.
+    assert_gain(album_tag(Some(0.9), measured), -20.0 * 0.9_f64.log10());
+    assert_gain(album_tag(None, measured), -20.0 * 0.95_f64.log10());
+    // With no peak anywhere the raise stops at unity.
+    assert_gain(album_tag(None, None), 0.0);
+}
+
+#[test]
+fn play_25_the_album_peak_wins_over_the_track_peak_for_an_album_tag() {
+    let result = resolve_gain(tag_only(
+        ReplayGainMode::Album,
+        ReplayGainTags {
+            album_gain_db: Some(-3.0),
+            album_peak: Some(0.9),
+            track_peak: Some(0.5),
+            ..ReplayGainTags::default()
+        },
+        LoudnessTarget::STREAMING,
+    ));
+
+    // The raised +1.0 dB only clips the album peak; the looser track peak would let it pass.
+    assert_gain(result, -20.0 * 0.9_f64.log10());
+}
+
+#[test]
+fn play_25_the_album_peak_cap_applies_after_the_raise() {
+    let album_tagged = resolve_gain(tag_only(
+        ReplayGainMode::Album,
+        ReplayGainTags {
+            album_gain_db: Some(-2.0),
+            album_peak: Some(0.9),
+            ..ReplayGainTags::default()
+        },
+        LoudnessTarget::STREAMING,
+    ));
+    // -2.0 + 4.0 = +2.0 dB would clip; capping first and raising after would give +2.0.
+    assert_gain(album_tagged, -20.0 * 0.9_f64.log10());
+
+    let album_measured = resolve_gain(GainInputs {
+        album_measured: Some((-20.0, 0.9)),
+        target: LoudnessTarget::STREAMING,
+        ..inputs(ReplayGainMode::Album)
+    });
+    assert_gain(album_measured, -20.0 * 0.9_f64.log10());
+}
+
+#[test]
+fn play_25_the_safe_range_clamp_applies_after_the_raise() {
+    let measured = resolve_gain(GainInputs {
+        measured: Some(MeasuredLoudness {
+            integrated_lufs: -30.0,
+            true_peak: 0.001,
+        }),
+        target: LoudnessTarget::STREAMING,
+        ..inputs(ReplayGainMode::Track)
+    });
+    assert_eq!(measured.gain_db, MAX_GAIN_DB);
+
+    let tagged = resolve_gain(tag_only(
+        ReplayGainMode::Track,
+        ReplayGainTags {
+            track_gain_db: Some(10.0),
+            track_peak: Some(0.001),
+            ..ReplayGainTags::default()
+        },
+        LoudnessTarget::STREAMING,
+    ));
+    assert_eq!(tagged.gain_db, MAX_GAIN_DB);
+}

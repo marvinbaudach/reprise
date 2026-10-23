@@ -384,7 +384,7 @@ impl PlayerController {
                         conn,
                         id,
                         mode,
-                        reprise_core::library::loudness::LoudnessTarget::REPLAYGAIN,
+                        crate::ui::audio_effects::DESKTOP_LOUDNESS_TARGET,
                     );
                     let segment = summary.playback_segment();
                     (summary.path, gain_db, segment)

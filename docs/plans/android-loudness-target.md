@@ -51,7 +51,11 @@ frontend picks one.
     the track and album measurements, and replaces both `REFERENCE_LUFS − …` sites.
   - The peak cap and the `[MIN_GAIN_DB, MAX_GAIN_DB]` clamp apply **after** the
     offset, unchanged. A raised target can therefore never clip a peak the tag or
-    measurement knows about.
+    measurement knows about. A tag gain without its own peak falls back to the
+    measured peak (album tags: album peak, then track peak, then measured). With
+    no known peak at all the raise stops at `max(tag gain, 0.0)`: it may bring an
+    attenuation up to unity but never amplifies beyond the tag. `REPLAYGAIN` has
+    offset 0, so the desktop is unchanged.
   - `Off` stays unity whatever the target.
 
 `crates/reprise-core/src/queries/track_gain.rs`

@@ -4,10 +4,15 @@ use std::cell::RefCell;
 use std::rc::Rc;
 
 use reprise_core::db::Db;
+use reprise_core::library::loudness::LoudnessTarget;
 use reprise_core::library::{audio_effect_settings, settings};
 use reprise_core::playback::{AudioEffects, PlaybackBackend, PlaybackError};
 
 use super::player_controller::PlayerController;
+
+/// The desktop normalises to the ReplayGain 2.0 reference, -18 LUFS; the phone
+/// aims higher because it has no amplifier headroom (see the Android session).
+pub(in crate::ui) const DESKTOP_LOUDNESS_TARGET: LoudnessTarget = LoudnessTarget::REPLAYGAIN;
 
 pub(in crate::ui) fn stored(db: &Db) -> AudioEffects {
     audio_effect_settings::load(db)
@@ -26,12 +31,8 @@ fn apply_current_gain(
     let Some(track_id) = track_id else {
         return Ok(());
     };
-    let gain_db = reprise_core::queries::effective_gain_db(
-        db,
-        track_id,
-        mode,
-        reprise_core::library::loudness::LoudnessTarget::REPLAYGAIN,
-    );
+    let gain_db =
+        reprise_core::queries::effective_gain_db(db, track_id, mode, DESKTOP_LOUDNESS_TARGET);
     player.set_current_gain_db(gain_db)
 }
 

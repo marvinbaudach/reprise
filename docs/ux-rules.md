@@ -743,7 +743,10 @@ result.
   measured track aims at -14 LUFS. A tagged track's gain is raised by the 4 dB
   between the ReplayGain reference and that target. The peak cap and the safe
   range still apply after the raise, so a raised gain never clips the chosen
-  source's peak. The desktop keeps -18 LUFS. Proven in Core's gain resolution
+  source's peak. A tag without a peak (Opus never carries one) is bounded by the
+  measured peak instead; with no known peak at all the raise brings a gain at
+  most to unity and never amplifies beyond what the tag itself asked for. The
+  desktop keeps -18 LUFS. Proven in Core's gain resolution
   and at the phone session boundary (the port receives the raised gain); the
   audible level in the car is a manual check.
   *Tests:*
@@ -751,6 +754,13 @@ result.
   `play_25_a_tag_gain_is_raised_by_the_target_offset`,
   `play_25_the_peak_cap_applies_after_the_raise`,
   `play_25_album_mode_raises_album_tags_and_measurements`,
+  `play_25_a_tag_without_a_peak_is_capped_by_the_measured_peak`,
+  `play_25_a_tag_without_any_known_peak_is_raised_at_most_to_unity`,
+  `play_25_the_desktop_target_leaves_a_peakless_tag_exactly_as_tagged`,
+  `play_25_an_album_tag_without_a_peak_falls_back_to_the_track_peak`,
+  `play_25_the_album_peak_wins_over_the_track_peak_for_an_album_tag`,
+  `play_25_the_album_peak_cap_applies_after_the_raise`,
+  `play_25_the_safe_range_clamp_applies_after_the_raise`,
   `play_25_the_phone_session_resolves_gain_at_the_streaming_target`.
 - **SEEK-1** [active] [gtk] — **The seek bar's colour is a reading, not a
   decoration, and it is averaged over time.** The spectral centroid swings
