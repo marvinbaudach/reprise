@@ -8,7 +8,14 @@
 use crate::playback::AndroidPlaybackItem;
 use crate::AndroidPlaybackSegment;
 
+use reprise_core::library::loudness::LoudnessTarget;
+
 use super::{AndroidPlaybackError, SessionInner};
+
+/// The phone aims normalised playback at the level streaming services use, not
+/// the desktop's ReplayGain 2.0 reference: a phone has no amplifier headroom to
+/// make up the 4 dB, so at -18 LUFS it plays far quieter than other audio.
+const PHONE_LOUDNESS_TARGET: LoudnessTarget = LoudnessTarget::STREAMING;
 
 /// A queue entry as the backend needs to be told about it.
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -30,7 +37,7 @@ impl SessionInner {
             }
         };
         let mode = reprise_core::library::settings::get_replay_gain_mode(&reader);
-        reprise_core::queries::effective_gain_db(&reader, track_id, mode)
+        reprise_core::queries::effective_gain_db(&reader, track_id, mode, PHONE_LOUDNESS_TARGET)
     }
 
     /// The stretch of its file `track_id` plays; `None` for a whole-file

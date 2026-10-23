@@ -375,7 +375,12 @@ pub(in crate::ui) fn start_track_for_lyrics(
 ) -> Result<LyricsTrack, PlaybackError> {
     player.play(reprise_core::playback::PlaybackItem {
         path: &summary.path,
-        gain_db: reprise_core::queries::effective_gain_db(db, track_id, mode),
+        gain_db: reprise_core::queries::effective_gain_db(
+            db,
+            track_id,
+            mode,
+            reprise_core::library::loudness::LoudnessTarget::REPLAYGAIN,
+        ),
         segment: summary.playback_segment(),
     })?;
     Ok(lyrics_query_for(summary))

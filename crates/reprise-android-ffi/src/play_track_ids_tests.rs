@@ -70,7 +70,7 @@ fn measure_loudness(directory: &Path, track_id: i64, integrated_lufs: f64) {
 fn set_next_carries_the_gain_resolved_from_the_phone_database() {
     let directory = tempfile::tempdir().unwrap();
     let tracks = seed_tracks(directory.path(), &["First", "Second"]);
-    measure_loudness(directory.path(), tracks[1].id, -21.0);
+    measure_loudness(directory.path(), tracks[1].id, -19.0);
     let calls = Arc::new(Mutex::new(Vec::new()));
     let session = AndroidPlaybackSession::new(
         library_in(directory.path()),
@@ -93,7 +93,7 @@ fn set_next_carries_the_gain_resolved_from_the_phone_database() {
     assert!(calls
         .lock()
         .unwrap()
-        .contains(&PortCall::SetNext(Some(tracks[1].path.clone()), 3.0,)));
+        .contains(&PortCall::SetNext(Some(tracks[1].path.clone()), 5.0,)));
 }
 
 #[test]
@@ -214,8 +214,8 @@ fn id_only_play_resolves_live_paths_and_preserves_the_requested_start() {
 fn a_track_whose_uri_is_not_its_database_path_still_gets_its_gain_by_id() {
     let directory = tempfile::tempdir().unwrap();
     let tracks = seed_tracks(directory.path(), &["First", "Second"]);
-    measure_loudness(directory.path(), tracks[0].id, -21.0);
-    measure_loudness(directory.path(), tracks[1].id, -15.0);
+    measure_loudness(directory.path(), tracks[0].id, -19.0);
+    measure_loudness(directory.path(), tracks[1].id, -11.0);
     let calls = Arc::new(Mutex::new(Vec::new()));
     let session = AndroidPlaybackSession::new(
         library_in(directory.path()),
@@ -246,7 +246,7 @@ fn a_track_whose_uri_is_not_its_database_path_still_gets_its_gain_by_id() {
     let recorded = calls.lock().unwrap();
     assert!(recorded.contains(&PortCall::PlayPath(
         "content://provider/document/first".to_owned(),
-        3.0
+        5.0
     )));
     assert!(recorded.contains(&PortCall::SetNext(
         Some("content://provider/document/second".to_owned()),
@@ -269,8 +269,8 @@ fn play_21_a_mode_change_reaches_the_playing_track_and_the_pre_fed_one() {
 
     let directory = tempfile::tempdir().unwrap();
     let tracks = seed_tracks(directory.path(), &["First", "Second"]);
-    measure_loudness(directory.path(), tracks[0].id, -21.0);
-    measure_loudness(directory.path(), tracks[1].id, -15.0);
+    measure_loudness(directory.path(), tracks[0].id, -19.0);
+    measure_loudness(directory.path(), tracks[1].id, -11.0);
     let calls = Arc::new(Mutex::new(Vec::new()));
     let session = AndroidPlaybackSession::new(
         library_in(directory.path()),
@@ -302,7 +302,7 @@ fn play_21_a_mode_change_reaches_the_playing_track_and_the_pre_fed_one() {
             _ => None,
         })
         .collect();
-    assert_eq!(gains, vec![(0.0, Some(0.0)), (3.0, Some(-3.0))]);
+    assert_eq!(gains, vec![(0.0, Some(0.0)), (5.0, Some(-3.0))]);
     // The tracks are not restarted or re-queued to take the new gain.
     assert!(!recorded.iter().any(|call| matches!(
         call,
@@ -340,4 +340,42 @@ fn a_mode_change_with_nothing_playing_touches_no_gain() {
         .unwrap()
         .iter()
         .any(|call| matches!(call, PortCall::SetGains(..))));
+}
+
+#[test]
+fn play_25_the_phone_session_resolves_gain_at_the_streaming_target() {
+    let directory = tempfile::tempdir().unwrap();
+    let tracks = seed_tracks(directory.path(), &["First", "Second"]);
+    // -20 LUFS aims 6 dB up at -14 LUFS; at the ReplayGain reference it would
+    // be 2 dB. The 0.5 peak allows 6.02 dB, so the cap does not interfere.
+    measure_loudness(directory.path(), tracks[0].id, -20.0);
+    measure_loudness(directory.path(), tracks[1].id, -20.0);
+    let calls = Arc::new(Mutex::new(Vec::new()));
+    let session = AndroidPlaybackSession::new(
+        library_in(directory.path()),
+        Box::new(RecordingPort {
+            calls: Arc::clone(&calls),
+            bridge: Arc::new(Mutex::new(None::<Arc<PlaybackEventBridge>>)),
+        }),
+        Box::new(RecordingListener {
+            snapshots: Arc::new(Mutex::new(Vec::new())),
+            report_changes: Arc::new(AtomicUsize::new(0)),
+        }),
+    )
+    .unwrap();
+    calls.lock().unwrap().clear();
+
+    session
+        .play_track_ids(vec![tracks[0].id, tracks[1].id], 0)
+        .unwrap();
+
+    let recorded = calls.lock().unwrap();
+    assert!(
+        recorded.contains(&PortCall::PlayPath(tracks[0].path.clone(), 6.0)),
+        "the started track plays at the streaming target: {recorded:?}"
+    );
+    assert!(
+        recorded.contains(&PortCall::SetNext(Some(tracks[1].path.clone()), 6.0)),
+        "the pre-fed track gets the same target: {recorded:?}"
+    );
 }

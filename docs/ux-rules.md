@@ -602,8 +602,9 @@ result.
   never persisted.
 - **PLAY-19** [active] [core] — **Volume normalisation never needs a tag.** A
   track without ReplayGain tags is normalised from the loudness Reprise measured
-  for it (EBU R128, integrated, aimed at the ReplayGain 2.0 reference of
-  -18 LUFS). A track that carries tags is normalised from them, and the tags win
+  for it (EBU R128, integrated, aimed at the frontend's loudness target: the
+  ReplayGain 2.0 reference of -18 LUFS on the desktop, -14 LUFS on the phone
+  (PLAY-25)). A track that carries tags is normalised from them, and the tags win
   over a measurement of the same track. The mode **Off** disables both sources
   at once: tags and measurements alike resolve to unity gain. A positive gain
   never lets the chosen source's peak clip, and a silent track has no measured
@@ -738,6 +739,19 @@ result.
   play through instead (PLAY-23a). Crossfades between whole files are
   unchanged. Proven by the GStreamer backend tests.
   <!-- REVIEW: rule proposal -->
+- **PLAY-25** [active] [android] — **The phone normalises to -14 LUFS.** A
+  measured track aims at -14 LUFS. A tagged track's gain is raised by the 4 dB
+  between the ReplayGain reference and that target. The peak cap and the safe
+  range still apply after the raise, so a raised gain never clips the chosen
+  source's peak. The desktop keeps -18 LUFS. Proven in Core's gain resolution
+  and at the phone session boundary (the port receives the raised gain); the
+  audible level in the car is a manual check.
+  *Tests:*
+  `play_25_a_measured_track_aims_at_the_streaming_target`,
+  `play_25_a_tag_gain_is_raised_by_the_target_offset`,
+  `play_25_the_peak_cap_applies_after_the_raise`,
+  `play_25_album_mode_raises_album_tags_and_measurements`,
+  `play_25_the_phone_session_resolves_gain_at_the_streaming_target`.
 - **SEEK-1** [active] [gtk] — **The seek bar's colour is a reading, not a
   decoration, and it is averaged over time.** The spectral centroid swings
   from beat to beat: taken per bar it puts cyan next to magenta inside two

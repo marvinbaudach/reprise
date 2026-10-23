@@ -1,12 +1,17 @@
 use rusqlite::{Connection, OptionalExtension};
 
 use crate::db::Db;
-use crate::library::loudness::{resolve_gain, GainInputs, ReplayGainTags};
+use crate::library::loudness::{resolve_gain, GainInputs, LoudnessTarget, ReplayGainTags};
 use crate::library::loudness_store::{album_measured_loudness, measured_loudness};
 use crate::library::settings::ReplayGainMode;
 
-pub fn effective_gain_db(db: &Db, track_id: i64, mode: ReplayGainMode) -> f64 {
-    effective_gain_db_result(db.conn(), track_id, mode).unwrap_or_else(|error| {
+pub fn effective_gain_db(
+    db: &Db,
+    track_id: i64,
+    mode: ReplayGainMode,
+    target: LoudnessTarget,
+) -> f64 {
+    effective_gain_db_result(db.conn(), track_id, mode, target).unwrap_or_else(|error| {
         tracing::warn!(track_id, %error, "could not resolve track gain; using unity gain");
         0.0
     })
@@ -18,8 +23,9 @@ fn effective_gain_db_result(
     conn: &Connection,
     track_id: i64,
     mode: ReplayGainMode,
+    target: LoudnessTarget,
 ) -> Result<f64, rusqlite::Error> {
-    resolve_for_track(conn, track_id, mode, album_measured_loudness)
+    resolve_for_track(conn, track_id, mode, target, album_measured_loudness)
 }
 
 /// Runs only the queries the mode can use: `Off` none, `Track` the tags and the
@@ -30,6 +36,7 @@ fn resolve_for_track(
     conn: &Connection,
     track_id: i64,
     mode: ReplayGainMode,
+    target: LoudnessTarget,
     album_lookup: AlbumLookup,
 ) -> Result<f64, rusqlite::Error> {
     if mode == ReplayGainMode::Off {
@@ -61,6 +68,7 @@ fn resolve_for_track(
         tags,
         measured: measured_loudness(conn, track_id)?,
         album_measured,
+        target,
     })
     .gain_db)
 }
@@ -110,7 +118,10 @@ mod tests {
         let db = track((None, None));
         store_measured(&db);
 
-        assert_eq!(effective_gain_db(&db, 1, ReplayGainMode::Track), 3.0);
+        assert_eq!(
+            effective_gain_db(&db, 1, ReplayGainMode::Track, LoudnessTarget::REPLAYGAIN),
+            3.0
+        );
     }
 
     #[test]
@@ -118,7 +129,10 @@ mod tests {
         let db = track((Some(-4.0), Some(0.5)));
         store_measured(&db);
 
-        assert_eq!(effective_gain_db(&db, 1, ReplayGainMode::Track), -4.0);
+        assert_eq!(
+            effective_gain_db(&db, 1, ReplayGainMode::Track, LoudnessTarget::REPLAYGAIN),
+            -4.0
+        );
     }
 
     #[test]
@@ -126,7 +140,10 @@ mod tests {
         let db = track((Some(-4.0), Some(0.5)));
         store_measured(&db);
 
-        assert_eq!(effective_gain_db(&db, 1, ReplayGainMode::Off), 0.0);
+        assert_eq!(
+            effective_gain_db(&db, 1, ReplayGainMode::Off, LoudnessTarget::REPLAYGAIN),
+            0.0
+        );
     }
 
     use std::sync::atomic::{AtomicUsize, Ordering};
@@ -144,7 +161,14 @@ mod tests {
         let bare = Connection::open_in_memory().unwrap();
 
         assert_eq!(
-            resolve_for_track(&bare, 1, ReplayGainMode::Off, counted_album_lookup).unwrap(),
+            resolve_for_track(
+                &bare,
+                1,
+                ReplayGainMode::Off,
+                LoudnessTarget::REPLAYGAIN,
+                counted_album_lookup
+            )
+            .unwrap(),
             0.0
         );
     }
@@ -155,10 +179,24 @@ mod tests {
         store_measured(&db);
         let before = ALBUM_LOOKUPS.load(Ordering::SeqCst);
 
-        resolve_for_track(db.conn(), 1, ReplayGainMode::Track, counted_album_lookup).unwrap();
+        resolve_for_track(
+            db.conn(),
+            1,
+            ReplayGainMode::Track,
+            LoudnessTarget::REPLAYGAIN,
+            counted_album_lookup,
+        )
+        .unwrap();
         assert_eq!(ALBUM_LOOKUPS.load(Ordering::SeqCst), before);
 
-        resolve_for_track(db.conn(), 1, ReplayGainMode::Album, counted_album_lookup).unwrap();
+        resolve_for_track(
+            db.conn(),
+            1,
+            ReplayGainMode::Album,
+            LoudnessTarget::REPLAYGAIN,
+            counted_album_lookup,
+        )
+        .unwrap();
         assert_eq!(ALBUM_LOOKUPS.load(Ordering::SeqCst), before + 1);
     }
 }

@@ -26,7 +26,12 @@ fn apply_current_gain(
     let Some(track_id) = track_id else {
         return Ok(());
     };
-    let gain_db = reprise_core::queries::effective_gain_db(db, track_id, mode);
+    let gain_db = reprise_core::queries::effective_gain_db(
+        db,
+        track_id,
+        mode,
+        reprise_core::library::loudness::LoudnessTarget::REPLAYGAIN,
+    );
     player.set_current_gain_db(gain_db)
 }
 
