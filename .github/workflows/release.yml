@@ -411,6 +411,7 @@ jobs:
         id: bundle
         env:
           EXPECTED_DESKTOP_VERSION: ${{ needs.gate.outputs.desktop_version }}
+          FLATPAK_REPO_GPG_KEY: ${{ vars.FLATPAK_REPO_GPG_KEY }}
         run: |
           set -euo pipefail
           version=$(scripts/bump-version.sh current)
@@ -420,7 +421,18 @@ jobs:
             exit 1
           fi
           bundle="Reprise-$version.flatpak"
-          flatpak build-bundle repo "$bundle" io.github.marvinbaudach.Reprise
+          if [[ -n ${FLATPAK_REPO_GPG_KEY:-} ]]; then
+            public_key="$RUNNER_TEMP/reprise-flatpak-public.gpg"
+            printf '%s' "$FLATPAK_REPO_GPG_KEY" | base64 --decode > "$public_key"
+            flatpak build-bundle \
+              --repo-url=https://marvinbaudach.github.io/reprise-flatpak/repo \
+              --runtime-repo=https://dl.flathub.org/repo/flathub.flatpakrepo \
+              --gpg-keys="$public_key" \
+              repo "$bundle" io.github.marvinbaudach.Reprise
+            rm -f "$public_key"
+          else
+            flatpak build-bundle repo "$bundle" io.github.marvinbaudach.Reprise
+          fi
           {
             echo ""
             echo "**After flatpak build-bundle (single-file bundle complete)**"
@@ -703,8 +715,8 @@ jobs:
           print("```")
           print()
           print(
-              "The bundle does not self-update. A self-hosted Flatpak repository is "
-              "the named follow-up."
+              "Install the signed Reprise Flatpak repository for updates: "
+              "https://marvinbaudach.github.io/reprise-flatpak/reprise.flatpakref"
           )
           print(
               "This Flatpak ships without stems separation because it does not include "
@@ -752,3 +764,125 @@ jobs:
       - name: Remove stale draft and any draft-created tag
         if: failure()
         run: gh release delete "$TAG" --yes --cleanup-tag || true
+
+  flatpak-remote:
+    name: Publish signed Flatpak repository
+    needs: [publish, gate]
+    if: >-
+      github.event_name == 'push' &&
+      github.ref == 'refs/heads/main' &&
+      vars.FLATPAK_REMOTE_ENABLED == 'true'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    permissions:
+      contents: read
+    env:
+      FLATPAK_REPO_GPG_KEY: ${{ vars.FLATPAK_REPO_GPG_KEY }}
+      FLATPAK_GPG_PRIVATE_KEY: ${{ secrets.FLATPAK_GPG_PRIVATE_KEY }}
+      FLATPAK_GPG_PASSPHRASE: ${{ secrets.FLATPAK_GPG_PASSPHRASE }}
+      FLATPAK_REPO_DEPLOY_KEY: ${{ secrets.FLATPAK_REPO_DEPLOY_KEY }}
+      BUNDLE_VERSION: ${{ needs.gate.outputs.desktop_version }}
+    steps:
+      - name: Require repository credentials
+        shell: bash
+        run: |
+          set -euo pipefail
+          [[ -n "$FLATPAK_REPO_GPG_KEY" ]] || { echo "FLATPAK_REPO_GPG_KEY is required" >&2; exit 1; }
+          [[ -n "$FLATPAK_GPG_PRIVATE_KEY" ]] || { echo "FLATPAK_GPG_PRIVATE_KEY is required" >&2; exit 1; }
+          [[ -n "$FLATPAK_REPO_DEPLOY_KEY" ]] || { echo "FLATPAK_REPO_DEPLOY_KEY is required" >&2; exit 1; }
+
+      - name: Install Flatpak publishing tools
+        run: sudo apt-get update && sudo apt-get install --yes flatpak ostree gnupg
+
+      - name: Import repository signing key
+        id: signing
+        shell: bash
+        run: |
+          set -euo pipefail
+          key_file="$RUNNER_TEMP/reprise-flatpak-signing-key.asc"
+          printf '%s\n' "$FLATPAK_GPG_PRIVATE_KEY" > "$key_file"
+          if [[ -n ${FLATPAK_GPG_PASSPHRASE:-} ]]; then
+            printf '%s\n' "$FLATPAK_GPG_PASSPHRASE" | gpg --batch --pinentry-mode loopback --passphrase-fd 0 --import "$key_file"
+          else
+            gpg --batch --import "$key_file"
+          fi
+          key_id=$(gpg --batch --with-colons --list-secret-keys | awk -F: '$1 == "sec" { print $5; exit }')
+          [[ -n "$key_id" ]] || { echo "Imported signing key has no secret key ID" >&2; exit 1; }
+          echo "key_id=$key_id" >> "$GITHUB_OUTPUT"
+          rm -f "$key_file"
+
+      - name: Checkout Flatpak repository publication branch
+        env:
+          DEPLOY_KEY: ${{ secrets.FLATPAK_REPO_DEPLOY_KEY }}
+        run: |
+          set -euo pipefail
+          install -m 700 -d ~/.ssh
+          printf '%s\n' "$DEPLOY_KEY" > ~/.ssh/reprise-flatpak-deploy
+          chmod 600 ~/.ssh/reprise-flatpak-deploy
+          cat > ~/.ssh/config <<'SSH'
+          Host github.com
+            HostName github.com
+            User git
+            IdentityFile ~/.ssh/reprise-flatpak-deploy
+            IdentitiesOnly yes
+            StrictHostKeyChecking accept-new
+          SSH
+          git clone --depth 1 --branch gh-pages git@github.com:marvinbaudach/reprise-flatpak.git publish-tree || {
+            echo "Could not clone reprise-flatpak gh-pages; create the repository and branch first" >&2
+            exit 1
+          }
+          rm -f ~/.ssh/reprise-flatpak-deploy ~/.ssh/config
+
+      - name: Download Flatpak bundle
+        uses: actions/download-artifact@v8
+        with:
+          name: reprise-flatpak-${{ needs.gate.outputs.desktop_version }}
+          path: dist
+
+      - name: Import bundle, update metadata, and stage install links
+        env:
+          SIGNING_KEY_ID: ${{ steps.signing.outputs.key_id }}
+        run: |
+          set -euo pipefail
+          cd publish-tree
+          if [[ ! -d repo/objects ]]; then
+            rm -rf repo
+            ostree init --mode=archive-z2 --repo=repo
+          fi
+          bundle="$GITHUB_WORKSPACE/dist/Reprise-$BUNDLE_VERSION.flatpak"
+          flatpak build-import-bundle --gpg-sign="$SIGNING_KEY_ID" repo "$bundle"
+          flatpak build-update-repo --gpg-sign="$SIGNING_KEY_ID" --generate-static-deltas --prune --prune-depth=3 repo
+          public_key="$RUNNER_TEMP/reprise-flatpak-public.gpg"
+          printf '%s' "$FLATPAK_REPO_GPG_KEY" | base64 --decode > "$public_key"
+          cat > reprise.flatpakrepo <<EOF
+          [Flatpak Repo]
+          Title=Reprise
+          Url=https://marvinbaudach.github.io/reprise-flatpak/repo
+          GPGKey=$(base64 -w0 "$public_key")
+          EOF
+          cat > reprise.flatpakref <<EOF
+          [Flatpak Ref]
+          Name=io.github.marvinbaudach.Reprise
+          Branch=master
+          Url=https://marvinbaudach.github.io/reprise-flatpak/repo
+          RuntimeRepo=https://dl.flathub.org/repo/flathub.flatpakrepo
+          GPGKey=$(base64 -w0 "$public_key")
+          IsRuntime=false
+          EOF
+          rm -f "$public_key"
+          cat > index.html <<'HTML'
+          <!doctype html>
+          <html lang="en"><meta charset="utf-8"><title>Reprise Flatpak</title>
+          <p><a href="https://github.com/marvinbaudach/reprise">Reprise music player</a></p>
+          <p><a href="reprise.flatpakref">Install Reprise</a></p></html>
+          HTML
+          touch .nojekyll
+          ostree summary --view --repo=repo | tee "$RUNNER_TEMP/ostree-summary.txt"
+          grep -F "io.github.marvinbaudach.Reprise" "$RUNNER_TEMP/ostree-summary.txt" || {
+            echo "Published OSTree summary does not include Reprise" >&2
+            exit 1
+          }
+          git checkout --orphan publish-flatpak
+          git add -A
+          git -c user.name='github-actions[bot]' -c user.email='41898282+github-actions[bot]@users.noreply.github.com' commit -m "Publish Reprise Flatpak repository"
+          git push --force origin HEAD:gh-pages
