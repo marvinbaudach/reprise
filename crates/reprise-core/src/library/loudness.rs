@@ -6,6 +6,30 @@ pub const REFERENCE_LUFS: f64 = -18.0;
 pub const MIN_GAIN_DB: f64 = -24.0;
 pub const MAX_GAIN_DB: f64 = 12.0;
 
+/// The loudness a frontend aims normalised playback at, in LUFS. Core names the
+/// two levels; each frontend picks one.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct LoudnessTarget(f64);
+
+impl LoudnessTarget {
+    /// The ReplayGain 2.0 reference, the desktop's level.
+    pub const REPLAYGAIN: Self = Self(REFERENCE_LUFS);
+    /// The level streaming services aim at, for a device with no amplifier
+    /// headroom to make up the difference.
+    pub const STREAMING: Self = Self(-14.0);
+
+    /// The level this target aims at, in LUFS.
+    pub fn lufs(self) -> f64 {
+        self.0
+    }
+
+    /// How far this target lies above the ReplayGain reference, which every
+    /// ReplayGain tag is relative to.
+    pub fn offset_db(self) -> f64 {
+        self.0 - REFERENCE_LUFS
+    }
+}
+
 #[derive(Debug, Clone, Copy, Default, PartialEq)]
 pub struct ReplayGainTags {
     pub track_gain_db: Option<f64>,
@@ -30,6 +54,7 @@ pub struct GainInputs {
     pub tags: ReplayGainTags,
     pub measured: Option<MeasuredLoudness>,
     pub album_measured: Option<(f64, f64)>,
+    pub target: LoudnessTarget,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -63,12 +88,16 @@ pub fn resolve_gain(inputs: GainInputs) -> ResolvedGain {
         return no_gain();
     }
 
+    let measured_peak = inputs.measured.map(|measured| measured.true_peak);
     let track = || {
         inputs
             .tags
             .track_gain_db
-            .map(|gain| resolved(gain, inputs.tags.track_peak, GainSource::Tag))
-            .or_else(|| measured_gain(inputs.measured))
+            .map(|gain| {
+                let peaks = [inputs.tags.track_peak, measured_peak];
+                raised_tag_gain(gain, inputs.target, &peaks)
+            })
+            .or_else(|| measured_gain(inputs.measured, inputs.target))
     };
 
     match inputs.mode {
@@ -77,13 +106,27 @@ pub fn resolve_gain(inputs: GainInputs) -> ResolvedGain {
         ReplayGainMode::Album => inputs
             .tags
             .album_gain_db
-            .map(|gain| resolved(gain, inputs.tags.album_peak, GainSource::Tag))
+            .map(|gain| {
+                // A heuristic bound, not the album's true peak: a tagger that
+                // omits the album peak usually omits it for the tracks too, and
+                // a track peak is the closest known bound on the album's.
+                let peaks = [
+                    inputs.tags.album_peak,
+                    inputs.tags.track_peak,
+                    measured_peak,
+                ];
+                raised_tag_gain(gain, inputs.target, &peaks)
+            })
             .or_else(|| {
                 inputs
                     .album_measured
                     .filter(|(lufs, _)| lufs.is_finite())
                     .map(|(lufs, peak)| {
-                        resolved(REFERENCE_LUFS - lufs, Some(peak), GainSource::Measured)
+                        resolved(
+                            inputs.target.lufs() - lufs,
+                            Some(peak),
+                            GainSource::Measured,
+                        )
                     })
             })
             .or_else(track)
@@ -91,12 +134,41 @@ pub fn resolve_gain(inputs: GainInputs) -> ResolvedGain {
     }
 }
 
-fn measured_gain(measured: Option<MeasuredLoudness>) -> Option<ResolvedGain> {
+/// A tag gain is relative to the ReplayGain reference, so it is raised by the
+/// target's offset, then held below the first usable peak in `peaks`. Without
+/// one (Opus `R128_TRACK_GAIN` never carries a peak) the raise may bring an
+/// attenuation up to unity but never amplifies beyond what the tag asked for.
+fn raised_tag_gain(
+    tag_gain_db: f64,
+    target: LoudnessTarget,
+    peaks: &[Option<f64>],
+) -> ResolvedGain {
+    let raised = tag_gain_db + target.offset_db();
+    let peak = peaks
+        .iter()
+        .flatten()
+        .copied()
+        .find(|peak| usable_peak(*peak));
+    let bounded = match peak {
+        Some(_) => raised,
+        None => raised.min(tag_gain_db.max(0.0)),
+    };
+    resolved(bounded, peak, GainSource::Tag)
+}
+
+fn usable_peak(peak: f64) -> bool {
+    peak.is_finite() && peak > 0.0
+}
+
+fn measured_gain(
+    measured: Option<MeasuredLoudness>,
+    target: LoudnessTarget,
+) -> Option<ResolvedGain> {
     measured
         .filter(|value| value.integrated_lufs.is_finite())
         .map(|value| {
             resolved(
-                REFERENCE_LUFS - value.integrated_lufs,
+                target.lufs() - value.integrated_lufs,
                 Some(value.true_peak),
                 GainSource::Measured,
             )
@@ -105,7 +177,7 @@ fn measured_gain(measured: Option<MeasuredLoudness>) -> Option<ResolvedGain> {
 
 fn resolved(gain_db: f64, peak: Option<f64>, source: GainSource) -> ResolvedGain {
     let peak_cap = peak
-        .filter(|peak| peak.is_finite() && *peak > 0.0)
+        .filter(|peak| usable_peak(*peak))
         .map(|peak| -20.0 * peak.log10());
     let capped = peak_cap.map_or(gain_db, |cap| gain_db.min(cap));
     ResolvedGain {

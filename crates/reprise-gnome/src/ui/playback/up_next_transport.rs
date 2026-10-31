@@ -380,7 +380,12 @@ impl PlayerController {
                 .flatten()
                 .map(|summary| {
                     let mode = settings::get_replay_gain_mode(conn);
-                    let gain_db = queries::effective_gain_db(conn, id, mode);
+                    let gain_db = queries::effective_gain_db(
+                        conn,
+                        id,
+                        mode,
+                        crate::ui::audio_effects::DESKTOP_LOUDNESS_TARGET,
+                    );
                     let segment = summary.playback_segment();
                     (summary.path, gain_db, segment)
                 })
