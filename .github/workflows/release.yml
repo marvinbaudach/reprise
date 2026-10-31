@@ -544,10 +544,12 @@ jobs:
           else
             keystore="$RUNNER_TEMP/reprise-upload.keystore"
             printf '%s' "$KEYSTORE_BASE64" | base64 --decode > "$keystore"
-            echo "REPRISE_KEYSTORE_PATH=$keystore" >> "$GITHUB_ENV"
-            echo "REPRISE_KEYSTORE_PASSWORD=$KEYSTORE_PASSWORD" >> "$GITHUB_ENV"
-            echo "REPRISE_KEYSTORE_ALIAS=$KEY_ALIAS" >> "$GITHUB_ENV"
-            echo "REPRISE_KEY_PASSWORD=$KEY_PASSWORD" >> "$GITHUB_ENV"
+            {
+              echo "REPRISE_KEYSTORE_PATH=$keystore"
+              echo "REPRISE_KEYSTORE_PASSWORD=$KEYSTORE_PASSWORD"
+              echo "REPRISE_KEYSTORE_ALIAS=$KEY_ALIAS"
+              echo "REPRISE_KEY_PASSWORD=$KEY_PASSWORD"
+            } >> "$GITHUB_ENV"
             echo "production=true" >> "$GITHUB_OUTPUT"
           fi
 
