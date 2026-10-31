@@ -59,3 +59,18 @@ publish.
 ## Gate
 
 The Showroom scripts above and the documentation gates of `scripts/check-merge-readiness.sh`.
+
+## Execution record
+
+- **C1 — README: complete.** The core sentence, Rhythmbox import details, repository install link,
+  four known limitations, and AI FAQ are present. The existing Why Reprise section now describes
+  Reprise's features without claiming Rhythmbox lacks them.
+- **C2 — Showroom: complete.** The text-only Rhythmbox section follows the product film and links
+  to the target Flatpak reference.
+- **C3 — issue templates: complete.** The import report form and optional bug-report diagnostics
+  field use the agreed `Copy Diagnostics` label.
+
+Comparative wording was narrowed because Rhythmbox 3.5.1 documents overlapping library fields,
+lyrics, podcasts, radio, and Android/device integrations. No remaining bullet under Why Reprise
+asserts a comparative advantage. Post-merge checks X2, X3, and X4 must still verify the final
+published URL, menu label, and shipped limitations across strands A and B.

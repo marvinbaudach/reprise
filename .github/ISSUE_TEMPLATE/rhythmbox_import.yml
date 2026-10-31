@@ -1,0 +1,67 @@
+name: Rhythmbox import report
+description: Report what did or did not transfer from a Rhythmbox library
+title: ""
+labels:
+  - needs-triage
+body:
+  - type: markdown
+    attributes:
+      value: Share the import results. Remove private file paths and personal information before posting.
+  - type: input
+    id: reprise-version
+    attributes:
+      label: Reprise version
+      description: Find the version in About Reprise.
+    validations:
+      required: true
+  - type: dropdown
+    id: install-type
+    attributes:
+      label: Install type
+      options:
+        - Flatpak repository
+        - Flatpak bundle
+        - AUR
+        - Source
+    validations:
+      required: true
+  - type: dropdown
+    id: rhythmbox-source
+    attributes:
+      label: Rhythmbox source
+      options:
+        - Distribution package
+        - Flathub
+    validations:
+      required: true
+  - type: input
+    id: library-size
+    attributes:
+      label: Library size in tracks
+      placeholder: "About how many tracks?"
+    validations:
+      required: true
+  - type: checkboxes
+    id: imported-data
+    attributes:
+      label: What came over?
+      options:
+        - label: Ratings
+        - label: Play counts and last played
+        - label: Date added
+        - label: Playlists
+  - type: textarea
+    id: missing-data
+    attributes:
+      label: What did not come over?
+      description: Include examples if possible, but do not include private paths.
+  - type: textarea
+    id: expectations
+    attributes:
+      label: Expectations about automatic playlists, podcasts, and radio
+      description: What did you expect to transfer, and what happened?
+  - type: textarea
+    id: diagnostics
+    attributes:
+      label: Copy Diagnostics report
+      description: In Reprise's primary menu, choose "Copy Diagnostics" and paste the report here. Review it for private information before posting.
