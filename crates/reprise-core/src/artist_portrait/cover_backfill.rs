@@ -31,6 +31,16 @@ pub struct CoverBackfillProgress {
 pub type CoverBackfillFetch =
     dyn Fn(&str, &str, &str) -> crate::cover_download::CoverFetchOutcome + Send + Sync;
 pub type CoverBackfillListener = dyn Fn(CoverBackfillProgress) + Send + Sync;
+pub type CoverBackfillTriage = dyn Fn(&str, &str, &str) -> CoverAlbumTriage + Send + Sync;
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum CoverAlbumTriage {
+    Cached,
+    KnownMissing,
+    LocalMarker,
+    LocalResolved,
+    NeedsRequest,
+}
 
 #[must_use]
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -102,11 +112,28 @@ impl CoverBackfill {
         listener: Arc<CoverBackfillListener>,
         consent_allowed: Arc<ConsentAllowed>,
     ) -> bool {
+        self.start_with_triage(
+            database_path,
+            fetch,
+            listener,
+            consent_allowed,
+            Arc::new(|_, _, _| CoverAlbumTriage::NeedsRequest),
+        )
+    }
+
+    pub fn start_with_triage(
+        &self,
+        database_path: PathBuf,
+        fetch: Arc<CoverBackfillFetch>,
+        listener: Arc<CoverBackfillListener>,
+        consent_allowed: Arc<ConsentAllowed>,
+        triage: Arc<CoverBackfillTriage>,
+    ) -> bool {
         self.launch(
             None,
             Box::new(move || {
                 let db = Db::open_ready(&database_path).map_err(|error| error.to_string())?;
-                pending_albums(&db).map_err(|error| error.to_string())
+                pending_albums(&db, triage.as_ref()).map_err(|error| error.to_string())
             }),
             fetch,
             listener,
@@ -123,11 +150,30 @@ impl CoverBackfill {
         listener: Arc<CoverBackfillListener>,
         consent_allowed: Arc<ConsentAllowed>,
     ) -> ChainedCoverStart {
+        self.start_chained_with_triage(
+            transition,
+            database_path,
+            fetch,
+            listener,
+            consent_allowed,
+            Arc::new(|_, _, _| CoverAlbumTriage::NeedsRequest),
+        )
+    }
+
+    pub fn start_chained_with_triage(
+        &self,
+        transition: ChainedCoverStartGuard,
+        database_path: PathBuf,
+        fetch: Arc<CoverBackfillFetch>,
+        listener: Arc<CoverBackfillListener>,
+        consent_allowed: Arc<ConsentAllowed>,
+        triage: Arc<CoverBackfillTriage>,
+    ) -> ChainedCoverStart {
         let start = self.launch(
             Some(transition.generation),
             Box::new(move || {
                 let db = Db::open_ready(&database_path).map_err(|error| error.to_string())?;
-                pending_albums(&db).map_err(|error| error.to_string())
+                pending_albums(&db, triage.as_ref()).map_err(|error| error.to_string())
             }),
             fetch,
             listener,
@@ -310,6 +356,25 @@ impl CoverBackfill {
     }
 
     #[cfg(test)]
+    fn start_prepared_triaged(
+        &self,
+        albums: Vec<(String, String, String)>,
+        triage: Arc<CoverBackfillTriage>,
+        fetch: Arc<CoverBackfillFetch>,
+        listener: Arc<CoverBackfillListener>,
+        consent_allowed: Arc<ConsentAllowed>,
+    ) -> bool {
+        self.launch(
+            None,
+            Box::new(move || Ok(triage_albums(albums, triage.as_ref()))),
+            fetch,
+            listener,
+            consent_allowed,
+        )
+        .is_started()
+    }
+
+    #[cfg(test)]
     fn start_chained_prepared(
         &self,
         transition: ChainedCoverStartGuard,
@@ -389,7 +454,10 @@ impl Drop for CoverBackfill {
 
 /// One `(album_artist, album, representative_track_uri)` per album in the
 /// library, in the same paged read `PortraitBackfill::pending_artists` uses.
-fn pending_albums(db: &Db) -> Result<Vec<(String, String, String)>, rusqlite::Error> {
+fn pending_albums(
+    db: &Db,
+    triage: &CoverBackfillTriage,
+) -> Result<Vec<(String, String, String)>, rusqlite::Error> {
     let mut albums = Vec::new();
     let mut offset = 0_i64;
     loop {
@@ -409,19 +477,38 @@ fn pending_albums(db: &Db) -> Result<Vec<(String, String, String)>, rusqlite::Er
                 .map(|album| (album.album_artist, album.album, album.representative_path)),
         );
         if !window.has_more || returned == 0 {
-            tracing::info!(
-                total_albums = albums.len(),
-                cached = 0_u64,
-                known_missing = 0_u64,
-                local_marker = 0_u64,
-                local_resolved = 0_u64,
-                needs_request = albums.len(),
-                "album cover backfill worklist"
-            );
-            return Ok(albums);
+            return Ok(triage_albums(albums, triage));
         }
         offset = offset.saturating_add(i64::try_from(returned).unwrap_or(i64::MAX));
     }
+}
+
+fn triage_albums(
+    albums: Vec<(String, String, String)>,
+    triage: &CoverBackfillTriage,
+) -> Vec<(String, String, String)> {
+    let total = u64::try_from(albums.len()).unwrap_or(u64::MAX);
+    let mut counts = [0_u64; 4];
+    let mut pending = Vec::new();
+    for (artist, album, path) in albums {
+        match triage(&artist, &album, &path) {
+            CoverAlbumTriage::Cached => counts[0] += 1,
+            CoverAlbumTriage::KnownMissing => counts[1] += 1,
+            CoverAlbumTriage::LocalMarker => counts[2] += 1,
+            CoverAlbumTriage::LocalResolved => counts[3] += 1,
+            CoverAlbumTriage::NeedsRequest => pending.push((artist, album, path)),
+        }
+    }
+    tracing::info!(
+        total_albums = total,
+        cached = counts[0],
+        known_missing = counts[1],
+        local_marker = counts[2],
+        local_resolved = counts[3],
+        needs_request = pending.len(),
+        "album cover backfill worklist"
+    );
+    pending
 }
 
 fn cancelled(shared: &Mutex<Shared>) -> bool {

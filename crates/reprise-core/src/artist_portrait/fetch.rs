@@ -29,8 +29,10 @@ pub(crate) fn load_or_fetch(
     }
     let stale = match cache::verdict(dir, name, now) {
         cache::CacheVerdict::FreshPortrait(path) => return Ok(PortraitOutcome::Found(path)),
-        cache::CacheVerdict::FreshNegative => return Ok(PortraitOutcome::NotFound),
-        cache::CacheVerdict::NeedsFetch { stale_portrait } => stale_portrait,
+        cache::CacheVerdict::FreshNegative | cache::CacheVerdict::FreshRetry => {
+            return Ok(PortraitOutcome::NotFound)
+        }
+        cache::CacheVerdict::NeedsFetch { stale_portrait, .. } => stale_portrait,
     };
 
     let search_body = match (fetchers.deezer_text)(&deezer::search_url(name)) {

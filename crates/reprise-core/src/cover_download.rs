@@ -22,7 +22,8 @@ pub(crate) const MAX_IMAGE_BYTES: u64 = 20 * 1024 * 1024;
 /// How long an album or release-group negative cover marker blocks a re-fetch.
 /// Covers can appear on the Cover Art Archive after the fact, so a stale 404
 /// gets rechecked instead of being cached forever.
-const NEGATIVE_MARKER_MAX_AGE: Duration = Duration::from_secs(7 * 24 * 60 * 60);
+const NEGATIVE_MARKER_MAX_AGE: Duration = Duration::from_secs(30 * 24 * 60 * 60);
+const NEGATIVE_MARKER_MAX_SPREAD: Duration = Duration::from_secs(7 * 24 * 60 * 60);
 
 /// Generation 2 was the one-shot invalidation for markers created before
 /// self-healing TTLs (#908). Generation 3 retires markers written by the
@@ -107,6 +108,44 @@ pub fn downloaded_dir() -> PathBuf {
 /// (`cover::resolve_source_with_source`) agree it lives.
 pub fn downloaded_dir_in(cache_root: &Path) -> PathBuf {
     cover::cache_dir_with_root(cache_root).join("downloaded")
+}
+
+/// Stat-only state lookup for a backfill triage pass.
+pub fn album_cover_state_in(cache_root: &Path, album_artist: &str, album: &str) -> CoverState {
+    album_cover_state_at_in(
+        &downloaded_dir_in(cache_root),
+        &album_key(album_artist, album),
+        SystemTime::now(),
+    )
+}
+
+/// Whether a prior local SAF resolution is still fresh for this album.
+pub fn local_marker_is_fresh_in(cache_root: &Path, album_artist: &str, album: &str) -> bool {
+    let dir = downloaded_dir_in(cache_root);
+    let key = album_key(album_artist, album);
+    std::fs::metadata(dir.join(format!("{key}.local")))
+        .and_then(|metadata| metadata.modified())
+        .ok()
+        .is_some_and(|modified| {
+            SystemTime::now()
+                .duration_since(modified)
+                .map_or(true, |age| age < negative_marker_ttl(&key))
+        })
+}
+
+/// Atomically records local art found during triage; display resolution ignores this marker.
+pub fn write_local_marker_in(cache_root: &Path, album_artist: &str, album: &str) {
+    let dir = downloaded_dir_in(cache_root);
+    if std::fs::create_dir_all(&dir).is_err() {
+        return;
+    }
+    let key = album_key(album_artist, album);
+    let output = dir.join(format!("{key}.local"));
+    let temporary = dir.join(format!(".{key}-{}.local.tmp", fastrand::u64(..)));
+    if std::fs::write(&temporary, b"").is_ok() && std::fs::rename(&temporary, output).is_ok() {
+        return;
+    }
+    let _ = std::fs::remove_file(temporary);
 }
 
 /// The cached downloaded cover file for `key`, if one exists (any known ext).
@@ -198,13 +237,18 @@ fn release_group_key(mbid: &str) -> String {
 /// it's fresh (younger than `NEGATIVE_MARKER_MAX_AGE`).
 /// A marker with no known mtime doesn't block; a marker whose mtime is in
 /// the future (clock skew) is treated as fresh.
-fn negative_marker_blocks(marker_modified: Option<SystemTime>, now: SystemTime) -> bool {
+fn negative_marker_blocks(marker_modified: Option<SystemTime>, key: &str, now: SystemTime) -> bool {
+    let ttl = negative_marker_ttl(key);
     match marker_modified {
-        Some(modified) => now
-            .duration_since(modified)
-            .map_or(true, |age| age < NEGATIVE_MARKER_MAX_AGE),
+        Some(modified) => now.duration_since(modified).map_or(true, |age| age < ttl),
         None => false,
     }
+}
+
+fn negative_marker_ttl(key: &str) -> Duration {
+    let spread = u64::from_str_radix(&key[..8], 16).unwrap_or(0)
+        % (NEGATIVE_MARKER_MAX_SPREAD.as_secs() + 1);
+    NEGATIVE_MARKER_MAX_AGE + Duration::from_secs(spread)
 }
 
 pub fn release_group_cover_path(mbid: &str) -> Option<PathBuf> {
@@ -221,7 +265,7 @@ fn release_group_cover_state_at(mbid: &str, now: SystemTime) -> CoverState {
     let marker_modified = std::fs::metadata(negative_marker_path(&key))
         .and_then(|metadata| metadata.modified())
         .ok();
-    cover_state_from(cached, marker_modified, now)
+    cover_state_from(cached, marker_modified, &key, now)
 }
 
 fn album_cover_state_at_in(dir: &Path, key: &str, now: SystemTime) -> CoverState {
@@ -229,18 +273,19 @@ fn album_cover_state_at_in(dir: &Path, key: &str, now: SystemTime) -> CoverState
     let marker_modified = std::fs::metadata(negative_marker_path_in(dir, key))
         .and_then(|metadata| metadata.modified())
         .ok();
-    cover_state_from(cached, marker_modified, now)
+    cover_state_from(cached, marker_modified, key, now)
 }
 
 fn cover_state_from(
     cached: Option<PathBuf>,
     marker_modified: Option<SystemTime>,
+    key: &str,
     now: SystemTime,
 ) -> CoverState {
     if let Some(path) = cached {
         return CoverState::Cached(path);
     }
-    if negative_marker_blocks(marker_modified, now) {
+    if negative_marker_blocks(marker_modified, key, now) {
         CoverState::KnownMissing
     } else {
         CoverState::Unknown
@@ -713,6 +758,14 @@ mod typographic_tests;
 #[cfg(test)]
 #[path = "cover_download_retry_tests.rs"]
 mod retry_tests;
+
+#[cfg(test)]
+#[path = "cover_download_ttl_tests.rs"]
+mod ttl_tests;
+
+#[cfg(test)]
+#[path = "cover_download_local_tests.rs"]
+mod local_tests;
 
 #[cfg(test)]
 #[path = "cover_download_tests.rs"]

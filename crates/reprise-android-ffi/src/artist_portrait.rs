@@ -246,10 +246,22 @@ pub trait ArtistPortraitProgressListener: Send + Sync {
 #[uniffi::export]
 impl MusicLibrary {
     pub fn artist_portrait_backfill_progress(&self) -> ArtistPortraitProgressUpdate {
-        merged_progress_update(
-            self.portrait_backfill.progress(),
-            album_cover::cover_backfill().progress(),
-        )
+        let portrait = self.portrait_backfill.progress();
+        let covers = album_cover::cover_backfill().progress();
+        let covers = if covers.total > 0 && covers.done >= covers.total {
+            CoverBackfillProgress::default()
+        } else {
+            covers
+        };
+        if portrait.state == PortraitBackfillState::Complete
+            && portrait.run_id != 0
+            && (covers.total == 0 || covers.done >= covers.total)
+        {
+            // A terminal listener update carries its summary; a later poll is an idle
+            // snapshot so it cannot resurrect completed progress under the same run id.
+            return PortraitBackfillProgress::idle().into();
+        }
+        merged_progress_update(portrait, covers)
     }
 
     pub fn start_artist_portrait_backfill(
@@ -355,7 +367,7 @@ impl MusicLibrary {
             } else {
                 None
             };
-            if will_chain {
+            if will_chain && progress.total > 0 {
                 // A cover pass is about to start riding this same
                 // completion: pushing the raw `Complete` here would be
                 // revoked the instant that pass's own `Running` update
@@ -371,7 +383,9 @@ impl MusicLibrary {
                     ..progress.into()
                 });
             } else {
-                forward_listener.on_progress(progress.into());
+                if !will_chain {
+                    forward_listener.on_progress(progress.into());
+                }
             }
             if !just_completed {
                 return;
@@ -425,12 +439,52 @@ impl MusicLibrary {
                 })
             });
 
-            let start = album_cover::cover_backfill().start_chained(
+            let triage_cache_root = cache_root.clone();
+            let triage_source = Arc::clone(&source);
+            let triage: Arc<reprise_core::artist_portrait::CoverBackfillTriage> =
+                Arc::new(move |album_artist, album, representative_uri| {
+                    use reprise_core::artist_portrait::CoverAlbumTriage as Triage;
+                    match cover_download::album_cover_state_in(
+                        &triage_cache_root,
+                        album_artist,
+                        album,
+                    ) {
+                        cover_download::CoverState::Cached(_) => return Triage::Cached,
+                        cover_download::CoverState::KnownMissing => return Triage::KnownMissing,
+                        cover_download::CoverState::Unknown => {}
+                    }
+                    if cover_download::local_marker_is_fresh_in(
+                        &triage_cache_root,
+                        album_artist,
+                        album,
+                    ) {
+                        return Triage::LocalMarker;
+                    }
+                    let path = std::path::Path::new(representative_uri);
+                    if cover::resolve_source_with_source(
+                        triage_source.as_ref(),
+                        path,
+                        &triage_cache_root,
+                    )
+                    .is_some()
+                    {
+                        cover_download::write_local_marker_in(
+                            &triage_cache_root,
+                            album_artist,
+                            album,
+                        );
+                        Triage::LocalResolved
+                    } else {
+                        Triage::NeedsRequest
+                    }
+                });
+            let start = album_cover::cover_backfill().start_chained_with_triage(
                 transition,
                 database_path.clone(),
                 fetch,
                 cover_listener,
                 consent_allowed,
+                triage,
             );
             if start == ChainedCoverStart::Cancelled {
                 forward_listener.on_progress(PortraitBackfillProgress::idle().into());
@@ -447,6 +501,9 @@ impl MusicLibrary {
 
 // The tests store their fixtures through `reprise_core::artist_portrait::
 // store_fixture_image`, which exists in debug builds only.
+#[cfg(all(test, debug_assertions))]
+#[path = "artist_portrait_quiet_tests.rs"]
+mod quiet_tests;
 #[cfg(all(test, debug_assertions))]
 #[path = "artist_portrait_tests.rs"]
 mod tests;

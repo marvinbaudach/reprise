@@ -90,25 +90,23 @@ fn the_cover_pass_starts_after_the_portraits() {
 
 #[test]
 fn albums_with_local_art_are_skipped() {
-    // The fetch closure alone decides whether an album needed a request —
-    // this module has no filesystem access to tell. Whatever it reports,
-    // the pass advances past the album without pausing or retrying.
     let backfill = CoverBackfill::new();
     let (_, listener) = updates();
     let calls = Arc::new(AtomicUsize::new(0));
     let counted = Arc::clone(&calls);
     let fetch: Arc<CoverBackfillFetch> = Arc::new(move |_, _, _| {
         counted.fetch_add(1, Ordering::Relaxed);
-        // The first album already has local art, reported the same way a
-        // fresh download would be; the second is a definitive miss.
-        if counted.load(Ordering::Relaxed) == 1 {
-            CoverFetchOutcome::Downloaded(std::path::PathBuf::from("/cover.png"))
-        } else {
-            CoverFetchOutcome::NotFound
-        }
+        CoverFetchOutcome::NotFound
     });
 
-    backfill.start_prepared(
+    let triage: Arc<CoverBackfillTriage> = Arc::new(|_, _, path| {
+        if path == "/local.flac" {
+            CoverAlbumTriage::LocalResolved
+        } else {
+            CoverAlbumTriage::NeedsRequest
+        }
+    });
+    backfill.start_prepared_triaged(
         vec![
             (
                 "Local Band".into(),
@@ -117,17 +115,40 @@ fn albums_with_local_art_are_skipped() {
             ),
             ("Miss Band".into(), "Miss Album".into(), "/miss.flac".into()),
         ],
+        triage,
         fetch,
         listener,
         always(),
     );
     wait_for_worker_to_finish(&backfill);
 
-    assert_eq!(calls.load(Ordering::Relaxed), 2);
+    assert_eq!(calls.load(Ordering::Relaxed), 1);
     assert_eq!(
         backfill.progress(),
-        CoverBackfillProgress { done: 2, total: 2 }
+        CoverBackfillProgress { done: 1, total: 1 }
     );
+}
+
+#[test]
+fn an_empty_triaged_worklist_has_no_visible_progress() {
+    let backfill = CoverBackfill::new();
+    let (events, listener) = updates();
+    let triage: Arc<CoverBackfillTriage> = Arc::new(|_, _, _| CoverAlbumTriage::Cached);
+    let fetch: Arc<CoverBackfillFetch> = Arc::new(|_, _, _| panic!("cached albums never fetch"));
+    backfill.start_prepared_triaged(
+        vec![("Band".into(), "Album".into(), "/track.flac".into())],
+        triage,
+        fetch,
+        listener,
+        always(),
+    );
+    wait_for_worker_to_finish(&backfill);
+
+    assert!(events
+        .lock()
+        .unwrap()
+        .iter()
+        .all(|progress| progress.total == 0));
 }
 
 #[test]

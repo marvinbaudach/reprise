@@ -31,7 +31,8 @@ pub use backfill::{
 pub(crate) use cache::{cache_dir, IMAGE_EXTS};
 pub use cache::{verdict, CacheVerdict};
 pub use cover_backfill::{
-    CoverBackfill, CoverBackfillFetch, CoverBackfillListener, CoverBackfillProgress,
+    CoverAlbumTriage, CoverBackfill, CoverBackfillFetch, CoverBackfillListener,
+    CoverBackfillProgress, CoverBackfillTriage,
 };
 pub use sidecar::PortraitCredit;
 

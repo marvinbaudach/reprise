@@ -10,7 +10,9 @@ use std::time::UNIX_EPOCH;
 pub(crate) const IMAGE_EXTS: &[&str] = &["jpg", "jpeg", "png", "webp", "gif", "bmp"];
 
 const POSITIVE_TTL_SECONDS: i64 = 30 * 24 * 60 * 60;
-const NEGATIVE_TTL_SECONDS: i64 = 7 * 24 * 60 * 60;
+const NEGATIVE_TTL_SECONDS: i64 = 30 * 24 * 60 * 60;
+const NEGATIVE_SPREAD_SECONDS: i64 = 7 * 24 * 60 * 60;
+pub(crate) const RETRY_TTL_SECONDS: i64 = 24 * 60 * 60;
 
 static CACHE_WRITE_LOCK: Mutex<()> = Mutex::new(());
 
@@ -18,7 +20,12 @@ static CACHE_WRITE_LOCK: Mutex<()> = Mutex::new(());
 pub enum CacheVerdict {
     FreshPortrait(PathBuf),
     FreshNegative,
-    NeedsFetch { stale_portrait: Option<PathBuf> },
+    FreshRetry,
+    NeedsFetch {
+        stale_portrait: Option<PathBuf>,
+        expired_miss: bool,
+        expired_retry: bool,
+    },
 }
 
 impl CacheVerdict {
@@ -57,6 +64,13 @@ pub(crate) fn is_fresh(fetched_at: i64, now: i64, positive: bool) -> bool {
     age <= ttl
 }
 
+fn negative_ttl(name: &str) -> i64 {
+    let key = key_for(name);
+    let spread = u64::from_str_radix(&key[..8], 16).unwrap_or(0)
+        % u64::try_from(NEGATIVE_SPREAD_SECONDS + 1).unwrap_or(1);
+    NEGATIVE_TTL_SECONDS + i64::try_from(spread).unwrap_or(0)
+}
+
 /// Resolves the current positive, negative, or refreshable cache state.
 pub fn verdict(dir: &Path, name: &str, now: i64) -> CacheVerdict {
     let _guard = CACHE_WRITE_LOCK
@@ -69,11 +83,23 @@ pub fn verdict(dir: &Path, name: &str, now: i64) -> CacheVerdict {
         }
     }
     let marker = negative_marker_path(dir, name);
-    if marker.exists() && is_fresh(file_epoch_secs(&marker), now, false) {
+    let marker_exists = marker.exists();
+    let expired_miss =
+        marker_exists && now.saturating_sub(file_epoch_secs(&marker)).max(0) > negative_ttl(name);
+    if marker_exists && !expired_miss {
         return CacheVerdict::FreshNegative;
+    }
+    let retry = retry_marker_path(dir, name);
+    let retry_exists = retry.exists();
+    let expired_retry =
+        retry_exists && now.saturating_sub(file_epoch_secs(&retry)).max(0) > RETRY_TTL_SECONDS;
+    if retry_exists && !expired_retry {
+        return CacheVerdict::FreshRetry;
     }
     CacheVerdict::NeedsFetch {
         stale_portrait: portrait,
+        expired_miss,
+        expired_retry,
     }
 }
 
@@ -137,6 +163,7 @@ pub(crate) fn store_portrait(
         }
     }
     let _ = std::fs::remove_file(negative_marker_path(dir, name));
+    let _ = std::fs::remove_file(retry_marker_path(dir, name));
     Some(output)
 }
 
@@ -174,6 +201,27 @@ pub(crate) fn write_negative(dir: &Path, name: &str) {
             let _ = std::fs::remove_file(dir.join(format!("{key}.{extension}")));
         }
         let _ = std::fs::remove_file(super::sidecar::path(dir, name));
+        let _ = std::fs::remove_file(retry_marker_path(dir, name));
+        return;
+    }
+    let _ = std::fs::remove_file(temporary);
+}
+
+pub(crate) fn retry_marker_path(dir: &Path, name: &str) -> PathBuf {
+    dir.join(format!("{}.retry", key_for(name)))
+}
+
+pub(crate) fn write_retry(dir: &Path, name: &str) {
+    let _guard = CACHE_WRITE_LOCK
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner);
+    if std::fs::create_dir_all(dir).is_err() {
+        return;
+    }
+    let key = key_for(name);
+    let output = retry_marker_path(dir, name);
+    let temporary = dir.join(format!(".{key}-{}.retry.tmp", fastrand::u64(..)));
+    if std::fs::write(&temporary, b"").is_ok() && std::fs::rename(&temporary, output).is_ok() {
         return;
     }
     let _ = std::fs::remove_file(temporary);
@@ -202,6 +250,8 @@ pub(crate) fn prune_except(dir: &Path, retained_keys: &HashSet<String>) {
 
 fn cache_entry_key(file_name: &str) -> Option<&str> {
     let key = if let Some(key) = file_name.strip_suffix(".notfound") {
+        key
+    } else if let Some(key) = file_name.strip_suffix(".retry") {
         key
     } else if let Some(key) = file_name.strip_suffix(".json") {
         key
@@ -242,12 +292,15 @@ mod tests {
     }
 
     #[test]
-    fn positive_ttl_is_30_days_negative_7_days() {
+    fn positive_ttl_is_30_days_and_negative_ttl_is_30_to_37_days() {
         let day = 24 * 60 * 60;
         assert!(is_fresh(1_000, 1_000 + 29 * day, true));
         assert!(!is_fresh(1_000, 1_000 + 31 * day, true));
-        assert!(is_fresh(1_000, 1_000 + 6 * day, false));
-        assert!(!is_fresh(1_000, 1_000 + 8 * day, false));
+        assert_eq!(NEGATIVE_TTL_SECONDS, 30 * day);
+        let first = negative_ttl("First");
+        assert_eq!(first, negative_ttl("First"));
+        assert!((30 * day..=37 * day).contains(&first));
+        assert_ne!(negative_ttl("First"), negative_ttl("Second"));
     }
 
     #[test]
@@ -264,6 +317,14 @@ mod tests {
             CacheVerdict::FreshPortrait(_)
         ));
         assert_eq!(
+            verdict(
+                &dir,
+                "Known missing",
+                marker_time + negative_ttl("Known missing") - 1,
+            ),
+            CacheVerdict::FreshNegative
+        );
+        assert_eq!(
             verdict(&dir, "Known missing", marker_time + NEGATIVE_TTL_SECONDS,),
             CacheVerdict::FreshNegative
         );
@@ -271,16 +332,18 @@ mod tests {
             verdict(
                 &dir,
                 "Known missing",
-                marker_time + NEGATIVE_TTL_SECONDS + 1,
+                marker_time + negative_ttl("Known missing") + 1,
             ),
             CacheVerdict::NeedsFetch {
-                stale_portrait: None
+                stale_portrait: None,
+                ..
             }
         ));
         assert!(matches!(
             verdict(&dir, "Never seen", marker_time),
             CacheVerdict::NeedsFetch {
-                stale_portrait: None
+                stale_portrait: None,
+                ..
             }
         ));
 
