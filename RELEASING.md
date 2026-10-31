@@ -102,8 +102,12 @@ structure, and the generated Cargo checksums. It runs `flatpak-builder-lint`
 when that tool (or the `org.flatpak.Builder` Flatpak) is installed and reports
 an explicit skip otherwise. It never launches Reprise or opens a user database.
 
-Only `RUSTSEC-2024-0436` (`paste`, transitively through `lofty`) is an accepted
-audit warning. Any additional advisory is a release blocker. The AppStream check
+The accepted audit warnings are the ones listed in `AGENTS.md` under the gates:
+`RUSTSEC-2024-0436` (`paste`, transitively through `lofty`), plus four
+unmaintained-crate warnings accepted temporarily until #1300 is resolved:
+`RUSTSEC-2026-0370`, `RUSTSEC-2026-0371` and `RUSTSEC-2026-0372` (the zbus
+family) and `RUSTSEC-2026-0374` (`basic-toml`, through `askama`). Any additional
+advisory is a release blocker. The AppStream check
 allows exactly two documented informational conditions: the pedantic
 `cid-contains-uppercase-letter` note for `io.github.marvinbaudach.Reprise`,
 which is intentionally accepted because an uppercase final component is

@@ -106,8 +106,16 @@ Run from the repo root:
 cargo fmt --check
 cargo clippy --all-targets --workspace -- -D warnings   # ALL clippy lints are errors, not just the workspace set
 cargo test --workspace                                  # NOTE: bare `cargo test` runs only the gnome default-member; always use --workspace
-cargo audit                                             # ONLY accepted advisory: RUSTSEC-2024-0436 (`paste`, via lofty). A NEW advisory = STOP.
+cargo audit                                             # Accepted advisories: see below. A NEW advisory = STOP.
 ```
+
+Accepted `cargo audit` advisories, all of them unmaintained-crate warnings:
+- `RUSTSEC-2024-0436` — `paste`, via lofty.
+- `RUSTSEC-2026-0370`, `RUSTSEC-2026-0371`, `RUSTSEC-2026-0372` — `zvariant`, `zbus_names` and
+  `zvariant_derive`, via zbus. Temporary until #1300 is resolved.
+- `RUSTSEC-2026-0374` — `basic-toml`, via askama. Temporary until #1300 is resolved.
+
+Any advisory not on this list is a stop.
 
 Do not copy a historical test count into this file. Use the result from the exact gate run
 being reviewed, or measure the current suite when a task needs a baseline.
