@@ -349,6 +349,12 @@ pub fn pending_artists(
     now: i64,
 ) -> Result<Vec<String>, rusqlite::Error> {
     let mut pending = Vec::new();
+    let mut total_artists = 0_u64;
+    let mut fresh_portraits = 0_u64;
+    let mut fresh_misses = 0_u64;
+    let mut needs_fetch = 0_u64;
+    let mut stale_portraits = 0_u64;
+    let mut never_fetched = 0_u64;
     let mut retained_keys = HashSet::new();
     let mut offset = 0_i64;
     loop {
@@ -362,13 +368,42 @@ pub fn pending_artists(
         )?;
         let returned = window.rows.len();
         pending.extend(window.rows.into_iter().filter_map(|artist| {
+            total_artists += 1;
             retained_keys.insert(cache::key_for(&artist.artist));
-            cache::verdict(cache_dir, &artist.artist, now)
-                .needs_fetch()
-                .then_some(artist.artist)
+            match cache::verdict(cache_dir, &artist.artist, now) {
+                cache::CacheVerdict::FreshPortrait(_) => {
+                    fresh_portraits += 1;
+                    None
+                }
+                cache::CacheVerdict::FreshNegative => {
+                    fresh_misses += 1;
+                    None
+                }
+                cache::CacheVerdict::NeedsFetch { stale_portrait } => {
+                    needs_fetch += 1;
+                    if stale_portrait.is_some() {
+                        stale_portraits += 1;
+                    } else {
+                        never_fetched += 1;
+                    }
+                    Some(artist.artist)
+                }
+            }
         }));
         if !window.has_more || returned == 0 {
             cache::prune_except(cache_dir, &retained_keys);
+            tracing::info!(
+                total_artists,
+                fresh_portrait = fresh_portraits,
+                fresh_miss = fresh_misses,
+                fresh_retry = 0_u64,
+                needs_fetch,
+                never_fetched,
+                stale_portrait = stale_portraits,
+                expired_miss = 0_u64,
+                expired_retry = 0_u64,
+                "artist portrait backfill worklist"
+            );
             return Ok(pending);
         }
         offset = offset.saturating_add(i64::try_from(returned).unwrap_or(i64::MAX));

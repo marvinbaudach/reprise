@@ -409,6 +409,15 @@ fn pending_albums(db: &Db) -> Result<Vec<(String, String, String)>, rusqlite::Er
                 .map(|album| (album.album_artist, album.album, album.representative_path)),
         );
         if !window.has_more || returned == 0 {
+            tracing::info!(
+                total_albums = albums.len(),
+                cached = 0_u64,
+                known_missing = 0_u64,
+                local_marker = 0_u64,
+                local_resolved = 0_u64,
+                needs_request = albums.len(),
+                "album cover backfill worklist"
+            );
             return Ok(albums);
         }
         offset = offset.saturating_add(i64::try_from(returned).unwrap_or(i64::MAX));
