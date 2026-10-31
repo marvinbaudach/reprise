@@ -3922,6 +3922,17 @@ property is set and yet nothing happens.
   with its source, author, licence, licence URL and file-page URL; a cached image without
   that record counts as stale. A miss is recorded only when every source has answered
   without a photo.
+- **NET-9a** [active] [core] — Extends `NET-9` for a Deezer photo that exists but cannot
+  be downloaded. When the image request is refused with a client status, a 4xx other
+  than 429 (the Deezer image CDN refuses the connection's network or lacks the file), a
+  stale cached portrait is kept and the credited Commons chain is not asked. Without a
+  stale portrait the fetch runs that chain, and a photo it finds is stored with its credit
+  as usual. When the chain finds nothing, no negative marker is written, because the
+  Deezer photo exists and the refusal depends on the network: the original download error
+  is returned and the next fetch tries again. A 429, a server error or a transport
+  error on the download keeps its earlier behavior: a stale portrait is kept, otherwise
+  the error is returned, and Commons is not asked. The portrait backfill does not retry
+  a refused artist within a run; the next run tries again.
 - **LYR-1** [active] [core] — Local embedded lyrics and `.lrc` sidecars
   are shown independently of the Online Lyrics module. Sidecars take
   precedence over embedded tags; synchronized text takes precedence over

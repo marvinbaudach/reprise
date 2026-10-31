@@ -408,6 +408,14 @@ fn is_network_shaped_error(error: &PortraitError) -> bool {
     )
 }
 
+/// Whether the server refused the request outright (see `fetch::is_refusal`).
+fn is_refused(error: &PortraitError) -> bool {
+    matches!(
+        error,
+        PortraitError::Fetch(FetchError::HttpStatus(status)) if super::fetch::is_refusal(*status)
+    )
+}
+
 fn run_worker(
     control: &Control,
     preparing: PortraitBackfillProgress,
@@ -460,6 +468,11 @@ fn run_worker(
                     if consecutive_errors >= 3 {
                         progress.state = PortraitBackfillState::Paused;
                     }
+                } else if is_refused(&error) {
+                    // Refused: the server declined this artist for good. Retrying within
+                    // this run repeats every source request; the next run tries again.
+                    tracing::debug!(%error, "artist portrait backfill request refused");
+                    progress.failed = progress.failed.saturating_add(1);
                 } else {
                     // Artist-shaped: server answered but rejected this request.
                     // Consumes one attempt; never triggers Paused.

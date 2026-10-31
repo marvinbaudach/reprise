@@ -13,6 +13,8 @@ mod sidecar;
 mod wikimedia;
 
 #[cfg(test)]
+mod refused_image_tests;
+#[cfg(test)]
 mod source_tests;
 #[cfg(test)]
 mod wikimedia_tests;

@@ -51,15 +51,32 @@ pub(crate) fn load_or_fetch(
             };
             if release_cover::is_release_cover(&url, &covers) {
                 cache::remove_portrait(dir, name);
-                return fetch_commons(name, mbid_hint, None, dir, fetchers);
+                return fetch_commons(name, mbid_hint, None, None, dir, fetchers);
             }
-            if let Some(outcome) = fetch_deezer_image(name, &url, stale.clone(), dir, fetchers)? {
-                return Ok(outcome);
+            match fetch_deezer_image(name, &url, stale.clone(), dir, fetchers) {
+                Ok(Some(outcome)) => return Ok(outcome),
+                Ok(None) => {}
+                // A refused download only reaches here without a stale portrait to keep.
+                Err(PortraitError::Fetch(refusal @ FetchError::HttpStatus(status)))
+                    if is_refusal(status) =>
+                {
+                    return fetch_commons(name, mbid_hint, None, Some(refusal), dir, fetchers);
+                }
+                Err(error) => return Err(error),
             }
         }
     }
 
-    fetch_commons(name, mbid_hint, stale, dir, fetchers)
+    fetch_commons(name, mbid_hint, stale, None, dir, fetchers)
+}
+
+const HTTP_CLIENT_ERRORS: std::ops::Range<u16> = 400..500;
+const HTTP_TOO_MANY_REQUESTS: u16 = 429;
+
+/// Whether an HTTP status is the server declining this request for good (a 4xx
+/// other than 429), as opposed to a rate limit or server error that passes.
+pub(crate) fn is_refusal(status: u16) -> bool {
+    HTTP_CLIENT_ERRORS.contains(&status) && status != HTTP_TOO_MANY_REQUESTS
 }
 
 fn fetch_deezer_image(
@@ -119,10 +136,14 @@ fn fetch_deezer_image(
     Ok(Some(outcome))
 }
 
+/// Runs the credited Commons chain. `refusal` is the Deezer download error that sent
+/// the fetch here: a Commons miss then returns it instead of recording a negative
+/// marker, because the Deezer photo exists and the refusal may be network-dependent.
 fn fetch_commons(
     name: &str,
     mbid_hint: Option<&str>,
     stale: Option<PathBuf>,
+    refusal: Option<FetchError>,
     dir: &Path,
     fetchers: &mut Fetchers<'_>,
 ) -> Result<PortraitOutcome, PortraitError> {
@@ -135,7 +156,7 @@ fn fetch_commons(
         },
     };
     let Some(mbid) = mbid else {
-        return cache_miss(dir, name);
+        return cache_miss(dir, name, refusal);
     };
 
     let relations = match (fetchers.musicbrainz_text)(&wikimedia::musicbrainz_relations_url(&mbid))
@@ -147,7 +168,7 @@ fn fetch_commons(
                 Err(error) => return super::stale_or(stale, error),
             };
             let Some(fallback_mbid) = fallback_mbid else {
-                return cache_miss(dir, name);
+                return cache_miss(dir, name, refusal);
             };
             match (fetchers.musicbrainz_text)(&wikimedia::musicbrainz_relations_url(&fallback_mbid))
             {
@@ -162,7 +183,7 @@ fn fetch_commons(
         Err(()) => return super::stale_or(stale, PortraitError::InvalidResponse),
     };
     let Some(qid) = qid else {
-        return cache_miss(dir, name);
+        return cache_miss(dir, name, refusal);
     };
     let claims = match (fetchers.wikimedia_text)(&wikimedia::wikidata_claims_url(&qid)) {
         Ok(body) => body,
@@ -173,7 +194,7 @@ fn fetch_commons(
         Err(()) => return super::stale_or(stale, PortraitError::InvalidResponse),
     };
     let Some(filename) = filename else {
-        return cache_miss(dir, name);
+        return cache_miss(dir, name, refusal);
     };
     let info = match (fetchers.wikimedia_text)(&wikimedia::commons_imageinfo_url(&filename)) {
         Ok(body) => body,
@@ -184,7 +205,7 @@ fn fetch_commons(
         Err(()) => return super::stale_or(stale, PortraitError::InvalidResponse),
     };
     let Some(image) = image else {
-        return cache_miss(dir, name);
+        return cache_miss(dir, name, refusal);
     };
     if !wikimedia::is_download_url(&image.thumbnail_url) {
         return super::stale_or(stale, PortraitError::InvalidResponse);
@@ -225,7 +246,14 @@ fn exact_name_mbid(
     })
 }
 
-fn cache_miss(dir: &Path, name: &str) -> Result<PortraitOutcome, PortraitError> {
+fn cache_miss(
+    dir: &Path,
+    name: &str,
+    refusal: Option<FetchError>,
+) -> Result<PortraitOutcome, PortraitError> {
+    if let Some(refusal) = refusal {
+        return Err(refusal.into());
+    }
     cache::write_negative(dir, name);
     Ok(PortraitOutcome::NotFound)
 }
