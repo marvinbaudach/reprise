@@ -698,3 +698,37 @@ fn a_total_outage_spends_no_attempt_budget() {
     assert_eq!(final_progress.done, 2);
     assert_eq!(artist_calls.load(Ordering::Relaxed), failure_calls + 1);
 }
+
+#[test]
+fn net_9a_a_refused_artist_is_tried_once_per_run_and_gets_no_negative_marker() {
+    let cache_dir = tempfile::tempdir().unwrap();
+    let cache_path = cache_dir.path().to_owned();
+    let call_count = Arc::new(AtomicU32::new(0));
+    let counted = Arc::clone(&call_count);
+    let fetch: Arc<PortraitBackfillFetch> = Arc::new(move |name, _, _| {
+        if name == "Refused" {
+            counted.fetch_add(1, Ordering::Relaxed);
+            Err(PortraitError::Fetch(
+                crate::musicbrainz::FetchError::HttpStatus(403),
+            ))
+        } else {
+            Ok(PortraitOutcome::Found(cache_path.join(name)))
+        }
+    });
+    let (_, listener) = updates();
+    let backfill = PortraitBackfill::new();
+    backfill.start_prepared(
+        vec!["Refused".to_owned(), "A".to_owned()],
+        cache_dir.path().to_owned(),
+        fetch,
+        listener,
+        no_wait(),
+    );
+    let final_progress = wait_for_completion(&backfill);
+
+    assert_eq!(final_progress.state, PortraitBackfillState::Complete);
+    assert_eq!(final_progress.done, 1);
+    assert_eq!(final_progress.failed, 1);
+    assert_eq!(call_count.load(Ordering::Relaxed), 1);
+    assert!(!cache::negative_marker_path(cache_dir.path(), "Refused").exists());
+}

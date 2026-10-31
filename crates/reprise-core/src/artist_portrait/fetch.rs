@@ -57,7 +57,9 @@ pub(crate) fn load_or_fetch(
                 Ok(Some(outcome)) => return Ok(outcome),
                 Ok(None) => {}
                 // A refused download only reaches here without a stale portrait to keep.
-                Err(PortraitError::Fetch(refusal @ FetchError::HttpStatus(_))) => {
+                Err(PortraitError::Fetch(refusal @ FetchError::HttpStatus(status)))
+                    if is_refusal(status) =>
+                {
                     return fetch_commons(name, mbid_hint, None, Some(refusal), dir, fetchers);
                 }
                 Err(error) => return Err(error),
@@ -66,6 +68,15 @@ pub(crate) fn load_or_fetch(
     }
 
     fetch_commons(name, mbid_hint, stale, None, dir, fetchers)
+}
+
+const HTTP_CLIENT_ERRORS: std::ops::Range<u16> = 400..500;
+const HTTP_TOO_MANY_REQUESTS: u16 = 429;
+
+/// Whether an HTTP status is the server declining this request for good (a 4xx
+/// other than 429), as opposed to a rate limit or server error that passes.
+pub(crate) fn is_refusal(status: u16) -> bool {
+    HTTP_CLIENT_ERRORS.contains(&status) && status != HTTP_TOO_MANY_REQUESTS
 }
 
 fn fetch_deezer_image(

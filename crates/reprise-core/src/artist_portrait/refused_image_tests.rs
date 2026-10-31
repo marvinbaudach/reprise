@@ -5,6 +5,9 @@ use crate::musicbrainz::FetchError;
 use std::cell::Cell;
 
 const SEARCH: &str = r#"{"data":[{"id":7,"name":"Band","nb_fan":2,"picture_xl":"https://cdn-images.dzcdn.net/images/artist/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa/1000x1000.jpg"}]}"#;
+const DEEZER_IMAGE: &str =
+    "https://cdn-images.dzcdn.net/images/artist/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa/1000x1000.jpg";
+const COMMONS_IMAGE: &str = "https://upload.wikimedia.org/portrait.jpg";
 const NO_COVERS: &str = r#"{"data":[]}"#;
 const RELATIONS: &str =
     r#"{"relations":[{"url":{"resource":"https://www.wikidata.org/wiki/Q42"}}]}"#;
@@ -51,12 +54,10 @@ fn fetch_with(
         .to_owned())
     };
     let mut deezer_image = Some(deezer_image);
-    let mut image = |url: &str| {
-        if url.contains("dzcdn.net") {
-            Err(deezer_image.take().unwrap_or(FetchError::Transport))
-        } else {
-            Ok(png_bytes())
-        }
+    let mut image = |url: &str| match url {
+        DEEZER_IMAGE => Err(deezer_image.take().unwrap_or(FetchError::Transport)),
+        COMMONS_IMAGE => Ok(png_bytes()),
+        other => panic!("unexpected image URL: {other}"),
     };
     let mut fetchers = fetch::Fetchers {
         deezer_text: &mut deezer_text,
@@ -126,4 +127,39 @@ fn net_9a_transport_error_on_the_deezer_image_never_asks_commons() {
     ));
     assert_eq!(wikimedia_calls, 0);
     assert!(!cache::negative_marker_path(dir.path(), "Band").exists());
+}
+
+/// A rate limit or a server error says nothing about this photo, so neither may
+/// replace it with a Commons one.
+fn assert_transient_status_never_asks_commons(status: u16) {
+    let dir = tempfile::tempdir().unwrap();
+
+    let (result, wikimedia_calls) =
+        fetch_with(dir.path(), 1_000, FetchError::HttpStatus(status), CLAIMS);
+
+    assert!(matches!(
+        result,
+        Err(PortraitError::Fetch(FetchError::HttpStatus(returned))) if returned == status
+    ));
+    assert_eq!(wikimedia_calls, 0);
+    assert!(!cache::negative_marker_path(dir.path(), "Band").exists());
+}
+
+#[test]
+fn net_9a_server_error_on_the_deezer_image_never_asks_commons() {
+    assert_transient_status_never_asks_commons(500);
+}
+
+#[test]
+fn net_9a_rate_limit_on_the_deezer_image_never_asks_commons() {
+    assert_transient_status_never_asks_commons(429);
+}
+
+#[test]
+fn net_9a_not_found_on_the_deezer_image_is_a_refusal_that_asks_commons() {
+    let dir = tempfile::tempdir().unwrap();
+
+    let (result, _) = fetch_with(dir.path(), 1_000, FetchError::HttpStatus(404), CLAIMS);
+
+    assert!(matches!(result, Ok(PortraitOutcome::Found(_))));
 }
