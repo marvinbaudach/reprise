@@ -6,7 +6,7 @@
 //! edits one of the two — it cannot catch what actually matters here, which is
 //! a msgid drifting away from the translated catalogs. That is what
 //! `scripts/tests/gettext-catalogs.sh` checks, against the real `po/*.po`
-//! files, for all seven locales.
+//! files, for all eight locales.
 
 pub use super::scan::RETRY;
 
