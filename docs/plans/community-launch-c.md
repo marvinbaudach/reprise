@@ -2,7 +2,7 @@
 slug: community-launch-c
 worktree: /home/marvin/Projects/reprise-community-launch-c
 branch: feature/community-launch-c
-phase: planned
+phase: coded
 codex_session:
 created: 2026-10-31
 ---
