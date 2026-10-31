@@ -89,7 +89,7 @@ impl ArtistPortraitProgressListener for CapturedProgress {
 /// `covers_done == covers_total`, which cannot tell a locally-resolved
 /// album from one that silently made a live request.
 #[test]
-fn local_art_is_recorded_and_excluded_before_the_cover_pass_counts_work() {
+fn net_7e_local_art_is_recorded_and_excluded_before_the_cover_pass_counts_work() {
     let _guard = album_cover::reset_album_cover_state_for_tests();
     let directory = tempfile::tempdir().unwrap();
     let music = directory.path().join("music");
@@ -205,7 +205,7 @@ fn local_art_is_recorded_and_excluded_before_the_cover_pass_counts_work() {
 }
 
 #[test]
-fn fresh_portraits_still_chain_one_album_request_and_terminal_snapshot_is_hidden() {
+fn net_7e_fresh_portraits_still_chain_one_album_request_and_terminal_snapshot_is_hidden() {
     let _guard = album_cover::reset_album_cover_state_for_tests();
     let directory = tempfile::tempdir().unwrap();
     let music = directory.path().join("music");

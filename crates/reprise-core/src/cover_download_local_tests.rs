@@ -1,7 +1,7 @@
 use super::*;
 
 #[test]
-fn local_marker_is_atomic_fresh_and_expires_after_the_keyed_ttl() {
+fn net_7e_local_marker_is_atomic_fresh_and_expires_after_the_keyed_ttl() {
     let cache = tempfile::tempdir().unwrap();
     let artist = "Local band";
     let album = "Local album";
@@ -25,7 +25,7 @@ fn local_marker_is_atomic_fresh_and_expires_after_the_keyed_ttl() {
 }
 
 #[test]
-fn album_state_lookup_uses_only_downloaded_files_and_negative_markers() {
+fn net_7e_album_state_lookup_uses_only_downloaded_files_and_negative_markers() {
     let cache = tempfile::tempdir().unwrap();
     let key = album_key("Band", "Album");
     let dir = downloaded_dir_in(cache.path());

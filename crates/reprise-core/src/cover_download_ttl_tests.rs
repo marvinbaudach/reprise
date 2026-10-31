@@ -1,7 +1,7 @@
 use super::*;
 
 #[test]
-fn album_negative_ttl_is_deterministic_and_spread_from_thirty_to_thirty_seven_days() {
+fn net_7e_album_negative_ttl_is_deterministic_and_spread_from_thirty_to_thirty_seven_days() {
     let first = album_key("Band", "First");
     let second = album_key("Band", "Second");
     let first_ttl = negative_marker_ttl(&first);
@@ -19,7 +19,7 @@ fn album_negative_ttl_is_deterministic_and_spread_from_thirty_to_thirty_seven_da
 }
 
 #[test]
-fn album_negative_marker_expires_on_its_keyed_boundary() {
+fn net_7e_album_negative_marker_expires_on_its_keyed_boundary() {
     let key = album_key("Band", "Boundary");
     let modified = SystemTime::UNIX_EPOCH + Duration::from_secs(1_000_000);
     let ttl = negative_marker_ttl(&key);

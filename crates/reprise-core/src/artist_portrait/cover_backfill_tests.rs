@@ -89,7 +89,7 @@ fn the_cover_pass_starts_after_the_portraits() {
 }
 
 #[test]
-fn albums_with_local_art_are_skipped() {
+fn net_7e_albums_with_local_art_are_skipped() {
     let backfill = CoverBackfill::new();
     let (_, listener) = updates();
     let calls = Arc::new(AtomicUsize::new(0));
@@ -130,7 +130,7 @@ fn albums_with_local_art_are_skipped() {
 }
 
 #[test]
-fn an_empty_triaged_worklist_has_no_visible_progress() {
+fn net_7e_an_empty_triaged_worklist_has_no_visible_progress() {
     let backfill = CoverBackfill::new();
     let (events, listener) = updates();
     let triage: Arc<CoverBackfillTriage> = Arc::new(|_, _, _| CoverAlbumTriage::Cached);

@@ -144,8 +144,7 @@ internal fun LibrarySummaryActions(
                 )
                 if (
                     artworkProgress?.phase == ArtistPhotoProgressPhase.PREPARING ||
-                    artworkProgress?.phase == ArtistPhotoProgressPhase.RUNNING ||
-                    artworkProgress?.phase == ArtistPhotoProgressPhase.PAUSED
+                    artworkProgress?.phase == ArtistPhotoProgressPhase.RUNNING
                 ) {
                     DropdownMenuItem(
                         text = { Text("Stop artwork download") },

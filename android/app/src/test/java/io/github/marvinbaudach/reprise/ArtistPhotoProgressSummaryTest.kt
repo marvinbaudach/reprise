@@ -5,14 +5,14 @@ import org.junit.Test
 
 class ArtistPhotoProgressSummaryTest {
     @Test
-    fun everyPhaseMapsToItsSummarySuffixWithAndWithoutFailures() {
+    fun net_7e_everyPhaseMapsToItsSummarySuffixWithAndWithoutFailures() {
         val cases = listOf(
             progress(ArtistPhotoProgressPhase.PREPARING) to " · Preparing artwork",
             progress(ArtistPhotoProgressPhase.PREPARING, failed = 2) to " · Preparing artwork",
             progress(ArtistPhotoProgressPhase.RUNNING) to " · Artwork 3/8",
             progress(ArtistPhotoProgressPhase.RUNNING, failed = 2) to " · Artwork 3/8",
-            progress(ArtistPhotoProgressPhase.PAUSED) to " · Waiting for a connection",
-            progress(ArtistPhotoProgressPhase.PAUSED, failed = 2) to " · Waiting for a connection",
+            progress(ArtistPhotoProgressPhase.PAUSED) to "",
+            progress(ArtistPhotoProgressPhase.PAUSED, failed = 2) to "",
             progress(ArtistPhotoProgressPhase.COMPLETE) to "",
             progress(ArtistPhotoProgressPhase.COMPLETE, failed = 2) to " · 2 without a photo",
         )

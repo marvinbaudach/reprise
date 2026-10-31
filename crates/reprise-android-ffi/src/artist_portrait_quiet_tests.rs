@@ -100,7 +100,7 @@ fn visible(update: ArtistPortraitProgressUpdate) -> bool {
 }
 
 #[test]
-fn a_second_start_after_a_settled_run_shows_nothing() {
+fn net_7e_a_second_start_after_a_settled_run_shows_nothing() {
     let _guard = album_cover::reset_album_cover_state_for_tests();
     let root = tempfile::tempdir().unwrap();
     let music = root.path().join("music");

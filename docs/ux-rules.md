@@ -3793,20 +3793,58 @@ property is set and yet nothing happens.
   leaves a transient failure open or fails, its one retry starts when the pass
   ends. A return after a clean pass does nothing visible.
   (#1052)
-- **NET-7d** [active] [android] — The cover pass runs on every app start,
+- **NET-7d** [replaced by NET-7e] [android] — The cover pass runs on every app start,
   including after an update without a scan, once the library folder is
   registered. It restarts once on every real network return after an offline
   period, but not on a switch between two online networks. It does not restart
   if the user stopped the download in this process; the next scan or app start
-  runs it again. The progress card shows as on a start. *Tests:*
-  `net_7d_restore_starts_artwork_once_immediately_after_configuring_the_tree`,
-  `net_7d_restore_does_not_start_artwork_without_a_readable_remembered_tree`,
-  `net_7d_activity_recreation_does_not_restart_a_stopped_artwork_pass`,
-  `net_7d_one_real_network_return_starts_one_background_pass_not_followups`,
-  `net_7d_a_pending_real_return_replays_one_artwork_start_after_monitor_restart`,
-  `net_7d_configuration_change_monitor_restart_does_not_duplicate_artwork_start`,
-  `net_7d_a_stopped_download_ignores_the_view_model_network_return_path`,
-  `net_7d_stopped_artwork_waits_for_a_scan_before_network_returns_can_restart_it`.
+  runs it again. The progress card shows as on a start.
+- **NET-7e** [active] [android] [core] — The cover pass is attempted on every app start,
+  including after an update without a scan, once the library folder is registered and
+  the phone is online, and after every scan that added or changed tracks; a scan that
+  found nothing leaves it alone. A start skipped while offline runs on the next network
+  return. It restarts once on every real network return after an offline period, but not
+  on a switch between two online networks. It does not restart if the user stopped the
+  download in this process; the next scan that added or changed tracks, or the next app
+  start, runs it again. A pass asks the network only for artists and albums that need it:
+  one with a fresh photo or cover, local art, a recorded miss, or a request rejected
+  within the last day is skipped before counting. A recorded miss is asked again after
+  30 to 37 days, spread per artist or album. A pass with nothing to ask for shows
+  nothing; otherwise its progress counts only what it asks for. While the pass waits for
+  a connection, it shows nothing. *Tests:*
+  `net_7e_restore_starts_artwork_once_immediately_after_configuring_the_tree`,
+  `net_7e_restore_does_not_start_artwork_without_a_readable_remembered_tree`,
+  `net_7e_activity_recreation_does_not_restart_a_stopped_artwork_pass`,
+  `net_7e_one_real_network_return_starts_one_background_pass_not_followups`,
+  `net_7e_a_pending_real_return_replays_one_artwork_start_after_monitor_restart`,
+  `net_7e_configuration_change_monitor_restart_does_not_duplicate_artwork_start`,
+  `net_7e_a_stopped_download_ignores_the_view_model_network_return_path`,
+  `net_7e_stopped_artwork_waits_for_a_scan_before_network_returns_can_restart_it`,
+  `net_7e_a_scan_with_no_changes_keeps_a_user_stop`,
+  `net_7e_scans_that_add_or_update_tracks_restart_a_stopped_pass`,
+  `net_7e_a_cold_start_while_offline_waits_for_one_real_network_return`,
+  `net_7e_pausedArtworkHidesTheProgressBar`,
+  `net_7e_artworkStopActionMatchesTheCancelablePhasesAndHidesItsChrome`,
+  `net_7e_everyPhaseMapsToItsSummarySuffixWithAndWithoutFailures`,
+  `net_7e_a_second_start_after_a_settled_run_shows_nothing`,
+  `net_7e_a_fresh_retry_marker_skips_the_artist_and_an_expired_one_does_not`,
+  `net_7e_positive_and_negative_results_remove_retry_markers_and_pruning_removes_orphans`,
+  `net_7e_a_dropped_artist_gets_no_negative_marker`,
+  `net_7e_positive_ttl_is_30_days_and_negative_ttl_is_30_to_37_days`,
+  `net_7e_cache_verdict_distinguishes_fresh_positive_negative_stale_and_missing_entries`,
+  `net_7e_an_empty_worklist_publishes_one_terminal_zero_total_completion`,
+  `net_7e_albums_with_local_art_are_skipped`,
+  `net_7e_an_empty_triaged_worklist_has_no_visible_progress`,
+  `net_7e_album_negative_ttl_is_deterministic_and_spread_from_thirty_to_thirty_seven_days`,
+  `net_7e_album_negative_marker_expires_on_its_keyed_boundary`,
+  `net_7e_stale_album_negative_marker_does_not_block_a_new_search`,
+  `net_7e_negative_marker_blocks_when_fresh`,
+  `net_7e_negative_marker_does_not_block_when_stale`,
+  `net_7e_cover_state_distinguishes_cached_known_missing_and_unknown`,
+  `net_7e_local_marker_is_atomic_fresh_and_expires_after_the_keyed_ttl`,
+  `net_7e_album_state_lookup_uses_only_downloaded_files_and_negative_markers`,
+  `net_7e_local_art_is_recorded_and_excluded_before_the_cover_pass_counts_work`,
+  `net_7e_fresh_portraits_still_chain_one_album_request_and_terminal_snapshot_is_hidden`.
 - **NET-3** [active] [core] [gtk] — Offline is a state, not an error: no network-backed
   place in the app may treat a missing network connection like an error
   message. The contract covers seven states every network-backed view (feed,

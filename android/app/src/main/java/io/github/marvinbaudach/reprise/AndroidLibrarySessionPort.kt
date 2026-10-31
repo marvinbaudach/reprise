@@ -13,6 +13,7 @@ import uniffi.reprise_android_ffi.AlbumWindow as FfiAlbumWindow
 import uniffi.reprise_android_ffi.ArtistRow
 import uniffi.reprise_android_ffi.ArtistWindow as FfiArtistWindow
 import uniffi.reprise_android_ffi.MusicLibrary
+import uniffi.reprise_android_ffi.ScanSummary
 import uniffi.reprise_android_ffi.TrackRow
 import uniffi.reprise_android_ffi.TrackWindow as FfiTrackWindow
 import uniffi.reprise_android_ffi.WindowRange as FfiWindowRange
@@ -25,7 +26,7 @@ internal class AndroidLibrarySessionPort(
     private val resolver: ContentResolver,
     private val preferences: SharedPreferences,
     private val library: MusicLibrary,
-    private val afterScan: () -> Unit = {},
+    private val afterScan: (ScanSummary) -> Unit = {},
 ) : LibrarySessionPort {
     override fun rememberedTreeUri(): String? =
         preferences.getString(TREE_URI_PREFERENCE, null)
@@ -69,7 +70,7 @@ internal class AndroidLibrarySessionPort(
             "Scan completed: added=${summary.added} updated=${summary.updated} " +
                 "errors=${summary.errors}",
         )
-        afterScan()
+        afterScan(summary)
     }
 
     override fun lastScanCompletedAtMs(): Long =

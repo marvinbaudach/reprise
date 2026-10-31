@@ -2,6 +2,7 @@ package io.github.marvinbaudach.reprise
 
 import android.content.Context
 import android.net.ConnectivityManager
+import android.net.NetworkCapabilities
 import android.os.Handler
 import android.os.Looper
 import android.os.SystemClock
@@ -14,6 +15,7 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import androidx.lifecycle.ViewModel
 import uniffi.reprise_android_ffi.MusicLibrary
+import uniffi.reprise_android_ffi.ScanSummary
 
 private const val ANALYSIS_PREFETCH_OFFSET = -3L
 private const val ANALYSIS_PREFETCH_LIMIT = 5L
@@ -107,6 +109,15 @@ internal fun LibraryScreenState.Browse.catalogShape() = LibraryCatalogShape(
     artists = artists.total,
 )
 
+private fun ConnectivityManager.hasValidatedPhysicalNetwork(): Boolean =
+    allNetworks.any { network ->
+        val capabilities = getNetworkCapabilities(network)
+        capabilities != null &&
+            capabilities.hasCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET) &&
+            capabilities.hasCapability(NetworkCapabilities.NET_CAPABILITY_VALIDATED) &&
+            capabilities.hasCapability(NetworkCapabilities.NET_CAPABILITY_NOT_VPN)
+    }
+
 private data class ArtistPhotoBackfillBinding(
     val snapshot: () -> ArtistPhotoProgress,
     val start: ((ArtistPhotoProgress) -> Unit) -> Unit,
@@ -136,6 +147,9 @@ internal class MobileSurfaceViewModel(
     private var reportNetworkReturn: (() -> Unit)? = null
     private var networkReturnPending = false
     private var artworkNetworkReturnPending = false
+    private var artworkNetworkAvailable: Boolean? = null
+    private var currentArtworkNetworkState: (() -> Boolean)? = null
+    private var artworkStartPending = false
 
     var selectedTab by mutableStateOf(BrowseTab.TITLES)
         private set
@@ -190,6 +204,7 @@ internal class MobileSurfaceViewModel(
         get() = artistPhotoProgress?.takeIf { update ->
             update.runId != 0L &&
                 update.runId != dismissedArtistPhotoRunId &&
+                update.phase != ArtistPhotoProgressPhase.PAUSED &&
                 !(update.phase == ArtistPhotoProgressPhase.COMPLETE && update.total == 0L)
         }
 
@@ -321,10 +336,13 @@ internal class MobileSurfaceViewModel(
         }
         networkReturnMonitor?.let { monitor ->
             monitor.start()
+            startPendingArtworkIfOnline()
             return
         }
         val connectivity = context.applicationContext
             .getSystemService(ConnectivityManager::class.java)
+        currentArtworkNetworkState = { connectivity.hasValidatedPhysicalNetwork() }
+        artworkNetworkAvailable = connectivity.hasValidatedPhysicalNetwork()
         networkReturnMonitor = NetworkReturnMonitor(
             connectivity = connectivity,
             detector = networkReturnDetector,
@@ -339,6 +357,7 @@ internal class MobileSurfaceViewModel(
                 }
             },
         ).also(NetworkReturnMonitor::start)
+        startPendingArtworkIfOnline()
     }
 
     fun stopNetworkReturnMonitor(configurationChange: Boolean = false) {
@@ -358,16 +377,33 @@ internal class MobileSurfaceViewModel(
     }
 
     fun networkReturnedRestartArtwork() {
+        // This callback is emitted only after NetworkReturnMonitor validates the network.
+        artworkNetworkAvailable = true
         startArtistPhotoBackfillUnlessStopped()
     }
 
     fun startArtistPhotoBackfillUnlessStopped() {
-        if (!artworkBackfillStopped) startArtistPhotoBackfill()
+        if (artworkBackfillStopped) return
+        artworkNetworkAvailable = currentArtworkNetworkState?.invoke() ?: artworkNetworkAvailable
+        when (artworkNetworkAvailable) {
+            true -> {
+                artworkStartPending = false
+                startArtistPhotoBackfill()
+            }
+            false, null -> artworkStartPending = true
+        }
     }
 
-    fun scanCompletedRestartArtwork() {
+    fun scanCompletedRestartArtwork(summary: ScanSummary) {
+        if (summary.added + summary.updated == 0) return
         artworkBackfillStopped = false
-        startArtistPhotoBackfill()
+        startArtistPhotoBackfillUnlessStopped()
+    }
+
+    private fun startPendingArtworkIfOnline() {
+        if (artworkStartPending && artworkNetworkAvailable == true) {
+            startArtistPhotoBackfillUnlessStopped()
+        }
     }
 
     fun acceptArtistPhotoProgress(update: ArtistPhotoProgress) {
@@ -437,6 +473,7 @@ internal class MobileSurfaceViewModel(
 
     fun cancelArtistPhotoBackfill() {
         artworkBackfillStopped = true
+        artworkStartPending = false
         artistPhotoBackfillBinding?.cancel?.invoke()
         dismissArtistPhotoProgress()
     }

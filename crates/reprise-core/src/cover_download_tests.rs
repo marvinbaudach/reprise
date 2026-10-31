@@ -236,7 +236,7 @@ fn album_negative_marker_uses_the_current_generation() {
 }
 
 #[test]
-fn stale_album_negative_marker_does_not_block_a_new_search() {
+fn net_7e_stale_album_negative_marker_does_not_block_a_new_search() {
     let album = format!("Stale marker {:016x}", fastrand::u64(..));
     let key = album_key("Marker Band", &album);
     let marker = negative_marker_path(&key);
@@ -596,7 +596,7 @@ fn nr_2a_missing_cover_uses_fallback_tile() {
 }
 
 #[test]
-fn cover_state_distinguishes_cached_known_missing_and_unknown() {
+fn net_7e_cover_state_distinguishes_cached_known_missing_and_unknown() {
     let now = SystemTime::UNIX_EPOCH + Duration::from_secs(10_000_000);
     let cached_path = PathBuf::from("/isolated/release-cover.png");
     assert_eq!(
@@ -621,13 +621,13 @@ fn cover_state_distinguishes_cached_known_missing_and_unknown() {
 }
 
 #[test]
-fn negative_marker_blocks_when_fresh() {
+fn net_7e_negative_marker_blocks_when_fresh() {
     let now = SystemTime::now();
     assert!(negative_marker_blocks(Some(now), "0123456789abcdef", now));
 }
 
 #[test]
-fn negative_marker_does_not_block_when_stale() {
+fn net_7e_negative_marker_does_not_block_when_stale() {
     let now = SystemTime::now();
     let thirty_eight_days_ago = now - Duration::from_secs(38 * 24 * 60 * 60);
     assert!(!negative_marker_blocks(

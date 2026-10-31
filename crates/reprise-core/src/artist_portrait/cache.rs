@@ -292,7 +292,7 @@ mod tests {
     }
 
     #[test]
-    fn positive_ttl_is_30_days_and_negative_ttl_is_30_to_37_days() {
+    fn net_7e_positive_ttl_is_30_days_and_negative_ttl_is_30_to_37_days() {
         let day = 24 * 60 * 60;
         assert!(is_fresh(1_000, 1_000 + 29 * day, true));
         assert!(!is_fresh(1_000, 1_000 + 31 * day, true));
@@ -304,7 +304,7 @@ mod tests {
     }
 
     #[test]
-    fn cache_verdict_distinguishes_fresh_positive_negative_stale_and_missing_entries() {
+    fn net_7e_cache_verdict_distinguishes_fresh_positive_negative_stale_and_missing_entries() {
         let dir = std::env::temp_dir().join(format!("rp-portrait-{}", fastrand::u64(..)));
         let fresh_portrait = store_image(&dir, "Fresh", b"img", "jpg").unwrap();
         let portrait_time = file_epoch_secs(&fresh_portrait);

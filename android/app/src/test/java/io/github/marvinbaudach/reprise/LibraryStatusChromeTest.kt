@@ -262,7 +262,7 @@ class LibraryStatusChromeTest {
     }
 
     @Test
-    fun artworkStopActionMatchesTheCancelablePhasesAndHidesItsChrome() {
+    fun net_7e_artworkStopActionMatchesTheCancelablePhasesAndHidesItsChrome() {
         val viewModel = MobileSurfaceViewModel()
         val stops = AtomicInteger()
         showArtists(viewModel)
@@ -284,7 +284,12 @@ class LibraryStatusChromeTest {
         compose.runOnIdle {
             viewModel.acceptArtistPhotoProgress(progress(ArtistPhotoProgressPhase.PAUSED, done = 2))
         }
-        assertStopEntryAndCloseMenu()
+        compose.onNodeWithContentDescription("Library actions").performClick()
+        compose.onNodeWithText("Stop artwork download").assertDoesNotExist()
+        compose.onNodeWithText("6 artists").assertIsDisplayed()
+        compose.onNodeWithText("Waiting for a connection").assertDoesNotExist()
+        compose.onNodeWithTag("artist-photo-progress-track").assertDoesNotExist()
+        compose.onNodeWithContentDescription("Library actions").performClick()
 
         compose.runOnIdle {
             viewModel.acceptArtistPhotoProgress(progress(ArtistPhotoProgressPhase.RUNNING, done = 2))

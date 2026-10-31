@@ -205,7 +205,7 @@ fn one_hundred_fast_steps_are_throttled_but_complete_is_always_reported() {
 }
 
 #[test]
-fn an_empty_worklist_publishes_one_terminal_zero_total_completion() {
+fn net_7e_an_empty_worklist_publishes_one_terminal_zero_total_completion() {
     let cache_dir = tempfile::tempdir().unwrap();
     let (updates, listener) = updates();
     let backfill = PortraitBackfill::new();
@@ -640,7 +640,7 @@ fn a_broken_artist_never_pauses_the_run() {
 }
 
 #[test]
-fn a_dropped_artist_gets_no_negative_marker() {
+fn net_7e_a_dropped_artist_gets_no_negative_marker() {
     let cache_dir = tempfile::tempdir().unwrap();
     let cache_path = cache_dir.path().to_owned();
     let call_count = Arc::new(AtomicU32::new(0));

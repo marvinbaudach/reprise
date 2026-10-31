@@ -15,7 +15,7 @@ fn library_with_artist(name: &str) -> Db {
 }
 
 #[test]
-fn a_fresh_retry_marker_skips_the_artist_and_an_expired_one_does_not() {
+fn net_7e_a_fresh_retry_marker_skips_the_artist_and_an_expired_one_does_not() {
     let db = library_with_artist("Rejected artist");
     let cache = tempfile::tempdir().unwrap();
     cache::write_retry(cache.path(), "Rejected artist");
@@ -45,7 +45,7 @@ fn a_fresh_retry_marker_skips_the_artist_and_an_expired_one_does_not() {
 }
 
 #[test]
-fn positive_and_negative_results_remove_retry_markers_and_pruning_removes_orphans() {
+fn net_7e_positive_and_negative_results_remove_retry_markers_and_pruning_removes_orphans() {
     let db = library_with_artist("Here");
     let cache = tempfile::tempdir().unwrap();
     cache::write_retry(cache.path(), "Here");
