@@ -4,6 +4,31 @@ Reprise release notes are curated from the changes that reached the stable
 branch. They describe user-visible changes rather than reproducing commit
 messages.
 
+## [0.1.324] - 2026-10-31
+
+### Android
+
+- Music on the phone plays as loud as other audio. The phone now normalises
+  tracks to -14 LUFS, the level streaming services use, instead of the
+  ReplayGain reference of -18 LUFS. That reference turned typical masters down
+  by 8 to 10 dB, and in the car navigation prompts drowned the music out. A
+  track with no known peak is never raised above its tagged gain, so it cannot
+  clip. The desktop stays at -18 LUFS.
+
+### Discovery
+
+- An artist whose Deezer photo cannot be downloaded falls back to their
+  Wikimedia Commons photo, with its photographer's credit. Deezer's image
+  server refuses some networks, such as some VPN exits, and those artists used
+  to stay without a portrait. A refused download is not recorded as "no photo",
+  so the Deezer photo is tried again on the next fetch.
+
+### Tools, packaging, and reliability
+
+- The TLS and async runtime libraries are raised to releases that fix newly
+  published security advisories (rustls, rustls-webpki, webpki-roots and
+  tokio).
+
 ## [0.1.321] - 2026-10-13
 
 ### Discovery
