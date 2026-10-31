@@ -66,6 +66,9 @@ internal fun SettingsNavigation(
     // whole, and the opaque surface around each page keeps what is behind it
     // hidden until it has left. The graph itself draws the front page on top,
     // arriving and leaving alike, so the parallax needs no z-order of its own.
+    // The system back gesture has a pair of transitions of its own, and the
+    // graph's default for them fades and shrinks the page, so they are set
+    // to the same slide: the finger only decides how far along it is.
     NavHost(
         navController = navController,
         startDestination = SettingsRoute.OVERVIEW.route,
@@ -83,6 +86,14 @@ internal fun SettingsNavigation(
             }
         },
         popExitTransition = {
+            slideOutHorizontally(tween(SETTINGS_PAGE_SLIDE_MS)) { width -> width }
+        },
+        predictivePopEnterTransition = {
+            slideInHorizontally(tween(SETTINGS_PAGE_SLIDE_MS)) { width ->
+                -width / PAGE_BEHIND_PARALLAX
+            }
+        },
+        predictivePopExitTransition = {
             slideOutHorizontally(tween(SETTINGS_PAGE_SLIDE_MS)) { width -> width }
         },
     ) {

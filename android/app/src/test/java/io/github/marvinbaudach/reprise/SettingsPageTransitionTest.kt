@@ -20,6 +20,8 @@ import androidx.compose.ui.test.performClick
 import io.github.marvinbaudach.reprise.settings.SETTINGS_PAGE_SLIDE_MS
 import io.github.marvinbaudach.reprise.settings.SettingsNavigation
 import io.github.marvinbaudach.reprise.ui.theme.RepriseTheme
+import androidx.navigationevent.DirectNavigationEventInput
+import androidx.navigationevent.NavigationEvent
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
 import org.junit.Rule
@@ -59,6 +61,47 @@ class SettingsPageTransitionTest {
         assertPageIntact(atRest, midway, shift)
     }
 
+    /**
+     * The system back gesture drives its own pair of transitions, and the
+     * graph's default for them fades and shrinks the page. Seen on a device:
+     * swiping back from a page left it fading and zooming out over the
+     * overview, while the back arrow slid it away.
+     */
+    @Test
+    fun theBackGestureSlidesThePageAwayLikeTheBackArrow() {
+        mountSettings()
+        compose.onNodeWithContentDescription("Open Audio").performClick()
+        compose.onNodeWithTag("settings-page-audio").assertIsDisplayed()
+        val atRest = captureHost()
+
+        compose.mainClock.autoAdvance = false
+        val gesture = DirectNavigationEventInput()
+        val width = atRest.width.toFloat()
+        compose.runOnIdle {
+            compose.activity.navigationEventDispatcher.addInput(gesture)
+            gesture.backStarted(backEvent(width, 0f))
+        }
+        compose.mainClock.advanceTimeByFrame()
+        compose.runOnIdle { gesture.backProgressed(backEvent(width, 0.5f)) }
+        // A gesture holds the transition where the finger is, so time can pass
+        // without the page moving on: it has to stay where the gesture put it.
+        compose.mainClock.advanceTimeBy(SETTINGS_PAGE_SLIDE_MS.toLong())
+
+        compose.onAllNodesWithTag("settings-overview-row").assertCountEquals(4)
+        val page = compose.onNodeWithTag("settings-page-audio").getUnclippedBoundsInRoot()
+        val shift = with(compose.density) { page.left.toPx() }.roundToInt()
+        assertTrue("the gesture has moved the page (shift $shift)", shift > 0)
+        assertPageIntact(atRest, captureHost(), shift)
+    }
+
+    private fun backEvent(width: Float, progress: Float) =
+        NavigationEvent(
+            touchX = progress * width,
+            touchY = 400f,
+            progress = progress,
+            swipeEdge = NavigationEvent.EDGE_LEFT,
+        )
+
     @Test
     fun theArrivingPageCoversTheOverviewOnItsWayIn() {
         mountSettings()
@@ -69,7 +112,7 @@ class SettingsPageTransitionTest {
         assertTrue("the page is still arriving (shift $shift)", shift > 0)
 
         compose.mainClock.autoAdvance = true
-        compose.waitForIdle()
+        compose.mainClock.advanceTimeByFrame()
         val atRest = captureHost()
 
         assertPageIntact(atRest, midway, shift)
