@@ -6,16 +6,13 @@
 //! `has_cached_content`.
 
 use super::popover_fetch::FetchTrigger;
-use super::tests::{noop_show_album, test_popover};
+use super::tests::{noop_show_album, recent_release_date, test_popover};
 use super::*;
 
 /// Seeds one recent release, close enough to today to survive
 /// `delta_candidates`'s 90-day window without pinning a fixed date.
 fn seed_recent_release(conn: &reprise_core::db::Db) {
-    let today = chrono::Local::now().date_naive();
-    let recent = (today - chrono::Duration::days(10))
-        .format("%Y-%m-%d")
-        .to_string();
+    let recent = recent_release_date();
     crate::test_db::connection(conn)
         .execute(
             "INSERT INTO new_releases (
