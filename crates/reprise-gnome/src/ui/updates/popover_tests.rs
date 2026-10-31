@@ -10,6 +10,20 @@ use super::popover_fetch::{FetchPlan, FetchTrigger};
 use super::*;
 use reprise_core::db::Db;
 
+/// Days before today that every seeded release came out. Inside the 90-day
+/// announcement window of `reprise_core::artist_news_parsing`, so a row seeded
+/// here is still a news item whenever the suite runs.
+const RELEASE_AGE_DAYS: i64 = 10;
+
+/// A release date relative to the real clock, read the way the popover reads
+/// it. A pinned literal ages out of the 90-day window and turns every test
+/// that seeds it from green to red on its own.
+pub(super) fn recent_release_date() -> String {
+    (chrono::Local::now().date_naive() - chrono::Duration::days(RELEASE_AGE_DAYS))
+        .format("%Y-%m-%d")
+        .to_string()
+}
+
 fn release(id: &str) -> reprise_core::artist_news::StoredRelease {
     reprise_core::artist_news::StoredRelease {
         release_group_mbid: id.into(),
@@ -17,7 +31,7 @@ fn release(id: &str) -> reprise_core::artist_news::StoredRelease {
         artist_mbid: "artist-id".into(),
         title: "Release".into(),
         release_type: "Album".into(),
-        first_release_date: "2026-08-01".into(),
+        first_release_date: recent_release_date(),
         fetched_at: 100,
         seen_at: None,
         hidden: false,
@@ -509,8 +523,8 @@ fn nr_7_header_button_stays_hidden_with_cached_releases_while_disabled() {
            release_group_mbid, artist_name, artist_mbid, title, release_type,
            first_release_date, fetched_at
          ) VALUES ('release', 'Artist', 'artist', 'Release', 'Album',
-                   '2026-08-01', 1)",
-            [],
+                   ?1, 1)",
+            [recent_release_date()],
         )
         .unwrap();
     let conn = Rc::new(conn);
@@ -536,8 +550,8 @@ fn nr_3a_header_button_is_visible_only_when_releases_exist_after_first_fetch() {
                release_group_mbid, artist_name, artist_mbid, title, release_type,
                first_release_date, fetched_at
              ) VALUES ('release', 'Artist', 'artist', 'Release', 'Album',
-                       '2026-08-01', 1)",
-            [],
+                       ?1, 1)",
+            [recent_release_date()],
         )
         .unwrap();
     reprise_core::modules::set_enabled(&conn, &reprise_core::modules::NEW_RELEASES_MODULE, true)
@@ -613,8 +627,8 @@ fn nr_29_opening_keeps_the_pre_stamp_count_and_clears_the_badge() {
                release_group_mbid, artist_name, artist_mbid, title, release_type,
                first_release_date, fetched_at
              ) VALUES (?1, 'Artist', 'artist', ?2, 'Album',
-                       '2026-08-01', ?3)",
-                rusqlite::params![mbid, title, now],
+                       ?4, ?3)",
+                rusqlite::params![mbid, title, now, recent_release_date()],
             )
             .unwrap();
     }
@@ -661,8 +675,8 @@ fn nr_34_a_held_over_batch_renders_without_claiming_to_be_new() {
                release_group_mbid, artist_name, artist_mbid, title, release_type,
                first_release_date, fetched_at, seen_at
              ) VALUES ('already-read', 'Artist', 'artist', 'Release', 'Album',
-                       '2026-08-01', ?1, ?1)",
-            rusqlite::params![now],
+                       ?2, ?1, ?1)",
+            rusqlite::params![now, recent_release_date()],
         )
         .unwrap();
     let conn = Rc::new(conn);
