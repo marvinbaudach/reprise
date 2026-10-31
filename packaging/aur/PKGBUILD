@@ -27,7 +27,7 @@ makedepends=(
   'git'
   'meson>=1.3'
   'ninja'
-  'rust'
+  'rust>=1.92'
 )
 optdepends=(
   'gnome-keyring: Secret Service provider for stored account credentials'
@@ -38,7 +38,7 @@ optdepends=(
 provides=('reprise')
 conflicts=('reprise')
 options=('!lto')
-source=('reprise::git+https://github.com/marvinbaudach/reprise.git')
+source=('reprise::git+https://github.com/marvinbaudach/reprise.git#branch=main')
 sha256sums=('SKIP')
 
 pkgver() {

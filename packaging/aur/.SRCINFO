@@ -9,7 +9,7 @@ pkgbase = reprise-git
 	makedepends = git
 	makedepends = meson>=1.3
 	makedepends = ninja
-	makedepends = rust
+	makedepends = rust>=1.92
 	depends = cairo
 	depends = gdk-pixbuf2
 	depends = glib2
@@ -30,7 +30,7 @@ pkgbase = reprise-git
 	provides = reprise
 	conflicts = reprise
 	options = !lto
-	source = reprise::git+https://github.com/marvinbaudach/reprise.git
+	source = reprise::git+https://github.com/marvinbaudach/reprise.git#branch=main
 	sha256sums = SKIP
 
 pkgname = reprise-git
