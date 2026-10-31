@@ -93,3 +93,28 @@ A real build is a manual step before M6.
 `actionlint` on `release.yml`, `scripts/check-flatpak-device-permissions.sh`,
 `scripts/check-flatpak-manifest.sh`, `bash -n` on the PKGBUILD, and the documentation gates of
 `scripts/check-merge-readiness.sh`.
+
+## Implementation record
+
+Completed on `feature/community-launch-b`:
+
+- B1 added the three scoped filesystem grants to both manifests and extended the
+  device-permissions gate to require exactly one of each. The Flathub Rhythmbox
+  grant could not be verified locally because this run explicitly forbids
+  Flatpak builds; P2 must verify it in the installed sandbox.
+- B2 adds remote metadata and the public key to bundles only when
+  `FLATPAK_REPO_GPG_KEY` is non-empty. With the variable absent, bundle creation
+  keeps its previous command and behavior.
+- B3 adds an inert `flatpak-remote` publisher gated on a `main` push and
+  `FLATPAK_REMOTE_ENABLED == 'true'`. It requires the signing/deploy credentials,
+  publishes a signed repository, prunes to three builds, and replaces the Pages
+  branch with one orphan commit.
+- B4 keeps `reprise-git`, pins its source to `main`, retains optional
+  `onnxruntime`, updates Rust/GTK/libadwaita build requirements, and regenerates
+  `.SRCINFO`. A real package build remains a manual step before M6.
+- B5 documents the compatibility cut-off, promotion permission, remote
+  operations, install reference, and START-7 Rhythmbox checks.
+
+The run did not perform a Flatpak build, any Cargo command, or a real AUR build,
+per task constraints. `actionlint` availability and the requested gates are
+recorded in the strand summary.

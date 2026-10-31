@@ -51,6 +51,21 @@ synchronization, in particular `lamemp3enc` and `id3v2mux`. Run
 packaging verification; synchronization blocks before any managed deletion if
 the fixed MP3/ID3 pipeline is unavailable.
 
+## Install from the Reprise update repository
+
+The signed repository is hosted at <https://marvinbaudach.github.io/reprise-flatpak/>.
+Install Reprise and receive later updates with the published reference:
+
+```sh
+flatpak install --user https://marvinbaudach.github.io/reprise-flatpak/reprise.flatpakref
+flatpak update --user io.github.marvinbaudach.Reprise
+```
+
+The repository is x86_64-only. Libraries outside the XDG music directory need a
+narrow filesystem override through Flatseal or `flatpak override`. Stem
+separation is not included in the Flatpak because the bundle does not ship
+`onnxruntime`.
+
 ## Public-source handoff
 
 The repository currently has no public remote or immutable release artifact,

@@ -79,11 +79,32 @@ release-channel change to exercise the real check-run and tag decisions without
 publishing. Do not set `dry_run: false` unless the curated text, upload-key
 fingerprint, CI evidence, and both release artifacts are ready.
 
-The named follow-up is a self-hosted Flatpak repository, which will provide a
-real update path. It is deferred because the existing GitHub Pages deployment
-serves the Showroom from the same publication surface; repository metadata and
-the Showroom deployment need a collision-free Pages layout first. Until then,
-the downloadable `.flatpak` bundle does not self-update.
+## Self-hosted Flatpak update repository
+
+The signed repository is published to the `gh-pages` branch of
+`marvinbaudach/reprise-flatpak`, served at
+<https://marvinbaudach.github.io/reprise-flatpak/>. The `flatpak-remote` job runs
+only for pushes to `main` and only when the Actions variable
+`FLATPAK_REMOTE_ENABLED` is exactly `true`. Keep it unset or false until the
+repository, Pages site, signing key, and deploy key are ready.
+
+The job requires the `FLATPAK_GPG_PRIVATE_KEY` and
+`FLATPAK_REPO_DEPLOY_KEY` Actions secrets, and the base64-encoded public key in
+the `FLATPAK_REPO_GPG_KEY` Actions variable. If the signing key has a
+passphrase, set `FLATPAK_GPG_PASSPHRASE`. Never put key material in the
+repository or logs. To rotate the signing key, publish a transition signed by
+the existing key and update the public key distributed in bundles and repository
+metadata before retiring the old key; rehearse the transition with the maintainer
+before enabling a release. Rotate the deploy key independently in the repository
+and Actions secret.
+
+Each publish imports the release bundle, regenerates static deltas, and prunes
+to the newest three builds. It replaces `gh-pages` with one orphan commit so its
+Git history remains bounded. After a publish, check the Actions summary for the
+new OSTree commit, confirm the `.flatpakrepo` and `.flatpakref` are served, and
+install/update from the `.flatpakref` on a clean test profile. Bundles built
+without `FLATPAK_REPO_GPG_KEY` retain the current standalone behavior and do not
+receive the repository URL metadata.
 
 ## Automated release check
 
@@ -379,6 +400,13 @@ Do not point development hooks at the maintainer's real library.
   real GNOME/Wayland dialogs and portals, and reduced animation. Record the
   result before changing ACC-7 from `[planned]` to `[active]`.
 
+- START-7: install Rhythmbox from the distribution and from Flathub in turn.
+  Confirm Reprise detects `rhythmdb.xml` at both `~/.local/share/rhythmbox`
+  and `~/.var/app/org.gnome.Rhythmbox3/data/rhythmbox`, and that the installed
+  Reprise Flatpak can read each source. Confirm the XDG music directory is
+  available for tag, lyric, and cover writes. This depends on the grants in
+  both manifests; the Flathub grant still needs validation in the installed
+  sandbox.
 - Confirm first-run copy/layout, Skip, Set Up Library, and the portal folder
   chooser. The copy must disclose automatic cover lookup without showing a
   disable switch. A detected `rhythmdb.xml` must show a clearly default-off,
