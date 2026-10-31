@@ -155,17 +155,18 @@ mod tests {
     fn gui_language_follows_gettext_catalog_resolution() {
         assert_eq!(preferred_gui_language(Some("de_CH.UTF-8"), None), "de");
         assert_eq!(
-            preferred_gui_language(Some("fr_FR.UTF-8"), Some("it:de:fr")),
+            preferred_gui_language(Some("fr_FR.UTF-8"), Some("ja:de:fr")),
             "de"
         );
         assert_eq!(preferred_gui_language(Some("zh_CN.UTF-8"), None), "zh_CN");
+        assert_eq!(preferred_gui_language(Some("it_IT.UTF-8"), None), "it");
     }
 
     #[test]
     fn gui_language_uses_english_when_gettext_uses_source_strings() {
-        assert_eq!(preferred_gui_language(Some("it_IT.UTF-8"), None), "en");
+        assert_eq!(preferred_gui_language(Some("ja_JP.UTF-8"), None), "en");
         assert_eq!(
-            preferred_gui_language(Some("fr_FR.UTF-8"), Some("it")),
+            preferred_gui_language(Some("fr_FR.UTF-8"), Some("ja")),
             "en"
         );
         assert_eq!(preferred_gui_language(Some("C.UTF-8"), Some("de")), "en");

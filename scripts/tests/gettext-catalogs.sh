@@ -4,8 +4,8 @@ set -euo pipefail
 repo_root=$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)
 cd "$repo_root"
 
-expected_locales=(ar bn de es fr hi zh_CN)
-complete_locales=(de es)
+expected_locales=(ar bn de es fr hi it zh_CN)
+complete_locales=(de es it)
 minimum_seed_messages=100
 mapfile -t actual_locales < <(sed '/^[[:space:]]*#/d; /^[[:space:]]*$/d' po/LINGUAS | sort)
 
