@@ -8,7 +8,7 @@ use std::path::{Path, PathBuf};
 use std::time::{Duration, SystemTime};
 
 use crate::{
-    cover, musicbrainz,
+    cover, marker_expiry, musicbrainz,
     net::client::{build_agent, AgentPolicy},
     net::rate::{wait_for_slot, RateLimitKey},
     source_error::{SourceError, SourceErrorKind},
@@ -123,14 +123,10 @@ pub fn album_cover_state_in(cache_root: &Path, album_artist: &str, album: &str) 
 pub fn local_marker_is_fresh_in(cache_root: &Path, album_artist: &str, album: &str) -> bool {
     let dir = downloaded_dir_in(cache_root);
     let key = album_key(album_artist, album);
-    std::fs::metadata(dir.join(format!("{key}.local")))
+    let modified = std::fs::metadata(dir.join(format!("{key}.local")))
         .and_then(|metadata| metadata.modified())
-        .ok()
-        .is_some_and(|modified| {
-            SystemTime::now()
-                .duration_since(modified)
-                .map_or(true, |age| age < negative_marker_ttl(&key))
-        })
+        .ok();
+    negative_marker_blocks(modified, &key, SystemTime::now())
 }
 
 /// Atomically records local art found during triage; display resolution ignores this marker.
@@ -234,15 +230,16 @@ fn release_group_key(mbid: &str) -> String {
 }
 
 /// Does an existing negative marker still block a network re-fetch? Only while
-/// it's fresh (younger than `NEGATIVE_MARKER_MAX_AGE`).
-/// A marker with no known mtime doesn't block; a marker whose mtime is in
-/// the future (clock skew) is treated as fresh.
+/// it's fresh (younger than its keyed TTL; exactly the TTL is expired).
+/// A marker with no known mtime doesn't block; a marker dated more than a day
+/// ahead of `now` (a bad clock) is expired, a smaller skew counts as fresh.
 fn negative_marker_blocks(marker_modified: Option<SystemTime>, key: &str, now: SystemTime) -> bool {
-    let ttl = negative_marker_ttl(key);
-    match marker_modified {
-        Some(modified) => now.duration_since(modified).map_or(true, |age| age < ttl),
-        None => false,
-    }
+    marker_modified.is_some_and(|modified| {
+        marker_expiry::marker_is_fresh(
+            marker_expiry::age_seconds(now, modified),
+            i64::try_from(negative_marker_ttl(key).as_secs()).unwrap_or(i64::MAX),
+        )
+    })
 }
 
 fn negative_marker_ttl(key: &str) -> Duration {

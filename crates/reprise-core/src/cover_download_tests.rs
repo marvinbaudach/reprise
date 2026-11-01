@@ -648,7 +648,7 @@ fn negative_marker_does_not_block_when_absent() {
 
 #[test]
 fn negative_marker_blocks_when_mtime_is_in_the_future() {
-    // Clock skew: a marker that appears newer than "now" is treated as fresh.
+    // Small clock skew: a marker a minute ahead of "now" is treated as fresh.
     let now = SystemTime::now();
     let future = now + Duration::from_secs(60);
     assert!(negative_marker_blocks(
