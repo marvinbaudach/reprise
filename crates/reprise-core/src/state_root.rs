@@ -17,19 +17,19 @@ const CRASH_MARKER_FILE: &str = "last-crash";
 /// The active log: `<state root>/reprise/reprise.log`.
 #[must_use]
 pub fn log_path() -> Option<PathBuf> {
-    state_root().map(|root| log_path_in(&root))
+    root().map(|root| log_path_in(&root))
 }
 
 /// The previous run's log, kept as exactly one generation.
 #[must_use]
 pub fn previous_log_path() -> Option<PathBuf> {
-    state_root().map(|root| previous_log_path_in(&root))
+    root().map(|root| previous_log_path_in(&root))
 }
 
 /// The running sentinel: present while a run has not ended cleanly.
 #[must_use]
 pub fn crash_marker_path() -> Option<PathBuf> {
-    state_root().map(|root| crash_marker_path_in(&root))
+    root().map(|root| crash_marker_path_in(&root))
 }
 
 /// Moves an existing log aside so a run starts on a clean file. The caller logs
@@ -83,7 +83,9 @@ pub fn state_root_from(
         .or(data_root)
 }
 
-fn state_root() -> Option<PathBuf> {
+/// The directory the `reprise/` state folder hangs below.
+#[must_use]
+pub fn root() -> Option<PathBuf> {
     #[cfg(any(test, feature = "test-private-dirs"))]
     {
         Some(isolated_root().to_path_buf())
@@ -105,7 +107,7 @@ fn isolated_root() -> &'static Path {
     })
 }
 
-fn rotate_paths(active: &Path, previous: &Path) -> io::Result<()> {
+pub(crate) fn rotate_paths(active: &Path, previous: &Path) -> io::Result<()> {
     match std::fs::remove_file(previous) {
         Ok(()) => {}
         Err(error) if error.kind() == io::ErrorKind::NotFound => {}

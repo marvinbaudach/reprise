@@ -16,6 +16,8 @@ use tracing::{Event, Level, Metadata, Subscriber};
 use tracing_subscriber::filter::{filter_fn, FilterFn};
 use tracing_subscriber::layer::{Context, Layer};
 
+pub(crate) mod file_log;
+
 type SharedDiagnosticLog = Arc<Mutex<DiagnosticLog>>;
 
 static SESSION_LOG: OnceLock<SharedDiagnosticLog> = OnceLock::new();

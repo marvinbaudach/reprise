@@ -137,6 +137,7 @@ pub mod radio;
 pub mod remote_image;
 pub mod render_data_segments;
 pub mod render_data_session;
+pub mod run_log;
 pub mod scrobbling;
 pub mod source_error;
 pub mod spectrogram;

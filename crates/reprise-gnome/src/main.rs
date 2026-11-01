@@ -120,13 +120,24 @@ pub(crate) const SMOKE_MPRIS_BUS_ENV_VAR: &str = "REPRISE_SMOKE_MPRIS_BUS_NAME";
 /// `REPRISE_LOG=debug`). This must run before any other startup code so that
 /// failures during database setup are visible on the console.
 fn init_logging() {
-    let filter = EnvFilter::try_from_env("REPRISE_LOG")
-        .unwrap_or_else(|_| EnvFilter::new("info,lofty=error"));
+    // The same level on both layers. `EnvFilter` is not `Clone`, so each layer
+    // reads the variable itself.
+    let log_filter = || {
+        EnvFilter::try_from_env("REPRISE_LOG")
+            .unwrap_or_else(|_| EnvFilter::new("info,lofty=error"))
+    };
     let formatting = tracing_subscriber::fmt::layer()
         .with_writer(std::io::stderr)
-        .with_filter(filter);
+        .with_filter(log_filter());
+    // Mirrored into the state directory's log file once the process knows it
+    // is the first instance (`ui::diagnostics::file_log`).
+    let mirror = tracing_subscriber::fmt::layer()
+        .with_ansi(false)
+        .with_writer(ui::diagnostics::file_log::FileLogWriter::new)
+        .with_filter(log_filter());
     tracing_subscriber::registry()
         .with(formatting)
+        .with(mirror)
         .with(ui::diagnostics::session_layer().with_filter(ui::diagnostics::session_filter()))
         .init();
 }
@@ -332,8 +343,10 @@ fn run() -> glib::ExitCode {
         // Forwards `activate` to the primary instance and returns once
         // that's done — the primary's activate handler (below, but running
         // in the *other* process) presents its window.
+        ui::diagnostics::file_log::discard();
         return app.run();
     }
+    ui::diagnostics::file_log::start();
 
     let path = db::default_path();
     tracing::info!(db_path = %path.display(), "opening database");
