@@ -8,7 +8,9 @@
 
 use std::cell::RefCell;
 use std::path::Path;
+use std::sync::OnceLock;
 
+use ort::environment::Environment;
 use ort::session::builder::GraphOptimizationLevel;
 use ort::session::Session;
 use ort::value::Tensor;
@@ -104,7 +106,8 @@ impl OrtStemBackend {
 
     fn from_configured_model_file(model_path: &Path, model_id: &str) -> Result<Self, StemError> {
         let threads = std::thread::available_parallelism().map_or(1, std::num::NonZero::get);
-        let session = Session::builder()
+        let environment = environment()?;
+        let session = Session::builder(environment)
             .map_err(|e| session_error(&e))?
             // Level3 (all optimisations) is ort's default; set it explicitly to
             // match the model's reference inference.
@@ -169,6 +172,23 @@ fn run_segment(session: &mut Session, segment: usize, mix: &[f32]) -> Result<Vec
         .try_extract_tensor::<f32>()
         .map_err(|e| StemError::Backend(format!("extract stems: {e}")))?;
     Ok(data.to_vec())
+}
+
+/// The process-wide onnxruntime [`Environment`], created on first use.
+///
+/// ort 2.0.0-rc.14 no longer creates an implicit environment: a session is
+/// built against an explicit one, and `build` refuses a second environment in
+/// the same process even after the first was dropped. Backends are constructed
+/// repeatedly (every worker launch, every test), so the environment is built
+/// once and every session borrows it. The first call also loads the library
+/// named by [`provision::ORT_DYLIB_ENV`], so it must follow the env var being
+/// set. `ort::Error` is not `Clone`, so a failed build is cached as its message.
+fn environment() -> Result<&'static Environment, StemError> {
+    static ENVIRONMENT: OnceLock<Result<Environment, String>> = OnceLock::new();
+    ENVIRONMENT
+        .get_or_init(|| ort::init().build().map_err(|e| e.to_string()))
+        .as_ref()
+        .map_err(|e| StemError::Backend(format!("onnxruntime environment: {e}")))
 }
 
 /// Locates onnxruntime for the load-dynamic linkage and points ort at it. A
