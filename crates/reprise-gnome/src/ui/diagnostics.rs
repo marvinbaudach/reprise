@@ -8,8 +8,9 @@ use chrono::{Local, Timelike};
 use libadwaita as adw;
 use reprise_core::db::Db;
 use reprise_core::diagnostics::{
-    is_safe_structured_field, DiagnosticEvent, DiagnosticLevel, DiagnosticLog,
+    is_safe_structured_field, read_log_tail, DiagnosticEvent, DiagnosticLevel, DiagnosticLog,
 };
+use reprise_core::state_root;
 use reprise_platform_linux::diagnostics::DesktopDiagnosticInput;
 use tracing::field::{Field, Visit};
 use tracing::{Event, Level, Metadata, Subscriber};
@@ -81,6 +82,8 @@ pub(crate) fn build_report(db: &Db, db_path: &Path) -> String {
             adw::micro_version()
         ),
         rust_version: option_env!("REPRISE_RUST_VERSION").map(str::to_string),
+        log_tail: state_root::log_path().and_then(|path| read_log_tail(&path)),
+        previous_log_tail: state_root::previous_log_path().and_then(|path| read_log_tail(&path)),
     };
     let log = session_log()
         .lock()

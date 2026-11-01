@@ -23,6 +23,7 @@ pub(super) fn wire_menu(
         sidebar,
         app,
         scan_controls,
+        toast_overlay,
         ..
     } = *w;
     let minimal_toggle = minimal_view.clone();
@@ -65,6 +66,16 @@ pub(super) fn wire_menu(
             },
             on_stop_playback: stop_player,
             on_preferences: Rc::new(move || menu_preferences.present()),
+            on_copy_diagnostics: {
+                let overlay = toast_overlay.downgrade();
+                let conn = conn.clone();
+                let db_path = db_path.to_path_buf();
+                Rc::new(move || {
+                    if let Some(overlay) = overlay.upgrade() {
+                        crate::ui::diagnostics::copy::copy_report(&overlay, &conn, &db_path);
+                    }
+                })
+            },
             on_about: {
                 let window = window.clone();
                 let conn = conn.clone();

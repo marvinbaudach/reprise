@@ -2079,6 +2079,22 @@ result.
   `fb_18_the_undo_snackbar_floats_above_the_bottom_frame_without_moving_the_list`,
   `fb_18_the_titles_tab_stays_where_it_is`,
   `fb_18_over_the_stacked_sheet_the_snackbar_sits_just_above_the_transport_row`.
+- **FB-19** [planned] [gtk] — **The primary menu can copy the diagnostics
+  report.** <!-- REVIEW: rule proposal --> The settings section of the primary
+  menu holds "Copy Diagnostics" between Help and About Reprise. Activating it
+  puts the redacted diagnostics report on the clipboard and confirms it in a
+  toast; without a display it says the copy failed instead of claiming one.
+  It is the same report About shows and the crash offer (START-6) copies, so
+  it additionally lists the enabled optional modules and ends with a bounded
+  tail of this run's log and of the previous run's log, each under its own
+  heading. Every log line passes the redaction of the warnings, so a library
+  path in the log never reaches the clipboard. *Tests:*
+  `fb_19_copy_diagnostics_is_a_labelled_entry_between_help_and_about`,
+  `fb_19_activating_the_menu_entry_runs_the_copy_callback`,
+  `fb_19_the_copied_report_lists_the_enabled_modules`,
+  `fb_19_the_copied_report_carries_both_runs_log_tails_labelled`,
+  `fb_19_the_platform_report_lists_modules_and_the_supplied_log_tail`,
+  `crash_report_never_contains_a_library_path_in_the_log_tails`.
 
 ## H. File association & OS integration
 
