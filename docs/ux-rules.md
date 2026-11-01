@@ -3832,6 +3832,8 @@ property is set and yet nothing happens.
   `net_7e_a_fresh_retry_marker_skips_the_artist_and_an_expired_one_does_not`,
   `net_7e_positive_and_negative_results_remove_retry_markers_and_pruning_removes_orphans`,
   `net_7e_a_dropped_artist_gets_no_negative_marker`,
+  `net_7e_a_stale_portrait_whose_refresh_is_rejected_is_not_asked_again_for_a_day`,
+  `net_7e_a_stale_portrait_whose_refresh_hits_the_network_is_asked_again_next_start`,
   `net_7e_positive_ttl_is_30_days_and_negative_ttl_is_30_to_37_days`,
   `net_7e_cache_verdict_distinguishes_fresh_positive_negative_stale_and_missing_entries`,
   `net_7e_an_empty_worklist_publishes_one_terminal_zero_total_completion`,

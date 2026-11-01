@@ -17,6 +17,8 @@ mod refused_image_tests;
 #[cfg(test)]
 mod source_tests;
 #[cfg(test)]
+mod stale_retry_tests;
+#[cfg(test)]
 mod wikimedia_tests;
 
 #[cfg(test)]
@@ -202,16 +204,6 @@ pub(crate) fn normalize(value: &str) -> String {
         .collect::<Vec<_>>()
         .join(" ")
         .to_lowercase()
-}
-
-fn stale_or(
-    cached_path: Option<PathBuf>,
-    error: PortraitError,
-) -> Result<PortraitOutcome, PortraitError> {
-    cached_path
-        .filter(|path| path.exists())
-        .map(PortraitOutcome::Found)
-        .ok_or(error)
 }
 
 #[cfg(test)]

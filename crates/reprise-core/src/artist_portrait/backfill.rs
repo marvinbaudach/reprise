@@ -7,6 +7,7 @@ use std::sync::{Arc, Condvar, Mutex};
 use std::thread::JoinHandle;
 use std::time::{Duration, Instant};
 
+use crate::artist_portrait::fetch::is_network_shaped_error;
 use crate::artist_portrait::{cache, PortraitError, PortraitOutcome};
 use crate::db::Db;
 use crate::musicbrainz::FetchError;
@@ -441,25 +442,6 @@ fn pending_artists_with_hints(
         .collect()
 }
 
-/// Classifies a portrait fetch error as network-shaped or artist-shaped.
-///
-/// Network-shaped errors indicate the connection is the problem; every artist would
-/// fail the same way. These retries never consume artist-specific budgets.
-///
-/// Artist-shaped errors indicate the server answered and the answer is specific to
-/// this request. These always consume one artist attempt.
-fn is_network_shaped_error(error: &PortraitError) -> bool {
-    matches!(
-        error,
-        PortraitError::Fetch(
-            FetchError::Timeout
-                | FetchError::Transport
-                | FetchError::Body
-                | FetchError::HttpStatus(429 | 500..=599)
-        )
-    )
-}
-
 /// Whether the server refused the request outright (see `fetch::is_refusal`).
 fn is_refused(error: &PortraitError) -> bool {
     matches!(
@@ -522,7 +504,8 @@ fn run_worker(
                     }
                 } else if is_refused(&error) {
                     // Refused: the server declined this artist for good. Retrying within
-                    // this run repeats every source request; the next run tries again.
+                    // this run repeats every source request; the retry marker keeps the
+                    // next day's runs from asking again.
                     tracing::debug!(%error, "artist portrait backfill request refused");
                     cache::write_retry(cache_dir, &artist.name);
                     progress.failed = progress.failed.saturating_add(1);

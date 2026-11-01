@@ -740,4 +740,5 @@ fn net_9a_a_refused_artist_is_tried_once_per_run_and_gets_no_negative_marker() {
     assert_eq!(final_progress.failed, 1);
     assert_eq!(call_count.load(Ordering::Relaxed), 1);
     assert!(!cache::negative_marker_path(cache_dir.path(), "Refused").exists());
+    assert!(cache::retry_marker_path(cache_dir.path(), "Refused").exists());
 }
