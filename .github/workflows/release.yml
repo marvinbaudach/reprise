@@ -805,6 +805,16 @@ jobs:
           printf '%s\n' "$FLATPAK_GPG_PRIVATE_KEY" > "$key_file"
           if [[ -n ${FLATPAK_GPG_PASSPHRASE:-} ]]; then
             printf '%s\n' "$FLATPAK_GPG_PASSPHRASE" | gpg --batch --pinentry-mode loopback --passphrase-fd 0 --import "$key_file"
+            # Signing runs inside flatpak and ostree, which cannot answer a
+            # passphrase prompt, so cache the passphrase in the agent for every key.
+            mkdir -p ~/.gnupg
+            chmod 700 ~/.gnupg
+            echo allow-preset-passphrase >> ~/.gnupg/gpg-agent.conf
+            gpgconf --reload gpg-agent
+            preset="$(gpgconf --list-dirs libexecdir)/gpg-preset-passphrase"
+            while read -r keygrip; do
+              printf '%s' "$FLATPAK_GPG_PASSPHRASE" | "$preset" --preset "$keygrip"
+            done < <(gpg --batch --with-colons --with-keygrip --list-secret-keys | awk -F: '$1 == "grp" { print $10 }')
           else
             gpg --batch --import "$key_file"
           fi
@@ -833,7 +843,6 @@ jobs:
             echo "Could not clone reprise-flatpak gh-pages; create the repository and branch first" >&2
             exit 1
           }
-          rm -f ~/.ssh/reprise-flatpak-deploy ~/.ssh/config
 
       - name: Download Flatpak bundle
         uses: actions/download-artifact@v8
@@ -851,6 +860,9 @@ jobs:
             rm -rf repo
             ostree init --mode=archive-z2 --repo=repo
           fi
+          # Git does not keep empty directories, so a cloned repository lacks the
+          # ones ostree needs to open it; "ostree init" does not recreate them.
+          mkdir -p repo/tmp repo/state repo/extensions repo/refs/heads repo/refs/mirrors repo/refs/remotes
           bundle="$GITHUB_WORKSPACE/dist/Reprise-$BUNDLE_VERSION.flatpak"
           flatpak build-import-bundle --gpg-sign="$SIGNING_KEY_ID" repo "$bundle"
           flatpak build-update-repo --gpg-sign="$SIGNING_KEY_ID" --generate-static-deltas --prune --prune-depth=3 repo
@@ -879,12 +891,14 @@ jobs:
           <p><a href="reprise.flatpakref">Install Reprise</a></p></html>
           HTML
           touch .nojekyll
+          new_commit=$(ostree rev-parse --repo=repo app/io.github.marvinbaudach.Reprise/x86_64/master)
           ostree summary --view --repo=repo | tee "$RUNNER_TEMP/ostree-summary.txt"
-          grep -F "io.github.marvinbaudach.Reprise" "$RUNNER_TEMP/ostree-summary.txt" || {
-            echo "Published OSTree summary does not include Reprise" >&2
+          grep -F "$new_commit" "$RUNNER_TEMP/ostree-summary.txt" || {
+            echo "Published OSTree summary does not include the new Reprise commit $new_commit" >&2
             exit 1
           }
           git checkout --orphan publish-flatpak
           git add -A
           git -c user.name='github-actions[bot]' -c user.email='41898282+github-actions[bot]@users.noreply.github.com' commit -m "Publish Reprise Flatpak repository"
           git push --force origin HEAD:gh-pages
+          rm -f ~/.ssh/reprise-flatpak-deploy ~/.ssh/config
