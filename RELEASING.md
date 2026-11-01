@@ -87,6 +87,10 @@ The self-hosted Flatpak repository is published to the `gh-pages` branch of
 only for pushes to `main` and only when the Actions variable
 `FLATPAK_REMOTE_ENABLED` is exactly `true`. Keep it unset or false until the
 repository, Pages site, signing key, and deploy key are ready.
+Setting it is the decision that begins public distribution: the first publish ends
+the agents' standing permission to promote `dev` to `main` (`AGENTS.md`,
+`docs/agents/branching.md`) and starts the data-preservation contract in
+`AGENTS.md`.
 
 The job requires the `FLATPAK_GPG_PRIVATE_KEY` and
 `FLATPAK_REPO_DEPLOY_KEY` Actions secrets, and the base64-encoded public key in

@@ -91,11 +91,11 @@ agent may act alone and an agent that never opens the guide must still meet them
 
 - The `dev`-to-`main` promotion is a fast-forward push, never a pull request; a squashed
   promotion would make the two branches diverge permanently.
-- Until the first build is published to the self-hosted Flatpak repository, agents may
-  perform this promotion autonomously. That first publication begins public distribution
-  and ends the standing permission; after it, only the repository owner decides when a
-  promotion happens, though an agent may execute the exact promotion the owner explicitly
-  authorizes.
+- Until Reprise is publicly distributed, agents may perform this promotion autonomously.
+  Public distribution begins with the first build published to the self-hosted Flatpak
+  repository, and that permission ends then; after it, only the repository owner decides
+  when a promotion happens, though an agent may execute the exact promotion the owner
+  explicitly authorizes.
 - Emergency production fixes start on a `hotfix/*` branch **from `dev`** and reach `main`
   through the same promotion. A `hotfix/*` merged straight into `main` breaks the
   fast-forward property irrecoverably.
