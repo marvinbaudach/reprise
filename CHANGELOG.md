@@ -4,6 +4,22 @@ Reprise release notes are curated from the changes that reached the stable
 branch. They describe user-visible changes rather than reproducing commit
 messages.
 
+## [0.1.326] - 2026-11-01
+
+### Language
+
+- Added an Italian translation, contributed by giallorosso84.
+
+### Android
+
+- Swiping back from a settings page slides the page away, as the back arrow
+  does. The system back gesture used to fade and shrink it instead.
+
+### Tools, packaging, and reliability
+
+- Dependencies and build tools pick up their October patch releases, among
+  them serde_json, Gradle 9.8.1 and the Kotlin Compose plugin.
+
 ## [0.1.324] - 2026-10-31
 
 ### Android
