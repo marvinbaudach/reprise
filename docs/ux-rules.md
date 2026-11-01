@@ -3781,7 +3781,7 @@ property is set and yet nothing happens.
   reaches the other surfaces by NET-7a. A return that happened while the app
   was in the background counts when the app comes back to the foreground. A
   switch between two online networks is not a return. A surface that already
-  shows a real cover is not asked again. NET-7d governs restarting the
+  shows a real cover is not asked again. NET-7e governs restarting the
   background pass. The return is followed by at most three bounded retries
   after 3, 10 and 30 seconds while the physical network stays online and the
   app stays in the foreground. A configuration change preserves that schedule;
@@ -3823,6 +3823,8 @@ property is set and yet nothing happens.
   `net_7e_a_scan_with_no_changes_keeps_a_user_stop`,
   `net_7e_scans_that_add_or_update_tracks_restart_a_stopped_pass`,
   `net_7e_a_cold_start_while_offline_waits_for_one_real_network_return`,
+  `net_7e_a_scan_that_added_tracks_starts_artwork_at_once_while_online`,
+  `net_7e_a_scan_that_added_tracks_waits_for_the_network_while_offline`,
   `net_7e_pausedArtworkHidesTheProgressBar`,
   `net_7e_artworkStopActionMatchesTheCancelablePhasesAndHidesItsChrome`,
   `net_7e_everyPhaseMapsToItsSummarySuffixWithAndWithoutFailures`,
