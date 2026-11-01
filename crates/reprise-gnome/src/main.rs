@@ -159,6 +159,10 @@ fn install_panic_hook() {
             .location()
             .map_or_else(|| "unknown location".to_owned(), ToString::to_string);
         tracing::error!(panic_payload = payload, panic_location = location, "panic");
+        // `force_capture`: a tester never sets `RUST_BACKTRACE`, and a crash
+        // report without a backtrace has no content.
+        let backtrace = std::backtrace::Backtrace::force_capture().to_string();
+        reprise_core::crash_report::write_report(payload, &location, &backtrace);
         previous(panic_info);
     }));
 }
@@ -346,6 +350,8 @@ fn run() -> glib::ExitCode {
         return app.run();
     }
     ui::diagnostics::file_log::start();
+    // START-6: from here until a clean way out this run owns the sentinel.
+    ui::diagnostics::crash_offer::arm();
 
     let path = db::default_path();
     tracing::info!(db_path = %path.display(), "opening database");
@@ -357,6 +363,8 @@ fn run() -> glib::ExitCode {
                 error = %failure.error,
                 "could not open or migrate database"
             );
+            // A reported failure is an orderly end, not a crash.
+            ui::diagnostics::crash_offer::disarm();
             return report_database_open_failure(&app, failure);
         }
     };
@@ -499,6 +507,10 @@ fn run() -> glib::ExitCode {
     // Nothing is left to save: a signal during teardown ends the process as it
     // did before START-5 instead of sitting unread in the listener's channel.
     ui::termination::release();
+    // Every way the application can end without a crash returns from `run`
+    // (the window close and a termination request disarm earlier, with the
+    // session save); a panic in a signal handler aborts and never gets here.
+    ui::diagnostics::crash_offer::disarm();
     exit_code
 }
 

@@ -148,6 +148,10 @@ pub const SHOW_COLUMNS: &str = N_!("Show columns");
 pub const INFO_PANEL_CLOSED: &str = N_!("The info panel was closed to fit the window");
 pub const UNDO: &str = N_!("Undo");
 
+#[path = "strings_diagnostics.rs"]
+mod diagnostics;
+pub use diagnostics::*;
+
 #[path = "strings_rhythmbox.rs"]
 mod rhythmbox;
 pub use rhythmbox::*;

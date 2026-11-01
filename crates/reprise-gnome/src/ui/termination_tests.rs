@@ -218,6 +218,28 @@ fn start_5a_a_termination_request_saves_the_visible_place_and_closes_the_window(
 
 #[test]
 #[ignore = "requires a display; run via xvfb-run"]
+fn start_6_a_termination_request_removes_the_running_marker() {
+    let _marker = crate::ui::diagnostics::crash_offer::marker_test_lock();
+    let _main_context = crate::ui::test_main_context::lock_main_context();
+    let f = fixture(false);
+    f.window.present();
+    settle_until_mapped(f._track_list.widget());
+    let marker = reprise_core::state_root::crash_marker_path().unwrap();
+    crate::ui::diagnostics::crash_offer::arm();
+    assert!(marker.exists(), "a running process leaves its sentinel");
+    let (window, saver) = (f.window.clone(), f.saver.clone());
+
+    let quit_in_time = run_until_quit(&f.app, move || handle(&window, &saver));
+
+    assert!(quit_in_time, "the request quit the application");
+    assert!(
+        !marker.exists(),
+        "a handled termination request is a clean exit"
+    );
+}
+
+#[test]
+#[ignore = "requires a display; run via xvfb-run"]
 fn start_5a_a_termination_request_in_compact_mode_saves_without_a_presented_window() {
     let _main_context = crate::ui::test_main_context::lock_main_context();
     let f = fixture(false);

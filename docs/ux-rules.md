@@ -2266,6 +2266,30 @@ result.
   resume position is part of the saved session. The application releases the
   listener when `run` returns, so a request still unread at that point ends
   the process too.
+- **START-6** [planned] [gtk] — **A run that did not end cleanly is noticed
+  once, on the next start.** <!-- REVIEW: rule proposal --> The first
+  instance mirrors its log into `reprise.log` in the state directory
+  (`$XDG_STATE_HOME/reprise/`, the data directory when that is unset), which
+  only its owner can read: the previous run's log is kept as `reprise.log.1`
+  and no older one, a run that logs more than 8 MB stops writing instead of
+  rotating again, and every line passes the redaction of the copied
+  diagnostics report. A second `reprise` launch never touches the file. The
+  first instance also keeps a running marker in that directory from startup
+  until a clean way out: the session save that a window close and a
+  termination request both reach (START-5a), or the return of the application
+  run. A panic appends its message, location and backtrace to the log, with
+  library paths removed. When a start finds the marker of an earlier run
+  still there (a crash, a kill, a power loss), the main window shows exactly
+  one toast, "Reprise did not close properly last time", whose action is
+  "Copy Diagnostics": it puts the diagnostics report on the clipboard and
+  confirms it in a toast. The offer is not repeated within the process, and
+  the marker is not consumed by it: it already belongs to the new run. *Tests:*
+  `start_6_an_unclean_previous_run_is_offered_exactly_once`,
+  `start_6_a_clean_previous_run_offers_nothing`,
+  `start_6_the_offer_is_one_toast_with_copy_diagnostics_and_not_repeated`,
+  `start_6_a_clean_shutdown_removes_the_running_marker`,
+  `start_6_a_run_that_never_saved_leaves_the_running_marker`,
+  `start_6_a_termination_request_removes_the_running_marker`.
 
 ## J. Queue view
 

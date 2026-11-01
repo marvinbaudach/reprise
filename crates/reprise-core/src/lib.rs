@@ -54,6 +54,7 @@ pub mod connectivity;
 pub mod cover;
 pub mod cover_download;
 pub mod cover_writeback;
+pub mod crash_report;
 pub mod cue;
 #[cfg(test)]
 mod cue_lookup_tests;

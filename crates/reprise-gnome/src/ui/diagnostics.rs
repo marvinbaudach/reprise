@@ -16,6 +16,8 @@ use tracing::{Event, Level, Metadata, Subscriber};
 use tracing_subscriber::filter::{filter_fn, FilterFn};
 use tracing_subscriber::layer::{Context, Layer};
 
+pub(crate) mod copy;
+pub(crate) mod crash_offer;
 pub(crate) mod file_log;
 pub(crate) mod file_mirror;
 

@@ -59,6 +59,8 @@ impl SessionSaver {
             Ok(()) => tracing::info!(?state, "application session saved"),
             Err(error) => tracing::error!(%error, "could not save application session"),
         }
+        // A window close and a termination request both end here: a clean exit.
+        crate::ui::diagnostics::crash_offer::disarm();
         debug_assert!(close_should_proceed(result.is_ok()));
     }
 
@@ -109,6 +111,10 @@ mod tests {
 
     const LIBRARY_ROOT: &str = "/music/library";
 
+    fn marker_lock() -> std::sync::MutexGuard<'static, ()> {
+        crate::ui::diagnostics::crash_offer::marker_test_lock()
+    }
+
     /// A saver as it stands before the library is up or after the list was
     /// torn down: no live track list, no player.
     fn bare_saver(loaded: SessionState, geometry: (i32, i32, bool)) -> (SessionSaver, Rc<Db>) {
@@ -127,6 +133,7 @@ mod tests {
 
     #[test]
     fn start_5a_a_saver_without_a_live_window_content_still_saves_geometry() {
+        let _marker = marker_lock();
         let loaded = SessionState {
             window_width: 800,
             window_height: 600,
@@ -143,6 +150,7 @@ mod tests {
 
     #[test]
     fn start_5a_saving_twice_keeps_the_first_session() {
+        let _marker = marker_lock();
         let (saver, conn) = bare_saver(SessionState::default(), (800, 600, false));
 
         saver.save_once((1111, 777, false));
@@ -155,6 +163,7 @@ mod tests {
 
     #[test]
     fn start_5a_the_clean_exit_marker_is_written_with_the_session() {
+        let _marker = marker_lock();
         let (saver, conn) = bare_saver(SessionState::default(), (800, 600, false));
         reprise_core::library::settings::set_library_root(&conn, LIBRARY_ROOT).unwrap();
 
@@ -166,5 +175,32 @@ mod tests {
             Some(LIBRARY_ROOT.to_owned()),
             "a termination request counts as the clean exit a window close is"
         );
+    }
+
+    #[test]
+    fn start_6_a_clean_shutdown_removes_the_running_marker() {
+        let _marker = marker_lock();
+        let (saver, _conn) = bare_saver(SessionState::default(), (800, 600, false));
+        let marker = reprise_core::state_root::crash_marker_path().unwrap();
+        crate::ui::diagnostics::crash_offer::arm();
+        assert!(marker.exists(), "a running process leaves its sentinel");
+
+        saver.save_once((800, 600, false));
+
+        assert!(!marker.exists(), "the session save is the clean way out");
+    }
+
+    #[test]
+    fn start_6_a_run_that_never_saved_leaves_the_running_marker() {
+        let _marker = marker_lock();
+        let (saver, _conn) = bare_saver(SessionState::default(), (800, 600, false));
+        let marker = reprise_core::state_root::crash_marker_path().unwrap();
+
+        crate::ui::diagnostics::crash_offer::arm();
+
+        assert!(marker.exists());
+        drop(saver);
+        assert!(marker.exists(), "only an orderly shutdown removes it");
+        crate::ui::diagnostics::crash_offer::disarm();
     }
 }
