@@ -2,7 +2,6 @@ package io.github.marvinbaudach.reprise
 
 import android.content.Context
 import android.net.ConnectivityManager
-import android.net.NetworkCapabilities
 import android.os.Handler
 import android.os.Looper
 import android.os.SystemClock
@@ -109,15 +108,6 @@ internal fun LibraryScreenState.Browse.catalogShape() = LibraryCatalogShape(
     artists = artists.total,
 )
 
-private fun ConnectivityManager.hasValidatedPhysicalNetwork(): Boolean =
-    allNetworks.any { network ->
-        val capabilities = getNetworkCapabilities(network)
-        capabilities != null &&
-            capabilities.hasCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET) &&
-            capabilities.hasCapability(NetworkCapabilities.NET_CAPABILITY_VALIDATED) &&
-            capabilities.hasCapability(NetworkCapabilities.NET_CAPABILITY_NOT_VPN)
-    }
-
 private data class ArtistPhotoBackfillBinding(
     val snapshot: () -> ArtistPhotoProgress,
     val start: ((ArtistPhotoProgress) -> Unit) -> Unit,
@@ -147,8 +137,13 @@ internal class MobileSurfaceViewModel(
     private var reportNetworkReturn: (() -> Unit)? = null
     private var networkReturnPending = false
     private var artworkNetworkReturnPending = false
+    // The scan thread (AndroidLibrarySessionPort's afterScan) and the main thread both write
+    // these, so each is volatile.
+    @Volatile
     private var artworkNetworkAvailable: Boolean? = null
+    @Volatile
     private var currentArtworkNetworkState: (() -> Boolean)? = null
+    @Volatile
     private var artworkStartPending = false
 
     var selectedTab by mutableStateOf(BrowseTab.TITLES)
@@ -193,6 +188,7 @@ internal class MobileSurfaceViewModel(
     private var refreshedAlbumCoverDone = 0L
     private var albumCoverWindowStartedAtMs: Long? = null
     private var albumCoverScheduleGeneration = 0L
+    @Volatile
     private var artworkBackfillStopped = false
     @Volatile
     private var artistPhotoBackfillBinding: ArtistPhotoBackfillBinding? = null
@@ -377,32 +373,37 @@ internal class MobileSurfaceViewModel(
     }
 
     fun networkReturnedRestartArtwork() {
-        // This callback is emitted only after NetworkReturnMonitor validates the network.
-        artworkNetworkAvailable = true
-        startArtistPhotoBackfillUnlessStopped()
+        // This callback is emitted only after NetworkReturnMonitor validates the network, so the
+        // start takes it as online rather than racing a live read that may lag the callback.
+        startArtistPhotoBackfillIfOnline(online = true)
     }
 
     fun startArtistPhotoBackfillUnlessStopped() {
-        if (artworkBackfillStopped) return
-        artworkNetworkAvailable = currentArtworkNetworkState?.invoke() ?: artworkNetworkAvailable
-        when (artworkNetworkAvailable) {
-            true -> {
-                artworkStartPending = false
-                startArtistPhotoBackfill()
-            }
-            false, null -> artworkStartPending = true
-        }
+        startArtistPhotoBackfillIfOnline(
+            online = currentArtworkNetworkState?.invoke() ?: artworkNetworkAvailable,
+        )
     }
 
     fun scanCompletedRestartArtwork(summary: ScanSummary) {
-        if (summary.added + summary.updated == 0) return
+        if (summary.added + summary.updated == 0u) return
         artworkBackfillStopped = false
         startArtistPhotoBackfillUnlessStopped()
     }
 
+    private fun startArtistPhotoBackfillIfOnline(online: Boolean?) {
+        if (artworkBackfillStopped) return
+        artworkNetworkAvailable = online
+        if (online == true) {
+            artworkStartPending = false
+            startArtistPhotoBackfill()
+        } else {
+            artworkStartPending = true
+        }
+    }
+
     private fun startPendingArtworkIfOnline() {
         if (artworkStartPending && artworkNetworkAvailable == true) {
-            startArtistPhotoBackfillUnlessStopped()
+            startArtistPhotoBackfillIfOnline(online = true)
         }
     }
 

@@ -3,6 +3,7 @@ package io.github.marvinbaudach.reprise
 import android.content.Context
 import android.net.ConnectivityManager
 import android.net.NetworkCapabilities
+import android.net.NetworkInfo
 import android.os.Looper
 import androidx.test.core.app.ApplicationProvider
 import org.junit.Assert.assertEquals
@@ -13,6 +14,7 @@ import org.robolectric.Shadows.shadowOf
 import org.robolectric.annotation.Config
 import org.robolectric.shadows.ShadowNetwork
 import org.robolectric.shadows.ShadowNetworkCapabilities
+import org.robolectric.shadows.ShadowNetworkInfo
 import uniffi.reprise_android_ffi.ScanSummary
 
 @RunWith(RobolectricTestRunner::class)
@@ -72,7 +74,7 @@ class NetworkReturnBackgroundArtworkTest {
         assertEquals(1, cancels)
         assertEquals(0, starts)
 
-        surface.scanCompletedRestartArtwork(ScanSummary(added = 1, updated = 0, errors = 0))
+        surface.scanCompletedRestartArtwork(ScanSummary(added = 1u, updated = 0u, errors = 0u))
         surface.networkReturnedRestartArtwork()
 
         assertEquals(1, starts)
@@ -85,7 +87,7 @@ class NetworkReturnBackgroundArtworkTest {
         surface.bindArtistPhotoBackfill(::idleArtworkProgress, { starts += 1 }, {})
         surface.cancelArtistPhotoBackfill()
 
-        surface.scanCompletedRestartArtwork(ScanSummary(added = 0, updated = 0, errors = 0))
+        surface.scanCompletedRestartArtwork(ScanSummary(added = 0u, updated = 0u, errors = 0u))
         surface.networkReturnedRestartArtwork()
 
         assertEquals(0, starts)
@@ -94,8 +96,8 @@ class NetworkReturnBackgroundArtworkTest {
     @Test
     fun net_7e_scans_that_add_or_update_tracks_restart_a_stopped_pass() {
         listOf(
-            ScanSummary(added = 1, updated = 0, errors = 0),
-            ScanSummary(added = 0, updated = 1, errors = 0),
+            ScanSummary(added = 1u, updated = 0u, errors = 0u),
+            ScanSummary(added = 0u, updated = 1u, errors = 0u),
         ).forEach { summary ->
             val surface = MobileSurfaceViewModel()
             var starts = 0
@@ -124,6 +126,47 @@ class NetworkReturnBackgroundArtworkTest {
 
         shadow.networkCallbacks.single().onCapabilitiesChanged(
             ShadowNetwork.newInstance(180),
+            validatedWifiCapabilities(),
+        )
+        shadowOf(Looper.getMainLooper()).idle()
+
+        assertEquals(1, starts)
+        surface.stopNetworkReturnMonitor()
+    }
+
+    @Test
+    fun net_7e_a_scan_that_added_tracks_starts_artwork_at_once_while_online() {
+        val context = onlineNetworkContext()
+        val surface = MobileSurfaceViewModel()
+        var starts = 0
+        surface.bindArtistPhotoBackfill(::idleArtworkProgress, { starts += 1 }, {})
+        surface.startNetworkReturnMonitor(context) {}
+        assertEquals(0, starts)
+
+        surface.scanCompletedRestartArtwork(ScanSummary(added = 0u, updated = 0u, errors = 0u))
+        assertEquals(0, starts)
+
+        surface.scanCompletedRestartArtwork(ScanSummary(added = 1u, updated = 0u, errors = 0u))
+
+        assertEquals(1, starts)
+        surface.stopNetworkReturnMonitor()
+    }
+
+    @Test
+    fun net_7e_a_scan_that_added_tracks_waits_for_the_network_while_offline() {
+        val context = offlineNetworkContext()
+        val manager = context.getSystemService(ConnectivityManager::class.java)
+        val shadow = shadowOf(manager)
+        val surface = MobileSurfaceViewModel()
+        var starts = 0
+        surface.bindArtistPhotoBackfill(::idleArtworkProgress, { starts += 1 }, {})
+        surface.startNetworkReturnMonitor(context) {}
+
+        surface.scanCompletedRestartArtwork(ScanSummary(added = 1u, updated = 0u, errors = 0u))
+        assertEquals(0, starts)
+
+        shadow.networkCallbacks.single().onCapabilitiesChanged(
+            ShadowNetwork.newInstance(181),
             validatedWifiCapabilities(),
         )
         shadowOf(Looper.getMainLooper()).idle()
@@ -235,6 +278,24 @@ private fun offlineNetworkContext(): Context =
         shadowOf(context.getSystemService(ConnectivityManager::class.java)).apply {
             clearAllNetworks()
             setActiveNetworkInfo(null)
+        }
+    }
+
+private fun onlineNetworkContext(): Context =
+    offlineNetworkContext().also { context ->
+        val network = ShadowNetwork.newInstance(190)
+        shadowOf(context.getSystemService(ConnectivityManager::class.java)).apply {
+            addNetwork(
+                network,
+                ShadowNetworkInfo.newInstance(
+                    NetworkInfo.DetailedState.CONNECTED,
+                    ConnectivityManager.TYPE_WIFI,
+                    0,
+                    true,
+                    NetworkInfo.State.CONNECTED,
+                ),
+            )
+            setNetworkCapabilities(network, validatedWifiCapabilities())
         }
     }
 

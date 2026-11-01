@@ -200,7 +200,10 @@ internal class NetworkReturnMonitor(
     }
 }
 
-private fun NetworkCapabilities?.isValidatedPhysicalNetwork(): Boolean =
+internal fun ConnectivityManager.hasValidatedPhysicalNetwork(): Boolean =
+    allNetworks.any { network -> getNetworkCapabilities(network).isValidatedPhysicalNetwork() }
+
+internal fun NetworkCapabilities?.isValidatedPhysicalNetwork(): Boolean =
     this != null &&
         hasCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET) &&
         hasCapability(NetworkCapabilities.NET_CAPABILITY_VALIDATED) &&

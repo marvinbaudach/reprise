@@ -78,9 +78,7 @@ internal fun ArtistPhotoEdgeProgress(
 
 @Composable
 private fun ArtistPhotoTrack(progress: ArtistPhotoProgress) {
-    if (
-        progress.phase == ArtistPhotoProgressPhase.PREPARING
-    ) {
+    if (progress.phase == ArtistPhotoProgressPhase.PREPARING) {
         LinearProgressIndicator(
             color = MaterialTheme.colorScheme.primary,
             trackColor = MaterialTheme.colorScheme.outlineVariant,
