@@ -2,7 +2,7 @@
 slug: community-launch-b
 worktree: /home/marvin/Projects/reprise-community-launch-b
 branch: feature/community-launch-b
-phase: planned
+phase: coded
 codex_session:
 created: 2026-10-31
 ---
