@@ -2484,9 +2484,9 @@ dependencies = [
 
 [[package]]
 name = "ort"
-version = "2.0.0-rc.13"
+version = "2.0.0-rc.14"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "4336a1e2b38848325241c72889086886004e589b7c74f335e60a8e8db5138a0b"
+checksum = "08ca9287c05aace7e95250104a00d54b7da0fc9ac5f25efa424b80827d2e25eb"
 dependencies = [
  "libloading",
  "ndarray",
@@ -2497,9 +2497,9 @@ dependencies = [
 
 [[package]]
 name = "ort-sys"
-version = "2.0.0-rc.13"
+version = "2.0.0-rc.14"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "cf211e3776eea6aec988552fa118dd746d70e1b1e5e244058d1c98015f3e5872"
+checksum = "4af4763e553f916650b0bfe4b8d217d61c28607f6117e48b8ab5584d1138f22f"
 
 [[package]]
 name = "pango"
@@ -2853,7 +2853,7 @@ checksum = "d6f6ff9a378485b298a5286656da665ba74413d36db0979633275d2e708145d4"
 
 [[package]]
 name = "reprise-android-ffi"
-version = "0.1.326"
+version = "0.1.327"
 dependencies = [
  "reprise-core",
  "reprise-view",
@@ -2869,7 +2869,7 @@ dependencies = [
 
 [[package]]
 name = "reprise-cli"
-version = "0.1.326"
+version = "0.1.327"
 dependencies = [
  "chrono",
  "clap",
@@ -2885,7 +2885,7 @@ dependencies = [
 
 [[package]]
 name = "reprise-core"
-version = "0.1.326"
+version = "0.1.327"
 dependencies = [
  "async-channel",
  "chrono",
@@ -2915,7 +2915,7 @@ dependencies = [
 
 [[package]]
 name = "reprise-gnome"
-version = "0.1.326"
+version = "0.1.327"
 dependencies = [
  "async-channel",
  "chrono",
@@ -2942,7 +2942,7 @@ dependencies = [
 
 [[package]]
 name = "reprise-mcp"
-version = "0.1.326"
+version = "0.1.327"
 dependencies = [
  "chrono",
  "reprise-core",
@@ -2961,7 +2961,7 @@ dependencies = [
 
 [[package]]
 name = "reprise-platform-linux"
-version = "0.1.326"
+version = "0.1.327"
 dependencies = [
  "async-channel",
  "gio",
@@ -2981,7 +2981,7 @@ dependencies = [
 
 [[package]]
 name = "reprise-runtime-protocol"
-version = "0.1.326"
+version = "0.1.327"
 dependencies = [
  "serde",
  "serde_json",
@@ -2990,7 +2990,7 @@ dependencies = [
 
 [[package]]
 name = "reprise-stems"
-version = "0.1.326"
+version = "0.1.327"
 dependencies = [
  "flacenc",
  "ort",
@@ -3005,7 +3005,7 @@ dependencies = [
 
 [[package]]
 name = "reprise-view"
-version = "0.1.326"
+version = "0.1.327"
 dependencies = [
  "reprise-core",
 ]
