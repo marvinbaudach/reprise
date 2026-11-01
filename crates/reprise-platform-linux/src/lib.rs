@@ -29,6 +29,7 @@ pub mod device_sync;
 pub mod device_transfer;
 pub mod diagnostics;
 pub mod fingerprint;
+pub mod flatpak;
 mod gapless;
 pub mod location;
 pub mod mpris;

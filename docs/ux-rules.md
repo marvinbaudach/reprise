@@ -2306,6 +2306,24 @@ result.
   `start_6_a_clean_shutdown_removes_the_running_marker`,
   `start_6_a_run_that_never_saved_leaves_the_running_marker`,
   `start_6_a_termination_request_removes_the_running_marker`.
+- **START-7** [planned] [core] — **The Rhythmbox import finds the library
+  wherever Rhythmbox keeps it.** <!-- REVIEW: rule proposal --> The importer
+  looks for `rhythmdb.xml` in these directories, in this order, and the first
+  one that holds it wins: the `rhythmbox` folder of the data directory (inside
+  a Flatpak, the host's: `$HOST_XDG_DATA_HOME`, else `$HOME/.local/share`),
+  then `$HOME/.var/app/org.gnome.Rhythmbox3/data/rhythmbox` for a Rhythmbox
+  installed from Flathub. With none present the first directory stays the
+  answer, so the import is offered only when a database really exists. The
+  playlists file is the sibling `playlists.xml` of the database that was found.
+  `REPRISE_RHYTHMDB_PATH` and `REPRISE_RHYTHMBOX_PLAYLISTS_PATH` still name
+  either file directly and are not probed. Inside a Flatpak the host
+  directories are reachable only if the manifest grants read access to them.
+  *Tests:*
+  `start_7_inside_a_flatpak_the_hosts_rhythmbox_directory_is_probed_first`,
+  `start_7_a_rhythmbox_from_flathub_is_found_in_its_sandbox_directory`,
+  `start_7_the_first_directory_with_a_database_wins_and_the_override_still_beats_it`,
+  `start_7_the_playlists_file_sits_beside_the_database_that_was_found`,
+  `start_7_the_importer_takes_its_playlists_file_from_the_resolver`.
 
 ## J. Queue view
 

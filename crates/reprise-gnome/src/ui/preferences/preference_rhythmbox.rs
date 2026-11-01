@@ -11,15 +11,13 @@ use reprise_core::library::rhythmbox_import::{
     self, RhythmboxImportChoices, RhythmboxPlaylist, RhythmboxPrescanResult, RhythmboxRollback,
     RhythmboxTrackStats,
 };
+use reprise_core::library::rhythmbox_locations;
 use reprise_core::library::source::{
     LibraryLinkMode, LibraryPathPresence, LibrarySource, UnixLibrarySource,
 };
 
 use super::strings;
 use super::PreferencesContext;
-
-const RHYTHMDB_PATH_ENV: &str = "REPRISE_RHYTHMDB_PATH";
-const PLAYLISTS_PATH_ENV: &str = "REPRISE_RHYTHMBOX_PLAYLISTS_PATH";
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum RhythmboxOption {
@@ -65,15 +63,17 @@ fn option_title(option: RhythmboxOption) -> String {
     })
 }
 
+/// START-7: the database Rhythmbox keeps, wherever its packaging put it.
 #[allow(
     clippy::disallowed_methods,
     reason = "reads Rhythmbox's own data, not Reprise's"
 )]
 fn default_rhythmdb_path() -> PathBuf {
-    std::env::var_os(RHYTHMDB_PATH_ENV).map_or_else(
-        || glib::user_data_dir().join("rhythmbox/rhythmdb.xml"),
-        PathBuf::from,
+    rhythmbox_locations::from_environment(
+        reprise_platform_linux::flatpak::running_in_flatpak(),
+        glib::user_data_dir(),
     )
+    .rhythmdb
 }
 
 fn rhythmbox_data_available(rhythmdb_path: &Path) -> bool {
@@ -92,11 +92,8 @@ pub(in crate::ui) fn rhythmbox_import_available() -> bool {
     rhythmbox_data_available(&default_rhythmdb_path())
 }
 
-fn default_playlists_path(rhythmdb_path: &std::path::Path) -> PathBuf {
-    std::env::var_os(PLAYLISTS_PATH_ENV).map_or_else(
-        || rhythmdb_path.with_file_name("playlists.xml"),
-        PathBuf::from,
-    )
+fn default_playlists_path(rhythmdb_path: &Path) -> PathBuf {
+    rhythmbox_locations::playlists_path_from_environment(rhythmdb_path)
 }
 
 struct ParsedImport {

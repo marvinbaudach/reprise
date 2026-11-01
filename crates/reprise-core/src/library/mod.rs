@@ -17,6 +17,7 @@ pub mod playlists;
 pub mod relink;
 pub mod remote_stats;
 pub mod rhythmbox_import;
+pub mod rhythmbox_locations;
 #[cfg(test)]
 mod rival_commit_contention_tests;
 #[cfg(test)]

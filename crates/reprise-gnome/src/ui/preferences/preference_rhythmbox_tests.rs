@@ -82,3 +82,12 @@ fn import_dialog_has_three_stack_states_and_four_readable_option_rows() {
     // Import button starts insensitive (needs prescan)
     assert!(!widgets.import_button.is_sensitive());
 }
+
+#[test]
+fn start_7_the_importer_takes_its_playlists_file_from_the_resolver() {
+    // No test sets the override variable, so the sibling rule decides.
+    assert_eq!(
+        default_playlists_path(std::path::Path::new("/found/rhythmbox/rhythmdb.xml")),
+        std::path::PathBuf::from("/found/rhythmbox/playlists.xml")
+    );
+}
