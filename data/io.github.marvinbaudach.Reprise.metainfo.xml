@@ -139,6 +139,12 @@
     <!-- One entry per promoted release, not per merge into dev. Every merge
          raises the workspace version; only a promotion to main ships one.
          See docs/agents/branching.md and RELEASING.md. -->
+    <release version="0.1.326" date="2026-11-01" type="stable">
+      <description>
+        <p>Adds an Italian translation, contributed by giallorosso84. On Android, swiping back from a settings page now slides the page away like the back arrow does, instead of fading and shrinking it. Dependencies and build tools pick up their October patch releases.</p>
+        <p xml:lang="de">Fügt eine italienische Übersetzung hinzu, beigesteuert von giallorosso84. Unter Android schiebt die Zurück-Geste eine Einstellungsseite jetzt wie der Zurück-Pfeil zur Seite, statt sie auszublenden und zu verkleinern. Abhängigkeiten und Build-Werkzeuge erhalten ihre Oktober-Patch-Releases.</p>
+      </description>
+    </release>
     <release version="0.1.324" date="2026-10-31" type="stable">
       <description>
         <p>Makes the Android app as loud as other audio on the phone. It now normalises tracks to -14 LUFS, the level streaming services use, instead of -18 LUFS, so navigation prompts in the car no longer drown out the music; the desktop stays at -18 LUFS. An artist whose Deezer photo is refused by the image server now falls back to their credited Wikimedia Commons photo instead of staying without a portrait. TLS and async runtime libraries are raised to releases that fix newly published security advisories.</p>
