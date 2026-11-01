@@ -30,24 +30,29 @@ pub(crate) fn load_or_fetch(
     let stale = match cache::verdict(dir, name, now) {
         cache::CacheVerdict::FreshPortrait(path) => return Ok(PortraitOutcome::Found(path)),
         cache::CacheVerdict::FreshNegative => return Ok(PortraitOutcome::NotFound),
-        cache::CacheVerdict::NeedsFetch { stale_portrait } => stale_portrait,
+        // A remembered rejection stops the asking, not the serving of the portrait already held.
+        cache::CacheVerdict::FreshRetry => {
+            return Ok(cache::portrait_path_in(dir, name)
+                .map_or(PortraitOutcome::NotFound, PortraitOutcome::Found))
+        }
+        cache::CacheVerdict::NeedsFetch { stale_portrait, .. } => stale_portrait,
     };
 
     let search_body = match (fetchers.deezer_text)(&deezer::search_url(name)) {
         Ok(body) => body,
-        Err(error) => return super::stale_or(stale, error.into()),
+        Err(error) => return stale_or(dir, name, stale, error.into()),
     };
     if !deezer::has_data_array(&search_body) {
-        return super::stale_or(stale, PortraitError::InvalidResponse);
+        return stale_or(dir, name, stale, PortraitError::InvalidResponse);
     }
     if let Some(artist) = deezer::parse_best_artist(&search_body, name) {
         if let Some(url) = artist.picture_url {
             let albums = match (fetchers.deezer_text)(&release_cover::albums_url(artist.id)) {
                 Ok(body) => body,
-                Err(error) => return super::stale_or(stale, error.into()),
+                Err(error) => return stale_or(dir, name, stale, error.into()),
             };
             let Some(covers) = release_cover::parse_release_cover_identifiers(&albums) else {
-                return super::stale_or(stale, PortraitError::InvalidResponse);
+                return stale_or(dir, name, stale, PortraitError::InvalidResponse);
             };
             if release_cover::is_release_cover(&url, &covers) {
                 cache::remove_portrait(dir, name);
@@ -70,6 +75,25 @@ pub(crate) fn load_or_fetch(
     fetch_commons(name, mbid_hint, stale, None, dir, fetchers)
 }
 
+/// Classifies a portrait fetch error as network-shaped or artist-shaped.
+///
+/// Network-shaped errors indicate the connection is the problem; every artist would
+/// fail the same way. These retries never consume artist-specific budgets.
+///
+/// Artist-shaped errors indicate the server answered and the answer is specific to
+/// this request. These always consume one artist attempt.
+pub(crate) fn is_network_shaped_error(error: &PortraitError) -> bool {
+    matches!(
+        error,
+        PortraitError::Fetch(
+            FetchError::Timeout
+                | FetchError::Transport
+                | FetchError::Body
+                | FetchError::HttpStatus(429 | 500..=599)
+        )
+    )
+}
+
 const HTTP_CLIENT_ERRORS: std::ops::Range<u16> = 400..500;
 const HTTP_TOO_MANY_REQUESTS: u16 = 429;
 
@@ -77,6 +101,26 @@ const HTTP_TOO_MANY_REQUESTS: u16 = 429;
 /// other than 429), as opposed to a rate limit or server error that passes.
 pub(crate) fn is_refusal(status: u16) -> bool {
     HTTP_CLIENT_ERRORS.contains(&status) && status != HTTP_TOO_MANY_REQUESTS
+}
+
+/// Serves the stale portrait when a refresh fails. A failure that is not the network's
+/// (the server answered and refused or garbled it) is remembered for a day, so the next
+/// start does not ask again; a network-shaped failure writes nothing.
+fn stale_or(
+    dir: &Path,
+    name: &str,
+    cached_path: Option<PathBuf>,
+    error: PortraitError,
+) -> Result<PortraitOutcome, PortraitError> {
+    match cached_path.filter(|path| path.exists()) {
+        Some(path) => {
+            if !is_network_shaped_error(&error) {
+                cache::write_retry(dir, name);
+            }
+            Ok(PortraitOutcome::Found(path))
+        }
+        None => Err(error),
+    }
 }
 
 fn fetch_deezer_image(
@@ -88,7 +132,7 @@ fn fetch_deezer_image(
 ) -> Result<Option<PortraitOutcome>, PortraitError> {
     let bytes = match (fetchers.image)(url) {
         Ok(bytes) => bytes,
-        Err(error) => return super::stale_or(stale, error.into()).map(Some),
+        Err(error) => return stale_or(dir, name, stale, error.into()).map(Some),
     };
     let decoded = crate::cover_download::decode_image(&bytes);
     let distance = decoded
@@ -152,7 +196,7 @@ fn fetch_commons(
         Some(mbid) => Some(mbid.to_owned()),
         None => match exact_name_mbid(name, fetchers.musicbrainz_text) {
             Ok(mbid) => mbid,
-            Err(error) => return super::stale_or(stale, error),
+            Err(error) => return stale_or(dir, name, stale, error),
         },
     };
     let Some(mbid) = mbid else {
@@ -165,7 +209,7 @@ fn fetch_commons(
         Err(FetchError::HttpStatus(404)) if hinted_mbid.is_some() => {
             let fallback_mbid = match exact_name_mbid(name, fetchers.musicbrainz_text) {
                 Ok(mbid) => mbid,
-                Err(error) => return super::stale_or(stale, error),
+                Err(error) => return stale_or(dir, name, stale, error),
             };
             let Some(fallback_mbid) = fallback_mbid else {
                 return cache_miss(dir, name, refusal);
@@ -173,52 +217,52 @@ fn fetch_commons(
             match (fetchers.musicbrainz_text)(&wikimedia::musicbrainz_relations_url(&fallback_mbid))
             {
                 Ok(body) => body,
-                Err(error) => return super::stale_or(stale, error.into()),
+                Err(error) => return stale_or(dir, name, stale, error.into()),
             }
         }
-        Err(error) => return super::stale_or(stale, error.into()),
+        Err(error) => return stale_or(dir, name, stale, error.into()),
     };
     let qid = match wikimedia::parse_wikidata_qid(&relations) {
         Ok(qid) => qid,
-        Err(()) => return super::stale_or(stale, PortraitError::InvalidResponse),
+        Err(()) => return stale_or(dir, name, stale, PortraitError::InvalidResponse),
     };
     let Some(qid) = qid else {
         return cache_miss(dir, name, refusal);
     };
     let claims = match (fetchers.wikimedia_text)(&wikimedia::wikidata_claims_url(&qid)) {
         Ok(body) => body,
-        Err(error) => return super::stale_or(stale, error.into()),
+        Err(error) => return stale_or(dir, name, stale, error.into()),
     };
     let filename = match wikimedia::parse_p18_filename(&claims, &qid) {
         Ok(filename) => filename,
-        Err(()) => return super::stale_or(stale, PortraitError::InvalidResponse),
+        Err(()) => return stale_or(dir, name, stale, PortraitError::InvalidResponse),
     };
     let Some(filename) = filename else {
         return cache_miss(dir, name, refusal);
     };
     let info = match (fetchers.wikimedia_text)(&wikimedia::commons_imageinfo_url(&filename)) {
         Ok(body) => body,
-        Err(error) => return super::stale_or(stale, error.into()),
+        Err(error) => return stale_or(dir, name, stale, error.into()),
     };
     let image = match wikimedia::parse_commons_imageinfo(&info) {
         Ok(image) => image,
-        Err(()) => return super::stale_or(stale, PortraitError::InvalidResponse),
+        Err(()) => return stale_or(dir, name, stale, PortraitError::InvalidResponse),
     };
     let Some(image) = image else {
         return cache_miss(dir, name, refusal);
     };
     if !wikimedia::is_download_url(&image.thumbnail_url) {
-        return super::stale_or(stale, PortraitError::InvalidResponse);
+        return stale_or(dir, name, stale, PortraitError::InvalidResponse);
     }
     let bytes = match (fetchers.image)(&image.thumbnail_url) {
         Ok(bytes) => bytes,
-        Err(error) => return super::stale_or(stale, error.into()),
+        Err(error) => return stale_or(dir, name, stale, error.into()),
     };
     let Some(extension) = crate::cover_download::decode_image(&bytes)
         .as_ref()
         .and_then(crate::cover_download::DecodedImage::validated_extension)
     else {
-        return super::stale_or(stale, PortraitError::InvalidResponse);
+        return stale_or(dir, name, stale, PortraitError::InvalidResponse);
     };
     let Some(path) = cache::store_portrait(
         dir,
@@ -227,7 +271,7 @@ fn fetch_commons(
         extension,
         &PortraitRecord::commons(image.credit),
     ) else {
-        return super::stale_or(stale, PortraitError::InvalidResponse);
+        return stale_or(dir, name, stale, PortraitError::InvalidResponse);
     };
     Ok(PortraitOutcome::Found(path))
 }

@@ -31,6 +31,16 @@ pub struct CoverBackfillProgress {
 pub type CoverBackfillFetch =
     dyn Fn(&str, &str, &str) -> crate::cover_download::CoverFetchOutcome + Send + Sync;
 pub type CoverBackfillListener = dyn Fn(CoverBackfillProgress) + Send + Sync;
+pub type CoverBackfillTriage = dyn Fn(&str, &str, &str) -> CoverAlbumTriage + Send + Sync;
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum CoverAlbumTriage {
+    Cached,
+    KnownMissing,
+    LocalMarker,
+    LocalResolved,
+    NeedsRequest,
+}
 
 #[must_use]
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -40,7 +50,9 @@ pub enum ChainedCoverStart {
     Busy,
 }
 
-type PrepareWork = dyn FnOnce() -> Result<Vec<(String, String, String)>, String> + Send;
+/// Prepares the worklist; the probe reports a stop so a long preparation can end early.
+type PrepareWork = dyn for<'a> FnOnce(&'a (dyn Fn() -> bool + 'a)) -> Result<Vec<(String, String, String)>, String>
+    + Send;
 type ConsentAllowed = dyn Fn() -> bool + Send + Sync;
 
 struct Shared {
@@ -102,11 +114,29 @@ impl CoverBackfill {
         listener: Arc<CoverBackfillListener>,
         consent_allowed: Arc<ConsentAllowed>,
     ) -> bool {
+        self.start_with_triage(
+            database_path,
+            fetch,
+            listener,
+            consent_allowed,
+            Arc::new(|_, _, _| CoverAlbumTriage::NeedsRequest),
+        )
+    }
+
+    pub fn start_with_triage(
+        &self,
+        database_path: PathBuf,
+        fetch: Arc<CoverBackfillFetch>,
+        listener: Arc<CoverBackfillListener>,
+        consent_allowed: Arc<ConsentAllowed>,
+        triage: Arc<CoverBackfillTriage>,
+    ) -> bool {
         self.launch(
             None,
-            Box::new(move || {
+            Box::new(move |is_cancelled| {
                 let db = Db::open_ready(&database_path).map_err(|error| error.to_string())?;
-                pending_albums(&db).map_err(|error| error.to_string())
+                pending_albums(&db, triage.as_ref(), is_cancelled)
+                    .map_err(|error| error.to_string())
             }),
             fetch,
             listener,
@@ -123,11 +153,31 @@ impl CoverBackfill {
         listener: Arc<CoverBackfillListener>,
         consent_allowed: Arc<ConsentAllowed>,
     ) -> ChainedCoverStart {
+        self.start_chained_with_triage(
+            transition,
+            database_path,
+            fetch,
+            listener,
+            consent_allowed,
+            Arc::new(|_, _, _| CoverAlbumTriage::NeedsRequest),
+        )
+    }
+
+    pub fn start_chained_with_triage(
+        &self,
+        transition: ChainedCoverStartGuard,
+        database_path: PathBuf,
+        fetch: Arc<CoverBackfillFetch>,
+        listener: Arc<CoverBackfillListener>,
+        consent_allowed: Arc<ConsentAllowed>,
+        triage: Arc<CoverBackfillTriage>,
+    ) -> ChainedCoverStart {
         let start = self.launch(
             Some(transition.generation),
-            Box::new(move || {
+            Box::new(move |is_cancelled| {
                 let db = Db::open_ready(&database_path).map_err(|error| error.to_string())?;
-                pending_albums(&db).map_err(|error| error.to_string())
+                pending_albums(&db, triage.as_ref(), is_cancelled)
+                    .map_err(|error| error.to_string())
             }),
             fetch,
             listener,
@@ -278,7 +328,7 @@ impl CoverBackfill {
 
         let shared = Arc::clone(&self.shared);
         *worker = Some(std::thread::spawn(move || {
-            let albums = match prepare() {
+            let albums = match prepare(&|| cancelled(&shared)) {
                 Ok(albums) => albums,
                 Err(error) => {
                     tracing::warn!(%error, "album cover backfill could not prepare its worklist");
@@ -301,7 +351,26 @@ impl CoverBackfill {
     ) -> bool {
         self.launch(
             None,
-            Box::new(move || Ok(albums)),
+            Box::new(move |_| Ok(albums)),
+            fetch,
+            listener,
+            consent_allowed,
+        )
+        .is_started()
+    }
+
+    #[cfg(test)]
+    fn start_prepared_triaged(
+        &self,
+        albums: Vec<(String, String, String)>,
+        triage: Arc<CoverBackfillTriage>,
+        fetch: Arc<CoverBackfillFetch>,
+        listener: Arc<CoverBackfillListener>,
+        consent_allowed: Arc<ConsentAllowed>,
+    ) -> bool {
+        self.launch(
+            None,
+            Box::new(move |is_cancelled| Ok(triage_albums(albums, triage.as_ref(), is_cancelled))),
             fetch,
             listener,
             consent_allowed,
@@ -320,7 +389,7 @@ impl CoverBackfill {
     ) -> ChainedCoverStart {
         let start = self.launch(
             Some(transition.generation),
-            Box::new(move || Ok(albums)),
+            Box::new(move |_| Ok(albums)),
             fetch,
             listener,
             consent_allowed,
@@ -389,7 +458,11 @@ impl Drop for CoverBackfill {
 
 /// One `(album_artist, album, representative_track_uri)` per album in the
 /// library, in the same paged read `PortraitBackfill::pending_artists` uses.
-fn pending_albums(db: &Db) -> Result<Vec<(String, String, String)>, rusqlite::Error> {
+fn pending_albums(
+    db: &Db,
+    triage: &CoverBackfillTriage,
+    is_cancelled: &dyn Fn() -> bool,
+) -> Result<Vec<(String, String, String)>, rusqlite::Error> {
     let mut albums = Vec::new();
     let mut offset = 0_i64;
     loop {
@@ -409,10 +482,45 @@ fn pending_albums(db: &Db) -> Result<Vec<(String, String, String)>, rusqlite::Er
                 .map(|album| (album.album_artist, album.album, album.representative_path)),
         );
         if !window.has_more || returned == 0 {
-            return Ok(albums);
+            return Ok(triage_albums(albums, triage, is_cancelled));
         }
         offset = offset.saturating_add(i64::try_from(returned).unwrap_or(i64::MAX));
     }
+}
+
+/// Classifies every album, checking for a stop before each one: a triage reads tags and
+/// writes markers per album, so a stopped run must not keep doing that for the rest.
+/// A stopped triage returns what it has; the worker then ends as cancelled.
+fn triage_albums(
+    albums: Vec<(String, String, String)>,
+    triage: &CoverBackfillTriage,
+    is_cancelled: &dyn Fn() -> bool,
+) -> Vec<(String, String, String)> {
+    let total = u64::try_from(albums.len()).unwrap_or(u64::MAX);
+    let mut counts = [0_u64; 4];
+    let mut pending = Vec::new();
+    for (artist, album, path) in albums {
+        if is_cancelled() {
+            return pending;
+        }
+        match triage(&artist, &album, &path) {
+            CoverAlbumTriage::Cached => counts[0] += 1,
+            CoverAlbumTriage::KnownMissing => counts[1] += 1,
+            CoverAlbumTriage::LocalMarker => counts[2] += 1,
+            CoverAlbumTriage::LocalResolved => counts[3] += 1,
+            CoverAlbumTriage::NeedsRequest => pending.push((artist, album, path)),
+        }
+    }
+    tracing::info!(
+        total_albums = total,
+        cached = counts[0],
+        known_missing = counts[1],
+        local_marker = counts[2],
+        local_resolved = counts[3],
+        needs_request = pending.len(),
+        "album cover backfill worklist"
+    );
+    pending
 }
 
 fn cancelled(shared: &Mutex<Shared>) -> bool {

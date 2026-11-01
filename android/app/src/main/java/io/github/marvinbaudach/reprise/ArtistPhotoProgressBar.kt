@@ -67,7 +67,7 @@ internal fun ArtistPhotoEdgeProgress(
         }
     }
     AnimatedVisibility(
-        visible = progress != null,
+        visible = progress != null && progress.phase != ArtistPhotoProgressPhase.PAUSED,
         modifier = modifier,
         enter = fadeIn(tween(DELETION_LINE_FADE_MS)),
         exit = fadeOut(tween(DELETION_LINE_FADE_MS)),
@@ -78,10 +78,7 @@ internal fun ArtistPhotoEdgeProgress(
 
 @Composable
 private fun ArtistPhotoTrack(progress: ArtistPhotoProgress) {
-    if (
-        progress.phase == ArtistPhotoProgressPhase.PREPARING ||
-        progress.phase == ArtistPhotoProgressPhase.PAUSED
-    ) {
+    if (progress.phase == ArtistPhotoProgressPhase.PREPARING) {
         LinearProgressIndicator(
             color = MaterialTheme.colorScheme.primary,
             trackColor = MaterialTheme.colorScheme.outlineVariant,

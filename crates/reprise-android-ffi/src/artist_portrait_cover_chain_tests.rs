@@ -6,7 +6,7 @@ use super::*;
 /// A `SafSource` reading straight off the real filesystem, for tests that
 /// need a configured tree — the cover chain (B3) has no reason to run
 /// without one.
-struct ChainFsSource;
+pub(super) struct ChainFsSource;
 
 impl crate::source::SafSource for ChainFsSource {
     fn residence_token(&self, _uri: String) -> Result<Option<i64>, crate::source::SafSourceError> {
@@ -72,6 +72,14 @@ impl ArtistPortraitProgressListener for NoopProgressListener {
     fn on_progress(&self, _update: ArtistPortraitProgressUpdate) {}
 }
 
+struct CapturedProgress(Arc<Mutex<Vec<ArtistPortraitProgressUpdate>>>);
+
+impl ArtistPortraitProgressListener for CapturedProgress {
+    fn on_progress(&self, update: ArtistPortraitProgressUpdate) {
+        self.0.lock().unwrap().push(update);
+    }
+}
+
 /// The chain B3 adds: once the portrait run this rides beside reports
 /// `Complete`, the cover pass starts on its own worklist and its progress
 /// merges into the same `ArtistPortraitProgressUpdate` Kotlin already reads.
@@ -81,7 +89,7 @@ impl ArtistPortraitProgressListener for NoopProgressListener {
 /// `covers_done == covers_total`, which cannot tell a locally-resolved
 /// album from one that silently made a live request.
 #[test]
-fn the_cover_pass_starts_once_the_portrait_run_completes() {
+fn net_7e_local_art_is_recorded_and_excluded_before_the_cover_pass_counts_work() {
     let _guard = album_cover::reset_album_cover_state_for_tests();
     let directory = tempfile::tempdir().unwrap();
     let music = directory.path().join("music");
@@ -106,9 +114,10 @@ fn the_cover_pass_starts_once_the_portrait_run_completes() {
     // Local art: the cover pass must settle this album without a request.
     std::fs::write(music.join("cover.png"), TINY_IMAGE).unwrap();
 
+    let cache_root = directory.path().join("cache");
     let library = MusicLibrary::open_with_portrait_fetch(
         directory.path().to_str().unwrap(),
-        directory.path().join("cache").to_str().unwrap(),
+        cache_root.to_str().unwrap(),
         |_, _| Ok(reprise_core::artist_portrait::PortraitOutcome::NotFound),
     )
     .unwrap();
@@ -122,35 +131,158 @@ fn the_cover_pass_starts_once_the_portrait_run_completes() {
     let writer = library.writer().unwrap();
     reprise_core::library::scanner::scan_folder(&writer, &music).unwrap();
     drop(writer);
+    reprise_core::artist_portrait::store_fixture_image(
+        &library.portrait_dir(),
+        "Chain Band",
+        TINY_IMAGE,
+        "png",
+    )
+    .unwrap();
 
+    let updates = Arc::new(Mutex::new(Vec::new()));
     let network_fetch_calls = Arc::new(AtomicUsize::new(0));
     let counted_network_fetch = Arc::clone(&network_fetch_calls);
     library.start_artist_portrait_backfill_with(
-        Box::new(NoopProgressListener),
+        Box::new(CapturedProgress(Arc::clone(&updates))),
         Arc::new(move |_, _, _| {
             counted_network_fetch.fetch_add(1, Ordering::Relaxed);
             CoverFetchOutcome::NotFound
         }),
     );
 
-    let mut last = library.artist_portrait_backfill_progress();
+    let local_marker = reprise_core::cover_download::downloaded_dir_in(&cache_root).join(format!(
+        "{}.local",
+        reprise_core::cover_download::album_key("Chain Band", "Chain Album")
+    ));
     for _ in 0..5_000 {
-        last = library.artist_portrait_backfill_progress();
-        if last.covers_total > 0 && last.covers_done == last.covers_total {
+        if local_marker.exists() && updates.lock().unwrap().len() >= 2 {
             break;
         }
         std::thread::sleep(std::time::Duration::from_millis(1));
     }
 
-    assert_eq!(last.covers_total, 1, "one album, one representative track");
-    assert_eq!(
-        last.covers_done, 1,
-        "local art settles the album without a request"
+    assert!(
+        local_marker.exists(),
+        "local art is remembered during triage"
     );
     assert_eq!(
         network_fetch_calls.load(Ordering::Relaxed),
         0,
         "a locally-resolved album must never reach the network fetch",
+    );
+    assert!(updates.lock().unwrap().iter().all(|update| {
+        update.run_id == 0
+            || (update.state == ArtistPortraitProgressState::Complete && update.total == 0)
+    }));
+    let first_run_id = updates.lock().unwrap().last().unwrap().run_id;
+    let marker_time = std::fs::metadata(&local_marker)
+        .unwrap()
+        .modified()
+        .unwrap();
+    super::super::test_support::start_until_settled(
+        || {
+            library.start_artist_portrait_backfill_with(
+                Box::new(CapturedProgress(Arc::clone(&updates))),
+                Arc::new(|_, _, _| panic!("local art is not fetched")),
+            );
+        },
+        &updates,
+        0,
+        |update| {
+            update.run_id > first_run_id && update.state == ArtistPortraitProgressState::Complete
+        },
+    );
+    assert_eq!(
+        std::fs::metadata(&local_marker)
+            .unwrap()
+            .modified()
+            .unwrap(),
+        marker_time,
+        "a fresh local marker prevents another SAF resolution",
+    );
+    assert_eq!(library.artist_portrait_backfill_progress().run_id, 0);
+}
+
+#[test]
+fn net_7e_fresh_portraits_still_chain_one_album_request_and_terminal_snapshot_is_hidden() {
+    let _guard = album_cover::reset_album_cover_state_for_tests();
+    let directory = tempfile::tempdir().unwrap();
+    let music = directory.path().join("music");
+    std::fs::create_dir(&music).unwrap();
+    let track_path = music.join("track.flac");
+    let fixture = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+        .join("../../android/app/src/main/assets/sine.flac");
+    std::fs::copy(fixture, &track_path).unwrap();
+    reprise_core::library::tag_edit::apply_patch_to_file(
+        &track_path,
+        &reprise_core::library::tag_edit::TagPatch {
+            title: Some("Track".into()),
+            artist: Some("Fresh Band".into()),
+            album: Some("New Album".into()),
+            album_artist: Some("Fresh Band".into()),
+            year: None,
+            track_no: Some(Some(1)),
+            genre: None,
+        },
+    )
+    .unwrap();
+    let cache_root = directory.path().join("cache");
+    let library = MusicLibrary::open_with_portrait_fetch(
+        directory.path().to_str().unwrap(),
+        cache_root.to_str().unwrap(),
+        |_, _| panic!("a fresh portrait is not fetched"),
+    )
+    .unwrap();
+    open_gate(&library);
+    reprise_core::artist_portrait::store_fixture_image(
+        &library.portrait_dir(),
+        "Fresh Band",
+        TINY_IMAGE,
+        "png",
+    )
+    .unwrap();
+    library
+        .set_tree_uri(
+            music.to_string_lossy().into_owned(),
+            Box::new(ChainFsSource),
+        )
+        .unwrap();
+    let writer = library.writer().unwrap();
+    reprise_core::library::scanner::scan_folder(&writer, &music).unwrap();
+    drop(writer);
+
+    let updates = Arc::new(Mutex::new(Vec::new()));
+    let fetches = Arc::new(AtomicUsize::new(0));
+    let counted = Arc::clone(&fetches);
+    library.start_artist_portrait_backfill_with(
+        Box::new(CapturedProgress(Arc::clone(&updates))),
+        Arc::new(move |_, _, _| {
+            counted.fetch_add(1, Ordering::Relaxed);
+            CoverFetchOutcome::NotFound
+        }),
+    );
+    for _ in 0..5_000 {
+        if fetches.load(Ordering::Relaxed) == 1
+            && updates
+                .lock()
+                .unwrap()
+                .last()
+                .is_some_and(|update| update.state == ArtistPortraitProgressState::Complete)
+        {
+            break;
+        }
+        std::thread::sleep(std::time::Duration::from_millis(1));
+    }
+
+    let updates = updates.lock().unwrap();
+    assert!(updates
+        .iter()
+        .any(|update| update.run_id != 0 && update.covers_total == 1));
+    assert_eq!(fetches.load(Ordering::Relaxed), 1);
+    let snapshot = library.artist_portrait_backfill_progress();
+    assert!(
+        snapshot.run_id == 0
+            || (snapshot.state == ArtistPortraitProgressState::Complete && snapshot.total == 0)
     );
 }
 
@@ -531,18 +663,15 @@ fn the_forward_closure_never_pushes_complete_before_the_chained_cover_pass_repor
     }
 
     let captured = updates.lock().unwrap().clone();
-    let first_cover_update = captured.iter().position(|update| update.covers_total > 0);
     assert!(
-        first_cover_update.is_some(),
-        "the chain must report cover progress at all: {captured:?}"
-    );
-    let first_cover_update = first_cover_update.unwrap();
-    assert!(
-        captured[..first_cover_update]
+        captured
             .iter()
-            .all(|update| update.state != ArtistPortraitProgressState::Complete),
-        "a Complete update arrived before the chained cover pass reported \
-         any progress, a bar that finished and then ran backwards: {captured:?}"
+            .any(|update| update.state == ArtistPortraitProgressState::Complete),
+        "the locally-resolved run must terminate: {captured:?}"
+    );
+    assert!(
+        captured.iter().all(|update| update.covers_total == 0),
+        "local art is excluded before cover progress is counted: {captured:?}"
     );
 }
 

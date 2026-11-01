@@ -114,7 +114,7 @@ fn total_excludes_fresh_portraits_and_markers_but_includes_an_expired_marker() {
         .unwrap()
         .set_times(
             FileTimes::new()
-                .set_modified(UNIX_EPOCH + Duration::from_secs((now - 8 * 24 * 60 * 60) as u64)),
+                .set_modified(UNIX_EPOCH + Duration::from_secs((now - 38 * 24 * 60 * 60) as u64)),
         )
         .unwrap();
 
@@ -205,7 +205,7 @@ fn one_hundred_fast_steps_are_throttled_but_complete_is_always_reported() {
 }
 
 #[test]
-fn an_empty_worklist_publishes_no_progress() {
+fn net_7e_an_empty_worklist_publishes_one_terminal_zero_total_completion() {
     let cache_dir = tempfile::tempdir().unwrap();
     let (updates, listener) = updates();
     let backfill = PortraitBackfill::new();
@@ -220,8 +220,15 @@ fn an_empty_worklist_publishes_no_progress() {
     ));
     wait_for_worker_to_finish(&backfill);
 
-    assert_eq!(backfill.progress(), PortraitBackfillProgress::idle());
-    assert!(updates.lock().unwrap().is_empty());
+    let completed = PortraitBackfillProgress {
+        run_id: 1,
+        state: PortraitBackfillState::Complete,
+        done: 0,
+        failed: 0,
+        total: 0,
+    };
+    assert_eq!(backfill.progress(), completed);
+    assert_eq!(*updates.lock().unwrap(), vec![completed]);
 }
 
 #[test]
@@ -633,7 +640,7 @@ fn a_broken_artist_never_pauses_the_run() {
 }
 
 #[test]
-fn a_dropped_artist_gets_no_negative_marker() {
+fn net_7e_a_dropped_artist_gets_no_negative_marker() {
     let cache_dir = tempfile::tempdir().unwrap();
     let cache_path = cache_dir.path().to_owned();
     let call_count = Arc::new(AtomicU32::new(0));
@@ -665,6 +672,7 @@ fn a_dropped_artist_gets_no_negative_marker() {
         super::MAX_ATTEMPTS_PER_ARTIST
     );
     assert!(!negative_marker.exists());
+    assert!(cache::retry_marker_path(cache_dir.path(), "Bad").exists());
 }
 
 #[test]
@@ -697,6 +705,7 @@ fn a_total_outage_spends_no_attempt_budget() {
     assert_eq!(final_progress.failed, 0);
     assert_eq!(final_progress.done, 2);
     assert_eq!(artist_calls.load(Ordering::Relaxed), failure_calls + 1);
+    assert!(!cache::retry_marker_path(cache_dir.path(), "A").exists());
 }
 
 #[test]
@@ -731,4 +740,5 @@ fn net_9a_a_refused_artist_is_tried_once_per_run_and_gets_no_negative_marker() {
     assert_eq!(final_progress.failed, 1);
     assert_eq!(call_count.load(Ordering::Relaxed), 1);
     assert!(!cache::negative_marker_path(cache_dir.path(), "Refused").exists());
+    assert!(cache::retry_marker_path(cache_dir.path(), "Refused").exists());
 }

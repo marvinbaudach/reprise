@@ -160,7 +160,7 @@ fun rememberedReadableTreeLoadsOnlyTheRememberedDestinationWithoutScanning() {
 }
 
 @Test
-fun net_7d_restore_starts_artwork_once_immediately_after_configuring_the_tree() {
+fun net_7e_restore_starts_artwork_once_immediately_after_configuring_the_tree() {
     val port = RecordingLibrarySessionPort(
         rememberedTreeUri = "content://provider/tree/Music",
         readable = true,
@@ -188,7 +188,7 @@ fun net_7d_restore_starts_artwork_once_immediately_after_configuring_the_tree() 
 }
 
 @Test
-fun net_7d_restore_does_not_start_artwork_without_a_readable_remembered_tree() {
+fun net_7e_restore_does_not_start_artwork_without_a_readable_remembered_tree() {
     var starts = 0
     val noTree = RecordingLibrarySessionPort(
         rememberedTreeUri = null,

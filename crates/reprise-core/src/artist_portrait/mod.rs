@@ -5,6 +5,7 @@
 pub mod backfill;
 mod cache;
 pub mod cover_backfill;
+mod cover_triage;
 pub(crate) mod deezer;
 mod fetch;
 mod placeholder;
@@ -16,6 +17,8 @@ mod wikimedia;
 mod refused_image_tests;
 #[cfg(test)]
 mod source_tests;
+#[cfg(test)]
+mod stale_retry_tests;
 #[cfg(test)]
 mod wikimedia_tests;
 
@@ -31,8 +34,10 @@ pub use backfill::{
 pub(crate) use cache::{cache_dir, IMAGE_EXTS};
 pub use cache::{verdict, CacheVerdict};
 pub use cover_backfill::{
-    CoverBackfill, CoverBackfillFetch, CoverBackfillListener, CoverBackfillProgress,
+    CoverAlbumTriage, CoverBackfill, CoverBackfillFetch, CoverBackfillListener,
+    CoverBackfillProgress, CoverBackfillTriage,
 };
+pub use cover_triage::{stat_only_triage_in, triage_album_in};
 pub use sidecar::PortraitCredit;
 
 use std::path::{Path, PathBuf};
@@ -201,16 +206,6 @@ pub(crate) fn normalize(value: &str) -> String {
         .collect::<Vec<_>>()
         .join(" ")
         .to_lowercase()
-}
-
-fn stale_or(
-    cached_path: Option<PathBuf>,
-    error: PortraitError,
-) -> Result<PortraitOutcome, PortraitError> {
-    cached_path
-        .filter(|path| path.exists())
-        .map(PortraitOutcome::Found)
-        .ok_or(error)
 }
 
 #[cfg(test)]

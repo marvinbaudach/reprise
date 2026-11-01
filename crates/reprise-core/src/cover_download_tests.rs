@@ -236,13 +236,13 @@ fn album_negative_marker_uses_the_current_generation() {
 }
 
 #[test]
-fn stale_album_negative_marker_does_not_block_a_new_search() {
+fn net_7e_stale_album_negative_marker_does_not_block_a_new_search() {
     let album = format!("Stale marker {:016x}", fastrand::u64(..));
     let key = album_key("Marker Band", &album);
     let marker = negative_marker_path(&key);
     std::fs::create_dir_all(downloaded_dir()).unwrap();
     std::fs::write(&marker, b"").unwrap();
-    let stale = SystemTime::now() - Duration::from_secs(8 * 24 * 60 * 60);
+    let stale = SystemTime::now() - negative_marker_ttl(&key) - Duration::from_secs(1);
     std::fs::File::options()
         .write(true)
         .open(&marker)
@@ -596,53 +596,66 @@ fn nr_2a_missing_cover_uses_fallback_tile() {
 }
 
 #[test]
-fn cover_state_distinguishes_cached_known_missing_and_unknown() {
+fn net_7e_cover_state_distinguishes_cached_known_missing_and_unknown() {
     let now = SystemTime::UNIX_EPOCH + Duration::from_secs(10_000_000);
     let cached_path = PathBuf::from("/isolated/release-cover.png");
     assert_eq!(
-        cover_state_from(Some(cached_path.clone()), None, now),
+        cover_state_from(Some(cached_path.clone()), None, "0123456789abcdef", now),
         CoverState::Cached(cached_path.clone())
     );
 
     let modified = now - Duration::from_secs(60);
     assert_eq!(
-        cover_state_from(None, Some(modified), now),
+        cover_state_from(None, Some(modified), "0123456789abcdef", now),
         CoverState::KnownMissing
     );
     assert_eq!(
         cover_state_from(
             None,
             Some(modified),
-            modified + NEGATIVE_MARKER_MAX_AGE + Duration::from_secs(1),
+            "0123456789abcdef",
+            modified + negative_marker_ttl("0123456789abcdef") + Duration::from_secs(1),
         ),
         CoverState::Unknown
     );
 }
 
 #[test]
-fn negative_marker_blocks_when_fresh() {
+fn net_7e_negative_marker_blocks_when_fresh() {
     let now = SystemTime::now();
-    assert!(negative_marker_blocks(Some(now), now));
+    assert!(negative_marker_blocks(Some(now), "0123456789abcdef", now));
 }
 
 #[test]
-fn negative_marker_does_not_block_when_stale() {
+fn net_7e_negative_marker_does_not_block_when_stale() {
     let now = SystemTime::now();
-    let eight_days_ago = now - Duration::from_secs(8 * 24 * 60 * 60);
-    assert!(!negative_marker_blocks(Some(eight_days_ago), now));
+    let thirty_eight_days_ago = now - Duration::from_secs(38 * 24 * 60 * 60);
+    assert!(!negative_marker_blocks(
+        Some(thirty_eight_days_ago),
+        "0123456789abcdef",
+        now
+    ));
 }
 
 #[test]
 fn negative_marker_does_not_block_when_absent() {
-    assert!(!negative_marker_blocks(None, SystemTime::now()));
+    assert!(!negative_marker_blocks(
+        None,
+        "0123456789abcdef",
+        SystemTime::now()
+    ));
 }
 
 #[test]
 fn negative_marker_blocks_when_mtime_is_in_the_future() {
-    // Clock skew: a marker that appears newer than "now" is treated as fresh.
+    // Small clock skew: a marker a minute ahead of "now" is treated as fresh.
     let now = SystemTime::now();
     let future = now + Duration::from_secs(60);
-    assert!(negative_marker_blocks(Some(future), now));
+    assert!(negative_marker_blocks(
+        Some(future),
+        "0123456789abcdef",
+        now
+    ));
 }
 
 #[test]

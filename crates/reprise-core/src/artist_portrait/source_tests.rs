@@ -455,7 +455,7 @@ fn net_9_cached_image_without_sidecar_needs_fetch() {
     assert!(matches!(
         cache::verdict(dir.path(), "Band", now),
         cache::CacheVerdict::NeedsFetch {
-            stale_portrait: Some(path)
+            stale_portrait: Some(path), ..
         } if path == image
     ));
 }

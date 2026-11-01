@@ -74,17 +74,11 @@ class ArtistPhotoProgressBarTest {
     }
 
     @Test
-    fun waitingUsesIndeterminateEdgeProgress() {
+    fun net_7e_pausedArtworkHidesTheProgressBar() {
         show(progress(ArtistPhotoProgressPhase.PAUSED, done = 2, total = 8))
 
         compose.onNodeWithTag("artist-photo-progress-track")
-            .assertIsDisplayed()
-            .assert(
-                SemanticsMatcher.expectValue(
-                    SemanticsProperties.ProgressBarRangeInfo,
-                    ProgressBarRangeInfo.Indeterminate,
-                ),
-            )
+            .assertDoesNotExist()
     }
 
     @Test

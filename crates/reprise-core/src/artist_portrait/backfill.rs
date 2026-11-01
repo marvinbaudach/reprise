@@ -7,6 +7,7 @@ use std::sync::{Arc, Condvar, Mutex};
 use std::thread::JoinHandle;
 use std::time::{Duration, Instant};
 
+use crate::artist_portrait::fetch::is_network_shaped_error;
 use crate::artist_portrait::{cache, PortraitError, PortraitOutcome};
 use crate::db::Db;
 use crate::musicbrainz::FetchError;
@@ -272,7 +273,7 @@ impl PortraitBackfill {
                 }
             };
             if artists.is_empty() {
-                finish_without_run(&control);
+                finish_empty_worklist(&control, preparing);
                 return;
             }
             if !publish_preparing(&control, preparing) {
@@ -349,6 +350,15 @@ pub fn pending_artists(
     now: i64,
 ) -> Result<Vec<String>, rusqlite::Error> {
     let mut pending = Vec::new();
+    let mut total_artists = 0_u64;
+    let mut fresh_portraits = 0_u64;
+    let mut fresh_misses = 0_u64;
+    let mut fresh_retries = 0_u64;
+    let mut expired_misses = 0_u64;
+    let mut expired_retries = 0_u64;
+    let mut needs_fetch = 0_u64;
+    let mut stale_portraits = 0_u64;
+    let mut never_fetched = 0_u64;
     let mut retained_keys = HashSet::new();
     let mut offset = 0_i64;
     loop {
@@ -362,13 +372,56 @@ pub fn pending_artists(
         )?;
         let returned = window.rows.len();
         pending.extend(window.rows.into_iter().filter_map(|artist| {
+            total_artists += 1;
             retained_keys.insert(cache::key_for(&artist.artist));
-            cache::verdict(cache_dir, &artist.artist, now)
-                .needs_fetch()
-                .then_some(artist.artist)
+            match cache::verdict(cache_dir, &artist.artist, now) {
+                cache::CacheVerdict::FreshPortrait(_) => {
+                    fresh_portraits += 1;
+                    None
+                }
+                cache::CacheVerdict::FreshNegative => {
+                    fresh_misses += 1;
+                    None
+                }
+                cache::CacheVerdict::FreshRetry => {
+                    fresh_retries += 1;
+                    None
+                }
+                cache::CacheVerdict::NeedsFetch {
+                    stale_portrait,
+                    expired_miss,
+                    expired_retry,
+                } => {
+                    needs_fetch += 1;
+                    if stale_portrait.is_some() {
+                        stale_portraits += 1;
+                    } else {
+                        never_fetched += 1;
+                    }
+                    if expired_miss {
+                        expired_misses += 1;
+                    }
+                    if expired_retry {
+                        expired_retries += 1;
+                    }
+                    Some(artist.artist)
+                }
+            }
         }));
         if !window.has_more || returned == 0 {
             cache::prune_except(cache_dir, &retained_keys);
+            tracing::info!(
+                total_artists,
+                fresh_portrait = fresh_portraits,
+                fresh_miss = fresh_misses,
+                fresh_retry = fresh_retries,
+                needs_fetch,
+                never_fetched,
+                stale_portrait = stale_portraits,
+                expired_miss = expired_misses,
+                expired_retry = expired_retries,
+                "artist portrait backfill worklist"
+            );
             return Ok(pending);
         }
         offset = offset.saturating_add(i64::try_from(returned).unwrap_or(i64::MAX));
@@ -387,25 +440,6 @@ fn pending_artists_with_hints(
             Ok(PendingArtist { name, mbid_hint })
         })
         .collect()
-}
-
-/// Classifies a portrait fetch error as network-shaped or artist-shaped.
-///
-/// Network-shaped errors indicate the connection is the problem; every artist would
-/// fail the same way. These retries never consume artist-specific budgets.
-///
-/// Artist-shaped errors indicate the server answered and the answer is specific to
-/// this request. These always consume one artist attempt.
-fn is_network_shaped_error(error: &PortraitError) -> bool {
-    matches!(
-        error,
-        PortraitError::Fetch(
-            FetchError::Timeout
-                | FetchError::Transport
-                | FetchError::Body
-                | FetchError::HttpStatus(429 | 500..=599)
-        )
-    )
 }
 
 /// Whether the server refused the request outright (see `fetch::is_refusal`).
@@ -470,8 +504,10 @@ fn run_worker(
                     }
                 } else if is_refused(&error) {
                     // Refused: the server declined this artist for good. Retrying within
-                    // this run repeats every source request; the next run tries again.
+                    // this run repeats every source request; the retry marker keeps the
+                    // next day's runs from asking again.
                     tracing::debug!(%error, "artist portrait backfill request refused");
+                    cache::write_retry(cache_dir, &artist.name);
                     progress.failed = progress.failed.saturating_add(1);
                 } else {
                     // Artist-shaped: server answered but rejected this request.
@@ -488,6 +524,7 @@ fn run_worker(
                     } else {
                         // Budget exhausted
                         tracing::debug!(%error, "artist portrait backfill request dropped after {next_attempts} attempts");
+                        cache::write_retry(cache_dir, &artist.name);
                         progress.failed = progress.failed.saturating_add(1);
                     }
                 }
@@ -620,6 +657,26 @@ fn finish_without_run(control: &Control) {
     shared.listener = None;
 }
 
+fn finish_empty_worklist(control: &Control, mut progress: PortraitBackfillProgress) {
+    progress.state = PortraitBackfillState::Complete;
+    let listener = {
+        let mut shared = control
+            .shared
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        if shared.cancelled {
+            shared.active = false;
+            return;
+        }
+        shared.active = false;
+        shared.progress = progress;
+        shared.listener.clone()
+    };
+    if let Some(listener) = listener {
+        listener(progress);
+    }
+}
+
 fn reset_after_worker_exit(control: &Control) {
     let mut shared = control
         .shared
@@ -631,6 +688,9 @@ fn reset_after_worker_exit(control: &Control) {
     shared.listener = None;
 }
 
+#[cfg(test)]
+#[path = "backfill_retry_tests.rs"]
+mod retry_tests;
 #[cfg(test)]
 #[path = "backfill_tests.rs"]
 mod tests;

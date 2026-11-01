@@ -7,10 +7,14 @@ use std::path::{Path, PathBuf};
 use std::sync::Mutex;
 use std::time::UNIX_EPOCH;
 
+use crate::marker_expiry;
+
 pub(crate) const IMAGE_EXTS: &[&str] = &["jpg", "jpeg", "png", "webp", "gif", "bmp"];
 
 const POSITIVE_TTL_SECONDS: i64 = 30 * 24 * 60 * 60;
-const NEGATIVE_TTL_SECONDS: i64 = 7 * 24 * 60 * 60;
+const NEGATIVE_TTL_SECONDS: i64 = 30 * 24 * 60 * 60;
+const NEGATIVE_SPREAD_SECONDS: i64 = 7 * 24 * 60 * 60;
+pub(crate) const RETRY_TTL_SECONDS: i64 = 24 * 60 * 60;
 
 static CACHE_WRITE_LOCK: Mutex<()> = Mutex::new(());
 
@@ -18,7 +22,12 @@ static CACHE_WRITE_LOCK: Mutex<()> = Mutex::new(());
 pub enum CacheVerdict {
     FreshPortrait(PathBuf),
     FreshNegative,
-    NeedsFetch { stale_portrait: Option<PathBuf> },
+    FreshRetry,
+    NeedsFetch {
+        stale_portrait: Option<PathBuf>,
+        expired_miss: bool,
+        expired_retry: bool,
+    },
 }
 
 impl CacheVerdict {
@@ -47,14 +56,15 @@ pub(crate) fn negative_marker_path(dir: &Path, name: &str) -> PathBuf {
     dir.join(format!("{}.notfound", key_for(name)))
 }
 
-pub(crate) fn is_fresh(fetched_at: i64, now: i64, positive: bool) -> bool {
-    let age = now.saturating_sub(fetched_at).max(0);
-    let ttl = if positive {
-        POSITIVE_TTL_SECONDS
-    } else {
-        NEGATIVE_TTL_SECONDS
-    };
-    age <= ttl
+pub(crate) fn is_fresh(fetched_at: i64, now: i64) -> bool {
+    now.saturating_sub(fetched_at).max(0) <= POSITIVE_TTL_SECONDS
+}
+
+fn negative_ttl(name: &str) -> i64 {
+    let key = key_for(name);
+    let spread = u64::from_str_radix(&key[..8], 16).unwrap_or(0)
+        % u64::try_from(NEGATIVE_SPREAD_SECONDS + 1).unwrap_or(1);
+    NEGATIVE_TTL_SECONDS + i64::try_from(spread).unwrap_or(0)
 }
 
 /// Resolves the current positive, negative, or refreshable cache state.
@@ -64,17 +74,31 @@ pub fn verdict(dir: &Path, name: &str, now: i64) -> CacheVerdict {
         .unwrap_or_else(std::sync::PoisonError::into_inner);
     let portrait = portrait_path_in(dir, name);
     if let Some(path) = portrait.as_ref() {
-        if super::sidecar::read(dir, name).is_some() && is_fresh(file_epoch_secs(path), now, true) {
+        if super::sidecar::read(dir, name).is_some() && is_fresh(file_epoch_secs(path), now) {
             return CacheVerdict::FreshPortrait(path.clone());
         }
     }
     let marker = negative_marker_path(dir, name);
-    if marker.exists() && is_fresh(file_epoch_secs(&marker), now, false) {
+    let marker_exists = marker.exists();
+    let expired_miss = marker_exists && !marker_is_fresh_at(&marker, now, negative_ttl(name));
+    if marker_exists && !expired_miss {
         return CacheVerdict::FreshNegative;
+    }
+    let retry = retry_marker_path(dir, name);
+    let retry_exists = retry.exists();
+    let expired_retry = retry_exists && !marker_is_fresh_at(&retry, now, RETRY_TTL_SECONDS);
+    if retry_exists && !expired_retry {
+        return CacheVerdict::FreshRetry;
     }
     CacheVerdict::NeedsFetch {
         stale_portrait: portrait,
+        expired_miss,
+        expired_retry,
     }
+}
+
+fn marker_is_fresh_at(marker: &Path, now: i64, ttl_seconds: i64) -> bool {
+    marker_expiry::marker_is_fresh(now.saturating_sub(file_epoch_secs(marker)), ttl_seconds)
 }
 
 pub(crate) fn file_epoch_secs(path: &Path) -> i64 {
@@ -137,6 +161,7 @@ pub(crate) fn store_portrait(
         }
     }
     let _ = std::fs::remove_file(negative_marker_path(dir, name));
+    let _ = std::fs::remove_file(retry_marker_path(dir, name));
     Some(output)
 }
 
@@ -174,6 +199,27 @@ pub(crate) fn write_negative(dir: &Path, name: &str) {
             let _ = std::fs::remove_file(dir.join(format!("{key}.{extension}")));
         }
         let _ = std::fs::remove_file(super::sidecar::path(dir, name));
+        let _ = std::fs::remove_file(retry_marker_path(dir, name));
+        return;
+    }
+    let _ = std::fs::remove_file(temporary);
+}
+
+pub(crate) fn retry_marker_path(dir: &Path, name: &str) -> PathBuf {
+    dir.join(format!("{}.retry", key_for(name)))
+}
+
+pub(crate) fn write_retry(dir: &Path, name: &str) {
+    let _guard = CACHE_WRITE_LOCK
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner);
+    if std::fs::create_dir_all(dir).is_err() {
+        return;
+    }
+    let key = key_for(name);
+    let output = retry_marker_path(dir, name);
+    let temporary = dir.join(format!(".{key}-{}.retry.tmp", fastrand::u64(..)));
+    if std::fs::write(&temporary, b"").is_ok() && std::fs::rename(&temporary, output).is_ok() {
         return;
     }
     let _ = std::fs::remove_file(temporary);
@@ -202,6 +248,8 @@ pub(crate) fn prune_except(dir: &Path, retained_keys: &HashSet<String>) {
 
 fn cache_entry_key(file_name: &str) -> Option<&str> {
     let key = if let Some(key) = file_name.strip_suffix(".notfound") {
+        key
+    } else if let Some(key) = file_name.strip_suffix(".retry") {
         key
     } else if let Some(key) = file_name.strip_suffix(".json") {
         key
@@ -242,16 +290,83 @@ mod tests {
     }
 
     #[test]
-    fn positive_ttl_is_30_days_negative_7_days() {
+    fn net_7e_positive_ttl_is_30_days_and_negative_ttl_is_30_to_37_days() {
         let day = 24 * 60 * 60;
-        assert!(is_fresh(1_000, 1_000 + 29 * day, true));
-        assert!(!is_fresh(1_000, 1_000 + 31 * day, true));
-        assert!(is_fresh(1_000, 1_000 + 6 * day, false));
-        assert!(!is_fresh(1_000, 1_000 + 8 * day, false));
+        assert!(is_fresh(1_000, 1_000 + 29 * day));
+        assert!(!is_fresh(1_000, 1_000 + 31 * day));
+        assert_eq!(NEGATIVE_TTL_SECONDS, 30 * day);
+        let first = negative_ttl("First");
+        assert_eq!(first, negative_ttl("First"));
+        assert!((30 * day..=37 * day).contains(&first));
     }
 
     #[test]
-    fn cache_verdict_distinguishes_fresh_positive_negative_stale_and_missing_entries() {
+    fn net_7e_negative_ttl_spreads_over_the_week_without_leaving_it() {
+        let day = 24 * 60 * 60;
+        let ttls: HashSet<i64> = (0..64)
+            .map(|index| negative_ttl(&format!("Artist {index}")))
+            .collect();
+
+        assert!(ttls.iter().all(|ttl| (30 * day..=37 * day).contains(ttl)));
+        assert!(ttls.len() > 1, "all 64 artists share one expiry day");
+    }
+
+    #[test]
+    fn net_7e_portrait_markers_expire_at_exactly_their_ttl() {
+        let dir = tempfile::tempdir().unwrap();
+        write_negative(dir.path(), "Boundary");
+        write_retry(dir.path(), "Other");
+        let miss_time = file_epoch_secs(&negative_marker_path(dir.path(), "Boundary"));
+        let retry_time = file_epoch_secs(&retry_marker_path(dir.path(), "Other"));
+        let miss_ttl = negative_ttl("Boundary");
+
+        assert_eq!(
+            verdict(dir.path(), "Boundary", miss_time + miss_ttl - 1),
+            CacheVerdict::FreshNegative
+        );
+        assert!(verdict(dir.path(), "Boundary", miss_time + miss_ttl).needs_fetch());
+        assert_eq!(
+            verdict(dir.path(), "Other", retry_time + RETRY_TTL_SECONDS - 1),
+            CacheVerdict::FreshRetry
+        );
+        assert!(verdict(dir.path(), "Other", retry_time + RETRY_TTL_SECONDS).needs_fetch());
+    }
+
+    #[test]
+    fn net_7e_a_portrait_marker_dated_more_than_a_day_ahead_is_expired() {
+        let day = 24 * 60 * 60;
+        let dir = tempfile::tempdir().unwrap();
+        write_negative(dir.path(), "Skewed");
+        write_retry(dir.path(), "Rejected");
+        let miss_time = file_epoch_secs(&negative_marker_path(dir.path(), "Skewed"));
+        let retry_time = file_epoch_secs(&retry_marker_path(dir.path(), "Rejected"));
+
+        assert_eq!(
+            verdict(dir.path(), "Skewed", miss_time - 3_600),
+            CacheVerdict::FreshNegative
+        );
+        assert!(matches!(
+            verdict(dir.path(), "Skewed", miss_time - 2 * day),
+            CacheVerdict::NeedsFetch {
+                expired_miss: true,
+                ..
+            }
+        ));
+        assert_eq!(
+            verdict(dir.path(), "Rejected", retry_time - 3_600),
+            CacheVerdict::FreshRetry
+        );
+        assert!(matches!(
+            verdict(dir.path(), "Rejected", retry_time - 2 * day),
+            CacheVerdict::NeedsFetch {
+                expired_retry: true,
+                ..
+            }
+        ));
+    }
+
+    #[test]
+    fn net_7e_cache_verdict_distinguishes_fresh_positive_negative_stale_and_missing_entries() {
         let dir = std::env::temp_dir().join(format!("rp-portrait-{}", fastrand::u64(..)));
         let fresh_portrait = store_image(&dir, "Fresh", b"img", "jpg").unwrap();
         let portrait_time = file_epoch_secs(&fresh_portrait);
@@ -264,6 +379,14 @@ mod tests {
             CacheVerdict::FreshPortrait(_)
         ));
         assert_eq!(
+            verdict(
+                &dir,
+                "Known missing",
+                marker_time + negative_ttl("Known missing") - 1,
+            ),
+            CacheVerdict::FreshNegative
+        );
+        assert_eq!(
             verdict(&dir, "Known missing", marker_time + NEGATIVE_TTL_SECONDS,),
             CacheVerdict::FreshNegative
         );
@@ -271,16 +394,18 @@ mod tests {
             verdict(
                 &dir,
                 "Known missing",
-                marker_time + NEGATIVE_TTL_SECONDS + 1,
+                marker_time + negative_ttl("Known missing") + 1,
             ),
             CacheVerdict::NeedsFetch {
-                stale_portrait: None
+                stale_portrait: None,
+                ..
             }
         ));
         assert!(matches!(
             verdict(&dir, "Never seen", marker_time),
             CacheVerdict::NeedsFetch {
-                stale_portrait: None
+                stale_portrait: None,
+                ..
             }
         ));
 

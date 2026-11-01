@@ -643,3 +643,6 @@ fn revoking_artwork_consent_stops_the_worker_before_the_next_artist() {
 
 #[path = "artist_portrait_cover_chain_tests.rs"]
 mod cover_chain_tests;
+
+#[path = "artist_portrait_forward_tests.rs"]
+mod forward_tests;

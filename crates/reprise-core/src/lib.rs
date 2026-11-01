@@ -117,6 +117,7 @@ pub mod library;
 pub use library::library_doctor;
 pub mod location;
 pub mod lyrics;
+mod marker_expiry;
 pub mod media_integration;
 pub mod models;
 pub mod modules;
