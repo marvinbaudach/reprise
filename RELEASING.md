@@ -81,8 +81,8 @@ fingerprint, CI evidence, and both release artifacts are ready.
 
 ## Self-hosted Flatpak update repository
 
-The signed repository is published to the `gh-pages` branch of
-`marvinbaudach/reprise-flatpak`, served at
+The self-hosted Flatpak repository is published to the `gh-pages` branch of
+`marvinbaudach/reprise-flatpak`, on a separate Pages site from the Showroom, served at
 <https://marvinbaudach.github.io/reprise-flatpak/>. The `flatpak-remote` job runs
 only for pushes to `main` and only when the Actions variable
 `FLATPAK_REMOTE_ENABLED` is exactly `true`. Keep it unset or false until the
@@ -90,7 +90,7 @@ repository, Pages site, signing key, and deploy key are ready.
 
 The job requires the `FLATPAK_GPG_PRIVATE_KEY` and
 `FLATPAK_REPO_DEPLOY_KEY` Actions secrets, and the base64-encoded public key in
-the `FLATPAK_REPO_GPG_KEY` Actions variable. If the signing key has a
+the `FLATPAK_REPO_GPG_KEY` Actions variable (`gpg --export <id> | base64 -w0`). If the signing key has a
 passphrase, set `FLATPAK_GPG_PASSPHRASE`. Never put key material in the
 repository or logs. To rotate the signing key, publish a transition signed by
 the existing key and update the public key distributed in bundles and repository
