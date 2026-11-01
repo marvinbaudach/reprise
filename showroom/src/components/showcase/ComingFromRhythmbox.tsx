@@ -1,8 +1,10 @@
+import './rhythmbox.css';
+
 const FLATPAKREF_URL = 'https://marvinbaudach.github.io/reprise-flatpak/reprise.flatpakref';
 
 export function ComingFromRhythmbox() {
   return (
-    <section id="rhythmbox" className="frame" aria-labelledby="rhythmbox-heading">
+    <section id="rhythmbox" className="frame rhythmbox" aria-labelledby="rhythmbox-heading">
       <header className="film-heading">
         <div>
           <p className="eyebrow">Bring your library</p>

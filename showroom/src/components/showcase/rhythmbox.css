@@ -1,0 +1,12 @@
+.rhythmbox {
+  margin-block: 0 5rem;
+  scroll-margin-top: 6rem;
+}
+.rhythmbox > p {
+  max-width: 62ch;
+  color: var(--text-body);
+  line-height: 1.55;
+}
+.rhythmbox > p + p {
+  margin-top: 1rem;
+}

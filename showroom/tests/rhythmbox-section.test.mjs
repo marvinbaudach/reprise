@@ -12,6 +12,7 @@ test('the Rhythmbox import section follows the film and links to the Flatpak rep
   const firstChapter = html.indexOf('id="ch-01"');
 
   assert.ok(filmEnd >= 0 && importStart > filmEnd && firstChapter > importStart);
+  assert.match(html, /<section id="rhythmbox" class="frame rhythmbox"/);
   assert.match(
     html,
     /href="https:\/\/marvinbaudach\.github\.io\/reprise-flatpak\/reprise\.flatpakref"/,
