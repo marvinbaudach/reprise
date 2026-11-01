@@ -118,3 +118,17 @@ Completed on `feature/community-launch-b`:
 The run did not perform a Flatpak build, any Cargo command, or a real AUR build,
 per task constraints. `actionlint` availability and the requested gates are
 recorded in the strand summary.
+
+Finishing review (second pass) corrected four defects in the first implementation:
+
+- The device-permissions gate had a syntax error (a case pattern list split across lines).
+- `flatpak-remote` deleted the deploy key right after cloning, so the final `git push` could not
+  authenticate; the key is now removed after the push.
+- A cloned `gh-pages` lacks the empty directories ostree needs, and `ostree init` does not recreate
+  them; the job now creates them before importing.
+- A passphrase-protected signing key could not sign non-interactively; the passphrase is now preset
+  in the gpg agent. The summary check also looks for the new commit rather than the application id.
+- `AGENTS.md` and `docs/agents/branching.md` keep the sentence `scripts/tests/github-flow.sh` requires.
+
+`flatpak-builder-lint` reports `finish-args-flatpak-appdata-folder-org.gnome.Rhythmbox3-data-rhythmbox-ro-access`
+for the Flathub-Rhythmbox grant. The rule is `[planned]` (GP-14), so it only warns; the grant stays.
