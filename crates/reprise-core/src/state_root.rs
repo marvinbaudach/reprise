@@ -4,6 +4,7 @@
 //! the user's saved diagnostics.
 
 use std::ffi::OsString;
+use std::fs::OpenOptions;
 use std::io;
 use std::path::{Path, PathBuf};
 
@@ -13,6 +14,10 @@ const APP_DIRECTORY: &str = "reprise";
 const LOG_FILE: &str = "reprise.log";
 const PREVIOUS_LOG_FILE: &str = "reprise.log.1";
 const CRASH_MARKER_FILE: &str = "last-crash";
+#[cfg(unix)]
+const PRIVATE_DIRECTORY_MODE: u32 = 0o700;
+#[cfg(unix)]
+const PRIVATE_FILE_MODE: u32 = 0o600;
 
 /// The active log: `<state root>/reprise/reprise.log`.
 #[must_use]
@@ -43,7 +48,7 @@ pub fn rotate_on_start() -> io::Result<()> {
         ));
     };
     if let Some(parent) = active.parent() {
-        std::fs::create_dir_all(parent)?;
+        create_private_dir(parent)?;
     }
     rotate_paths(&active, &previous)
 }
@@ -105,6 +110,26 @@ fn isolated_root() -> &'static Path {
     ROOT.get_or_init(|| {
         std::env::temp_dir().join(format!("reprise-test-state-{}", std::process::id()))
     })
+}
+
+/// Creates the state directory (and what is missing above it) readable by the
+/// owner alone: a log and a crash report describe one person's machine.
+pub(crate) fn create_private_dir(directory: &Path) -> io::Result<()> {
+    let mut builder = std::fs::DirBuilder::new();
+    builder.recursive(true);
+    #[cfg(unix)]
+    std::os::unix::fs::DirBuilderExt::mode(&mut builder, PRIVATE_DIRECTORY_MODE);
+    builder.create(directory)
+}
+
+/// Options for a state file that only its owner may read or write. The mode
+/// applies when the file is created; rotation keeps it.
+pub(crate) fn private_file_options() -> OpenOptions {
+    let mut options = OpenOptions::new();
+    options.create(true);
+    #[cfg(unix)]
+    std::os::unix::fs::OpenOptionsExt::mode(&mut options, PRIVATE_FILE_MODE);
+    options
 }
 
 pub(crate) fn rotate_paths(active: &Path, previous: &Path) -> io::Result<()> {

@@ -77,7 +77,8 @@ fn collect_facts(db: &Db, db_path: &Path, input: &DesktopDiagnosticInput) -> Dia
     }
 }
 
-fn redaction_context() -> RedactionContext {
+/// What a report or a mirrored log line must not reveal on this machine.
+pub fn redaction_context() -> RedactionContext {
     RedactionContext {
         music_dir: glib::user_special_dir(glib::UserDirectory::Music)
             .map(|path| path.to_string_lossy().into_owned()),

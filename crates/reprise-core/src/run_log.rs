@@ -11,7 +11,7 @@
 //! one's live log away. [`DeferredRunLog`] therefore holds early output back
 //! until its owner either activates it or discards it.
 
-use std::fs::{File, OpenOptions};
+use std::fs::File;
 use std::io::{self, Write};
 use std::path::Path;
 
@@ -41,14 +41,16 @@ impl RunLog {
     fn start_in_capped(root: &Path, cap: u64) -> io::Result<Self> {
         let active = state_root::log_path_in(root);
         if let Some(directory) = active.parent() {
-            std::fs::create_dir_all(directory)?;
+            state_root::create_private_dir(directory)?;
         }
         if let Err(error) =
             state_root::rotate_paths(&active, &state_root::previous_log_path_in(root))
         {
             tracing::warn!(%error, "could not move the previous log aside");
         }
-        let file = OpenOptions::new().create(true).append(true).open(active)?;
+        let file = state_root::private_file_options()
+            .append(true)
+            .open(active)?;
         Ok(Self {
             file,
             written: 0,
@@ -234,5 +236,21 @@ mod tests {
             panic!("a log nobody activated stays pending");
         };
         assert_eq!(held.len(), MAX_PENDING_BYTES);
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn the_state_directory_and_the_logs_are_readable_by_the_owner_alone() {
+        use std::os::unix::fs::PermissionsExt;
+        let mode = |path: &Path| std::fs::metadata(path).unwrap().permissions().mode() & 0o777;
+        let root = tempfile::tempdir().unwrap();
+        // Two runs, so the first run's log is the previous log of the second.
+        drop(RunLog::start_in(root.path()).unwrap());
+        drop(RunLog::start_in(root.path()).unwrap());
+
+        let active = state_root::log_path_in(root.path());
+        assert_eq!(mode(active.parent().unwrap()), 0o700);
+        assert_eq!(mode(&active), 0o600);
+        assert_eq!(mode(&state_root::previous_log_path_in(root.path())), 0o600);
     }
 }

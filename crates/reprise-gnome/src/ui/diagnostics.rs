@@ -17,6 +17,7 @@ use tracing_subscriber::filter::{filter_fn, FilterFn};
 use tracing_subscriber::layer::{Context, Layer};
 
 pub(crate) mod file_log;
+pub(crate) mod file_mirror;
 
 type SharedDiagnosticLog = Arc<Mutex<DiagnosticLog>>;
 

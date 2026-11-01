@@ -131,10 +131,9 @@ fn init_logging() {
         .with_filter(log_filter());
     // Mirrored into the state directory's log file once the process knows it
     // is the first instance (`ui::diagnostics::file_log`).
-    let mirror = tracing_subscriber::fmt::layer()
-        .with_ansi(false)
-        .with_writer(ui::diagnostics::file_log::FileLogWriter::new)
-        .with_filter(log_filter());
+    // Its lines are redacted like the session warnings (`file_mirror`).
+    let mirror =
+        ui::diagnostics::file_mirror::FileMirrorLayer::for_this_machine().with_filter(log_filter());
     tracing_subscriber::registry()
         .with(formatting)
         .with(mirror)
