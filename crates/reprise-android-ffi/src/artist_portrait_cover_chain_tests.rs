@@ -6,7 +6,7 @@ use super::*;
 /// A `SafSource` reading straight off the real filesystem, for tests that
 /// need a configured tree — the cover chain (B3) has no reason to run
 /// without one.
-struct ChainFsSource;
+pub(super) struct ChainFsSource;
 
 impl crate::source::SafSource for ChainFsSource {
     fn residence_token(&self, _uri: String) -> Result<Option<i64>, crate::source::SafSourceError> {
@@ -179,20 +179,19 @@ fn net_7e_local_art_is_recorded_and_excluded_before_the_cover_pass_counts_work()
         .unwrap()
         .modified()
         .unwrap();
-    std::thread::sleep(std::time::Duration::from_millis(20));
-    library.start_artist_portrait_backfill_with(
-        Box::new(CapturedProgress(Arc::clone(&updates))),
-        Arc::new(|_, _, _| panic!("local art is not fetched")),
-    );
-    for _ in 0..5_000 {
-        let settled = updates.lock().unwrap().last().is_some_and(|update| {
+    super::super::test_support::start_until_settled(
+        || {
+            library.start_artist_portrait_backfill_with(
+                Box::new(CapturedProgress(Arc::clone(&updates))),
+                Arc::new(|_, _, _| panic!("local art is not fetched")),
+            );
+        },
+        &updates,
+        0,
+        |update| {
             update.run_id > first_run_id && update.state == ArtistPortraitProgressState::Complete
-        });
-        if settled {
-            break;
-        }
-        std::thread::sleep(std::time::Duration::from_millis(1));
-    }
+        },
+    );
     assert_eq!(
         std::fs::metadata(&local_marker)
             .unwrap()

@@ -3859,7 +3859,8 @@ property is set and yet nothing happens.
   `net_7e_local_marker_is_atomic_fresh_and_expires_after_the_keyed_ttl`,
   `net_7e_album_state_lookup_uses_only_downloaded_files_and_negative_markers`,
   `net_7e_local_art_is_recorded_and_excluded_before_the_cover_pass_counts_work`,
-  `net_7e_fresh_portraits_still_chain_one_album_request_and_terminal_snapshot_is_hidden`.
+  `net_7e_fresh_portraits_still_chain_one_album_request_and_terminal_snapshot_is_hidden`,
+  `net_7e_a_portrait_run_with_work_hands_over_to_the_cover_pass_without_a_complete`.
 - **NET-3** [active] [core] [gtk] — Offline is a state, not an error: no network-backed
   place in the app may treat a missing network connection like an error
   message. The contract covers seven states every network-backed view (feed,

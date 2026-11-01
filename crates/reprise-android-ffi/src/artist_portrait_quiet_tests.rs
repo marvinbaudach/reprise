@@ -6,6 +6,7 @@ use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
+use super::test_support::start_until_settled;
 use super::*;
 
 const FIXTURE_IMAGE: &[u8] = b"fixture";
@@ -214,7 +215,6 @@ fn net_7e_a_second_start_after_a_settled_run_shows_nothing() {
             && update.covers_total == 1
             && update.covers_done == 1
     });
-    std::thread::sleep(Duration::from_millis(20));
 
     // The injected network seam stands in for fetch_and_cache_in's persistent miss write.
     let needs_key = reprise_core::cover_download::album_key("Other artist", "Needs album");
@@ -228,11 +228,15 @@ fn net_7e_a_second_start_after_a_settled_run_shows_nothing() {
     let portrait_count = portrait_fetches.load(Ordering::Relaxed);
     let network_count = network_fetches.load(Ordering::Relaxed);
     let before_second = updates.lock().unwrap().len();
-    start();
-    assert!(!visible(library.artist_portrait_backfill_progress()));
-    wait_for_update(&updates, before_second, |update| {
-        update.state == ArtistPortraitProgressState::Complete
-    });
+    start_until_settled(
+        || {
+            start();
+            assert!(!visible(library.artist_portrait_backfill_progress()));
+        },
+        &updates,
+        before_second,
+        |update| update.state == ArtistPortraitProgressState::Complete,
+    );
 
     let captured = updates.lock().unwrap();
     let second_updates = &captured[before_second..];

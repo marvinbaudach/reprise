@@ -6,8 +6,9 @@ use std::sync::{Mutex, OnceLock, PoisonError};
 
 use reprise_core::artist_portrait::cover_backfill::ChainedCoverStart;
 use reprise_core::artist_portrait::{
-    load_cached_credit_from, load_cached_from, verdict, CoverBackfillFetch, CoverBackfillListener,
-    CoverBackfillProgress, PortraitBackfillListener as CorePortraitBackfillListener,
+    load_cached_credit_from, load_cached_from, stat_only_triage_in, triage_album_in, verdict,
+    CoverAlbumTriage, CoverBackfillFetch, CoverBackfillListener, CoverBackfillProgress,
+    CoverBackfillTriage, PortraitBackfillListener as CorePortraitBackfillListener,
     PortraitBackfillProgress, PortraitBackfillState, PortraitOutcome,
 };
 use reprise_core::cover::{self, CoverSource};
@@ -382,10 +383,8 @@ impl MusicLibrary {
                     state: ArtistPortraitProgressState::Running,
                     ..progress.into()
                 });
-            } else {
-                if !will_chain {
-                    forward_listener.on_progress(progress.into());
-                }
+            } else if !will_chain {
+                forward_listener.on_progress(progress.into());
             }
             if !just_completed {
                 return;
@@ -402,21 +401,16 @@ impl MusicLibrary {
             let network_fetch = Arc::clone(&network_fetch);
             let fetch: Arc<CoverBackfillFetch> =
                 Arc::new(move |album_artist, album, representative_uri| {
-                    let path = std::path::Path::new(representative_uri);
-                    let locally_resolved = cover::resolve_source_with_source(
-                        fetch_source.as_ref(),
-                        path,
-                        &fetch_cache_root,
-                    )
-                    .is_some();
-                    if locally_resolved {
-                        // Local art already resolves: settled without a
-                        // request (decision 9). The cover pass only counts
-                        // albums, it never reads this path back — a
-                        // placeholder marks "no fetch needed" rather than
-                        // claiming a made-up cache path is real.
-                        return CoverFetchOutcome::Downloaded(fetch_cache_root.clone());
+                    // Triage already read this album's tags; a stat-only recheck guards the
+                    // race where the cover or a marker landed since, without a second SAF read.
+                    match stat_only_triage_in(&fetch_cache_root, album_artist, album) {
+                        Some(CoverAlbumTriage::KnownMissing) => return CoverFetchOutcome::NotFound,
+                        // The cover pass only counts albums and never reads this path
+                        // back: a placeholder marks "no fetch needed" (decision 9).
+                        Some(_) => return CoverFetchOutcome::Downloaded(fetch_cache_root.clone()),
+                        None => {}
                     }
+                    let path = std::path::Path::new(representative_uri);
                     let mbid =
                         cover::read_cover_tag_with_source(fetch_source.as_ref(), path).release_mbid;
                     network_fetch(album_artist, album, mbid.as_deref())
@@ -441,42 +435,16 @@ impl MusicLibrary {
 
             let triage_cache_root = cache_root.clone();
             let triage_source = Arc::clone(&source);
-            let triage: Arc<reprise_core::artist_portrait::CoverBackfillTriage> =
+            let triage: Arc<CoverBackfillTriage> =
                 Arc::new(move |album_artist, album, representative_uri| {
-                    use reprise_core::artist_portrait::CoverAlbumTriage as Triage;
-                    match cover_download::album_cover_state_in(
-                        &triage_cache_root,
-                        album_artist,
-                        album,
-                    ) {
-                        cover_download::CoverState::Cached(_) => return Triage::Cached,
-                        cover_download::CoverState::KnownMissing => return Triage::KnownMissing,
-                        cover_download::CoverState::Unknown => {}
-                    }
-                    if cover_download::local_marker_is_fresh_in(
-                        &triage_cache_root,
-                        album_artist,
-                        album,
-                    ) {
-                        return Triage::LocalMarker;
-                    }
-                    let path = std::path::Path::new(representative_uri);
-                    if cover::resolve_source_with_source(
-                        triage_source.as_ref(),
-                        path,
-                        &triage_cache_root,
-                    )
-                    .is_some()
-                    {
-                        cover_download::write_local_marker_in(
+                    triage_album_in(&triage_cache_root, album_artist, album, || {
+                        cover::resolve_source_with_source(
+                            triage_source.as_ref(),
+                            std::path::Path::new(representative_uri),
                             &triage_cache_root,
-                            album_artist,
-                            album,
-                        );
-                        Triage::LocalResolved
-                    } else {
-                        Triage::NeedsRequest
-                    }
+                        )
+                        .is_some()
+                    })
                 });
             let start = album_cover::cover_backfill().start_chained_with_triage(
                 transition,
@@ -499,6 +467,9 @@ impl MusicLibrary {
     }
 }
 
+#[cfg(all(test, debug_assertions))]
+#[path = "artist_portrait_test_support.rs"]
+mod test_support;
 // The tests store their fixtures through `reprise_core::artist_portrait::
 // store_fixture_image`, which exists in debug builds only.
 #[cfg(all(test, debug_assertions))]
