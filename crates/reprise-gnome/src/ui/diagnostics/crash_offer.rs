@@ -56,7 +56,12 @@ pub(crate) fn marker_test_lock() -> std::sync::MutexGuard<'static, ()> {
 /// Writes the sentinel for this run and remembers whether the previous one
 /// left its own behind.
 pub(crate) fn arm() {
-    PENDING.after(crash_report::arm());
+    let previous = crash_report::arm();
+    if previous == PreviousExit::Unclean {
+        // The crashed run's log is `reprise.log.1` by now; say so in this one.
+        tracing::info!("the previous run did not end cleanly");
+    }
+    PENDING.after(previous);
 }
 
 /// This run ended the way it meant to.
