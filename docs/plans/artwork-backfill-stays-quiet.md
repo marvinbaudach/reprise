@@ -2,7 +2,7 @@
 slug: artwork-backfill-stays-quiet
 worktree: /home/marvin/Projects/reprise-artwork-backfill-stays-quiet
 branch: feature/artwork-backfill-stays-quiet
-phase: reviewed
+phase: refactored
 codex_session:
 created: 2026-10-30
 ---
