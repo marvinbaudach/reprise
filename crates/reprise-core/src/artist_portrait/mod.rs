@@ -5,6 +5,7 @@
 pub mod backfill;
 mod cache;
 pub mod cover_backfill;
+mod cover_triage;
 pub(crate) mod deezer;
 mod fetch;
 mod placeholder;
@@ -36,6 +37,7 @@ pub use cover_backfill::{
     CoverAlbumTriage, CoverBackfill, CoverBackfillFetch, CoverBackfillListener,
     CoverBackfillProgress, CoverBackfillTriage,
 };
+pub use cover_triage::{stat_only_triage_in, triage_album_in};
 pub use sidecar::PortraitCredit;
 
 use std::path::{Path, PathBuf};

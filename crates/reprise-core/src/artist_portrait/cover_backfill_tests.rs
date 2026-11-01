@@ -312,3 +312,51 @@ fn consent_withdrawn_mid_run_stops_the_pass() {
     );
     assert_eq!(backfill.progress(), CoverBackfillProgress::default());
 }
+
+#[test]
+fn net_7e_a_stop_during_triage_ends_the_triage_and_frees_the_handle() {
+    const ALBUMS: usize = 100;
+    let backfill = Arc::new(CoverBackfill::new());
+    let triaged = Arc::new(AtomicUsize::new(0));
+    let fetched = Arc::new(AtomicUsize::new(0));
+    let stopper = Arc::clone(&backfill);
+    let counted_triage = Arc::clone(&triaged);
+    let triage: Arc<CoverBackfillTriage> = Arc::new(move |_, _, _| {
+        counted_triage.fetch_add(1, Ordering::Relaxed);
+        stopper.cancel();
+        CoverAlbumTriage::NeedsRequest
+    });
+    let counted_fetch = Arc::clone(&fetched);
+    let fetch: Arc<CoverBackfillFetch> = Arc::new(move |_, _, _| {
+        counted_fetch.fetch_add(1, Ordering::Relaxed);
+        CoverFetchOutcome::NotFound
+    });
+    let (_, listener) = updates();
+    let albums = (0..ALBUMS)
+        .map(|index| {
+            (
+                "Band".to_owned(),
+                format!("Album {index}"),
+                format!("/{index}.flac"),
+            )
+        })
+        .collect();
+
+    backfill.start_prepared_triaged(albums, triage, Arc::clone(&fetch), listener, always());
+    wait_for_worker_to_finish(&backfill);
+
+    assert_eq!(triaged.load(Ordering::Relaxed), 1, "a stop ends the triage");
+    assert_eq!(fetched.load(Ordering::Relaxed), 0);
+    let (_, listener) = updates();
+    assert!(
+        backfill.start_prepared(
+            vec![("Band".into(), "Next".into(), "/next.flac".into())],
+            fetch,
+            listener,
+            always(),
+        ),
+        "the stopped triage must not leave the handle busy",
+    );
+    wait_for_worker_to_finish(&backfill);
+    assert_eq!(fetched.load(Ordering::Relaxed), 1);
+}

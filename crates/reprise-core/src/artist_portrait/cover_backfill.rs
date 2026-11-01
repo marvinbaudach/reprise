@@ -50,7 +50,9 @@ pub enum ChainedCoverStart {
     Busy,
 }
 
-type PrepareWork = dyn FnOnce() -> Result<Vec<(String, String, String)>, String> + Send;
+/// Prepares the worklist; the probe reports a stop so a long preparation can end early.
+type PrepareWork = dyn for<'a> FnOnce(&'a (dyn Fn() -> bool + 'a)) -> Result<Vec<(String, String, String)>, String>
+    + Send;
 type ConsentAllowed = dyn Fn() -> bool + Send + Sync;
 
 struct Shared {
@@ -131,9 +133,10 @@ impl CoverBackfill {
     ) -> bool {
         self.launch(
             None,
-            Box::new(move || {
+            Box::new(move |is_cancelled| {
                 let db = Db::open_ready(&database_path).map_err(|error| error.to_string())?;
-                pending_albums(&db, triage.as_ref()).map_err(|error| error.to_string())
+                pending_albums(&db, triage.as_ref(), is_cancelled)
+                    .map_err(|error| error.to_string())
             }),
             fetch,
             listener,
@@ -171,9 +174,10 @@ impl CoverBackfill {
     ) -> ChainedCoverStart {
         let start = self.launch(
             Some(transition.generation),
-            Box::new(move || {
+            Box::new(move |is_cancelled| {
                 let db = Db::open_ready(&database_path).map_err(|error| error.to_string())?;
-                pending_albums(&db, triage.as_ref()).map_err(|error| error.to_string())
+                pending_albums(&db, triage.as_ref(), is_cancelled)
+                    .map_err(|error| error.to_string())
             }),
             fetch,
             listener,
@@ -324,7 +328,7 @@ impl CoverBackfill {
 
         let shared = Arc::clone(&self.shared);
         *worker = Some(std::thread::spawn(move || {
-            let albums = match prepare() {
+            let albums = match prepare(&|| cancelled(&shared)) {
                 Ok(albums) => albums,
                 Err(error) => {
                     tracing::warn!(%error, "album cover backfill could not prepare its worklist");
@@ -347,7 +351,7 @@ impl CoverBackfill {
     ) -> bool {
         self.launch(
             None,
-            Box::new(move || Ok(albums)),
+            Box::new(move |_| Ok(albums)),
             fetch,
             listener,
             consent_allowed,
@@ -366,7 +370,7 @@ impl CoverBackfill {
     ) -> bool {
         self.launch(
             None,
-            Box::new(move || Ok(triage_albums(albums, triage.as_ref()))),
+            Box::new(move |is_cancelled| Ok(triage_albums(albums, triage.as_ref(), is_cancelled))),
             fetch,
             listener,
             consent_allowed,
@@ -385,7 +389,7 @@ impl CoverBackfill {
     ) -> ChainedCoverStart {
         let start = self.launch(
             Some(transition.generation),
-            Box::new(move || Ok(albums)),
+            Box::new(move |_| Ok(albums)),
             fetch,
             listener,
             consent_allowed,
@@ -457,6 +461,7 @@ impl Drop for CoverBackfill {
 fn pending_albums(
     db: &Db,
     triage: &CoverBackfillTriage,
+    is_cancelled: &dyn Fn() -> bool,
 ) -> Result<Vec<(String, String, String)>, rusqlite::Error> {
     let mut albums = Vec::new();
     let mut offset = 0_i64;
@@ -477,20 +482,27 @@ fn pending_albums(
                 .map(|album| (album.album_artist, album.album, album.representative_path)),
         );
         if !window.has_more || returned == 0 {
-            return Ok(triage_albums(albums, triage));
+            return Ok(triage_albums(albums, triage, is_cancelled));
         }
         offset = offset.saturating_add(i64::try_from(returned).unwrap_or(i64::MAX));
     }
 }
 
+/// Classifies every album, checking for a stop before each one: a triage reads tags and
+/// writes markers per album, so a stopped run must not keep doing that for the rest.
+/// A stopped triage returns what it has; the worker then ends as cancelled.
 fn triage_albums(
     albums: Vec<(String, String, String)>,
     triage: &CoverBackfillTriage,
+    is_cancelled: &dyn Fn() -> bool,
 ) -> Vec<(String, String, String)> {
     let total = u64::try_from(albums.len()).unwrap_or(u64::MAX);
     let mut counts = [0_u64; 4];
     let mut pending = Vec::new();
     for (artist, album, path) in albums {
+        if is_cancelled() {
+            return pending;
+        }
         match triage(&artist, &album, &path) {
             CoverAlbumTriage::Cached => counts[0] += 1,
             CoverAlbumTriage::KnownMissing => counts[1] += 1,
