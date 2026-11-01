@@ -21,8 +21,7 @@ require_once '--filesystem=~/.var/app/org.gnome.Rhythmbox3/data/rhythmbox:ro'
 
 while IFS= read -r permission; do
   case "$permission" in
-    '--talk-name=org.gtk.vfs.*'|'--filesystem=xdg-run/gvfsd'|'--filesystem=xdg-music'|
-    '--filesystem=~/.local/share/rhythmbox:ro'|'--filesystem=~/.var/app/org.gnome.Rhythmbox3/data/rhythmbox:ro')
+    '--talk-name=org.gtk.vfs.*'|'--filesystem=xdg-run/gvfsd'|'--filesystem=xdg-music'|'--filesystem=~/.local/share/rhythmbox:ro'|'--filesystem=~/.var/app/org.gnome.Rhythmbox3/data/rhythmbox:ro')
       ;;
     --filesystem=*|--talk-name=*|--socket=session-bus|--socket=system-bus|--device=all)
       echo "Flatpak manifest contains forbidden broad permission: $permission" >&2
