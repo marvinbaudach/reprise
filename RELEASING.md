@@ -62,8 +62,10 @@ raises that number, finalise the curated text and renumber the `CHANGELOG.md`
 heading and metainfo `<release>` entry to the then-current version in `dev`,
 immediately before opening the promotion pull request. Otherwise
 `scripts/check-release-metadata.sh` refuses the release gate. The generated
-GitHub header adds both app versions, installation requirements, the Flatpak
-update limitation, the missing stems backend in that bundle, Android's minimum
+GitHub header adds both app versions, installation requirements, how the Flatpak
+updates (the link to the update repository only while `FLATPAK_REMOTE_ENABLED`
+is `true` for a push to `main`, otherwise the note that the bundle does not
+self-update), the missing stems backend in that bundle, Android's minimum
 version, and the shared licence.
 
 Pull requests that touch release inputs run both build jobs and upload their
@@ -102,13 +104,30 @@ metadata before retiring the old key; rehearse the transition with the maintaine
 before enabling a release. Rotate the deploy key independently in the repository
 and Actions secret.
 
-Each publish imports the release bundle, regenerates static deltas, and prunes
-to the newest three builds. It replaces `gh-pages` with one orphan commit so its
-Git history remains bounded. After a publish, check the Actions summary for the
-new OSTree commit, confirm the `.flatpakrepo` and `.flatpakref` are served, and
-install/update from the `.flatpakref` on a clean test profile. Bundles built
-without `FLATPAK_REPO_GPG_KEY` retain the current standalone behavior and do not
-receive the repository URL metadata.
+The `flatpak` job always builds the same standalone, unsigned bundle, so the
+release asset installs whether or not the update repository exists. The
+`flatpak-remote` job runs after the release is published. It imports that bundle
+into a scratch repository and commits it onto the published ref with
+`flatpak build-commit-from --gpg-sign`, so each publish is a new signed commit
+whose parent is the previous tip (the first publish has no parent). The signing
+step first checks that the signing key's fingerprint equals the fingerprint of
+`FLATPAK_REPO_GPG_KEY` and fails otherwise. `flatpak build-update-repo` then
+regenerates the summary and static deltas, which now exist between consecutive
+builds, and prunes with `--prune-depth=2`: the newest commit plus its two
+parents, that is the newest three builds. The job then builds a second bundle
+from the signed repository with `--repo-url`, `--runtime-repo` and `--gpg-keys`,
+and replaces the release's `Reprise-<version>.flatpak` and its `.sha256` with it
+(`gh release upload --clobber`). That replacement is the only reason the job has
+`contents: write`. Installing the bundle adds the signed Reprise repository as a
+GPG-verified remote, so later `flatpak update` runs follow it. Until the job has
+finished, or while `FLATPAK_REMOTE_ENABLED` is unset, the release carries the
+standalone bundle and the release notes say the Flatpak does not self-update.
+
+The job replaces `gh-pages` with one orphan commit so the Git history of the
+Pages branch stays bounded; the OSTree history lives inside `repo/`. After a
+publish, check the Actions summary for the new OSTree commit, confirm the
+`.flatpakrepo` and `.flatpakref` are served, and install/update from the
+`.flatpakref` on a clean test profile.
 
 ## Automated release check
 

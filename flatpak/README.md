@@ -54,17 +54,23 @@ the fixed MP3/ID3 pipeline is unavailable.
 ## Install from the Reprise update repository
 
 The signed repository is hosted at <https://marvinbaudach.github.io/reprise-flatpak/>.
-Install Reprise and receive later updates with the published reference:
+It exists only after the maintainer has enabled publishing and the first release
+has been published from `main`; before that, the links below return 404 and the
+`.flatpak` bundle attached to a release is a standalone install that does not
+update itself. Once the repository exists, install Reprise and receive later
+updates with the published reference:
 
 ```sh
 flatpak install --user https://marvinbaudach.github.io/reprise-flatpak/reprise.flatpakref
 flatpak update --user io.github.marvinbaudach.Reprise
 ```
 
-The repository is x86_64-only. Libraries outside the XDG music directory need a
-narrow filesystem override through Flatseal or `flatpak override`. Stem
-separation is not included in the Flatpak because the bundle does not ship
-`onnxruntime`.
+The release's `.flatpak` bundle is replaced by a signed one shortly after the
+repository is published; installing that bundle also adds the repository as a
+verified remote, so it updates too. The repository is x86_64-only. Libraries
+outside the XDG music directory need a narrow filesystem override through
+Flatseal or `flatpak override`. Stem separation is not included in the Flatpak
+because the bundle does not ship `onnxruntime`.
 
 ## Public-source handoff
 
