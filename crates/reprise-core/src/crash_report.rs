@@ -16,6 +16,9 @@ use std::path::Path;
 use crate::diagnostics::{redact_log_message, RedactionContext};
 use crate::state_root;
 
+/// The line that opens a crash report in the log; the diagnostics tail looks for it.
+pub(crate) const CRASH_REPORT_MARKER: &str = "---- Reprise crash report ----";
+
 /// How the run before this one ended.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum PreviousExit {
@@ -123,7 +126,7 @@ fn redaction_context() -> RedactionContext {
 /// library, so it goes through the same redaction as a copied diagnostics
 /// report. Location and backtrace are source paths and symbol names; they
 /// only lose the home and music directories a build path can sit in.
-fn render_report(
+pub(crate) fn render_report(
     message: &str,
     location: &str,
     backtrace: &str,
@@ -131,7 +134,7 @@ fn render_report(
     timestamp: &str,
 ) -> String {
     let mut report = String::new();
-    let _ = writeln!(report, "---- Reprise crash report ----");
+    let _ = writeln!(report, "{CRASH_REPORT_MARKER}");
     let _ = writeln!(report, "time: {timestamp}");
     let _ = writeln!(report, "version: {}", env!("CARGO_PKG_VERSION"));
     let _ = writeln!(report, "schema: {}", crate::db::SUPPORTED_SCHEMA_VERSION);
