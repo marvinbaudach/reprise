@@ -672,12 +672,18 @@ jobs:
           path: dist
 
       - name: Generate release notes
+        env:
+          # The same condition as the flatpak-remote job: only then is the
+          # update repository (and its .flatpakref) published after this release.
+          UPDATE_REPOSITORY: ${{ github.event_name == 'push' && github.ref == 'refs/heads/main' && vars.FLATPAK_REMOTE_ENABLED == 'true' }}
         run: |
           python3 - "$DESKTOP_VERSION" "$ANDROID_VERSION" "$ANDROID_CODE" > release-notes.md <<'PY'
+          import os
           import pathlib
           import sys
 
           desktop, android, android_code = sys.argv[1:4]
+          update_repository = os.environ["UPDATE_REPOSITORY"] == "true"
           changelog = pathlib.Path("CHANGELOG.md").read_text(encoding="utf-8")
           heading = f"## [{desktop}] - "
           start = next(
@@ -704,10 +710,16 @@ jobs:
           print(f"flatpak install --user ./Reprise-{desktop}.flatpak")
           print("```")
           print()
-          print(
-              "Install the signed Reprise Flatpak repository for updates: "
-              "https://marvinbaudach.github.io/reprise-flatpak/reprise.flatpakref"
-          )
+          if update_repository:
+              print(
+                  "Install the signed Reprise Flatpak repository for updates: "
+                  "https://marvinbaudach.github.io/reprise-flatpak/reprise.flatpakref"
+              )
+          else:
+              print(
+                  "The bundle does not self-update. A self-hosted Flatpak repository is "
+                  "the named follow-up."
+              )
           print(
               "This Flatpak ships without stems separation because it does not include "
               "onnxruntime; AUR, COPR and local builds retain the feature."
