@@ -62,8 +62,10 @@ raises that number, finalise the curated text and renumber the `CHANGELOG.md`
 heading and metainfo `<release>` entry to the then-current version in `dev`,
 immediately before opening the promotion pull request. Otherwise
 `scripts/check-release-metadata.sh` refuses the release gate. The generated
-GitHub header adds both app versions, installation requirements, the Flatpak
-update limitation, the missing stems backend in that bundle, Android's minimum
+GitHub header adds both app versions, installation requirements, how the Flatpak
+updates (the link to the update repository only while `FLATPAK_REMOTE_ENABLED`
+is `true` for a push to `main`, otherwise the note that the bundle does not
+self-update), the missing stems backend in that bundle, Android's minimum
 version, and the shared licence.
 
 Pull requests that touch release inputs run both build jobs and upload their
@@ -79,11 +81,53 @@ release-channel change to exercise the real check-run and tag decisions without
 publishing. Do not set `dry_run: false` unless the curated text, upload-key
 fingerprint, CI evidence, and both release artifacts are ready.
 
-The named follow-up is a self-hosted Flatpak repository, which will provide a
-real update path. It is deferred because the existing GitHub Pages deployment
-serves the Showroom from the same publication surface; repository metadata and
-the Showroom deployment need a collision-free Pages layout first. Until then,
-the downloadable `.flatpak` bundle does not self-update.
+## Self-hosted Flatpak update repository
+
+The self-hosted Flatpak repository is published to the `gh-pages` branch of
+`marvinbaudach/reprise-flatpak`, on a separate Pages site from the Showroom, served at
+<https://marvinbaudach.github.io/reprise-flatpak/>. The `flatpak-remote` job runs
+only for pushes to `main` and only when the Actions variable
+`FLATPAK_REMOTE_ENABLED` is exactly `true`. Keep it unset or false until the
+repository, Pages site, signing key, and deploy key are ready.
+Setting it is the decision that begins public distribution: the first publish ends
+the agents' standing permission to promote `dev` to `main` (`AGENTS.md`,
+`docs/agents/branching.md`) and starts the data-preservation contract in
+`AGENTS.md`.
+
+The job requires the `FLATPAK_GPG_PRIVATE_KEY` and
+`FLATPAK_REPO_DEPLOY_KEY` Actions secrets, and the base64-encoded public key in
+the `FLATPAK_REPO_GPG_KEY` Actions variable (`gpg --export <id> | base64 -w0`). If the signing key has a
+passphrase, set `FLATPAK_GPG_PASSPHRASE`. Never put key material in the
+repository or logs. To rotate the signing key, publish a transition signed by
+the existing key and update the public key distributed in bundles and repository
+metadata before retiring the old key; rehearse the transition with the maintainer
+before enabling a release. Rotate the deploy key independently in the repository
+and Actions secret.
+
+The `flatpak` job always builds the same standalone, unsigned bundle, so the
+release asset installs whether or not the update repository exists. The
+`flatpak-remote` job runs after the release is published. It imports that bundle
+into a scratch repository and commits it onto the published ref with
+`flatpak build-commit-from --gpg-sign`, so each publish is a new signed commit
+whose parent is the previous tip (the first publish has no parent). The signing
+step first checks that the signing key's fingerprint equals the fingerprint of
+`FLATPAK_REPO_GPG_KEY` and fails otherwise. `flatpak build-update-repo` then
+regenerates the summary and static deltas, which now exist between consecutive
+builds, and prunes with `--prune-depth=2`: the newest commit plus its two
+parents, that is the newest three builds. The job then builds a second bundle
+from the signed repository with `--repo-url`, `--runtime-repo` and `--gpg-keys`,
+and replaces the release's `Reprise-<version>.flatpak` and its `.sha256` with it
+(`gh release upload --clobber`). That replacement is the only reason the job has
+`contents: write`. Installing the bundle adds the signed Reprise repository as a
+GPG-verified remote, so later `flatpak update` runs follow it. Until the job has
+finished, or while `FLATPAK_REMOTE_ENABLED` is unset, the release carries the
+standalone bundle and the release notes say the Flatpak does not self-update.
+
+The job replaces `gh-pages` with one orphan commit so the Git history of the
+Pages branch stays bounded; the OSTree history lives inside `repo/`. After a
+publish, check the Actions summary for the new OSTree commit, confirm the
+`.flatpakrepo` and `.flatpakref` are served, and install/update from the
+`.flatpakref` on a clean test profile.
 
 ## Automated release check
 
@@ -379,6 +423,13 @@ Do not point development hooks at the maintainer's real library.
   real GNOME/Wayland dialogs and portals, and reduced animation. Record the
   result before changing ACC-7 from `[planned]` to `[active]`.
 
+- START-7: install Rhythmbox from the distribution and from Flathub in turn.
+  Confirm Reprise detects `rhythmdb.xml` at both `~/.local/share/rhythmbox`
+  and `~/.var/app/org.gnome.Rhythmbox3/data/rhythmbox`, and that the installed
+  Reprise Flatpak can read each source. Confirm the XDG music directory is
+  available for tag, lyric, and cover writes. This depends on the grants in
+  both manifests; the Flathub grant still needs validation in the installed
+  sandbox.
 - Confirm first-run copy/layout, Skip, Set Up Library, and the portal folder
   chooser. The copy must disclose automatic cover lookup without showing a
   disable switch. A detected `rhythmdb.xml` must show a clearly default-off,

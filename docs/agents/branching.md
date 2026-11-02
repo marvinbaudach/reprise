@@ -37,10 +37,10 @@ to it. See "Merge method".
 
    This is the one sanctioned direct push to `main`. Until Reprise is publicly distributed,
    agents may perform this promotion autonomously without separate owner authorization.
-   Public distribution means availability through AUR, Flathub/GNOME Software, or another
-   public app channel. This standing permission expires immediately when public distribution
-   begins; after that, only the repository owner decides when promotion happens, though an
-   agent may execute the exact promotion the owner explicitly authorizes. Immediately before
+   Public distribution begins with the first build published to Reprise's self-hosted
+   Flatpak repository, and this standing permission ends then; after that, only the
+   repository owner decides when promotion happens, though an agent may execute the exact
+   promotion the owner explicitly authorizes. Immediately before
    pushing in either case, the agent live-reads both remote refs, proves `main` is an ancestor
    of `dev`, and verifies successful `Quality gate` and `From dev` checks on the exact current
    `dev` SHA. After pushing, the agent reads both refs back and requires exact equality. The

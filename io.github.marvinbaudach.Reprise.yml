@@ -16,6 +16,12 @@ finish-args:
   - --own-name=org.mpris.MediaPlayer2.reprise
   - --talk-name=org.gtk.vfs.*
   - --filesystem=xdg-run/gvfsd
+  # Read and update tracks, lyrics, and covers in the user's music folder.
+  - --filesystem=xdg-music
+  # Import the distribution-installed Rhythmbox library.
+  - --filesystem=~/.local/share/rhythmbox:ro
+  # Import the Flathub-installed Rhythmbox library.
+  - --filesystem=~/.var/app/org.gnome.Rhythmbox3/data/rhythmbox:ro
 
 # The stems separation feature needs onnxruntime, which is only available as a
 # prebuilt x86_64 binary. Flathub requires builds from source and Circle

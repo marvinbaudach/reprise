@@ -92,8 +92,10 @@ agent may act alone and an agent that never opens the guide must still meet them
 - The `dev`-to-`main` promotion is a fast-forward push, never a pull request; a squashed
   promotion would make the two branches diverge permanently.
 - Until Reprise is publicly distributed, agents may perform this promotion autonomously.
-  Public distribution means AUR, Flathub/GNOME Software, or another public app channel;
-  that permission expires the moment it begins.
+  Public distribution begins with the first build published to the self-hosted Flatpak
+  repository, and that permission ends then; after it, only the repository owner decides
+  when a promotion happens, though an agent may execute the exact promotion the owner
+  explicitly authorizes.
 - Emergency production fixes start on a `hotfix/*` branch **from `dev`** and reach `main`
   through the same promotion. A `hotfix/*` merged straight into `main` breaks the
   fast-forward property irrecoverably.
@@ -242,24 +244,14 @@ Default labels: `needs-triage`, `needs-info`, `ready-for-agent`, `ready-for-huma
 
 Single-context: one `CONTEXT.md` + `docs/adr/` at the repo root. See `docs/agents/domain.md`.
 
-## Not released yet — no backwards compatibility
+## Compatibility after public distribution
 
-> **This section expires with the first test release.** It is correct only while nobody has
-> installed Reprise. The moment a tester does, the permission below becomes a licence to
-> delete data in someone else's library. `docs/plans/consolidation-plan.md` task 0.7 carries
-> the replacement text and says to set it **in the same change that opens the test round** —
-> not before, because until then this rule is still right and still useful.
-
-Reprise has **not** shipped and there are **no existing installations**. Migrations,
-compatibility fallbacks, dual-write paths and deprecated-key readers are therefore *not*
-a design criterion anywhere in this repo.
-
-Where a clean data model and a backwards-compatible one collide, take the clean one and
-delete the old shape outright. A leftover second source of truth is worse than either
-option on its own. This applies to settings keys, module descriptors, database columns and
-on-device layouts alike. (Schema *migrations* still exist as the mechanism for changing the
-database — the point is that you never have to preserve an old shape for users who don't
-exist.)
+Before the first Reprise build is published to the self-hosted Flatpak repository, no
+installation depends on the current data shape, so clean model changes may remove old
+shapes outright. From that first publication onward, installations exist and data must be
+preserved: database migrations are forward-only and lossless, and settings keys are migrated
+rather than discarded. A field may disappear only after a migration has carried its content
+over. A clean data model does not justify losing data in someone else's library.
 
 ## Key conventions to match
 
