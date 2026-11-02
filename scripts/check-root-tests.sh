@@ -44,6 +44,9 @@ core_modules=(
   'crates/reprise-core/src/library/scanner_import_errors_tests.rs=library::scanner::import_errors_tests::'
   'crates/reprise-core/src/podcasts/pipeline_tag_tests.rs=podcasts::pipeline::tag_tests::'
   'crates/reprise-core/src/podcasts/ytdlp_process_tests.rs=podcasts::ytdlp::process_tests::'
+  'crates/reprise-core/src/state_root.rs=state_root::tests::'
+  'crates/reprise-core/src/run_log.rs=run_log::tests::'
+  'crates/reprise-core/src/crash_report.rs=crash_report::tests::'
 )
 # device_sync_directory_tests.rs is a child module of device_sync_tests.rs.
 platform_modules=(

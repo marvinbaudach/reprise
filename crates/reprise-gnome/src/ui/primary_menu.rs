@@ -41,6 +41,8 @@ pub(super) const ACTION_STOP_PLAYBACK: &str = "stop-playback";
 pub(super) const ACTION_PREFERENCES: &str = "preferences";
 pub(super) const ACTION_KEYBOARD_SHORTCUTS: &str = "keyboard-shortcuts";
 pub(super) const ACTION_HELP: &str = "help";
+/// FB-19: puts the redacted diagnostics report on the clipboard.
+pub(super) const ACTION_COPY_DIAGNOSTICS: &str = "copy-diagnostics";
 pub(super) const ACTION_ABOUT: &str = "about";
 pub(super) const ACTION_OPEN_PRIMARY_MENU: &str = "open-primary-menu";
 pub(in crate::ui) const SMOKE_MINIMAL_VIEW_ENV_VAR: &str = "REPRISE_SMOKE_MINIMAL_VIEW";
@@ -52,6 +54,7 @@ pub(super) struct Callbacks {
     pub(super) on_import_playlist: Rc<dyn Fn()>,
     pub(super) on_stop_playback: Option<Rc<dyn Fn()>>,
     pub(super) on_preferences: Rc<dyn Fn()>,
+    pub(super) on_copy_diagnostics: Rc<dyn Fn()>,
     pub(super) on_about: Rc<dyn Fn()>,
 }
 
@@ -83,7 +86,7 @@ fn build_library_section() -> gio::Menu {
     menu
 }
 
-/// Settings section: preferences, shortcuts, help, and about.
+/// Settings section: preferences, shortcuts, help, diagnostics, and about.
 fn settings_section_entries() -> Vec<(String, &'static str)> {
     vec![
         (strings::text(strings::PREFERENCES), "win.preferences"),
@@ -92,6 +95,10 @@ fn settings_section_entries() -> Vec<(String, &'static str)> {
             "win.keyboard-shortcuts",
         ),
         (strings::text(strings::HELP), "win.help"),
+        (
+            strings::text(strings::COPY_DIAGNOSTICS),
+            "win.copy-diagnostics",
+        ),
         (strings::text(strings::ABOUT_REPRISE), "win.about"),
     ]
 }
@@ -206,6 +213,13 @@ pub(super) fn install(
         let preferences = preferences.clone();
         glib::idle_add_local_once(move || preferences.activate(None));
     }
+
+    let copy_diagnostics = gio::SimpleAction::new(ACTION_COPY_DIAGNOSTICS, None);
+    {
+        let cb = callbacks.on_copy_diagnostics.clone();
+        copy_diagnostics.connect_activate(move |_, _| cb());
+    }
+    window.add_action(&copy_diagnostics);
 
     let about = gio::SimpleAction::new(ACTION_ABOUT, None);
     {
@@ -462,7 +476,58 @@ mod tests {
             .collect();
         let help = actions.iter().position(|a| *a == "win.help");
         let about = actions.iter().position(|a| *a == "win.about");
-        assert_eq!(help.map(|i| i + 1), about);
+        // Copy Diagnostics sits between them (FB-19), so About is two after Help.
+        assert_eq!(help.map(|i| i + 2), about);
+    }
+
+    #[test]
+    fn fb_19_copy_diagnostics_is_a_labelled_entry_between_help_and_about() {
+        let entries = settings_section_entries();
+        let position = |action: &str| entries.iter().position(|(_, a)| *a == action);
+
+        let copy = position("win.copy-diagnostics").expect("the menu has the entry");
+        assert_eq!(entries[copy].0, strings::text(strings::COPY_DIAGNOSTICS));
+        assert_eq!(strings::COPY_DIAGNOSTICS, "Copy Diagnostics");
+        assert_eq!(position("win.help").map(|i| i + 1), Some(copy));
+        assert_eq!(position("win.about").map(|i| i - 1), Some(copy));
+        assert_eq!(
+            format!("win.{ACTION_COPY_DIAGNOSTICS}"),
+            "win.copy-diagnostics"
+        );
+    }
+
+    #[test]
+    #[ignore = "requires a display; run via xvfb-run"]
+    fn fb_19_activating_the_menu_entry_runs_the_copy_callback() {
+        let _main_context = crate::ui::test_main_context::lock_main_context();
+        gtk4::init().unwrap();
+        adw::init().unwrap();
+        let window = adw::ApplicationWindow::builder().build();
+        let header = adw::HeaderBar::new();
+        let copies = Rc::new(std::cell::Cell::new(0));
+        let noop = || Rc::new(|| {}) as Rc<dyn Fn()>;
+        install(
+            &header,
+            &window,
+            &Rc::new(ActiveTable::default()),
+            Callbacks {
+                on_minimal_view: noop(),
+                on_library_doctor: noop(),
+                on_library_doctor_findings: noop(),
+                on_import_playlist: noop(),
+                on_stop_playback: None,
+                on_preferences: noop(),
+                on_copy_diagnostics: {
+                    let copies = copies.clone();
+                    Rc::new(move || copies.set(copies.get() + 1))
+                },
+                on_about: noop(),
+            },
+        );
+
+        gtk4::prelude::WidgetExt::activate_action(&window, "win.copy-diagnostics", None).unwrap();
+
+        assert_eq!(copies.get(), 1);
     }
 
     #[test]

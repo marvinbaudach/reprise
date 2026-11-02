@@ -2079,6 +2079,22 @@ result.
   `fb_18_the_undo_snackbar_floats_above_the_bottom_frame_without_moving_the_list`,
   `fb_18_the_titles_tab_stays_where_it_is`,
   `fb_18_over_the_stacked_sheet_the_snackbar_sits_just_above_the_transport_row`.
+- **FB-19** [planned] [gtk] — **The primary menu can copy the diagnostics
+  report.** <!-- REVIEW: rule proposal --> The settings section of the primary
+  menu holds "Copy Diagnostics" between Help and About Reprise. Activating it
+  puts the redacted diagnostics report on the clipboard and confirms it in a
+  toast; without a display it says the copy failed instead of claiming one.
+  It is the same report About shows and the crash offer (START-6) copies, so
+  it additionally lists the enabled optional modules and ends with a bounded
+  tail of this run's log and of the previous run's log, each under its own
+  heading. Every log line passes the redaction of the warnings, so a library
+  path in the log never reaches the clipboard. *Tests:*
+  `fb_19_copy_diagnostics_is_a_labelled_entry_between_help_and_about`,
+  `fb_19_activating_the_menu_entry_runs_the_copy_callback`,
+  `fb_19_the_copied_report_lists_the_enabled_modules`,
+  `fb_19_the_copied_report_carries_both_runs_log_tails_labelled`,
+  `fb_19_the_platform_report_lists_modules_and_the_supplied_log_tail`,
+  `crash_report_never_contains_a_library_path_in_the_log_tails`.
 
 ## H. File association & OS integration
 
@@ -2266,6 +2282,48 @@ result.
   resume position is part of the saved session. The application releases the
   listener when `run` returns, so a request still unread at that point ends
   the process too.
+- **START-6** [planned] [gtk] — **A run that did not end cleanly is noticed
+  once, on the next start.** <!-- REVIEW: rule proposal --> The first
+  instance mirrors its log into `reprise.log` in the state directory
+  (`$XDG_STATE_HOME/reprise/`, the data directory when that is unset), which
+  only its owner can read: the previous run's log is kept as `reprise.log.1`
+  and no older one, a run that logs more than 8 MB stops writing instead of
+  rotating again, and every line passes the redaction of the copied
+  diagnostics report. A second `reprise` launch never touches the file. The
+  first instance also keeps a running marker in that directory from startup
+  until a clean way out: the session save that a window close and a
+  termination request both reach (START-5a), or the return of the application
+  run. A panic appends its message, location and backtrace to the log, with
+  library paths removed. When a start finds the marker of an earlier run
+  still there (a crash, a kill, a power loss), the main window shows exactly
+  one toast, "Reprise did not close properly last time", whose action is
+  "Copy Diagnostics": it puts the diagnostics report on the clipboard and
+  confirms it in a toast. The offer is not repeated within the process, and
+  the marker is not consumed by it: it already belongs to the new run. *Tests:*
+  `start_6_an_unclean_previous_run_is_offered_exactly_once`,
+  `start_6_a_clean_previous_run_offers_nothing`,
+  `start_6_the_offer_is_one_toast_with_copy_diagnostics_and_not_repeated`,
+  `start_6_a_clean_shutdown_removes_the_running_marker`,
+  `start_6_a_run_that_never_saved_leaves_the_running_marker`,
+  `start_6_a_termination_request_removes_the_running_marker`.
+- **START-7** [planned] [core] — **The Rhythmbox import finds the library
+  wherever Rhythmbox keeps it.** <!-- REVIEW: rule proposal --> The importer
+  looks for `rhythmdb.xml` in these directories, in this order, and the first
+  one that holds it wins: the `rhythmbox` folder of the data directory (inside
+  a Flatpak, the host's: `$HOST_XDG_DATA_HOME`, else `$HOME/.local/share`),
+  then `$HOME/.var/app/org.gnome.Rhythmbox3/data/rhythmbox` for a Rhythmbox
+  installed from Flathub. With none present the first directory stays the
+  answer, so the import is offered only when a database really exists. The
+  playlists file is the sibling `playlists.xml` of the database that was found.
+  `REPRISE_RHYTHMDB_PATH` and `REPRISE_RHYTHMBOX_PLAYLISTS_PATH` still name
+  either file directly and are not probed. Inside a Flatpak the host
+  directories are reachable only if the manifest grants read access to them.
+  *Tests:*
+  `start_7_inside_a_flatpak_the_hosts_rhythmbox_directory_is_probed_first`,
+  `start_7_a_rhythmbox_from_flathub_is_found_in_its_sandbox_directory`,
+  `start_7_the_first_directory_with_a_database_wins_and_the_override_still_beats_it`,
+  `start_7_the_playlists_file_sits_beside_the_database_that_was_found`,
+  `start_7_the_importer_takes_its_playlists_file_from_the_resolver`.
 
 ## J. Queue view
 

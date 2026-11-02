@@ -10,6 +10,7 @@ crates/reprise-gnome/src/ui/strings_news.rs
 crates/reprise-gnome/src/ui/strings_notifications.rs
 crates/reprise-gnome/src/ui/strings_online_sources.rs
 crates/reprise-gnome/src/ui/strings_concerts.rs
+crates/reprise-gnome/src/ui/strings_diagnostics.rs
 crates/reprise-gnome/src/ui/strings_releases.rs
 crates/reprise-gnome/src/ui/strings_podcasts.rs
 crates/reprise-gnome/src/ui/strings_radio.rs

@@ -27,6 +27,7 @@ fn complete_facts() -> DiagnosticFacts {
         db_size_bytes: Some(19_293_798),
         gvfs_version: Some("1.60.2".into()),
         remembered_device_count: Some(1),
+        ..DiagnosticFacts::default()
     }
 }
 

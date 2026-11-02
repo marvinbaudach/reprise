@@ -5,6 +5,8 @@ use super::redact::redact_log_message;
 
 const RENDERED_EVENT_LIMIT: usize = 10;
 const UNKNOWN: &str = "unknown";
+const THIS_RUN_HEADING: &str = "log, this run";
+const PREVIOUS_RUN_HEADING: &str = "log, previous run";
 
 // Writing into a `String` cannot fail, so the `fmt::Result` of every `write!`
 // below carries no information and is discarded with `let _ =`.
@@ -59,6 +61,9 @@ pub fn render_report(
         optional(&facts.gvfs_version),
         remembered_devices(facts.remembered_device_count)
     );
+    if let Some(modules) = &facts.enabled_modules {
+        let _ = write!(report, "\nmodules {}", enabled_modules(modules));
+    }
 
     if !log.is_empty() {
         report.push_str("\n\nlast warnings\n");
@@ -85,7 +90,37 @@ pub fn render_report(
             }
         }
     }
+    append_log_tail(&mut report, THIS_RUN_HEADING, &facts.log_tail, redaction);
+    append_log_tail(
+        &mut report,
+        PREVIOUS_RUN_HEADING,
+        &facts.previous_log_tail,
+        redaction,
+    );
     report
+}
+
+fn append_log_tail(
+    report: &mut String,
+    heading: &str,
+    tail: &Option<String>,
+    redaction: &RedactionContext,
+) {
+    let Some(tail) = tail.as_deref().filter(|tail| !tail.trim().is_empty()) else {
+        return;
+    };
+    let _ = write!(report, "\n\n{heading}");
+    for line in tail.lines() {
+        let _ = write!(report, "\n{}", redact_log_message(line, redaction));
+    }
+}
+
+fn enabled_modules(modules: &[String]) -> String {
+    if modules.is_empty() {
+        "none".into()
+    } else {
+        modules.join(" ")
+    }
 }
 
 fn final_target_segment(target: &str) -> &str {

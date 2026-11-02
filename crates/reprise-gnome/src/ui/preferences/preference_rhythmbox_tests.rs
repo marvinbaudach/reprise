@@ -82,3 +82,73 @@ fn import_dialog_has_three_stack_states_and_four_readable_option_rows() {
     // Import button starts insensitive (needs prescan)
     assert!(!widgets.import_button.is_sensitive());
 }
+
+/// A stand-in environment: the tests never read or write the process's own.
+fn variables<'a>(
+    pairs: &'a [(&'a str, &'a str)],
+) -> impl Fn(&str) -> Option<std::ffi::OsString> + 'a {
+    move |name| {
+        pairs
+            .iter()
+            .find(|(key, _)| *key == name)
+            .map(|(_, value)| std::ffi::OsString::from(*value))
+    }
+}
+
+const FLATHUB_DATABASE: &str =
+    "/home/tester/.var/app/org.gnome.Rhythmbox3/data/rhythmbox/rhythmdb.xml";
+
+#[test]
+fn start_7_the_importer_finds_the_database_through_the_resolver() {
+    let environment = [("HOME", "/home/tester")];
+    let native = || std::path::PathBuf::from("/home/tester/.local/share");
+
+    // Nothing exists: the native directory is where a missing library is reported.
+    assert_eq!(
+        rhythmdb_path_for(false, native(), variables(&environment), |_| false),
+        std::path::PathBuf::from("/home/tester/.local/share/rhythmbox/rhythmdb.xml")
+    );
+    // Only the Flathub Rhythmbox has a database: the old native-only join missed it.
+    assert_eq!(
+        rhythmdb_path_for(false, native(), variables(&environment), |path| path
+            == std::path::Path::new(FLATHUB_DATABASE)),
+        std::path::PathBuf::from(FLATHUB_DATABASE)
+    );
+    // The override wins untouched, even when a database exists elsewhere.
+    assert_eq!(
+        rhythmdb_path_for(
+            false,
+            native(),
+            variables(&[
+                ("HOME", "/home/tester"),
+                ("REPRISE_RHYTHMDB_PATH", "/chosen/db.xml")
+            ]),
+            |_| true
+        ),
+        std::path::PathBuf::from("/chosen/db.xml")
+    );
+}
+
+#[test]
+fn start_7_the_importer_takes_its_playlists_file_from_the_resolver() {
+    let rhythmdb = std::path::Path::new("/found/rhythmbox/rhythmdb.xml");
+
+    assert_eq!(
+        playlists_path_for(rhythmdb, variables(&[])),
+        std::path::PathBuf::from("/found/rhythmbox/playlists.xml")
+    );
+    assert_eq!(
+        playlists_path_for(
+            rhythmdb,
+            variables(&[("REPRISE_RHYTHMBOX_PLAYLISTS_PATH", "/chosen/playlists.xml")])
+        ),
+        std::path::PathBuf::from("/chosen/playlists.xml")
+    );
+    assert_eq!(
+        playlists_path_for(
+            rhythmdb,
+            variables(&[("REPRISE_RHYTHMBOX_PLAYLISTS_PATH", "")])
+        ),
+        std::path::PathBuf::from("/found/rhythmbox/playlists.xml")
+    );
+}

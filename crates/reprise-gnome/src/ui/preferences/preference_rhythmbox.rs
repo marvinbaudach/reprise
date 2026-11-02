@@ -11,15 +11,13 @@ use reprise_core::library::rhythmbox_import::{
     self, RhythmboxImportChoices, RhythmboxPlaylist, RhythmboxPrescanResult, RhythmboxRollback,
     RhythmboxTrackStats,
 };
+use reprise_core::library::rhythmbox_locations;
 use reprise_core::library::source::{
     LibraryLinkMode, LibraryPathPresence, LibrarySource, UnixLibrarySource,
 };
 
 use super::strings;
 use super::PreferencesContext;
-
-const RHYTHMDB_PATH_ENV: &str = "REPRISE_RHYTHMDB_PATH";
-const PLAYLISTS_PATH_ENV: &str = "REPRISE_RHYTHMBOX_PLAYLISTS_PATH";
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum RhythmboxOption {
@@ -65,15 +63,30 @@ fn option_title(option: RhythmboxOption) -> String {
     })
 }
 
+/// START-7: the database Rhythmbox keeps, wherever its packaging put it.
 #[allow(
     clippy::disallowed_methods,
     reason = "reads Rhythmbox's own data, not Reprise's"
 )]
 fn default_rhythmdb_path() -> PathBuf {
-    std::env::var_os(RHYTHMDB_PATH_ENV).map_or_else(
-        || glib::user_data_dir().join("rhythmbox/rhythmdb.xml"),
-        PathBuf::from,
+    rhythmdb_path_for(
+        reprise_platform_linux::flatpak::running_in_flatpak(),
+        glib::user_data_dir(),
+        |name| std::env::var_os(name),
+        Path::is_file,
     )
+}
+
+/// [`default_rhythmdb_path`] with every input explicit, so a test needs neither
+/// the process environment nor the file system.
+fn rhythmdb_path_for(
+    in_flatpak: bool,
+    native_data_dir: PathBuf,
+    var: impl Fn(&str) -> Option<std::ffi::OsString>,
+    is_file: impl Fn(&Path) -> bool,
+) -> PathBuf {
+    let inputs = rhythmbox_locations::inputs_from(in_flatpak, native_data_dir, var);
+    rhythmbox_locations::resolve(&inputs, is_file).rhythmdb
 }
 
 fn rhythmbox_data_available(rhythmdb_path: &Path) -> bool {
@@ -92,11 +105,17 @@ pub(in crate::ui) fn rhythmbox_import_available() -> bool {
     rhythmbox_data_available(&default_rhythmdb_path())
 }
 
-fn default_playlists_path(rhythmdb_path: &std::path::Path) -> PathBuf {
-    std::env::var_os(PLAYLISTS_PATH_ENV).map_or_else(
-        || rhythmdb_path.with_file_name("playlists.xml"),
-        PathBuf::from,
-    )
+fn default_playlists_path(rhythmdb_path: &Path) -> PathBuf {
+    playlists_path_for(rhythmdb_path, |name| std::env::var_os(name))
+}
+
+/// [`default_playlists_path`] with the environment explicit.
+fn playlists_path_for(
+    rhythmdb_path: &Path,
+    var: impl Fn(&str) -> Option<std::ffi::OsString>,
+) -> PathBuf {
+    let playlists_override = var(rhythmbox_locations::PLAYLISTS_PATH_ENV).filter(|v| !v.is_empty());
+    rhythmbox_locations::playlists_path(rhythmdb_path, playlists_override.as_deref())
 }
 
 struct ParsedImport {

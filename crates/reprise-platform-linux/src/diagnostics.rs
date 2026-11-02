@@ -20,6 +20,10 @@ pub struct DesktopDiagnosticInput {
     pub gtk_version: String,
     pub libadwaita_version: String,
     pub rust_version: Option<String>,
+    /// The end of this run's log file; read by the caller, which owns the state directory.
+    pub log_tail: Option<String>,
+    /// The end of the previous run's log file.
+    pub previous_log_tail: Option<String>,
 }
 
 /// Collects fallible Linux and database facts and renders a privacy-safe report.
@@ -74,10 +78,26 @@ fn collect_facts(db: &Db, db_path: &Path, input: &DesktopDiagnosticInput) -> Dia
             .map(|metadata| metadata.len()),
         gvfs_version: gvfs_version(),
         remembered_device_count,
+        enabled_modules: enabled_module_ids(db),
+        log_tail: input.log_tail.clone(),
+        previous_log_tail: input.previous_log_tail.clone(),
     }
 }
 
-fn redaction_context() -> RedactionContext {
+/// Ids of the optional modules that are switched on. A module whose setting
+/// cannot be read makes the whole list unknown rather than silently absent.
+fn enabled_module_ids(db: &Db) -> Option<Vec<String>> {
+    let mut ids = Vec::new();
+    for module in reprise_core::modules::ALL_MODULES {
+        if reprise_core::modules::is_enabled(db, module).ok()? {
+            ids.push(module.id.to_string());
+        }
+    }
+    Some(ids)
+}
+
+/// What a report or a mirrored log line must not reveal on this machine.
+pub fn redaction_context() -> RedactionContext {
     RedactionContext {
         music_dir: glib::user_special_dir(glib::UserDirectory::Music)
             .map(|path| path.to_string_lossy().into_owned()),

@@ -537,5 +537,6 @@ pub fn build(
         &minimal_view,
     );
     super::runtime_performance::arm(&window, &track_list);
+    crate::ui::diagnostics::crash_offer::offer(&toast_overlay, conn, db_path);
     FileOpenHandler::new(&window, conn.clone(), player, &toast_overlay, sidebar)
 }

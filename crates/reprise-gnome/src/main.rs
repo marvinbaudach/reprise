@@ -120,13 +120,23 @@ pub(crate) const SMOKE_MPRIS_BUS_ENV_VAR: &str = "REPRISE_SMOKE_MPRIS_BUS_NAME";
 /// `REPRISE_LOG=debug`). This must run before any other startup code so that
 /// failures during database setup are visible on the console.
 fn init_logging() {
-    let filter = EnvFilter::try_from_env("REPRISE_LOG")
-        .unwrap_or_else(|_| EnvFilter::new("info,lofty=error"));
+    // The same level on both layers. `EnvFilter` is not `Clone`, so each layer
+    // reads the variable itself.
+    let log_filter = || {
+        EnvFilter::try_from_env("REPRISE_LOG")
+            .unwrap_or_else(|_| EnvFilter::new("info,lofty=error"))
+    };
     let formatting = tracing_subscriber::fmt::layer()
         .with_writer(std::io::stderr)
-        .with_filter(filter);
+        .with_filter(log_filter());
+    // Mirrored into the state directory's log file once the process knows it
+    // is the first instance (`ui::diagnostics::file_log`).
+    // Its lines are redacted like the session warnings (`file_mirror`).
+    let mirror =
+        ui::diagnostics::file_mirror::FileMirrorLayer::for_this_machine().with_filter(log_filter());
     tracing_subscriber::registry()
         .with(formatting)
+        .with(mirror)
         .with(ui::diagnostics::session_layer().with_filter(ui::diagnostics::session_filter()))
         .init();
 }
@@ -149,6 +159,10 @@ fn install_panic_hook() {
             .location()
             .map_or_else(|| "unknown location".to_owned(), ToString::to_string);
         tracing::error!(panic_payload = payload, panic_location = location, "panic");
+        // `force_capture`: a tester never sets `RUST_BACKTRACE`, and a crash
+        // report without a backtrace has no content.
+        let backtrace = std::backtrace::Backtrace::force_capture().to_string();
+        reprise_core::crash_report::write_report(payload, &location, &backtrace);
         previous(panic_info);
     }));
 }
@@ -332,8 +346,12 @@ fn run() -> glib::ExitCode {
         // Forwards `activate` to the primary instance and returns once
         // that's done — the primary's activate handler (below, but running
         // in the *other* process) presents its window.
+        ui::diagnostics::file_log::discard();
         return app.run();
     }
+    ui::diagnostics::file_log::start();
+    // START-6: from here until a clean way out this run owns the sentinel.
+    ui::diagnostics::crash_offer::arm();
 
     let path = db::default_path();
     tracing::info!(db_path = %path.display(), "opening database");
@@ -345,6 +363,8 @@ fn run() -> glib::ExitCode {
                 error = %failure.error,
                 "could not open or migrate database"
             );
+            // A reported failure is an orderly end, not a crash.
+            ui::diagnostics::crash_offer::disarm();
             return report_database_open_failure(&app, failure);
         }
     };
@@ -487,6 +507,10 @@ fn run() -> glib::ExitCode {
     // Nothing is left to save: a signal during teardown ends the process as it
     // did before START-5 instead of sitting unread in the listener's channel.
     ui::termination::release();
+    // Every way the application can end without a crash returns from `run`
+    // (the window close and a termination request disarm earlier, with the
+    // session save); a panic in a signal handler aborts and never gets here.
+    ui::diagnostics::crash_offer::disarm();
     exit_code
 }
 

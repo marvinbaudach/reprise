@@ -33,6 +33,12 @@ pub struct DiagnosticFacts {
     pub db_size_bytes: Option<u64>,
     pub gvfs_version: Option<String>,
     pub remembered_device_count: Option<usize>,
+    /// Ids of the optional modules switched on; `None` when they could not be read.
+    pub enabled_modules: Option<Vec<String>>,
+    /// The end of this run's log file, as written. Redacted again when rendered.
+    pub log_tail: Option<String>,
+    /// The end of the previous run's log file, the crashed run's after a crash.
+    pub previous_log_tail: Option<String>,
 }
 
 /// Values whose literal appearance must be removed from session log messages.
