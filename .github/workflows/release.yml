@@ -675,7 +675,9 @@ jobs:
         env:
           # The same condition as the flatpak-remote job: only then is the
           # update repository (and its .flatpakref) published after this release.
-          UPDATE_REPOSITORY: ${{ github.event_name == 'push' && github.ref == 'refs/heads/main' && vars.FLATPAK_REMOTE_ENABLED == 'true' }}
+          UPDATE_REPOSITORY: >-
+            ${{ github.event_name == 'push' && github.ref == 'refs/heads/main'
+            && vars.FLATPAK_REMOTE_ENABLED == 'true' }}
         run: |
           python3 - "$DESKTOP_VERSION" "$ANDROID_VERSION" "$ANDROID_CODE" > release-notes.md <<'PY'
           import os
@@ -809,7 +811,8 @@ jobs:
           key_file="$RUNNER_TEMP/reprise-flatpak-signing-key.asc"
           printf '%s\n' "$FLATPAK_GPG_PRIVATE_KEY" > "$key_file"
           if [[ -n ${FLATPAK_GPG_PASSPHRASE:-} ]]; then
-            printf '%s\n' "$FLATPAK_GPG_PASSPHRASE" | gpg --batch --pinentry-mode loopback --passphrase-fd 0 --import "$key_file"
+            printf '%s\n' "$FLATPAK_GPG_PASSPHRASE" |
+              gpg --batch --pinentry-mode loopback --passphrase-fd 0 --import "$key_file"
             # Signing runs inside flatpak and ostree, which cannot answer a
             # passphrase prompt, so cache the passphrase in the agent for every key.
             mkdir -p ~/.gnupg
@@ -826,7 +829,8 @@ jobs:
           rm -f "$key_file"
           key_id=$(gpg --batch --with-colons --list-secret-keys | awk -F: '$1 == "sec" { print $5; exit }')
           [[ -n "$key_id" ]] || { echo "Imported signing key has no secret key ID" >&2; exit 1; }
-          signing_fpr=$(gpg --batch --with-colons --list-secret-keys | awk -F: '$1 == "sec" { want = 1 } $1 == "fpr" && want { print $10; exit }')
+          signing_fpr=$(gpg --batch --with-colons --list-secret-keys |
+            awk -F: '$1 == "sec" { want = 1 } $1 == "fpr" && want { print $10; exit }')
           # The .flatpakref, the .flatpakrepo and the bundle all publish
           # FLATPAK_REPO_GPG_KEY, so the repository must be signed by that very key.
           public_check="$RUNNER_TEMP/reprise-flatpak-public-check.gpg"
@@ -840,7 +844,8 @@ jobs:
           }
           published_fpr=$(awk -F: '$1 == "fpr" { print $10; exit }' <<< "$published")
           [[ -n "$signing_fpr" && "$signing_fpr" == "$published_fpr" ]] || {
-            echo "The signing key $signing_fpr differs from the published FLATPAK_REPO_GPG_KEY $published_fpr; refusing to publish a repository its own key cannot verify" >&2
+            echo "The signing key $signing_fpr differs from the published FLATPAK_REPO_GPG_KEY" \
+              "$published_fpr; refusing to publish a repository its own key cannot verify" >&2
             exit 1
           }
           echo "key_id=$key_id" >> "$GITHUB_OUTPUT"
@@ -962,7 +967,8 @@ jobs:
             --gpg-keys="$public_key" \
             publish-tree/repo "$bundle" io.github.marvinbaudach.Reprise
           rm -f "$public_key"
-          (cd "$GITHUB_WORKSPACE/signed" && sha256sum "Reprise-$BUNDLE_VERSION.flatpak" > "Reprise-$BUNDLE_VERSION.flatpak.sha256")
+          (cd "$GITHUB_WORKSPACE/signed" &&
+            sha256sum "Reprise-$BUNDLE_VERSION.flatpak" > "Reprise-$BUNDLE_VERSION.flatpak.sha256")
 
       - name: Publish the repository
         run: |
@@ -970,7 +976,9 @@ jobs:
           cd publish-tree
           git checkout --orphan publish-flatpak
           git add -A
-          git -c user.name='github-actions[bot]' -c user.email='41898282+github-actions[bot]@users.noreply.github.com' commit -m "Publish Reprise Flatpak repository"
+          git -c user.name='github-actions[bot]' \
+            -c user.email='41898282+github-actions[bot]@users.noreply.github.com' \
+            commit -m "Publish Reprise Flatpak repository"
           git push --force origin HEAD:gh-pages
 
       - name: Remove the deploy key
