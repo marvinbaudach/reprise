@@ -72,7 +72,7 @@ reprise-runtime-protocol = { path = "../reprise-runtime-protocol", optional = tr
 tempfile = "3"
 # The test-built binary must not read or write the user's real `~/.local/share/reprise`.
 reprise-core = { path = "../reprise-core", features = ["test-private-dirs"] }
-rusqlite = { version = "0.40", features = ["bundled"] }
+rusqlite = { version = "0.41", features = ["bundled"] }
 serde_json = "1.0"
 
 [lints]
