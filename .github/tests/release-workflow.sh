@@ -22,7 +22,21 @@ with path.open(encoding="utf-8") as stream:
     workflow = yaml.safe_load(stream)
 assert isinstance(workflow, dict), "workflow root must be a mapping"
 jobs = workflow.get("jobs", {})
-assert set(jobs) == {"gate", "flatpak", "apk", "publish"}, jobs.keys()
+assert set(jobs) == {"gate", "flatpak", "apk", "publish", "flatpak-remote"}, jobs.keys()
+
+# The signed update repository publishes only after the release itself, only from
+# main, and only once the owner has switched it on.
+flatpak_remote = jobs["flatpak-remote"]
+assert set(flatpak_remote.get("needs", [])) == {"gate", "publish"}, (
+    "the Flatpak repository must wait for the published release"
+)
+flatpak_remote_if = flatpak_remote.get("if", "")
+for guard in (
+    "github.event_name == 'push'",
+    "github.ref == 'refs/heads/main'",
+    "vars.FLATPAK_REMOTE_ENABLED == 'true'",
+):
+    assert guard in flatpak_remote_if, f"flatpak-remote must be guarded by {guard}"
 
 def named_step(job_name, step_name):
     for step in jobs[job_name].get("steps", []):
