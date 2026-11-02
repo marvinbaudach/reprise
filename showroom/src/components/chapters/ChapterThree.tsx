@@ -34,9 +34,22 @@ export function ChapterThree({ reducedMotion }: ChapterThreeProps) {
         <p className="chapter__intro" data-reveal>
           Each platform also keeps its own habits. On the desktop the mini-player is a window of its
           own: switching to it hides the library window instead of resizing it, so the library keeps
-          its size and place. On Android a long press on an artist offers Delete from device…; after
-          a confirmation that it cannot be undone, it deletes the files of that artist&apos;s tracks
-          from the phone.
+          its size and place. On Android a long press on an artist offers Delete from device…; the
+          artist&apos;s tracks leave the lists at once, and their files are deleted from the phone
+          only when a short Undo window has passed.
+        </p>
+        <p className="chapter__intro" data-reveal>
+          The desktop player bar has a sleep timer, which fades the volume over four seconds before
+          it pauses, and Ctrl+K opens Quick Open to jump to a track, album, artist, playlist or
+          podcast show by name. On the phone, Android Auto can browse the library and a home-screen
+          widget controls playback. A track removed from the queue can be brought back with Undo,
+          and returns to its old place.
+        </p>
+        <p className="chapter__intro" data-reveal>
+          An artist&apos;s portrait is never one of their own release covers. Without a usable
+          Deezer photo it comes from Wikimedia Commons with the photographer&apos;s credit, shown
+          under the portrait on Android and as a tooltip on the desktop. Reprise also speaks Italian
+          now, a translation contributed by giallorosso84.
         </p>
         <details className="evidence-details">
           <summary>Explore the interactive seek bar</summary>

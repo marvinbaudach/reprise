@@ -37,6 +37,16 @@ export function ChapterOne() {
           Archive, through the same download code the desktop uses. It happens only once online
           sources are switched on, and the cover stays in the app&apos;s cache.
         </p>
+        <p className="case-result">
+          An album ripped as one audio file with a CUE sheet is listed as its tracks. The core
+          splits the file once, so the desktop and the phone each play a track only from its own
+          start to its own end, and each track gets its own waveform and loudness.
+        </p>
+        <p className="case-result">
+          Loudness is measured in that same shared analysis pass (EBU R128). The desktop evens
+          tracks out to the ReplayGain reference of -18 LUFS; the phone aims at -14 LUFS, because at
+          -18 navigation prompts drowned the music out in the car.
+        </p>
         <details className="evidence-details">
           <summary>Code breakdown</summary>
           <FigureGrid figures={HEADLINE_FIGURES} variant="headline" />
