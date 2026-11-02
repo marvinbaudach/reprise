@@ -147,8 +147,6 @@ pub(crate) fn rotate_paths(active: &Path, previous: &Path) -> io::Result<()> {
 
 #[cfg(test)]
 mod tests {
-    use std::os::unix::fs::PermissionsExt;
-
     use super::*;
 
     #[test]
@@ -202,18 +200,18 @@ mod tests {
     }
 
     #[test]
-    fn rotation_reports_but_survives_a_read_only_directory() {
+    fn rotation_reports_a_failure_and_keeps_the_current_log() {
+        // A directory where the previous log belongs makes the rotation fail for
+        // every user, root included; a read-only directory would not stop root.
         let root = tempfile::tempdir().unwrap();
         let active = log_path_in(root.path());
-        let directory = active.parent().unwrap().to_path_buf();
-        std::fs::create_dir_all(&directory).unwrap();
+        std::fs::create_dir_all(active.parent().unwrap()).unwrap();
         std::fs::write(&active, "current").unwrap();
         let previous = previous_log_path_in(root.path());
-        std::fs::set_permissions(&directory, std::fs::Permissions::from_mode(0o555)).unwrap();
+        std::fs::create_dir(&previous).unwrap();
 
         let result = rotate_paths(&active, &previous);
 
-        std::fs::set_permissions(&directory, std::fs::Permissions::from_mode(0o755)).unwrap();
         assert!(result.is_err());
         assert_eq!(std::fs::read_to_string(active).unwrap(), "current");
     }
