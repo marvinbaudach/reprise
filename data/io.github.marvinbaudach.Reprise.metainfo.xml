@@ -139,6 +139,12 @@
     <!-- One entry per promoted release, not per merge into dev. Every merge
          raises the workspace version; only a promotion to main ships one.
          See docs/agents/branching.md and RELEASING.md. -->
+    <release version="0.1.328" date="2026-11-02" type="stable">
+      <description>
+        <p>On Android, the artwork progress bar no longer appears on nearly every start: a run with nothing to fetch stays hidden, an unchanged library starts no artwork search, and artists and albums without artwork are not asked for again on every start. The experimental stem separation backend moves to newer ONNX Runtime bindings.</p>
+        <p xml:lang="de">Unter Android erscheint der Fortschrittsbalken für Coverbilder nicht mehr bei fast jedem Start: Ein Lauf ohne etwas abzurufen bleibt unsichtbar, eine unveränderte Bibliothek startet keine Bildersuche, und Künstler und Alben ohne Bild werden nicht bei jedem Start erneut angefragt. Das experimentelle Backend für die Stem-Trennung wechselt auf neuere ONNX-Runtime-Bindings.</p>
+      </description>
+    </release>
     <release version="0.1.326" date="2026-11-01" type="stable">
       <description>
         <p>Adds an Italian translation, contributed by giallorosso84. On Android, swiping back from a settings page now slides the page away like the back arrow does, instead of fading and shrinking it. Dependencies and build tools pick up their October patch releases.</p>

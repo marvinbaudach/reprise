@@ -4,6 +4,20 @@ Reprise release notes are curated from the changes that reached the stable
 branch. They describe user-visible changes rather than reproducing commit
 messages.
 
+## [0.1.328] - 2026-11-02
+
+### Android
+
+- The artwork progress bar no longer appears on nearly every start. A run with
+  nothing to ask the network for stays hidden, a scan that found no new or
+  changed tracks starts no artwork search, and artists and albums without
+  artwork are not asked again on every start.
+
+### Tools, packaging, and reliability
+
+- The experimental stem separation backend moves to ONNX Runtime bindings
+  2.0.0-rc.14.
+
 ## [0.1.326] - 2026-11-01
 
 ### Language
