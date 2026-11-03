@@ -96,6 +96,18 @@ fn playing_pipeline(player: &Player) -> bool {
     playbin.current_state() == gst::State::Playing
 }
 
+/// Where a silent start stands, for the report: the watchdog only acts on a
+/// pipeline that is in READY with a state change pending.
+fn pipeline_state(player: &Player) -> String {
+    let playbin = player
+        .playbin
+        .lock()
+        .unwrap_or_else(PoisonError::into_inner)
+        .clone();
+    let (change, current, pending) = playbin.state(gst::ClockTime::ZERO);
+    format!("pipeline: current={current:?} pending={pending:?} change={change:?}")
+}
+
 fn gave_up(events: &[PlayerEvent]) -> bool {
     events.iter().any(|event| {
         matches!(
@@ -161,7 +173,14 @@ fn soak(deadline: Duration) -> (Summary, u64) {
             summary.played += 1;
         } else {
             summary.silent += 1;
-            eprintln!("start {index} (cue: {cue}) stayed silent for {took:?}");
+            eprintln!(
+                "start {index} (cue: {cue}) stayed silent for {took:?}; {}; errors reported: {:?}",
+                pipeline_state(&harness.player),
+                events
+                    .iter()
+                    .filter(|event| matches!(event, PlayerEvent::Error(_)))
+                    .collect::<Vec<_>>()
+            );
         }
     }
     let restarts = harness.player.start_watchdog.restarts();
