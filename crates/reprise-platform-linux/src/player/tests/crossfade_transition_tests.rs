@@ -1,9 +1,11 @@
-use super::segment_support::{count, Harness};
+use super::segment_support::{count, write_regions_wav, Harness};
 use super::*;
 use crate::crossfade::test_seam;
 use reprise_core::library::settings::TrackTransition;
 use std::sync::atomic::AtomicUsize;
 
+/// Length of the track the promotion test fades into.
+const SECOND_TRACK_MS: u32 = 3_000;
 pub(super) const HANG_GUARD: Duration = Duration::from_secs(20);
 /// How often a crossfade is begun again when its secondary hangs in READY.
 const CROSSFADE_START_ATTEMPTS: usize = 5;
@@ -163,7 +165,13 @@ fn play_20b_crossfade_promotion_carries_the_next_gain_from_the_first_sample() {
     player.set_transition(TrackTransition::Crossfade, 1);
 
     let first = concat!(env!("CARGO_MANIFEST_DIR"), "/tests/fixtures/sine.flac");
-    let second = concat!(env!("CARGO_MANIFEST_DIR"), "/tests/fixtures/blip.flac");
+    // Longer than the whole fade: a fixture that ends within it would post its
+    // own end-of-stream right after the promotion, and that is a finished
+    // track, not the outgoing one leaking. (`blip.flac` is 0.46 s.)
+    let directory = tempfile::tempdir().unwrap();
+    let second_path = directory.path().join("second.wav");
+    write_regions_wav(&second_path, &[(SECOND_TRACK_MS, true)]);
+    let second = second_path.to_str().unwrap();
     let watcher = trouble_on_secondary(Trouble::Watch);
     let (events, saw_crossfading) = crossfade_over_when_hung(
         &harness,
@@ -208,7 +216,7 @@ fn play_20b_crossfade_promotion_carries_the_next_gain_from_the_first_sample() {
     assert!(
         current_uri
             .as_deref()
-            .is_some_and(|uri| uri.ends_with("blip.flac")),
+            .is_some_and(|uri| uri.ends_with("second.wav")),
         "the promoted pipeline should contain the second track"
     );
     let track_gain = playbin

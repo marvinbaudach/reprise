@@ -89,6 +89,20 @@ pub(crate) fn crossfade_gains(elapsed_ms: u64, total_ms: u64) -> (f64, f64) {
     (angle.cos(), angle.sin())
 }
 
+/// How long the ramp runs once the incoming track has prerolled: the fade the
+/// user asked for, cut short to the time that is left until
+/// [`OUTGOING_END_MARGIN`] before the outgoing track ends. The ramp starts only
+/// after the wait for the preroll, so without the cut a slow preroll leaves the
+/// outgoing track ending, at full-ish volume, while the incoming one is still
+/// ramping up.
+fn ramp_length_ms(total_ms: u64, outgoing_ends_at: Instant, now: Instant) -> u64 {
+    let ramp_ends_at = outgoing_ends_at
+        .checked_sub(OUTGOING_END_MARGIN)
+        .unwrap_or(outgoing_ends_at);
+    let left = ramp_ends_at.saturating_duration_since(now);
+    (left.as_millis() as u64).min(total_ms)
+}
+
 /// Bündel geteilter Zustandshandles, das der Position-Ticker (zum Starten einer
 /// Überblendung) und der Rampen-Thread (zum Durchführen und Befördern) teilen.
 /// Alles `Arc`-basiert; `Clone` ist ein reiner Refcount-Bump. Der `Player` hält
@@ -282,6 +296,10 @@ impl CrossfadeEngine {
             }
         }
 
+        // The ramp was meant to end with the outgoing track, and the wait ate
+        // into the time that is left: ramp over what remains, never longer
+        // than the fade the user asked for.
+        let ramp_ms = ramp_length_ms(total_ms, outgoing_ends_at, Instant::now());
         let start = Instant::now();
         loop {
             if self.generation.load(Ordering::SeqCst) != my_generation {
@@ -291,7 +309,7 @@ impl CrossfadeEngine {
                 return;
             }
             let elapsed = start.elapsed().as_millis() as u64;
-            let (out_gain, in_gain) = crossfade_gains(elapsed, total_ms);
+            let (out_gain, in_gain) = crossfade_gains(elapsed, ramp_ms);
             let user_volume = *self
                 .user_volume
                 .lock()
@@ -301,7 +319,7 @@ impl CrossfadeEngine {
                 primary.set_property("volume", out_gain * user_volume);
             }
             secondary.set_property("volume", in_gain * user_volume);
-            if elapsed >= total_ms {
+            if elapsed >= ramp_ms {
                 break;
             }
             std::thread::sleep(RAMP_STEP);
@@ -505,6 +523,28 @@ pub(crate) mod test_seam {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn the_ramp_is_the_requested_fade_when_there_is_time_for_it() {
+        let now = Instant::now();
+        let ends_at = now + Duration::from_secs(10);
+        assert_eq!(ramp_length_ms(4_000, ends_at, now), 4_000);
+    }
+
+    #[test]
+    fn the_ramp_ends_before_the_outgoing_track_does() {
+        let now = Instant::now();
+        let ends_at = now + Duration::from_secs(3);
+        let expected = 3_000 - OUTGOING_END_MARGIN.as_millis() as u64;
+        assert_eq!(ramp_length_ms(4_000, ends_at, now), expected);
+    }
+
+    #[test]
+    fn a_ramp_with_no_time_left_is_empty() {
+        let now = Instant::now();
+        assert_eq!(ramp_length_ms(4_000, now, now), 0);
+        assert_eq!(ramp_length_ms(4_000, now, now + Duration::from_secs(1)), 0);
+    }
 
     #[test]
     fn gains_at_start_are_full_out_silent_in() {

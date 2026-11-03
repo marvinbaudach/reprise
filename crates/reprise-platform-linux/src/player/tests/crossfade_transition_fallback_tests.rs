@@ -8,6 +8,7 @@ use super::crossfade_transition_tests::{
 use super::segment_support::{count, ticks, write_regions_wav, Harness};
 use super::*;
 use reprise_core::library::settings::TrackTransition;
+use std::time::Instant;
 
 /// How long the slow secondary holds its first buffer.
 const SLOW_FIRST_BUFFER: Duration = Duration::from_secs(1);
@@ -118,22 +119,61 @@ fn play_25_a_crossfade_whose_incoming_track_hangs_falls_back_to_a_plain_track_ch
     assert_eq!(count(&events, failed), 0, "events: {events:?}");
 }
 
+/// When the fade started and when it ended, as the player reported them.
+#[derive(Default)]
+struct FadeTimeline {
+    /// When the outgoing track will end, worked out from the first position
+    /// tick inside the fade window.
+    outgoing_ends_at: Option<Instant>,
+    promoted_at: Option<Instant>,
+}
+
+/// The fade of the slow-preroll test, longer than the first buffer's delay.
+const SLOW_FADE_SECONDS: u8 = 4;
+
+/// How much later than the outgoing track's end the promotion may come: one
+/// ramp step, and the position ticker's granularity.
+const PROMOTION_SLACK: Duration = Duration::from_millis(400);
+
 /// Guards against an over-eager fallback: a secondary that starts late but
-/// inside the bound still fades and is promoted, as before.
+/// inside the bound still fades and is promoted, as before. The fade it gets
+/// is the time that is left: the ramp starts after the wait, and it ends when
+/// the outgoing track does, not `SLOW_FADE_SECONDS` after it started.
 #[test]
 fn play_25_a_crossfade_whose_incoming_track_prerolls_slowly_still_fades() {
-    let harness = Harness::new();
+    let timeline = Arc::new(Mutex::new(FadeTimeline::default()));
+    let observed = timeline.clone();
+    let harness = Harness::observing(move |event| {
+        let mut timeline = observed.lock().unwrap_or_else(PoisonError::into_inner);
+        match event {
+            PlayerEvent::Position {
+                position_ms,
+                duration_ms,
+            } if timeline.outgoing_ends_at.is_none()
+                && *position_ms >= duration_ms - i64::from(SLOW_FADE_SECONDS) * 1_000 =>
+            {
+                timeline.outgoing_ends_at = Some(
+                    Instant::now() + Duration::from_millis((duration_ms - position_ms) as u64),
+                );
+            }
+            PlayerEvent::AdvancedToNext if timeline.promoted_at.is_none() => {
+                timeline.promoted_at = Some(Instant::now());
+            }
+            _ => {}
+        }
+    });
     let player = &harness.player;
     let directory = tempfile::tempdir().unwrap();
     let first = tone(&directory, "first.wav", 7_000);
     let second = tone(&directory, "second.wav", 4_000);
-    player.set_transition(TrackTransition::Crossfade, 4);
+    player.set_transition(TrackTransition::Crossfade, SLOW_FADE_SECONDS);
     let trouble = trouble_on_secondary(Trouble::Late(SLOW_FIRST_BUFFER));
 
     let (events, _) = crossfade_over_when_hung(
         &harness,
         &trouble,
         || {
+            *timeline.lock().unwrap_or_else(PoisonError::into_inner) = FadeTimeline::default();
             player.play(item(&first)).unwrap();
             player.set_next(Some(item(&second)));
         },
@@ -146,6 +186,16 @@ fn play_25_a_crossfade_whose_incoming_track_prerolls_slowly_still_fades() {
     assert_eq!(count(&events, failed), 0, "events: {events:?}");
     assert!(current_uri(player).is_some_and(|uri| uri.ends_with("second.wav")));
     assert!(!player.crossfading.load(Ordering::SeqCst));
+    let timeline = timeline.lock().unwrap_or_else(PoisonError::into_inner);
+    let (Some(ends_at), Some(promoted_at)) = (timeline.outgoing_ends_at, timeline.promoted_at)
+    else {
+        panic!("the fade was not timed");
+    };
+    assert!(
+        promoted_at <= ends_at + PROMOTION_SLACK,
+        "the ramp outlasted the outgoing track by {:?}: it was cut off mid-fade",
+        promoted_at.saturating_duration_since(ends_at)
+    );
 }
 
 /// The volume the user drags to while the crossfade waits for its incoming
