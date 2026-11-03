@@ -7,6 +7,7 @@ use crate::player_pipeline::{
 use reprise_core::playback::{PlaybackFailureKind, PlaybackItem, PlaybackSessionId};
 
 mod cava_tests;
+mod crossfade_transition_fallback_tests;
 mod crossfade_transition_tests;
 mod gain_alignment_tests;
 mod gain_refresh_tests;
