@@ -52,6 +52,20 @@ const RAMP_STEP: Duration = Duration::from_millis(50);
 
 const MS_PER_SECOND: u64 = 1000;
 
+/// How long a crossfade waits for its incoming track to preroll before it
+/// gives way to a plain track change. The counterpart of
+/// `start_watchdog::START_DEADLINE` for the secondary, which no watchdog
+/// watches: a fade out over a pipeline that never started is silence, and
+/// promoting it leaves the listener with nothing until they skip.
+const PREROLL_BOUND: Duration = Duration::from_secs(4);
+
+/// How long before the outgoing track ends the wait for the incoming one must
+/// give up. The outgoing track's bus watch drops its end-of-stream while
+/// `crossfading` is set, so a fade abandoned only at the very end could lose
+/// the `TrackFinished` the plain track change depends on. This covers the
+/// position ticker's staleness and the main context's dispatch delay.
+const OUTGOING_END_MARGIN: Duration = Duration::from_millis(200);
+
 /// Equal-power-Überblendungskurve. Liefert `(out, in)` für den bisher
 /// verstrichenen Rampenanteil `t = elapsed_ms / total_ms`:
 ///
@@ -114,6 +128,14 @@ pub(crate) struct CrossfadeEngine {
     pub(crate) segments: SegmentHandle,
 }
 
+/// How the wait for the secondary's preroll ended.
+enum Preroll {
+    Done,
+    /// A manual jump bumped `generation`; it has done the cleaning up.
+    Superseded,
+    GaveUp(&'static str),
+}
+
 impl CrossfadeEngine {
     /// Vom Position-Ticker jeden Tick gerufen. Startet — falls Modus
     /// `Crossfade`, ein Nachfolger vorgefüttert ist, keine Blende läuft und die
@@ -157,14 +179,28 @@ impl CrossfadeEngine {
         self.crossfading.store(true, Ordering::SeqCst);
         let my_generation = self.generation.fetch_add(1, Ordering::SeqCst) + 1;
         let total_ms = (seconds as u64) * MS_PER_SECOND;
+        let outgoing_ends_at =
+            Instant::now() + Duration::from_millis((duration_ms - position_ms).max(0) as u64);
         let engine = self.clone();
-        std::thread::spawn(move || engine.run(&queued, my_generation, total_ms));
+        std::thread::spawn(move || {
+            engine.run(&queued, my_generation, total_ms, outgoing_ends_at);
+        });
     }
 
     /// Rampen-Thread-Rumpf: baut die Sekundär-Pipeline, spielt sie leise an,
-    /// blendet beide Volumes invers über und befördert am Ende. Bricht bei jedem
-    /// Schritt ab, sobald `generation` nicht mehr `my_generation` ist.
-    fn run(self, queued: &QueuedTrack, my_generation: u64, total_ms: u64) {
+    /// wartet auf ihr Preroll, blendet beide Volumes invers über und befördert am
+    /// Ende. Bricht bei jedem Schritt ab, sobald `generation` nicht mehr
+    /// `my_generation` ist. Prerollt die Sekundär nicht rechtzeitig (siehe
+    /// [`Self::await_preroll`]), wird die Blende aufgegeben: die ausklingende
+    /// Pipeline spielt mit vollem Volume zu Ende, der nächste Titel startet
+    /// über den gewöhnlichen Start.
+    fn run(
+        self,
+        queued: &QueuedTrack,
+        my_generation: u64,
+        total_ms: u64,
+        outgoing_ends_at: Instant,
+    ) {
         if self.generation.load(Ordering::SeqCst) != my_generation {
             return; // schon abgebrochen, bevor der Thread loslief
         }
@@ -189,6 +225,8 @@ impl CrossfadeEngine {
                 return;
             }
         };
+        #[cfg(test)]
+        test_seam::secondary_built(&secondary);
         // A consumer from the first buffer on, until promotion installs the
         // real CAVA processor — see `discard_cava_samples`.
         if let Err(error) = discard_cava_samples(&secondary) {
@@ -219,13 +257,30 @@ impl CrossfadeEngine {
             return;
         }
         secondary.set_property("volume", 0.0_f64);
+        // Published before it plays, so an abort during the state change
+        // already finds it.
+        *self.incoming.lock().unwrap_or_else(PoisonError::into_inner) = Some(secondary.clone());
         if let Err(error) = secondary.set_state(gst::State::Playing) {
             tracing::warn!(%error, "crossfade: secondary pipeline refused Playing; aborting fade");
-            let _ = secondary.set_state(gst::State::Null);
-            self.crossfading.store(false, Ordering::SeqCst);
+            self.abandon_fade(&secondary, my_generation);
             return;
         }
-        *self.incoming.lock().unwrap_or_else(PoisonError::into_inner) = Some(secondary.clone());
+        match self.await_preroll(&secondary, my_generation, outgoing_ends_at) {
+            Preroll::Done => {}
+            Preroll::Superseded => {
+                let _ = secondary.set_state(gst::State::Null);
+                return;
+            }
+            Preroll::GaveUp(reason) => {
+                tracing::warn!(
+                    reason,
+                    uri = %queued.uri,
+                    "crossfade: incoming track did not start; giving way to a plain track change"
+                );
+                self.abandon_fade(&secondary, my_generation);
+                return;
+            }
+        }
 
         let start = Instant::now();
         loop {
@@ -252,6 +307,62 @@ impl CrossfadeEngine {
             std::thread::sleep(RAMP_STEP);
         }
         self.promote(&secondary, my_generation);
+    }
+
+    /// Waits on the crossfade thread, never the main context, until the
+    /// secondary has prerolled. The wait is cut into [`RAMP_STEP`] slices so a
+    /// manual jump (a changed `generation`) stands the fade down within one
+    /// step. It ends at the earlier of [`PREROLL_BOUND`] and
+    /// [`OUTGOING_END_MARGIN`] before `outgoing_ends_at`.
+    fn await_preroll(
+        &self,
+        secondary: &gst::Element,
+        my_generation: u64,
+        outgoing_ends_at: Instant,
+    ) -> Preroll {
+        let give_up_at = (Instant::now() + PREROLL_BOUND).min(
+            outgoing_ends_at
+                .checked_sub(OUTGOING_END_MARGIN)
+                .unwrap_or_else(Instant::now),
+        );
+        loop {
+            if self.generation.load(Ordering::SeqCst) != my_generation {
+                return Preroll::Superseded;
+            }
+            let slice = give_up_at
+                .saturating_duration_since(Instant::now())
+                .min(RAMP_STEP);
+            let (result, _, _) =
+                secondary.state(gst::ClockTime::from_nseconds(slice.as_nanos() as u64));
+            match result {
+                Ok(gst::StateChangeSuccess::Success | gst::StateChangeSuccess::NoPreroll) => {
+                    return Preroll::Done;
+                }
+                Ok(gst::StateChangeSuccess::Async) => {}
+                Err(_) => return Preroll::GaveUp("the incoming pipeline failed to start"),
+            }
+            if Instant::now() >= give_up_at {
+                return Preroll::GaveUp("the incoming pipeline did not preroll in time");
+            }
+        }
+    }
+
+    /// Gives up the fade: the secondary goes to `Null` and leaves the slot,
+    /// and the guard is released so the outgoing track's end-of-stream is
+    /// reported again. The ramp never ran, so the outgoing track still has its
+    /// full volume. A fade that a manual jump already superseded is left alone:
+    /// the jump cleaned up, and its guard may belong to a newer fade by now.
+    fn abandon_fade(&self, secondary: &gst::Element, my_generation: u64) {
+        {
+            let mut slot = self.incoming.lock().unwrap_or_else(PoisonError::into_inner);
+            if slot.as_ref() == Some(secondary) {
+                *slot = None;
+            }
+        }
+        let _ = secondary.set_state(gst::State::Null);
+        if self.generation.load(Ordering::SeqCst) == my_generation {
+            self.crossfading.store(false, Ordering::SeqCst);
+        }
     }
 
     /// Befördert die fertige Sekundär-Pipeline zur neuen Primär-`playbin`:
@@ -326,6 +437,50 @@ impl CrossfadeEngine {
             .unwrap_or_else(PoisonError::into_inner) = new_watch;
         self.crossfading.store(false, Ordering::SeqCst);
         (self.on_event)(PlayerEvent::AdvancedToNext);
+    }
+}
+
+/// Test seam: lets a test reach the crossfade secondary before it plays.
+///
+/// The secondary is built on the crossfade thread, so no test can hold it
+/// before its first buffer has moved. This hook runs on that thread with the
+/// freshly built secondary, before it leaves `Null`. It is process-global,
+/// which is safe because every test that crossfades holds
+/// `AUDIO_SINK_TEST_LOCK` for its whole life.
+#[cfg(test)]
+pub(crate) mod test_seam {
+    use super::*;
+
+    pub(crate) type Hook = Arc<dyn Fn(&gst::Element) + Send + Sync>;
+
+    static SECONDARY_BUILT: Mutex<Option<Hook>> = Mutex::new(None);
+
+    /// Removes the hook again when dropped, panic or not.
+    pub(crate) struct HookGuard;
+
+    impl Drop for HookGuard {
+        fn drop(&mut self) {
+            *SECONDARY_BUILT
+                .lock()
+                .unwrap_or_else(PoisonError::into_inner) = None;
+        }
+    }
+
+    pub(crate) fn on_secondary_built(hook: Hook) -> HookGuard {
+        *SECONDARY_BUILT
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner) = Some(hook);
+        HookGuard
+    }
+
+    pub(super) fn secondary_built(secondary: &gst::Element) {
+        let hook = SECONDARY_BUILT
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .clone();
+        if let Some(hook) = hook {
+            hook(secondary);
+        }
     }
 }
 
