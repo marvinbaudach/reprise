@@ -4,7 +4,7 @@ Reprise release notes are curated from the changes that reached the stable
 branch. They describe user-visible changes rather than reproducing commit
 messages.
 
-## [0.1.330] - 2026-11-03
+## [0.1.331] - 2026-11-03
 
 ### Library
 
