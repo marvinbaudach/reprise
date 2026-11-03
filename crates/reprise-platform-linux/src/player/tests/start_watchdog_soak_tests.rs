@@ -12,6 +12,9 @@
 //! production arm fails when a start stays silent past the watchdog's give-up
 //! bound; the control arm puts the deadline out of reach and only reports,
 //! because the hangs it finds are its result.
+//!
+//! A production arm with `restarts=0` passes, but it proves only that the
+//! watchdog did no harm: no hang occurred, so none was recovered. It says so.
 
 use std::sync::atomic::AtomicBool;
 
@@ -124,6 +127,7 @@ fn soak(deadline: Duration) -> (Summary, u64) {
     let mut summary = Summary::default();
     for index in 0..starts() {
         let began = std::time::Instant::now();
+        let restarts_before = harness.player.start_watchdog.restarts();
         let cue = index % 2 == 1;
         let played = if cue {
             harness.player.play(cue_item(&flac, CUE_SEGMENT, 0.0))
@@ -137,6 +141,20 @@ fn soak(deadline: Duration) -> (Summary, u64) {
         let took = began.elapsed();
         summary.starts += 1;
         summary.slowest = summary.slowest.max(took);
+        let started_over = harness.player.start_watchdog.restarts() - restarts_before;
+        if started_over > 0 {
+            // The recovery evidence: which kind of start hung, and how it ended.
+            let outcome = if gave_up(&events) {
+                "was given up on"
+            } else if playing_pipeline(&harness.player) {
+                "then played"
+            } else {
+                "stayed silent"
+            };
+            println!(
+                "start {index} (cue: {cue}) hung and was started over {started_over}x; it {outcome} after {took:.2?}"
+            );
+        }
         if gave_up(&events) {
             summary.give_ups += 1;
         } else if playing_pipeline(&harness.player) {
@@ -150,6 +168,13 @@ fn soak(deadline: Duration) -> (Summary, u64) {
     (summary, restarts)
 }
 
+/// Printed when the production arm saw no hang at all: its result is then
+/// only that the watchdog does no harm, and says nothing about recovery.
+const NO_RECOVERY_WARNING: &str = "WARNING: the production arm saw restarts=0, so the watchdog \
+never had a real hang to recover. This run shows no regression, not that a \
+hung start (CUE or whole file) is recovered. Compare the control arm, and run \
+more starts (REPRISE_START_SOAK_STARTS) for recovery evidence.";
+
 fn report(arm: &str, summary: &Summary, restarts: u64) {
     println!(
         "start watchdog soak [{arm}]: starts={} played={} restarts={restarts} give_ups={} silent={} slowest={:.2?}",
@@ -162,6 +187,9 @@ fn report(arm: &str, summary: &Summary, restarts: u64) {
 fn start_watchdog_soak_production_arm() {
     let (summary, restarts) = soak(START_DEADLINE);
     report("production", &summary, restarts);
+    if restarts == 0 {
+        println!("{NO_RECOVERY_WARNING}");
+    }
     assert_eq!(
         summary.silent, 0,
         "every start must reach PLAYING or be given up on within the give-up bound"
