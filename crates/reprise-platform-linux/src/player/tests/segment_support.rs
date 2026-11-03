@@ -498,8 +498,21 @@ impl Harness {
     /// [`Self::start`] with a `reset` that runs before every attempt, and the
     /// stream generation read just before the attempt that succeeded; see
     /// [`start_over_when_hung_resetting`].
+    ///
+    /// The harness's own event channel is drained before every attempt, ahead
+    /// of `reset`, so a later [`Self::pump_until`] only sees events the
+    /// succeeding attempt produced: an abandoned attempt's `Error` or
+    /// `StateChanged` stays out of the test's assertions. [`Self::start`]
+    /// leaves the channel alone, as its callers may collect events across it.
     pub(super) fn start_resetting(&self, reset: impl Fn(), begin: impl Fn()) -> StreamGeneration {
-        start_over_when_hung_resetting(&self.player, reset, begin)
+        start_over_when_hung_resetting(
+            &self.player,
+            || {
+                self.events.try_iter().for_each(drop);
+                reset();
+            },
+            begin,
+        )
     }
 
     /// Pumps the main context (which dispatches the bus watch) and collects

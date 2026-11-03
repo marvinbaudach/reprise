@@ -101,7 +101,8 @@ fn play_22_a_zero_start_does_not_flush_the_prerolled_flac_parser() {
 
     let album = fixture("sine.flac");
     // A start that hangs in READY is begun again; the SEGMENT events the
-    // abandoned attempt sent must not count towards the one that succeeds.
+    // abandoned attempt sent must not count towards the one that succeeds, and
+    // its events (an `Error` included) must not reach the assertions below.
     harness.start_resetting(
         || segment_events.store(0, Ordering::SeqCst),
         || {
