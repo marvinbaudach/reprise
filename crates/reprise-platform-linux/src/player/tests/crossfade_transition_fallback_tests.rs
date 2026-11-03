@@ -147,3 +147,49 @@ fn play_25_a_crossfade_whose_incoming_track_prerolls_slowly_still_fades() {
     assert!(current_uri(player).is_some_and(|uri| uri.ends_with("second.wav")));
     assert!(!player.crossfading.load(Ordering::SeqCst));
 }
+
+/// The volume the user drags to while the crossfade waits for its incoming
+/// track.
+const VOLUME_DURING_WAIT: f64 = 0.4;
+
+/// `set_volume` only stores the target while a fade runs, because the ramp
+/// applies it. A fade that gave way never ran the ramp, so giving way must
+/// apply the stored volume to the outgoing track itself.
+#[test]
+fn play_25_a_crossfade_that_gives_way_applies_the_volume_set_while_it_waited() {
+    let harness = Harness::new();
+    let player = &harness.player;
+    let directory = tempfile::tempdir().unwrap();
+    let first = tone(&directory, "first.wav", 4_000);
+    let second = tone(&directory, "second.wav", 3_000);
+    player.set_transition(TrackTransition::Crossfade, 2);
+    let _trouble = trouble_on_secondary(Trouble::Hang);
+
+    harness.start(|| {
+        player.play(item(&first)).unwrap();
+        player.set_next(Some(item(&second)));
+    });
+    let saw_crossfading = std::cell::Cell::new(false);
+    let changed = std::cell::Cell::new(false);
+    let events = harness.pump_until(HANG_GUARD, |events| {
+        if player.crossfading.load(Ordering::SeqCst) {
+            saw_crossfading.set(true);
+            if !changed.replace(true) {
+                player.set_volume(VOLUME_DURING_WAIT);
+            }
+        }
+        saw_crossfading.get() && !player.crossfading.load(Ordering::SeqCst)
+            || count(events, finished) > 0
+    });
+
+    assert!(
+        changed.get(),
+        "the volume was never changed during the wait"
+    );
+    assert_eq!(count(&events, advanced), 0);
+    assert!(
+        (primary_volume(player) - VOLUME_DURING_WAIT).abs() < 1e-6,
+        "the outgoing track kept the old volume: {}",
+        primary_volume(player)
+    );
+}

@@ -350,7 +350,7 @@ impl CrossfadeEngine {
     /// Gives up the fade: the secondary goes to `Null` and leaves the slot,
     /// and the guard is released so the outgoing track's end-of-stream is
     /// reported again. The ramp never ran, so the outgoing track still has its
-    /// full volume. A fade that a manual jump already superseded is left alone:
+    /// full volume, or the one the user chose meanwhile. A fade that a manual jump already superseded is left alone:
     /// the jump cleaned up, and its guard may belong to a newer fade by now.
     fn abandon_fade(&self, secondary: &gst::Element, my_generation: u64) {
         {
@@ -362,7 +362,25 @@ impl CrossfadeEngine {
         let _ = secondary.set_state(gst::State::Null);
         if self.generation.load(Ordering::SeqCst) == my_generation {
             self.crossfading.store(false, Ordering::SeqCst);
+            // `set_volume` only stores its target while the guard is up, and
+            // the ramp that would have applied it never ran. The guard is
+            // cleared first, so a `set_volume` after this point applies
+            // itself and one before it is read here.
+            self.restore_user_volume();
         }
+    }
+
+    /// Applies the user's volume to the primary, as `Player::abort_crossfade`
+    /// does after it cancels a fade.
+    fn restore_user_volume(&self) {
+        let user_volume = *self
+            .user_volume
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner);
+        self.playbin
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .set_property("volume", user_volume);
     }
 
     /// Befördert die fertige Sekundär-Pipeline zur neuen Primär-`playbin`:
