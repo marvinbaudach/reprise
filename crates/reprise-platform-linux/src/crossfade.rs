@@ -358,6 +358,8 @@ impl CrossfadeEngine {
                     uri = %queued.uri,
                     "crossfade: incoming track did not start; giving way to a plain track change"
                 );
+                #[cfg(test)]
+                test_seam::gave_up(&secondary);
                 self.give_way(Some(&secondary), &outgoing_end, my_generation);
                 return;
             }
@@ -576,6 +578,10 @@ pub(crate) mod test_seam {
 
     static SECONDARY_BUILT: Mutex<Option<Hook>> = Mutex::new(None);
 
+    /// The (current, pending) state of the secondary the last fade gave up on,
+    /// read at the moment it gave up.
+    static GAVE_UP: Mutex<Option<(gst::State, gst::State)>> = Mutex::new(None);
+
     /// Removes the hook again when dropped, panic or not.
     pub(crate) struct HookGuard;
 
@@ -584,6 +590,7 @@ pub(crate) mod test_seam {
             *SECONDARY_BUILT
                 .lock()
                 .unwrap_or_else(PoisonError::into_inner) = None;
+            forget_gave_up();
         }
     }
 
@@ -592,6 +599,22 @@ pub(crate) mod test_seam {
             .lock()
             .unwrap_or_else(PoisonError::into_inner) = Some(hook);
         HookGuard
+    }
+
+    /// Records what state the secondary was in when its fade gave way, which
+    /// tells a pipeline that never left READY from one that was merely slow.
+    pub(super) fn gave_up(secondary: &gst::Element) {
+        let (_, current, pending) = secondary.state(gst::ClockTime::ZERO);
+        *GAVE_UP.lock().unwrap_or_else(PoisonError::into_inner) = Some((current, pending));
+    }
+
+    /// The state recorded by the last [`gave_up`], if a fade gave up since.
+    pub(crate) fn gave_up_in() -> Option<(gst::State, gst::State)> {
+        *GAVE_UP.lock().unwrap_or_else(PoisonError::into_inner)
+    }
+
+    pub(crate) fn forget_gave_up() {
+        *GAVE_UP.lock().unwrap_or_else(PoisonError::into_inner) = None;
     }
 
     pub(super) fn secondary_built(secondary: &gst::Element) {

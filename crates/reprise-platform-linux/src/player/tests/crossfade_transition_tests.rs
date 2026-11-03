@@ -7,8 +7,11 @@ use std::sync::atomic::AtomicUsize;
 /// Length of the track the promotion test fades into.
 const SECOND_TRACK_MS: u32 = 3_000;
 pub(super) const HANG_GUARD: Duration = Duration::from_secs(20);
-/// How often a crossfade is begun again when its secondary hangs in READY.
-const CROSSFADE_START_ATTEMPTS: usize = 5;
+/// How often a crossfade is begun, the first time included, when its
+/// secondary hangs in READY. A natural hang is rare even under load, so a test
+/// that needs more than one retry points at the fade giving way, not at
+/// `playbin3`.
+const CROSSFADE_START_ATTEMPTS: usize = 3;
 /// How long a given-way crossfade must stay without a promotion before it
 /// counts as given way: the promotion clears the guard a moment before it
 /// reports `AdvancedToNext`.
@@ -72,6 +75,7 @@ impl SecondaryTrouble {
     fn reset(&self) {
         self.installed.store(0, Ordering::SeqCst);
         self.reached.store(0, Ordering::SeqCst);
+        test_seam::forget_gave_up();
     }
 }
 
@@ -124,6 +128,15 @@ pub(super) fn trouble_on_secondary(trouble: Trouble) -> SecondaryTrouble {
     }
 }
 
+/// Whether a secondary that the fade gave up on had hung in READY on its own,
+/// as `playbin3` sometimes does on a start: no buffer ever reached its gain
+/// element. `gave_up_in` is its (current, pending) state when the fade gave
+/// up. Only that case is begun again; a secondary that was moving, or that
+/// had left READY, was given up on too early, and the test must fail on it.
+fn hung_in_ready(reached: usize, gave_up_in: Option<(gst::State, gst::State)>) -> bool {
+    reached == 0 && gave_up_in == Some((gst::State::Ready, gst::State::Playing))
+}
+
 /// Runs a crossfade scenario until `done` holds for the events, and returns
 /// them together with whether a second pipeline was ever seen starting.
 ///
@@ -169,11 +182,13 @@ pub(super) fn crossfade_over_when_hung(
         if !done(&events) && gave_way() {
             events.extend(harness.pump_for(GAVE_WAY_SETTLE));
         }
-        let hung_on_its_own = !done(&events) && gave_way() && secondary.reached() == 0;
+        let hung_on_its_own = !done(&events)
+            && gave_way()
+            && hung_in_ready(secondary.reached(), test_seam::gave_up_in());
         if !hung_on_its_own {
             return (events, saw_crossfading.get());
         }
-        eprintln!("the crossfade secondary hung in READY on start {attempt}; starting over");
+        eprintln!("crossfade-retry: the secondary hung in READY on start {attempt}; starting over");
     }
     panic!("the crossfade secondary hung in READY on all {CROSSFADE_START_ATTEMPTS} starts");
 }
@@ -489,5 +504,37 @@ mod cue {
             .lock()
             .unwrap_or_else(PoisonError::into_inner)
             .is_some());
+    }
+}
+
+mod hung_in_ready_rule {
+    use super::*;
+
+    const HUNG: Option<(gst::State, gst::State)> = Some((gst::State::Ready, gst::State::Playing));
+
+    #[test]
+    fn a_secondary_that_never_left_ready_and_got_no_buffer_hung_on_its_own() {
+        assert!(hung_in_ready(0, HUNG));
+    }
+
+    #[test]
+    fn a_secondary_that_had_left_ready_was_given_up_on_too_early() {
+        for state in [
+            (gst::State::Paused, gst::State::Playing),
+            (gst::State::Paused, gst::State::VoidPending),
+            (gst::State::Playing, gst::State::VoidPending),
+        ] {
+            assert!(!hung_in_ready(0, Some(state)), "{state:?}");
+        }
+    }
+
+    #[test]
+    fn a_secondary_that_got_a_buffer_was_not_hung() {
+        assert!(!hung_in_ready(1, HUNG));
+    }
+
+    #[test]
+    fn a_fade_that_did_not_record_its_secondary_is_not_retried() {
+        assert!(!hung_in_ready(0, None));
     }
 }
