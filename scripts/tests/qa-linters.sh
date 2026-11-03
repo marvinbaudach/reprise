@@ -223,7 +223,13 @@ require_pattern 'scripts/tests/worktree-gc-schedule\.sh' .github/workflows/ci.ym
 require_pattern 'Run the script self-tests' .github/workflows/ci.yml
 require_pattern 'scripts/tests/qa-linters\.sh' .github/workflows/ci.yml
 require_pattern '^          scripts/check-shell\.sh$' .github/workflows/ci.yml
-require_pattern '^            \[\[ \$contract == \.github/tests/flatpak-cargo-sources\.sh \]\] && continue$' .github/workflows/ci.yml
+# The contract loop lives in one script that CI and the merge gate both call.
+# While it sat inline in the workflow, the local gate never ran it, and #1311
+# turned red only on dev.
+require_pattern '^          scripts/check-repository-contracts\.sh$' .github/workflows/ci.yml
+reject_pattern 'for contract in \.github/tests/' .github/workflows/ci.yml
+require_pattern '^gate "Repository contracts" -- scripts/check-repository-contracts\.sh$' scripts/check-merge-readiness.sh
+require_pattern '\[\[ \$contract == \.github/tests/flatpak-cargo-sources\.sh \]\] && continue$' scripts/check-repository-contracts.sh
 require_pattern '^        run: scripts/check-project-quality\.sh --project --showroom$' .github/workflows/ci.yml
 require_pattern '^          scripts/check-architecture\.sh$' .github/workflows/ci.yml
 require_pattern_order 'Verify worktree hygiene' 'Verify project source quality' .github/workflows/ci.yml
