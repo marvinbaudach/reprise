@@ -122,8 +122,15 @@ const GATE_GROUP_ASSIGNMENTS: readonly GateGroupDefinition[] = [
   {
     name: 'Toolchain hygiene',
     short: 'Toolchain',
-    line: 'The branch, the shell scripts, the worktrees.',
-    checks: ['Branch diff', 'Shell', 'Worktree GC', 'Worktree GC schedule', 'Script self-tests'],
+    line: 'The branch, the shell scripts, the worktrees, the CI contracts.',
+    checks: [
+      'Branch diff',
+      'Shell',
+      'Worktree GC',
+      'Worktree GC schedule',
+      'Script self-tests',
+      'Repository contracts',
+    ],
   },
 ];
 

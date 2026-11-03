@@ -289,7 +289,8 @@ test('show-10 the gate count is nowhere a literal, not even in the meta descript
     const source = await readFile(file, 'utf8');
     assert.doesNotMatch(
       source,
-      new RegExp(`(?<![\\d.])${count}(?![\\d.])`),
+      // `_` is the numeric separator: `30_000` is thirty thousand, not the count 30.
+      new RegExp(`(?<![\\d._])${count}(?![\\d._])`),
       `${file} types the gate count instead of deriving it`,
     );
   }

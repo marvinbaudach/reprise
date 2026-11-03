@@ -108,6 +108,9 @@ gate "Gettext catalogues" -- scripts/tests/gettext-catalogs.sh
 # 84s measured. The three lines above it run once: the self-tests no longer
 # repeat them, and check-release.sh calls all three on its own.
 gate "Script self-tests" -- scripts/tests/qa-linters.sh
+# The same contracts CI's base job runs, through the same script. Without this
+# line #1311 passed here and turned red only on dev.
+gate "Repository contracts" -- scripts/check-repository-contracts.sh
 gate "Architecture" -- scripts/check-architecture.sh
 gate "Device-sync GStreamer" -- scripts/check-device-sync-gstreamer.sh
 gate "Accessibility semantics" -- scripts/check-accessibility-semantics.sh

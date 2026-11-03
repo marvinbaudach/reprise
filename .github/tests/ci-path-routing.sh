@@ -384,7 +384,10 @@ rg --multiline --quiet \
     fail "the nightly full-suite schedule is missing"
 rg --quiet 'require-ci-results\.sh' "$workflow" || \
     fail "the Quality gate does not use the tested result aggregator"
-rg --fixed-strings --quiet 'GITHUB_ACTIONS=false "$contract"' "$workflow" || \
+rg --quiet '^          scripts/check-repository-contracts\.sh$' "$workflow" || \
+    fail "the PR base job must run the repository contracts through their shared script"
+rg --fixed-strings --quiet 'GITHUB_ACTIONS=false "$contract"' \
+    "$repo_root/scripts/check-repository-contracts.sh" || \
     fail "the PR base job must run event-sensitive workflow tests in static contract mode"
 rg --quiet 'check-project-quality\.sh --project --showroom' "$workflow" || \
     fail "the base job must run project and Showroom source quality"
