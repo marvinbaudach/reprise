@@ -44,10 +44,12 @@ fn play_23a_a_whole_file_after_a_cue_track_is_not_prefed() {
     let cue_file = album(&directory, "album.wav");
     let whole = album(&directory, "single.wav");
 
-    harness
-        .player
-        .play(cue_item(&cue_file, FIRST, 0.0))
-        .unwrap();
+    harness.start(|| {
+        harness
+            .player
+            .play(cue_item(&cue_file, FIRST, 0.0))
+            .unwrap();
+    });
     harness.player.set_next(Some(item(whole.to_str().unwrap())));
 
     assert!(queued(&harness.player).is_none());
@@ -60,7 +62,7 @@ fn play_23a_a_cue_track_after_a_whole_file_is_not_prefed() {
     let cue_file = album(&directory, "album.wav");
     let whole = album(&directory, "single.wav");
 
-    harness.player.play(item(whole.to_str().unwrap())).unwrap();
+    harness.start(|| harness.player.play(item(whole.to_str().unwrap())).unwrap());
     harness
         .player
         .set_next(Some(cue_item(&cue_file, FIRST, 0.0)));
@@ -75,7 +77,7 @@ fn play_23a_a_whole_file_after_a_whole_file_is_still_prefed() {
     let first = album(&directory, "first.wav");
     let second = album(&directory, "second.wav");
 
-    harness.player.play(item(first.to_str().unwrap())).unwrap();
+    harness.start(|| harness.player.play(item(first.to_str().unwrap())).unwrap());
     harness
         .player
         .set_next(Some(item(second.to_str().unwrap())));

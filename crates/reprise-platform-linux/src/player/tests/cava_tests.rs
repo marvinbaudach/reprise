@@ -1,4 +1,4 @@
-use super::segment_support::start_over_when_hung;
+use super::segment_support::{start_over_when_hung, start_over_when_hung_resetting};
 use super::*;
 use crate::player_effects::{build_audio_filter, set_spectrum_messages};
 use crate::player_pipeline::AUDIO_SINK_ENV_VAR;
@@ -166,8 +166,15 @@ fn ac_29_flac_playback_emits_spectrum_at_display_cadence() {
     .unwrap();
     player.set_spectrum_enabled(true).unwrap();
     let path = concat!(env!("CARGO_MANIFEST_DIR"), "/tests/fixtures/sine.flac");
-    player.play(item(path)).unwrap();
+    // The frames are counted from the events the start leaves in the channel,
+    // so the reset empties it: a hung attempt's frames are not the start's.
+    start_over_when_hung_resetting(
+        &player,
+        || while rx.try_recv().is_ok() {},
+        || player.play(item(path)).unwrap(),
+    );
 
+    // The window opens when the start that succeeded has left READY.
     let deadline = std::time::Instant::now() + Duration::from_secs(5);
     let mut spectrum_frames = 0;
     loop {

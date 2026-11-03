@@ -100,10 +100,17 @@ fn play_22_a_zero_start_does_not_flush_the_prerolled_flac_parser() {
         });
 
     let album = fixture("sine.flac");
-    harness
-        .player
-        .play(cue_item(&album, ZERO_START_CUE, 0.0))
-        .unwrap();
+    // A start that hangs in READY is begun again; the SEGMENT events the
+    // abandoned attempt sent must not count towards the one that succeeds.
+    harness.start_resetting(
+        || segment_events.store(0, Ordering::SeqCst),
+        || {
+            harness
+                .player
+                .play(cue_item(&album, ZERO_START_CUE, 0.0))
+                .unwrap();
+        },
+    );
     let events = run_to_finish_or_error(&harness);
 
     assert!(

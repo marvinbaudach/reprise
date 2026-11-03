@@ -18,6 +18,7 @@
 //! generations strictly increase and that each event is stamped with the
 //! generation live at its own production instant.
 
+use super::segment_support::start_over_when_hung_resetting;
 use super::*;
 use crate::player_pipeline::AUDIO_SINK_ENV_VAR;
 
@@ -77,28 +78,61 @@ fn consecutive_starts_produce_strictly_increasing_generations() {
     );
 
     let first = concat!(env!("CARGO_MANIFEST_DIR"), "/tests/fixtures/sine.flac");
-    player.play(item(first)).unwrap();
+    // A start that hangs in READY is begun again, which bumps the generation
+    // once more: each assertion compares with the value read just before the
+    // attempt that succeeded, not with an earlier start.
+    let before_first = start_over_when_hung_resetting(
+        &player,
+        || {},
+        || {
+            player.play(item(first)).unwrap();
+        },
+    );
     let after_first = player.current_generation();
     assert!(
         after_first > StreamGeneration::INITIAL,
         "play() must bump past INITIAL"
     );
+    assert!(
+        after_first > before_first,
+        "play() must bump past the generation it started from"
+    );
 
     let second = concat!(env!("CARGO_MANIFEST_DIR"), "/tests/fixtures/blip.flac");
-    player.play(item(second)).unwrap();
+    let before_second = start_over_when_hung_resetting(
+        &player,
+        || {},
+        || {
+            player.play(item(second)).unwrap();
+        },
+    );
+    assert!(
+        before_second >= after_first,
+        "the baseline of the second start cannot lie before the first start"
+    );
     let after_second = player.current_generation();
     assert!(
-        after_second > after_first,
+        after_second > before_second,
         "a second play() must strictly increase the generation again"
     );
 
     // play_uri is the same "start something new" contract as play — a
     // file:// URI onto the same fixture exercises it without a real network.
     let third_uri = path_to_uri(first).unwrap();
-    player.play_uri(&third_uri).unwrap();
+    let before_third = start_over_when_hung_resetting(
+        &player,
+        || {},
+        || {
+            player.play_uri(&third_uri).unwrap();
+        },
+    );
+    assert!(
+        before_third >= after_second,
+        "the baseline of the third start cannot lie before the second start"
+    );
     let after_third = player.current_generation();
     assert!(
-        after_third > after_second,
+        after_third > before_third,
         "play_uri() must strictly increase the generation too"
     );
 
@@ -124,7 +158,12 @@ fn tagged_event_carries_the_generation_current_when_its_stream_started() {
     .unwrap();
 
     let first = concat!(env!("CARGO_MANIFEST_DIR"), "/tests/fixtures/sine.flac");
-    player.play(item(first)).unwrap();
+    // Every attempt starts with an empty channel: what a hung attempt sent is
+    // not what the start that succeeded produced.
+    let drain = || while rx.try_recv().is_ok() {};
+    let before_first = start_over_when_hung_resetting(&player, drain, || {
+        player.play(item(first)).unwrap();
+    });
     let playing_timeout = Duration::from_secs(5);
     let first_tagged = rx
         .recv_timeout(playing_timeout)
@@ -134,6 +173,10 @@ fn tagged_event_carries_the_generation_current_when_its_stream_started() {
         PlayerEvent::StateChanged(PlaybackState::Playing)
     ));
     let first_generation = first_tagged.generation;
+    assert!(
+        first_generation > before_first,
+        "the first start must carry a generation newer than the one it started from"
+    );
     assert_eq!(
         first_generation,
         player.current_generation(),
@@ -142,7 +185,13 @@ fn tagged_event_carries_the_generation_current_when_its_stream_started() {
     );
 
     let second = concat!(env!("CARGO_MANIFEST_DIR"), "/tests/fixtures/blip.flac");
-    player.play(item(second)).unwrap();
+    let before_second = start_over_when_hung_resetting(&player, drain, || {
+        player.play(item(second)).unwrap();
+    });
+    assert!(
+        before_second >= first_generation,
+        "the baseline of the second start cannot lie before the first stream"
+    );
     let second_tagged = loop {
         let tagged = rx
             .recv_timeout(playing_timeout)
@@ -155,7 +204,7 @@ fn tagged_event_carries_the_generation_current_when_its_stream_started() {
         }
     };
     assert!(
-        second_tagged.generation > first_generation,
+        second_tagged.generation > before_second,
         "the second stream's event must carry a strictly newer generation \
          than the first stream's, so a consumer that remembers {first_generation:?} \
          can tell the two apart"
@@ -193,11 +242,19 @@ fn gapless_handoff_carries_a_newer_generation_than_the_track_it_replaced() {
     let first = directory.path().join("first.wav");
     handoff_duration_tests::write_sine_wav(&first, FIRST_TRACK_SECONDS);
     let second = concat!(env!("CARGO_MANIFEST_DIR"), "/tests/fixtures/blip.flac");
-    player.play(item(first.to_str().unwrap())).unwrap();
+    let before_first = start_over_when_hung_resetting(
+        &player,
+        || while rx.try_recv().is_ok() {},
+        || player.play(item(first.to_str().unwrap())).unwrap(),
+    );
     let first_generation = rx
         .recv_timeout(HANG_GUARD)
         .expect("expected a tagged StateChanged(Playing) for the first stream")
         .generation;
+    assert!(
+        first_generation > before_first,
+        "the first start must carry a generation newer than the one it started from"
+    );
     player.set_next(Some(item(second)));
 
     // Same pump-until-resolved pattern as `gapless_handoff_advances_without_
@@ -260,11 +317,19 @@ fn crossfade_promotion_carries_a_newer_generation_than_the_track_it_replaced() {
 
     let first = concat!(env!("CARGO_MANIFEST_DIR"), "/tests/fixtures/sine.flac");
     let second = concat!(env!("CARGO_MANIFEST_DIR"), "/tests/fixtures/blip.flac");
-    player.play(item(first)).unwrap();
+    let before_first = start_over_when_hung_resetting(
+        &player,
+        || while rx.try_recv().is_ok() {},
+        || player.play(item(first)).unwrap(),
+    );
     let first_generation = rx
         .recv_timeout(Duration::from_secs(5))
         .expect("expected a tagged StateChanged(Playing) for the first stream")
         .generation;
+    assert!(
+        first_generation > before_first,
+        "the first start must carry a generation newer than the one it started from"
+    );
     player.set_next(Some(item(second)));
     start_crossfade_for_generation_test(&player);
 
