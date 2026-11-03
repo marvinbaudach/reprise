@@ -12,7 +12,9 @@ use std::sync::atomic::AtomicUsize;
 
 use std::path::Path;
 
-use super::segment_support::{cue_item, gain_element, write_regions_wav, Harness};
+use super::segment_support::{
+    cue_item, encode_flac, gain_element, record_heard, write_regions_wav, Harness,
+};
 use super::*;
 
 /// The watchdog's deadline where the test only waits for it.
@@ -24,7 +26,17 @@ const ROOMY_DEADLINE: Duration = Duration::from_millis(1_000);
 const PATIENCE: Duration = Duration::from_secs(20);
 /// Long enough for several more deadlines to pass, for the "nothing happens" arms.
 const QUIET_FOR: Duration = Duration::from_millis(2_500);
+/// A deadline no test reaches: the watch is armed but never acts.
+const OUT_OF_REACH: Duration = Duration::from_secs(3_600);
 const TRACK_MS: u32 = 2_000;
+/// Where the tone of the CUE fixture starts, and where its CUE track does.
+const CUE_START_MS: i64 = 2_000;
+const CUE_END_MS: i64 = 4_000;
+/// How far the first sample heard may lie from the CUE track's start (the
+/// tolerance of `segment_clock_tests`).
+const CUE_START_TOLERANCE_MS: i64 = 20;
+/// The preroll at the file's start, then the seek to the track's start.
+const SEEKS_AFTER_START: usize = 2;
 
 /// Blocks the first `hang_starts` starts at the gain element's sink pad and
 /// lets every later one through. Returns how many starts reached the pad.
@@ -168,12 +180,13 @@ fn a_hung_start_the_user_stopped_is_left_stopped() {
     assert_eq!(state_of(&harness.player).0, gst::State::Null);
 }
 
-/// The watchdog does not cover CUE starts, so nothing re-arms it when one
-/// replaces a hung local start: the old watch has to be cancelled by the play.
+/// The CUE start that replaces a hung local start arms a watch of its own, so
+/// this test puts that one out of reach: what is left to start the CUE start
+/// over is the first play's watch, which the play has to cancel.
 #[test]
 fn a_hung_start_that_a_cue_start_replaced_is_not_started_over_by_the_old_watch() {
     const CUE_TRACK: (i64, i64) = (500, 1_500);
-    let harness = harness_with_deadline(ROOMY_DEADLINE);
+    let mut harness = harness_with_deadline(ROOMY_DEADLINE);
     let dir = tempfile::tempdir().unwrap();
     let path = local_track(&dir);
     let reached = hang_starts(&harness.player, usize::MAX);
@@ -182,6 +195,8 @@ fn a_hung_start_that_a_cue_start_replaced_is_not_started_over_by_the_old_watch()
 
     // The CUE start hangs as well, in READY with PAUSED pending. Were the
     // first start's watch still running, it would find that and start over.
+    // Only the watch of the next `arm` takes the new deadline.
+    harness.player.start_watchdog.deadline = OUT_OF_REACH;
     harness
         .player
         .play(cue_item(Path::new(&path), CUE_TRACK, 0.0))
@@ -195,6 +210,89 @@ fn a_hung_start_that_a_cue_start_replaced_is_not_started_over_by_the_old_watch()
         2,
         "the first play's watch started the CUE start over"
     );
+}
+
+/// Silence, the track's tone, silence, as a FLAC: the tone starts exactly at
+/// the CUE track's start, so the first buffer heard proves where it began.
+fn cue_flac(dir: &tempfile::TempDir) -> std::path::PathBuf {
+    let wav = dir.path().join("album.wav");
+    let flac = dir.path().join("album.flac");
+    write_regions_wav(&wav, &[(2_000, false), (2_000, true), (2_000, false)]);
+    encode_flac(&wav, &flac);
+    flac
+}
+
+fn playing(events: &[PlayerEvent]) -> usize {
+    events
+        .iter()
+        .filter(|event| matches!(event, PlayerEvent::StateChanged(PlaybackState::Playing)))
+        .count()
+}
+
+/// A CUE start is begun over like a whole file's, and the gate's pending start
+/// survives the `Null`: the next preroll seeks to the segment start and plays.
+#[test]
+fn play_25_a_hung_cue_start_is_started_over_and_plays_from_its_segment_start() {
+    let harness = harness_with_deadline(TEST_DEADLINE);
+    let dir = tempfile::tempdir().unwrap();
+    let flac = cue_flac(&dir);
+    let reached = hang_starts(&harness.player, 1);
+    let heard = record_heard(&harness.player);
+
+    harness
+        .player
+        .play(cue_item(&flac, (CUE_START_MS, CUE_END_MS), 0.0))
+        .unwrap();
+    // The control arm: the first start really is the hang the watchdog is for.
+    let mut events = harness.pump_until(PATIENCE, |_| reached.load(Ordering::SeqCst) >= 1);
+    assert_eq!(playing(&events), 0, "a hung start has not played");
+
+    // Nothing but the watchdog can end it: the pump just runs the main context.
+    events.extend(harness.pump_until(PATIENCE, |collected| {
+        playing(collected) > 0 && heard.landings() >= SEEKS_AFTER_START
+    }));
+
+    assert_eq!(
+        reached.load(Ordering::SeqCst),
+        2,
+        "the watchdog must start the hung CUE track over once (events: {events:?})"
+    );
+    assert!(playing(&events) > 0, "the start must finish: {events:?}");
+    let first = heard.latest_landing();
+    assert!(
+        (first.start_ms - CUE_START_MS).abs() <= CUE_START_TOLERANCE_MS,
+        "the first sample heard must be the track's own start, got {first:?}"
+    );
+    assert!(first.audible, "the first buffer heard must carry the tone");
+    assert_eq!(errors(&events), 0, "a recovered start reports nothing");
+}
+
+#[test]
+fn play_25_a_cue_start_that_never_finishes_is_given_up_after_three_attempts() {
+    let harness = harness_with_deadline(TEST_DEADLINE);
+    let dir = tempfile::tempdir().unwrap();
+    let flac = cue_flac(&dir);
+    let reached = hang_starts(&harness.player, usize::MAX);
+
+    harness
+        .player
+        .play(cue_item(&flac, (CUE_START_MS, CUE_END_MS), 0.0))
+        .unwrap();
+    let events = harness.pump_until(PATIENCE, |events| errors(events) > 0);
+    assert_eq!(errors(&events), 1, "events: {events:?}");
+    assert!(
+        events.iter().any(|event| matches!(
+            event,
+            PlayerEvent::Error(failure)
+                if failure.kind() == PlaybackFailureKind::StartNeverFinished
+        )),
+        "the frontend words the give-up from its kind: {events:?}"
+    );
+    assert_eq!(reached.load(Ordering::SeqCst), 3, "three starts, no fourth");
+
+    let later = harness.pump_for(QUIET_FOR);
+    assert_eq!(errors(&later), 0, "the error is reported once");
+    assert_eq!(reached.load(Ordering::SeqCst), 3);
 }
 
 /// Makes the file source slow rather than stuck: each of its first `slowed`
