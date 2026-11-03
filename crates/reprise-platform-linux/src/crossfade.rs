@@ -341,6 +341,8 @@ impl CrossfadeEngine {
         // Published before it plays, so an abort during the state change
         // already finds it.
         *self.incoming.lock().unwrap_or_else(PoisonError::into_inner) = Some(secondary.clone());
+        #[cfg(test)]
+        let playing_since = Instant::now();
         if let Err(error) = secondary.set_state(gst::State::Playing) {
             tracing::warn!(%error, "crossfade: secondary pipeline refused Playing; aborting fade");
             self.give_way(Some(&secondary), &outgoing_end, my_generation);
@@ -359,7 +361,7 @@ impl CrossfadeEngine {
                     "crossfade: incoming track did not start; giving way to a plain track change"
                 );
                 #[cfg(test)]
-                test_seam::gave_up(&secondary);
+                test_seam::gave_up(&secondary, playing_since.elapsed());
                 self.give_way(Some(&secondary), &outgoing_end, my_generation);
                 return;
             }
@@ -578,9 +580,16 @@ pub(crate) mod test_seam {
 
     static SECONDARY_BUILT: Mutex<Option<Hook>> = Mutex::new(None);
 
-    /// The (current, pending) state of the secondary the last fade gave up on,
-    /// read at the moment it gave up.
-    static GAVE_UP: Mutex<Option<(gst::State, gst::State)>> = Mutex::new(None);
+    /// What the secondary the last fade gave up on looked like at that moment.
+    #[derive(Clone, Copy, Debug)]
+    pub(crate) struct GaveUp {
+        pub(crate) current: gst::State,
+        pub(crate) pending: gst::State,
+        /// How long it had been given from `Playing` on.
+        pub(crate) waited: Duration,
+    }
+
+    static GAVE_UP: Mutex<Option<GaveUp>> = Mutex::new(None);
 
     /// Removes the hook again when dropped, panic or not.
     pub(crate) struct HookGuard;
@@ -601,15 +610,20 @@ pub(crate) mod test_seam {
         HookGuard
     }
 
-    /// Records what state the secondary was in when its fade gave way, which
-    /// tells a pipeline that never left READY from one that was merely slow.
-    pub(super) fn gave_up(secondary: &gst::Element) {
+    /// Records what state the secondary was in, and for how long it had been
+    /// given, when its fade gave way. State alone cannot tell a pipeline that
+    /// hung on its own from one the fade stopped waiting for too early.
+    pub(super) fn gave_up(secondary: &gst::Element, waited: Duration) {
         let (_, current, pending) = secondary.state(gst::ClockTime::ZERO);
-        *GAVE_UP.lock().unwrap_or_else(PoisonError::into_inner) = Some((current, pending));
+        *GAVE_UP.lock().unwrap_or_else(PoisonError::into_inner) = Some(GaveUp {
+            current,
+            pending,
+            waited,
+        });
     }
 
-    /// The state recorded by the last [`gave_up`], if a fade gave up since.
-    pub(crate) fn gave_up_in() -> Option<(gst::State, gst::State)> {
+    /// What the last [`gave_up`] recorded, if a fade gave up since.
+    pub(crate) fn gave_up_in() -> Option<GaveUp> {
         *GAVE_UP.lock().unwrap_or_else(PoisonError::into_inner)
     }
 

@@ -4,8 +4,11 @@ use crate::crossfade::{test_seam, CrossfadeEngine};
 use reprise_core::library::settings::TrackTransition;
 use std::sync::atomic::AtomicUsize;
 
-/// Length of the track the promotion test fades into.
-const SECOND_TRACK_MS: u32 = 3_000;
+/// Length of each track of the promotion test.
+const PROMOTION_TRACK_MS: u32 = 4_000;
+/// The fade the promotion tests run: two seconds gives the 500 ms position
+/// ticker four chances to start it even on a loaded machine.
+const PROMOTION_FADE_SECONDS: u8 = 2;
 pub(super) const HANG_GUARD: Duration = Duration::from_secs(20);
 /// How often a crossfade is begun, the first time included, when its
 /// secondary hangs in READY. A natural hang is rare even under load, so a test
@@ -128,13 +131,23 @@ pub(super) fn trouble_on_secondary(trouble: Trouble) -> SecondaryTrouble {
     }
 }
 
+/// How long a healthy local secondary may take to preroll at the very most,
+/// loaded machine included. A fade that gave up on a READY secondary sooner
+/// than this stopped waiting too early, whatever state the secondary was in.
+const HEALTHY_PREROLL: Duration = Duration::from_secs(1);
+
 /// Whether a secondary that the fade gave up on had hung in READY on its own,
 /// as `playbin3` sometimes does on a start: no buffer ever reached its gain
-/// element. `gave_up_in` is its (current, pending) state when the fade gave
-/// up. Only that case is begun again; a secondary that was moving, or that
-/// had left READY, was given up on too early, and the test must fail on it.
-fn hung_in_ready(reached: usize, gave_up_in: Option<(gst::State, gst::State)>) -> bool {
-    reached == 0 && gave_up_in == Some((gst::State::Ready, gst::State::Playing))
+/// element, and it had been given long enough. Only that case is begun again.
+/// A secondary that was moving, that had left READY, or that was not given
+/// [`HEALTHY_PREROLL`] was given up on too early, and the test must fail.
+fn hung_in_ready(reached: usize, gave_up: Option<test_seam::GaveUp>) -> bool {
+    reached == 0
+        && gave_up.is_some_and(|gave_up| {
+            gave_up.current == gst::State::Ready
+                && gave_up.pending == gst::State::Playing
+                && gave_up.waited >= HEALTHY_PREROLL
+        })
 }
 
 /// Runs a crossfade scenario until `done` holds for the events, and returns
@@ -200,15 +213,20 @@ pub(super) fn crossfade_over_when_hung(
 fn play_20b_crossfade_promotion_carries_the_next_gain_from_the_first_sample() {
     let harness = Harness::new();
     let player = &harness.player;
-    player.set_transition(TrackTransition::Crossfade, 1);
+    player.set_transition(TrackTransition::Crossfade, PROMOTION_FADE_SECONDS);
 
-    let first = concat!(env!("CARGO_MANIFEST_DIR"), "/tests/fixtures/sine.flac");
-    // Longer than the whole fade: a fixture that ends within it would post its
-    // own end-of-stream right after the promotion, and that is a finished
-    // track, not the outgoing one leaking. (`blip.flac` is 0.46 s.)
+    // Both tracks are longer than the fade plus the wait for the secondary's
+    // preroll. The first, so that a secondary that hung on its own is given
+    // `HEALTHY_PREROLL` before the fade gives way and the test may begin
+    // again. The second, so that it does not post its own end-of-stream right
+    // after the promotion: that is a finished track, not the outgoing one
+    // leaking.
     let directory = tempfile::tempdir().unwrap();
+    let first_path = directory.path().join("first.wav");
+    write_regions_wav(&first_path, &[(PROMOTION_TRACK_MS, true)]);
+    let first = first_path.to_str().unwrap();
     let second_path = directory.path().join("second.wav");
-    write_regions_wav(&second_path, &[(SECOND_TRACK_MS, true)]);
+    write_regions_wav(&second_path, &[(PROMOTION_TRACK_MS, true)]);
     let second = second_path.to_str().unwrap();
     let watcher = trouble_on_secondary(Trouble::Watch);
     let (events, saw_crossfading) = crossfade_over_when_hung(
@@ -381,10 +399,6 @@ mod cue {
         assert_eq!(count(&events, advanced), 0);
     }
 
-    /// The fade the promotion tests run: two seconds gives the 500 ms
-    /// position ticker four chances to start it even on a loaded machine.
-    const PROMOTION_FADE_SECONDS: u8 = 2;
-
     /// Fades `first` into `second` and returns once the crossfade promoted
     /// the pipeline playing `second`.
     fn crossfade_into(harness: &Harness, first: &std::path::Path, second: &std::path::Path) {
@@ -510,27 +524,51 @@ mod cue {
 mod hung_in_ready_rule {
     use super::*;
 
-    const HUNG: Option<(gst::State, gst::State)> = Some((gst::State::Ready, gst::State::Playing));
+    fn gave_up(current: gst::State, pending: gst::State, waited: Duration) -> test_seam::GaveUp {
+        test_seam::GaveUp {
+            current,
+            pending,
+            waited,
+        }
+    }
+
+    fn hung(waited: Duration) -> Option<test_seam::GaveUp> {
+        Some(gave_up(gst::State::Ready, gst::State::Playing, waited))
+    }
 
     #[test]
     fn a_secondary_that_never_left_ready_and_got_no_buffer_hung_on_its_own() {
-        assert!(hung_in_ready(0, HUNG));
+        assert!(hung_in_ready(0, hung(Duration::from_millis(3_400))));
+        assert!(hung_in_ready(0, hung(HEALTHY_PREROLL)));
+    }
+
+    #[test]
+    fn a_secondary_that_was_not_given_time_was_given_up_on_too_early() {
+        assert!(!hung_in_ready(0, hung(Duration::from_millis(100))));
+        assert!(!hung_in_ready(
+            0,
+            hung(HEALTHY_PREROLL - Duration::from_millis(1))
+        ));
     }
 
     #[test]
     fn a_secondary_that_had_left_ready_was_given_up_on_too_early() {
-        for state in [
+        for (current, pending) in [
             (gst::State::Paused, gst::State::Playing),
             (gst::State::Paused, gst::State::VoidPending),
             (gst::State::Playing, gst::State::VoidPending),
         ] {
-            assert!(!hung_in_ready(0, Some(state)), "{state:?}");
+            let long = Duration::from_secs(3);
+            assert!(
+                !hung_in_ready(0, Some(gave_up(current, pending, long))),
+                "{current:?}, {pending:?}"
+            );
         }
     }
 
     #[test]
     fn a_secondary_that_got_a_buffer_was_not_hung() {
-        assert!(!hung_in_ready(1, HUNG));
+        assert!(!hung_in_ready(1, hung(Duration::from_secs(3))));
     }
 
     #[test]
