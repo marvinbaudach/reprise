@@ -3,7 +3,7 @@
 //! probe on its own gain element; the primary plays on a `fakesink`.
 
 use super::crossfade_transition_tests::{
-    crossfade_over_when_hung, trouble_on_secondary, Trouble, HANG_GUARD,
+    crossfade_over_when_hung, engine_of, trouble_on_secondary, Trouble, HANG_GUARD,
 };
 use super::segment_support::{count, ticks, write_regions_wav, Harness};
 use super::*;
@@ -242,4 +242,49 @@ fn play_25_a_crossfade_that_gives_way_applies_the_volume_set_while_it_waited() {
         "the outgoing track kept the old volume: {}",
         primary_volume(player)
     );
+}
+
+/// The real length of the track that ends while its fade still waits.
+const SHORT_TRACK_MS: u32 = 2_000;
+
+/// What the position ticker is told about the track: more than it really has,
+/// as a VBR file without a length header or a stale duration does.
+const OVERSTATED_DURATION_MS: i64 = 3_500;
+
+/// The bus watch of the outgoing pipeline drops its end-of-stream while a fade
+/// runs. A duration that is longer than the track lets that end come before
+/// the fade gives way, and the track change that follows must not lose it.
+#[test]
+fn play_25_a_crossfade_that_gives_way_after_the_outgoing_track_ended_still_finishes_it() {
+    let harness = Harness::new();
+    let player = &harness.player;
+    let directory = tempfile::tempdir().unwrap();
+    let first = tone(&directory, "first.wav", SHORT_TRACK_MS);
+    let second = tone(&directory, "second.wav", 3_000);
+    let trouble = trouble_on_secondary(Trouble::Hang);
+
+    harness.start(|| {
+        player.play(item(&first)).unwrap();
+    });
+    // The ticker's part, played by hand so that its numbers can be wrong: the
+    // real ticker would report the true duration and give up in time.
+    player.set_next(Some(item(&second)));
+    player.set_transition(TrackTransition::Crossfade, 4);
+    engine_of(player).maybe_start(0, OVERSTATED_DURATION_MS);
+
+    let mut events = harness.pump_until(Duration::from_secs(10), |events| {
+        count(events, finished) > 0
+    });
+    // A second report would be as wrong as none.
+    events.extend(harness.pump_for(Duration::from_secs(1)));
+
+    assert_eq!(trouble.installed(), 1, "the secondary was not hooked");
+    assert_eq!(count(&events, advanced), 0);
+    assert_eq!(
+        count(&events, finished),
+        1,
+        "the outgoing track ended during the wait and was never reported: {events:?}"
+    );
+    assert_eq!(count(&events, failed), 0, "events: {events:?}");
+    assert!(!player.crossfading.load(Ordering::SeqCst));
 }

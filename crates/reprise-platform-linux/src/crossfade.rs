@@ -150,6 +150,66 @@ enum Preroll {
     GaveUp(&'static str),
 }
 
+/// Takes the outgoing pipeline's end-of-stream for the length of a fade.
+///
+/// While `crossfading` is set the pipeline's bus watch drops that message, so
+/// a track that really ends before the fade gives way (a duration that was an
+/// estimate, say) would never be reported. This sync handler sees the message
+/// first, keeps it from the queue, and remembers it, and [`Self::release`]
+/// says afterwards whether there was one. That is the only way to be exact:
+/// reading the position cannot tell a dropped message from one still queued,
+/// and re-reporting after the guard went down could report it twice.
+///
+/// The handler stays on the bus after the fade, as a pass-through: it cannot be
+/// told apart from a newer fade's handler on the same bus, which replaces it.
+struct EosCatch {
+    state: Arc<Mutex<EosCatchState>>,
+}
+
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum EosCatchState {
+    Watching,
+    Caught,
+    Released,
+}
+
+impl EosCatch {
+    /// Starts catching on `bus`. The catch ends by itself once `generation`
+    /// moves on from `my_generation`: a manual jump starts a new track whose
+    /// end-of-stream belongs to the bus watch.
+    fn install(bus: Option<gst::Bus>, generation: Arc<AtomicU64>, my_generation: u64) -> Self {
+        let state = Arc::new(Mutex::new(EosCatchState::Watching));
+        if let Some(bus) = bus {
+            let handler_state = state.clone();
+            bus.set_sync_handler(move |_, message| {
+                if message.type_() != gst::MessageType::Eos
+                    || generation.load(Ordering::SeqCst) != my_generation
+                {
+                    return gst::BusSyncReply::Pass;
+                }
+                let mut state = handler_state.lock().unwrap_or_else(PoisonError::into_inner);
+                match *state {
+                    EosCatchState::Released => gst::BusSyncReply::Pass,
+                    EosCatchState::Watching | EosCatchState::Caught => {
+                        *state = EosCatchState::Caught;
+                        gst::BusSyncReply::Drop
+                    }
+                }
+            });
+        }
+        Self { state }
+    }
+
+    /// Stops catching and says whether an end-of-stream was caught. Call it
+    /// after the guard went down: whatever arrives later reaches the watch.
+    fn release(&self) -> bool {
+        let mut state = self.state.lock().unwrap_or_else(PoisonError::into_inner);
+        let caught = *state == EosCatchState::Caught;
+        *state = EosCatchState::Released;
+        caught
+    }
+}
+
 impl CrossfadeEngine {
     /// Vom Position-Ticker jeden Tick gerufen. Startet — falls Modus
     /// `Crossfade`, ein Nachfolger vorgefüttert ist, keine Blende läuft und die
@@ -218,6 +278,16 @@ impl CrossfadeEngine {
         if self.generation.load(Ordering::SeqCst) != my_generation {
             return; // schon abgebrochen, bevor der Thread loslief
         }
+        // From here on the outgoing track's end-of-stream is ours: the bus
+        // watch would drop it for as long as the guard is up.
+        let outgoing_end = EosCatch::install(
+            self.playbin
+                .lock()
+                .unwrap_or_else(PoisonError::into_inner)
+                .bus(),
+            self.generation.clone(),
+            my_generation,
+        );
         let effects = self
             .effects
             .lock()
@@ -235,7 +305,7 @@ impl CrossfadeEngine {
             Ok(element) => element,
             Err(error) => {
                 tracing::warn!(%error, "crossfade: could not build secondary pipeline; aborting fade");
-                self.crossfading.store(false, Ordering::SeqCst);
+                self.give_way(None, &outgoing_end, my_generation);
                 return;
             }
         };
@@ -245,8 +315,7 @@ impl CrossfadeEngine {
         // real CAVA processor — see `discard_cava_samples`.
         if let Err(error) = discard_cava_samples(&secondary) {
             tracing::warn!(%error, "crossfade: could not give the secondary's CAVA sink a consumer; aborting fade");
-            let _ = secondary.set_state(gst::State::Null);
-            self.crossfading.store(false, Ordering::SeqCst);
+            self.give_way(Some(&secondary), &outgoing_end, my_generation);
             return;
         }
         if let Err(error) = crate::player_effects::set_playbin_spectrum_messages(
@@ -257,8 +326,7 @@ impl CrossfadeEngine {
         }
         if let Err(error) = configure_download_buffering(&secondary, &queued.uri, false) {
             tracing::warn!(%error, "crossfade: could not configure download buffering");
-            let _ = secondary.set_state(gst::State::Null);
-            self.crossfading.store(false, Ordering::SeqCst);
+            self.give_way(Some(&secondary), &outgoing_end, my_generation);
             return;
         }
         secondary.set_property("uri", &queued.uri);
@@ -266,8 +334,7 @@ impl CrossfadeEngine {
             crate::player_effects::set_playbin_track_gain(&secondary, queued.gain_db)
         {
             tracing::warn!(%error, "crossfade: could not apply incoming track gain");
-            let _ = secondary.set_state(gst::State::Null);
-            self.crossfading.store(false, Ordering::SeqCst);
+            self.give_way(Some(&secondary), &outgoing_end, my_generation);
             return;
         }
         secondary.set_property("volume", 0.0_f64);
@@ -276,7 +343,7 @@ impl CrossfadeEngine {
         *self.incoming.lock().unwrap_or_else(PoisonError::into_inner) = Some(secondary.clone());
         if let Err(error) = secondary.set_state(gst::State::Playing) {
             tracing::warn!(%error, "crossfade: secondary pipeline refused Playing; aborting fade");
-            self.abandon_fade(&secondary, my_generation);
+            self.give_way(Some(&secondary), &outgoing_end, my_generation);
             return;
         }
         match self.await_preroll(&secondary, my_generation, outgoing_ends_at) {
@@ -291,7 +358,7 @@ impl CrossfadeEngine {
                     uri = %queued.uri,
                     "crossfade: incoming track did not start; giving way to a plain track change"
                 );
-                self.abandon_fade(&secondary, my_generation);
+                self.give_way(Some(&secondary), &outgoing_end, my_generation);
                 return;
             }
         }
@@ -365,26 +432,44 @@ impl CrossfadeEngine {
         }
     }
 
-    /// Gives up the fade: the secondary goes to `Null` and leaves the slot,
-    /// and the guard is released so the outgoing track's end-of-stream is
-    /// reported again. The ramp never ran, so the outgoing track still has its
-    /// full volume, or the one the user chose meanwhile. A fade that a manual jump already superseded is left alone:
-    /// the jump cleaned up, and its guard may belong to a newer fade by now.
-    fn abandon_fade(&self, secondary: &gst::Element, my_generation: u64) {
-        {
-            let mut slot = self.incoming.lock().unwrap_or_else(PoisonError::into_inner);
-            if slot.as_ref() == Some(secondary) {
-                *slot = None;
+    /// Gives up the fade: the secondary, if there is one, goes to `Null` and
+    /// leaves the slot, and the guard is released so the outgoing track's
+    /// end-of-stream is reported again. The ramp never ran, so the outgoing
+    /// track gets back its full volume, or the one the user chose meanwhile.
+    /// An end-of-stream the outgoing track reached while the fade waited is
+    /// reported here, once, because the guard made the bus watch drop it. A
+    /// fade that a manual jump already superseded is left alone: the jump
+    /// cleaned up, and its guard may belong to a newer fade by now.
+    fn give_way(
+        &self,
+        secondary: Option<&gst::Element>,
+        outgoing_end: &EosCatch,
+        my_generation: u64,
+    ) {
+        if let Some(secondary) = secondary {
+            {
+                let mut slot = self.incoming.lock().unwrap_or_else(PoisonError::into_inner);
+                if slot.as_ref() == Some(secondary) {
+                    *slot = None;
+                }
             }
+            let _ = secondary.set_state(gst::State::Null);
         }
-        let _ = secondary.set_state(gst::State::Null);
-        if self.generation.load(Ordering::SeqCst) == my_generation {
-            self.crossfading.store(false, Ordering::SeqCst);
-            // `set_volume` only stores its target while the guard is up, and
-            // the ramp that would have applied it never ran. The guard is
-            // cleared first, so a `set_volume` after this point applies
-            // itself and one before it is read here.
-            self.restore_user_volume();
+        if self.generation.load(Ordering::SeqCst) != my_generation {
+            return;
+        }
+        // Order matters. With the guard down first, an end-of-stream that
+        // arrives from here on is either caught (and reported below) or
+        // reaches the bus watch, which reports it itself.
+        self.crossfading.store(false, Ordering::SeqCst);
+        // `set_volume` only stores its target while the guard is up, and the
+        // ramp that would have applied it never ran. A `set_volume` after the
+        // guard went down applies itself; one before it is read here.
+        self.restore_user_volume();
+        if outgoing_end.release() {
+            tracing::debug!("crossfade: the outgoing track ended during the wait; reporting it");
+            self.segments.complete_pending_handoff();
+            (self.on_event)(PlayerEvent::TrackFinished);
         }
     }
 

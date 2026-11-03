@@ -1,6 +1,6 @@
 use super::segment_support::{count, write_regions_wav, Harness};
 use super::*;
-use crate::crossfade::test_seam;
+use crate::crossfade::{test_seam, CrossfadeEngine};
 use reprise_core::library::settings::TrackTransition;
 use std::sync::atomic::AtomicUsize;
 
@@ -13,6 +13,29 @@ const CROSSFADE_START_ATTEMPTS: usize = 5;
 /// counts as given way: the promotion clears the guard a moment before it
 /// reports `AdvancedToNext`.
 const GAVE_WAY_SETTLE: Duration = Duration::from_millis(100);
+
+/// The engine the position ticker drives, built from `player`'s handles, for
+/// a test that plays the ticker's part itself.
+pub(super) fn engine_of(player: &Player) -> CrossfadeEngine {
+    CrossfadeEngine {
+        playbin: player.playbin.clone(),
+        bus_watch: player.bus_watch.clone(),
+        on_event: player.on_event.clone(),
+        effects: player.effects.clone(),
+        next_uri: player.next_uri.clone(),
+        pending_gain: player.pending_gain.clone(),
+        handoff_pending: player.handoff_pending.clone(),
+        transition: player.transition.clone(),
+        crossfading: player.crossfading.clone(),
+        user_volume: player.user_volume.clone(),
+        generation: player.fade_generation.clone(),
+        incoming: player.incoming.clone(),
+        spectrum_enabled: player.spectrum_enabled.clone(),
+        cava_stream_generation: player.cava_stream_generation.clone(),
+        stream_generation: player.stream_generation.clone(),
+        segments: player.segments.clone(),
+    }
+}
 
 /// What goes wrong with the crossfade secondary.
 #[derive(Clone, Copy)]
@@ -251,7 +274,6 @@ mod cue {
 
     use super::super::segment_support::{count, cue_item, write_regions_wav, Harness};
     use super::*;
-    use crate::crossfade::CrossfadeEngine;
     use crate::gapless::QueuedTrack;
     use crate::player_pipeline::path_to_uri;
 
@@ -458,27 +480,9 @@ mod cue {
             segment: None,
         });
 
-        let player = &harness.player;
-        CrossfadeEngine {
-            playbin: player.playbin.clone(),
-            bus_watch: player.bus_watch.clone(),
-            on_event: player.on_event.clone(),
-            effects: player.effects.clone(),
-            next_uri: player.next_uri.clone(),
-            pending_gain: player.pending_gain.clone(),
-            handoff_pending: player.handoff_pending.clone(),
-            transition: player.transition.clone(),
-            crossfading: player.crossfading.clone(),
-            user_volume: player.user_volume.clone(),
-            generation: player.fade_generation.clone(),
-            incoming: player.incoming.clone(),
-            spectrum_enabled: player.spectrum_enabled.clone(),
-            cava_stream_generation: player.cava_stream_generation.clone(),
-            stream_generation: player.stream_generation.clone(),
-            segments: player.segments.clone(),
-        }
-        .maybe_start(1_500, 2_000);
+        engine_of(&harness.player).maybe_start(1_500, 2_000);
 
+        let player = &harness.player;
         assert!(!player.crossfading.load(Ordering::SeqCst));
         assert!(player
             .next_uri
