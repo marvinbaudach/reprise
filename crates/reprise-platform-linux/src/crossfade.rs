@@ -161,7 +161,9 @@ enum Preroll {
 /// and re-reporting after the guard went down could report it twice.
 ///
 /// The handler stays on the bus after the fade, as a pass-through: it cannot be
-/// told apart from a newer fade's handler on the same bus, which replaces it.
+/// told apart from a newer fade's handler on the same bus, which replaces it
+/// (`play_25_a_second_crossfade_on_the_same_pipeline_*` runs two fades on one
+/// pipeline to prove that GStreamer lets it).
 struct EosCatch {
     state: Arc<Mutex<EosCatchState>>,
 }
@@ -395,7 +397,7 @@ impl CrossfadeEngine {
             }
             std::thread::sleep(RAMP_STEP);
         }
-        self.promote(&secondary, my_generation);
+        self.promote(&secondary, &outgoing_end, my_generation);
     }
 
     /// Waits on the crossfade thread, never the main context, until the
@@ -493,7 +495,7 @@ impl CrossfadeEngine {
     /// Befördert die fertige Sekundär-Pipeline zur neuen Primär-`playbin`:
     /// frischen Bus-Watch anhängen, unter dem `playbin`-Lock atomar tauschen,
     /// alte Pipeline auf `Null`, Ziel-Volume wiederherstellen, `AdvancedToNext`.
-    fn promote(self, secondary: &gst::Element, my_generation: u64) {
+    fn promote(self, secondary: &gst::Element, outgoing_end: &EosCatch, my_generation: u64) {
         // Vor dem Anhängen des Watches etwaige *veraltete* Bus-Nachrichten
         // verwerfen (z. B. ein EOS, das ein sehr kurzer Nachfolger schon während
         // der Blende gepostet hat). In der Praxis (echte Songs) steht hier
@@ -515,8 +517,9 @@ impl CrossfadeEngine {
             Ok(watch) => watch,
             Err(error) => {
                 tracing::warn!(%error, "crossfade: could not attach bus watch to promoted pipeline");
-                let _ = secondary.set_state(gst::State::Null);
-                self.crossfading.store(false, Ordering::SeqCst);
+                // The outgoing track plays on: it needs its end-of-stream
+                // reported, and its volume back.
+                self.give_way(Some(secondary), outgoing_end, my_generation);
                 return;
             }
         };

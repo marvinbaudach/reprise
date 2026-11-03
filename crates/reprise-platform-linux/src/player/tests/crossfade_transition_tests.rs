@@ -75,7 +75,7 @@ impl SecondaryTrouble {
     }
 
     /// Forgets what an earlier attempt of the same test counted.
-    fn reset(&self) {
+    pub(super) fn reset(&self) {
         self.installed.store(0, Ordering::SeqCst);
         self.reached.store(0, Ordering::SeqCst);
         test_seam::forget_gave_up();

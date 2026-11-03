@@ -251,24 +251,21 @@ const SHORT_TRACK_MS: u32 = 2_000;
 /// as a VBR file without a length header or a stale duration does.
 const OVERSTATED_DURATION_MS: i64 = 3_500;
 
-/// The bus watch of the outgoing pipeline drops its end-of-stream while a fade
-/// runs. A duration that is longer than the track lets that end come before
-/// the fade gives way, and the track change that follows must not lose it.
-#[test]
-fn play_25_a_crossfade_that_gives_way_after_the_outgoing_track_ended_still_finishes_it() {
-    let harness = Harness::new();
+/// One round of the scenario below: the outgoing track ends during the wait,
+/// the incoming one hangs, and the fade gives way. Returns the events up to a
+/// second after the report.
+fn outgoing_track_ends_during_the_wait(
+    harness: &Harness,
+    first: &str,
+    second: &str,
+) -> Vec<PlayerEvent> {
     let player = &harness.player;
-    let directory = tempfile::tempdir().unwrap();
-    let first = tone(&directory, "first.wav", SHORT_TRACK_MS);
-    let second = tone(&directory, "second.wav", 3_000);
-    let trouble = trouble_on_secondary(Trouble::Hang);
-
     harness.start(|| {
-        player.play(item(&first)).unwrap();
+        player.play(item(first)).unwrap();
     });
     // The ticker's part, played by hand so that its numbers can be wrong: the
     // real ticker would report the true duration and give up in time.
-    player.set_next(Some(item(&second)));
+    player.set_next(Some(item(second)));
     player.set_transition(TrackTransition::Crossfade, 4);
     engine_of(player).maybe_start(0, OVERSTATED_DURATION_MS);
 
@@ -277,6 +274,21 @@ fn play_25_a_crossfade_that_gives_way_after_the_outgoing_track_ended_still_finis
     });
     // A second report would be as wrong as none.
     events.extend(harness.pump_for(Duration::from_secs(1)));
+    events
+}
+
+/// The bus watch of the outgoing pipeline drops its end-of-stream while a fade
+/// runs. A duration that is longer than the track lets that end come before
+/// the fade gives way, and the track change that follows must not lose it.
+#[test]
+fn play_25_a_crossfade_that_gives_way_after_the_outgoing_track_ended_still_finishes_it() {
+    let harness = Harness::new();
+    let directory = tempfile::tempdir().unwrap();
+    let first = tone(&directory, "first.wav", SHORT_TRACK_MS);
+    let second = tone(&directory, "second.wav", 3_000);
+    let trouble = trouble_on_secondary(Trouble::Hang);
+
+    let events = outgoing_track_ends_during_the_wait(&harness, &first, &second);
 
     assert_eq!(trouble.installed(), 1, "the secondary was not hooked");
     assert_eq!(count(&events, advanced), 0);
@@ -286,5 +298,46 @@ fn play_25_a_crossfade_that_gives_way_after_the_outgoing_track_ended_still_finis
         "the outgoing track ended during the wait and was never reported: {events:?}"
     );
     assert_eq!(count(&events, failed), 0, "events: {events:?}");
-    assert!(!player.crossfading.load(Ordering::SeqCst));
+    assert!(!harness.player.crossfading.load(Ordering::SeqCst));
+}
+
+/// The catch on the outgoing pipeline's bus belongs to one fade. The next fade
+/// on the same pipeline (the track change after a fade that gave way plays on
+/// it) must catch its own.
+#[test]
+fn play_25_a_second_crossfade_on_the_same_pipeline_also_reports_the_end_it_missed() {
+    let harness = Harness::new();
+    let directory = tempfile::tempdir().unwrap();
+    let first = tone(&directory, "first.wav", SHORT_TRACK_MS);
+    let second = tone(&directory, "second.wav", 3_000);
+    let trouble = trouble_on_secondary(Trouble::Hang);
+
+    let mut pipelines = Vec::new();
+    for round in 1..=2 {
+        trouble.reset();
+        let events = outgoing_track_ends_during_the_wait(&harness, &first, &second);
+        assert_eq!(
+            trouble.installed(),
+            1,
+            "round {round}: the secondary was not hooked"
+        );
+        assert_eq!(count(&events, advanced), 0, "round {round}");
+        assert_eq!(
+            count(&events, finished),
+            1,
+            "round {round}: the outgoing track ended during the wait and was not reported once: {events:?}"
+        );
+        pipelines.push(
+            harness
+                .player
+                .playbin
+                .lock()
+                .unwrap_or_else(PoisonError::into_inner)
+                .clone(),
+        );
+    }
+    assert_eq!(
+        pipelines[0], pipelines[1],
+        "the rounds must run on one pipeline, or the second proves nothing"
+    );
 }
