@@ -1,6 +1,8 @@
 use super::segment_support::{count, Harness};
 use super::*;
+use crate::crossfade::test_seam;
 use reprise_core::library::settings::TrackTransition;
+use std::sync::atomic::AtomicUsize;
 
 const HANG_GUARD: Duration = Duration::from_secs(20);
 /// How often a crossfade is begun again when its secondary hangs in READY.
@@ -10,6 +12,93 @@ const CROSSFADE_START_ATTEMPTS: usize = 5;
 /// reports `AdvancedToNext`.
 const GAVE_WAY_SETTLE: Duration = Duration::from_millis(100);
 
+/// What goes wrong with the crossfade secondary.
+#[derive(Clone, Copy)]
+enum Trouble {
+    /// Nothing: the probe only counts the buffers that reach the secondary.
+    Watch,
+    /// The start never completes: the first buffer is held until `Null`.
+    Hang,
+    /// The start is late but completes: the first buffer waits this long.
+    Late(Duration),
+}
+
+/// The injector installed on the next crossfade secondary. `installed`
+/// counts the secondaries it reached, `reached` how often the probe fired
+/// on one of them: the control arms that prove the trouble was injected,
+/// and the tell between a secondary that hung in READY on its own (no
+/// buffer ever reaches its gain element) and one that was merely slow.
+struct SecondaryTrouble {
+    installed: Arc<AtomicUsize>,
+    reached: Arc<AtomicUsize>,
+    _hook: test_seam::HookGuard,
+}
+
+impl SecondaryTrouble {
+    fn installed(&self) -> usize {
+        self.installed.load(Ordering::SeqCst)
+    }
+
+    fn reached(&self) -> usize {
+        self.reached.load(Ordering::SeqCst)
+    }
+
+    /// Forgets what an earlier attempt of the same test counted.
+    fn reset(&self) {
+        self.installed.store(0, Ordering::SeqCst);
+        self.reached.store(0, Ordering::SeqCst);
+    }
+}
+
+/// Hooks the next secondary the crossfade builds, before it plays, and
+/// puts a probe on the sink pad of its track-gain element, the same
+/// technique as the start watchdog tests use on the main playbin.
+fn trouble_on_secondary(trouble: Trouble) -> SecondaryTrouble {
+    let installed = Arc::new(AtomicUsize::new(0));
+    let hooked = installed.clone();
+    let reached = Arc::new(AtomicUsize::new(0));
+    let counted = reached.clone();
+    let hook = test_seam::on_secondary_built(Arc::new(move |secondary| {
+        hooked.fetch_add(1, Ordering::SeqCst);
+        let gain = secondary
+            .property::<Option<gst::Element>>("audio-filter")
+            .unwrap()
+            .downcast::<gst::Bin>()
+            .unwrap()
+            .by_name("reprise-track-gain")
+            .unwrap();
+        let pad = gain.static_pad("sink").unwrap();
+        let counted = counted.clone();
+        match trouble {
+            Trouble::Watch => {
+                pad.add_probe(gst::PadProbeType::BUFFER, move |_, _| {
+                    counted.fetch_add(1, Ordering::SeqCst);
+                    gst::PadProbeReturn::Ok
+                });
+            }
+            Trouble::Hang => {
+                pad.add_probe(gst::PadProbeType::BLOCK_DOWNSTREAM, move |_, _| {
+                    counted.fetch_add(1, Ordering::SeqCst);
+                    // Stay blocked: the pad is released by the next `Null`.
+                    gst::PadProbeReturn::Ok
+                });
+            }
+            Trouble::Late(delay) => {
+                pad.add_probe(gst::PadProbeType::BUFFER, move |_, _| {
+                    counted.fetch_add(1, Ordering::SeqCst);
+                    std::thread::sleep(delay);
+                    gst::PadProbeReturn::Remove
+                });
+            }
+        }
+    }));
+    SecondaryTrouble {
+        installed,
+        reached,
+        _hook: hook,
+    }
+}
+
 /// Runs a crossfade scenario until `done` holds for the events, and returns
 /// them together with whether a second pipeline was ever seen starting.
 ///
@@ -17,15 +106,21 @@ const GAVE_WAY_SETTLE: Duration = Duration::from_millis(100);
 /// never leaves READY on a start (see `Harness::start`). Since the crossfade
 /// gives way to a plain track change when its incoming track does not preroll
 /// (PLAY-25), such a secondary is no longer promoted, so a test that needs the
-/// fade begins again, as `Harness::start` does for the main pipeline. Only a
-/// fade that gave way counts: whatever else fails the test still fails it.
+/// fade begins again, as `Harness::start` does for the main pipeline.
+///
+/// Only a secondary that hung on its own is begun again: `secondary` watches
+/// the buffers reaching its gain element, and a hung one never gets one. A fade
+/// that gave way although the secondary was moving is a failure of the fade,
+/// and the events are returned for the test to fail on.
 fn crossfade_over_when_hung(
     harness: &Harness,
+    secondary: &SecondaryTrouble,
     begin: impl Fn(),
     done: impl Fn(&[PlayerEvent]) -> bool,
 ) -> (Vec<PlayerEvent>, bool) {
     let player = &harness.player;
     for attempt in 1..=CROSSFADE_START_ATTEMPTS {
+        secondary.reset();
         harness.start(&begin);
         let saw_crossfading = std::cell::Cell::new(false);
         let gave_way = || {
@@ -37,18 +132,20 @@ fn crossfade_over_when_hung(
                     .unwrap_or_else(PoisonError::into_inner)
                     .is_none()
         };
+        let promoted = |events: &[PlayerEvent]| {
+            count(events, |event| matches!(event, PlayerEvent::AdvancedToNext)) > 0
+        };
         let mut events = harness.pump_until(HANG_GUARD, |events| {
             if player.crossfading.load(Ordering::SeqCst) {
                 saw_crossfading.set(true);
             }
-            done(events)
-                || (gave_way()
-                    && count(events, |event| matches!(event, PlayerEvent::AdvancedToNext)) == 0)
+            done(events) || (gave_way() && !promoted(events))
         });
         if !done(&events) && gave_way() {
             events.extend(harness.pump_for(GAVE_WAY_SETTLE));
         }
-        if done(&events) || !gave_way() {
+        let hung_on_its_own = !done(&events) && gave_way() && secondary.reached() == 0;
+        if !hung_on_its_own {
             return (events, saw_crossfading.get());
         }
         eprintln!("the crossfade secondary hung in READY on start {attempt}; starting over");
@@ -67,8 +164,10 @@ fn play_20b_crossfade_promotion_carries_the_next_gain_from_the_first_sample() {
 
     let first = concat!(env!("CARGO_MANIFEST_DIR"), "/tests/fixtures/sine.flac");
     let second = concat!(env!("CARGO_MANIFEST_DIR"), "/tests/fixtures/blip.flac");
+    let watcher = trouble_on_secondary(Trouble::Watch);
     let (events, saw_crossfading) = crossfade_over_when_hung(
         &harness,
+        &watcher,
         || {
             player.play(item(first)).unwrap();
             player.set_next(Some(PlaybackItem {
@@ -247,8 +346,10 @@ mod cue {
         harness
             .player
             .set_transition(TrackTransition::Crossfade, PROMOTION_FADE_SECONDS);
+        let watcher = super::trouble_on_secondary(super::Trouble::Watch);
         let (events, _) = super::crossfade_over_when_hung(
             harness,
+            &watcher,
             || {
                 harness.player.play(item(first.to_str().unwrap())).unwrap();
                 harness
@@ -386,8 +487,6 @@ mod fallback {
 
     use super::super::segment_support::{count, ticks, write_regions_wav, Harness};
     use super::*;
-    use crate::crossfade::test_seam;
-    use std::sync::atomic::AtomicUsize;
 
     /// How long the slow secondary holds its first buffer.
     const SLOW_FIRST_BUFFER: Duration = Duration::from_secs(1);
@@ -406,85 +505,6 @@ mod fallback {
 
     fn playing(event: &PlayerEvent) -> bool {
         matches!(event, PlayerEvent::StateChanged(PlaybackState::Playing))
-    }
-
-    /// What goes wrong with the crossfade secondary.
-    #[derive(Clone, Copy)]
-    enum Trouble {
-        /// The start never completes: the first buffer is held until `Null`.
-        Hang,
-        /// The start is late but completes: the first buffer waits this long.
-        Late(Duration),
-    }
-
-    /// The injector installed on the next crossfade secondary. `installed`
-    /// counts the secondaries it reached, `reached` how often the probe fired
-    /// on one of them: the control arms that prove the trouble was injected.
-    /// (A secondary can also hang on its own before any buffer reaches the
-    /// probe, so `reached` is only asserted where the test needs the probe.)
-    struct SecondaryTrouble {
-        installed: Arc<AtomicUsize>,
-        reached: Arc<AtomicUsize>,
-        _hook: test_seam::HookGuard,
-    }
-
-    impl SecondaryTrouble {
-        fn installed(&self) -> usize {
-            self.installed.load(Ordering::SeqCst)
-        }
-
-        fn reached(&self) -> usize {
-            self.reached.load(Ordering::SeqCst)
-        }
-
-        /// Forgets what an earlier attempt of the same test counted.
-        fn reset(&self) {
-            self.installed.store(0, Ordering::SeqCst);
-            self.reached.store(0, Ordering::SeqCst);
-        }
-    }
-
-    /// Hooks the next secondary the crossfade builds, before it plays, and
-    /// puts a probe on the sink pad of its track-gain element, the same
-    /// technique as the start watchdog tests use on the main playbin.
-    fn trouble_on_secondary(trouble: Trouble) -> SecondaryTrouble {
-        let installed = Arc::new(AtomicUsize::new(0));
-        let hooked = installed.clone();
-        let reached = Arc::new(AtomicUsize::new(0));
-        let counted = reached.clone();
-        let hook = test_seam::on_secondary_built(Arc::new(move |secondary| {
-            hooked.fetch_add(1, Ordering::SeqCst);
-            let gain = secondary
-                .property::<Option<gst::Element>>("audio-filter")
-                .unwrap()
-                .downcast::<gst::Bin>()
-                .unwrap()
-                .by_name("reprise-track-gain")
-                .unwrap();
-            let pad = gain.static_pad("sink").unwrap();
-            let counted = counted.clone();
-            match trouble {
-                Trouble::Hang => {
-                    pad.add_probe(gst::PadProbeType::BLOCK_DOWNSTREAM, move |_, _| {
-                        counted.fetch_add(1, Ordering::SeqCst);
-                        // Stay blocked: the pad is released by the next `Null`.
-                        gst::PadProbeReturn::Ok
-                    });
-                }
-                Trouble::Late(delay) => {
-                    pad.add_probe(gst::PadProbeType::BUFFER, move |_, _| {
-                        counted.fetch_add(1, Ordering::SeqCst);
-                        std::thread::sleep(delay);
-                        gst::PadProbeReturn::Remove
-                    });
-                }
-            }
-        }));
-        SecondaryTrouble {
-            installed,
-            reached,
-            _hook: hook,
-        }
     }
 
     fn tone(directory: &tempfile::TempDir, name: &str, ms: u32) -> String {
@@ -591,8 +611,8 @@ mod fallback {
 
         let (events, _) = crossfade_over_when_hung(
             &harness,
+            &trouble,
             || {
-                trouble.reset();
                 player.play(item(&first)).unwrap();
                 player.set_next(Some(item(&second)));
             },
