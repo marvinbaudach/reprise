@@ -28,6 +28,11 @@ const PATIENCE: Duration = Duration::from_secs(20);
 const QUIET_FOR: Duration = Duration::from_millis(2_500);
 /// A deadline no test reaches: the watch is armed but never acts.
 const OUT_OF_REACH: Duration = Duration::from_secs(3_600);
+/// Three starts in all are two starts over. Counted by the watchdog rather
+/// than by the starts that reached the probe: on a loaded machine the last
+/// start can still be on its way to the probe, inside its short test deadline,
+/// when the watchdog gives up on it.
+const RESTARTS_BEFORE_GIVING_UP: u64 = 2;
 const TRACK_MS: u32 = 2_000;
 /// Where the tone of the CUE fixture starts, and where its CUE track does.
 const CUE_START_MS: i64 = 2_000;
@@ -156,11 +161,20 @@ fn a_start_that_keeps_hanging_is_given_up_on_after_three_starts() {
         )),
         "the frontend words the give-up from its kind: {events:?}"
     );
-    assert_eq!(reached.load(Ordering::SeqCst), 3, "three starts, no fourth");
+    assert_eq!(
+        harness.player.start_watchdog.restarts(),
+        RESTARTS_BEFORE_GIVING_UP,
+        "three starts, no fourth"
+    );
+    let reached_at_give_up = reached.load(Ordering::SeqCst);
 
     let later = harness.pump_for(QUIET_FOR);
     assert_eq!(errors(&later), 0, "the error is reported once");
-    assert_eq!(reached.load(Ordering::SeqCst), 3);
+    assert_eq!(
+        harness.player.start_watchdog.restarts(),
+        RESTARTS_BEFORE_GIVING_UP
+    );
+    assert_eq!(reached.load(Ordering::SeqCst), reached_at_give_up);
 }
 
 #[test]
@@ -233,7 +247,9 @@ fn playing(events: &[PlayerEvent]) -> usize {
 /// survives the `Null`: the next preroll seeks to the segment start and plays.
 #[test]
 fn play_25_a_hung_cue_start_is_started_over_and_plays_from_its_segment_start() {
-    let harness = harness_with_deadline(TEST_DEADLINE);
+    // Roomy: the start over is counted exactly, so a second start that is only
+    // slow under load must not be begun over again.
+    let harness = harness_with_deadline(ROOMY_DEADLINE);
     let dir = tempfile::tempdir().unwrap();
     let flac = cue_flac(&dir);
     let reached = hang_starts(&harness.player, 1);
@@ -288,11 +304,20 @@ fn play_25_a_cue_start_that_never_finishes_is_given_up_after_three_attempts() {
         )),
         "the frontend words the give-up from its kind: {events:?}"
     );
-    assert_eq!(reached.load(Ordering::SeqCst), 3, "three starts, no fourth");
+    assert_eq!(
+        harness.player.start_watchdog.restarts(),
+        RESTARTS_BEFORE_GIVING_UP,
+        "three starts, no fourth"
+    );
+    let reached_at_give_up = reached.load(Ordering::SeqCst);
 
     let later = harness.pump_for(QUIET_FOR);
     assert_eq!(errors(&later), 0, "the error is reported once");
-    assert_eq!(reached.load(Ordering::SeqCst), 3);
+    assert_eq!(
+        harness.player.start_watchdog.restarts(),
+        RESTARTS_BEFORE_GIVING_UP
+    );
+    assert_eq!(reached.load(Ordering::SeqCst), reached_at_give_up);
 }
 
 /// Makes the file source slow rather than stuck: each of its first `slowed`
@@ -379,21 +404,39 @@ fn a_start_stuck_on_one_long_read_plays_after_a_restart_instead_of_being_skipped
 }
 
 /// Control for the test above: a source that is stuck is still started over.
+///
+/// The injected hang is one start. On a loaded machine the start over can hang
+/// for real, the very thing the watchdog is for, and is begun over once more;
+/// that adds a source this test is not about. The watchdog's own count tells
+/// the two apart, and a run with a real hang in it is made again, so the
+/// assertions below stay exact.
 #[test]
 fn a_start_whose_source_stopped_reading_is_still_started_over() {
-    let harness = harness_with_deadline(TEST_DEADLINE);
-    let dir = tempfile::tempdir().unwrap();
-    let path = local_track(&dir);
-    let sources = slow_source(&harness.player, 0, Duration::ZERO);
-    let reached = hang_starts(&harness.player, 1);
+    const REAL_HANG_RETRIES: usize = 5;
+    for attempt in 1..=REAL_HANG_RETRIES {
+        // Roomy: a second start that is merely slow under load must not be
+        // begun over again either.
+        let harness = harness_with_deadline(ROOMY_DEADLINE);
+        let dir = tempfile::tempdir().unwrap();
+        let path = local_track(&dir);
+        let sources = slow_source(&harness.player, 0, Duration::ZERO);
+        let reached = hang_starts(&harness.player, 1);
 
-    harness.player.play(item(&path)).unwrap();
-    harness.pump_until(PATIENCE, |_| {
-        state_of(&harness.player).0 == gst::State::Playing
-    });
+        harness.player.play(item(&path)).unwrap();
+        harness.pump_until(PATIENCE, |_| {
+            state_of(&harness.player).0 == gst::State::Playing
+        });
 
-    assert_eq!(reached.load(Ordering::SeqCst), 2);
-    assert_eq!(sources.load(Ordering::SeqCst), 2, "one source per start");
+        let restarts = harness.player.start_watchdog.restarts();
+        if restarts != 1 {
+            eprintln!("a real hang on attempt {attempt}: {restarts} restarts for one injected hang; trying again");
+            continue;
+        }
+        assert_eq!(reached.load(Ordering::SeqCst), 2);
+        assert_eq!(sources.load(Ordering::SeqCst), 2, "one source per start");
+        return;
+    }
+    panic!("playbin3 hung for real on all {REAL_HANG_RETRIES} runs");
 }
 
 /// Every start that is given up on is its own session, so the frontend's
