@@ -139,6 +139,12 @@
     <!-- One entry per promoted release, not per merge into dev. Every merge
          raises the workspace version; only a promotion to main ships one.
          See docs/agents/branching.md and RELEASING.md. -->
+    <release version="0.1.330" date="2026-11-03" type="stable">
+      <description>
+        <p>Reprise now keeps a private log of each run and the one before it, says once when the previous run did not close properly, and can copy a diagnostics report with both logs from the main menu for bug reports. The Rhythmbox import finds the library of a Flatpak Rhythmbox, including the Flathub build.</p>
+        <p xml:lang="de">Reprise führt jetzt ein privates Protokoll jedes Laufs und des vorherigen, meldet einmal, wenn der letzte Lauf nicht sauber beendet wurde, und kann aus dem Hauptmenü einen Diagnosebericht mit beiden Protokollen für Fehlerberichte kopieren. Der Rhythmbox-Import findet die Bibliothek eines Flatpak-Rhythmbox, auch der Flathub-Version.</p>
+      </description>
+    </release>
     <release version="0.1.328" date="2026-11-02" type="stable">
       <description>
         <p>On Android, the artwork progress bar no longer appears on nearly every start: a run with nothing to fetch stays hidden, an unchanged library starts no artwork search, and artists and albums without artwork are not asked for again on every start. The experimental stem separation backend moves to newer ONNX Runtime bindings.</p>

@@ -4,6 +4,22 @@ Reprise release notes are curated from the changes that reached the stable
 branch. They describe user-visible changes rather than reproducing commit
 messages.
 
+## [0.1.330] - 2026-11-03
+
+### Library
+
+- The Rhythmbox import finds the library when Rhythmbox runs as a Flatpak,
+  including the Flathub build, and the Reprise Flatpak may now read it.
+
+### Tools, packaging, and reliability
+
+- Reprise keeps a log of each run in its state directory, readable only by you,
+  with the previous run's log beside it.
+- After a run that did not end cleanly, the next start says so once.
+- Copy Diagnostics in the main menu copies a report with the enabled modules and
+  the logs of the current and the previous run, ready to attach to a bug report.
+- RELEASING.md states the public compatibility and release contract.
+
 ## [0.1.328] - 2026-11-02
 
 ### Android
