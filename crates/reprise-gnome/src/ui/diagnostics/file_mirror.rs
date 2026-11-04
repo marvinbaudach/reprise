@@ -2,11 +2,15 @@
 //!
 //! The file leaves the machine inside a Copy Diagnostics report, so its lines
 //! pass the same redaction as the session warnings: a structured field is kept
-//! only when `is_safe_structured_field` says so (`EventFields`), and the text
-//! goes through `redact_log_message`, which removes library paths, URIs, file
-//! names, the home directory and the user name. This layer formats the line
-//! itself instead of using `tracing_subscriber`'s formatter, because that
-//! formatter prints every field verbatim.
+//! only when its key is in `KEEP_FIELDS` (`reprise_core::diagnostics`'s
+//! `field_policy`, asked through `is_safe_structured_field` by `EventFields`),
+//! and the text goes through `redact_log_message`, which removes library
+//! paths, URIs, file names, the home directory and the user name. Every other
+//! key is written as `key=$REDACTED`, including a key that is new: adding a
+//! field to a log call fails the classification test until its key is listed
+//! in `KEEP_FIELDS` or `REDACT_FIELDS`. This layer formats the line itself
+//! instead of using `tracing_subscriber`'s formatter, because that formatter
+//! prints every field verbatim.
 
 use std::io::Write as _;
 
@@ -72,9 +76,15 @@ where
 mod tests {
     use std::sync::{Arc, Mutex};
 
+    use reprise_core::diagnostics::{render_report, DiagnosticFacts, DiagnosticLog};
     use tracing_subscriber::layer::SubscriberExt;
 
     use super::*;
+
+    #[derive(Debug)]
+    enum Playback {
+        Playing,
+    }
 
     fn context() -> RedactionContext {
         RedactionContext {
@@ -123,5 +133,41 @@ mod tests {
         assert!(text.contains(" INFO "), "{text}");
         assert!(text.contains("reprise"), "{text}");
         assert!(text.starts_with("20"), "{text}");
+    }
+
+    #[test]
+    fn kept_fields_arrive_verbatim_and_the_error_is_redacted_in_the_file_and_the_copied_report() {
+        let text = mirrored(|| {
+            tracing::warn!(
+                elapsed_ms = 12,
+                state = ?Playback::Playing,
+                count = 3,
+                error = "could not open /home/someone/Music/Artist/x.flac",
+                "playback stalled"
+            );
+        });
+        // The report re-redacts the file's lines when it embeds the tail.
+        let facts = DiagnosticFacts {
+            log_tail: Some(text.clone()),
+            ..DiagnosticFacts::default()
+        };
+        let report = render_report(&facts, &DiagnosticLog::default(), &context());
+
+        for (surface, shown) in [("the log file", &text), ("the copied report", &report)] {
+            for kept in [
+                "elapsed_ms=12",
+                "state=Playing",
+                "count=3",
+                "error=$REDACTED",
+            ] {
+                assert!(shown.contains(kept), "{surface} lost {kept:?}: {shown}");
+            }
+            for leaked in ["x.flac", "Artist", "/home/someone", "someone"] {
+                assert!(
+                    !shown.contains(leaked),
+                    "{surface} leaked {leaked:?}: {shown}"
+                );
+            }
+        }
     }
 }
