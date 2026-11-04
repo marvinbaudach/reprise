@@ -101,13 +101,15 @@ injected one) is recovered. This plan closes all three and then closes #1239.
   prints the number of restarts the watchdog performed and any give-ups. The
   control arm raises the watchdog deadline out of reach. Both arms' numbers go
   into strand a's PR. The gates do not run it.
-- **D7 — UX rule PLAY-25, as a proposal.** The ID is reserved now, so the new tests
-  in strands a and b carry `play_25` in their names. The rule text is written in
+- **D7 — UX rule PLAY-26, as a proposal.** The ID is reserved now, so the new tests
+  in strands a and b carry `play_26` in their names. The rule text is written in
   task D, after the merge, with the `<!-- REVIEW: rule proposal -->` marker.
   Proposed text: "A local track whose start never completes is started over up
   to three times and then skipped. This includes CUE tracks. When the incoming
   track of a crossfade has not started in time, the crossfade gives way to a plain
   track change." Status: `[planned]`, until the user activates it.
+  PLAY-25 was taken by the Android loudness rule (#1292) before this proposal was
+  written, so the rule and its tests moved to PLAY-26.
 
 ## The cut
 
@@ -138,9 +140,9 @@ b because the rule text names the CUE behaviour first.
 
 ## Task D — record and close (after the cross-checks, on dev)
 
-D1. Write PLAY-25 into `docs/ux-rules.md`, after PLAY-24, as a `[planned]` rule
+D1. Write PLAY-26 into `docs/ux-rules.md`, after PLAY-25, as a `[planned]` rule
     proposal with the text above. Its rule-named tests are strand a's and strand
-    b's `play_25_*` tests. Follow the rules document's introduction for the
+    b's `play_26_*` tests. Follow the rules document's introduction for the
     proposal format.
 D2. Comment on #1239 with the soak numbers from strand a's PR, both arms. File the
     two out-of-scope follow-up issues: the root cause, with the bare-`playbin3`

@@ -32,13 +32,13 @@ B1. In `crossfade_transition_tests.rs`, add a hang injector for the crossfade
     exposes to tests, and blocks its sink pad with a BLOCK_DOWNSTREAM probe that
     `Null` releases. That is the same technique as `hang_starts`, written
     locally.
-B2. Add `play_25_a_crossfade_whose_incoming_track_hangs_falls_back_to_a_plain_track_change`.
+B2. Add `play_26_a_crossfade_whose_incoming_track_hangs_falls_back_to_a_plain_track_change`.
     With crossfade enabled and the next track queued, the secondary hangs.
     Assert: no promotion happens, the outgoing track keeps full volume and plays
     to its end, the queued track then starts through the ordinary start and plays,
     and no `PlayerEvent::Error` is emitted. Run it and see it fail: today the hung
     secondary is promoted.
-B3. Add `play_25_a_crossfade_whose_incoming_track_prerolls_slowly_still_fades`. A
+B3. Add `play_26_a_crossfade_whose_incoming_track_prerolls_slowly_still_fades`. A
     secondary that is delayed but healthy, prerolling inside the bound, fades and
     is promoted as before. Delay it, for example with a pad probe that holds the
     first buffer for 1 s.
