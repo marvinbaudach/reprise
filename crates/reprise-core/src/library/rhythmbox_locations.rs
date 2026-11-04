@@ -6,7 +6,8 @@
 //! Flatpak sandbox sees a different one and has to look at the host's, and a
 //! Rhythmbox installed from Flathub keeps its files in its own sandbox
 //! directory. The resolver takes every input explicitly so each branch is a
-//! table row in a test, and only [`from_environment`] touches the process.
+//! table row in a test; callers read the process environment and hand it in
+//! through [`inputs_from`].
 
 use std::ffi::OsString;
 use std::path::{Path, PathBuf};
@@ -140,24 +141,6 @@ pub fn resolve(inputs: &LocationInputs, is_file: impl Fn(&Path) -> bool) -> Rhyt
 #[must_use]
 pub fn playlists_path(rhythmdb: &Path, playlists_override: Option<&std::ffi::OsStr>) -> PathBuf {
     playlists_override.map_or_else(|| rhythmdb.with_file_name(PLAYLISTS_FILE), PathBuf::from)
-}
-
-/// [`resolve`] against the real process environment and file system.
-#[must_use]
-pub fn from_environment(in_flatpak: bool, native_data_dir: PathBuf) -> RhythmboxLocations {
-    let inputs = inputs_from(in_flatpak, native_data_dir, |name| std::env::var_os(name));
-    resolve(&inputs, Path::is_file)
-}
-
-/// The playlists file that goes with `rhythmdb`, honouring the process environment.
-#[must_use]
-pub fn playlists_path_from_environment(rhythmdb: &Path) -> PathBuf {
-    playlists_path(
-        rhythmdb,
-        std::env::var_os(PLAYLISTS_PATH_ENV)
-            .filter(|value| !value.is_empty())
-            .as_deref(),
-    )
 }
 
 #[cfg(test)]
