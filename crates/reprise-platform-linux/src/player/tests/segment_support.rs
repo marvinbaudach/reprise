@@ -396,11 +396,33 @@ const START_ATTEMPTS: usize = 5;
 /// [`Harness::start`] for a test that builds its own [`Player`]: runs `begin`
 /// and starts it over, up to [`START_ATTEMPTS`] times, while the pipeline
 /// hangs in READY.
+///
+/// For a test that counts or collects anything while the start runs, use
+/// [`start_over_when_hung_resetting`]: a hung attempt leaves its counts behind.
 pub(super) fn start_over_when_hung(player: &Player, begin: impl Fn()) {
+    start_over_when_hung_resetting(player, || {}, begin);
+}
+
+/// [`start_over_when_hung`] for a test whose assertions depend on what the
+/// start itself produced. A hung attempt can leave events, probe counts and a
+/// bumped stream generation behind, and an exact assertion would then count
+/// the abandoned attempt too.
+///
+/// `reset` runs before every attempt, the first included, and puts the test's
+/// counters and collected events back to zero. Returns the stream generation
+/// read just before the attempt that succeeded, so a test can compare against
+/// the start it actually measures instead of against an earlier one.
+pub(super) fn start_over_when_hung_resetting(
+    player: &Player,
+    reset: impl Fn(),
+    begin: impl Fn(),
+) -> StreamGeneration {
     for attempt in 1..=START_ATTEMPTS {
+        reset();
+        let baseline = player.current_generation();
         begin();
         if leaves_ready(player, HUNG_START_PATIENCE) {
-            return;
+            return baseline;
         }
         eprintln!("the pipeline hung in READY on start {attempt}; starting over");
     }
@@ -471,6 +493,26 @@ impl Harness {
     /// [`HUNG_START_PATIENCE`] is begun again from `Null`, which `play` does.
     pub(super) fn start(&self, begin: impl Fn()) {
         start_over_when_hung(&self.player, begin);
+    }
+
+    /// [`Self::start`] with a `reset` that runs before every attempt, and the
+    /// stream generation read just before the attempt that succeeded; see
+    /// [`start_over_when_hung_resetting`].
+    ///
+    /// The harness's own event channel is drained before every attempt, ahead
+    /// of `reset`, so a later [`Self::pump_until`] only sees events the
+    /// succeeding attempt produced: an abandoned attempt's `Error` or
+    /// `StateChanged` stays out of the test's assertions. [`Self::start`]
+    /// leaves the channel alone, as its callers may collect events across it.
+    pub(super) fn start_resetting(&self, reset: impl Fn(), begin: impl Fn()) -> StreamGeneration {
+        start_over_when_hung_resetting(
+            &self.player,
+            || {
+                self.events.try_iter().for_each(drop);
+                reset();
+            },
+            begin,
+        )
     }
 
     /// Pumps the main context (which dispatches the bus watch) and collects
