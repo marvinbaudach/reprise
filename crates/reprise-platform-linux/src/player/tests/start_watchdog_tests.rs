@@ -87,6 +87,14 @@ pub(super) fn state_of(player: &Player) -> (gst::State, gst::State) {
     (current, pending)
 }
 
+pub(super) fn current_playbin(player: &Player) -> gst::Element {
+    player
+        .playbin
+        .lock()
+        .unwrap_or_else(PoisonError::into_inner)
+        .clone()
+}
+
 pub(super) fn harness_with_deadline(deadline: Duration) -> Harness {
     let mut harness = Harness::new();
     harness.player.start_watchdog.deadline = deadline;
@@ -288,6 +296,7 @@ fn play_26_a_hung_cue_start_is_started_over_and_plays_from_its_segment_start() {
     // The control arm: the first start really is the hang the watchdog is for.
     let mut events = harness.pump_until(PATIENCE, |_| reached.load(Ordering::SeqCst) >= 1);
     assert_eq!(playing(&events), 0, "a hung start has not played");
+    let hung = current_playbin(&harness.player);
 
     // Nothing but the watchdog can end it: the pump just runs the main context.
     events.extend(harness.pump_until(PATIENCE, |collected| {
@@ -298,6 +307,11 @@ fn play_26_a_hung_cue_start_is_started_over_and_plays_from_its_segment_start() {
         reached.load(Ordering::SeqCst),
         2,
         "the watchdog must start the hung CUE track over once (events: {events:?})"
+    );
+    assert_ne!(
+        current_playbin(&harness.player),
+        hung,
+        "the start must go on a new pipeline, the pending segment start with it"
     );
     assert!(playing(&events) > 0, "the start must finish: {events:?}");
     let first = heard.latest_landing();

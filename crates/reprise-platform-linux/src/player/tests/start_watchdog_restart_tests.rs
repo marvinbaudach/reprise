@@ -16,8 +16,8 @@ use std::sync::atomic::AtomicUsize;
 
 use super::segment_support::write_regions_wav;
 use super::start_watchdog_tests::{
-    errors, hang_starts, harness_with_deadline, local_track, state_of, PATIENCE, QUIET_FOR,
-    ROOMY_DEADLINE,
+    current_playbin, errors, hang_starts, harness_with_deadline, local_track, state_of, PATIENCE,
+    QUIET_FOR, ROOMY_DEADLINE,
 };
 use super::*;
 
@@ -36,14 +36,6 @@ fn restart_after(
         real(request)
     });
     calls
-}
-
-fn current_playbin(player: &Player) -> gst::Element {
-    player
-        .playbin
-        .lock()
-        .unwrap_or_else(PoisonError::into_inner)
-        .clone()
 }
 
 /// What a gapless step or a crossfade promotion does to the stream: replaces it
