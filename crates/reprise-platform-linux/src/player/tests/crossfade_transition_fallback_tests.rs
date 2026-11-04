@@ -198,6 +198,49 @@ fn play_25_a_crossfade_whose_incoming_track_prerolls_slowly_still_fades() {
     );
 }
 
+/// A one-second fade whose incoming track holds its first buffer this long
+/// prerolls with too little of the outgoing track left to fade over.
+const LATE_FOR_A_ONE_SECOND_FADE: Duration = Duration::from_millis(600);
+
+/// A secondary that prerolls just inside the bound can leave a ramp of a few
+/// milliseconds: a full-to-silent step instead of a fade. The fade must give
+/// way to a plain change instead. The ticker's part is played by hand, so that
+/// the outgoing track really has seconds left and the test needs no late tick.
+#[test]
+fn play_25_a_crossfade_with_too_little_time_left_to_ramp_gives_way_instead_of_cutting() {
+    let harness = Harness::new();
+    let player = &harness.player;
+    let directory = tempfile::tempdir().unwrap();
+    let first = tone(&directory, "first.wav", 4_000);
+    let second = tone(&directory, "second.wav", 3_000);
+    player.set_transition(TrackTransition::Crossfade, 1);
+    let trouble = trouble_on_secondary(Trouble::Late(LATE_FOR_A_ONE_SECOND_FADE));
+    let user_volume = *player
+        .user_volume
+        .lock()
+        .unwrap_or_else(PoisonError::into_inner);
+
+    harness.start(|| {
+        player.play(item(&first)).unwrap();
+    });
+    player.set_next(Some(item(&second)));
+    engine_of(player).maybe_start(0, 1_000);
+    let lowest_volume = std::cell::Cell::new(f64::MAX);
+    let events = harness.pump_until(HANG_GUARD, |events| {
+        lowest_volume.set(lowest_volume.get().min(primary_volume(player)));
+        !player.crossfading.load(Ordering::SeqCst) || count(events, advanced) > 0
+    });
+
+    assert_eq!(trouble.installed(), 1, "the secondary was not hooked");
+    assert_eq!(count(&events, advanced), 0, "a ramp of a few ms was run");
+    assert!(
+        lowest_volume.get() >= user_volume - 1e-9,
+        "the outgoing track was cut: {}",
+        lowest_volume.get()
+    );
+    assert_eq!(count(&events, failed), 0, "events: {events:?}");
+}
+
 /// The volume the user drags to while the crossfade waits for its incoming
 /// track.
 const VOLUME_DURING_WAIT: f64 = 0.4;

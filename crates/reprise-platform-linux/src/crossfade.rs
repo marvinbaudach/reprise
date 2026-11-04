@@ -66,6 +66,16 @@ const PREROLL_BOUND: Duration = Duration::from_secs(4);
 /// position ticker's staleness and the main context's dispatch delay.
 const OUTGOING_END_MARGIN: Duration = Duration::from_millis(200);
 
+/// The shortest ramp worth running. A ramp that is only a few steps long is a
+/// hard cut: the outgoing track drops from full to silent while the incoming
+/// one jumps to full, a fraction of a second before the outgoing one ends
+/// anyway. A plain track change sounds cleaner. 250 ms is five [`RAMP_STEP`]s,
+/// the least that still has gains between the two ends; it is a fixed floor
+/// rather than a share of the fade, because a long fade that the wait cut down
+/// to a couple of seconds is still a fade. A fade the user asked to be shorter
+/// than this keeps its own length.
+const MIN_RAMP: Duration = Duration::from_millis(250);
+
 /// Equal-power-Überblendungskurve. Liefert `(out, in)` für den bisher
 /// verstrichenen Rampenanteil `t = elapsed_ms / total_ms`:
 ///
@@ -94,13 +104,16 @@ pub(crate) fn crossfade_gains(elapsed_ms: u64, total_ms: u64) -> (f64, f64) {
 /// [`OUTGOING_END_MARGIN`] before the outgoing track ends. The ramp starts only
 /// after the wait for the preroll, so without the cut a slow preroll leaves the
 /// outgoing track ending, at full-ish volume, while the incoming one is still
-/// ramping up.
-fn ramp_length_ms(total_ms: u64, outgoing_ends_at: Instant, now: Instant) -> u64 {
+/// ramping up. `None` when what is left is shorter than [`MIN_RAMP`] (or than
+/// the whole fade, if that is shorter still): the fade then gives way.
+fn ramp_length_ms(total_ms: u64, outgoing_ends_at: Instant, now: Instant) -> Option<u64> {
     let ramp_ends_at = outgoing_ends_at
         .checked_sub(OUTGOING_END_MARGIN)
         .unwrap_or(outgoing_ends_at);
     let left = ramp_ends_at.saturating_duration_since(now);
-    (left.as_millis() as u64).min(total_ms)
+    let ramp_ms = (left.as_millis() as u64).min(total_ms);
+    let floor_ms = (MIN_RAMP.as_millis() as u64).min(total_ms);
+    (ramp_ms >= floor_ms && ramp_ms > 0).then_some(ramp_ms)
 }
 
 /// Bündel geteilter Zustandshandles, das der Position-Ticker (zum Starten einer
@@ -372,7 +385,14 @@ impl CrossfadeEngine {
         // The ramp was meant to end with the outgoing track, and the wait ate
         // into the time that is left: ramp over what remains, never longer
         // than the fade the user asked for.
-        let ramp_ms = ramp_length_ms(total_ms, outgoing_ends_at, Instant::now());
+        let Some(ramp_ms) = ramp_length_ms(total_ms, outgoing_ends_at, Instant::now()) else {
+            tracing::warn!(
+                uri = %queued.uri,
+                "crossfade: too little of the outgoing track is left to fade; giving way to a plain track change"
+            );
+            self.give_way(Some(&secondary), &outgoing_end, my_generation);
+            return;
+        };
         let start = Instant::now();
         loop {
             if self.generation.load(Ordering::SeqCst) != my_generation {
@@ -568,82 +588,8 @@ impl CrossfadeEngine {
     }
 }
 
-/// Test seam: lets a test reach the crossfade secondary before it plays.
-///
-/// The secondary is built on the crossfade thread, so no test can hold it
-/// before its first buffer has moved. This hook runs on that thread with the
-/// freshly built secondary, before it leaves `Null`. It is process-global,
-/// which is safe because every test that crossfades holds
-/// `AUDIO_SINK_TEST_LOCK` for its whole life.
 #[cfg(test)]
-pub(crate) mod test_seam {
-    use super::*;
-
-    pub(crate) type Hook = Arc<dyn Fn(&gst::Element) + Send + Sync>;
-
-    static SECONDARY_BUILT: Mutex<Option<Hook>> = Mutex::new(None);
-
-    /// What the secondary the last fade gave up on looked like at that moment.
-    #[derive(Clone, Copy, Debug)]
-    pub(crate) struct GaveUp {
-        pub(crate) current: gst::State,
-        pub(crate) pending: gst::State,
-        /// How long it had been given from `Playing` on.
-        pub(crate) waited: Duration,
-    }
-
-    static GAVE_UP: Mutex<Option<GaveUp>> = Mutex::new(None);
-
-    /// Removes the hook again when dropped, panic or not.
-    pub(crate) struct HookGuard;
-
-    impl Drop for HookGuard {
-        fn drop(&mut self) {
-            *SECONDARY_BUILT
-                .lock()
-                .unwrap_or_else(PoisonError::into_inner) = None;
-            forget_gave_up();
-        }
-    }
-
-    pub(crate) fn on_secondary_built(hook: Hook) -> HookGuard {
-        *SECONDARY_BUILT
-            .lock()
-            .unwrap_or_else(PoisonError::into_inner) = Some(hook);
-        HookGuard
-    }
-
-    /// Records what state the secondary was in, and for how long it had been
-    /// given, when its fade gave way. State alone cannot tell a pipeline that
-    /// hung on its own from one the fade stopped waiting for too early.
-    pub(super) fn gave_up(secondary: &gst::Element, waited: Duration) {
-        let (_, current, pending) = secondary.state(gst::ClockTime::ZERO);
-        *GAVE_UP.lock().unwrap_or_else(PoisonError::into_inner) = Some(GaveUp {
-            current,
-            pending,
-            waited,
-        });
-    }
-
-    /// What the last [`gave_up`] recorded, if a fade gave up since.
-    pub(crate) fn gave_up_in() -> Option<GaveUp> {
-        *GAVE_UP.lock().unwrap_or_else(PoisonError::into_inner)
-    }
-
-    pub(crate) fn forget_gave_up() {
-        *GAVE_UP.lock().unwrap_or_else(PoisonError::into_inner) = None;
-    }
-
-    pub(super) fn secondary_built(secondary: &gst::Element) {
-        let hook = SECONDARY_BUILT
-            .lock()
-            .unwrap_or_else(PoisonError::into_inner)
-            .clone();
-        if let Some(hook) = hook {
-            hook(secondary);
-        }
-    }
-}
+pub(crate) mod test_seam;
 
 #[cfg(test)]
 mod tests {
@@ -653,7 +599,7 @@ mod tests {
     fn the_ramp_is_the_requested_fade_when_there_is_time_for_it() {
         let now = Instant::now();
         let ends_at = now + Duration::from_secs(10);
-        assert_eq!(ramp_length_ms(4_000, ends_at, now), 4_000);
+        assert_eq!(ramp_length_ms(4_000, ends_at, now), Some(4_000));
     }
 
     #[test]
@@ -661,14 +607,47 @@ mod tests {
         let now = Instant::now();
         let ends_at = now + Duration::from_secs(3);
         let expected = 3_000 - OUTGOING_END_MARGIN.as_millis() as u64;
-        assert_eq!(ramp_length_ms(4_000, ends_at, now), expected);
+        assert_eq!(ramp_length_ms(4_000, ends_at, now), Some(expected));
     }
 
     #[test]
-    fn a_ramp_with_no_time_left_is_empty() {
+    fn a_ramp_with_no_time_left_is_refused() {
         let now = Instant::now();
-        assert_eq!(ramp_length_ms(4_000, now, now), 0);
-        assert_eq!(ramp_length_ms(4_000, now, now + Duration::from_secs(1)), 0);
+        assert_eq!(ramp_length_ms(4_000, now, now), None);
+        assert_eq!(
+            ramp_length_ms(4_000, now, now + Duration::from_secs(1)),
+            None
+        );
+    }
+
+    /// The case that made the minimum necessary: a one-second fade whose
+    /// incoming track prerolled 380 ms into 600 ms of outgoing track leaves a
+    /// 20 ms ramp, which is a hard cut with extra steps.
+    #[test]
+    fn a_ramp_that_would_be_a_hard_cut_is_refused() {
+        let now = Instant::now();
+        let ends_at = now + Duration::from_millis(220);
+        assert_eq!(ramp_length_ms(1_000, ends_at, now), None);
+    }
+
+    #[test]
+    fn a_ramp_just_below_the_minimum_is_refused_and_one_at_it_is_kept() {
+        let now = Instant::now();
+        let margin = OUTGOING_END_MARGIN;
+        let below = now + margin + MIN_RAMP - Duration::from_millis(1);
+        let at = now + margin + MIN_RAMP;
+        assert_eq!(ramp_length_ms(4_000, below, now), None);
+        assert_eq!(
+            ramp_length_ms(4_000, at, now),
+            Some(MIN_RAMP.as_millis() as u64)
+        );
+    }
+
+    #[test]
+    fn a_fade_shorter_than_the_minimum_is_not_refused_for_being_short() {
+        let now = Instant::now();
+        let ends_at = now + Duration::from_secs(10);
+        assert_eq!(ramp_length_ms(100, ends_at, now), Some(100));
     }
 
     #[test]
