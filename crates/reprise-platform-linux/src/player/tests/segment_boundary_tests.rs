@@ -150,7 +150,15 @@ fn play_22_a_cue_track_starts_without_blocking_on_its_file() {
     const RETURNS_WITHIN: Duration = Duration::from_millis(500);
     const SAMPLES_ARRIVE_AFTER: Duration = Duration::from_millis(1_500);
     const WAV_HEADER_BYTES: usize = 44;
-    let harness = Harness::new();
+    // The start watchdog now watches CUE starts, and this one stands still on
+    // purpose: the FIFO delivers nothing for `SAMPLES_ARRIVE_AFTER`. That is
+    // well under the watchdog's 4 s standstill bound, but a loaded machine can
+    // stretch it, and a FIFO can be read only once, so a start begun over
+    // would never see its header again. Put the deadline out of reach for this
+    // test alone; what it measures, that `play()` does not block, is unchanged.
+    const WATCHDOG_DEADLINE: Duration = Duration::from_secs(600);
+    let mut harness = Harness::new();
+    harness.player.start_watchdog.deadline = WATCHDOG_DEADLINE;
     let directory = tempfile::tempdir().unwrap();
     let source = directory.path().join("source.wav");
     write_regions_wav(&source, &[(3_000, true)]);

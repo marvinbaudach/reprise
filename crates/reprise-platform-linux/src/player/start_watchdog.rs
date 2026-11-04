@@ -19,7 +19,10 @@
 //! one is reported as a [`PlayerEvent::Error`], which the frontend answers by
 //! skipping the track.
 //!
-//! CUE segment starts and the crossfade secondary start do not arm it.
+//! A CUE segment start arms it like a whole file's: it is begun over into
+//! `Paused`, and the segment gate's pending start survives the `Null`, so the
+//! next preroll still seeks to the segment start. The crossfade secondary
+//! start does not arm it.
 
 use gstreamer as gst;
 use gstreamer::prelude::*;
@@ -93,10 +96,11 @@ pub(super) fn judge(observation: StartObservation, attempt: u32, deadline: Durat
     }
 }
 
-/// Whether a start of `uri` is one the watchdog covers: a plain local file,
-/// not a CUE segment (whose start finishes on the bus).
-pub(super) fn covers(uri: &str, live: bool, segment: Option<(i64, i64)>) -> bool {
-    !live && segment.is_none() && !is_remote_playback_uri(Some(uri))
+/// Whether a start of `uri` is one the watchdog covers: a local file, whole
+/// or as a CUE segment. A segment's start finishes on the bus, but the gate
+/// keeps its pending start across the restart, so starting it over is safe.
+pub(super) fn covers(uri: &str, live: bool, _segment: Option<(i64, i64)>) -> bool {
+    !live && !is_remote_playback_uri(Some(uri))
 }
 
 /// How far the pipeline's file source has read, in bytes, if it has one yet.
@@ -126,6 +130,8 @@ pub(super) struct StartWatchdog {
     on_event: Arc<dyn Fn(PlayerEvent) + Send + Sync>,
     /// Bumped to cancel the timer in flight, whichever one that is.
     epoch: Arc<AtomicU64>,
+    /// How many hung starts this watchdog has begun over, for the soak test.
+    restarts: Arc<AtomicU64>,
     pub(super) deadline: Duration,
 }
 
@@ -140,8 +146,15 @@ impl StartWatchdog {
             stream_generation,
             on_event,
             epoch: Arc::new(AtomicU64::new(0)),
+            restarts: Arc::new(AtomicU64::new(0)),
             deadline: START_DEADLINE,
         }
+    }
+
+    /// How many hung starts have been begun over so far.
+    #[cfg(test)]
+    pub(super) fn restarts(&self) -> u64 {
+        self.restarts.load(Ordering::SeqCst)
     }
 
     /// Stops watching. Idempotent; a timer already queued ends at its next look.
@@ -159,6 +172,7 @@ impl StartWatchdog {
             stream_generation: self.stream_generation.clone(),
             on_event: self.on_event.clone(),
             epoch: self.epoch.clone(),
+            restarts: self.restarts.clone(),
             deadline: self.deadline,
         };
         let mut progress = Progress::starting(Instant::now());
@@ -214,6 +228,7 @@ struct Look {
     stream_generation: Arc<AtomicU64>,
     on_event: Arc<dyn Fn(PlayerEvent) + Send + Sync>,
     epoch: Arc<AtomicU64>,
+    restarts: Arc<AtomicU64>,
     deadline: Duration,
 }
 
@@ -249,6 +264,7 @@ impl Look {
                 );
                 match restart(&playbin, pending) {
                     Ok(()) => {
+                        self.restarts.fetch_add(1, Ordering::SeqCst);
                         progress.restarted(now);
                         gst::glib::ControlFlow::Continue
                     }
@@ -423,10 +439,10 @@ mod tests {
     }
 
     #[test]
-    fn only_a_plain_local_file_is_covered() {
+    fn only_a_local_file_whole_or_a_cue_segment_is_covered() {
         assert!(covers("file:///music/a.flac", false, None));
         assert!(!covers("file:///music/a.flac", true, None));
-        assert!(!covers("file:///music/a.flac", false, Some((0, 1_000))));
+        assert!(covers("file:///music/a.flac", false, Some((0, 1_000))));
         assert!(!covers("https://radio.example/live", false, None));
     }
 
