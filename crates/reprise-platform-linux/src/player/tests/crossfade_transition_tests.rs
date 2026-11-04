@@ -1,69 +1,257 @@
-use super::segment_support::start_over_when_hung;
+use super::segment_support::{count, write_regions_wav, Harness};
 use super::*;
+use crate::crossfade::{test_seam, CrossfadeEngine};
 use reprise_core::library::settings::TrackTransition;
+use std::sync::atomic::AtomicUsize;
+
+/// Length of each track of the promotion test.
+const PROMOTION_TRACK_MS: u32 = 4_000;
+/// The fade the promotion tests run: two seconds gives the 500 ms position
+/// ticker four chances to start it even on a loaded machine.
+const PROMOTION_FADE_SECONDS: u8 = 2;
+pub(super) const HANG_GUARD: Duration = Duration::from_secs(20);
+/// How often a crossfade is begun, the first time included, when its
+/// secondary hangs in READY. A natural hang is rare even under load, so a test
+/// that needs more than one retry points at the fade giving way, not at
+/// `playbin3`.
+const CROSSFADE_START_ATTEMPTS: usize = 3;
+/// How long a given-way crossfade must stay without a promotion before it
+/// counts as given way: the promotion clears the guard a moment before it
+/// reports `AdvancedToNext`.
+const GAVE_WAY_SETTLE: Duration = Duration::from_millis(100);
+
+/// The engine the position ticker drives, built from `player`'s handles, for
+/// a test that plays the ticker's part itself.
+pub(super) fn engine_of(player: &Player) -> CrossfadeEngine {
+    CrossfadeEngine {
+        playbin: player.playbin.clone(),
+        bus_watch: player.bus_watch.clone(),
+        on_event: player.on_event.clone(),
+        effects: player.effects.clone(),
+        next_uri: player.next_uri.clone(),
+        pending_gain: player.pending_gain.clone(),
+        handoff_pending: player.handoff_pending.clone(),
+        transition: player.transition.clone(),
+        crossfading: player.crossfading.clone(),
+        user_volume: player.user_volume.clone(),
+        generation: player.fade_generation.clone(),
+        incoming: player.incoming.clone(),
+        spectrum_enabled: player.spectrum_enabled.clone(),
+        cava_stream_generation: player.cava_stream_generation.clone(),
+        stream_generation: player.stream_generation.clone(),
+        segments: player.segments.clone(),
+    }
+}
+
+/// What goes wrong with the crossfade secondary.
+#[derive(Clone, Copy)]
+pub(super) enum Trouble {
+    /// Nothing: the probe only counts the buffers that reach the secondary.
+    Watch,
+    /// The start never completes: the first buffer is held until `Null`.
+    Hang,
+    /// The start is late but completes: the first buffer waits this long.
+    Late(Duration),
+}
+
+/// The injector installed on the next crossfade secondary. `installed`
+/// counts the secondaries it reached, `reached` how often the probe fired
+/// on one of them: the control arms that prove the trouble was injected,
+/// and the tell between a secondary that hung in READY on its own (no
+/// buffer ever reaches its gain element) and one that was merely slow.
+pub(super) struct SecondaryTrouble {
+    installed: Arc<AtomicUsize>,
+    reached: Arc<AtomicUsize>,
+    _hook: test_seam::HookGuard,
+}
+
+impl SecondaryTrouble {
+    pub(super) fn installed(&self) -> usize {
+        self.installed.load(Ordering::SeqCst)
+    }
+
+    pub(super) fn reached(&self) -> usize {
+        self.reached.load(Ordering::SeqCst)
+    }
+
+    /// Forgets what an earlier attempt of the same test counted.
+    pub(super) fn reset(&self) {
+        self.installed.store(0, Ordering::SeqCst);
+        self.reached.store(0, Ordering::SeqCst);
+        test_seam::forget_gave_up();
+    }
+}
+
+/// Hooks the next secondary the crossfade builds, before it plays, and
+/// puts a probe on the sink pad of its track-gain element, the same
+/// technique as the start watchdog tests use on the main playbin.
+pub(super) fn trouble_on_secondary(trouble: Trouble) -> SecondaryTrouble {
+    let installed = Arc::new(AtomicUsize::new(0));
+    let hooked = installed.clone();
+    let reached = Arc::new(AtomicUsize::new(0));
+    let counted = reached.clone();
+    let hook = test_seam::on_secondary_built(Arc::new(move |secondary| {
+        hooked.fetch_add(1, Ordering::SeqCst);
+        let gain = secondary
+            .property::<Option<gst::Element>>("audio-filter")
+            .unwrap()
+            .downcast::<gst::Bin>()
+            .unwrap()
+            .by_name("reprise-track-gain")
+            .unwrap();
+        let pad = gain.static_pad("sink").unwrap();
+        let counted = counted.clone();
+        match trouble {
+            Trouble::Watch => {
+                pad.add_probe(gst::PadProbeType::BUFFER, move |_, _| {
+                    counted.fetch_add(1, Ordering::SeqCst);
+                    gst::PadProbeReturn::Ok
+                });
+            }
+            Trouble::Hang => {
+                pad.add_probe(gst::PadProbeType::BLOCK_DOWNSTREAM, move |_, _| {
+                    counted.fetch_add(1, Ordering::SeqCst);
+                    // Stay blocked: the pad is released by the next `Null`.
+                    gst::PadProbeReturn::Ok
+                });
+            }
+            Trouble::Late(delay) => {
+                pad.add_probe(gst::PadProbeType::BUFFER, move |_, _| {
+                    counted.fetch_add(1, Ordering::SeqCst);
+                    std::thread::sleep(delay);
+                    gst::PadProbeReturn::Remove
+                });
+            }
+        }
+    }));
+    SecondaryTrouble {
+        installed,
+        reached,
+        _hook: hook,
+    }
+}
+
+/// How long a healthy local secondary may take to preroll at the very most,
+/// loaded machine included. A fade that gave up on a READY secondary sooner
+/// than this stopped waiting too early, whatever state the secondary was in.
+const HEALTHY_PREROLL: Duration = Duration::from_secs(1);
+
+/// Whether a secondary that the fade gave up on had hung in READY on its own,
+/// as `playbin3` sometimes does on a start: no buffer ever reached its gain
+/// element, and it had been given long enough. Only that case is begun again.
+/// A secondary that was moving, that had left READY, or that was not given
+/// [`HEALTHY_PREROLL`] was given up on too early, and the test must fail.
+fn hung_in_ready(reached: usize, gave_up: Option<test_seam::GaveUp>) -> bool {
+    reached == 0
+        && gave_up.is_some_and(|gave_up| {
+            gave_up.current == gst::State::Ready
+                && gave_up.pending == gst::State::Playing
+                && gave_up.waited >= HEALTHY_PREROLL
+        })
+}
+
+/// Runs a crossfade scenario until `done` holds for the events, and returns
+/// them together with whether a second pipeline was ever seen starting.
+///
+/// The crossfade secondary is a `playbin3` too, and GStreamer 1.28's sometimes
+/// never leaves READY on a start (see `Harness::start`). Since the crossfade
+/// gives way to a plain track change when its incoming track does not preroll
+/// (PLAY-25), such a secondary is no longer promoted, so a test that needs the
+/// fade begins again, as `Harness::start` does for the main pipeline.
+///
+/// Only a secondary that hung on its own is begun again: `secondary` watches
+/// the buffers reaching its gain element, and a hung one never gets one. A fade
+/// that gave way although the secondary was moving is a failure of the fade,
+/// and the events are returned for the test to fail on.
+pub(super) fn crossfade_over_when_hung(
+    harness: &Harness,
+    secondary: &SecondaryTrouble,
+    begin: impl Fn(),
+    done: impl Fn(&[PlayerEvent]) -> bool,
+) -> (Vec<PlayerEvent>, bool) {
+    let player = &harness.player;
+    for attempt in 1..=CROSSFADE_START_ATTEMPTS {
+        secondary.reset();
+        harness.start(&begin);
+        let saw_crossfading = std::cell::Cell::new(false);
+        let gave_way = || {
+            saw_crossfading.get()
+                && !player.crossfading.load(Ordering::SeqCst)
+                && player
+                    .incoming
+                    .lock()
+                    .unwrap_or_else(PoisonError::into_inner)
+                    .is_none()
+        };
+        let promoted = |events: &[PlayerEvent]| {
+            count(events, |event| matches!(event, PlayerEvent::AdvancedToNext)) > 0
+        };
+        let mut events = harness.pump_until(HANG_GUARD, |events| {
+            if player.crossfading.load(Ordering::SeqCst) {
+                saw_crossfading.set(true);
+            }
+            done(events) || (gave_way() && !promoted(events))
+        });
+        if !done(&events) && gave_way() {
+            events.extend(harness.pump_for(GAVE_WAY_SETTLE));
+        }
+        let hung_on_its_own = !done(&events)
+            && gave_way()
+            && hung_in_ready(secondary.reached(), test_seam::gave_up_in());
+        if !hung_on_its_own {
+            return (events, saw_crossfading.get());
+        }
+        eprintln!("crossfade-retry: the secondary hung in READY on start {attempt}; starting over");
+    }
+    panic!("the crossfade secondary hung in READY on all {CROSSFADE_START_ATTEMPTS} starts");
+}
 
 /// Crossfade Phase B backend proof (headless, fakesink): with `Crossfade`
 /// selected, the position ticker must spin up a second playbin for the
 /// pre-fed successor and promote it without stopping the primary pipeline.
 #[test]
 fn play_20b_crossfade_promotion_carries_the_next_gain_from_the_first_sample() {
-    let _guard = AUDIO_SINK_TEST_LOCK
-        .lock()
-        .unwrap_or_else(std::sync::PoisonError::into_inner);
-    std::env::set_var(AUDIO_SINK_ENV_VAR, "fakesink");
+    let harness = Harness::new();
+    let player = &harness.player;
+    player.set_transition(TrackTransition::Crossfade, PROMOTION_FADE_SECONDS);
 
-    let (tx, rx) = std::sync::mpsc::channel::<PlayerEvent>();
-    let player = Player::new(Box::new(move |event| {
-        let _ = tx.send(event);
-    }))
-    .unwrap();
-
-    player.set_transition(TrackTransition::Crossfade, 1);
-
-    let first = concat!(env!("CARGO_MANIFEST_DIR"), "/tests/fixtures/sine.flac");
-    let second = concat!(env!("CARGO_MANIFEST_DIR"), "/tests/fixtures/blip.flac");
-    start_over_when_hung(&player, || {
-        player.play(item(first)).unwrap();
-        player.set_next(Some(PlaybackItem {
-            segment: None,
-            path: second,
-            gain_db: 6.0,
-        }));
+    // Both tracks are longer than the fade plus the wait for the secondary's
+    // preroll. The first, so that a secondary that hung on its own is given
+    // `HEALTHY_PREROLL` before the fade gives way and the test may begin
+    // again. The second, so that it does not post its own end-of-stream right
+    // after the promotion: that is a finished track, not the outgoing one
+    // leaking.
+    let directory = tempfile::tempdir().unwrap();
+    let first_path = directory.path().join("first.wav");
+    write_regions_wav(&first_path, &[(PROMOTION_TRACK_MS, true)]);
+    let first = first_path.to_str().unwrap();
+    let second_path = directory.path().join("second.wav");
+    write_regions_wav(&second_path, &[(PROMOTION_TRACK_MS, true)]);
+    let second = second_path.to_str().unwrap();
+    let watcher = trouble_on_secondary(Trouble::Watch);
+    let (events, saw_crossfading) = crossfade_over_when_hung(
+        &harness,
+        &watcher,
+        || {
+            player.play(item(first)).unwrap();
+            player.set_next(Some(PlaybackItem {
+                segment: None,
+                path: second,
+                gain_db: 6.0,
+            }));
+        },
+        |events| count(events, |event| matches!(event, PlayerEvent::AdvancedToNext)) > 0,
+    );
+    // Let the promotion's own events settle before counting them.
+    let mut events = events;
+    events.extend(harness.pump_for(Duration::from_millis(50)));
+    let advanced = count(&events, |event| {
+        matches!(event, PlayerEvent::AdvancedToNext)
     });
-
-    let main_context = gst::glib::MainContext::default();
-    let deadline = std::time::Instant::now() + Duration::from_secs(15);
-    let mut advanced = 0usize;
-    let mut finished = 0usize;
-    let mut stopped = 0usize;
-    let mut saw_crossfading = false;
-    while std::time::Instant::now() < deadline {
-        main_context.iteration(false);
-        if player.crossfading.load(Ordering::SeqCst) {
-            saw_crossfading = true;
-        }
-        while let Ok(event) = rx.try_recv() {
-            match event {
-                PlayerEvent::AdvancedToNext => advanced += 1,
-                PlayerEvent::TrackFinished => finished += 1,
-                PlayerEvent::StateChanged(PlaybackState::Stopped) => stopped += 1,
-                _ => {}
-            }
-        }
-        if advanced > 0 {
-            break;
-        }
-        std::thread::sleep(Duration::from_millis(10));
-    }
-    main_context.iteration(false);
-    while let Ok(event) = rx.try_recv() {
-        match event {
-            PlayerEvent::AdvancedToNext => advanced += 1,
-            PlayerEvent::TrackFinished => finished += 1,
-            PlayerEvent::StateChanged(PlaybackState::Stopped) => stopped += 1,
-            _ => {}
-        }
-    }
+    let finished = count(&events, |event| matches!(event, PlayerEvent::TrackFinished));
+    let stopped = count(&events, |event| {
+        matches!(event, PlayerEvent::StateChanged(PlaybackState::Stopped))
+    });
 
     assert!(saw_crossfading, "expected the second pipeline to start");
     assert_eq!(
@@ -84,7 +272,7 @@ fn play_20b_crossfade_promotion_carries_the_next_gain_from_the_first_sample() {
     assert!(
         current_uri
             .as_deref()
-            .is_some_and(|uri| uri.ends_with("blip.flac")),
+            .is_some_and(|uri| uri.ends_with("second.wav")),
         "the promoted pipeline should contain the second track"
     );
     let track_gain = playbin
@@ -110,9 +298,6 @@ fn play_20b_crossfade_promotion_carries_the_next_gain_from_the_first_sample() {
             .is_none(),
         "the incoming-pipeline slot must be empty after promotion"
     );
-
-    player.stop().unwrap();
-    std::env::remove_var(AUDIO_SINK_ENV_VAR);
 }
 
 mod cue {
@@ -122,12 +307,10 @@ mod cue {
 
     use super::super::segment_support::{count, cue_item, write_regions_wav, Harness};
     use super::*;
-    use crate::crossfade::CrossfadeEngine;
     use crate::gapless::QueuedTrack;
     use crate::player_pipeline::path_to_uri;
 
     const CROSSFADE_SECONDS: u8 = 1;
-    const HANG_GUARD: Duration = Duration::from_secs(20);
 
     fn finished(event: &PlayerEvent) -> bool {
         matches!(event, PlayerEvent::TrackFinished)
@@ -216,23 +399,24 @@ mod cue {
         assert_eq!(count(&events, advanced), 0);
     }
 
-    /// The fade the promotion tests run: two seconds gives the 500 ms
-    /// position ticker four chances to start it even on a loaded machine.
-    const PROMOTION_FADE_SECONDS: u8 = 2;
-
     /// Fades `first` into `second` and returns once the crossfade promoted
     /// the pipeline playing `second`.
     fn crossfade_into(harness: &Harness, first: &std::path::Path, second: &std::path::Path) {
         harness
             .player
             .set_transition(TrackTransition::Crossfade, PROMOTION_FADE_SECONDS);
-        harness.start(|| {
-            harness.player.play(item(first.to_str().unwrap())).unwrap();
-            harness
-                .player
-                .set_next(Some(item(second.to_str().unwrap())));
-        });
-        let events = harness.pump_until(HANG_GUARD, |events| count(events, advanced) > 0);
+        let watcher = super::trouble_on_secondary(super::Trouble::Watch);
+        let (events, _) = super::crossfade_over_when_hung(
+            harness,
+            &watcher,
+            || {
+                harness.player.play(item(first.to_str().unwrap())).unwrap();
+                harness
+                    .player
+                    .set_next(Some(item(second.to_str().unwrap())));
+            },
+            |events| count(events, advanced) > 0,
+        );
         assert_eq!(count(&events, advanced), 1, "the crossfade must promote");
         assert_eq!(count(&events, finished), 0);
     }
@@ -325,32 +509,70 @@ mod cue {
             segment: None,
         });
 
-        let player = &harness.player;
-        CrossfadeEngine {
-            playbin: player.playbin.clone(),
-            bus_watch: player.bus_watch.clone(),
-            on_event: player.on_event.clone(),
-            effects: player.effects.clone(),
-            next_uri: player.next_uri.clone(),
-            pending_gain: player.pending_gain.clone(),
-            handoff_pending: player.handoff_pending.clone(),
-            transition: player.transition.clone(),
-            crossfading: player.crossfading.clone(),
-            user_volume: player.user_volume.clone(),
-            generation: player.fade_generation.clone(),
-            incoming: player.incoming.clone(),
-            spectrum_enabled: player.spectrum_enabled.clone(),
-            cava_stream_generation: player.cava_stream_generation.clone(),
-            stream_generation: player.stream_generation.clone(),
-            segments: player.segments.clone(),
-        }
-        .maybe_start(1_500, 2_000);
+        engine_of(&harness.player).maybe_start(1_500, 2_000);
 
+        let player = &harness.player;
         assert!(!player.crossfading.load(Ordering::SeqCst));
         assert!(player
             .next_uri
             .lock()
             .unwrap_or_else(PoisonError::into_inner)
             .is_some());
+    }
+}
+
+mod hung_in_ready_rule {
+    use super::*;
+
+    fn gave_up(current: gst::State, pending: gst::State, waited: Duration) -> test_seam::GaveUp {
+        test_seam::GaveUp {
+            current,
+            pending,
+            waited,
+        }
+    }
+
+    fn hung(waited: Duration) -> Option<test_seam::GaveUp> {
+        Some(gave_up(gst::State::Ready, gst::State::Playing, waited))
+    }
+
+    #[test]
+    fn a_secondary_that_never_left_ready_and_got_no_buffer_hung_on_its_own() {
+        assert!(hung_in_ready(0, hung(Duration::from_millis(3_400))));
+        assert!(hung_in_ready(0, hung(HEALTHY_PREROLL)));
+    }
+
+    #[test]
+    fn a_secondary_that_was_not_given_time_was_given_up_on_too_early() {
+        assert!(!hung_in_ready(0, hung(Duration::from_millis(100))));
+        assert!(!hung_in_ready(
+            0,
+            hung(HEALTHY_PREROLL - Duration::from_millis(1))
+        ));
+    }
+
+    #[test]
+    fn a_secondary_that_had_left_ready_was_given_up_on_too_early() {
+        for (current, pending) in [
+            (gst::State::Paused, gst::State::Playing),
+            (gst::State::Paused, gst::State::VoidPending),
+            (gst::State::Playing, gst::State::VoidPending),
+        ] {
+            let long = Duration::from_secs(3);
+            assert!(
+                !hung_in_ready(0, Some(gave_up(current, pending, long))),
+                "{current:?}, {pending:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn a_secondary_that_got_a_buffer_was_not_hung() {
+        assert!(!hung_in_ready(1, hung(Duration::from_secs(3))));
+    }
+
+    #[test]
+    fn a_fade_that_did_not_record_its_secondary_is_not_retried() {
+        assert!(!hung_in_ready(0, None));
     }
 }

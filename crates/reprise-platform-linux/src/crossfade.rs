@@ -52,6 +52,30 @@ const RAMP_STEP: Duration = Duration::from_millis(50);
 
 const MS_PER_SECOND: u64 = 1000;
 
+/// How long a crossfade waits for its incoming track to preroll before it
+/// gives way to a plain track change. The counterpart of
+/// `start_watchdog::START_DEADLINE` for the secondary, which no watchdog
+/// watches: a fade out over a pipeline that never started is silence, and
+/// promoting it leaves the listener with nothing until they skip.
+const PREROLL_BOUND: Duration = Duration::from_secs(4);
+
+/// How long before the outgoing track ends the wait for the incoming one must
+/// give up. The outgoing track's bus watch drops its end-of-stream while
+/// `crossfading` is set, so a fade abandoned only at the very end could lose
+/// the `TrackFinished` the plain track change depends on. This covers the
+/// position ticker's staleness and the main context's dispatch delay.
+const OUTGOING_END_MARGIN: Duration = Duration::from_millis(200);
+
+/// The shortest ramp worth running. A ramp that is only a few steps long is a
+/// hard cut: the outgoing track drops from full to silent while the incoming
+/// one jumps to full, a fraction of a second before the outgoing one ends
+/// anyway. A plain track change sounds cleaner. 250 ms is five [`RAMP_STEP`]s,
+/// the least that still has gains between the two ends; it is a fixed floor
+/// rather than a share of the fade, because a long fade that the wait cut down
+/// to a couple of seconds is still a fade. A fade the user asked to be shorter
+/// than this keeps its own length.
+const MIN_RAMP: Duration = Duration::from_millis(250);
+
 /// Equal-power-Überblendungskurve. Liefert `(out, in)` für den bisher
 /// verstrichenen Rampenanteil `t = elapsed_ms / total_ms`:
 ///
@@ -73,6 +97,23 @@ pub(crate) fn crossfade_gains(elapsed_ms: u64, total_ms: u64) -> (f64, f64) {
     let t = (elapsed_ms.min(total_ms) as f64) / (total_ms as f64);
     let angle = t * FRAC_PI_2;
     (angle.cos(), angle.sin())
+}
+
+/// How long the ramp runs once the incoming track has prerolled: the fade the
+/// user asked for, cut short to the time that is left until
+/// [`OUTGOING_END_MARGIN`] before the outgoing track ends. The ramp starts only
+/// after the wait for the preroll, so without the cut a slow preroll leaves the
+/// outgoing track ending, at full-ish volume, while the incoming one is still
+/// ramping up. `None` when what is left is shorter than [`MIN_RAMP`] (or than
+/// the whole fade, if that is shorter still): the fade then gives way.
+fn ramp_length_ms(total_ms: u64, outgoing_ends_at: Instant, now: Instant) -> Option<u64> {
+    let ramp_ends_at = outgoing_ends_at
+        .checked_sub(OUTGOING_END_MARGIN)
+        .unwrap_or(outgoing_ends_at);
+    let left = ramp_ends_at.saturating_duration_since(now);
+    let ramp_ms = (left.as_millis() as u64).min(total_ms);
+    let floor_ms = (MIN_RAMP.as_millis() as u64).min(total_ms);
+    (ramp_ms >= floor_ms && ramp_ms > 0).then_some(ramp_ms)
 }
 
 /// Bündel geteilter Zustandshandles, das der Position-Ticker (zum Starten einer
@@ -112,6 +153,76 @@ pub(crate) struct CrossfadeEngine {
     /// The CUE cut state (see `player/segment.rs`), handed to every pipeline
     /// built here so a promoted secondary enforces a later track's end too.
     pub(crate) segments: SegmentHandle,
+}
+
+/// How the wait for the secondary's preroll ended.
+enum Preroll {
+    Done,
+    /// A manual jump bumped `generation`; it has done the cleaning up.
+    Superseded,
+    GaveUp(&'static str),
+}
+
+/// Takes the outgoing pipeline's end-of-stream for the length of a fade.
+///
+/// While `crossfading` is set the pipeline's bus watch drops that message, so
+/// a track that really ends before the fade gives way (a duration that was an
+/// estimate, say) would never be reported. This sync handler sees the message
+/// first, keeps it from the queue, and remembers it, and [`Self::release`]
+/// says afterwards whether there was one. That is the only way to be exact:
+/// reading the position cannot tell a dropped message from one still queued,
+/// and re-reporting after the guard went down could report it twice.
+///
+/// The handler stays on the bus after the fade, as a pass-through: it cannot be
+/// told apart from a newer fade's handler on the same bus, which replaces it
+/// (`play_25_a_second_crossfade_on_the_same_pipeline_*` runs two fades on one
+/// pipeline to prove that GStreamer lets it).
+struct EosCatch {
+    state: Arc<Mutex<EosCatchState>>,
+}
+
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum EosCatchState {
+    Watching,
+    Caught,
+    Released,
+}
+
+impl EosCatch {
+    /// Starts catching on `bus`. The catch ends by itself once `generation`
+    /// moves on from `my_generation`: a manual jump starts a new track whose
+    /// end-of-stream belongs to the bus watch.
+    fn install(bus: Option<gst::Bus>, generation: Arc<AtomicU64>, my_generation: u64) -> Self {
+        let state = Arc::new(Mutex::new(EosCatchState::Watching));
+        if let Some(bus) = bus {
+            let handler_state = state.clone();
+            bus.set_sync_handler(move |_, message| {
+                if message.type_() != gst::MessageType::Eos
+                    || generation.load(Ordering::SeqCst) != my_generation
+                {
+                    return gst::BusSyncReply::Pass;
+                }
+                let mut state = handler_state.lock().unwrap_or_else(PoisonError::into_inner);
+                match *state {
+                    EosCatchState::Released => gst::BusSyncReply::Pass,
+                    EosCatchState::Watching | EosCatchState::Caught => {
+                        *state = EosCatchState::Caught;
+                        gst::BusSyncReply::Drop
+                    }
+                }
+            });
+        }
+        Self { state }
+    }
+
+    /// Stops catching and says whether an end-of-stream was caught. Call it
+    /// after the guard went down: whatever arrives later reaches the watch.
+    fn release(&self) -> bool {
+        let mut state = self.state.lock().unwrap_or_else(PoisonError::into_inner);
+        let caught = *state == EosCatchState::Caught;
+        *state = EosCatchState::Released;
+        caught
+    }
 }
 
 impl CrossfadeEngine {
@@ -157,17 +268,41 @@ impl CrossfadeEngine {
         self.crossfading.store(true, Ordering::SeqCst);
         let my_generation = self.generation.fetch_add(1, Ordering::SeqCst) + 1;
         let total_ms = (seconds as u64) * MS_PER_SECOND;
+        let outgoing_ends_at =
+            Instant::now() + Duration::from_millis((duration_ms - position_ms).max(0) as u64);
         let engine = self.clone();
-        std::thread::spawn(move || engine.run(&queued, my_generation, total_ms));
+        std::thread::spawn(move || {
+            engine.run(&queued, my_generation, total_ms, outgoing_ends_at);
+        });
     }
 
     /// Rampen-Thread-Rumpf: baut die Sekundär-Pipeline, spielt sie leise an,
-    /// blendet beide Volumes invers über und befördert am Ende. Bricht bei jedem
-    /// Schritt ab, sobald `generation` nicht mehr `my_generation` ist.
-    fn run(self, queued: &QueuedTrack, my_generation: u64, total_ms: u64) {
+    /// wartet auf ihr Preroll, blendet beide Volumes invers über und befördert am
+    /// Ende. Bricht bei jedem Schritt ab, sobald `generation` nicht mehr
+    /// `my_generation` ist. Prerollt die Sekundär nicht rechtzeitig (siehe
+    /// [`Self::await_preroll`]), wird die Blende aufgegeben: die ausklingende
+    /// Pipeline spielt mit vollem Volume zu Ende, der nächste Titel startet
+    /// über den gewöhnlichen Start.
+    fn run(
+        self,
+        queued: &QueuedTrack,
+        my_generation: u64,
+        total_ms: u64,
+        outgoing_ends_at: Instant,
+    ) {
         if self.generation.load(Ordering::SeqCst) != my_generation {
             return; // schon abgebrochen, bevor der Thread loslief
         }
+        // From here on the outgoing track's end-of-stream is ours: the bus
+        // watch would drop it for as long as the guard is up.
+        let outgoing_end = EosCatch::install(
+            self.playbin
+                .lock()
+                .unwrap_or_else(PoisonError::into_inner)
+                .bus(),
+            self.generation.clone(),
+            my_generation,
+        );
         let effects = self
             .effects
             .lock()
@@ -185,16 +320,17 @@ impl CrossfadeEngine {
             Ok(element) => element,
             Err(error) => {
                 tracing::warn!(%error, "crossfade: could not build secondary pipeline; aborting fade");
-                self.crossfading.store(false, Ordering::SeqCst);
+                self.give_way(None, &outgoing_end, my_generation);
                 return;
             }
         };
+        #[cfg(test)]
+        test_seam::secondary_built(&secondary);
         // A consumer from the first buffer on, until promotion installs the
         // real CAVA processor — see `discard_cava_samples`.
         if let Err(error) = discard_cava_samples(&secondary) {
             tracing::warn!(%error, "crossfade: could not give the secondary's CAVA sink a consumer; aborting fade");
-            let _ = secondary.set_state(gst::State::Null);
-            self.crossfading.store(false, Ordering::SeqCst);
+            self.give_way(Some(&secondary), &outgoing_end, my_generation);
             return;
         }
         if let Err(error) = crate::player_effects::set_playbin_spectrum_messages(
@@ -205,8 +341,7 @@ impl CrossfadeEngine {
         }
         if let Err(error) = configure_download_buffering(&secondary, &queued.uri, false) {
             tracing::warn!(%error, "crossfade: could not configure download buffering");
-            let _ = secondary.set_state(gst::State::Null);
-            self.crossfading.store(false, Ordering::SeqCst);
+            self.give_way(Some(&secondary), &outgoing_end, my_generation);
             return;
         }
         secondary.set_property("uri", &queued.uri);
@@ -214,19 +349,50 @@ impl CrossfadeEngine {
             crate::player_effects::set_playbin_track_gain(&secondary, queued.gain_db)
         {
             tracing::warn!(%error, "crossfade: could not apply incoming track gain");
-            let _ = secondary.set_state(gst::State::Null);
-            self.crossfading.store(false, Ordering::SeqCst);
+            self.give_way(Some(&secondary), &outgoing_end, my_generation);
             return;
         }
         secondary.set_property("volume", 0.0_f64);
+        // Published before it plays, so an abort during the state change
+        // already finds it.
+        *self.incoming.lock().unwrap_or_else(PoisonError::into_inner) = Some(secondary.clone());
+        #[cfg(test)]
+        let playing_since = Instant::now();
         if let Err(error) = secondary.set_state(gst::State::Playing) {
             tracing::warn!(%error, "crossfade: secondary pipeline refused Playing; aborting fade");
-            let _ = secondary.set_state(gst::State::Null);
-            self.crossfading.store(false, Ordering::SeqCst);
+            self.give_way(Some(&secondary), &outgoing_end, my_generation);
             return;
         }
-        *self.incoming.lock().unwrap_or_else(PoisonError::into_inner) = Some(secondary.clone());
+        match self.await_preroll(&secondary, my_generation, outgoing_ends_at) {
+            Preroll::Done => {}
+            Preroll::Superseded => {
+                let _ = secondary.set_state(gst::State::Null);
+                return;
+            }
+            Preroll::GaveUp(reason) => {
+                tracing::warn!(
+                    reason,
+                    uri = %queued.uri,
+                    "crossfade: incoming track did not start; giving way to a plain track change"
+                );
+                #[cfg(test)]
+                test_seam::gave_up(&secondary, playing_since.elapsed());
+                self.give_way(Some(&secondary), &outgoing_end, my_generation);
+                return;
+            }
+        }
 
+        // The ramp was meant to end with the outgoing track, and the wait ate
+        // into the time that is left: ramp over what remains, never longer
+        // than the fade the user asked for.
+        let Some(ramp_ms) = ramp_length_ms(total_ms, outgoing_ends_at, Instant::now()) else {
+            tracing::warn!(
+                uri = %queued.uri,
+                "crossfade: too little of the outgoing track is left to fade; giving way to a plain track change"
+            );
+            self.give_way(Some(&secondary), &outgoing_end, my_generation);
+            return;
+        };
         let start = Instant::now();
         loop {
             if self.generation.load(Ordering::SeqCst) != my_generation {
@@ -236,7 +402,7 @@ impl CrossfadeEngine {
                 return;
             }
             let elapsed = start.elapsed().as_millis() as u64;
-            let (out_gain, in_gain) = crossfade_gains(elapsed, total_ms);
+            let (out_gain, in_gain) = crossfade_gains(elapsed, ramp_ms);
             let user_volume = *self
                 .user_volume
                 .lock()
@@ -246,18 +412,115 @@ impl CrossfadeEngine {
                 primary.set_property("volume", out_gain * user_volume);
             }
             secondary.set_property("volume", in_gain * user_volume);
-            if elapsed >= total_ms {
+            if elapsed >= ramp_ms {
                 break;
             }
             std::thread::sleep(RAMP_STEP);
         }
-        self.promote(&secondary, my_generation);
+        self.promote(&secondary, &outgoing_end, my_generation);
+    }
+
+    /// Waits on the crossfade thread, never the main context, until the
+    /// secondary has prerolled. The wait is cut into [`RAMP_STEP`] slices so a
+    /// manual jump (a changed `generation`) stands the fade down within one
+    /// step. It ends at the earlier of [`PREROLL_BOUND`] and
+    /// [`OUTGOING_END_MARGIN`] before `outgoing_ends_at`.
+    fn await_preroll(
+        &self,
+        secondary: &gst::Element,
+        my_generation: u64,
+        outgoing_ends_at: Instant,
+    ) -> Preroll {
+        let give_up_at = (Instant::now() + PREROLL_BOUND).min(
+            outgoing_ends_at
+                .checked_sub(OUTGOING_END_MARGIN)
+                .unwrap_or_else(Instant::now),
+        );
+        loop {
+            if self.generation.load(Ordering::SeqCst) != my_generation {
+                return Preroll::Superseded;
+            }
+            let slice = give_up_at
+                .saturating_duration_since(Instant::now())
+                .min(RAMP_STEP);
+            let (result, _, _) =
+                secondary.state(gst::ClockTime::from_nseconds(slice.as_nanos() as u64));
+            match result {
+                Ok(gst::StateChangeSuccess::Success | gst::StateChangeSuccess::NoPreroll) => {
+                    return Preroll::Done;
+                }
+                Ok(gst::StateChangeSuccess::Async) => {}
+                Err(_) => return Preroll::GaveUp("the incoming pipeline failed to start"),
+            }
+            if Instant::now() >= give_up_at {
+                return Preroll::GaveUp("the incoming pipeline did not preroll in time");
+            }
+        }
+    }
+
+    /// Gives up the fade: the secondary, if there is one, goes to `Null` and
+    /// leaves the slot, and the guard is released so the outgoing track's
+    /// end-of-stream is reported again. The ramp never ran, so the outgoing
+    /// track gets back its full volume, or the one the user chose meanwhile.
+    /// An end-of-stream the outgoing track reached while the fade waited is
+    /// reported here, once, because the guard made the bus watch drop it. A
+    /// fade that a manual jump already superseded is left alone: the jump
+    /// cleaned up, and its guard may belong to a newer fade by now.
+    fn give_way(
+        &self,
+        secondary: Option<&gst::Element>,
+        outgoing_end: &EosCatch,
+        my_generation: u64,
+    ) {
+        if let Some(secondary) = secondary {
+            {
+                let mut slot = self.incoming.lock().unwrap_or_else(PoisonError::into_inner);
+                if slot.as_ref() == Some(secondary) {
+                    *slot = None;
+                }
+            }
+            let _ = secondary.set_state(gst::State::Null);
+        }
+        if self.generation.load(Ordering::SeqCst) != my_generation {
+            return;
+        }
+        // Order matters. With the guard down first, an end-of-stream that
+        // arrives from here on is either caught (and reported below) or
+        // reaches the bus watch, which reports it itself.
+        self.crossfading.store(false, Ordering::SeqCst);
+        // `set_volume` only stores its target while the guard is up, and the
+        // ramp that would have applied it never ran. A `set_volume` after the
+        // guard went down applies itself; one before it is read here.
+        self.restore_user_volume();
+        #[cfg(test)]
+        test_seam::before_release();
+        // A `play()` that landed after the check above started a track of its
+        // own; the end this fade caught belongs to the one it replaced.
+        let caught = outgoing_end.release();
+        if caught && self.generation.load(Ordering::SeqCst) == my_generation {
+            tracing::debug!("crossfade: the outgoing track ended during the wait; reporting it");
+            self.segments.complete_pending_handoff();
+            (self.on_event)(PlayerEvent::TrackFinished);
+        }
+    }
+
+    /// Applies the user's volume to the primary, as `Player::abort_crossfade`
+    /// does after it cancels a fade.
+    fn restore_user_volume(&self) {
+        let user_volume = *self
+            .user_volume
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner);
+        self.playbin
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .set_property("volume", user_volume);
     }
 
     /// Befördert die fertige Sekundär-Pipeline zur neuen Primär-`playbin`:
     /// frischen Bus-Watch anhängen, unter dem `playbin`-Lock atomar tauschen,
     /// alte Pipeline auf `Null`, Ziel-Volume wiederherstellen, `AdvancedToNext`.
-    fn promote(self, secondary: &gst::Element, my_generation: u64) {
+    fn promote(self, secondary: &gst::Element, outgoing_end: &EosCatch, my_generation: u64) {
         // Vor dem Anhängen des Watches etwaige *veraltete* Bus-Nachrichten
         // verwerfen (z. B. ein EOS, das ein sehr kurzer Nachfolger schon während
         // der Blende gepostet hat). In der Praxis (echte Songs) steht hier
@@ -279,8 +542,9 @@ impl CrossfadeEngine {
             Ok(watch) => watch,
             Err(error) => {
                 tracing::warn!(%error, "crossfade: could not attach bus watch to promoted pipeline");
-                let _ = secondary.set_state(gst::State::Null);
-                self.crossfading.store(false, Ordering::SeqCst);
+                // The outgoing track plays on: it needs its end-of-stream
+                // reported, and its volume back.
+                self.give_way(Some(secondary), outgoing_end, my_generation);
                 return;
             }
         };
@@ -330,8 +594,66 @@ impl CrossfadeEngine {
 }
 
 #[cfg(test)]
+pub(crate) mod test_seam;
+
+#[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn the_ramp_is_the_requested_fade_when_there_is_time_for_it() {
+        let now = Instant::now();
+        let ends_at = now + Duration::from_secs(10);
+        assert_eq!(ramp_length_ms(4_000, ends_at, now), Some(4_000));
+    }
+
+    #[test]
+    fn the_ramp_ends_before_the_outgoing_track_does() {
+        let now = Instant::now();
+        let ends_at = now + Duration::from_secs(3);
+        let expected = 3_000 - OUTGOING_END_MARGIN.as_millis() as u64;
+        assert_eq!(ramp_length_ms(4_000, ends_at, now), Some(expected));
+    }
+
+    #[test]
+    fn a_ramp_with_no_time_left_is_refused() {
+        let now = Instant::now();
+        assert_eq!(ramp_length_ms(4_000, now, now), None);
+        assert_eq!(
+            ramp_length_ms(4_000, now, now + Duration::from_secs(1)),
+            None
+        );
+    }
+
+    /// The case that made the minimum necessary: a one-second fade whose
+    /// incoming track prerolled 380 ms into 600 ms of outgoing track leaves a
+    /// 20 ms ramp, which is a hard cut with extra steps.
+    #[test]
+    fn a_ramp_that_would_be_a_hard_cut_is_refused() {
+        let now = Instant::now();
+        let ends_at = now + Duration::from_millis(220);
+        assert_eq!(ramp_length_ms(1_000, ends_at, now), None);
+    }
+
+    #[test]
+    fn a_ramp_just_below_the_minimum_is_refused_and_one_at_it_is_kept() {
+        let now = Instant::now();
+        let margin = OUTGOING_END_MARGIN;
+        let below = now + margin + MIN_RAMP - Duration::from_millis(1);
+        let at = now + margin + MIN_RAMP;
+        assert_eq!(ramp_length_ms(4_000, below, now), None);
+        assert_eq!(
+            ramp_length_ms(4_000, at, now),
+            Some(MIN_RAMP.as_millis() as u64)
+        );
+    }
+
+    #[test]
+    fn a_fade_shorter_than_the_minimum_is_not_refused_for_being_short() {
+        let now = Instant::now();
+        let ends_at = now + Duration::from_secs(10);
+        assert_eq!(ramp_length_ms(100, ends_at, now), Some(100));
+    }
 
     #[test]
     fn gains_at_start_are_full_out_silent_in() {
