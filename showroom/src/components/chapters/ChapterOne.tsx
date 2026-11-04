@@ -21,32 +21,32 @@ export function ChapterOne() {
         </h2>
 
         <p className="chapter__intro" data-reveal>
-          I separated the music library and application logic from platform code. GNOME and Android
-          keep their native interfaces; the CLI and MCP server use the same core without a screen.
-          Adding a platform builds on existing behaviour.
+          The library and all application logic live in one Rust core. GNOME and Android stay fully
+          native; the CLI and MCP server run the same core without a screen.
         </p>
 
         <CoreArchitecture />
 
-        <p className="case-result">
-          The boundary is enforced in the build: the core cannot depend on a UI framework.{' '}
-          <a href="#ch-04">Explore CLI and MCP</a>.
-        </p>
-        <p className="case-result">
-          An Android album with no cover of its own gets one from MusicBrainz and the Cover Art
-          Archive, through the same download code the desktop uses. It happens only once online
-          sources are switched on, and the cover stays in the app&apos;s cache.
-        </p>
-        <p className="case-result">
-          An album ripped as one audio file with a CUE sheet is listed as its tracks. The core
-          splits the file once, so the desktop and the phone each play a track only from its own
-          start to its own end, and each track gets its own waveform and loudness.
-        </p>
-        <p className="case-result">
-          Loudness is measured in that same shared analysis pass (EBU R128). The desktop evens
-          tracks out to the ReplayGain reference of -18 LUFS; the phone aims at -14 LUFS, because at
-          -18 navigation prompts drowned the music out in the car.
-        </p>
+        <h3 className="chapter__subhead">Written once, shipped twice</h3>
+        <ul className="point-list">
+          <li>
+            <strong className="point-list__lead">CUE albums</strong> split once in the core, then
+            play track by track on desktop and phone.
+          </li>
+          <li>
+            <strong className="point-list__lead">Loudness</strong> measured once (EBU R128): −18
+            LUFS at the desk, −14 LUFS on the phone, so navigation prompts no longer drown the music
+            in the car.
+          </li>
+          <li>
+            <strong className="point-list__lead">Missing covers</strong> fetched by the same code on
+            both, and only once online sources are on.
+          </li>
+          <li>
+            <strong className="point-list__lead">Scripts and agents</strong> —{' '}
+            <a href="#ch-04">CLI and MCP</a> on the same core.
+          </li>
+        </ul>
         <details className="evidence-details">
           <summary>Code breakdown</summary>
           <FigureGrid figures={HEADLINE_FIGURES} variant="headline" />

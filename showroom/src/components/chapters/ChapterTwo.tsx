@@ -269,9 +269,11 @@ export function ChapterTwo() {
         </h2>
 
         <p className="chapter__intro" data-reveal>
-          I use AI agents to implement focused changes, with architecture rules and automated checks
-          governing what can merge. I also test the tests: a useful check must detect the defect it
-          claims to prevent.
+          Built with AI assistance: I direct the product, review changes and remain responsible for
+          the result. The gates and tests are public.
+        </p>
+        <p className="chapter__intro" data-reveal>
+          Even the tests are tested: each check must catch the defect it claims to prevent.
         </p>
 
         <details className="evidence-details">

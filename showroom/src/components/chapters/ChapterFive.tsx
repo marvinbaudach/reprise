@@ -20,8 +20,7 @@ export function ChapterFive() {
           <p>Performance</p>
           <h2 id="ch-05-heading">A faster library. A measured trade-off.</h2>
           <p>
-            A slow title-list query led me to rebuild its database index. The measurements below
-            show the before and after, alongside the extra storage it needs.
+            One slow query, one rebuilt index — the before, the after, and the storage it costs.
           </p>
         </header>
 

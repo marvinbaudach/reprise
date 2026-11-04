@@ -155,10 +155,26 @@ body {
   font-size: 1rem;
   margin-top: 0;
 }
-.case-result {
-  max-width: 72ch;
-  margin-top: 1.5rem;
+.point-list {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 280px), 1fr));
+  gap: var(--gap-line) var(--gap-block);
+  max-width: var(--frame-max);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.point-list > li {
+  padding-left: 0.875rem;
+  border-left: 2px solid var(--surface-line);
+  color: var(--text-muted);
   font-size: 0.95rem;
+  line-height: 1.55;
+  text-wrap: pretty;
+}
+.point-list__lead {
+  color: var(--text-strong);
+  font-weight: 560;
 }
 .evidence-details {
   margin-top: 1.75rem;
@@ -291,4 +307,7 @@ body {
   .chapter-five {
     padding-block: 2.5rem;
   }
+}
+.chapter__intro + .chapter__intro {
+  margin-top: 0.75rem;
 }

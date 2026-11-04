@@ -89,6 +89,23 @@
   text-wrap: pretty;
 }
 
+.skill-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--gap-tight);
+  margin: 1.25rem 0 0;
+  padding: 0;
+  list-style: none;
+}
+
+.skill-list > li {
+  padding: 0.3rem 0.7rem;
+  border: 1px solid var(--surface-line);
+  border-radius: 999px;
+  color: var(--text-strong);
+  font-size: 0.8rem;
+}
+
 .availability__actions {
   display: flex;
   flex-direction: column;

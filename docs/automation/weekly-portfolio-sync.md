@@ -29,6 +29,11 @@ Refresh the screenshots as part of every run, not only the prose. Compare every 
 ones that no longer match what ships, and add a shot whenever a shipped UI highlight has no
 picture yet. The showroom should show the current highlights, not the state of an earlier week.
 
+The showroom page is a pitch, not a changelog. A newly landed feature enters it as one line in an
+existing feature list, never as a new paragraph, and only when it is worth more than the line it
+displaces; depth goes inside a `<details>` disclosure. `showroom/tests/portfolio-reading.test.mjs`
+enforces a word budget for the prose visible without a disclosure and a length cap per paragraph.
+
 Treat the player as the fastest-ageing screenshot: its layout, visualizer, and controls keep
 changing, so assume a committed player shot is stale until it has been checked against the current
 build in that run. A wrong player screenshot misrepresents the product more than a missing one —

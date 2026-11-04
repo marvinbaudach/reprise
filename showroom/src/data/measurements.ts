@@ -38,16 +38,16 @@ export const BASELINE = {
    * byte — and it sits on `main`. `permalinks-resolve.test.mjs` fails the build
    * on a missing path, which is the only reason this stays true.
    *
-   * It follows the promotions rather than standing still. `91ecb35fc5` is the
-   * `main` head of 2026-11-01, the last promoted commit before the tree the
-   * current figures were counted on (`dev` at `f6a0189014`, three commits
+   * It follows the promotions rather than standing still. `a8d91469f8` is the
+   * `main` head of 2026-11-03, the last promoted commit before the tree the
+   * current figures were counted on (`dev` at `b2c6973d6a`, five commits
    * ahead). A pin left behind the figures beside it sends a reader who clicks a
    * source link out of the tree the counts were taken from. Moving it is safe
    * exactly while it is a commit on `main` — a tag would read better and
    * resolve worse, because the page is rebuilt between releases and the pin
    * has to carry the paths that build cites.
    */
-  commit: '91ecb35fc5',
+  commit: 'a8d91469f8',
   repository: 'https://github.com/marvinbaudach/reprise',
 } as const;
 
