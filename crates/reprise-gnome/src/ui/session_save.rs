@@ -56,7 +56,7 @@ impl SessionSaver {
         let state = self.assemble(live);
         let result = session::save(&self.conn, &state);
         match &result {
-            Ok(()) => tracing::info!(?state, "application session saved"),
+            Ok(()) => tracing::info!(session = ?state, "application session saved"),
             Err(error) => tracing::error!(%error, "could not save application session"),
         }
         // A window close and a termination request both end here: a clean exit.

@@ -326,7 +326,7 @@ fn parse_entries(
             Err(UnreadableLine::ForeignVersion(version)) => {
                 tracing::warn!(
                     line = line_number,
-                    %version,
+                    foreign_version = %version,
                     "refused an Android play journal written in an unknown format",
                 );
                 return Err(io::Error::new(

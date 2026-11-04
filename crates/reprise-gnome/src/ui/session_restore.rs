@@ -26,7 +26,7 @@ pub(super) fn load(db: &Db) -> SessionState {
     match std::env::var(SEED_ENV) {
         Ok(fixture) => match seeded_state(&fixture) {
             Some(state) => {
-                tracing::info!(fixture, ?state, "session smoke fixture loaded");
+                tracing::info!(fixture, session = ?state, "session smoke fixture loaded");
                 state
             }
             None => {
@@ -87,7 +87,7 @@ pub(super) fn restore_runtime(player: Option<&Rc<PlayerController>>, state: &Ses
             player.and_then(|player| player.pending_random_start_track_id());
         let runtime_current_up_next = player.map(|player| player.session_up_next_snapshot().1);
         tracing::info!(
-            ?state,
+            session = ?state,
             ?pending_random_start_track_id,
             ?runtime_current_up_next,
             playback = playback.as_str(),

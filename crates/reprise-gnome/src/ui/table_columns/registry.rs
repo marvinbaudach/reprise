@@ -405,7 +405,7 @@ fn parse_editor_key<K: ColumnKey>(id: &str, operation: &str, role: &str) -> Opti
     let key = K::parse(id);
     if key.is_none() {
         tracing::warn!(
-            operation,
+            editor_operation = operation,
             role,
             column_id = id,
             column_type = std::any::type_name::<K>(),

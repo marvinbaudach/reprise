@@ -749,7 +749,7 @@ impl MprisPlayer {
             self.dispatch(command);
         } else {
             tracing::debug!(
-                requested = track_id.as_str(),
+                requested_object_path = track_id.as_str(),
                 "MPRIS SetPosition: media is not seekable or trackid is stale; ignoring"
             );
         }
