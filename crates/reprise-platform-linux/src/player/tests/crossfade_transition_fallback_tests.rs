@@ -202,6 +202,10 @@ fn play_25_a_crossfade_whose_incoming_track_prerolls_slowly_still_fades() {
 /// track.
 const VOLUME_DURING_WAIT: f64 = 0.4;
 
+/// How long the volume may trail the guard before the test calls it lost. The
+/// restore is a single property write after the guard goes down.
+const VOLUME_SETTLE: Duration = Duration::from_secs(5);
+
 /// `set_volume` only stores the target while a fade runs, because the ramp
 /// applies it. A fade that gave way never ran the ramp, so giving way must
 /// apply the stored volume to the outgoing track itself.
@@ -237,6 +241,12 @@ fn play_25_a_crossfade_that_gives_way_applies_the_volume_set_while_it_waited() {
         "the volume was never changed during the wait"
     );
     assert_eq!(count(&events, advanced), 0);
+    // `give_way` clears the guard before it restores the volume, and the pump
+    // stops at the guard: the restore may be a moment behind.
+    let deadline = Instant::now() + VOLUME_SETTLE;
+    while (primary_volume(player) - VOLUME_DURING_WAIT).abs() >= 1e-6 && Instant::now() < deadline {
+        std::thread::sleep(Duration::from_millis(10));
+    }
     assert!(
         (primary_volume(player) - VOLUME_DURING_WAIT).abs() < 1e-6,
         "the outgoing track kept the old volume: {}",
