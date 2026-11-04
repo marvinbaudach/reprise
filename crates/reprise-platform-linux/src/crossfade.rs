@@ -492,7 +492,12 @@ impl CrossfadeEngine {
         // ramp that would have applied it never ran. A `set_volume` after the
         // guard went down applies itself; one before it is read here.
         self.restore_user_volume();
-        if outgoing_end.release() {
+        #[cfg(test)]
+        test_seam::before_release();
+        // A `play()` that landed after the check above started a track of its
+        // own; the end this fade caught belongs to the one it replaced.
+        let caught = outgoing_end.release();
+        if caught && self.generation.load(Ordering::SeqCst) == my_generation {
             tracing::debug!("crossfade: the outgoing track ended during the wait; reporting it");
             self.segments.complete_pending_handoff();
             (self.on_event)(PlayerEvent::TrackFinished);

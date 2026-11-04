@@ -354,6 +354,43 @@ fn play_25_a_crossfade_that_gives_way_after_the_outgoing_track_ended_still_finis
     assert!(!harness.player.crossfading.load(Ordering::SeqCst));
 }
 
+/// A manual `play()` bumps the generation. If it lands after a fade that gives
+/// way has checked the generation, the fade must not report the end of the track
+/// that `play()` just replaced. The hook is that `play()`, at the one moment
+/// where it can no longer be seen by the check.
+#[test]
+fn play_25_a_crossfade_that_gives_way_does_not_report_a_track_a_play_replaced() {
+    let harness = Harness::new();
+    let player = &harness.player;
+    let directory = tempfile::tempdir().unwrap();
+    let first = tone(&directory, "first.wav", SHORT_TRACK_MS);
+    let second = tone(&directory, "second.wav", 3_000);
+    let trouble = trouble_on_secondary(Trouble::Hang);
+    let generation = engine_of(player).generation;
+    let _play_lands = crate::crossfade::test_seam::on_before_release(Arc::new(move || {
+        generation.fetch_add(1, Ordering::SeqCst);
+    }));
+
+    harness.start(|| {
+        player.play(item(&first)).unwrap();
+    });
+    player.set_next(Some(item(&second)));
+    player.set_transition(TrackTransition::Crossfade, 4);
+    engine_of(player).maybe_start(0, OVERSTATED_DURATION_MS);
+    let mut events = harness.pump_until(Duration::from_secs(10), |events| {
+        count(events, finished) > 0 || !player.crossfading.load(Ordering::SeqCst)
+    });
+    events.extend(harness.pump_for(Duration::from_secs(1)));
+
+    assert_eq!(trouble.installed(), 1, "the secondary was not hooked");
+    assert!(!player.crossfading.load(Ordering::SeqCst));
+    assert_eq!(
+        count(&events, finished),
+        0,
+        "the fade reported the end of a track that a play had replaced: {events:?}"
+    );
+}
+
 /// The catch on the outgoing pipeline's bus belongs to one fade. The next fade
 /// on the same pipeline (the track change after a fade that gave way plays on
 /// it) must catch its own.

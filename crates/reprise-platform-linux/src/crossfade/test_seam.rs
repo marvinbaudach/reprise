@@ -23,6 +23,39 @@ pub(crate) struct GaveUp {
 
 static GAVE_UP: Mutex<Option<GaveUp>> = Mutex::new(None);
 
+static BEFORE_RELEASE: Mutex<Option<Arc<dyn Fn() + Send + Sync>>> = Mutex::new(None);
+
+/// Removes the before-release hook again when dropped, panic or not.
+pub(crate) struct ReleaseHookGuard;
+
+impl Drop for ReleaseHookGuard {
+    fn drop(&mut self) {
+        *BEFORE_RELEASE
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner) = None;
+    }
+}
+
+/// Runs `hook` on the crossfade thread at the point where a fade giving way
+/// has passed its generation check and not yet released its end-of-stream
+/// catch: the window in which a manual `play()` can still land.
+pub(crate) fn on_before_release(hook: Arc<dyn Fn() + Send + Sync>) -> ReleaseHookGuard {
+    *BEFORE_RELEASE
+        .lock()
+        .unwrap_or_else(PoisonError::into_inner) = Some(hook);
+    ReleaseHookGuard
+}
+
+pub(super) fn before_release() {
+    let hook = BEFORE_RELEASE
+        .lock()
+        .unwrap_or_else(PoisonError::into_inner)
+        .clone();
+    if let Some(hook) = hook {
+        hook();
+    }
+}
+
 /// Removes the hook again when dropped, panic or not.
 pub(crate) struct HookGuard;
 
