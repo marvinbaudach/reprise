@@ -175,7 +175,7 @@ enum Preroll {
 ///
 /// The handler stays on the bus after the fade, as a pass-through: it cannot be
 /// told apart from a newer fade's handler on the same bus, which replaces it
-/// (`play_25_a_second_crossfade_on_the_same_pipeline_*` runs two fades on one
+/// (`play_26_a_second_crossfade_on_the_same_pipeline_*` runs two fades on one
 /// pipeline to prove that GStreamer lets it).
 struct EosCatch {
     state: Arc<Mutex<EosCatchState>>,

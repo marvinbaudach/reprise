@@ -762,6 +762,28 @@ result.
   `play_25_the_album_peak_cap_applies_after_the_raise`,
   `play_25_the_safe_range_clamp_applies_after_the_raise`,
   `play_25_the_phone_session_resolves_gain_at_the_streaming_target`.
+- **PLAY-26** [planned] [core] — **A start that never finishes is started over,
+  then skipped; a crossfade whose incoming track never starts gives way.** A
+  local track whose start never completes is started over, up to three times,
+  and then skipped. CUE tracks are included: a CUE start that hangs is started
+  over and plays from its segment start, and one that never finishes is given up
+  after the third attempt. In a crossfade, the incoming track is promoted only
+  once it has prerolled. When it has not started in time, or too little of the
+  outgoing track is left to ramp the fade, the fade gives way to a plain track
+  change: the outgoing track plays out, and no end of track is lost. An
+  incoming track that prerolls slowly but in time still fades. Proven by the
+  GStreamer backend tests.
+  *Tests:*
+  `play_26_a_hung_cue_start_is_started_over_and_plays_from_its_segment_start`,
+  `play_26_a_cue_start_that_never_finishes_is_given_up_after_three_attempts`,
+  `play_26_a_crossfade_whose_incoming_track_hangs_falls_back_to_a_plain_track_change`,
+  `play_26_a_crossfade_whose_incoming_track_prerolls_slowly_still_fades`,
+  `play_26_a_crossfade_with_too_little_time_left_to_ramp_gives_way_instead_of_cutting`,
+  `play_26_a_crossfade_that_gives_way_applies_the_volume_set_while_it_waited`,
+  `play_26_a_crossfade_that_gives_way_after_the_outgoing_track_ended_still_finishes_it`,
+  `play_26_a_crossfade_that_gives_way_does_not_report_a_track_a_play_replaced`,
+  `play_26_a_second_crossfade_on_the_same_pipeline_also_reports_the_end_it_missed`.
+  <!-- REVIEW: rule proposal -->
 - **SEEK-1** [active] [gtk] — **The seek bar's colour is a reading, not a
   decoration, and it is averaged over time.** The spectral centroid swings
   from beat to beat: taken per bar it puts cyan next to magenta inside two

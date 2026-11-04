@@ -1,4 +1,4 @@
-//! PLAY-25 (proposed): a crossfade never promotes an incoming track that
+//! PLAY-26 (proposed): a crossfade never promotes an incoming track that
 //! has not started. The secondary is made to hang, or to start late, by a
 //! probe on its own gain element; the primary plays on a `fakesink`.
 
@@ -52,7 +52,7 @@ fn current_uri(player: &Player) -> Option<String> {
 }
 
 #[test]
-fn play_25_a_crossfade_whose_incoming_track_hangs_falls_back_to_a_plain_track_change() {
+fn play_26_a_crossfade_whose_incoming_track_hangs_falls_back_to_a_plain_track_change() {
     let harness = Harness::new();
     let player = &harness.player;
     let directory = tempfile::tempdir().unwrap();
@@ -140,7 +140,7 @@ const PROMOTION_SLACK: Duration = Duration::from_millis(400);
 /// is the time that is left: the ramp starts after the wait, and it ends when
 /// the outgoing track does, not `SLOW_FADE_SECONDS` after it started.
 #[test]
-fn play_25_a_crossfade_whose_incoming_track_prerolls_slowly_still_fades() {
+fn play_26_a_crossfade_whose_incoming_track_prerolls_slowly_still_fades() {
     let timeline = Arc::new(Mutex::new(FadeTimeline::default()));
     let observed = timeline.clone();
     let harness = Harness::observing(move |event| {
@@ -207,7 +207,7 @@ const LATE_FOR_A_ONE_SECOND_FADE: Duration = Duration::from_millis(600);
 /// way to a plain change instead. The ticker's part is played by hand, so that
 /// the outgoing track really has seconds left and the test needs no late tick.
 #[test]
-fn play_25_a_crossfade_with_too_little_time_left_to_ramp_gives_way_instead_of_cutting() {
+fn play_26_a_crossfade_with_too_little_time_left_to_ramp_gives_way_instead_of_cutting() {
     let harness = Harness::new();
     let player = &harness.player;
     let directory = tempfile::tempdir().unwrap();
@@ -253,7 +253,7 @@ const VOLUME_SETTLE: Duration = Duration::from_secs(5);
 /// applies it. A fade that gave way never ran the ramp, so giving way must
 /// apply the stored volume to the outgoing track itself.
 #[test]
-fn play_25_a_crossfade_that_gives_way_applies_the_volume_set_while_it_waited() {
+fn play_26_a_crossfade_that_gives_way_applies_the_volume_set_while_it_waited() {
     let harness = Harness::new();
     let player = &harness.player;
     let directory = tempfile::tempdir().unwrap();
@@ -334,7 +334,7 @@ fn outgoing_track_ends_during_the_wait(
 /// runs. A duration that is longer than the track lets that end come before
 /// the fade gives way, and the track change that follows must not lose it.
 #[test]
-fn play_25_a_crossfade_that_gives_way_after_the_outgoing_track_ended_still_finishes_it() {
+fn play_26_a_crossfade_that_gives_way_after_the_outgoing_track_ended_still_finishes_it() {
     let harness = Harness::new();
     let directory = tempfile::tempdir().unwrap();
     let first = tone(&directory, "first.wav", SHORT_TRACK_MS);
@@ -359,7 +359,7 @@ fn play_25_a_crossfade_that_gives_way_after_the_outgoing_track_ended_still_finis
 /// that `play()` just replaced. The hook is that `play()`, at the one moment
 /// where it can no longer be seen by the check.
 #[test]
-fn play_25_a_crossfade_that_gives_way_does_not_report_a_track_a_play_replaced() {
+fn play_26_a_crossfade_that_gives_way_does_not_report_a_track_a_play_replaced() {
     let harness = Harness::new();
     let player = &harness.player;
     let directory = tempfile::tempdir().unwrap();
@@ -395,7 +395,7 @@ fn play_25_a_crossfade_that_gives_way_does_not_report_a_track_a_play_replaced() 
 /// on the same pipeline (the track change after a fade that gave way plays on
 /// it) must catch its own.
 #[test]
-fn play_25_a_second_crossfade_on_the_same_pipeline_also_reports_the_end_it_missed() {
+fn play_26_a_second_crossfade_on_the_same_pipeline_also_reports_the_end_it_missed() {
     let harness = Harness::new();
     let directory = tempfile::tempdir().unwrap();
     let first = tone(&directory, "first.wav", SHORT_TRACK_MS);

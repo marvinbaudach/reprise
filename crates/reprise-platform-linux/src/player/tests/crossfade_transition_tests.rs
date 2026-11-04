@@ -156,7 +156,7 @@ fn hung_in_ready(reached: usize, gave_up: Option<test_seam::GaveUp>) -> bool {
 /// The crossfade secondary is a `playbin3` too, and GStreamer 1.28's sometimes
 /// never leaves READY on a start (see `Harness::start`). Since the crossfade
 /// gives way to a plain track change when its incoming track does not preroll
-/// (PLAY-25), such a secondary is no longer promoted, so a test that needs the
+/// (PLAY-26), such a secondary is no longer promoted, so a test that needs the
 /// fade begins again, as `Harness::start` does for the main pipeline.
 ///
 /// Only a secondary that hung on its own is begun again: `secondary` watches

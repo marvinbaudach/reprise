@@ -266,7 +266,7 @@ fn playing(events: &[PlayerEvent]) -> usize {
 /// A CUE start is begun over like a whole file's, and the gate's pending start
 /// survives the `Null`: the next preroll seeks to the segment start and plays.
 #[test]
-fn play_25_a_hung_cue_start_is_started_over_and_plays_from_its_segment_start() {
+fn play_26_a_hung_cue_start_is_started_over_and_plays_from_its_segment_start() {
     // Roomy: the start over is counted exactly, so a second start that is only
     // slow under load must not be begun over again.
     let harness = harness_with_deadline(ROOMY_DEADLINE);
@@ -304,7 +304,7 @@ fn play_25_a_hung_cue_start_is_started_over_and_plays_from_its_segment_start() {
 }
 
 #[test]
-fn play_25_a_cue_start_that_never_finishes_is_given_up_after_three_attempts() {
+fn play_26_a_cue_start_that_never_finishes_is_given_up_after_three_attempts() {
     let harness = harness_with_deadline(TEST_DEADLINE);
     let dir = tempfile::tempdir().unwrap();
     let flac = cue_flac(&dir);
