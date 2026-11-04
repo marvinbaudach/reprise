@@ -22,6 +22,8 @@ mod segment_prefeed_tests;
 mod segment_start_tests;
 mod segment_support;
 mod segment_understated_tests;
+mod start_watchdog_freeze_tests;
+mod start_watchdog_restart_tests;
 mod start_watchdog_soak_tests;
 mod start_watchdog_tests;
 mod stream_generation_tests;

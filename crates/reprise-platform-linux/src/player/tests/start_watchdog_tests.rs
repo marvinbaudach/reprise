@@ -11,7 +11,7 @@
 use std::sync::atomic::AtomicUsize;
 
 use super::segment_support::{
-    cue_item, encode_flac, gain_element, record_heard, write_regions_wav, Harness,
+    cue_item, encode_flac, gain_of, on_every_pipeline, record_heard, write_regions_wav, Harness,
 };
 use super::*;
 use crate::player::start_watchdog::allowed_idle;
@@ -20,11 +20,11 @@ use crate::player::start_watchdog::allowed_idle;
 const TEST_DEADLINE: Duration = Duration::from_millis(150);
 /// The deadline where the test acts on the hung start first: it has to land
 /// before the watchdog does, so it gets room to do so on a busy machine.
-const ROOMY_DEADLINE: Duration = Duration::from_millis(1_000);
+pub(super) const ROOMY_DEADLINE: Duration = Duration::from_millis(1_000);
 /// Far more than the attempts need, and far less than a hang would take.
-const PATIENCE: Duration = Duration::from_secs(20);
+pub(super) const PATIENCE: Duration = Duration::from_secs(20);
 /// Long enough for several more deadlines to pass, for the "nothing happens" arms.
-const QUIET_FOR: Duration = Duration::from_millis(2_500);
+pub(super) const QUIET_FOR: Duration = Duration::from_millis(2_500);
 /// Three starts in all are two starts over. Counted by the watchdog rather
 /// than by the starts that reached the probe: on a loaded machine the last
 /// start can still be on its way to the probe, inside its short test deadline,
@@ -42,38 +42,42 @@ const SEEKS_AFTER_START: usize = 2;
 
 /// Blocks the first `hang_starts` starts at the gain element's sink pad and
 /// lets every later one through. Returns how many starts reached the pad.
-fn hang_starts(player: &Player, hang_starts: usize) -> Arc<AtomicUsize> {
+pub(super) fn hang_starts(player: &Player, hang_starts: usize) -> Arc<AtomicUsize> {
     let reached = Arc::new(AtomicUsize::new(0));
     let counted = reached.clone();
-    gain_element(player).static_pad("sink").unwrap().add_probe(
-        gst::PadProbeType::BLOCK_DOWNSTREAM,
-        move |_, _| {
-            let start = counted.fetch_add(1, Ordering::SeqCst) + 1;
-            if start <= hang_starts {
-                // Stay blocked: the pad is released by the next `Null`.
-                gst::PadProbeReturn::Ok
-            } else {
-                gst::PadProbeReturn::Remove
-            }
-        },
-    );
+    // On every pipeline a start over builds as well: the count is of starts.
+    on_every_pipeline(player, move |playbin| {
+        let counted = counted.clone();
+        gain_of(playbin).static_pad("sink").unwrap().add_probe(
+            gst::PadProbeType::BLOCK_DOWNSTREAM,
+            move |_, _| {
+                let start = counted.fetch_add(1, Ordering::SeqCst) + 1;
+                if start <= hang_starts {
+                    // Stay blocked: the pad is released by the next `Null`.
+                    gst::PadProbeReturn::Ok
+                } else {
+                    gst::PadProbeReturn::Remove
+                }
+            },
+        );
+    });
     reached
 }
 
-fn local_track(dir: &tempfile::TempDir) -> String {
+pub(super) fn local_track(dir: &tempfile::TempDir) -> String {
     let path = dir.path().join("track.wav");
     write_regions_wav(&path, &[(TRACK_MS, true)]);
     path.to_str().unwrap().to_owned()
 }
 
-fn errors(events: &[PlayerEvent]) -> usize {
+pub(super) fn errors(events: &[PlayerEvent]) -> usize {
     events
         .iter()
         .filter(|event| matches!(event, PlayerEvent::Error(_)))
         .count()
 }
 
-fn state_of(player: &Player) -> (gst::State, gst::State) {
+pub(super) fn state_of(player: &Player) -> (gst::State, gst::State) {
     let playbin = player
         .playbin
         .lock()
@@ -83,7 +87,7 @@ fn state_of(player: &Player) -> (gst::State, gst::State) {
     (current, pending)
 }
 
-fn harness_with_deadline(deadline: Duration) -> Harness {
+pub(super) fn harness_with_deadline(deadline: Duration) -> Harness {
     let mut harness = Harness::new();
     harness.player.start_watchdog.deadline = deadline;
     harness
@@ -216,7 +220,9 @@ fn a_hung_start_the_user_stopped_is_left_stopped() {
 /// `disarm`, and the watch's own check that the stream is still the one it was
 /// armed for (every play bumps the generation). Either alone is enough, so this
 /// test fails only when both are gone; with one of them removed it still
-/// passes, and each is a safe backstop for the other.
+/// passes, and each is a safe backstop for the other. The restart's own checks
+/// under the lock, and the tests that need each one alone, are in
+/// `start_watchdog_restart_tests`.
 #[test]
 fn a_hung_start_that_a_live_start_replaced_is_not_started_over_by_the_old_watch() {
     let harness = harness_with_deadline(ROOMY_DEADLINE);
@@ -335,29 +341,31 @@ fn slow_source(player: &Player, slowed: usize, delay: Duration) -> Arc<AtomicUsi
     let sources = Arc::new(AtomicUsize::new(0));
     let created = sources.clone();
     let reads = Arc::new(AtomicUsize::new(0));
-    let playbin = player
-        .playbin
-        .lock()
-        .unwrap_or_else(PoisonError::into_inner)
-        .clone()
-        .downcast::<gst::Bin>()
-        .unwrap();
-    playbin.connect("deep-element-added", false, move |values| {
-        let element = values[2].get::<gst::Element>().unwrap();
-        if element.factory().is_some_and(|f| f.name() == "filesrc") {
-            created.fetch_add(1, Ordering::SeqCst);
-            let reads = reads.clone();
-            element.static_pad("src").unwrap().add_probe(
-                gst::PadProbeType::PULL | gst::PadProbeType::BUFFER,
-                move |_, _| {
-                    if reads.fetch_add(1, Ordering::SeqCst) < slowed {
-                        std::thread::sleep(delay);
-                    }
-                    gst::PadProbeReturn::Ok
-                },
-            );
-        }
-        None
+    // The handler goes on every pipeline a start over builds, and the read
+    // count runs across all of them.
+    on_every_pipeline(player, move |playbin| {
+        let created = created.clone();
+        let reads = reads.clone();
+        let Ok(bin) = playbin.clone().downcast::<gst::Bin>() else {
+            return;
+        };
+        bin.connect("deep-element-added", false, move |values| {
+            let element = values[2].get::<gst::Element>().unwrap();
+            if element.factory().is_some_and(|f| f.name() == "filesrc") {
+                created.fetch_add(1, Ordering::SeqCst);
+                let reads = reads.clone();
+                element.static_pad("src").unwrap().add_probe(
+                    gst::PadProbeType::PULL | gst::PadProbeType::BUFFER,
+                    move |_, _| {
+                        if reads.fetch_add(1, Ordering::SeqCst) < slowed {
+                            std::thread::sleep(delay);
+                        }
+                        gst::PadProbeReturn::Ok
+                    },
+                );
+            }
+            None
+        });
     });
     sources
 }

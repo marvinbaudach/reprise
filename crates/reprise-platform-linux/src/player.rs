@@ -19,9 +19,12 @@ use crate::player_pipeline::{
     attach_bus_watch, build_playbin, configure_download_buffering, path_to_uri,
     validated_playback_uri,
 };
+use pipeline_swap::PipelineSwap;
 use segment::{CutSeek, SegmentGate, SegmentHandle};
 use start_watchdog::StartWatchdog;
 
+mod pipeline_swap;
+mod reaper;
 pub(crate) mod segment;
 mod start_watchdog;
 mod successor;
@@ -67,14 +70,6 @@ pub struct Player {
     /// the rest of the process's life.
     playbin: Arc<Mutex<gst::Element>>,
     on_event: Arc<dyn Fn(PlayerEvent) + Send + Sync + 'static>,
-    /// Held for its `Drop` side effect (removes the bus watch) and replaced
-    /// wholesale by `rebuild_playbin` and by the crossfade promotion, since a
-    /// `BusWatchGuard` is tied to the specific `Bus` (and thus element) it was
-    /// created for — a rebuilt/promoted playbin needs its own fresh watch, not
-    /// the old element's. `Arc<Mutex<_>>` rather than `RefCell` because the
-    /// crossfade ramp thread (see `crossfade.rs`) swaps it from off-thread when
-    /// it promotes the incoming pipeline.
-    bus_watch: Arc<Mutex<gst::bus::BusWatchGuard>>,
     effects: Arc<Mutex<AudioEffects>>,
     /// Gapless slot: the URI pre-fed via `set_next`, consumed by the
     /// `about-to-finish` handler installed in `build_playbin` (Gapless mode) or
@@ -104,10 +99,6 @@ pub struct Player {
     /// silence it immediately. See `crossfade.rs`.
     incoming: IncomingSlot,
     spectrum_enabled: Arc<AtomicBool>,
-    /// Incremented for every GStreamer stream start so a gapless handoff
-    /// cannot inherit the previous track's FFT, gravity, or sensitivity
-    /// state. Purely internal to CAVA — not `stream_generation` below.
-    cava_stream_generation: Arc<AtomicU64>,
     /// Bumped synchronously on every `play`/`play_uri` (`try_play`) or
     /// gapless/crossfade hand-off — the `PlaybackBackend` "Stream
     /// generations" contract. Stamped onto events as a `StreamEvent` for
@@ -119,6 +110,9 @@ pub struct Player {
     /// Starts a local file over when `playbin3` hangs in READY — see
     /// `player/start_watchdog.rs`.
     start_watchdog: StartWatchdog,
+    /// Replaces the playbin with a fresh one, for `rebuild_playbin` and for the
+    /// watchdog — see `player/pipeline_swap.rs`.
+    swap: Arc<PipelineSwap>,
 }
 
 impl Player {
@@ -199,8 +193,29 @@ impl Player {
         )?;
         let playbin = Arc::new(Mutex::new(playbin));
         let bus_watch = Arc::new(Mutex::new(bus_watch));
-        let start_watchdog =
-            StartWatchdog::new(playbin.clone(), stream_generation.clone(), on_event.clone());
+        let swap = Arc::new(PipelineSwap {
+            playbin: playbin.clone(),
+            bus_watch: bus_watch.clone(),
+            on_event: on_event.clone(),
+            effects: effects.clone(),
+            next_uri: next_uri.clone(),
+            pending_gain: pending_gain.clone(),
+            handoff_pending: handoff_pending.clone(),
+            transition: transition.clone(),
+            crossfading: crossfading.clone(),
+            user_volume: user_volume.clone(),
+            spectrum_enabled: spectrum_enabled.clone(),
+            cava_stream_generation: cava_stream_generation.clone(),
+            stream_generation: stream_generation.clone(),
+            segments: segments.clone(),
+        });
+        let restarting = swap.clone();
+        let start_watchdog = StartWatchdog::new(
+            playbin.clone(),
+            stream_generation.clone(),
+            on_event.clone(),
+            Arc::new(move |request| restarting.restart_hung_start(request)),
+        );
 
         let engine = CrossfadeEngine {
             playbin: playbin.clone(),
@@ -270,7 +285,6 @@ impl Player {
         Ok(Self {
             playbin,
             on_event,
-            bus_watch,
             effects,
             next_uri,
             pending_gain,
@@ -281,10 +295,10 @@ impl Player {
             fade_generation,
             incoming,
             spectrum_enabled,
-            cava_stream_generation,
             stream_generation,
             segments,
             start_watchdog,
+            swap,
         })
     }
 
@@ -421,65 +435,12 @@ impl Player {
     /// re-attaching an equivalent bus watch. The position ticker picks up
     /// the replacement automatically on its next tick (it reads through the
     /// same `Arc<Mutex<_>>`, not a stale clone — see the `playbin` field's
-    /// doc comment).
+    /// doc comment). The discarded element is taken down on a reaper thread.
     fn rebuild_playbin(&self) -> Result<(), PlaybackError> {
-        let effects = self
-            .effects
-            .lock()
-            .unwrap_or_else(std::sync::PoisonError::into_inner)
-            .clone();
         // A rebuild is a hard restart: any pre-fed successor and any in-flight
         // crossfade are now stale.
         self.reset_transition();
-        let new_playbin = build_playbin(
-            &effects,
-            self.next_uri.clone(),
-            self.handoff_pending.clone(),
-            self.transition.clone(),
-            self.stream_generation.clone(),
-            self.pending_gain.clone(),
-            self.segments.clone(),
-        )?;
-        set_playbin_spectrum_messages(&new_playbin, self.spectrum_enabled.load(Ordering::SeqCst))?;
-        let new_watch = attach_bus_watch(
-            &new_playbin,
-            self.on_event.clone(),
-            self.handoff_pending.clone(),
-            self.crossfading.clone(),
-            self.spectrum_enabled.clone(),
-            self.cava_stream_generation.clone(),
-            self.segments.clone(),
-        )?;
-
-        let mut playbin = self.playbin.lock().unwrap_or_else(PoisonError::into_inner);
-
-        // Transition the old playbin to Null before discarding it to ensure
-        // proper resource cleanup (decoders, file descriptors, buffers).
-        // Ignore transition failures since the element is already broken.
-        if let Err(error) = playbin.set_state(gst::State::Null) {
-            tracing::debug!(%error, "old playbin refused Null transition during rebuild (already broken; dropping anyway)");
-        }
-
-        // A fresh playbin starts at its factory volume (1.0), so carry the
-        // user's volume over. Read under the playbin lock: a concurrent
-        // `set_volume` has then either already stored its value (seen here) or
-        // applies it to the new element after the swap. Lock order playbin ->
-        // user_volume is safe; no path nests them the other way round.
-        let user_volume = *self
-            .user_volume
-            .lock()
-            .unwrap_or_else(PoisonError::into_inner);
-        new_playbin.set_property("volume", user_volume);
-        *playbin = new_playbin;
-        drop(playbin);
-
-        // Swapping the guard drops the old (now-discarded) element's bus watch —
-        // exactly what should happen when it's replaced.
-        *self
-            .bus_watch
-            .lock()
-            .unwrap_or_else(PoisonError::into_inner) = new_watch;
-        Ok(())
+        self.swap.replace()
     }
 }
 

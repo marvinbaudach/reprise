@@ -41,7 +41,7 @@ const FIRST_TRACK_SECONDS: u32 = 6;
 fn start_crossfade_for_generation_test(player: &Player) {
     CrossfadeEngine {
         playbin: player.playbin.clone(),
-        bus_watch: player.bus_watch.clone(),
+        bus_watch: player.swap.bus_watch.clone(),
         on_event: player.on_event.clone(),
         effects: player.effects.clone(),
         next_uri: player.next_uri.clone(),
@@ -53,7 +53,7 @@ fn start_crossfade_for_generation_test(player: &Player) {
         generation: player.fade_generation.clone(),
         incoming: player.incoming.clone(),
         spectrum_enabled: player.spectrum_enabled.clone(),
-        cava_stream_generation: player.cava_stream_generation.clone(),
+        cava_stream_generation: player.swap.cava_stream_generation.clone(),
         stream_generation: player.stream_generation.clone(),
         segments: player.segments.clone(),
     }

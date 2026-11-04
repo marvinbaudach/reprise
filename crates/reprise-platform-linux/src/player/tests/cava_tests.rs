@@ -323,7 +323,7 @@ fn ac_29_stream_start_invalidates_the_previous_cava_history() {
         .lock()
         .unwrap_or_else(std::sync::PoisonError::into_inner);
     let player = Player::new(Box::new(|_| {})).unwrap();
-    let before = player.cava_stream_generation.load(Ordering::SeqCst);
+    let before = player.swap.cava_stream_generation.load(Ordering::SeqCst);
     let playbin = player
         .playbin
         .lock()
@@ -337,5 +337,5 @@ fn ac_29_stream_start_invalidates_the_previous_cava_history() {
         gst::glib::MainContext::default().iteration(false);
     }
 
-    assert!(player.cava_stream_generation.load(Ordering::SeqCst) > before);
+    assert!(player.swap.cava_stream_generation.load(Ordering::SeqCst) > before);
 }
