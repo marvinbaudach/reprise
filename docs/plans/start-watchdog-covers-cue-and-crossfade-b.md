@@ -2,7 +2,7 @@
 slug: start-watchdog-covers-cue-and-crossfade-b
 worktree: /home/marvin/Projects/reprise-start-watchdog-covers-cue-and-crossfade-b
 branch: feature/start-watchdog-covers-cue-and-crossfade-b
-phase: planned
+phase: shipped
 codex_session:
 created: 2026-11-02
 ---
