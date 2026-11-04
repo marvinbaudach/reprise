@@ -132,7 +132,7 @@ pub(super) fn judge(observation: StartObservation, attempt: u32, deadline: Durat
 /// Whether a start of `uri` is one the watchdog covers: a local file, whole
 /// or as a CUE segment. A segment's start finishes on the bus, but the gate
 /// keeps its pending start across the restart, so starting it over is safe.
-pub(super) fn covers(uri: &str, live: bool, _segment: Option<(i64, i64)>) -> bool {
+pub(super) fn covers(uri: &str, live: bool) -> bool {
     !live && !is_remote_playback_uri(Some(uri))
 }
 
@@ -203,6 +203,16 @@ impl StartWatchdog {
     }
 
     /// Stops watching. Idempotent; a timer already queued ends at its next look.
+    ///
+    /// The stream generation, which already stands a watch down when another
+    /// start replaced its own, does not cover everything: `stop`, dropping the
+    /// player and a `play` whose attempts both fail leave it where it was. So
+    /// `disarm` alone covers a `stop` followed by a resume of the same URI that
+    /// hangs again (same generation, hung, and not this watch's to restart),
+    /// and a dropped player (nothing owns the pipeline; the generation never
+    /// moves again). Every start that bumps the generation without a `disarm`
+    /// in its path (a gapless step, a crossfade promotion) is covered by the
+    /// generation alone, which the restart checks again under the lock.
     pub(super) fn disarm(&self) {
         self.epoch.fetch_add(1, Ordering::SeqCst);
     }
@@ -491,10 +501,9 @@ mod tests {
 
     #[test]
     fn only_a_local_file_whole_or_a_cue_segment_is_covered() {
-        assert!(covers("file:///music/a.flac", false, None));
-        assert!(!covers("file:///music/a.flac", true, None));
-        assert!(covers("file:///music/a.flac", false, Some((0, 1_000))));
-        assert!(!covers("https://radio.example/live", false, None));
+        assert!(covers("file:///music/a.flac", false));
+        assert!(!covers("file:///music/a.flac", true));
+        assert!(!covers("https://radio.example/live", false));
     }
 
     #[test]
