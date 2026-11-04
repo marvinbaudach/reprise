@@ -96,10 +96,11 @@ pub(super) fn judge(observation: StartObservation, attempt: u32, deadline: Durat
     }
 }
 
-/// Whether a start of `uri` is one the watchdog covers: a local file, whole
-/// or as a CUE segment. A segment's start finishes on the bus, but the gate
-/// keeps its pending start across the restart, so starting it over is safe.
-pub(super) fn covers(uri: &str, live: bool, _segment: Option<(i64, i64)>) -> bool {
+/// Whether a start of `uri` is one the watchdog covers: a local file, whether
+/// it is played whole or as a CUE segment. A segment's start finishes on the
+/// bus, but the gate keeps its pending start across the restart, so starting
+/// it over is safe. Only the URI and the live flag decide.
+pub(super) fn covers(uri: &str, live: bool) -> bool {
     !live && !is_remote_playback_uri(Some(uri))
 }
 
@@ -158,6 +159,16 @@ impl StartWatchdog {
     }
 
     /// Stops watching. Idempotent; a timer already queued ends at its next look.
+    ///
+    /// Deliberately a second guard beside the stream-generation check in
+    /// [`Look::at_poll`]: a new start bumps the generation, so an old watch
+    /// would stand down by itself at its next look, and `play` and `stop`
+    /// cancel it anyway. The old-watch cancellation test does not fail when
+    /// `disarm()` alone is removed, because the generation check also stands
+    /// the old watch down. Both stay because a watch must never restart a
+    /// pipeline that a newer start already owns, and the two guards fail
+    /// independently: the epoch cancels the timer before it looks at all, the
+    /// generation compares what it looks at.
     pub(super) fn disarm(&self) {
         self.epoch.fetch_add(1, Ordering::SeqCst);
     }
@@ -439,11 +450,12 @@ mod tests {
     }
 
     #[test]
-    fn only_a_local_file_whole_or_a_cue_segment_is_covered() {
-        assert!(covers("file:///music/a.flac", false, None));
-        assert!(!covers("file:///music/a.flac", true, None));
-        assert!(covers("file:///music/a.flac", false, Some((0, 1_000))));
-        assert!(!covers("https://radio.example/live", false, None));
+    fn only_a_local_file_is_covered_whole_or_as_a_cue_segment() {
+        // The same local file URI is covered whether it is played whole or as
+        // a CUE segment: a segment start has no bearing on coverage.
+        assert!(covers("file:///music/a.flac", false));
+        assert!(!covers("file:///music/a.flac", true));
+        assert!(!covers("https://radio.example/live", false));
     }
 
     #[test]
