@@ -1,3 +1,4 @@
+use super::field_policy::is_kept_field;
 use super::model::RedactionContext;
 
 const ELLIPSIS: &str = "…";
@@ -170,35 +171,13 @@ fn redact_sensitive_token(token: &str) -> String {
     )
 }
 
+/// Whether a structured field's value may be kept in a diagnostics line.
+///
+/// A lookup in [`KEEP_FIELDS`](super::field_policy::KEEP_FIELDS): both
+/// redaction passes ask this one question, and every key not listed there is
+/// redacted. `field_policy` explains how a key earns its place.
 pub fn is_safe_structured_field(key: &str) -> bool {
-    matches!(
-        key,
-        "track_id"
-            | "episode_id"
-            | "playlist_id"
-            | "run_id"
-            | "job_id"
-            | "position"
-            | "count"
-            | "attempt"
-            | "retry_count"
-            // Counts of candidates, not identities — same category as
-            // `count`/`attempt` above.
-            | "consecutive_failures"
-            | "skipped"
-            // `SourceError::technical_cause()` as logged by New Releases
-            // (`artist_news_pipeline.rs::record_failed_attempt`): its values
-            // are the constant `FetchError` `Display` strings from
-            // `musicbrainz.rs` plus the fixed literal in
-            // `invalid_response_source_error`, never user-entered or fetched
-            // content. Named for MusicBrainz specifically, not the generic
-            // `fetch_error`: this list is global over both redaction paths
-            // (here and `EventFields::record_value` in
-            // `reprise-gnome/src/ui/diagnostics.rs`), and a source whose
-            // technical cause can carry a URL or a foreign library's own
-            // message (podcasts, concerts) must not reuse this key.
-            | "musicbrainz_error"
-    )
+    is_kept_field(key)
 }
 
 fn replace_bounded(input: &str, needle: &str, replacement: &str) -> String {

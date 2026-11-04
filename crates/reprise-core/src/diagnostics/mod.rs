@@ -1,10 +1,14 @@
 //! Privacy-safe, platform-neutral diagnostic report model and renderer.
 
+mod field_policy;
+#[cfg(test)]
+mod field_sweep;
 mod log_tail;
 mod model;
 mod redact;
 mod render;
 
+pub use field_policy::{KEEP_FIELDS, REDACT_FIELDS};
 pub use log_tail::{read_log_tail, tail_of, TAIL_MAX_BYTES, TAIL_MAX_LINES};
 pub use model::{
     DiagnosticEvent, DiagnosticFacts, DiagnosticLevel, DiagnosticLog, PackageKind,
@@ -15,6 +19,12 @@ pub use render::render_report;
 
 #[cfg(test)]
 mod extended_tests;
+#[cfg(test)]
+mod field_policy_sweep_tests;
+#[cfg(test)]
+mod field_policy_tests;
+#[cfg(test)]
+mod field_sweep_tests;
 #[cfg(test)]
 mod log_tail_tests;
 #[cfg(test)]
