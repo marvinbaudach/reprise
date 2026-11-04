@@ -68,9 +68,8 @@ export function CoreArchitecture() {
       </div>
 
       <figcaption id="architecture-caption" className="architecture__caption" data-reveal>
-        The dependency arrows only point inward. GNOME and Android keep their native toolkit and
-        interaction model; CLI and MCP reuse the same application layer without pretending to be
-        screens. The build rejects GTK, libadwaita, GStreamer and D-Bus in the core.
+        The dependency arrows only point inward. The build rejects GTK, libadwaita, GStreamer and
+        D-Bus in the core, so no platform can leak into it.
       </figcaption>
     </figure>
   );

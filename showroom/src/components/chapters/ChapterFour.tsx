@@ -17,8 +17,8 @@ export function ChapterFour() {
           The same library, ready for automation.
         </h2>
         <p className="chapter-four__intro" data-reveal>
-          The CLI and MCP server bring the same library into scripts and agent workflows. Capability
-          flags control access, and changes appear in the running desktop app.
+          Scripts and AI agents use the same library — a CLI for the terminal, an MCP server for
+          agents. Reads are safe; every write is opt-in.
         </p>
 
         <details className="evidence-details">
@@ -44,9 +44,8 @@ export function ChapterFour() {
                 ))}
               </div>
               <p className="headless-card__note terminal-card__note">
-                Every command takes <code>--json</code> for machine consumption and{' '}
-                <code>--db</code> for a scratch library, so automation never has to touch the real
-                one. Deleting a playlist refuses to run without <code>--yes</code>.
+                <code>--json</code> for machines, <code>--db</code> for a scratch library, and no
+                playlist deletion without <code>--yes</code>.
               </p>
             </figure>
 
@@ -70,10 +69,8 @@ export function ChapterFour() {
                 })}
               </ul>
               <p className="headless-card__note mcp-card__note">
-                Tools over stdio, each behind one of seven capability flags read live from the
-                library. A revocation takes effect on the next call. Responses never carry
-                filesystem paths, cache locations or credentials — and the source resources omit
-                stored URLs, because those can hold access tokens.
+                Seven capability flags, read live: a revocation applies on the next call. No
+                response carries a file path, a credential or a stored source URL.
               </p>
               <p className="mcp-card__link">
                 <a href="https://github.com/marvinbaudach/reprise/blob/main/crates/reprise-mcp/README.md">

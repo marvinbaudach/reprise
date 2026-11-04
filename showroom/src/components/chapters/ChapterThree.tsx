@@ -22,35 +22,40 @@ export function ChapterThree({ reducedMotion }: ChapterThreeProps) {
         </h2>
 
         <p className="chapter__intro" data-reveal>
-          GNOME conventions on the desktop, Material on the phone. I designed a shared visual
-          language that preserves each platform's navigation and interaction patterns. The spectral
-          seek bar makes the structure of a track visible on both.
+          GNOME conventions on the desktop, Material on the phone. The spectral seek bar is the
+          signature they share: the shape of a track, at a glance.
         </p>
-        <p className="chapter__intro" data-reveal>
-          On the phone, the waveform and spectrogram behind that bar arrive with the desktop sync. A
-          track without them is decoded and analysed on the device, and the rest of the library
-          follows in the background, only while music plays and never in battery saver.
-        </p>
-        <p className="chapter__intro" data-reveal>
-          Each platform also keeps its own habits. On the desktop the mini-player is a window of its
-          own: switching to it hides the library window instead of resizing it, so the library keeps
-          its size and place. On Android a long press on an artist offers Delete from device…; the
-          artist&apos;s tracks leave the lists at once, and their files are deleted from the phone
-          only when a short Undo window has passed.
-        </p>
-        <p className="chapter__intro" data-reveal>
-          The desktop player bar has a sleep timer, which fades the volume over four seconds before
-          it pauses, and Ctrl+K opens Quick Open to jump to a track, album, artist, playlist or
-          podcast show by name. On the phone, Android Auto can browse the library and a home-screen
-          widget controls playback. A track removed from the queue can be brought back with Undo,
-          and returns to its old place.
-        </p>
-        <p className="chapter__intro" data-reveal>
-          An artist&apos;s portrait is never one of their own release covers. Without a usable
-          Deezer photo it comes from Wikimedia Commons with the photographer&apos;s credit, shown
-          under the portrait on Android and as a tooltip on the desktop. Reprise also speaks Italian
-          now, a translation contributed by giallorosso84.
-        </p>
+        <h3 className="chapter__subhead">Details that make it feel finished</h3>
+        <ul className="point-list">
+          <li>
+            <strong className="point-list__lead">Quick Open</strong> — Ctrl+K jumps to any track,
+            album, artist, playlist or show.
+          </li>
+          <li>
+            <strong className="point-list__lead">Sleep timer</strong> — fades out over four seconds,
+            then pauses.
+          </li>
+          <li>
+            <strong className="point-list__lead">Mini-player</strong> — a window of its own; the
+            library keeps its size and place.
+          </li>
+          <li>
+            <strong className="point-list__lead">Undo</strong> — a removed queue track returns to
+            its old place.
+          </li>
+          <li>
+            <strong className="point-list__lead">Android Auto and a widget</strong> — browse in the
+            car, play from the home screen.
+          </li>
+          <li>
+            <strong className="point-list__lead">On-device analysis</strong> — waveforms arrive with
+            the sync, the rest is computed while music plays.
+          </li>
+          <li>
+            <strong className="point-list__lead">Artist photos</strong> — from Deezer, or credited
+            Commons portraits; never a stray album cover.
+          </li>
+        </ul>
         <details className="evidence-details">
           <summary>Explore the interactive seek bar</summary>
           <SpectralSeekTrack reducedMotion={reducedMotion} />

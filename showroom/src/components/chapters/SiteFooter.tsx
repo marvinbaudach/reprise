@@ -12,6 +12,17 @@ import './SiteFooter.css';
 
 const MARK = `${import.meta.env.BASE_URL}brand/reprise-mark.svg`;
 
+/** What the page demonstrates, named for a reader who skims to the end. */
+const SKILLS = [
+  'Product design',
+  'Software architecture',
+  'Rust',
+  'GTK4 · libadwaita',
+  'Kotlin · Compose',
+  'Test strategy',
+  'AI-assisted engineering',
+] as const;
+
 export function SiteFooter() {
   return (
     <footer className="site-footer" data-ground="oklch(10.5% 0.012 269)">
@@ -26,16 +37,22 @@ export function SiteFooter() {
             <p className="availability__eyebrow">Availability</p>
             <h2 id="availability-heading">Open to work.</h2>
             <p className="availability__copy">
-              I’m Marvin Baudach. Reprise brings together my work in product design, native
-              development and AI-assisted engineering. I’m interested in bringing that experience to
-              a team and its next product challenge.
+              I’m Marvin Baudach. I designed Reprise, shaped its architecture and built the gates
+              that keep every change honest. Next: a team that wants product and engineering in one
+              person.
             </p>
+            <ul className="skill-list" aria-label="Skills">
+              {SKILLS.map((skill) => (
+                <li key={skill}>{skill}</li>
+              ))}
+            </ul>
           </div>
           <div className="availability__actions">
             <a className="availability__contact" href="https://github.com/marvinbaudach">
               github.com/marvinbaudach ↗
             </a>
             <p>GPL-3.0-or-later · active alpha</p>
+            <p>Italian translation by giallorosso84 — thank you.</p>
           </div>
         </section>
         <details className="evidence-details">
@@ -45,16 +62,13 @@ export function SiteFooter() {
           </p>
 
           <p className="site-footer__honesty" data-reveal>
-            Three kinds of number appear on this page and they are not the same kind of claim.{' '}
-            <strong>Counted:</strong> the line volumes, their shares, the gate and group counts, and
-            the five weeks are read out of this repository while the page is built —{' '}
+            Three kinds of number appear on this page. <strong>Counted:</strong> read from this
+            repository at build time —{' '}
             <a href={permalink(CENSUS_SCOPE.source)}>
               <code>code-census.mjs</code>
             </a>{' '}
-            walked {group(CENSUS_SCOPE.files)} files for the volumes, counting every line with
-            something on it. <strong>Quoted:</strong> the index rebuild and the quality case study
-            both describe things that happened once and cannot be recounted from the tree, so they
-            are read from{' '}
+            walks {group(CENSUS_SCOPE.files)} files. <strong>Quoted:</strong> from records that
+            carry commit, date and method —{' '}
             <a href={permalink(PERFORMANCE_RECORD)}>
               <code>index-rebuild.md</code>
             </a>{' '}
@@ -62,10 +76,8 @@ export function SiteFooter() {
             <a href={permalink(INCIDENT_RECORD)}>
               <code>queue-anchor-grill-followups.md</code>
             </a>
-            , where every row and every claim carries its commit, its date and its method.{' '}
-            <strong>Stated:</strong> &ldquo;1 → 4&rdquo; is an architectural claim, not a
-            measurement, and the four frontends are its evidence. Every live count is parsed rather
-            than copied; the suite is what keeps it that way.
+            . <strong>Stated:</strong> &ldquo;1 → 4&rdquo; is an architectural claim; the four
+            frontends are its evidence.
           </p>
 
           <div className="site-footer__links" data-reveal>

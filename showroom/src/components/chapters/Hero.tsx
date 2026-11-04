@@ -18,11 +18,12 @@ export function Hero() {
             <span>One Rust core.</span>
           </h1>
           <p className="hero__lead">
-            Your music library, at home and on the move. Built to feel at home on each platform.
+            Your whole library on the desktop and in your pocket — native on both, synced between
+            them.
           </p>
           <p className="hero__note">
-            An independent project by <strong>Marvin Baudach</strong>.<br />
-            Product design, architecture and quality — with AI-assisted development.
+            Designed and built by <strong>Marvin Baudach</strong>.<br />
+            Product design, architecture and quality — one engineer, AI-assisted.
           </p>
           <div className="hero__actions">
             <a className="action action--primary" href="#film">

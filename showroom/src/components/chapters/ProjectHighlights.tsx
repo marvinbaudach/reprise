@@ -7,17 +7,17 @@ export function ProjectHighlights() {
       <a href="#ch-01" className="highlight">
         <span className="highlight__label">Architecture</span>
         <strong>One core. Four frontends.</strong>
-        <span>Desktop, Android, CLI and MCP reuse the same application logic.</span>
+        <span>Desktop, phone, terminal and AI agents share one tested core.</span>
       </a>
       <a href="#ch-05" className="highlight">
         <span className="highlight__label">Performance</span>
         <strong>{PERFORMANCE[0]?.delta} query time</strong>
-        <span>A measured title-list optimisation, with its storage cost reported.</span>
+        <span>The title list over 100&apos;000 tracks. Storage cost on the record.</span>
       </a>
       <a href="#ch-02" className="highlight">
         <span className="highlight__label">Quality</span>
         <strong>{GATES.length} checks before merge.</strong>
-        <span>Automated checks for architecture, behaviour and distribution.</span>
+        <span>Architecture, behaviour and packaging — checked on every change.</span>
       </a>
     </nav>
   );
