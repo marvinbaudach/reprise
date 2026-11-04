@@ -419,9 +419,12 @@ pub(super) fn slow_sink_into(player: &Player, rendered: &RenderedLog) {
 const HUNG_START_PATIENCE: Duration = Duration::from_secs(5);
 /// Starts tried before a test gives up; every one of them hanging is not luck.
 const START_ATTEMPTS: usize = 5;
-/// Longer than any test, so the watchdog never acts in a test about something
-/// else; see [`Harness::observing`].
-const HARNESS_WATCHDOG_DEADLINE: Duration = Duration::from_secs(600);
+/// Longer than [`HUNG_START_PATIENCE`], so a test that starts through
+/// [`Harness::start`] has begun a hung start over in place before the watchdog
+/// would begin it over on a new pipeline; see [`Harness::observing`]. A test
+/// that plays directly still gets the watchdog's recovery from a real hang,
+/// later than in production.
+const HARNESS_WATCHDOG_DEADLINE: Duration = Duration::from_secs(8);
 
 /// [`Harness::start`] for a test that builds its own [`Player`]: runs `begin`
 /// and starts it over, up to [`START_ATTEMPTS`] times, while the pipeline
@@ -506,10 +509,10 @@ impl Harness {
             let _ = tx.send(event);
         }))
         .unwrap();
-        // The watchdog would begin a start over on a new pipeline, which loses
-        // what a test did to the first one; `Self::start` begins it over in
-        // place after `HUNG_START_PATIENCE`. The watchdog's own tests set their
-        // own deadline.
+        // The watchdog begins a start over on a new pipeline, which loses what a
+        // test did to the first one; `Self::start` begins it over in place after
+        // `HUNG_START_PATIENCE`, so the watchdog waits longer than that. The
+        // watchdog's own tests set their own deadline.
         player.start_watchdog.deadline = HARNESS_WATCHDOG_DEADLINE;
         Self {
             player,
