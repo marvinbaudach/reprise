@@ -280,7 +280,7 @@ fn other_inner_attributes_leave_the_file_in_production() {
     let swept = sweep(
         r#"
         #![cfg_attr(not(test), deny(clippy::unwrap_used))]
-        #![allow(dead_code)]
+        #![forbid(unsafe_code)]
         fn f() { info!(kept = 1); }
         "#,
     );
