@@ -87,6 +87,10 @@ impl PipelineSwap {
     /// segment gate is not reset (a CUE start's pending seek must survive),
     /// and the fresh pipeline gets the old one's URI, gain and download
     /// flags before it enters the pending state of the one it replaces.
+    ///
+    /// `Err` is only ever returned before the swap: a pipeline that could not
+    /// be built, or could not take the start over. A failed start after the
+    /// swap is [`Restarted::StartFailed`], reported by the new pipeline's bus.
     pub(super) fn restart_hung_start(
         &self,
         request: &RestartRequest<'_>,
@@ -109,9 +113,13 @@ impl PipelineSwap {
             (retired, fresh.set_state(pending))
         };
         self.retire(retired, watch);
-        started
-            .map(|_| Restarted::Done)
-            .map_err(|error| PlaybackError::Backend(format!("GStreamer: {error}")))
+        Ok(match started {
+            Ok(_) => Restarted::Done,
+            Err(error) => {
+                tracing::warn!(%error, "the fresh pipeline's start failed after the swap");
+                Restarted::StartFailed
+            }
+        })
     }
 
     /// Builds a pipeline like the current one and attaches its bus watch.

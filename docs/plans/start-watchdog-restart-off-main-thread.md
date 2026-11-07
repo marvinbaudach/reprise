@@ -2,7 +2,7 @@
 slug: start-watchdog-restart-off-main-thread
 worktree: /home/marvin/Projects/reprise-start-watchdog-restart-off-main-thread
 branch: feature/start-watchdog-restart-off-main-thread
-phase: planned
+phase: coded
 codex_session:
 created: 2026-11-04
 ---

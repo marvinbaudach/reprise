@@ -84,9 +84,15 @@ pub(super) enum Restarted {
     Done,
     /// The start was not the one asked for, or no longer hung: untouched.
     StoodDown,
+    /// The new pipeline is in place but its start failed. That failure is on
+    /// the new pipeline's bus, which reports it, so the watchdog reports nothing.
+    StartFailed,
 }
 
 /// Begins a hung start over; built by the `Player`, which owns what it takes.
+///
+/// `Err` means nothing was swapped: the hung pipeline is still the player's and
+/// nothing has been reported, so the watchdog reports the track itself.
 pub(super) type RestartFn =
     Arc<dyn Fn(&RestartRequest<'_>) -> Result<Restarted, PlaybackError> + Send + Sync>;
 
@@ -338,16 +344,26 @@ impl Look {
                         gst::glib::ControlFlow::Continue
                     }
                     Ok(Restarted::StoodDown) => gst::glib::ControlFlow::Break,
+                    Ok(Restarted::StartFailed) => {
+                        // The new pipeline's failed state change has put its
+                        // own error on its bus, with the session it belongs to;
+                        // a second report from here would be taken for another
+                        // track's.
+                        tracing::error!("the hung track's start over failed");
+                        gst::glib::ControlFlow::Break
+                    }
                     Err(error) => {
-                        // A state change that fails has put its own error on
-                        // the bus, with the session it belongs to; a second
-                        // report from here would be taken for another track's.
+                        // Nothing was swapped, so nothing has reached any bus:
+                        // the hung pipeline stays and the track would stay
+                        // silent for good. Report it.
                         tracing::error!(%error, "could not start the hung track over");
+                        self.give_up();
                         gst::glib::ControlFlow::Break
                     }
                 }
             }
             Verdict::GiveUp => {
+                tracing::error!("local start abandoned after {START_ATTEMPTS} attempts");
                 self.give_up();
                 gst::glib::ControlFlow::Break
             }
@@ -359,7 +375,6 @@ impl Look {
     /// session and ignores its repeats, and must not take this for a repeat of
     /// the last track's.
     fn give_up(&self) {
-        tracing::error!("local start abandoned after {START_ATTEMPTS} attempts");
         (self.on_event)(PlayerEvent::Error(PlaybackFailure::new(
             "The track did not start: the pipeline never left READY",
             PlaybackFailureKind::StartNeverFinished,
