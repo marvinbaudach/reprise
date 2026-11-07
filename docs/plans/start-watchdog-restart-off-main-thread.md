@@ -133,6 +133,25 @@ Run, with `heavy-run heavy --` in front of each cargo command:
 Do not run the Android, display or merge-readiness gates. The orchestrator
 runs the full gate before landing.
 
+## Known residuals
+
+- `try_play` and `stop()` still run `set_state` on the main thread under the
+  playbin lock, so a start or stop on a dead mount still freezes. This is
+  pre-existing; the orchestrator files the follow-up issue. It also reaches the
+  restart's new pipeline: a `play` or `stop` that lands while the restart's
+  asynchronous start is blocked in `open()` waits on that element's state lock
+  on the main thread.
+- The crossfade promote still sets the outgoing pipeline to `Null` under the
+  lock.
+- An EQ change made between `build()` and the swap is lost: the new pipeline was
+  built from the effects as they were, and is not rebuilt.
+- `HARNESS_WATCHDOG_DEADLINE` (8 s) means the test harness never reaches the
+  watchdog on its own, so only the dedicated watchdog tests exercise the
+  production restart path.
+- A `stop` that takes the playbin lock right after the restart queued its
+  asynchronous start can see that start land after its `Null`. The window is the
+  time the element's thread takes to begin, and that revived start is not watched.
+
 ## UX rules
 
 PLAY-26 (proposed in #1325) describes what the user sees: start over, then

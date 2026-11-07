@@ -170,6 +170,15 @@ impl PipelineSwap {
     /// Swapping the guard drops the retired pipeline's bus watch, and only then
     /// does the pipeline go to the reaper: nothing it posts on the way down
     /// reaches the handler.
+    ///
+    /// The bus watch is not the only thing the retired pipeline still carries:
+    /// until the reaper's `Null` lands, which can be never on a dead source,
+    /// its CAVA appsink callback, its gain-switch probe and its segment-boundary
+    /// probe stay installed. They are harmless. Its pads go flushing as `Null`
+    /// begins, so nothing more arrives for them to act on. A hard start such as
+    /// a restart has no `pending_gain` (it is `None`), so the gain switch has
+    /// nothing to apply to the shared state. And no CUE handoff is staged on a
+    /// start, so the boundary probe has none to complete.
     fn retire(&self, retired: gst::Element, watch: gst::bus::BusWatchGuard) {
         *self
             .bus_watch

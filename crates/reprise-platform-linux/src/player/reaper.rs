@@ -9,6 +9,12 @@
 //! takes as long as it takes.
 //!
 //! The reaper takes no lock of the player and holds nothing it shares.
+//!
+//! The cost of that is paid on a source that is truly dead. Each attempt of a
+//! hung start leaves one reaper thread and one pipeline blocked in `Null` for
+//! the rest of the process, so a track that never starts leaves up to
+//! `START_ATTEMPTS` of each behind. On an exclusive ALSA device the retired
+//! pipeline's sink may keep the device busy for as long as that lasts.
 
 use gstreamer as gst;
 use gstreamer::prelude::*;
