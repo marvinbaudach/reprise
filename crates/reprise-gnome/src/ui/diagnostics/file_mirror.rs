@@ -11,6 +11,15 @@
 //! in `KEEP_FIELDS` or `REDACT_FIELDS`. This layer formats the line itself
 //! instead of using `tracing_subscriber`'s formatter, because that formatter
 //! prints every field verbatim.
+//!
+//! The event's own text is the one value the key policy does not see:
+//! `EventFields` puts a field called `message` into the message slot, and the
+//! text of a log call is a field called `message` too, so the two cannot be
+//! told apart. The slot still passes `redact_log_message`, here and for the
+//! session warnings at render time, but that pass only removes paths, URIs,
+//! file names, the home directory, the user name and unkept `key=` tokens; a
+//! GStreamer string with a host or a title survives it. The classification
+//! test therefore refuses an explicit `message` field in production code.
 
 use std::io::Write as _;
 
@@ -140,6 +149,10 @@ mod tests {
         let text = mirrored(|| {
             tracing::warn!(
                 elapsed_ms = 12,
+                placeholder_distance = 0.25,
+                version = "0.1.331",
+                volume = 0.5,
+                failure_message = "Artist - Title could not be decoded",
                 state = ?Playback::Playing,
                 count = 3,
                 error = "could not open /home/someone/Music/Artist/x.flac",
@@ -156,13 +169,25 @@ mod tests {
         for (surface, shown) in [("the log file", &text), ("the copied report", &report)] {
             for kept in [
                 "elapsed_ms=12",
+                "placeholder_distance=0.25",
+                "version=0.1.331",
                 "state=Playing",
                 "count=3",
                 "error=$REDACTED",
+                // A redacted key stays redacted whatever its value looks like.
+                "volume=$REDACTED",
+                "failure_message=$REDACTED",
             ] {
                 assert!(shown.contains(kept), "{surface} lost {kept:?}: {shown}");
             }
-            for leaked in ["x.flac", "Artist", "/home/someone", "someone"] {
+            for leaked in [
+                "x.flac",
+                "Artist",
+                "/home/someone",
+                "someone",
+                "decoded",
+                "volume=0.5",
+            ] {
                 assert!(
                     !shown.contains(leaked),
                     "{surface} leaked {leaked:?}: {shown}"

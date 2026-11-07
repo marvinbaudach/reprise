@@ -93,3 +93,36 @@ fn crash_report_never_contains_a_library_path_in_the_log_tails() {
     assert!(report.contains("opened"));
     assert!(report.contains("panicked reading"));
 }
+
+fn redacted(message: &str) -> String {
+    super::redact_log_message(message, &RedactionContext::default())
+}
+
+#[test]
+fn a_kept_field_with_a_float_or_a_version_arrives_verbatim() {
+    assert_eq!(
+        redacted("playback stalled elapsed_ms=12.5 version=0.1.331 placeholder_distance=0.25 offset=-1.5"),
+        "playback stalled elapsed_ms=12.5 version=0.1.331 placeholder_distance=0.25 offset=-1.5"
+    );
+}
+
+#[test]
+fn a_filename_is_still_redacted_with_or_without_a_key() {
+    for (input, expected) in [
+        ("opened cover.jpg now", "opened … now"),
+        ("opened track01.flac now", "opened … now"),
+        ("opened count=song.mp3 now", "opened … now"),
+        ("opened count=1.5.mp3 now", "opened … now"),
+        ("opened count=v1.2 now", "opened … now"),
+    ] {
+        assert_eq!(redacted(input), expected, "{input}");
+    }
+}
+
+#[test]
+fn a_redacted_key_stays_redacted_whatever_its_value_looks_like() {
+    assert_eq!(
+        redacted("volume=0.5 path=0.1.331"),
+        "volume=$REDACTED path=$REDACTED"
+    );
+}

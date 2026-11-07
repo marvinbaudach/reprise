@@ -1,4 +1,4 @@
-use super::field_policy::is_kept_field;
+use super::field_policy::KEEP_FIELDS;
 use super::model::RedactionContext;
 
 const ELLIPSIS: &str = "…";
@@ -173,11 +173,12 @@ fn redact_sensitive_token(token: &str) -> String {
 
 /// Whether a structured field's value may be kept in a diagnostics line.
 ///
-/// A lookup in [`KEEP_FIELDS`](super::field_policy::KEEP_FIELDS): both
-/// redaction passes ask this one question, and every key not listed there is
-/// redacted. `field_policy` explains how a key earns its place.
+/// A lookup in [`KEEP_FIELDS`]: both redaction passes ask this one question,
+/// and every key not listed there is redacted. Only an exact, lowercase match
+/// counts; an unknown key is never safe. `field_policy` explains how a key
+/// earns its place.
 pub fn is_safe_structured_field(key: &str) -> bool {
-    is_kept_field(key)
+    KEEP_FIELDS.binary_search(&key).is_ok()
 }
 
 fn replace_bounded(input: &str, needle: &str, replacement: &str) -> String {
@@ -227,6 +228,13 @@ fn redact_filenames(input: &str) -> String {
 }
 
 fn looks_like_filename(token: &str) -> bool {
+    // `key=12.5` and `key=0.1.331` end in what looks like an extension, but a
+    // plain number or a dotted version is not a name.
+    if let Some((_, value)) = token.split_once('=') {
+        if is_number_or_version(value) {
+            return false;
+        }
+    }
     let Some((stem, extension)) = token.rsplit_once('.') else {
         return false;
     };
@@ -234,4 +242,14 @@ fn looks_like_filename(token: &str) -> bool {
         && !stem.chars().all(|ch| ch.is_ascii_digit() || ch == '.')
         && (1..=12).contains(&extension.len())
         && extension.chars().all(|ch| ch.is_ascii_alphanumeric())
+}
+
+/// An integer, a float or a dotted version: digits and single dots, with an
+/// optional leading `-`, starting and ending in a digit.
+fn is_number_or_version(value: &str) -> bool {
+    let digits = value.strip_prefix('-').unwrap_or(value);
+    digits.starts_with(|ch: char| ch.is_ascii_digit())
+        && digits.ends_with(|ch: char| ch.is_ascii_digit())
+        && !digits.contains("..")
+        && digits.chars().all(|ch| ch.is_ascii_digit() || ch == '.')
 }
