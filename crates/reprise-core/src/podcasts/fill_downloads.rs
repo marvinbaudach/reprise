@@ -36,7 +36,7 @@ pub(crate) fn record_fill_outcome(
         Ok(state) => {
             tracing::warn!(
                 episode_id,
-                ?state,
+                state_kind = state.kind(),
                 "podcast fill received a non-terminal download state"
             );
         }

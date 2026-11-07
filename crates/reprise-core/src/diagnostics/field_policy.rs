@@ -157,10 +157,12 @@ pub const KEEP_FIELDS: &[&str] = &[
     "height",
     // Internal database ids of tracks, episodes and playlists.
     "id",
+    // A `usize` count.
+    "id_count",
     "idle_wait_ms",
-    // `Debug` of a `Vec<i64>` of track ids.
-    "ids",
     "ids_ms",
+    // `Result::is_ok`.
+    "ids_ok",
     "ignored",
     "index",
     "info_visible",
@@ -326,8 +328,10 @@ pub const KEEP_FIELDS: &[&str] = &[
     "start_ms",
     // A `u64` library signature.
     "started_signature",
-    // `Debug` of fieldless state enums, and of `DownloadState` in the arm that follows its `Downloaded` and `Failed` arms. The `SessionState` struct, which carries the search text and browse filter, is logged as `session`.
+    // `Debug` of fieldless state enums. The `SessionState` struct, which carries the search text and browse filter, is logged as `session`; a `DownloadState` is logged as `state_kind`.
     "state",
+    // `DownloadState::kind`: a `&'static str` that never carries the failure message.
+    "state_kind",
     "station_id",
     // An HTTP status code.
     "status",
@@ -391,6 +395,8 @@ pub const REDACT_FIELDS: &[&str] = &[
     // A column id string.
     "before_column",
     "browse",
+    // The text of an MCP playback bus error.
+    "bus_message",
     // A D-Bus name, a `String`.
     "bus_name",
     "cached_path",
@@ -430,6 +436,8 @@ pub const REDACT_FIELDS: &[&str] = &[
     // A string id from an update event.
     "event_id",
     "example_error",
+    // A GStreamer error string, which can name a host, a stream or a file.
+    "failure_message",
     // `Display` of a persisted sort field, a `String`.
     "field",
     "file",
@@ -457,6 +465,9 @@ pub const REDACT_FIELDS: &[&str] = &[
     "layout_spec",
     "linger_error",
     "locale_dir",
+    // Only `reprise-android-ffi` emits it, and that crate never runs the redactor. A field
+    // called `message` is the event's own text slot, which `EventFields` does not check
+    // against the policy, so the classification test refuses it everywhere else.
     "message",
     "mount",
     "mount_point",
@@ -464,6 +475,8 @@ pub const REDACT_FIELDS: &[&str] = &[
     "moved_column",
     "music",
     "name",
+    // The text of a toast shown for a missing track.
+    "notice_message",
     // A stream tag from the network.
     "organization",
     // `Debug` of a list of track ids paired with file paths.
@@ -543,6 +556,8 @@ pub const REDACT_FIELDS: &[&str] = &[
     "track",
     "uri",
     "url",
+    // A translated user-facing sentence.
+    "user_notice",
     "value",
     // `ViewSource::label()` embeds album and artist names.
     "vanished_source",

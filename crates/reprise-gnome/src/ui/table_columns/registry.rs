@@ -365,7 +365,7 @@ impl<K: ColumnKey> ColumnRegistry<K> {
             tracing::warn!(
                 %error,
                 key = self.keys.layout,
-                message = %crate::ui::strings::text(crate::ui::strings::COLUMN_LAYOUT_SAVE_FAILED),
+                user_notice = %crate::ui::strings::text(crate::ui::strings::COLUMN_LAYOUT_SAVE_FAILED),
                 "could not persist column layout"
             );
         }
