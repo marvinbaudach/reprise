@@ -3,6 +3,10 @@
 mod field_policy;
 #[cfg(test)]
 mod field_sweep;
+#[cfg(test)]
+mod field_sweep_cfg;
+#[cfg(test)]
+mod field_sweep_lex;
 mod log_tail;
 mod model;
 mod redact;
@@ -23,6 +27,8 @@ mod extended_tests;
 mod field_policy_sweep_tests;
 #[cfg(test)]
 mod field_policy_tests;
+#[cfg(test)]
+mod field_sweep_files_tests;
 #[cfg(test)]
 mod field_sweep_tests;
 #[cfg(test)]

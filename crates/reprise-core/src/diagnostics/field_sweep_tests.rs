@@ -1,6 +1,8 @@
 //! The scanner behind the classification check reads each field form.
 
-use super::field_sweep::{sweep_source, FileSweep};
+use std::path::{Path, PathBuf};
+
+use super::field_sweep::{sweep_source, test_only_paths, FileSweep};
 
 fn keys(source: &str) -> Vec<String> {
     sweep_source("fixture.rs", source)
@@ -176,4 +178,148 @@ fn a_part_it_cannot_read_is_an_error_not_a_silent_miss() {
         .expect_err("a call is not a field");
 
     assert!(error.contains("fixture.rs:1"), "{error}");
+}
+
+#[test]
+fn an_identifier_called_level_inside_a_field_value_does_not_hide_the_field() {
+    let found = keys("fn f() { event!(Level::INFO, a = ?Level::DEBUG, b = 2); }");
+
+    assert_eq!(found, ["a", "b"]);
+}
+
+#[test]
+fn a_level_held_in_a_constant_is_not_taken_for_a_field() {
+    let found = keys(
+        r#"
+        fn f() {
+            event!(LEVEL, a = 1);
+            tracing::event!(target: "x", parent: id, LEVEL, b = 2, "m");
+            event!(tracing::Level::WARN, c);
+        }
+        "#,
+    );
+
+    assert_eq!(found, ["a", "b", "c"]);
+}
+
+#[test]
+fn an_aliased_tracing_import_is_an_error_naming_the_site() {
+    for source in [
+        "use tracing::info as i;",
+        "fn f() {}\nuse tracing::{debug, warn as w};",
+        "pub(crate) use tracing::{error as e};",
+        "use tracing::event as ev;",
+        "use tracing as t;",
+        "use tracing::{self as t};",
+    ] {
+        let error = sweep_source("fixture.rs", source).expect_err(source);
+
+        assert!(error.contains("fixture.rs:"), "{source}: {error}");
+        assert!(error.contains("alias"), "{source}: {error}");
+        assert!(error.contains("tracing"), "{source}: {error}");
+    }
+}
+
+#[test]
+fn imports_that_are_not_aliased_tracing_macros_are_fine() {
+    let swept = sweep(
+        r#"
+        use std::fmt::Result as FmtResult;
+        use tracing::field::Visit as V;
+        use tracing::{info, Level as L, warn};
+        #[cfg(test)]
+        use tracing::debug as hidden_alias;
+        fn f() { info!(a = 1); }
+        "#,
+    );
+
+    assert_eq!(swept.sites.len(), 1);
+}
+
+#[test]
+fn a_test_only_item_with_a_crate_visibility_and_generics_is_cut_whole() {
+    let found = keys(
+        r#"
+        #[cfg(test)] pub(crate) fn a<A, B>() { info!(hidden_a = 1); }
+        #[cfg(test)] pub(super) fn b<A, B>() { info!(hidden_b = 1); }
+        #[cfg(test)] pub(in crate::x) fn c<A, B>() { info!(hidden_c = 1); }
+        fn kept() { info!(kept = 1); }
+        "#,
+    );
+
+    assert_eq!(found, ["kept"]);
+}
+
+#[test]
+fn a_brace_group_inside_a_generic_argument_does_not_end_the_item() {
+    let found = keys(
+        r#"
+        #[cfg(test)]
+        fn t<T>() where T: Foo<{ 1 }> { info!(hidden = 1); }
+        #[cfg(test)]
+        impl<const N: usize> Bar<{ N }> for Baz { fn f() { info!(hidden_too = 1); } }
+        #[cfg(test)]
+        const fn c<T: Foo<{ 2 }>>() -> Option<T> { info!(hidden_const = 1); None }
+        fn kept() { info!(kept = 1); }
+        "#,
+    );
+
+    assert_eq!(found, ["kept"]);
+}
+
+#[test]
+fn an_inner_test_cfg_makes_the_whole_file_test_only() {
+    let swept = sweep("#![cfg(test)]\nmod helper;\nfn f() { info!(hidden = 1); }");
+
+    assert!(swept.test_only);
+    assert!(swept.sites.is_empty());
+}
+
+#[test]
+fn other_inner_attributes_leave_the_file_in_production() {
+    let swept = sweep(
+        r#"
+        #![cfg_attr(not(test), deny(clippy::unwrap_used))]
+        #![allow(dead_code)]
+        fn f() { info!(kept = 1); }
+        "#,
+    );
+
+    assert!(!swept.test_only);
+    assert_eq!(swept.sites.len(), 1);
+}
+
+#[test]
+fn a_path_attribute_before_the_test_cfg_still_names_the_module() {
+    let swept = sweep(
+        r#"
+        #[path = "before_tests.rs"]
+        #[cfg(test)]
+        mod before;
+
+        #[path = "production.rs"]
+        mod production;
+        "#,
+    );
+
+    assert_eq!(
+        swept.test_modules,
+        [("before".to_owned(), Some("before_tests.rs".to_owned()))]
+    );
+}
+
+#[test]
+fn a_binary_root_resolves_its_modules_beside_itself() {
+    let swept = FileSweep {
+        test_modules: vec![("helper".to_owned(), None)],
+        ..FileSweep::default()
+    };
+
+    let bin = test_only_paths(Path::new("/c/src/bin/tool.rs"), &swept);
+    let nested = test_only_paths(Path::new("/c/src/ui/panel.rs"), &swept);
+
+    let expect = |paths: &[PathBuf], suffix: &str| paths.contains(&PathBuf::from(suffix));
+    assert!(expect(&bin, "/c/src/bin/helper.rs"), "{bin:?}");
+    assert!(expect(&bin, "/c/src/bin/helper"), "{bin:?}");
+    assert!(expect(&nested, "/c/src/ui/panel/helper.rs"), "{nested:?}");
 }
