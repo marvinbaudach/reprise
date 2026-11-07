@@ -88,15 +88,17 @@ impl PipelineSwap {
     /// and the fresh pipeline gets the old one's URI, gain and download
     /// flags before it enters the pending state of the one it replaces.
     ///
-    /// `Err` is only ever returned before the swap: a pipeline that could not
-    /// be built, or could not take the start over. A failed start after the
-    /// swap is [`Restarted::StartFailed`], reported by the new pipeline's bus.
+    /// The new pipeline's start runs asynchronously (see below), so `Done`
+    /// means the swap happened and the start was issued, not that it succeeded.
+    /// `Err` therefore always means nothing was swapped: a pipeline that could
+    /// not be built, or could not take the start over. A start that fails after
+    /// the swap is reported by the new pipeline's own bus.
     pub(super) fn restart_hung_start(
         &self,
         request: &RestartRequest<'_>,
     ) -> Result<Restarted, PlaybackError> {
         let (fresh, watch) = self.build()?;
-        let (retired, started) = {
+        let retired = {
             let mut playbin = self.playbin.lock().unwrap_or_else(PoisonError::into_inner);
             let (_, current, pending) = playbin.state(gst::ClockTime::ZERO);
             let same_stream = self.stream_generation.load(Ordering::SeqCst) == request.generation;
@@ -107,19 +109,23 @@ impl PipelineSwap {
             carry_start(&playbin, &fresh)?;
             self.carry_volume(&fresh);
             let retired = std::mem::replace(&mut *playbin, fresh.clone());
-            // Under the lock like `try_play`'s start, but on the fresh pipeline:
-            // a failing change has put its error on its bus, whose watch is
+            // Queued under the lock, so a `stop` that takes it next finds the
+            // start already on its way, but run on a thread of the element's
+            // own: the change opens the source, and a source blocked in
+            // `open()` (a dead mount, a FIFO nobody writes) keeps the change
+            // from returning. Waiting for it here would freeze the main
+            // context and every path that wants this lock. A failing change
+            // puts its error on the fresh pipeline's bus, whose watch is
             // installed below, so the failure reaches the frontend once.
-            (retired, fresh.set_state(pending))
+            fresh.call_async(move |element| {
+                if let Err(error) = element.set_state(pending) {
+                    tracing::warn!(%error, ?pending, "the restarted start's state change failed");
+                }
+            });
+            retired
         };
         self.retire(retired, watch);
-        Ok(match started {
-            Ok(_) => Restarted::Done,
-            Err(error) => {
-                tracing::warn!(%error, "the fresh pipeline's start failed after the swap");
-                Restarted::StartFailed
-            }
-        })
+        Ok(Restarted::Done)
     }
 
     /// Builds a pipeline like the current one and attaches its bus watch.

@@ -80,13 +80,11 @@ pub(super) struct RestartRequest<'a> {
 /// What came of a restart request.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(super) enum Restarted {
-    /// The start is running again on a new pipeline.
+    /// The new pipeline is in place and its start has been issued; it runs
+    /// off the main context, and a failure of it is reported by its own bus.
     Done,
     /// The start was not the one asked for, or no longer hung: untouched.
     StoodDown,
-    /// The new pipeline is in place but its start failed. That failure is on
-    /// the new pipeline's bus, which reports it, so the watchdog reports nothing.
-    StartFailed,
 }
 
 /// Begins a hung start over; built by the `Player`, which owns what it takes.
@@ -256,6 +254,10 @@ struct Progress {
     source_position: Option<u64>,
     /// When the source last moved, or the attempt began.
     moved_at: Instant,
+    /// Set by a restart, whose start is issued from another thread: until the
+    /// new pipeline has left `Null` once, a pipeline in `Null` with nothing
+    /// pending has not begun its start, which is not the same as being stopped.
+    awaiting_start: bool,
 }
 
 impl Progress {
@@ -264,7 +266,19 @@ impl Progress {
             attempt: 1,
             source_position: None,
             moved_at: now,
+            awaiting_start: false,
         }
+    }
+
+    /// Whether the new pipeline of a restart has yet to begin its start, so a
+    /// look finding it in `Null` must wait instead of standing down. It ends
+    /// the first time the pipeline is seen anywhere else; a start that never
+    /// leaves `Null` is cut off by the caller's deadline.
+    fn awaiting_start(&mut self, current: gst::State, pending: gst::State) -> bool {
+        if current != gst::State::Null || pending != gst::State::VoidPending {
+            self.awaiting_start = false;
+        }
+        self.awaiting_start
     }
 
     /// Notes where the source is now and returns how long it has stood still.
@@ -281,6 +295,7 @@ impl Progress {
         self.attempt += 1;
         self.source_position = None;
         self.moved_at = now;
+        self.awaiting_start = true;
     }
 }
 
@@ -321,6 +336,11 @@ impl Look {
             same_stream: self.stream_generation.load(Ordering::SeqCst) == generation,
             idle: progress.idle_at(now, source_position(&playbin)),
         };
+        if progress.awaiting_start(current, pending)
+            && observation.idle < allowed_idle(self.deadline, progress.attempt)
+        {
+            return gst::glib::ControlFlow::Continue;
+        }
         match judge(observation, progress.attempt, self.deadline) {
             Verdict::StandDown => gst::glib::ControlFlow::Break,
             Verdict::Wait => gst::glib::ControlFlow::Continue,
@@ -344,14 +364,6 @@ impl Look {
                         gst::glib::ControlFlow::Continue
                     }
                     Ok(Restarted::StoodDown) => gst::glib::ControlFlow::Break,
-                    Ok(Restarted::StartFailed) => {
-                        // The new pipeline's failed state change has put its
-                        // own error on its bus, with the session it belongs to;
-                        // a second report from here would be taken for another
-                        // track's.
-                        tracing::error!("the hung track's start over failed");
-                        gst::glib::ControlFlow::Break
-                    }
                     Err(error) => {
                         // Nothing was swapped, so nothing has reached any bus:
                         // the hung pipeline stays and the track would stay
@@ -411,6 +423,18 @@ mod tests {
             true,
             allowed_idle(DEADLINE, attempt),
         )
+    }
+
+    #[test]
+    fn a_restarted_start_still_in_null_is_waited_for_until_it_leaves_null() {
+        let mut progress = Progress::starting(Instant::now());
+        assert!(!progress.awaiting_start(gst::State::Null, gst::State::VoidPending));
+        progress.restarted(Instant::now());
+        assert!(progress.awaiting_start(gst::State::Null, gst::State::VoidPending));
+        assert!(progress.awaiting_start(gst::State::Null, gst::State::VoidPending));
+        assert!(!progress.awaiting_start(gst::State::Ready, gst::State::Paused));
+        // Left once, left for good: a later stop is not a start that has not begun.
+        assert!(!progress.awaiting_start(gst::State::Null, gst::State::VoidPending));
     }
 
     #[test]

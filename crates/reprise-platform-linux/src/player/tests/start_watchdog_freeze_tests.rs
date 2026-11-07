@@ -23,20 +23,20 @@ const TEST_DEADLINE: Duration = Duration::from_millis(150);
 /// Far more than the test needs, and far less than a hang would take.
 const PATIENCE: Duration = Duration::from_secs(20);
 /// How often the heartbeat timer asks the main context to dispatch it.
-const HEARTBEAT: Duration = Duration::from_millis(20);
+pub(super) const HEARTBEAT: Duration = Duration::from_millis(20);
 /// The longest the main context may go without dispatching the heartbeat.
-const MAX_GAP: Duration = Duration::from_millis(500);
+pub(super) const MAX_GAP: Duration = Duration::from_millis(500);
 /// How long the FIFO's writer stays open, whatever the test does: a regression
 /// freezes the main context for about this long, and no longer.
-const STUCK_FOR: Duration = Duration::from_secs(3);
+pub(super) const STUCK_FOR: Duration = Duration::from_secs(3);
 /// How long the heartbeat is watched once the restart has happened.
-const WATCH_AFTER_RESTART: Duration = Duration::from_millis(700);
+pub(super) const WATCH_AFTER_RESTART: Duration = Duration::from_millis(700);
 /// The sample rate and size the WAV header declares; no sample ever follows.
 const WAV_HEADER_LEN: u32 = 44;
 const WAV_DECLARED_DATA: u32 = 1 << 24;
 
 /// A 16-bit mono WAV header that promises far more data than is ever written.
-fn wav_header() -> Vec<u8> {
+pub(super) fn wav_header() -> Vec<u8> {
     let mut header = Vec::with_capacity(WAV_HEADER_LEN as usize);
     header.extend_from_slice(b"RIFF");
     header.extend_from_slice(&(36 + WAV_DECLARED_DATA).to_le_bytes());
@@ -54,7 +54,7 @@ fn wav_header() -> Vec<u8> {
 }
 
 /// A FIFO with a writer that stays open and silent until released.
-struct StuckFifo {
+pub(super) struct StuckFifo {
     release: Option<Sender<()>>,
     closer: Option<std::thread::JoinHandle<()>>,
 }
@@ -63,7 +63,13 @@ impl StuckFifo {
     /// Makes the FIFO at `path` and writes the header into it. `O_RDWR` lets the
     /// test open it without a reader being there, and keeps `open` from ever
     /// blocking on either side.
-    fn make(path: &std::path::Path) -> Self {
+    pub(super) fn make(path: &std::path::Path) -> Self {
+        Self::open_for(path, STUCK_FOR)
+    }
+
+    /// [`Self::make`], with the writer closed after `open_for` if nobody
+    /// releases it sooner.
+    pub(super) fn open_for(path: &std::path::Path, open_for: Duration) -> Self {
         let made = std::process::Command::new("mkfifo")
             .arg(path)
             .status()
@@ -80,7 +86,7 @@ impl StuckFifo {
         let path = path.to_owned();
         let closer = std::thread::spawn(move || {
             // Released by the test, or by the clock: whichever comes first.
-            let _ = released.recv_timeout(STUCK_FOR);
+            let _ = released.recv_timeout(open_for);
             // The name goes first: a start over that reopens the FIFO then
             // finds nothing, instead of blocking in `open` for good.
             let _ = std::fs::remove_file(&path);
@@ -105,7 +111,7 @@ impl Drop for StuckFifo {
 }
 
 /// The longest stretch between two heartbeats.
-fn longest_gap(beats: &[Instant]) -> Duration {
+pub(super) fn longest_gap(beats: &[Instant]) -> Duration {
     beats
         .windows(2)
         .map(|pair| pair[1].duration_since(pair[0]))

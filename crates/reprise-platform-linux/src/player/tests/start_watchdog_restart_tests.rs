@@ -23,7 +23,7 @@ use super::*;
 
 /// Replaces the player's restart with one that runs `before` first and then the
 /// real one. Returns how many times it was called.
-fn restart_after(
+pub(super) fn restart_after(
     player: &mut Player,
     before: impl Fn() + Send + Sync + 'static,
 ) -> Arc<AtomicUsize> {

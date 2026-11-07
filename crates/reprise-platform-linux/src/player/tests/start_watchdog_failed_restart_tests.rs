@@ -103,4 +103,5 @@ fn a_start_over_that_fails_after_the_swap_is_reported_by_its_bus_alone() {
         hung,
         "the start over never reached the swap, so the test measured nothing"
     );
+    assert!(harness.player.start_watchdog.restarts() >= 1);
 }
