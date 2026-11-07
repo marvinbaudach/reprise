@@ -409,7 +409,7 @@ impl Player {
                 self.try_play(uri, live, gain_db, segment)
             }
         };
-        if started.is_ok() && start_watchdog::covers(uri, live, segment) {
+        if started.is_ok() && start_watchdog::covers(uri, live) {
             self.start_watchdog
                 .arm(self.stream_generation.load(Ordering::SeqCst));
         }
