@@ -135,15 +135,41 @@ fn redact_sensitive_assignments(input: &str) -> String {
         .collect()
 }
 
-fn redact_sensitive_token(token: &str) -> String {
-    let Some((separator, separator_char)) =
-        token.char_indices().find(|(_, ch)| matches!(ch, '=' | ':'))
-    else {
-        return token.to_string();
-    };
+/// Where a token splits into a key and a value, as both passes read it.
+struct Assignment {
+    /// Byte index of the first `=` or `:`.
+    separator: usize,
+    separator_char: char,
+    /// The text before it, reduced to a lowercase identifier.
+    key: String,
+}
+
+/// The one reading of "key then value" that the key pass and the filename
+/// pass share, so a token cannot be a kept `key=value` to one and something
+/// else to the other.
+fn split_assignment(token: &str) -> Option<Assignment> {
+    let (separator, separator_char) = token
+        .char_indices()
+        .find(|(_, ch)| matches!(ch, '=' | ':'))?;
     let key = token[..separator]
         .trim_matches(|ch: char| !ch.is_ascii_alphanumeric() && ch != '_')
         .to_ascii_lowercase();
+    Some(Assignment {
+        separator,
+        separator_char,
+        key,
+    })
+}
+
+fn redact_sensitive_token(token: &str) -> String {
+    let Some(Assignment {
+        separator,
+        separator_char,
+        key,
+    }) = split_assignment(token)
+    else {
+        return token.to_string();
+    };
     let sensitive = if separator_char == '=' {
         !is_safe_structured_field(&key)
     } else {
@@ -218,7 +244,7 @@ fn redact_filenames(input: &str) -> String {
                     ',' | ';' | ':' | '(' | ')' | '[' | ']' | '{' | '}' | '"' | '\''
                 )
             });
-            if looks_like_filename(trimmed) {
+            if !is_kept_number(body) && looks_like_filename(trimmed) {
                 format!("{ELLIPSIS}{whitespace}")
             } else {
                 token.to_string()
@@ -228,13 +254,6 @@ fn redact_filenames(input: &str) -> String {
 }
 
 fn looks_like_filename(token: &str) -> bool {
-    // `key=12.5` and `key=0.1.331` end in what looks like an extension, but a
-    // plain number or a dotted version is not a name.
-    if let Some((_, value)) = token.split_once('=') {
-        if is_number_or_version(value) {
-            return false;
-        }
-    }
     let Some((stem, extension)) = token.rsplit_once('.') else {
         return false;
     };
@@ -242,6 +261,27 @@ fn looks_like_filename(token: &str) -> bool {
         && !stem.chars().all(|ch| ch.is_ascii_digit() || ch == '.')
         && (1..=12).contains(&extension.len())
         && extension.chars().all(|ch| ch.is_ascii_alphanumeric())
+}
+
+/// `key=12.5` and `key=0.1.331` end in what looks like an extension, but a
+/// plain number or a dotted version is not a name. The exemption holds only
+/// when the key pass has read the token the same way: it splits at an `=`
+/// (not an earlier `:`) and the key is kept. Any other token that carries a
+/// number, such as `name:cover.jpg=1.2`, still goes to the filename check.
+fn is_kept_number(body: &str) -> bool {
+    let Some(assignment) = split_assignment(body) else {
+        return false;
+    };
+    if assignment.separator_char != '=' || !is_safe_structured_field(&assignment.key) {
+        return false;
+    }
+    let value = body[assignment.separator + 1..].trim_matches(|ch: char| {
+        matches!(
+            ch,
+            ',' | ';' | ':' | '(' | ')' | '[' | ']' | '{' | '}' | '"' | '\''
+        )
+    });
+    is_number_or_version(value)
 }
 
 /// An integer, a float or a dotted version: digits and single dots, with an

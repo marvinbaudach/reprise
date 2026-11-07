@@ -126,3 +126,28 @@ fn a_redacted_key_stays_redacted_whatever_its_value_looks_like() {
         "volume=$REDACTED path=$REDACTED"
     );
 }
+
+#[test]
+fn a_colon_before_the_equals_sign_never_exempts_a_filename() {
+    // The key pass ends the key at the first `=` or `:`, so these tokens are
+    // not `key=value` to it and only the filename pass can redact them.
+    for input in [
+        "name:cover.jpg=1.2",
+        "a:b=0.25",
+        "x:elapsed_ms=1.5",
+        "track:song.mp3=0.1.331",
+        ":cover.jpg=1.2",
+    ] {
+        let output = redacted(&format!("opened {input} now"));
+
+        assert_eq!(output, "opened … now", "{input}");
+    }
+}
+
+#[test]
+fn only_a_kept_key_exempts_a_number_from_the_filename_pass() {
+    // `cover.jpg` is no kept key, so the key pass redacts the value before the
+    // filename pass runs; the number is not what protects it.
+    assert_eq!(redacted("cover.jpg=1.2"), "cover.jpg=$REDACTED");
+    assert_eq!(redacted("(elapsed_ms=1.5),"), "(elapsed_ms=1.5),");
+}
