@@ -1,6 +1,6 @@
 //! The shape of the two field lists, and what the predicate does with them.
 
-use super::field_policy::{is_kept_field, KEEP_FIELDS, REDACT_FIELDS};
+use super::field_policy::{KEEP_FIELDS, REDACT_FIELDS};
 use super::is_safe_structured_field;
 
 /// Keys the maintainers decided stay redacted whatever a site carries.
@@ -80,7 +80,10 @@ fn every_listed_key_is_lowercase_ascii() {
 fn the_maintainers_named_identifying_keys_are_never_kept() {
     for key in NEVER_KEPT {
         assert!(!is_safe_structured_field(key), "`{key}` must stay redacted");
-        assert!(!is_kept_field(key), "`{key}` must not be in KEEP_FIELDS");
+        assert!(
+            KEEP_FIELDS.binary_search(&key).is_err(),
+            "`{key}` must not be in KEEP_FIELDS"
+        );
     }
 }
 

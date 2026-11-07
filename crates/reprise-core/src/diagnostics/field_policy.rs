@@ -23,6 +23,20 @@
 //! is not such a value. When one site of a key fails the test, the key goes
 //! into `REDACT_FIELDS`, or that one site is renamed to a key that does.
 //!
+//! # What the policy does not promise
+//!
+//! The predicate also governs the `key=value` tokens inside free-text
+//! messages and the log tail (D2), where it keeps the first word after
+//! `key=` of a kept key, whatever that word is. That is accepted: the path,
+//! URI and filename passes run first, and a new message that interpolates
+//! foreign text after a kept key is a review concern.
+//!
+//! The classification test checks keys, not value types, and it does not see
+//! fields that dependencies emit (zbus, for one). A new site that emits an
+//! existing kept key with a string, or a `Debug` of a payload enum that gains
+//! a `String` field, passes the test. A kept site that formats with `%` or
+//! `?` therefore needs its value's type checked in review.
+//!
 //! # The check
 //!
 //! Every key emitted by a `tracing` macro in production code under `crates/`
@@ -32,7 +46,7 @@
 //! and the site, and says which list to put it in.
 
 /// Keys whose values are harmless in every place they are emitted. Sorted.
-pub const KEEP_FIELDS: &[&str] = &[
+pub(super) const KEEP_FIELDS: &[&str] = &[
     "above",
     "acknowledged",
     "active_import_errors",
@@ -380,8 +394,10 @@ pub const KEEP_FIELDS: &[&str] = &[
 /// Keys that identify, or may identify, something and so stay redacted. Sorted.
 ///
 /// This list exists so that no key is silently on either side: a key that is
-/// emitted but listed nowhere fails the classification check.
-pub const REDACT_FIELDS: &[&str] = &[
+/// emitted but listed nowhere fails the classification check. Nothing outside
+/// that check and its tests reads the list, so it is compiled for tests only.
+#[cfg(test)]
+pub(super) const REDACT_FIELDS: &[&str] = &[
     "action",
     // Smoke output of unverified type.
     "active_line",
@@ -564,10 +580,3 @@ pub const REDACT_FIELDS: &[&str] = &[
     "volume",
     "welcome",
 ];
-
-/// Whether `key` is on the allow-list.
-///
-/// Only an exact, lowercase match counts; an unknown key is never safe.
-pub fn is_kept_field(key: &str) -> bool {
-    KEEP_FIELDS.binary_search(&key).is_ok()
-}

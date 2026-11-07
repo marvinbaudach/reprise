@@ -12,7 +12,6 @@ mod model;
 mod redact;
 mod render;
 
-pub use field_policy::{KEEP_FIELDS, REDACT_FIELDS};
 pub use log_tail::{read_log_tail, tail_of, TAIL_MAX_BYTES, TAIL_MAX_LINES};
 pub use model::{
     DiagnosticEvent, DiagnosticFacts, DiagnosticLevel, DiagnosticLog, PackageKind,
