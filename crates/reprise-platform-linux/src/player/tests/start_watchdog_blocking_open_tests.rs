@@ -31,14 +31,12 @@ const DEADLINE: Duration = Duration::from_millis(400);
 
 /// How many descriptors of this process point at `path`.
 fn open_descriptors_of(path: &std::path::Path) -> usize {
-    std::fs::read_dir("/proc/self/fd")
-        .map(|fds| {
-            fds.filter_map(Result::ok)
-                .filter_map(|fd| std::fs::read_link(fd.path()).ok())
-                .filter(|target| target == path)
-                .count()
-        })
-        .unwrap_or(0)
+    std::fs::read_dir("/proc/self/fd").map_or(0, |fds| {
+        fds.filter_map(Result::ok)
+            .filter_map(|fd| std::fs::read_link(fd.path()).ok())
+            .filter(|target| target == path)
+            .count()
+    })
 }
 
 fn make_fifo(path: &std::path::Path) {

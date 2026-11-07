@@ -71,7 +71,11 @@ fn a_hung_start_whose_stream_was_replaced_is_not_even_asked_to_restart() {
 /// `disarm` in `stop` keeps that watch from starting the resume over.
 #[test]
 fn a_hung_resume_after_a_stop_is_not_started_over_by_the_old_watch() {
-    let harness = harness_with_deadline(ROOMY_DEADLINE);
+    // Twice the usual room: a start slow to reach the probe on a loaded machine
+    // must not be started over before the `stop`, which would end the test on
+    // a restart it did not set out to look at. The old watch, if it survived
+    // the `stop`, still fires well inside the quiet period.
+    let harness = harness_with_deadline(ROOMY_DEADLINE * 2);
     let dir = tempfile::tempdir().unwrap();
     let path = local_track(&dir);
     let reached = hang_starts(&harness.player, usize::MAX);
