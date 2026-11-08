@@ -575,10 +575,12 @@ fn play_20a_gapless_handoff_applies_the_next_gain_at_the_second_stream_start() {
     std::env::set_var(AUDIO_SINK_ENV_VAR, "fakesink");
 
     let (tx, rx) = std::sync::mpsc::channel::<PlayerEvent>();
-    let player = Player::new(Box::new(move |event| {
-        let _ = tx.send(event);
-    }))
-    .unwrap();
+    let player = segment_support::leaving_hung_starts_to_the_test(
+        Player::new(Box::new(move |event| {
+            let _ = tx.send(event);
+        }))
+        .unwrap(),
+    );
 
     let directory = tempfile::tempdir().unwrap();
     let first = directory.path().join("first.wav");
@@ -616,18 +618,22 @@ fn play_20a_gapless_handoff_applies_the_next_gain_at_the_second_stream_start() {
             gst::PadProbeReturn::Ok
         },
     );
-    player
-        .play(PlaybackItem {
+    // A start that hangs in READY is begun over in place, on the pipeline the
+    // probe above is on: the watchdog would put it on a new one.
+    segment_support::start_over_when_hung(&player, || {
+        player
+            .play(PlaybackItem {
+                segment: None,
+                path: first.to_str().unwrap(),
+                gain_db: -6.0,
+            })
+            .unwrap();
+        player.set_next(Some(PlaybackItem {
             segment: None,
-            path: first.to_str().unwrap(),
-            gain_db: -6.0,
-        })
-        .unwrap();
-    player.set_next(Some(PlaybackItem {
-        segment: None,
-        path: second.to_str().unwrap(),
-        gain_db: 6.0,
-    }));
+            path: second.to_str().unwrap(),
+            gain_db: 6.0,
+        }));
+    });
 
     // The bus watch (source of AdvancedToNext / TrackFinished) is dispatched
     // by the GLib main context; nothing iterates it in a headless test, so

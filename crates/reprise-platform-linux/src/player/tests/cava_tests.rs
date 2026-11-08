@@ -1,4 +1,6 @@
-use super::segment_support::{start_over_when_hung, start_over_when_hung_resetting};
+use super::segment_support::{
+    leaving_hung_starts_to_the_test, start_over_when_hung, start_over_when_hung_resetting,
+};
 use super::*;
 use crate::player_effects::{build_audio_filter, set_spectrum_messages};
 use crate::player_pipeline::AUDIO_SINK_ENV_VAR;
@@ -133,10 +135,12 @@ fn ac_29_enabled_player_emits_live_cava_frames() {
     std::env::set_var(AUDIO_SINK_ENV_VAR, "fakesink");
 
     let (tx, rx) = std::sync::mpsc::channel::<PlayerEvent>();
-    let player = Player::new(Box::new(move |event| {
-        let _ = tx.send(event);
-    }))
-    .unwrap();
+    let player = leaving_hung_starts_to_the_test(
+        Player::new(Box::new(move |event| {
+            let _ = tx.send(event);
+        }))
+        .unwrap(),
+    );
     player.set_spectrum_enabled(true).unwrap();
     let path = concat!(env!("CARGO_MANIFEST_DIR"), "/tests/fixtures/sine.flac");
     start_over_when_hung(&player, || player.play(item(path)).unwrap());
@@ -160,10 +164,12 @@ fn ac_29_flac_playback_emits_spectrum_at_display_cadence() {
     std::env::set_var(AUDIO_SINK_ENV_VAR, "fakesink");
 
     let (tx, rx) = std::sync::mpsc::channel::<PlayerEvent>();
-    let player = Player::new(Box::new(move |event| {
-        let _ = tx.send(event);
-    }))
-    .unwrap();
+    let player = leaving_hung_starts_to_the_test(
+        Player::new(Box::new(move |event| {
+            let _ = tx.send(event);
+        }))
+        .unwrap(),
+    );
     player.set_spectrum_enabled(true).unwrap();
     let path = concat!(env!("CARGO_MANIFEST_DIR"), "/tests/fixtures/sine.flac");
     // The frames are counted from the events the start leaves in the channel,
@@ -218,10 +224,12 @@ fn ac_26_enabled_uri_playback_emits_live_cava_frames() {
     std::env::set_var(AUDIO_SINK_ENV_VAR, "fakesink");
 
     let (tx, rx) = std::sync::mpsc::channel::<PlayerEvent>();
-    let player = Player::new(Box::new(move |event| {
-        let _ = tx.send(event);
-    }))
-    .unwrap();
+    let player = leaving_hung_starts_to_the_test(
+        Player::new(Box::new(move |event| {
+            let _ = tx.send(event);
+        }))
+        .unwrap(),
+    );
     player.set_spectrum_enabled(true).unwrap();
     let path = concat!(env!("CARGO_MANIFEST_DIR"), "/tests/fixtures/sine.flac");
     let uri = gst::glib::filename_to_uri(path, None).unwrap();
@@ -241,10 +249,12 @@ fn ac_29_enabled_player_measures_absolute_bass_pressure() {
     std::env::set_var(AUDIO_SINK_ENV_VAR, "fakesink");
 
     let (tx, rx) = std::sync::mpsc::channel::<PlayerEvent>();
-    let player = Player::new(Box::new(move |event| {
-        let _ = tx.send(event);
-    }))
-    .unwrap();
+    let player = leaving_hung_starts_to_the_test(
+        Player::new(Box::new(move |event| {
+            let _ = tx.send(event);
+        }))
+        .unwrap(),
+    );
     player.set_spectrum_enabled(true).unwrap();
     let path = concat!(env!("CARGO_MANIFEST_DIR"), "/tests/fixtures/sine.flac");
     start_over_when_hung(&player, || player.play(item(path)).unwrap());
@@ -287,10 +297,12 @@ fn ac_29_filter_replacement_reattaches_the_cava_processor() {
     std::env::set_var(AUDIO_SINK_ENV_VAR, "fakesink");
 
     let (tx, rx) = std::sync::mpsc::channel::<PlayerEvent>();
-    let player = Player::new(Box::new(move |event| {
-        let _ = tx.send(event);
-    }))
-    .unwrap();
+    let player = leaving_hung_starts_to_the_test(
+        Player::new(Box::new(move |event| {
+            let _ = tx.send(event);
+        }))
+        .unwrap(),
+    );
     player.set_spectrum_enabled(true).unwrap();
     player
         .set_audio_effects(AudioEffects {

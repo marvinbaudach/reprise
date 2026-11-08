@@ -18,7 +18,7 @@
 //! generations strictly increase and that each event is stamped with the
 //! generation live at its own production instant.
 
-use super::segment_support::start_over_when_hung_resetting;
+use super::segment_support::{leaving_hung_starts_to_the_test, start_over_when_hung_resetting};
 use super::*;
 use crate::player_pipeline::AUDIO_SINK_ENV_VAR;
 
@@ -70,7 +70,7 @@ fn consecutive_starts_produce_strictly_increasing_generations() {
         .unwrap_or_else(std::sync::PoisonError::into_inner);
     std::env::set_var(AUDIO_SINK_ENV_VAR, "fakesink");
 
-    let player = Player::new(Box::new(|_| {})).unwrap();
+    let player = leaving_hung_starts_to_the_test(Player::new(Box::new(|_| {})).unwrap());
     assert_eq!(
         player.current_generation(),
         StreamGeneration::INITIAL,
@@ -152,10 +152,12 @@ fn tagged_event_carries_the_generation_current_when_its_stream_started() {
     std::env::set_var(AUDIO_SINK_ENV_VAR, "fakesink");
 
     let (tx, rx) = std::sync::mpsc::channel::<StreamEvent>();
-    let player = Player::new_with_generation(Box::new(move |tagged| {
-        let _ = tx.send(tagged);
-    }))
-    .unwrap();
+    let player = leaving_hung_starts_to_the_test(
+        Player::new_with_generation(Box::new(move |tagged| {
+            let _ = tx.send(tagged);
+        }))
+        .unwrap(),
+    );
 
     let first = concat!(env!("CARGO_MANIFEST_DIR"), "/tests/fixtures/sine.flac");
     // Every attempt starts with an empty channel: what a hung attempt sent is
@@ -228,10 +230,12 @@ fn gapless_handoff_carries_a_newer_generation_than_the_track_it_replaced() {
     std::env::set_var(AUDIO_SINK_ENV_VAR, "fakesink");
 
     let (tx, rx) = std::sync::mpsc::channel::<StreamEvent>();
-    let player = Player::new_with_generation(Box::new(move |tagged| {
-        let _ = tx.send(tagged);
-    }))
-    .unwrap();
+    let player = leaving_hung_starts_to_the_test(
+        Player::new_with_generation(Box::new(move |tagged| {
+            let _ = tx.send(tagged);
+        }))
+        .unwrap(),
+    );
 
     // A generated first track, as `handoff_duration_tests` uses: `play()` emits
     // Playing synchronously, so nothing but the length of this track bounds how
@@ -307,10 +311,12 @@ fn crossfade_promotion_carries_a_newer_generation_than_the_track_it_replaced() {
     std::env::set_var(AUDIO_SINK_ENV_VAR, "fakesink");
 
     let (tx, rx) = std::sync::mpsc::channel::<StreamEvent>();
-    let player = Player::new_with_generation(Box::new(move |tagged| {
-        let _ = tx.send(tagged);
-    }))
-    .unwrap();
+    let player = leaving_hung_starts_to_the_test(
+        Player::new_with_generation(Box::new(move |tagged| {
+            let _ = tx.send(tagged);
+        }))
+        .unwrap(),
+    );
     // Short fade (1 s), matching the existing crossfade backend test, so this
     // finishes quickly.
     player.set_transition(TrackTransition::Crossfade, 1);

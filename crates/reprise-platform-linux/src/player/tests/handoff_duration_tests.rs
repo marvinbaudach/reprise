@@ -18,7 +18,7 @@
 
 use std::path::Path;
 
-use super::segment_support::start_over_when_hung;
+use super::segment_support::{leaving_hung_starts_to_the_test, start_over_when_hung};
 use super::*;
 use crate::player_pipeline::AUDIO_SINK_ENV_VAR;
 
@@ -83,10 +83,12 @@ fn gapless_handoff_never_reports_a_duration_that_moves_the_playhead_backwards() 
     write_sine_wav(&second, 2);
 
     let (tx, rx) = std::sync::mpsc::channel::<PlayerEvent>();
-    let player = Player::new(Box::new(move |event| {
-        let _ = tx.send(event);
-    }))
-    .unwrap();
+    let player = leaving_hung_starts_to_the_test(
+        Player::new(Box::new(move |event| {
+            let _ = tx.send(event);
+        }))
+        .unwrap(),
+    );
 
     start_over_when_hung(&player, || {
         player.play(item(first.to_str().unwrap())).unwrap();

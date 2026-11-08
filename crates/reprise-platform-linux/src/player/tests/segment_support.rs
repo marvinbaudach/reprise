@@ -420,11 +420,27 @@ const HUNG_START_PATIENCE: Duration = Duration::from_secs(5);
 /// Starts tried before a test gives up; every one of them hanging is not luck.
 const START_ATTEMPTS: usize = 5;
 /// Longer than [`HUNG_START_PATIENCE`], so a test that starts through
-/// [`Harness::start`] has begun a hung start over in place before the watchdog
-/// would begin it over on a new pipeline; see [`Harness::observing`]. A test
-/// that plays directly still gets the watchdog's recovery from a real hang,
-/// later than in production.
+/// [`Harness::start`] or [`start_over_when_hung`] has begun a hung start over in
+/// place before the watchdog would begin it over on a new pipeline; see
+/// [`leaving_hung_starts_to_the_test`]. A test that plays directly still gets
+/// the watchdog's recovery from a real hang, later than in production.
 const HARNESS_WATCHDOG_DEADLINE: Duration = Duration::from_secs(8);
+
+/// `player` with its start watchdog held back for the test's own recovery.
+///
+/// The watchdog begins a hung start over on a new pipeline, which loses what a
+/// test put on the first one (a probe, a signal handler, a counter), and its
+/// production deadline of 4 s is shorter than [`HUNG_START_PATIENCE`]. On a
+/// loaded machine a start really does hang now and then, and the watchdog would
+/// then replace the pipeline under the test before [`start_over_when_hung`]
+/// has begun the start over in place, on the pipeline the test is watching.
+/// So every test that builds its own [`Player`] and starts it over by that
+/// helper builds it through here. The watchdog's own tests set their own
+/// deadline.
+pub(super) fn leaving_hung_starts_to_the_test(mut player: Player) -> Player {
+    player.start_watchdog.deadline = HARNESS_WATCHDOG_DEADLINE;
+    player
+}
 
 /// [`Harness::start`] for a test that builds its own [`Player`]: runs `begin`
 /// and starts it over, up to [`START_ATTEMPTS`] times, while the pipeline
@@ -504,16 +520,13 @@ impl Harness {
         crate::player::pipeline_swap::test_seam::clear();
         std::env::set_var(AUDIO_SINK_ENV_VAR, "fakesink");
         let (tx, events) = std::sync::mpsc::channel::<PlayerEvent>();
-        let mut player = Player::new(Box::new(move |event| {
-            observe(&event);
-            let _ = tx.send(event);
-        }))
-        .unwrap();
-        // The watchdog begins a start over on a new pipeline, which loses what a
-        // test did to the first one; `Self::start` begins it over in place after
-        // `HUNG_START_PATIENCE`, so the watchdog waits longer than that. The
-        // watchdog's own tests set their own deadline.
-        player.start_watchdog.deadline = HARNESS_WATCHDOG_DEADLINE;
+        let player = leaving_hung_starts_to_the_test(
+            Player::new(Box::new(move |event| {
+                observe(&event);
+                let _ = tx.send(event);
+            }))
+            .unwrap(),
+        );
         Self {
             player,
             events,

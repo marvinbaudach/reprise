@@ -21,6 +21,10 @@ use super::start_watchdog_tests::{
 };
 use super::*;
 
+/// A deadline no start that merely runs slowly reaches, for a watch that is not
+/// the one under test.
+const UNHURRIED_DEADLINE: Duration = Duration::from_secs(8);
+
 /// Replaces the player's restart with one that runs `before` first and then the
 /// real one. Returns how many times it was called.
 pub(super) fn restart_after(
@@ -48,12 +52,18 @@ fn a_hung_start_whose_stream_was_replaced_is_not_even_asked_to_restart() {
     let reached = hang_starts(&harness.player, usize::MAX);
     let calls = restart_after(&mut harness.player, || {});
     harness.player.play(item(&path)).unwrap();
-    harness.pump_until(PATIENCE, |_| reached.load(Ordering::SeqCst) >= 1);
-
+    // Replaced before the main context is pumped at all, so no look can have
+    // run yet: a start slow to reach the probe on a loaded machine has not
+    // been asked about before the stream is replaced. The look that follows
+    // finds the start hung, and for as long as the deadline, and must still
+    // not ask.
     harness
         .player
         .stream_generation
         .fetch_add(1, Ordering::SeqCst);
+    // The control arm: the replaced start really is the hang the look would
+    // have started over.
+    harness.pump_until(PATIENCE, |_| reached.load(Ordering::SeqCst) >= 1);
     let events = harness.pump_for(QUIET_FOR);
 
     assert_eq!(
@@ -175,6 +185,11 @@ fn a_play_that_lands_between_the_look_and_the_restart_is_left_to_play() {
     });
     harness.player.play(item(&hung_path)).unwrap();
     let hung = current_playbin(&harness.player);
+    // The hung start's watch has taken its deadline already. The newer start
+    // is watched too, and a healthy start that is merely slow on a loaded
+    // machine must not be asked about: that look would be a second one, and
+    // this test is about the first.
+    harness.player.start_watchdog.deadline = UNHURRIED_DEADLINE;
 
     let player = &harness.player;
     let events = std::thread::scope(|scope| {
