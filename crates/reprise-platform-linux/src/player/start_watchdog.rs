@@ -133,9 +133,10 @@ pub(super) fn judge(observation: StartObservation, attempt: u32, deadline: Durat
     }
 }
 
-/// Whether a start of `uri` is one the watchdog covers: a local file, whole
-/// or as a CUE segment. A segment's start finishes on the bus, but the gate
-/// keeps its pending start across the restart, so starting it over is safe.
+/// Whether a start of `uri` is one the watchdog covers: a local file, whether
+/// it is played whole or as a CUE segment. A segment's start finishes on the
+/// bus, but the gate keeps its pending start across the restart, so starting
+/// it over is safe. Only the URI and the live flag decide.
 pub(super) fn covers(uri: &str, live: bool) -> bool {
     !live && !is_remote_playback_uri(Some(uri))
 }
@@ -539,7 +540,9 @@ mod tests {
     }
 
     #[test]
-    fn only_a_local_file_whole_or_a_cue_segment_is_covered() {
+    fn only_a_local_file_is_covered_whole_or_as_a_cue_segment() {
+        // The same local file URI is covered whether it is played whole or as
+        // a CUE segment: a segment start has no bearing on coverage.
         assert!(covers("file:///music/a.flac", false));
         assert!(!covers("file:///music/a.flac", true));
         assert!(!covers("https://radio.example/live", false));
