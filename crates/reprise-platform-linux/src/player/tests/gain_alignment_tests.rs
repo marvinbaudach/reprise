@@ -8,7 +8,7 @@
 
 use std::path::Path;
 
-use super::segment_support::start_over_when_hung;
+use super::segment_support::{leaving_hung_starts_to_the_test, start_over_when_hung};
 use super::*;
 use crate::player_pipeline::AUDIO_SINK_ENV_VAR;
 
@@ -110,10 +110,12 @@ fn play_20a_every_buffer_of_each_track_carries_that_tracks_gain() {
         .unwrap_or_else(std::sync::PoisonError::into_inner);
     std::env::set_var(AUDIO_SINK_ENV_VAR, "fakesink");
     let (tx, rx) = std::sync::mpsc::channel::<PlayerEvent>();
-    let player = Player::new(Box::new(move |event| {
-        let _ = tx.send(event);
-    }))
-    .unwrap();
+    let player = leaving_hung_starts_to_the_test(
+        Player::new(Box::new(move |event| {
+            let _ = tx.send(event);
+        }))
+        .unwrap(),
+    );
     let directory = tempfile::tempdir().unwrap();
     let (first, second) = write_wavs(directory.path());
     let samples = record_gain_per_buffer(&gain_element(&player));

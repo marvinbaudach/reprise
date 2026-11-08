@@ -123,6 +123,11 @@ pub(super) fn gain_element(player: &Player) -> gst::Element {
         .lock()
         .unwrap_or_else(PoisonError::into_inner)
         .clone();
+    gain_of(&playbin)
+}
+
+/// The track-gain element inside `playbin`'s audio filter.
+pub(super) fn gain_of(playbin: &gst::Element) -> gst::Element {
     playbin
         .property::<Option<gst::Element>>("audio-filter")
         .unwrap()
@@ -130,6 +135,23 @@ pub(super) fn gain_element(player: &Player) -> gst::Element {
         .unwrap()
         .by_name("reprise-track-gain")
         .unwrap()
+}
+
+/// Runs `install` on the player's current pipeline now, and on every pipeline
+/// built to replace it later (a start the watchdog began over, a rebuild), so
+/// a probe or a signal handler follows the start. The hooks last until the
+/// [`Harness`] is dropped.
+pub(super) fn on_every_pipeline(
+    player: &Player,
+    install: impl Fn(&gst::Element) + Send + Sync + 'static,
+) {
+    let current = player
+        .playbin
+        .lock()
+        .unwrap_or_else(PoisonError::into_inner)
+        .clone();
+    install(&current);
+    crate::player::pipeline_swap::test_seam::on_pipeline_built(Arc::new(install));
 }
 
 /// What left the gain element since the last `SEGMENT` event, and how many
@@ -226,9 +248,15 @@ impl HeardLog {
 /// event — so after a flushing seek only what the seek produced is kept.
 pub(super) fn record_heard(player: &Player) -> HeardLog {
     let heard = HeardLog::default();
+    let log = heard.clone();
+    on_every_pipeline(player, move |playbin| record_into(&log, &gain_of(playbin)));
+    heard
+}
+
+/// [`record_heard`] on one pipeline's gain element.
+fn record_into(heard: &HeardLog, gain: &gst::Element) {
     let recorded = heard.buffers.clone();
     let segments = heard.segments.clone();
-    let gain = gain_element(player);
     let element = gain.clone();
     let stream_starts = heard.stream_starts.clone();
     let landings = heard.landings.clone();
@@ -290,7 +318,6 @@ pub(super) fn record_heard(player: &Player) -> HeardLog {
             gst::PadProbeReturn::Ok
         },
     );
-    heard
 }
 
 /// The buffer's peak as a fraction of full scale, for the raw formats the
@@ -392,6 +419,28 @@ pub(super) fn slow_sink_into(player: &Player, rendered: &RenderedLog) {
 const HUNG_START_PATIENCE: Duration = Duration::from_secs(5);
 /// Starts tried before a test gives up; every one of them hanging is not luck.
 const START_ATTEMPTS: usize = 5;
+/// Longer than [`HUNG_START_PATIENCE`], so a test that starts through
+/// [`Harness::start`] or [`start_over_when_hung`] has begun a hung start over in
+/// place before the watchdog would begin it over on a new pipeline; see
+/// [`leaving_hung_starts_to_the_test`]. A test that plays directly still gets
+/// the watchdog's recovery from a real hang, later than in production.
+const HARNESS_WATCHDOG_DEADLINE: Duration = Duration::from_secs(8);
+
+/// `player` with its start watchdog held back for the test's own recovery.
+///
+/// The watchdog begins a hung start over on a new pipeline, which loses what a
+/// test put on the first one (a probe, a signal handler, a counter), and its
+/// production deadline of 4 s is shorter than [`HUNG_START_PATIENCE`]. On a
+/// loaded machine a start really does hang now and then, and the watchdog would
+/// then replace the pipeline under the test before [`start_over_when_hung`]
+/// has begun the start over in place, on the pipeline the test is watching.
+/// So every test that builds its own [`Player`] and starts it over by that
+/// helper builds it through here. The watchdog's own tests set their own
+/// deadline.
+pub(super) fn leaving_hung_starts_to_the_test(mut player: Player) -> Player {
+    player.start_watchdog.deadline = HARNESS_WATCHDOG_DEADLINE;
+    player
+}
 
 /// [`Harness::start`] for a test that builds its own [`Player`]: runs `begin`
 /// and starts it over, up to [`START_ATTEMPTS`] times, while the pipeline
@@ -468,18 +517,35 @@ impl Harness {
         let guard = AUDIO_SINK_TEST_LOCK
             .lock()
             .unwrap_or_else(PoisonError::into_inner);
+        crate::player::pipeline_swap::test_seam::clear();
         std::env::set_var(AUDIO_SINK_ENV_VAR, "fakesink");
         let (tx, events) = std::sync::mpsc::channel::<PlayerEvent>();
-        let player = Player::new(Box::new(move |event| {
-            observe(&event);
-            let _ = tx.send(event);
-        }))
-        .unwrap();
+        let player = leaving_hung_starts_to_the_test(
+            Player::new(Box::new(move |event| {
+                observe(&event);
+                let _ = tx.send(event);
+            }))
+            .unwrap(),
+        );
         Self {
             player,
             events,
             _guard: guard,
         }
+    }
+
+    /// [`Self::new`] with the watchdog's production deadline, for a test that
+    /// plays directly and leaves a hung start to the watchdog's recovery.
+    ///
+    /// The harness's own deadline ([`HARNESS_WATCHDOG_DEADLINE`]) lies after
+    /// [`HUNG_START_PATIENCE`] so that [`Self::start`] begins a hung start over
+    /// first; a test that never calls it has nothing to make room for, and a
+    /// guard of its own that only just outlasts the production deadline would
+    /// not outlast the harness's.
+    pub(super) fn recovering_hung_starts_itself() -> Self {
+        let mut harness = Self::new();
+        harness.player.start_watchdog.deadline = crate::player::start_watchdog::START_DEADLINE;
+        harness
     }
 
     /// Runs `begin` — the `play` of a track and whatever the test does at once
@@ -545,6 +611,7 @@ impl Harness {
 impl Drop for Harness {
     fn drop(&mut self) {
         let _ = self.player.stop();
+        crate::player::pipeline_swap::test_seam::clear();
         std::env::remove_var(AUDIO_SINK_ENV_VAR);
     }
 }

@@ -178,7 +178,10 @@ fn play_22_a_cue_track_is_not_announced_playing_until_its_start_seek_lands() {
 
 #[test]
 fn play_22_flac_cue_tracks_start_reliably_cold_and_after_a_whole_file() {
-    let harness = Harness::new();
+    // It plays directly and counts on the watchdog to recover a real hang
+    // inside `HANG_GUARD`, which the harness's later deadline would not leave
+    // room for.
+    let harness = Harness::recovering_hung_starts_itself();
     let directory = tempfile::tempdir().unwrap();
     let album = write_cue_flac(&directory);
     let whole = fixture("blip.flac");
