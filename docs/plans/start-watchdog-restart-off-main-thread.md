@@ -149,6 +149,12 @@ runs the full gate before landing.
   watchdog on its own, so only the dedicated watchdog tests and
   `play_22_flac_cue_tracks_start_reliably_cold_and_after_a_whole_file`, which
   asks for the production deadline, exercise the production restart path.
+- `a_start_stuck_on_one_long_read_plays_after_a_restart_instead_of_being_skipped`
+  gave up after three attempts in 2 of 16 full-suite runs under load (0 of 16 on
+  the control arm, 0 of 120 isolated). The cause is not found: the rebuild is not
+  slower than the old in-place restart (restart to first source read: p99 21 to
+  43 ms on this branch, 160 to 500 ms on the control, 178 samples in the full
+  suite, the module and alone), and no run failed while measuring.
 - A `stop` that takes the playbin lock right after the restart queued its
   asynchronous start can see that start land after its `Null`. The window is the
   time the element's thread takes to begin, and that revived start is not watched.
