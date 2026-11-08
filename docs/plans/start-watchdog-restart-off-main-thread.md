@@ -146,8 +146,9 @@ runs the full gate before landing.
 - An EQ change made between `build()` and the swap is lost: the new pipeline was
   built from the effects as they were, and is not rebuilt.
 - `HARNESS_WATCHDOG_DEADLINE` (8 s) means the test harness never reaches the
-  watchdog on its own, so only the dedicated watchdog tests exercise the
-  production restart path.
+  watchdog on its own, so only the dedicated watchdog tests and
+  `play_22_flac_cue_tracks_start_reliably_cold_and_after_a_whole_file`, which
+  asks for the production deadline, exercise the production restart path.
 - A `stop` that takes the playbin lock right after the restart queued its
   asynchronous start can see that start land after its `Null`. The window is the
   time the element's thread takes to begin, and that revived start is not watched.

@@ -534,6 +534,20 @@ impl Harness {
         }
     }
 
+    /// [`Self::new`] with the watchdog's production deadline, for a test that
+    /// plays directly and leaves a hung start to the watchdog's recovery.
+    ///
+    /// The harness's own deadline ([`HARNESS_WATCHDOG_DEADLINE`]) lies after
+    /// [`HUNG_START_PATIENCE`] so that [`Self::start`] begins a hung start over
+    /// first; a test that never calls it has nothing to make room for, and a
+    /// guard of its own that only just outlasts the production deadline would
+    /// not outlast the harness's.
+    pub(super) fn recovering_hung_starts_itself() -> Self {
+        let mut harness = Self::new();
+        harness.player.start_watchdog.deadline = crate::player::start_watchdog::START_DEADLINE;
+        harness
+    }
+
     /// Runs `begin` — the `play` of a track and whatever the test does at once
     /// after it — and starts it over if the pipeline hangs in READY.
     ///
