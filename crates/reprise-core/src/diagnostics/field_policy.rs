@@ -283,6 +283,8 @@ pub(super) const KEEP_FIELDS: &[&str] = &[
     "queued",
     "queued_ms",
     "ratings",
+    // A byte count.
+    "received_bytes",
     "recovered",
     // `RecoveryOutcome::as_str`: a static label.
     "recovery",
@@ -363,6 +365,8 @@ pub(super) const KEEP_FIELDS: &[&str] = &[
     "total",
     "total_albums",
     "total_artists",
+    // A byte count.
+    "total_bytes",
     "touched",
     "track_id",
     "tracks",

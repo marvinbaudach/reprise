@@ -34,9 +34,20 @@ pub(crate) fn record_fill_outcome(
         Err(PipelineError::DownloadAlreadyRunning) => {}
         Err(_) => summary.failed += 1,
         Ok(state) => {
+            // Only the byte counts of an in-flight download are logged; a
+            // `Failed` message never is. A field that is `None` is omitted.
+            let (received_bytes, total_bytes) = match &state {
+                DownloadState::Downloading {
+                    received_bytes,
+                    total_bytes,
+                } => (Some(*received_bytes), *total_bytes),
+                _ => (None, None),
+            };
             tracing::warn!(
                 episode_id,
                 state_kind = state.kind(),
+                received_bytes,
+                total_bytes,
                 "podcast fill received a non-terminal download state"
             );
         }
