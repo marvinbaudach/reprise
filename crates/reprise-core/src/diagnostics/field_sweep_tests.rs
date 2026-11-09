@@ -112,7 +112,6 @@ fn ignores_strings_comments_other_macros_and_foreign_paths() {
             let _ = "info!(quoted = 1)";
             let _ = r#"warn!(raw = 1)"#;
             println!("a = {}", a);
-            log::info!(foreign = 1);
             format!("{}", error);
         }
         "##,
@@ -220,6 +219,8 @@ fn an_aliased_tracing_import_is_an_error_naming_the_site() {
         "use tracing::event as ev;",
         "use tracing as t;",
         "use tracing::{self as t};",
+        "extern crate tracing as t;",
+        "fn f() {}\npub extern crate tracing as logging;",
     ] {
         let error = sweep_source("fixture.rs", source).expect_err(source);
 
@@ -411,4 +412,62 @@ fn a_module_inside_an_inline_module_resolves_below_its_directory() {
     assert!(has(&root, "/c/src/a/moved.rs"), "{root:?}");
     assert!(has(&leaf, "/c/src/ui/panel/a/b/x.rs"), "{leaf:?}");
     assert!(!has(&root, "/c/src/x.rs"), "{root:?}");
+}
+
+#[test]
+fn a_qualified_call_that_does_not_start_at_tracing_is_an_error_naming_the_site() {
+    for (source, root) in [
+        ("tracing_core::event!(Level::INFO, a = 1);", "tracing_core"),
+        ("crate::info!(b = 2);", "crate"),
+        ("self::warn!(c = 3);", "self"),
+        ("super::error!(d = 4);", "super"),
+        ("log::info!(foreign = 1);", "log"),
+        ("t::info!(a = 1);", "t"),
+        ("other::info_span!(\"n\", a = 1);", "other"),
+        ("a::b::debug!(a = 1);", "a"),
+        ("x::tracing::trace!(a = 1);", "x"),
+        ("$crate::info!(a = 1);", "crate"),
+    ] {
+        let source = format!("fn f() {{}}\nfn g() {{ {source} }}");
+        let error = sweep_source("fixture.rs", &source).expect_err(&source);
+
+        assert!(error.contains("fixture.rs:2"), "{source}: {error}");
+        assert!(error.contains(&format!("`{root}::")), "{source}: {error}");
+        assert!(error.contains("tracing"), "{source}: {error}");
+    }
+}
+
+#[test]
+fn a_call_through_tracing_itself_is_read_with_or_without_a_leading_path_separator() {
+    let found = keys(
+        r#"
+        fn f() {
+            tracing::info!(a = 1);
+            ::tracing::warn!(b = 1);
+            info!(c = 1);
+            tracing::info_span!("n", d = 1);
+        }
+        "#,
+    );
+
+    assert_eq!(found, ["a", "b", "c", "d"]);
+}
+
+#[test]
+fn an_extern_crate_that_is_not_aliased_is_fine() {
+    let swept = sweep("extern crate tracing;\nfn f() { info!(a = 1); }");
+
+    assert_eq!(swept.sites.len(), 1);
+}
+
+#[test]
+fn a_macro_of_the_same_name_that_is_not_called_is_not_a_call() {
+    let swept = sweep(
+        r#"
+        macro_rules! info { ($($t:tt)*) => {}; }
+        fn f() { let info = 1; other::info(a); path::to::error; }
+        "#,
+    );
+
+    assert!(swept.sites.is_empty());
 }

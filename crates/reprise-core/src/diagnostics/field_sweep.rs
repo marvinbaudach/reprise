@@ -20,8 +20,10 @@
 //! carry it into the report, so a key classified now cannot slip through
 //! later.
 //!
-//! An alias of a `tracing` import is an error, since the scanner finds a macro
-//! by its name and an alias would hide its calls.
+//! A call to one of these macro names through a path whose root is not
+//! `tracing` (`tracing_core::event!`, `crate::info!`, an `extern crate tracing
+//! as t` alias) is an error, and so is an alias of a `tracing` import, since
+//! the scanner finds a macro by its name and an alias would hide its calls.
 //!
 //! What does not count: items behind `#[cfg(test)]` or `#[cfg(all(test, …))]`,
 //! files those attributes pull in through `mod name;` (also from inside an
@@ -238,10 +240,19 @@ pub(super) fn sweep_source(name: &str, source: &str) -> Result<FileSweep, String
         let Some(leading) = leading_positionals(ident) else {
             continue;
         };
-        if !is_tracing_call(&production, index) {
-            continue;
-        }
         let line = production[index].line;
+        match call_root(&production, index) {
+            CallRoot::NotACall => continue,
+            CallRoot::Tracing => {}
+            CallRoot::Foreign(root) if NON_TRACING_ROOTS.contains(&root.as_str()) => continue,
+            CallRoot::Foreign(root) => {
+                return Err(format!(
+                    "{name}:{line}: `{root}::{ident}!` is called through a path that does not \
+                     start at `tracing`, so the field scan cannot tell whether it is a `tracing` \
+                     macro; call it as `tracing::{ident}!`"
+                ));
+            }
+        }
         let Some(arguments) = macro_arguments(&production, index + 2) else {
             continue;
         };
@@ -268,7 +279,24 @@ pub(super) fn unreadable_field(name: &str, line: usize, part: &str) -> String {
     format!("{name}:{line}: cannot read the field `{part}`; {UNREADABLE_HINT}")
 }
 
-fn is_tracing_call(tokens: &[Spanned], index: usize) -> bool {
+/// Where a macro-shaped `name!(…)` at `index` comes from.
+enum CallRoot {
+    /// Not an invocation: no `!` and bracket after the name.
+    NotACall,
+    /// Bare, or through a path that starts at `tracing`.
+    Tracing,
+    /// Through a path that starts at this other root.
+    Foreign(String),
+}
+
+/// Crate roots whose macros share a `tracing` macro's name but are not
+/// `tracing` macros, so a qualified call through them is not scanned. Empty on
+/// purpose: no production code under `crates/*/src` calls such a macro. Add a
+/// root only after checking that its macro cannot reach the log layer with a
+/// field, and say why in a comment here.
+const NON_TRACING_ROOTS: &[&str] = &[];
+
+fn call_root(tokens: &[Spanned], index: usize) -> CallRoot {
     let call = matches!(
         (tokens.get(index + 1), tokens.get(index + 2)),
         (
@@ -283,14 +311,25 @@ fn is_tracing_call(tokens: &[Spanned], index: usize) -> bool {
         )
     );
     if !call {
-        return false;
+        return CallRoot::NotACall;
     }
-    let before = |back: usize| index.checked_sub(back).map(|at| &tokens[at].token);
-    match (before(1), before(2)) {
-        (Some(Token::Punct(':')), Some(Token::Punct(':'))) => {
-            matches!(before(3), Some(Token::Ident(path)) if path == "tracing")
-        }
-        _ => true,
+    // Walk the `a::b::` path back to its first segment. A leading `::` or a
+    // `$` (as in `$crate`) stops the walk without adding a segment.
+    let mut root: Option<&str> = None;
+    let mut at = index;
+    while at >= 3
+        && matches!(tokens[at - 1].token, Token::Punct(':'))
+        && matches!(tokens[at - 2].token, Token::Punct(':'))
+    {
+        let Token::Ident(segment) = &tokens[at - 3].token else {
+            break;
+        };
+        root = Some(segment);
+        at -= 3;
+    }
+    match root {
+        None | Some("tracing") => CallRoot::Tracing,
+        Some(other) => CallRoot::Foreign(other.to_owned()),
     }
 }
 
@@ -463,6 +502,19 @@ fn dotted_path(tokens: &[Spanned]) -> Option<(String, &[Spanned])> {
 /// names the line.
 fn reject_aliased_imports(name: &str, tokens: &[Spanned]) -> Result<(), String> {
     let is_word = |at: usize, word: &str| matches!(tokens.get(at).map(|s| &s.token), Some(Token::Ident(text)) if text == word);
+    for (at, spanned) in tokens.iter().enumerate() {
+        if is_word(at, "extern")
+            && is_word(at + 1, "crate")
+            && is_word(at + 2, "tracing")
+            && is_word(at + 3, "as")
+        {
+            return Err(format!(
+                "{name}:{}: an alias of `extern crate tracing` hides its macro calls from the \
+                 field scan; import the macro by its own name",
+                spanned.line
+            ));
+        }
+    }
     for (at, spanned) in tokens.iter().enumerate() {
         if !is_word(at, "use") {
             continue;
