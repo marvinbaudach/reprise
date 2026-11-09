@@ -16,6 +16,11 @@ const MESSAGE_KEY: &str = "message";
 /// there. Everywhere else it is refused.
 const MESSAGE_EXEMPT_PREFIX: &str = "reprise-android-ffi/";
 
+/// The number of distinct keys in the plan's key table
+/// (`docs/plans/diagnostics-field-policy.md`, Task 3). The scan must find at
+/// least this many, or it reads less than the table did.
+const KEY_TABLE_SIZE: usize = 397;
+
 /// What is wrong with the classification of `emitted`, one sentence per
 /// problem; empty when every key is in exactly one list and every listed key
 /// is still emitted.
@@ -80,9 +85,67 @@ fn every_emitted_field_key_is_in_exactly_one_list() {
     assert!(sweep.files > 0, "the scan read no source file");
     assert!(!sweep.sites.is_empty(), "the scan found no field site");
 
+    let found = distinct_keys(&sweep.sites).len();
+    assert!(
+        found >= KEY_TABLE_SIZE,
+        "the scan found {found} distinct keys, fewer than the {KEY_TABLE_SIZE} of the plan's table"
+    );
+    let listed = KEEP_FIELDS.len() + REDACT_FIELDS.len();
+    assert!(
+        found >= listed,
+        "the scan found {found} distinct keys but {listed} are listed"
+    );
+
     let problems = classification_problems(&sweep.sites, KEEP_FIELDS, REDACT_FIELDS);
 
     assert!(problems.is_empty(), "\n{}\n", problems.join("\n"));
+}
+
+#[test]
+fn a_new_unclassified_field_in_a_scratch_crate_fails_the_check_with_its_site() {
+    let crates = tempfile::tempdir().expect("a scratch directory can be created");
+    let source = crates.path().join("scratch/src");
+    std::fs::create_dir_all(&source).expect("the crate directory can be created");
+    std::fs::write(
+        source.join("lib.rs"),
+        "pub fn f() { tracing::info!(fresh = 1); }\n",
+    )
+    .expect("the source can be written");
+
+    let sweep = workspace_sites(crates.path()).expect("the scratch tree is readable");
+    let problems = classification_problems(&sweep.sites, &[], &[]);
+
+    assert_eq!(sweep.sites.len(), 1, "{:?}", sweep.sites);
+    assert_eq!(problems.len(), 1, "{problems:?}");
+    assert!(problems[0].contains("`fresh`"), "{}", problems[0]);
+    assert!(
+        problems[0].contains("scratch/src/lib.rs:1"),
+        "{}",
+        problems[0]
+    );
+    assert!(problems[0].contains("KEEP_FIELDS"), "{}", problems[0]);
+    assert!(problems[0].contains("REDACT_FIELDS"), "{}", problems[0]);
+}
+
+#[test]
+fn the_real_lists_still_report_the_scratch_key_as_the_only_new_one() {
+    let crates = tempfile::tempdir().expect("a scratch directory can be created");
+    let source = crates.path().join("scratch/src");
+    std::fs::create_dir_all(&source).expect("the crate directory can be created");
+    std::fs::write(
+        source.join("lib.rs"),
+        "pub fn f() { tracing::info!(count = 1, fresh = 1); }\n",
+    )
+    .expect("the source can be written");
+
+    let sweep = workspace_sites(crates.path()).expect("the scratch tree is readable");
+    let problems: Vec<String> = classification_problems(&sweep.sites, KEEP_FIELDS, REDACT_FIELDS)
+        .into_iter()
+        .filter(|problem| !problem.contains("no tracing macro emits"))
+        .collect();
+
+    assert_eq!(problems.len(), 1, "{problems:?}");
+    assert!(problems[0].contains("`fresh`"), "{}", problems[0]);
 }
 
 fn site(key: &str, file: &str, line: usize) -> FieldSite {
