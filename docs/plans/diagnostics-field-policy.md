@@ -97,8 +97,11 @@ other sites are worth keeping and the rename is trivial.
 - `reprise-android-ffi`: it logs ~25 `error = %error` fields and never calls
   the redactor. Note it in the PR body as a separate finding; do not change
   it here.
-- Free-text messages that contain `key=multi word`: only the first word is
-  checked. Existing behaviour, not widened by this change.
+- Free-text messages that contain `key=multi word`: the first version of this
+  change left them as they were, checking only the first word. The second
+  review round (P3) closed that: a redacted key now takes every word up to the
+  next `key=` token or the end of the line. What stays out of scope is the
+  message slot itself, which the key policy never sees.
 
 ## Gates
 

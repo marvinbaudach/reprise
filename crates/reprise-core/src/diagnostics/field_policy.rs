@@ -26,10 +26,19 @@
 //! # What the policy does not promise
 //!
 //! The predicate also governs the `key=value` tokens inside free-text
-//! messages and the log tail (D2), where it keeps the first word after
-//! `key=` of a kept key, whatever that word is. That is accepted: the path,
-//! URI and filename passes run first, and a new message that interpolates
-//! foreign text after a kept key is a review concern.
+//! messages and the log tail (D2). There a kept key keeps its value only when
+//! the value is a number (an integer, a float with one dot, an exponent form,
+//! a duration such as `12.5ms`, or `Some(..)` of one; several dots only under
+//! `version`) or a plain identifier (`[A-Za-z_][A-Za-z0-9_]*`, and not eight
+//! or more hex digits). Anything else, such as `mode=Compact,title=Foo`, is
+//! `key=$REDACTED`. A redacted key takes every word up to the next `key=`
+//! token or the end of the line. What remains is a plain identifier that is
+//! itself foreign text (`state=Artist`): the policy cannot tell it from a
+//! variant name, so a message that interpolates foreign text after a kept key
+//! is a review concern. The typed `EventFields` path keeps typed values and is
+//! unaffected, but the file mirror runs this pass over the finished line too,
+//! so a kept key whose `Debug` value has more than one word or punctuation
+//! (a `Vec` of rows, say) is redacted in the log file.
 //!
 //! The classification test checks keys, not value types, and it does not see
 //! fields that dependencies emit (zbus, for one). A new site that emits an

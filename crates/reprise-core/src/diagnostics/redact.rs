@@ -1,5 +1,6 @@
 use super::field_policy::KEEP_FIELDS;
 use super::model::RedactionContext;
+use super::redact_assignments::{is_kept_number, redact_sensitive_assignments};
 
 const ELLIPSIS: &str = "…";
 
@@ -148,81 +149,15 @@ fn span_end(input: &str, start: usize, stop_at_whitespace: bool) -> usize {
         .unwrap_or(input.len())
 }
 
-fn redact_sensitive_assignments(input: &str) -> String {
-    input
-        .split_inclusive(char::is_whitespace)
-        .map(redact_sensitive_token)
-        .collect()
-}
-
-/// Where a token splits into a key and a value, as both passes read it.
-struct Assignment {
-    /// Byte index of the first `=` or `:`.
-    separator: usize,
-    separator_char: char,
-    /// The text before it, reduced to a lowercase identifier.
-    key: String,
-}
-
-/// The one reading of "key then value" that the key pass and the filename
-/// pass share, so a token cannot be a kept `key=value` to one and something
-/// else to the other.
-fn split_assignment(token: &str) -> Option<Assignment> {
-    let (separator, separator_char) = token
-        .char_indices()
-        .find(|(_, ch)| matches!(ch, '=' | ':'))?;
-    let key = token[..separator]
-        .trim_matches(|ch: char| !ch.is_ascii_alphanumeric() && ch != '_')
-        .to_ascii_lowercase();
-    Some(Assignment {
-        separator,
-        separator_char,
-        key,
-    })
-}
-
-fn redact_sensitive_token(token: &str) -> String {
-    let Some(Assignment {
-        separator,
-        separator_char,
-        key,
-    }) = split_assignment(token)
-    else {
-        return token.to_string();
-    };
-    let sensitive = if separator_char == '=' {
-        !is_safe_structured_field(&key)
-    } else {
-        [
-            "password",
-            "token",
-            "secret",
-            "credential",
-            "username",
-            "user_name",
-            "api_key",
-        ]
-        .iter()
-        .any(|needle| key.contains(needle))
-    };
-    if !sensitive {
-        return token.to_string();
-    }
-    let body = token.trim_end_matches(char::is_whitespace);
-    let whitespace = &token[body.len()..];
-    format!(
-        "{}{}$REDACTED{whitespace}",
-        &token[..separator],
-        &token[separator..separator + 1]
-    )
-}
-
 /// Whether a structured field's value may be kept in a diagnostics line.
 ///
 /// A lookup in [`KEEP_FIELDS`]: both redaction passes ask this one question,
-/// and every key not listed there is redacted. Only an exact, lowercase match
-/// counts; an unknown key is never safe. `field_policy` explains how a key
-/// earns its place.
+/// and every key not listed there is redacted. The lookup is an exact match
+/// against lowercase names. `EventFields` passes a field's name as written,
+/// so `Count` is unknown there; the free-text pass lowercases the key first
+/// (`split_assignment`), so `Count=3` reads as `count=3`. That is harmless:
+/// it can only keep a value whose lowercase key is kept anyway. An unknown key
+/// is never safe. `field_policy` explains how a key earns its place.
 pub fn is_safe_structured_field(key: &str) -> bool {
     KEEP_FIELDS.binary_search(&key).is_ok()
 }
@@ -284,37 +219,6 @@ fn looks_like_filename(token: &str) -> bool {
         && !stem.chars().all(|ch| ch.is_ascii_digit() || ch == '.')
         && (1..=12).contains(&extension.len())
         && extension.chars().all(|ch| ch.is_ascii_alphanumeric())
-}
-
-/// `key=12.5` and `key=0.1.331` end in what looks like an extension, but a
-/// plain number or a dotted version is not a name. The exemption holds only
-/// when the key pass has read the token the same way: it splits at an `=`
-/// (not an earlier `:`) and the key is kept. Any other token that carries a
-/// number, such as `name:cover.jpg=1.2`, still goes to the filename check.
-fn is_kept_number(body: &str) -> bool {
-    let Some(assignment) = split_assignment(body) else {
-        return false;
-    };
-    if assignment.separator_char != '=' || !is_safe_structured_field(&assignment.key) {
-        return false;
-    }
-    let value = body[assignment.separator + 1..].trim_matches(|ch: char| {
-        matches!(
-            ch,
-            ',' | ';' | ':' | '(' | ')' | '[' | ']' | '{' | '}' | '"' | '\''
-        )
-    });
-    is_number_or_version(value)
-}
-
-/// An integer, a float or a dotted version: digits and single dots, with an
-/// optional leading `-`, starting and ending in a digit.
-fn is_number_or_version(value: &str) -> bool {
-    let digits = value.strip_prefix('-').unwrap_or(value);
-    digits.starts_with(|ch: char| ch.is_ascii_digit())
-        && digits.ends_with(|ch: char| ch.is_ascii_digit())
-        && !digits.contains("..")
-        && digits.chars().all(|ch| ch.is_ascii_digit() || ch == '.')
 }
 
 /// `2026-11-08T12:00:00.123Z`, with an optional fraction and either `Z` or a

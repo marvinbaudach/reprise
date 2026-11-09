@@ -12,12 +12,18 @@ fn context() -> RedactionContext {
 
 #[test]
 fn a_music_folder_name_with_spaces_does_not_leak_its_tail() {
-    let output = redact_log_message("could not scan /home/u/Music/Pink Floyd/The Wall", &context());
+    let output = redact_log_message(
+        "could not scan /home/u/Music/Pink Floyd/The Wall",
+        &context(),
+    );
 
     for leaked in ["Pink", "Floyd", "The"] {
         assert!(!output.contains(leaked), "{leaked:?} leaked: {output}");
     }
-    assert!(output.starts_with("could not scan $XDG_MUSIC_DIR/…"), "{output}");
+    assert!(
+        output.starts_with("could not scan $XDG_MUSIC_DIR/…"),
+        "{output}"
+    );
 }
 
 #[test]

@@ -111,9 +111,9 @@ fn a_filename_is_still_redacted_with_or_without_a_key() {
     for (input, expected) in [
         ("opened cover.jpg now", "opened … now"),
         ("opened track01.flac now", "opened … now"),
-        ("opened count=song.mp3 now", "opened … now"),
-        ("opened count=1.5.mp3 now", "opened … now"),
-        ("opened count=v1.2 now", "opened … now"),
+        ("opened count=song.mp3 now", "opened count=$REDACTED now"),
+        ("opened count=1.5.mp3 now", "opened count=$REDACTED now"),
+        ("opened count=v1.2 now", "opened count=$REDACTED now"),
     ] {
         assert_eq!(redacted(input), expected, "{input}");
     }
@@ -191,6 +191,9 @@ fn only_a_strict_rfc3339_timestamp_escapes_the_filename_pass() {
     ] {
         let output = redacted(&format!("at {input} done"));
 
-        assert!(!output.contains("123Z") && !output.contains("00.Z"), "{input}: {output}");
+        assert!(
+            !output.contains("123Z") && !output.contains("00.Z"),
+            "{input}: {output}"
+        );
     }
 }
