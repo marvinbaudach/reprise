@@ -20,7 +20,7 @@ use std::collections::BTreeSet;
 use std::fs;
 use std::path::{Path, PathBuf};
 
-use super::field_sweep_cfg::{without_test_items, TestSplit};
+use super::field_sweep_cfg::{without_test_items, TestModule, TestSplit};
 use super::field_sweep_lex::{matching_close, tokenize, Spanned, Token};
 
 /// What to do about a shape the scanner cannot split: a top-level comma inside
@@ -43,9 +43,8 @@ pub(super) struct FieldSite {
 #[derive(Debug, Default)]
 pub(super) struct FileSweep {
     pub(super) sites: Vec<FieldSite>,
-    /// Out-of-line modules declared behind a test-only `cfg`: the module name
-    /// and the `#[path = "…"]` it carries, if any.
-    pub(super) test_modules: Vec<(String, Option<String>)>,
+    /// Out-of-line modules declared behind a test-only `cfg`.
+    pub(super) test_modules: Vec<TestModule>,
     /// The whole file is test-only: it opens with `#![cfg(test)]`.
     pub(super) test_only: bool,
 }
@@ -139,7 +138,9 @@ fn collect_sources(dir: &Path, out: &mut Vec<PathBuf>) -> Result<(), String> {
 /// file that is test-only as a whole, the file and the modules it owns.
 ///
 /// A directory entry is matched with `starts_with`, which compares whole path
-/// components.
+/// components. A module declared inside inline modules resolves in the
+/// directory those modules name; an inline module's own `#[path]` is not
+/// followed.
 pub(super) fn test_only_paths(file: &Path, sweep: &FileSweep) -> Vec<PathBuf> {
     let Some(dir) = file.parent() else {
         return Vec::new();
@@ -160,13 +161,23 @@ pub(super) fn test_only_paths(file: &Path, sweep: &FileSweep) -> Vec<PathBuf> {
             paths.push(base.clone());
         }
     }
-    for (name, path_attribute) in &sweep.test_modules {
-        if let Some(path) = path_attribute {
-            paths.push(dir.join(path));
+    for module in &sweep.test_modules {
+        // Inside an inline module, both the module's file and a `#[path]`
+        // are relative to a directory per enclosing inline module.
+        let anchor = module
+            .inline
+            .iter()
+            .fold(base.clone(), |anchor, segment| anchor.join(segment));
+        if let Some(path) = &module.path {
+            paths.push(if module.inline.is_empty() {
+                dir.join(path)
+            } else {
+                anchor.join(path)
+            });
             continue;
         }
-        paths.push(base.join(format!("{name}.rs")));
-        paths.push(base.join(name));
+        paths.push(anchor.join(format!("{}.rs", module.name)));
+        paths.push(anchor.join(&module.name));
     }
     paths
 }

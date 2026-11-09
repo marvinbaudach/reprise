@@ -109,3 +109,57 @@ fn an_aliased_tracing_import_fails_the_walk_with_its_file_and_line() {
 
     assert!(error.contains("demo/src/lib.rs:2"), "{error}");
 }
+
+#[test]
+fn a_test_only_module_inside_an_inline_module_resolves_in_that_modules_directory() {
+    let tree = Tree::new();
+    tree.write(
+        "demo/src/lib.rs",
+        r#"
+        mod outer {
+            pub mod inner {
+                #[cfg(test)]
+                mod hidden;
+                #[cfg(test)]
+                #[path = "moved.rs"]
+                mod relocated;
+                mod shown;
+            }
+            #[cfg(test)]
+            mod sibling;
+        }
+        #[cfg(test)]
+        mod top_hidden;
+        "#,
+    );
+    tree.write(
+        "demo/src/outer/inner/hidden.rs",
+        "fn f() { info!(hidden_key = 1); }",
+    );
+    tree.write(
+        "demo/src/outer/inner/moved.rs",
+        "fn f() { info!(moved_key = 1); }",
+    );
+    tree.write(
+        "demo/src/outer/inner/shown.rs",
+        "fn f() { info!(shown_key = 1); }",
+    );
+    tree.write(
+        "demo/src/outer/sibling.rs",
+        "fn f() { info!(sibling_key = 1); }",
+    );
+    tree.write(
+        "demo/src/top_hidden.rs",
+        "fn f() { info!(top_hidden_key = 1); }",
+    );
+    // The module a stale reading would have excluded instead.
+    tree.write(
+        "demo/src/hidden.rs",
+        "fn f() { info!(wrongly_hidden_key = 1); }",
+    );
+
+    let sweep = workspace_sites(tree.path()).expect("the scratch tree is readable");
+
+    let keys: Vec<&str> = distinct_keys(&sweep.sites).into_iter().collect();
+    assert_eq!(keys, ["shown_key", "wrongly_hidden_key"]);
+}

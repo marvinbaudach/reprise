@@ -3,6 +3,7 @@
 use std::path::{Path, PathBuf};
 
 use super::field_sweep::{sweep_source, test_only_paths, FileSweep};
+use super::field_sweep_cfg::TestModule;
 
 fn keys(source: &str) -> Vec<String> {
     sweep_source("fixture.rs", source)
@@ -11,6 +12,14 @@ fn keys(source: &str) -> Vec<String> {
         .into_iter()
         .map(|site| site.key)
         .collect()
+}
+
+fn test_module(name: &str, path: Option<&str>) -> TestModule {
+    TestModule {
+        name: name.to_owned(),
+        path: path.map(str::to_owned),
+        inline: Vec::new(),
+    }
 }
 
 fn sweep(source: &str) -> FileSweep {
@@ -159,8 +168,8 @@ fn skips_test_only_items_and_reports_test_only_modules() {
     assert_eq!(
         swept.test_modules,
         [
-            ("helper".to_owned(), None),
-            ("moved".to_owned(), Some("elsewhere_tests.rs".to_owned())),
+            test_module("helper", None),
+            test_module("moved", Some("elsewhere_tests.rs")),
         ]
     );
 }
@@ -304,14 +313,14 @@ fn a_path_attribute_before_the_test_cfg_still_names_the_module() {
 
     assert_eq!(
         swept.test_modules,
-        [("before".to_owned(), Some("before_tests.rs".to_owned()))]
+        [test_module("before", Some("before_tests.rs"))]
     );
 }
 
 #[test]
 fn a_binary_root_resolves_its_modules_beside_itself() {
     let swept = FileSweep {
-        test_modules: vec![("helper".to_owned(), None)],
+        test_modules: vec![test_module("helper", None)],
         ..FileSweep::default()
     };
 
@@ -346,4 +355,60 @@ fn a_value_wrapped_in_parentheses_reads_where_the_bare_shape_does_not() {
         keys("fn f() { info!(a = (x.collect::<HashMap<_, _>>()), b = (|x, y| x), \"m\"); }");
 
     assert_eq!(found, ["a", "b"]);
+}
+
+#[test]
+fn a_test_only_module_records_the_inline_modules_around_it() {
+    let swept = sweep(
+        r#"
+        mod a {
+            mod b {
+                fn f() {}
+                #[cfg(test)]
+                mod deep;
+            }
+            #[cfg(test)]
+            mod mid;
+        }
+        #[cfg(test)]
+        mod top;
+        "#,
+    );
+
+    let inline = |name: &str| {
+        swept
+            .test_modules
+            .iter()
+            .find(|module| module.name == name)
+            .map(|module| module.inline.clone())
+    };
+    assert_eq!(inline("deep"), Some(vec!["a".to_owned(), "b".to_owned()]));
+    assert_eq!(inline("mid"), Some(vec!["a".to_owned()]));
+    assert_eq!(inline("top"), Some(Vec::new()));
+}
+
+#[test]
+fn a_module_inside_an_inline_module_resolves_below_its_directory() {
+    let nested = TestModule {
+        inline: vec!["a".to_owned(), "b".to_owned()],
+        ..test_module("x", None)
+    };
+    let nested_path = TestModule {
+        inline: vec!["a".to_owned()],
+        ..test_module("y", Some("moved.rs"))
+    };
+    let swept = FileSweep {
+        test_modules: vec![nested, nested_path],
+        ..FileSweep::default()
+    };
+
+    let root = test_only_paths(Path::new("/c/src/lib.rs"), &swept);
+    let leaf = test_only_paths(Path::new("/c/src/ui/panel.rs"), &swept);
+
+    let has = |paths: &[PathBuf], want: &str| paths.contains(&PathBuf::from(want));
+    assert!(has(&root, "/c/src/a/b/x.rs"), "{root:?}");
+    assert!(has(&root, "/c/src/a/b/x"), "{root:?}");
+    assert!(has(&root, "/c/src/a/moved.rs"), "{root:?}");
+    assert!(has(&leaf, "/c/src/ui/panel/a/b/x.rs"), "{leaf:?}");
+    assert!(!has(&root, "/c/src/x.rs"), "{root:?}");
 }

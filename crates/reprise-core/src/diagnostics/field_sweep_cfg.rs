@@ -6,11 +6,23 @@
 
 use super::field_sweep_lex::{matching_close, Spanned, Token};
 
+/// An out-of-line module declared behind a test-only `cfg`.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(super) struct TestModule {
+    pub(super) name: String,
+    /// The `#[path = "…"]` it carries, if any.
+    pub(super) path: Option<String>,
+    /// The inline modules (`mod a { … }`) the declaration sits in, outermost
+    /// first. A file-backed module inside them lives in a directory named
+    /// after each. An inline module's own `#[path]` is not followed.
+    pub(super) inline: Vec<String>,
+}
+
 /// A source file with its test-only items cut out.
 pub(super) struct TestSplit {
     pub(super) production: Vec<Spanned>,
-    /// The out-of-line modules among the cut items: name and `#[path]`.
-    pub(super) test_modules: Vec<(String, Option<String>)>,
+    /// The out-of-line modules among the cut items.
+    pub(super) test_modules: Vec<TestModule>,
     /// The whole file is test-only.
     pub(super) test_only: bool,
 }
@@ -65,7 +77,11 @@ pub(super) fn without_test_items(tokens: &[Spanned]) -> TestSplit {
             .find_map(|(start, end)| path_value(&tokens[*start..*end]));
         let end = item_end(tokens, item);
         if let Some(name) = out_of_line_module(&tokens[item..end]) {
-            modules.push((name, path_attribute));
+            modules.push(TestModule {
+                name,
+                path: path_attribute,
+                inline: inline_modules(&tokens[..at]),
+            });
         }
         at = end;
     }
@@ -74,6 +90,39 @@ pub(super) fn without_test_items(tokens: &[Spanned]) -> TestSplit {
         test_modules: modules,
         test_only: false,
     }
+}
+
+/// The names of the inline modules, `mod a { … }`, that are still open at the
+/// end of `tokens`, outermost first.
+fn inline_modules(tokens: &[Spanned]) -> Vec<String> {
+    let mut open: Vec<(String, usize)> = Vec::new();
+    let mut depth = 0usize;
+    for (at, spanned) in tokens.iter().enumerate() {
+        match spanned.token {
+            Token::Punct('{') => {
+                depth += 1;
+                let declared = at.checked_sub(2).and_then(|keyword| {
+                    match (&tokens[keyword].token, &tokens[at - 1].token) {
+                        (Token::Ident(word), Token::Ident(name)) if word == "mod" => {
+                            Some(name.clone())
+                        }
+                        _ => None,
+                    }
+                });
+                if let Some(name) = declared {
+                    open.push((name, depth));
+                }
+            }
+            Token::Punct('}') => {
+                if open.last().is_some_and(|(_, opened)| *opened == depth) {
+                    open.pop();
+                }
+                depth = depth.saturating_sub(1);
+            }
+            _ => {}
+        }
+    }
+    open.into_iter().map(|(name, _)| name).collect()
 }
 
 /// `#![…]` rather than `#[…]` at `at`.
