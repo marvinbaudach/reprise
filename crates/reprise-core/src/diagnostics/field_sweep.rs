@@ -23,6 +23,12 @@ use std::path::{Path, PathBuf};
 use super::field_sweep_cfg::{without_test_items, TestSplit};
 use super::field_sweep_lex::{matching_close, tokenize, Spanned, Token};
 
+/// What to do about a shape the scanner cannot split: a top-level comma inside
+/// a turbofish (`collect::<HashMap<_, _>>()`) or a closure's parameter list
+/// looks like the end of the field, and `format_args!(…)` is no field at all.
+const UNREADABLE_HINT: &str = "wrap the value in parentheses or bind it to a local first, and \
+     pass a message as a string literal";
+
 const MACROS: [&str; 6] = ["trace", "debug", "info", "warn", "error", "event"];
 
 /// One field key at one place in the sources.
@@ -198,9 +204,9 @@ pub(super) fn sweep_source(name: &str, source: &str) -> Result<FileSweep, String
         let Some(arguments) = macro_arguments(&production, index + 2) else {
             continue;
         };
-        for key in field_keys(arguments, ident == "event")
-            .map_err(|part| format!("{name}:{line}: cannot read the field `{part}`"))?
-        {
+        for key in field_keys(arguments, ident == "event").map_err(|part| {
+            format!("{name}:{line}: cannot read the field `{part}`; {UNREADABLE_HINT}")
+        })? {
             sites.push(FieldSite {
                 key,
                 file: name.to_owned(),

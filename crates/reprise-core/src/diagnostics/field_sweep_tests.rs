@@ -323,3 +323,27 @@ fn a_binary_root_resolves_its_modules_beside_itself() {
     assert!(expect(&bin, "/c/src/bin/helper"), "{bin:?}");
     assert!(expect(&nested, "/c/src/ui/panel/helper.rs"), "{nested:?}");
 }
+
+#[test]
+fn a_shape_the_scanner_cannot_split_is_an_error_with_a_way_out() {
+    for source in [
+        "fn f() { info!(a = x.collect::<HashMap<_, _>>(), \"m\"); }",
+        "fn f() { info!(a = |x, y| x, \"m\"); }",
+        "fn f() { info!(a = 1, format_args!(\"x {}\", y)); }",
+    ] {
+        let error = sweep_source("fixture.rs", source).expect_err(source);
+
+        assert!(error.contains("fixture.rs:1"), "{source}: {error}");
+        assert!(error.contains("cannot read the field"), "{source}: {error}");
+        assert!(error.contains("in parentheses"), "{source}: {error}");
+        assert!(error.contains("local"), "{source}: {error}");
+    }
+}
+
+#[test]
+fn a_value_wrapped_in_parentheses_reads_where_the_bare_shape_does_not() {
+    let found =
+        keys("fn f() { info!(a = (x.collect::<HashMap<_, _>>()), b = (|x, y| x), \"m\"); }");
+
+    assert_eq!(found, ["a", "b"]);
+}
