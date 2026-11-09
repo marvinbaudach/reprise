@@ -49,15 +49,18 @@ fn a_kept_key_keeps_a_plain_identifier_or_a_number() {
 }
 
 #[test]
-fn a_kept_key_with_an_odd_value_redacts_only_that_value() {
-    assert_eq!(
-        redacted("opened count=song.mp3 now"),
-        "opened count=$REDACTED now"
-    );
-    assert_eq!(
-        redacted("mode=a/b next words count=2"),
-        "mode=$REDACTED next words count=2"
-    );
+fn a_kept_key_with_a_rejected_value_takes_the_words_after_it_like_an_unknown_key() {
+    for (input, expected) in [
+        ("opened count=song.mp3 now", "opened count=$REDACTED"),
+        ("kind=Music/Pink Floyd/The Wall", "kind=$REDACTED"),
+        ("state=\"Pink Floyd/The Wall\"", "state=$REDACTED"),
+        ("state=Pink(Floyd The Wall)", "state=$REDACTED"),
+        ("state=(Pink Floyd)", "state=$REDACTED"),
+        ("mode=a/b next words count=2", "mode=$REDACTED count=2"),
+        ("state=/x/y Floyd The Wall id=3", "state=$REDACTED id=3"),
+    ] {
+        assert_eq!(redacted(input), expected, "{input}");
+    }
 }
 
 #[test]
@@ -120,8 +123,8 @@ fn a_redacted_key_takes_every_word_up_to_the_next_assignment() {
         ("error=a b\nnext line", "error=$REDACTED\nnext line"),
         ("path=x y; elapsed_ms=12", "path=$REDACTED elapsed_ms=12"),
         (
-            "error=a b other=c d count=3",
-            "error=$REDACTED other=$REDACTED count=3",
+            "error=a b path=c d count=3",
+            "error=$REDACTED path=$REDACTED count=3",
         ),
         ("error=a b ", "error=$REDACTED "),
     ] {
@@ -134,7 +137,7 @@ fn a_secret_like_key_before_a_colon_takes_its_value_words_too() {
     for (input, expected) in [
         ("password: hunter2 and more", "password:$REDACTED"),
         ("password:hunter2 and more", "password:$REDACTED"),
-        ("api_key: abc def count=3", "api_key:$REDACTED count=3"),
+        ("api_key: abc def count=3 tail", "api_key:$REDACTED"),
         ("status: all fine", "status: all fine"),
     ] {
         assert_eq!(redacted(input), expected, "{input:?}");
@@ -154,4 +157,34 @@ fn redacting_twice_changes_nothing() {
 
         assert_eq!(redacted(&once), once, "{input}");
     }
+}
+
+#[test]
+fn only_a_known_well_formed_key_ends_a_swallowed_value() {
+    for (input, expected) in [
+        ("error=boom data=abc== tail words", "error=$REDACTED"),
+        ("error=x foo=bar more", "error=$REDACTED"),
+        (
+            "error=x a=b c=d count=3 tail",
+            "error=$REDACTED count=3 tail",
+        ),
+        ("error=x Count=3 tail", "error=$REDACTED Count=3 tail"),
+        ("error=x ==abc count=", "error=$REDACTED"),
+        ("error=x 1count=3 y", "error=$REDACTED"),
+        ("error=x (id=3) tail", "error=$REDACTED (id=3) tail"),
+    ] {
+        assert_eq!(redacted(input), expected, "{input}");
+    }
+}
+
+#[test]
+fn a_secret_like_colon_key_takes_the_rest_of_the_line_even_past_a_known_key() {
+    assert_eq!(
+        redacted("token: abc def count=3 tail words\nnext count=4"),
+        "token:$REDACTED\nnext count=4"
+    );
+    assert_eq!(
+        redacted("password: hunter2 error=x y"),
+        "password:$REDACTED"
+    );
 }

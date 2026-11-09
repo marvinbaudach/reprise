@@ -5,13 +5,15 @@
 //! everything up to the next `key=` token or the end of the line, because a
 //! value with spaces would otherwise leak every word after the first.
 
+use super::field_policy::{KEEP_FIELDS, REDACT_FIELDS};
 use super::redact::is_safe_structured_field;
 
 const REDACTED: &str = "$REDACTED";
 
-/// Characters that may hug a value without being part of it: `(elapsed_ms=1.5),`.
+/// Characters that may follow a value without being part of it: `(elapsed_ms=1.5),`.
+/// Nothing is trimmed from the front: a value that opens with a quote or a
+/// bracket is not a plain value.
 const TRAILING_PUNCTUATION: [char; 6] = [',', ';', ':', ']', '}', '"'];
-const LEADING_PUNCTUATION: [char; 5] = ['(', '[', '{', '"', '\''];
 
 /// Keys that mark a colon-separated secret: `password: hunter2`.
 const SECRET_KEY_NEEDLES: [&str; 7] = [
@@ -57,17 +59,38 @@ pub(super) fn split_assignment(token: &str) -> Option<Assignment> {
     })
 }
 
+/// How far a redaction reaches into the words after it.
+#[derive(Clone, Copy, PartialEq)]
+enum Reach {
+    /// Only the token itself.
+    Token,
+    /// Up to the next token that opens a known `key=` assignment, or the end
+    /// of the line.
+    UntilAssignment,
+    /// To the end of the line: a secret has no reliable end.
+    EndOfLine,
+}
+
 /// Redacts every `key=value` whose key or value may not leave the machine.
+///
+/// A redacted `key=` and a kept key with a value that is not plain both own
+/// the words after them, because a value with spaces would otherwise leak
+/// every word after the first.
 pub(super) fn redact_sensitive_assignments(input: &str) -> String {
     let mut output = String::with_capacity(input.len());
     // The whitespace after the last token that was folded into a redaction:
     // it is written only once something follows on the same line.
     let mut pending_whitespace = "";
-    let mut swallowing = false;
+    let mut reach = Reach::Token;
     for token in input.split_inclusive(char::is_whitespace) {
         let body = token.trim_end_matches(char::is_whitespace);
         let whitespace = &token[body.len()..];
-        if swallowing && !starts_assignment(body) {
+        let swallowed = match reach {
+            Reach::Token => false,
+            Reach::UntilAssignment => !starts_known_assignment(body),
+            Reach::EndOfLine => true,
+        };
+        if swallowed {
             pending_whitespace = whitespace;
         } else {
             output.push_str(pending_whitespace);
@@ -76,21 +99,17 @@ pub(super) fn redact_sensitive_assignments(input: &str) -> String {
                 Some(redaction) => {
                     output.push_str(&redaction.text);
                     pending_whitespace = whitespace;
-                    swallowing = redaction.swallows_following_words;
-                    if !swallowing {
-                        output.push_str(pending_whitespace);
-                        pending_whitespace = "";
-                    }
+                    reach = redaction.reach;
                 }
                 None => {
                     output.push_str(body);
                     output.push_str(whitespace);
-                    swallowing = false;
+                    reach = Reach::Token;
                 }
             }
         }
         if whitespace.contains(['\n', '\r']) {
-            swallowing = false;
+            reach = Reach::Token;
         }
     }
     output.push_str(pending_whitespace);
@@ -99,9 +118,7 @@ pub(super) fn redact_sensitive_assignments(input: &str) -> String {
 
 struct Redaction {
     text: String,
-    /// A redacted key owns the words after it, up to the next `key=`; a kept
-    /// key with an odd value owns only its own token.
-    swallows_following_words: bool,
+    reach: Reach,
 }
 
 fn redact_assignment(body: &str) -> Option<Redaction> {
@@ -110,27 +127,37 @@ fn redact_assignment(body: &str) -> Option<Redaction> {
         separator_char,
         key,
     } = split_assignment(body)?;
-    let kept_key = separator_char == '=' && is_safe_structured_field(&key);
-    let swallows_following_words = if separator_char == '=' {
-        if kept_key && is_plain_value(&body[separator + 1..], &key) {
+    let reach = if separator_char == '=' {
+        if is_safe_structured_field(&key) && is_plain_value(&body[separator + 1..], &key) {
             return None;
         }
-        !kept_key
+        Reach::UntilAssignment
     } else if SECRET_KEY_NEEDLES.iter().any(|needle| key.contains(needle)) {
-        true
+        Reach::EndOfLine
     } else {
         return None;
     };
     Some(Redaction {
         text: format!("{}{REDACTED}", &body[..=separator]),
-        swallows_following_words,
+        reach,
     })
 }
 
-/// Whether a token opens a new `key=` assignment, ending a swallowed value.
-fn starts_assignment(body: &str) -> bool {
-    split_assignment(body)
-        .is_some_and(|assignment| assignment.separator_char == '=' && !assignment.key.is_empty())
+/// Whether a token opens the next assignment, ending a swallowed value. Only
+/// a well-formed key that the policy knows does: `abc==` (base64 padding) or
+/// `a=b` inside swallowed text is part of the value, not a new assignment.
+fn starts_known_assignment(body: &str) -> bool {
+    let Some(assignment) = split_assignment(body) else {
+        return false;
+    };
+    let key = assignment.key.as_str();
+    assignment.separator_char == '='
+        && body.len() > assignment.separator + 1
+        && key.starts_with(|ch: char| ch.is_ascii_lowercase() || ch == '_')
+        && key
+            .chars()
+            .all(|ch| ch.is_ascii_lowercase() || ch.is_ascii_digit() || matches!(ch, '_' | '.'))
+        && (KEEP_FIELDS.binary_search(&key).is_ok() || REDACT_FIELDS.binary_search(&key).is_ok())
 }
 
 /// A value a kept key may carry in free text: a number or a plain identifier.
@@ -143,7 +170,7 @@ fn is_plain_value(value: &str, key: &str) -> bool {
 /// parenthesis is dropped only when no opening one in the value matches it, so
 /// `Some(1.5)` stays whole and `(elapsed_ms=1.5)` loses only the last `)`.
 fn trim_value(value: &str) -> &str {
-    let mut value = value.trim_start_matches(LEADING_PUNCTUATION);
+    let mut value = value;
     loop {
         let shorter = value.trim_end_matches(TRAILING_PUNCTUATION);
         let unbalanced_close =

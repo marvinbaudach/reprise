@@ -179,7 +179,9 @@ fn rendered_events_redact_identifying_structured_fields() {
     }
     assert!(report.contains("device_id=$REDACTED"));
     assert!(report.contains("playlist=$REDACTED"));
-    assert!(report.contains("user_name=$REDACTED"));
+    // `user_name` and `device_serial` are in neither list, so they do not end
+    // the redaction that came before them; their values go with it.
+    assert!(!report.contains("user_name="));
     assert!(report.contains("track_id=42"));
 }
 

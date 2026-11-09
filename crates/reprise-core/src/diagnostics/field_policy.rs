@@ -31,8 +31,9 @@
 //! a duration such as `12.5ms`, or `Some(..)` of one; several dots only under
 //! `version`) or a plain identifier (`[A-Za-z_][A-Za-z0-9_]*`, and not eight
 //! or more hex digits). Anything else, such as `mode=Compact,title=Foo`, is
-//! `key=$REDACTED`. A redacted key takes every word up to the next `key=`
-//! token or the end of the line. What remains is a plain identifier that is
+//! `key=$REDACTED`, and, like an unknown key, it takes every word up to the
+//! next known `key=` token (a key listed below, written as an identifier) or
+//! the end of the line; a secret-like `token:` takes the rest of the line. What remains is a plain identifier that is
 //! itself foreign text (`state=Artist`): the policy cannot tell it from a
 //! variant name, so a message that interpolates foreign text after a kept key
 //! is a review concern. The typed `EventFields` path keeps typed values and is
@@ -407,9 +408,10 @@ pub(super) const KEEP_FIELDS: &[&str] = &[
 /// Keys that identify, or may identify, something and so stay redacted. Sorted.
 ///
 /// This list exists so that no key is silently on either side: a key that is
-/// emitted but listed nowhere fails the classification check. Nothing outside
-/// that check and its tests reads the list, so it is compiled for tests only.
-#[cfg(test)]
+/// emitted but listed nowhere fails the classification check. The free-text
+/// pass also reads it, to tell a known `key=` that ends a swallowed value from
+/// a fragment such as `abc==` inside it. The redaction itself never depends on
+/// it: a key in neither list is redacted all the same.
 pub(super) const REDACT_FIELDS: &[&str] = &[
     "action",
     // Smoke output of unverified type.

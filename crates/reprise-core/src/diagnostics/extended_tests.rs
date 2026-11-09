@@ -111,9 +111,9 @@ fn a_filename_is_still_redacted_with_or_without_a_key() {
     for (input, expected) in [
         ("opened cover.jpg now", "opened … now"),
         ("opened track01.flac now", "opened … now"),
-        ("opened count=song.mp3 now", "opened count=$REDACTED now"),
-        ("opened count=1.5.mp3 now", "opened count=$REDACTED now"),
-        ("opened count=v1.2 now", "opened count=$REDACTED now"),
+        ("opened count=song.mp3 now", "opened count=$REDACTED"),
+        ("opened count=1.5.mp3 now", "opened count=$REDACTED"),
+        ("opened count=v1.2 now", "opened count=$REDACTED"),
     ] {
         assert_eq!(redacted(input), expected, "{input}");
     }
