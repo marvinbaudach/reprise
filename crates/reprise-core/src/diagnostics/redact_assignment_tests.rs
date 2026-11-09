@@ -188,3 +188,15 @@ fn a_secret_like_colon_key_takes_the_rest_of_the_line_even_past_a_known_key() {
         "password:$REDACTED"
     );
 }
+
+#[test]
+fn a_field_that_is_already_redacted_ends_the_previous_redaction_but_not_its_own() {
+    assert_eq!(
+        redacted("playlist=Roadtrip Mix user_name=$REDACTED track_id=42"),
+        "playlist=$REDACTED user_name=$REDACTED track_id=42"
+    );
+    assert_eq!(
+        redacted("user_name=$REDACTED leaked words id=3"),
+        "user_name=$REDACTED id=3"
+    );
+}

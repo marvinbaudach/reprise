@@ -157,7 +157,16 @@ fn starts_known_assignment(body: &str) -> bool {
         && key
             .chars()
             .all(|ch| ch.is_ascii_lowercase() || ch.is_ascii_digit() || matches!(ch, '_' | '.'))
-        && (KEEP_FIELDS.binary_search(&key).is_ok() || REDACT_FIELDS.binary_search(&key).is_ok())
+        && (KEEP_FIELDS.binary_search(&key).is_ok()
+            || REDACT_FIELDS.binary_search(&key).is_ok()
+            || is_already_redacted(body, &assignment))
+}
+
+/// `user_name=$REDACTED`, as `EventFields` writes an unlisted structured
+/// field: there is no value left to protect, so the token may end the previous
+/// redaction. It is then redacted again itself, so nothing after it is let go.
+fn is_already_redacted(body: &str, assignment: &Assignment) -> bool {
+    body[assignment.separator + 1..] == *REDACTED
 }
 
 /// A value a kept key may carry in free text: a number or a plain identifier.
