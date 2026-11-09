@@ -33,4 +33,6 @@ mod field_sweep_tests;
 #[cfg(test)]
 mod log_tail_tests;
 #[cfg(test)]
+mod redact_path_tests;
+#[cfg(test)]
 mod tests;

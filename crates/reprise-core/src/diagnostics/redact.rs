@@ -79,7 +79,7 @@ fn redact_prefixed_path(input: &str, prefix: &str, replacement: &str) -> String 
         let start = cursor + relative;
         output.push_str(&input[cursor..start]);
         output.push_str(replacement);
-        cursor = span_end(input, start + prefix.len(), true);
+        cursor = path_continuation_end(input, span_end(input, start + prefix.len(), true));
     }
     output.push_str(&input[cursor..]);
     output
@@ -112,9 +112,29 @@ fn redact_absolute_paths(input: &str) -> String {
         }
         output.push_str(&input[cursor..start]);
         output.push_str(ELLIPSIS);
-        cursor = span_end(input, start + 1, true);
+        cursor = path_continuation_end(input, span_end(input, start + 1, true));
     }
     output
+}
+
+/// A path with spaces in a folder name ends at the first space. The words after
+/// it that still contain a `/` are further segments of the same path, so they
+/// go too: `/media/disk/My Band/Live 2019` loses `Band/Live`. A last segment
+/// with no `/` of its own (`2019`) cannot be told from the next word and stays.
+fn path_continuation_end(input: &str, mut end: usize) -> usize {
+    loop {
+        let rest = &input[end..];
+        let gap = rest.len() - rest.trim_start_matches([' ', '\t']).len();
+        if gap == 0 {
+            return end;
+        }
+        let word_start = end + gap;
+        let word_end = span_end(input, word_start, true);
+        if !input[word_start..word_end].contains('/') {
+            return end;
+        }
+        end = word_end;
+    }
 }
 
 fn span_end(input: &str, start: usize, stop_at_whitespace: bool) -> usize {
@@ -244,7 +264,10 @@ fn redact_filenames(input: &str) -> String {
                     ',' | ';' | ':' | '(' | ')' | '[' | ']' | '{' | '}' | '"' | '\''
                 )
             });
-            if !is_kept_number(body) && looks_like_filename(trimmed) {
+            if looks_like_filename(trimmed)
+                && !is_rfc3339_timestamp(trimmed)
+                && !is_kept_number(body)
+            {
                 format!("{ELLIPSIS}{whitespace}")
             } else {
                 token.to_string()
@@ -292,4 +315,51 @@ fn is_number_or_version(value: &str) -> bool {
         && digits.ends_with(|ch: char| ch.is_ascii_digit())
         && !digits.contains("..")
         && digits.chars().all(|ch| ch.is_ascii_digit() || ch == '.')
+}
+
+/// `2026-11-08T12:00:00.123Z`, with an optional fraction and either `Z` or a
+/// numeric offset. Every file-mirror line starts with one, and `.123Z` reads
+/// as a file extension, so this exact shape is exempt from the filename pass.
+/// Nothing looser is: a name that merely resembles a time is still a name.
+fn is_rfc3339_timestamp(token: &str) -> bool {
+    let bytes = token.as_bytes();
+    let digits = |range: std::ops::Range<usize>| {
+        bytes
+            .get(range)
+            .is_some_and(|part| part.iter().all(u8::is_ascii_digit))
+    };
+    let separators = [(4, b'-'), (7, b'-'), (10, b'T'), (13, b':'), (16, b':')];
+    if !(digits(0..4)
+        && digits(5..7)
+        && digits(8..10)
+        && digits(11..13)
+        && digits(14..16)
+        && digits(17..19))
+        || !separators
+            .iter()
+            .all(|(index, expected)| bytes.get(*index) == Some(expected))
+    {
+        return false;
+    }
+    let mut end = 19;
+    if bytes.get(end) == Some(&b'.') {
+        let fraction = bytes[end + 1..]
+            .iter()
+            .take_while(|byte| byte.is_ascii_digit())
+            .count();
+        if fraction == 0 {
+            return false;
+        }
+        end += 1 + fraction;
+    }
+    match &bytes[end..] {
+        b"Z" => true,
+        [b'+' | b'-', ..] => {
+            digits(end + 1..end + 3)
+                && bytes.get(end + 3) == Some(&b':')
+                && digits(end + 4..end + 6)
+                && bytes.len() == end + 6
+        }
+        _ => false,
+    }
 }

@@ -151,3 +151,46 @@ fn only_a_kept_key_exempts_a_number_from_the_filename_pass() {
     assert_eq!(redacted("cover.jpg=1.2"), "cover.jpg=$REDACTED");
     assert_eq!(redacted("(elapsed_ms=1.5),"), "(elapsed_ms=1.5),");
 }
+
+#[test]
+fn a_log_tail_line_keeps_its_rfc3339_timestamp_in_the_copied_report() {
+    // The file mirror starts every line with `SecondsFormat::Millis` in UTC.
+    // `.123Z` has the shape of a file extension; the report re-redacts the
+    // tail and must not turn the time into `…`.
+    let facts = DiagnosticFacts {
+        log_tail: Some(
+            "2026-11-08T12:00:00.123Z  WARN reprise: playback stalled elapsed_ms=12\n\
+             2026-11-08T12:00:01+01:00  INFO reprise: resumed\n\
+             2026-11-08T12:00:02.5-05:30  INFO reprise: resumed again"
+                .into(),
+        ),
+        ..DiagnosticFacts::default()
+    };
+
+    let report = render(&facts);
+
+    for line in [
+        "\n2026-11-08T12:00:00.123Z  WARN reprise: playback stalled elapsed_ms=12",
+        "\n2026-11-08T12:00:01+01:00  INFO reprise: resumed",
+        "\n2026-11-08T12:00:02.5-05:30  INFO reprise: resumed again",
+    ] {
+        assert!(report.contains(line), "timestamp lost: {report}");
+    }
+}
+
+#[test]
+fn only_a_strict_rfc3339_timestamp_escapes_the_filename_pass() {
+    for input in [
+        "2026-11-08T12:00:00.123Zx",
+        "2026-11-08T12:00:00.123Z.flac",
+        "2026-11-08 12:00:00.123Z",
+        "2026-11-08T12:00.123Z",
+        "26-11-08T12:00:00.123Z",
+        "2026-11-08T12:00:00.Z",
+        "2026-11-08t12:00:00.123z",
+    ] {
+        let output = redacted(&format!("at {input} done"));
+
+        assert!(!output.contains("123Z") && !output.contains("00.Z"), "{input}: {output}");
+    }
+}

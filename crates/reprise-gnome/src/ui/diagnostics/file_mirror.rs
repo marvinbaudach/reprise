@@ -166,7 +166,18 @@ mod tests {
         };
         let report = render_report(&facts, &DiagnosticLog::default(), &context());
 
+        // Every line starts with an RFC 3339 time whose `.123Z` looks like a
+        // file extension; the report's second redaction must leave it alone.
+        let timestamp = text.split(' ').next().unwrap_or_default();
+        assert!(
+            timestamp.len() == "2026-11-08T12:00:00.123Z".len() && timestamp.ends_with('Z'),
+            "unexpected line start: {text}"
+        );
         for (surface, shown) in [("the log file", &text), ("the copied report", &report)] {
+            assert!(
+                shown.contains(&format!("{timestamp}  WARN ")),
+                "{surface} lost the line's timestamp {timestamp:?}: {shown}"
+            );
             for kept in [
                 "elapsed_ms=12",
                 "placeholder_distance=0.25",
