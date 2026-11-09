@@ -50,6 +50,7 @@
 //! # The check
 //!
 //! Every key emitted by a `tracing` macro in production code under `crates/`
+//! (events and span fields, `span!`, `*_span!` and `#[instrument(fields(…))]`)
 //! must be in exactly one of the two lists, and a listed key must still be
 //! emitted (`field_policy_sweep_tests`). Adding a field to a log call is
 //! therefore a decision the test suite forces: the failing test names the key
@@ -221,6 +222,9 @@ pub(super) const KEEP_FIELDS: &[&str] = &[
     "max",
     "max_position_ms",
     "maximized",
+    // A span field of `startup_report::measure(&'static str)`: every caller
+    // passes a string literal such as `view.library.construct`.
+    "measurement",
     "mirror_ms",
     "missing",
     // `Debug` of fieldless mode enums and a `u8` selection mode.

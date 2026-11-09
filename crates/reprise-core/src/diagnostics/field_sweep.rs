@@ -7,14 +7,31 @@
 //!
 //! What counts as a field: the `key = expr`, `key = %expr`, `key = ?expr`
 //! forms and the shorthand `key`, `%key` and `?key`, in an invocation of
-//! `trace!`, `debug!`, `info!`, `warn!`, `error!` or `event!` (bare, or as
-//! `tracing::…`). A dotted key such as `restored.browse` is one key. Scanning
-//! stops at the first string literal, because everything after the message is
-//! a format argument, not a field.
+//! `trace!`, `debug!`, `info!`, `warn!`, `error!` or `event!`, and of the span
+//! macros `span!`, `trace_span!`, `debug_span!`, `info_span!`, `warn_span!` and
+//! `error_span!` (bare, or as `tracing::…`), and in the `fields(…)` of
+//! `#[instrument]` (see `field_sweep_spans`). A dotted key such as
+//! `restored.browse` is one key. In an event, scanning stops at the first
+//! string literal, because everything after the message is a format argument,
+//! not a field; a span's name, and an event's level, are skipped by position.
+//!
+//! Span fields are scanned although no layer reads them today: a span field
+//! is a key the same as an event field, and a layer that records spans would
+//! carry it into the report, so a key classified now cannot slip through
+//! later.
+//!
+//! An alias of a `tracing` import is an error, since the scanner finds a macro
+//! by its name and an alias would hide its calls.
 //!
 //! What does not count: items behind `#[cfg(test)]` or `#[cfg(all(test, …))]`,
-//! files those attributes pull in through `mod name;`, `*_tests.rs` files,
-//! `tests.rs`, `tests/` directories and `build.rs`.
+//! files those attributes pull in through `mod name;` (also from inside an
+//! inline `mod a { … }`; an inline module's own `#[path]` is not followed),
+//! `*_tests.rs` files, `tests.rs`, `tests/` directories and `build.rs`.
+//!
+//! What is not scanned: fields a dependency emits (zbus, for one), fields
+//! recorded at run time with `Span::record` (a span must declare the field,
+//! with `field::Empty`, and that declaration is scanned), and macros that
+//! wrap a `tracing` macro under another name.
 
 use std::collections::BTreeSet;
 use std::fs;
@@ -22,6 +39,7 @@ use std::path::{Path, PathBuf};
 
 use super::field_sweep_cfg::{without_test_items, TestModule, TestSplit};
 use super::field_sweep_lex::{matching_close, tokenize, Spanned, Token};
+use super::field_sweep_spans::instrument_sites;
 
 /// What to do about a shape the scanner cannot split: a top-level comma inside
 /// a turbofish (`collect::<HashMap<_, _>>()`) or a closure's parameter list
@@ -29,7 +47,16 @@ use super::field_sweep_lex::{matching_close, tokenize, Spanned, Token};
 const UNREADABLE_HINT: &str = "wrap the value in parentheses or bind it to a local first, and \
      pass a message as a string literal";
 
-const MACROS: [&str; 6] = ["trace", "debug", "info", "warn", "error", "event"];
+/// How many arguments before the fields a macro takes after its options: an
+/// event's level, a span's name, and for `span!` both.
+fn leading_positionals(name: &str) -> Option<usize> {
+    match name {
+        "trace" | "debug" | "info" | "warn" | "error" => Some(0),
+        "event" | "trace_span" | "debug_span" | "info_span" | "warn_span" | "error_span" => Some(1),
+        "span" => Some(2),
+        _ => None,
+    }
+}
 
 /// One field key at one place in the sources.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -208,16 +235,19 @@ pub(super) fn sweep_source(name: &str, source: &str) -> Result<FileSweep, String
         let Token::Ident(ident) = &production[index].token else {
             continue;
         };
-        if !MACROS.contains(&ident.as_str()) || !is_tracing_call(&production, index) {
+        let Some(leading) = leading_positionals(ident) else {
+            continue;
+        };
+        if !is_tracing_call(&production, index) {
             continue;
         }
         let line = production[index].line;
         let Some(arguments) = macro_arguments(&production, index + 2) else {
             continue;
         };
-        for key in field_keys(arguments, ident == "event").map_err(|part| {
-            format!("{name}:{line}: cannot read the field `{part}`; {UNREADABLE_HINT}")
-        })? {
+        for key in
+            field_keys(arguments, leading).map_err(|part| unreadable_field(name, line, &part))?
+        {
             sites.push(FieldSite {
                 key,
                 file: name.to_owned(),
@@ -225,11 +255,17 @@ pub(super) fn sweep_source(name: &str, source: &str) -> Result<FileSweep, String
             });
         }
     }
+    sites.extend(instrument_sites(name, &production)?);
     Ok(FileSweep {
         sites,
         test_modules,
         test_only,
     })
+}
+
+/// The error for a field part the scanner cannot read.
+pub(super) fn unreadable_field(name: &str, line: usize, part: &str) -> String {
+    format!("{name}:{line}: cannot read the field `{part}`; {UNREADABLE_HINT}")
 }
 
 fn is_tracing_call(tokens: &[Spanned], index: usize) -> bool {
@@ -265,7 +301,7 @@ fn macro_arguments(tokens: &[Spanned], open: usize) -> Option<&[Spanned]> {
 }
 
 /// Splits on commas outside any bracket.
-fn top_level_parts(tokens: &[Spanned]) -> Vec<&[Spanned]> {
+pub(super) fn top_level_parts(tokens: &[Spanned]) -> Vec<&[Spanned]> {
     let mut parts = Vec::new();
     let mut depth = 0usize;
     let mut start = 0;
@@ -289,19 +325,19 @@ fn top_level_parts(tokens: &[Spanned]) -> Vec<&[Spanned]> {
 /// part that is neither a field nor a recognised option, so a shape the
 /// scanner cannot read fails loudly instead of hiding a key.
 ///
-/// `event!` takes its level as the first argument after the options. It is
-/// skipped by position, because a level can be a path, a constant or a
-/// call, and none of those is told apart from a shorthand field by its
-/// tokens.
-fn field_keys(arguments: &[Spanned], is_event: bool) -> Result<Vec<String>, String> {
+/// `leading` arguments after the options are positional, not fields: an
+/// event's level, a span's name, both for `span!`. They are skipped by
+/// position, because a level can be a path, a constant or a call, and none of
+/// those is told apart from a shorthand field by its tokens.
+pub(super) fn field_keys(arguments: &[Spanned], leading: usize) -> Result<Vec<String>, String> {
     let mut keys = Vec::new();
-    let mut level_pending = is_event;
+    let mut positional_pending = leading;
     for part in top_level_parts(arguments) {
         if is_option(part) {
             continue;
         }
-        if level_pending {
-            level_pending = false;
+        if positional_pending > 0 {
+            positional_pending -= 1;
             if !assigns(part) {
                 continue;
             }
@@ -445,7 +481,8 @@ fn reject_aliased_imports(name: &str, tokens: &[Spanned]) -> Result<(), String> 
         for pair in (at + 1..end).filter(|index| is_word(*index, "as")) {
             let hides = match tokens.get(pair - 1).map(|s| &s.token) {
                 Some(Token::Ident(word)) => {
-                    MACROS.contains(&word.as_str()) || matches!(word.as_str(), "tracing" | "self")
+                    leading_positionals(word).is_some()
+                        || matches!(word.as_str(), "tracing" | "self")
                 }
                 _ => false,
             };

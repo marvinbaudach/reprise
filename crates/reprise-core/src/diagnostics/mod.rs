@@ -7,6 +7,8 @@ mod field_sweep;
 mod field_sweep_cfg;
 #[cfg(test)]
 mod field_sweep_lex;
+#[cfg(test)]
+mod field_sweep_spans;
 mod log_tail;
 mod model;
 mod redact;
@@ -31,6 +33,8 @@ mod field_policy_tests;
 mod field_sweep_files_tests;
 #[cfg(test)]
 mod field_sweep_lex_tests;
+#[cfg(test)]
+mod field_sweep_spans_tests;
 #[cfg(test)]
 mod field_sweep_tests;
 #[cfg(test)]
