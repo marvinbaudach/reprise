@@ -30,6 +30,8 @@ mod field_policy_tests;
 #[cfg(test)]
 mod field_sweep_files_tests;
 #[cfg(test)]
+mod field_sweep_lex_tests;
+#[cfg(test)]
 mod field_sweep_tests;
 #[cfg(test)]
 mod log_tail_tests;

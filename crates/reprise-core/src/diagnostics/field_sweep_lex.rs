@@ -113,6 +113,8 @@ fn skip_block_comment(chars: &[char], start: usize) -> (usize, usize) {
 }
 
 /// A `"…"` string starting at `start`; returns its text and the index past it.
+/// An unterminated string runs to the end of the input, so the index never
+/// exceeds `chars.len()`.
 fn read_string(chars: &[char], start: usize) -> (String, usize) {
     let mut text = String::new();
     let mut at = start + 1;
@@ -125,7 +127,7 @@ fn read_string(chars: &[char], start: usize) -> (String, usize) {
         }
         at += 1;
     }
-    (text, at + 1)
+    (text, (at + 1).min(chars.len()))
 }
 
 /// `r"…"`, `r#"…"#`, `b"…"`, `br"…"`, `c"…"` after the prefix word `word`.
@@ -148,7 +150,7 @@ fn prefixed_string(chars: &[char], word: &str, end: usize) -> Option<(String, us
         }
         return Some((
             chars[body..at.min(chars.len())].iter().collect(),
-            at + close.len(),
+            (at + close.len()).min(chars.len()),
         ));
     }
     (chars.get(end) == Some(&'"')).then(|| read_string(chars, end))
@@ -168,7 +170,7 @@ fn read_quote(chars: &[char], start: usize) -> (Token, usize) {
     while at < chars.len() && chars[at] != '\'' {
         at += if chars[at] == '\\' { 2 } else { 1 };
     }
-    (Token::Other, at + 1)
+    (Token::Other, (at + 1).min(chars.len()))
 }
 
 /// The index of the bracket that closes the one at `open`.
