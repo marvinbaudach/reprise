@@ -157,7 +157,7 @@ fn the_view_source_log_line_keeps_the_album_or_artist_label_out_of_its_message()
     // which is redacted. No smoke script reads the old interpolated text.
     let line = include_str!("track_list_smoke.rs")
         .lines()
-        .find(|line| line.contains("view source set"))
+        .find(|line| line.contains("tracing::info!") && line.contains("view source set"))
         .expect("the programmatic source switch logs its result");
 
     assert!(!line.contains("{label}"), "label interpolated: {line}");
