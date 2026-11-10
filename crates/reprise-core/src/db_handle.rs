@@ -123,6 +123,14 @@ impl Db {
     pub(crate) fn conn(&self) -> &Connection {
         &self.conn
     }
+
+    /// The underlying connection, mutably. rusqlite 0.41 made the hook
+    /// installers (`authorizer`, `busy_handler`, `trace_v2`) take `&mut self`,
+    /// and the contention tests install them on the handle they are probing.
+    #[cfg(test)]
+    pub(crate) fn conn_mut(&mut self) -> &mut Connection {
+        &mut self.conn
+    }
 }
 
 impl std::fmt::Debug for Db {

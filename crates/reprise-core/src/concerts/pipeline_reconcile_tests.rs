@@ -96,8 +96,9 @@ fn reconciling_an_artist_survives_a_rival_commit_between_its_read_and_its_write(
 
     let directory = tempfile::tempdir().unwrap();
     let path = directory.path().join("reprise.db");
-    let db = crate::db::Db::open_migrated(Some(&path)).unwrap();
-    let flag = crate::library::rival_commit_test_support::arm(db.conn(), &path, "concert_events");
+    let mut db = crate::db::Db::open_migrated(Some(&path)).unwrap();
+    let flag =
+        crate::library::rival_commit_test_support::arm(db.conn_mut(), &path, "concert_events");
     let artist = LedgerArtist {
         key: "artist",
         name: "Artist",

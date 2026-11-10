@@ -26,8 +26,12 @@ fn contended_db() -> (tempfile::TempDir, Db) {
     (directory, db)
 }
 
-fn arm_first_write(directory: &tempfile::TempDir, db: &Db, table: &'static str) -> Arc<AtomicBool> {
-    arm_on_first_write(db.conn(), &directory.path().join(DB_FILE), table)
+fn arm_first_write(
+    directory: &tempfile::TempDir,
+    db: &mut Db,
+    table: &'static str,
+) -> Arc<AtomicBool> {
+    arm_on_first_write(db.conn_mut(), &directory.path().join(DB_FILE), table)
 }
 
 fn assert_interleaved(flag: &AtomicBool) {
@@ -59,10 +63,10 @@ fn fingerprint() -> TrackSourceFingerprint {
 
 #[test]
 fn storing_a_spectrogram_survives_a_rival_commit_between_its_read_and_its_write() {
-    let (directory, db) = contended_db();
+    let (directory, mut db) = contended_db();
     insert_track(&db, 1);
     let flag = arm(
-        db.conn(),
+        db.conn_mut(),
         &directory.path().join(DB_FILE),
         "track_spectrograms",
     );
@@ -77,9 +81,9 @@ fn storing_a_spectrogram_survives_a_rival_commit_between_its_read_and_its_write(
 
 #[test]
 fn storing_render_data_survives_a_rival_commit_between_its_read_and_its_write() {
-    let (directory, db) = contended_db();
+    let (directory, mut db) = contended_db();
     insert_track(&db, 1);
-    let flag = arm_first_write(&directory, &db, "tracks");
+    let flag = arm_first_write(&directory, &mut db, "tracks");
 
     let outcome =
         crate::db::set_track_render_data(&db, 1, fingerprint(), &TrackRenderData::empty()).unwrap();
@@ -90,10 +94,10 @@ fn storing_render_data_survives_a_rival_commit_between_its_read_and_its_write() 
 
 #[test]
 fn recording_a_render_data_failure_survives_a_rival_commit_between_its_read_and_its_write() {
-    let (directory, db) = contended_db();
+    let (directory, mut db) = contended_db();
     insert_track(&db, 1);
     let flag = arm(
-        db.conn(),
+        db.conn_mut(),
         &directory.path().join(DB_FILE),
         "render_data_failures",
     );
@@ -108,9 +112,9 @@ fn recording_a_render_data_failure_survives_a_rival_commit_between_its_read_and_
 
 #[test]
 fn deleting_a_playlist_survives_a_rival_commit_between_its_read_and_its_write() {
-    let (directory, db) = contended_db();
+    let (directory, mut db) = contended_db();
     let id = playlists::create(&db, "Doomed").unwrap();
-    let flag = arm_first_write(&directory, &db, "playlists");
+    let flag = arm_first_write(&directory, &mut db, "playlists");
 
     let deleted = playlists::delete(&db, id, "Doomed").unwrap();
 
@@ -120,12 +124,12 @@ fn deleting_a_playlist_survives_a_rival_commit_between_its_read_and_its_write() 
 
 #[test]
 fn adding_unique_tracks_survives_a_rival_commit_between_its_read_and_its_write() {
-    let (directory, db) = contended_db();
+    let (directory, mut db) = contended_db();
     insert_track(&db, 1);
     insert_track(&db, 2);
     let id = playlists::create(&db, "Contested").unwrap();
     let flag = arm(
-        db.conn(),
+        db.conn_mut(),
         &directory.path().join(DB_FILE),
         "playlist_tracks",
     );
@@ -138,8 +142,12 @@ fn adding_unique_tracks_survives_a_rival_commit_between_its_read_and_its_write()
 
 #[test]
 fn adding_a_radio_station_survives_a_rival_commit_between_its_read_and_its_write() {
-    let (directory, db) = contended_db();
-    let flag = arm(db.conn(), &directory.path().join(DB_FILE), "radio_stations");
+    let (directory, mut db) = contended_db();
+    let flag = arm(
+        db.conn_mut(),
+        &directory.path().join(DB_FILE),
+        "radio_stations",
+    );
     let new_station = NewStation {
         uuid: Some("station-1".into()),
         name: "Contested FM".into(),
@@ -161,7 +169,7 @@ fn adding_a_radio_station_survives_a_rival_commit_between_its_read_and_its_write
 
 #[test]
 fn tombstoning_missing_tracks_survives_a_rival_commit_between_its_read_and_its_write() {
-    let (directory, db) = contended_db();
+    let (directory, mut db) = contended_db();
     db.conn()
         .execute(
             "INSERT INTO tracks (id, path, title, added_at, missing_since, missing_reason) \
@@ -169,7 +177,7 @@ fn tombstoning_missing_tracks_survives_a_rival_commit_between_its_read_and_its_w
             [],
         )
         .unwrap();
-    let flag = arm_first_write(&directory, &db, "tracks");
+    let flag = arm_first_write(&directory, &mut db, "tracks");
 
     let tombstoned = tombstone_still_missing(&db, &MissingGroupKind::Deleted, &[1], 1_000).unwrap();
 
@@ -179,9 +187,9 @@ fn tombstoning_missing_tracks_survives_a_rival_commit_between_its_read_and_its_w
 
 #[test]
 fn merging_rhythmbox_stats_survives_a_rival_commit_between_its_read_and_its_write() {
-    let (directory, db) = contended_db();
+    let (directory, mut db) = contended_db();
     insert_track(&db, 1);
-    let flag = arm_first_write(&directory, &db, "tracks");
+    let flag = arm_first_write(&directory, &mut db, "tracks");
     let stats = rhythmbox_import::RhythmboxTrackStats {
         path: "/music/1.flac".into(),
         rating: Some(4),
@@ -225,9 +233,9 @@ fn is_hidden(db: &Db, mbid: &str) -> bool {
 
 #[test]
 fn showing_a_hidden_release_again_survives_a_rival_commit_between_its_read_and_its_write() {
-    let (directory, db) = contended_db();
+    let (directory, mut db) = contended_db();
     insert_hidden_release(&db, "one");
-    let flag = arm_first_write(&directory, &db, "new_releases");
+    let flag = arm_first_write(&directory, &mut db, "new_releases");
 
     crate::artist_news::set_release_hidden(&db, "one", false).unwrap();
 
@@ -237,9 +245,9 @@ fn showing_a_hidden_release_again_survives_a_rival_commit_between_its_read_and_i
 
 #[test]
 fn showing_hidden_releases_again_survives_a_rival_commit_between_its_read_and_its_write() {
-    let (directory, db) = contended_db();
+    let (directory, mut db) = contended_db();
     insert_hidden_release(&db, "one");
-    let flag = arm_first_write(&directory, &db, "new_releases");
+    let flag = arm_first_write(&directory, &mut db, "new_releases");
 
     crate::artist_news::set_releases_hidden(&db, &["one".to_string()], false).unwrap();
 
@@ -249,9 +257,9 @@ fn showing_hidden_releases_again_survives_a_rival_commit_between_its_read_and_it
 
 #[test]
 fn restoring_a_release_survives_a_rival_commit_between_its_read_and_its_write() {
-    let (directory, db) = contended_db();
+    let (directory, mut db) = contended_db();
     insert_hidden_release(&db, "one");
-    let flag = arm_first_write(&directory, &db, "new_releases");
+    let flag = arm_first_write(&directory, &mut db, "new_releases");
 
     crate::artist_news_history::restore_release(&db, "one").unwrap();
 
@@ -278,9 +286,9 @@ fn seed_deleted_release_memory(db: &Db) {
 
 #[test]
 fn reconciling_deleted_release_memory_survives_a_rival_commit_between_its_read_and_its_write() {
-    let (directory, db) = contended_db();
+    let (directory, mut db) = contended_db();
     seed_deleted_release_memory(&db);
-    let flag = arm_first_write(&directory, &db, "deleted_releases");
+    let flag = arm_first_write(&directory, &mut db, "deleted_releases");
 
     crate::artist_news_pipeline::reconcile_deleted_release_memory(db.conn()).unwrap();
 
@@ -304,14 +312,14 @@ fn reconciling_with_no_deleted_release_memory_never_waits_for_the_write_lock() {
 /// for the lock each time the scan prepares its read of `tracks`.
 #[test]
 fn reconciling_deleted_release_memory_scans_the_library_outside_the_write_lock() {
-    let (directory, db) = contended_db();
+    let (directory, mut db) = contended_db();
     seed_deleted_release_memory(&db);
     let rival = rusqlite::Connection::open(directory.path().join(DB_FILE)).unwrap();
     rival.pragma_update(None, "busy_timeout", 0).unwrap();
     let scans = Arc::new(AtomicU32::new(0));
     let scans_under_the_lock = Arc::new(AtomicU32::new(0));
     let (seen, locked) = (Arc::clone(&scans), Arc::clone(&scans_under_the_lock));
-    db.conn()
+    db.conn_mut()
         .authorizer(Some(move |context: AuthContext<'_>| {
             if matches!(
                 context.action,

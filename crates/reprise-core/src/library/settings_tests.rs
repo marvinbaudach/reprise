@@ -475,9 +475,9 @@ fn a_settings_write_survives_a_rival_commit_between_its_read_and_its_write() {
 
     let directory = tempfile::tempdir().unwrap();
     let path = directory.path().join("reprise.db");
-    let writer = crate::db::Db::open_migrated(Some(&path)).unwrap();
+    let mut writer = crate::db::Db::open_migrated(Some(&path)).unwrap();
     let interleaved =
-        crate::library::rival_commit_test_support::arm(writer.conn(), &path, "settings");
+        crate::library::rival_commit_test_support::arm(writer.conn_mut(), &path, "settings");
 
     set_setting(&writer, "ui.contested", "mine").unwrap();
 

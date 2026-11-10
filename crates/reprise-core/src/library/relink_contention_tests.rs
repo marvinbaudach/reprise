@@ -41,8 +41,8 @@ fn relinking_a_track_survives_a_rival_commit_between_its_read_and_its_write() {
     let (_temp, memory, track_id, new_path) = imported_missing_track("Relinked title");
     let target = target_for(&memory, track_id);
     let directory = tempfile::tempdir().unwrap();
-    let db = into_file_db(&memory, directory.path());
-    let flag = arm_on_first_write(db.conn(), &directory.path().join(DB_FILE), "tracks");
+    let mut db = into_file_db(&memory, directory.path());
+    let flag = arm_on_first_write(db.conn_mut(), &directory.path().join(DB_FILE), "tracks");
 
     relink_track(&db, &target, &new_path).unwrap();
 
@@ -58,8 +58,8 @@ fn relinking_from_a_folder_survives_a_rival_commit_between_its_read_and_its_writ
     let (_temp, memory, ids, new_folder) = moved_group(1);
     let targets = targets_for(&memory, &ids);
     let directory = tempfile::tempdir().unwrap();
-    let db = into_file_db(&memory, directory.path());
-    let flag = arm_on_first_write(db.conn(), &directory.path().join(DB_FILE), "tracks");
+    let mut db = into_file_db(&memory, directory.path());
+    let flag = arm_on_first_write(db.conn_mut(), &directory.path().join(DB_FILE), "tracks");
     let cancel = AtomicBool::new(false);
 
     let report = relink_from_folder(&db, &new_folder, &targets, &cancel, |_, _| {}).unwrap();
