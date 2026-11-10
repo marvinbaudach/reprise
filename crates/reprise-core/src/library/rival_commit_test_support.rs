@@ -21,7 +21,7 @@ use rusqlite::Connection;
 /// was immediate); only the writer under test must always succeed. Returns the
 /// flag the authorizer raises once the rival attempt has been made, so a test
 /// can prove the interleaving really happened.
-pub(crate) fn arm(writer: &Connection, path: &Path, table: &'static str) -> Arc<AtomicBool> {
+pub(crate) fn arm(writer: &mut Connection, path: &Path, table: &'static str) -> Arc<AtomicBool> {
     arm_matching(
         writer,
         path,
@@ -34,7 +34,7 @@ pub(crate) fn arm(writer: &Connection, path: &Path, table: &'static str) -> Arc<
 /// `UPDATE` or `DELETE` is invisible to [`arm`], so its test would pass
 /// without the fix and prove nothing.
 pub(crate) fn arm_on_first_write(
-    writer: &Connection,
+    writer: &mut Connection,
     path: &Path,
     table: &'static str,
 ) -> Arc<AtomicBool> {
@@ -48,7 +48,7 @@ pub(crate) fn arm_on_first_write(
 }
 
 fn arm_matching(
-    writer: &Connection,
+    writer: &mut Connection,
     path: &Path,
     watched: impl Fn(AuthAction<'_>) -> bool + Send + 'static,
 ) -> Arc<AtomicBool> {

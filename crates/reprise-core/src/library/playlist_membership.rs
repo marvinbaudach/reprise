@@ -115,17 +115,21 @@ mod tests {
 
     #[test]
     fn interactive_add_skips_existing_and_repeated_track_ids() {
-        let db = seeded_db();
+        let mut db = seeded_db();
         let playlist_id = crate::library::playlists::create(&db, "P").unwrap();
         crate::library::playlists::add_tracks(&db, playlist_id, &[1, 2]).unwrap();
 
         MEMBERSHIP_SELECTS.store(0, Ordering::SeqCst);
-        db.conn().trace_v2(
-            TraceEventCodes::SQLITE_TRACE_STMT,
-            Some(count_membership_selects),
-        );
+        db.conn_mut()
+            .trace_v2(
+                TraceEventCodes::SQLITE_TRACE_STMT,
+                Some(count_membership_selects),
+            )
+            .unwrap();
         let inserted = super::add_unique_tracks(&db, playlist_id, &[2, 3, 3, 4]).unwrap();
-        db.conn().trace_v2(TraceEventCodes::empty(), None);
+        db.conn_mut()
+            .trace_v2(TraceEventCodes::empty(), None::<fn(TraceEvent<'_>)>)
+            .unwrap();
         assert_eq!(inserted, 2);
         // One set read to settle a no-op before any transaction opens, one under
         // the write lock — never one per requested id.

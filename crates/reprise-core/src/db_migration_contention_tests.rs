@@ -49,7 +49,7 @@ impl Scene {
     /// Makes the first `BEGIN` `writer` prepares let a rival connection run
     /// the whole migration first. The rival runs on its own thread, as a
     /// second process would: a step's noted start is per thread.
-    fn rival_migrates_at_first_begin(&self, writer: &Connection) -> Arc<AtomicBool> {
+    fn rival_migrates_at_first_begin(&self, writer: &mut Connection) -> Arc<AtomicBool> {
         let path = self.path();
         let caches: PathBuf = self.caches.path().to_path_buf();
         let fired = Arc::new(AtomicBool::new(false));
@@ -87,8 +87,8 @@ fn user_version(conn: &Connection) -> i64 {
 #[test]
 fn a_fresh_database_survives_a_rival_that_migrates_it_first() {
     let scene = Scene::new();
-    let writer = scene.open();
-    let fired = scene.rival_migrates_at_first_begin(&writer);
+    let mut writer = scene.open();
+    let fired = scene.rival_migrates_at_first_begin(&mut writer);
 
     scene.migrate(&writer).unwrap();
 
@@ -99,7 +99,7 @@ fn a_fresh_database_survives_a_rival_that_migrates_it_first() {
 #[test]
 fn a_half_migrated_database_survives_a_rival_that_finishes_it_first() {
     let scene = Scene::new();
-    let writer = scene.open();
+    let mut writer = scene.open();
     crate::db_schema_baseline::migrate_baseline(
         &writer,
         false,
@@ -108,7 +108,7 @@ fn a_half_migrated_database_survives_a_rival_that_finishes_it_first() {
     )
     .unwrap();
     crate::db_migrations::run_migrations_through(&writer, MID_CHAIN_VERSION).unwrap();
-    let fired = scene.rival_migrates_at_first_begin(&writer);
+    let fired = scene.rival_migrates_at_first_begin(&mut writer);
 
     scene.migrate(&writer).unwrap();
 
@@ -119,7 +119,7 @@ fn a_half_migrated_database_survives_a_rival_that_finishes_it_first() {
 #[test]
 fn a_step_that_reads_before_it_writes_survives_a_rival_commit_between_the_two() {
     let scene = Scene::new();
-    let writer = scene.open();
+    let mut writer = scene.open();
     scene.migrate(&writer).unwrap();
     writer.pragma_update(None, "user_version", 75).unwrap();
     writer
@@ -132,7 +132,7 @@ fn a_step_that_reads_before_it_writes_survives_a_rival_commit_between_the_two() 
             [],
         )
         .unwrap();
-    let fired = arm_on_first_write(&writer, &scene.path(), "concert_events");
+    let fired = arm_on_first_write(&mut writer, &scene.path(), "concert_events");
 
     crate::db_concerts::migrate_v76(&writer).unwrap();
 
@@ -165,7 +165,7 @@ fn opening_a_current_database_never_waits_for_the_write_lock() {
 #[test]
 fn a_step_that_finds_the_write_lock_held_is_started_again() {
     let scene = Scene::new();
-    let opener = scene.open();
+    let mut opener = scene.open();
     opener.pragma_update(None, "busy_timeout", 0).unwrap();
     let holder = scene.open();
     holder.execute_batch("BEGIN IMMEDIATE").unwrap();

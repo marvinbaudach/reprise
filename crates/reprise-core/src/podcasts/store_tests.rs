@@ -469,7 +469,7 @@ fn pod_6_removing_an_episode_waits_for_a_concurrent_writer() {
 
     let directory = tempfile::tempdir().unwrap();
     let database_path = directory.path().join("library.db");
-    let db = Db::open_migrated(Some(&database_path)).unwrap();
+    let mut db = Db::open_migrated(Some(&database_path)).unwrap();
     assert_eq!(
         db.conn()
             .query_row("PRAGMA busy_timeout", [], |row| row.get::<_, i64>(0))
@@ -545,7 +545,9 @@ fn pod_6_removing_an_episode_waits_for_a_concurrent_writer() {
         }
     }
 
-    db.conn().busy_handler(Some(count_and_signal_busy)).unwrap();
+    db.conn_mut()
+        .busy_handler(Some(count_and_signal_busy))
+        .unwrap();
     let removed = commit_remove_episode(&db, episode_id);
     BUSY_SIGNAL.lock().unwrap().take();
     writer

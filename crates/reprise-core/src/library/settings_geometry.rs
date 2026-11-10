@@ -127,9 +127,9 @@ mod tests {
 
         let directory = tempfile::tempdir().unwrap();
         let path = directory.path().join("reprise.db");
-        let writer = crate::db::Db::open_migrated(Some(&path)).unwrap();
+        let mut writer = crate::db::Db::open_migrated(Some(&path)).unwrap();
         let interleaved =
-            crate::library::rival_commit_test_support::arm(writer.conn(), &path, "settings");
+            crate::library::rival_commit_test_support::arm(writer.conn_mut(), &path, "settings");
 
         set_row_and_section_header_heights(&writer, 34.0, 28.0).unwrap();
 

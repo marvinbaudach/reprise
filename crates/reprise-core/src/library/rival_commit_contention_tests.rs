@@ -29,8 +29,12 @@ fn changed_effects() -> AudioEffects {
 
 #[test]
 fn storing_audio_effects_survives_a_rival_commit_between_its_read_and_its_write() {
-    let (directory, db) = contended_db();
-    let interleaved = arm(db.conn(), &directory.path().join("reprise.db"), "settings");
+    let (directory, mut db) = contended_db();
+    let interleaved = arm(
+        db.conn_mut(),
+        &directory.path().join("reprise.db"),
+        "settings",
+    );
 
     super::audio_effect_settings::store(&db, &changed_effects()).unwrap();
 
@@ -59,8 +63,12 @@ fn storing_unchanged_audio_effects_never_waits_for_the_write_lock() {
 
 #[test]
 fn recording_doctor_scan_rates_survives_a_rival_commit_between_its_read_and_its_write() {
-    let (directory, db) = contended_db();
-    let interleaved = arm(db.conn(), &directory.path().join("reprise.db"), "settings");
+    let (directory, mut db) = contended_db();
+    let interleaved = arm(
+        db.conn_mut(),
+        &directory.path().join("reprise.db"),
+        "settings",
+    );
 
     super::library_doctor::record_scan_rates(
         &db,
@@ -81,8 +89,12 @@ fn recording_doctor_scan_rates_survives_a_rival_commit_between_its_read_and_its_
 
 #[test]
 fn accepting_remote_suggestions_survives_a_rival_commit_between_its_read_and_its_write() {
-    let (directory, db) = contended_db();
-    let interleaved = arm(db.conn(), &directory.path().join("reprise.db"), "settings");
+    let (directory, mut db) = contended_db();
+    let interleaved = arm(
+        db.conn_mut(),
+        &directory.path().join("reprise.db"),
+        "settings",
+    );
 
     super::library_doctor::accept_remote_suggestions(&db).unwrap();
 
@@ -104,7 +116,7 @@ fn marking_device_playlists_synced_opens_with_a_write_and_survives_a_rival_commi
         DevicePlaylistRecord, SelectionSource,
     };
 
-    let (directory, db) = contended_db();
+    let (directory, mut db) = contended_db();
     upsert_device_playlist(
         &db,
         &DevicePlaylistRecord {
@@ -117,7 +129,7 @@ fn marking_device_playlists_synced_opens_with_a_write_and_survives_a_rival_commi
     )
     .unwrap();
     let interleaved = arm_on_first_write(
-        db.conn(),
+        db.conn_mut(),
         &directory.path().join("reprise.db"),
         "device_playlists",
     );

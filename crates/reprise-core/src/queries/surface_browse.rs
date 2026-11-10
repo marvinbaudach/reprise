@@ -402,7 +402,7 @@ mod tests {
 
         static BATCH_STATEMENTS: AtomicUsize = AtomicUsize::new(0);
 
-        let db = Db::open_in_memory().unwrap();
+        let mut db = Db::open_in_memory().unwrap();
         db.conn()
             .execute_batch(
                 "INSERT INTO tracks
@@ -421,17 +421,19 @@ mod tests {
         expected.sort_by_key(|track| track.id);
 
         BATCH_STATEMENTS.store(0, Ordering::SeqCst);
-        db.conn().trace_v2(
-            TraceEventCodes::SQLITE_TRACE_STMT,
-            Some(|event| {
-                if let TraceEvent::Stmt(statement, _expanded) = event {
-                    let sql = statement.sql();
-                    if sql.contains("FROM tracks WHERE id IN") {
-                        BATCH_STATEMENTS.fetch_add(1, Ordering::SeqCst);
+        db.conn_mut()
+            .trace_v2(
+                TraceEventCodes::SQLITE_TRACE_STMT,
+                Some(|event: TraceEvent<'_>| {
+                    if let TraceEvent::Stmt(statement, _expanded) = event {
+                        let sql = statement.sql();
+                        if sql.contains("FROM tracks WHERE id IN") {
+                            BATCH_STATEMENTS.fetch_add(1, Ordering::SeqCst);
+                        }
                     }
-                }
-            }),
-        );
+                }),
+            )
+            .unwrap();
         let mut actual = query_present_tracks_by_ids(&db, &ids).unwrap();
         actual.sort_by_key(|track| track.id);
 

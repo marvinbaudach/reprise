@@ -42,8 +42,12 @@ impl Scene {
 
     /// Makes the first write the scan prepares against `table` provoke a
     /// rival commit.
-    fn arm(&self, table: &'static str) -> std::sync::Arc<AtomicBool> {
-        arm_on_first_write(self.db.conn(), &self.directory.path().join(DB_FILE), table)
+    fn arm(&mut self, table: &'static str) -> std::sync::Arc<AtomicBool> {
+        arm_on_first_write(
+            self.db.conn_mut(),
+            &self.directory.path().join(DB_FILE),
+            table,
+        )
     }
 
     fn scan(&self) -> Result<ScanReport, ScanError> {
@@ -60,7 +64,7 @@ fn assert_interleaved(flag: &AtomicBool) {
 
 #[test]
 fn importing_a_file_survives_a_rival_commit_between_its_read_and_its_write() {
-    let scene = Scene::new();
+    let mut scene = Scene::new();
     fixture_copy(scene.music.path(), "a.flac");
     // The import's first statement clears a stale import error: a write that
     // follows the batch's read of the known row.
@@ -74,7 +78,7 @@ fn importing_a_file_survives_a_rival_commit_between_its_read_and_its_write() {
 
 #[test]
 fn restoring_a_reappeared_file_survives_a_rival_commit_between_its_read_and_its_write() {
-    let scene = Scene::new();
+    let mut scene = Scene::new();
     fixture_copy(scene.music.path(), "a.flac");
     scene.scan().unwrap();
     scene
@@ -101,7 +105,7 @@ fn restoring_a_reappeared_file_survives_a_rival_commit_between_its_read_and_its_
 
 #[test]
 fn marking_a_vanished_file_survives_a_rival_commit_between_its_read_and_its_write() {
-    let scene = Scene::new();
+    let mut scene = Scene::new();
     let gone = fixture_copy(scene.music.path(), "a.flac");
     scene.scan().unwrap();
     // A folder emptied of audio: with nothing observed, the tail starts with

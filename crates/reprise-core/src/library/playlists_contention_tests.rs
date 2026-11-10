@@ -16,17 +16,17 @@ fn contended_db() -> (tempfile::TempDir, Db) {
 
 fn arm_on_playlists(
     directory: &tempfile::TempDir,
-    db: &Db,
+    db: &mut Db,
     table: &'static str,
 ) -> impl Fn() -> bool {
-    let flag = arm(db.conn(), &directory.path().join("reprise.db"), table);
+    let flag = arm(db.conn_mut(), &directory.path().join("reprise.db"), table);
     move || flag.load(Ordering::SeqCst)
 }
 
 #[test]
 fn creating_a_playlist_survives_a_rival_commit_between_its_read_and_its_write() {
-    let (directory, db) = contended_db();
-    let interleaved = arm_on_playlists(&directory, &db, "playlists");
+    let (directory, mut db) = contended_db();
+    let interleaved = arm_on_playlists(&directory, &mut db, "playlists");
 
     let id = create(&db, "Contested").unwrap();
 
@@ -39,8 +39,8 @@ fn creating_a_playlist_survives_a_rival_commit_between_its_read_and_its_write() 
 
 #[test]
 fn ensuring_a_role_playlist_survives_a_rival_commit_between_its_read_and_its_write() {
-    let (directory, db) = contended_db();
-    let interleaved = arm_on_playlists(&directory, &db, "playlists");
+    let (directory, mut db) = contended_db();
+    let interleaved = arm_on_playlists(&directory, &mut db, "playlists");
 
     let id = ensure_role_playlist(&db, "Conversion", "conversion").unwrap();
 
@@ -53,8 +53,8 @@ fn ensuring_a_role_playlist_survives_a_rival_commit_between_its_read_and_its_wri
 
 #[test]
 fn creating_a_smart_playlist_survives_a_rival_commit_between_its_read_and_its_write() {
-    let (directory, db) = contended_db();
-    let interleaved = arm_on_playlists(&directory, &db, "smart_playlists");
+    let (directory, mut db) = contended_db();
+    let interleaved = arm_on_playlists(&directory, &mut db, "smart_playlists");
 
     let id = create_smart(&db, "Contested", GENRE_RULES, "title", "asc", None).unwrap();
 
@@ -93,10 +93,10 @@ fn seed_tracks(db: &Db, count: i64) -> Vec<i64> {
 
 #[test]
 fn appending_tracks_survives_a_rival_commit_between_its_read_and_its_write() {
-    let (directory, db) = contended_db();
+    let (directory, mut db) = contended_db();
     let tracks = seed_tracks(&db, 3);
     let playlist = create(&db, "Contested").unwrap();
-    let interleaved = arm_on_playlists(&directory, &db, "playlist_tracks");
+    let interleaved = arm_on_playlists(&directory, &mut db, "playlist_tracks");
 
     let inserted = add_tracks(&db, playlist, &tracks).unwrap();
 
@@ -110,9 +110,9 @@ fn appending_tracks_survives_a_rival_commit_between_its_read_and_its_write() {
 
 #[test]
 fn creating_a_playlist_with_tracks_survives_a_rival_commit_between_its_read_and_its_write() {
-    let (directory, db) = contended_db();
+    let (directory, mut db) = contended_db();
     let tracks = seed_tracks(&db, 2);
-    let interleaved = arm_on_playlists(&directory, &db, "playlists");
+    let interleaved = arm_on_playlists(&directory, &mut db, "playlists");
 
     let id = create_with_tracks(&db, "Contested", &tracks).unwrap();
 
@@ -125,11 +125,11 @@ fn creating_a_playlist_with_tracks_survives_a_rival_commit_between_its_read_and_
 
 #[test]
 fn moving_a_track_survives_a_rival_commit_between_its_read_and_its_write() {
-    let (directory, db) = contended_db();
+    let (directory, mut db) = contended_db();
     let tracks = seed_tracks(&db, 3);
     let playlist = create_with_tracks(&db, "Contested", &tracks).unwrap();
     let flag = arm_on_first_write(
-        db.conn(),
+        db.conn_mut(),
         &directory.path().join("reprise.db"),
         "playlist_tracks",
     );
@@ -151,14 +151,14 @@ fn moving_a_track_survives_a_rival_commit_between_its_read_and_its_write() {
 fn moving_a_track_in_a_playlist_that_shrank_before_the_lock_is_a_no_op() {
     use rusqlite::hooks::{AuthAction, AuthContext, Authorization, TransactionOperation};
 
-    let (directory, db) = contended_db();
+    let (directory, mut db) = contended_db();
     let tracks = seed_tracks(&db, 3);
     let playlist = create_with_tracks(&db, "Shrinking", &tracks).unwrap();
     let rival = rusqlite::Connection::open(directory.path().join("reprise.db")).unwrap();
     rival.pragma_update(None, "busy_timeout", 0).unwrap();
     let shrunk = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false));
     let hook_shrunk = std::sync::Arc::clone(&shrunk);
-    db.conn()
+    db.conn_mut()
         .authorizer(Some(move |context: AuthContext<'_>| {
             let begins = matches!(
                 context.action,
@@ -192,11 +192,11 @@ fn moving_a_track_in_a_playlist_that_shrank_before_the_lock_is_a_no_op() {
 /// reading honest.
 #[test]
 fn removing_positions_opens_with_a_write_and_survives_a_rival_commit() {
-    let (directory, db) = contended_db();
+    let (directory, mut db) = contended_db();
     let tracks = seed_tracks(&db, 3);
     let playlist = create_with_tracks(&db, "Contested", &tracks).unwrap();
     let flag = arm_on_first_write(
-        db.conn(),
+        db.conn_mut(),
         &directory.path().join("reprise.db"),
         "playlist_tracks",
     );
