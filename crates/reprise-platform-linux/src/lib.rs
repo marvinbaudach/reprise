@@ -36,6 +36,7 @@ pub mod mpris;
 pub mod player;
 mod player_effects;
 pub(crate) mod player_pipeline;
+mod seek_dedupe;
 pub mod signals;
 pub mod spectrogram_backfill;
 pub mod termination;

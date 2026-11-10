@@ -13,6 +13,9 @@ pub(super) const CAVA_SAMPLE_RATE_HZ: i32 = 44_100;
 // stay bounded because this branch must never back-pressure audible playback.
 const CAVA_SINK_MAX_QUEUED_BUFFERS: u32 = 8;
 
+/// Builds the audio-filter bin: equalizer, track gain and the analysis tee that
+/// feeds the CAVA appsink. The bin carries the seek de-duplicating probe of
+/// [`crate::seek_dedupe`], so every pipeline that gets a filter gets it.
 pub(super) fn build_audio_filter(
     effects: &AudioEffects,
 ) -> Result<Option<gst::Element>, PlaybackError> {
@@ -129,6 +132,7 @@ pub(super) fn build_audio_filter(
             .map_err(|error| PlaybackError::Backend(format!("GStreamer: {error}")))?,
     )
     .map_err(|error| PlaybackError::Backend(format!("GStreamer: {error}")))?;
+    crate::seek_dedupe::install_seek_dedupe(&bin)?;
     Ok(Some(bin.upcast()))
 }
 

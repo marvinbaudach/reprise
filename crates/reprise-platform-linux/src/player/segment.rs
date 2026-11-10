@@ -30,9 +30,14 @@
 //! calls [`SegmentGate::complete_start`], which learns the file's duration and
 //! seeks to a nonzero track start. A track beginning with its file needs no
 //! seek: flushing `flacparse` back to zero during its fresh preroll can fail the
-//! stream. A nonzero seek's own `ASYNC_DONE` then enters Playing, so playback
-//! does not overlap its flush either. `play` runs on the GTK main thread, and a
-//! file on a slow mount must not freeze it.
+//! stream. The mechanism is repeated flushing seeks: one seek used to reach the
+//! parser as several with the same seqnum, which left a sticky TAG stale, and
+//! GStreamer turns the FALSE push of a stale sticky event into a
+//! `GST_FLOW_ERROR`. The audio-filter bin forwards each seqnum once now (see
+//! [`crate::seek_dedupe`]), but a flush the track does not need stays avoided.
+//! A nonzero seek's own `ASYNC_DONE` then enters Playing, so playback does not
+//! overlap its flush either. `play` runs on the GTK main thread, and a file on
+//! a slow mount must not freeze it.
 //!
 //! The last track of a file has no boundary when its end lies within
 //! [`OPEN_END_TOLERANCE_MS`] of the file's duration: it plays to the end of the
