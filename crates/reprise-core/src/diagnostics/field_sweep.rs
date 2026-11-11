@@ -313,8 +313,10 @@ fn call_root(tokens: &[Spanned], index: usize) -> CallRoot {
     if !call {
         return CallRoot::NotACall;
     }
-    // Walk the `a::b::` path back to its first segment. A leading `::` or a
-    // `$` (as in `$crate`) stops the walk without adding a segment.
+    // Walk the `a::b::` path back to its first segment. A leading `::` stops
+    // the walk without adding a segment. A `$` does not: `$crate::info!` ends
+    // in `Foreign("crate")`, because the `$` is not an identifier, so the last
+    // segment the walk added is `crate`.
     let mut root: Option<&str> = None;
     let mut at = index;
     while at >= 3
