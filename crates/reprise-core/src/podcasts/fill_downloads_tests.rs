@@ -308,6 +308,45 @@ fn a_non_terminal_download_result_is_warned_instead_of_silently_dropped() {
 }
 
 #[test]
+fn a_non_terminal_downloading_result_keeps_its_byte_progress_and_never_a_failure_message() {
+    let logs = crate::log_capture::CapturedLogs::default();
+    let mut summary = FillSummary::default();
+
+    logs.capture(|| {
+        record_fill_outcome(
+            &mut summary,
+            7,
+            Ok(DownloadState::Downloading {
+                received_bytes: 1024,
+                total_bytes: Some(4096),
+            }),
+        );
+        record_fill_outcome(
+            &mut summary,
+            8,
+            Ok(DownloadState::Downloading {
+                received_bytes: 512,
+                total_bytes: None,
+            }),
+        );
+    });
+
+    let logged = logs.joined();
+    assert!(
+        logged.contains("received_bytes=1024") && logged.contains("total_bytes=4096"),
+        "byte progress dropped: {logged}"
+    );
+    assert!(
+        logged.contains("received_bytes=512"),
+        "unknown total must not hide the received bytes: {logged}"
+    );
+    assert!(
+        !logged.contains("Some("),
+        "total_bytes must be a plain number, not a Debug wrapper: {logged}"
+    );
+}
+
+#[test]
 fn the_fill_up_respects_each_subscriptions_auto_download_switch() {
     let disabled_db = conn();
     let disabled_root = tempfile::tempdir().unwrap();

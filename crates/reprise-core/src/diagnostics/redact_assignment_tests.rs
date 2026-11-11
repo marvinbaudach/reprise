@@ -1,0 +1,408 @@
+//! The `key=value` pass in free text: what a kept key may carry (M1, L1, L2)
+//! and how far a redacted key's value reaches (P3).
+
+use super::{redact_log_message, RedactionContext};
+
+fn redacted(message: &str) -> String {
+    redact_log_message(message, &RedactionContext::default())
+}
+
+#[test]
+fn a_kept_key_never_carries_a_second_assignment_or_a_name_through() {
+    for (input, expected) in [
+        ("elapsed_ms=12;file=Artist", "elapsed_ms=$REDACTED"),
+        ("count=3;title=Foo", "count=$REDACTED"),
+        ("mode=Compact,title=Foo", "mode=$REDACTED"),
+        ("version=0.1.331;title=Foo", "version=$REDACTED"),
+        ("version=0.1.331-Artist", "version=$REDACTED"),
+        ("id=2024-11-08-Artist", "id=$REDACTED"),
+        ("id=deadbeefcafe", "id=$REDACTED"),
+        ("kind=Music/Artist/Album", "kind=$REDACTED"),
+        ("state=/home/x/song.flac", "state=$REDACTED"),
+        ("state=song.flac", "state=$REDACTED"),
+        ("state=~/x", "state=$REDACTED"),
+        ("state=./x", "state=$REDACTED"),
+        ("state=", "state=$REDACTED"),
+    ] {
+        assert_eq!(redacted(input), expected, "{input}");
+    }
+}
+
+#[test]
+fn a_kept_key_keeps_a_plain_identifier_or_a_number() {
+    for input in [
+        "mode=Compact",
+        "state=Playing",
+        "id=Track7",
+        "kind=_private",
+        "count=3",
+        "count=-3",
+        "count=3,",
+        "(count=3)",
+        "[count=3]",
+        "version=0.1.331",
+        "version=1.2.3.4",
+        "mode=Compact; id=12 kind=Music",
+    ] {
+        assert_eq!(redacted(input), input, "{input}");
+    }
+}
+
+#[test]
+fn a_kept_key_with_a_rejected_value_takes_the_words_after_it_like_an_unknown_key() {
+    for (input, expected) in [
+        ("opened count=song.mp3 now", "opened count=$REDACTED"),
+        ("kind=Music/Pink Floyd/The Wall", "kind=$REDACTED"),
+        ("state=\"Pink Floyd/The Wall\"", "state=$REDACTED"),
+        ("state=Pink(Floyd The Wall)", "state=$REDACTED"),
+        ("state=(Pink Floyd)", "state=$REDACTED"),
+        ("mode=a/b next words count=2", "mode=$REDACTED"),
+        ("state=/x/y Floyd The Wall id=3", "state=$REDACTED"),
+    ] {
+        assert_eq!(redacted(input), expected, "{input}");
+    }
+}
+
+#[test]
+fn more_than_one_dot_is_a_version_only_under_the_version_key() {
+    for input in ["count=192.168.1.5", "id=1.1.1.1", "elapsed_ms=0.1.331"] {
+        let output = redacted(input);
+
+        assert!(output.ends_with("=$REDACTED"), "{input}: {output}");
+        assert!(!output.contains('.'), "{input}: {output}");
+    }
+    for input in ["count=1.5", "count=12", "id=0.25", "version=0.1.331"] {
+        assert_eq!(redacted(input), input, "{input}");
+    }
+}
+
+#[test]
+fn a_debug_number_keeps_its_key_and_value() {
+    for input in [
+        "elapsed_ms=Some(1.5)",
+        "elapsed_ms=Some(250)",
+        "buffered_ms=None",
+        "elapsed_ms=12.5ms",
+        "elapsed_ms=3.5µs",
+        "elapsed_ms=40us",
+        "elapsed_ms=100ns",
+        "elapsed_ms=2s",
+        "elapsed_ms=Some(12.5ms)",
+        "elapsed_ms=1.5e16",
+        "elapsed_ms=1e-3",
+        "elapsed_ms=2E+4",
+        "elapsed_ms=-1.5e-3",
+        "(elapsed_ms=Some(1.5)),",
+    ] {
+        assert_eq!(redacted(input), input, "{input}");
+    }
+}
+
+#[test]
+fn something_that_only_looks_like_a_debug_number_is_redacted() {
+    for input in [
+        "elapsed_ms=Some(Artist.flac)",
+        "elapsed_ms=Some(1.5",
+        "elapsed_ms=1.5.5ms",
+        "elapsed_ms=1.e5",
+        "elapsed_ms=1e",
+        "elapsed_ms=12.5msx",
+        "elapsed_ms=Some(1)(2)",
+    ] {
+        assert_eq!(redacted(input), "elapsed_ms=$REDACTED", "{input}");
+    }
+}
+
+#[test]
+fn a_redacted_key_takes_every_word_to_the_end_of_the_line() {
+    for (input, expected) in [
+        ("error=a b c", "error=$REDACTED"),
+        ("error=a b count=3 more", "error=$REDACTED"),
+        ("error=a  b   count=3", "error=$REDACTED"),
+        ("prefix error=a b", "prefix error=$REDACTED"),
+        ("error=a b\nnext line", "error=$REDACTED\nnext line"),
+        ("error=a b\nnext count=3", "error=$REDACTED\nnext count=3"),
+        ("path=x y; elapsed_ms=12", "path=$REDACTED"),
+        ("error=a b path=c d count=3", "error=$REDACTED"),
+        ("error=a b ", "error=$REDACTED "),
+    ] {
+        assert_eq!(redacted(input), expected, "{input:?}");
+    }
+}
+
+#[test]
+fn a_forged_known_key_does_not_end_a_swallowed_value() {
+    for (input, expected) in [
+        ("error=foo count=3 Pink Floyd", "error=$REDACTED"),
+        ("error=a, count=3 Pink Floyd", "error=$REDACTED"),
+        ("error=a count=3: Pink Floyd", "error=$REDACTED"),
+        ("error=a (count=3) Pink Floyd", "error=$REDACTED"),
+        ("error=a COUNT=3 Pink", "error=$REDACTED"),
+        ("error=a [id=3] Pink Floyd", "error=$REDACTED"),
+        ("error=a elapsed_ms=1.5 Pink Floyd", "error=$REDACTED"),
+        ("state=Some(\"Pink\") count=3 Floyd", "state=$REDACTED"),
+        ("count=song.mp3 id=3 Pink Floyd", "count=$REDACTED"),
+        ("volume=0.5 count=3 Pink Floyd", "volume=$REDACTED"),
+    ] {
+        assert_eq!(redacted(input), expected, "{input}");
+    }
+}
+
+#[test]
+fn only_a_field_that_is_already_redacted_ends_a_swallowed_value() {
+    for (input, expected) in [
+        ("error=boom data=abc== tail words", "error=$REDACTED"),
+        ("error=x foo=bar more", "error=$REDACTED"),
+        ("error=x a=b c=d count=3 tail", "error=$REDACTED"),
+        ("error=x ==abc count=", "error=$REDACTED"),
+        ("error=x 1count=3 y", "error=$REDACTED"),
+        ("error=x y=$REDACTED) tail", "error=$REDACTED"),
+        (
+            "error=x y=$REDACTED count=3 tail",
+            "error=$REDACTED y=$REDACTED count=3 ",
+        ),
+        (
+            "error=x user_name=$REDACTED count=3 Pink Floyd",
+            "error=$REDACTED user_name=$REDACTED count=3 ",
+        ),
+    ] {
+        assert_eq!(redacted(input), expected, "{input}");
+    }
+}
+
+#[test]
+fn the_typed_fields_after_a_redacted_one_stay_readable_and_nothing_else_does() {
+    // The structured path writes one `key=value` per field, a redacted one as
+    // `key=$REDACTED`, so a kept field after it is a typed value.
+    for input in [
+        "error=$REDACTED count=3",
+        "error=$REDACTED count=3 elapsed_ms=12.5 state=Playing",
+        "playback stalled; error=$REDACTED volume=$REDACTED count=3",
+        "playback stalled; count=3 error=$REDACTED id=7",
+    ] {
+        assert_eq!(redacted(input), input, "{input}");
+    }
+    assert_eq!(
+        redacted("error=$REDACTED count=3 Pink Floyd"),
+        "error=$REDACTED count=3 "
+    );
+    assert_eq!(
+        redacted("error=$REDACTED Pink Floyd count=3"),
+        "error=$REDACTED count=3"
+    );
+}
+
+#[test]
+fn a_secret_like_key_before_a_colon_takes_its_value_words_too() {
+    for (input, expected) in [
+        ("password: hunter2 and more", "password:$REDACTED"),
+        ("password:hunter2 and more", "password:$REDACTED"),
+        ("api_key: abc def count=3 tail", "api_key:$REDACTED"),
+        ("status: all fine", "status: all fine"),
+    ] {
+        assert_eq!(redacted(input), expected, "{input:?}");
+    }
+}
+
+#[test]
+fn redacting_twice_changes_nothing() {
+    // The log file's lines are redacted again when the report embeds them.
+    for input in [
+        "error=a b c count=3",
+        "elapsed_ms=12;file=Artist",
+        "password: hunter2",
+        "state=Playing id=deadbeefcafe version=0.1.331-x",
+    ] {
+        let once = redacted(input);
+
+        assert_eq!(redacted(&once), once, "{input}");
+    }
+}
+
+#[test]
+fn a_secret_like_colon_key_takes_the_rest_of_the_line_even_past_a_known_key() {
+    assert_eq!(
+        redacted("token: abc def count=3 tail words\nnext count=4"),
+        "token:$REDACTED\nnext count=4"
+    );
+    assert_eq!(
+        redacted("password: hunter2 error=x y"),
+        "password:$REDACTED"
+    );
+}
+
+#[test]
+fn redacting_twice_with_a_user_home_and_music_directory_changes_nothing() {
+    // The report redacts a log line the file mirror has already redacted, with
+    // the same context: a marker written by the first pass (`$USER`, `$HOME/…`)
+    // must read to the second as a redacted value, not as a value to judge.
+    let context = RedactionContext {
+        music_dir: Some("/home/marvin/Music".to_owned()),
+        home_dir: Some("/home/marvin".to_owned()),
+        username: Some("marvin".to_owned()),
+    };
+    for input in [
+        "id=marvin more words",
+        "id=marvin",
+        "count=3 marvin id=marvin more words",
+        "error=a b marvin count=3",
+        "state=/home/marvin/Music/Pink Floyd/The Wall id=3",
+        "state=/home/marvin/Documents/x.txt id=3",
+        "kind=marvin/Pink more words",
+        "error=foo count=3 marvin Pink Floyd",
+        "password: marvin hunter2",
+    ] {
+        let once = redact_log_message(input, &context);
+
+        assert_eq!(redact_log_message(&once, &context), once, "{input}");
+    }
+}
+
+#[test]
+fn a_user_name_after_a_kept_key_is_replaced_by_its_marker_and_the_marker_is_kept() {
+    let context = RedactionContext {
+        username: Some("marvin".to_owned()),
+        ..RedactionContext::default()
+    };
+
+    assert_eq!(
+        redact_log_message("id=marvin more words", &context),
+        "id=$USER more words"
+    );
+    assert_eq!(
+        redact_log_message("opened by marvin id=3", &context),
+        "opened by $USER id=3"
+    );
+}
+
+#[test]
+fn a_user_name_that_is_also_a_key_does_not_change_how_the_key_is_read() {
+    // S3: replacing the name before the key pass renamed the key itself, so
+    // `password: hunter2` under a user called `password` was no longer a secret
+    // and a kept `id=` under a user called `id` was no longer a kept key.
+    let named = |username: &str| RedactionContext {
+        username: Some(username.to_owned()),
+        ..RedactionContext::default()
+    };
+
+    for (username, input, expected) in [
+        ("password", "password: hunter2 and more", "$USER:$REDACTED"),
+        ("password", "password=hunter2 and more", "$USER=$REDACTED"),
+        ("token", "token: abc def", "$USER:$REDACTED"),
+        ("id", "id=marvin more", "id=marvin more"),
+        ("id", "id=id more", "id=$USER more"),
+        ("count", "count=3 count=4", "count=3 count=4"),
+    ] {
+        let context = named(username);
+        let once = redact_log_message(input, &context);
+
+        assert_eq!(once, expected, "{username}: {input}");
+        assert_eq!(
+            redact_log_message(&once, &context),
+            once,
+            "{username}: {input}"
+        );
+    }
+}
+
+#[test]
+fn a_user_name_elsewhere_in_a_line_is_still_replaced_next_to_a_colon_or_equals_sign() {
+    let context = RedactionContext {
+        username: Some("marvin".to_owned()),
+        ..RedactionContext::default()
+    };
+
+    for (input, expected) in [
+        ("marvin: denied", "$USER: denied"),
+        ("marvin=3", "$USER=$REDACTED"),
+        ("by marvin, id=3", "by $USER, id=3"),
+    ] {
+        assert_eq!(redact_log_message(input, &context), expected, "{input}");
+    }
+}
+
+#[test]
+fn a_field_that_is_already_redacted_ends_the_previous_redaction_but_not_its_own() {
+    assert_eq!(
+        redacted("playlist=Roadtrip Mix user_name=$REDACTED track_id=42"),
+        "playlist=$REDACTED user_name=$REDACTED track_id=42"
+    );
+    assert_eq!(
+        redacted("user_name=$REDACTED leaked words id=3"),
+        "user_name=$REDACTED id=3"
+    );
+}
+
+/// Generous on purpose: the quadratic scan took 5 to 19 seconds on these
+/// inputs, a linear one takes milliseconds, so the bound only has to separate
+/// the two on any machine and build profile.
+const SLOW_SCAN_BOUND: std::time::Duration = std::time::Duration::from_secs(2);
+
+#[test]
+fn a_long_run_of_closing_brackets_is_trimmed_in_one_pass() {
+    use super::redact_assignments::trim_value;
+
+    let closing = ")".repeat(200_000);
+    let started = std::time::Instant::now();
+
+    assert_eq!(trim_value(&closing), "");
+    assert_eq!(trim_value(&format!("1{}", ",)".repeat(50_000))), "1");
+    assert!(
+        started.elapsed() < SLOW_SCAN_BOUND,
+        "{:?}",
+        started.elapsed()
+    );
+}
+
+#[test]
+fn trimming_a_value_drops_only_the_punctuation_that_wraps_it() {
+    use super::redact_assignments::trim_value;
+
+    for (value, expected) in [
+        ("1.5", "1.5"),
+        ("1.5),", "1.5"),
+        ("Some(1.5)", "Some(1.5)"),
+        ("Some(1.5))", "Some(1.5)"),
+        ("Some(1.5)),;", "Some(1.5)"),
+        ("(a)", "(a)"),
+        ("a)", "a"),
+        ("a))", "a"),
+        ("(a))", "(a)"),
+        ("\"a\"", "\"a"),
+        ("", ""),
+    ] {
+        assert_eq!(trim_value(value), expected, "{value:?}");
+    }
+}
+
+#[test]
+fn a_huge_value_under_a_kept_key_is_redacted_quickly() {
+    for input in [
+        format!("state={}", ")".repeat(200_000)),
+        format!("count=1{}", ",)".repeat(50_000)),
+        format!("id={}", "z".repeat(100_000)),
+    ] {
+        let started = std::time::Instant::now();
+        let output = redacted(&input);
+
+        let key = input.split('=').next().unwrap_or_default();
+        assert_eq!(output, format!("{key}=$REDACTED"));
+        assert!(
+            started.elapsed() < SLOW_SCAN_BOUND,
+            "{key}: {:?}",
+            started.elapsed()
+        );
+    }
+}
+
+#[test]
+fn a_value_up_to_the_length_cap_is_judged_by_its_shape_and_one_past_it_is_redacted() {
+    let at_cap = "z".repeat(4096);
+
+    assert_eq!(redacted(&format!("id={at_cap}")), format!("id={at_cap}"));
+    assert_eq!(redacted(&format!("id={at_cap}z")), "id=$REDACTED");
+    assert_eq!(
+        redacted(&format!("count={}", "1".repeat(4097))),
+        "count=$REDACTED"
+    );
+}

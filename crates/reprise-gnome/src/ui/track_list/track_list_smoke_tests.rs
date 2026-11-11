@@ -149,3 +149,17 @@ fn reload_oracle_failure_lines_are_machine_parseable() {
         "REPRISE_RELOAD_ORACLE error=incomplete-samples count=2"
     );
 }
+
+#[test]
+fn the_view_source_log_line_keeps_the_album_or_artist_label_out_of_its_message() {
+    // The message slot is not subject to the field key policy, so the label
+    // (an album, an artist or a playlist name) belongs in the `source` field,
+    // which is redacted. No smoke script reads the old interpolated text.
+    let line = include_str!("track_list_smoke.rs")
+        .lines()
+        .find(|line| line.contains("tracing::info!") && line.contains("view source set"))
+        .expect("the programmatic source switch logs its result");
+
+    assert!(!line.contains("{label}"), "label interpolated: {line}");
+    assert!(line.contains("source = %label"), "label field gone: {line}");
+}

@@ -315,6 +315,6 @@ fn warn_placeholder(name: &str, url: &str, distance: f64, message: &'static str)
         artist = name,
         image_identifier,
         placeholder_distance = distance,
-        message
+        "{message}"
     );
 }

@@ -50,7 +50,7 @@ pub(in crate::ui) fn arm_bar_position(
         let _ = settings::set_player_bar_position(conn, position);
     }
     library_player_bar.set_position(position);
-    tracing::info!(position = %value, "smoke: applied player bar position");
+    tracing::info!(smoke_position = %value, "smoke: applied player bar position");
 }
 
 /// Queues one synthetic listen and starts the worker only when a debug build

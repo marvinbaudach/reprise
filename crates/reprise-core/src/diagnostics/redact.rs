@@ -1,4 +1,6 @@
+use super::field_policy::KEEP_FIELDS;
 use super::model::RedactionContext;
+use super::redact_assignments::{is_kept_number, is_known_field, redact_sensitive_assignments};
 
 const ELLIPSIS: &str = "…";
 
@@ -20,13 +22,17 @@ pub fn redact_log_message(message: &str, context: &RedactionContext) -> String {
         redacted = redact_prefixed_path(&redacted, home_dir, "$HOME/…");
     }
     redacted = redact_absolute_paths(&redacted);
+    // The key pass reads the line before the name is replaced, so a user whose
+    // name is a key (`password`, `id`) cannot change what that key means. The
+    // report redacts the file's lines again; `id=$USER` is a value that pass
+    // accepts as it is (`is_plain_value`), so the second run changes nothing.
     redacted = redact_sensitive_assignments(&redacted);
     if let Some(username) = context
         .username
         .as_deref()
         .filter(|value| !value.is_empty())
     {
-        redacted = replace_bounded(&redacted, username, "$USER");
+        redacted = replace_username(&redacted, username);
     }
     redact_filenames(&redacted)
 }
@@ -78,7 +84,7 @@ fn redact_prefixed_path(input: &str, prefix: &str, replacement: &str) -> String 
         let start = cursor + relative;
         output.push_str(&input[cursor..start]);
         output.push_str(replacement);
-        cursor = span_end(input, start + prefix.len(), true);
+        cursor = path_continuation_end(input, span_end(input, start + prefix.len(), true));
     }
     output.push_str(&input[cursor..]);
     output
@@ -111,9 +117,29 @@ fn redact_absolute_paths(input: &str) -> String {
         }
         output.push_str(&input[cursor..start]);
         output.push_str(ELLIPSIS);
-        cursor = span_end(input, start + 1, true);
+        cursor = path_continuation_end(input, span_end(input, start + 1, true));
     }
     output
+}
+
+/// A path with spaces in a folder name ends at the first space. The words after
+/// it that still contain a `/` are further segments of the same path, so they
+/// go too: `/media/disk/My Band/Live 2019` loses `Band/Live`. A last segment
+/// with no `/` of its own (`2019`) cannot be told from the next word and stays.
+fn path_continuation_end(input: &str, mut end: usize) -> usize {
+    loop {
+        let rest = &input[end..];
+        let gap = rest.len() - rest.trim_start_matches([' ', '\t']).len();
+        if gap == 0 {
+            return end;
+        }
+        let word_start = end + gap;
+        let word_end = span_end(input, word_start, true);
+        if !input[word_start..word_end].contains('/') {
+            return end;
+        }
+        end = word_end;
+    }
 }
 
 fn span_end(input: &str, start: usize, stop_at_whitespace: bool) -> usize {
@@ -127,94 +153,38 @@ fn span_end(input: &str, start: usize, stop_at_whitespace: bool) -> usize {
         .unwrap_or(input.len())
 }
 
-fn redact_sensitive_assignments(input: &str) -> String {
-    input
-        .split_inclusive(char::is_whitespace)
-        .map(redact_sensitive_token)
-        .collect()
-}
-
-fn redact_sensitive_token(token: &str) -> String {
-    let Some((separator, separator_char)) =
-        token.char_indices().find(|(_, ch)| matches!(ch, '=' | ':'))
-    else {
-        return token.to_string();
-    };
-    let key = token[..separator]
-        .trim_matches(|ch: char| !ch.is_ascii_alphanumeric() && ch != '_')
-        .to_ascii_lowercase();
-    let sensitive = if separator_char == '=' {
-        !is_safe_structured_field(&key)
-    } else {
-        [
-            "password",
-            "token",
-            "secret",
-            "credential",
-            "username",
-            "user_name",
-            "api_key",
-        ]
-        .iter()
-        .any(|needle| key.contains(needle))
-    };
-    if !sensitive {
-        return token.to_string();
-    }
-    let body = token.trim_end_matches(char::is_whitespace);
-    let whitespace = &token[body.len()..];
-    format!(
-        "{}{}$REDACTED{whitespace}",
-        &token[..separator],
-        &token[separator..separator + 1]
-    )
-}
-
+/// Whether a structured field's value may be kept in a diagnostics line.
+///
+/// A lookup in [`KEEP_FIELDS`]: both redaction passes ask this one question,
+/// and every key not listed there is redacted. The lookup is an exact match
+/// against lowercase names. `EventFields` passes a field's name as written,
+/// so `Count` is unknown there; the free-text pass lowercases the key first
+/// (`split_assignment`), so `Count=3` reads as `count=3`. That is harmless:
+/// it can only keep a value whose lowercase key is kept anyway. An unknown key
+/// is never safe. `field_policy` explains how a key earns its place.
 pub fn is_safe_structured_field(key: &str) -> bool {
-    matches!(
-        key,
-        "track_id"
-            | "episode_id"
-            | "playlist_id"
-            | "run_id"
-            | "job_id"
-            | "position"
-            | "count"
-            | "attempt"
-            | "retry_count"
-            // Counts of candidates, not identities — same category as
-            // `count`/`attempt` above.
-            | "consecutive_failures"
-            | "skipped"
-            // `SourceError::technical_cause()` as logged by New Releases
-            // (`artist_news_pipeline.rs::record_failed_attempt`): its values
-            // are the constant `FetchError` `Display` strings from
-            // `musicbrainz.rs` plus the fixed literal in
-            // `invalid_response_source_error`, never user-entered or fetched
-            // content. Named for MusicBrainz specifically, not the generic
-            // `fetch_error`: this list is global over both redaction paths
-            // (here and `EventFields::record_value` in
-            // `reprise-gnome/src/ui/diagnostics.rs`), and a source whose
-            // technical cause can carry a URL or a foreign library's own
-            // message (podcasts, concerts) must not reuse this key.
-            | "musicbrainz_error"
-    )
+    KEEP_FIELDS.binary_search(&key).is_ok()
 }
 
-fn replace_bounded(input: &str, needle: &str, replacement: &str) -> String {
+/// Replaces the user name wherever it stands as a word, except as a known
+/// field's key (`id=`): replacing that would rename the field, and the line
+/// would read differently the second time the report redacts it. A name that
+/// is not a known key is replaced in key position too (`marvin=3`).
+fn replace_username(input: &str, username: &str) -> String {
+    let spare_key = username.is_ascii() && is_known_field(&username.to_ascii_lowercase());
     let mut output = String::with_capacity(input.len());
     let mut cursor = 0;
-    while let Some(relative) = input[cursor..].find(needle) {
+    while let Some(relative) = input[cursor..].find(username) {
         let start = cursor + relative;
-        let end = start + needle.len();
+        let end = start + username.len();
         let left = input[..start].chars().next_back();
         let right = input[end..].chars().next();
         let bounded = left.is_none_or(|ch| !is_word(ch)) && right.is_none_or(|ch| !is_word(ch));
         output.push_str(&input[cursor..start]);
-        if bounded {
-            output.push_str(replacement);
+        if bounded && !(spare_key && right == Some('=')) {
+            output.push_str("$USER");
         } else {
-            output.push_str(needle);
+            output.push_str(username);
         }
         cursor = end;
     }
@@ -238,7 +208,10 @@ fn redact_filenames(input: &str) -> String {
                     ',' | ';' | ':' | '(' | ')' | '[' | ']' | '{' | '}' | '"' | '\''
                 )
             });
-            if looks_like_filename(trimmed) {
+            if looks_like_filename(trimmed)
+                && !is_rfc3339_timestamp(trimmed)
+                && !is_kept_number(body)
+            {
                 format!("{ELLIPSIS}{whitespace}")
             } else {
                 token.to_string()
@@ -255,4 +228,51 @@ fn looks_like_filename(token: &str) -> bool {
         && !stem.chars().all(|ch| ch.is_ascii_digit() || ch == '.')
         && (1..=12).contains(&extension.len())
         && extension.chars().all(|ch| ch.is_ascii_alphanumeric())
+}
+
+/// `2026-11-08T12:00:00.123Z`, with an optional fraction and either `Z` or a
+/// numeric offset. Every file-mirror line starts with one, and `.123Z` reads
+/// as a file extension, so this exact shape is exempt from the filename pass.
+/// Nothing looser is: a name that merely resembles a time is still a name.
+fn is_rfc3339_timestamp(token: &str) -> bool {
+    let bytes = token.as_bytes();
+    let digits = |range: std::ops::Range<usize>| {
+        bytes
+            .get(range)
+            .is_some_and(|part| part.iter().all(u8::is_ascii_digit))
+    };
+    let separators = [(4, b'-'), (7, b'-'), (10, b'T'), (13, b':'), (16, b':')];
+    if !(digits(0..4)
+        && digits(5..7)
+        && digits(8..10)
+        && digits(11..13)
+        && digits(14..16)
+        && digits(17..19))
+        || !separators
+            .iter()
+            .all(|(index, expected)| bytes.get(*index) == Some(expected))
+    {
+        return false;
+    }
+    let mut end = 19;
+    if bytes.get(end) == Some(&b'.') {
+        let fraction = bytes[end + 1..]
+            .iter()
+            .take_while(|byte| byte.is_ascii_digit())
+            .count();
+        if fraction == 0 {
+            return false;
+        }
+        end += 1 + fraction;
+    }
+    match &bytes[end..] {
+        b"Z" => true,
+        [b'+' | b'-', ..] => {
+            digits(end + 1..end + 3)
+                && bytes.get(end + 3) == Some(&b':')
+                && digits(end + 4..end + 6)
+                && bytes.len() == end + 6
+        }
+        _ => false,
+    }
 }

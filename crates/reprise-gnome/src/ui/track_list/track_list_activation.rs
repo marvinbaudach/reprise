@@ -114,7 +114,7 @@ pub(in crate::ui) fn explain_missing_track(shared: &Rc<Shared>, track: &Track) -
 
 fn show_missing_activation(shared: &Rc<Shared>, notice: MissingActivationNotice) {
     let Some(overlay) = shared.toast_overlay.upgrade() else {
-        tracing::warn!(message = %notice.message, "toast overlay is gone; degrading to log-only");
+        tracing::warn!(notice_message = %notice.message, "toast overlay is gone; degrading to log-only");
         return;
     };
     let toast = crate::ui::toasts::plain(&notice.message);

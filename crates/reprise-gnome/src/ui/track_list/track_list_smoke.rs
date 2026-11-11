@@ -635,7 +635,7 @@ pub(in crate::ui) fn arm_smoke_source(shared: &Rc<Shared>) {
         } else {
             shared.model.n_items()
         };
-        tracing::info!(source = %label, rows, "view source set to {label} ({rows} rows)");
+        tracing::info!(source = %label, rows, "view source set");
     });
 }
 

@@ -164,6 +164,6 @@ fn wire_order_persistence<K: ColumnKey>(registry: &Rc<ColumnRegistry<K>>) {
             let layout = layout::normalize(order, visible);
             let serialized = layout::serialize(&layout);
             registry.persist(&layout);
-            tracing::debug!(layout = %serialized, "column order persisted after header drag");
+            tracing::debug!(layout_spec = %serialized, "column order persisted after header drag");
         });
 }

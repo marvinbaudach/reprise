@@ -291,7 +291,7 @@ impl PlayerController {
                     .is_some_and(|session_id| session_id == failure.session_id());
                 if is_external_mode(mode) || repeated_external_error {
                     let safe_message = redact_local_stream_proxy_urls(failure.message());
-                    tracing::error!(message = %safe_message, "player error during external playback");
+                    tracing::error!(failure_message = %safe_message, "player error during external playback");
                     if repeated_external_error {
                         return;
                     }
@@ -327,25 +327,25 @@ impl PlayerController {
                 let message = failure.into_message();
                 match mode {
                     PlaybackMode::Preview => {
-                        tracing::error!(%message, "player error during preview playback");
+                        tracing::error!(failure_message = %message, "player error during preview playback");
                         self.reset_to_stopped();
                         return;
                     }
                     PlaybackMode::Queue => {}
                     PlaybackMode::Podcast | PlaybackMode::QueuedEpisode | PlaybackMode::Radio => {
                         invariant_broken!("external errors returned above");
-                        tracing::error!(%message, "player error during external playback");
+                        tracing::error!(failure_message = %message, "player error during external playback");
                         self.reset_to_stopped();
                         return;
                     }
                 }
                 match self.current_track.get() {
                     Some((id, _)) => {
-                        tracing::error!(%message, track_id = id, "player error during queue track playback");
+                        tracing::error!(failure_message = %message, track_id = id, "player error during queue track playback");
                         self.handle_unplayable_track(id);
                     }
                     None => {
-                        tracing::error!(%message, "player error with no current track; resetting to stopped");
+                        tracing::error!(failure_message = %message, "player error with no current track; resetting to stopped");
                         self.reset_to_stopped();
                     }
                 }

@@ -641,11 +641,14 @@ fn schedule_smoke_step(
             .map(|chip| format!("{} {}", facet_label(chip.facet), chip.model.value))
             .collect();
         let result_count = shared.browse_bar.result_count();
+        // The query error carries a SQLite message, so only its outcome is logged.
+        let id_count = ids.as_ref().map_or(0, Vec::len);
         tracing::info!(
             ?browse,
             ?chips,
             ?result_count,
-            ?ids,
+            id_count,
+            ids_ok = ids.is_ok(),
             "browse smoke completed"
         );
     });

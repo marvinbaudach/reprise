@@ -365,7 +365,7 @@ impl<K: ColumnKey> ColumnRegistry<K> {
             tracing::warn!(
                 %error,
                 key = self.keys.layout,
-                message = %crate::ui::strings::text(crate::ui::strings::COLUMN_LAYOUT_SAVE_FAILED),
+                user_notice = %crate::ui::strings::text(crate::ui::strings::COLUMN_LAYOUT_SAVE_FAILED),
                 "could not persist column layout"
             );
         }
@@ -405,7 +405,7 @@ fn parse_editor_key<K: ColumnKey>(id: &str, operation: &str, role: &str) -> Opti
     let key = K::parse(id);
     if key.is_none() {
         tracing::warn!(
-            operation,
+            editor_operation = operation,
             role,
             column_id = id,
             column_type = std::any::type_name::<K>(),

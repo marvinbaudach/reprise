@@ -75,6 +75,20 @@ pub fn from_persisted(
 }
 
 impl DownloadState {
+    /// A static name for the variant, safe for a log line: it never carries
+    /// the payload, so a `Failed` message cannot reach the log through it.
+    #[must_use]
+    pub const fn kind(&self) -> &'static str {
+        match self {
+            DownloadState::NotDownloaded => "not_downloaded",
+            DownloadState::Queued => "queued",
+            DownloadState::Downloading { .. } => "downloading",
+            DownloadState::Downloaded { .. } => "downloaded",
+            DownloadState::Missing => "missing",
+            DownloadState::Failed { .. } => "failed",
+        }
+    }
+
     /// `NET-3a`'s bridge from this module's richer download lifecycle into
     /// the offline projection's simpler local-availability signal. Only a
     /// file that is actually present locally lets a row or an action skip
@@ -97,6 +111,31 @@ impl DownloadState {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn kind_names_every_variant_and_never_its_payload() {
+        let failed = DownloadState::Failed {
+            message: "could not write /home/someone/Music/x.mp3".to_owned(),
+        };
+        let kinds = [
+            (DownloadState::NotDownloaded, "not_downloaded"),
+            (DownloadState::Queued, "queued"),
+            (
+                DownloadState::Downloading {
+                    received_bytes: 1,
+                    total_bytes: None,
+                },
+                "downloading",
+            ),
+            (DownloadState::Downloaded { bytes: 1 }, "downloaded"),
+            (DownloadState::Missing, "missing"),
+            (failed, "failed"),
+        ];
+
+        for (state, kind) in kinds {
+            assert_eq!(state.kind(), kind);
+        }
+    }
 
     #[test]
     fn pod_7_download_progress_is_monotone_and_allows_an_unknown_total() {
