@@ -157,7 +157,7 @@ fn prefixed_string(chars: &[char], word: &str, end: usize) -> Option<(String, us
 }
 
 /// A char literal or a lifetime starting at the quote at `start`.
-fn read_quote(chars: &[char], start: usize) -> (Token, usize) {
+pub(super) fn read_quote(chars: &[char], start: usize) -> (Token, usize) {
     let is_char = match chars.get(start + 1) {
         Some('\\') => true,
         Some(_) => chars.get(start + 2) == Some(&'\''),

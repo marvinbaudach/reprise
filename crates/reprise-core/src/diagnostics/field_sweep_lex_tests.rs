@@ -1,7 +1,7 @@
 //! The token reader behind the field sweep: literals that look like code, and
 //! input that ends in the middle of a literal.
 
-use super::field_sweep_lex::{tokenize, Token};
+use super::field_sweep_lex::{read_quote, tokenize, Token};
 
 fn tokens(source: &str) -> Vec<Token> {
     tokenize(source).into_iter().map(|s| s.token).collect()
@@ -41,9 +41,23 @@ fn a_string_that_ends_in_a_backslash_ends_at_the_end_of_the_input() {
 }
 
 #[test]
-fn an_unterminated_char_literal_ends_at_the_end_of_the_input() {
+fn an_unterminated_char_literal_swallows_the_rest_of_the_input_as_one_token() {
+    // A plain behaviour test: `tokenize` stops at the end of the input even
+    // when `read_quote` hands back an index past it, so this passes with or
+    // without the clamp. The next test is the one that guards the index.
     assert_eq!(tokens("'\\"), [Token::Other]);
     assert_eq!(tokens("'\\n"), [Token::Other]);
+}
+
+#[test]
+fn an_unterminated_char_literal_never_returns_an_index_past_the_end() {
+    // The index is a position the caller may slice with (L5).
+    for source in ["'\\", "'\\n", "'\\\\", "'\\'"] {
+        let chars: Vec<char> = source.chars().collect();
+        let (_, next) = read_quote(&chars, 0);
+
+        assert!(next <= chars.len(), "{source:?}: {next} > {}", chars.len());
+    }
 }
 
 #[test]
