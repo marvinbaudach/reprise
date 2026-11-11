@@ -34,6 +34,10 @@ const SECRET_KEY_NEEDLES: [&str; 7] = [
 /// scan that is linear per token is still a cost an attacker can multiply.
 pub(super) const MAX_VALUE_BYTES: usize = 4096;
 
+/// What the user name is replaced with. A kept key may carry it as its value,
+/// so that a line the report redacts a second time reads as it did the first.
+const USER_MARKER: &str = "$USER";
+
 /// Duration suffixes of `Debug` for `Duration`, longest first.
 const DURATION_UNITS: [&str; 5] = ["ms", "ns", "µs", "us", "s"];
 
@@ -223,9 +227,13 @@ fn starts_known_assignment(body: &str) -> bool {
     assignment.separator_char == '='
         && body.len() > assignment.separator + 1
         && is_well_formed_key(key)
-        && (KEEP_FIELDS.binary_search(&key).is_ok()
-            || REDACT_FIELDS.binary_search(&key).is_ok()
-            || is_already_redacted(body, &assignment))
+        && (is_known_field(key) || is_already_redacted(body, &assignment))
+}
+
+/// A key either list of the policy names, as the key pass reads keys
+/// (lowercase).
+pub(super) fn is_known_field(key: &str) -> bool {
+    KEEP_FIELDS.binary_search(&key).is_ok() || REDACT_FIELDS.binary_search(&key).is_ok()
 }
 
 fn is_well_formed_key(key: &str) -> bool {
@@ -258,6 +266,9 @@ fn is_plain_value(value: &str, key: &str) -> bool {
         return false;
     }
     let value = trim_value(value);
+    if value == USER_MARKER {
+        return true;
+    }
     is_number_or_version(value, key) || is_plain_identifier(value) || is_plain_wrapped(value)
 }
 

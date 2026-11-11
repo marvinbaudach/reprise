@@ -259,7 +259,7 @@ fn redacting_twice_with_a_user_home_and_music_directory_changes_nothing() {
 }
 
 #[test]
-fn a_user_name_after_a_kept_key_is_redacted_with_the_words_after_it() {
+fn a_user_name_after_a_kept_key_is_replaced_by_its_marker_and_the_marker_is_kept() {
     let context = RedactionContext {
         username: Some("marvin".to_owned()),
         ..RedactionContext::default()
@@ -267,12 +267,58 @@ fn a_user_name_after_a_kept_key_is_redacted_with_the_words_after_it() {
 
     assert_eq!(
         redact_log_message("id=marvin more words", &context),
-        "id=$REDACTED"
+        "id=$USER more words"
     );
     assert_eq!(
         redact_log_message("opened by marvin id=3", &context),
         "opened by $USER id=3"
     );
+}
+
+#[test]
+fn a_user_name_that_is_also_a_key_does_not_change_how_the_key_is_read() {
+    // S3: replacing the name before the key pass renamed the key itself, so
+    // `password: hunter2` under a user called `password` was no longer a secret
+    // and a kept `id=` under a user called `id` was no longer a kept key.
+    let named = |username: &str| RedactionContext {
+        username: Some(username.to_owned()),
+        ..RedactionContext::default()
+    };
+
+    for (username, input, expected) in [
+        ("password", "password: hunter2 and more", "$USER:$REDACTED"),
+        ("password", "password=hunter2 and more", "$USER=$REDACTED"),
+        ("token", "token: abc def", "$USER:$REDACTED"),
+        ("id", "id=marvin more", "id=marvin more"),
+        ("id", "id=id more", "id=$USER more"),
+        ("count", "count=3 count=4", "count=3 count=4"),
+    ] {
+        let context = named(username);
+        let once = redact_log_message(input, &context);
+
+        assert_eq!(once, expected, "{username}: {input}");
+        assert_eq!(
+            redact_log_message(&once, &context),
+            once,
+            "{username}: {input}"
+        );
+    }
+}
+
+#[test]
+fn a_user_name_elsewhere_in_a_line_is_still_replaced_next_to_a_colon_or_equals_sign() {
+    let context = RedactionContext {
+        username: Some("marvin".to_owned()),
+        ..RedactionContext::default()
+    };
+
+    for (input, expected) in [
+        ("marvin: denied", "$USER: denied"),
+        ("marvin=3", "$USER=$REDACTED"),
+        ("by marvin, id=3", "by $USER, id=3"),
+    ] {
+        assert_eq!(redact_log_message(input, &context), expected, "{input}");
+    }
 }
 
 #[test]
