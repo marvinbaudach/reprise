@@ -200,3 +200,77 @@ fn a_field_that_is_already_redacted_ends_the_previous_redaction_but_not_its_own(
         "user_name=$REDACTED id=3"
     );
 }
+
+/// Generous on purpose: the quadratic scan took 5 to 19 seconds on these
+/// inputs, a linear one takes milliseconds, so the bound only has to separate
+/// the two on any machine and build profile.
+const SLOW_SCAN_BOUND: std::time::Duration = std::time::Duration::from_secs(2);
+
+#[test]
+fn a_long_run_of_closing_brackets_is_trimmed_in_one_pass() {
+    use super::redact_assignments::trim_value;
+
+    let closing = ")".repeat(200_000);
+    let started = std::time::Instant::now();
+
+    assert_eq!(trim_value(&closing), "");
+    assert_eq!(trim_value(&format!("1{}", ",)".repeat(50_000))), "1");
+    assert!(
+        started.elapsed() < SLOW_SCAN_BOUND,
+        "{:?}",
+        started.elapsed()
+    );
+}
+
+#[test]
+fn trimming_a_value_drops_only_the_punctuation_that_wraps_it() {
+    use super::redact_assignments::trim_value;
+
+    for (value, expected) in [
+        ("1.5", "1.5"),
+        ("1.5),", "1.5"),
+        ("Some(1.5)", "Some(1.5)"),
+        ("Some(1.5))", "Some(1.5)"),
+        ("Some(1.5)),;", "Some(1.5)"),
+        ("(a)", "(a)"),
+        ("a)", "a"),
+        ("a))", "a"),
+        ("(a))", "(a)"),
+        ("\"a\"", "\"a"),
+        ("", ""),
+    ] {
+        assert_eq!(trim_value(value), expected, "{value:?}");
+    }
+}
+
+#[test]
+fn a_huge_value_under_a_kept_key_is_redacted_quickly() {
+    for input in [
+        format!("state={}", ")".repeat(200_000)),
+        format!("count=1{}", ",)".repeat(50_000)),
+        format!("id={}", "z".repeat(100_000)),
+    ] {
+        let started = std::time::Instant::now();
+        let output = redacted(&input);
+
+        let key = input.split('=').next().unwrap_or_default();
+        assert_eq!(output, format!("{key}=$REDACTED"));
+        assert!(
+            started.elapsed() < SLOW_SCAN_BOUND,
+            "{key}: {:?}",
+            started.elapsed()
+        );
+    }
+}
+
+#[test]
+fn a_value_up_to_the_length_cap_is_judged_by_its_shape_and_one_past_it_is_redacted() {
+    let at_cap = "z".repeat(4096);
+
+    assert_eq!(redacted(&format!("id={at_cap}")), format!("id={at_cap}"));
+    assert_eq!(redacted(&format!("id={at_cap}z")), "id=$REDACTED");
+    assert_eq!(
+        redacted(&format!("count={}", "1".repeat(4097))),
+        "count=$REDACTED"
+    );
+}

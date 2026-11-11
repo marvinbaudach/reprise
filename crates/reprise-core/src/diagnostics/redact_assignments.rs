@@ -28,6 +28,11 @@ const SECRET_KEY_NEEDLES: [&str; 7] = [
     "api_key",
 ];
 
+/// The longest value that is read at all. A longer one is redacted without
+/// being scanned: no field of ours writes more than a few hundred bytes, and a
+/// scan that is linear per token is still a cost an attacker can multiply.
+pub(super) const MAX_VALUE_BYTES: usize = 4096;
+
 /// Duration suffixes of `Debug` for `Duration`, longest first.
 const DURATION_UNITS: [&str; 5] = ["ms", "ns", "µs", "us", "s"];
 
@@ -210,6 +215,9 @@ fn is_already_redacted(body: &str, assignment: &Assignment) -> bool {
 /// A value a kept key may carry in free text: a number, a plain identifier, or
 /// a wrapper around one (`Some(Track(5))`).
 fn is_plain_value(value: &str, key: &str) -> bool {
+    if value.len() > MAX_VALUE_BYTES {
+        return false;
+    }
     let value = trim_value(value);
     is_number_or_version(value, key) || is_plain_identifier(value) || is_plain_wrapped(value)
 }
@@ -217,21 +225,22 @@ fn is_plain_value(value: &str, key: &str) -> bool {
 /// The value without the punctuation that wraps it in running text. A closing
 /// parenthesis is dropped only when no opening one in the value matches it, so
 /// `Some(1.5)` stays whole and `(elapsed_ms=1.5)` loses only the last `)`.
-fn trim_value(value: &str) -> &str {
-    let mut value = value;
+///
+/// One pass from the back with a running count of the unmatched closers: the
+/// parentheses are counted once, so a value that is nothing but `)` costs as
+/// much as its length and no more.
+pub(super) fn trim_value(value: &str) -> &str {
+    let opens = value.matches('(').count();
+    let mut closes = value.matches(')').count();
+    let mut end = value.len();
     loop {
-        let shorter = value.trim_end_matches(TRAILING_PUNCTUATION);
-        let unbalanced_close =
-            shorter.ends_with(')') && shorter.matches(')').count() > shorter.matches('(').count();
-        let shorter = if unbalanced_close {
-            &shorter[..shorter.len() - 1]
+        end = value[..end].trim_end_matches(TRAILING_PUNCTUATION).len();
+        if value[..end].ends_with(')') && closes > opens {
+            end -= 1;
+            closes -= 1;
         } else {
-            shorter
-        };
-        if shorter.len() == value.len() {
-            return value;
+            return &value[..end];
         }
-        value = shorter;
     }
 }
 
@@ -257,7 +266,10 @@ pub(super) fn is_kept_number(body: &str) -> bool {
     let Some(assignment) = split_assignment(body) else {
         return false;
     };
-    if assignment.separator_char != '=' || !is_safe_structured_field(&assignment.key) {
+    if assignment.separator_char != '='
+        || !is_safe_structured_field(&assignment.key)
+        || body.len() - assignment.separator > MAX_VALUE_BYTES
+    {
         return false;
     }
     is_number_or_version(

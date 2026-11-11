@@ -11,7 +11,7 @@
 //! [`plain_list_span`] reads them as one value or not at all.
 
 use super::redact::is_safe_structured_field;
-use super::redact_assignments::{is_plain_identifier, split_assignment};
+use super::redact_assignments::{is_plain_identifier, split_assignment, MAX_VALUE_BYTES};
 
 /// Wrappers around one leaf: `Some(Some(Some(1)))` is three. A fourth is a
 /// shape no field of ours has, so it is redacted.
@@ -45,6 +45,9 @@ pub(super) fn plain_list_span(tokens: &[&str]) -> Option<usize> {
     for (index, token) in tokens.iter().take(MAX_LIST_ELEMENTS).enumerate() {
         if index > 0 {
             joined.push_str(token.trim_end_matches(char::is_whitespace));
+        }
+        if joined.len() > MAX_VALUE_BYTES {
+            return None;
         }
         if joined.contains(']') {
             return is_plain_list(&joined).then_some(index + 1);
