@@ -115,17 +115,17 @@ fn a_struct_like_value_is_redacted_with_its_fields() {
 
 #[test]
 fn a_list_split_by_a_line_break_or_a_wide_gap_is_not_one_value() {
-    for input in [
-        "episode_ids=[1,\n2] count=2",
-        "episode_ids=[1,  2] count=2",
-        "episode_ids=[1,\t2] count=2",
+    // The value is redacted to the end of its line. After a line break the
+    // next line starts afresh, so the rest of the list shows there.
+    for (input, expected) in [
+        (
+            "episode_ids=[1,\n2] count=2",
+            "episode_ids=$REDACTED\n2] count=2",
+        ),
+        ("episode_ids=[1,  2] count=2", "episode_ids=$REDACTED"),
+        ("episode_ids=[1,\t2] count=2", "episode_ids=$REDACTED"),
     ] {
-        let output = redacted(input);
-
-        assert!(
-            output.starts_with("episode_ids=$REDACTED"),
-            "{input}: {output}"
-        );
+        assert_eq!(redacted(input), expected, "{input:?}");
     }
 }
 
