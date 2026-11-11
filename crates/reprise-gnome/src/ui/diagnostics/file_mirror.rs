@@ -86,6 +86,8 @@ mod tests {
     use std::sync::{Arc, Mutex};
 
     use reprise_core::diagnostics::{render_report, DiagnosticFacts, DiagnosticLog};
+    use reprise_core::up_next::QueueItem;
+    use reprise_view::queue::rows::QueueRow;
     use tracing_subscriber::layer::SubscriberExt;
 
     use super::*;
@@ -204,6 +206,36 @@ mod tests {
                     "{surface} leaked {leaked:?}: {shown}"
                 );
             }
+        }
+    }
+
+    #[test]
+    fn a_kept_composite_field_arrives_verbatim_and_a_foreign_one_does_not() {
+        let text = mirrored(|| {
+            tracing::info!(
+                current_up_next = ?Some(QueueItem::Track(5)),
+                episode_ids = ?vec![1_i64, 2, 3],
+                rows = ?[QueueRow::NowPlaying, QueueRow::PlayNext(0), QueueRow::UpNext(1)],
+                state = ?Some("Pink Floyd"),
+                "queue changed"
+            );
+        });
+        let facts = DiagnosticFacts {
+            log_tail: Some(text.clone()),
+            ..DiagnosticFacts::default()
+        };
+        let report = render_report(&facts, &DiagnosticLog::default(), &context());
+
+        for (surface, shown) in [("the log file", &text), ("the copied report", &report)] {
+            for kept in [
+                "current_up_next=Some(Track(5))",
+                "episode_ids=[1, 2, 3]",
+                "rows=[NowPlaying, PlayNext(0), UpNext(1)]",
+                "state=$REDACTED",
+            ] {
+                assert!(shown.contains(kept), "{surface} lost {kept:?}: {shown}");
+            }
+            assert!(!shown.contains("Pink"), "{surface} leaked a name: {shown}");
         }
     }
 }

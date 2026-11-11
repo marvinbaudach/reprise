@@ -13,6 +13,7 @@ mod log_tail;
 mod model;
 mod redact;
 mod redact_assignments;
+mod redact_composite;
 mod render;
 
 pub use log_tail::{read_log_tail, tail_of, TAIL_MAX_BYTES, TAIL_MAX_LINES};
@@ -41,6 +42,8 @@ mod field_sweep_tests;
 mod log_tail_tests;
 #[cfg(test)]
 mod redact_assignment_tests;
+#[cfg(test)]
+mod redact_composite_tests;
 #[cfg(test)]
 mod redact_path_tests;
 #[cfg(test)]

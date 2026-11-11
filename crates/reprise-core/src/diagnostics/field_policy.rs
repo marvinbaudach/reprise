@@ -29,8 +29,12 @@
 //! messages and the log tail (D2). There a kept key keeps its value only when
 //! the value is a number (an integer, a float with one dot, an exponent form,
 //! a duration such as `12.5ms`, or `Some(..)` of one; several dots only under
-//! `version`) or a plain identifier (`[A-Za-z_][A-Za-z0-9_]*`, and not eight
-//! or more hex digits). Anything else, such as `mode=Compact,title=Foo`, is
+//! `version`), a plain identifier (`[A-Za-z_][A-Za-z0-9_]*`, and not eight
+//! or more hex digits), or an option, tuple variant or list of those:
+//! `Some(Track(5))`, `[1, 2, 3]`, `[NowPlaying, PlayNext(0)]` (integers and
+//! identifiers only inside; at most three wrappers and 64 elements, see
+//! `redact_composite`). Anything else, such as `mode=Compact,title=Foo` or a
+//! struct body (`StaleFor { seconds: 60 }`), is
 //! `key=$REDACTED`, and, like an unknown key, it takes every word up to the
 //! next known `key=` token (a key listed below, written as an identifier) or
 //! the end of the line; a secret-like `token:` takes the rest of the line. What remains is a plain identifier that is
@@ -38,8 +42,8 @@
 //! variant name, so a message that interpolates foreign text after a kept key
 //! is a review concern. The typed `EventFields` path keeps typed values and is
 //! unaffected, but the file mirror runs this pass over the finished line too,
-//! so a kept key whose `Debug` value has more than one word or punctuation
-//! (a `Vec` of rows, say) is redacted in the log file.
+//! so a kept key whose `Debug` value is not one of the shapes above (a
+//! struct variant, a list holding a float) is redacted in the log file.
 //!
 //! The classification test checks keys, not value types, and it does not see
 //! fields that dependencies emit (zbus, for one). A new site that emits an

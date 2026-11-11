@@ -1,12 +1,14 @@
 //! The `key=value` pass of the free-text redaction.
 //!
 //! A kept key (see `field_policy`) keeps its value only when the value is a
-//! number or a plain identifier. Any other key is redacted together with
+//! number, a plain identifier, or a composite of plain values (`redact_composite`).
+//! Any other key is redacted together with
 //! everything up to the next `key=` token or the end of the line, because a
 //! value with spaces would otherwise leak every word after the first.
 
 use super::field_policy::{KEEP_FIELDS, REDACT_FIELDS};
 use super::redact::is_safe_structured_field;
+use super::redact_composite::{is_plain_wrapped, plain_list_span};
 
 const REDACTED: &str = "$REDACTED";
 
@@ -77,12 +79,14 @@ enum Reach {
 /// the words after them, because a value with spaces would otherwise leak
 /// every word after the first.
 pub(super) fn redact_sensitive_assignments(input: &str) -> String {
+    let tokens: Vec<&str> = input.split_inclusive(char::is_whitespace).collect();
     let mut output = String::with_capacity(input.len());
     // The whitespace after the last token that was folded into a redaction:
     // it is written only once something follows on the same line.
     let mut pending_whitespace = "";
     let mut reach = Reach::Token;
-    for token in input.split_inclusive(char::is_whitespace) {
+    let mut index = 0;
+    while let Some(token) = tokens.get(index) {
         let body = token.trim_end_matches(char::is_whitespace);
         let whitespace = &token[body.len()..];
         let swallowed = match reach {
@@ -90,25 +94,35 @@ pub(super) fn redact_sensitive_assignments(input: &str) -> String {
             Reach::UntilAssignment => !starts_known_assignment(body),
             Reach::EndOfLine => true,
         };
+        let mut last_whitespace = whitespace;
+        let start = index;
+        index += 1;
         if swallowed {
             pending_whitespace = whitespace;
         } else {
             output.push_str(pending_whitespace);
             pending_whitespace = "";
-            match redact_assignment(body) {
-                Some(redaction) => {
+            match redact_assignment(&tokens[start..]) {
+                Outcome::Kept(count) => {
+                    // A list spans several tokens; the gaps between them are
+                    // single spaces, so only the last one can hold a newline.
+                    for kept in &tokens[start..start + count] {
+                        output.push_str(kept);
+                    }
+                    index += count - 1;
+                    last_whitespace = tokens.get(index - 1).map_or("", |last| {
+                        &last[last.trim_end_matches(char::is_whitespace).len()..]
+                    });
+                    reach = Reach::Token;
+                }
+                Outcome::Redacted(redaction) => {
                     output.push_str(&redaction.text);
                     pending_whitespace = whitespace;
                     reach = redaction.reach;
                 }
-                None => {
-                    output.push_str(body);
-                    output.push_str(whitespace);
-                    reach = Reach::Token;
-                }
             }
         }
-        if whitespace.contains(['\n', '\r']) {
+        if last_whitespace.contains(['\n', '\r']) {
             reach = Reach::Token;
         }
     }
@@ -121,26 +135,50 @@ struct Redaction {
     reach: Reach,
 }
 
-fn redact_assignment(body: &str) -> Option<Redaction> {
-    let Assignment {
+enum Outcome {
+    /// The token, or the run of this many tokens, is written as it is.
+    Kept(usize),
+    Redacted(Redaction),
+}
+
+fn redact_assignment(tokens: &[&str]) -> Outcome {
+    let body = tokens
+        .first()
+        .map_or("", |token| token.trim_end_matches(char::is_whitespace));
+    let Some(Assignment {
         separator,
         separator_char,
         key,
-    } = split_assignment(body)?;
+    }) = split_assignment(body)
+    else {
+        return Outcome::Kept(1);
+    };
     let reach = if separator_char == '=' {
-        if is_safe_structured_field(&key) && is_plain_value(&body[separator + 1..], &key) {
-            return None;
+        if let Some(count) = plain_list_span(tokens) {
+            return Outcome::Kept(count);
+        }
+        if is_safe_structured_field(&key)
+            && is_plain_value(&body[separator + 1..], &key)
+            && !opens_struct_body(tokens)
+        {
+            return Outcome::Kept(1);
         }
         Reach::UntilAssignment
     } else if SECRET_KEY_NEEDLES.iter().any(|needle| key.contains(needle)) {
         Reach::EndOfLine
     } else {
-        return None;
+        return Outcome::Kept(1);
     };
-    Some(Redaction {
+    Outcome::Redacted(Redaction {
         text: format!("{}{REDACTED}", &body[..=separator]),
         reach,
     })
+}
+
+/// `QueueRow { index: 1 }`: a plain name followed by a struct body is not a
+/// plain value, the body holds fields that were never checked.
+fn opens_struct_body(tokens: &[&str]) -> bool {
+    tokens.get(1).is_some_and(|next| next.starts_with('{'))
 }
 
 /// Whether a token opens the next assignment, ending a swallowed value. Only
@@ -169,10 +207,11 @@ fn is_already_redacted(body: &str, assignment: &Assignment) -> bool {
     body[assignment.separator + 1..] == *REDACTED
 }
 
-/// A value a kept key may carry in free text: a number or a plain identifier.
+/// A value a kept key may carry in free text: a number, a plain identifier, or
+/// a wrapper around one (`Some(Track(5))`).
 fn is_plain_value(value: &str, key: &str) -> bool {
     let value = trim_value(value);
-    is_number_or_version(value, key) || is_plain_identifier(value)
+    is_number_or_version(value, key) || is_plain_identifier(value) || is_plain_wrapped(value)
 }
 
 /// The value without the punctuation that wraps it in running text. A closing
@@ -197,7 +236,7 @@ fn trim_value(value: &str) -> &str {
 }
 
 /// `^[A-Za-z_][A-Za-z0-9_]*$`, minus anything that reads as a hash.
-fn is_plain_identifier(value: &str) -> bool {
+pub(super) fn is_plain_identifier(value: &str) -> bool {
     value
         .chars()
         .next()
