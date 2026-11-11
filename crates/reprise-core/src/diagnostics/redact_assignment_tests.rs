@@ -232,6 +232,50 @@ fn a_secret_like_colon_key_takes_the_rest_of_the_line_even_past_a_known_key() {
 }
 
 #[test]
+fn redacting_twice_with_a_user_home_and_music_directory_changes_nothing() {
+    // The report redacts a log line the file mirror has already redacted, with
+    // the same context: a marker written by the first pass (`$USER`, `$HOME/…`)
+    // must read to the second as a redacted value, not as a value to judge.
+    let context = RedactionContext {
+        music_dir: Some("/home/marvin/Music".to_owned()),
+        home_dir: Some("/home/marvin".to_owned()),
+        username: Some("marvin".to_owned()),
+    };
+    for input in [
+        "id=marvin more words",
+        "id=marvin",
+        "count=3 marvin id=marvin more words",
+        "error=a b marvin count=3",
+        "state=/home/marvin/Music/Pink Floyd/The Wall id=3",
+        "state=/home/marvin/Documents/x.txt id=3",
+        "kind=marvin/Pink more words",
+        "error=foo count=3 marvin Pink Floyd",
+        "password: marvin hunter2",
+    ] {
+        let once = redact_log_message(input, &context);
+
+        assert_eq!(redact_log_message(&once, &context), once, "{input}");
+    }
+}
+
+#[test]
+fn a_user_name_after_a_kept_key_is_redacted_with_the_words_after_it() {
+    let context = RedactionContext {
+        username: Some("marvin".to_owned()),
+        ..RedactionContext::default()
+    };
+
+    assert_eq!(
+        redact_log_message("id=marvin more words", &context),
+        "id=$REDACTED"
+    );
+    assert_eq!(
+        redact_log_message("opened by marvin id=3", &context),
+        "opened by $USER id=3"
+    );
+}
+
+#[test]
 fn a_field_that_is_already_redacted_ends_the_previous_redaction_but_not_its_own() {
     assert_eq!(
         redacted("playlist=Roadtrip Mix user_name=$REDACTED track_id=42"),

@@ -22,7 +22,11 @@ pub fn redact_log_message(message: &str, context: &RedactionContext) -> String {
         redacted = redact_prefixed_path(&redacted, home_dir, "$HOME/…");
     }
     redacted = redact_absolute_paths(&redacted);
-    redacted = redact_sensitive_assignments(&redacted);
+    // Every marker is written before the key pass reads the line, so the pass
+    // judges `id=$USER` the way it will judge it in a second run over the
+    // output (the report re-redacts the log file's lines): as a value that is
+    // not plain. Written after it, `id=marvin more words` became
+    // `id=$USER more words` once and `id=$REDACTED` the second time.
     if let Some(username) = context
         .username
         .as_deref()
@@ -30,6 +34,7 @@ pub fn redact_log_message(message: &str, context: &RedactionContext) -> String {
     {
         redacted = replace_bounded(&redacted, username, "$USER");
     }
+    redacted = redact_sensitive_assignments(&redacted);
     redact_filenames(&redacted)
 }
 
