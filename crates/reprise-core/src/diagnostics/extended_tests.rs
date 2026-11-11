@@ -121,10 +121,19 @@ fn a_filename_is_still_redacted_with_or_without_a_key() {
 
 #[test]
 fn a_redacted_key_stays_redacted_whatever_its_value_looks_like() {
-    assert_eq!(
-        redacted("volume=0.5 path=0.1.331"),
-        "volume=$REDACTED path=$REDACTED"
-    );
+    // The first raw value takes the rest of the line, so each key is shown on
+    // its own to see that it is redacted by its key and not by its neighbour.
+    for (input, expected) in [
+        ("volume=0.5", "volume=$REDACTED"),
+        ("path=0.1.331", "path=$REDACTED"),
+        ("volume=0.5 path=0.1.331", "volume=$REDACTED"),
+        (
+            "volume=$REDACTED path=$REDACTED",
+            "volume=$REDACTED path=$REDACTED",
+        ),
+    ] {
+        assert_eq!(redacted(input), expected, "{input}");
+    }
 }
 
 #[test]

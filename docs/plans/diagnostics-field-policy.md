@@ -100,7 +100,8 @@ other sites are worth keeping and the rename is trivial.
 - Free-text messages that contain `key=multi word`: the first version of this
   change left them as they were, checking only the first word. The second
   review round (P3) closed that: a redacted key now takes every word up to the
-  next known `key=` token or the end of the line. What stays out of scope is the
+  end of the line, and only a token whose value is already `$REDACTED` ends
+  it (a forged `count=3` after raw text no longer does). What stays out of scope is the
   message slot itself, which the key policy never sees.
 
 ## Gates

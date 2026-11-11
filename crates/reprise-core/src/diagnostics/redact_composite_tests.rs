@@ -55,8 +55,8 @@ fn a_list_at_the_element_bound_survives_and_one_more_does_not() {
     };
 
     assert_eq!(redacted(&list(64)), list(64));
-    assert_eq!(redacted(&list(65)), "episode_ids=$REDACTED count=2");
-    assert_eq!(redacted(&list(100)), "episode_ids=$REDACTED count=2");
+    assert_eq!(redacted(&list(65)), "episode_ids=$REDACTED");
+    assert_eq!(redacted(&list(100)), "episode_ids=$REDACTED");
 }
 
 #[test]
@@ -64,51 +64,30 @@ fn a_composite_value_with_anything_but_plain_parts_is_redacted_with_its_words() 
     for (input, expected) in [
         (
             "current_up_next=Some(\"Pink Floyd\") count=2",
-            "current_up_next=$REDACTED count=2",
+            "current_up_next=$REDACTED",
         ),
         (
             "current_up_next=Some(/home/x) count=2",
-            "current_up_next=$REDACTED count=2",
+            "current_up_next=$REDACTED",
         ),
-        (
-            "episode_ids=[1, /home/x] count=2",
-            "episode_ids=$REDACTED count=2",
-        ),
-        (
-            "episode_ids=[Artist Name] count=2",
-            "episode_ids=$REDACTED count=2",
-        ),
+        ("episode_ids=[1, /home/x] count=2", "episode_ids=$REDACTED"),
+        ("episode_ids=[Artist Name] count=2", "episode_ids=$REDACTED"),
         (
             "current_up_next=Some(Track(deadbeefcafe)) count=2",
-            "current_up_next=$REDACTED count=2",
+            "current_up_next=$REDACTED",
         ),
-        ("episode_ids=[1, 2 count=2", "episode_ids=$REDACTED count=2"),
+        ("episode_ids=[1, 2 count=2", "episode_ids=$REDACTED"),
         ("episode_ids=[1, 2 tail words only", "episode_ids=$REDACTED"),
-        (
-            "state=Some(Some(Some(Some(1)))) count=2",
-            "state=$REDACTED count=2",
-        ),
-        (
-            "episode_ids=[1, 2]x count=2",
-            "episode_ids=$REDACTED count=2",
-        ),
-        (
-            "episode_ids=[[1], [2]] count=2",
-            "episode_ids=$REDACTED count=2",
-        ),
-        ("episode_ids=[1, ] count=2", "episode_ids=$REDACTED count=2"),
-        (
-            "episode_ids=[1.5, 2] count=2",
-            "episode_ids=$REDACTED count=2",
-        ),
-        (
-            "episode_ids=[a.flac, b] count=2",
-            "episode_ids=$REDACTED count=2",
-        ),
-        ("episode_ids=[a:b] count=2", "episode_ids=$REDACTED count=2"),
-        ("state=Some(Track(1.5)) count=2", "state=$REDACTED count=2"),
-        ("state=Some(Track()) count=2", "state=$REDACTED count=2"),
-        ("state=Some() count=2", "state=$REDACTED count=2"),
+        ("state=Some(Some(Some(Some(1)))) count=2", "state=$REDACTED"),
+        ("episode_ids=[1, 2]x count=2", "episode_ids=$REDACTED"),
+        ("episode_ids=[[1], [2]] count=2", "episode_ids=$REDACTED"),
+        ("episode_ids=[1, ] count=2", "episode_ids=$REDACTED"),
+        ("episode_ids=[1.5, 2] count=2", "episode_ids=$REDACTED"),
+        ("episode_ids=[a.flac, b] count=2", "episode_ids=$REDACTED"),
+        ("episode_ids=[a:b] count=2", "episode_ids=$REDACTED"),
+        ("state=Some(Track(1.5)) count=2", "state=$REDACTED"),
+        ("state=Some(Track()) count=2", "state=$REDACTED"),
+        ("state=Some() count=2", "state=$REDACTED"),
     ] {
         assert_eq!(redacted(input), expected, "{input}");
     }
@@ -116,30 +95,18 @@ fn a_composite_value_with_anything_but_plain_parts_is_redacted_with_its_words() 
 
 #[test]
 fn a_list_on_a_key_that_is_not_kept_is_redacted() {
-    assert_eq!(
-        redacted("volume=[1, 2, 3] count=2"),
-        "volume=$REDACTED count=2"
-    );
-    assert_eq!(
-        redacted("error=[1, 2, 3] count=2"),
-        "error=$REDACTED count=2"
-    );
+    assert_eq!(redacted("volume=[1, 2, 3] count=2"), "volume=$REDACTED");
+    assert_eq!(redacted("error=[1, 2, 3] count=2"), "error=$REDACTED");
 }
 
 #[test]
 fn a_struct_like_value_is_redacted_with_its_fields() {
     for (input, expected) in [
-        (
-            "rows=QueueRow { index: 1 } count=2",
-            "rows=$REDACTED count=2",
-        ),
-        (
-            "rows=[QueueRow { index: 1 }] count=2",
-            "rows=$REDACTED count=2",
-        ),
+        ("rows=QueueRow { index: 1 } count=2", "rows=$REDACTED"),
+        ("rows=[QueueRow { index: 1 }] count=2", "rows=$REDACTED"),
         (
             "current_up_next=Some(Track { id: 5 }) count=2",
-            "current_up_next=$REDACTED count=2",
+            "current_up_next=$REDACTED",
         ),
     ] {
         assert_eq!(redacted(input), expected, "{input}");

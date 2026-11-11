@@ -56,8 +56,8 @@ fn a_kept_key_with_a_rejected_value_takes_the_words_after_it_like_an_unknown_key
         ("state=\"Pink Floyd/The Wall\"", "state=$REDACTED"),
         ("state=Pink(Floyd The Wall)", "state=$REDACTED"),
         ("state=(Pink Floyd)", "state=$REDACTED"),
-        ("mode=a/b next words count=2", "mode=$REDACTED count=2"),
-        ("state=/x/y Floyd The Wall id=3", "state=$REDACTED id=3"),
+        ("mode=a/b next words count=2", "mode=$REDACTED"),
+        ("state=/x/y Floyd The Wall id=3", "state=$REDACTED"),
     ] {
         assert_eq!(redacted(input), expected, "{input}");
     }
@@ -114,22 +114,82 @@ fn something_that_only_looks_like_a_debug_number_is_redacted() {
 }
 
 #[test]
-fn a_redacted_key_takes_every_word_up_to_the_next_assignment() {
+fn a_redacted_key_takes_every_word_to_the_end_of_the_line() {
     for (input, expected) in [
         ("error=a b c", "error=$REDACTED"),
-        ("error=a b count=3 more", "error=$REDACTED count=3 more"),
-        ("error=a  b   count=3", "error=$REDACTED count=3"),
+        ("error=a b count=3 more", "error=$REDACTED"),
+        ("error=a  b   count=3", "error=$REDACTED"),
         ("prefix error=a b", "prefix error=$REDACTED"),
         ("error=a b\nnext line", "error=$REDACTED\nnext line"),
-        ("path=x y; elapsed_ms=12", "path=$REDACTED elapsed_ms=12"),
-        (
-            "error=a b path=c d count=3",
-            "error=$REDACTED path=$REDACTED count=3",
-        ),
+        ("error=a b\nnext count=3", "error=$REDACTED\nnext count=3"),
+        ("path=x y; elapsed_ms=12", "path=$REDACTED"),
+        ("error=a b path=c d count=3", "error=$REDACTED"),
         ("error=a b ", "error=$REDACTED "),
     ] {
         assert_eq!(redacted(input), expected, "{input:?}");
     }
+}
+
+#[test]
+fn a_forged_known_key_does_not_end_a_swallowed_value() {
+    for (input, expected) in [
+        ("error=foo count=3 Pink Floyd", "error=$REDACTED"),
+        ("error=a, count=3 Pink Floyd", "error=$REDACTED"),
+        ("error=a count=3: Pink Floyd", "error=$REDACTED"),
+        ("error=a (count=3) Pink Floyd", "error=$REDACTED"),
+        ("error=a COUNT=3 Pink", "error=$REDACTED"),
+        ("error=a [id=3] Pink Floyd", "error=$REDACTED"),
+        ("error=a elapsed_ms=1.5 Pink Floyd", "error=$REDACTED"),
+        ("state=Some(\"Pink\") count=3 Floyd", "state=$REDACTED"),
+        ("count=song.mp3 id=3 Pink Floyd", "count=$REDACTED"),
+        ("volume=0.5 count=3 Pink Floyd", "volume=$REDACTED"),
+    ] {
+        assert_eq!(redacted(input), expected, "{input}");
+    }
+}
+
+#[test]
+fn only_a_field_that_is_already_redacted_ends_a_swallowed_value() {
+    for (input, expected) in [
+        ("error=boom data=abc== tail words", "error=$REDACTED"),
+        ("error=x foo=bar more", "error=$REDACTED"),
+        ("error=x a=b c=d count=3 tail", "error=$REDACTED"),
+        ("error=x ==abc count=", "error=$REDACTED"),
+        ("error=x 1count=3 y", "error=$REDACTED"),
+        ("error=x y=$REDACTED) tail", "error=$REDACTED"),
+        (
+            "error=x y=$REDACTED count=3 tail",
+            "error=$REDACTED y=$REDACTED count=3 ",
+        ),
+        (
+            "error=x user_name=$REDACTED count=3 Pink Floyd",
+            "error=$REDACTED user_name=$REDACTED count=3 ",
+        ),
+    ] {
+        assert_eq!(redacted(input), expected, "{input}");
+    }
+}
+
+#[test]
+fn the_typed_fields_after_a_redacted_one_stay_readable_and_nothing_else_does() {
+    // The structured path writes one `key=value` per field, a redacted one as
+    // `key=$REDACTED`, so a kept field after it is a typed value.
+    for input in [
+        "error=$REDACTED count=3",
+        "error=$REDACTED count=3 elapsed_ms=12.5 state=Playing",
+        "playback stalled; error=$REDACTED volume=$REDACTED count=3",
+        "playback stalled; count=3 error=$REDACTED id=7",
+    ] {
+        assert_eq!(redacted(input), input, "{input}");
+    }
+    assert_eq!(
+        redacted("error=$REDACTED count=3 Pink Floyd"),
+        "error=$REDACTED count=3 "
+    );
+    assert_eq!(
+        redacted("error=$REDACTED Pink Floyd count=3"),
+        "error=$REDACTED count=3"
+    );
 }
 
 #[test]
@@ -156,24 +216,6 @@ fn redacting_twice_changes_nothing() {
         let once = redacted(input);
 
         assert_eq!(redacted(&once), once, "{input}");
-    }
-}
-
-#[test]
-fn only_a_known_well_formed_key_ends_a_swallowed_value() {
-    for (input, expected) in [
-        ("error=boom data=abc== tail words", "error=$REDACTED"),
-        ("error=x foo=bar more", "error=$REDACTED"),
-        (
-            "error=x a=b c=d count=3 tail",
-            "error=$REDACTED count=3 tail",
-        ),
-        ("error=x Count=3 tail", "error=$REDACTED Count=3 tail"),
-        ("error=x ==abc count=", "error=$REDACTED"),
-        ("error=x 1count=3 y", "error=$REDACTED"),
-        ("error=x (id=3) tail", "error=$REDACTED (id=3) tail"),
-    ] {
-        assert_eq!(redacted(input), expected, "{input}");
     }
 }
 

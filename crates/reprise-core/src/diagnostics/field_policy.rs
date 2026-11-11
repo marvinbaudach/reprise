@@ -35,15 +35,20 @@
 //! identifiers only inside; at most three wrappers and 64 elements, see
 //! `redact_composite`). Anything else, such as `mode=Compact,title=Foo` or a
 //! struct body (`StaleFor { seconds: 60 }`), is
-//! `key=$REDACTED`, and, like an unknown key, it takes every word up to the
-//! next known `key=` token (a key listed below, written as an identifier) or
-//! the end of the line; a secret-like `token:` takes the rest of the line. What remains is a plain identifier that is
+//! `key=$REDACTED`, and, like an unknown key, it takes every word after it up
+//! to the end of the line. Only a token whose value is already exactly
+//! `$REDACTED` ends that: it is what the typed path writes for a redacted field,
+//! so it carries nothing, and the typed fields after it stay readable (a known
+//! `key=` token ends the swallow after such a token, never after raw text, where
+//! `count=3` may be forged). A secret-like `token:` takes the rest of the line
+//! whatever follows. What remains is a plain identifier that is
 //! itself foreign text (`state=Artist`): the policy cannot tell it from a
 //! variant name, so a message that interpolates foreign text after a kept key
 //! is a review concern. The typed `EventFields` path keeps typed values and is
 //! unaffected, but the file mirror runs this pass over the finished line too,
 //! so a kept key whose `Debug` value is not one of the shapes above (a
-//! struct variant, a list holding a float) is redacted in the log file.
+//! struct variant, a list holding a float) is redacted in the log file, and
+//! the fields written after it on that line go with it.
 //!
 //! The classification test checks keys, not value types, and it does not see
 //! fields that dependencies emit (zbus, for one). A new site that emits an

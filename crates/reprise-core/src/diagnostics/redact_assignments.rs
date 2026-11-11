@@ -2,9 +2,10 @@
 //!
 //! A kept key (see `field_policy`) keeps its value only when the value is a
 //! number, a plain identifier, or a composite of plain values (`redact_composite`).
-//! Any other key is redacted together with
-//! everything up to the next `key=` token or the end of the line, because a
-//! value with spaces would otherwise leak every word after the first.
+//! Any other value is redacted together with the words after it, because a
+//! value with spaces would otherwise leak every word after the first. How far
+//! that reaches is [`Reach`]: the one rule is that text a redaction swallowed
+//! never ends at a token that merely looks like a known field.
 
 use super::field_policy::{KEEP_FIELDS, REDACT_FIELDS};
 use super::redact::is_safe_structured_field;
@@ -67,13 +68,29 @@ pub(super) fn split_assignment(token: &str) -> Option<Assignment> {
 }
 
 /// How far a redaction reaches into the words after it.
+///
+/// What ends a swallow depends on what started it. Foreign text can contain
+/// anything, including a forged `count=3`, so a swallow that began at a value
+/// nobody vetted must not end at a token an attacker can write. A token whose
+/// value is already exactly `$REDACTED` can only be a field the structured path
+/// has redacted (or a copy of that text): there is nothing left in it to leak,
+/// so it is the one thing that may end such a swallow.
 #[derive(Clone, Copy, PartialEq)]
 enum Reach {
     /// Only the token itself.
     Token,
-    /// Up to the next token that opens a known `key=` assignment, or the end
-    /// of the line.
-    UntilAssignment,
+    /// After a token whose value is already `$REDACTED`: up to the next token
+    /// that opens a known `key=` assignment, or the end of the line. The
+    /// structured path writes `error=$REDACTED count=3`, one field after the
+    /// other, and the typed fields after a redacted one must stay readable.
+    /// The reach outlives the kept tokens that end it: after `error=$REDACTED
+    /// count=3` a stray word is still not part of any field.
+    UntilKnownField,
+    /// After a value that was rejected, or that belongs to a key the policy
+    /// does not keep (raw foreign text): up to the next token whose value is
+    /// already exactly `$REDACTED`, or the end of the line. A token that
+    /// merely opens a known key (`count=3`) does not end it.
+    UntilRedactedField,
     /// To the end of the line: a secret has no reliable end.
     EndOfLine,
 }
@@ -81,8 +98,7 @@ enum Reach {
 /// Redacts every `key=value` whose key or value may not leave the machine.
 ///
 /// A redacted `key=` and a kept key with a value that is not plain both own
-/// the words after them, because a value with spaces would otherwise leak
-/// every word after the first.
+/// the words after them, as far as their [`Reach`] goes.
 pub(super) fn redact_sensitive_assignments(input: &str) -> String {
     let tokens: Vec<&str> = input.split_inclusive(char::is_whitespace).collect();
     let mut output = String::with_capacity(input.len());
@@ -96,7 +112,8 @@ pub(super) fn redact_sensitive_assignments(input: &str) -> String {
         let whitespace = &token[body.len()..];
         let swallowed = match reach {
             Reach::Token => false,
-            Reach::UntilAssignment => !starts_known_assignment(body),
+            Reach::UntilKnownField => !starts_known_assignment(body),
+            Reach::UntilRedactedField => !is_redacted_field(body),
             Reach::EndOfLine => true,
         };
         let mut last_whitespace = whitespace;
@@ -118,7 +135,9 @@ pub(super) fn redact_sensitive_assignments(input: &str) -> String {
                     last_whitespace = tokens.get(index - 1).map_or("", |last| {
                         &last[last.trim_end_matches(char::is_whitespace).len()..]
                     });
-                    reach = Reach::Token;
+                    if reach != Reach::UntilKnownField {
+                        reach = Reach::Token;
+                    }
                 }
                 Outcome::Redacted(redaction) => {
                     output.push_str(&redaction.text);
@@ -159,6 +178,12 @@ fn redact_assignment(tokens: &[&str]) -> Outcome {
         return Outcome::Kept(1);
     };
     let reach = if separator_char == '=' {
+        if is_redacted_field(body) {
+            return Outcome::Redacted(Redaction {
+                text: body.to_owned(),
+                reach: Reach::UntilKnownField,
+            });
+        }
         if let Some(count) = plain_list_span(tokens) {
             return Outcome::Kept(count);
         }
@@ -168,7 +193,7 @@ fn redact_assignment(tokens: &[&str]) -> Outcome {
         {
             return Outcome::Kept(1);
         }
-        Reach::UntilAssignment
+        Reach::UntilRedactedField
     } else if SECRET_KEY_NEEDLES.iter().any(|needle| key.contains(needle)) {
         Reach::EndOfLine
     } else {
@@ -186,9 +211,10 @@ fn opens_struct_body(tokens: &[&str]) -> bool {
     tokens.get(1).is_some_and(|next| next.starts_with('{'))
 }
 
-/// Whether a token opens the next assignment, ending a swallowed value. Only
-/// a well-formed key that the policy knows does: `abc==` (base64 padding) or
-/// `a=b` inside swallowed text is part of the value, not a new assignment.
+/// Whether a token opens a known assignment, which ends a swallow that began
+/// at an already redacted field. Only a well-formed key that the policy knows
+/// does: `abc==` (base64 padding) or `a=b` inside swallowed text is part of the
+/// value, not a new assignment.
 fn starts_known_assignment(body: &str) -> bool {
     let Some(assignment) = split_assignment(body) else {
         return false;
@@ -196,18 +222,31 @@ fn starts_known_assignment(body: &str) -> bool {
     let key = assignment.key.as_str();
     assignment.separator_char == '='
         && body.len() > assignment.separator + 1
-        && key.starts_with(|ch: char| ch.is_ascii_lowercase() || ch == '_')
-        && key
-            .chars()
-            .all(|ch| ch.is_ascii_lowercase() || ch.is_ascii_digit() || matches!(ch, '_' | '.'))
+        && is_well_formed_key(key)
         && (KEEP_FIELDS.binary_search(&key).is_ok()
             || REDACT_FIELDS.binary_search(&key).is_ok()
             || is_already_redacted(body, &assignment))
 }
 
+fn is_well_formed_key(key: &str) -> bool {
+    key.starts_with(|ch: char| ch.is_ascii_lowercase() || ch == '_')
+        && key
+            .chars()
+            .all(|ch| ch.is_ascii_lowercase() || ch.is_ascii_digit() || matches!(ch, '_' | '.'))
+}
+
 /// `user_name=$REDACTED`, as `EventFields` writes an unlisted structured
-/// field: there is no value left to protect, so the token may end the previous
-/// redaction. It is then redacted again itself, so nothing after it is let go.
+/// field: there is no value left to protect, so the token may end a swallow.
+/// The value must be exactly the marker: `$REDACTED more` is two tokens and
+/// `x=$REDACTED)` is a value nobody wrote.
+fn is_redacted_field(body: &str) -> bool {
+    split_assignment(body).is_some_and(|assignment| {
+        assignment.separator_char == '='
+            && is_well_formed_key(&assignment.key)
+            && is_already_redacted(body, &assignment)
+    })
+}
+
 fn is_already_redacted(body: &str, assignment: &Assignment) -> bool {
     body[assignment.separator + 1..] == *REDACTED
 }

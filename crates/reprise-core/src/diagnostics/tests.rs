@@ -153,17 +153,23 @@ fn rendered_events_redact_every_absolute_path_without_losing_sentence_context() 
     assert!(report.contains("then moved … to … successfully"));
 }
 
-#[test]
-fn rendered_events_redact_identifying_structured_fields() {
+fn device_sync_report(message: &str) -> String {
     let mut log = DiagnosticLog::default();
     log.push(DiagnosticEvent::new(
         8 * 3_600 + 14 * 60 + 22,
         DiagnosticLevel::Warn,
         "device_sync",
-        "device_id=0123456789ABCDEF device_serial=SERIAL-PRIVATE playlist=Roadtrip playlist_name=SecretMix user_name=private-listener track_id=42",
+        message,
     ));
 
-    let report = render_report(&complete_facts(), &log, &RedactionContext::default());
+    render_report(&complete_facts(), &log, &RedactionContext::default())
+}
+
+#[test]
+fn rendered_events_redact_identifying_fields_written_as_raw_text() {
+    let report = device_sync_report(
+        "device_id=0123456789ABCDEF device_serial=SERIAL-PRIVATE playlist=Roadtrip playlist_name=SecretMix user_name=private-listener track_id=42",
+    );
 
     for private in [
         "0123456789ABCDEF",
@@ -177,12 +183,32 @@ fn rendered_events_redact_identifying_structured_fields() {
             "report leaked {private:?}:\n{report}"
         );
     }
-    assert!(report.contains("device_id=$REDACTED"));
-    assert!(report.contains("playlist=$REDACTED"));
-    // `user_name` and `device_serial` are in neither list, so they do not end
-    // the redaction that came before them; their values go with it.
-    assert!(!report.contains("user_name="));
-    assert!(report.contains("track_id=42"));
+    // The first value is raw text, so it owns the rest of the line: a later
+    // `track_id=42` could be forged text just as well as a typed field.
+    assert!(
+        report
+            .lines()
+            .any(|line| line.ends_with("device_sync: device_id=$REDACTED")),
+        "{report}"
+    );
+    assert!(!report.contains("track_id="), "{report}");
+}
+
+#[test]
+fn rendered_events_keep_the_typed_fields_that_follow_a_redacted_one() {
+    // What `EventFields` writes for typed fields: a field outside both lists,
+    // such as `user_name` or `device_serial`, is already `$REDACTED`.
+    let report = device_sync_report(
+        "device sync failed; device_id=$REDACTED device_serial=$REDACTED playlist=$REDACTED user_name=$REDACTED track_id=42",
+    );
+
+    assert!(
+        report.contains(
+            "device sync failed; device_id=$REDACTED device_serial=$REDACTED \
+playlist=$REDACTED user_name=$REDACTED track_id=42"
+        ),
+        "{report}"
+    );
 }
 
 #[test]
