@@ -2,7 +2,7 @@
 slug: diagnostics-field-policy
 worktree: /home/marvin/Projects/reprise-diagnostics-field-policy
 branch: feature/diagnostics-field-policy
-phase: refactored
+phase: shipped
 codex_session:
 created: 2026-11-04
 ---
