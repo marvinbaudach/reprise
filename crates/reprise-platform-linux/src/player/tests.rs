@@ -30,6 +30,7 @@ mod start_watchdog_restart_tests;
 mod start_watchdog_soak_tests;
 mod start_watchdog_tests;
 mod stream_generation_tests;
+mod stuck_source_support;
 
 fn item(path: &str) -> PlaybackItem<'_> {
     PlaybackItem {
