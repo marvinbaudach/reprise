@@ -40,6 +40,7 @@ fn primary_volume(player: &Player) -> f64 {
         .playbin
         .lock()
         .unwrap_or_else(PoisonError::into_inner)
+        .element()
         .property::<f64>("volume")
 }
 
@@ -48,6 +49,7 @@ fn current_uri(player: &Player) -> Option<String> {
         .playbin
         .lock()
         .unwrap_or_else(PoisonError::into_inner)
+        .element()
         .property::<Option<String>>("current-uri")
 }
 
@@ -306,16 +308,23 @@ const OVERSTATED_DURATION_MS: i64 = 3_500;
 
 /// One round of the scenario below: the outgoing track ends during the wait,
 /// the incoming one hangs, and the fade gives way. Returns the events up to a
-/// second after the report.
+/// second after the report. `again_in_place` plays the track again on the
+/// pipeline it already plays on (a seek to its start), instead of starting it
+/// on a fresh one: every `play` builds a new pipeline.
 fn outgoing_track_ends_during_the_wait(
     harness: &Harness,
     first: &str,
     second: &str,
+    again_in_place: bool,
 ) -> Vec<PlayerEvent> {
     let player = &harness.player;
-    harness.start(|| {
-        player.play(item(first)).unwrap();
-    });
+    if again_in_place {
+        player.seek_to(0).unwrap();
+    } else {
+        harness.start(|| {
+            player.play(item(first)).unwrap();
+        });
+    }
     // The ticker's part, played by hand so that its numbers can be wrong: the
     // real ticker would report the true duration and give up in time.
     player.set_next(Some(item(second)));
@@ -341,7 +350,7 @@ fn play_26_a_crossfade_that_gives_way_after_the_outgoing_track_ended_still_finis
     let second = tone(&directory, "second.wav", 3_000);
     let trouble = trouble_on_secondary(Trouble::Hang);
 
-    let events = outgoing_track_ends_during_the_wait(&harness, &first, &second);
+    let events = outgoing_track_ends_during_the_wait(&harness, &first, &second, false);
 
     assert_eq!(trouble.installed(), 1, "the secondary was not hooked");
     assert_eq!(count(&events, advanced), 0);
@@ -405,7 +414,7 @@ fn play_26_a_second_crossfade_on_the_same_pipeline_also_reports_the_end_it_misse
     let mut pipelines = Vec::new();
     for round in 1..=2 {
         trouble.reset();
-        let events = outgoing_track_ends_during_the_wait(&harness, &first, &second);
+        let events = outgoing_track_ends_during_the_wait(&harness, &first, &second, round == 2);
         assert_eq!(
             trouble.installed(),
             1,
@@ -423,6 +432,7 @@ fn play_26_a_second_crossfade_on_the_same_pipeline_also_reports_the_end_it_misse
                 .playbin
                 .lock()
                 .unwrap_or_else(PoisonError::into_inner)
+                .element()
                 .clone(),
         );
     }

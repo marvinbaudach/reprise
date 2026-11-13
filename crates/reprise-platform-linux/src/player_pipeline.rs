@@ -24,6 +24,7 @@ use crate::crossfade::Transition;
 use crate::gapless::{
     connect_about_to_finish, note_stream_start, HandoffFlag, NextUri, PendingGain,
 };
+use crate::player::pipeline_queue::QueueHandle;
 use crate::player::segment::{install_segment_boundary, SegmentHandle};
 use crate::player_effects::{
     apply_audio_filter, install_stream_start_gain_switch, CAVA_SAMPLE_RATE_HZ, CAVA_SINK_NAME,
@@ -232,11 +233,11 @@ fn query_buffered_ms(playbin: &gst::Element) -> Option<i64> {
 pub(crate) const AUDIO_SINK_ENV_VAR: &str = "REPRISE_AUDIO_SINK";
 
 /// Builds a fresh `playbin3` element with the `REPRISE_AUDIO_SINK` override
-/// applied, if set. Extracted out of `Player::new` so `Player::rebuild_
-/// playbin` (the wedged-pipeline recovery — see `Player::play`'s doc comment)
-/// and the crossfade ramp (which builds the identically-configured *secondary*
-/// pipeline — see `crossfade.rs`) can build matching elements. `pub(crate)` for
-/// that second caller.
+/// applied, if set. Extracted out of `Player::new` so every start (a fresh
+/// pipeline per start — see `Player::play`'s doc comment) and the crossfade
+/// ramp (which builds the identically-configured *secondary* pipeline — see
+/// `crossfade.rs`) can build matching elements. `pub(crate)` for that second
+/// caller.
 pub(crate) fn build_playbin(
     effects: &AudioEffects,
     next_uri: NextUri,
@@ -256,7 +257,7 @@ pub(crate) fn build_playbin(
 
     // Gapless handoff: consume any pre-fed URI on `about-to-finish` without a
     // pipeline restart (Gapless mode only — the handler no-ops in Crossfade/Off,
-    // see `gapless.rs`). Installed here so `rebuild_playbin` and the crossfade
+    // see `gapless.rs`). Installed here so every fresh start and the crossfade
     // secondary re-arm it on the built element for free.
     connect_about_to_finish(
         &playbin,
@@ -376,16 +377,26 @@ pub(crate) fn attach_cava_sink(
     Ok(())
 }
 
+/// What finishes a CUE track's start from the bus watch: the segment gate, and
+/// the queue of the pipeline the watch belongs to, which the seek and the state
+/// change of the finish are submitted to.
+pub(crate) struct CueCompletion {
+    pub(crate) segments: SegmentHandle,
+    pub(crate) queue: QueueHandle,
+}
+
 /// Attaches a bus watch to `playbin` that reports EOS/error messages via
-/// `on_event`. Extracted out of `Player::new` so `Player::rebuild_playbin` and
-/// the crossfade promotion (see `crossfade.rs`) can attach an identically-
+/// `on_event`. Extracted out of `Player::new` so every fresh start and the
+/// crossfade promotion (see `crossfade.rs`) can attach an identically-
 /// behaving watch to a replacement/promoted element (a `BusWatchGuard`/`Bus` is
 /// tied to the specific element it came from, so a rebuilt/promoted playbin
 /// needs its own watch rather than reusing the old one). `pub(crate)` for the
 /// crossfade caller.
 ///
-/// `segments` completes the start of a CUE track once its file has prerolled
-/// (`ASYNC_DONE`, see `player/segment.rs`).
+/// `cue` completes the start of a CUE track once its file has prerolled
+/// (`ASYNC_DONE`, see `player/segment.rs`), through the queue of the pipeline
+/// this watch belongs to: the seek and the state change that finish a start
+/// never run on the main context this watch is dispatched from.
 ///
 /// A CUE track's end is an end-of-stream too: its boundary probe sends one in
 /// place of the first buffer past the end (see `player/segment.rs`), so this
@@ -403,8 +414,9 @@ pub(crate) fn attach_bus_watch(
     crossfading: Arc<AtomicBool>,
     spectrum_enabled: Arc<AtomicBool>,
     cava_stream_generation: Arc<AtomicU64>,
-    segments: SegmentHandle,
+    cue: CueCompletion,
 ) -> Result<gst::bus::BusWatchGuard, PlaybackError> {
+    let CueCompletion { segments, queue } = cue;
     attach_cava_sink(
         playbin,
         on_event.clone(),
@@ -434,7 +446,7 @@ pub(crate) fn attach_bus_watch(
                 }
             }
             MessageView::AsyncDone(_) if msg.src() == Some(watched_playbin.upcast_ref()) => {
-                segments.complete_start(&watched_playbin);
+                segments.complete_start(&watched_playbin, &queue);
             }
             MessageView::StateChanged(state)
                 if state.src() == Some(watched_playbin.upcast_ref())

@@ -1,5 +1,6 @@
-//! A rebuilt playbin (the wedged-pipeline recovery in `Player::play`) must
-//! carry what the user asked for, not the element's factory defaults.
+//! A start after a failed start plays, and at the user's volume: every start is
+//! a fresh pipeline (see `Player::play`), carrying what the user asked for, not
+//! the element's factory defaults.
 
 use super::*;
 
@@ -13,11 +14,18 @@ fn live_volume(player: &Player) -> f64 {
         .playbin
         .lock()
         .unwrap_or_else(PoisonError::into_inner)
+        .element()
         .property::<f64>("volume")
 }
 
+const MISSING: &str = concat!(
+    env!("CARGO_MANIFEST_DIR"),
+    "/tests/fixtures/does-not-exist.flac"
+);
+const VALID: &str = concat!(env!("CARGO_MANIFEST_DIR"), "/tests/fixtures/sine.flac");
+
 #[test]
-fn a_rebuilt_playbin_plays_at_the_users_volume() {
+fn a_fresh_pipeline_for_a_start_plays_at_the_users_volume() {
     let _guard = AUDIO_SINK_TEST_LOCK
         .lock()
         .unwrap_or_else(std::sync::PoisonError::into_inner);
@@ -25,18 +33,19 @@ fn a_rebuilt_playbin_plays_at_the_users_volume() {
     let player = Player::new(Box::new(|_| {})).unwrap();
     player.set_volume(USER_VOLUME);
 
-    player.rebuild_playbin().unwrap();
+    player.play(item(VALID)).unwrap();
 
     let volume = live_volume(&player);
+    let _ = player.stop();
     std::env::remove_var(AUDIO_SINK_ENV_VAR);
     assert!(
         (volume - USER_VOLUME).abs() < VOLUME_EPSILON,
-        "the rebuilt playbin must carry the user's volume, got {volume}"
+        "the pipeline of a start must carry the user's volume, got {volume}"
     );
 }
 
 #[test]
-fn a_failed_play_that_rebuilds_the_pipeline_keeps_the_users_volume() {
+fn a_start_after_a_failed_start_plays_at_the_users_volume() {
     let _guard = AUDIO_SINK_TEST_LOCK
         .lock()
         .unwrap_or_else(std::sync::PoisonError::into_inner);
@@ -44,16 +53,20 @@ fn a_failed_play_that_rebuilds_the_pipeline_keeps_the_users_volume() {
     let player = Player::new(Box::new(|_| {})).unwrap();
     player.set_volume(USER_VOLUME);
 
-    let missing_path = concat!(
-        env!("CARGO_MANIFEST_DIR"),
-        "/tests/fixtures/does-not-exist.flac"
-    );
-    let _ = player.play(item(missing_path));
-
+    assert!(player.play(item(MISSING)).is_err());
+    let after_failure = live_volume(&player);
+    player
+        .play(item(VALID))
+        .expect("a valid file must play after a failed start");
     let volume = live_volume(&player);
+    let _ = player.stop();
     std::env::remove_var(AUDIO_SINK_ENV_VAR);
     assert!(
+        (after_failure - USER_VOLUME).abs() < VOLUME_EPSILON,
+        "the idle pipeline left by a failed start must carry the user's volume, got {after_failure}"
+    );
+    assert!(
         (volume - USER_VOLUME).abs() < VOLUME_EPSILON,
-        "a play that rebuilt the pipeline must keep the user's volume, got {volume}"
+        "the start after a failed start must carry the user's volume, got {volume}"
     );
 }

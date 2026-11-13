@@ -8,7 +8,9 @@
 
 use std::path::Path;
 
-use super::segment_support::{leaving_hung_starts_to_the_test, start_over_when_hung};
+use super::segment_support::{
+    gain_of, leaving_hung_starts_to_the_test, on_every_pipeline, start_over_when_hung,
+};
 use super::*;
 use crate::player_pipeline::AUDIO_SINK_ENV_VAR;
 
@@ -31,25 +33,19 @@ fn linear(gain_db: f64) -> f64 {
     10_f64.powf(gain_db / 20.0)
 }
 
-fn gain_element(player: &Player) -> gst::Element {
-    let playbin = player
-        .playbin
-        .lock()
-        .unwrap_or_else(PoisonError::into_inner)
-        .clone();
-    playbin
-        .property::<Option<gst::Element>>("audio-filter")
-        .unwrap()
-        .downcast::<gst::Bin>()
-        .unwrap()
-        .by_name("reprise-track-gain")
-        .unwrap()
-}
-
 /// Records every buffer leaving the gain element together with the stream it
 /// belongs to (counted from the `STREAM_START` events on the same pad).
-fn record_gain_per_buffer(gain: &gst::Element) -> Arc<Mutex<Vec<GainSample>>> {
+fn record_gain_per_buffer(player: &Player) -> Arc<Mutex<Vec<GainSample>>> {
     let samples = Arc::new(Mutex::new(Vec::new()));
+    let recorded = samples.clone();
+    // On the pipeline of every start: each start builds a fresh one.
+    on_every_pipeline(player, move |playbin| {
+        record_gain_into(&recorded, &gain_of(playbin));
+    });
+    samples
+}
+
+fn record_gain_into(samples: &Arc<Mutex<Vec<GainSample>>>, gain: &gst::Element) {
     let recorded = samples.clone();
     let element = gain.clone();
     let streams_seen = Arc::new(std::sync::atomic::AtomicUsize::new(0));
@@ -77,7 +73,6 @@ fn record_gain_per_buffer(gain: &gst::Element) -> Arc<Mutex<Vec<GainSample>>> {
             gst::PadProbeReturn::Ok
         },
     );
-    samples
 }
 
 fn pump_until_finished(rx: &std::sync::mpsc::Receiver<PlayerEvent>) {
@@ -118,7 +113,7 @@ fn play_20a_every_buffer_of_each_track_carries_that_tracks_gain() {
     );
     let directory = tempfile::tempdir().unwrap();
     let (first, second) = write_wavs(directory.path());
-    let samples = record_gain_per_buffer(&gain_element(&player));
+    let samples = record_gain_per_buffer(&player);
 
     start_over_when_hung(&player, || {
         player

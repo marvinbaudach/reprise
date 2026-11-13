@@ -16,18 +16,21 @@ use crate::player_effects::{
     set_playbin_spectrum_messages, set_playbin_track_gain, update_existing_audio_filter,
 };
 use crate::player_pipeline::{
-    attach_bus_watch, build_playbin, configure_download_buffering, path_to_uri,
-    validated_playback_uri,
+    attach_bus_watch, build_playbin, path_to_uri, validated_playback_uri, CueCompletion,
 };
+use pipeline_queue::Pipeline;
 use pipeline_swap::PipelineSwap;
-use segment::{CutSeek, SegmentGate, SegmentHandle};
+use segment::{SegmentGate, SegmentHandle};
 use start_watchdog::StartWatchdog;
 
+pub(crate) mod pipeline_queue;
 mod pipeline_swap;
 mod reaper;
 pub(crate) mod segment;
+mod start;
 mod start_watchdog;
 mod successor;
+mod transport;
 
 /// Default playback volume before the user ever moves the slider — full scale,
 /// matching `playbin3`'s own `volume` property default. Also the value the
@@ -35,6 +38,14 @@ mod successor;
 const DEFAULT_VOLUME: f64 = 1.0;
 
 const POSITION_TICK_INTERVAL: Duration = Duration::from_millis(500);
+
+/// How long `play` and `seek_to` wait on the main context for the answer of a
+/// pipeline's state change or seek (decision 2 of the transport plan): a fast
+/// failure such as a missing file stays a synchronous `Err`, and a source that
+/// blocks in the kernel is left to the watchdog after this long. Well under the
+/// 500 ms the freeze tests allow the main context to stand still, a pipeline
+/// build included; a healthy start answers in about 10 ms.
+pub(crate) const START_ANSWER_WAIT: Duration = Duration::from_millis(250);
 
 /// While a gapless hand-off is pending, `playbin3` already answers
 /// `query_duration` for the *next* stream while `query_position` still measures
@@ -60,15 +71,15 @@ fn reported_duration_ms(queried_ms: i64, last_stable_ms: i64, handoff_pending: b
 }
 
 pub struct Player {
-    /// The live GStreamer pipeline. `Arc<Mutex<_>>`, not a plain field: the
-    /// position-ticker thread (spawned in `new`) needs to read whichever
-    /// element is *current* on every tick, and `play`'s wedged-pipeline
-    /// recovery (see its doc comment) can swap this out for a freshly built
-    /// element after a failure. A plain field (or a value captured once by
-    /// the ticker thread at spawn time, as this used to be) would go stale
-    /// the moment a rebuild happened, silently freezing position ticks for
-    /// the rest of the process's life.
-    playbin: Arc<Mutex<gst::Element>>,
+    /// The live GStreamer pipeline, with the queue every state change and
+    /// seek of it goes through (see `player/pipeline_queue.rs`).
+    /// `Arc<Mutex<_>>`, not a plain field: the position-ticker thread (spawned
+    /// in `new`) needs to read whichever element is *current* on every tick, and
+    /// every start swaps in a freshly built pipeline (see `play`'s doc comment).
+    /// A plain field (or a value captured once by the ticker thread at spawn
+    /// time) would go stale at the first start, silently freezing position
+    /// ticks for the rest of the process's life.
+    playbin: Arc<Mutex<Pipeline>>,
     on_event: Arc<dyn Fn(PlayerEvent) + Send + Sync + 'static>,
     effects: Arc<Mutex<AudioEffects>>,
     /// Gapless slot: the URI pre-fed via `set_next`, consumed by the
@@ -99,7 +110,7 @@ pub struct Player {
     /// silence it immediately. See `crossfade.rs`.
     incoming: IncomingSlot,
     spectrum_enabled: Arc<AtomicBool>,
-    /// Bumped synchronously on every `play`/`play_uri` (`try_play`) or
+    /// Bumped synchronously on every `play`/`play_uri` (`play_resolved_uri`) or
     /// gapless/crossfade hand-off — the `PlaybackBackend` "Stream
     /// generations" contract. Stamped onto events as a `StreamEvent` for
     /// `new_with_generation` consumers.
@@ -110,8 +121,8 @@ pub struct Player {
     /// Starts a local file over when `playbin3` hangs in READY — see
     /// `player/start_watchdog.rs`.
     start_watchdog: StartWatchdog,
-    /// Replaces the playbin with a fresh one, for `rebuild_playbin` and for the
-    /// watchdog — see `player/pipeline_swap.rs`.
+    /// Builds the fresh pipelines every start, `stop` and the watchdog's restart
+    /// put in the playbin slot — see `player/pipeline_swap.rs`.
     swap: Arc<PipelineSwap>,
 }
 
@@ -147,7 +158,7 @@ impl Player {
 
     /// Shared construction logic behind `new`/`new_with_generation`.
     /// `stream_generation` is owned by the caller so both reuse the same
-    /// bump sites (`try_play`, the gapless hand-off, the crossfade promotion).
+    /// bump sites (`play_resolved_uri`, the gapless hand-off, the crossfade promotion).
     fn build(
         on_event: Arc<dyn Fn(PlayerEvent) + Send + Sync>,
         stream_generation: Arc<AtomicU64>,
@@ -173,7 +184,7 @@ impl Player {
         let cava_stream_generation = Arc::new(AtomicU64::new(0));
         let segments = SegmentGate::new(on_event.clone(), stream_generation.clone());
 
-        let playbin = build_playbin(
+        let playbin = Pipeline::new(build_playbin(
             &effects.lock().unwrap_or_else(PoisonError::into_inner),
             next_uri.clone(),
             handoff_pending.clone(),
@@ -181,15 +192,18 @@ impl Player {
             stream_generation.clone(),
             pending_gain.clone(),
             segments.clone(),
-        )?;
+        )?);
         let bus_watch = attach_bus_watch(
-            &playbin,
+            playbin.element(),
             on_event.clone(),
             handoff_pending.clone(),
             crossfading.clone(),
             spectrum_enabled.clone(),
             cava_stream_generation.clone(),
-            segments.clone(),
+            CueCompletion {
+                segments: segments.clone(),
+                queue: playbin.queue(),
+            },
         )?;
         let playbin = Arc::new(Mutex::new(playbin));
         let bus_watch = Arc::new(Mutex::new(bus_watch));
@@ -208,6 +222,7 @@ impl Player {
             cava_stream_generation: cava_stream_generation.clone(),
             stream_generation: stream_generation.clone(),
             segments: segments.clone(),
+            start_record: Arc::new(Mutex::new(None)),
         });
         let restarting = swap.clone();
         let start_watchdog = StartWatchdog::new(
@@ -254,7 +269,7 @@ impl Player {
                         .playbin
                         .lock()
                         .unwrap_or_else(PoisonError::into_inner);
-                    guard.clone()
+                    guard.element().clone()
                 };
                 if element.current_state() == gst::State::Playing {
                     let position_ms = element
@@ -304,8 +319,9 @@ impl Player {
 
     /// Aborts any in-flight crossfade cleanly: bumps the fade generation (so the
     /// ramp thread notices it is superseded and terminates without touching the
-    /// now-discarded elements), clears the `crossfading` guard, silences and
-    /// drops the incoming secondary pipeline, and restores the (outgoing)
+    /// now-discarded elements), clears the `crossfading` guard, retires the
+    /// incoming secondary pipeline (silencing it without waiting for its
+    /// `Null`, which a stuck source can hold up), and restores the (outgoing)
     /// primary's `volume` to the user's target — the ramp may have faded it down
     /// partway, and whatever plays next on it must be at full requested volume.
     /// Idempotent and safe to call when no crossfade is running.
@@ -318,7 +334,7 @@ impl Player {
             .unwrap_or_else(PoisonError::into_inner)
             .take();
         if let Some(secondary) = secondary {
-            let _ = secondary.set_state(gst::State::Null);
+            secondary.retire();
         }
         let user_volume = *self
             .user_volume
@@ -327,12 +343,12 @@ impl Player {
         self.playbin
             .lock()
             .unwrap_or_else(PoisonError::into_inner)
+            .element()
             .set_property("volume", user_volume);
     }
 
     /// Clears both transition slots: the gapless pre-fed successor *and* any
-    /// in-flight crossfade. Called on every hard restart (`play`,
-    /// `rebuild_playbin`) — a pre-fed/overlapping successor is only valid
+    /// in-flight crossfade. Called on every hard restart (`play`, `stop`) — a pre-fed/overlapping successor is only valid
     /// relative to the track it was queued behind.
     fn reset_transition(&self) {
         self.abort_crossfade();
@@ -341,7 +357,7 @@ impl Player {
     }
 
     /// Clears the gapless slot and the handoff flag. Called on every manual
-    /// jump (`play`) and on `rebuild_playbin`: a pre-fed successor is only valid
+    /// jump (`play`): a pre-fed successor is only valid
     /// relative to the track it was queued behind, so any hard restart
     /// invalidates it (the frontend re-feeds afterwards). Idempotent.
     fn reset_gapless(&self) {
@@ -355,121 +371,34 @@ impl Player {
             .lock()
             .unwrap_or_else(PoisonError::into_inner) = None;
     }
-
-    /// One playback attempt on the *current* pipeline: `Null` → set the new
-    /// URI → `Playing`. Shared by `play`'s first attempt and its post-
-    /// rebuild retry (DRY) — see `play`'s doc comment. A CUE track's
-    /// `segment` is set paused and returns at once: the bus's `ASYNC_DONE`
-    /// seeks to its start and enters `Playing` (see `segment::start_segment`).
-    ///
-    /// Bumps `stream_generation` once the start is accepted (a failed attempt
-    /// never emits an event, nothing to mislabel), still under the `playbin`
-    /// lock: a whole file after `Playing` is entered, a CUE track when its
-    /// paused start is issued (`segment::start_segment`) rather than at
-    /// preroll, so the `StateChanged` below and the bus events that follow
-    /// carry the new one. A position tick already in flight, or a spectrum
-    /// frame from a streaming thread, can still carry the previous generation.
-    fn try_play(
-        &self,
-        uri: &str,
-        live: bool,
-        gain_db: f64,
-        segment: Option<(i64, i64)>,
-    ) -> Result<(), PlaybackError> {
-        let playbin = self
-            .playbin
-            .lock()
-            .unwrap_or_else(std::sync::PoisonError::into_inner);
-        playbin
-            .set_state(gst::State::Null)
-            .map_err(|e| PlaybackError::Backend(format!("GStreamer: {e}")))?;
-        configure_download_buffering(&playbin, uri, live)?;
-        set_playbin_track_gain(&playbin, gain_db)?;
-        playbin.set_property("uri", uri);
-        if let Some(segment) = segment {
-            // The bus finishes the start once the file has prerolled.
-            return segment::start_segment(&playbin, &self.segments, uri, segment);
-        }
-        playbin
-            .set_state(gst::State::Playing)
-            .map_err(|e| PlaybackError::Backend(format!("GStreamer: {e}")))?;
-        self.stream_generation.fetch_add(1, Ordering::SeqCst);
-        drop(playbin);
-        (self.on_event)(PlayerEvent::StateChanged(PlaybackState::Playing));
-        Ok(())
-    }
-
-    fn play_resolved_uri(
-        &self,
-        uri: &str,
-        source: &str,
-        live: bool,
-        gain_db: f64,
-        segment: Option<(i64, i64)>,
-    ) -> Result<(), PlaybackError> {
-        // A manual jump invalidates every gapless/crossfade transition. This
-        // applies equally to local paths and external media.
-        self.reset_transition();
-        self.start_watchdog.disarm();
-        let started = match self.try_play(uri, live, gain_db, segment) {
-            Ok(()) => Ok(()),
-            Err(error) => {
-                tracing::warn!(
-                    %error,
-                    source,
-                    "playback failed; rebuilding pipeline and retrying once"
-                );
-                self.rebuild_playbin()?;
-                self.try_play(uri, live, gain_db, segment)
-            }
-        };
-        if started.is_ok() && start_watchdog::covers(uri, live) {
-            self.start_watchdog
-                .arm(self.stream_generation.load(Ordering::SeqCst));
-        }
-        started
-    }
-
-    /// Discards the current playbin element and replaces it with a freshly
-    /// built one (see `play`'s `## Wedged-pipeline recovery` doc section),
-    /// re-attaching an equivalent bus watch. The position ticker picks up
-    /// the replacement automatically on its next tick (it reads through the
-    /// same `Arc<Mutex<_>>`, not a stale clone — see the `playbin` field's
-    /// doc comment). The discarded element is taken down on a reaper thread.
-    fn rebuild_playbin(&self) -> Result<(), PlaybackError> {
-        // A rebuild is a hard restart: any pre-fed successor and any in-flight
-        // crossfade are now stale.
-        self.reset_transition();
-        self.swap.replace()
-    }
 }
 
 impl PlaybackBackend for Player {
-    /// Starts playback of `path`. On a `set_state(Playing)` failure, retries
-    /// exactly once against a freshly rebuilt pipeline (see `rebuild_
-    /// playbin`) before giving up — see the module's `## Wedged-pipeline
-    /// recovery` note below for why. Transparent to callers either way: they
-    /// only ever see the final `Ok(())`/`Err`.
+    /// Starts playback of `path`.
     ///
-    /// ## Wedged-pipeline recovery (Stage 2 Task 5)
+    /// ## A fresh pipeline per start
     ///
-    /// Empirically (headless `fakesink` E2E, diagnosing a deleted-file
-    /// scenario): once a `playbin3` instance's `set_state(Playing)` fails
-    /// even once — for *any* reason, including simply naming a file that no
-    /// longer exists — every subsequent `Playing` transition on that *same*
-    /// instance also fails, even for a completely valid file afterwards.
-    /// Ruled out as the cause, each individually confirmed not to matter:
-    /// a full `Null` cycle before retrying, blocking on `get_state` until
-    /// fully settled, draining any pending bus messages first, and pumping
-    /// the `glib::MainContext` for 300ms before retrying. The only reliable
-    /// recovery found is discarding the element and building a new one.
-    /// Rebuilding a pipeline obviously can't make a genuinely missing file
-    /// exist, so a real "file not found" still correctly fails the retry
-    /// too (`skip_after_failure` in `ui::player_controller` still marks it
-    /// missing and moves on) — but a merely *wedged* pipeline self-heals
-    /// here instead of silently taking every subsequent queue track down
-    /// with it, which is the actual fault-tolerance property Task 5 exists
-    /// to guarantee (a deleted file must never crash *or dead-end* the app).
+    /// Every start builds a new `playbin3`, puts it in the slot and retires the
+    /// previous one (`pipeline_swap.rs`, `pipeline_queue.rs`). Two reasons.
+    /// A source that is stuck in the kernel (a dead NFS/SMB mount) holds the
+    /// old pipeline's `Null` and its state lock for as long as it likes, and
+    /// nothing on the main context may wait for that. And empirically (headless
+    /// `fakesink` E2E, a deleted-file scenario) a `playbin3` whose
+    /// `set_state(Playing)` failed once fails every later `Playing` on that same
+    /// instance, even for a valid file; a pipeline no start ever sees twice has
+    /// nothing to heal, which retired the wedged-pipeline recovery (rebuild and
+    /// retry once) this method used to have.
+    ///
+    /// ## What `play` waits for
+    ///
+    /// The start itself is a job on the new pipeline's queue. `play` waits at
+    /// most [`START_ANSWER_WAIT`] for its answer. A fast failure such as a
+    /// missing file answers within a millisecond and stays a synchronous `Err`
+    /// (the frontend's `Ok` side effects, scrobble and history, must never run
+    /// for a file that never plays); the failed pipeline is retired with its bus
+    /// watch removed, so its own error never reaches the frontend a second time.
+    /// A start that has not answered by then is `Ok`, left to the watchdog, and
+    /// a late failure arrives on the bus under the new stream generation.
     fn play(&self, item: PlaybackItem<'_>) -> Result<(), PlaybackError> {
         let uri = path_to_uri(item.path)?;
         self.play_resolved_uri(&uri, item.path, false, item.gain_db, item.segment)
@@ -486,53 +415,16 @@ impl PlaybackBackend for Player {
     }
 
     fn toggle_pause(&self) -> Result<PlaybackState, PlaybackError> {
-        let playbin = self
-            .playbin
-            .lock()
-            .unwrap_or_else(std::sync::PoisonError::into_inner);
-        let next = match playbin.current_state() {
-            gst::State::Playing => (gst::State::Paused, PlaybackState::Paused),
-            _ => (gst::State::Playing, PlaybackState::Playing),
-        };
-        playbin
-            .set_state(next.0)
-            .map_err(|e| PlaybackError::Backend(format!("GStreamer: {e}")))?;
-        drop(playbin);
-        (self.on_event)(PlayerEvent::StateChanged(next.1));
-        Ok(next.1)
+        self.toggle_pause_queued()
     }
 
     /// Seeks within the current track. A CUE track's `position_ms` is its
     /// own: the seek lands sample-accurately inside the track's stretch of
     /// the file. A whole file seeks to the nearest key unit, as it always has.
+    /// Waits at most [`START_ANSWER_WAIT`] for the answer; a seek that has not
+    /// been answered by then is an `Err` and stays queued (see `transport.rs`).
     fn seek_to(&self, position_ms: i64) -> Result<(), PlaybackError> {
-        // A seek within the current track abandons any crossfade that may have
-        // begun in its tail (the overlap position no longer applies); the
-        // gapless slot stays valid — we are still on the same track. `next_uri`
-        // is left intact so an already-in-progress fade that consumed it does
-        // not silently lose the successor for the rest of the track.
-        self.abort_crossfade();
-        let (flags, target_ms) = match self.segments.seek_target_ms(position_ms) {
-            Some(CutSeek::Deferred) => return Ok(()),
-            Some(CutSeek::Now(file_position_ms)) => (
-                gst::SeekFlags::FLUSH | gst::SeekFlags::ACCURATE,
-                file_position_ms,
-            ),
-            None => (
-                gst::SeekFlags::FLUSH | gst::SeekFlags::KEY_UNIT,
-                position_ms,
-            ),
-        };
-        let playbin = self.playbin.lock().unwrap_or_else(PoisonError::into_inner);
-        playbin
-            .seek_simple(
-                flags,
-                gst::ClockTime::from_mseconds(target_ms.max(0) as u64),
-            )
-            .map_err(|e| {
-                self.segments.seek_refused();
-                PlaybackError::Backend(format!("GStreamer: {e}"))
-            })
+        self.seek_queued(position_ms)
     }
 
     /// Sets the playback volume and remembers it as the crossfade ramp's target.
@@ -552,6 +444,7 @@ impl PlaybackBackend for Player {
         self.playbin
             .lock()
             .unwrap_or_else(PoisonError::into_inner)
+            .element()
             .set_property("volume", volume);
     }
 
@@ -564,19 +457,31 @@ impl PlaybackBackend for Player {
             .playbin
             .lock()
             .unwrap_or_else(std::sync::PoisonError::into_inner);
-        update_existing_audio_filter(&playbin, &effects)?;
+        update_existing_audio_filter(playbin.element(), &effects)?;
         *current_effects = effects;
         Ok(())
     }
 
     fn set_current_gain_db(&self, gain_db: f64) -> Result<(), PlaybackError> {
         let playbin = self.playbin.lock().unwrap_or_else(PoisonError::into_inner);
-        set_playbin_track_gain(&playbin, gain_db)
+        set_playbin_track_gain(playbin.element(), gain_db)?;
+        // The watchdog starts a hung start over from the record, so it carries
+        // the gain as it is now.
+        if let Some(record) = self
+            .swap
+            .start_record
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .as_mut()
+        {
+            record.gain_db = gain_db;
+        }
+        Ok(())
     }
 
     fn set_spectrum_enabled(&self, enabled: bool) -> Result<(), PlaybackError> {
         let playbin = self.playbin.lock().unwrap_or_else(PoisonError::into_inner);
-        set_playbin_spectrum_messages(&playbin, enabled)?;
+        set_playbin_spectrum_messages(playbin.element(), enabled)?;
         drop(playbin);
         if let Some(incoming) = self
             .incoming
@@ -584,24 +489,14 @@ impl PlaybackBackend for Player {
             .unwrap_or_else(PoisonError::into_inner)
             .as_ref()
         {
-            set_playbin_spectrum_messages(incoming, enabled)?;
+            set_playbin_spectrum_messages(incoming.element(), enabled)?;
         }
         self.spectrum_enabled.store(enabled, Ordering::SeqCst);
         Ok(())
     }
 
     fn stop(&self) -> Result<(), PlaybackError> {
-        // A full stop tears down everything: abort any crossfade (silencing and
-        // dropping the incoming pipeline) and clear the gapless slot.
-        self.reset_transition();
-        self.start_watchdog.disarm();
-        let playbin = self.playbin.lock().unwrap_or_else(PoisonError::into_inner);
-        playbin
-            .set_state(gst::State::Null)
-            .map_err(|e| PlaybackError::Backend(format!("GStreamer: {e}")))?;
-        drop(playbin);
-        (self.on_event)(PlayerEvent::StateChanged(PlaybackState::Stopped));
-        Ok(())
+        self.stop_playback()
     }
 
     /// Pre-feeds the next track's URI into the gapless slot that the

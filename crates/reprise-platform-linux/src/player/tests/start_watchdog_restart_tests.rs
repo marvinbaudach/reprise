@@ -106,11 +106,12 @@ fn a_hung_start_whose_stream_was_replaced_is_not_even_asked_to_restart() {
     });
 }
 
-/// `stop` leaves the generation where it was, so a resume of the same URI that
-/// hangs again looks like the start the old watch was armed for. Only the
-/// `disarm` in `stop` keeps that watch from starting the resume over.
+/// A pause toggle after a `stop` resumes nothing: `stop` leaves an idle
+/// pipeline, which `toggle_pause` leaves alone (the frontend starts again with
+/// `play`, which is a start of its own). The `disarm` in `stop` keeps the old
+/// watch from acting on the stopped start, and nothing arms a new one.
 #[test]
-fn a_hung_resume_after_a_stop_is_not_started_over_by_the_old_watch() {
+fn a_pause_toggle_after_a_stop_resumes_nothing_and_the_old_watch_stays_quiet() {
     on_the_injected_hang(|| {
         // Twice the usual room: a start slow to reach the probe on a loaded
         // machine must not be started over before the `stop`, which would end
@@ -127,18 +128,15 @@ fn a_hung_resume_after_a_stop_is_not_started_over_by_the_old_watch() {
         }
 
         harness.player.stop().unwrap();
-        harness.player.toggle_pause().unwrap();
-        harness.pump_until(PATIENCE, |_| reached.load(Ordering::SeqCst) >= 2);
-        if reached.load(Ordering::SeqCst) < 2 {
-            return false;
-        }
+        let toggled = harness.player.toggle_pause().unwrap();
         let events = harness.pump_for(QUIET_FOR);
 
+        assert_eq!(toggled, PlaybackState::Stopped);
         assert_eq!(harness.player.start_watchdog.restarts(), 0);
         assert_eq!(
             reached.load(Ordering::SeqCst),
-            2,
-            "the old watch started the resume over"
+            1,
+            "a start was made after the stop"
         );
         assert_eq!(errors(&events), 0, "events: {events:?}");
         true
@@ -269,14 +267,47 @@ fn a_play_that_lands_between_the_look_and_the_restart_is_left_to_play() {
         }
         assert_eq!(calls.load(Ordering::SeqCst), 1, "the look must have asked");
         assert_eq!(harness.player.start_watchdog.restarts(), 0);
-        assert_eq!(
+        // The newer `play` built a pipeline of its own, which the restart did
+        // not move (no restart happened), and the hung one is gone.
+        assert_ne!(
             current_playbin(&harness.player),
             hung,
-            "the newer start was moved to another pipeline"
+            "the newer start did not replace the hung pipeline"
         );
         assert_eq!(state_of(&harness.player).0, gst::State::Playing);
         assert_eq!(reached.load(Ordering::SeqCst), 2, "hung start, newer start");
         assert_eq!(errors(&events), 0, "events: {events:?}");
+        true
+    });
+}
+
+/// How long the test lets the stopped pipeline settle before it looks.
+const SETTLE: Duration = Duration::from_millis(1_000);
+
+/// The restart's start is a job on the new pipeline's queue, so a `stop` right
+/// after it is ordered behind that start: the stopped pipeline ends in `Null`,
+/// never in a start that landed after the `Null` (`call_async`, which began a
+/// restart before, orders nothing).
+#[test]
+fn a_stop_right_after_a_restarts_queued_start_leaves_the_stopped_pipeline_in_null() {
+    on_the_injected_hang(|| {
+        let harness = harness_with_deadline(Duration::from_millis(150));
+        let dir = tempfile::tempdir().unwrap();
+        let path = local_track(&dir);
+        let reached = hang_starts(&harness.player, 1);
+        harness.player.play(item(&path)).unwrap();
+        harness.pump_until(PATIENCE, |_| harness.player.start_watchdog.restarts() >= 1);
+        if reached.load(Ordering::SeqCst) == 0 || harness.player.start_watchdog.restarts() == 0 {
+            return false;
+        }
+        let restarted = current_playbin(&harness.player);
+
+        harness.player.stop().unwrap();
+        harness.pump_for(SETTLE);
+
+        assert_eq!(restarted.current_state(), gst::State::Null);
+        assert_ne!(current_playbin(&harness.player), restarted);
+        super::stuck_source_support::assert_every_retired_pipeline_went_down();
         true
     });
 }

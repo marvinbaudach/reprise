@@ -48,6 +48,7 @@ fn play_20a_a_refed_gain_replaces_the_pending_gain_of_the_handoff_in_flight() {
         .playbin
         .lock()
         .unwrap_or_else(PoisonError::into_inner)
+        .element()
         .set_property("uri", path_to_uri(NEXT_PATH).unwrap());
     *player
         .pending_gain
@@ -74,6 +75,7 @@ fn play_20a_a_different_next_track_leaves_the_pending_gain_alone() {
         .playbin
         .lock()
         .unwrap_or_else(PoisonError::into_inner)
+        .element()
         .set_property("uri", path_to_uri("/music/other.flac").unwrap());
     *player
         .pending_gain
@@ -107,7 +109,7 @@ fn play_20b_a_refed_gain_reaches_the_prebuilt_crossfade_secondary() {
     *player
         .incoming
         .lock()
-        .unwrap_or_else(PoisonError::into_inner) = Some(secondary.clone());
+        .unwrap_or_else(PoisonError::into_inner) = Some(Pipeline::new(secondary.clone()));
 
     player.set_next(Some(next_item(REFRESHED_GAIN_DB)));
 
@@ -136,6 +138,7 @@ fn play_20a_a_cue_track_of_the_handed_off_file_leaves_the_pending_gain_alone() {
         .playbin
         .lock()
         .unwrap_or_else(PoisonError::into_inner)
+        .element()
         .set_property("uri", path_to_uri(NEXT_PATH).unwrap());
     *player
         .pending_gain

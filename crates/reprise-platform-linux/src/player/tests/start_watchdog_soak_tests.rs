@@ -92,6 +92,7 @@ fn playing_pipeline(player: &Player) -> bool {
         .playbin
         .lock()
         .unwrap_or_else(PoisonError::into_inner)
+        .element()
         .clone();
     playbin.current_state() == gst::State::Playing
 }
@@ -103,6 +104,7 @@ fn pipeline_state(player: &Player) -> String {
         .playbin
         .lock()
         .unwrap_or_else(PoisonError::into_inner)
+        .element()
         .clone();
     let (change, current, pending) = playbin.state(gst::ClockTime::ZERO);
     format!("pipeline: current={current:?} pending={pending:?} change={change:?}")

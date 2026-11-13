@@ -1,13 +1,15 @@
-//! Replaces the player's playbin with a freshly built one.
+//! Builds the pipelines the player puts into service, and swaps them in.
 //!
-//! Two callers need the same sequence: `Player::rebuild_playbin`, the recovery
-//! from a wedged pipeline, and the start watchdog, which begins a hung start
-//! over on a new pipeline rather than taking the hung one through `Null` in
-//! place. A hung pipeline can be stuck inside a kernel read that `Null` waits
-//! for, and `Null` under the playbin lock on the main context would freeze
-//! every path that wants either. So the retired pipeline is never set to `Null`
-//! here: it is handed to [`super::reaper`], after its bus watch is gone, so
-//! nothing it posts while it winds down reaches the frontend.
+//! Every start of a track is a fresh pipeline (see `Player::play`), so building
+//! one and putting it in the playbin slot is the common path of three callers:
+//! `play`, which starts a track on it; `stop` (and a failed start), which put an
+//! idle one in the slot; and the start watchdog, which begins a hung start over
+//! on a new pipeline rather than taking the hung one through `Null` in place. A
+//! hung pipeline can be stuck inside a kernel read that `Null` waits for, and
+//! `Null` under the playbin lock on the main context would freeze every path
+//! that wants either. So the pipeline that leaves the slot is never set to
+//! `Null` here: it is retired (see `pipeline_queue.rs`), after its bus watch is
+//! gone, so nothing it posts while it winds down reaches the frontend.
 //!
 //! The swap holds only clones of what the player shares, so the watchdog's
 //! timer can own one without keeping a `Player` alive.
@@ -19,20 +21,59 @@ use std::sync::{Arc, Mutex, PoisonError};
 
 use reprise_core::playback::{AudioEffects, PlaybackError, PlayerEvent};
 
-use super::reaper::retire_pipeline;
+use super::pipeline_queue::{Answer, Asked, Pipeline};
 use super::segment::SegmentHandle;
 use super::start_watchdog::{is_hung, RestartRequest, Restarted};
 use crate::crossfade::Transition;
 use crate::gapless::{HandoffFlag, NextUri, PendingGain};
-use crate::player_effects::{set_playbin_spectrum_messages, TRACK_GAIN_NAME};
-use crate::player_pipeline::{attach_bus_watch, build_playbin, configure_download_buffering};
+use crate::player_effects::{set_playbin_spectrum_messages, set_playbin_track_gain};
+use crate::player_pipeline::{
+    attach_bus_watch, build_playbin, configure_download_buffering, CueCompletion,
+};
 
-/// A local file start is never live; only those are begun over.
-const RESTARTED_START_IS_LIVE: bool = false;
+/// What a track's start was, kept so the watchdog can begin it over without
+/// reading it back from a pipeline that may be inside its own stuck state
+/// change (`carry_start` used to read the URI of a hung `playbin3`).
+#[derive(Clone, Debug, PartialEq)]
+pub(super) struct StartRecord {
+    pub(super) uri: String,
+    pub(super) live: bool,
+    pub(super) gain_db: f64,
+    /// The CUE track's stretch of the file; its start goes into `Paused`.
+    pub(super) segment: Option<(i64, i64)>,
+}
 
-/// The shared state a replacement pipeline is built from and installed into.
+impl StartRecord {
+    /// The state the pipeline's start asks for first: a CUE track's file is
+    /// only set to paused, and the preroll completes the start.
+    fn first_state(&self) -> gst::State {
+        if self.segment.is_some() {
+            gst::State::Paused
+        } else {
+            gst::State::Playing
+        }
+    }
+}
+
+/// The record of the start in service, `None` while the pipeline is idle.
+/// Written under the playbin lock, and only ever locked after it.
+pub(super) type StartRecordSlot = Arc<Mutex<Option<StartRecord>>>;
+
+/// The answer to a start's state change.
+pub(super) type StartAnswer = Answer<Result<gst::StateChangeSuccess, gst::StateChangeError>>;
+
+/// A start that has been put in service.
+pub(super) struct Started {
+    /// The stream generation this start is current under.
+    pub(super) generation: u64,
+    /// The element of the pipeline now in the slot.
+    pub(super) element: gst::Element,
+    pub(super) answer: StartAnswer,
+}
+
+/// The shared state a pipeline is built from and installed into.
 pub(super) struct PipelineSwap {
-    pub(super) playbin: Arc<Mutex<gst::Element>>,
+    pub(super) playbin: Arc<Mutex<Pipeline>>,
     /// Held for its `Drop` side effect (removes the bus watch) and replaced
     /// wholesale by every swap, since a `BusWatchGuard` is tied to the specific
     /// `Bus` (and thus element) it was created for. `Arc<Mutex<_>>` rather than
@@ -51,26 +92,112 @@ pub(super) struct PipelineSwap {
     pub(super) cava_stream_generation: Arc<AtomicU64>,
     pub(super) stream_generation: Arc<AtomicU64>,
     pub(super) segments: SegmentHandle,
+    pub(super) start_record: StartRecordSlot,
 }
 
 impl PipelineSwap {
-    /// Discards the current playbin for a freshly built one, for the wedged-
-    /// pipeline recovery (see `Player::play`). The caller has already cleared
-    /// the transition slots, as every hard restart does.
-    pub(super) fn replace(&self) -> Result<(), PlaybackError> {
+    /// Builds a pipeline for the track `record` describes, with its bus watch.
+    pub(super) fn build_for(
+        &self,
+        record: &StartRecord,
+    ) -> Result<(Pipeline, gst::bus::BusWatchGuard), PlaybackError> {
         let (fresh, watch) = self.build()?;
-        let retired = {
+        configure_start(fresh.element(), record)?;
+        Ok((fresh, watch))
+    }
+
+    /// Puts `fresh`, built by [`Self::build_for`] for `record`, in the slot as
+    /// the start of a track, and retires the pipeline it replaces. The start's
+    /// state change is queued before the playbin lock is released, so whatever
+    /// takes the lock next finds the start already on its way.
+    ///
+    /// Under the lock: the user's volume is carried over (a fresh playbin
+    /// starts at its factory volume, 1.0); a CUE track's cut is installed;
+    /// the start record is written; and the stream generation is bumped, once
+    /// per start, whether it goes on to succeed or fail, so a fault of this
+    /// start is never mistaken for the previous stream's by the frontend.
+    pub(super) fn begin_start(
+        &self,
+        fresh: Pipeline,
+        watch: gst::bus::BusWatchGuard,
+        record: StartRecord,
+    ) -> Started {
+        let element = fresh.element().clone();
+        let first_state = record.first_state();
+        let (previous, generation, answer) = {
             let mut playbin = self.playbin.lock().unwrap_or_else(PoisonError::into_inner);
-            // A fresh playbin starts at its factory volume (1.0), so carry the
-            // user's volume over. Read under the playbin lock: a concurrent
-            // `set_volume` has then either already stored its value (seen here)
-            // or applies it to the new element after the swap. Lock order
-            // playbin -> user_volume is safe; no path nests them the other way.
-            self.carry_volume(&fresh);
-            std::mem::replace(&mut *playbin, fresh)
+            // Read under the playbin lock: a concurrent `set_volume` has then
+            // either already stored its value (seen here) or applies it to the
+            // new element after the swap. Lock order playbin -> user_volume is
+            // safe; no path nests them the other way.
+            self.carry_volume(fresh.element());
+            if let Some(segment) = record.segment {
+                self.segments.begin_start(&record.uri, segment);
+            }
+            // The user asked for a track to play; a CUE start's first state is
+            // only the means.
+            fresh.set_asked(Asked::Playing);
+            let answer = fresh.ask(move |element| element.set_state(first_state));
+            let previous = std::mem::replace(&mut *playbin, fresh);
+            *self
+                .start_record
+                .lock()
+                .unwrap_or_else(PoisonError::into_inner) = Some(record);
+            let generation = self.stream_generation.fetch_add(1, Ordering::SeqCst) + 1;
+            (previous, generation, answer)
         };
-        self.retire(retired, watch);
-        Ok(())
+        self.retire(previous, watch);
+        Started {
+            generation,
+            element,
+            answer,
+        }
+    }
+
+    /// Replaces the pipeline whose element is `expected` (any, if `None`) with
+    /// an idle one, and retires it. For `stop`, and for a start that failed:
+    /// the track's pipeline goes the way of every retired pipeline, and what is
+    /// left in the slot is a fresh one that has no source.
+    ///
+    /// Nothing is swapped, and `false` is returned, if the slot no longer holds
+    /// `expected`: whoever took it out has retired it. `Err` means no idle
+    /// pipeline could be built, and the current one is told to go to `Null` on
+    /// its own queue instead.
+    pub(super) fn replace_with_idle(
+        &self,
+        expected: Option<&gst::Element>,
+    ) -> Result<bool, PlaybackError> {
+        let (idle, watch) = match self.build() {
+            Ok(built) => built,
+            Err(error) => {
+                tracing::warn!(%error, "could not build an idle pipeline; taking the current one to Null");
+                self.playbin
+                    .lock()
+                    .unwrap_or_else(PoisonError::into_inner)
+                    .submit(|element| {
+                        let _ = element.set_state(gst::State::Null);
+                    });
+                self.start_record
+                    .lock()
+                    .unwrap_or_else(PoisonError::into_inner)
+                    .take();
+                return Err(error);
+            }
+        };
+        let previous = {
+            let mut playbin = self.playbin.lock().unwrap_or_else(PoisonError::into_inner);
+            if expected.is_some_and(|expected| playbin.element() != expected) {
+                return Ok(false);
+            }
+            self.carry_volume(idle.element());
+            self.start_record
+                .lock()
+                .unwrap_or_else(PoisonError::into_inner)
+                .take();
+            std::mem::replace(&mut *playbin, idle)
+        };
+        self.retire(previous, watch);
+        Ok(true)
     }
 
     /// Begins the hung start of the current pipeline over on a fresh one.
@@ -85,14 +212,26 @@ impl PipelineSwap {
     ///
     /// The stream generation is not bumped (the restart is the same start), the
     /// segment gate is not reset (a CUE start's pending seek must survive),
-    /// and the fresh pipeline gets the old one's URI, gain and download
-    /// flags before it enters the pending state of the one it replaces.
+    /// and the fresh pipeline gets the start from the player's record of it,
+    /// with the track gain as `set_current_gain_db` last made it, not from the
+    /// hung pipeline, which may be inside a state change that never returns.
     ///
-    /// The new pipeline's start runs asynchronously (see below), so `Done`
-    /// means the swap happened and the start was issued, not that it succeeded.
-    /// `Err` therefore always means nothing was swapped: a pipeline that could
-    /// not be built, or could not take the start over. A start that fails after
-    /// the swap is reported by the new pipeline's own bus.
+    /// The new pipeline starts into the state the user asked for: `Paused` if
+    /// they paused during the start (a pause queued behind a start that blocks
+    /// never ran), else the first state of the start. Its start is a job on its
+    /// own queue (see below), so `Done` means the swap happened and the start
+    /// was issued, not that it succeeded. `Err` therefore always means nothing
+    /// was swapped: a pipeline that could not be built, or could not take the
+    /// start over. A start that fails after the swap is reported by the new
+    /// pipeline's own bus, whose watch is installed below, so the failure
+    /// reaches the frontend once.
+    ///
+    /// The start is a job on the new pipeline's queue and not a state change
+    /// made here: it opens the source, and a source blocked in `open()` (a dead
+    /// mount, a FIFO nobody writes) keeps the change from returning. Waiting
+    /// for it here would freeze the main context and every path that wants this
+    /// lock. Queued under the lock, so a `stop` that takes it next finds the
+    /// start already on its way and its `Null` ordered behind it.
     pub(super) fn restart_hung_start(
         &self,
         request: &RestartRequest<'_>,
@@ -100,42 +239,49 @@ impl PipelineSwap {
         let (fresh, watch) = self.build()?;
         let retired = {
             let mut playbin = self.playbin.lock().unwrap_or_else(PoisonError::into_inner);
-            let (_, current, pending) = playbin.state(gst::ClockTime::ZERO);
+            let (_, current, pending) = playbin.element().state(gst::ClockTime::ZERO);
             let same_stream = self.stream_generation.load(Ordering::SeqCst) == request.generation;
             if !(request.still_armed)() || !same_stream || !is_hung(current, pending) {
                 // `fresh` and its watch never left this scope; dropped unused.
                 return Ok(Restarted::StoodDown);
             }
-            carry_start(&playbin, &fresh)?;
-            self.carry_volume(&fresh);
-            let retired = std::mem::replace(&mut *playbin, fresh.clone());
-            // Queued under the lock, so a `stop` that takes it next finds the
-            // start already on its way, but run on a thread of the element's
-            // own: the change opens the source, and a source blocked in
-            // `open()` (a dead mount, a FIFO nobody writes) keeps the change
-            // from returning. Waiting for it here would freeze the main
-            // context and every path that wants this lock. A failing change
-            // puts its error on the fresh pipeline's bus, whose watch is
-            // installed below, so the failure reaches the frontend once.
-            fresh.call_async(move |element| {
-                if let Err(error) = element.set_state(pending) {
-                    tracing::warn!(%error, ?pending, "the restarted start's state change failed");
+            let Some(record) = self
+                .start_record
+                .lock()
+                .unwrap_or_else(PoisonError::into_inner)
+                .clone()
+            else {
+                return Ok(Restarted::StoodDown);
+            };
+            configure_start(fresh.element(), &record)?;
+            self.carry_volume(fresh.element());
+            let asked = playbin.asked();
+            fresh.set_asked(asked);
+            let target = if asked == Asked::Paused {
+                gst::State::Paused
+            } else {
+                record.first_state()
+            };
+            fresh.submit(move |element| {
+                if let Err(error) = element.set_state(target) {
+                    tracing::warn!(%error, ?target, "the restarted start's state change failed");
                 }
             });
-            retired
+            std::mem::replace(&mut *playbin, fresh)
         };
         self.retire(retired, watch);
         Ok(Restarted::Done)
     }
 
-    /// Builds a pipeline like the current one and attaches its bus watch.
-    fn build(&self) -> Result<(gst::Element, gst::bus::BusWatchGuard), PlaybackError> {
+    /// Builds a pipeline like the current one, with no track, and attaches its
+    /// bus watch.
+    pub(super) fn build(&self) -> Result<(Pipeline, gst::bus::BusWatchGuard), PlaybackError> {
         let effects = self
             .effects
             .lock()
             .unwrap_or_else(PoisonError::into_inner)
             .clone();
-        let fresh = build_playbin(
+        let element = build_playbin(
             &effects,
             self.next_uri.clone(),
             self.handoff_pending.clone(),
@@ -144,18 +290,26 @@ impl PipelineSwap {
             self.pending_gain.clone(),
             self.segments.clone(),
         )?;
-        set_playbin_spectrum_messages(&fresh, self.spectrum_enabled.load(Ordering::SeqCst))?;
+        // From here on a failure drops the pipeline, which retires it.
+        let fresh = Pipeline::new(element);
+        set_playbin_spectrum_messages(
+            fresh.element(),
+            self.spectrum_enabled.load(Ordering::SeqCst),
+        )?;
         let watch = attach_bus_watch(
-            &fresh,
+            fresh.element(),
             self.on_event.clone(),
             self.handoff_pending.clone(),
             self.crossfading.clone(),
             self.spectrum_enabled.clone(),
             self.cava_stream_generation.clone(),
-            self.segments.clone(),
+            CueCompletion {
+                segments: self.segments.clone(),
+                queue: fresh.queue(),
+            },
         )?;
         #[cfg(test)]
-        test_seam::built(&fresh);
+        test_seam::built(fresh.element());
         Ok((fresh, watch))
     }
 
@@ -168,53 +322,43 @@ impl PipelineSwap {
     }
 
     /// Swapping the guard drops the retired pipeline's bus watch, and only then
-    /// does the pipeline go to the reaper: nothing it posts on the way down
-    /// reaches the handler.
+    /// is the pipeline retired: nothing it posts on the way down reaches the
+    /// handler.
     ///
     /// The bus watch is not the only thing the retired pipeline still carries:
-    /// until the reaper's `Null` lands, which can be never on a dead source,
-    /// its CAVA appsink callback, its gain-switch probe and its segment-boundary
-    /// probe stay installed. They are harmless. Its pads go flushing as `Null`
-    /// begins, so nothing more arrives for them to act on. A hard start such as
-    /// a restart has no `pending_gain` (it is `None`), so the gain switch has
-    /// nothing to apply to the shared state. And no CUE handoff is staged on a
-    /// start, so the boundary probe has none to complete.
-    fn retire(&self, retired: gst::Element, watch: gst::bus::BusWatchGuard) {
+    /// until its `Null` lands, which can be never on a dead source, its CAVA
+    /// appsink callback, its gain-switch probe and its segment-boundary probe
+    /// stay installed. They are harmless. Its pads go flushing as `Null`
+    /// begins, so nothing more arrives for them to act on. A hard start has no
+    /// `pending_gain` (it is `None`), so the gain switch has nothing to apply
+    /// to the shared state. And no CUE handoff is staged on a start, so the
+    /// boundary probe has none to complete.
+    fn retire(&self, retired: Pipeline, watch: gst::bus::BusWatchGuard) {
         *self
             .bus_watch
             .lock()
             .unwrap_or_else(PoisonError::into_inner) = watch;
-        retire_pipeline(retired);
+        retired.retire();
     }
 }
 
-/// Gives `fresh` what a start set on `old`: the URI, the download-buffering
-/// flags and the track gain as the old pipeline holds it now, which a gain
-/// refreshed after the start has already updated.
-fn carry_start(old: &gst::Element, fresh: &gst::Element) -> Result<(), PlaybackError> {
-    let uri = old
-        .property::<Option<String>>("uri")
-        .ok_or_else(|| PlaybackError::Backend("GStreamer: the hung start has no URI".into()))?;
-    configure_download_buffering(fresh, &uri, RESTARTED_START_IS_LIVE)?;
-    track_gain(fresh)?.set_property("volume", track_gain(old)?.property::<f64>("volume"));
-    fresh.set_property("uri", uri.as_str());
+/// Gives `fresh` what a start sets: the download-buffering flags, the track gain
+/// and the URI.
+pub(super) fn configure_start(
+    fresh: &gst::Element,
+    record: &StartRecord,
+) -> Result<(), PlaybackError> {
+    configure_download_buffering(fresh, &record.uri, record.live)?;
+    set_playbin_track_gain(fresh, record.gain_db)?;
+    fresh.set_property("uri", record.uri.as_str());
     Ok(())
-}
-
-/// The element that applies the track's gain, inside the audio filter.
-fn track_gain(playbin: &gst::Element) -> Result<gst::Element, PlaybackError> {
-    playbin
-        .property::<Option<gst::Element>>("audio-filter")
-        .and_then(|filter| filter.downcast::<gst::Bin>().ok())
-        .and_then(|bin| bin.by_name(TRACK_GAIN_NAME))
-        .ok_or_else(|| PlaybackError::Backend("GStreamer: audio filter has no track gain".into()))
 }
 
 /// Test seam: lets a test reach every pipeline a swap builds before it starts,
 /// the way it reaches the first one by hand. A probe or a signal handler put on
-/// the first pipeline does not follow a start over to its replacement.
-/// Process-global, which is safe because every test that swaps holds
-/// `AUDIO_SINK_TEST_LOCK` for its whole life.
+/// the first pipeline does not follow a start to its fresh pipeline, and every
+/// start builds one. Process-global, which is safe because every test that
+/// swaps holds `AUDIO_SINK_TEST_LOCK` for its whole life.
 #[cfg(test)]
 pub(super) mod test_seam {
     use super::*;

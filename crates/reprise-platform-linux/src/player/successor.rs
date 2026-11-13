@@ -27,6 +27,7 @@ impl Player {
             .playbin
             .lock()
             .unwrap_or_else(PoisonError::into_inner)
+            .element()
             .clone();
         if let Some(segment) = queued.segment {
             if !self
@@ -54,7 +55,8 @@ impl Player {
             .incoming
             .lock()
             .unwrap_or_else(PoisonError::into_inner)
-            .clone();
+            .as_ref()
+            .map(|secondary| secondary.element().clone());
         let Some(secondary) = incoming else {
             return false;
         };

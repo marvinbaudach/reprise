@@ -18,7 +18,15 @@ use std::io::Write;
 use std::os::fd::AsRawFd;
 use std::os::unix::fs::OpenOptionsExt;
 use std::sync::mpsc::{channel, Sender};
+use std::sync::{Arc, Condvar, Mutex};
 use std::time::{Duration, Instant};
+
+use gstreamer::prelude::*;
+
+use super::segment_support::gain_of;
+
+use gstreamer as gst;
+use std::sync::PoisonError;
 
 use crate::player::reaper;
 
@@ -40,6 +48,8 @@ const WAV_HEADER_LEN: u32 = 44;
 const WAV_DECLARED_DATA: u32 = 1 << 24;
 const SAMPLE_RATE: u32 = 44_100;
 const BYTES_PER_SAMPLE: u32 = 2;
+/// About a second of 16-bit mono silence.
+const SILENCE_BYTES: usize = (SAMPLE_RATE * BYTES_PER_SAMPLE) as usize;
 /// Room for the header and the silence in the pipe, so the test's own writes
 /// never block (the system's maximum for an unprivileged process is 1 MiB).
 const PIPE_CAPACITY_BYTES: libc::c_int = 1 << 20;
@@ -62,6 +72,19 @@ pub(super) fn wav_header() -> Vec<u8> {
     header
 }
 
+/// Makes the pipe behind `writer` big enough for `len` bytes, so writing them
+/// never blocks the test, whatever has or has not been read.
+fn grow_pipe_to_hold(writer: &std::fs::File, len: usize) {
+    // SAFETY: `fcntl` with `F_SETPIPE_SZ` only reads the integer argument and
+    // the descriptor, which `writer` keeps open for the call.
+    let capacity =
+        unsafe { libc::fcntl(writer.as_raw_fd(), libc::F_SETPIPE_SZ, PIPE_CAPACITY_BYTES) };
+    assert!(
+        usize::try_from(capacity).is_ok_and(|bytes| bytes >= len),
+        "the pipe cannot hold the fixture's content, so writing it would block"
+    );
+}
+
 /// A FIFO with a writer that stays open and silent until released.
 pub(super) struct StuckFifo {
     release: Option<Sender<()>>,
@@ -82,6 +105,13 @@ impl StuckFifo {
         Self::with_content(path, open_for, &wav_header())
     }
 
+    /// [`Self::make`], with about a second of silent samples behind the header:
+    /// a pipeline reads them, prerolls and reaches `Playing`, and only then
+    /// does its source block in `read()`.
+    pub(super) fn after_playing(path: &std::path::Path) -> Self {
+        Self::with_content(path, STUCK_FOR, &header_and_a_second_of_silence())
+    }
+
     fn with_content(path: &std::path::Path, open_for: Duration, content: &[u8]) -> Self {
         make_fifo(path);
         let mut writer = std::fs::OpenOptions::new()
@@ -90,14 +120,7 @@ impl StuckFifo {
             .custom_flags(libc::O_CLOEXEC)
             .open(path)
             .unwrap();
-        // SAFETY: `fcntl` with `F_SETPIPE_SZ` only reads the integer argument
-        // and the descriptor, which `writer` keeps open for the call.
-        let capacity =
-            unsafe { libc::fcntl(writer.as_raw_fd(), libc::F_SETPIPE_SZ, PIPE_CAPACITY_BYTES) };
-        assert!(
-            usize::try_from(capacity).is_ok_and(|bytes| bytes >= content.len()),
-            "the pipe cannot hold the fixture's content, so writing it would block"
-        );
+        grow_pipe_to_hold(&writer, content.len());
         writer.write_all(content).unwrap();
         let (release, released) = channel::<()>();
         let path = path.to_owned();
@@ -134,6 +157,50 @@ pub(super) fn longest_gap(beats: &[Instant]) -> Duration {
         .map(|pair| pair[1].duration_since(pair[0]))
         .max()
         .unwrap_or(Duration::ZERO)
+}
+
+/// A `glib::timeout_add` heartbeat on the main context, recording when it
+/// fired. Only fires while something pumps the main context.
+pub(super) struct Heartbeat {
+    beats: Arc<Mutex<Vec<Instant>>>,
+    source: Option<gst::glib::SourceId>,
+}
+
+impl Heartbeat {
+    pub(super) fn start() -> Self {
+        let beats = Arc::new(Mutex::new(vec![Instant::now()]));
+        let recorded = beats.clone();
+        let source = gst::glib::timeout_add(HEARTBEAT, move || {
+            recorded
+                .lock()
+                .unwrap_or_else(PoisonError::into_inner)
+                .push(Instant::now());
+            gst::glib::ControlFlow::Continue
+        });
+        Self {
+            beats,
+            source: Some(source),
+        }
+    }
+
+    /// The longest gap so far, the stretch up to now included.
+    pub(super) fn longest_gap(&self) -> Duration {
+        let mut beats = self
+            .beats
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .clone();
+        beats.push(Instant::now());
+        longest_gap(&beats)
+    }
+}
+
+impl Drop for Heartbeat {
+    fn drop(&mut self) {
+        if let Some(source) = self.source.take() {
+            source.remove();
+        }
+    }
 }
 
 /// How many descriptors of this process point at `path`.
@@ -176,10 +243,15 @@ pub(super) struct OpenerRelease {
 
 impl OpenerRelease {
     pub(super) fn at(path: &std::path::Path) -> Self {
+        Self::after(path, STUCK_FOR)
+    }
+
+    /// [`Self::at`], with the clock set to `release_after`.
+    pub(super) fn after(path: &std::path::Path, release_after: Duration) -> Self {
         let (release, released) = channel::<()>();
         let path = path.to_owned();
         let releaser = std::thread::spawn(move || {
-            let _ = released.recv_timeout(STUCK_FOR);
+            let _ = released.recv_timeout(release_after);
             release_openers(&path);
         });
         Self {
@@ -187,16 +259,21 @@ impl OpenerRelease {
             releaser: Some(releaser),
         }
     }
-}
 
-impl Drop for OpenerRelease {
-    fn drop(&mut self) {
+    /// Releases the openers now rather than when dropped.
+    pub(super) fn release_now(&mut self) {
         if let Some(release) = self.release.take() {
             let _ = release.send(());
         }
         if let Some(releaser) = self.releaser.take() {
             let _ = releaser.join();
         }
+    }
+}
+
+impl Drop for OpenerRelease {
+    fn drop(&mut self) {
+        self.release_now();
     }
 }
 
@@ -212,4 +289,106 @@ pub(super) fn assert_every_retired_pipeline_went_down() {
         0,
         "a retired pipeline was never taken down"
     );
+}
+
+/// The writer that finally shows up for a FIFO whose reader is blocked in
+/// `open()`: it opens the FIFO (which wakes the reader), writes `content` and
+/// stays open and silent, so the reader then blocks in `read()` for the rest.
+/// Dropped, it takes the name away and closes.
+pub(super) struct LateWriter {
+    path: std::path::PathBuf,
+    writer: Option<std::fs::File>,
+}
+
+impl LateWriter {
+    pub(super) fn arrive(path: &std::path::Path, content: &[u8]) -> Self {
+        let writer = std::fs::OpenOptions::new()
+            .read(true)
+            .write(true)
+            .custom_flags(libc::O_CLOEXEC)
+            .open(path)
+            .ok()
+            .map(|mut writer| {
+                grow_pipe_to_hold(&writer, content.len());
+                let _ = writer.write_all(content);
+                writer
+            });
+        Self {
+            path: path.to_owned(),
+            writer,
+        }
+    }
+}
+
+impl Drop for LateWriter {
+    fn drop(&mut self) {
+        let _ = std::fs::remove_file(&self.path);
+        drop(self.writer.take());
+    }
+}
+
+/// About a second of 16-bit mono silence behind a WAV header: what a source
+/// that played for a moment before it stalled has delivered.
+pub(super) fn header_and_a_second_of_silence() -> Vec<u8> {
+    let mut content = wav_header();
+    content.resize(content.len() + SILENCE_BYTES, 0);
+    content
+}
+
+/// A stall inside the streaming thread, on a source that can be sought: a
+/// FIFO cannot be (its seek is refused at once), so a seek test stalls the
+/// streaming thread in a buffer probe instead. Like a `filesrc` blocked in
+/// `read()`, the thread keeps the stream lock a flushing seek needs, and a
+/// flush does not wake it. The stall lets go when told to, or by the clock.
+#[derive(Clone, Default)]
+pub(super) struct StreamStall {
+    state: Arc<(Mutex<StallState>, Condvar)>,
+}
+
+#[derive(Clone, Copy, Default, PartialEq, Eq)]
+enum StallState {
+    #[default]
+    Idle,
+    Armed,
+    Released,
+}
+
+impl StreamStall {
+    /// Puts the stalling probe on the gain element's sink pad of `playbin`.
+    pub(super) fn install_on(&self, playbin: &gst::Element) {
+        let state = self.state.clone();
+        gain_of(playbin).static_pad("sink").unwrap().add_probe(
+            gst::PadProbeType::BUFFER,
+            move |_, _| {
+                let (lock, released) = &*state;
+                let mut guard = lock.lock().unwrap_or_else(PoisonError::into_inner);
+                if *guard == StallState::Armed {
+                    let (woken, _) = released
+                        .wait_timeout_while(guard, STUCK_FOR, |state| *state == StallState::Armed)
+                        .unwrap_or_else(PoisonError::into_inner);
+                    guard = woken;
+                }
+                drop(guard);
+                gst::PadProbeReturn::Ok
+            },
+        );
+    }
+
+    /// The next buffer to reach the probe stays there until [`Self::release`].
+    pub(super) fn arm(&self) {
+        *self.state.0.lock().unwrap_or_else(PoisonError::into_inner) = StallState::Armed;
+    }
+
+    pub(super) fn release(&self) {
+        *self.state.0.lock().unwrap_or_else(PoisonError::into_inner) = StallState::Released;
+        self.state.1.notify_all();
+    }
+}
+
+impl Drop for StreamStall {
+    fn drop(&mut self) {
+        if Arc::strong_count(&self.state) == 1 {
+            self.release();
+        }
+    }
 }

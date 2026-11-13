@@ -7,6 +7,7 @@ use crate::player_pipeline::{
 use reprise_core::playback::{PlaybackFailureKind, PlaybackItem, PlaybackSessionId};
 
 mod cava_tests;
+mod crossfade_stuck_source_tests;
 mod crossfade_transition_fallback_tests;
 mod crossfade_transition_tests;
 mod gain_alignment_tests;
@@ -31,6 +32,7 @@ mod start_watchdog_soak_tests;
 mod start_watchdog_tests;
 mod stream_generation_tests;
 mod stuck_source_support;
+mod transport_freeze_tests;
 
 fn item(path: &str) -> PlaybackItem<'_> {
     PlaybackItem {
@@ -366,7 +368,9 @@ fn enabling_equalizer_does_not_replace_or_rewind_pipeline() {
         let playbin = player
             .playbin
             .lock()
-            .unwrap_or_else(std::sync::PoisonError::into_inner);
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .element()
+            .clone();
         let _ = playbin.state(gst::ClockTime::from_seconds(5));
     }
     player.seek_to(500).unwrap();
@@ -376,7 +380,9 @@ fn enabling_equalizer_does_not_replace_or_rewind_pipeline() {
         let playbin = player
             .playbin
             .lock()
-            .unwrap_or_else(std::sync::PoisonError::into_inner);
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .element()
+            .clone();
         (
             playbin.property::<Option<gst::Element>>("audio-filter"),
             playbin
@@ -395,7 +401,9 @@ fn enabling_equalizer_does_not_replace_or_rewind_pipeline() {
     let playbin = player
         .playbin
         .lock()
-        .unwrap_or_else(std::sync::PoisonError::into_inner);
+        .unwrap_or_else(std::sync::PoisonError::into_inner)
+        .element()
+        .clone();
     let filter_after = playbin.property::<Option<gst::Element>>("audio-filter");
     let position_after = playbin
         .query_position::<gst::ClockTime>()
@@ -437,6 +445,7 @@ fn live_audio_effect_change_preserves_a_playable_pipeline() {
         .playbin
         .lock()
         .unwrap_or_else(std::sync::PoisonError::into_inner)
+        .element()
         .property::<Option<gst::Element>>("audio-filter")
         .unwrap();
     let adjusted = AudioEffects {
@@ -448,7 +457,9 @@ fn live_audio_effect_change_preserves_a_playable_pipeline() {
     let playbin = player
         .playbin
         .lock()
-        .unwrap_or_else(std::sync::PoisonError::into_inner);
+        .unwrap_or_else(std::sync::PoisonError::into_inner)
+        .element()
+        .clone();
     let filter_after = playbin
         .property::<Option<gst::Element>>("audio-filter")
         .unwrap();
@@ -467,8 +478,8 @@ fn live_audio_effect_change_preserves_a_playable_pipeline() {
     std::env::remove_var(AUDIO_SINK_ENV_VAR);
 }
 
-/// Stage 2 Task 5 regression test for the wedged-pipeline recovery (see
-/// `Player::play`'s doc comment): a failed `play()` against a
+/// Stage 2 Task 5 regression test for the fault tolerance a deleted file
+/// needs (see `Player::play`'s doc comment: a fresh pipeline per start): a failed `play()` against a
 /// nonexistent file must not take down subsequent, valid `play()` calls
 /// on the same `Player` instance. Holds `AUDIO_SINK_TEST_LOCK` for its
 /// full duration — see that lock's doc comment for why.
@@ -498,8 +509,8 @@ fn play_recovers_after_a_failed_attempt() {
     assert!(
         player.play(item(valid_path)).is_ok(),
         "a valid file must still play successfully after a prior failure \
-             on the same Player — this is the wedged-pipeline recovery this \
-             test guards against regressing"
+             on the same Player — a failed start must not take later ones down \
+             with it"
     );
 
     let playing_timeout = Duration::from_secs(5);
@@ -591,37 +602,29 @@ fn play_20a_gapless_handoff_applies_the_next_gain_at_the_second_stream_start() {
     handoff_duration_tests::write_sine_wav(&second, 1);
     let stream_start_gains = Arc::new(Mutex::new(Vec::new()));
     let observed = stream_start_gains.clone();
-    let playbin = player
-        .playbin
-        .lock()
-        .unwrap_or_else(PoisonError::into_inner)
-        .clone();
-    let filter = playbin
-        .property::<Option<gst::Element>>("audio-filter")
-        .unwrap();
-    let gain = filter
-        .clone()
-        .downcast::<gst::Bin>()
-        .unwrap()
-        .by_name("reprise-track-gain")
-        .unwrap();
-    gain.static_pad("src").unwrap().add_probe(
-        gst::PadProbeType::EVENT_DOWNSTREAM,
-        move |_, info| {
-            if info
-                .event()
-                .is_some_and(|event| event.type_() == gst::EventType::StreamStart)
-            {
-                observed
-                    .lock()
-                    .unwrap_or_else(PoisonError::into_inner)
-                    .push(gain.property::<f64>("volume"));
-            }
-            gst::PadProbeReturn::Ok
-        },
-    );
-    // A start that hangs in READY is begun over in place, on the pipeline the
-    // probe above is on: the watchdog would put it on a new one.
+    // On the pipeline of every start: each start builds a fresh one.
+    segment_support::on_every_pipeline(&player, move |playbin| {
+        let observed = observed.clone();
+        let gain = segment_support::gain_of(playbin);
+        let probed = gain.clone();
+        gain.static_pad("src").unwrap().add_probe(
+            gst::PadProbeType::EVENT_DOWNSTREAM,
+            move |_, info| {
+                if info
+                    .event()
+                    .is_some_and(|event| event.type_() == gst::EventType::StreamStart)
+                {
+                    observed
+                        .lock()
+                        .unwrap_or_else(PoisonError::into_inner)
+                        .push(probed.property::<f64>("volume"));
+                }
+                gst::PadProbeReturn::Ok
+            },
+        );
+    });
+    // A start that hangs in READY is begun over, and every start builds a new
+    // pipeline, which the probe above follows.
     segment_support::start_over_when_hung(&player, || {
         player
             .play(PlaybackItem {
@@ -690,7 +693,9 @@ fn play_20a_gapless_handoff_applies_the_next_gain_at_the_second_stream_start() {
     let playbin = player
         .playbin
         .lock()
-        .unwrap_or_else(std::sync::PoisonError::into_inner);
+        .unwrap_or_else(std::sync::PoisonError::into_inner)
+        .element()
+        .clone();
     let current_uri = playbin.property::<Option<String>>("current-uri");
     assert!(
         current_uri

@@ -23,6 +23,11 @@ use super::stuck_source_support::{
 use super::*;
 use crate::player::start_watchdog::is_hung;
 
+/// How many restarts the test watches the main context across: the first
+/// onto a pipeline whose `open()` blocks, and the second, which finds that
+/// pipeline hung in its turn and begins the start over again (#1327).
+const RESTARTS_WATCHED: u64 = 2;
+
 /// Roomy for the first open to have happened before the look finds the start
 /// hung, short enough to keep the test brief.
 const DEADLINE: Duration = Duration::from_millis(400);
@@ -62,7 +67,8 @@ fn a_restart_whose_new_pipeline_blocks_in_open_does_not_freeze_the_main_context(
     });
     let began = Instant::now();
     harness.pump_until(PATIENCE, |_| {
-        harness.player.start_watchdog.restarts() >= 1 || began.elapsed() > STUCK_FOR * 2
+        harness.player.start_watchdog.restarts() >= RESTARTS_WATCHED
+            || began.elapsed() > STUCK_FOR * 2
     });
     harness.pump_for(WATCH_AFTER_RESTART);
     heartbeat.remove();
@@ -79,8 +85,8 @@ fn a_restart_whose_new_pipeline_blocks_in_open_does_not_freeze_the_main_context(
         "the main context stood still for {gap:?} while the restart's own start blocked in open()"
     );
     assert!(
-        restarts >= 1,
-        "the watchdog never restarted the stuck start"
+        restarts >= RESTARTS_WATCHED,
+        "the watchdog did not restart the stuck start twice ({restarts})"
     );
     assert!(
         is_hung(current, pending),

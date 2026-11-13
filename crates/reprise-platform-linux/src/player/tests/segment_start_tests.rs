@@ -3,7 +3,9 @@
 //! These exercise the actual `playbin3`/`flacparse` path. An error here is
 //! the backend event that makes the frontend skip an existing track.
 
-use super::segment_support::{cue_item, encode_flac, gain_element, write_regions_wav, Harness};
+use super::segment_support::{
+    count, cue_item, encode_flac, gain_of, on_every_pipeline, write_regions_wav, Harness,
+};
 use super::*;
 use std::sync::atomic::AtomicUsize;
 
@@ -85,19 +87,23 @@ fn play_22_a_zero_start_does_not_flush_the_prerolled_flac_parser() {
     let segment_events = Arc::new(AtomicUsize::new(0));
     let harness = Harness::new();
     let counted = segment_events.clone();
-    gain_element(&harness.player)
-        .static_pad("src")
-        .unwrap()
-        .add_probe(gst::PadProbeType::EVENT_DOWNSTREAM, move |_, info| {
-            if matches!(
-                &info.data,
-                Some(gst::PadProbeData::Event(event))
-                    if matches!(event.view(), gst::EventView::Segment(_))
-            ) {
-                counted.fetch_add(1, Ordering::SeqCst);
-            }
-            gst::PadProbeReturn::Ok
-        });
+    // On the pipeline of every start: each start builds a fresh one.
+    on_every_pipeline(&harness.player, move |playbin| {
+        let counted = counted.clone();
+        gain_of(playbin).static_pad("src").unwrap().add_probe(
+            gst::PadProbeType::EVENT_DOWNSTREAM,
+            move |_, info| {
+                if matches!(
+                    &info.data,
+                    Some(gst::PadProbeData::Event(event))
+                        if matches!(event.view(), gst::EventView::Segment(_))
+                ) {
+                    counted.fetch_add(1, Ordering::SeqCst);
+                }
+                gst::PadProbeReturn::Ok
+            },
+        );
+    });
 
     let album = fixture("sine.flac");
     // A start that hangs in READY is begun again; the SEGMENT events the
@@ -141,19 +147,23 @@ fn play_22_a_cue_track_is_not_announced_playing_until_its_start_seek_lands() {
         }
     });
     let counted = segment_events.clone();
-    gain_element(&harness.player)
-        .static_pad("src")
-        .unwrap()
-        .add_probe(gst::PadProbeType::EVENT_DOWNSTREAM, move |_, info| {
-            if matches!(
-                &info.data,
-                Some(gst::PadProbeData::Event(event))
-                    if matches!(event.view(), gst::EventView::Segment(_))
-            ) {
-                counted.fetch_add(1, Ordering::SeqCst);
-            }
-            gst::PadProbeReturn::Ok
-        });
+    // On the pipeline of every start: each start builds a fresh one.
+    on_every_pipeline(&harness.player, move |playbin| {
+        let counted = counted.clone();
+        gain_of(playbin).static_pad("src").unwrap().add_probe(
+            gst::PadProbeType::EVENT_DOWNSTREAM,
+            move |_, info| {
+                if matches!(
+                    &info.data,
+                    Some(gst::PadProbeData::Event(event))
+                        if matches!(event.view(), gst::EventView::Segment(_))
+                ) {
+                    counted.fetch_add(1, Ordering::SeqCst);
+                }
+                gst::PadProbeReturn::Ok
+            },
+        );
+    });
 
     let album = fixture("sine.flac");
     harness.start(|| {
@@ -227,4 +237,54 @@ fn play_22_flac_cue_tracks_start_reliably_cold_and_after_a_whole_file() {
     whole_file_control.assert_clean("whole-file control");
     cold_cue.assert_clean("cold CUE start");
     hard_change_cue.assert_clean("CUE start after whole-file EOS");
+}
+
+/// Where the tone of the file starts, and where the CUE track of this test
+/// does: a nonzero start, so the start completes through a seek.
+const PAUSED_CUE: (i64, i64) = (2_000, 4_000);
+
+/// A CUE start the user paused before its preroll finished stays paused after
+/// `complete_start`: it enters the state last asked for, not `Playing` out of
+/// habit. A pause toggle that follows resumes it.
+#[test]
+fn play_22_a_cue_start_paused_before_its_preroll_stays_paused() {
+    use super::start_watchdog_tests::state_of;
+
+    let harness = Harness::new();
+    let directory = tempfile::tempdir().unwrap();
+    let path = directory.path().join("album.wav");
+    write_regions_wav(&path, &[(2_000, false), (2_000, true)]);
+
+    harness.start(|| {
+        harness
+            .player
+            .play(cue_item(&path, PAUSED_CUE, 0.0))
+            .unwrap();
+        assert_eq!(
+            harness.player.toggle_pause().unwrap(),
+            PlaybackState::Paused
+        );
+    });
+    // The preroll, the start seek and its own landing all pass in this time.
+    let events = harness.pump_for(Duration::from_millis(1_500));
+    let settled = state_of(&harness.player);
+    let playing_events = count(&events, |event| {
+        matches!(event, PlayerEvent::StateChanged(PlaybackState::Playing))
+    });
+
+    assert_eq!(
+        settled,
+        (gst::State::Paused, gst::State::VoidPending),
+        "the start must finish in the state the user asked for"
+    );
+    assert_eq!(playing_events, 0, "events: {events:?}");
+
+    assert_eq!(
+        harness.player.toggle_pause().unwrap(),
+        PlaybackState::Playing
+    );
+    harness.pump_until(HANG_GUARD, |_| {
+        state_of(&harness.player).0 == gst::State::Playing
+    });
+    assert_eq!(state_of(&harness.player).0, gst::State::Playing);
 }

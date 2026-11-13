@@ -340,6 +340,7 @@ fn ac_29_stream_start_invalidates_the_previous_cava_history() {
         .playbin
         .lock()
         .unwrap_or_else(std::sync::PoisonError::into_inner)
+        .element()
         .clone();
 
     playbin
