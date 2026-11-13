@@ -139,6 +139,7 @@ impl PipelineSwap {
             fresh.set_asked(Asked::Playing);
             let answer = fresh.ask(move |element| element.set_state(first_state));
             let previous = std::mem::replace(&mut *playbin, fresh);
+            self.install_watch(watch);
             *self
                 .start_record
                 .lock()
@@ -146,7 +147,7 @@ impl PipelineSwap {
             let generation = self.stream_generation.fetch_add(1, Ordering::SeqCst) + 1;
             (previous, generation, answer)
         };
-        self.retire(previous, watch);
+        previous.retire();
         Started {
             generation,
             element,
@@ -194,9 +195,11 @@ impl PipelineSwap {
                 .lock()
                 .unwrap_or_else(PoisonError::into_inner)
                 .take();
-            std::mem::replace(&mut *playbin, idle)
+            let previous = std::mem::replace(&mut *playbin, idle);
+            self.install_watch(watch);
+            previous
         };
-        self.retire(previous, watch);
+        previous.retire();
         Ok(true)
     }
 
@@ -267,9 +270,11 @@ impl PipelineSwap {
                     tracing::warn!(%error, ?target, "the restarted start's state change failed");
                 }
             });
-            std::mem::replace(&mut *playbin, fresh)
+            let retired = std::mem::replace(&mut *playbin, fresh);
+            self.install_watch(watch);
+            retired
         };
-        self.retire(retired, watch);
+        retired.retire();
         Ok(Restarted::Done)
     }
 
@@ -321,11 +326,19 @@ impl PipelineSwap {
         fresh.set_property("volume", user_volume);
     }
 
-    /// Swapping the guard drops the retired pipeline's bus watch, and only then
-    /// is the pipeline retired: nothing it posts on the way down reaches the
-    /// handler.
+    /// Swapping the guard drops the replaced pipeline's bus watch, so nothing
+    /// that pipeline posts on the way down reaches the handler; the caller
+    /// retires it afterwards, with the lock released.
     ///
-    /// The bus watch is not the only thing the retired pipeline still carries:
+    /// Called with the playbin lock held, in the same critical section as the
+    /// swap of the pipeline: a swap and its watch are one step. Done after the
+    /// lock was released, a `play` that landed in between would have its fresh
+    /// pipeline's watch overwritten by the watch of the pipeline it retired,
+    /// and that track would never report its end. Lock order playbin ->
+    /// bus_watch; no path nests them the other way, and dropping a guard only
+    /// destroys a source.
+    ///
+    /// The bus watch is not the only thing a retired pipeline still carries:
     /// until its `Null` lands, which can be never on a dead source, its CAVA
     /// appsink callback, its gain-switch probe and its segment-boundary probe
     /// stay installed. They are harmless. Its pads go flushing as `Null`
@@ -333,12 +346,11 @@ impl PipelineSwap {
     /// `pending_gain` (it is `None`), so the gain switch has nothing to apply
     /// to the shared state. And no CUE handoff is staged on a start, so the
     /// boundary probe has none to complete.
-    fn retire(&self, retired: Pipeline, watch: gst::bus::BusWatchGuard) {
+    fn install_watch(&self, watch: gst::bus::BusWatchGuard) {
         *self
             .bus_watch
             .lock()
             .unwrap_or_else(PoisonError::into_inner) = watch;
-        retired.retire();
     }
 }
 

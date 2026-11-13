@@ -169,6 +169,13 @@ impl CrossfadeEngine {
                 return;
             };
             let old = std::mem::replace(&mut *primary, promoted);
+            // The watch swaps with the pipeline, under the same lock: a `play`
+            // that lands after it must find its own watch where it put it.
+            // Replaces the old primary's guard, whose drop removes the old watch.
+            *self
+                .bus_watch
+                .lock()
+                .unwrap_or_else(PoisonError::into_inner) = new_watch;
             // Bumped here, under the same `playbin` lock as the swap, not when
             // the secondary silently started minutes/seconds earlier: until
             // this instant `self.playbin` (and thus every `Position` tick the
@@ -181,14 +188,8 @@ impl CrossfadeEngine {
             secondary.set_property("volume", user_volume);
             old
         };
-        // Replaces the old primary's watch guard (whose drop removes the old
-        // watch) with the new one's, and only then retires the old pipeline,
-        // with the lock free: its `Null` can take as long as a stuck source
-        // likes.
-        *self
-            .bus_watch
-            .lock()
-            .unwrap_or_else(PoisonError::into_inner) = new_watch;
+        // Retired with the lock free: its `Null` can take as long as a stuck
+        // source likes.
         old.retire();
         self.crossfading.store(false, Ordering::SeqCst);
         (self.on_event)(PlayerEvent::AdvancedToNext);

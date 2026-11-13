@@ -70,3 +70,50 @@ fn a_start_after_a_failed_start_plays_at_the_users_volume() {
         "the start after a failed start must carry the user's volume, got {volume}"
     );
 }
+
+/// Posts an end-of-stream on the bus of the pipeline in the slot and reports
+/// whether the player said `TrackFinished` for it: the bus is watched only if
+/// the guard the player holds is the one of this pipeline.
+fn slot_pipeline_reports_its_end(harness: &segment_support::Harness) -> bool {
+    let bus = current_playbin(&harness.player).bus().unwrap();
+    bus.post(gst::message::Eos::new()).unwrap();
+    harness
+        .pump_until(Duration::from_secs(5), |events| {
+            segment_support::count(events, |event| matches!(event, PlayerEvent::TrackFinished)) > 0
+        })
+        .iter()
+        .any(|event| matches!(event, PlayerEvent::TrackFinished))
+}
+
+use super::segment_support;
+use super::start_watchdog_tests::current_playbin;
+
+/// A swap and its bus watch are one step: after every kind of swap (a start, a
+/// `stop`, a failed start's idle pipeline) the pipeline in the slot is the one
+/// whose watch the player holds, so its end is never lost.
+#[test]
+fn the_pipeline_in_the_slot_always_has_its_bus_watched() {
+    let harness = segment_support::Harness::new();
+    assert!(
+        slot_pipeline_reports_its_end(&harness),
+        "the first pipeline"
+    );
+
+    harness.player.play(item(VALID)).unwrap();
+    assert!(slot_pipeline_reports_its_end(&harness), "after a start");
+
+    harness.player.stop().unwrap();
+    assert!(slot_pipeline_reports_its_end(&harness), "after a stop");
+
+    assert!(harness.player.play(item(MISSING)).is_err());
+    assert!(
+        slot_pipeline_reports_its_end(&harness),
+        "after a failed start"
+    );
+
+    harness.player.play(item(VALID)).unwrap();
+    assert!(
+        slot_pipeline_reports_its_end(&harness),
+        "after another start"
+    );
+}

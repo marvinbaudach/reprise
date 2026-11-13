@@ -225,6 +225,8 @@ fn a_play_that_lands_between_the_look_and_the_restart_is_left_to_play() {
         let reached = hang_starts(&harness.player, 1);
         let reached_at_the_ask = Arc::new(AtomicUsize::new(0));
         let (in_the_gap, play_now) = std::sync::mpsc::channel::<()>();
+        // The pipeline the newer `play` put in the slot, as it returned.
+        let newer_pipeline_slot = Mutex::new(None::<gst::Element>);
         let (played, newer_played) = std::sync::mpsc::channel::<()>();
         let newer_played = Mutex::new(newer_played);
         let (seen_at_the_ask, reached_now) = (reached_at_the_ask.clone(), reached.clone());
@@ -246,10 +248,14 @@ fn a_play_that_lands_between_the_look_and_the_restart_is_left_to_play() {
 
         let player = &harness.player;
         let newer_path = newer_path.to_str().unwrap();
+        let newer_pipeline = &newer_pipeline_slot;
         let events = std::thread::scope(|scope| {
             scope.spawn(move || {
                 if play_now.recv_timeout(PATIENCE).is_ok() {
                     player.play(item(newer_path)).unwrap();
+                    *newer_pipeline
+                        .lock()
+                        .unwrap_or_else(PoisonError::into_inner) = Some(current_playbin(player));
                 }
                 let _ = played.send(());
             });
@@ -267,12 +273,22 @@ fn a_play_that_lands_between_the_look_and_the_restart_is_left_to_play() {
         }
         assert_eq!(calls.load(Ordering::SeqCst), 1, "the look must have asked");
         assert_eq!(harness.player.start_watchdog.restarts(), 0);
-        // The newer `play` built a pipeline of its own, which the restart did
-        // not move (no restart happened), and the hung one is gone.
+        // Every `play` builds a pipeline of its own; the restart must not have
+        // moved the newer start off the one it was put on.
+        let newer = newer_pipeline_slot
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .clone();
+        assert_ne!(newer, None, "the newer play did not run");
         assert_ne!(
-            current_playbin(&harness.player),
-            hung,
-            "the newer start did not replace the hung pipeline"
+            newer,
+            Some(hung.clone()),
+            "the newer start reused the hung pipeline"
+        );
+        assert_eq!(
+            Some(current_playbin(&harness.player)),
+            newer,
+            "the newer start was moved to another pipeline"
         );
         assert_eq!(state_of(&harness.player).0, gst::State::Playing);
         assert_eq!(reached.load(Ordering::SeqCst), 2, "hung start, newer start");
