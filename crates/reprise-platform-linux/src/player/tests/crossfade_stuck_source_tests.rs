@@ -20,6 +20,8 @@ use std::time::Instant;
 /// given way, so only the bound can have ended the wait.
 const OPEN_RELEASED_AFTER: Duration = Duration::from_secs(12);
 const FADE_SECONDS: u8 = 2;
+/// The longest the playbin lock may keep a main-context call waiting.
+const LOCK_WAIT: Duration = Duration::from_millis(200);
 const OUTGOING_MS: u32 = 4_000;
 /// What a `play` may take on the main context: the answer bound plus slack.
 const PLAY_BOUND: Duration = Duration::from_millis(START_ANSWER_WAIT.as_millis() as u64 + 350);
@@ -147,10 +149,17 @@ fn a_promotion_retires_the_outgoing_pipeline_with_the_playbin_lock_free() {
     player.set_next(Some(item(&second)));
     // The outgoing stream stalls once the fade has begun: from then on its
     // `Null` hangs, and the promotion is what retires it.
+    // Something that needs the playbin lock is asked for all the while, and
+    // the longest wait for it is kept: the promotion must never hold the lock
+    // across the outgoing pipeline's `Null`.
+    let longest_lock_wait = std::cell::Cell::new(Duration::ZERO);
     let events = harness.pump_until(PATIENCE, |events| {
         if player.crossfading.load(Ordering::SeqCst) {
             stall.arm();
         }
+        let asked = Instant::now();
+        let _ = player.set_spectrum_enabled(false);
+        longest_lock_wait.set(longest_lock_wait.get().max(asked.elapsed()));
         count(events, advanced) > 0
     });
     let began = Instant::now();
@@ -163,8 +172,13 @@ fn a_promotion_retires_the_outgoing_pipeline_with_the_playbin_lock_free() {
 
     assert_eq!(count(&events, advanced), 1, "events: {events:?}");
     assert!(
-        volume_took < Duration::from_millis(200),
-        "set_volume waited {volume_took:?} for the playbin lock after the promotion"
+        volume_took < LOCK_WAIT,
+        "set_volume waited {volume_took:?} after the promotion"
+    );
+    assert!(
+        longest_lock_wait.get() < LOCK_WAIT,
+        "the playbin lock was held for {:?} across the outgoing pipeline's Null",
+        longest_lock_wait.get()
     );
     assert!(gap < MAX_GAP, "the main context stood still for {gap:?}");
 }
