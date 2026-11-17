@@ -16,6 +16,8 @@
 
 use gstreamer as gst;
 use gstreamer::prelude::*;
+#[cfg(test)]
+use std::sync::atomic::AtomicUsize;
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::{Arc, Mutex, PoisonError};
 
@@ -172,12 +174,15 @@ impl PipelineSwap {
             Ok(built) => built,
             Err(error) => {
                 tracing::warn!(%error, "could not build an idle pipeline; taking the current one to Null");
-                self.playbin
-                    .lock()
-                    .unwrap_or_else(PoisonError::into_inner)
-                    .submit(|element| {
-                        let _ = element.set_state(gst::State::Null);
-                    });
+                // One critical section: the pipeline is told to go down, is
+                // no longer asked to play, and has no start to begin over, so
+                // a later `toggle_pause` does not start the stopped track
+                // again on the pipeline that is still in the slot.
+                let playbin = self.playbin.lock().unwrap_or_else(PoisonError::into_inner);
+                playbin.set_asked(Asked::Idle);
+                playbin.submit(|element| {
+                    let _ = element.set_state(gst::State::Null);
+                });
                 self.start_record
                     .lock()
                     .unwrap_or_else(PoisonError::into_inner)
@@ -281,6 +286,12 @@ impl PipelineSwap {
     /// Builds a pipeline like the current one, with no track, and attaches its
     /// bus watch.
     pub(super) fn build(&self) -> Result<(Pipeline, gst::bus::BusWatchGuard), PlaybackError> {
+        #[cfg(test)]
+        if test_seam::build_fails() {
+            return Err(PlaybackError::Backend(
+                "test: the build was made to fail".into(),
+            ));
+        }
         let effects = self
             .effects
             .lock()
@@ -370,7 +381,7 @@ pub(super) fn configure_start(
 }
 
 /// Test seam: lets a test reach every pipeline a swap builds before it starts,
-/// the way it reaches the first one by hand. A probe or a signal handler put on
+/// the way it reaches the first one by hand, and make a build fail. A probe or a signal handler put on
 /// the first pipeline does not follow a start to its fresh pipeline, and every
 /// start builds one. Process-global, which is safe because every test that
 /// swaps holds `AUDIO_SINK_TEST_LOCK` for its whole life.
@@ -394,6 +405,24 @@ pub(super) mod test_seam {
     /// Removes every hook.
     pub(in crate::player) fn clear() {
         BUILT.lock().unwrap_or_else(PoisonError::into_inner).clear();
+        FAIL_BUILDS.store(0, Ordering::SeqCst);
+    }
+
+    static FAIL_BUILDS: AtomicUsize = AtomicUsize::new(0);
+
+    /// Makes the next `builds` calls of [`PipelineSwap::build`] fail, until
+    /// [`clear`].
+    pub(in crate::player) fn fail_next_builds(builds: usize) {
+        FAIL_BUILDS.store(builds, Ordering::SeqCst);
+    }
+
+    /// Whether this build is one a test made fail; counts it off.
+    pub(super) fn build_fails() -> bool {
+        FAIL_BUILDS
+            .fetch_update(Ordering::SeqCst, Ordering::SeqCst, |left| {
+                left.checked_sub(1)
+            })
+            .is_ok()
     }
 
     pub(super) fn built(fresh: &gst::Element) {

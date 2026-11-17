@@ -31,6 +31,7 @@ mod start_watchdog_freeze_tests;
 mod start_watchdog_restart_tests;
 mod start_watchdog_soak_tests;
 mod start_watchdog_tests;
+mod stop_fallback_tests;
 mod stream_generation_tests;
 mod stuck_source_support;
 mod transport_freeze_tests;
