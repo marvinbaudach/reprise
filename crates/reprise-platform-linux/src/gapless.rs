@@ -59,13 +59,13 @@ pub(crate) type HandoffFlag = Arc<AtomicBool>;
 /// füttert das Frontend gar keinen Nachfolger, sodass hier ebenfalls nichts zu
 /// tun ist; der strikte `== Gapless`-Check ist die sichere Formulierung davon.
 ///
-/// **Nur für das aktuelle Pipeline:** `retirement` gehört zum playbin, an dem der
-/// Handler hängt. Ein ausgemustertes Pipeline läuft bis sein `Null` ankommt
-/// weiter und kann `about-to-finish` noch feuern — es darf dann weder den
-/// Nachfolger entnehmen, den das Frontend für das ablösende Pipeline gefüttert
-/// hat, noch dessen Gain oder die Generation anfassen. Die Prüfung steht unter
-/// dem `next_uri`-Lock, direkt vor dem `take()`: ein `set_next`, das nach dem
-/// Ausmustern speichert, sieht das Flag also schon gesetzt.
+/// **Current pipeline only:** `retirement` belongs to the playbin this handler
+/// is attached to. A retired pipeline keeps running until its `Null` arrives and
+/// may still fire `about-to-finish`; it must then neither take the successor the
+/// frontend fed for the pipeline that replaced it, nor touch that successor's
+/// gain or the generation. The check sits under the `next_uri` lock, right
+/// before the `take()`: a `set_next` that stores after retirement therefore
+/// already sees the flag set.
 ///
 /// Das emittierende Element kommt aus `values[0]` (statt den playbin in seinen
 /// eigenen Signal-Handler zu capturen — das erzeugte einen Referenzzyklus, der
