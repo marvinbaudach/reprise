@@ -112,7 +112,7 @@ impl PlayerController {
             consecutive_episode_skips: Cell::new(0),
             fault_probe: RefCell::new(disk_probe()),
             pending_fault_toasts: Cell::new(0),
-            deferred_stop_toast: RefCell::new(None),
+            deferred_toasts: RefCell::new(Vec::new()),
             mpris_state,
             agent_queue_state,
             now_playing: Rc::new(RefCell::new(None)),

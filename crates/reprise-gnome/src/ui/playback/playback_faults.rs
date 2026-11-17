@@ -43,10 +43,12 @@
 //! the kernel call lasts, but freezes nothing. A fault whose row is already gone
 //! starts no probe and shows no toast.
 //!
-//! The skip-limit stop toast comes last. The faults of a run are skipped at
-//! once, so the stop can happen while their toasts are still pending; it is
-//! held back until every one of them has been shown (`pending_fault_toasts`,
-//! `deferred_stop_toast`), at most [`FAULT_PROBE_WAIT`] later.
+//! The run's closing toasts come last: the skip-limit stop and the summary of
+//! skipped unplayable episodes. The faults of a run are skipped at once, so
+//! these can be due while the fault toasts are still pending; they are held
+//! back, in order, until every fault toast has been shown
+//! (`pending_fault_toasts`, `deferred_toasts`), at most [`FAULT_PROBE_WAIT`]
+//! later.
 //!
 //! ## When the skip count resets
 //!
@@ -124,7 +126,7 @@ impl PlayerController {
     pub(in crate::ui) fn flush_episode_skip_toast(&self) {
         let count = take_episode_skip_count(&self.consecutive_episode_skips);
         if count > 0 {
-            self.show_toast(&strings::skipped_unplayable_episodes(count));
+            self.show_after_pending_fault_toasts(strings::skipped_unplayable_episodes(count));
         }
     }
 
@@ -247,8 +249,8 @@ impl PlayerController {
     }
 
     /// Shows a fault's one toast and, when it was the last one pending, the
-    /// stop toast that was waiting behind it. The stop text leaves its cell in
-    /// its own statement, so no borrow is alive when the toast reaches GTK.
+    /// closing toasts that were waiting behind it. They leave their cell in
+    /// their own statement, so no borrow is alive when a toast reaches GTK.
     fn settle_fault_toast(&self, text: &str) {
         self.show_fault_toast(text);
         let pending = self.pending_fault_toasts.get().saturating_sub(1);
@@ -256,19 +258,20 @@ impl PlayerController {
         if pending > 0 {
             return;
         }
-        let stop = self.deferred_stop_toast.borrow_mut().take();
-        if let Some(stop) = stop {
-            self.show_fault_toast(&stop);
+        let deferred = std::mem::take(&mut *self.deferred_toasts.borrow_mut());
+        for text in deferred {
+            self.show_fault_toast(&text);
         }
     }
 
-    /// The skip-limit stop toast: now when no fault toast is pending, else
-    /// after the last of them (`settle_fault_toast`).
-    fn show_stop_toast(&self, text: String) {
+    /// A toast that closes a run (the skip-limit stop, the skipped-episodes
+    /// summary): now when no fault toast is pending, else after the last of
+    /// them (`settle_fault_toast`), so it is never overtaken by one.
+    fn show_after_pending_fault_toasts(&self, text: String) {
         if self.pending_fault_toasts.get() == 0 {
             self.show_fault_toast(&text);
         } else {
-            *self.deferred_stop_toast.borrow_mut() = Some(text);
+            self.deferred_toasts.borrow_mut().push(text);
         }
     }
 
@@ -309,9 +312,9 @@ impl PlayerController {
             let episode_skips = take_episode_skip_count(&self.consecutive_episode_skips);
             self.reset_to_stopped();
             if episode_skips > 0 {
-                self.show_stop_toast(strings::skipped_unplayable_episodes(episode_skips));
+                self.show_after_pending_fault_toasts(strings::skipped_unplayable_episodes(episode_skips));
             } else {
-                self.show_stop_toast(strings::text(strings::PLAYBACK_STOPPED_TOO_MANY_UNPLAYABLE));
+                self.show_after_pending_fault_toasts(strings::text(strings::PLAYBACK_STOPPED_TOO_MANY_UNPLAYABLE));
             }
             return;
         }

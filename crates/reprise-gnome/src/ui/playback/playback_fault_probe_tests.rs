@@ -280,3 +280,43 @@ fn the_stop_toast_waits_for_the_fault_toasts_still_pending() {
         "every fault toast, then the single stop"
     );
 }
+
+#[test]
+#[ignore = "requires a display; run via xvfb-run"]
+fn the_skipped_episodes_summary_waits_for_the_fault_toasts_still_pending() {
+    let fixture = playing_repeat_all_queue();
+    let controller = &fixture.controller;
+    let open = Arc::new(AtomicBool::new(false));
+    *controller.fault_probe.borrow_mut() = Arc::new({
+        let open = open.clone();
+        move |_| {
+            let give_up = Instant::now() + PROBE_GATE_LIMIT;
+            while !open.load(Ordering::SeqCst) && Instant::now() < give_up {
+                std::thread::sleep(HEARTBEAT);
+            }
+            FaultProbeAnswer::FilePresent
+        }
+    });
+    recorded_fault_toasts();
+
+    controller.handle_unplayable_track(FAULTED);
+    controller.consecutive_episode_skips.set(2);
+    controller.flush_episode_skip_toast();
+    assert!(
+        recorded_fault_toasts().is_empty(),
+        "the summary does not overtake the fault toast still pending"
+    );
+
+    spin(FAULT_PROBE_WAIT + SETTLE);
+    open.store(true, Ordering::SeqCst);
+    spin(SETTLE);
+
+    assert_eq!(
+        recorded_fault_toasts(),
+        vec![
+            strings::could_not_play_toast("Track 41"),
+            strings::skipped_unplayable_episodes(2),
+        ],
+        "the fault toast, then the summary"
+    );
+}

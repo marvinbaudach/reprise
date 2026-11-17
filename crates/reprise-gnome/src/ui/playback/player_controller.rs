@@ -340,9 +340,10 @@ pub struct PlayerController {
     pub(in crate::ui) fault_probe: RefCell<FaultProbe>,
     /// Faults whose one toast has not been shown yet (`playback_faults.rs`).
     pub(in crate::ui) pending_fault_toasts: Cell<usize>,
-    /// The skip-limit stop toast, held back until `pending_fault_toasts`
-    /// reaches zero so that it is always the last toast of a run.
-    pub(in crate::ui) deferred_stop_toast: RefCell<Option<String>>,
+    /// The toasts that close a run (skip-limit stop, skipped-episodes summary),
+    /// held back in order until `pending_fault_toasts` reaches zero so that
+    /// they are always the last toasts of a run.
+    pub(in crate::ui) deferred_toasts: RefCell<Vec<String>>,
     /// Shared with `mpris.rs`'s D-Bus thread — see the module's `## MPRIS`
     /// doc section. Written by `mpris_mirror.rs`'s `update_mpris_mirror`,
     /// never read directly here (the MPRIS thread is the only reader).
