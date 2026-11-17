@@ -68,21 +68,22 @@ impl Player {
             ),
         };
         let segments = self.segments.clone();
-        let answer = self
-            .playbin
-            .lock()
-            .unwrap_or_else(PoisonError::into_inner)
-            .ask(move |element| {
+        let answer = {
+            let playbin = self.playbin.lock().unwrap_or_else(PoisonError::into_inner);
+            let queue = playbin.queue();
+            playbin.ask(move |element| {
                 let sought = element.seek_simple(
                     flags,
                     gst::ClockTime::from_mseconds(target_ms.max(0) as u64),
                 );
                 if sought.is_err() {
-                    // The job clears the flag itself, so a late refusal does too.
-                    segments.seek_refused();
+                    // The job clears the flag itself, so a late refusal does too
+                    // (unless its pipeline has been retired meanwhile).
+                    segments.seek_refused(&queue);
                 }
                 sought
-            });
+            })
+        };
         match answer.wait(START_ANSWER_WAIT) {
             Some(Ok(())) => Ok(()),
             Some(Err(error)) => Err(PlaybackError::Backend(format!("GStreamer: {error}"))),

@@ -103,3 +103,67 @@ fn a_stop_during_the_state_change_is_not_answered_with_playing() {
     let events = events_of(Interruption::Stop);
     assert_eq!(playing(&events), 0, "events: {events:?}");
 }
+
+/// A pipeline already taken out of service, with a way into its queue and the
+/// element a late job of it would still be handed. The element is in `Null`,
+/// so a seek on it is refused.
+fn retired_pipeline() -> (gst::Element, QueueHandle) {
+    gst::init().unwrap();
+    let element = gst::parse::launch("audiotestsrc ! fakesink").unwrap();
+    let pipeline = Pipeline::new(element.clone());
+    let queue = pipeline.queue();
+    pipeline.retire();
+    assert!(queue.is_retired());
+    (element, queue)
+}
+
+/// A gate holding what a newer CUE start has installed: its cut, and its
+/// start-seek still to come.
+fn gate_with_a_newer_start() -> Arc<SegmentGate> {
+    let gate = SegmentGate::new(Arc::new(|_| {}), Arc::new(AtomicU64::new(0)));
+    gate.begin_start("file:///newer.flac", (5_000, 9_000));
+    gate
+}
+
+#[test]
+fn a_retired_starts_refused_seek_leaves_a_newer_starts_pending_state_intact() {
+    let (element, queue) = retired_pipeline();
+    let gate = gate_with_a_newer_start();
+
+    // The late job of the retired pipeline: its seek to the old track's start
+    // is refused, and it must not clear the newer start's pending seek.
+    gate.finish_start(&element, &queue, Some(1_000));
+
+    assert_eq!(
+        gate.lock().pending_start_ms,
+        Some(5_000),
+        "a retired pipeline's late refusal wiped the newer start's pending seek"
+    );
+}
+
+#[test]
+fn a_retired_pipelines_refused_seek_leaves_the_newer_streams_seek_in_flight() {
+    let (_element, queue) = retired_pipeline();
+    let gate = gate_with_a_newer_start();
+    gate.lock().seek_in_flight = true;
+
+    gate.seek_refused(&queue);
+
+    assert!(
+        gate.lock().seek_in_flight,
+        "a retired pipeline's late refusal ended the newer stream's seek wait"
+    );
+}
+
+#[test]
+fn a_current_pipelines_refused_seek_ends_its_wait() {
+    gst::init().unwrap();
+    let element = gst::parse::launch("audiotestsrc ! fakesink").unwrap();
+    let pipeline = Pipeline::new(element);
+    let gate = gate_with_a_newer_start();
+    gate.lock().seek_in_flight = true;
+
+    gate.seek_refused(&pipeline.queue());
+
+    assert!(!gate.lock().seek_in_flight);
+}

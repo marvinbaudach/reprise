@@ -335,6 +335,12 @@ impl SegmentGate {
             match playbin.seek_simple(gst::SeekFlags::FLUSH | gst::SeekFlags::ACCURATE, start) {
                 Ok(()) => return,
                 Err(error) => {
+                    // A retired pipeline's refusal comes after a newer start has
+                    // made the gate its own; what it would clear is that
+                    // start's pending seek.
+                    if queue.is_retired() {
+                        return;
+                    }
                     let mut state = self.lock();
                     state.pending_start_ms = None;
                     state.start_seek_ms = None;
@@ -448,8 +454,13 @@ impl SegmentGate {
     }
 
     /// A seek [`Self::seek_target_ms`] asked for was refused: no flush will
-    /// come to end the wait it started.
-    pub(crate) fn seek_refused(&self) {
+    /// come to end the wait it started. `queue` is the pipeline that refused
+    /// it: a retired one answers late, after a newer stream has made the gate
+    /// its own, and the wait it clears would be that stream's.
+    pub(crate) fn seek_refused(&self, queue: &QueueHandle) {
+        if queue.is_retired() {
+            return;
+        }
         self.lock().seek_in_flight = false;
     }
 
