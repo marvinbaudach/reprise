@@ -177,9 +177,15 @@ impl PipelineSwap {
                 // One critical section: the pipeline is told to go down, is
                 // no longer asked to play, and has no start to begin over, so
                 // a later `toggle_pause` does not start the stopped track
-                // again on the pipeline that is still in the slot.
+                // again on the pipeline that is still in the slot. Its bus watch
+                // is replaced by one that says nothing, as a swap would: a late
+                // error of the stopped start must not reach the frontend.
+                let silent = silent_watch();
                 let playbin = self.playbin.lock().unwrap_or_else(PoisonError::into_inner);
                 playbin.set_asked(Asked::Idle);
+                if let Some(silent) = silent {
+                    self.install_watch(silent);
+                }
                 playbin.submit(|element| {
                     let _ = element.set_state(gst::State::Null);
                 });
@@ -365,6 +371,19 @@ impl PipelineSwap {
             .bus_watch
             .lock()
             .unwrap_or_else(PoisonError::into_inner) = watch;
+    }
+}
+
+/// A bus watch that delivers nothing, to take the place of one that must stop
+/// delivering without a pipeline to replace its own with. Dropping the guard it
+/// replaces removes that watch.
+fn silent_watch() -> Option<gst::bus::BusWatchGuard> {
+    match gst::Bus::new().add_watch(|_, _| gst::glib::ControlFlow::Continue) {
+        Ok(guard) => Some(guard),
+        Err(error) => {
+            tracing::warn!(%error, "could not silence the stopped pipeline's bus watch");
+            None
+        }
     }
 }
 
