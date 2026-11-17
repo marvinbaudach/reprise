@@ -14,7 +14,7 @@ use super::playback_fault_probe::{FaultProbe, FaultProbeAnswer};
 use super::playback_fault_progress_tests::{
     playing_repeat_all_queue, stalled_start, Fixture, TRACKS,
 };
-use super::playback_faults::{recorded_fault_toasts, FAULT_PROBE_WAIT};
+use super::playback_faults::{recorded_fault_toasts, FAULT_PROBE_WAIT, MAX_FAULT_PROBES_IN_FLIGHT};
 use crate::ui::strings;
 
 /// The longest the main context may go without running a heartbeat before the
@@ -213,7 +213,9 @@ fn the_skip_limit_still_stops_with_a_single_too_many_unplayable_toast() {
     for _ in 0..TRACKS.len() * 2 {
         controller.apply_event(stalled_start());
     }
-    spin(SETTLE);
+    // The run's faults happen in one call stack, so the probes past the bound
+    // never start and their toasts come from the overdue timer.
+    spin(FAULT_PROBE_WAIT + SETTLE);
 
     let toasts = recorded_fault_toasts();
     let stopped = strings::text(strings::PLAYBACK_STOPPED_TOO_MANY_UNPLAYABLE);
@@ -318,5 +320,108 @@ fn the_skipped_episodes_summary_waits_for_the_fault_toasts_still_pending() {
             strings::skipped_unplayable_episodes(2),
         ],
         "the fault toast, then the summary"
+    );
+}
+
+/// A probe that counts its calls and blocks until `open` is set, bounded by
+/// [`PROBE_GATE_LIMIT`] so a test that never opens it still ends.
+fn gated_probe(open: &Arc<AtomicBool>, calls: &Arc<AtomicUsize>) -> FaultProbe {
+    let (open, calls) = (open.clone(), calls.clone());
+    Arc::new(move |_| {
+        calls.fetch_add(1, Ordering::SeqCst);
+        let give_up = Instant::now() + PROBE_GATE_LIMIT;
+        while !open.load(Ordering::SeqCst) && Instant::now() < give_up {
+            std::thread::sleep(HEARTBEAT);
+        }
+        FaultProbeAnswer::FilePresent
+    })
+}
+
+#[test]
+#[ignore = "requires a display; run via xvfb-run"]
+fn probes_in_flight_are_bounded_and_every_fault_still_gets_one_toast() {
+    let fixture = playing_repeat_all_queue();
+    let controller = &fixture.controller;
+    let (open, probes) = (
+        Arc::new(AtomicBool::new(false)),
+        Arc::new(AtomicUsize::new(0)),
+    );
+    *controller.fault_probe.borrow_mut() = gated_probe(&open, &probes);
+    recorded_fault_toasts();
+
+    assert!(TRACKS.len() > MAX_FAULT_PROBES_IN_FLIGHT);
+    for id in TRACKS {
+        controller.handle_unplayable_track(id);
+    }
+    spin(SETTLE);
+    assert_eq!(
+        probes.load(Ordering::SeqCst),
+        MAX_FAULT_PROBES_IN_FLIGHT,
+        "no probe past the bound while the others are blocked"
+    );
+
+    spin(FAULT_PROBE_WAIT);
+    let neutral = strings::could_not_play_toast;
+    let mut expected: Vec<String> = TRACKS
+        .iter()
+        .map(|id| neutral(&format!("Track {id}")))
+        .collect();
+    let toasts = recorded_fault_toasts();
+    let stopped = strings::text(strings::PLAYBACK_STOPPED_TOO_MANY_UNPLAYABLE);
+    if toasts.last() == Some(&stopped) {
+        expected.push(stopped);
+    }
+    assert_eq!(
+        toasts, expected,
+        "one neutral toast per fault, the stop (if any) last"
+    );
+
+    open.store(true, Ordering::SeqCst);
+    spin(SETTLE);
+    assert!(
+        recorded_fault_toasts().is_empty(),
+        "the late answers add no toast"
+    );
+
+    controller.handle_unplayable_track(TRACKS[0]);
+    spin(SETTLE);
+    assert_eq!(
+        probes.load(Ordering::SeqCst),
+        MAX_FAULT_PROBES_IN_FLIGHT + 1,
+        "a released slot probes again"
+    );
+    let fault_toasts: Vec<String> = recorded_fault_toasts()
+        .into_iter()
+        .filter(|toast| *toast != strings::text(strings::PLAYBACK_STOPPED_TOO_MANY_UNPLAYABLE))
+        .collect();
+    assert_eq!(
+        fault_toasts,
+        vec![neutral("Track 41")],
+        "and its answer shows the one toast"
+    );
+}
+
+#[test]
+#[ignore = "requires a display; run via xvfb-run"]
+fn a_track_already_being_probed_starts_no_second_probe() {
+    let fixture = playing_repeat_all_queue();
+    let controller = &fixture.controller;
+    let (open, probes) = (
+        Arc::new(AtomicBool::new(false)),
+        Arc::new(AtomicUsize::new(0)),
+    );
+    *controller.fault_probe.borrow_mut() = gated_probe(&open, &probes);
+    recorded_fault_toasts();
+
+    controller.handle_unplayable_track(FAULTED);
+    controller.handle_unplayable_track(FAULTED);
+    spin(SETTLE);
+    assert_eq!(probes.load(Ordering::SeqCst), 1);
+
+    spin(FAULT_PROBE_WAIT);
+    assert_eq!(
+        recorded_fault_toasts(),
+        vec![strings::could_not_play_toast("Track 41"); 2],
+        "each fault still gets its one neutral toast"
     );
 }

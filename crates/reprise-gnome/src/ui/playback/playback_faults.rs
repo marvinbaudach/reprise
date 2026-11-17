@@ -105,6 +105,12 @@ pub(super) fn recorded_fault_toasts() -> Vec<String> {
 /// "could not play" toast itself.
 pub(in crate::ui) const FAULT_PROBE_WAIT: std::time::Duration = std::time::Duration::from_secs(1);
 
+/// How many probes may be in flight at once. Each holds a thread of GLib's
+/// shared task pool for as long as its kernel call blocks, and covers and the
+/// other background work share that pool, so a dead mount must not be able to
+/// fill it. A fault past the bound starts no probe and gets the neutral toast.
+pub(in crate::ui) const MAX_FAULT_PROBES_IN_FLIGHT: usize = 2;
+
 pub(super) fn note_episode_skip(run: &std::cell::Cell<usize>) {
     run.set(run.get().saturating_add(1));
 }
@@ -200,10 +206,21 @@ impl PlayerController {
         };
         glib::timeout_add_local_once(FAULT_PROBE_WAIT, overdue);
 
+        // A fault past the bound, or for a track already being probed, starts
+        // no job: the timer above shows its neutral toast.
+        if !self.claim_probe_slot(id) {
+            tracing::warn!(
+                track_id = id,
+                "no probe slot free or the track is already being probed; the neutral toast follows"
+            );
+            return;
+        }
         let this = std::rc::Rc::downgrade(self);
         glib::spawn_future_local(async move {
             let answer = gio::spawn_blocking(move || probe(request)).await;
             let Some(this) = this.upgrade() else { return };
+            // Returned or panicked: either way the worker thread is free again.
+            this.release_probe_slot(id);
             match answer {
                 Ok(answer) => {
                     let toast_due = toast_pending.replace(false);
@@ -213,6 +230,21 @@ impl PlayerController {
                 Err(_) => tracing::error!(track_id = id, "the file probe panicked"),
             }
         });
+    }
+
+    /// Takes a probe slot for `id`; false when [`MAX_FAULT_PROBES_IN_FLIGHT`]
+    /// probes are out or `id` already has one. The set is only touched in its
+    /// own statements, so no borrow is alive across a GTK call.
+    fn claim_probe_slot(&self, id: i64) -> bool {
+        let mut in_flight = self.probes_in_flight.borrow_mut();
+        if in_flight.len() >= MAX_FAULT_PROBES_IN_FLIGHT {
+            return false;
+        }
+        in_flight.insert(id)
+    }
+
+    fn release_probe_slot(&self, id: i64) {
+        self.probes_in_flight.borrow_mut().remove(&id);
     }
 
     fn apply_probe_answer(
@@ -312,9 +344,13 @@ impl PlayerController {
             let episode_skips = take_episode_skip_count(&self.consecutive_episode_skips);
             self.reset_to_stopped();
             if episode_skips > 0 {
-                self.show_after_pending_fault_toasts(strings::skipped_unplayable_episodes(episode_skips));
+                self.show_after_pending_fault_toasts(strings::skipped_unplayable_episodes(
+                    episode_skips,
+                ));
             } else {
-                self.show_after_pending_fault_toasts(strings::text(strings::PLAYBACK_STOPPED_TOO_MANY_UNPLAYABLE));
+                self.show_after_pending_fault_toasts(strings::text(
+                    strings::PLAYBACK_STOPPED_TOO_MANY_UNPLAYABLE,
+                ));
             }
             return;
         }

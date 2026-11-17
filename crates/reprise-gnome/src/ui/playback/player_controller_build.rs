@@ -111,6 +111,7 @@ impl PlayerController {
             failure_advance_in_flight: Cell::new(false),
             consecutive_episode_skips: Cell::new(0),
             fault_probe: RefCell::new(disk_probe()),
+            probes_in_flight: RefCell::new(std::collections::HashSet::new()),
             pending_fault_toasts: Cell::new(0),
             deferred_toasts: RefCell::new(Vec::new()),
             mpris_state,

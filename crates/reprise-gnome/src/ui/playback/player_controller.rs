@@ -338,6 +338,9 @@ pub struct PlayerController {
     /// How `playback_faults.rs` finds out whether a faulted track's file is
     /// gone, off the main thread. The real probe unless a test replaced it.
     pub(in crate::ui) fault_probe: RefCell<FaultProbe>,
+    /// Track ids with a probe running on a worker (`playback_faults.rs`);
+    /// bounds the jobs a dead mount can pin in GLib's shared task pool.
+    pub(in crate::ui) probes_in_flight: RefCell<std::collections::HashSet<i64>>,
     /// Faults whose one toast has not been shown yet (`playback_faults.rs`).
     pub(in crate::ui) pending_fault_toasts: Cell<usize>,
     /// The toasts that close a run (skip-limit stop, skipped-episodes summary),
