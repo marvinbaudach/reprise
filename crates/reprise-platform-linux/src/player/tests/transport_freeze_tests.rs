@@ -97,19 +97,18 @@ fn without_a_real_hang(scenario: impl Fn() -> bool) {
     panic!("the scenario never ran on a start that left READY in {REAL_HANG_ATTEMPTS} attempts");
 }
 
-/// Whether the pipeline reached `Playing`; `false` if it is still in READY or
-/// has not left `Null` after [`HUNG_START_WAIT`], which is the real hang. A
-/// pipeline that is on its way (any other state) gets [`PATIENCE`].
+/// Whether the pipeline reached `Playing`; `false` if it is still in READY
+/// after [`HUNG_START_WAIT`], which is the real hang. A pipeline in any other
+/// state is on its way and gets [`PATIENCE`]; one that is still in `Null` is a
+/// start that failed, which the assertion reports as such.
 fn reach_playing(harness: &Harness) -> bool {
     let playing = |_: &[PlayerEvent]| state_of(&harness.player).0 == gst::State::Playing;
     harness.pump_until(HUNG_START_WAIT, playing);
-    if state_of(&harness.player).0 == gst::State::Playing {
+    let state = state_of(&harness.player).0;
+    if state == gst::State::Playing {
         return true;
     }
-    if matches!(
-        state_of(&harness.player).0,
-        gst::State::Ready | gst::State::Null
-    ) {
+    if state == gst::State::Ready {
         return false;
     }
     harness.pump_until(PATIENCE, playing);
