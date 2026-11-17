@@ -156,6 +156,12 @@ impl QueueHandle {
         Answer { result }
     }
 
+    /// Whether the pipeline has been retired: jobs submitted from now on are
+    /// dropped, and a job already running is the last that does anything.
+    pub(crate) fn is_retired(&self) -> bool {
+        self.shared.retired.load(Ordering::SeqCst)
+    }
+
     /// The state last asked of the pipeline.
     pub(crate) fn asked(&self) -> Asked {
         Asked::from_u8(self.shared.asked.load(Ordering::SeqCst))

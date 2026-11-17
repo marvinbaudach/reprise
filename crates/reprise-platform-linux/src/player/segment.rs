@@ -56,6 +56,9 @@
 mod handoff;
 mod split;
 
+#[cfg(test)]
+mod finish_start_tests;
+
 use gstreamer as gst;
 use gstreamer::prelude::*;
 use std::sync::atomic::AtomicU64;
@@ -348,6 +351,14 @@ impl SegmentGate {
         if let Err(error) = playbin.set_state(gst::State::Playing) {
             // GStreamer posts the failure on the bus as well.
             tracing::warn!(%error, "CUE track's file would not start playing");
+            return;
+        }
+        // The state change took a while, and the user may have paused or
+        // stopped meanwhile. Their change is queued behind this job and its
+        // event is out already; `Playing` now would be the false last word.
+        // This narrows the window to the gap between this read and the send;
+        // it cannot close it, since the transport reports from its own thread.
+        if queue.is_retired() || queue.asked() != Asked::Playing {
             return;
         }
         (self.on_event)(PlayerEvent::StateChanged(PlaybackState::Playing));
