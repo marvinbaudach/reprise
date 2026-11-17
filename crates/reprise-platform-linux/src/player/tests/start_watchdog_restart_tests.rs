@@ -37,7 +37,7 @@ const REAL_HANG_RETRIES: usize = 5;
 /// evidence that this happened, and it is made again on a fresh player; every
 /// other outcome is the scenario's own checks, which panic as usual. A guard
 /// that is gone fails them on every attempt.
-fn on_the_injected_hang(scenario: impl Fn() -> bool) {
+pub(super) fn on_the_injected_hang(scenario: impl Fn() -> bool) {
     for attempt in 1..=REAL_HANG_RETRIES {
         if scenario() {
             return;
@@ -108,8 +108,10 @@ fn a_hung_start_whose_stream_was_replaced_is_not_even_asked_to_restart() {
 
 /// A pause toggle after a `stop` resumes nothing: `stop` leaves an idle
 /// pipeline, which `toggle_pause` leaves alone (the frontend starts again with
-/// `play`, which is a start of its own). The `disarm` in `stop` keeps the old
-/// watch from acting on the stopped start, and nothing arms a new one.
+/// `play`, which is a start of its own). The idle pipeline is not a hung start
+/// and its start record is gone, so the old watch finds nothing to act on, and
+/// nothing arms a new one. This does not depend on the `disarm` in `stop`: the
+/// one case that does is `start_watchdog_stop_tests`.
 #[test]
 fn a_pause_toggle_after_a_stop_resumes_nothing_and_the_old_watch_stays_quiet() {
     on_the_injected_hang(|| {
@@ -179,8 +181,10 @@ fn a_restart_whose_stream_was_replaced_after_the_look_leaves_everything_alone() 
 }
 
 /// A `stop` lands after the look: it disarms the watch before it takes the lock
-/// and does not move the generation, so only the armed check under the lock
-/// keeps the restart from starting the stopped track again.
+/// and does not move the generation. The bump of the epoch stands in for that
+/// `disarm`, so this proves the armed check under the lock on its own. (A real
+/// `stop` that built its idle pipeline would also be caught by the hung check
+/// and by the start record it takes.)
 #[test]
 fn a_restart_after_a_stop_that_landed_after_the_look_leaves_the_pipeline_alone() {
     on_the_injected_hang(|| {

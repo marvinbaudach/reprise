@@ -214,13 +214,21 @@ impl StartWatchdog {
     ///
     /// The stream generation, which already stands a watch down when another
     /// start replaced its own, does not cover everything: `stop`, dropping the
-    /// player and a `play` whose attempts both fail leave it where it was. So
-    /// `disarm` alone covers a `stop` followed by a resume of the same URI that
-    /// hangs again (same generation, hung, and not this watch's to restart),
-    /// and a dropped player (nothing owns the pipeline; the generation never
-    /// moves again). Every start that bumps the generation without a `disarm`
-    /// in its path (a gapless step, a crossfade promotion) is covered by the
-    /// generation alone, which the restart checks again under the lock.
+    /// player and a `play` whose attempts both fail leave it where it was.
+    ///
+    /// A `stop` that builds its idle pipeline needs no `disarm` to be safe: the
+    /// slot then holds a pipeline in `Null`, which is not a hung start, and the
+    /// start record is gone, so a look or a restart finds nothing to act on.
+    /// `disarm` is what covers the `stop` that cannot build one (the hung
+    /// pipeline stays in the slot, hung and on the same generation, its `Null`
+    /// queued behind a stuck job): the give-up reports the track with no check
+    /// under the lock, so without it the frontend would be told, after the
+    /// `stop`, that the stopped track never started
+    /// (`start_watchdog_stop_tests`). It also covers a dropped player (nothing
+    /// owns the pipeline; the generation never moves again). Every start that
+    /// bumps the generation without a `disarm` in its path (a gapless step, a
+    /// crossfade promotion) is covered by the generation alone, which the
+    /// restart checks again under the lock.
     pub(super) fn disarm(&self) {
         self.epoch.fetch_add(1, Ordering::SeqCst);
     }
