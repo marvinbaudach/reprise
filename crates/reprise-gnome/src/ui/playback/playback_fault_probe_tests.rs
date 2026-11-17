@@ -4,7 +4,7 @@
 
 use std::cell::Cell;
 use std::rc::Rc;
-use std::sync::atomic::{AtomicUsize, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use std::sync::{mpsc, Arc, Mutex};
 use std::time::{Duration, Instant};
 
@@ -224,9 +224,59 @@ fn the_skip_limit_still_stops_with_a_single_too_many_unplayable_toast() {
         "one could-not-play toast per fault, plus the stop: {toasts:?}"
     );
     assert_eq!(
+        toasts.last(),
+        Some(&stopped),
+        "the stop comes after every fault toast: {toasts:?}"
+    );
+    assert_eq!(
         fixture.calls.played.borrow().len(),
         TRACKS.len(),
         "each track tried once"
     );
     assert_eq!(controller.current_track.get(), None);
+}
+
+#[test]
+#[ignore = "requires a display; run via xvfb-run"]
+fn the_stop_toast_waits_for_the_fault_toasts_still_pending() {
+    let fixture = playing_repeat_all_queue();
+    let controller = &fixture.controller;
+    let open = Arc::new(AtomicBool::new(false));
+    *controller.fault_probe.borrow_mut() = Arc::new({
+        let open = open.clone();
+        move |_| {
+            let give_up = Instant::now() + PROBE_GATE_LIMIT;
+            while !open.load(Ordering::SeqCst) && Instant::now() < give_up {
+                std::thread::sleep(HEARTBEAT);
+            }
+            FaultProbeAnswer::FilePresent
+        }
+    });
+    recorded_fault_toasts();
+
+    for _ in 0..TRACKS.len() * 2 {
+        controller.apply_event(stalled_start());
+    }
+    assert_eq!(controller.current_track.get(), None, "the run has stopped");
+    assert!(
+        recorded_fault_toasts().is_empty(),
+        "the stop toast does not overtake the fault toasts still pending"
+    );
+
+    spin(FAULT_PROBE_WAIT + SETTLE);
+    open.store(true, Ordering::SeqCst);
+    spin(SETTLE);
+
+    let neutral = strings::could_not_play_toast;
+    let stopped = strings::text(strings::PLAYBACK_STOPPED_TOO_MANY_UNPLAYABLE);
+    let mut expected: Vec<String> = TRACKS
+        .iter()
+        .map(|id| neutral(&format!("Track {id}")))
+        .collect();
+    expected.push(stopped);
+    assert_eq!(
+        recorded_fault_toasts(),
+        expected,
+        "every fault toast, then the single stop"
+    );
 }
