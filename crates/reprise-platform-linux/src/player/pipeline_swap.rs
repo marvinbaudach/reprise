@@ -424,7 +424,52 @@ pub(super) mod test_seam {
     /// Removes every hook.
     pub(in crate::player) fn clear() {
         BUILT.lock().unwrap_or_else(PoisonError::into_inner).clear();
+        HOLD.lock().unwrap_or_else(PoisonError::into_inner).take();
         FAIL_BUILDS.store(0, Ordering::SeqCst);
+    }
+
+    /// The first job of one pipeline's queue is held back before it begins.
+    struct Hold {
+        element: gst::Element,
+        entered: std::sync::mpsc::Sender<()>,
+        release: std::sync::mpsc::Receiver<()>,
+    }
+
+    static HOLD: Mutex<Option<Hold>> = Mutex::new(None);
+
+    /// The longest a held job waits for its release.
+    const HOLD_LIMIT: std::time::Duration = std::time::Duration::from_secs(20);
+
+    /// Holds the first job of `element`'s queue back, before the queue looks at
+    /// whether the pipeline is retired, until `release` is sent (or dropped).
+    /// `entered` is told when the job is being held. Until [`clear`].
+    pub(in crate::player) fn hold_first_job_of(
+        element: &gst::Element,
+        entered: std::sync::mpsc::Sender<()>,
+        release: std::sync::mpsc::Receiver<()>,
+    ) {
+        *HOLD.lock().unwrap_or_else(PoisonError::into_inner) = Some(Hold {
+            element: element.clone(),
+            entered,
+            release,
+        });
+    }
+
+    /// Called by a pipeline's queue thread with each job it has taken, before
+    /// it begins.
+    pub(in crate::player) fn before_job(element: &gst::Element) {
+        let hold = {
+            let mut held = HOLD.lock().unwrap_or_else(PoisonError::into_inner);
+            match held.take() {
+                Some(hold) if hold.element == *element => hold,
+                other => {
+                    *held = other;
+                    return;
+                }
+            }
+        };
+        let _ = hold.entered.send(());
+        let _ = hold.release.recv_timeout(HOLD_LIMIT);
     }
 
     static FAIL_BUILDS: AtomicUsize = AtomicUsize::new(0);

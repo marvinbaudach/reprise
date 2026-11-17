@@ -295,6 +295,8 @@ impl Drop for Pipeline {
 /// takes the element down.
 fn run(element: &gst::Element, messages: &Receiver<Message>, shared: &Shared) {
     while let Ok(Message::Job(job)) = messages.recv() {
+        #[cfg(test)]
+        super::pipeline_swap::test_seam::before_job(element);
         if shared.retired.load(Ordering::SeqCst) {
             continue;
         }

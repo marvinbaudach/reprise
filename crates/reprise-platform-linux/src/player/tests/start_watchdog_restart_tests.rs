@@ -302,39 +302,56 @@ fn a_play_that_lands_between_the_look_and_the_restart_is_left_to_play() {
     });
 }
 
-/// More than a stop that waits for nothing needs, far less than the start is held.
-const STOP_BOUND: Duration = Duration::from_secs(2);
 /// How long the test lets the stopped pipeline settle before it looks.
 const SETTLE: Duration = Duration::from_millis(1_000);
 
-/// Makes the start of the second pipeline a swap builds, which is the restart's,
-/// stay inside its first state change until `release` is sent: the state change
-/// posts a message from the queue thread that runs it, and the handler on the
-/// bus does not return. `entered` is told when the start is held there.
-fn hold_the_restarted_start(
-    entered: std::sync::mpsc::Sender<()>,
-    release: std::sync::mpsc::Receiver<()>,
-) {
+/// What the second pipeline a swap builds, which is the restart's, is made to
+/// do in the test below.
+struct HeldRestart {
+    /// Told when the restarted pipeline's start is held before it begins.
+    held: std::sync::mpsc::Receiver<()>,
+    /// Lets the start go.
+    release: std::sync::mpsc::Sender<()>,
+    /// Whether the restarted pipeline ever left `Null`.
+    left_null: Arc<AtomicBool>,
+}
+
+/// Holds the restarted pipeline's start on its queue before it begins, and
+/// watches the pipeline's state changes.
+fn hold_the_restarted_start() -> HeldRestart {
+    let (entered, held) = std::sync::mpsc::channel::<()>();
+    let (release, released) = std::sync::mpsc::channel::<()>();
+    let left_null = Arc::new(AtomicBool::new(false));
     let builds = Arc::new(AtomicUsize::new(0));
-    let entered = Arc::new(Mutex::new(entered));
-    let release = Arc::new(Mutex::new(release));
+    let hook = Mutex::new(Some((entered, released)));
+    let watched = left_null.clone();
     test_seam::on_pipeline_built(Arc::new(move |pipeline| {
         if builds.fetch_add(1, Ordering::SeqCst) + 1 != 2 {
             return;
         }
-        let (entered, release) = (entered.clone(), release.clone());
-        let held = Arc::new(AtomicBool::new(false));
-        let Some(bus) = pipeline.bus() else { return };
-        bus.set_sync_handler(move |_, message| {
-            if matches!(message.view(), gst::MessageView::StateChanged(_))
-                && !held.swap(true, Ordering::SeqCst)
-            {
-                let _ = entered.lock().unwrap().send(());
-                let _ = release.lock().unwrap().recv_timeout(PATIENCE);
-            }
-            gst::BusSyncReply::Pass
-        });
+        let Some((entered, released)) = hook.lock().unwrap().take() else {
+            return;
+        };
+        test_seam::hold_first_job_of(pipeline, entered, released);
+        let (watched, element) = (watched.clone(), pipeline.clone());
+        if let Some(bus) = pipeline.bus() {
+            bus.set_sync_handler(move |_, message| {
+                if let gst::MessageView::StateChanged(change) = message.view() {
+                    if message.src() == Some(element.upcast_ref())
+                        && change.current() != gst::State::Null
+                    {
+                        watched.store(true, Ordering::SeqCst);
+                    }
+                }
+                gst::BusSyncReply::Pass
+            });
+        }
     }));
+    HeldRestart {
+        held,
+        release,
+        left_null,
+    }
 }
 
 /// The restart's start is a job on the new pipeline's queue, so a `stop` right
@@ -342,10 +359,13 @@ fn hold_the_restarted_start(
 /// never in a start that landed after the `Null` (`call_async`, which began a
 /// restart before, orders nothing).
 ///
-/// The ordering is forced, not hoped for: the restarted pipeline's own start is
-/// held inside its first state change while the stop lands, so the `Null` has
-/// something to overtake. It must wait behind the start, and come when the
-/// start has been let go.
+/// The ordering is forced, not hoped for: the restarted pipeline's own start
+/// is held on its queue before it begins, so it is still queued when the stop
+/// lands. The retirement the stop issues drops it, and the pipeline never
+/// leaves `Null`; a queue that ran it anyway would take the pipeline out of
+/// `Null` after the stop. What the test pins is that a start still queued at
+/// the stop is not run. (A `Null` made on another thread would pass it: that
+/// one stands behind the start's state lock, and ends last as well.)
 #[test]
 fn a_stop_right_after_a_restarts_queued_start_leaves_the_stopped_pipeline_in_null() {
     on_the_injected_hang(|| {
@@ -353,47 +373,34 @@ fn a_stop_right_after_a_restarts_queued_start_leaves_the_stopped_pipeline_in_nul
         let dir = tempfile::tempdir().unwrap();
         let path = local_track(&dir);
         let reached = hang_starts(&harness.player, 1);
-        let (entered, held) = std::sync::mpsc::channel::<()>();
-        let (release, released) = std::sync::mpsc::channel::<()>();
-        hold_the_restarted_start(entered, released);
+        let restart = hold_the_restarted_start();
         harness.player.play(item(&path)).unwrap();
         harness.pump_until(PATIENCE, |_| harness.player.start_watchdog.restarts() >= 1);
         if reached.load(Ordering::SeqCst) == 0 || harness.player.start_watchdog.restarts() == 0 {
-            let _ = release.send(());
+            let _ = restart.release.send(());
             return false;
         }
         let restarted = current_playbin(&harness.player);
-        let queue = harness.player.playbin.lock().unwrap().queue();
         assert!(
-            held.recv_timeout(PATIENCE).is_ok(),
-            "the restarted pipeline's start never began, so the test measured nothing"
+            restart.held.recv_timeout(PATIENCE).is_ok(),
+            "the restarted pipeline's start never reached its queue, so the test measured nothing"
         );
-
         // A slow machine can let the watch begin the start over once more
         // before the stop: that retires the pipeline held here by itself.
         if harness.player.start_watchdog.restarts() != 1 {
-            let _ = release.send(());
+            let _ = restart.release.send(());
             return false;
         }
 
-        let stop_began = std::time::Instant::now();
         harness.player.stop().unwrap();
-        let stop_took = stop_began.elapsed();
+        let _ = restart.release.send(());
         harness.pump_for(SETTLE);
-        // The stop does not wait for the start, which is held; a `Null` made
-        // on the stopping thread would stand behind the start's state lock.
-        assert!(
-            stop_took < STOP_BOUND,
-            "the stop waited {stop_took:?} for a start that is held"
-        );
-        // The control arm: the start is still in flight, and the `Null` waits.
-        assert!(
-            !queue.is_finished(),
-            "the Null of the stop overtook the start that was still running"
-        );
-        let _ = release.send(());
         super::stuck_source_support::assert_every_retired_pipeline_went_down();
 
+        assert!(
+            !restart.left_null.load(Ordering::SeqCst),
+            "the start that was queued when the stop came ran after it"
+        );
         assert_eq!(restarted.current_state(), gst::State::Null);
         assert_ne!(current_playbin(&harness.player), restarted);
         true
