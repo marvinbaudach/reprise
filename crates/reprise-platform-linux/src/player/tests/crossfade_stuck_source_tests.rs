@@ -63,7 +63,15 @@ fn a_secondary_blocked_in_open_gives_way_and_the_outgoing_track_is_reported_fini
     player.play(item(&first)).unwrap();
     player.set_next(Some(item(fifo.to_str().unwrap())));
     let began = Instant::now();
-    let events = harness.pump_until(PATIENCE, |events| count(events, finished) > 0);
+    // The fade has to have published its secondary before it gave way: without
+    // that, a track that merely ends passes every check below.
+    let published = std::cell::Cell::new(false);
+    let events = harness.pump_until(PATIENCE, |events| {
+        if secondary_published(player) {
+            published.set(true);
+        }
+        count(events, finished) > 0
+    });
     let took = began.elapsed();
     let gap = beat.longest_gap();
     let guard_down = !player.crossfading.load(Ordering::SeqCst);
@@ -71,6 +79,10 @@ fn a_secondary_blocked_in_open_gives_way_and_the_outgoing_track_is_reported_fini
     drop(openers);
     assert_every_retired_pipeline_went_down();
 
+    assert!(
+        published.get(),
+        "the fade never published its secondary, so no give-way was measured: {events:?}"
+    );
     assert_eq!(
         count(&events, finished),
         1,

@@ -306,6 +306,24 @@ const SHORT_TRACK_MS: u32 = 2_000;
 /// as a VBR file without a length header or a stale duration does.
 const OVERSTATED_DURATION_MS: i64 = 3_500;
 
+/// How often the seek to the start is tried: it fails when the pipeline's queue
+/// has not answered within the bound, which a loaded machine can cause, and
+/// the frontend retries the same target the same way.
+const SEEK_ATTEMPTS: usize = 5;
+
+/// Seeks the playing track to its start, on the pipeline it plays on.
+fn seek_to_start_in_place(harness: &Harness) {
+    let mut last = Ok(());
+    for _ in 0..SEEK_ATTEMPTS {
+        last = harness.player.seek_to(0);
+        if last.is_ok() {
+            return;
+        }
+        harness.pump_for(Duration::from_millis(100));
+    }
+    panic!("the seek to the start never succeeded: {last:?}");
+}
+
 /// One round of the scenario below: the outgoing track ends during the wait,
 /// the incoming one hangs, and the fade gives way. Returns the events up to a
 /// second after the report. `again_in_place` plays the track again on the
@@ -319,7 +337,7 @@ fn outgoing_track_ends_during_the_wait(
 ) -> Vec<PlayerEvent> {
     let player = &harness.player;
     if again_in_place {
-        player.seek_to(0).unwrap();
+        seek_to_start_in_place(harness);
     } else {
         harness.start(|| {
             player.play(item(first)).unwrap();
