@@ -106,6 +106,20 @@ enum Lane {
     Inline(gst::Element),
 }
 
+/// Whether one pipeline has been taken out of service, for what must not act
+/// on behalf of a retired pipeline: a signal handler that still runs on its
+/// streaming threads until its `Null` lands. Holds no lane and no element, so
+/// a handler that captures one makes no reference cycle with the element it is
+/// connected to.
+#[derive(Clone)]
+pub(crate) struct Retirement(Arc<Shared>);
+
+impl Retirement {
+    pub(crate) fn is_retired(&self) -> bool {
+        self.0.retired.load(Ordering::SeqCst)
+    }
+}
+
 /// A clonable way to put jobs on one pipeline's queue, for what has to submit
 /// without owning the pipeline: the bus watch, which finishes a CUE start.
 /// Holding one never keeps a retired pipeline's queue alive.
@@ -211,6 +225,10 @@ impl Pipeline {
 
     pub(crate) fn queue(&self) -> QueueHandle {
         self.queue.clone()
+    }
+
+    pub(crate) fn retirement(&self) -> Retirement {
+        Retirement(self.queue.shared.clone())
     }
 
     pub(crate) fn submit(&self, job: impl FnOnce(&gst::Element) + Send + 'static) {

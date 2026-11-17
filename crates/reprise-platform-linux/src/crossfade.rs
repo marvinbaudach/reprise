@@ -38,7 +38,7 @@ use reprise_core::playback::{AudioEffects, PlayerEvent};
 use crate::gapless::{HandoffFlag, NextUri, PendingGain, QueuedTrack};
 use crate::player::pipeline_queue::{Asked, Pipeline};
 use crate::player::segment::SegmentHandle;
-use crate::player_pipeline::{build_playbin, configure_download_buffering, discard_cava_samples};
+use crate::player_pipeline::{build_pipeline, configure_download_buffering, discard_cava_samples};
 
 /// Geteilter (Modus, Sekunden)-Zustand. Der Ticker liest ihn zur Trigger-
 /// Entscheidung, `set_transition` schreibt ihn, und der `about-to-finish`-
@@ -319,7 +319,7 @@ impl CrossfadeEngine {
             .lock()
             .unwrap_or_else(PoisonError::into_inner)
             .clone();
-        let built = build_playbin(
+        let built = build_pipeline(
             &effects,
             self.next_uri.clone(),
             self.handoff_pending.clone(),
@@ -331,7 +331,7 @@ impl CrossfadeEngine {
         // Until it is published in the slot the pipeline is this function's,
         // and dropping it, on any early return, retires it.
         let secondary = match built {
-            Ok(element) => Pipeline::new(element),
+            Ok(pipeline) => pipeline,
             Err(error) => {
                 tracing::warn!(%error, "crossfade: could not build secondary pipeline; aborting fade");
                 self.give_way(None, &outgoing_end, my_generation);

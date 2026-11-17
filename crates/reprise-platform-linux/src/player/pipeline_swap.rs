@@ -28,7 +28,7 @@ use crate::crossfade::Transition;
 use crate::gapless::{HandoffFlag, NextUri, PendingGain};
 use crate::player_effects::{set_playbin_spectrum_messages, set_playbin_track_gain};
 use crate::player_pipeline::{
-    attach_bus_watch, build_playbin, configure_download_buffering, CueCompletion,
+    attach_bus_watch, build_pipeline, configure_download_buffering, CueCompletion,
 };
 
 /// What a track's start was, kept so the watchdog can begin it over without
@@ -286,7 +286,8 @@ impl PipelineSwap {
             .lock()
             .unwrap_or_else(PoisonError::into_inner)
             .clone();
-        let element = build_playbin(
+        // From here on a failure drops the pipeline, which retires it.
+        let fresh = build_pipeline(
             &effects,
             self.next_uri.clone(),
             self.handoff_pending.clone(),
@@ -295,8 +296,6 @@ impl PipelineSwap {
             self.pending_gain.clone(),
             self.segments.clone(),
         )?;
-        // From here on a failure drops the pipeline, which retires it.
-        let fresh = Pipeline::new(element);
         set_playbin_spectrum_messages(
             fresh.element(),
             self.spectrum_enabled.load(Ordering::SeqCst),
@@ -340,12 +339,16 @@ impl PipelineSwap {
     ///
     /// The bus watch is not the only thing a retired pipeline still carries:
     /// until its `Null` lands, which can be never on a dead source, its CAVA
-    /// appsink callback, its gain-switch probe and its segment-boundary probe
-    /// stay installed. They are harmless. Its pads go flushing as `Null`
-    /// begins, so nothing more arrives for them to act on. A hard start has no
-    /// `pending_gain` (it is `None`), so the gain switch has nothing to apply
-    /// to the shared state. And no CUE handoff is staged on a start, so the
-    /// boundary probe has none to complete.
+    /// appsink callback, its gain-switch probe, its segment-boundary probe and
+    /// its `about-to-finish` handler stay installed. The first three are
+    /// harmless. Its pads go flushing as `Null` begins, so nothing more arrives
+    /// for them to act on. A hard start has no `pending_gain` (it is `None`),
+    /// so the gain switch has nothing to apply to the shared state. And no CUE
+    /// handoff is staged on a start, so the boundary probe has none to
+    /// complete. The `about-to-finish` handler is not harmless by itself, since
+    /// a retired pipeline in its tail could still fire it and take the
+    /// successor fed for the pipeline that replaced it, so it asks the
+    /// pipeline's retirement first (`gapless::connect_about_to_finish`).
     fn install_watch(&self, watch: gst::bus::BusWatchGuard) {
         *self
             .bus_watch

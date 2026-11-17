@@ -24,7 +24,7 @@ use crate::crossfade::Transition;
 use crate::gapless::{
     connect_about_to_finish, note_stream_start, HandoffFlag, NextUri, PendingGain,
 };
-use crate::player::pipeline_queue::QueueHandle;
+use crate::player::pipeline_queue::{Pipeline, QueueHandle};
 use crate::player::segment::{install_segment_boundary, SegmentHandle};
 use crate::player_effects::{
     apply_audio_filter, install_stream_start_gain_switch, CAVA_SAMPLE_RATE_HZ, CAVA_SINK_NAME,
@@ -232,13 +232,16 @@ fn query_buffered_ms(playbin: &gst::Element) -> Option<i64> {
 /// without a real audio device.
 pub(crate) const AUDIO_SINK_ENV_VAR: &str = "REPRISE_AUDIO_SINK";
 
-/// Builds a fresh `playbin3` element with the `REPRISE_AUDIO_SINK` override
-/// applied, if set. Extracted out of `Player::new` so every start (a fresh
-/// pipeline per start — see `Player::play`'s doc comment) and the crossfade
-/// ramp (which builds the identically-configured *secondary* pipeline — see
-/// `crossfade.rs`) can build matching elements. `pub(crate)` for that second
-/// caller.
-pub(crate) fn build_playbin(
+/// Builds a fresh `playbin3` as a [`Pipeline`], with its gapless hand-off
+/// wired to the shared state it is given.
+///
+/// The `about-to-finish` handler (Gapless mode only, it no-ops in
+/// Crossfade/Off, see `gapless.rs`) is connected here, after the element has
+/// its queue, so it can ask that queue's retirement: a pipeline taken out of
+/// service must not feed itself the successor the frontend has fed for the
+/// one that replaced it. Every fresh start, the watchdog's restart and the
+/// crossfade secondary get it for free by building through here.
+pub(crate) fn build_pipeline(
     effects: &AudioEffects,
     next_uri: NextUri,
     handoff_pending: HandoffFlag,
@@ -246,27 +249,39 @@ pub(crate) fn build_playbin(
     stream_generation: Arc<AtomicU64>,
     pending_gain: PendingGain,
     segments: SegmentHandle,
-) -> Result<gst::Element, PlaybackError> {
-    let playbin = gst::ElementFactory::make("playbin3")
-        .build()
-        .map_err(|e| PlaybackError::Backend(format!("GStreamer: {e}")))?;
-    apply_audio_filter(&playbin, effects)?;
-    install_stream_start_gain_switch(&playbin, pending_gain.clone())?;
-    // A CUE track's end: see `player/segment.rs`.
-    install_segment_boundary(&playbin, segments)?;
-
-    // Gapless handoff: consume any pre-fed URI on `about-to-finish` without a
-    // pipeline restart (Gapless mode only — the handler no-ops in Crossfade/Off,
-    // see `gapless.rs`). Installed here so every fresh start and the crossfade
-    // secondary re-arm it on the built element for free.
+) -> Result<Pipeline, PlaybackError> {
+    let playbin = build_playbin(effects, pending_gain.clone(), segments)?;
+    // From here on a failure drops the pipeline, which retires it.
+    let pipeline = Pipeline::new(playbin);
     connect_about_to_finish(
-        &playbin,
+        pipeline.element(),
+        pipeline.retirement(),
         next_uri,
         handoff_pending,
         transition,
         stream_generation,
         pending_gain,
     );
+    Ok(pipeline)
+}
+
+/// Builds a fresh `playbin3` element with the `REPRISE_AUDIO_SINK` override
+/// applied, if set. Extracted out of `Player::new` so every start (a fresh
+/// pipeline per start — see `Player::play`'s doc comment) and the crossfade
+/// ramp (which builds the identically-configured *secondary* pipeline — see
+/// `crossfade.rs`) can build matching elements, through [`build_pipeline`].
+fn build_playbin(
+    effects: &AudioEffects,
+    pending_gain: PendingGain,
+    segments: SegmentHandle,
+) -> Result<gst::Element, PlaybackError> {
+    let playbin = gst::ElementFactory::make("playbin3")
+        .build()
+        .map_err(|e| PlaybackError::Backend(format!("GStreamer: {e}")))?;
+    apply_audio_filter(&playbin, effects)?;
+    install_stream_start_gain_switch(&playbin, pending_gain)?;
+    // A CUE track's end: see `player/segment.rs`.
+    install_segment_boundary(&playbin, segments)?;
 
     if let Ok(sink_name) = std::env::var(AUDIO_SINK_ENV_VAR) {
         let sink = gst::ElementFactory::make(&sink_name)

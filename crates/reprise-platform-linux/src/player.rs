@@ -16,7 +16,7 @@ use crate::player_effects::{
     set_playbin_spectrum_messages, set_playbin_track_gain, update_existing_audio_filter,
 };
 use crate::player_pipeline::{
-    attach_bus_watch, build_playbin, path_to_uri, validated_playback_uri, CueCompletion,
+    attach_bus_watch, build_pipeline, path_to_uri, validated_playback_uri, CueCompletion,
 };
 use pipeline_queue::Pipeline;
 use pipeline_swap::PipelineSwap;
@@ -184,7 +184,7 @@ impl Player {
         let cava_stream_generation = Arc::new(AtomicU64::new(0));
         let segments = SegmentGate::new(on_event.clone(), stream_generation.clone());
 
-        let playbin = Pipeline::new(build_playbin(
+        let playbin = build_pipeline(
             &effects.lock().unwrap_or_else(PoisonError::into_inner),
             next_uri.clone(),
             handoff_pending.clone(),
@@ -192,7 +192,7 @@ impl Player {
             stream_generation.clone(),
             pending_gain.clone(),
             segments.clone(),
-        )?);
+        )?;
         let bus_watch = attach_bus_watch(
             playbin.element(),
             on_event.clone(),
