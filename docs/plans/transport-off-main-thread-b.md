@@ -2,7 +2,7 @@
 slug: transport-off-main-thread-b
 worktree: /home/marvin/Projects/reprise-transport-off-main-thread-b
 branch: feature/transport-off-main-thread-b
-phase: planned
+phase: shipped
 codex_session:
 created: 2026-11-11
 ---
