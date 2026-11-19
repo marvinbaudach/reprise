@@ -308,7 +308,7 @@ impl PlayerController {
     }
 
     /// [`Self::show_toast`] for the toasts of the fault path. A display test
-    /// reads what was said from [`recorded_fault_toasts`]: a toast overlay
+    /// reads what was said from `recorded_fault_toasts`: a toast overlay
     /// cannot be asked which toasts it has shown.
     fn show_fault_toast(&self, text: &str) {
         #[cfg(test)]
