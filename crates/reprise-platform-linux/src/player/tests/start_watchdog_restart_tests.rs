@@ -12,7 +12,7 @@
 //! can satisfy: the look's by a counting wrapper that must never be called, the
 //! restart's by a wrapper that supersedes the stream after the look.
 
-use std::sync::atomic::AtomicUsize;
+use std::sync::atomic::{AtomicBool, AtomicUsize};
 
 use super::segment_support::write_regions_wav;
 use super::start_watchdog_tests::{
@@ -20,6 +20,7 @@ use super::start_watchdog_tests::{
     QUIET_FOR, ROOMY_DEADLINE,
 };
 use super::*;
+use crate::player::pipeline_swap::test_seam;
 
 /// A deadline no start that merely runs slowly reaches, for a watch that is not
 /// the one under test.
@@ -37,7 +38,7 @@ const REAL_HANG_RETRIES: usize = 5;
 /// evidence that this happened, and it is made again on a fresh player; every
 /// other outcome is the scenario's own checks, which panic as usual. A guard
 /// that is gone fails them on every attempt.
-fn on_the_injected_hang(scenario: impl Fn() -> bool) {
+pub(super) fn on_the_injected_hang(scenario: impl Fn() -> bool) {
     for attempt in 1..=REAL_HANG_RETRIES {
         if scenario() {
             return;
@@ -106,11 +107,14 @@ fn a_hung_start_whose_stream_was_replaced_is_not_even_asked_to_restart() {
     });
 }
 
-/// `stop` leaves the generation where it was, so a resume of the same URI that
-/// hangs again looks like the start the old watch was armed for. Only the
-/// `disarm` in `stop` keeps that watch from starting the resume over.
+/// A pause toggle after a `stop` resumes nothing: `stop` leaves an idle
+/// pipeline, which `toggle_pause` leaves alone (the frontend starts again with
+/// `play`, which is a start of its own). The idle pipeline is not a hung start
+/// and its start record is gone, so the old watch finds nothing to act on, and
+/// nothing arms a new one. This does not depend on the `disarm` in `stop`: the
+/// one case that does is `start_watchdog_stop_tests`.
 #[test]
-fn a_hung_resume_after_a_stop_is_not_started_over_by_the_old_watch() {
+fn a_pause_toggle_after_a_stop_resumes_nothing_and_the_old_watch_stays_quiet() {
     on_the_injected_hang(|| {
         // Twice the usual room: a start slow to reach the probe on a loaded
         // machine must not be started over before the `stop`, which would end
@@ -127,18 +131,15 @@ fn a_hung_resume_after_a_stop_is_not_started_over_by_the_old_watch() {
         }
 
         harness.player.stop().unwrap();
-        harness.player.toggle_pause().unwrap();
-        harness.pump_until(PATIENCE, |_| reached.load(Ordering::SeqCst) >= 2);
-        if reached.load(Ordering::SeqCst) < 2 {
-            return false;
-        }
+        let toggled = harness.player.toggle_pause().unwrap();
         let events = harness.pump_for(QUIET_FOR);
 
+        assert_eq!(toggled, PlaybackState::Stopped);
         assert_eq!(harness.player.start_watchdog.restarts(), 0);
         assert_eq!(
             reached.load(Ordering::SeqCst),
-            2,
-            "the old watch started the resume over"
+            1,
+            "a start was made after the stop"
         );
         assert_eq!(errors(&events), 0, "events: {events:?}");
         true
@@ -181,8 +182,10 @@ fn a_restart_whose_stream_was_replaced_after_the_look_leaves_everything_alone() 
 }
 
 /// A `stop` lands after the look: it disarms the watch before it takes the lock
-/// and does not move the generation, so only the armed check under the lock
-/// keeps the restart from starting the stopped track again.
+/// and does not move the generation. The bump of the epoch stands in for that
+/// `disarm`, so this proves the armed check under the lock on its own. (A real
+/// `stop` that built its idle pipeline would also be caught by the hung check
+/// and by the start record it takes.)
 #[test]
 fn a_restart_after_a_stop_that_landed_after_the_look_leaves_the_pipeline_alone() {
     on_the_injected_hang(|| {
@@ -227,6 +230,8 @@ fn a_play_that_lands_between_the_look_and_the_restart_is_left_to_play() {
         let reached = hang_starts(&harness.player, 1);
         let reached_at_the_ask = Arc::new(AtomicUsize::new(0));
         let (in_the_gap, play_now) = std::sync::mpsc::channel::<()>();
+        // The pipeline the newer `play` put in the slot, as it returned.
+        let newer_pipeline_slot = Mutex::new(None::<gst::Element>);
         let (played, newer_played) = std::sync::mpsc::channel::<()>();
         let newer_played = Mutex::new(newer_played);
         let (seen_at_the_ask, reached_now) = (reached_at_the_ask.clone(), reached.clone());
@@ -248,10 +253,14 @@ fn a_play_that_lands_between_the_look_and_the_restart_is_left_to_play() {
 
         let player = &harness.player;
         let newer_path = newer_path.to_str().unwrap();
+        let newer_pipeline = &newer_pipeline_slot;
         let events = std::thread::scope(|scope| {
             scope.spawn(move || {
                 if play_now.recv_timeout(PATIENCE).is_ok() {
                     player.play(item(newer_path)).unwrap();
+                    *newer_pipeline
+                        .lock()
+                        .unwrap_or_else(PoisonError::into_inner) = Some(current_playbin(player));
                 }
                 let _ = played.send(());
             });
@@ -269,14 +278,131 @@ fn a_play_that_lands_between_the_look_and_the_restart_is_left_to_play() {
         }
         assert_eq!(calls.load(Ordering::SeqCst), 1, "the look must have asked");
         assert_eq!(harness.player.start_watchdog.restarts(), 0);
+        // Every `play` builds a pipeline of its own; the restart must not have
+        // moved the newer start off the one it was put on.
+        let newer = newer_pipeline_slot
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .clone();
+        assert_ne!(newer, None, "the newer play did not run");
+        assert_ne!(
+            newer,
+            Some(hung.clone()),
+            "the newer start reused the hung pipeline"
+        );
         assert_eq!(
-            current_playbin(&harness.player),
-            hung,
+            Some(current_playbin(&harness.player)),
+            newer,
             "the newer start was moved to another pipeline"
         );
         assert_eq!(state_of(&harness.player).0, gst::State::Playing);
         assert_eq!(reached.load(Ordering::SeqCst), 2, "hung start, newer start");
         assert_eq!(errors(&events), 0, "events: {events:?}");
+        true
+    });
+}
+
+/// How long the test lets the stopped pipeline settle before it looks.
+const SETTLE: Duration = Duration::from_millis(1_000);
+
+/// What the second pipeline a swap builds, which is the restart's, is made to
+/// do in the test below.
+struct HeldRestart {
+    /// Told when the restarted pipeline's start is held before it begins.
+    held: std::sync::mpsc::Receiver<()>,
+    /// Lets the start go.
+    release: std::sync::mpsc::Sender<()>,
+    /// Whether the restarted pipeline ever left `Null`.
+    left_null: Arc<AtomicBool>,
+}
+
+/// Holds the restarted pipeline's start on its queue before it begins, and
+/// watches the pipeline's state changes.
+fn hold_the_restarted_start() -> HeldRestart {
+    let (entered, held) = std::sync::mpsc::channel::<()>();
+    let (release, released) = std::sync::mpsc::channel::<()>();
+    let left_null = Arc::new(AtomicBool::new(false));
+    let builds = Arc::new(AtomicUsize::new(0));
+    let hook = Mutex::new(Some((entered, released)));
+    let watched = left_null.clone();
+    test_seam::on_pipeline_built(Arc::new(move |pipeline| {
+        if builds.fetch_add(1, Ordering::SeqCst) + 1 != 2 {
+            return;
+        }
+        let Some((entered, released)) = hook.lock().unwrap().take() else {
+            return;
+        };
+        test_seam::hold_first_job_of(pipeline, entered, released);
+        let (watched, element) = (watched.clone(), pipeline.clone());
+        if let Some(bus) = pipeline.bus() {
+            bus.set_sync_handler(move |_, message| {
+                if let gst::MessageView::StateChanged(change) = message.view() {
+                    if message.src() == Some(element.upcast_ref())
+                        && change.current() != gst::State::Null
+                    {
+                        watched.store(true, Ordering::SeqCst);
+                    }
+                }
+                gst::BusSyncReply::Pass
+            });
+        }
+    }));
+    HeldRestart {
+        held,
+        release,
+        left_null,
+    }
+}
+
+/// The restart's start is a job on the new pipeline's queue, so a `stop` right
+/// after it is ordered behind that start: the stopped pipeline ends in `Null`,
+/// never in a start that landed after the `Null` (`call_async`, which began a
+/// restart before, orders nothing).
+///
+/// The ordering is forced, not hoped for: the restarted pipeline's own start
+/// is held on its queue before it begins, so it is still queued when the stop
+/// lands. The retirement the stop issues drops it, and the pipeline never
+/// leaves `Null`; a queue that ran it anyway would take the pipeline out of
+/// `Null` after the stop. What the test pins is that a start still queued at
+/// the stop is not run. (A `Null` made on another thread would pass it: that
+/// one stands behind the start's state lock, and ends last as well.)
+#[test]
+fn a_stop_right_after_a_restarts_queued_start_leaves_the_stopped_pipeline_in_null() {
+    on_the_injected_hang(|| {
+        let harness = harness_with_deadline(Duration::from_millis(150));
+        let dir = tempfile::tempdir().unwrap();
+        let path = local_track(&dir);
+        let reached = hang_starts(&harness.player, 1);
+        let restart = hold_the_restarted_start();
+        harness.player.play(item(&path)).unwrap();
+        harness.pump_until(PATIENCE, |_| harness.player.start_watchdog.restarts() >= 1);
+        if reached.load(Ordering::SeqCst) == 0 || harness.player.start_watchdog.restarts() == 0 {
+            let _ = restart.release.send(());
+            return false;
+        }
+        let restarted = current_playbin(&harness.player);
+        assert!(
+            restart.held.recv_timeout(PATIENCE).is_ok(),
+            "the restarted pipeline's start never reached its queue, so the test measured nothing"
+        );
+        // A slow machine can let the watch begin the start over once more
+        // before the stop: that retires the pipeline held here by itself.
+        if harness.player.start_watchdog.restarts() != 1 {
+            let _ = restart.release.send(());
+            return false;
+        }
+
+        harness.player.stop().unwrap();
+        let _ = restart.release.send(());
+        harness.pump_for(SETTLE);
+        super::stuck_source_support::assert_every_retired_pipeline_went_down();
+
+        assert!(
+            !restart.left_null.load(Ordering::SeqCst),
+            "the start that was queued when the stop came ran after it"
+        );
+        assert_eq!(restarted.current_state(), gst::State::Null);
+        assert_ne!(current_playbin(&harness.player), restarted);
         true
     });
 }

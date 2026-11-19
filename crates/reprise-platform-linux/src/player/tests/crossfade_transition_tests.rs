@@ -267,7 +267,9 @@ fn play_20b_crossfade_promotion_carries_the_next_gain_from_the_first_sample() {
     let playbin = player
         .playbin
         .lock()
-        .unwrap_or_else(std::sync::PoisonError::into_inner);
+        .unwrap_or_else(std::sync::PoisonError::into_inner)
+        .element()
+        .clone();
     let current_uri = playbin.property::<Option<String>>("current-uri");
     assert!(
         current_uri
@@ -372,6 +374,7 @@ mod cue {
             .playbin
             .lock()
             .unwrap_or_else(PoisonError::into_inner)
+            .element()
             .property::<Option<String>>("current-uri");
         assert!(current_uri.is_some_and(|uri| uri.ends_with("single.wav")));
     }

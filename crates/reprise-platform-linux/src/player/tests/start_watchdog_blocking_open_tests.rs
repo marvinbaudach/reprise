@@ -11,87 +11,26 @@
 //! The FIFO is released by the test, or by the clock if the test is the thread
 //! that is stuck, so a regression fails on the gap instead of hanging.
 
-use std::os::unix::fs::OpenOptionsExt;
 use std::sync::atomic::AtomicBool;
-use std::sync::mpsc::{channel, Sender};
 use std::time::Instant;
 
-use super::start_watchdog_freeze_tests::{
-    longest_gap, StuckFifo, HEARTBEAT, MAX_GAP, STUCK_FOR, WATCH_AFTER_RESTART,
-};
 use super::start_watchdog_restart_tests::restart_after;
-use super::start_watchdog_tests::{harness_with_deadline, state_of, PATIENCE};
+use super::start_watchdog_tests::{harness_with_deadline, state_of};
+use super::stuck_source_support::{
+    assert_every_retired_pipeline_went_down, longest_gap, make_fifo, open_descriptors_of,
+    OpenerRelease, StuckFifo, HEARTBEAT, MAX_GAP, PATIENCE, STUCK_FOR, WATCH_AFTER_RESTART,
+};
 use super::*;
-use crate::player::reaper;
 use crate::player::start_watchdog::is_hung;
+
+/// How many restarts the test watches the main context across: the first
+/// onto a pipeline whose `open()` blocks, and the second, which finds that
+/// pipeline hung in its turn and begins the start over again (#1327).
+const RESTARTS_WATCHED: u64 = 2;
 
 /// Roomy for the first open to have happened before the look finds the start
 /// hung, short enough to keep the test brief.
 const DEADLINE: Duration = Duration::from_millis(400);
-
-/// How many descriptors of this process point at `path`.
-fn open_descriptors_of(path: &std::path::Path) -> usize {
-    std::fs::read_dir("/proc/self/fd").map_or(0, |fds| {
-        fds.filter_map(Result::ok)
-            .filter_map(|fd| std::fs::read_link(fd.path()).ok())
-            .filter(|target| target == path)
-            .count()
-    })
-}
-
-fn make_fifo(path: &std::path::Path) {
-    let made = std::process::Command::new("mkfifo")
-        .arg(path)
-        .status()
-        .unwrap();
-    assert!(made.success(), "mkfifo failed");
-}
-
-/// Wakes whatever is blocked in `open()` of the FIFO at `path`: opens it for
-/// reading and writing (which never blocks and counts as a writer), takes the
-/// name away so no later open blocks, and closes it, which is end of file for
-/// the reader that woke.
-fn release_openers(path: &std::path::Path) {
-    let writer = std::fs::OpenOptions::new()
-        .read(true)
-        .write(true)
-        .custom_flags(libc::O_CLOEXEC)
-        .open(path);
-    let _ = std::fs::remove_file(path);
-    drop(writer);
-}
-
-/// Releases the blocked openers at `path` when told to or after `STUCK_FOR`.
-struct OpenerRelease {
-    release: Option<Sender<()>>,
-    releaser: Option<std::thread::JoinHandle<()>>,
-}
-
-impl OpenerRelease {
-    fn at(path: &std::path::Path) -> Self {
-        let (release, released) = channel::<()>();
-        let path = path.to_owned();
-        let releaser = std::thread::spawn(move || {
-            let _ = released.recv_timeout(STUCK_FOR);
-            release_openers(&path);
-        });
-        Self {
-            release: Some(release),
-            releaser: Some(releaser),
-        }
-    }
-}
-
-impl Drop for OpenerRelease {
-    fn drop(&mut self) {
-        if let Some(release) = self.release.take() {
-            let _ = release.send(());
-        }
-        if let Some(releaser) = self.releaser.take() {
-            let _ = releaser.join();
-        }
-    }
-}
 
 #[test]
 fn a_restart_whose_new_pipeline_blocks_in_open_does_not_freeze_the_main_context() {
@@ -128,7 +67,8 @@ fn a_restart_whose_new_pipeline_blocks_in_open_does_not_freeze_the_main_context(
     });
     let began = Instant::now();
     harness.pump_until(PATIENCE, |_| {
-        harness.player.start_watchdog.restarts() >= 1 || began.elapsed() > STUCK_FOR * 2
+        harness.player.start_watchdog.restarts() >= RESTARTS_WATCHED
+            || began.elapsed() > STUCK_FOR * 2
     });
     harness.pump_for(WATCH_AFTER_RESTART);
     heartbeat.remove();
@@ -145,8 +85,8 @@ fn a_restart_whose_new_pipeline_blocks_in_open_does_not_freeze_the_main_context(
         "the main context stood still for {gap:?} while the restart's own start blocked in open()"
     );
     assert!(
-        restarts >= 1,
-        "the watchdog never restarted the stuck start"
+        restarts >= RESTARTS_WATCHED,
+        "the watchdog did not restart the stuck start twice ({restarts})"
     );
     assert!(
         is_hung(current, pending),
@@ -158,13 +98,5 @@ fn a_restart_whose_new_pipeline_blocks_in_open_does_not_freeze_the_main_context(
     // first FIFO's, and every pipeline the reaper holds goes down.
     drop(openers);
     drop(stuck);
-    let reaped = Instant::now();
-    while reaper::in_flight::count() > 0 && reaped.elapsed() < PATIENCE {
-        std::thread::sleep(HEARTBEAT);
-    }
-    assert_eq!(
-        reaper::in_flight::count(),
-        0,
-        "a retired pipeline was never taken down"
-    );
+    assert_every_retired_pipeline_went_down();
 }

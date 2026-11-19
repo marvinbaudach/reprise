@@ -82,6 +82,7 @@ pub(super) fn state_of(player: &Player) -> (gst::State, gst::State) {
         .playbin
         .lock()
         .unwrap_or_else(PoisonError::into_inner)
+        .element()
         .clone();
     let (_, current, pending) = playbin.state(gst::ClockTime::ZERO);
     (current, pending)
@@ -92,6 +93,7 @@ pub(super) fn current_playbin(player: &Player) -> gst::Element {
         .playbin
         .lock()
         .unwrap_or_else(PoisonError::into_inner)
+        .element()
         .clone()
 }
 
@@ -167,14 +169,12 @@ fn a_paused_hung_start_is_started_over_into_paused() {
     harness.player.play(item(&path)).unwrap();
     // The hang is real before the user acts on it.
     harness.pump_until(PATIENCE, |_| reached.load(Ordering::SeqCst) >= 1);
-    // Pausing the hung start leaves PAUSED, not PLAYING, as the pending state.
-    harness
-        .player
-        .playbin
-        .lock()
-        .unwrap_or_else(PoisonError::into_inner)
-        .set_state(gst::State::Paused)
-        .unwrap();
+    // The user pauses the hung start. The pause is queued behind the start
+    // and never runs there; what the restart goes by is the state asked for.
+    assert_eq!(
+        harness.player.toggle_pause().unwrap(),
+        PlaybackState::Paused
+    );
 
     harness.pump_until(PATIENCE, |_| {
         state_of(&harness.player).0 == gst::State::Paused
@@ -555,6 +555,7 @@ fn position_ms(player: &Player) -> i64 {
         .playbin
         .lock()
         .unwrap_or_else(PoisonError::into_inner)
+        .element()
         .clone();
     playbin
         .query_position::<gst::ClockTime>()

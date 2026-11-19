@@ -23,8 +23,10 @@
 //! kernel read (a dead network share) keeps `Null` waiting for as long as the
 //! read lasts, and the timer runs on the main context: the whole interface would
 //! wait with it. The start is begun over on a freshly built pipeline instead,
-//! swapped in under the playbin lock, and the hung one goes to a reaper thread
-//! (`reaper.rs`, `pipeline_swap.rs`). A look takes the lock only to observe; the
+//! swapped in under the playbin lock, its start issued as a job on that
+//! pipeline's own queue, and the hung one retired (`pipeline_queue.rs`,
+//! `pipeline_swap.rs`). The player keeps what each start was in a record, and a
+//! restart carries it over from there, not from the hung pipeline. A look takes the lock only to observe; the
 //! restart takes it again and checks again before it swaps, so a `play` that
 //! slipped in between is left alone.
 //!
@@ -41,6 +43,7 @@ use std::time::{Duration, Instant};
 
 use reprise_core::playback::{PlaybackError, PlaybackFailure, PlaybackFailureKind, PlayerEvent};
 
+use super::pipeline_queue::Pipeline;
 use crate::player_pipeline::{is_remote_playback_uri, next_playback_session_id};
 
 /// How long the source of a start in READY may stand still before the first
@@ -163,7 +166,7 @@ fn source_position(playbin: &gst::Element) -> Option<u64> {
 /// Watches the start of the current track. Holds only clones of what the
 /// player already shares, so a timer in flight never keeps a `Player` alive.
 pub(super) struct StartWatchdog {
-    playbin: Arc<Mutex<gst::Element>>,
+    playbin: Arc<Mutex<Pipeline>>,
     stream_generation: Arc<AtomicU64>,
     on_event: Arc<dyn Fn(PlayerEvent) + Send + Sync>,
     /// Begins a hung start over. A field rather than a call into the player so
@@ -178,7 +181,7 @@ pub(super) struct StartWatchdog {
 
 impl StartWatchdog {
     pub(super) fn new(
-        playbin: Arc<Mutex<gst::Element>>,
+        playbin: Arc<Mutex<Pipeline>>,
         stream_generation: Arc<AtomicU64>,
         on_event: Arc<dyn Fn(PlayerEvent) + Send + Sync>,
         restart: RestartFn,
@@ -211,13 +214,21 @@ impl StartWatchdog {
     ///
     /// The stream generation, which already stands a watch down when another
     /// start replaced its own, does not cover everything: `stop`, dropping the
-    /// player and a `play` whose attempts both fail leave it where it was. So
-    /// `disarm` alone covers a `stop` followed by a resume of the same URI that
-    /// hangs again (same generation, hung, and not this watch's to restart),
-    /// and a dropped player (nothing owns the pipeline; the generation never
-    /// moves again). Every start that bumps the generation without a `disarm`
-    /// in its path (a gapless step, a crossfade promotion) is covered by the
-    /// generation alone, which the restart checks again under the lock.
+    /// player and a `play` whose attempts both fail leave it where it was.
+    ///
+    /// A `stop` that builds its idle pipeline needs no `disarm` to be safe: the
+    /// slot then holds a pipeline in `Null`, which is not a hung start, and the
+    /// start record is gone, so a look or a restart finds nothing to act on.
+    /// `disarm` is what covers the `stop` that cannot build one (the hung
+    /// pipeline stays in the slot, hung and on the same generation, its `Null`
+    /// queued behind a stuck job): the give-up reports the track with no check
+    /// under the lock, so without it the frontend would be told, after the
+    /// `stop`, that the stopped track never started
+    /// (`start_watchdog_stop_tests`). It also covers a dropped player (nothing
+    /// owns the pipeline; the generation never moves again). Every start that
+    /// bumps the generation without a `disarm` in its path (a gapless step, a
+    /// crossfade promotion) is covered by the generation alone, which the
+    /// restart checks again under the lock.
     pub(super) fn disarm(&self) {
         self.epoch.fetch_add(1, Ordering::SeqCst);
     }
@@ -255,9 +266,10 @@ struct Progress {
     source_position: Option<u64>,
     /// When the source last moved, or the attempt began.
     moved_at: Instant,
-    /// Set by a restart, whose start is issued from another thread: until the
-    /// new pipeline has left `Null` once, a pipeline in `Null` with nothing
-    /// pending has not begun its start, which is not the same as being stopped.
+    /// Every start is issued from the pipeline's own queue thread, the first
+    /// one as much as a restart's: until the pipeline has left `Null` once, a
+    /// pipeline in `Null` with nothing pending has not begun its start, which
+    /// is not the same as being stopped.
     awaiting_start: bool,
 }
 
@@ -267,11 +279,11 @@ impl Progress {
             attempt: 1,
             source_position: None,
             moved_at: now,
-            awaiting_start: false,
+            awaiting_start: true,
         }
     }
 
-    /// Whether the new pipeline of a restart has yet to begin its start, so a
+    /// Whether the new pipeline of a start or a restart has yet to begin its start, so a
     /// look finding it in `Null` must wait instead of standing down. It ends
     /// the first time the pipeline is seen anywhere else; a start that never
     /// leaves `Null` is cut off by the caller's deadline.
@@ -302,7 +314,7 @@ impl Progress {
 
 /// One timer's view of the player, moved into the timer closure.
 struct Look {
-    playbin: Arc<Mutex<gst::Element>>,
+    playbin: Arc<Mutex<Pipeline>>,
     stream_generation: Arc<AtomicU64>,
     on_event: Arc<dyn Fn(PlayerEvent) + Send + Sync>,
     restart: RestartFn,
@@ -328,6 +340,7 @@ impl Look {
             .playbin
             .lock()
             .unwrap_or_else(PoisonError::into_inner)
+            .element()
             .clone();
         let (_, current, pending) = playbin.state(gst::ClockTime::ZERO);
         let now = Instant::now();
@@ -429,7 +442,8 @@ mod tests {
     #[test]
     fn a_restarted_start_still_in_null_is_waited_for_until_it_leaves_null() {
         let mut progress = Progress::starting(Instant::now());
-        assert!(!progress.awaiting_start(gst::State::Null, gst::State::VoidPending));
+        assert!(progress.awaiting_start(gst::State::Null, gst::State::VoidPending));
+        assert!(!progress.awaiting_start(gst::State::Ready, gst::State::Paused));
         progress.restarted(Instant::now());
         assert!(progress.awaiting_start(gst::State::Null, gst::State::VoidPending));
         assert!(progress.awaiting_start(gst::State::Null, gst::State::VoidPending));

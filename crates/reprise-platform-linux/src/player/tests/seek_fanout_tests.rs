@@ -162,6 +162,7 @@ fn file_position_ms(player: &Player) -> i64 {
         .playbin
         .lock()
         .unwrap_or_else(PoisonError::into_inner)
+        .element()
         .clone();
     playbin
         .query_position::<gst::ClockTime>()

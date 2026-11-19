@@ -25,9 +25,10 @@
 //! once the sink renders the boundary (see [`handoff`]): until then the
 //! frontend keeps the outgoing track, its time and its length.
 //!
-//! A CUE track starts without waiting: [`start_segment`] sets the file's
-//! pipeline to paused and returns, and the bus's `ASYNC_DONE` — the preroll —
-//! calls [`SegmentGate::complete_start`], which learns the file's duration and
+//! A CUE track starts without waiting: `Player::play` installs the cut with
+//! [`SegmentGate::begin_start`], has the file's pipeline set to paused and
+//! returns, and the bus's `ASYNC_DONE` — the preroll — calls
+//! [`SegmentGate::complete_start`], which learns the file's duration and
 //! seeks to a nonzero track start. A track beginning with its file needs no
 //! seek: flushing `flacparse` back to zero during its fresh preroll can fail the
 //! stream. The mechanism is repeated flushing seeks: one seek used to reach the
@@ -37,7 +38,9 @@
 //! [`crate::seek_dedupe`]), but a flush the track does not need stays avoided.
 //! A nonzero seek's own `ASYNC_DONE` then enters Playing, so playback does not
 //! overlap its flush either. `play` runs on the GTK main thread, and a file on
-//! a slow mount must not freeze it.
+//! a slow mount must not freeze it: the seek and the state change that finish a
+//! start are a job on the pipeline's own queue (see `pipeline_queue.rs`), never
+//! a call made on the bus watch's main context.
 //!
 //! The last track of a file has no boundary when its end lies within
 //! [`OPEN_END_TOLERANCE_MS`] of the file's duration: it plays to the end of the
@@ -53,12 +56,17 @@
 mod handoff;
 mod split;
 
+#[cfg(test)]
+mod finish_start_tests;
+
 use gstreamer as gst;
 use gstreamer::prelude::*;
-use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::atomic::AtomicU64;
 use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
 
 use reprise_core::playback::{PlaybackError, PlaybackState, PlayerEvent};
+
+use super::pipeline_queue::{Asked, QueueHandle};
 
 use crate::gapless::QueuedTrack;
 use crate::player_effects::{linear_gain, TRACK_GAIN_NAME};
@@ -242,7 +250,7 @@ impl SegmentGate {
     /// and records that its start-seek is still to come. The duration is not
     /// known yet: [`Self::complete_start`] adds it. The cut is installed now
     /// because the frontend feeds the next track right after `play`.
-    fn begin_start(&self, uri: &str, segment: (i64, i64)) {
+    pub(super) fn begin_start(&self, uri: &str, segment: (i64, i64)) {
         self.begin(uri, segment, None);
         self.lock().pending_start_ms = Some(segment.0);
     }
@@ -267,19 +275,26 @@ impl SegmentGate {
 
     /// Each start `ASYNC_DONE` of a CUE track's file calls. The preroll one
     /// issues a flushing, sample-accurate seek to a nonzero track start and
-    /// leaves the pipeline Paused. A zero start enters Playing directly: the
-    /// parser is already there, and a redundant flush back to zero is the
-    /// failure this path must avoid. A nonzero seek's own `ASYNC_DONE` enters
-    /// Playing, so the parser never has to stream while that flush is still in
-    /// flight. An early user seek that changed the desired start issues its
-    /// replacement here first. A refused seek is logged and the track plays
-    /// from where the file stands, because failing would mark a playable file
-    /// missing.
+    /// leaves the pipeline Paused. A zero start enters the state the user asked
+    /// for directly: the parser is already there, and a redundant flush back to
+    /// zero is the failure this path must avoid. A nonzero seek's own
+    /// `ASYNC_DONE` enters that state, so the parser never has to stream while
+    /// that flush is still in flight. An early user seek that changed the
+    /// desired start issues its replacement here first. A refused seek is
+    /// logged and the track plays from where the file stands, because failing
+    /// would mark a playable file missing.
+    ///
+    /// The state the user asked for is `Playing` unless they paused during the
+    /// start (see [`Asked`]); a start paused before its preroll stays paused.
     ///
     /// Does nothing unless a start is pending and `playbin` has really
     /// prerolled: a message left over from a pipeline that has since been
     /// restarted arrives while the new one still prerolls.
-    pub(crate) fn complete_start(&self, playbin: &gst::Element) {
+    ///
+    /// Only the bookkeeping runs here, on the bus watch's main context: the seek
+    /// and the state change are one job on the pipeline's own `queue`, because
+    /// either of them waits on a source that is blocked in the kernel.
+    pub(crate) fn complete_start(self: &Arc<Self>, playbin: &gst::Element, queue: &QueueHandle) {
         let (prerolled, _, _) = playbin.state(gst::ClockTime::ZERO);
         if matches!(prerolled, Ok(gst::StateChangeSuccess::Async) | Err(_)) {
             return;
@@ -307,11 +322,25 @@ impl SegmentGate {
                 .map(|duration| duration.mseconds() as i64);
             self.learn_file_duration(file_duration_ms);
         }
-        if let Some(start_ms) = next_seek_ms {
+        let gate = self.clone();
+        let asked = queue.clone();
+        queue.submit(move |playbin| gate.finish_start(playbin, &asked, next_seek_ms));
+    }
+
+    /// The tail of [`Self::complete_start`], on the pipeline's queue: the seek
+    /// to the track's start, or entering the state the user asked for.
+    fn finish_start(&self, playbin: &gst::Element, queue: &QueueHandle, seek_ms: Option<i64>) {
+        if let Some(start_ms) = seek_ms {
             let start = gst::ClockTime::from_mseconds(start_ms.max(0) as u64);
             match playbin.seek_simple(gst::SeekFlags::FLUSH | gst::SeekFlags::ACCURATE, start) {
                 Ok(()) => return,
                 Err(error) => {
+                    // A retired pipeline's refusal comes after a newer start has
+                    // made the gate its own; what it would clear is that
+                    // start's pending seek.
+                    if queue.is_retired() {
+                        return;
+                    }
                     let mut state = self.lock();
                     state.pending_start_ms = None;
                     state.start_seek_ms = None;
@@ -319,10 +348,23 @@ impl SegmentGate {
                 }
             }
         }
-        // The generation moved when the start was issued (`start_segment`).
+        if queue.asked() != Asked::Playing {
+            // Paused during the start: the pipeline is prerolled in Paused and
+            // stays there; `toggle_pause` already told the frontend.
+            return;
+        }
+        // The generation moved when the start was issued (`Player::play`).
         if let Err(error) = playbin.set_state(gst::State::Playing) {
             // GStreamer posts the failure on the bus as well.
             tracing::warn!(%error, "CUE track's file would not start playing");
+            return;
+        }
+        // The state change took a while, and the user may have paused or
+        // stopped meanwhile. Their change is queued behind this job and its
+        // event is out already; `Playing` now would be the false last word.
+        // This narrows the window to the gap between this read and the send;
+        // it cannot close it, since the transport reports from its own thread.
+        if queue.is_retired() || queue.asked() != Asked::Playing {
             return;
         }
         (self.on_event)(PlayerEvent::StateChanged(PlaybackState::Playing));
@@ -412,8 +454,13 @@ impl SegmentGate {
     }
 
     /// A seek [`Self::seek_target_ms`] asked for was refused: no flush will
-    /// come to end the wait it started.
-    pub(crate) fn seek_refused(&self) {
+    /// come to end the wait it started. `queue` is the pipeline that refused
+    /// it: a retired one answers late, after a newer stream has made the gate
+    /// its own, and the wait it clears would be that stream's.
+    pub(crate) fn seek_refused(&self, queue: &QueueHandle) {
+        if queue.is_retired() {
+            return;
+        }
         self.lock().seek_in_flight = false;
     }
 
@@ -448,35 +495,6 @@ impl SegmentGate {
         });
         (position_ms, duration_ms)
     }
-}
-
-/// Makes `segment` of `uri` the active cut and sets `playbin` to paused,
-/// without waiting for the file: the preroll's `ASYNC_DONE` completes the
-/// start (see [`SegmentGate::complete_start`]). Runs under
-/// `Player::try_play`'s `playbin` lock, after the URI is set. A file that
-/// cannot even be set paused fails the attempt; one that cannot be read fails
-/// on the bus, as a whole file does.
-pub(super) fn start_segment(
-    playbin: &gst::Element,
-    gate: &SegmentGate,
-    uri: &str,
-    segment: (i64, i64),
-) -> Result<(), PlaybackError> {
-    gate.begin_start(uri, segment);
-    playbin
-        .set_state(gst::State::Paused)
-        .map_err(|e| PlaybackError::Backend(format!("GStreamer: {e}")))?;
-    // The start is a stream start from here on, like a whole file's: the file
-    // only enters `Playing` once it has prerolled, and a fault of the stream
-    // before it that the frontend has not yet read must not carry the
-    // generation this one is current under. Bumped under `Player::try_play`'s
-    // `playbin` lock, so the events the bus and the start itself emit afterwards
-    // carry the new generation. Not every event can promise it: the position
-    // ticker looks at the pipeline's state outside that lock, and spectrum
-    // frames come from a streaming thread, so one that was already under way
-    // can still carry the previous generation.
-    gate.stream_generation.fetch_add(1, Ordering::SeqCst);
-    Ok(())
 }
 
 /// Installs the boundary probe on the gain element's sink pad of `playbin`'s
@@ -573,7 +591,7 @@ enum BoundaryVerdict {
 impl SegmentGate {
     /// The probe's decision for one buffer about to reach the gain element —
     /// see the module comment. Runs on the streaming thread; it takes only the
-    /// cut lock, never the `playbin` lock `try_play` holds across `Null`.
+    /// cut lock, never the `playbin` lock.
     fn on_buffer(
         &self,
         stream_time: Option<gst::ClockTime>,

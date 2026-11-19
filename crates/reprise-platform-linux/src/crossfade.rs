@@ -1,20 +1,29 @@
 //! Crossfade plumbing for the `playbin3` backend (Phase B — see `player.rs`).
 //!
-//! Kernidee: Anders als Gapless (ein playbin, uri-Swap auf `about-to-finish`)
-//! ist Crossfade *überlappend*. Kurz vor Track-Ende — `crossfade_seconds` vor
-//! Schluss — baut der Position-Ticker eine **zweite** `playbin3`-Pipeline für den
-//! vorgefütterten Nachfolger, startet sie leise (`volume = 0`) und blendet dann
-//! in einem kurzlebigen Thread beide Volumes invers über: die alte Pipeline von
-//! `user_volume` auf 0, die neue von 0 auf `user_volume`. Kein `audiomixer` —
-//! zwei Sinks spielen kurz gleichzeitig, der Audio-Server mischt. Am Ende der
-//! Rampe wird die neue Pipeline zur Primär-`playbin` befördert (in den geteilten
-//! `Arc<Mutex>` getauscht), die alte auf `Null` verworfen und — wie beim
-//! Gapless-Handoff — `AdvancedToNext` emittiert, damit das Frontend sein
-//! Queue-Modell um einen Schritt nachzieht.
+//! Unlike gapless (one playbin, a URI swap on `about-to-finish`), a crossfade
+//! *overlaps* the two tracks. Shortly before the track ends — `crossfade_seconds`
+//! before the end — the position ticker starts a thread that builds a **second**
+//! `playbin3` pipeline for the pre-fed successor, starts it silent
+//! (`volume = 0`) and then fades both volumes inversely: the old pipeline from
+//! `user_volume` to 0, the new one from 0 to `user_volume`. No `audiomixer`: two
+//! sinks play at once for a moment and the audio server mixes. At the end of
+//! the ramp the new pipeline is promoted to the primary (swapped into the shared
+//! `Arc<Mutex>`), the old one is retired and, as with a gapless hand-off,
+//! `AdvancedToNext` is emitted so the frontend moves its queue model one step.
 //!
-//! Die Gain-Berechnung [`crossfade_gains`] ist als reine Funktion herausgezogen:
-//! sie ist der headless deterministisch beweisbare Kern (Unit-Tests am Dateiende).
-//! Die eigentliche akustische Überblendung ist nur per Hörtest verifizierbar.
+//! Both pipelines are [`Pipeline`]s: an element with a command queue of its own
+//! (see `player/pipeline_queue.rs`). The secondary's start is a job on its
+//! queue that nobody waits for, so [`CrossfadeEngine::await_preroll`]'s bound
+//! applies even when the secondary's source blocks in `open()`; and every path
+//! that lets a pipeline go (a fade giving way, an abort, the promotion's
+//! outgoing pipeline) retires it instead of setting it to `Null` inline, which a
+//! stuck source would hold up on the ramp thread, on the main context, or under
+//! the playbin lock. The promotion retires the outgoing pipeline only after the
+//! lock is released (see `crossfade/handover.rs`).
+//!
+//! The gain computation [`crossfade_gains`] is a pure function: it is the core
+//! that can be proven deterministically headless (unit tests at the end of the
+//! file). The audible blend itself can only be verified by listening.
 
 use gstreamer as gst;
 use gstreamer::prelude::*;
@@ -27,10 +36,9 @@ use reprise_core::library::settings::TrackTransition;
 use reprise_core::playback::{AudioEffects, PlayerEvent};
 
 use crate::gapless::{HandoffFlag, NextUri, PendingGain, QueuedTrack};
+use crate::player::pipeline_queue::{Asked, Pipeline};
 use crate::player::segment::SegmentHandle;
-use crate::player_pipeline::{
-    attach_bus_watch, build_playbin, configure_download_buffering, discard_cava_samples,
-};
+use crate::player_pipeline::{build_pipeline, configure_download_buffering, discard_cava_samples};
 
 /// Geteilter (Modus, Sekunden)-Zustand. Der Ticker liest ihn zur Trigger-
 /// Entscheidung, `set_transition` schreibt ihn, und der `about-to-finish`-
@@ -38,12 +46,14 @@ use crate::player_pipeline::{
 /// gapless zu swappen (sonst konkurrierten Gapless-Swap und Crossfade).
 pub(crate) type Transition = Arc<Mutex<(TrackTransition, u8)>>;
 
-/// Slot für die eingehende Sekundär-Pipeline während einer laufenden
-/// Überblendung. Der Rampen-Thread legt sie hier ab; ein Abbruch
-/// (`play`/`stop`/`seek`) entnimmt sie und schaltet sie auf `Null`, damit die
-/// zweite (kurz hörbare) Pipeline sofort verstummt statt bis zum nächsten
-/// Rampenschritt weiterzulaufen.
-pub(crate) type IncomingSlot = Arc<Mutex<Option<gst::Element>>>;
+/// The slot of the incoming secondary pipeline during a fade, and its owner.
+/// The ramp thread puts the pipeline here before it plays and keeps only an
+/// element clone for volumes and state polls; an abort (`play`/`stop`/`seek`)
+/// takes it out and retires it, so the second (briefly audible) pipeline falls
+/// silent at once instead of playing on until the next ramp step, and the
+/// promotion takes it out to make it the primary. Whoever finds the slot empty
+/// knows an abort has already retired it.
+pub(crate) type IncomingSlot = Arc<Mutex<Option<Pipeline>>>;
 
 /// Schrittweite der Volume-Rampe. 50 ms ist fein genug, dass die Überblendung
 /// als kontinuierlich wahrgenommen wird, aber grob genug, dass der Thread fast
@@ -122,7 +132,7 @@ fn ramp_length_ms(total_ms: u64, outgoing_ends_at: Instant, now: Instant) -> Opt
 /// dieselben Handles direkt und konstruiert dieses Bündel via `Player::engine`.
 #[derive(Clone)]
 pub(crate) struct CrossfadeEngine {
-    pub(crate) playbin: Arc<Mutex<gst::Element>>,
+    pub(crate) playbin: Arc<Mutex<Pipeline>>,
     pub(crate) bus_watch: Arc<Mutex<gst::bus::BusWatchGuard>>,
     pub(crate) on_event: Arc<dyn Fn(PlayerEvent) + Send + Sync>,
     pub(crate) effects: Arc<Mutex<AudioEffects>>,
@@ -299,6 +309,7 @@ impl CrossfadeEngine {
             self.playbin
                 .lock()
                 .unwrap_or_else(PoisonError::into_inner)
+                .element()
                 .bus(),
             self.generation.clone(),
             my_generation,
@@ -308,7 +319,7 @@ impl CrossfadeEngine {
             .lock()
             .unwrap_or_else(PoisonError::into_inner)
             .clone();
-        let secondary = match build_playbin(
+        let built = build_pipeline(
             &effects,
             self.next_uri.clone(),
             self.handoff_pending.clone(),
@@ -316,57 +327,66 @@ impl CrossfadeEngine {
             self.stream_generation.clone(),
             self.pending_gain.clone(),
             self.segments.clone(),
-        ) {
-            Ok(element) => element,
+        );
+        // Until it is published in the slot the pipeline is this function's,
+        // and dropping it, on any early return, retires it.
+        let secondary = match built {
+            Ok(pipeline) => pipeline,
             Err(error) => {
                 tracing::warn!(%error, "crossfade: could not build secondary pipeline; aborting fade");
                 self.give_way(None, &outgoing_end, my_generation);
                 return;
             }
         };
+        let element = secondary.element().clone();
         #[cfg(test)]
-        test_seam::secondary_built(&secondary);
+        test_seam::secondary_built(&element);
         // A consumer from the first buffer on, until promotion installs the
         // real CAVA processor — see `discard_cava_samples`.
-        if let Err(error) = discard_cava_samples(&secondary) {
+        if let Err(error) = discard_cava_samples(&element) {
             tracing::warn!(%error, "crossfade: could not give the secondary's CAVA sink a consumer; aborting fade");
-            self.give_way(Some(&secondary), &outgoing_end, my_generation);
+            self.give_way(None, &outgoing_end, my_generation);
             return;
         }
         if let Err(error) = crate::player_effects::set_playbin_spectrum_messages(
-            &secondary,
+            &element,
             self.spectrum_enabled.load(Ordering::SeqCst),
         ) {
             tracing::warn!(%error, "crossfade: could not configure spectrum analyzer");
         }
-        if let Err(error) = configure_download_buffering(&secondary, &queued.uri, false) {
+        if let Err(error) = configure_download_buffering(&element, &queued.uri, false) {
             tracing::warn!(%error, "crossfade: could not configure download buffering");
-            self.give_way(Some(&secondary), &outgoing_end, my_generation);
+            self.give_way(None, &outgoing_end, my_generation);
             return;
         }
-        secondary.set_property("uri", &queued.uri);
-        if let Err(error) =
-            crate::player_effects::set_playbin_track_gain(&secondary, queued.gain_db)
+        element.set_property("uri", &queued.uri);
+        if let Err(error) = crate::player_effects::set_playbin_track_gain(&element, queued.gain_db)
         {
             tracing::warn!(%error, "crossfade: could not apply incoming track gain");
-            self.give_way(Some(&secondary), &outgoing_end, my_generation);
+            self.give_way(None, &outgoing_end, my_generation);
             return;
         }
-        secondary.set_property("volume", 0.0_f64);
-        // Published before it plays, so an abort during the state change
-        // already finds it.
-        *self.incoming.lock().unwrap_or_else(PoisonError::into_inner) = Some(secondary.clone());
+        element.set_property("volume", 0.0_f64);
+        secondary.set_asked(Asked::Playing);
         #[cfg(test)]
         let playing_since = Instant::now();
-        if let Err(error) = secondary.set_state(gst::State::Playing) {
-            tracing::warn!(%error, "crossfade: secondary pipeline refused Playing; aborting fade");
-            self.give_way(Some(&secondary), &outgoing_end, my_generation);
-            return;
+        // Published before it plays, so an abort during the state change
+        // already finds it. The start is a job nobody waits for: a source that
+        // blocks in `open()` keeps it from returning, and the wait below, which
+        // has a bound of its own, is what notices.
+        {
+            let mut slot = self.incoming.lock().unwrap_or_else(PoisonError::into_inner);
+            slot.insert(secondary).submit(|element| {
+                if let Err(error) = element.set_state(gst::State::Playing) {
+                    tracing::warn!(%error, "crossfade: secondary pipeline refused Playing");
+                }
+            });
         }
+        let secondary = element;
         match self.await_preroll(&secondary, my_generation, outgoing_ends_at) {
             Preroll::Done => {}
             Preroll::Superseded => {
-                let _ = secondary.set_state(gst::State::Null);
+                self.retire_incoming(&secondary);
                 return;
             }
             Preroll::GaveUp(reason) => {
@@ -396,9 +416,9 @@ impl CrossfadeEngine {
         let start = Instant::now();
         loop {
             if self.generation.load(Ordering::SeqCst) != my_generation {
-                // Abbruch: der Abbruch-Pfad hat den incoming-Slot bereits geleert
-                // und ggf. auf Null geschaltet; unser Klon hier zur Sicherheit auch.
-                let _ = secondary.set_state(gst::State::Null);
+                // Aborted: the abort path has already emptied the incoming slot
+                // and retired the pipeline; nothing is left for this clone to do.
+                self.retire_incoming(&secondary);
                 return;
             }
             let elapsed = start.elapsed().as_millis() as u64;
@@ -409,7 +429,9 @@ impl CrossfadeEngine {
                 .unwrap_or_else(PoisonError::into_inner);
             {
                 let primary = self.playbin.lock().unwrap_or_else(PoisonError::into_inner);
-                primary.set_property("volume", out_gain * user_volume);
+                primary
+                    .element()
+                    .set_property("volume", out_gain * user_volume);
             }
             secondary.set_property("volume", in_gain * user_volume);
             if elapsed >= ramp_ms {
@@ -443,11 +465,19 @@ impl CrossfadeEngine {
             let slice = give_up_at
                 .saturating_duration_since(Instant::now())
                 .min(RAMP_STEP);
-            let (result, _, _) =
+            let (result, current, _) =
                 secondary.state(gst::ClockTime::from_nseconds(slice.as_nanos() as u64));
             match result {
-                Ok(gst::StateChangeSuccess::Success | gst::StateChangeSuccess::NoPreroll) => {
+                // The start is a job on the secondary's own queue: until it has
+                // begun, the pipeline is in `Null` with nothing pending, which
+                // is not a preroll.
+                Ok(gst::StateChangeSuccess::Success | gst::StateChangeSuccess::NoPreroll)
+                    if current != gst::State::Null =>
+                {
                     return Preroll::Done;
+                }
+                Ok(gst::StateChangeSuccess::Success | gst::StateChangeSuccess::NoPreroll) => {
+                    std::thread::sleep(slice);
                 }
                 Ok(gst::StateChangeSuccess::Async) => {}
                 Err(_) => return Preroll::GaveUp("the incoming pipeline failed to start"),
@@ -457,141 +487,9 @@ impl CrossfadeEngine {
             }
         }
     }
-
-    /// Gives up the fade: the secondary, if there is one, goes to `Null` and
-    /// leaves the slot, and the guard is released so the outgoing track's
-    /// end-of-stream is reported again. The ramp never ran, so the outgoing
-    /// track gets back its full volume, or the one the user chose meanwhile.
-    /// An end-of-stream the outgoing track reached while the fade waited is
-    /// reported here, once, because the guard made the bus watch drop it. A
-    /// fade that a manual jump already superseded is left alone: the jump
-    /// cleaned up, and its guard may belong to a newer fade by now.
-    fn give_way(
-        &self,
-        secondary: Option<&gst::Element>,
-        outgoing_end: &EosCatch,
-        my_generation: u64,
-    ) {
-        if let Some(secondary) = secondary {
-            {
-                let mut slot = self.incoming.lock().unwrap_or_else(PoisonError::into_inner);
-                if slot.as_ref() == Some(secondary) {
-                    *slot = None;
-                }
-            }
-            let _ = secondary.set_state(gst::State::Null);
-        }
-        if self.generation.load(Ordering::SeqCst) != my_generation {
-            return;
-        }
-        // Order matters. With the guard down first, an end-of-stream that
-        // arrives from here on is either caught (and reported below) or
-        // reaches the bus watch, which reports it itself.
-        self.crossfading.store(false, Ordering::SeqCst);
-        // `set_volume` only stores its target while the guard is up, and the
-        // ramp that would have applied it never ran. A `set_volume` after the
-        // guard went down applies itself; one before it is read here.
-        self.restore_user_volume();
-        #[cfg(test)]
-        test_seam::before_release();
-        // A `play()` that landed after the check above started a track of its
-        // own; the end this fade caught belongs to the one it replaced.
-        let caught = outgoing_end.release();
-        if caught && self.generation.load(Ordering::SeqCst) == my_generation {
-            tracing::debug!("crossfade: the outgoing track ended during the wait; reporting it");
-            self.segments.complete_pending_handoff();
-            (self.on_event)(PlayerEvent::TrackFinished);
-        }
-    }
-
-    /// Applies the user's volume to the primary, as `Player::abort_crossfade`
-    /// does after it cancels a fade.
-    fn restore_user_volume(&self) {
-        let user_volume = *self
-            .user_volume
-            .lock()
-            .unwrap_or_else(PoisonError::into_inner);
-        self.playbin
-            .lock()
-            .unwrap_or_else(PoisonError::into_inner)
-            .set_property("volume", user_volume);
-    }
-
-    /// Befördert die fertige Sekundär-Pipeline zur neuen Primär-`playbin`:
-    /// frischen Bus-Watch anhängen, unter dem `playbin`-Lock atomar tauschen,
-    /// alte Pipeline auf `Null`, Ziel-Volume wiederherstellen, `AdvancedToNext`.
-    fn promote(self, secondary: &gst::Element, outgoing_end: &EosCatch, my_generation: u64) {
-        // Vor dem Anhängen des Watches etwaige *veraltete* Bus-Nachrichten
-        // verwerfen (z. B. ein EOS, das ein sehr kurzer Nachfolger schon während
-        // der Blende gepostet hat). In der Praxis (echte Songs) steht hier
-        // nichts an; die Drainage schützt nur gegen Stale-Events aus Tests mit
-        // Winz-Fixtures — der neue Handoff (`AdvancedToNext`) wird ohnehin
-        // manuell emittiert, nicht aus dem StreamStart der Sekundär abgeleitet.
-        if let Some(bus) = secondary.bus() {
-            while bus.pop().is_some() {}
-        }
-        let new_watch = match attach_bus_watch(
-            secondary,
-            self.on_event.clone(),
-            self.handoff_pending.clone(),
-            self.crossfading.clone(),
-            self.spectrum_enabled.clone(),
-            self.cava_stream_generation.clone(),
-            self.segments.clone(),
-        ) {
-            Ok(watch) => watch,
-            Err(error) => {
-                tracing::warn!(%error, "crossfade: could not attach bus watch to promoted pipeline");
-                // The outgoing track plays on: it needs its end-of-stream
-                // reported, and its volume back.
-                self.give_way(Some(secondary), outgoing_end, my_generation);
-                return;
-            }
-        };
-        let user_volume = *self
-            .user_volume
-            .lock()
-            .unwrap_or_else(PoisonError::into_inner);
-        {
-            let mut primary = self.playbin.lock().unwrap_or_else(PoisonError::into_inner);
-            // Letzte Abbruch-Prüfung unter dem Lock: ist zwischenzeitlich
-            // abgebrochen worden, die frisch gebaute Sekundär verwerfen und die
-            // Primär in Ruhe lassen (der Abbruch-Pfad hat schon aufgeräumt).
-            if self.generation.load(Ordering::SeqCst) != my_generation {
-                drop(new_watch);
-                let _ = secondary.set_state(gst::State::Null);
-                return;
-            }
-            let _ = self
-                .incoming
-                .lock()
-                .unwrap_or_else(PoisonError::into_inner)
-                .take();
-            let old = std::mem::replace(&mut *primary, secondary.clone());
-            // Bumped here, under the same `playbin` lock as the swap, not when
-            // the secondary silently started minutes/seconds earlier: until
-            // this instant `self.playbin` (and thus every `Position` tick the
-            // ticker reads through it) still describes the *outgoing* track,
-            // so bumping any earlier would mislabel those ticks as belonging
-            // to a stream that has not actually taken over yet. Taking the
-            // lock provides the happens-before edge that guarantees no ticker
-            // read after this point can observe the old generation.
-            self.stream_generation.fetch_add(1, Ordering::SeqCst);
-            if let Err(error) = old.set_state(gst::State::Null) {
-                tracing::debug!(%error, "crossfade: outgoing pipeline refused Null (dropping anyway)");
-            }
-            secondary.set_property("volume", user_volume);
-        }
-        // Ersetzt den Watch-Guard der alten Primär (dessen Drop den alten Watch
-        // entfernt) durch den der neuen.
-        *self
-            .bus_watch
-            .lock()
-            .unwrap_or_else(PoisonError::into_inner) = new_watch;
-        self.crossfading.store(false, Ordering::SeqCst);
-        (self.on_event)(PlayerEvent::AdvancedToNext);
-    }
 }
+
+mod handover;
 
 #[cfg(test)]
 pub(crate) mod test_seam;

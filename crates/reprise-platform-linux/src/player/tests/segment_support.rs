@@ -122,6 +122,7 @@ pub(super) fn gain_element(player: &Player) -> gst::Element {
         .playbin
         .lock()
         .unwrap_or_else(PoisonError::into_inner)
+        .element()
         .clone();
     gain_of(&playbin)
 }
@@ -149,6 +150,7 @@ pub(super) fn on_every_pipeline(
         .playbin
         .lock()
         .unwrap_or_else(PoisonError::into_inner)
+        .element()
         .clone();
     install(&current);
     crate::player::pipeline_swap::test_seam::on_pipeline_built(Arc::new(install));
@@ -387,30 +389,31 @@ pub(super) fn slow_sink(player: &Player) -> RenderedLog {
 /// [`slow_sink`], reporting into a log the caller made beforehand — so an
 /// event observer built before the player can read it.
 pub(super) fn slow_sink_into(player: &Player, rendered: &RenderedLog) {
-    let sink = gst::parse::bin_from_description(
-        &format!(
-            "queue max-size-time={SINK_BACKLOG_NANOS} max-size-buffers=0 max-size-bytes=0 \
-             ! fakesink name=rendered sync=true signal-handoffs=true"
-        ),
-        true,
-    )
-    .unwrap();
     let end_ms = rendered.end_ms.clone();
-    sink.by_name("rendered")
-        .unwrap()
-        .connect("handoff", false, move |values| {
-            let buffer = values[1].get::<gst::Buffer>().unwrap();
-            if let Some(pts) = buffer.pts() {
-                let end = pts + buffer.duration().unwrap_or(gst::ClockTime::ZERO);
-                end_ms.store(end.mseconds() as i64, Ordering::SeqCst);
-            }
-            None
-        });
-    player
-        .playbin
-        .lock()
-        .unwrap_or_else(PoisonError::into_inner)
-        .set_property("audio-sink", &sink);
+    // A sink for the pipeline of every start: each start builds a fresh one,
+    // and an element belongs to one pipeline.
+    on_every_pipeline(player, move |playbin| {
+        let sink = gst::parse::bin_from_description(
+            &format!(
+                "queue max-size-time={SINK_BACKLOG_NANOS} max-size-buffers=0 max-size-bytes=0 \
+                 ! fakesink name=rendered sync=true signal-handoffs=true"
+            ),
+            true,
+        )
+        .unwrap();
+        let end_ms = end_ms.clone();
+        sink.by_name("rendered")
+            .unwrap()
+            .connect("handoff", false, move |values| {
+                let buffer = values[1].get::<gst::Buffer>().unwrap();
+                if let Some(pts) = buffer.pts() {
+                    let end = pts + buffer.duration().unwrap_or(gst::ClockTime::ZERO);
+                    end_ms.store(end.mseconds() as i64, Ordering::SeqCst);
+                }
+                None
+            });
+        playbin.set_property("audio-sink", &sink);
+    });
 }
 
 /// How long a pipeline may sit in READY with its first state change pending
@@ -487,6 +490,7 @@ fn leaves_ready(player: &Player, patience: Duration) -> bool {
             .playbin
             .lock()
             .unwrap_or_else(PoisonError::into_inner)
+            .element()
             .clone();
         if playbin.current_state() != gst::State::Ready {
             return true;

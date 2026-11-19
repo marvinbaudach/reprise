@@ -128,7 +128,7 @@ fn gapless_handoff_never_reports_a_duration_that_moves_the_playhead_backwards() 
                     .playbin
                     .lock()
                     .unwrap_or_else(std::sync::PoisonError::into_inner);
-                guard.clone()
+                guard.element().clone()
             };
             if let Some(queried) = element.query_duration::<gst::ClockTime>() {
                 shortest_queried_during_handoff =

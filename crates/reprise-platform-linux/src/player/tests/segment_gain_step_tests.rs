@@ -6,7 +6,9 @@
 
 use std::path::Path;
 
-use super::segment_support::{count, cue_item, gain_element, linear, slow_sink, Harness};
+use super::segment_support::{
+    count, cue_item, gain_of as gain_element_of, linear, on_every_pipeline, slow_sink, Harness,
+};
 use super::*;
 
 /// Generous: under a loaded parallel test run the pipeline can take a while.
@@ -104,58 +106,65 @@ fn decode(bytes: &[u8], format: &str) -> Vec<f64> {
 fn record_frames(player: &Player, channels: usize) -> Arc<Mutex<Vec<FrameRun>>> {
     let runs = Arc::new(Mutex::new(Vec::new()));
     let recorded = runs.clone();
-    let stream_segment = Mutex::new(None::<gst::FormattedSegment<gst::ClockTime>>);
-    gain_element(player).static_pad("src").unwrap().add_probe(
-        gst::PadProbeType::BUFFER | gst::PadProbeType::EVENT_DOWNSTREAM,
-        move |pad, info| {
-            match &info.data {
-                Some(gst::PadProbeData::Event(event)) => {
-                    if let gst::EventView::Segment(event) = event.view() {
-                        *stream_segment
-                            .lock()
-                            .unwrap_or_else(PoisonError::into_inner) =
-                            event.segment().downcast_ref::<gst::ClockTime>().cloned();
-                        recorded
-                            .lock()
-                            .unwrap_or_else(PoisonError::into_inner)
-                            .clear();
-                    }
-                }
-                Some(gst::PadProbeData::Buffer(buffer)) => {
-                    let stream_time = buffer.pts().and_then(|pts| {
-                        stream_segment
-                            .lock()
-                            .unwrap_or_else(PoisonError::into_inner)
-                            .as_ref()
-                            .and_then(|segment| segment.to_stream_time(pts))
-                    });
-                    let format = pad.current_caps().and_then(|caps| {
-                        caps.structure(0)
-                            .and_then(|structure| structure.get::<String>("format").ok())
-                    });
-                    if let (Some(stream_time), Some(format), Ok(map)) =
-                        (stream_time, format, buffer.map_readable())
-                    {
-                        let first_frame = (stream_time.nseconds() as f64 * f64::from(SAMPLE_RATE)
-                            / 1e9)
-                            .round() as i64;
-                        recorded
-                            .lock()
-                            .unwrap_or_else(PoisonError::into_inner)
-                            .push(FrameRun {
-                                first_frame,
-                                samples: decode(map.as_slice(), &format)
-                                    .into_iter()
-                                    .step_by(channels)
-                                    .collect(),
+    // On the pipeline of every start: each start builds a fresh one.
+    on_every_pipeline(player, move |playbin| {
+        let recorded = recorded.clone();
+        let stream_segment = Mutex::new(None::<gst::FormattedSegment<gst::ClockTime>>);
+        gain_element_of(playbin)
+            .static_pad("src")
+            .unwrap()
+            .add_probe(
+                gst::PadProbeType::BUFFER | gst::PadProbeType::EVENT_DOWNSTREAM,
+                move |pad, info| {
+                    match &info.data {
+                        Some(gst::PadProbeData::Event(event)) => {
+                            if let gst::EventView::Segment(event) = event.view() {
+                                *stream_segment
+                                    .lock()
+                                    .unwrap_or_else(PoisonError::into_inner) =
+                                    event.segment().downcast_ref::<gst::ClockTime>().cloned();
+                                recorded
+                                    .lock()
+                                    .unwrap_or_else(PoisonError::into_inner)
+                                    .clear();
+                            }
+                        }
+                        Some(gst::PadProbeData::Buffer(buffer)) => {
+                            let stream_time = buffer.pts().and_then(|pts| {
+                                stream_segment
+                                    .lock()
+                                    .unwrap_or_else(PoisonError::into_inner)
+                                    .as_ref()
+                                    .and_then(|segment| segment.to_stream_time(pts))
                             });
+                            let format = pad.current_caps().and_then(|caps| {
+                                caps.structure(0)
+                                    .and_then(|structure| structure.get::<String>("format").ok())
+                            });
+                            if let (Some(stream_time), Some(format), Ok(map)) =
+                                (stream_time, format, buffer.map_readable())
+                            {
+                                let first_frame =
+                                    (stream_time.nseconds() as f64 * f64::from(SAMPLE_RATE) / 1e9)
+                                        .round() as i64;
+                                recorded
+                                    .lock()
+                                    .unwrap_or_else(PoisonError::into_inner)
+                                    .push(FrameRun {
+                                        first_frame,
+                                        samples: decode(map.as_slice(), &format)
+                                            .into_iter()
+                                            .step_by(channels)
+                                            .collect(),
+                                    });
+                            }
+                        }
+                        _ => {}
                     }
-                }
-                _ => {}
-            }
-            gst::PadProbeReturn::Ok
-        },
-    );
+                    gst::PadProbeReturn::Ok
+                },
+            );
+    });
     runs
 }
 

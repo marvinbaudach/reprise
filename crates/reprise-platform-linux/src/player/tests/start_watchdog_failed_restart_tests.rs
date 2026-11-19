@@ -13,6 +13,7 @@ use super::start_watchdog_tests::{
 };
 use super::*;
 use crate::player::pipeline_swap::test_seam;
+use std::sync::atomic::AtomicUsize;
 
 /// Long enough for a restart to have been tried, short enough to fail fast.
 const SETTLE: Duration = Duration::from_secs(4);
@@ -40,7 +41,13 @@ fn a_restart_that_cannot_carry_the_start_over_reports_the_track_once() {
     let dir = tempfile::tempdir().unwrap();
     let path = local_track(&dir);
     let reached = hang_starts(&harness.player, usize::MAX);
-    test_seam::on_pipeline_built(Arc::new(without_track_gain));
+    // The first pipeline a swap builds is the start's, the next the restart's.
+    let builds = Arc::new(AtomicUsize::new(0));
+    test_seam::on_pipeline_built(Arc::new(move |fresh| {
+        if builds.fetch_add(1, Ordering::SeqCst) >= 1 {
+            without_track_gain(fresh);
+        }
+    }));
 
     harness.player.play(item(&path)).unwrap();
     harness.pump_until(PATIENCE, |_| reached.load(Ordering::SeqCst) >= 1);

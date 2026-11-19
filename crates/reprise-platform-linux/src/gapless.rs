@@ -22,6 +22,7 @@ use reprise_core::library::settings::TrackTransition;
 use reprise_core::playback::PlayerEvent;
 
 use crate::crossfade::Transition;
+use crate::player::pipeline_queue::Retirement;
 
 /// Slot für den vorgefütterten nächsten URI. `None` = nichts vorgefüttert
 /// (Gapless aus, Queue-Ende, oder manueller Sprung hat ihn invalidiert).
@@ -58,6 +59,14 @@ pub(crate) type HandoffFlag = Arc<AtomicBool>;
 /// füttert das Frontend gar keinen Nachfolger, sodass hier ebenfalls nichts zu
 /// tun ist; der strikte `== Gapless`-Check ist die sichere Formulierung davon.
 ///
+/// **Current pipeline only:** `retirement` belongs to the playbin this handler
+/// is attached to. A retired pipeline keeps running until its `Null` arrives and
+/// may still fire `about-to-finish`; it must then neither take the successor the
+/// frontend fed for the pipeline that replaced it, nor touch that successor's
+/// gain or the generation. The check sits under the `next_uri` lock, right
+/// before the `take()`: a `set_next` that stores after retirement therefore
+/// already sees the flag set.
+///
 /// Das emittierende Element kommt aus `values[0]` (statt den playbin in seinen
 /// eigenen Signal-Handler zu capturen — das erzeugte einen Referenzzyklus, der
 /// das Element am Aufräumen hindern würde).
@@ -75,6 +84,7 @@ pub(crate) type HandoffFlag = Arc<AtomicBool>;
 /// (`Player::try_play`), not at some downstream confirmation.
 pub(crate) fn connect_about_to_finish(
     playbin: &gst::Element,
+    retirement: Retirement,
     next_uri: NextUri,
     handoff_pending: HandoffFlag,
     transition: Transition,
@@ -90,10 +100,13 @@ pub(crate) fn connect_about_to_finish(
         if mode != TrackTransition::Gapless {
             return None;
         }
-        let queued = next_uri
-            .lock()
-            .unwrap_or_else(PoisonError::into_inner)
-            .take();
+        let queued = {
+            let mut slot = next_uri.lock().unwrap_or_else(PoisonError::into_inner);
+            if retirement.is_retired() {
+                return None;
+            }
+            slot.take()
+        };
         if let Some(queued) = queued {
             tracing::debug!(uri = %queued.uri, "gapless: feeding next uri on about-to-finish");
             // The uri goes first: `Player::set_next` treats a pending gain as

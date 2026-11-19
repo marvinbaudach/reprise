@@ -4,7 +4,7 @@
 
 use super::*;
 use crate::player_effects::linear_gain;
-use crate::player_pipeline::{build_playbin, path_to_uri};
+use crate::player_pipeline::{build_pipeline, path_to_uri};
 
 const STALE_GAIN_DB: f64 = -3.0;
 const REFRESHED_GAIN_DB: f64 = 5.0;
@@ -48,6 +48,7 @@ fn play_20a_a_refed_gain_replaces_the_pending_gain_of_the_handoff_in_flight() {
         .playbin
         .lock()
         .unwrap_or_else(PoisonError::into_inner)
+        .element()
         .set_property("uri", path_to_uri(NEXT_PATH).unwrap());
     *player
         .pending_gain
@@ -74,6 +75,7 @@ fn play_20a_a_different_next_track_leaves_the_pending_gain_alone() {
         .playbin
         .lock()
         .unwrap_or_else(PoisonError::into_inner)
+        .element()
         .set_property("uri", path_to_uri("/music/other.flac").unwrap());
     *player
         .pending_gain
@@ -92,7 +94,7 @@ fn play_20b_a_refed_gain_reaches_the_prebuilt_crossfade_secondary() {
         .lock()
         .unwrap_or_else(std::sync::PoisonError::into_inner);
     let player = quiet_player();
-    let secondary = build_playbin(
+    let secondary_pipeline = build_pipeline(
         &AudioEffects::default(),
         player.next_uri.clone(),
         player.handoff_pending.clone(),
@@ -102,12 +104,13 @@ fn play_20b_a_refed_gain_reaches_the_prebuilt_crossfade_secondary() {
         player.segments.clone(),
     )
     .unwrap();
+    let secondary = secondary_pipeline.element().clone();
     secondary.set_property("uri", path_to_uri(NEXT_PATH).unwrap());
     crate::player_effects::set_playbin_track_gain(&secondary, STALE_GAIN_DB).unwrap();
     *player
         .incoming
         .lock()
-        .unwrap_or_else(PoisonError::into_inner) = Some(secondary.clone());
+        .unwrap_or_else(PoisonError::into_inner) = Some(secondary_pipeline);
 
     player.set_next(Some(next_item(REFRESHED_GAIN_DB)));
 
@@ -136,6 +139,7 @@ fn play_20a_a_cue_track_of_the_handed_off_file_leaves_the_pending_gain_alone() {
         .playbin
         .lock()
         .unwrap_or_else(PoisonError::into_inner)
+        .element()
         .set_property("uri", path_to_uri(NEXT_PATH).unwrap());
     *player
         .pending_gain
