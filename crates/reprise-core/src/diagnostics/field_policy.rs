@@ -385,6 +385,7 @@ pub(super) const KEEP_FIELDS: &[&str] = &[
     "task",
     "timeout_ms",
     "tombstoned",
+    "took",
     "total",
     "total_albums",
     "total_artists",

@@ -155,7 +155,7 @@ fn span_end(input: &str, start: usize, stop_at_whitespace: bool) -> usize {
 
 /// Whether a structured field's value may be kept in a diagnostics line.
 ///
-/// A lookup in [`KEEP_FIELDS`]: both redaction passes ask this one question,
+/// A lookup in `KEEP_FIELDS`: both redaction passes ask this one question,
 /// and every key not listed there is redacted. The lookup is an exact match
 /// against lowercase names. `EventFields` passes a field's name as written,
 /// so `Count` is unknown there; the free-text pass lowercases the key first
