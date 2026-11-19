@@ -392,7 +392,7 @@ impl PlaybackBackend for Player {
     /// ## What `play` waits for
     ///
     /// The start itself is a job on the new pipeline's queue. `play` waits at
-    /// most [`START_ANSWER_WAIT`] for its answer. A fast failure such as a
+    /// most `START_ANSWER_WAIT` for its answer. A fast failure such as a
     /// missing file answers within a millisecond and stays a synchronous `Err`
     /// (the frontend's `Ok` side effects, scrobble and history, must never run
     /// for a file that never plays); the failed pipeline is retired with its bus
@@ -421,7 +421,7 @@ impl PlaybackBackend for Player {
     /// Seeks within the current track. A CUE track's `position_ms` is its
     /// own: the seek lands sample-accurately inside the track's stretch of
     /// the file. A whole file seeks to the nearest key unit, as it always has.
-    /// Waits at most [`START_ANSWER_WAIT`] for the answer; a seek that has not
+    /// Waits at most `START_ANSWER_WAIT` for the answer; a seek that has not
     /// been answered by then is an `Err` and stays queued (see `transport.rs`).
     fn seek_to(&self, position_ms: i64) -> Result<(), PlaybackError> {
         self.seek_queued(position_ms)
