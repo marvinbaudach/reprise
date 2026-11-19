@@ -481,12 +481,21 @@ pub(super) mod test_seam {
     }
 
     /// Whether this build is one a test made fail; counts it off.
+    ///
+    /// A plain compare-exchange loop rather than `fetch_update`, which the
+    /// newest toolchain deprecates in favour of `try_update`, a name the
+    /// pinned toolchain does not know yet.
     pub(super) fn build_fails() -> bool {
-        FAIL_BUILDS
-            .fetch_update(Ordering::SeqCst, Ordering::SeqCst, |left| {
-                left.checked_sub(1)
-            })
-            .is_ok()
+        let mut left = FAIL_BUILDS.load(Ordering::SeqCst);
+        loop {
+            let Some(next) = left.checked_sub(1) else {
+                return false;
+            };
+            match FAIL_BUILDS.compare_exchange(left, next, Ordering::SeqCst, Ordering::SeqCst) {
+                Ok(_) => return true,
+                Err(actual) => left = actual,
+            }
+        }
     }
 
     pub(super) fn built(fresh: &gst::Element) {
