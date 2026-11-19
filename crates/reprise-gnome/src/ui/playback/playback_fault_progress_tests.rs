@@ -17,16 +17,16 @@ use super::play_origin::PlayOrigin;
 use super::player_controller::PlayerController;
 use super::test_support::controller_with_events;
 
-const TRACKS: [i64; 3] = [41, 42, 43];
+pub(super) const TRACKS: [i64; 3] = [41, 42, 43];
 
 #[derive(Default)]
-struct Calls {
-    played: RefCell<Vec<String>>,
+pub(super) struct Calls {
+    pub(super) played: RefCell<Vec<String>>,
     /// Bumped by every `play`, as the real player does.
-    generation: Cell<u64>,
+    pub(super) generation: Cell<u64>,
 }
 
-struct TestPlayback(Rc<Calls>);
+pub(super) struct TestPlayback(pub(super) Rc<Calls>);
 
 impl PlaybackBackend for TestPlayback {
     fn play(&self, item: PlaybackItem<'_>) -> Result<(), PlaybackError> {
@@ -66,17 +66,17 @@ impl PlaybackBackend for TestPlayback {
     }
 }
 
-struct Fixture {
-    controller: Rc<PlayerController>,
-    calls: Rc<Calls>,
-    events: async_channel::Sender<StreamEvent>,
+pub(super) struct Fixture {
+    pub(super) controller: Rc<PlayerController>,
+    pub(super) calls: Rc<Calls>,
+    pub(super) events: async_channel::Sender<StreamEvent>,
     _test_root: tempfile::TempDir,
     _main_context: std::sync::MutexGuard<'static, ()>,
 }
 
 /// A controller playing the first of three tracks on repeat-all. The files
 /// exist, so a fault is "could not play" and never marks a track missing.
-fn playing_repeat_all_queue() -> Fixture {
+pub(super) fn playing_repeat_all_queue() -> Fixture {
     let main_context = crate::ui::test_main_context::lock_main_context();
     gtk4::init().unwrap();
     let test_root = tempfile::tempdir().unwrap();
@@ -106,7 +106,7 @@ fn playing_repeat_all_queue() -> Fixture {
     }
 }
 
-fn stalled_start() -> PlayerEvent {
+pub(super) fn stalled_start() -> PlayerEvent {
     PlayerEvent::Error(PlaybackFailure::new(
         "playback did not start",
         PlaybackFailureKind::Other,

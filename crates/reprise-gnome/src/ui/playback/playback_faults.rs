@@ -9,13 +9,46 @@
 //!
 //! ## What lives here
 //!
-//! - `handle_unplayable_track`: diagnoses a playback failure for a track id
-//!   (file missing vs. file exists but won't play) and reports it (mark +
-//!   toast, or toast-only), then always hands off to `skip_after_failure`.
+//! - `handle_unplayable_track`: starts the diagnosis of a playback failure for
+//!   a track id (file missing vs. file exists but won't play) and hands off to
+//!   `skip_after_failure` without waiting for it.
+//! - `probe_fault` / `apply_probe_answer`: the diagnosis and its report (mark +
+//!   toast, or toast-only), see "Where the work runs" below.
 //! - `skip_after_failure`: the one shared skip-loop guard — advances pending
 //!   Up Next and the playback context, or gives up at their fixed combined
 //!   bound.
 //! - the fixed-bound skip loop, consulting Core's `should_stop_skipping` rule.
+//!
+//! ## Where the work runs
+//!
+//! A track on a dead hard NFS or SMB mount blocks every call that touches its
+//! path in the kernel, so the main thread never does:
+//!
+//! - **Main thread:** the `query_track_summary` read of the local database, the
+//!   skip (`skip_after_failure`), the overdue timer, applying the answer
+//!   (`reload_track_list`, the toast).
+//! - **`gio::spawn_blocking` worker:** `is_file()` and
+//!   `mark_track_missing_if_current`, together, in one job over owned values
+//!   and a database handle the worker opens itself (`playback_fault_probe.rs`,
+//!   injectable for tests).
+//!
+//! ## One toast per fault
+//!
+//! The skip does not wait for the probe, so the toast follows its answer, with
+//! today's wording. If the probe has not answered within [`FAULT_PROBE_WAIT`],
+//! the neutral "could not play" toast is shown at that moment instead, and the
+//! answer, when it arrives, only marks and reloads: whichever comes first sets
+//! the shared flag, so a fault never shows two toasts. A probe that never
+//! returns leaves the track unmarked and holds one worker thread for as long as
+//! the kernel call lasts, but freezes nothing. A fault whose row is already gone
+//! starts no probe and shows no toast.
+//!
+//! The run's closing toasts come last: the skip-limit stop and the summary of
+//! skipped unplayable episodes. The faults of a run are skipped at once, so
+//! these can be due while the fault toasts are still pending; they are held
+//! back, in order, until every fault toast has been shown
+//! (`pending_fault_toasts`, `deferred_toasts`), at most [`FAULT_PROBE_WAIT`]
+//! later.
 //!
 //! ## When the skip count resets
 //!
@@ -45,11 +78,38 @@
 //! so no borrow is alive when `play_track_id`/`reset_to_stopped` — both of
 //! which can synchronously trigger further `PlayerEvent`s — run afterward.
 
+use gtk4::{gio, glib};
+
 use crate::ui::player_controller::PlayerController;
 use crate::ui::strings;
 use crate::ui::up_next_transport::AdvanceReason;
 use reprise_core::playback::{playback_fault_policy, should_stop_skipping, PlaybackFaultNotice};
 use reprise_core::queries;
+
+use super::playback_fault_probe::{FaultProbeAnswer, FaultProbeRequest};
+
+#[cfg(test)]
+thread_local! {
+    static RECORDED_FAULT_TOASTS: std::cell::RefCell<Vec<String>> =
+        const { std::cell::RefCell::new(Vec::new()) };
+}
+
+/// Takes every toast the fault path has shown on this thread since the last
+/// call. Test threads are one per test, so tests never see each other's.
+#[cfg(test)]
+pub(super) fn recorded_fault_toasts() -> Vec<String> {
+    RECORDED_FAULT_TOASTS.with(|toasts| std::mem::take(&mut *toasts.borrow_mut()))
+}
+
+/// How long the handler waits for the probe before it shows the neutral
+/// "could not play" toast itself.
+pub(in crate::ui) const FAULT_PROBE_WAIT: std::time::Duration = std::time::Duration::from_secs(1);
+
+/// How many probes may be in flight at once. Each holds a thread of GLib's
+/// shared task pool for as long as its kernel call blocks, and covers and the
+/// other background work share that pool, so a dead mount must not be able to
+/// fill it. A fault past the bound starts no probe and gets the neutral toast.
+pub(in crate::ui) const MAX_FAULT_PROBES_IN_FLIGHT: usize = 2;
 
 pub(super) fn note_episode_skip(run: &std::cell::Cell<usize>) {
     run.set(run.get().saturating_add(1));
@@ -72,15 +132,15 @@ impl PlayerController {
     pub(in crate::ui) fn flush_episode_skip_toast(&self) {
         let count = take_episode_skip_count(&self.consecutive_episode_skips);
         if count > 0 {
-            self.show_toast(&strings::skipped_unplayable_episodes(count));
+            self.show_after_pending_fault_toasts(strings::skipped_unplayable_episodes(count));
         }
     }
 
     /// Diagnoses and reports a playback failure for `id` (shared by
     /// `player_controller.rs`'s `play_track_id` `Player::play` failure
     /// branch and its `apply_event`'s `PlayerEvent::Error` arm — see this
-    /// module's doc comment), then always calls `skip_after_failure` to move
-    /// on. Re-resolves `id`'s `TrackSummary` independently (rather than
+    /// module's doc comment) and always calls `skip_after_failure` to move
+    /// on at once, without waiting for the file probe (`probe_fault`). Re-resolves `id`'s `TrackSummary` independently (rather than
     /// requiring callers to pass one in) so both call sites can share this
     /// one function even though only `play_track_id` already has a summary
     /// in hand — one extra small `SELECT` on the failure path is a non-issue
@@ -92,51 +152,7 @@ impl PlayerController {
         };
 
         match summary {
-            Ok(Some(summary)) => {
-                let policy = playback_fault_policy(std::path::Path::new(&summary.path).is_file());
-                if !policy.mark_missing {
-                    tracing::error!(
-                        track_id = id,
-                        path = %summary.path,
-                        title = %summary.title,
-                        "playback failed for a file that still exists; skipping"
-                    );
-                } else {
-                    let diagnostic = strings::file_missing_toast(&summary.title);
-                    tracing::error!(
-                        track_id = id,
-                        path = %summary.path,
-                        title = %summary.title,
-                        diagnostic,
-                        "file no longer exists on disk; marking missing and skipping"
-                    );
-                    let mark_result = {
-                        let conn = &self.conn;
-                        queries::mark_track_missing_if_current(
-                            conn,
-                            id,
-                            std::path::Path::new(&summary.path),
-                        )
-                    };
-                    match mark_result {
-                        Ok(true) => {
-                            self.reload_track_list();
-                        }
-                        Ok(false) => tracing::info!(
-                            track_id = id,
-                            "stale playback fault did not mark a reconciled track missing"
-                        ),
-                        Err(error) => {
-                            tracing::error!(%error, track_id = id, "failed to mark track missing");
-                        }
-                    }
-                }
-                self.show_toast(&notice_text(policy.notices[0], &summary.title));
-                if policy.skip {
-                    self.skip_after_failure();
-                }
-                return;
-            }
+            Ok(Some(summary)) => self.probe_fault(id, summary.path, summary.title),
             Ok(None) => {
                 tracing::warn!(
                     track_id = id,
@@ -149,6 +165,155 @@ impl PlayerController {
         }
 
         self.skip_after_failure();
+    }
+
+    /// Starts the probe of a faulted track's file on a blocking worker and
+    /// arranges the one toast this fault is allowed. Whichever comes first
+    /// shows it: the probe's answer (today's wording) or, once the probe is
+    /// `FAULT_PROBE_WAIT` overdue, the neutral "could not play" toast. The
+    /// other then only does the probe's non-toast work.
+    ///
+    /// Nothing here waits: the callers skip to the next track right after.
+    /// Both callbacks hold only a `Weak`, so a late answer after the controller
+    /// is gone does nothing.
+    fn probe_fault(self: &std::rc::Rc<Self>, id: i64, path: String, title: String) {
+        let probe = self.fault_probe.borrow().clone();
+        let request = FaultProbeRequest {
+            track_id: id,
+            path: std::path::PathBuf::from(&path),
+            db_path: self.conn.path(),
+        };
+        let toast_pending = std::rc::Rc::new(std::cell::Cell::new(true));
+        self.pending_fault_toasts
+            .set(self.pending_fault_toasts.get() + 1);
+
+        let overdue = {
+            let (this, toast_pending, title) = (
+                std::rc::Rc::downgrade(self),
+                toast_pending.clone(),
+                title.clone(),
+            );
+            move || {
+                let Some(this) = this.upgrade() else { return };
+                if toast_pending.replace(false) {
+                    tracing::warn!(
+                        track_id = id,
+                        "the file probe has not answered; showing the neutral toast"
+                    );
+                    this.settle_fault_toast(&strings::could_not_play_toast(&title));
+                }
+            }
+        };
+        glib::timeout_add_local_once(FAULT_PROBE_WAIT, overdue);
+
+        // A fault past the bound, or for a track already being probed, starts
+        // no job: the timer above shows its neutral toast.
+        if !self.claim_probe_slot(id) {
+            tracing::warn!(
+                track_id = id,
+                "no probe slot free or the track is already being probed; the neutral toast follows"
+            );
+            return;
+        }
+        let this = std::rc::Rc::downgrade(self);
+        glib::spawn_future_local(async move {
+            let answer = gio::spawn_blocking(move || probe(request)).await;
+            let Some(this) = this.upgrade() else { return };
+            // Returned or panicked: either way the worker thread is free again.
+            this.release_probe_slot(id);
+            match answer {
+                Ok(answer) => {
+                    let toast_due = toast_pending.replace(false);
+                    this.apply_probe_answer(id, &path, &title, answer, toast_due);
+                }
+                // The timer above still shows the neutral toast.
+                Err(_) => tracing::error!(track_id = id, "the file probe panicked"),
+            }
+        });
+    }
+
+    /// Takes a probe slot for `id`; false when [`MAX_FAULT_PROBES_IN_FLIGHT`]
+    /// probes are out or `id` already has one. The set is only touched in its
+    /// own statements, so no borrow is alive across a GTK call.
+    fn claim_probe_slot(&self, id: i64) -> bool {
+        let mut in_flight = self.probes_in_flight.borrow_mut();
+        if in_flight.len() >= MAX_FAULT_PROBES_IN_FLIGHT {
+            return false;
+        }
+        in_flight.insert(id)
+    }
+
+    fn release_probe_slot(&self, id: i64) {
+        self.probes_in_flight.borrow_mut().remove(&id);
+    }
+
+    fn apply_probe_answer(
+        &self,
+        id: i64,
+        path: &str,
+        title: &str,
+        answer: FaultProbeAnswer,
+        toast_due: bool,
+    ) {
+        let policy = playback_fault_policy(answer == FaultProbeAnswer::FilePresent);
+        if policy.mark_missing {
+            tracing::error!(
+                track_id = id,
+                path,
+                title,
+                diagnostic = strings::file_missing_toast(title),
+                "file no longer exists on disk; marked missing and skipped"
+            );
+        } else {
+            tracing::error!(
+                track_id = id,
+                path,
+                title,
+                "playback failed for a file that still exists; skipping"
+            );
+        }
+        if answer == (FaultProbeAnswer::FileMissing { marked: true }) {
+            self.reload_track_list();
+        }
+        if toast_due {
+            self.settle_fault_toast(&notice_text(policy.notices[0], title));
+        }
+    }
+
+    /// Shows a fault's one toast and, when it was the last one pending, the
+    /// closing toasts that were waiting behind it. They leave their cell in
+    /// their own statement, so no borrow is alive when a toast reaches GTK.
+    fn settle_fault_toast(&self, text: &str) {
+        self.show_fault_toast(text);
+        let pending = self.pending_fault_toasts.get().saturating_sub(1);
+        self.pending_fault_toasts.set(pending);
+        if pending > 0 {
+            return;
+        }
+        let deferred = std::mem::take(&mut *self.deferred_toasts.borrow_mut());
+        for text in deferred {
+            self.show_fault_toast(&text);
+        }
+    }
+
+    /// A toast that closes a run (the skip-limit stop, the skipped-episodes
+    /// summary): now when no fault toast is pending, else after the last of
+    /// them (`settle_fault_toast`), so it is never overtaken by one.
+    fn show_after_pending_fault_toasts(&self, text: String) {
+        if self.pending_fault_toasts.get() == 0 {
+            self.show_fault_toast(&text);
+        } else {
+            self.deferred_toasts.borrow_mut().push(text);
+        }
+    }
+
+    /// [`Self::show_toast`] for the toasts of the fault path. A display test
+    /// reads what was said from `recorded_fault_toasts`: a toast overlay
+    /// cannot be asked which toasts it has shown.
+    fn show_fault_toast(&self, text: &str) {
+        #[cfg(test)]
+        RECORDED_FAULT_TOASTS.with(|toasts| toasts.borrow_mut().push(text.to_owned()));
+        self.show_toast(text);
     }
 
     /// The one shared skip-loop guard (Stage 2 Task 5 — see this module's
@@ -179,9 +344,11 @@ impl PlayerController {
             let episode_skips = take_episode_skip_count(&self.consecutive_episode_skips);
             self.reset_to_stopped();
             if episode_skips > 0 {
-                self.show_toast(&strings::skipped_unplayable_episodes(episode_skips));
+                self.show_after_pending_fault_toasts(strings::skipped_unplayable_episodes(
+                    episode_skips,
+                ));
             } else {
-                self.show_toast(&strings::text(
+                self.show_after_pending_fault_toasts(strings::text(
                     strings::PLAYBACK_STOPPED_TOO_MANY_UNPLAYABLE,
                 ));
             }

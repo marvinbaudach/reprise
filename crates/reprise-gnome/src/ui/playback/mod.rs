@@ -18,6 +18,9 @@ pub(in crate::ui) mod library_continuation;
 pub(crate) mod now_playing_wiring;
 pub(crate) mod play_origin;
 pub(in crate::ui) mod play_tracking;
+mod playback_fault_probe;
+#[cfg(test)]
+mod playback_fault_probe_tests;
 #[cfg(test)]
 mod playback_fault_progress_tests;
 pub(crate) mod playback_faults;

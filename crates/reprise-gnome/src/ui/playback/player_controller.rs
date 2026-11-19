@@ -176,6 +176,7 @@ use reprise_core::media_integration::{
 };
 use reprise_core::playback::PlaybackBackend;
 
+use super::playback_fault_probe::FaultProbe;
 use super::player_callbacks::{
     OnBassChanged, OnNowPlayingPanelStateChanged, OnNowPlayingPanelTrackChanged,
     OnSongVisualSpectrumChanged,
@@ -334,6 +335,18 @@ pub struct PlayerController {
     /// `play_track_id` can tell the skip loop's starts from the user's.
     pub(in crate::ui) failure_advance_in_flight: Cell<bool>,
     pub(in crate::ui) consecutive_episode_skips: Cell<usize>,
+    /// How `playback_faults.rs` finds out whether a faulted track's file is
+    /// gone, off the main thread. The real probe unless a test replaced it.
+    pub(in crate::ui) fault_probe: RefCell<FaultProbe>,
+    /// Track ids with a probe running on a worker (`playback_faults.rs`);
+    /// bounds the jobs a dead mount can pin in GLib's shared task pool.
+    pub(in crate::ui) probes_in_flight: RefCell<std::collections::HashSet<i64>>,
+    /// Faults whose one toast has not been shown yet (`playback_faults.rs`).
+    pub(in crate::ui) pending_fault_toasts: Cell<usize>,
+    /// The toasts that close a run (skip-limit stop, skipped-episodes summary),
+    /// held back in order until `pending_fault_toasts` reaches zero so that
+    /// they are always the last toasts of a run.
+    pub(in crate::ui) deferred_toasts: RefCell<Vec<String>>,
     /// Shared with `mpris.rs`'s D-Bus thread — see the module's `## MPRIS`
     /// doc section. Written by `mpris_mirror.rs`'s `update_mpris_mirror`,
     /// never read directly here (the MPRIS thread is the only reader).

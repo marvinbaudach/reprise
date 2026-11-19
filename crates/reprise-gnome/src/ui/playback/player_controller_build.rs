@@ -18,6 +18,7 @@ use crate::ui::player_bar::PlayerBar;
 use crate::ui::player_controller_wiring;
 use crate::ui::player_lyrics::PlayerLyrics;
 
+use super::playback_fault_probe::disk_probe;
 use super::player_controller::PlayerController;
 use super::player_controller_types::PlayerControllerBackends;
 use super::scrobble_runtime::ScrobbleRuntime;
@@ -109,6 +110,10 @@ impl PlayerController {
             failure_skip_limit: Cell::new(0),
             failure_advance_in_flight: Cell::new(false),
             consecutive_episode_skips: Cell::new(0),
+            fault_probe: RefCell::new(disk_probe()),
+            probes_in_flight: RefCell::new(std::collections::HashSet::new()),
+            pending_fault_toasts: Cell::new(0),
+            deferred_toasts: RefCell::new(Vec::new()),
             mpris_state,
             agent_queue_state,
             now_playing: Rc::new(RefCell::new(None)),
