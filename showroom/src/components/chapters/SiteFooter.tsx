@@ -84,7 +84,6 @@ export function SiteFooter() {
               github.com/marvinbaudach ↗
             </a>
             <p>GPL-3.0-or-later · beta</p>
-            <p>Italian translation by giallorosso84. Thank you.</p>
           </div>
         </section>
       </div>
