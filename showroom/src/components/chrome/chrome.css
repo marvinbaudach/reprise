@@ -84,14 +84,11 @@
 
 .site-header__nav a {
   text-decoration: none;
-}
-
-.site-header__nav a:not(.site-header__hire) {
   color: oklch(70% 0.011 269);
   transition: color 300ms ease;
 }
 
-.site-header__nav a:not(.site-header__hire):hover,
+.site-header__nav a:hover,
 .site-header__nav a[data-current="true"] {
   color: var(--brand-teal);
 }
@@ -100,66 +97,28 @@
   color: var(--text-body);
 }
 
-.site-header__split {
-  width: 1px;
-  height: 18px;
-  background: var(--surface-line);
-}
-
-.site-header__hire {
-  display: inline-flex;
-  align-items: center;
-  gap: 8px;
-  padding: 7px 13px;
-  border: 1px solid color-mix(in oklab, var(--accent) 52%, transparent);
-  border-radius: var(--radius-sharp);
-  color: var(--text-strong);
-  transition:
-    border-color var(--duration-fast),
-    background-color var(--duration-fast),
-    color var(--duration-fast);
-}
-
-.site-header__hire:hover {
-  border-color: var(--accent);
-  background-color: color-mix(in oklab, var(--accent) 22%, transparent);
-  color: var(--accent);
-}
-
 /* Below the nav's own breakpoint the chapter list is the first thing to go: the
    progress line and the top-of-page link still say where the reader is.
    
    70rem, not the 46rem this used to be. Measured in a headless Chromium with
-   both faces loaded: the full row — mark, wordmark, Beta, five chapter links,
-   Source and the hire pill — needs about 1105px of client width, because
-   --frame-pad grows with the viewport and takes the rest. At 46rem the row was
-   simply drawn past the right edge from 737px upwards, and `overflow-x: clip`
-   on the page swallowed it: on a phone in landscape and on a 1024px tablet the
-   hire pill sat entirely outside the window with nothing to say so. */
+   both faces loaded: --frame-pad grows with the viewport and takes the rest of
+   the width, so at 46rem the row was simply drawn past the right edge, and
+   `overflow-x: clip` on the page swallowed it: on a phone in landscape and on
+   a 1024px tablet the end of the row sat entirely outside the window with
+   nothing to say so. */
 @media (max-width: 70rem) {
   .site-header__nav a[data-navlink] {
     display: none;
   }
 
-  .site-header__source,
-  .site-header__split {
+  .site-header__source {
     display: none;
-  }
-
-  .site-header__hire {
-    padding: 9px 14px;
   }
 }
 
 @media (max-width: 26.5rem) {
   .site-header__state {
     display: none;
-  }
-
-  /* At 280px the hire pill still ran 7px past the edge with everything else
-     already hidden. The gap is the only thing left to give. */
-  .site-header {
-    gap: 12px;
   }
 }
 
