@@ -4,6 +4,54 @@ Reprise release notes are curated from the changes that reached the stable
 branch. They describe user-visible changes rather than reproducing commit
 messages.
 
+## [0.1.346] - 2026-11-20
+
+### Playback
+
+- A CUE track whose start hangs is now started over like a whole-file start,
+  and plays from its own start position afterwards.
+- A crossfade waits for the incoming track to start. If the track has not
+  started in time, the fade gives way to a plain track change: the outgoing
+  track plays out and its end is still reported, so the queue moves on. A
+  crossfade also fits its ramp into the time that is left instead of cutting
+  the outgoing track short.
+- A playable CUE track is no longer skipped. One seek used to reach the FLAC
+  parser three times, and when a following seek raced the leftovers the parser
+  failed the stream and the player skipped the track. In a soak of 3000 starts
+  under heavy load this happened 4 to 5 times before the change and never
+  after.
+- A hung start is restarted without freezing the window. The stuck pipeline is
+  now set aside and cleaned up on a background thread, so a dead network mount
+  or a stalled pipe no longer holds the interface until the read returns. A
+  restart that cannot be carried out reports the track once instead of leaving
+  it silent.
+- Play, skip, pause, seek and stop no longer wait on a source stuck in the
+  kernel. Every pipeline runs its blocking state changes and seeks on its own
+  thread, `play` waits at most a quarter of a second for the start to answer
+  and hands a start that is still hanging to the start watchdog, and a track
+  that was paused or stopped during a CUE start no longer reports that it is
+  playing. A dead mount still costs about 24 seconds per track before the
+  player gives up on it.
+- A track that faults on a dead mount is skipped without waiting for the check
+  of its file. The file is now probed in the background, at most two probes at
+  a time, and the notice about the faulted track waits at most a second for the
+  answer before it falls back to a neutral message. The "too many unplayable
+  tracks" notice still comes last.
+
+### Tools, packaging, and reliability
+
+- Copy Diagnostics and the run log keep the harmless fields of a log line
+  again. Almost every structured field used to be replaced by `$REDACTED`,
+  which left the reports hard to read. Numbers, versions, durations and plain
+  identifiers under a known field name are kept, and everything that can
+  identify a library, a device or a person is still redacted, as is every
+  field name the policy does not know. A timestamp at the start of a log line
+  is no longer mistaken for a file name, and a path with spaces is redacted as
+  one path.
+- SQLite and the MCP server move past four security advisories: `rmcp` 3.9.0
+  and `rusqlite` 0.41.1 with the SQLite library 0.39.1 it brings.
+- The async executor moves off its yanked 1.14.0 release to 1.14.1.
+
 ## [0.1.331] - 2026-11-03
 
 ### Library

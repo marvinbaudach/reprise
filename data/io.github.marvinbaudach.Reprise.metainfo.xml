@@ -139,6 +139,12 @@
     <!-- One entry per promoted release, not per merge into dev. Every merge
          raises the workspace version; only a promotion to main ships one.
          See docs/agents/branching.md and RELEASING.md. -->
+    <release version="0.1.346" date="2026-11-20" type="stable">
+      <description>
+        <p>Makes playback robust against files that cannot be read. A track whose start hangs, CUE tracks included, is started over without freezing the window, and a dead network mount no longer holds up play, skip, pause, seek or stop. A crossfade gives way to a plain track change when the next track does not start in time, and a playable CUE track is no longer skipped by a seek that reached the parser three times. Copy Diagnostics keeps the harmless fields of the log again while still redacting everything that can identify you. SQLite and the MCP server move past four security advisories.</p>
+        <p xml:lang="de">Macht die Wiedergabe robuster gegen Dateien, die sich nicht lesen lassen. Ein Titel, dessen Start hängt, auch ein CUE-Titel, wird neu gestartet, ohne das Fenster einzufrieren, und ein toter Netzwerk-Mount hält Wiedergabe, Überspringen, Pause, Suchen und Stopp nicht mehr auf. Eine Überblendung weicht einem einfachen Titelwechsel, wenn der nächste Titel nicht rechtzeitig startet, und ein abspielbarer CUE-Titel wird nicht mehr übersprungen, weil ein Suchbefehl den Parser dreimal erreichte. „Diagnose kopieren“ behält die harmlosen Felder des Protokolls wieder bei und schwärzt weiterhin alles, was Sie identifizieren kann. SQLite und der MCP-Server wechseln auf Versionen, die vier Sicherheitshinweise beheben.</p>
+      </description>
+    </release>
     <release version="0.1.331" date="2026-11-03" type="stable">
       <description>
         <p>Reprise now keeps a private log of each run and the one before it, says once when the previous run did not close properly, and can copy a diagnostics report with both logs from the main menu for bug reports. The Rhythmbox import finds the library of a Flatpak Rhythmbox, including the Flathub build.</p>
