@@ -82,7 +82,7 @@
   .colophon__source {
     gap: 8px;
     padding-inline: 12px;
-    font-size: var(--text-micro);
+    overflow-wrap: anywhere;
   }
 }
 
