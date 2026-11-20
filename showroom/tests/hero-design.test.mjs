@@ -47,7 +47,7 @@ test('the design hero opens with two screenshot buttons', async () => {
   }
 });
 
-test('the header and hero offer one in-page route to availability', async () => {
+test('the header and hero carry no call to action, only the chapter nav and the source link', async () => {
   const [html, chromeCss] = await Promise.all([
     readFile(join(showroomRoot, 'dist', 'index.html'), 'utf8'),
     readFile(join(showroomRoot, 'src', 'components', 'chrome', 'chrome.css'), 'utf8'),
@@ -57,40 +57,44 @@ test('the header and hero offer one in-page route to availability', async () => 
   assert.ok(hero);
   assert.ok(header);
 
-  assert.match(
+  assert.match(header, /site-header__source/);
+  assert.doesNotMatch(
     header,
-    /site-header__source[\s\S]*site-header__split[\s\S]*class="site-header__hire" href="#availability">Work with me<\/a>/,
+    /site-header__hire|site-header__split|Work with me|href="#availability"/,
   );
-  const hire = header.match(/<a class="site-header__hire"[^>]*>/)?.[0];
-  assert.ok(hire);
-  assert.doesNotMatch(hire, /data-navlink/);
 
   const normalizedHero = hero.replace(/<!-- -->/g, '').replace(/\s+/g, ' ');
   assert.match(normalizedHero, /Marvin Baudach/);
   assert.match(normalizedHero, /Product design, architecture and quality/);
-  assert.match(normalizedHero, /href="#availability"/);
-  // One wording for the same offer everywhere, and no outbound arrow on an
-  // in-page anchor.
-  assert.match(normalizedHero, /<a href="#availability">Work with me<\/a>/);
+  // The hero byline names the stack and offers no link; the availability block
+  // in the footer stays as the author section and nothing else points at it.
+  assert.doesNotMatch(
+    normalizedHero,
+    /href="#availability"|Work with me|Open to (?:work|opportunities)/,
+  );
+  assert.match(
+    normalizedHero,
+    /<div class="hero__byline frame"><span>Rust · GTK4 · Kotlin · Compose<\/span><\/div>/,
+  );
   assert.match(html, /id="availability-heading">Work with me\.</);
   assert.doesNotMatch(html, /Open to (?:work|opportunities)/);
+  // No outbound arrow on an in-page anchor.
   for (const anchor of html.match(/<a[^>]+href="#[^"]*"[^>]*>[\s\S]*?<\/a>/g) ?? []) {
     assert.doesNotMatch(anchor, /↗/, `an in-page link points outward: ${anchor}`);
   }
-  assert.doesNotMatch(chromeCss, /\.site-header__hire::before/);
+  assert.doesNotMatch(chromeCss, /site-header__hire|site-header__split/);
   assert.match(normalizedHero, /href="#film"/);
   assert.doesNotMatch(html, /mailto:/);
   assert.match(
     chromeCss,
-    /\.site-header__nav a:not\(\.site-header__hire\):hover,\s*\.site-header__nav a\[data-current="true"\]\s*\{/,
+    /\.site-header__nav a:hover,\s*\.site-header__nav a\[data-current="true"\]\s*\{/,
   );
 
   const mobile = chromeCss.slice(
     chromeCss.indexOf('@media (max-width: 70rem)'),
     chromeCss.indexOf('@media (max-width: 26.5rem)'),
   );
-  assert.match(mobile, /\.site-header__source,\s*\.site-header__split\s*\{[^}]*display: none;/);
-  assert.match(mobile, /\.site-header__hire\s*\{[^}]*padding: 9px 14px;/);
+  assert.match(mobile, /\.site-header__source\s*\{[^}]*display: none;/);
 
   // A backdrop blur behind a fixed, lifted header is a compositing pass on every
   // scrolled frame. The lightbox already refuses it at this width; so does this.

@@ -37,7 +37,6 @@ export function Hero() {
       </div>
       <div className="hero__byline frame">
         <span>Rust · GTK4 · Kotlin · Compose</span>
-        <a href="#availability">Work with me</a>
       </div>
     </section>
   );
