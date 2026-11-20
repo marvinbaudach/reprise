@@ -21,7 +21,6 @@ body:
       options:
         - Flatpak repository
         - Flatpak bundle
-        - AUR
         - Source
     validations:
       required: true
