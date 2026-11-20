@@ -66,8 +66,7 @@ test('the header and hero carry no call to action, only the chapter nav and the 
   const normalizedHero = hero.replace(/<!-- -->/g, '').replace(/\s+/g, ' ');
   assert.match(normalizedHero, /Marvin Baudach/);
   assert.match(normalizedHero, /Product design, architecture and quality/);
-  // The hero byline names the stack and offers no link; the availability block
-  // in the footer stays as the author section and nothing else points at it.
+  // The hero byline names the stack and offers no link.
   assert.doesNotMatch(
     normalizedHero,
     /href="#availability"|Work with me|Open to (?:work|opportunities)/,
@@ -76,9 +75,12 @@ test('the header and hero carry no call to action, only the chapter nav and the 
     normalizedHero,
     /<div class="hero__byline frame"><span>Rust · GTK4 · Kotlin · Compose<\/span><\/div>/,
   );
-  assert.match(html, /id="availability-heading">Open to a permanent role\.</);
-  assert.doesNotMatch(html, /Open to (?:work|opportunities)/);
-  assert.doesNotMatch(html, /Work with me|freelanc|hire me/i);
+  // The showroom is about the project: nothing on the page may say its author
+  // is looking for work, and nothing may point at the removed availability block.
+  assert.doesNotMatch(
+    html,
+    /permanent role|open to work|open to opportunit|work with me|freelanc|hire me|id="availability/i,
+  );
   // No outbound arrow on an in-page anchor.
   for (const anchor of html.match(/<a[^>]+href="#[^"]*"[^>]*>[\s\S]*?<\/a>/g) ?? []) {
     assert.doesNotMatch(anchor, /↗/, `an in-page link points outward: ${anchor}`);

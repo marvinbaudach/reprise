@@ -42,58 +42,15 @@
   opacity: 0.9;
 }
 
-.availability {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(min(100%, 300px), 1fr));
-  gap: clamp(1.6rem, 1.2rem + 2vw, 3.5rem);
-  align-items: start;
-  margin-top: clamp(3rem, 2.4rem + 2.4vw, 5rem);
-}
-
-.availability h2 {
-  max-width: 26ch;
-  margin: 0 0 14px;
-  font-size: clamp(1.7rem, 1.3rem + 1.9vw, 2.9rem);
-  line-height: 1.04;
-  letter-spacing: -0.025em;
-  color: oklch(97% 0.004 269);
-  font-variation-settings:
-    "wdth" 106,
-    "wght" 570;
-}
-
-.availability__copy {
-  max-width: 46ch;
-  margin: 0;
-  color: oklch(80% 0.008 269);
-  text-wrap: pretty;
-}
-
-.skill-list {
-  display: flex;
-  flex-wrap: wrap;
-  gap: var(--gap-tight);
-  margin: 1.25rem 0 0;
-  padding: 0;
-  list-style: none;
-}
-
-.skill-list > li {
-  padding: 0.3rem 0.7rem;
-  border: 1px solid var(--surface-line);
-  border-radius: 999px;
-  color: var(--text-strong);
-  font-size: 0.8rem;
-}
-
-.availability__actions {
+.colophon {
   display: flex;
   flex-direction: column;
   gap: 12px;
   align-items: flex-start;
+  margin-top: clamp(3rem, 2.4rem + 2.4vw, 5rem);
 }
 
-.availability__contact {
+.colophon__source {
   display: inline-flex;
   align-items: center;
   gap: 12px;
@@ -108,11 +65,11 @@
   text-decoration: none;
 }
 
-.availability__contact:hover {
+.colophon__source:hover {
   background: linear-gradient(120deg, oklch(32% 0.06 195 / 0.6), oklch(24% 0.018 269 / 0.8));
 }
 
-.availability__actions p {
+.colophon p {
   margin: 4px 0 0;
   font-size: 0.875rem;
   color: oklch(72% 0.011 269);

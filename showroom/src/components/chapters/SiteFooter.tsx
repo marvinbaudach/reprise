@@ -12,17 +12,6 @@ import './SiteFooter.css';
 
 const MARK = `${import.meta.env.BASE_URL}brand/reprise-mark.svg`;
 
-/** What the page demonstrates, named for a reader who skims to the end. */
-const SKILLS = [
-  'Product design',
-  'Software architecture',
-  'Rust',
-  'GTK4 · libadwaita',
-  'Kotlin · Compose',
-  'Test strategy',
-  'AI-assisted engineering',
-] as const;
-
 export function SiteFooter() {
   return (
     <footer className="site-footer" data-ground="oklch(10.5% 0.012 269)">
@@ -60,33 +49,12 @@ export function SiteFooter() {
             <a href={permalink(PERFORMANCE_RECORD)}>Measurements</a>
           </div>
         </details>
-        <section
-          id="availability"
-          className="availability"
-          data-reveal
-          aria-labelledby="availability-heading"
-        >
-          <div>
-            <h2 id="availability-heading">Open to a permanent role.</h2>
-            <p className="availability__copy">
-              I’m Marvin Baudach. I designed Reprise, shaped its architecture and built the gates
-              that keep every change honest. Next: a team that wants product and engineering in one
-              person.
-            </p>
-            <ul className="skill-list" aria-label="Skills">
-              {SKILLS.map((skill) => (
-                <li key={skill}>{skill}</li>
-              ))}
-            </ul>
-          </div>
-          <div className="availability__actions">
-            <a className="availability__contact" href="https://github.com/marvinbaudach">
-              github.com/marvinbaudach ↗
-            </a>
-            <p>GPL-3.0-or-later · beta</p>
-            <p>Italian translation by giallorosso84. Thank you.</p>
-          </div>
-        </section>
+        <div className="colophon" data-reveal>
+          <a className="colophon__source" href="https://github.com/marvinbaudach/reprise">
+            github.com/marvinbaudach/reprise ↗
+          </a>
+          <p>GPL-3.0-or-later · beta</p>
+        </div>
       </div>
     </footer>
   );

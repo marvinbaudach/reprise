@@ -154,7 +154,7 @@ test('chapter five exposes the complete measured ledger and its price without a 
   assert.match(mobile, /\.ledger td::before\s*\{[^}]*content: attr\(data-label\);/);
 });
 
-test('the design footer carries provenance availability and the exact contact treatment', async () => {
+test('the design footer carries provenance and the project colophon, and nothing about its author', async () => {
   const html = await prerenderedPage();
   const css = await builtCss();
   const footer = html.match(/<footer[^>]+class="site-footer"[\s\S]+?<\/footer>/)?.[0];
@@ -165,14 +165,20 @@ test('the design footer carries provenance availability and the exact contact tr
   assert.match(footer, /code-census\.mjs/);
   assert.match(footer, /index-rebuild\.md/);
   assert.match(footer, /src="\/reprise\/brand\/reprise-mark\.svg"/);
-  assert.match(footer, /<section id="availability" class="availability"/);
-  assert.match(footer, /id="availability-heading">Open to a permanent role\.</);
-  // The page ends on contact: both closing disclosures sit above it.
+  assert.match(footer, /<div class="colophon"/);
+  // The footer talks about the project only: no heading, copy or skill list
+  // about the author's work or availability, and nothing left to link to.
+  assert.doesNotMatch(footer, /<h2|<ul|availability|skill-list/i);
+  assert.doesNotMatch(footer, /permanent role|Open to|Next: a team|Marvin Baudach/);
+  // The page ends on the colophon: both closing disclosures sit above it.
   assert.ok(
-    footer.lastIndexOf('</details>') < footer.indexOf('id="availability"'),
-    'the timeline and the methodology must come before the contact section',
+    footer.lastIndexOf('</details>') < footer.indexOf('class="colophon"'),
+    'the timeline and the methodology must come before the colophon',
   );
-  assert.match(footer, /github\.com\/marvinbaudach ↗/);
+  assert.match(
+    footer,
+    /href="https:\/\/github\.com\/marvinbaudach\/reprise"[^>]*>\s*github\.com\/marvinbaudach\/reprise ↗/,
+  );
   assert.match(footer, /GPL-3\.0-or-later · beta/);
   // The record's framing sentence about where the price sits is not repeated.
   assert.doesNotMatch(html, /not in the small print/);
@@ -183,19 +189,17 @@ test('the design footer carries provenance availability and the exact contact tr
     // top is the gap of a summary row rather than of a section heading.
     /\.site-footer\{[^}]*padding:clamp\(2rem,1\.5rem \+ 2vw,3\.5rem\) 0 clamp\(3rem,2rem \+ 3vw,5rem\)/,
   );
-  assert.match(
-    css,
-    /\.availability\{[^}]*grid-template-columns:repeat\(auto-fit,minmax\(min\(100%,300px\),1fr\)/,
-  );
+  assert.match(css, /\.colophon\{[^}]*flex-direction:column/);
+  assert.doesNotMatch(css, /\.availability|\.skill-list/);
   // Lightning CSS (Vite 8's minifier) sorts declarations inside a block, so the
   // contact button is checked for what it carries, not for the order.
-  const contact = css.match(/\.availability__contact\{[^}]*\}/)?.[0];
-  assert.ok(contact, '.availability__contact must exist in the built CSS');
+  const contact = css.match(/\.colophon__source\{[^}]*\}/)?.[0];
+  assert.ok(contact, '.colophon__source must exist in the built CSS');
   for (const declaration of [
     'padding:14px 22px',
     'border:1px solid #4fdbd4',
     'border-radius:8px',
   ]) {
-    assert.ok(contact.includes(declaration), `.availability__contact must carry ${declaration}`);
+    assert.ok(contact.includes(declaration), `.colophon__source must carry ${declaration}`);
   }
 });

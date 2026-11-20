@@ -30,7 +30,7 @@ and no-download-before-play behaviour. Explain loading and playback errors.
 A critique found the content specific and the frame generic. This refinement
 keeps the calm direction above and changes only the frame:
 
-- **No labels above headings.** Chapters, the film, the availability section and
+- **No labels above headings.** Chapters, the film, the footer colophon and
   the blocks inside them carry no tracked mono kicker. Each heading is a plain
   sentence that states its fact, with figures read from the same sources as the
   rest of the page (gate count, ledger row). Sub-blocks use sentence-case
@@ -42,13 +42,14 @@ keeps the calm direction above and changes only the frame:
   disclosure.
 - **Order.** Hero, highlights, film, Architecture, Performance, Quality,
   Design, Automation, then the footer: the timeline and the sources and
-  methodology disclosures come first and the page ends on the contact section.
+  methodology disclosures come first and the page ends on the project colophon.
   The header names the five chapters in that order; the film is reached from
   the hero's first button.
-- **No call to action in the frame.** The header and the hero byline carry no
-  hire link, and nothing on the page reads as a freelance offer; the closing
-  heading of the author block in the footer says "Open to a permanent role."
-  In-page links carry no outbound arrow.
+- **About the project only.** The header, the hero byline and the footer carry
+  no hire link, no availability or job-search wording and no author skill list.
+  The hero note keeps the project credit ("Designed and built by"). The footer
+  ends on a colophon: the GitHub link and the licence line. In-page links carry
+  no outbound arrow.
 - **Type tokens.** No text is set below 11px. `--text-micro` 0.6875rem (11px) is
   the floor for labels that must fit beside a control on a phone;
   `--text-eyebrow` and `--text-data` are 0.75rem (12px) for labels and anything
