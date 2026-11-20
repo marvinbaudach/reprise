@@ -186,7 +186,7 @@ try {
   assert.equal(
     await evaluate('!!document.querySelector(".film__badge")'),
     false,
-    'once the readout shows the length, the badge does not repeat it',
+    'once playback has started, the duration badge is gone',
   );
   await evaluate('document.querySelector(\'button[aria-label="Pause"]\').click()');
   assert.equal(await evaluate('document.querySelector("video").paused'), true);
@@ -455,22 +455,31 @@ try {
   );
   await screenshot('architecture.png');
   await evaluate('document.querySelector("#ch-03").scrollIntoView({behavior:"instant"})');
-  const still = () =>
-    evaluate('document.querySelector(".seek-still__canvas")?.toDataURL() ?? null');
-  const blank = await evaluate(`(() => {
-    const canvas = document.querySelector('.seek-still__canvas');
-    const copy = document.createElement('canvas');
-    copy.width = canvas.width;
-    copy.height = canvas.height;
-    return copy.toDataURL();
-  })()`);
-  const stillFrame = await until(
-    still,
-    (frame) => Boolean(frame) && frame !== blank,
-    'still seek bar drawn',
+  // The still redraws when its width settles, so wait for the drawing to settle
+  // too: two identical reads in a row from a canvas of the same size, and not a
+  // blank canvas of that size.
+  const stillRead = () =>
+    evaluate(`(() => {
+      const canvas = document.querySelector('.seek-still__canvas');
+      if (!canvas) return null;
+      const copy = document.createElement('canvas');
+      copy.width = canvas.width;
+      copy.height = canvas.height;
+      const url = canvas.toDataURL();
+      return { size: \`\${canvas.width}x\${canvas.height}\`, url, blank: url === copy.toDataURL() };
+    })()`).then((read) => (read ? { ...read, key: `${read.size}:${read.url}` } : null));
+  let previousKey = null;
+  const settledStill = await until(
+    stillRead,
+    (read) => {
+      const settled = read !== null && !read.blank && read.key === previousKey;
+      previousKey = read?.key ?? null;
+      return settled;
+    },
+    'still seek bar drawn and settled',
   );
   await delay(400);
-  assert.equal(await still(), stillFrame, 'the seek bar at rest does not move');
+  assert.equal((await stillRead())?.key, settledStill.key, 'the seek bar at rest does not move');
   await evaluate('document.querySelector("#ch-05").scrollIntoView({behavior:"instant"})');
   await until(
     () => evaluate('document.querySelector("[data-navlink][aria-current]")?.hash'),
