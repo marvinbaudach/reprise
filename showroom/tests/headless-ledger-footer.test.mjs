@@ -175,7 +175,10 @@ test('the design footer carries provenance and the project colophon, and nothing
     footer.lastIndexOf('</details>') < footer.indexOf('class="colophon"'),
     'the timeline and the methodology must come before the colophon',
   );
-  assert.match(footer, /github\.com\/marvinbaudach ↗/);
+  assert.match(
+    footer,
+    /href="https:\/\/github\.com\/marvinbaudach\/reprise"[^>]*>\s*github\.com\/marvinbaudach\/reprise ↗/,
+  );
   assert.match(footer, /GPL-3\.0-or-later · beta/);
   // The record's framing sentence about where the price sits is not repeated.
   assert.doesNotMatch(html, /not in the small print/);

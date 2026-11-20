@@ -50,8 +50,8 @@ export function SiteFooter() {
           </div>
         </details>
         <div className="colophon" data-reveal>
-          <a className="colophon__source" href="https://github.com/marvinbaudach">
-            github.com/marvinbaudach ↗
+          <a className="colophon__source" href="https://github.com/marvinbaudach/reprise">
+            github.com/marvinbaudach/reprise ↗
           </a>
           <p>GPL-3.0-or-later · beta</p>
         </div>
