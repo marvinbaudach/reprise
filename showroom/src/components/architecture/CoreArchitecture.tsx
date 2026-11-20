@@ -20,17 +20,12 @@ export function CoreArchitecture() {
       </header>
 
       <ol className="architecture__surfaces" aria-label="Reprise frontends">
-        {ARCHITECTURE_SURFACES.map((surface, index) => (
+        {ARCHITECTURE_SURFACES.map((surface) => (
           <li className="architecture__surface" data-reveal key={surface.id}>
-            <a
-              className={`architecture__surface-link architecture__surface-link--${surface.id}`}
-              href={surface.href}
-              data-surface={surface.id}
-            >
-              <span className="data architecture__index">0{index + 1}</span>
+            <a className="architecture__surface-link" href={surface.href} data-surface={surface.id}>
               <strong>{surface.name}</strong>
               <span>{surface.stack}</span>
-              <span className="data">{surface.role}</span>
+              <span className="architecture__role">{surface.role}</span>
             </a>
           </li>
         ))}

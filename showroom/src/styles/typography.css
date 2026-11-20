@@ -25,6 +25,8 @@
   --text-data: 0.75rem;
   --text-body-size: clamp(1rem, 0.95rem + 0.22vw, 1.125rem);
   --text-lead: clamp(1.25rem, 1.05rem + 0.9vw, 1.75rem);
+  /* One size for every section h2 (the lightbox title is a dialog label), so the h1 stays the largest heading. */
+  --text-h2: clamp(1.5rem, 2.5vw, 2.25rem);
   --text-chapter: clamp(2.25rem, 1.4rem + 4vw, 5.25rem);
   --text-figure: clamp(2rem, 1.2rem + 3.4vw, 4rem);
 }

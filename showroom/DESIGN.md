@@ -58,6 +58,14 @@ keeps the calm direction above and changes only the frame:
   code census, timeline spans); figures inside a sentence stay in the display
   face. `--text-faint` is reserved for lines; text uses `--text-muted` or
   stronger for AA contrast.
+- **Heading sizes.** `--text-h2` (`clamp(1.5rem, 2.5vw, 2.25rem)`) is the one
+  size for every section h2 on the page (the chapters and the film headings), so
+  the h1 stays the largest heading. The lightbox title is an h2 inside a dialog
+  and stays a small label at 1.05rem; the architecture diagram titles itself
+  with an h3 on its own clamp.
+- **Skip link.** The skip link sits at `z-index` 60, above the fixed header (40)
+  and the scroll progress line (50); at a lower value the focused link would
+  disappear under the wordmark.
 - **Records stay records.** Text read from Markdown records renders its code
   spans as code. The price paragraph drops the record's lead-in about where the
   price sits and quotes the rest verbatim. The timeline row about the
@@ -182,8 +190,9 @@ does not claim a hosted CI result or permission to push, merge or deploy.
 The supplied GNOME capture replaces the desktop hero image. A segmented spectrum
 and a slowly rotating, cover-derived color disc bring the right sidebar to life.
 The sharp cover stays stationary and readable. The phone moves to the lower left
-so both visualizations remain visible; the desktop caption aligns to the right.
-The enlarged screenshot carries the same scene and zoom geometry.
+so both visualizations remain visible. The hero screenshots carry no caption
+or platform label over the product UI. The enlarged screenshot carries the same
+scene and zoom geometry.
 
 The source is the user-supplied 3456 × 2096 screenshot dated 2026-09-09 15:26:27.
 The `gnome-visualizer` WebP ladder contains 800, 1200, 1600 and 2400 pixel widths.
@@ -211,10 +220,10 @@ phone/sidebar separation at desktop and mobile sizes, exercise the enlarged
 scene, and verify offscreen, covered and reduced-motion pauses. The existing
 film controls, touch seeking, responsive layout and keyboard checks remain.
 
-Review found and corrected a covered GNOME caption and unnecessary rendering
-work. Glow fills now touch only their radial bounds, constant band colors are
-cached, and the hero requests a 120-pixel cover (about 4 KB); its larger derivative
-is requested only in the lightbox. The animation still uses the same spectrum,
+Review found and corrected unnecessary rendering work. Glow fills now touch only
+their radial bounds, constant band colors are cached, and the hero requests a
+120-pixel cover (about 4 KB); its larger derivative is requested only in the
+lightbox. The animation still uses the same spectrum,
 colors and simulation cadence. This avoids full-canvas fills for every bar.
 
 Before the phone follow-up, three local Lighthouse 13.4.1 runs per mode measured mobile performance

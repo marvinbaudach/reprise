@@ -23,7 +23,7 @@
   margin: 0;
   max-width: var(--measure);
   color: var(--text-strong);
-  font-size: clamp(1.45rem, 1.1rem + 1.5vw, 2rem);
+  font-size: clamp(1.3rem, 1.1rem + 0.9vw, 1.6rem);
   line-height: 1.16;
   letter-spacing: -0.015em;
   text-wrap: pretty;
