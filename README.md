@@ -55,7 +55,6 @@ lacks comparable functionality.
 ## Known limitations
 
 - The Flatpak is available for x86_64 only.
-- Music outside the XDG music directory needs a filesystem override.
 - Stem separation is not available in the Flatpak.
 - This is an early test release.
 
@@ -95,9 +94,7 @@ GStreamer Good Plug-ins, and GVfs MTP support.
 cargo build --locked --workspace
 cargo run --locked -p reprise-gnome
 cargo test --locked --workspace
-```
 
-```sh
 meson setup _build --prefix="$HOME/.local" -Dprofile=release
 meson compile -C _build
 meson install -C _build
@@ -115,9 +112,6 @@ cargo clippy --locked --all-targets --workspace -- -D warnings
 cargo test --locked --workspace
 scripts/check-architecture.sh
 scripts/check-ux-traceability.sh
-```
-
-```sh
 MERGE_READINESS_BASE_REF=origin/dev scripts/check-merge-readiness.sh --no-fetch
 ```
 
@@ -139,14 +133,8 @@ Reprise is **GPL-3.0-or-later**. See [LICENSE](LICENSE) and [LICENSING.md](LICEN
 
 ## How this project is built
 
-**Built with AI assistance: I direct the product, review changes and remain responsible for the
-result. The gates and tests are public.**
-
-**What does the AI do?** It assists with research, implementation, and drafting.
-
-**What does the maintainer do?** The maintainer sets product direction, reviews
-changes, and remains responsible for the result.
-
-**What do the gates check?** Public automated checks cover architecture, UX
-contracts, accessibility, source quality, and tests. [TESTING.md](TESTING.md)
+Reprise is built with AI assistance, which helps with research, implementation
+and drafting. I set the product direction, review every change and remain
+responsible for the result. Public automated checks cover architecture, UX
+contracts, accessibility, source quality and tests; [TESTING.md](TESTING.md)
 explains what they can and cannot prove.
