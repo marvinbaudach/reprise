@@ -1,8 +1,7 @@
 # Reprise
 
-A native music player for GNOME and Android, powered by a shared Rust engine.
-Browse your own music, build a queue, follow the lyrics, and take your library
-with you — with audio-reactive visuals that make listening feel alive.
+Reprise is a GTK4/libadwaita music player for people who manage a real library. If you use
+Rhythmbox, it imports your library with play counts, ratings and playlists.
 
 <p align="center">
   <img src="showroom/public/media/showroom/gnome-visualizer.webp" width="77%" alt="Reprise on GNOME with a sortable music library, album artwork, spectrum visualizer, and waveform playback controls." />
@@ -15,6 +14,7 @@ behind them.
 
 ## Downloads
 
+- [Install from the Reprise Flatpak repository](https://marvinbaudach.github.io/reprise-flatpak/reprise.flatpakref) — recommended for GNOME Software and updates
 - [GNOME desktop](https://github.com/marvinbaudach/reprise/releases/latest) — Flatpak bundle
 - [Android](https://github.com/marvinbaudach/reprise/releases/latest) — universal APK
 
@@ -27,14 +27,37 @@ adb install -r ./Reprise-Android-<android-version>.apk
 The desktop and Android version numbers are independent and are stated on the
 release page.
 
+## Coming from Rhythmbox?
+
+Reprise can import your ratings, play counts and last played times, date added,
+and playlists from your Rhythmbox library. The import is offered on first run
+and is available later in Preferences.
+
+The Flatpak can access your XDG music directory. If your music is stored
+elsewhere, grant access to its directory before importing:
+
+```sh
+flatpak override --user --filesystem=<dir> io.github.marvinbaudach.Reprise
+```
+
 ## Why Reprise
 
-- **Your music, organized:** sortable library, search, playlists, metadata
+- **A library you can shape:** sortable columns, search, playlists, metadata
   editing, and listening history, backed by a local database.
-- **More in every listen:** lyrics, artwork, audio-reactive visualizers,
-  podcasts, and radio; online features are opt-in.
-- **At home and on the move:** native GTK4/libadwaita on GNOME, Kotlin/Compose
-  on Android, and device synchronization from the desktop.
+- **One project across desktop and phone:** a native GTK4/libadwaita GNOME app,
+  an Android app, and desktop-to-device synchronization.
+- **Tools for a large collection:** Library Doctor reviews missing or incorrect
+  tags, and the library has been measured with 100,000 tracks.
+
+These describe Reprise's current features; they are not claims that Rhythmbox
+lacks comparable functionality.
+
+## Known limitations
+
+- The Flatpak is available for x86_64 only.
+- Music outside the XDG music directory needs a filesystem override.
+- Stem separation is not available in the Flatpak.
+- This is an early test release.
 
 ## Architecture
 
@@ -116,7 +139,14 @@ Reprise is **GPL-3.0-or-later**. See [LICENSE](LICENSE) and [LICENSING.md](LICEN
 
 ## How this project is built
 
-Reprise is built with AI assistance. The maintainer directs the product,
-reviews changes, and remains responsible for the result. Architecture, UX,
-accessibility, and source quality are checked by automated gates;
-[TESTING.md](TESTING.md) records what those checks can and cannot prove.
+**Built with AI assistance: I direct the product, review changes and remain responsible for the
+result. The gates and tests are public.**
+
+**What does the AI do?** It assists with research, implementation, and drafting.
+
+**What does the maintainer do?** The maintainer sets product direction, reviews
+changes, and remains responsible for the result.
+
+**What do the gates check?** Public automated checks cover architecture, UX
+contracts, accessibility, source quality, and tests. [TESTING.md](TESTING.md)
+explains what they can and cannot prove.

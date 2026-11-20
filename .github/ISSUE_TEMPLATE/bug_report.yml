@@ -42,3 +42,10 @@ body:
     attributes:
       label: Logs or screenshots
       description: Remove private file paths, credentials, and personal library data first.
+  - type: textarea
+    id: diagnostics
+    attributes:
+      label: Copy Diagnostics report (optional)
+      description: >-
+        In Reprise's primary menu, choose "Copy Diagnostics" and paste the report here.
+        Review it for private information before posting.

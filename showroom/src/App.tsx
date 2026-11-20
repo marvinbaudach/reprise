@@ -9,6 +9,7 @@ import { SiteFooter } from './components/chapters/SiteFooter';
 import { Backdrop } from './components/chrome/Backdrop';
 import { ScrollProgress } from './components/chrome/ScrollProgress';
 import { SiteHeader } from './components/chrome/SiteHeader';
+import { ComingFromRhythmbox } from './components/showcase/ComingFromRhythmbox';
 import { ShowreelFilm } from './components/showcase/ShowreelFilm';
 import { usePageChoreography } from './hooks/usePageChoreography';
 import { useReducedMotion } from './hooks/useReducedMotion';
@@ -31,6 +32,7 @@ export function App() {
         <Hero />
         <ProjectHighlights />
         <ShowreelFilm />
+        <ComingFromRhythmbox />
         <ChapterOne />
         <ChapterFive />
         <ChapterTwo />
