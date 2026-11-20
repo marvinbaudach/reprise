@@ -30,8 +30,7 @@ release page.
 ## Coming from Rhythmbox?
 
 Reprise can import your ratings, play counts and last played times, date added,
-and playlists from your Rhythmbox library. The import is offered on first run
-and is available later in Preferences.
+and playlists from your Rhythmbox library. The import is offered on first run.
 
 The Flatpak can access your XDG music directory. If your music is stored
 elsewhere, grant access to its directory before importing:
