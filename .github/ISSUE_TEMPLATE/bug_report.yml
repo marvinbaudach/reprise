@@ -46,4 +46,6 @@ body:
     id: diagnostics
     attributes:
       label: Copy Diagnostics report (optional)
-      description: In Reprise's primary menu, choose "Copy Diagnostics" and paste the report here. Review it for private information before posting.
+      description: >-
+        In Reprise's primary menu, choose "Copy Diagnostics" and paste the report here.
+        Review it for private information before posting.
