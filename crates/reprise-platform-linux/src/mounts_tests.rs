@@ -1,7 +1,7 @@
 //! The mountinfo lookup.
 
 use std::ffi::OsStr;
-use std::os::unix::ffi::OsStrExt;
+use std::os::unix::ffi::{OsStrExt, OsStringExt};
 use std::path::{Path, PathBuf};
 
 use super::mount_point_in;
@@ -45,6 +45,37 @@ fn octal_escapes_in_a_mount_point_are_undone() {
         mount("/run/media/me/My Disk\tTab")
     );
     assert_eq!(on("/data/back\\slash/a.flac"), mount("/data/back\\slash"));
+}
+
+#[test]
+fn malformed_octal_escapes_stay_literal_and_do_not_panic() {
+    let mountinfo = b"28 1 8:2 / / rw - ext4 /dev/sda2 rw\n\
+50 28 8:7 / /m/short\\0 rw - ext4 /dev/s1 rw\n\
+51 28 8:8 / /m/eight\\08 rw - ext4 /dev/s2 rw\n\
+52 28 8:9 / /m/wide\\400 rw - ext4 /dev/s3 rw\n\
+53 28 8:10 / /m/trail\\ rw - ext4 /dev/s4 rw\n\
+54 28 8:11 / /m/space\\0408 rw - ext4 /dev/s5 rw\n\
+55 28 8:12 / /m/mid\\0x/deep rw - ext4 /dev/s6 rw\n";
+    let resolved = |path: &[u8]| {
+        mount_point_in(mountinfo, Path::new(OsStr::from_bytes(path)))
+            .map(|point| point.into_os_string().into_vec())
+    };
+    let bytes = |point: &[u8]| Some(point.to_vec());
+    assert_eq!(resolved(b"/m/short\\0/a.flac"), bytes(b"/m/short\\0"));
+    assert_eq!(resolved(b"/m/eight\\08/a.flac"), bytes(b"/m/eight\\08"));
+    assert_eq!(resolved(b"/m/wide\\400/a.flac"), bytes(b"/m/wide\\400"));
+    assert_eq!(resolved(b"/m/trail\\/a.flac"), bytes(b"/m/trail\\"));
+    assert_eq!(
+        resolved(b"/m/mid\\0x/deep/a.flac"),
+        bytes(b"/m/mid\\0x/deep")
+    );
+    // `\040` is a space; the `8` after it is an ordinary character.
+    assert_eq!(resolved(b"/m/space 8/a.flac"), bytes(b"/m/space 8"));
+    assert_eq!(
+        resolved(b"/m/space\\0408/a.flac"),
+        bytes(b"/"),
+        "the escaped form is not the mount point"
+    );
 }
 
 #[test]
