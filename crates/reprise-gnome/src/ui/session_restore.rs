@@ -424,6 +424,9 @@ mod tests {
                 playback_events,
                 media: reprise_core::media_integration::MediaIntegrationHandles::inert(),
                 waveform: Arc::new(TestWaveform),
+                mount_resolver: std::rc::Rc::new(|_| {
+                    crate::ui::playback::fault_probe_slots::MountKey::Unresolved
+                }),
             },
             &app,
         )

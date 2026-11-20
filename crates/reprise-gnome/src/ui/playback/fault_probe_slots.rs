@@ -1,7 +1,7 @@
 //! Which faulted tracks may have a file probe in flight (`playback_faults.rs`).
 //!
 //! The pure half of the probe bound: the ledger of running probes and the
-//! lookup that says which mount a path lives on. Nothing here touches GTK, and
+//! key that says which mount a path lives on. Nothing here touches GTK, and
 //! nothing here touches the track's path.
 //!
 //! A probe holds a thread of GLib's shared task pool for as long as its kernel
@@ -14,10 +14,12 @@
 //! ## Finding the mount without asking the mount
 //!
 //! `canonicalize`, `metadata`, `exists` and `statfs` on a track path block on a
-//! dead mount, and this lookup runs on the main thread. So it is lexical: the
-//! mount points come from `/proc/self/mountinfo` (kernel memory, never blocks)
-//! and the mount of a path is the longest mount point that is a prefix of it on
-//! whole path components, so `/mnt/nas2/x` is not on `/mnt/nas`.
+//! dead mount, and this lookup runs on the main thread. So it is lexical, and it
+//! lives in the Linux platform crate's `mounts` module, which the window
+//! composition root wires in as the [`MountResolver`] (this layer may not name
+//! the platform crate): the mount points come from
+//! `/proc/self/mountinfo` (kernel memory, never blocks) and the mount of a path is
+//! the longest mount point that is a prefix of it on whole path components.
 //!
 //! A path that cannot be placed (relative, containing `..`, or mountinfo
 //! unreadable) falls under the one shared [`MountKey::Unresolved`] key, which is
@@ -33,11 +35,8 @@
 //! acts like the old shared bound, no worse than before.
 
 use std::collections::HashMap;
-use std::ffi::OsString;
-use std::os::unix::ffi::OsStringExt;
-use std::path::{Component, Path, PathBuf};
+use std::path::{Path, PathBuf};
 use std::rc::Rc;
-use std::sync::atomic::{AtomicBool, Ordering};
 
 /// How many probes may be in flight on one mount.
 pub(in crate::ui) const MAX_FAULT_PROBES_PER_MOUNT: usize = 2;
@@ -46,12 +45,6 @@ pub(in crate::ui) const MAX_FAULT_PROBES_PER_MOUNT: usize = 2;
 /// probe it holds, and covers and the other background work share the pool, so
 /// even several dead mounts must not be able to fill it.
 pub(in crate::ui) const MAX_FAULT_PROBES_TOTAL: usize = 8;
-
-/// Zero-based index of the mount point in a mountinfo line.
-const MOUNT_POINT_FIELD: usize = 4;
-
-/// Length of an escape such as `\040`.
-const ESCAPE_LEN: usize = 4;
 
 /// The mount a path lives on, as far as its text says.
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
@@ -65,78 +58,6 @@ pub(in crate::ui) enum MountKey {
 /// Maps a track path to its mount on the main thread; a test replaces it to
 /// put paths on different "mounts".
 pub(in crate::ui) type MountResolver = Rc<dyn Fn(&Path) -> MountKey>;
-
-/// Set once the unreadable-mountinfo warning has been logged, so a mountinfo
-/// that stays unreadable does not log on every fault.
-static UNREADABLE_LOGGED: AtomicBool = AtomicBool::new(false);
-
-/// The production resolver: `/proc/self/mountinfo`, read on each call so a
-/// mount made since startup is seen. It is read as bytes: the kernel escapes
-/// only space, tab, newline and backslash, so a mount point or device name may
-/// legally hold other non-UTF-8 bytes.
-pub(in crate::ui) fn procfs_mount_resolver() -> MountResolver {
-    Rc::new(|path| match std::fs::read("/proc/self/mountinfo") {
-        Ok(mountinfo) => mount_of(&mountinfo, path),
-        Err(error) => {
-            if !UNREADABLE_LOGGED.swap(true, Ordering::Relaxed) {
-                tracing::warn!(%error, "mountinfo is unreadable; probes share one bound");
-            }
-            MountKey::Unresolved
-        }
-    })
-}
-
-/// The mount of `path` among the mount points in `mountinfo`: the longest one
-/// that prefixes it. The lines are walked once and only the best match is kept.
-pub(in crate::ui) fn mount_of(mountinfo: &[u8], path: &Path) -> MountKey {
-    if !path.is_absolute() || path.components().any(|part| part == Component::ParentDir) {
-        return MountKey::Unresolved;
-    }
-    mountinfo
-        .split(|byte| *byte == b'\n')
-        .filter_map(|line| line.split(|byte| *byte == b' ').nth(MOUNT_POINT_FIELD))
-        .map(unescape_mount_point)
-        .filter(|point| path.starts_with(point))
-        .max_by_key(|point| point.components().count())
-        .map_or(MountKey::Unresolved, MountKey::Mount)
-}
-
-/// Undoes the kernel's `\NNN` octal escapes (space, tab, newline, backslash).
-/// Anything that is not three octal digits after a backslash stays as it is.
-fn unescape_mount_point(bytes: &[u8]) -> PathBuf {
-    let mut out = Vec::with_capacity(bytes.len());
-    let mut at = 0;
-    while let Some(&byte) = bytes.get(at) {
-        let escaped = (byte == b'\\')
-            .then(|| bytes.get(at + 1..at + 4))
-            .flatten()
-            .and_then(octal_byte);
-        match escaped {
-            Some(decoded) => {
-                out.push(decoded);
-                at += ESCAPE_LEN;
-            }
-            None => {
-                out.push(byte);
-                at += 1;
-            }
-        }
-    }
-    PathBuf::from(OsString::from_vec(out))
-}
-
-fn octal_byte(digits: &[u8]) -> Option<u8> {
-    digits
-        .iter()
-        .try_fold(0u32, |value, digit| {
-            digit
-                .is_ascii_digit()
-                .then(|| u32::from(digit - b'0'))
-                .filter(|octal| *octal < 8)
-                .map(|octal| value * 8 + octal)
-        })
-        .and_then(|value| u8::try_from(value).ok())
-}
 
 /// The probes in flight, by track id.
 #[derive(Debug, Default)]

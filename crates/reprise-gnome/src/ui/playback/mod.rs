@@ -13,7 +13,7 @@ mod external_media_position;
 mod external_media_session;
 mod external_media_state;
 mod external_media_toast;
-mod fault_probe_slots;
+pub(in crate::ui) mod fault_probe_slots;
 #[cfg(test)]
 mod fault_probe_slots_tests;
 mod instrumentation;

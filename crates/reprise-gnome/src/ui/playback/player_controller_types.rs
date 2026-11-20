@@ -4,6 +4,7 @@
 use std::rc::Rc;
 use std::sync::Arc;
 
+use super::fault_probe_slots::MountResolver;
 use reprise_core::db::Db;
 use reprise_core::media_integration::MediaIntegrationHandles;
 use reprise_core::playback::{PlaybackBackend, StreamEvent};
@@ -54,4 +55,6 @@ pub(in crate::ui) struct PlayerControllerBackends {
     pub(in crate::ui) playback_events: async_channel::Receiver<StreamEvent>,
     pub(in crate::ui) media: MediaIntegrationHandles,
     pub(in crate::ui) waveform: Arc<dyn RenderDataBackend>,
+    /// Finds the mount a faulted track's file lives on, for the probe bound.
+    pub(in crate::ui) mount_resolver: MountResolver,
 }

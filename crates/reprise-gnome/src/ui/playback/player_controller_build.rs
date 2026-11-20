@@ -18,7 +18,7 @@ use crate::ui::player_bar::PlayerBar;
 use crate::ui::player_controller_wiring;
 use crate::ui::player_lyrics::PlayerLyrics;
 
-use super::fault_probe_slots::{procfs_mount_resolver, ProbeSlots};
+use super::fault_probe_slots::ProbeSlots;
 use super::playback_fault_probe::disk_probe;
 use super::player_controller::PlayerController;
 use super::player_controller_types::PlayerControllerBackends;
@@ -44,6 +44,7 @@ impl PlayerController {
             playback_events: receiver,
             media: handles,
             waveform,
+            mount_resolver,
         } = backends;
         let initial_effects = super::audio_effects::apply_initial(player.as_ref(), &conn);
         let library_has_tracks = super::queue_transport::initial_library_availability(&conn);
@@ -113,7 +114,7 @@ impl PlayerController {
             consecutive_episode_skips: Cell::new(0),
             fault_probe: RefCell::new(disk_probe()),
             probe_slots: RefCell::new(ProbeSlots::default()),
-            mount_resolver: RefCell::new(procfs_mount_resolver()),
+            mount_resolver: RefCell::new(mount_resolver),
             pending_fault_toasts: Cell::new(0),
             deferred_toasts: RefCell::new(Vec::new()),
             mpris_state,

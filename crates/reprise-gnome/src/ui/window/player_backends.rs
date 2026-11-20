@@ -10,9 +10,12 @@
 //! layer is where the concrete backends are allowed to be named instead. This
 //! module is not the *only* such place: `window.rs` still names the waveform,
 //! MPRIS and device-monitor backends inline, and `window_runtime_wiring.rs`
-//! names the fingerprint backend. It is only the place where the concrete
-//! `Player` and its event channel are built.
+//! names the fingerprint backend. It is the place where the concrete `Player`
+//! and its event channel are built, and where the mount-table lookup behind the
+//! fault-probe bound is wired in as the controller's `MountResolver`.
 
+use std::path::Path;
+use std::rc::Rc;
 use std::sync::Arc;
 
 use reprise_core::playback::{PlaybackError, StreamEvent};
@@ -20,6 +23,7 @@ use reprise_core::waveform::RenderDataBackend;
 use reprise_platform_linux::player::Player;
 
 use super::player_controller::PlayerControllerBackends;
+use crate::ui::playback::fault_probe_slots::{MountKey, MountResolver};
 
 pub(super) fn build(
     waveform: Arc<dyn RenderDataBackend>,
@@ -40,5 +44,16 @@ pub(super) fn build(
         playback_events,
         media,
         waveform,
+        mount_resolver: procfs_mount_resolver(),
+    })
+}
+
+/// The production mount resolver: the platform crate's mount-table lookup, read
+/// on each call so a mount made since startup is seen. A path it cannot place
+/// shares the one `Unresolved` key.
+fn procfs_mount_resolver() -> MountResolver {
+    Rc::new(|path: &Path| {
+        reprise_platform_linux::mounts::mount_point_of(path)
+            .map_or(MountKey::Unresolved, MountKey::Mount)
     })
 }
