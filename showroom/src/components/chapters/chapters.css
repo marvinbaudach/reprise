@@ -21,7 +21,7 @@
 
 .hero__headline {
   margin: 0 0 26px;
-  font-size: clamp(2rem, 7.4cqi, 3.4rem);
+  font-size: clamp(2rem, 8.4cqi, 3.75rem);
   line-height: 0.96;
   letter-spacing: -0.03em;
   color: oklch(97% 0.004 269);

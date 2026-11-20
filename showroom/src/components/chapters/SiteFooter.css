@@ -69,6 +69,23 @@
   background: linear-gradient(120deg, oklch(32% 0.06 195 / 0.6), oklch(24% 0.018 269 / 0.8));
 }
 
+/* At phone width the link and its arrow would otherwise break onto two lines. */
+@media (max-width: 30rem) {
+  .colophon__source {
+    padding-inline: 16px;
+    font-size: var(--text-data);
+    letter-spacing: 0;
+  }
+}
+
+@media (max-width: 22.5rem) {
+  .colophon__source {
+    gap: 8px;
+    padding-inline: 12px;
+    font-size: var(--text-micro);
+  }
+}
+
 .colophon p {
   margin: 4px 0 0;
   font-size: 0.875rem;
