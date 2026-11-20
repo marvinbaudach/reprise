@@ -1,6 +1,8 @@
 //! The probe ledger and the mountinfo lookup behind it.
 
-use std::path::Path;
+use std::ffi::OsStr;
+use std::os::unix::ffi::OsStrExt;
+use std::path::{Path, PathBuf};
 
 use super::fault_probe_slots::{
     mount_of, MountKey, ProbeSlots, MAX_FAULT_PROBES_PER_MOUNT, MAX_FAULT_PROBES_TOTAL,
@@ -17,11 +19,11 @@ const MOUNTINFO: &str = "\
 ";
 
 fn mount(point: &str) -> MountKey {
-    MountKey::Mount(point.to_owned())
+    MountKey::Mount(PathBuf::from(point))
 }
 
 fn on(path: &str) -> MountKey {
-    mount_of(MOUNTINFO, Path::new(path))
+    mount_of(MOUNTINFO.as_bytes(), Path::new(path))
 }
 
 #[test]
@@ -48,21 +50,48 @@ fn octal_escapes_in_a_mount_point_are_undone() {
 }
 
 #[test]
+fn a_non_utf8_line_elsewhere_does_not_hide_the_valid_mounts() {
+    let mut mountinfo = MOUNTINFO.as_bytes().to_vec();
+    mountinfo.extend_from_slice(b"45 28 8:5 / /mnt/caf\xe9 rw - ext4 /dev/s\xffdc rw\n");
+    let valid = |path: &str| mount_of(&mountinfo, Path::new(path));
+    assert_eq!(valid("/mnt/nas/music/a.flac"), mount("/mnt/nas"));
+    assert_eq!(valid("/home/me/Music/a.flac"), mount("/"));
+}
+
+#[test]
+fn a_non_utf8_mount_point_is_kept_byte_for_byte() {
+    let mountinfo = b"28 1 8:2 / / rw - ext4 /dev/sda2 rw\n\
+45 28 8:5 / /mnt/caf\xe9 rw - ext4 /dev/sdc rw\n\
+46 28 8:6 / /mnt/caf\xc3\xa9 rw - ext4 /dev/sdd rw\n";
+    let latin1 = PathBuf::from(OsStr::from_bytes(b"/mnt/caf\xe9"));
+    let utf8 = PathBuf::from("/mnt/caf\u{e9}");
+    assert_eq!(
+        mount_of(mountinfo, &latin1.join("a.flac")),
+        MountKey::Mount(latin1)
+    );
+    assert_eq!(
+        mount_of(mountinfo, &utf8.join("a.flac")),
+        MountKey::Mount(utf8),
+        "two mounts that differ in bytes stay two keys"
+    );
+}
+
+#[test]
 fn a_path_that_cannot_be_placed_falls_under_the_shared_key() {
     assert_eq!(on("relative/a.flac"), MountKey::Unresolved);
     assert_eq!(on("/mnt/nas/../nas2/a.flac"), MountKey::Unresolved);
     assert_eq!(
-        mount_of("", Path::new("/mnt/nas/a.flac")),
+        mount_of(b"", Path::new("/mnt/nas/a.flac")),
         MountKey::Unresolved
     );
     assert_eq!(
-        mount_of("not mountinfo at all\n\ngarbage", Path::new("/a.flac")),
+        mount_of(b"not mountinfo at all\n\ngarbage", Path::new("/a.flac")),
         MountKey::Unresolved
     );
     // No mount point covers the path (no "/" entry): same shared key.
     let no_root = "40 28 0:35 / /mnt/nas rw - nfs4 nas:/export rw\n";
     assert_eq!(
-        mount_of(no_root, Path::new("/home/a.flac")),
+        mount_of(no_root.as_bytes(), Path::new("/home/a.flac")),
         MountKey::Unresolved
     );
 }
@@ -129,6 +158,34 @@ fn the_total_ceiling_holds_across_mounts() {
         }
     }
     assert!(!slots.claim(1000, mount("/one-more-mount")));
+}
+
+#[test]
+fn releasing_a_probe_lowers_its_mounts_count_and_no_other() {
+    let mut slots = ProbeSlots::default();
+    assert!(slots.claim(1, mount("/mnt/nas")));
+    assert!(slots.claim(2, mount("/mnt/nas")));
+    assert!(slots.claim(3, mount("/")));
+    assert_eq!(slots.held_on(&mount("/mnt/nas")), 2);
+    slots.release(1);
+    assert_eq!(slots.held_on(&mount("/mnt/nas")), 1);
+    assert_eq!(slots.held_on(&mount("/")), 1);
+    slots.release(2);
+    slots.release(2);
+    assert_eq!(slots.held_on(&mount("/mnt/nas")), 0);
+}
+
+#[test]
+fn a_refused_claim_adds_nothing_to_the_count() {
+    let mut slots = ProbeSlots::default();
+    for id in 0..MAX_FAULT_PROBES_PER_MOUNT as i64 {
+        assert!(slots.claim(id, mount("/mnt/nas")));
+    }
+    assert!(!slots.claim(100, mount("/mnt/nas")));
+    assert_eq!(
+        slots.held_on(&mount("/mnt/nas")),
+        MAX_FAULT_PROBES_PER_MOUNT
+    );
 }
 
 #[test]

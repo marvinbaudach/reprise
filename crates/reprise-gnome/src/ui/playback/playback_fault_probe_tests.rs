@@ -325,6 +325,16 @@ fn the_skipped_episodes_summary_waits_for_the_fault_toasts_still_pending() {
     );
 }
 
+/// Opens a probe gate when dropped, so a test that fails an assertion releases
+/// its blocked probe threads at once instead of at [`PROBE_GATE_LIMIT`].
+struct OpenOnDrop(Arc<AtomicBool>);
+
+impl Drop for OpenOnDrop {
+    fn drop(&mut self) {
+        self.0.store(true, Ordering::SeqCst);
+    }
+}
+
 /// A probe that counts its calls and blocks until `open` is set, bounded by
 /// [`PROBE_GATE_LIMIT`] so a test that never opens it still ends.
 fn gated_probe(open: &Arc<AtomicBool>, calls: &Arc<AtomicUsize>) -> FaultProbe {
@@ -348,6 +358,8 @@ fn probes_in_flight_are_bounded_and_every_fault_still_gets_one_toast() {
         Arc::new(AtomicBool::new(false)),
         Arc::new(AtomicUsize::new(0)),
     );
+    let _release = OpenOnDrop(open.clone());
+    *controller.mount_resolver.borrow_mut() = Rc::new(|_| MountKey::Mount("/one".into()));
     *controller.fault_probe.borrow_mut() = gated_probe(&open, &probes);
     recorded_fault_toasts();
 
@@ -412,6 +424,7 @@ fn a_track_already_being_probed_starts_no_second_probe() {
         Arc::new(AtomicBool::new(false)),
         Arc::new(AtomicUsize::new(0)),
     );
+    let _release = OpenOnDrop(open.clone());
     *controller.fault_probe.borrow_mut() = gated_probe(&open, &probes);
     recorded_fault_toasts();
 
@@ -444,12 +457,20 @@ fn a_missing_file_on_a_healthy_disk_is_marked_while_a_dead_mount_holds_its_probe
     let controller = &fixture.controller;
     let reloads = count_reloads(&fixture);
     *controller.mount_resolver.borrow_mut() = Rc::new(|path| {
-        MountKey::Mount(if on_dead_mount(path) { "dead" } else { "local" }.to_owned())
+        MountKey::Mount(
+            if on_dead_mount(path) {
+                "/dead"
+            } else {
+                "/local"
+            }
+            .into(),
+        )
     });
     let (open, dead_probes) = (
         Arc::new(AtomicBool::new(false)),
         Arc::new(AtomicUsize::new(0)),
     );
+    let _release = OpenOnDrop(open.clone());
     let blocked = gated_probe(&open, &dead_probes);
     let healthy = super::playback_fault_probe::disk_probe();
     *controller.fault_probe.borrow_mut() = Arc::new(move |request| {
