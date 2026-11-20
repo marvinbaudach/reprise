@@ -19,10 +19,48 @@ interactive spectral example in the design details, honouring reduced motion.
 
 The existing 58-second film uses a central play button, duration badge, seek bar,
 elapsed/total time, mute/volume, fullscreen and replay. Playback only follows an
-explicit action, never loops, and rests on the end card. Controls reveal on
-pointer activity, touch or keyboard focus; paused controls stay visible. Native
-controls are the fallback before enhancement. Preserve the existing source ladder
+explicit action, never loops, and rests on the end card. Before the first play
+the poster shows only the play button and the duration badge. From then on,
+controls reveal on pointer activity, touch or keyboard focus, and paused
+controls stay visible. Native controls are the fallback before enhancement. Preserve the existing source ladder
 and no-download-before-play behaviour. Explain loading and playback errors.
+
+## Plain-spoken refinement (2026-11-20)
+
+A critique found the content specific and the frame generic. This refinement
+keeps the calm direction above and changes only the frame:
+
+- **No labels above headings.** Chapters, the film, the availability section and
+  the blocks inside them carry no tracked mono kicker. Each heading is a plain
+  sentence that states its fact, with figures read from the same sources as the
+  rest of the page (gate count, ledger row). Sub-blocks use sentence-case
+  headings in the display face.
+- **Chapter shapes differ.** Architecture stacks heading, diagram and pairs of
+  points; Performance leads with the ledger; Quality and Automation set the
+  heading beside its short case on wide screens; Design opens on a still
+  rendering of the spectral seek bar, with the interactive bar in its
+  disclosure.
+- **Order.** Hero, highlights, film, Architecture, Performance, Quality,
+  Design, Automation, then the footer: the timeline and the sources and
+  methodology disclosures come first and the page ends on the contact section.
+  The header names the five chapters in that order; the film is reached from
+  the hero's first button.
+- **One offer, one wording.** "Work with me" in the header, the hero byline and
+  the closing heading. In-page links carry no outbound arrow, and the header
+  button has no status dot.
+- **Type tokens.** No text is set below 11px. `--text-micro` 0.6875rem (11px) is
+  the floor for labels that must fit beside a control on a phone;
+  `--text-eyebrow` and `--text-data` are 0.75rem (12px) for labels and anything
+  clickable. The header navigation is 0.875rem in the display face. Martian
+  Mono carries data and every figure that sits in a column with others (ledger,
+  code census, timeline spans); figures inside a sentence stay in the display
+  face. `--text-faint` is reserved for lines; text uses `--text-muted` or
+  stronger for AA contrast.
+- **Records stay records.** Text read from Markdown records renders its code
+  spans as code. The price paragraph drops the record's lead-in about where the
+  price sits and quotes the rest verbatim. The timeline row about the
+  single-owner runtime gains a note, at render time, that the runtime and its
+  client were later shelved and deleted (ADR 003).
 
 ## Delivery scope
 

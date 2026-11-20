@@ -8,15 +8,6 @@
   padding: 0 clamp(1.25rem, 0.6rem + 3vw, 4rem);
 }
 
-.chapter-four__eyebrow {
-  margin: 0 0 14px;
-  font-family: var(--font-mono);
-  font-size: 0.68rem;
-  letter-spacing: 0.2em;
-  text-transform: uppercase;
-  color: oklch(68% 0.011 269);
-}
-
 .chapter-four__title {
   max-width: 34ch;
   margin: 0 0 20px;
@@ -66,7 +57,7 @@
   border-bottom: 1px solid oklch(26% 0.016 269);
   background: oklch(18% 0.016 269 / 0.8);
   font-family: var(--font-mono);
-  font-size: 0.68rem;
+  font-size: var(--text-eyebrow);
   letter-spacing: 0.14em;
   text-transform: uppercase;
   color: oklch(70% 0.011 269);
@@ -89,7 +80,7 @@
   overflow-x: auto;
   overflow-y: hidden;
   font-family: var(--font-mono);
-  font-size: 0.68rem;
+  font-size: var(--text-eyebrow);
   line-height: 2.1;
   color: oklch(76% 0.009 269);
 }
@@ -132,7 +123,7 @@
   padding: 14px 18px;
   border-bottom: 1px solid oklch(26% 0.016 269);
   font-family: var(--font-mono);
-  font-size: 0.68rem;
+  font-size: var(--text-eyebrow);
   letter-spacing: 0.14em;
   text-transform: uppercase;
   color: oklch(70% 0.011 269);
@@ -168,7 +159,7 @@
 .capability__id,
 .capability__state {
   font-family: var(--font-mono);
-  font-size: 0.68rem;
+  font-size: var(--text-eyebrow);
 }
 
 .capability__id {
@@ -201,5 +192,5 @@
   margin: 0;
   padding: 0 18px 18px;
   font-family: var(--font-mono);
-  font-size: 0.68rem;
+  font-size: var(--text-eyebrow);
 }

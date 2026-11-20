@@ -35,7 +35,7 @@
 .lightbox__heading p {
   margin: 0 0 2px;
   font-family: "Martian Mono", ui-monospace, monospace;
-  font-size: 0.68rem;
+  font-size: var(--text-eyebrow);
   letter-spacing: 0.18em;
   text-transform: uppercase;
   color: #4fdbd4;
@@ -56,7 +56,7 @@
 
 .lightbox__counter {
   font-family: "Martian Mono", ui-monospace, monospace;
-  font-size: 0.68rem;
+  font-size: var(--text-eyebrow);
   color: oklch(68% 0.011 269);
   transition: opacity 160ms ease-out;
 }

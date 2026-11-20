@@ -1,5 +1,5 @@
 .site-footer {
-  padding: clamp(3.5rem, 2.5rem + 4vw, 6rem) 0 clamp(3rem, 2rem + 3vw, 5rem);
+  padding: clamp(2rem, 1.5rem + 2vw, 3.5rem) 0 clamp(3rem, 2rem + 3vw, 5rem);
   border-top: 1px solid oklch(24% 0.016 269);
 }
 
@@ -7,15 +7,6 @@
   max-width: 78rem;
   margin: 0 auto;
   padding: 0 clamp(1.25rem, 0.6rem + 3vw, 4rem);
-}
-
-.site-footer__eyebrow {
-  margin: 0 0 16px;
-  font-family: var(--font-mono);
-  font-size: 0.68rem;
-  letter-spacing: 0.18em;
-  text-transform: uppercase;
-  color: oklch(68% 0.011 269);
 }
 
 .site-footer__honesty {
@@ -41,7 +32,7 @@
   align-items: center;
   gap: 14px 26px;
   font-family: var(--font-mono);
-  font-size: 0.68rem;
+  font-size: var(--text-data);
 }
 
 .site-footer__links img {
@@ -56,18 +47,7 @@
   grid-template-columns: repeat(auto-fit, minmax(min(100%, 300px), 1fr));
   gap: clamp(1.6rem, 1.2rem + 2vw, 3.5rem);
   align-items: start;
-  margin-top: clamp(2.5rem, 2rem + 2vw, 4rem);
-  padding-top: clamp(2rem, 1.6rem + 1.5vw, 3rem);
-  border-top: 1px solid oklch(24% 0.016 269);
-}
-
-.availability__eyebrow {
-  margin: 0 0 12px;
-  font-family: var(--font-mono);
-  font-size: 0.68rem;
-  letter-spacing: 0.2em;
-  text-transform: uppercase;
-  color: #4fdbd4;
+  margin-top: clamp(3rem, 2.4rem + 2.4vw, 5rem);
 }
 
 .availability h2 {
@@ -122,8 +102,8 @@
   border-radius: 8px;
   background: linear-gradient(120deg, oklch(26% 0.05 195 / 0.5), oklch(20% 0.018 269 / 0.7));
   font-family: var(--font-mono);
-  font-size: 0.68rem;
-  letter-spacing: 0.06em;
+  font-size: 0.8125rem;
+  letter-spacing: 0.02em;
   color: oklch(97% 0.004 269);
   text-decoration: none;
 }
@@ -134,9 +114,12 @@
 
 .availability__actions p {
   margin: 4px 0 0;
-  font-family: var(--font-mono);
-  font-size: 0.68rem;
-  letter-spacing: 0.12em;
-  text-transform: uppercase;
-  color: oklch(68% 0.011 269);
+  font-size: 0.875rem;
+  color: oklch(72% 0.011 269);
+}
+
+/* The footer's own rule already opens it; the first disclosure needs no second. */
+.site-footer__frame > .evidence-details:first-child {
+  margin-top: 0;
+  border-top: 0;
 }

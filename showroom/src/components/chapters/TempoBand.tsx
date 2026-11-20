@@ -1,5 +1,6 @@
 import { TIMELINE } from 'virtual:build-timeline';
 import { permalink } from '../../data/measurements';
+import { InlineCode } from '../ui/InlineCode';
 import './chapters.css';
 
 const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
@@ -32,6 +33,36 @@ export function displaySpan(from: string, to: string): string {
 }
 
 /**
+ * The record describes each week as it was. One of those weeks built something
+ * that was later removed, and a reader of this page today deserves to know it
+ * without the history being rewritten: the note is added where the row is
+ * shown, keyed by what the row says, and the build fails if that row is ever
+ * reworded or duplicated rather than quietly dropping the note.
+ */
+const SHELVED_RUNTIME = 'single-owner runtime';
+const SHELVED_RUNTIME_ADR = 'docs/adr/003-runtime-ownership.md';
+
+const shelvedRows = TIMELINE.filter((week) => week.landed.includes(SHELVED_RUNTIME));
+if (shelvedRows.length !== 1) {
+  throw new Error(
+    `expected one timeline row naming the ${SHELVED_RUNTIME}, found ${shelvedRows.length}`,
+  );
+}
+
+function ShelvedNote({ landed }: { readonly landed: string }) {
+  if (!landed.includes(SHELVED_RUNTIME)) return null;
+  return (
+    <>
+      {' '}
+      <span className="tempo__later">
+        The runtime and its client were later shelved and deleted (
+        <a href={permalink(SHELVED_RUNTIME_ADR)}>ADR 003</a>); the protocol stayed.
+      </span>
+    </>
+  );
+}
+
+/**
  * The tempo band between the hero and the first chapter: the weeks it took, one
  * card each, on a rail.
  *
@@ -46,19 +77,16 @@ export function TempoBand() {
       <div className="tempo__frame frame">
         <div className="tempo__head">
           <div>
-            <p className="eyebrow tempo__label" data-reveal>
-              Idea to alpha
-            </p>
             <p className="tempo__figure" data-reveal>
               <span data-counter>{TIMELINE.length}</span>
               <span className="tempo__unit">weeks</span>
             </p>
           </div>
           <p className="tempo__note" data-reveal>
-            Counted from the first commit — a design document, not a line of product code — to a
-            running alpha on all four frontends. The weeks are the record in{' '}
-            <a href={permalink('docs/showroom/timeline.md')}>timeline.md</a>, and the number beside
-            it is how many rows it has.
+            Counted from the first commit, a design document, to a running alpha on all four
+            frontends. The weeks come from{' '}
+            <a href={permalink('docs/showroom/timeline.md')}>timeline.md</a>, and the number is how
+            many rows it has.
           </p>
         </div>
 
@@ -67,7 +95,10 @@ export function TempoBand() {
             <li className="tempo__week" key={week.week} data-week={week.week}>
               <p className="data tempo__span">{displaySpan(week.from, week.to)}</p>
               <p className="tempo__theme">{week.theme}</p>
-              <p className="tempo__landed">{week.landed}</p>
+              <p className="tempo__landed">
+                <InlineCode text={week.landed} />
+                <ShelvedNote landed={week.landed} />
+              </p>
             </li>
           ))}
         </ol>

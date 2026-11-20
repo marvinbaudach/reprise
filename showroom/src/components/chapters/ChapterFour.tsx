@@ -10,16 +10,15 @@ export function ChapterFour() {
       aria-labelledby="ch-04-heading"
     >
       <div className="chapter-four__frame">
-        <p className="chapter-four__eyebrow" data-reveal>
-          Automation
-        </p>
-        <h2 id="ch-04-heading" className="chapter-four__title" data-reveal>
-          The same library, ready for automation.
-        </h2>
-        <p className="chapter-four__intro" data-reveal>
-          Scripts and AI agents use the same library — a CLI for the terminal, an MCP server for
-          agents. Reads are safe; every write is opt-in.
-        </p>
+        <div className="chapter__split">
+          <h2 id="ch-04-heading" className="chapter-four__title" data-reveal>
+            The same library, ready for automation.
+          </h2>
+          <p className="chapter-four__intro" data-reveal>
+            Scripts reach it through a CLI and AI agents through an MCP server. Reads are safe, and
+            every write is opt-in.
+          </p>
+        </div>
 
         <details className="evidence-details">
           <summary>CLI commands and MCP permissions</summary>

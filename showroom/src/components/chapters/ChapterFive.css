@@ -12,15 +12,6 @@
   margin-bottom: clamp(1.5rem, 1.2rem + 1vw, 2.5rem);
 }
 
-.chapter-five__heading > p:first-child {
-  margin: 0 0 10px;
-  font-family: var(--font-mono);
-  font-size: 0.68rem;
-  letter-spacing: 0.18em;
-  text-transform: uppercase;
-  color: #ff6f5e;
-}
-
 .chapter-five__heading h2 {
   max-width: 40ch;
   margin: 0 0 14px;
@@ -33,7 +24,7 @@
     "wght" 570;
 }
 
-.chapter-five__heading > p:last-child {
+.chapter-five__lead {
   max-width: 64ch;
   margin: 0;
   color: oklch(80% 0.008 269);
@@ -48,23 +39,10 @@
 }
 
 .ledger-card__heading {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: baseline;
-  gap: 6px 18px;
+  margin: 0;
   padding: 22px 24px 6px;
-}
-
-.ledger-card__heading > span:first-child {
-  font-family: var(--font-mono);
-  font-size: 0.68rem;
-  letter-spacing: 0.18em;
-  text-transform: uppercase;
-  color: oklch(68% 0.011 269);
-}
-
-.ledger-card__heading > span:last-child {
   font-size: 1.05rem;
+  font-weight: 500;
   color: oklch(96% 0.004 269);
 }
 
@@ -80,11 +58,10 @@
 
 .ledger caption {
   padding-bottom: 14px;
-  font-family: var(--font-mono);
-  font-size: 0.68rem;
-  letter-spacing: 0.12em;
+  font-size: 0.875rem;
+  line-height: 1.55;
   text-align: left;
-  color: oklch(68% 0.011 269);
+  color: oklch(74% 0.009 269);
 }
 
 .ledger th,
@@ -95,13 +72,10 @@
 .ledger thead th {
   padding: 10px 12px;
   border-bottom-color: oklch(30% 0.018 269);
-  font-family: var(--font-mono);
-  font-size: 0.68rem;
-  font-weight: 400;
-  letter-spacing: 0.14em;
+  font-size: 0.8125rem;
+  font-weight: 500;
   text-align: right;
-  text-transform: uppercase;
-  color: oklch(68% 0.011 269);
+  color: oklch(74% 0.009 269);
 }
 
 .ledger thead th:first-child {
@@ -175,9 +149,7 @@
   .ledger caption {
     display: block;
     width: 100%;
-    font-size: 0.75rem;
     line-height: 1.6;
-    letter-spacing: 0.04em;
   }
 
   .ledger tbody tr {
@@ -187,7 +159,6 @@
     margin-bottom: 8px;
     padding: 12px 13px;
     border: 1px solid var(--surface-line-soft);
-    border-left: 2px solid color-mix(in oklab, var(--accent) 46%, transparent);
     border-radius: 8px;
     background: var(--surface-raised);
   }
@@ -206,6 +177,7 @@
   .ledger td:last-child {
     padding: 0;
     border: 0;
+    font-size: 0.8125rem;
     text-align: left;
   }
 
@@ -213,9 +185,8 @@
     display: block;
     margin-bottom: 4px;
     color: var(--text-muted);
-    font-size: 0.56rem;
-    letter-spacing: 0.14em;
-    text-transform: uppercase;
+    font-family: var(--font-display);
+    font-size: var(--text-eyebrow);
     content: attr(data-label);
   }
 }

@@ -73,6 +73,13 @@ a:hover {
   text-decoration-color: var(--accent);
 }
 
+/* Crate names and attributes quoted from the records read as code. */
+code {
+  font-family: var(--font-mono);
+  font-size: 0.88em;
+  letter-spacing: 0;
+}
+
 :focus-visible {
   outline: 2px solid var(--accent);
   outline-offset: 3px;
@@ -156,7 +163,7 @@ a:hover {
   display: flex;
   align-items: center;
   gap: var(--gap-line);
-  color: var(--text-faint);
+  color: var(--text-muted);
 }
 
 .rule::after {

@@ -83,7 +83,7 @@ const GATE_GROUP_ASSIGNMENTS: readonly GateGroupDefinition[] = [
   {
     name: 'Distribution',
     short: 'Install',
-    line: 'It installs as a desktop app, not as a demo.',
+    line: 'It installs like any other desktop app.',
     checks: [
       'Gettext catalogues',
       'Release metadata',

@@ -67,7 +67,7 @@
   border: 1px solid oklch(30% 0.018 269);
   border-radius: 999px;
   font-family: var(--font-mono);
-  font-size: 0.68rem;
+  font-size: var(--text-eyebrow);
   letter-spacing: 0.18em;
   text-transform: uppercase;
   color: var(--brand-teal);
@@ -77,10 +77,7 @@
   display: flex;
   align-items: center;
   gap: clamp(0.75rem, 0.4rem + 1vw, 1.75rem);
-  font-family: var(--font-mono);
-  font-size: 0.68rem;
-  letter-spacing: 0.16em;
-  text-transform: uppercase;
+  font-size: 0.875rem;
   white-space: nowrap;
   min-width: 0;
 }
@@ -123,15 +120,6 @@
     color var(--duration-fast);
 }
 
-.site-header__hire::before {
-  width: 6px;
-  height: 6px;
-  border-radius: 50%;
-  background: var(--accent);
-  box-shadow: 0 0 0 3px color-mix(in oklab, var(--accent) 22%, transparent);
-  content: "";
-}
-
 .site-header__hire:hover {
   border-color: var(--accent);
   background-color: color-mix(in oklab, var(--accent) 22%, transparent);
@@ -142,7 +130,7 @@
    progress line and the top-of-page link still say where the reader is.
    
    70rem, not the 46rem this used to be. Measured in a headless Chromium with
-   both faces loaded: the full row — mark, wordmark, Alpha, five chapter links,
+   both faces loaded: the full row — mark, wordmark, Beta, five chapter links,
    Source and the hire pill — needs about 1105px of client width, because
    --frame-pad grows with the viewport and takes the rest. At 46rem the row was
    simply drawn past the right edge from 737px upwards, and `overflow-x: clip`

@@ -78,7 +78,6 @@ test('chapter five exposes the complete measured ledger and its price without a 
 
   assert.ok(chapter);
   assert.match(chapter, /data-ground="oklch\(12\.5% 0\.018 24\)"/);
-  assert.match(chapter, /A faster library\. A measured trade-off\./);
   const table = chapter.match(/<table[^>]+class="ledger"[\s\S]+?<\/table>/)?.[0];
   assert.ok(table);
   assert.match(table, /<table[^>]+role="table"/);
@@ -101,6 +100,12 @@ test('chapter five exposes the complete measured ledger and its price without a 
   assert.ok(rows.length > 0, 'the measurement record must carry its table');
   const shown = (value) =>
     new RegExp(value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&').replaceAll("'", "(?:'|&#x27;)"));
+  // The heading carries the headline row's own before and after, quoted.
+  const heading = chapter.match(/<h2 id="ch-05-heading">([\s\S]+?)<\/h2>/)?.[1];
+  assert.ok(heading, 'chapter five must keep its heading');
+  const [, titleBefore, titleAfter] = rows[0];
+  assert.match(heading, shown(titleBefore));
+  assert.match(heading, shown(titleAfter));
   for (const cells of rows) {
     for (const cell of cells) assert.match(chapter, shown(cell));
   }
@@ -128,6 +133,18 @@ test('chapter five exposes the complete measured ledger and its price without a 
     chapter.indexOf('class="ledger__price"') > chapter.indexOf('</table>'),
     'the price must remain the final line after the complete ledger',
   );
+  // The page quotes the paragraph minus its framing lead-in, and nothing else is cut.
+  const leadIn = 'The price sits next to it, not in the small print: ';
+  assert.ok(price.startsWith(leadIn), 'the record must open its price with the framing lead-in');
+  const quoted = price.slice(leadIn.length);
+  const shownPrice = chapter
+    .match(/<p class="ledger__price">([\s\S]*?)<\/p>/)?.[1]
+    ?.replace(/&#x([0-9a-f]+);/gi, (_, hex) => String.fromCodePoint(Number.parseInt(hex, 16)))
+    .replace(/&quot;/g, '"')
+    .replace(/&lt;/g, '<')
+    .replace(/&gt;/g, '>')
+    .replace(/&amp;/g, '&');
+  assert.equal(shownPrice, `${quoted.charAt(0).toUpperCase()}${quoted.slice(1)}`);
   assert.match(css, /\.chapter-five\{[^}]*padding:clamp\(4rem,3rem \+ 5vw,7rem\) 0/);
   assert.match(css, /\.ledger-card\{[^}]*border-radius:12px/);
   assert.match(authoredCss, /background: oklch\(17% 0\.016 269 \/ 0\.72\)/);
@@ -148,15 +165,23 @@ test('the design footer carries provenance availability and the exact contact tr
   assert.match(footer, /code-census\.mjs/);
   assert.match(footer, /index-rebuild\.md/);
   assert.match(footer, /src="\/reprise\/brand\/reprise-mark\.svg"/);
-  assert.match(footer, /Availability/);
   assert.match(footer, /<section id="availability" class="availability"/);
-  assert.match(footer, /Open to work\./);
+  assert.match(footer, /id="availability-heading">Work with me\.</);
+  // The page ends on contact: both closing disclosures sit above it.
+  assert.ok(
+    footer.lastIndexOf('</details>') < footer.indexOf('id="availability"'),
+    'the timeline and the methodology must come before the contact section',
+  );
   assert.match(footer, /github\.com\/marvinbaudach ↗/);
-  assert.match(footer, /GPL-3\.0-or-later · active alpha/);
+  assert.match(footer, /GPL-3\.0-or-later · beta/);
+  // The record's framing sentence about where the price sits is not repeated.
+  assert.doesNotMatch(html, /not in the small print/);
   assert.doesNotMatch(footer, / style=/);
   assert.match(
     css,
-    /\.site-footer\{[^}]*padding:clamp\(3\.5rem,2\.5rem \+ 4vw,6rem\) 0 clamp\(3rem,2rem \+ 3vw,5rem\)/,
+    // The footer opens on the closing disclosures, then ends on contact, so its
+    // top is the gap of a summary row rather than of a section heading.
+    /\.site-footer\{[^}]*padding:clamp\(2rem,1\.5rem \+ 2vw,3\.5rem\) 0 clamp\(3rem,2rem \+ 3vw,5rem\)/,
   );
   assert.match(
     css,

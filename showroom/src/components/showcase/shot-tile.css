@@ -185,7 +185,7 @@
 
 .shot-tile__platform {
   font-family: "Martian Mono", ui-monospace, monospace;
-  font-size: 0.68rem;
+  font-size: var(--text-eyebrow);
   letter-spacing: 0.18em;
   text-transform: uppercase;
   color: #4fdbd4;

@@ -26,7 +26,7 @@
 .seek-track__time {
   flex: 0 0 auto;
   font-family: var(--font-mono);
-  font-size: 0.68rem;
+  font-size: var(--text-eyebrow);
   color: oklch(70% 0.011 269);
 }
 
@@ -36,7 +36,7 @@
   gap: 6px 14px;
   margin: 12px 0 0;
   font-family: var(--font-mono);
-  font-size: 0.68rem;
+  font-size: var(--text-eyebrow);
   letter-spacing: 0.14em;
   text-transform: uppercase;
   color: oklch(68% 0.011 269);
@@ -89,7 +89,7 @@
   flex: 1 1 0;
   margin: 0;
   font-family: var(--font-mono);
-  font-size: 0.68rem;
+  font-size: var(--text-eyebrow);
   color: oklch(62% 0.011 269);
 }
 
@@ -107,26 +107,10 @@
 }
 
 .seek-card__heading {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: flex-end;
-  justify-content: space-between;
-  gap: 18px;
-  margin-bottom: 22px;
-}
-
-.seek-card__heading p {
-  margin: 0 0 6px;
-  font-family: var(--font-mono);
-  font-size: 0.68rem;
-  letter-spacing: 0.18em;
-  text-transform: uppercase;
-  color: #4fdbd4;
-}
-
-.seek-card__heading h3 {
-  margin: 0;
+  margin: 0 0 22px;
+  max-width: 36ch;
   font-size: clamp(1.2rem, 1.05rem + 0.8vw, 1.7rem);
+  text-wrap: balance;
   color: oklch(97% 0.004 269);
   font-variation-settings:
     "wdth" 104,
@@ -150,7 +134,7 @@
   gap: 12px 24px;
   margin-top: 6px;
   font-family: var(--font-mono);
-  font-size: 0.68rem;
+  font-size: var(--text-eyebrow);
   color: oklch(70% 0.011 269);
 }
 
@@ -196,26 +180,14 @@
 .seek-legends article {
   padding: 18px 20px;
   border: 1px solid oklch(28% 0.018 269);
-  border-top: 2px solid oklch(78% 0.008 269);
   border-radius: 8px;
   background: oklch(18% 0.016 269 / 0.7);
 }
 
-.seek-legends article:nth-child(2) {
-  border-top-color: #4fdbd4;
-}
-
-.seek-legends article:nth-child(3) {
-  border-top-color: #ff6f5e;
-}
-
 .seek-legends h4 {
   margin: 0 0 10px;
-  font-family: var(--font-mono);
-  font-size: 0.68rem;
-  font-weight: 400;
-  letter-spacing: 0.14em;
-  text-transform: uppercase;
+  font-size: 1rem;
+  font-weight: 560;
   color: oklch(90% 0.006 269);
 }
 
@@ -246,6 +218,33 @@
   justify-content: space-between;
   margin-top: 8px;
   font-family: var(--font-mono);
-  font-size: 0.68rem;
+  font-size: var(--text-eyebrow);
   color: oklch(68% 0.011 269);
+}
+
+/*
+ * The bar at rest, shown without opening anything. Its height is reserved so
+ * the chapter does not move when the measured track arrives.
+ */
+.seek-still {
+  margin: clamp(2rem, 1.5rem + 2vw, 3rem) 0 0;
+  padding: clamp(1rem, 0.7rem + 1.2vw, 1.75rem) clamp(1rem, 0.6rem + 1.6vw, 2rem);
+  border: 1px solid oklch(30% 0.02 300);
+  border-radius: 14px;
+  background: linear-gradient(160deg, oklch(13% 0.026 300 / 0.78), oklch(10% 0.014 269 / 0.88));
+}
+
+.seek-still__canvas,
+.seek-still .seek-track__unavailable {
+  display: block;
+  width: 100%;
+  height: clamp(72px, 4rem + 4vw, 120px);
+}
+
+.seek-still__caption {
+  margin-top: 14px;
+  max-width: 68ch;
+  font-size: 0.9rem;
+  color: oklch(74% 0.009 269);
+  text-wrap: pretty;
 }

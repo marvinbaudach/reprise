@@ -8,16 +8,16 @@ import {
 import { formatSeekTime, loadSeekTrack, type MeasuredSeekTrack } from '../../lib/seekTrack';
 import './measured-seek-track.css';
 
-interface ReadyTrack {
+export interface ReadyTrack {
   readonly status: 'ready';
   readonly track: MeasuredSeekTrack;
 }
 
-interface PendingTrack {
+export interface PendingTrack {
   readonly status: 'loading' | 'failed';
 }
 
-type TrackState = ReadyTrack | PendingTrack;
+export type TrackState = ReadyTrack | PendingTrack;
 
 interface SeekCanvasProps {
   readonly hero?: boolean;
@@ -28,7 +28,7 @@ interface SeekCanvasProps {
   readonly state: TrackState;
 }
 
-function useMeasuredSeekTrack(): TrackState {
+export function useMeasuredSeekTrack(): TrackState {
   const [state, setState] = useState<TrackState>({ status: 'loading' });
   useEffect(() => {
     let current = true;
@@ -294,12 +294,9 @@ export function SpectralSeekTrack({ reducedMotion }: { readonly reducedMotion: b
 
   return (
     <figure className="seek-card" data-reveal="" data-showcase="spectral-seek-track">
-      <div className="seek-card__heading">
-        <div>
-          <p>The spectral seek bar, live</p>
-          <h3>Height is the level. Colour is the frequency.</h3>
-        </div>
-      </div>
+      <h3 className="seek-card__heading">
+        Move across the measured track to read its level and its centroid.
+      </h3>
 
       <div className="seek-card__canvas">
         <SeekCanvas
@@ -323,8 +320,7 @@ export function SpectralSeekTrack({ reducedMotion }: { readonly reducedMotion: b
       </div>
 
       <p className="seek-card__note" data-reveal="">
-        Move across the measured track to inspect its values. The bars are shaped by the same
-        functions the apps use —{' '}
+        The bars are shaped by the same functions the apps use, in{' '}
         <a href="https://github.com/marvinbaudach/reprise/blob/main/crates/reprise-core/src/visuals/modes/bars.rs">
           bars.rs
         </a>
@@ -335,13 +331,13 @@ export function SpectralSeekTrack({ reducedMotion }: { readonly reducedMotion: b
         and{' '}
         <a href="https://github.com/marvinbaudach/reprise/blob/main/crates/reprise-view/src/spectral_colour.rs">
           spectral_colour.rs
-        </a>{' '}
-        — with only the band values standing in for live PCM.
+        </a>
+        . Only the band values stand in for live PCM.
       </p>
 
       <div className="seek-legends">
         <article data-reveal="" data-seek-legend="height">
-          <h4>Height — the body</h4>
+          <h4>Height shows the level</h4>
           <p>
             Every bar is the RMS of its slice, mapped through the track's own p10–p95 window and
             smoothed against flicker. A compressed master still shows verse against chorus instead
@@ -349,7 +345,7 @@ export function SpectralSeekTrack({ reducedMotion }: { readonly reducedMotion: b
           </p>
         </article>
         <article data-reveal="" data-seek-legend="colour">
-          <h4>Colour — the frequency</h4>
+          <h4>Colour shows the frequency</h4>
           <p>The tint is the spectral centroid: coral is low and weighty, teal high and airy.</p>
           <div className="seek-legends__axis" aria-hidden="true" />
           <div className="seek-legends__ends">

@@ -21,6 +21,19 @@ test('the overview names its author and puts the film before technical evidence'
   assert.match(html, /<summary[^>]*>Sources and methodology/);
 });
 
+test('no label sits above a heading, and no record markup leaks into the text', async () => {
+  const html = await readFile(new URL('dist/index.html', root), 'utf8');
+  const body = html.slice(html.indexOf('<body')).replace(/<(script|style)\b[\s\S]*?<\/\1>/g, '');
+  // Headings name their sections; a tracked label above them only repeated it.
+  assert.doesNotMatch(body, /class="[^"]*\beyebrow\b/);
+  assert.doesNotMatch(body, /chapter__eyebrow|availability__eyebrow|chapter-four__eyebrow/);
+  // Text read from Markdown records renders its code spans as code.
+  const text = body.replace(/<[^>]+>/g, ' ');
+  assert.doesNotMatch(text, /`/, 'a Markdown backtick reached the page');
+  assert.match(body, /<code>reprise-core<\/code>/);
+  assert.match(body, /<code>#\[cfg\(test\)\]<\/code>/);
+});
+
 test('reading never depends on entrances or count-up effects', async () => {
   const source = await readFile(new URL('src/hooks/usePageChoreography.ts', root), 'utf8');
   assert.doesNotMatch(

@@ -1,4 +1,5 @@
 import { CODE_SEGMENTS, group } from '../../data/measurements';
+import { InlineCode } from './InlineCode';
 import './ui.css';
 
 /**
@@ -10,7 +11,7 @@ import './ui.css';
 export function CodeRatioBar() {
   return (
     <figure className="ratio" data-reveal>
-      <p className="ratio__heading">Where the lines sit</p>
+      <h4 className="ratio__heading">Where the lines sit</h4>
       <div
         className="ratio__bar"
         data-ratio
@@ -37,7 +38,9 @@ export function CodeRatioBar() {
               <span className={`ratio__swatch ratio__segment--${segment.key}`} aria-hidden="true" />
               {segment.label} · {group(segment.lines)}
             </span>
-            <span className="ratio__note">{segment.note}</span>
+            <span className="ratio__note">
+              <InlineCode text={segment.note} />
+            </span>
           </li>
         ))}
       </ul>

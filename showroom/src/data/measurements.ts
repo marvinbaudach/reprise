@@ -184,7 +184,39 @@ export interface Measurement {
 
 export const PERFORMANCE: readonly Measurement[] = INDEX_REBUILD.rows;
 
-export const PERFORMANCE_PRICE = INDEX_REBUILD.price;
+/** The label of the headline row: the title query the index was rebuilt for. */
+const TITLE_QUERY_LABEL = "Title window over 100'000 tracks";
+
+/**
+ * The headline row, keyed by what it says rather than by where it sits. Like the
+ * shelved-runtime note on the timeline, the build fails if the record is ever
+ * reworded or reordered instead of quietly headlining the wrong figure.
+ */
+export const TITLE_QUERY: Measurement = (() => {
+  const row = PERFORMANCE.find((candidate) => candidate.what === TITLE_QUERY_LABEL);
+  if (!row) {
+    throw new Error(`the measurement record has no row labelled "${TITLE_QUERY_LABEL}"`);
+  }
+  return row;
+})();
+
+/** The record's own framing sentence about where the price sits. */
+const PRICE_LEAD_IN = 'The price sits next to it, not in the small print: ';
+
+/**
+ * The record opens its price paragraph with a sentence about where the price
+ * sits. The page shows that placement instead of saying it, so exactly that
+ * lead-in is dropped and the rest, every figure included, is quoted as written
+ * with its first letter capitalised. A paragraph that does not open with it is
+ * returned verbatim: nothing else is ever treated as framing.
+ */
+function withoutLeadIn(paragraph: string): string {
+  if (!paragraph.startsWith(PRICE_LEAD_IN)) return paragraph;
+  const rest = paragraph.slice(PRICE_LEAD_IN.length);
+  return `${rest.charAt(0).toUpperCase()}${rest.slice(1)}`;
+}
+
+export const PERFORMANCE_PRICE = withoutLeadIn(INDEX_REBUILD.price);
 
 export const PERFORMANCE_RECORD = 'docs/measurements/index-rebuild.md';
 

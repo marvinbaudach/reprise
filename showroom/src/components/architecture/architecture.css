@@ -15,15 +15,10 @@
   margin-bottom: 28px;
 }
 
-.architecture__header .eyebrow {
-  margin: 0 0 6px;
-  font-size: 0.68rem;
-  letter-spacing: 0.18em;
-  color: oklch(68% 0.011 269);
-}
-
 .architecture__title {
+  max-width: 34ch;
   margin: 0;
+  text-wrap: balance;
   font-size: clamp(1.2rem, 1.05rem + 0.7vw, 1.6rem);
   color: oklch(96% 0.004 269);
   font-variation-settings:
@@ -32,7 +27,7 @@
 }
 
 .architecture__gate-link {
-  font-size: 0.68rem;
+  font-size: var(--text-eyebrow);
 }
 
 .architecture__surfaces {
@@ -75,12 +70,12 @@
 }
 
 .architecture__index {
-  font-size: 0.68rem;
+  font-size: var(--text-eyebrow);
   color: oklch(68% 0.011 269);
 }
 
 .architecture__surface-link > .data:last-child {
-  font-size: 0.68rem;
+  font-size: var(--text-eyebrow);
   letter-spacing: 0.1em;
   text-transform: uppercase;
   color: oklch(68% 0.011 269);
@@ -130,10 +125,8 @@
   text-decoration: none;
 }
 
-.architecture__layer .eyebrow {
-  font-size: 0.68rem;
-  letter-spacing: 0.16em;
-  color: oklch(68% 0.011 269);
+.architecture__layer .data.architecture__layer-role {
+  color: oklch(72% 0.011 269);
 }
 
 .architecture__layer strong {
@@ -142,7 +135,7 @@
 }
 
 .architecture__layer .data {
-  font-size: 0.68rem;
+  font-size: var(--text-eyebrow);
   color: oklch(70% 0.011 269);
 }
 
@@ -152,7 +145,7 @@
   background: linear-gradient(120deg, oklch(26% 0.05 195 / 0.55), oklch(22% 0.02 269 / 0.75));
 }
 
-.architecture__layer--core .eyebrow {
+.architecture__layer--core .data.architecture__layer-role {
   color: #4fdbd4;
 }
 

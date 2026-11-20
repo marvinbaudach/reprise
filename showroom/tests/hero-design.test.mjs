@@ -20,6 +20,8 @@ test('the design hero opens with two screenshot buttons', async () => {
   assert.ok(hero);
   assert.match(hero, /A music player for GNOME and Android/);
   assert.match(hero, /href="#film"/);
+  // The hero says who built it and that the work was AI-assisted, in one plain line.
+  assert.match(hero, /quality by one engineer, AI-assisted\./);
   assert.doesNotMatch(hero, /data-showcase="scroll-cue"/);
   assert.equal((hero.match(/<button[^>]+type="button"[^>]+data-shot=""/g) ?? []).length, 2);
   assert.match(css, /\.hero__actions/);
@@ -67,6 +69,15 @@ test('the header and hero offer one in-page route to availability', async () => 
   assert.match(normalizedHero, /Marvin Baudach/);
   assert.match(normalizedHero, /Product design, architecture and quality/);
   assert.match(normalizedHero, /href="#availability"/);
+  // One wording for the same offer everywhere, and no outbound arrow on an
+  // in-page anchor.
+  assert.match(normalizedHero, /<a href="#availability">Work with me<\/a>/);
+  assert.match(html, /id="availability-heading">Work with me\.</);
+  assert.doesNotMatch(html, /Open to (?:work|opportunities)/);
+  for (const anchor of html.match(/<a[^>]+href="#[^"]*"[^>]*>[\s\S]*?<\/a>/g) ?? []) {
+    assert.doesNotMatch(anchor, /↗/, `an in-page link points outward: ${anchor}`);
+  }
+  assert.doesNotMatch(chromeCss, /\.site-header__hire::before/);
   assert.match(normalizedHero, /href="#film"/);
   assert.doesNotMatch(html, /mailto:/);
   assert.match(

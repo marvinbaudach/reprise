@@ -60,7 +60,7 @@
 .figure-grid__detail {
   display: block;
   margin-top: 6px;
-  font-size: 0.68rem;
+  font-size: var(--text-eyebrow);
   color: oklch(68% 0.011 269);
 }
 
@@ -72,11 +72,9 @@
 
 .ratio__heading {
   margin: 0 0 14px;
-  font-family: var(--font-mono);
-  font-size: 0.68rem;
-  letter-spacing: 0.18em;
-  text-transform: uppercase;
-  color: oklch(68% 0.011 269);
+  font-size: 1rem;
+  font-weight: 560;
+  color: oklch(94% 0.004 269);
 }
 
 .ratio__bar {
@@ -202,7 +200,7 @@
 
 .axis__caption {
   text-align: center;
-  color: var(--text-faint);
+  color: var(--text-muted);
   max-width: 62ch;
   justify-self: center;
   line-height: 1.5;

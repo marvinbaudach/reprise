@@ -12,18 +12,16 @@ export function Hero() {
     >
       <div className="hero__grid">
         <div className="hero__copy">
-          <p className="hero__eyebrow">A music player for GNOME and Android</p>
           <h1 id="hero-heading" className="hero__headline">
-            <span>Two native apps.</span>
-            <span>One Rust core.</span>
+            A music player for GNOME and Android, built on one Rust core.
           </h1>
           <p className="hero__lead">
-            Your whole library on the desktop and in your pocket — native on both, synced between
+            Your whole library on the desktop and in your pocket, native on both and synced between
             them.
           </p>
           <p className="hero__note">
             Designed and built by <strong>Marvin Baudach</strong>.<br />
-            Product design, architecture and quality — one engineer, AI-assisted.
+            Product design, architecture and quality by one engineer, AI-assisted.
           </p>
           <div className="hero__actions">
             <a className="action action--primary" href="#film">
@@ -39,9 +37,7 @@ export function Hero() {
       </div>
       <div className="hero__byline frame">
         <span>Rust · GTK4 · Kotlin · Compose</span>
-        <a href="#availability">
-          Open to opportunities <span aria-hidden="true">↗</span>
-        </a>
+        <a href="#availability">Work with me</a>
       </div>
     </section>
   );
