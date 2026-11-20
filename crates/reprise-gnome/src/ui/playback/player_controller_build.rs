@@ -18,6 +18,7 @@ use crate::ui::player_bar::PlayerBar;
 use crate::ui::player_controller_wiring;
 use crate::ui::player_lyrics::PlayerLyrics;
 
+use super::fault_probe_slots::{procfs_mount_resolver, ProbeSlots};
 use super::playback_fault_probe::disk_probe;
 use super::player_controller::PlayerController;
 use super::player_controller_types::PlayerControllerBackends;
@@ -111,7 +112,8 @@ impl PlayerController {
             failure_advance_in_flight: Cell::new(false),
             consecutive_episode_skips: Cell::new(0),
             fault_probe: RefCell::new(disk_probe()),
-            probes_in_flight: RefCell::new(std::collections::HashSet::new()),
+            probe_slots: RefCell::new(ProbeSlots::default()),
+            mount_resolver: RefCell::new(procfs_mount_resolver()),
             pending_fault_toasts: Cell::new(0),
             deferred_toasts: RefCell::new(Vec::new()),
             mpris_state,
