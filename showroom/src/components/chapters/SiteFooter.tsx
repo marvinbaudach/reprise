@@ -67,7 +67,7 @@ export function SiteFooter() {
           aria-labelledby="availability-heading"
         >
           <div>
-            <h2 id="availability-heading">Work with me.</h2>
+            <h2 id="availability-heading">Open to a permanent role.</h2>
             <p className="availability__copy">
               I’m Marvin Baudach. I designed Reprise, shaped its architecture and built the gates
               that keep every change honest. Next: a team that wants product and engineering in one

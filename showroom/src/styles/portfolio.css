@@ -82,9 +82,6 @@ body {
   font-size: 0.78rem;
   color: var(--text-muted);
 }
-.hero__byline a {
-  text-decoration: none;
-}
 .highlights {
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));

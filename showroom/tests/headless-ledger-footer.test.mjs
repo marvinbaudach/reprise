@@ -166,7 +166,7 @@ test('the design footer carries provenance availability and the exact contact tr
   assert.match(footer, /index-rebuild\.md/);
   assert.match(footer, /src="\/reprise\/brand\/reprise-mark\.svg"/);
   assert.match(footer, /<section id="availability" class="availability"/);
-  assert.match(footer, /id="availability-heading">Work with me\.</);
+  assert.match(footer, /id="availability-heading">Open to a permanent role\.</);
   // The page ends on contact: both closing disclosures sit above it.
   assert.ok(
     footer.lastIndexOf('</details>') < footer.indexOf('id="availability"'),

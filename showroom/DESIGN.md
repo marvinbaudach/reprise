@@ -45,9 +45,10 @@ keeps the calm direction above and changes only the frame:
   methodology disclosures come first and the page ends on the contact section.
   The header names the five chapters in that order; the film is reached from
   the hero's first button.
-- **One offer, one wording.** "Work with me" in the header, the hero byline and
-  the closing heading. In-page links carry no outbound arrow, and the header
-  button has no status dot.
+- **No call to action in the frame.** The header and the hero byline carry no
+  hire link, and nothing on the page reads as a freelance offer; the closing
+  heading of the author block in the footer says "Open to a permanent role."
+  In-page links carry no outbound arrow.
 - **Type tokens.** No text is set below 11px. `--text-micro` 0.6875rem (11px) is
   the floor for labels that must fit beside a control on a phone;
   `--text-eyebrow` and `--text-data` are 0.75rem (12px) for labels and anything
