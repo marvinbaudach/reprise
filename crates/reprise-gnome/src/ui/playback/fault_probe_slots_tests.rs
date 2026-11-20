@@ -48,6 +48,21 @@ fn a_refused_claim_leaves_the_probe_it_collided_with_in_place() {
 }
 
 #[test]
+fn a_refused_same_id_reclaim_changes_no_count() {
+    let mut slots = ProbeSlots::default();
+    assert!(slots.claim(7, mount("/mnt/nas")));
+    assert!(!slots.claim(7, mount("/mnt/nas")));
+    assert!(!slots.claim(7, mount("/")));
+    assert_eq!(slots.held_on(&mount("/mnt/nas")), 1);
+    assert_eq!(slots.held_on(&mount("/")), 0);
+    // The total is unchanged too: exactly the remaining ceiling still fits.
+    for id in 100..100 + MAX_FAULT_PROBES_TOTAL as i64 - 1 {
+        assert!(slots.claim(id, mount(&format!("/m{id}"))));
+    }
+    assert!(!slots.claim(999, mount("/one-more-mount")));
+}
+
+#[test]
 fn releasing_a_probe_frees_its_slot_and_its_id() {
     let mut slots = ProbeSlots::default();
     let dead = mount("/mnt/nas");
