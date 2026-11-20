@@ -7,13 +7,13 @@ import {
   captureSrcSet,
   captureVariantFilename,
   captureWidths,
-  GALLERY_MOSAIC_CAPTURES,
+  GALLERY_CAPTURES,
   HERO_CAPTURES,
   LIGHTBOX_SIZES,
 } from '../src/data/showcase.ts';
 
 const showroomRoot = new URL('..', import.meta.url).pathname;
-const captures = [...HERO_CAPTURES, ...GALLERY_MOSAIC_CAPTURES];
+const captures = [...HERO_CAPTURES, ...GALLERY_CAPTURES];
 
 test('every step of every capture ladder is a real file of the promised width', async () => {
   assert.equal(captures.length, 11);

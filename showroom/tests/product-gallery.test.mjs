@@ -32,6 +32,7 @@ test('the screenshot mosaic is gone from the page and from the tree', async () =
   assert.match(html, /data-showcase="showreel-film"/);
   await assert.rejects(
     access(join(showroomRoot, 'src', 'components', 'showcase', 'ProductGallery.tsx')),
+    { code: 'ENOENT' },
   );
 });
 

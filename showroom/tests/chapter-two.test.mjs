@@ -308,6 +308,11 @@ test('show-10 the gate count is nowhere a literal, not even in the meta descript
       `<meta\\s+name="description"\\s+content="[^"]*Every merge has to pass ${count} gates`,
     ),
   );
+  // A link unfurl reads og:description, so it must say what the search result does.
+  const description = built.match(/<meta\s+name="description"\s+content="([^"]*)"/)?.[1];
+  const unfurl = built.match(/<meta\s+property="og:description"\s+content="([^"]*)"/)?.[1];
+  assert.ok(description, 'the built page must carry a meta description');
+  assert.equal(unfurl, description);
 });
 
 test('show-18 the six gate groups partition every parsed check exactly once', async () => {
