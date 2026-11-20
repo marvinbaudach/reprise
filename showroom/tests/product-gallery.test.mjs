@@ -21,17 +21,19 @@ test('the prerendered page opens with real GNOME and Android product media', asy
   assert.match(html, /Reprise on Android showing the audio-reactive Now Playing scene/);
 });
 
-test('the screenshot mosaic left the page to the film, without leaving the tree', async () => {
+test('the screenshot mosaic is gone from the page and from the tree', async () => {
   const html = await prerenderedPage();
 
   // CH.03 used to close on nine screenshots of the same surfaces the film now
   // walks through. Keeping both would say it twice, once in stills and once in
-  // motion, so the mosaic came off the page — unmounted, not deleted. Putting it
-  // back is one import and one element in ChapterThree.tsx.
+  // motion, so the mosaic and its component were deleted.
   assert.doesNotMatch(html, /data-showcase="product-gallery"/);
   assert.doesNotMatch(html, /data-layout="design-mosaic"/);
   assert.match(html, /data-showcase="showreel-film"/);
-  await access(join(showroomRoot, 'src', 'components', 'showcase', 'ProductGallery.tsx'));
+  await assert.rejects(
+    access(join(showroomRoot, 'src', 'components', 'showcase', 'ProductGallery.tsx')),
+    { code: 'ENOENT' },
+  );
 });
 
 test('every screenshot the page ships is copied into the build and stays below one megabyte', async () => {

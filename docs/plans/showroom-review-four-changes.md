@@ -49,7 +49,7 @@ dem Handy lesbar.
 ## 1 — Platten-Hover: Kante und Schatten, kein Zoom, kein Lift
 
 **Dateien:** `showroom/src/components/showcase/shot-tile.css`,
-`showroom/tests/gallery-hover.test.mjs`
+`showroom/tests/shot-tile-hover.test.mjs`
 
 Heute setzt `.shot-tile:hover` `--shot-zoom: 1.045` und `--plate-lift: -6px`.
 Beide fallen weg. Ein auf 1.045 skalierter Screenshot beschneidet die
@@ -119,7 +119,7 @@ Weiter:
 
 ### Testvertrag
 
-`tests/gallery-hover.test.mjs`, Test `show-1`: die drei Zusicherungen über
+`tests/shot-tile-hover.test.mjs`, Test `show-1`: die drei Zusicherungen über
 `--shot-zoom` (`.shot-tile__picture` trägt `transform:scale(var(--shot-zoom))`,
 jeder `var(--shot-zoom)`-Verbrauch steht in einem `transform`) beschreiben
 genau das entfernte Verhalten. Sie werden ersetzt durch:

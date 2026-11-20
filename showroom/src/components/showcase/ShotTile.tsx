@@ -40,7 +40,7 @@ export function ShotTile({
       data-shot=""
       data-reveal={reveal}
       data-loading={loading ? 'true' : 'false'}
-      aria-label={`Open screenshot: ${capture.title}`}
+      aria-label={`Open screenshot: ${capture.title} (${capture.platform})`}
       onClick={(event) => onOpen(event.currentTarget)}
     >
       {/*

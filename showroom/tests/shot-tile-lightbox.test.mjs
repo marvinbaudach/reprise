@@ -58,6 +58,19 @@ test('ShotTile owns the still frame the loading sweep and the zoom cue', async (
   );
 });
 
+test('a ShotTile has no visible text, so its aria-label names the view and the platform', async () => {
+  const html = await readFile(join(showroomRoot, 'dist', 'index.html'), 'utf8');
+  const tiles = [...html.matchAll(/<button\b[^>]*class="[^"]*shot-tile[^"]*"[^>]*>/g)].map(
+    ([tag]) => tag,
+  );
+
+  // The hero pair, in page order. The label is the tile's only accessible name:
+  // the picture's alt text describes the image, not the action.
+  assert.equal(tiles.length, 2);
+  assert.match(tiles[0], /\baria-label="Open screenshot: Music library \(GNOME\)"/);
+  assert.match(tiles[1], /\baria-label="Open screenshot: Now Playing \(Android\)"/);
+});
+
 test('Lightbox traps focus and restores its trigger around keyboard navigation and click zoom', async () => {
   const source = await readFile(
     join(showroomRoot, 'src', 'components', 'showcase', 'Lightbox.tsx'),

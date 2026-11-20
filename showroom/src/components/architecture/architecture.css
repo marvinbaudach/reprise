@@ -52,7 +52,7 @@
   font-weight: 500;
 }
 
-.architecture__role {
+.data.architecture__role {
   color: oklch(68% 0.011 269);
   font-size: var(--text-data);
 }
@@ -125,7 +125,12 @@
   text-wrap: pretty;
 }
 
-/* The cards wrap below this width and no longer sit over their connectors. */
+/*
+ * The connectors only meet the cards while the cards are equally tall. The row
+ * wraps to two cards per line at 44.5rem, but the labels start wrapping and the
+ * heights diverge from about 50.5rem (measured), which leaves the connectors
+ * floating under the shorter cards. 56rem hides them with margin to spare.
+ */
 @media (max-width: 56rem) {
   .architecture__flow {
     display: none;
