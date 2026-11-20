@@ -116,6 +116,10 @@ try {
     else request.resolve(message.result);
   });
   await call('Runtime.enable');
+  // A headless window starts unfocused and Chromium refuses fullscreen for it
+  // ("TypeError: not granted") even from a user gesture. Activating the page
+  // makes it the focused window, as it is for a person who just opened it.
+  await call('Page.bringToFront');
   await call('Emulation.setDeviceMetricsOverride', {
     width: 1440,
     height: 1000,
