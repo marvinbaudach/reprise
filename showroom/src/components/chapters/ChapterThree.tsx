@@ -25,7 +25,7 @@ export function ChapterThree({ reducedMotion }: ChapterThreeProps) {
 
         <SeekStill />
 
-        <h3 className="chapter__subhead">Details that make it feel finished</h3>
+        <h3 className="chapter__subhead">Smaller details across both apps</h3>
         <ul className="point-list point-list--flow">
           <li>
             <strong className="point-list__lead">Quick Open</strong> (Ctrl+K) jumps to any track,

@@ -1,12 +1,11 @@
 .shot-tile {
   /*
    * Hover and :focus-visible cannot share a selector list — one lives inside a
-   * `(hover: hover)` query, the other must not. They set these seven tokens
+   * `(hover: hover)` query, the other must not. They set these six tokens
    * instead, so the state is written once and invoked twice.
    */
   --edge: oklch(32% 0.018 269);
   --edge-inner: transparent;
-  --glow: transparent;
   --ambient: oklch(4% 0.02 269 / 0.95);
   --ambient-geom: 0 40px 90px -50px;
   --cue-opacity: 0;
@@ -23,8 +22,7 @@
   background: oklch(17.5% 0.016 269);
   box-shadow:
     inset 0 0 0 1px var(--edge-inner),
-    var(--ambient-geom) var(--ambient),
-    0 0 40px -12px var(--glow);
+    var(--ambient-geom) var(--ambient);
   cursor: zoom-in;
   text-align: left;
   color: inherit;
@@ -137,7 +135,6 @@
   .shot-tile:hover {
     --edge: oklch(58% 0.09 195);
     --edge-inner: oklch(74% 0.1 195 / 0.3);
-    --glow: oklch(80% 0.12 190 / 0.34);
     --ambient-geom: 0 26px 54px -22px;
     --ambient: oklch(2% 0.02 269 / 0.98);
     --cue-opacity: 1;
@@ -148,7 +145,6 @@
 .shot-tile:focus-visible {
   --edge: oklch(58% 0.09 195);
   --edge-inner: oklch(74% 0.1 195 / 0.3);
-  --glow: oklch(80% 0.12 190 / 0.34);
   --ambient-geom: 0 26px 54px -22px;
   --ambient: oklch(2% 0.02 269 / 0.98);
   --cue-opacity: 1;
@@ -160,49 +156,6 @@
     --cue-opacity: 0.55;
     --cue-rise: 0px;
   }
-}
-
-.shot-tile__caption {
-  position: absolute;
-  inset: auto 0 0;
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
-  padding: 16px 18px;
-  background: linear-gradient(
-    to top,
-    oklch(9% 0.012 269 / 0.94),
-    oklch(9% 0.012 269 / 0.5) 58%,
-    transparent
-  );
-}
-
-.shot-tile--phone .shot-tile__caption {
-  gap: 0;
-  padding: 10px 12px;
-  background: linear-gradient(to top, oklch(9% 0.012 269 / 0.94), transparent);
-}
-
-.shot-tile__platform {
-  font-family: "Martian Mono", ui-monospace, monospace;
-  font-size: var(--text-eyebrow);
-  letter-spacing: 0.18em;
-  text-transform: uppercase;
-  color: #4fdbd4;
-}
-
-.shot-tile--phone .shot-tile__platform {
-  letter-spacing: 0.16em;
-  color: #ff6f5e;
-}
-
-.shot-tile__title {
-  color: oklch(96% 0.004 269);
-  font-size: 0.98rem;
-}
-
-.shot-tile--phone .shot-tile__title {
-  font-size: 0.78rem;
 }
 
 @keyframes rp-sweep {

@@ -88,7 +88,8 @@ code {
 
 .skip-link {
   position: fixed;
-  z-index: 20;
+  /* Above the fixed header (z-index 40), or the focused link sits under the wordmark. */
+  z-index: 60;
   inset-block-start: var(--gap-tight);
   inset-inline-start: var(--gap-tight);
   padding: var(--gap-tight) var(--gap-line);

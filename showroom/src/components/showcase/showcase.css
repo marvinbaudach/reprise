@@ -16,11 +16,6 @@
   position: relative;
 }
 
-.hero-product__desktop .shot-tile__caption {
-  align-items: flex-end;
-  padding-left: 32%;
-}
-
 /*
  * The phone leans past the frame's edge on purpose. It must not lean past the
  * window's: --frame-pad is the room there actually is, and below roughly 800px
@@ -103,21 +98,6 @@
   border-radius: 14px;
 }
 
-.mosaic .shot-tile--phone .shot-tile__caption {
-  gap: 2px;
-  padding: 14px 16px;
-  background: linear-gradient(
-    to top,
-    oklch(9% 0.012 269 / 0.94),
-    oklch(9% 0.012 269 / 0.5) 58%,
-    transparent
-  );
-}
-
-.mosaic .shot-tile--phone .shot-tile__title {
-  font-size: 0.9rem;
-}
-
 .mosaic-tile--gnome-podcasts {
   flex: 1.62 1 340px;
 }
@@ -156,12 +136,4 @@
 .mosaic .mosaic-tile--gnome-listening-stats {
   width: 100%;
   box-shadow: 0 30px 70px -44px oklch(4% 0.02 269 / 0.95);
-}
-
-.mosaic .mosaic-tile--gnome-listening-stats .shot-tile__caption {
-  padding: 18px 20px;
-}
-
-.mosaic .mosaic-tile--gnome-listening-stats .shot-tile__title {
-  font-size: 1.02rem;
 }

@@ -304,7 +304,9 @@ test('show-10 the gate count is nowhere a literal, not even in the meta descript
   assert.doesNotMatch(built, /%GATE_COUNT%/, 'the placeholder must be filled at build time');
   assert.match(
     built,
-    new RegExp(`<meta\\s+name="description"\\s+content="[^"]*decided by ${count} gates`),
+    new RegExp(
+      `<meta\\s+name="description"\\s+content="[^"]*Every merge has to pass ${count} gates`,
+    ),
   );
 });
 
