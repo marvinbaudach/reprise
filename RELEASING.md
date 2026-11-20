@@ -397,18 +397,13 @@ to expose GVfs MTP. The manifest must contain exactly
 host filesystem access, and broad session/system bus access are forbidden by the
 release check.
 
-## AUR metadata
+## Arch build recipe
 
-Regenerate `packaging/aur/.SRCINFO` whenever `packaging/aur/PKGBUILD` or the
-Meson install set changes:
-
-```sh
-cd packaging/aur
-makepkg --printsrcinfo > .SRCINFO
-```
-
-Review and push the separate AUR mirror by hand as documented in
-`packaging/aur/README.md`. Release tooling must not push it.
+`packaging/aur/PKGBUILD` is a local `makepkg` build recipe for Arch-based
+systems and nothing more. The AUR does not accept AI-built projects, so Reprise
+has no AUR package and nothing is pushed there. No release step or gate checks
+the recipe; `packaging/aur/.SRCINFO` is optional and may be regenerated with
+`makepkg --printsrcinfo > .SRCINFO` from `packaging/aur` if it is wanted.
 
 ## Manual GNOME QA
 
@@ -549,7 +544,7 @@ populated test library; do not fabricate them from headless output.
 
 ## Other publication channels
 
-The GitHub release is not a Flathub, AUR, COPR, Play Store, or F-Droid
+The GitHub release is not a Flathub, Play Store, or F-Droid
 publication. Those channels keep their own review and maintainer handoffs. The
 Flatpak manifest uses the immutable tagged source archive and verified checksum
 prepared by the release procedure above; submitting it to a distribution

@@ -27,7 +27,7 @@ finish-args:
 # prebuilt x86_64 binary. Flathub requires builds from source and Circle
 # requires both x86_64 and aarch64, so the Flatpak ships without it. The Rust
 # side dlopens the library at runtime and degrades to "feature unavailable"
-# when it is absent; AUR, COPR and local builds keep the feature.
+# when it is absent; source builds keep the feature.
 modules:
   - name: reprise
     buildsystem: meson

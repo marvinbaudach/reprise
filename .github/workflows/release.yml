@@ -724,7 +724,7 @@ jobs:
               )
           print(
               "This Flatpak ships without stems separation because it does not include "
-              "onnxruntime; AUR, COPR and local builds retain the feature."
+              "onnxruntime; source builds retain the feature."
           )
           print(
               "The Android app requires Android 8.0 or newer and is "
