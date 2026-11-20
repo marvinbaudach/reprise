@@ -2,7 +2,7 @@ import './chrome.css';
 
 /**
  * One link per chapter heading, in page order. The film needs none: it sits
- * directly under the hero, whose first button already plays it.
+ * directly under the hero, whose first button scrolls to it.
  */
 const CHAPTERS: readonly { id: string; label: string }[] = [
   { id: 'ch-01', label: 'Architecture' },
