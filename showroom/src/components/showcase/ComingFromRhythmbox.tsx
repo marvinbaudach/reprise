@@ -6,10 +6,7 @@ export function ComingFromRhythmbox() {
   return (
     <section id="rhythmbox" className="frame rhythmbox" aria-labelledby="rhythmbox-heading">
       <header className="film-heading">
-        <div>
-          <p className="eyebrow">Bring your library</p>
-          <h2 id="rhythmbox-heading">Coming from Rhythmbox?</h2>
-        </div>
+        <h2 id="rhythmbox-heading">Coming from Rhythmbox?</h2>
         <p>
           Reprise imports ratings, play counts and last played times, date added, and playlists.
           Start the import on first run or later from Preferences.
