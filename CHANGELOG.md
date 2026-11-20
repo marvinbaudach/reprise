@@ -4,6 +4,25 @@ Reprise release notes are curated from the changes that reached the stable
 branch. They describe user-visible changes rather than reproducing commit
 messages.
 
+## [0.1.347] - 2026-11-20
+
+### Playback
+
+- A dead network mount no longer stops Reprise from noticing missing files
+  elsewhere. When a track fails to play, Reprise checks in the background
+  whether its file still exists. At most two of these checks used to run at a
+  time across the whole library, so two checks stuck on a dead NFS or SMB mount
+  blocked all the others, and a file missing from a healthy local disk was
+  never marked as missing. The limit now applies per mount: a dead mount holds
+  at most two checks, and every other mount keeps being checked.
+
+### Tools, packaging, and reliability
+
+- Dependency updates: `rusqlite` 0.42 (the bundled SQLite library stays at
+  3.54.1), `rmcp` 3.10.0 for the MCP server, `lofty` 0.25.5 and `ogg_pager`
+  0.8.0 for reading and writing tags, and `ort` 2.0.0-rc.15 for the
+  experimental stem separation.
+
 ## [0.1.346] - 2026-11-20
 
 ### Playback

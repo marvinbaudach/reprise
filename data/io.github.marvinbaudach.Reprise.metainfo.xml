@@ -139,6 +139,12 @@
     <!-- One entry per promoted release, not per merge into dev. Every merge
          raises the workspace version; only a promotion to main ships one.
          See docs/agents/branching.md and RELEASING.md. -->
+    <release version="0.1.347" date="2026-11-20" type="stable">
+      <description>
+        <p>A dead network mount no longer stops Reprise from noticing missing files elsewhere in the library: the check that runs after a track fails to play is now limited per mount instead of across the whole library. Several libraries Reprise builds on are updated, among them the database and tag-reading libraries.</p>
+        <p xml:lang="de">Ein toter Netzwerk-Mount hindert Reprise nicht mehr daran, fehlende Dateien an anderer Stelle der Bibliothek zu erkennen: Die Prüfung, die nach einem nicht abspielbaren Titel läuft, ist jetzt pro Mount begrenzt statt für die ganze Bibliothek. Mehrere Bibliotheken, auf denen Reprise aufbaut, sind aktualisiert, darunter die für die Datenbank und das Lesen von Tags.</p>
+      </description>
+    </release>
     <release version="0.1.346" date="2026-11-20" type="stable">
       <description>
         <p>Makes playback robust against files that cannot be read. A track whose start hangs, CUE tracks included, is started over without freezing the window, and a dead network mount no longer holds up play, skip, pause, seek or stop. A crossfade gives way to a plain track change when the next track does not start in time, and a playable CUE track is no longer skipped by a seek that reached the parser three times. Copy Diagnostics keeps the harmless fields of the log again while still redacting everything that can identify you. SQLite and the MCP server move past four security advisories.</p>
