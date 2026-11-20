@@ -32,6 +32,15 @@
 //!   and a database handle the worker opens itself (`playback_fault_probe.rs`,
 //!   injectable for tests).
 //!
+//! Each probe holds one thread of GLib's shared task pool for as long as its
+//! kernel call blocks, so the probes are bounded per mount, not globally
+//! (`fault_probe_slots.rs`): at most two in flight per mount, plus a ceiling
+//! over all mounts that only protects the pool. A dead mount therefore pins at
+//! most two threads, and a fault on a healthy disk still gets its probe. The
+//! mount is found lexically on the main thread, from `/proc/self/mountinfo`
+//! and the path's text; a path that cannot be placed shares one fallback
+//! bound. A symlink into another mount counts as on its own mount.
+//!
 //! ## One toast per fault
 //!
 //! The skip does not wait for the probe, so the toast follows its answer, with
@@ -39,9 +48,11 @@
 //! the neutral "could not play" toast is shown at that moment instead, and the
 //! answer, when it arrives, only marks and reloads: whichever comes first sets
 //! the shared flag, so a fault never shows two toasts. A probe that never
-//! returns leaves the track unmarked and holds one worker thread for as long as
-//! the kernel call lasts, but freezes nothing. A fault whose row is already gone
-//! starts no probe and shows no toast.
+//! returns leaves the track unmarked and holds one worker thread, and one of
+//! its mount's slots, for as long as the kernel call lasts, but freezes nothing.
+//! A fault the mount's slots cannot take starts no probe and gets the neutral
+//! toast from the same timer. A fault whose row is already gone starts no probe
+//! and shows no toast.
 //!
 //! The run's closing toasts come last: the skip-limit stop and the summary of
 //! skipped unplayable episodes. The faults of a run are skipped at once, so
@@ -104,12 +115,6 @@ pub(super) fn recorded_fault_toasts() -> Vec<String> {
 /// How long the handler waits for the probe before it shows the neutral
 /// "could not play" toast itself.
 pub(in crate::ui) const FAULT_PROBE_WAIT: std::time::Duration = std::time::Duration::from_secs(1);
-
-/// How many probes may be in flight at once. Each holds a thread of GLib's
-/// shared task pool for as long as its kernel call blocks, and covers and the
-/// other background work share that pool, so a dead mount must not be able to
-/// fill it. A fault past the bound starts no probe and gets the neutral toast.
-pub(in crate::ui) const MAX_FAULT_PROBES_IN_FLIGHT: usize = 2;
 
 pub(super) fn note_episode_skip(run: &std::cell::Cell<usize>) {
     run.set(run.get().saturating_add(1));
@@ -206,12 +211,12 @@ impl PlayerController {
         };
         glib::timeout_add_local_once(FAULT_PROBE_WAIT, overdue);
 
-        // A fault past the bound, or for a track already being probed, starts
-        // no job: the timer above shows its neutral toast.
-        if !self.claim_probe_slot(id) {
+        // A fault past its mount's bound, or for a track already being probed,
+        // starts no job: the timer above shows its neutral toast.
+        if !self.claim_probe_slot(id, std::path::Path::new(&path)) {
             tracing::warn!(
                 track_id = id,
-                "no probe slot free or the track is already being probed; the neutral toast follows"
+                "no probe slot free on the track's mount or the track is already being probed; the neutral toast follows"
             );
             return;
         }
@@ -232,19 +237,18 @@ impl PlayerController {
         });
     }
 
-    /// Takes a probe slot for `id`; false when [`MAX_FAULT_PROBES_IN_FLIGHT`]
-    /// probes are out or `id` already has one. The set is only touched in its
-    /// own statements, so no borrow is alive across a GTK call.
-    fn claim_probe_slot(&self, id: i64) -> bool {
-        let mut in_flight = self.probes_in_flight.borrow_mut();
-        if in_flight.len() >= MAX_FAULT_PROBES_IN_FLIGHT {
-            return false;
-        }
-        in_flight.insert(id)
+    /// Takes a probe slot for `id` on the mount of `path`; false when that
+    /// mount's bound is reached (`fault_probe_slots.rs`) or `id` already has
+    /// one. The resolver and the ledger are each used in their own statement,
+    /// so no borrow is alive across the resolver call or a GTK call.
+    fn claim_probe_slot(&self, id: i64, path: &std::path::Path) -> bool {
+        let resolve = self.mount_resolver.borrow().clone();
+        let mount = resolve(path);
+        self.probe_slots.borrow_mut().claim(id, mount)
     }
 
     fn release_probe_slot(&self, id: i64) {
-        self.probes_in_flight.borrow_mut().remove(&id);
+        self.probe_slots.borrow_mut().release(id);
     }
 
     fn apply_probe_answer(

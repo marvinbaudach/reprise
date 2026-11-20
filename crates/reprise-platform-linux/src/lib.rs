@@ -32,6 +32,7 @@ pub mod fingerprint;
 pub mod flatpak;
 mod gapless;
 pub mod location;
+pub mod mounts;
 pub mod mpris;
 pub mod player;
 mod player_effects;

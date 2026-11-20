@@ -176,6 +176,7 @@ use reprise_core::media_integration::{
 };
 use reprise_core::playback::PlaybackBackend;
 
+use super::fault_probe_slots::{MountResolver, ProbeSlots};
 use super::playback_fault_probe::FaultProbe;
 use super::player_callbacks::{
     OnBassChanged, OnNowPlayingPanelStateChanged, OnNowPlayingPanelTrackChanged,
@@ -338,9 +339,13 @@ pub struct PlayerController {
     /// How `playback_faults.rs` finds out whether a faulted track's file is
     /// gone, off the main thread. The real probe unless a test replaced it.
     pub(in crate::ui) fault_probe: RefCell<FaultProbe>,
-    /// Track ids with a probe running on a worker (`playback_faults.rs`);
-    /// bounds the jobs a dead mount can pin in GLib's shared task pool.
-    pub(in crate::ui) probes_in_flight: RefCell<std::collections::HashSet<i64>>,
+    /// The probes running on workers (`playback_faults.rs`); bounds, per mount,
+    /// the jobs a dead mount can pin in GLib's shared task pool.
+    pub(in crate::ui) probe_slots: RefCell<ProbeSlots>,
+    /// How a faulted track's path is placed on a mount for `probe_slots`,
+    /// lexically and on the main thread. The real lookup unless a test
+    /// replaced it.
+    pub(in crate::ui) mount_resolver: RefCell<MountResolver>,
     /// Faults whose one toast has not been shown yet (`playback_faults.rs`).
     pub(in crate::ui) pending_fault_toasts: Cell<usize>,
     /// The toasts that close a run (skip-limit stop, skipped-episodes summary),

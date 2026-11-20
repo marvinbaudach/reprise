@@ -3,6 +3,7 @@
 //! answer in time never freezes the window or doubles the toast.
 
 use std::cell::Cell;
+use std::path::Path;
 use std::rc::Rc;
 use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use std::sync::{mpsc, Arc, Mutex};
@@ -10,11 +11,12 @@ use std::time::{Duration, Instant};
 
 use gtk4::glib;
 
+use super::fault_probe_slots::{MountKey, MAX_FAULT_PROBES_PER_MOUNT};
 use super::playback_fault_probe::{FaultProbe, FaultProbeAnswer};
 use super::playback_fault_progress_tests::{
     playing_repeat_all_queue, stalled_start, Fixture, TRACKS,
 };
-use super::playback_faults::{recorded_fault_toasts, FAULT_PROBE_WAIT, MAX_FAULT_PROBES_IN_FLIGHT};
+use super::playback_faults::{recorded_fault_toasts, FAULT_PROBE_WAIT};
 use crate::ui::strings;
 
 /// The longest the main context may go without running a heartbeat before the
@@ -323,6 +325,16 @@ fn the_skipped_episodes_summary_waits_for_the_fault_toasts_still_pending() {
     );
 }
 
+/// Opens a probe gate when dropped, so a test that fails an assertion releases
+/// its blocked probe threads at once instead of at [`PROBE_GATE_LIMIT`].
+struct OpenOnDrop(Arc<AtomicBool>);
+
+impl Drop for OpenOnDrop {
+    fn drop(&mut self) {
+        self.0.store(true, Ordering::SeqCst);
+    }
+}
+
 /// A probe that counts its calls and blocks until `open` is set, bounded by
 /// [`PROBE_GATE_LIMIT`] so a test that never opens it still ends.
 fn gated_probe(open: &Arc<AtomicBool>, calls: &Arc<AtomicUsize>) -> FaultProbe {
@@ -346,17 +358,19 @@ fn probes_in_flight_are_bounded_and_every_fault_still_gets_one_toast() {
         Arc::new(AtomicBool::new(false)),
         Arc::new(AtomicUsize::new(0)),
     );
+    let _release = OpenOnDrop(open.clone());
+    *controller.mount_resolver.borrow_mut() = Rc::new(|_| MountKey::Mount("/one".into()));
     *controller.fault_probe.borrow_mut() = gated_probe(&open, &probes);
     recorded_fault_toasts();
 
-    assert!(TRACKS.len() > MAX_FAULT_PROBES_IN_FLIGHT);
+    assert!(TRACKS.len() > MAX_FAULT_PROBES_PER_MOUNT);
     for id in TRACKS {
         controller.handle_unplayable_track(id);
     }
     spin(SETTLE);
     assert_eq!(
         probes.load(Ordering::SeqCst),
-        MAX_FAULT_PROBES_IN_FLIGHT,
+        MAX_FAULT_PROBES_PER_MOUNT,
         "no probe past the bound while the others are blocked"
     );
 
@@ -387,7 +401,7 @@ fn probes_in_flight_are_bounded_and_every_fault_still_gets_one_toast() {
     spin(SETTLE);
     assert_eq!(
         probes.load(Ordering::SeqCst),
-        MAX_FAULT_PROBES_IN_FLIGHT + 1,
+        MAX_FAULT_PROBES_PER_MOUNT + 1,
         "a released slot probes again"
     );
     let fault_toasts: Vec<String> = recorded_fault_toasts()
@@ -410,6 +424,7 @@ fn a_track_already_being_probed_starts_no_second_probe() {
         Arc::new(AtomicBool::new(false)),
         Arc::new(AtomicUsize::new(0)),
     );
+    let _release = OpenOnDrop(open.clone());
     *controller.fault_probe.borrow_mut() = gated_probe(&open, &probes);
     recorded_fault_toasts();
 
@@ -424,4 +439,78 @@ fn a_track_already_being_probed_starts_no_second_probe() {
         vec![strings::could_not_play_toast("Track 41"); 2],
         "each fault still gets its one neutral toast"
     );
+}
+
+const DEAD_TRACKS: [i64; 2] = [41, 42];
+const LOCAL_TRACK: i64 = 43;
+
+fn on_dead_mount(path: &Path) -> bool {
+    DEAD_TRACKS
+        .iter()
+        .any(|id| path.ends_with(format!("track-{id}.flac")))
+}
+
+#[test]
+#[ignore = "requires a display; run via xvfb-run"]
+fn a_missing_file_on_a_healthy_disk_is_marked_while_a_dead_mount_holds_its_probe_slots() {
+    let fixture = playing_repeat_all_queue();
+    let controller = &fixture.controller;
+    let reloads = count_reloads(&fixture);
+    *controller.mount_resolver.borrow_mut() = Rc::new(|path| {
+        MountKey::Mount(
+            if on_dead_mount(path) {
+                "/dead"
+            } else {
+                "/local"
+            }
+            .into(),
+        )
+    });
+    let (open, dead_probes) = (
+        Arc::new(AtomicBool::new(false)),
+        Arc::new(AtomicUsize::new(0)),
+    );
+    let _release = OpenOnDrop(open.clone());
+    let blocked = gated_probe(&open, &dead_probes);
+    let healthy = super::playback_fault_probe::disk_probe();
+    *controller.fault_probe.borrow_mut() = Arc::new(move |request| {
+        if on_dead_mount(&request.path) {
+            blocked(request)
+        } else {
+            healthy(request)
+        }
+    });
+    assert_eq!(DEAD_TRACKS.len(), MAX_FAULT_PROBES_PER_MOUNT);
+    std::fs::remove_file(path_of(&fixture, LOCAL_TRACK)).unwrap();
+    recorded_fault_toasts();
+
+    for id in DEAD_TRACKS {
+        controller.handle_unplayable_track(id);
+    }
+    controller.handle_unplayable_track(LOCAL_TRACK);
+    spin(SETTLE);
+
+    assert_eq!(
+        dead_probes.load(Ordering::SeqCst),
+        MAX_FAULT_PROBES_PER_MOUNT,
+        "both dead-mount probes are stuck"
+    );
+    assert!(
+        missing_since_is_set(&fixture, LOCAL_TRACK),
+        "the healthy disk still gets its probe"
+    );
+    assert_eq!(reloads.get(), 1);
+    assert_eq!(
+        recorded_fault_toasts(),
+        vec![strings::text(strings::TRACK_UNAVAILABLE_SKIPPED)],
+        "the healthy disk's answer shows its toast while the dead mount's are pending"
+    );
+    assert!(
+        !missing_since_is_set(&fixture, DEAD_TRACKS[0]),
+        "a probe that never answers marks nothing"
+    );
+
+    // Let the stuck probes end so no worker outlives the test.
+    open.store(true, Ordering::SeqCst);
+    spin(FAULT_PROBE_WAIT + SETTLE);
 }
