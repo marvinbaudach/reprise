@@ -21,7 +21,7 @@ export function Hero() {
           </p>
           <p className="hero__note">
             Designed and built by <strong>Marvin Baudach</strong>.<br />
-            Product design, architecture and quality, all by one engineer.
+            Product design, architecture and quality by one engineer, AI-assisted.
           </p>
           <div className="hero__actions">
             <a className="action action--primary" href="#film">

@@ -20,6 +20,8 @@ test('the design hero opens with two screenshot buttons', async () => {
   assert.ok(hero);
   assert.match(hero, /A music player for GNOME and Android/);
   assert.match(hero, /href="#film"/);
+  // The hero says who built it and that the work was AI-assisted, in one plain line.
+  assert.match(hero, /quality by one engineer, AI-assisted\./);
   assert.doesNotMatch(hero, /data-showcase="scroll-cue"/);
   assert.equal((hero.match(/<button[^>]+type="button"[^>]+data-shot=""/g) ?? []).length, 2);
   assert.match(css, /\.hero__actions/);
