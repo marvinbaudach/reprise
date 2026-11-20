@@ -18,6 +18,7 @@ test('the Rhythmbox import section follows the film and links to the Flatpak rep
     /href="https:\/\/marvinbaudach\.github\.io\/reprise-flatpak\/reprise\.flatpakref"/,
   );
   assert.match(html, /play counts and last played times/);
-  assert.match(html, /first run or later from Preferences/);
+  assert.match(html, /offers the import on first run/);
+  assert.doesNotMatch(html, /Preferences/);
   assert.match(html, /XDG music directory/);
 });

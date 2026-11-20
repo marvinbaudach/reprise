@@ -9,7 +9,7 @@ export function ComingFromRhythmbox() {
         <h2 id="rhythmbox-heading">Coming from Rhythmbox?</h2>
         <p>
           Reprise imports ratings, play counts and last played times, date added, and playlists.
-          Start the import on first run or later from Preferences.
+          Reprise offers the import on first run.
         </p>
       </header>
       <p>
