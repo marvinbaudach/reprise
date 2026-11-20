@@ -133,6 +133,18 @@ test('chapter five exposes the complete measured ledger and its price without a 
     chapter.indexOf('class="ledger__price"') > chapter.indexOf('</table>'),
     'the price must remain the final line after the complete ledger',
   );
+  // The page quotes the paragraph minus its framing lead-in, and nothing else is cut.
+  const leadIn = 'The price sits next to it, not in the small print: ';
+  assert.ok(price.startsWith(leadIn), 'the record must open its price with the framing lead-in');
+  const quoted = price.slice(leadIn.length);
+  const shownPrice = chapter
+    .match(/<p class="ledger__price">([\s\S]*?)<\/p>/)?.[1]
+    ?.replace(/&#x([0-9a-f]+);/gi, (_, hex) => String.fromCodePoint(Number.parseInt(hex, 16)))
+    .replace(/&quot;/g, '"')
+    .replace(/&lt;/g, '<')
+    .replace(/&gt;/g, '>')
+    .replace(/&amp;/g, '&');
+  assert.equal(shownPrice, `${quoted.charAt(0).toUpperCase()}${quoted.slice(1)}`);
   assert.match(css, /\.chapter-five\{[^}]*padding:clamp\(4rem,3rem \+ 5vw,7rem\) 0/);
   assert.match(css, /\.ledger-card\{[^}]*border-radius:12px/);
   assert.match(authoredCss, /background: oklch\(17% 0\.016 269 \/ 0\.72\)/);

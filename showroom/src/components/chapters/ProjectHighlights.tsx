@@ -1,8 +1,8 @@
 import { GATES } from 'virtual:merge-gates';
-import { PERFORMANCE } from '../../data/measurements';
+import { TITLE_QUERY } from '../../data/measurements';
 
 /** The ledger writes a fall as a signed delta; a sentence says it in words. */
-const titleQueryFall = PERFORMANCE[0]?.delta.replace(/^[−-]\s*/, '');
+const titleQueryFall = TITLE_QUERY.delta.replace(/^[−-]\s*/, '');
 
 export function ProjectHighlights() {
   return (

@@ -3,11 +3,9 @@ import {
   PERFORMANCE_PRICE,
   PERFORMANCE_RECORD,
   permalink,
+  TITLE_QUERY,
 } from '../../data/measurements';
 import './ChapterFive.css';
-
-/** The headline row of the ledger: the title query the index was rebuilt for. */
-const titleQuery = PERFORMANCE[0];
 
 export function ChapterFive() {
   return (
@@ -21,10 +19,10 @@ export function ChapterFive() {
       <div className="chapter-five__frame">
         <header className="chapter-five__heading" data-reveal>
           <h2 id="ch-05-heading">
-            One rebuilt index took the title query from {titleQuery?.before} to {titleQuery?.after}.
+            One rebuilt index took the title query from {TITLE_QUERY.before} to {TITLE_QUERY.after}.
           </h2>
           <p className="chapter-five__lead">
-            Every row it moved is below, with the storage it costs.
+            Every measured figure is below, with the storage the index costs.
           </p>
         </header>
 
@@ -34,7 +32,8 @@ export function ChapterFive() {
             {/* biome-ignore lint/a11y/noRedundantRoles: Mobile display changes require explicit table semantics in Safari and VoiceOver. */}
             <table className="ledger" role="table">
               <caption>
-                Measured over 100&apos;000 tracks, before and after the index rebuild. Quoted from{' '}
+                The first two rows were measured over generated 100&apos;000-track profiles, the
+                last two against a copy of a real 1847-track library. Quoted from{' '}
                 <a href={permalink(PERFORMANCE_RECORD)}>the record</a>, which carries the commit,
                 the date and the method behind every row.
               </caption>

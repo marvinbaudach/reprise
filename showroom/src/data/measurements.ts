@@ -184,17 +184,35 @@ export interface Measurement {
 
 export const PERFORMANCE: readonly Measurement[] = INDEX_REBUILD.rows;
 
+/** The label of the headline row: the title query the index was rebuilt for. */
+const TITLE_QUERY_LABEL = "Title window over 100'000 tracks";
+
+/**
+ * The headline row, keyed by what it says rather than by where it sits. Like the
+ * shelved-runtime note on the timeline, the build fails if the record is ever
+ * reworded or reordered instead of quietly headlining the wrong figure.
+ */
+export const TITLE_QUERY: Measurement = (() => {
+  const row = PERFORMANCE.find((candidate) => candidate.what === TITLE_QUERY_LABEL);
+  if (!row) {
+    throw new Error(`the measurement record has no row labelled "${TITLE_QUERY_LABEL}"`);
+  }
+  return row;
+})();
+
+/** The record's own framing sentence about where the price sits. */
+const PRICE_LEAD_IN = 'The price sits next to it, not in the small print: ';
+
 /**
  * The record opens its price paragraph with a sentence about where the price
- * sits ("next to it, not in the small print"). The page shows that placement
- * instead of saying it, so the lead-in up to the first colon is dropped and the
- * rest, every figure included, is quoted as written.
+ * sits. The page shows that placement instead of saying it, so exactly that
+ * lead-in is dropped and the rest, every figure included, is quoted as written
+ * with its first letter capitalised. A paragraph that does not open with it is
+ * returned verbatim: nothing else is ever treated as framing.
  */
 function withoutLeadIn(paragraph: string): string {
-  const colon = paragraph.indexOf(': ');
-  // Only a short lead-in without figures is framing; anything else is content.
-  if (colon === -1 || colon > 80 || /\d/.test(paragraph.slice(0, colon))) return paragraph;
-  const rest = paragraph.slice(colon + 2);
+  if (!paragraph.startsWith(PRICE_LEAD_IN)) return paragraph;
+  const rest = paragraph.slice(PRICE_LEAD_IN.length);
   return `${rest.charAt(0).toUpperCase()}${rest.slice(1)}`;
 }
 
