@@ -83,7 +83,7 @@ export function SiteFooter() {
             <a className="availability__contact" href="https://github.com/marvinbaudach">
               github.com/marvinbaudach ↗
             </a>
-            <p>GPL-3.0-or-later · active alpha</p>
+            <p>GPL-3.0-or-later · beta</p>
             <p>Italian translation by giallorosso84. Thank you.</p>
           </div>
         </section>

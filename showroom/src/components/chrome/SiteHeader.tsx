@@ -26,7 +26,7 @@ export function SiteHeader() {
       <a className="site-header__id" href="#rp-top">
         <img className="site-header__mark" src={MARK} alt="" width={24} height={24} />
         <span className="site-header__wordmark">Reprise</span>
-        <span className="site-header__state">Alpha</span>
+        <span className="site-header__state">Beta</span>
       </a>
 
       <nav className="site-header__nav" aria-label="Chapters">

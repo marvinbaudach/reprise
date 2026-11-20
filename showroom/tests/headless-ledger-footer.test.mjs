@@ -173,7 +173,7 @@ test('the design footer carries provenance availability and the exact contact tr
     'the timeline and the methodology must come before the contact section',
   );
   assert.match(footer, /github\.com\/marvinbaudach ↗/);
-  assert.match(footer, /GPL-3\.0-or-later · active alpha/);
+  assert.match(footer, /GPL-3\.0-or-later · beta/);
   // The record's framing sentence about where the price sits is not repeated.
   assert.doesNotMatch(html, /not in the small print/);
   assert.doesNotMatch(footer, / style=/);

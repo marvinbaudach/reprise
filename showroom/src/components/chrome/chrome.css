@@ -130,7 +130,7 @@
    progress line and the top-of-page link still say where the reader is.
    
    70rem, not the 46rem this used to be. Measured in a headless Chromium with
-   both faces loaded: the full row — mark, wordmark, Alpha, five chapter links,
+   both faces loaded: the full row — mark, wordmark, Beta, five chapter links,
    Source and the hire pill — needs about 1105px of client width, because
    --frame-pad grows with the viewport and takes the rest. At 46rem the row was
    simply drawn past the right edge from 737px upwards, and `overflow-x: clip`
