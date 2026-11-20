@@ -76,8 +76,9 @@ test('the header and hero carry no call to action, only the chapter nav and the 
     normalizedHero,
     /<div class="hero__byline frame"><span>Rust · GTK4 · Kotlin · Compose<\/span><\/div>/,
   );
-  assert.match(html, /id="availability-heading">Work with me\.</);
+  assert.match(html, /id="availability-heading">Open to a permanent role\.</);
   assert.doesNotMatch(html, /Open to (?:work|opportunities)/);
+  assert.doesNotMatch(html, /Work with me|freelanc|hire me/i);
   // No outbound arrow on an in-page anchor.
   for (const anchor of html.match(/<a[^>]+href="#[^"]*"[^>]*>[\s\S]*?<\/a>/g) ?? []) {
     assert.doesNotMatch(anchor, /↗/, `an in-page link points outward: ${anchor}`);
