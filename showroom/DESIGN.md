@@ -59,7 +59,10 @@ keeps the calm direction above and changes only the frame:
   face. `--text-faint` is reserved for lines; text uses `--text-muted` or
   stronger for AA contrast.
 - **Heading sizes.** `--text-h2` (`clamp(1.5rem, 2.5vw, 2.25rem)`) is the one
-  size for every chapter h2, so the h1 stays the largest heading.
+  size for every section h2 on the page (the chapters and the film headings), so
+  the h1 stays the largest heading. The lightbox title is an h2 inside a dialog
+  and stays a small label at 1.05rem; the architecture diagram titles itself
+  with an h3 on its own clamp.
 - **Skip link.** The skip link sits at `z-index` 60, above the fixed header (40)
   and the scroll progress line (50); at a lower value the focused link would
   disappear under the wordmark.
