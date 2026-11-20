@@ -175,9 +175,10 @@ test('the design footer carries provenance and the project colophon, and nothing
     footer.lastIndexOf('</details>') < footer.indexOf('class="colophon"'),
     'the timeline and the methodology must come before the colophon',
   );
+  // The <wbr> breaks keep a narrow phone from splitting "reprise" mid-word.
   assert.match(
     footer,
-    /href="https:\/\/github\.com\/marvinbaudach\/reprise"[^>]*>\s*github\.com\/marvinbaudach\/reprise ↗/,
+    /href="https:\/\/github\.com\/marvinbaudach\/reprise"[^>]*>\s*github\.com\/<wbr\/>marvinbaudach\/<wbr\/>reprise ↗/,
   );
   assert.match(footer, /GPL-3\.0-or-later · beta/);
   // The record's framing sentence about where the price sits is not repeated.

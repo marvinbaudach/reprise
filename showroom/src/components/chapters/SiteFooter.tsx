@@ -51,7 +51,11 @@ export function SiteFooter() {
         </details>
         <div className="colophon" data-reveal>
           <a className="colophon__source" href="https://github.com/marvinbaudach/reprise">
-            github.com/marvinbaudach/reprise ↗
+            github.com/
+            <wbr />
+            marvinbaudach/
+            <wbr />
+            reprise ↗
           </a>
           <p>GPL-3.0-or-later · beta</p>
         </div>
