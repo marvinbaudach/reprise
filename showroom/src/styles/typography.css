@@ -5,16 +5,23 @@
  * heavy — the proportions of a level meter — and the body text runs the same
  * family narrow and light. One family, two voices, no second display font.
  *
- * Martian Mono carries data lines only: labels, commits, units. Figures are set
- * in the display face, never hidden in monospace; a measured number is the
- * loudest thing this page has to say.
+ * Martian Mono carries data: labels, commits, units, and every figure that sits
+ * in a column beside others of its kind — the ledger, the code census, the
+ * timeline spans. Tabular figures line up there, and a measured number reads as
+ * a measurement. Figures inside a sentence, such as the highlights under the
+ * hero, stay in the display face of that sentence.
+ *
+ * No text is set below 11px. `--text-eyebrow` and `--text-data` are the floor
+ * for labels and anything a reader clicks; `--text-micro` is the 11px floor for
+ * the few labels that must fit beside a control on a phone.
  */
 
 :root {
   --font-display: "Archivo", "Archivo Expanded", system-ui, sans-serif;
   --font-mono: "Martian Mono", ui-monospace, "SFMono-Regular", monospace;
 
-  --text-eyebrow: 0.6875rem;
+  --text-micro: 0.6875rem;
+  --text-eyebrow: 0.75rem;
   --text-data: 0.75rem;
   --text-body-size: clamp(1rem, 0.95rem + 0.22vw, 1.125rem);
   --text-lead: clamp(1.25rem, 1.05rem + 0.9vw, 1.75rem);

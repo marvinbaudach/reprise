@@ -152,6 +152,16 @@ try {
     null,
     'no false error before playback',
   );
+  assert.equal(
+    await evaluate('getComputedStyle(document.querySelector(".film__controls")).visibility'),
+    'hidden',
+    'before the first play the toolbar stays off the poster',
+  );
+  assert.equal(
+    await evaluate('document.querySelector(".film__badge")?.textContent ?? null'),
+    '0:58',
+    'before the first play the duration badge names the length',
+  );
   assert.ok(
     await evaluate(
       'document.querySelector("#film").getBoundingClientRect().top < document.querySelector("#ch-01").getBoundingClientRect().top',
@@ -172,6 +182,11 @@ try {
     () => evaluate('document.querySelector("video").currentTime'),
     (value) => value > 0.2,
     'film playing',
+  );
+  assert.equal(
+    await evaluate('!!document.querySelector(".film__badge")'),
+    false,
+    'once the readout shows the length, the badge does not repeat it',
   );
   await evaluate('document.querySelector(\'button[aria-label="Pause"]\').click()');
   assert.equal(await evaluate('document.querySelector("video").paused'), true);
@@ -439,6 +454,23 @@ try {
     'source-derived ratio is drawn when opened',
   );
   await screenshot('architecture.png');
+  await evaluate('document.querySelector("#ch-03").scrollIntoView({behavior:"instant"})');
+  const still = () =>
+    evaluate('document.querySelector(".seek-still__canvas")?.toDataURL() ?? null');
+  const blank = await evaluate(`(() => {
+    const canvas = document.querySelector('.seek-still__canvas');
+    const copy = document.createElement('canvas');
+    copy.width = canvas.width;
+    copy.height = canvas.height;
+    return copy.toDataURL();
+  })()`);
+  const stillFrame = await until(
+    still,
+    (frame) => Boolean(frame) && frame !== blank,
+    'still seek bar drawn',
+  );
+  await delay(400);
+  assert.equal(await still(), stillFrame, 'the seek bar at rest does not move');
   await evaluate('document.querySelector("#ch-05").scrollIntoView({behavior:"instant"})');
   await until(
     () => evaluate('document.querySelector("[data-navlink][aria-current]")?.hash'),

@@ -67,6 +67,15 @@ test('the header and hero offer one in-page route to availability', async () => 
   assert.match(normalizedHero, /Marvin Baudach/);
   assert.match(normalizedHero, /Product design, architecture and quality/);
   assert.match(normalizedHero, /href="#availability"/);
+  // One wording for the same offer everywhere, and no outbound arrow on an
+  // in-page anchor.
+  assert.match(normalizedHero, /<a href="#availability">Work with me<\/a>/);
+  assert.match(html, /id="availability-heading">Work with me\.</);
+  assert.doesNotMatch(html, /Open to (?:work|opportunities)/);
+  for (const anchor of html.match(/<a[^>]+href="#[^"]*"[^>]*>[\s\S]*?<\/a>/g) ?? []) {
+    assert.doesNotMatch(anchor, /↗/, `an in-page link points outward: ${anchor}`);
+  }
+  assert.doesNotMatch(chromeCss, /\.site-header__hire::before/);
   assert.match(normalizedHero, /href="#film"/);
   assert.doesNotMatch(html, /mailto:/);
   assert.match(

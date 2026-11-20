@@ -240,10 +240,10 @@ function GateGroups() {
           data-gates={group.gates.join('|')}
         >
           <h4 className="gate-group__title">
-            <span className="data gate-group__count">
-              {String(group.gates.length).padStart(2, '0')}
+            {group.name}{' '}
+            <span className="gate-group__count">
+              {group.gates.length} {group.gates.length === 1 ? 'check' : 'checks'}
             </span>
-            {group.name}
           </h4>
           <p>{group.line}</p>
         </article>
@@ -261,31 +261,31 @@ export function ChapterTwo() {
       aria-labelledby="ch-02-heading"
     >
       <div className="frame">
-        <p className="chapter__eyebrow" data-reveal>
-          Quality
-        </p>
-        <h2 id="ch-02-heading" className="chapter__title" data-reveal>
-          AI-assisted development. Verified changes.
-        </h2>
-
-        <p className="chapter__intro" data-reveal>
-          Built with AI assistance: I direct the product, review changes and remain responsible for
-          the result. The gates and tests are public.
-        </p>
-        <p className="chapter__intro" data-reveal>
-          Even the tests are tested: each check must catch the defect it claims to prevent.
-        </p>
+        <div className="chapter__split">
+          <h2 id="ch-02-heading" className="chapter__title" data-reveal>
+            No change merges until all {GATES.length} checks pass.
+          </h2>
+          <div>
+            <p className="chapter__intro" data-reveal>
+              Built with AI assistance: I direct the product, review changes and remain responsible
+              for the result. The gates and tests are public.
+            </p>
+            <p className="chapter__intro" data-reveal>
+              The tests are tested too: each check must catch the defect it claims to prevent.
+            </p>
+          </div>
+        </div>
 
         <details className="evidence-details">
           <summary>Read the quality case study</summary>
           <div className="incident" data-reveal>
-            <p className="incident__eyebrow">One incident · {INCIDENT.date}</p>
             <h3 className="incident__title">A test was measuring an app that never ships.</h3>
+            <p className="incident__date">Recorded {INCIDENT.date}</p>
           </div>
 
           <p className="chapter__intro" data-reveal>
-            A queue test failed on header heights. The headers were fine. The fixture never installs
-            the app stylesheet, so it was measuring widgets the app never renders.
+            A queue test failed on header heights while the app drew them correctly: the fixture
+            never installs the app stylesheet, so it measured widgets the app never renders.
           </p>
 
           <figure className="incident-figure" data-reveal aria-labelledby="ch-02-figure-caption">
@@ -316,8 +316,8 @@ export function ChapterTwo() {
               different size.”
             </p>
             <footer>
-              the doc comment on <a href={QUOTE_LINK}>app_css_for_test()</a> — written before the
-              incident, naming the trap that produced it
+              The doc comment on <a href={QUOTE_LINK}>app_css_for_test()</a>, written before the
+              incident, names the trap that produced it.
             </footer>
           </blockquote>
 
@@ -327,7 +327,6 @@ export function ChapterTwo() {
           </p>
 
           <div className="incident" data-reveal>
-            <p className="incident__eyebrow incident__eyebrow--accent">Fail closed</p>
             <h3 className="incident__title">There is no partial merge.</h3>
           </div>
 
@@ -335,13 +334,12 @@ export function ChapterTwo() {
             <GateStrip />
             <figcaption id="ch-02-gate-caption" className="gate-figure__caption">
               {GATES.length} checks from <a href={GATE_LINK}>check-merge-readiness.sh</a>. Hover one
-              to see what it is; click one to fail it. A red check does not stop the report. It
-              stops the merge.
+              to see what it is; click one to fail it. The report still runs to the end, and one red
+              check is enough to block the merge.
             </figcaption>
           </figure>
 
           <div className="incident" data-reveal>
-            <p className="incident__eyebrow incident__eyebrow--accent">What the checks refuse</p>
             <h3 className="incident__title">Six ways a change can stop short of the branch.</h3>
           </div>
 

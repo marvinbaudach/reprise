@@ -11,12 +11,9 @@ export function CoreArchitecture() {
       aria-describedby="architecture-caption"
     >
       <header className="architecture__header">
-        <div>
-          <p className="eyebrow">Core and edges</p>
-          <h3 id="architecture-title" className="architecture__title">
-            Four surfaces. Dependency only points inward.
-          </h3>
-        </div>
+        <h3 id="architecture-title" className="architecture__title">
+          Four surfaces depend on the core, and the core depends on none of them.
+        </h3>
         <a className="data architecture__gate-link" href={ARCHITECTURE_LINKS.gate}>
           machine-enforced ↗
         </a>
@@ -52,7 +49,7 @@ export function CoreArchitecture() {
           data-reveal
           href={ARCHITECTURE_LINKS.view}
         >
-          <span className="eyebrow">portable presentation semantics</span>
+          <span className="data architecture__layer-role">portable presentation semantics</span>
           <strong>reprise-view</strong>
           <span className="data">geometry · colour · scene · surface models</span>
         </a>
@@ -61,15 +58,15 @@ export function CoreArchitecture() {
           data-reveal
           href={ARCHITECTURE_LINKS.core}
         >
-          <span className="eyebrow">application and domain layer</span>
+          <span className="data architecture__layer-role">application and domain layer</span>
           <strong>reprise-core</strong>
           <span className="data">22 dependencies · 0 UI frameworks</span>
         </a>
       </div>
 
       <figcaption id="architecture-caption" className="architecture__caption" data-reveal>
-        The dependency arrows only point inward. The build rejects GTK, libadwaita, GStreamer and
-        D-Bus in the core, so no platform can leak into it.
+        The build rejects GTK, libadwaita, GStreamer and D-Bus in the core, so no platform can leak
+        into it.
       </figcaption>
     </figure>
   );

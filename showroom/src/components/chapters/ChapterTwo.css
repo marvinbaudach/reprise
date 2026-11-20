@@ -13,18 +13,10 @@
   margin-top: var(--gap-block);
 }
 
-.incident__eyebrow {
+.incident__date {
   margin: 0;
-  color: var(--second);
-  font-family: var(--font-mono);
-  font-size: 0.68rem;
-  letter-spacing: 0.18em;
-  text-transform: uppercase;
-}
-
-/* The gate strip's heading takes the accent instead — it is not the incident. */
-.incident__eyebrow--accent {
-  color: var(--accent);
+  color: var(--text-muted);
+  font-size: 0.875rem;
 }
 
 .incident__title {
@@ -104,7 +96,7 @@
   margin: 0;
   color: var(--floor-ink);
   font-family: var(--font-mono);
-  font-size: 0.62rem;
+  font-size: var(--text-micro);
   letter-spacing: 0.18em;
   text-transform: uppercase;
 }
@@ -145,7 +137,7 @@
   margin: 0;
   color: var(--floor-ink);
   font-family: var(--font-mono);
-  font-size: 0.62rem;
+  font-size: var(--text-micro);
   letter-spacing: 0.08em;
 }
 
@@ -260,7 +252,7 @@
 .pipeline__detail {
   color: var(--text-muted);
   font-family: var(--font-mono);
-  font-size: 0.68rem;
+  font-size: var(--text-eyebrow);
   letter-spacing: 0.1em;
 }
 
@@ -323,7 +315,7 @@
   overflow: hidden;
   color: var(--text-muted);
   font-family: var(--font-mono);
-  font-size: 0.62rem;
+  font-size: var(--text-micro);
   letter-spacing: 0.04em;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -409,8 +401,7 @@
   margin-top: var(--gap-line);
   max-width: var(--measure);
   color: var(--text-muted);
-  font-family: var(--font-mono);
-  font-size: 0.72rem;
+  font-size: 0.875rem;
   line-height: 1.6;
 }
 
@@ -432,8 +423,10 @@
 
 .gate-group__title {
   display: flex;
-  gap: var(--gap-tight);
+  flex-wrap: wrap;
+  gap: var(--gap-hair) var(--gap-tight);
   align-items: baseline;
+  justify-content: space-between;
   margin: 0;
   color: var(--text-strong);
   font-size: 0.92rem;
@@ -441,10 +434,10 @@
 }
 
 .gate-group__count {
-  color: var(--accent);
-  font-size: 0.68rem;
+  color: var(--text-muted);
+  font-size: 0.8125rem;
   font-weight: 400;
-  letter-spacing: 0.08em;
+  font-variant-numeric: tabular-nums;
 }
 
 .gate-group > p {

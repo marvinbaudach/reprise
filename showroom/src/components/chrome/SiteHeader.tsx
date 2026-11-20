@@ -1,11 +1,15 @@
 import './chrome.css';
 
+/**
+ * One link per chapter heading, in page order. The film needs none: it sits
+ * directly under the hero, whose first button already plays it.
+ */
 const CHAPTERS: readonly { id: string; label: string }[] = [
-  { id: 'film', label: 'Product' },
   { id: 'ch-01', label: 'Architecture' },
   { id: 'ch-05', label: 'Performance' },
   { id: 'ch-02', label: 'Quality' },
   { id: 'ch-03', label: 'Design' },
+  { id: 'ch-04', label: 'Automation' },
 ];
 
 const MARK = `${import.meta.env.BASE_URL}brand/reprise-mark.svg`;

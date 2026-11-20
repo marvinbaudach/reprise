@@ -30,12 +30,18 @@ test('CH.03 exposes the rendering, a readout and two legends', async () => {
   assert.match(chapter, /centroid 0\.00/);
   assert.match(chapter, /level 0\.00/);
   assert.equal((chapter.match(/data-seek-legend=/g) ?? []).length, 2);
-  for (const heading of ['Height — the body', 'Colour — the frequency']) {
+  for (const heading of ['Height shows the level', 'Colour shows the frequency']) {
     assert.match(chapter, new RegExp(heading));
   }
   // The bar below the fold is operable too, and it takes its slider role only
   // once the track is loaded — so the prerendered chapter carries none.
   assert.doesNotMatch(chapter, /role="slider"|aria-valuemin|aria-valuemax/);
+  // The chapter calls the seek bar its signature, so a still rendering of it
+  // is visible without opening anything; the interactive one stays folded.
+  const atRest = chapter.slice(0, chapter.indexOf('<details'));
+  assert.match(atRest, /data-showcase="seek-still"/);
+  assert.doesNotMatch(atRest, /data-showcase="spectral-seek-track"/);
+  assert.match(chapter.slice(chapter.indexOf('<details')), /data-showcase="spectral-seek-track"/);
   assert.match(css, /\.seek-track__canvas-frame\{[^}]*height:148px/);
   assert.match(css, /\.seek-track__canvas-frame\{[^}]*touch-action:pan-y/);
   assert.match(css, /\.seek-track__canvas-frame:focus-visible\{outline:/);

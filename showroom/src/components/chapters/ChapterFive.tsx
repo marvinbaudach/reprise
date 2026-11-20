@@ -6,6 +6,9 @@ import {
 } from '../../data/measurements';
 import './ChapterFive.css';
 
+/** The headline row of the ledger: the title query the index was rebuilt for. */
+const titleQuery = PERFORMANCE[0];
+
 export function ChapterFive() {
   return (
     <section
@@ -17,18 +20,16 @@ export function ChapterFive() {
     >
       <div className="chapter-five__frame">
         <header className="chapter-five__heading" data-reveal>
-          <p>Performance</p>
-          <h2 id="ch-05-heading">A faster library. A measured trade-off.</h2>
-          <p>
-            One slow query, one rebuilt index — the before, the after, and the storage it costs.
+          <h2 id="ch-05-heading">
+            One rebuilt index took the title query from {titleQuery?.before} to {titleQuery?.after}.
+          </h2>
+          <p className="chapter-five__lead">
+            Every row it moved is below, with the storage it costs.
           </p>
         </header>
 
         <div className="ledger-card" data-reveal>
-          <header className="ledger-card__heading">
-            <span>The ledger</span>
-            <span>What the title index cost, and what it bought</span>
-          </header>
+          <h3 className="ledger-card__heading">What the title index cost, and what it bought</h3>
           <div className="ledger-card__body">
             {/* biome-ignore lint/a11y/noRedundantRoles: Mobile display changes require explicit table semantics in Safari and VoiceOver. */}
             <table className="ledger" role="table">

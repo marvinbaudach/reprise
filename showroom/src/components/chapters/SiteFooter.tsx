@@ -27,48 +27,20 @@ export function SiteFooter() {
   return (
     <footer className="site-footer" data-ground="oklch(10.5% 0.012 269)">
       <div className="site-footer__frame">
-        <section
-          id="availability"
-          className="availability"
-          data-reveal
-          aria-labelledby="availability-heading"
-        >
-          <div>
-            <p className="availability__eyebrow">Availability</p>
-            <h2 id="availability-heading">Open to work.</h2>
-            <p className="availability__copy">
-              I’m Marvin Baudach. I designed Reprise, shaped its architecture and built the gates
-              that keep every change honest. Next: a team that wants product and engineering in one
-              person.
-            </p>
-            <ul className="skill-list" aria-label="Skills">
-              {SKILLS.map((skill) => (
-                <li key={skill}>{skill}</li>
-              ))}
-            </ul>
-          </div>
-          <div className="availability__actions">
-            <a className="availability__contact" href="https://github.com/marvinbaudach">
-              github.com/marvinbaudach ↗
-            </a>
-            <p>GPL-3.0-or-later · active alpha</p>
-            <p>Italian translation by giallorosso84 — thank you.</p>
-          </div>
-        </section>
+        <details className="evidence-details">
+          <summary>From idea to alpha · {TIMELINE.length} weeks</summary>
+          <TempoBand />
+        </details>
         <details className="evidence-details">
           <summary>Sources and methodology</summary>
-          <p className="site-footer__eyebrow" data-reveal>
-            Where the figures come from
-          </p>
-
           <p className="site-footer__honesty" data-reveal>
             Three kinds of number appear on this page. <strong>Counted:</strong> read from this
-            repository at build time —{' '}
+            repository at build time, where{' '}
             <a href={permalink(CENSUS_SCOPE.source)}>
               <code>code-census.mjs</code>
             </a>{' '}
             walks {group(CENSUS_SCOPE.files)} files. <strong>Quoted:</strong> from records that
-            carry commit, date and method —{' '}
+            carry commit, date and method, namely{' '}
             <a href={permalink(PERFORMANCE_RECORD)}>
               <code>index-rebuild.md</code>
             </a>{' '}
@@ -88,10 +60,33 @@ export function SiteFooter() {
             <a href={permalink(PERFORMANCE_RECORD)}>Measurements</a>
           </div>
         </details>
-        <details className="evidence-details">
-          <summary>From idea to alpha · {TIMELINE.length} weeks</summary>
-          <TempoBand />
-        </details>
+        <section
+          id="availability"
+          className="availability"
+          data-reveal
+          aria-labelledby="availability-heading"
+        >
+          <div>
+            <h2 id="availability-heading">Work with me.</h2>
+            <p className="availability__copy">
+              I’m Marvin Baudach. I designed Reprise, shaped its architecture and built the gates
+              that keep every change honest. Next: a team that wants product and engineering in one
+              person.
+            </p>
+            <ul className="skill-list" aria-label="Skills">
+              {SKILLS.map((skill) => (
+                <li key={skill}>{skill}</li>
+              ))}
+            </ul>
+          </div>
+          <div className="availability__actions">
+            <a className="availability__contact" href="https://github.com/marvinbaudach">
+              github.com/marvinbaudach ↗
+            </a>
+            <p>GPL-3.0-or-later · active alpha</p>
+            <p>Italian translation by giallorosso84. Thank you.</p>
+          </div>
+        </section>
       </div>
     </footer>
   );

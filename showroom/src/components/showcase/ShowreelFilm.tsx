@@ -29,6 +29,9 @@ export function ShowreelFilm() {
   const [fullscreen, setFullscreen] = useState(false);
   const [waiting, setWaiting] = useState(false);
   const [error, setError] = useState('');
+  // Until the first explicit play the poster shows only the play button and
+  // the duration badge; the toolbar would sit on the poster's own caption.
+  const [started, setStarted] = useState(false);
 
   const attachVideo = useCallback((video: HTMLVideoElement | null) => {
     videoRef.current = video;
@@ -55,6 +58,7 @@ export function ShowreelFilm() {
   const start = useCallback(async (video: HTMLVideoElement, fromTheTop: boolean) => {
     if (video.error || video.networkState === HTMLMediaElement.NETWORK_NO_SOURCE) video.load();
     if (fromTheTop) video.currentTime = 0;
+    setStarted(true);
     setError('');
     setWaiting(true);
     try {
@@ -153,10 +157,7 @@ export function ShowreelFilm() {
   return (
     <section id="film" className="frame film-frame" aria-labelledby="film-heading">
       <header className="film-heading">
-        <div>
-          <p className="eyebrow">See it in action</p>
-          <h2 id="film-heading">Reprise in 58 seconds.</h2>
-        </div>
+        <h2 id="film-heading">Reprise in 58 seconds.</h2>
         <p>The desktop, the phone, and the sync between them. Recorded in the running apps.</p>
       </header>
       <figure className="film" data-showcase="showreel-film" aria-labelledby="film-heading">
@@ -169,6 +170,7 @@ export function ShowreelFilm() {
           tabIndex={-1}
           data-active={active || !playing || waiting || Boolean(error)}
           data-playing={playing}
+          data-started={started}
           onPointerMove={wakeControls}
           onPointerDown={wakeControls}
           onKeyDown={shortcuts}
@@ -248,7 +250,7 @@ export function ShowreelFilm() {
                   </span>
                 )}
               </button>
-              {!duration && <span className="film__badge">0:58</span>}
+              {!started && <span className="film__badge">0:58</span>}
               {waiting && (
                 <span className="film__loading" role="status">
                   Loading film…
@@ -306,7 +308,7 @@ export function ShowreelFilm() {
                   />
                   <span className="film__time">
                     {timeLabel(displayPosition)}{' '}
-                    <span>/ {duration ? timeLabel(duration) : '0:58'}</span>
+                    {duration ? <span>/ {timeLabel(duration)}</span> : null}
                   </span>
                   <button
                     type="button"
@@ -329,7 +331,7 @@ export function ShowreelFilm() {
         </div>
         <figcaption className="film__caption">
           Browse music and podcasts, discover releases and concerts, then sync the library to
-          Android — with the same visualizer on both platforms.
+          Android, with the same visualizer on both platforms.
         </figcaption>
       </figure>
     </section>

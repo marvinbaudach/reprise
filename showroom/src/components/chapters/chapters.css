@@ -19,18 +19,9 @@
   container-type: inline-size;
 }
 
-.hero__eyebrow {
-  margin: 0 0 22px;
-  font-family: "Martian Mono", ui-monospace, monospace;
-  font-size: 0.68rem;
-  letter-spacing: 0.2em;
-  text-transform: uppercase;
-  color: #4fdbd4;
-}
-
 .hero__headline {
   margin: 0 0 26px;
-  font-size: clamp(2.1rem, 11.4cqi, 4rem);
+  font-size: clamp(2rem, 7.4cqi, 3.4rem);
   line-height: 0.96;
   letter-spacing: -0.03em;
   color: oklch(97% 0.004 269);
@@ -38,10 +29,6 @@
     "wdth" 108,
     "wght" 620;
   text-wrap: balance;
-}
-
-.hero__headline span {
-  display: block;
 }
 
 .hero__lead {
@@ -60,104 +47,10 @@
   text-wrap: pretty;
 }
 
-.hero__scroll-cue {
-  display: flex;
-  align-items: center;
-  gap: 14px;
-  margin-top: 40px;
-  font-family: "Martian Mono", ui-monospace, monospace;
-  font-size: 0.68rem;
-  letter-spacing: 0.2em;
-  text-transform: uppercase;
-  color: oklch(68% 0.011 269);
-}
-
-/*
- * CH.02 carries its title for assistive technology only, which takes the
- * title's bottom margin out of the flow with it. Without this the eyebrow would
- * sit 14px above the first figure and break the rhythm CH.01 and CH.03 keep.
- */
-.chapter__eyebrow--standalone {
-  margin-bottom: var(--gap-chapter-header);
-}
-
-.hero__scroll-line {
-  width: 1px;
-  height: 46px;
-  transform-origin: top;
-  background: linear-gradient(180deg, #4fdbd4, transparent);
-  animation: rp-cue 2.6s ease-in-out infinite;
-}
-
-.hero__offer {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: baseline;
-  gap: 14px 22px;
-  margin-top: 34px;
-  padding-top: 20px;
-  border-top: 1px solid var(--surface-line-soft);
-}
-
-.hero__offer-state {
-  display: inline-flex;
-  align-items: center;
-  gap: 8px;
-  color: var(--accent);
-  font-family: var(--font-mono);
-  font-size: 0.68rem;
-  letter-spacing: 0.16em;
-  text-transform: uppercase;
-}
-
-.hero__offer-state::before {
-  width: 6px;
-  height: 6px;
-  border-radius: 50%;
-  background: var(--accent);
-  content: "";
-}
-
-.hero__offer-copy {
-  color: var(--text-muted);
-}
-
-.hero__offer-link {
-  border-bottom: 1px solid var(--accent);
-  color: var(--text-strong);
-  font-family: var(--font-mono);
-  text-decoration: none;
-  transition:
-    border-color var(--duration-fast),
-    color var(--duration-fast);
-}
-
-.hero__offer-link:hover {
-  border-color: var(--accent);
-  color: var(--accent);
-}
-
-@keyframes rp-cue {
-  0%,
-  100% {
-    transform: scaleY(0.2);
-    opacity: 0.3;
-  }
-
-  50% {
-    transform: scaleY(1);
-    opacity: 1;
-  }
-}
-
 /* --- Chapters ------------------------------------------------------------ */
 
 .chapter {
-  /*
-   * The drop from a chapter's header to its first block. It lives on the
-   * chapter because CH.02 hides its title and has to hand the same gap to the
-   * eyebrow — two places, one number.
-   */
+  /* The drop from a chapter's header to its first block, one number for all. */
   --gap-chapter-header: clamp(2.5rem, 1.8rem + 2vw, 4rem);
 
   padding-block-end: var(--gap-chapter);
@@ -172,15 +65,6 @@
   width: 100%;
   max-width: var(--frame-max);
   padding-inline: var(--frame-pad);
-}
-
-.chapter__eyebrow {
-  margin: 0 0 14px;
-  font-family: var(--font-mono);
-  font-size: 0.68rem;
-  letter-spacing: 0.2em;
-  text-transform: uppercase;
-  color: oklch(68% 0.011 269);
 }
 
 .chapter__title {
@@ -201,121 +85,36 @@
   text-wrap: pretty;
 }
 
-.chapter__intro--after-rungs,
+/*
+ * A chapter whose case is made in a sentence or two sets the heading beside it
+ * rather than above it, so not every chapter runs the same top-down stack.
+ */
+@media (min-width: 60rem) {
+  .chapter__split {
+    display: grid;
+    grid-template-columns: minmax(0, 1.05fr) minmax(0, 1fr);
+    gap: clamp(2rem, 1rem + 3vw, 4.5rem);
+    align-items: start;
+  }
+
+  .chapter__split > .chapter__title,
+  .chapter__split > .chapter-four__title {
+    margin-bottom: 0;
+  }
+}
+
 .chapter__intro--closing {
   margin-top: clamp(2rem, 1.5rem + 1.5vw, 3rem);
 }
 
 .chapter__subhead {
-  margin: clamp(2.5rem, 2rem + 2vw, 4rem) 0 18px;
-  font-family: var(--font-mono);
-  font-size: 0.68rem;
-  font-weight: 400;
-  letter-spacing: 0.18em;
-  text-transform: uppercase;
-  color: oklch(68% 0.011 269);
-}
-
-.evidence-heading {
-  margin: clamp(2.5rem, 2rem + 2vw, 4rem) 0 22px;
-}
-
-.evidence-heading > p:first-child {
-  margin: 0 0 10px;
-  font-family: var(--font-mono);
-  font-size: 0.68rem;
-  letter-spacing: 0.18em;
-  text-transform: uppercase;
-  color: oklch(68% 0.011 269);
-}
-
-.evidence-heading h3 {
-  margin: 0 0 12px;
-  max-width: 46ch;
-  font-size: clamp(1.35rem, 1.1rem + 1.1vw, 2.1rem);
-  line-height: 1.12;
-  letter-spacing: -0.02em;
+  margin: clamp(2.5rem, 2rem + 2vw, 3.5rem) 0 1rem;
+  font-size: 1.05rem;
+  line-height: 1.3;
   color: oklch(97% 0.004 269);
   font-variation-settings:
-    "wdth" 104,
+    "wdth" 102,
     "wght" 560;
-}
-
-.evidence-heading > p:last-child {
-  max-width: 62ch;
-  color: oklch(76% 0.009 269);
-  text-wrap: pretty;
-}
-
-/* --- The verification staircase ------------------------------------------ */
-
-.rungs {
-  display: grid;
-  gap: 8px;
-}
-
-.rungs__rung {
-  display: grid;
-  grid-template-columns: minmax(90px, 110px) minmax(180px, 1.1fr) 1fr 1fr;
-  gap: 10px 22px;
-  align-items: baseline;
-  padding: 18px 20px;
-  border: 1px solid oklch(28% 0.018 269);
-  border-left: 2px solid oklch(40% 0.018 269);
-  border-radius: 8px;
-  background: oklch(17% 0.016 269 / 0.7);
-}
-
-.rungs__rung:nth-child(2) {
-  border-left-color: oklch(46% 0.018 269);
-}
-
-.rungs__rung:nth-child(3) {
-  border-left-color: oklch(52% 0.018 269);
-}
-
-.rungs__rung--agent {
-  border-color: oklch(30% 0.03 195);
-  border-left: 2px solid #4fdbd4;
-  background: linear-gradient(120deg, oklch(22% 0.04 195 / 0.5), oklch(17% 0.016 269 / 0.7));
-}
-
-.rungs__rung:nth-child(5) {
-  background: linear-gradient(120deg, oklch(24% 0.05 195 / 0.55), oklch(17% 0.016 269 / 0.7));
-}
-
-.rungs__count {
-  font-family: var(--font-mono);
-  font-size: 1.5rem;
-  letter-spacing: -0.03em;
-  color: oklch(97% 0.004 269);
-}
-
-.rungs__name {
-  color: oklch(94% 0.004 269);
-  font-weight: 500;
-}
-
-.rungs__proves,
-.rungs__cannot {
-  font-size: 0.86rem;
-  color: oklch(76% 0.009 269);
-}
-
-.rungs__marker {
-  margin-right: 8px;
-  font-family: var(--font-mono);
-  font-size: 0.68rem;
-  letter-spacing: 0.12em;
-  text-transform: uppercase;
-}
-
-.rungs__marker--can {
-  color: var(--accent);
-}
-
-.rungs__marker--cannot {
-  color: #ff6f5e;
 }
 
 /* --- Tempo band ---------------------------------------------------------- */
@@ -339,11 +138,6 @@
   grid-template-columns: repeat(auto-fit, minmax(min(100%, 300px), 1fr));
   gap: clamp(1.6rem, 1.2rem + 2vw, 3.5rem);
   align-items: end;
-}
-
-.tempo__label {
-  margin-bottom: 12px;
-  color: var(--brand-teal);
 }
 
 .tempo__figure {
@@ -476,6 +270,10 @@
   line-height: 1.5;
   color: oklch(80% 0.009 269);
   text-wrap: pretty;
+}
+
+.tempo__later {
+  color: oklch(72% 0.011 269);
 }
 
 @media (prefers-reduced-motion: reduce) {

@@ -27,5 +27,9 @@ test('the architecture claim links to the code and the check that enforce it', a
   assert.match(architecture, /crates\/reprise-core\/Cargo.toml/);
   assert.match(architecture, /scripts\/check-architecture\.sh/);
   assert.match(architecture, /<figcaption/);
-  assert.match(architecture, /The dependency arrows only point inward/);
+  assert.match(
+    architecture,
+    /Four surfaces depend on the core, and the core depends on none of them\./,
+  );
+  assert.match(architecture, /The build rejects GTK, libadwaita, GStreamer and D-Bus in the core/);
 });

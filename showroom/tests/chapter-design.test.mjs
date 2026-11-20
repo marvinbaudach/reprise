@@ -70,7 +70,17 @@ test('chapter two is one incident, with no process diagram left in it', async ()
   assert.ok(chapter);
   assert.match(chapter, /data-ground="oklch\(13\.5% 0\.02 205\)"/);
   assert.match(chapter, /id="ch-02-heading"/);
-  assert.match(chapter, /AI-assisted development\. Verified changes\./);
+  // The heading states the gate count, read from the same script as the strip.
+  const gateCount = (
+    await readFile(join(showroomRoot, '..', 'scripts', 'check-merge-readiness.sh'), 'utf8')
+  ).match(/^gate "[^"]+"/gm)?.length;
+  assert.ok(gateCount);
+  assert.match(
+    chapter.replace(/<!-- -->/g, ''),
+    new RegExp(`No change merges until all ${gateCount} checks pass\\.`),
+  );
+  // AI assistance is named once, where it says who is responsible.
+  assert.equal((chapter.match(/AI assistance|AI-assisted/g) ?? []).length, 1);
   assert.match(chapter, /A test was measuring an app that never ships\./);
 
   // The swimlane and the wall of 27 labels are gone, and nothing rebuilt them.

@@ -125,6 +125,16 @@ test('show-11 the timeline names its weeks from the record, and nothing types th
     }
   }
 
+  // The record describes the runtime as it was built; the page says what
+  // became of it, linked to the decision, without rewriting the record.
+  const shelved = weeks.filter((week) => week.landed.includes('single-owner runtime'));
+  assert.equal(shelved.length, 1);
+  const shelvedRow = band.match(new RegExp(`data-week="${shelved[0].week}"[\\s\\S]+?</li>`))?.[0];
+  assert.ok(shelvedRow);
+  assert.match(shelvedRow, /shelved and deleted/);
+  assert.match(shelvedRow, /docs\/adr\/003-runtime-ownership\.md/);
+  assert.match(shelvedRow, /the protocol stayed/);
+
   const bandSource = await readFile(
     join(showroomRoot, 'src', 'components', 'chapters', 'TempoBand.tsx'),
     'utf8',

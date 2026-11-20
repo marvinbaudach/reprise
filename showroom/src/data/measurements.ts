@@ -184,7 +184,21 @@ export interface Measurement {
 
 export const PERFORMANCE: readonly Measurement[] = INDEX_REBUILD.rows;
 
-export const PERFORMANCE_PRICE = INDEX_REBUILD.price;
+/**
+ * The record opens its price paragraph with a sentence about where the price
+ * sits ("next to it, not in the small print"). The page shows that placement
+ * instead of saying it, so the lead-in up to the first colon is dropped and the
+ * rest, every figure included, is quoted as written.
+ */
+function withoutLeadIn(paragraph: string): string {
+  const colon = paragraph.indexOf(': ');
+  // Only a short lead-in without figures is framing; anything else is content.
+  if (colon === -1 || colon > 80 || /\d/.test(paragraph.slice(0, colon))) return paragraph;
+  const rest = paragraph.slice(colon + 2);
+  return `${rest.charAt(0).toUpperCase()}${rest.slice(1)}`;
+}
+
+export const PERFORMANCE_PRICE = withoutLeadIn(INDEX_REBUILD.price);
 
 export const PERFORMANCE_RECORD = 'docs/measurements/index-rebuild.md';
 

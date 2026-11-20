@@ -27,6 +27,7 @@
   --text-strong: oklch(96% 0.004 269);
   --text-body: oklch(80% 0.008 269);
   --text-muted: oklch(62% 0.011 269);
+  /* Lines and rules only; text below the muted step would miss AA on this ground. */
   --text-faint: oklch(48% 0.012 269);
 
   --accent: var(--brand-teal);

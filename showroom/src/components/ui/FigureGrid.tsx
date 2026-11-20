@@ -2,8 +2,9 @@ import type { Figure } from '../../data/measurements';
 import './ui.css';
 
 /**
- * Figures are set in the display face, not hidden in monospace. A measured
- * number is the loudest thing this page has to say, so it gets the loudest type.
+ * The census figures sit side by side, so they are set in Martian Mono at
+ * display size: tabular digits line up across the cells, and the size, not the
+ * face, makes them the loudest thing in the disclosure.
  */
 export function FigureGrid({
   figures,
