@@ -210,10 +210,6 @@ body {
   width: 100%;
   padding-inline: 0;
 }
-.availability {
-  padding-top: 0;
-  border-top: 0;
-}
 @media (max-width: 46rem) {
   .hero {
     padding-top: 6.5rem;
