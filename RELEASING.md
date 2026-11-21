@@ -150,7 +150,9 @@ The accepted audit warnings are the ones listed in `AGENTS.md` under the gates:
 `RUSTSEC-2024-0436` (`paste`, transitively through `lofty`), plus four
 unmaintained-crate warnings accepted temporarily until #1300 is resolved:
 `RUSTSEC-2026-0370`, `RUSTSEC-2026-0371` and `RUSTSEC-2026-0372` (the zbus
-family) and `RUSTSEC-2026-0374` (`basic-toml`, through `askama`). Any additional
+family) and `RUSTSEC-2026-0374` (`basic-toml`, through `askama`), and the unsoundness
+warning `RUSTSEC-2026-0582` (`heapless` 0.8.0, through `flacenc` in `reprise-stems`),
+accepted temporarily until #1376. Any additional
 advisory is a release blocker. The AppStream check
 allows exactly two documented informational conditions: the pedantic
 `cid-contains-uppercase-letter` note for `io.github.marvinbaudach.Reprise`,
