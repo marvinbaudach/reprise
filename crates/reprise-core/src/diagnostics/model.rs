@@ -47,6 +47,9 @@ pub struct RedactionContext {
     pub music_dir: Option<String>,
     pub home_dir: Option<String>,
     pub username: Option<String>,
+    /// This machine's host name: the name of the user's NAS or PC is as
+    /// identifying as the user name, and shows up in addresses and shares.
+    pub hostname: Option<String>,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]

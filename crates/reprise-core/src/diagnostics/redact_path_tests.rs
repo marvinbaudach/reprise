@@ -7,6 +7,7 @@ fn context() -> RedactionContext {
         music_dir: Some("/home/u/Music".into()),
         home_dir: Some("/home/u".into()),
         username: Some("u".into()),
+        hostname: None,
     }
 }
 

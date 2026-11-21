@@ -71,6 +71,7 @@ fn crash_report_never_contains_a_library_path_in_the_log_tails() {
         music_dir: Some("/home/tester/Music".into()),
         home_dir: Some("/home/tester".into()),
         username: Some("tester".into()),
+        hostname: None,
     };
 
     let report = render_report(&facts, &DiagnosticLog::default(), &context);
@@ -141,10 +142,12 @@ fn a_colon_before_the_equals_sign_never_exempts_a_filename() {
     // The key pass ends the key at the first `=` or `:`, so these tokens are
     // not `key=value` to it and only the filename pass can redact them.
     for input in [
-        "name:cover.jpg=1.2",
+        // `name:` is the colon form of a field the policy redacts, which
+        // takes the line; any other word before the colon is not a field.
+        "cover:cover.jpg=1.2",
         "a:b=0.25",
         "x:elapsed_ms=1.5",
-        "track:song.mp3=0.1.331",
+        "x:song.mp3=0.1.331",
         ":cover.jpg=1.2",
     ] {
         let output = redacted(&format!("opened {input} now"));

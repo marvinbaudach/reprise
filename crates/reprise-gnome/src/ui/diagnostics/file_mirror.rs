@@ -102,6 +102,7 @@ mod tests {
             music_dir: Some("/home/someone/Music".to_owned()),
             home_dir: Some("/home/someone".to_owned()),
             username: Some("someone".to_owned()),
+            hostname: None,
         }
     }
 

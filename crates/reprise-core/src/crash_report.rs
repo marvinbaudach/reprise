@@ -119,6 +119,12 @@ fn redaction_context() -> RedactionContext {
         music_dir: dirs::audio_dir().map(|path| path.to_string_lossy().into_owned()),
         home_dir: variable("HOME"),
         username: variable("USER"),
+        hostname: variable("HOSTNAME").or_else(|| {
+            std::fs::read_to_string("/etc/hostname")
+                .ok()
+                .map(|name| name.trim().to_owned())
+                .filter(|name| !name.is_empty())
+        }),
     }
 }
 
@@ -171,6 +177,7 @@ mod tests {
             music_dir: Some("/home/tester/Music".to_owned()),
             home_dir: Some("/home/tester".to_owned()),
             username: Some("tester".to_owned()),
+            hostname: None,
         }
     }
 

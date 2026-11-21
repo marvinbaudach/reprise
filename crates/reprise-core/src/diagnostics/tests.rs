@@ -92,6 +92,7 @@ fn rendered_events_do_not_expose_paths_uris_filenames_users_or_credentials() {
         music_dir: Some("/home/marvin/Music".into()),
         home_dir: Some("/home/marvin".into()),
         username: Some("alice".into()),
+        hostname: None,
     };
 
     let report = render_report(&complete_facts(), &log, &context);

@@ -120,8 +120,11 @@ fn a_redacted_key_takes_every_word_to_the_end_of_the_line() {
         ("error=a b count=3 more", "error=$REDACTED"),
         ("error=a  b   count=3", "error=$REDACTED"),
         ("prefix error=a b", "prefix error=$REDACTED"),
-        ("error=a b\nnext line", "error=$REDACTED\nnext line"),
-        ("error=a b\nnext count=3", "error=$REDACTED\nnext count=3"),
+        // A line break does not end it (V6): the next line is still the
+        // message that opened the value.
+        ("error=a b\nnext line", "error=$REDACTED"),
+        ("error=a b\nnext count=3", "error=$REDACTED"),
+        ("error=a\nb\nc d", "error=$REDACTED"),
         ("path=x y; elapsed_ms=12", "path=$REDACTED"),
         ("error=a b path=c d count=3", "error=$REDACTED"),
         ("error=a b ", "error=$REDACTED "),
@@ -223,7 +226,7 @@ fn redacting_twice_changes_nothing() {
 fn a_secret_like_colon_key_takes_the_rest_of_the_line_even_past_a_known_key() {
     assert_eq!(
         redacted("token: abc def count=3 tail words\nnext count=4"),
-        "token:$REDACTED\nnext count=4"
+        "token:$REDACTED"
     );
     assert_eq!(
         redacted("password: hunter2 error=x y"),
@@ -240,6 +243,7 @@ fn redacting_twice_with_a_user_home_and_music_directory_changes_nothing() {
         music_dir: Some("/home/marvin/Music".to_owned()),
         home_dir: Some("/home/marvin".to_owned()),
         username: Some("marvin".to_owned()),
+        hostname: None,
     };
     for input in [
         "id=marvin more words",
@@ -262,6 +266,7 @@ fn redacting_twice_with_a_user_home_and_music_directory_changes_nothing() {
 fn a_user_name_after_a_kept_key_is_replaced_by_its_marker_and_the_marker_is_kept() {
     let context = RedactionContext {
         username: Some("marvin".to_owned()),
+        hostname: None,
         ..RedactionContext::default()
     };
 
@@ -309,6 +314,7 @@ fn a_user_name_that_is_also_a_key_does_not_change_how_the_key_is_read() {
 fn a_user_name_elsewhere_in_a_line_is_still_replaced_next_to_a_colon_or_equals_sign() {
     let context = RedactionContext {
         username: Some("marvin".to_owned()),
+        hostname: None,
         ..RedactionContext::default()
     };
 
