@@ -3,7 +3,7 @@
 use std::path::Path;
 
 /// The file the Flatpak runtime places in every sandbox.
-const FLATPAK_INFO: &str = "/.flatpak-info";
+pub(crate) const FLATPAK_INFO: &str = "/.flatpak-info";
 
 /// True inside a Flatpak sandbox, which sees its own data directory instead of
 /// the host's.
