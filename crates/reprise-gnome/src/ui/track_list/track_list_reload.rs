@@ -340,7 +340,10 @@ fn select_captured_ids(shared: &Shared, captured: &ReloadAnchor, current_ids: &[
 ///
 /// Called after `route_to_place`, which is the one moment nothing else owns
 /// A no-op when nothing is loaded or the loaded track is not part of the
-/// view, preserving that view's own selection and viewport.
+/// view, preserving that view's own selection and viewport. It is just as much
+/// a no-op when the restored place already selected rows of its own
+/// (START-4a): a startup greeting is a random pick, so letting it replace the
+/// saved selection made every plain restart save a different row (#1369).
 pub(in crate::ui) fn center_loaded_track(shared: &Rc<Shared>) {
     let Some(track_id) = shared.playing_track_id.get() else {
         return;
@@ -353,7 +356,13 @@ pub(in crate::ui) fn center_loaded_track(shared: &Rc<Shared>) {
         );
         return;
     };
-    shared.selection.unselect_all();
+    if shared.selection.selection().size() > 0 {
+        tracing::debug!(
+            track_id,
+            "startup selection skipped: the restored place carries its own selection"
+        );
+        return;
+    }
     shared.selection.select_item(position as u32, false);
     super::centered_scroll_restore::schedule(shared, Some(track_id), &current_ids);
 }

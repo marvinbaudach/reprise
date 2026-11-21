@@ -440,5 +440,9 @@ mod tests;
 mod start_restore_tests;
 
 #[cfg(test)]
+#[path = "start_restore_selection_tests.rs"]
+mod start_restore_selection_tests;
+
+#[cfg(test)]
 #[path = "delete_follow_display_tests.rs"]
 mod delete_follow_display_tests;

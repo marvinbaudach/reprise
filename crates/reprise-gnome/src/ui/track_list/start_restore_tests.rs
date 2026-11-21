@@ -87,7 +87,7 @@ fn centered_value(track_list: &TrackList, position: u32) -> Option<f64> {
     )
 }
 
-struct SilentPlayback;
+pub(super) struct SilentPlayback;
 
 impl PlaybackBackend for SilentPlayback {
     fn play(&self, _: reprise_core::playback::PlaybackItem<'_>) -> Result<(), PlaybackError> {
