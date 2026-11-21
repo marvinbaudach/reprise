@@ -56,15 +56,17 @@ impl Player {
         // is left intact so an already-in-progress fade that consumed it does
         // not silently lose the successor for the rest of the track.
         self.abort_crossfade();
-        let (flags, target_ms) = match self.segments.seek_target_ms(position_ms) {
+        let (flags, target_ms, epoch) = match self.segments.seek_target_ms(position_ms) {
             Some(CutSeek::Deferred) => return Ok(()),
-            Some(CutSeek::Now(file_position_ms)) => (
+            Some(CutSeek::Now(file_position_ms, epoch)) => (
                 gst::SeekFlags::FLUSH | gst::SeekFlags::ACCURATE,
                 file_position_ms,
+                Some(epoch),
             ),
             None => (
                 gst::SeekFlags::FLUSH | gst::SeekFlags::KEY_UNIT,
                 position_ms,
+                None,
             ),
         };
         let segments = self.segments.clone();
@@ -76,10 +78,11 @@ impl Player {
                     flags,
                     gst::ClockTime::from_mseconds(target_ms.max(0) as u64),
                 );
-                if sought.is_err() {
+                // A whole file's seek has no wait of the gate's to end.
+                if let (Err(_), Some(epoch)) = (&sought, epoch) {
                     // The job clears the flag itself, so a late refusal does too
-                    // (unless its pipeline has been retired meanwhile).
-                    segments.seek_refused(&queue);
+                    // (unless a newer stream has taken the gate meanwhile).
+                    segments.seek_refused(&queue, epoch);
                 }
                 sought
             })
