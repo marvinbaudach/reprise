@@ -148,7 +148,7 @@ jobs:
         uses: actions/cache/restore@v6
         with:
           path: ~/.cargo/bin/cargo-xwin
-          key: cargo-xwin-${{ runner.os }}-0.23.0
+          key: cargo-xwin-${{ runner.os }}-0.23.1
 
       # reprise-core links rusqlite with the `bundled` feature, so even
       # `cargo check` runs libsqlite3-sys's build script and compiles SQLite C
@@ -164,7 +164,7 @@ jobs:
         id: cargo_xwin_install
         if: steps.cargo_xwin_cache.outputs.cache-hit != 'true'
         run: |
-          cargo install --locked --version 0.23.0 cargo-xwin
+          cargo install --locked --version 0.23.1 cargo-xwin
 
       - name: Save cargo-xwin
         if: >-
@@ -174,7 +174,7 @@ jobs:
         uses: actions/cache/save@v6
         with:
           path: ~/.cargo/bin/cargo-xwin
-          key: cargo-xwin-${{ runner.os }}-0.23.0
+          key: cargo-xwin-${{ runner.os }}-0.23.1
 
       - name: cargo check reprise-core for x86_64-pc-windows-msvc
         run: cargo xwin check --locked -p reprise-core --target x86_64-pc-windows-msvc
