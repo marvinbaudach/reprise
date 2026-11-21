@@ -257,10 +257,25 @@ impl PlayerController {
     ) {
         match target {
             StoppedPlayTarget::Greeting(ids) => {
-                self.play_from_view(ids, 0, super::play_origin::PlayOrigin::library());
+                // The caller's `change` describes an ordinary item; a greeting
+                // is exempt from a second reveal only when startup placed it.
+                self.play_from_view_with_change(
+                    ids,
+                    0,
+                    super::play_origin::PlayOrigin::library(),
+                    super::queue_transport::restored_start_change(
+                        self.restored_placement_intact.get(),
+                    ),
+                );
             }
             StoppedPlayTarget::Item(item) => self.start_current_item(item, change),
         }
+    }
+
+    /// Startup did not place the loaded row (START-4a), so the first Play
+    /// reveals it like any start from Stopped instead of assuming it is there.
+    pub(in crate::ui) fn forget_restored_placement(&self) {
+        self.restored_placement_intact.set(false);
     }
 
     pub(in crate::ui) fn has_playable_item(&self) -> bool {

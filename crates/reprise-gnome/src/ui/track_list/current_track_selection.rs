@@ -139,6 +139,21 @@ pub(in crate::ui) fn wire(player: Option<&Rc<PlayerController>>, track_list: &Rc
     });
 }
 
+impl TrackList {
+    /// START-4 / START-4a: places the startup item and tells the player
+    /// whether it did. A first Play skips its own reveal only for a row this
+    /// placed; when the restored selection kept the row unplaced, the Play
+    /// reveals it like any other start from Stopped (NAV-10b).
+    pub(in crate::ui) fn place_startup_item(&self, player: Option<&Rc<PlayerController>>) {
+        let placement = self.center_loaded_track();
+        if placement == super::track_list_reload::StartupPlacement::SelectionKept {
+            if let Some(player) = player {
+                player.forget_restored_placement();
+            }
+        }
+    }
+}
+
 impl PlayerController {
     /// Adds a loaded-track listener. Appends rather than replaces: every
     /// surface that carries the shared playback marker registers here, and
@@ -438,6 +453,10 @@ mod tests;
 #[cfg(test)]
 #[path = "start_restore_tests.rs"]
 mod start_restore_tests;
+
+#[cfg(test)]
+#[path = "start_restore_selection_tests.rs"]
+mod start_restore_selection_tests;
 
 #[cfg(test)]
 #[path = "delete_follow_display_tests.rs"]

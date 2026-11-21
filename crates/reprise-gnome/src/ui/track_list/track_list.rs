@@ -488,8 +488,8 @@ impl TrackList {
     /// START-3: centers the loaded track after startup routing built this
     /// view. See `track_list_reload::center_loaded_track` for why this is the
     /// only scroller running at that moment.
-    pub(in crate::ui) fn center_loaded_track(&self) {
-        super::track_list_reload::center_loaded_track(&self.shared);
+    pub(in crate::ui) fn center_loaded_track(&self) -> super::track_list_reload::StartupPlacement {
+        super::track_list_reload::center_loaded_track(&self.shared)
     }
 
     pub(in crate::ui) fn set_on_search_restored(&self, callback: impl Fn(&str) + 'static) {
