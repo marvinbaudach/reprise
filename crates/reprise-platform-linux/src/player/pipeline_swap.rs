@@ -283,6 +283,10 @@ impl PipelineSwap {
             });
             let retired = std::mem::replace(&mut *playbin, fresh);
             self.install_watch(watch);
+            // The cut and its pending start-seek stay for the new pipeline; what
+            // the hung one reports from now on is stale. Lock order playbin ->
+            // gate, as in `begin_start`.
+            self.segments.next_epoch();
             retired
         };
         retired.retire();

@@ -147,11 +147,24 @@ impl Cut {
     }
 }
 
+/// Which pipeline's start the gate serves. [`SegmentGate::begin_start`],
+/// [`SegmentGate::reset`] and [`SegmentGate::next_epoch`] hand the gate to a
+/// new one, and a job that was queued for an earlier one carries the epoch it
+/// was queued under: a late refusal of it, compared with the gate's epoch
+/// under the gate's own lock, is the earlier pipeline's and clears nothing of
+/// the current one. A start over keeps the cut and the pending start-seek for
+/// the pipeline that replaces the hung one, so it only advances the epoch. The
+/// pipeline's retirement cannot say this alone: a newer start writes the gate,
+/// and a start over swaps the pipeline, before the one they replace is retired.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub(crate) struct StartEpoch(u64);
+
 /// What a seek within a CUE track comes to.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(crate) enum CutSeek {
-    /// Seek the pipeline to this file position now.
-    Now(i64),
+    /// Seek the pipeline to this file position now. The epoch is the gate's
+    /// when the seek was asked for, for [`SegmentGate::seek_refused`].
+    Now(i64, StartEpoch),
     /// The track has not started yet; its start-seek will go there.
     Deferred,
 }
@@ -164,6 +177,8 @@ struct ArmedNext {
 
 #[derive(Debug, Default)]
 struct CutState {
+    /// Counts the starts the gate has been handed to; see [`StartEpoch`].
+    epoch: StartEpoch,
     uri: String,
     active: Option<Cut>,
     file_duration_ms: Option<i64>,
@@ -188,6 +203,12 @@ struct CutState {
     /// probe yet. Buffers until then predate the seek, and a hand-off they
     /// stage must not be announced: the next post-seek buffer withdraws it.
     seek_in_flight: bool,
+}
+
+impl StartEpoch {
+    fn next(self) -> Self {
+        Self(self.0.wrapping_add(1))
+    }
 }
 
 impl CutState {
@@ -231,28 +252,58 @@ impl SegmentGate {
     /// restart calls it: a cut is only valid for
     /// the stream it was set on.
     pub(crate) fn reset(&self) {
-        *self.lock() = CutState::default();
+        let mut state = self.lock();
+        *state = CutState {
+            epoch: state.epoch.next(),
+            ..CutState::default()
+        };
     }
 
     /// Makes `segment` of `uri` the active cut. `file_duration_ms` is the
     /// pipeline's answer after preroll, cached so neither the probe nor
-    /// `route_next` ever has to query the pipeline.
+    /// `route_next` ever has to query the pipeline. The tests' way to a cut that
+    /// has prerolled; a start installs its cut with [`Self::begin_start`].
+    #[cfg(test)]
     pub(crate) fn begin(&self, uri: &str, segment: (i64, i64), file_duration_ms: Option<i64>) {
-        *self.lock() = CutState {
-            uri: uri.to_owned(),
-            active: Some(Cut::new(segment.0, segment.1, file_duration_ms)),
-            file_duration_ms,
-            ..CutState::default()
-        };
+        let mut state = self.lock();
+        *state = Self::fresh_cut(state.epoch.next(), uri, segment, file_duration_ms);
     }
 
     /// Makes `segment` of `uri` the active cut before the file has prerolled
     /// and records that its start-seek is still to come. The duration is not
     /// known yet: [`Self::complete_start`] adds it. The cut is installed now
-    /// because the frontend feeds the next track right after `play`.
+    /// because the frontend feeds the next track right after `play`. One
+    /// acquisition of the lock writes all of it, so a seek that lands meanwhile
+    /// finds either the old state or a start whose seek is pending, and defers.
     pub(super) fn begin_start(&self, uri: &str, segment: (i64, i64)) {
-        self.begin(uri, segment, None);
-        self.lock().pending_start_ms = Some(segment.0);
+        let mut state = self.lock();
+        *state = CutState {
+            pending_start_ms: Some(segment.0),
+            ..Self::fresh_cut(state.epoch.next(), uri, segment, None)
+        };
+    }
+
+    /// Hands the gate to the pipeline that replaces a hung start's, keeping
+    /// the cut and the pending start-seek for it: whatever the replaced
+    /// pipeline's jobs report from now on is stale (see [`StartEpoch`]).
+    pub(super) fn next_epoch(&self) {
+        let mut state = self.lock();
+        state.epoch = state.epoch.next();
+    }
+
+    fn fresh_cut(
+        epoch: StartEpoch,
+        uri: &str,
+        segment: (i64, i64),
+        file_duration_ms: Option<i64>,
+    ) -> CutState {
+        CutState {
+            epoch,
+            uri: uri.to_owned(),
+            active: Some(Cut::new(segment.0, segment.1, file_duration_ms)),
+            file_duration_ms,
+            ..CutState::default()
+        }
     }
 
     /// Learns the file's duration once it is known: an end within the
@@ -299,8 +350,15 @@ impl SegmentGate {
         if matches!(prerolled, Ok(gst::StateChangeSuccess::Async) | Err(_)) {
             return;
         }
-        let (next_seek_ms, learn_duration) = {
+        let (next_seek_ms, learn_duration, epoch) = {
             let mut state = self.lock();
+            // A retired pipeline's late `ASYNC_DONE` belongs to a start that a
+            // newer pipeline has replaced; the start-seek it would record is
+            // the newer pipeline's, which would then skip it. Checked under the
+            // lock the record is written under.
+            if queue.is_retired() {
+                return;
+            }
             let Some(pending_start_ms) = state.pending_start_ms else {
                 return;
             };
@@ -310,10 +368,10 @@ impl SegmentGate {
             {
                 state.pending_start_ms = None;
                 state.start_seek_ms = None;
-                (None, learn_duration)
+                (None, learn_duration, state.epoch)
             } else {
                 state.start_seek_ms = Some(pending_start_ms);
-                (Some(pending_start_ms), learn_duration)
+                (Some(pending_start_ms), learn_duration, state.epoch)
             }
         };
         if learn_duration {
@@ -324,24 +382,33 @@ impl SegmentGate {
         }
         let gate = self.clone();
         let asked = queue.clone();
-        queue.submit(move |playbin| gate.finish_start(playbin, &asked, next_seek_ms));
+        queue.submit(move |playbin| gate.finish_start(playbin, &asked, epoch, next_seek_ms));
     }
 
     /// The tail of [`Self::complete_start`], on the pipeline's queue: the seek
-    /// to the track's start, or entering the state the user asked for.
-    fn finish_start(&self, playbin: &gst::Element, queue: &QueueHandle, seek_ms: Option<i64>) {
+    /// to the track's start, or entering the state the user asked for. `epoch`
+    /// is the gate's when the job was queued.
+    fn finish_start(
+        &self,
+        playbin: &gst::Element,
+        queue: &QueueHandle,
+        epoch: StartEpoch,
+        seek_ms: Option<i64>,
+    ) {
         if let Some(start_ms) = seek_ms {
             let start = gst::ClockTime::from_mseconds(start_ms.max(0) as u64);
             match playbin.seek_simple(gst::SeekFlags::FLUSH | gst::SeekFlags::ACCURATE, start) {
                 Ok(()) => return,
                 Err(error) => {
-                    // A retired pipeline's refusal comes after a newer start has
-                    // made the gate its own; what it would clear is that
-                    // start's pending seek.
-                    if queue.is_retired() {
+                    // A refusal that comes after a newer start has made the gate
+                    // its own would clear that start's pending seek. The newer
+                    // start writes the gate before it retires this pipeline, so
+                    // the retirement is no proof yet; the epoch is, and is
+                    // compared under the same lock as the write it guards.
+                    let mut state = self.lock();
+                    if queue.is_retired() || state.epoch != epoch {
                         return;
                     }
-                    let mut state = self.lock();
                     state.pending_start_ms = None;
                     state.start_seek_ms = None;
                     tracing::warn!(%error, start_ms, "could not seek to the CUE track's start");
@@ -404,6 +471,12 @@ impl SegmentGate {
         state.active.is_none() && next.is_some_and(|next| next.segment.is_none())
     }
 
+    /// The epoch the gate is in now, for the tests.
+    #[cfg(test)]
+    pub(crate) fn epoch(&self) -> StartEpoch {
+        self.lock().epoch
+    }
+
     /// Whether a CUE track is playing.
     pub(crate) fn cue_active(&self) -> bool {
         self.lock().active.is_some()
@@ -450,18 +523,21 @@ impl SegmentGate {
             return Some(CutSeek::Deferred);
         }
         state.seek_in_flight = true;
-        Some(CutSeek::Now(target_ms))
+        Some(CutSeek::Now(target_ms, state.epoch))
     }
 
     /// A seek [`Self::seek_target_ms`] asked for was refused: no flush will
     /// come to end the wait it started. `queue` is the pipeline that refused
-    /// it: a retired one answers late, after a newer stream has made the gate
-    /// its own, and the wait it clears would be that stream's.
-    pub(crate) fn seek_refused(&self, queue: &QueueHandle) {
-        if queue.is_retired() {
+    /// it and `epoch` the one the seek came with: a refusal that comes late,
+    /// after a newer stream has made the gate its own, would clear a wait that
+    /// is that stream's. Both are checked under the gate's lock (see
+    /// [`StartEpoch`]).
+    pub(crate) fn seek_refused(&self, queue: &QueueHandle, epoch: StartEpoch) {
+        let mut state = self.lock();
+        if queue.is_retired() || state.epoch != epoch {
             return;
         }
-        self.lock().seek_in_flight = false;
+        state.seek_in_flight = false;
     }
 
     /// The flushing seek's new segment reached the probe: buffers from here
