@@ -159,8 +159,13 @@ pub fn rhythmbox_progress_count(done: usize, total: usize) -> String {
 }
 
 pub fn rhythmbox_result_ratings(count: usize) -> String {
-    let count = count.to_string();
-    formatted(N_!("{count} imported"), &[("count", &count)])
+    let count_text = count.to_string();
+    plural(
+        "{count} rating imported",
+        "{count} ratings imported",
+        count,
+        &[("count", &count_text)],
+    )
 }
 
 /// The "Play counts & last played" row owns both numbers: how many play counts
@@ -174,8 +179,10 @@ pub fn rhythmbox_result_play_counts(raised: usize, last_played: usize) -> String
         &[("count", &raised_text)],
     );
     let last_played_text = last_played.to_string();
-    let last_played_count = formatted(
-        N_!("{count} last played restored"),
+    let last_played_count = plural(
+        "{count} last played date restored",
+        "{count} last played dates restored",
+        last_played,
         &[("count", &last_played_text)],
     );
     formatted(
@@ -189,13 +196,23 @@ pub fn rhythmbox_result_play_counts(raised: usize, last_played: usize) -> String
 
 /// The "Date added" row counts dates and nothing else.
 pub fn rhythmbox_result_dates(dates: usize) -> String {
-    let count = dates.to_string();
-    formatted(N_!("{count} restored"), &[("count", &count)])
+    let count_text = dates.to_string();
+    plural(
+        "{count} date restored",
+        "{count} dates restored",
+        dates,
+        &[("count", &count_text)],
+    )
 }
 
 pub fn rhythmbox_result_playlists(count: usize) -> String {
-    let count = count.to_string();
-    formatted(N_!("{count} created"), &[("count", &count)])
+    let count_text = count.to_string();
+    plural(
+        "{count} playlist created",
+        "{count} playlists created",
+        count,
+        &[("count", &count_text)],
+    )
 }
 
 /// The pre-import warning: a headline for everything that will be skipped and
@@ -220,14 +237,18 @@ pub fn rhythmbox_skipped_warning(
     );
     let mut reasons = Vec::new();
     if outside_library > 0 {
-        reasons.push(formatted(
-            N_!("{count} outside your library folder"),
+        reasons.push(plural(
+            "{count} file outside your library folder",
+            "{count} files outside your library folder",
+            outside_library,
             &[("count", &outside_library.to_string())],
         ));
     }
     if missing_on_disk > 0 {
-        reasons.push(formatted(
-            N_!("{count} no longer on disk"),
+        reasons.push(plural(
+            "{count} file no longer on disk",
+            "{count} files no longer on disk",
+            missing_on_disk,
             &[("count", &missing_on_disk.to_string())],
         ));
     }
@@ -241,8 +262,23 @@ pub fn rhythmbox_skipped_warning(
     }
     RhythmboxSkipWarning {
         title,
-        reasons: reasons.join(" \u{00b7} "),
+        reasons: join_reasons(reasons),
     }
+}
+
+/// Joins the reasons through a catalog string, so a translation owns the
+/// separator instead of the code hard-coding an English-looking one.
+fn join_reasons(reasons: Vec<String>) -> String {
+    let mut reasons = reasons.into_iter();
+    let Some(first) = reasons.next() else {
+        return String::new();
+    };
+    reasons.fold(first, |joined, next| {
+        formatted(
+            N_!("{first} \u{00b7} {second}"),
+            &[("first", &joined), ("second", &next)],
+        )
+    })
 }
 
 #[cfg(test)]
@@ -289,13 +325,18 @@ mod tests {
         );
         assert_eq!(rhythmbox_progress_count(1, 1), "1 of 1 track");
         assert_eq!(rhythmbox_progress_count(10, 10), "10 of 10 tracks");
+        assert_eq!(rhythmbox_result_ratings(1), "1 rating imported");
+        assert_eq!(rhythmbox_result_ratings(6), "6 ratings imported");
+        assert_eq!(rhythmbox_result_playlists(1), "1 playlist created");
+        assert_eq!(rhythmbox_result_playlists(2), "2 playlists created");
     }
 
     /// The Date added row reports dates, and only dates: a last-played count
     /// beside it ("10 \u{b7} 6 restored") read as 6 of 10 dates restored.
     #[test]
     fn rbx_copy_2_date_added_row_counts_its_own_dates_only() {
-        assert_eq!(rhythmbox_result_dates(10), "10 restored");
+        assert_eq!(rhythmbox_result_dates(10), "10 dates restored");
+        assert_eq!(rhythmbox_result_dates(1), "1 date restored");
     }
 
     /// Last played belongs to the "Play counts & last played" row, named as
@@ -304,11 +345,11 @@ mod tests {
     fn rbx_copy_3_play_count_row_carries_the_last_played_count() {
         assert_eq!(
             rhythmbox_result_play_counts(1, 1),
-            "1 play count raised \u{b7} 1 last played restored"
+            "1 play count raised \u{b7} 1 last played date restored"
         );
         assert_eq!(
             rhythmbox_result_play_counts(4, 6),
-            "4 play counts raised \u{b7} 6 last played restored"
+            "4 play counts raised \u{b7} 6 last played dates restored"
         );
     }
 
@@ -318,18 +359,28 @@ mod tests {
     fn rbx_copy_4_the_skip_warning_names_only_the_reasons_that_apply() {
         let missing_only = rhythmbox_skipped_warning(0, 1, 0);
         assert_eq!(missing_only.title, "1 Rhythmbox entry will be skipped");
-        assert_eq!(missing_only.reasons, "1 no longer on disk");
+        assert_eq!(missing_only.reasons, "1 file no longer on disk");
         assert!(!missing_only.reasons.contains("outside"));
 
         let everything = rhythmbox_skipped_warning(2, 1, 5);
         assert_eq!(everything.title, "8 Rhythmbox entries will be skipped");
         assert_eq!(
             everything.reasons,
-            "2 outside your library folder \u{b7} 1 no longer on disk \u{b7} 5 podcasts or radio streams"
+            "2 files outside your library folder \u{b7} 1 file no longer on disk \u{b7} 5 podcasts or radio streams"
         );
 
         let one_stream = rhythmbox_skipped_warning(0, 0, 1);
         assert_eq!(one_stream.reasons, "1 podcast or radio stream");
         assert!(rhythmbox_skipped_warning(0, 0, 0).reasons.is_empty());
+    }
+
+    /// The separator between skip reasons belongs to the catalog, like every
+    /// other "{a} \u{b7} {b}" line here, not to a hard-coded `join`.
+    #[test]
+    fn rbx_copy_6_the_skip_reason_separator_is_a_catalog_string() {
+        let source = include_str!("strings_rhythmbox.rs");
+        let production = source.split("#[cfg(test)]").next().unwrap_or_default();
+        assert!(!production.contains(".join("));
+        assert!(production.contains("N_!(\"{first} \\u{00b7} {second}\")"));
     }
 }

@@ -2,7 +2,7 @@ msgid ""
 msgstr ""
 "Project-Id-Version: Reprise 0.1.1\n"
 "Report-Msgid-Bugs-To: Marvin Baudach\n"
-"POT-Creation-Date: 2026-11-21 10:28+0100\n"
+"POT-Creation-Date: 2026-11-21 20:04+0100\n"
 "PO-Revision-Date: 2026-07-26 14:47+0200\n"
 "Last-Translator: Reprise contributors\n"
 "Language-Team: Spanish\n"
@@ -4436,61 +4436,78 @@ msgid_plural "{done} of {total} tracks"
 msgstr[0] "{done} de {total} pista"
 msgstr[1] "{done} de {total} pistas"
 
-#: crates/reprise-gnome/src/ui/strings_rhythmbox.rs:163
+#: crates/reprise-gnome/src/ui/strings_rhythmbox.rs:164
 #, rust-format
-msgid "{count} imported"
-msgstr "{count} importadas"
+msgid "{count} rating imported"
+msgid_plural "{count} ratings imported"
+msgstr[0] "{count} valoración importada"
+msgstr[1] "{count} valoraciones importadas"
 
-#: crates/reprise-gnome/src/ui/strings_rhythmbox.rs:171
+#: crates/reprise-gnome/src/ui/strings_rhythmbox.rs:176
 #, rust-format
 msgid "{count} play count raised"
 msgid_plural "{count} play counts raised"
 msgstr[0] "{count} contador de reproducciones aumentado"
 msgstr[1] "{count} contadores de reproducciones aumentados"
 
-#: crates/reprise-gnome/src/ui/strings_rhythmbox.rs:178
+#: crates/reprise-gnome/src/ui/strings_rhythmbox.rs:183
 #, rust-format
-msgid "{count} last played restored"
-msgstr "{count} con la última reproducción restaurada"
+msgid "{count} last played date restored"
+msgid_plural "{count} last played dates restored"
+msgstr[0] "{count} fecha de última reproducción restaurada"
+msgstr[1] "{count} fechas de última reproducción restauradas"
 
-#: crates/reprise-gnome/src/ui/strings_rhythmbox.rs:182
+#: crates/reprise-gnome/src/ui/strings_rhythmbox.rs:189
 #, rust-format
 msgid "{raised} · {last_played}"
 msgstr "{raised} · {last_played}"
 
-#: crates/reprise-gnome/src/ui/strings_rhythmbox.rs:193
+#: crates/reprise-gnome/src/ui/strings_rhythmbox.rs:201
 #, rust-format
-msgid "{count} restored"
-msgstr "{count} restauradas"
+msgid "{count} date restored"
+msgid_plural "{count} dates restored"
+msgstr[0] "{count} fecha restaurada"
+msgstr[1] "{count} fechas restauradas"
 
-#: crates/reprise-gnome/src/ui/strings_rhythmbox.rs:198
+#: crates/reprise-gnome/src/ui/strings_rhythmbox.rs:211
 #, rust-format
-msgid "{count} created"
-msgstr "{count} creadas"
+msgid "{count} playlist created"
+msgid_plural "{count} playlists created"
+msgstr[0] "{count} lista de reproducción creada"
+msgstr[1] "{count} listas de reproducción creadas"
 
-#: crates/reprise-gnome/src/ui/strings_rhythmbox.rs:216
+#: crates/reprise-gnome/src/ui/strings_rhythmbox.rs:233
 #, rust-format
 msgid "{count} Rhythmbox entry will be skipped"
 msgid_plural "{count} Rhythmbox entries will be skipped"
 msgstr[0] "{count} entrada de Rhythmbox se omitirá"
 msgstr[1] "{count} entradas de Rhythmbox se omitirán"
 
-#: crates/reprise-gnome/src/ui/strings_rhythmbox.rs:224
+#: crates/reprise-gnome/src/ui/strings_rhythmbox.rs:241
 #, rust-format
-msgid "{count} outside your library folder"
-msgstr "{count} fuera de la carpeta de la biblioteca"
+msgid "{count} file outside your library folder"
+msgid_plural "{count} files outside your library folder"
+msgstr[0] "{count} archivo fuera de la carpeta de la biblioteca"
+msgstr[1] "{count} archivos fuera de la carpeta de la biblioteca"
 
-#: crates/reprise-gnome/src/ui/strings_rhythmbox.rs:230
+#: crates/reprise-gnome/src/ui/strings_rhythmbox.rs:249
 #, rust-format
-msgid "{count} no longer on disk"
-msgstr "{count} ya no están en el disco"
+msgid "{count} file no longer on disk"
+msgid_plural "{count} files no longer on disk"
+msgstr[0] "{count} archivo ya no está en el disco"
+msgstr[1] "{count} archivos ya no están en el disco"
 
-#: crates/reprise-gnome/src/ui/strings_rhythmbox.rs:236
+#: crates/reprise-gnome/src/ui/strings_rhythmbox.rs:257
 #, rust-format
 msgid "{count} podcast or radio stream"
 msgid_plural "{count} podcasts or radio streams"
 msgstr[0] "{count} pódcast o emisión de radio"
 msgstr[1] "{count} pódcast o emisiones de radio"
+
+#: crates/reprise-gnome/src/ui/strings_rhythmbox.rs:278
+#, rust-format
+msgid "{first} · {second}"
+msgstr "{first} · {second}"
 
 #: crates/reprise-gnome/src/ui/strings_scan.rs:14
 msgid "Scanning"

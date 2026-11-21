@@ -2042,9 +2042,18 @@ result.
   libadwaita defaults `use-markup` to TRUE on all of them, so library data
   and translations containing `&`, `<` or `>` would otherwise render an
   empty label — the same defect class FB-11 closed for toasts. Rows and
-  banners are therefore built only through `ui/rows.rs`, which turns the
-  default off at the one construction point; `check-gnome-idioms.sh` rejects
-  direct construction. `AdwStatusPage` is exempt because its title is not
+  banners are therefore built only through `ui/rows.rs`; `check-gnome-idioms.sh`
+  rejects direct construction. Switching `use-markup` off on the builder is
+  not enough: a GObject builder does not let the caller win the race, and a
+  title or subtitle given at construction reaches the label while markup is
+  still on, is parsed once, and logs "Failed to set text ... from markup"
+  (measured on the published 0.1.346 Flatpak, three times when the Rhythmbox
+  import dialog opened). The `ui/rows.rs` builders therefore hold the title
+  and subtitle back and give them to the finished row only after
+  `set_use_markup(false)`, in `build()`; `banner()` does the same. No title
+  reaches the markup parser, not even for an instant; the test
+  `fb_13_a_row_title_with_markup_characters_is_never_parsed_as_markup`
+  asserts it against the GTK log. `AdwStatusPage` is exempt because its title is not
   parsed as markup, and the count labels that deliberately use Pango markup
   are plain `GtkLabel`s and stay outside this rule. Named exception:
   `preferences/preferences_search_results.rs`'s `apply_highlight` (~line 189)

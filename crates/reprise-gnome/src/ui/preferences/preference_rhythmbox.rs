@@ -187,8 +187,10 @@ fn build_import_dialog() -> ImportDialogWidgets {
     let rows: Vec<adw::SwitchRow> = specs
         .into_iter()
         .map(|spec| {
-            let row = crate::ui::rows::titled_switch_row(&option_title(spec.id));
-            row.set_active(spec.selected);
+            let row = crate::ui::rows::switch_row()
+                .title(option_title(spec.id))
+                .active(spec.selected)
+                .build();
             row.add_css_class("reprise-rhythmbox-import-option");
             options_group.add(&row);
             row
@@ -247,16 +249,20 @@ fn build_import_dialog() -> ImportDialogWidgets {
     complete_subtitle.set_margin_bottom(18);
 
     let results_group = adw::PreferencesGroup::new();
-    // Titled rows: see `rows::titled_action_row` for why not the builder.
-    let ratings_result =
-        crate::ui::rows::titled_action_row(&strings::text(strings::RHYTHMBOX_IMPORT_RATINGS));
-    let play_counts_result = crate::ui::rows::titled_action_row(&strings::text(
-        strings::RHYTHMBOX_PLAY_COUNTS_AND_LAST_PLAYED,
-    ));
-    let dates_result =
-        crate::ui::rows::titled_action_row(&strings::text(strings::RHYTHMBOX_IMPORT_DATE_ADDED));
-    let playlists_result =
-        crate::ui::rows::titled_action_row(&strings::text(strings::RHYTHMBOX_IMPORT_PLAYLISTS));
+    let ratings_result = crate::ui::rows::action_row()
+        .title(strings::text(strings::RHYTHMBOX_IMPORT_RATINGS))
+        .build();
+    let play_counts_result = crate::ui::rows::action_row()
+        .title(strings::text(
+            strings::RHYTHMBOX_PLAY_COUNTS_AND_LAST_PLAYED,
+        ))
+        .build();
+    let dates_result = crate::ui::rows::action_row()
+        .title(strings::text(strings::RHYTHMBOX_IMPORT_DATE_ADDED))
+        .build();
+    let playlists_result = crate::ui::rows::action_row()
+        .title(strings::text(strings::RHYTHMBOX_IMPORT_PLAYLISTS))
+        .build();
     results_group.add(&ratings_result);
     results_group.add(&play_counts_result);
     results_group.add(&dates_result);
@@ -267,12 +273,15 @@ fn build_import_dialog() -> ImportDialogWidgets {
         .show_enable_switch(false)
         .build();
     skipped_expander.add_prefix(&gtk4::Image::from_icon_name("dialog-warning-symbolic"));
-    let skip_outside =
-        crate::ui::rows::titled_action_row(&strings::text(strings::RHYTHMBOX_SKIP_OUTSIDE_LIBRARY));
-    let skip_missing =
-        crate::ui::rows::titled_action_row(&strings::text(strings::RHYTHMBOX_SKIP_MISSING_ON_DISK));
-    let skip_non_song =
-        crate::ui::rows::titled_action_row(&strings::text(strings::RHYTHMBOX_SKIP_NON_SONG));
+    let skip_outside = crate::ui::rows::action_row()
+        .title(strings::text(strings::RHYTHMBOX_SKIP_OUTSIDE_LIBRARY))
+        .build();
+    let skip_missing = crate::ui::rows::action_row()
+        .title(strings::text(strings::RHYTHMBOX_SKIP_MISSING_ON_DISK))
+        .build();
+    let skip_non_song = crate::ui::rows::action_row()
+        .title(strings::text(strings::RHYTHMBOX_SKIP_NON_SONG))
+        .build();
     skipped_expander.add_row(&skip_outside);
     skipped_expander.add_row(&skip_missing);
     skipped_expander.add_row(&skip_non_song);

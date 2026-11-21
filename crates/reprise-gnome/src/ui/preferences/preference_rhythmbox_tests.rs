@@ -164,27 +164,6 @@ fn rendered_texts(widget: &gtk4::Widget, out: &mut Vec<String>) {
     }
 }
 
-static GTK_WARNINGS: std::sync::Mutex<Vec<String>> = std::sync::Mutex::new(Vec::new());
-
-/// GTK logs through `g_log_structured`, which GLib's per-domain handlers never
-/// see; only the process-wide writer does. It may be installed once per
-/// process, so only this display test installs it (the display gate runs each
-/// test in its own process) and it keeps the default output.
-fn capture_gtk_messages() {
-    glib::log_set_writer_func(|_, fields| {
-        let message = fields
-            .iter()
-            .find(|field| field.key() == "MESSAGE")
-            .and_then(|field| field.value_str());
-        if let Some(message) = message {
-            if let Ok(mut captured) = GTK_WARNINGS.lock() {
-                captured.push(message.to_string());
-            }
-        }
-        glib::LogWriterOutput::Unhandled
-    });
-}
-
 /// FB-13: building the import dialog parses no title as markup. Two titles
 /// carry a literal `&`; a row that is handed such a title while it still parses
 /// markup logs "Gtk-WARNING: Failed to set text ... from markup". The published
@@ -196,7 +175,7 @@ fn capture_gtk_messages() {
 fn fb_13_the_import_dialog_rows_render_their_ampersand_titles() {
     gtk4::init().unwrap();
     libadwaita::init().unwrap();
-    capture_gtk_messages();
+    let mark = crate::ui::gtk_log_capture::mark();
     let widgets = build_import_dialog();
     let skipped = strings::rhythmbox_skipped_warning(1, 2, 3);
     widgets.warning_row.set_title(&skipped.title);
@@ -225,7 +204,7 @@ fn fb_13_the_import_dialog_rows_render_their_ampersand_titles() {
     widgets.dialog.force_close();
     parent.close();
 
-    let warnings = GTK_WARNINGS.lock().unwrap().clone();
+    let warnings = crate::ui::gtk_log_capture::messages_since(mark);
     assert!(
         warnings
             .iter()
