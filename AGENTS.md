@@ -116,6 +116,7 @@ Accepted `cargo audit` advisories, all of them unmaintained-crate warnings:
 - `RUSTSEC-2026-0370`, `RUSTSEC-2026-0371`, `RUSTSEC-2026-0372` — `zvariant`, `zbus_names` and
   `zvariant_derive`, via zbus. Temporary until #1300 is resolved.
 - `RUSTSEC-2026-0374` — `basic-toml`, via askama. Temporary until #1300 is resolved.
+- `RUSTSEC-2026-0582` — `heapless` 0.8.0, via flacenc in reprise-stems, temporary until #1376.
 
 Any advisory not on this list is a stop.
 
