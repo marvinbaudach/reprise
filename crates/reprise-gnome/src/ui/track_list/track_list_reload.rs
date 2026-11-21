@@ -335,15 +335,32 @@ fn select_captured_ids(shared: &Shared, captured: &ReloadAnchor, current_ids: &[
     }
 }
 
-/// START-3: selects and centers the loaded track once startup routing has
+/// What `center_loaded_track` did with the startup item's row.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(in crate::ui) enum StartupPlacement {
+    /// The row was selected and centered (START-4).
+    Placed,
+    /// The restored place selected rows of its own, so the row was left alone
+    /// and nothing placed it (START-4a).
+    SelectionKept,
+    /// Nothing is loaded, or the loaded track is not in the restored view.
+    NotInView,
+}
+
+/// START-4: selects and centers the loaded track once startup routing has
 /// built the restored view.
 ///
 /// Called after `route_to_place`, which is the one moment nothing else owns
-/// A no-op when nothing is loaded or the loaded track is not part of the
-/// view, preserving that view's own selection and viewport.
-pub(in crate::ui) fn center_loaded_track(shared: &Rc<Shared>) {
+/// the viewport. A no-op when nothing is loaded or the loaded track is not
+/// part of the view, preserving that view's own selection and viewport. It is
+/// just as much a no-op when the restored place already selected rows of its
+/// own (START-4a): a startup greeting is a random pick, so letting it replace
+/// the saved selection made every plain restart save a different row (#1369).
+/// The result says which of these happened, because a first Play may only skip
+/// its own reveal when this placed the row.
+pub(in crate::ui) fn center_loaded_track(shared: &Rc<Shared>) -> StartupPlacement {
     let Some(track_id) = shared.playing_track_id.get() else {
-        return;
+        return StartupPlacement::NotInView;
     };
     let current_ids = shared.current_view_ids();
     let Some(position) = current_ids.iter().position(|id| *id == track_id) else {
@@ -351,11 +368,18 @@ pub(in crate::ui) fn center_loaded_track(shared: &Rc<Shared>) {
             track_id,
             "startup selection skipped: loaded track is not in the restored view"
         );
-        return;
+        return StartupPlacement::NotInView;
     };
-    shared.selection.unselect_all();
+    if shared.selection.selection().size() > 0 {
+        tracing::debug!(
+            track_id,
+            "startup selection skipped: the restored place carries its own selection"
+        );
+        return StartupPlacement::SelectionKept;
+    }
     shared.selection.select_item(position as u32, false);
     super::centered_scroll_restore::schedule(shared, Some(track_id), &current_ids);
+    StartupPlacement::Placed
 }
 
 /// NAV-19: places the loaded track in the middle of the view the sidebar just
