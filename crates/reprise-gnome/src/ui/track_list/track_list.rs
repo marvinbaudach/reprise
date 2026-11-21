@@ -488,8 +488,24 @@ impl TrackList {
     /// START-3: centers the loaded track after startup routing built this
     /// view. See `track_list_reload::center_loaded_track` for why this is the
     /// only scroller running at that moment.
-    pub(in crate::ui) fn center_loaded_track(&self) {
-        super::track_list_reload::center_loaded_track(&self.shared);
+    pub(in crate::ui) fn center_loaded_track(&self) -> super::track_list_reload::StartupPlacement {
+        super::track_list_reload::center_loaded_track(&self.shared)
+    }
+
+    /// START-4 / START-4a: places the startup item and tells the player
+    /// whether it did. A first Play skips its own reveal only for a row this
+    /// placed; when the restored selection kept the row unplaced, the Play
+    /// reveals it like any other start from Stopped (NAV-10b).
+    pub(in crate::ui) fn place_startup_item(
+        &self,
+        player: Option<&Rc<crate::ui::player_controller::PlayerController>>,
+    ) {
+        let placement = self.center_loaded_track();
+        if placement == super::track_list_reload::StartupPlacement::SelectionKept {
+            if let Some(player) = player {
+                player.forget_restored_placement();
+            }
+        }
     }
 
     pub(in crate::ui) fn set_on_search_restored(&self, callback: impl Fn(&str) + 'static) {

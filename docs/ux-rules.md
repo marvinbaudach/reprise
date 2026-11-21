@@ -2235,8 +2235,13 @@ result.
   every plain restart replaced the saved selection with a randomly chosen
   greeting row, so a quit without a click saved a different row each time
   (#1369). The same value is saved again at quit however many reloads a startup
-  scan reconcile adds in between. *Test:*
-  `start_4a_a_restored_selection_survives_the_greeting_and_a_reconcile`.
+  scan reconcile adds in between. The loaded row is then not placed, so the
+  first Play from Stopped reveals it instead of taking NAV-10b's exemption for
+  a placed row. *Tests:*
+  `start_4a_a_restored_selection_survives_the_greeting_and_a_reconcile`,
+  `start_4a_the_restored_viewport_stays_where_the_place_was_saved`,
+  `start_4a_a_saved_id_that_no_longer_exists_leaves_the_greeting_selected`,
+  `start_4a_play_from_stopped_reveals_a_row_the_start_did_not_place`.
 - **START-5a** [active] [gtk] — **A termination request saves the session
   and shuts down through the window close.** When Reprise receives SIGTERM,
   SIGHUP or SIGINT (logout, `systemctl --user stop`, a harness restart,
@@ -4561,7 +4566,10 @@ property is set and yet nothing happens.
   one Play that starts a restored session, whose pending Play-Next item or
   startup greeting START-4 already selected and centered: that row is placed,
   so starting it only starts the audio. Centring it again would be a second visible scroll on a
-  viewport that is already the target.
+  viewport that is already the target. The exemption holds only for a row
+  startup actually placed: when the restored place kept a selection of its own
+  (START-4a) the row was left where it is, and that first Play centers it like
+  any other Play from Stopped.
   At startup the loaded track therefore means the greeting, never the hidden
   current item of the untouched persisted queue. Previous or Next discarding
   the greeting moves the marker to the concrete restored-queue target. A

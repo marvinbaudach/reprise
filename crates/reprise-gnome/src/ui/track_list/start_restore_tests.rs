@@ -67,7 +67,7 @@ fn synthetic_track_list(rows: i64) -> (TrackList, gtk4::Window) {
 /// follows a model swap (`centered_scroll_restore::centered_anchor`). Half a
 /// row is therefore the honest bound, and it is what these tests hold the path
 /// to. In this fixture's geometry the edge falls 0.5 px from the centre.
-fn centering_tolerance(track_list: &TrackList) -> f64 {
+pub(super) fn centering_tolerance(track_list: &TrackList) -> f64 {
     let adjustment = track_list
         .shared
         .column_view
@@ -77,7 +77,7 @@ fn centering_tolerance(track_list: &TrackList) -> f64 {
     adjustment.upper() / f64::from(track_list.shared.model.n_items()) / 2.0
 }
 
-fn centered_value(track_list: &TrackList, position: u32) -> Option<f64> {
+pub(super) fn centered_value(track_list: &TrackList, position: u32) -> Option<f64> {
     let adjustment = track_list.shared.column_view.vadjustment()?;
     scroll_center::centered_scroll_value(
         position,

@@ -52,7 +52,7 @@ pub(super) fn wire_session_restore(w: &RuntimeWiring<'_>, scratch: &WiringScratc
     track_list.finish_startup_load(&startup_place);
     // START-3: the routing above owns the model; this owns the viewport.
     // Order matters — the view must exist before its rows can be centered.
-    track_list.center_loaded_track();
+    track_list.place_startup_item(player.as_ref());
     super::startup_report::mark("center_loaded_track");
     super::session_restore_ui::wire_close(
         window,
