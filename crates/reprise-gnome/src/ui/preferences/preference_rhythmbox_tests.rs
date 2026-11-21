@@ -152,3 +152,71 @@ fn start_7_the_importer_takes_its_playlists_file_from_the_resolver() {
         std::path::PathBuf::from("/found/rhythmbox/playlists.xml")
     );
 }
+
+fn rendered_texts(widget: &gtk4::Widget, out: &mut Vec<String>) {
+    if let Some(label) = widget.downcast_ref::<gtk4::Label>() {
+        out.push(label.text().to_string());
+    }
+    let mut child = widget.first_child();
+    while let Some(current) = child {
+        rendered_texts(&current, out);
+        child = current.next_sibling();
+    }
+}
+
+/// FB-13: every row of the import dialog keeps its title. Two titles carry a
+/// literal `&`; a row that parsed them as markup logs "Gtk-WARNING: Failed to
+/// set text ... from markup" and draws an empty label. The assertion reads the
+/// rendered labels, not the row property the accessible name is built from,
+/// because the property survives the failure that the label does not. (GLib's
+/// per-domain log handlers do not see that warning, so the label is the
+/// observable.) Control arm: with `ui/rows.rs` flipped to `use_markup(true)`
+/// both titles render on zero rows and this test fails.
+#[test]
+#[ignore = "requires a display; run via xvfb-run"]
+fn fb_13_the_import_dialog_rows_render_their_ampersand_titles() {
+    gtk4::init().unwrap();
+    libadwaita::init().unwrap();
+    let widgets = build_import_dialog();
+    let skipped = strings::rhythmbox_skipped_warning(1, 2, 3);
+    widgets.warning_row.set_title(&skipped.title);
+    widgets.warning_row.set_subtitle(&skipped.reasons);
+    widgets.warning_row.set_visible(true);
+    widgets
+        .skipped_expander
+        .set_title(&strings::rhythmbox_entries_skipped(6));
+    widgets.skip_non_song.set_subtitle("3");
+    widgets
+        .play_counts_result
+        .set_subtitle(&strings::rhythmbox_result_play_counts(4, 6));
+
+    widgets.stack.set_visible_child_name("complete");
+    let parent = adw::Window::builder()
+        .default_width(800)
+        .default_height(900)
+        .build();
+    parent.present();
+    widgets.dialog.present(Some(&parent));
+    crate::ui::test_settle::settle_for(std::time::Duration::from_millis(500));
+    let content = widgets.dialog.child().expect("dialog content");
+
+    let mut texts = Vec::new();
+    rendered_texts(content.upcast_ref(), &mut texts);
+    widgets.dialog.force_close();
+    parent.close();
+
+    // The option row (selection page) and the result row (complete page) both
+    // carry this title; every other title appears on one row only.
+    for (title, rows) in [
+        (strings::RHYTHMBOX_PLAY_COUNTS_AND_LAST_PLAYED, 2),
+        (strings::RHYTHMBOX_SKIP_NON_SONG, 1),
+        (strings::RHYTHMBOX_SKIP_OUTSIDE_LIBRARY, 1),
+        (strings::RHYTHMBOX_SKIP_MISSING_ON_DISK, 1),
+    ] {
+        let rendered = texts.iter().filter(|text| *text == title).count();
+        assert_eq!(
+            rendered, rows,
+            "{title:?} rendered on {rendered} rows, expected {rows}: {texts:?}"
+        );
+    }
+}
