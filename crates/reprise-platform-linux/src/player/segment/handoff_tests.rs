@@ -98,10 +98,12 @@ fn play_23a_a_hand_off_staged_before_a_seek_lands_is_never_announced() {
     let gain = gain();
     staged(&gate, &gain);
 
-    assert!(matches!(
+    let epoch = gate.lock().epoch;
+    assert_eq!(
         gate.seek_target_ms(500),
-        Some(super::super::CutSeek::Now(1_500, _))
-    ));
+        Some(super::super::CutSeek::Now(1_500, epoch)),
+        "a seek carries the epoch the gate is in"
+    );
     // A buffer already on its way before the flush stages the hand-off again.
     let BoundaryVerdict::HandOff(restaged) = gate.on_buffer(at(3_020), &gain) else {
         panic!("a buffer past the boundary stages the re-armed hand-off");
