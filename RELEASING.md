@@ -147,7 +147,7 @@ when that tool (or the `org.flatpak.Builder` Flatpak) is installed and reports
 an explicit skip otherwise. It never launches Reprise or opens a user database.
 
 The accepted audit warnings are the ones listed in `AGENTS.md` under the gates:
-`RUSTSEC-2024-0436` (`paste`, transitively through `lofty`), plus five
+`RUSTSEC-2024-0436` (`paste`, transitively through `lofty`), plus four
 unmaintained-crate warnings accepted temporarily until #1300 is resolved:
 `RUSTSEC-2026-0370`, `RUSTSEC-2026-0371` and `RUSTSEC-2026-0372` (the zbus
 family) and `RUSTSEC-2026-0374` (`basic-toml`, through `askama`), and the unsoundness
