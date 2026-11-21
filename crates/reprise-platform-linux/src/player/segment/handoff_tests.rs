@@ -100,7 +100,7 @@ fn play_23a_a_hand_off_staged_before_a_seek_lands_is_never_announced() {
 
     assert!(matches!(
         gate.seek_target_ms(500),
-        Some(super::super::CutSeek::Now(1_500))
+        Some(super::super::CutSeek::Now(1_500, _))
     ));
     // A buffer already on its way before the flush stages the hand-off again.
     let BoundaryVerdict::HandOff(restaged) = gate.on_buffer(at(3_020), &gain) else {
