@@ -406,3 +406,43 @@ fn a_stop_right_after_a_restarts_queued_start_leaves_the_stopped_pipeline_in_nul
         true
     });
 }
+
+/// The start over replaces the pipeline under the same cut, so the gate's epoch
+/// has to move for the jobs of the pipeline it replaces to become stale: a late
+/// refusal of the hung one would otherwise clear the replacement's pending
+/// start-seek.
+#[test]
+fn a_start_over_hands_the_gate_to_the_new_pipeline_without_wiping_the_cut() {
+    on_the_injected_hang(|| {
+        let harness = harness_with_deadline(ROOMY_DEADLINE);
+        let dir = tempfile::tempdir().unwrap();
+        let flac = dir.path().join("album.flac");
+        let wav = dir.path().join("album.wav");
+        write_regions_wav(&wav, &[(30_000, true)]);
+        super::segment_support::encode_flac(&wav, &flac);
+        let reached = hang_starts(&harness.player, 1);
+        harness
+            .player
+            .play(super::segment_support::cue_item(&flac, (5_000, 9_000), 0.0))
+            .unwrap();
+        let hung = current_playbin(&harness.player);
+        let epoch_of_hung = harness.player.segments.epoch();
+        harness.pump_until(PATIENCE, |_| reached.load(Ordering::SeqCst) >= 1);
+        if reached.load(Ordering::SeqCst) == 0 {
+            return false;
+        }
+        harness.pump_until(PATIENCE, |_| harness.player.start_watchdog.restarts() >= 1);
+
+        assert_ne!(current_playbin(&harness.player), hung, "no start over");
+        assert_ne!(
+            harness.player.segments.epoch(),
+            epoch_of_hung,
+            "the hung pipeline's jobs are not stale after the start over"
+        );
+        assert!(
+            harness.player.segments.cue_active(),
+            "the start over must keep the cut"
+        );
+        true
+    });
+}
