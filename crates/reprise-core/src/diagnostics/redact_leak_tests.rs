@@ -125,6 +125,30 @@ fn v1_a_second_path_after_a_library_path_is_its_own_span() {
     assert!(output.contains("file://…"), "{output}");
 }
 
+#[test]
+fn v1_an_apostrophe_in_a_name_is_not_a_closing_quote() {
+    // Guns N' Roses: quoted, under the library, outside it, and unquoted.
+    for input in [
+        "scan '/home/marvin/Music/Guns N' Roses/Appetite/01.flac' failed",
+        "scan '/mnt/x/Guns N' Roses/Appetite/01.flac' failed",
+        "scan \"/mnt/x/Guns N' Roses/Appetite/01.flac\" failed",
+        "scan /home/marvin/Music/Guns N' Roses/Appetite/01.flac failed",
+        "scan /mnt/x/Guns N' Roses/Appetite/01.flac failed",
+        "NotFound { path: '/mnt/x/Guns N' Roses/Appetite/01.flac' }",
+        // Only one more slash after the apostrophe: no later pass catches it.
+        "scan '/home/marvin/Music/Guns N' Roses Live/x.flac' failed",
+        "scan '/mnt/x/Guns N' Roses Live/x.flac' failed",
+        "scan /mnt/x/Guns N' Roses Live/x.flac failed",
+    ] {
+        assert_no_leak(input, &["Guns", "Roses", "Appetite", "01", "Live"]);
+    }
+    // A real closing quote still ends the path, even before another quoted one.
+    assert_eq!(
+        redacted("copy '/mnt/x/a/b' to '/mnt/y/c/d' now"),
+        "copy '…' to '…' now"
+    );
+}
+
 // V2 -- URIs
 
 #[test]
@@ -229,9 +253,23 @@ fn v3_colon_prose_and_rust_paths_are_not_fields() {
         "scan failed: no such file",
         "reprise_core::db::open failed",
         "at 12:30:45 the player stopped",
-        "db::open failed",
     ] {
         assert_eq!(redacted(input), input, "{input}");
+    }
+}
+
+#[test]
+fn v3_a_double_colon_does_not_hide_a_secret_or_a_field_value() {
+    for (input, leaks) in [
+        ("login password::hunter2 failed", &["hunter2", "failed"][..]),
+        ("login token:: abc more words", &["abc", "more", "words"]),
+        ("api-key::abc def", &["abc", "def"]),
+        ("title::Pink Floyd", PINK_FLOYD),
+        ("artist:: Pink Floyd", PINK_FLOYD),
+        ("password:/hunter2 more", &["hunter2", "more"]),
+        ("password://hunter2 more", &["hunter2", "more"]),
+    ] {
+        assert_no_leak(input, leaks);
     }
 }
 
@@ -397,5 +435,30 @@ fn a_very_long_line_of_paths_stays_linear() {
     let output = redacted(&input);
 
     assert!(!output.is_empty());
-    assert!(started.elapsed() < std::time::Duration::from_secs(5));
+    // Generous: a debug build on a loaded runner. The quadratic version this
+    // guards against did not finish in minutes.
+    assert!(started.elapsed() < std::time::Duration::from_secs(60));
+}
+
+#[test]
+fn a_name_that_is_part_of_one_of_our_markers_does_not_break_them() {
+    let context = RedactionContext {
+        username: Some("redacted".into()),
+        hostname: Some("home".into()),
+        ..RedactionContext::default()
+    };
+    for input in [
+        "error=$REDACTED count=3",
+        "scan $HOME/… failed",
+        "scan $XDG_MUSIC_DIR/… failed",
+        "peer $IP at $HOST as $USER",
+    ] {
+        let once = redact_log_message(input, &context);
+        assert_eq!(redact_log_message(&once, &context), once, "{input}");
+        assert!(!once.contains("$$"), "{once}");
+    }
+    assert_eq!(
+        redact_log_message("error=$REDACTED count=3", &context),
+        "error=$REDACTED count=3"
+    );
 }

@@ -83,9 +83,11 @@ fn replace_name(input: &str, name: &str, marker: &str) -> String {
         let left = input[..start].chars().next_back();
         let right = input[end..].chars().next();
         let bounded = left.is_none_or(|ch| !is_word(ch)) && right.is_none_or(|ch| !is_word(ch));
-        let is_marker = left == Some('$') && marker.get(1..) == input.get(start..end);
+        // Never inside one of our own markers (`$HOME`, `$HOST`, `$REDACTED`),
+        // whatever name a user or a machine has.
+        let in_marker = left == Some('$');
         output.push_str(&input[cursor..start]);
-        if bounded && !is_marker && !(spare_key && right == Some('=')) {
+        if bounded && !in_marker && !(spare_key && right == Some('=')) {
             output.push_str(marker);
         } else {
             output.push_str(&input[start..end]);

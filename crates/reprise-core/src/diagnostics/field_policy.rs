@@ -36,7 +36,7 @@
 //! `redact_composite`). Anything else, such as `mode=Compact,title=Foo` or a
 //! struct body (`StaleFor { seconds: 60 }`), is
 //! `key=$REDACTED`, and, like an unknown key, it takes every word after it up
-//! to the end of the line. Only a token whose value is already exactly
+//! to the end of the message, across line breaks. Only a token whose value is already exactly
 //! `$REDACTED` ends that: it is what the typed path writes for a redacted field,
 //! so it carries nothing, and the typed fields after it stay readable (a known
 //! `key=` token ends the swallow after such a token, never after raw text, where

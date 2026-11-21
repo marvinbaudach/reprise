@@ -206,6 +206,9 @@ fn web_cut(input: &str, start: usize, end: usize, web: bool) -> Option<usize> {
 
 /// The closing quote of a path opened right after `quote`, within the line.
 /// `escaped` is true when the opener was `\"` (a `Debug` string inside a string).
+///
+/// A quote the name goes on after is an apostrophe, not a closing quote
+/// (`'/music/Guns N' Roses/Appetite/01.flac'`): see [`name_continues`].
 fn closing_quote(input: &str, from: usize, quote: char, escaped: bool) -> Option<usize> {
     let mut skip = false;
     for (offset, ch) in input[from..].char_indices() {
@@ -213,18 +216,48 @@ fn closing_quote(input: &str, from: usize, quote: char, escaped: bool) -> Option
             return None;
         }
         let index = from + offset;
-        if ch == quote {
-            if escaped {
-                let at_backslash = input[..index].ends_with('\\');
-                return Some(if at_backslash { index - 1 } else { index });
-            }
-            if !skip {
-                return Some(index);
+        if ch == quote && (escaped || !skip) {
+            let end = if escaped && input[..index].ends_with('\\') {
+                index - 1
+            } else {
+                index
+            };
+            if !name_continues(input, index + quote.len_utf8()) {
+                return Some(end);
             }
         }
         skip = ch == '\\' && !skip;
     }
     None
+}
+
+/// Whether the text after a candidate closing quote still reads as the rest of
+/// a path name: it follows the quote without a gap (`N'x`, `'/y`), or a word
+/// within [`LOOKAHEAD_WORDS`] carries a further segment before anything else
+/// begins.
+fn name_continues(input: &str, after: usize) -> bool {
+    if input[after..]
+        .chars()
+        .next()
+        .is_some_and(|ch| is_word(ch) || ch == '/')
+    {
+        return true;
+    }
+    let mut cursor = after;
+    for _ in 0..LOOKAHEAD_WORDS {
+        let Some((start, end)) = next_word(input, cursor) else {
+            return false;
+        };
+        let word = &input[start..end];
+        if is_stop_word(word) {
+            return false;
+        }
+        if has_glued_slash(word) {
+            return true;
+        }
+        cursor = end;
+    }
+    false
 }
 
 /// Where the path that starts at `start` and whose name begins at `rest` ends.

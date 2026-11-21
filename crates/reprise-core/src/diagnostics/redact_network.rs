@@ -1,9 +1,10 @@
 //! Network identifiers in free text: IPv4 and IPv6 addresses (with a port or a
 //! zone) and MAC addresses. They name the user's router, NAS or phone.
 //!
-//! A host name is not a shape: `my-nas` reads like any word. It is removed
-//! through `RedactionContext::hostname`, and inside a URI, a share or an
-//! address it goes with the rest of that span.
+//! A host name is not a shape: `my-nas` reads like any word. This machine's
+//! own name is removed through `RedactionContext::hostname`; another
+//! machine's name goes only with the URI, share or `host:/` root it stands in.
+//! A bare foreign host name in running text is not detected.
 
 const IP_MARKER: &str = "$IP";
 const MAC_MARKER: &str = "$MAC";

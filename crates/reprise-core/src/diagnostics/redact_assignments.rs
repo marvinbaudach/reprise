@@ -94,7 +94,7 @@ enum Reach {
     /// Only the token itself.
     Token,
     /// After a token whose value is already `$REDACTED`: up to the next token
-    /// that opens a known `key=` assignment, or the end of the line. The
+    /// that opens a known `key=` assignment, or the end of the message. The
     /// structured path writes `error=$REDACTED count=3`, one field after the
     /// other, and the typed fields after a redacted one must stay readable.
     /// The reach outlives the kept tokens that end it: after `error=$REDACTED
@@ -102,10 +102,10 @@ enum Reach {
     UntilKnownField,
     /// After a value that was rejected, or that belongs to a key the policy
     /// does not keep (raw foreign text): up to the next token whose value is
-    /// already exactly `$REDACTED`, or the end of the line. A token that
+    /// already exactly `$REDACTED`, or the end of the message. A token that
     /// merely opens a known key (`count=3`) does not end it.
     UntilRedactedField,
-    /// To the end of the line: a secret has no reliable end.
+    /// To the end of the message: a secret has no reliable end.
     EndOfLine,
 }
 
@@ -120,7 +120,7 @@ pub(super) fn redact_sensitive_assignments(input: &str) -> String {
     let tokens: Vec<&str> = input.split_inclusive(char::is_whitespace).collect();
     let mut output = String::with_capacity(input.len());
     // The whitespace after the last token that was folded into a redaction:
-    // it is written only once something follows on the same line.
+    // it is written only once something follows that is kept.
     let mut pending_whitespace = "";
     let mut reach = Reach::Token;
     let mut index = 0;
@@ -142,8 +142,7 @@ pub(super) fn redact_sensitive_assignments(input: &str) -> String {
             pending_whitespace = "";
             match redact_assignment(&tokens[start..]) {
                 Outcome::Kept(count) => {
-                    // A list spans several tokens; the gaps between them are
-                    // single spaces, so only the last one can hold a newline.
+                    // A list spans several tokens, written as they were.
                     for kept in &tokens[start..start + count] {
                         output.push_str(kept);
                     }
@@ -193,11 +192,6 @@ fn redact_assignment(tokens: &[&str]) -> Outcome {
             reach: Reach::UntilKnownField,
         });
     }
-    if separator_char == ':' && body[separator + 1..].starts_with([':', '/']) {
-        // `db::open` is a path separator, `file://…` a URI the path pass has
-        // already redacted: neither is a key with a value.
-        return Outcome::Kept(1);
-    }
     let reach = if separator_char == '=' {
         if let Some(count) = plain_list_span(tokens) {
             return Outcome::Kept(count);
@@ -214,13 +208,19 @@ fn redact_assignment(tokens: &[&str]) -> Outcome {
     } else if is_well_formed_key(&key) && is_known_field(&key) {
         // The colon form of a field the policy knows: `title: Pink Floyd`,
         // `{"artist":"x"}`, `count: 3`. It reads like `=`, except that the
-        // value may stand in the next token (`index: 1`).
+        // value may stand in the next token (`index: 1`). A `::` after the
+        // key is no path separator here: `title::Pink` is a value too.
+        if body[separator + 1..].starts_with("//…") {
+            // `file://…`: a URI the path pass has already redacted.
+            return Outcome::Kept(1);
+        }
         match colon_value(tokens, &body[separator + 1..], &key) {
             Some(count) => return Outcome::Kept(count),
             None => Reach::UntilRedactedField,
         }
     } else {
-        // An unknown word before a colon is prose (`failed:`), not a field.
+        // An unknown word before a colon is prose (`failed:`), not a field;
+        // `db::open` is a Rust path.
         return Outcome::Kept(1);
     };
     Outcome::Redacted(Redaction {
