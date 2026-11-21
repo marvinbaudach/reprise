@@ -55,8 +55,8 @@ fn redact_token(token: &str) -> String {
 /// opens with a colon that belongs to the address); only then is sentence
 /// punctuation at either end (`192.168.0.12:`, `.1.2.3.4`) taken off.
 fn push_run(output: &mut String, run: &str) {
-    // `$HOST.fritz.box`: the tail of one of our own markers.
-    if output.ends_with('$') && run.starts_with(char::is_uppercase) {
+    // The name of one of our own markers (`$HOST`): the `$` is already written.
+    if output.ends_with('$') && ["IP", "MAC", "HOST", "USER"].contains(&run) {
         output.push_str(run);
         return;
     }

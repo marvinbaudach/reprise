@@ -201,8 +201,9 @@ fn redact_assignment(tokens: &[&str]) -> Outcome {
             reach: Reach::UntilKnownField,
         });
     }
-    // `$USER:` is one of our own markers, and `$VAR:` a variable: not a key.
-    if separator_char == ':' && body[..separator].contains('$') {
+    // `$USER:` is one of our own markers: not a key. Only the exact marker is;
+    // `$password:` and `x$token:` are keys with a sigil in front.
+    if separator_char == ':' && is_marker(&body[..separator]) {
         return Outcome::Kept(1);
     }
     let reach = if separator_char == '=' {
@@ -359,7 +360,7 @@ fn join_spaced_separators(input: &str) -> String {
             .find(|(_, c)| !(c.is_ascii_alphanumeric() || matches!(c, '_' | '-')))
             .map_or(0, |(at, c)| at + c.len_utf8());
         // `$USER :` is one of our own markers, not a key.
-        if word[..word_start].ends_with('$') {
+        if word[..word_start].ends_with('$') && is_marker(&word[word_start - 1..]) {
             continue;
         }
         let word = &word[word_start..];
@@ -536,4 +537,11 @@ fn is_exponent_float(value: &str) -> bool {
     };
     let exponent = exponent.strip_prefix(['+', '-']).unwrap_or(exponent);
     is_decimal(mantissa) && !exponent.is_empty() && exponent.chars().all(|ch| ch.is_ascii_digit())
+}
+
+/// The text our own passes write in place of a value, as a whole token (quotes
+/// and brackets around it do not count).
+pub(super) fn is_marker(token: &str) -> bool {
+    ["$USER", "$HOST", "$IP", "$MAC", "$REDACTED"]
+        .contains(&token.trim_matches(|ch: char| !ch.is_alphanumeric() && ch != '$'))
 }

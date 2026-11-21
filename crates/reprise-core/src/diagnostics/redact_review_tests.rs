@@ -472,3 +472,53 @@ fn a_second_pass_changes_nothing_on_adversarial_strings() {
         assert_eq!(redact_log_message(&once, &context), once, "{input:?}");
     }
 }
+
+// A forged `$` must not turn a real name into one of our own markers.
+
+#[test]
+fn a_dollar_sign_in_front_of_a_secret_key_does_not_make_it_a_marker() {
+    for input in [
+        "login $password: hunter2",
+        "login x$token: abc",
+        "login $password : hunter2",
+        "login $user: bob",
+        "login $secret:hunter2",
+    ] {
+        assert_no_leak(input, &["hunter2", "abc", "bob"]);
+    }
+    // The marker itself is not a key.
+    for input in [
+        "opened by $USER: failed",
+        "peer $IP: closed",
+        "opened by $USER : failed",
+    ] {
+        assert_eq!(redacted(input), input, "{input}");
+    }
+}
+
+#[test]
+fn a_dollar_path_is_a_marker_only_when_the_whole_marker_stands_there() {
+    for input in [
+        "scan $HOSTNAME_REAL/Pink Floyd/x failed",
+        "scan $USERDATA/Pink Floyd/x failed",
+        "scan $IPFS/Pink Floyd/x failed",
+        "scan $MACOS/Pink Floyd/x failed",
+    ] {
+        assert_no_leak(input, &["Pink", "Floyd"]);
+    }
+    for input in ["connect to $IP/24 failed", "scan $USER/x failed"] {
+        assert!(redacted(input).contains("failed"), "{input}");
+    }
+}
+
+#[test]
+fn a_dollar_sign_in_front_of_a_host_does_not_hide_it() {
+    for input in [
+        "connect to $MyNas.fritz.box failed",
+        "connect to $Nas.local:445 failed",
+        "connect to $192.168.1.5 failed",
+        "connect to $Fe80::1 failed",
+    ] {
+        assert_no_leak(input, &["MyNas", "Nas", "192.168", "Fe80", "fritz"]);
+    }
+}

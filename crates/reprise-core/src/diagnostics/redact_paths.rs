@@ -643,10 +643,10 @@ fn is_rooted(tail: &str) -> bool {
         return true;
     }
     // Our own markers: `$IP/24` is an address with a prefix length.
-    if ["$IP", "$MAC", "$HOST", "$USER"]
-        .iter()
-        .any(|marker| tail.starts_with(marker))
-    {
+    if ["$IP", "$MAC", "$HOST", "$USER"].iter().any(|marker| {
+        tail.strip_prefix(marker)
+            .is_some_and(|rest| rest.is_empty() || rest.starts_with(['/', '\\', '.', ':']))
+    }) {
         return false;
     }
     let after_sigil = if let Some(rest) = tail.strip_prefix("${") {
