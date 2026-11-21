@@ -21,10 +21,10 @@ const REDACTED_PATH: &str = "…";
 /// bracket is not a plain value.
 const TRAILING_PUNCTUATION: [char; 6] = [',', ';', ':', ']', '}', '"'];
 
-/// Keys that mark a colon-separated secret: `password: hunter2`. Compared with
-/// `-` and `_` removed and the case folded, so `x-api-key`, `API_KEY` and
-/// `apikey` are one key.
-const SECRET_KEY_NEEDLES: [&str; 12] = [
+/// Words that mark a secret anywhere in a colon-form key: `password: hunter2`,
+/// `x-api-key:`, `my_session_id:`. Compared with `-` and `_` removed and the
+/// case folded, so `x-api-key`, `API_KEY` and `apikey` are one key.
+const SECRET_KEY_NEEDLES: [&str; 14] = [
     "password",
     "passwd",
     "pwd",
@@ -37,6 +37,15 @@ const SECRET_KEY_NEEDLES: [&str; 12] = [
     "authorization",
     "bearer",
     "cookie",
+    "session",
+    "signature",
+];
+
+/// Short words that mark a secret only as a whole segment of the key
+/// (`pin`, `auth_code`): inside a longer word (`spinning`, `decode`) they are
+/// prose.
+const SECRET_KEY_SEGMENTS: [&str; 9] = [
+    "pass", "pin", "auth", "sig", "otp", "code", "login", "user", "ssid",
 ];
 
 /// The longest value that is read at all. A longer one is redacted without
@@ -184,13 +193,17 @@ fn redact_assignment(tokens: &[&str]) -> Outcome {
         key,
     }) = split_assignment(body)
     else {
-        return Outcome::Kept(1);
+        return bare_secret_word(tokens, body);
     };
     if is_redacted_field(body) {
         return Outcome::Redacted(Redaction {
             text: body.to_owned(),
             reach: Reach::UntilKnownField,
         });
+    }
+    // `$USER:` is one of our own markers, and `$VAR:` a variable: not a key.
+    if separator_char == ':' && body[..separator].contains('$') {
+        return Outcome::Kept(1);
     }
     let reach = if separator_char == '=' {
         if let Some(count) = plain_list_span(tokens) {
@@ -203,9 +216,13 @@ fn redact_assignment(tokens: &[&str]) -> Outcome {
             return Outcome::Kept(1);
         }
         Reach::UntilRedactedField
+    } else if let Some(count) = status_code(tokens, &body[separator + 1..], &key) {
+        return Outcome::Kept(count);
     } else if is_secret_key(&key) {
         Reach::EndOfLine
-    } else if is_well_formed_key(&key) && is_known_field(&key) {
+    } else if is_well_formed_key(&key)
+        && (is_known_field(&key) || is_field_like(&body[..separator], &key, &body[separator + 1..]))
+    {
         // The colon form of a field the policy knows: `title: Pink Floyd`,
         // `{"artist":"x"}`, `count: 3`. It reads like `=`, except that the
         // value may stand in the next token (`index: 1`). A `::` after the
@@ -219,8 +236,8 @@ fn redact_assignment(tokens: &[&str]) -> Outcome {
             None => Reach::UntilRedactedField,
         }
     } else {
-        // An unknown word before a colon is prose (`failed:`), not a field;
-        // `db::open` is a Rust path.
+        // An unknown plain word before a colon is prose (`failed:`), not a
+        // field; `db::open` is a Rust path.
         return Outcome::Kept(1);
     };
     Outcome::Redacted(Redaction {
@@ -229,17 +246,42 @@ fn redact_assignment(tokens: &[&str]) -> Outcome {
     })
 }
 
+/// Words that announce a secret in running text (`the password is hunter2`):
+/// what follows them on the line goes.
+const SECRET_WORDS: [&str; 6] = [
+    "password",
+    "passwd",
+    "passphrase",
+    "secret",
+    "bearer",
+    "authorization",
+];
+
+/// A token with no separator is kept, unless it is a [`SECRET_WORDS`] word with
+/// something after it.
+fn bare_secret_word(tokens: &[&str], body: &str) -> Outcome {
+    let word = body
+        .trim_matches(|ch: char| !ch.is_alphanumeric())
+        .to_lowercase();
+    if tokens.len() > 1 && SECRET_WORDS.contains(&word.as_str()) {
+        return Outcome::Redacted(Redaction {
+            text: format!("{body} {REDACTED}"),
+            reach: Reach::EndOfLine,
+        });
+    }
+    Outcome::Kept(1)
+}
+
+/// An unknown key that reads as a field and not as prose: a snake_case name
+/// (`album_name: x`) or one in quotes (`{"foo":"x"}`). `a_b::c` is a Rust path.
+fn is_field_like(raw_key: &str, key: &str, after: &str) -> bool {
+    !after.starts_with(':') && (key.contains('_') || raw_key.contains(['"', '\'']))
+}
+
 /// How many tokens a colon-form kept field is, or `None` when the field is
 /// redacted: its key is not kept, or its value is not plain.
 fn colon_value(tokens: &[&str], attached: &str, key: &str) -> Option<usize> {
-    let (value, count) = if attached.is_empty() {
-        let next = tokens
-            .get(1)
-            .map_or("", |token| token.trim_end_matches(char::is_whitespace));
-        (next, 2)
-    } else {
-        (attached, 1)
-    };
+    let (value, count) = colon_value_token(tokens, attached);
     // `path:…`: the path pass has already redacted this value.
     if trim_value(value) == REDACTED_PATH {
         return Some(count);
@@ -251,16 +293,47 @@ fn colon_value(tokens: &[&str], attached: &str, key: &str) -> Option<usize> {
     (!value.is_empty() && is_plain_value(value, key) && !opens_struct).then_some(count)
 }
 
+/// The value of a colon-form field and how many tokens the field spans: the
+/// text after the colon, or the next token when nothing follows it.
+fn colon_value_token<'a>(tokens: &[&'a str], attached: &'a str) -> (&'a str, usize) {
+    if attached.is_empty() {
+        let next = tokens
+            .get(1)
+            .map_or("", |token| token.trim_end_matches(char::is_whitespace));
+        (next, 2)
+    } else {
+        (attached, 1)
+    }
+}
+
+/// `code: 2`, `exit_code: 101`: a status code is a number of a few digits,
+/// whereas an authorisation code (`code: 4/0AX4XfWh`) is not.
+fn status_code(tokens: &[&str], attached: &str, key: &str) -> Option<usize> {
+    if key.rsplit(['_', '-', '.']).next() != Some("code") {
+        return None;
+    }
+    let (value, count) = colon_value_token(tokens, attached);
+    let digits = trim_value(value)
+        .strip_prefix('-')
+        .unwrap_or(trim_value(value));
+    ((1..=3).contains(&digits.len()) && digits.chars().all(|ch| ch.is_ascii_digit()))
+        .then_some(count)
+}
+
 /// Whether a key names a secret: `password`, `x-api-key`, `Authorization`.
 fn is_secret_key(key: &str) -> bool {
     let compact: String = key
         .chars()
         .filter(|ch| !matches!(ch, '-' | '_' | ' '))
-        .map(|ch| ch.to_ascii_lowercase())
+        .flat_map(char::to_lowercase)
         .collect();
     SECRET_KEY_NEEDLES
         .iter()
         .any(|needle| compact.contains(needle))
+        || key
+            .to_lowercase()
+            .split(|ch: char| !ch.is_alphanumeric())
+            .any(|segment| SECRET_KEY_SEGMENTS.contains(&segment))
 }
 
 /// `Password : x` and `title : Pink Floyd` read as `Password: x`: the space
@@ -274,7 +347,7 @@ fn join_spaced_separators(input: &str) -> String {
             continue;
         }
         let before = &input[cursor..index];
-        let gap = before.len() - before.trim_end_matches([' ', '\t']).len();
+        let gap = before.len() - before.trim_end_matches(char::is_whitespace).len();
         if gap == 0 {
             continue;
         }
@@ -285,6 +358,10 @@ fn join_spaced_separators(input: &str) -> String {
             .rev()
             .find(|(_, c)| !(c.is_ascii_alphanumeric() || matches!(c, '_' | '-')))
             .map_or(0, |(at, c)| at + c.len_utf8());
+        // `$USER :` is one of our own markers, not a key.
+        if word[..word_start].ends_with('$') {
+            continue;
+        }
         let word = &word[word_start..];
         let key = word.to_ascii_lowercase();
         if !key.is_empty() && (is_secret_key(&key) || is_known_field(&key)) {

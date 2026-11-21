@@ -8,6 +8,7 @@
 
 const IP_MARKER: &str = "$IP";
 const MAC_MARKER: &str = "$MAC";
+const HOST_MARKER: &str = "$HOST";
 
 /// Characters an address is written with. A run of them is read as one candidate.
 fn is_address_char(ch: char) -> bool {
@@ -50,9 +51,19 @@ fn redact_token(token: &str) -> String {
     output
 }
 
-/// Writes the run, or its marker. Sentence punctuation at either end of the
-/// run (`192.168.0.12:`, `.1.2.3.4`) is not part of the address.
+/// Writes the run, or its marker. The whole run is judged first (`::ffff:c0a8:1`
+/// opens with a colon that belongs to the address); only then is sentence
+/// punctuation at either end (`192.168.0.12:`, `.1.2.3.4`) taken off.
 fn push_run(output: &mut String, run: &str) {
+    // `$HOST.fritz.box`: the tail of one of our own markers.
+    if output.ends_with('$') && run.starts_with(char::is_uppercase) {
+        output.push_str(run);
+        return;
+    }
+    if let Some(marker) = marker_for(run) {
+        output.push_str(marker);
+        return;
+    }
     let core = run.trim_matches(['.', ':', '-', '_']);
     let lead = &run[..run.len() - run.trim_start_matches(['.', ':', '-', '_']).len()];
     let tail = &run[lead.len() + core.len()..];
@@ -69,9 +80,43 @@ fn marker_for(core: &str) -> Option<&'static str> {
         Some(MAC_MARKER)
     } else if is_ipv4(core) || is_ipv6(core) {
         Some(IP_MARKER)
+    } else if is_lan_host(core) {
+        Some(HOST_MARKER)
     } else {
         None
     }
+}
+
+/// Domains that only exist inside a home or office network: a name under one
+/// of them (`nas.local:445`, `my-nas.fritz.box`) is the user's machine.
+const LAN_SUFFIXES: [&str; 10] = [
+    ".local",
+    ".lan",
+    ".home",
+    ".internal",
+    ".intranet",
+    ".corp",
+    ".localdomain",
+    ".home.arpa",
+    ".fritz.box",
+    ".speedport.ip",
+];
+
+fn is_lan_host(candidate: &str) -> bool {
+    let (host, port) = match candidate.rsplit_once(':') {
+        Some((host, port)) => (host, Some(port)),
+        None => (candidate, None),
+    };
+    if port.is_some_and(|port| {
+        port.is_empty() || port.len() > 5 || !port.chars().all(|ch| ch.is_ascii_digit())
+    }) {
+        return false;
+    }
+    let host = host.to_ascii_lowercase();
+    host.len() > 1
+        && LAN_SUFFIXES
+            .iter()
+            .any(|suffix| host.ends_with(suffix) && host.len() > suffix.len())
 }
 
 /// Six hex pairs joined by `:`, or by `-`.

@@ -8,8 +8,49 @@ use super::redact_paths::{
 
 const ELLIPSIS: &str = "…";
 
+/// The longest message that is redacted. No line of ours comes near it, and
+/// the passes read each message more than once: what lies beyond is cut off
+/// (and so never leaves the machine) instead of being scanned.
+const MAX_MESSAGE_BYTES: usize = 8 * 1024;
+
+/// The message up to [`MAX_MESSAGE_BYTES`], cut at a character boundary and
+/// marked with an ellipsis. A fullwidth colon is a colon to a reader and a
+/// bypass to a parser, so it is written as one before any pass reads the text.
+fn capped(message: &str) -> String {
+    let message = message.replace('：', ":");
+    let message = message.as_str();
+    if message.len() <= MAX_MESSAGE_BYTES {
+        return message.to_owned();
+    }
+    let mut end = MAX_MESSAGE_BYTES - ELLIPSIS.len();
+    while !message.is_char_boundary(end) {
+        end -= 1;
+    }
+    format!("{}{ELLIPSIS}", &message[..end])
+}
+
+/// How often the passes are applied to their own output at most.
+const MAX_ROUNDS: usize = 4;
+
 /// Removes values that must not leave the user's machine in a copied report.
+///
+/// The passes run on their own output until it stops changing: the report
+/// redacts the lines the file mirror has already redacted, and a pass that
+/// cuts a word short can leave a prefix an earlier pass reads differently the
+/// second time. The result is a fixed point, so a second redaction is a no-op.
 pub fn redact_log_message(message: &str, context: &RedactionContext) -> String {
+    let mut current = capped(message);
+    for _ in 0..MAX_ROUNDS {
+        let next = redact_round(&current, context);
+        if next == current {
+            break;
+        }
+        current = next;
+    }
+    current
+}
+
+fn redact_round(message: &str, context: &RedactionContext) -> String {
     let mut redacted = redact_uris(message);
     if let Some(music_dir) = context
         .music_dir
@@ -71,31 +112,59 @@ pub fn is_safe_structured_field(key: &str) -> bool {
 /// (`marvin=3`). The marker itself (`$USER`) is never replaced again.
 fn replace_name(input: &str, name: &str, marker: &str) -> String {
     let spare_key = name.is_ascii() && is_known_field(&name.to_ascii_lowercase());
-    // ASCII case folding keeps every byte offset, so a hit in the folded copy
-    // is a hit in the original.
-    let folded = input.to_ascii_lowercase();
-    let needle = name.to_ascii_lowercase();
     let mut output = String::with_capacity(input.len());
     let mut cursor = 0;
-    while let Some(relative) = folded[cursor..].find(&needle) {
-        let start = cursor + relative;
-        let end = start + needle.len();
+    let mut scan = 0;
+    while let Some(end) = next_name_hit(input, name, scan) {
+        let start = end.0;
+        let end = end.1;
         let left = input[..start].chars().next_back();
         let right = input[end..].chars().next();
         let bounded = left.is_none_or(|ch| !is_word(ch)) && right.is_none_or(|ch| !is_word(ch));
         // Never inside one of our own markers (`$HOME`, `$HOST`, `$REDACTED`),
         // whatever name a user or a machine has.
         let in_marker = left == Some('$');
-        output.push_str(&input[cursor..start]);
         if bounded && !in_marker && !(spare_key && right == Some('=')) {
+            output.push_str(&input[cursor..start]);
             output.push_str(marker);
-        } else {
-            output.push_str(&input[start..end]);
+            cursor = end;
         }
-        cursor = end;
+        scan = end;
     }
     output.push_str(&input[cursor..]);
     output
+}
+
+/// The next place at or after `from` where `name` stands, as (start, end),
+/// compared case-insensitively over Unicode (`MÜLLER` is `müller`).
+fn next_name_hit(input: &str, name: &str, from: usize) -> Option<(usize, usize)> {
+    let first = name.chars().next()?;
+    for (offset, ch) in input[from..].char_indices() {
+        if !chars_match(ch, first) {
+            continue;
+        }
+        let start = from + offset;
+        let mut rest = input[start..].char_indices();
+        let mut matched = true;
+        let mut end = start;
+        for wanted in name.chars() {
+            match rest.next() {
+                Some((at, got)) if chars_match(got, wanted) => end = start + at + got.len_utf8(),
+                _ => {
+                    matched = false;
+                    break;
+                }
+            }
+        }
+        if matched {
+            return Some((start, end));
+        }
+    }
+    None
+}
+
+fn chars_match(left: char, right: char) -> bool {
+    left == right || left.to_lowercase().eq(right.to_lowercase())
 }
 
 fn is_word(ch: char) -> bool {

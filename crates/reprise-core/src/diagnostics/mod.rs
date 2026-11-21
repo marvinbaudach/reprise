@@ -51,4 +51,6 @@ mod redact_leak_tests;
 #[cfg(test)]
 mod redact_path_tests;
 #[cfg(test)]
+mod redact_review_tests;
+#[cfg(test)]
 mod tests;

@@ -129,13 +129,13 @@ fn rendered_events_redact_every_absolute_path_without_losing_sentence_context() 
         8 * 3_600 + 14 * 60 + 22,
         DiagnosticLevel::Warn,
         "device_sync",
-        "device path:/run/media/marvin/BACKUP_DRIVE mounted; inspected `/srv/archive/private`, then moved /var/tmp/x.mp3 to /opt/share/y.mp3 successfully",
+        "device path:/var/lib/BACKUP_DRIVE mounted; inspected `/srv/archive/private`, then moved /var/tmp/x.mp3 to /opt/share/y.mp3 successfully",
     ));
 
     let report = render_report(&complete_facts(), &log, &RedactionContext::default());
 
     for private in [
-        "/run/media",
+        "/var/lib",
         "BACKUP_DRIVE",
         "/srv/archive",
         "private",
