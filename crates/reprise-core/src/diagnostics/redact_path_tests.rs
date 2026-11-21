@@ -7,6 +7,7 @@ fn context() -> RedactionContext {
         music_dir: Some("/home/u/Music".into()),
         home_dir: Some("/home/u".into()),
         username: Some("u".into()),
+        hostname: None,
     }
 }
 
@@ -38,7 +39,7 @@ fn an_absolute_path_with_spaces_outside_the_library_does_not_leak_its_tail() {
 #[test]
 fn every_slash_word_after_a_path_belongs_to_it() {
     let output = redact_log_message(
-        "opened /srv/a b/c d/e f/g then closed",
+        "opened /var/a b/c d/e f/g then closed",
         &RedactionContext::default(),
     );
 
@@ -57,10 +58,16 @@ fn a_path_ends_at_the_first_word_without_a_slash_or_at_a_delimiter() {
         redact_log_message("read (/a/b), then /c/d x/y; done", &none),
         "read (…), then …; done"
     );
-    // The final segment has no `/` of its own, so it cannot be told from the
-    // next word. This is the documented limit.
+    // The final segment has no `/` of its own, but a word that opens like a
+    // name (a capital or a digit) is taken for its next part. A lower-case word
+    // is the sentence going on: that is the documented limit.
     assert_eq!(
-        redact_log_message("scan /media/My Band/Live 2019", &none),
-        "scan … 2019"
+        redact_log_message("scan /opt/My Band/Live 2019 failed", &none),
+        "scan … failed"
+    );
+    // The user's disks and phones take the whole line.
+    assert_eq!(
+        redact_log_message("scan /media/My Band/Live now", &none),
+        "scan …"
     );
 }

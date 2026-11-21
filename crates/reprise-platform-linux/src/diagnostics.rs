@@ -103,6 +103,7 @@ pub fn redaction_context() -> RedactionContext {
             .map(|path| path.to_string_lossy().into_owned()),
         home_dir: std::env::var("HOME").ok().filter(|value| !value.is_empty()),
         username: std::env::var("USER").ok().filter(|value| !value.is_empty()),
+        hostname: Some(glib::host_name().to_string()).filter(|value| !value.is_empty()),
     }
 }
 

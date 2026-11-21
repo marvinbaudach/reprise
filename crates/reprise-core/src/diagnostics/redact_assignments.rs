@@ -13,20 +13,39 @@ use super::redact_composite::{is_plain_wrapped, plain_list_span};
 
 const REDACTED: &str = "$REDACTED";
 
+/// What the path pass leaves where it removed a path.
+const REDACTED_PATH: &str = "…";
+
 /// Characters that may follow a value without being part of it: `(elapsed_ms=1.5),`.
 /// Nothing is trimmed from the front: a value that opens with a quote or a
 /// bracket is not a plain value.
 const TRAILING_PUNCTUATION: [char; 6] = [',', ';', ':', ']', '}', '"'];
 
-/// Keys that mark a colon-separated secret: `password: hunter2`.
-const SECRET_KEY_NEEDLES: [&str; 7] = [
+/// Words that mark a secret anywhere in a colon-form key: `password: hunter2`,
+/// `x-api-key:`, `my_session_id:`. Compared with `-` and `_` removed and the
+/// case folded, so `x-api-key`, `API_KEY` and `apikey` are one key.
+const SECRET_KEY_NEEDLES: [&str; 14] = [
     "password",
+    "passwd",
+    "pwd",
+    "passphrase",
     "token",
     "secret",
     "credential",
     "username",
-    "user_name",
-    "api_key",
+    "apikey",
+    "authorization",
+    "bearer",
+    "cookie",
+    "session",
+    "signature",
+];
+
+/// Short words that mark a secret only as a whole segment of the key
+/// (`pin`, `auth_code`): inside a longer word (`spinning`, `decode`) they are
+/// prose.
+const SECRET_KEY_SEGMENTS: [&str; 9] = [
+    "pass", "pin", "auth", "sig", "otp", "code", "login", "user", "ssid",
 ];
 
 /// The longest value that is read at all. A longer one is redacted without
@@ -84,7 +103,7 @@ enum Reach {
     /// Only the token itself.
     Token,
     /// After a token whose value is already `$REDACTED`: up to the next token
-    /// that opens a known `key=` assignment, or the end of the line. The
+    /// that opens a known `key=` assignment, or the end of the message. The
     /// structured path writes `error=$REDACTED count=3`, one field after the
     /// other, and the typed fields after a redacted one must stay readable.
     /// The reach outlives the kept tokens that end it: after `error=$REDACTED
@@ -92,22 +111,25 @@ enum Reach {
     UntilKnownField,
     /// After a value that was rejected, or that belongs to a key the policy
     /// does not keep (raw foreign text): up to the next token whose value is
-    /// already exactly `$REDACTED`, or the end of the line. A token that
+    /// already exactly `$REDACTED`, or the end of the message. A token that
     /// merely opens a known key (`count=3`) does not end it.
     UntilRedactedField,
-    /// To the end of the line: a secret has no reliable end.
+    /// To the end of the message: a secret has no reliable end.
     EndOfLine,
 }
 
 /// Redacts every `key=value` whose key or value may not leave the machine.
 ///
 /// A redacted `key=` and a kept key with a value that is not plain both own
-/// the words after them, as far as their [`Reach`] goes.
+/// the words after them, as far as their [`Reach`] goes. A swallow runs on
+/// across a line break: a message with a newline in it is one message, and the
+/// words on the next line still belong to the value that opened it.
 pub(super) fn redact_sensitive_assignments(input: &str) -> String {
+    let input = &join_spaced_separators(input);
     let tokens: Vec<&str> = input.split_inclusive(char::is_whitespace).collect();
     let mut output = String::with_capacity(input.len());
     // The whitespace after the last token that was folded into a redaction:
-    // it is written only once something follows on the same line.
+    // it is written only once something follows that is kept.
     let mut pending_whitespace = "";
     let mut reach = Reach::Token;
     let mut index = 0;
@@ -120,7 +142,6 @@ pub(super) fn redact_sensitive_assignments(input: &str) -> String {
             Reach::UntilRedactedField => !is_redacted_field(body),
             Reach::EndOfLine => true,
         };
-        let mut last_whitespace = whitespace;
         let start = index;
         index += 1;
         if swallowed {
@@ -130,15 +151,11 @@ pub(super) fn redact_sensitive_assignments(input: &str) -> String {
             pending_whitespace = "";
             match redact_assignment(&tokens[start..]) {
                 Outcome::Kept(count) => {
-                    // A list spans several tokens; the gaps between them are
-                    // single spaces, so only the last one can hold a newline.
+                    // A list spans several tokens, written as they were.
                     for kept in &tokens[start..start + count] {
                         output.push_str(kept);
                     }
                     index += count - 1;
-                    last_whitespace = tokens.get(index - 1).map_or("", |last| {
-                        &last[last.trim_end_matches(char::is_whitespace).len()..]
-                    });
                     if reach != Reach::UntilKnownField {
                         reach = Reach::Token;
                     }
@@ -149,9 +166,6 @@ pub(super) fn redact_sensitive_assignments(input: &str) -> String {
                     reach = redaction.reach;
                 }
             }
-        }
-        if last_whitespace.contains(['\n', '\r']) {
-            reach = Reach::Token;
         }
     }
     output.push_str(pending_whitespace);
@@ -179,15 +193,20 @@ fn redact_assignment(tokens: &[&str]) -> Outcome {
         key,
     }) = split_assignment(body)
     else {
-        return Outcome::Kept(1);
+        return bare_secret_word(tokens, body);
     };
+    if is_redacted_field(body) {
+        return Outcome::Redacted(Redaction {
+            text: body.to_owned(),
+            reach: Reach::UntilKnownField,
+        });
+    }
+    // `$USER:` is one of our own markers: not a key. Only the exact marker is;
+    // `$password:` and `x$token:` are keys with a sigil in front.
+    if separator_char == ':' && is_marker(&body[..separator]) {
+        return Outcome::Kept(1);
+    }
     let reach = if separator_char == '=' {
-        if is_redacted_field(body) {
-            return Outcome::Redacted(Redaction {
-                text: body.to_owned(),
-                reach: Reach::UntilKnownField,
-            });
-        }
         if let Some(count) = plain_list_span(tokens) {
             return Outcome::Kept(count);
         }
@@ -198,15 +217,161 @@ fn redact_assignment(tokens: &[&str]) -> Outcome {
             return Outcome::Kept(1);
         }
         Reach::UntilRedactedField
-    } else if SECRET_KEY_NEEDLES.iter().any(|needle| key.contains(needle)) {
+    } else if let Some(count) = status_code(tokens, &body[separator + 1..], &key) {
+        return Outcome::Kept(count);
+    } else if is_secret_key(&key) {
         Reach::EndOfLine
+    } else if is_well_formed_key(&key)
+        && (is_known_field(&key) || is_field_like(&body[..separator], &key, &body[separator + 1..]))
+    {
+        // The colon form of a field the policy knows: `title: Pink Floyd`,
+        // `{"artist":"x"}`, `count: 3`. It reads like `=`, except that the
+        // value may stand in the next token (`index: 1`). A `::` after the
+        // key is no path separator here: `title::Pink` is a value too.
+        if body[separator + 1..].starts_with("//…") {
+            // `file://…`: a URI the path pass has already redacted.
+            return Outcome::Kept(1);
+        }
+        match colon_value(tokens, &body[separator + 1..], &key) {
+            Some(count) => return Outcome::Kept(count),
+            None => Reach::UntilRedactedField,
+        }
     } else {
+        // An unknown plain word before a colon is prose (`failed:`), not a
+        // field; `db::open` is a Rust path.
         return Outcome::Kept(1);
     };
     Outcome::Redacted(Redaction {
         text: format!("{}{REDACTED}", &body[..=separator]),
         reach,
     })
+}
+
+/// Words that announce a secret in running text (`the password is hunter2`):
+/// what follows them on the line goes.
+const SECRET_WORDS: [&str; 6] = [
+    "password",
+    "passwd",
+    "passphrase",
+    "secret",
+    "bearer",
+    "authorization",
+];
+
+/// A token with no separator is kept, unless it is a [`SECRET_WORDS`] word with
+/// something after it.
+fn bare_secret_word(tokens: &[&str], body: &str) -> Outcome {
+    let word = body
+        .trim_matches(|ch: char| !ch.is_alphanumeric())
+        .to_lowercase();
+    if tokens.len() > 1 && SECRET_WORDS.contains(&word.as_str()) {
+        return Outcome::Redacted(Redaction {
+            text: format!("{body} {REDACTED}"),
+            reach: Reach::EndOfLine,
+        });
+    }
+    Outcome::Kept(1)
+}
+
+/// An unknown key that reads as a field and not as prose: a snake_case name
+/// (`album_name: x`) or one in quotes (`{"foo":"x"}`). `a_b::c` is a Rust path.
+fn is_field_like(raw_key: &str, key: &str, after: &str) -> bool {
+    !after.starts_with(':') && (key.contains('_') || raw_key.contains(['"', '\'']))
+}
+
+/// How many tokens a colon-form kept field is, or `None` when the field is
+/// redacted: its key is not kept, or its value is not plain.
+fn colon_value(tokens: &[&str], attached: &str, key: &str) -> Option<usize> {
+    let (value, count) = colon_value_token(tokens, attached);
+    // `path:…`: the path pass has already redacted this value.
+    if trim_value(value) == REDACTED_PATH {
+        return Some(count);
+    }
+    if !is_safe_structured_field(key) {
+        return None;
+    }
+    let opens_struct = tokens.get(count).is_some_and(|next| next.starts_with('{'));
+    (!value.is_empty() && is_plain_value(value, key) && !opens_struct).then_some(count)
+}
+
+/// The value of a colon-form field and how many tokens the field spans: the
+/// text after the colon, or the next token when nothing follows it.
+fn colon_value_token<'a>(tokens: &[&'a str], attached: &'a str) -> (&'a str, usize) {
+    if attached.is_empty() {
+        let next = tokens
+            .get(1)
+            .map_or("", |token| token.trim_end_matches(char::is_whitespace));
+        (next, 2)
+    } else {
+        (attached, 1)
+    }
+}
+
+/// `code: 2`, `exit_code: 101`: a status code is a number of a few digits,
+/// whereas an authorisation code (`code: 4/0AX4XfWh`) is not.
+fn status_code(tokens: &[&str], attached: &str, key: &str) -> Option<usize> {
+    if key.rsplit(['_', '-', '.']).next() != Some("code") {
+        return None;
+    }
+    let (value, count) = colon_value_token(tokens, attached);
+    let digits = trim_value(value)
+        .strip_prefix('-')
+        .unwrap_or(trim_value(value));
+    ((1..=3).contains(&digits.len()) && digits.chars().all(|ch| ch.is_ascii_digit()))
+        .then_some(count)
+}
+
+/// Whether a key names a secret: `password`, `x-api-key`, `Authorization`.
+fn is_secret_key(key: &str) -> bool {
+    let compact: String = key
+        .chars()
+        .filter(|ch| !matches!(ch, '-' | '_' | ' '))
+        .flat_map(char::to_lowercase)
+        .collect();
+    SECRET_KEY_NEEDLES
+        .iter()
+        .any(|needle| compact.contains(needle))
+        || key
+            .to_lowercase()
+            .split(|ch: char| !ch.is_alphanumeric())
+            .any(|segment| SECRET_KEY_SEGMENTS.contains(&segment))
+}
+
+/// `Password : x` and `title : Pink Floyd` read as `Password: x`: the space
+/// before the separator is dropped when the word in front of it is a secret
+/// key or a field the policy knows. Any other word keeps its spacing.
+fn join_spaced_separators(input: &str) -> String {
+    let mut output = String::with_capacity(input.len());
+    let mut cursor = 0;
+    for (index, ch) in input.char_indices() {
+        if !matches!(ch, ':' | '=') || index < cursor {
+            continue;
+        }
+        let before = &input[cursor..index];
+        let gap = before.len() - before.trim_end_matches(char::is_whitespace).len();
+        if gap == 0 {
+            continue;
+        }
+        let word_end = index - gap;
+        let word = input[..word_end].trim_end_matches(['"', '\'']);
+        let word_start = word
+            .char_indices()
+            .rev()
+            .find(|(_, c)| !(c.is_ascii_alphanumeric() || matches!(c, '_' | '-')))
+            .map_or(0, |(at, c)| at + c.len_utf8());
+        // `$USER :` is one of our own markers, not a key.
+        if word[..word_start].ends_with('$') && is_marker(&word[word_start - 1..]) {
+            continue;
+        }
+        let word = &word[word_start..];
+        let key = word.to_ascii_lowercase();
+        if !key.is_empty() && (is_secret_key(&key) || is_known_field(&key)) {
+            output.push_str(&input[cursor..word_end]);
+            cursor = index;
+        }
+    }
+    output.push_str(&input[cursor..]);
+    output
 }
 
 /// `QueueRow { index: 1 }`: a plain name followed by a struct body is not a
@@ -219,7 +384,7 @@ fn opens_struct_body(tokens: &[&str]) -> bool {
 /// at an already redacted field. Only a well-formed key that the policy knows
 /// does: `abc==` (base64 padding) or `a=b` inside swallowed text is part of the
 /// value, not a new assignment.
-fn starts_known_assignment(body: &str) -> bool {
+pub(super) fn starts_known_assignment(body: &str) -> bool {
     let Some(assignment) = split_assignment(body) else {
         return false;
     };
@@ -249,9 +414,7 @@ fn is_well_formed_key(key: &str) -> bool {
 /// `x=$REDACTED)` is a value nobody wrote.
 fn is_redacted_field(body: &str) -> bool {
     split_assignment(body).is_some_and(|assignment| {
-        assignment.separator_char == '='
-            && is_well_formed_key(&assignment.key)
-            && is_already_redacted(body, &assignment)
+        is_well_formed_key(&assignment.key) && is_already_redacted(body, &assignment)
     })
 }
 
@@ -374,4 +537,11 @@ fn is_exponent_float(value: &str) -> bool {
     };
     let exponent = exponent.strip_prefix(['+', '-']).unwrap_or(exponent);
     is_decimal(mantissa) && !exponent.is_empty() && exponent.chars().all(|ch| ch.is_ascii_digit())
+}
+
+/// The text our own passes write in place of a value, as a whole token (quotes
+/// and brackets around it do not count).
+pub(super) fn is_marker(token: &str) -> bool {
+    ["$USER", "$HOST", "$IP", "$MAC", "$REDACTED"]
+        .contains(&token.trim_matches(|ch: char| !ch.is_alphanumeric() && ch != '$'))
 }
