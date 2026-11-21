@@ -2,9 +2,34 @@
 //! and subtitles are plain text, so markup characters cannot discard them.
 
 use libadwaita as adw;
+use libadwaita::prelude::PreferencesRowExt;
 
 pub(in crate::ui) fn action_row() -> adw::builders::ActionRowBuilder {
     adw::ActionRow::builder().use_markup(false)
+}
+
+/// An action row whose title is plain text from the first moment it has one.
+///
+/// The builders above turn markup off, but GObject applies the builder's
+/// `title` before its `use-markup`, so a title with an `&` is parsed as markup
+/// once, fails, and logs "Failed to set text ... from markup" (measured: the
+/// published 0.1.346 Flatpak logged it three times when the Rhythmbox import
+/// dialog opened; the label settled on the right text afterwards). Switching
+/// markup off on a constructed row before it is given its title avoids the
+/// parse altogether. Use this for any title that may contain `&`, `<` or `>`.
+pub(in crate::ui) fn titled_action_row(title: &str) -> adw::ActionRow {
+    let row = adw::ActionRow::new();
+    row.set_use_markup(false);
+    row.set_title(title);
+    row
+}
+
+/// [`titled_action_row`] for a switch row.
+pub(in crate::ui) fn titled_switch_row(title: &str) -> adw::SwitchRow {
+    let row = adw::SwitchRow::new();
+    row.set_use_markup(false);
+    row.set_title(title);
+    row
 }
 
 pub(in crate::ui) fn expander_row() -> adw::builders::ExpanderRowBuilder {

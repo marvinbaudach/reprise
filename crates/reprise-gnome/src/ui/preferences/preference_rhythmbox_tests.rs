@@ -164,19 +164,39 @@ fn rendered_texts(widget: &gtk4::Widget, out: &mut Vec<String>) {
     }
 }
 
-/// FB-13: every row of the import dialog keeps its title. Two titles carry a
-/// literal `&`; a row that parsed them as markup logs "Gtk-WARNING: Failed to
-/// set text ... from markup" and draws an empty label. The assertion reads the
-/// rendered labels, not the row property the accessible name is built from,
-/// because the property survives the failure that the label does not. (GLib's
-/// per-domain log handlers do not see that warning, so the label is the
-/// observable.) Control arm: with `ui/rows.rs` flipped to `use_markup(true)`
-/// both titles render on zero rows and this test fails.
+static GTK_WARNINGS: std::sync::Mutex<Vec<String>> = std::sync::Mutex::new(Vec::new());
+
+/// GTK logs through `g_log_structured`, which GLib's per-domain handlers never
+/// see; only the process-wide writer does. It may be installed once per
+/// process, so only this display test installs it (the display gate runs each
+/// test in its own process) and it keeps the default output.
+fn capture_gtk_messages() {
+    glib::log_set_writer_func(|_, fields| {
+        let message = fields
+            .iter()
+            .find(|field| field.key() == "MESSAGE")
+            .and_then(|field| field.value_str());
+        if let Some(message) = message {
+            if let Ok(mut captured) = GTK_WARNINGS.lock() {
+                captured.push(message.to_string());
+            }
+        }
+        glib::LogWriterOutput::Unhandled
+    });
+}
+
+/// FB-13: building the import dialog parses no title as markup. Two titles
+/// carry a literal `&`; a row that is handed such a title while it still parses
+/// markup logs "Gtk-WARNING: Failed to set text ... from markup". The published
+/// 0.1.346 Flatpak logged it three times while the first-run wizard opened
+/// this dialog, even though the labels settled on the right text afterwards,
+/// so the test reads both the log and the rendered labels.
 #[test]
 #[ignore = "requires a display; run via xvfb-run"]
 fn fb_13_the_import_dialog_rows_render_their_ampersand_titles() {
     gtk4::init().unwrap();
     libadwaita::init().unwrap();
+    capture_gtk_messages();
     let widgets = build_import_dialog();
     let skipped = strings::rhythmbox_skipped_warning(1, 2, 3);
     widgets.warning_row.set_title(&skipped.title);
@@ -204,6 +224,14 @@ fn fb_13_the_import_dialog_rows_render_their_ampersand_titles() {
     rendered_texts(content.upcast_ref(), &mut texts);
     widgets.dialog.force_close();
     parent.close();
+
+    let warnings = GTK_WARNINGS.lock().unwrap().clone();
+    assert!(
+        warnings
+            .iter()
+            .all(|message| !message.contains("from markup")),
+        "GTK parsed a row title as markup: {warnings:?}"
+    );
 
     // The option row (selection page) and the result row (complete page) both
     // carry this title; every other title appears on one row only.
