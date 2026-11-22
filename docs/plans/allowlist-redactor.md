@@ -2,7 +2,7 @@
 slug: allowlist-redactor
 worktree: /home/marvin/Projects/reprise-allowlist-redactor
 branch: feature/allowlist-redactor
-phase: planned
+phase: coded
 codex_session:
 created: 2026-11-22
 ---
