@@ -2360,8 +2360,10 @@ result.
   panic was compiled with, or a standard panic phrase or a log template of the
   panic's source file with every value shown as `…`, and `…` when nothing
   matches; its location and each backtrace line are kept only in the shapes of
-  the app's own or a dependency's source path and of a Rust symbol, and are
-  `…` otherwise, so no directory or file name of the user's reaches the log.
+  the app's own, the standard library's or a dependency's source path (a
+  dependency is shown as its crate name and version and its source file) and
+  of a Rust symbol, and are `…` otherwise, so no directory of the user's and
+  no file of the user's library reaches the log.
   When a start finds the marker of an earlier run
   still there (a crash, a kill, a power loss), the main window shows exactly
   one toast, "Reprise did not close properly last time", whose action is
