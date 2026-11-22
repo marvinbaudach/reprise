@@ -71,6 +71,11 @@ fn file_name_of(body: &str) -> Option<&str> {
         .then_some(trimmed)
 }
 
+/// Whether the word ends in the extension of a track, a cover or a playlist.
+pub(super) fn has_media_extension(name: &str) -> bool {
+    is_media(name.trim_matches(|ch: char| !ch.is_alphanumeric()))
+}
+
 fn is_media(name: &str) -> bool {
     name.rsplit_once('.').is_some_and(|(_, extension)| {
         MEDIA_EXTENSIONS.contains(&extension.to_ascii_lowercase().as_str())

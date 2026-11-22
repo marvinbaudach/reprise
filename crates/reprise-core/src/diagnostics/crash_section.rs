@@ -31,11 +31,13 @@ const SOURCE_ROOTS: [&str; 5] = ["crates", "src", "tests", "benches", "examples"
 const LOCATION_KEY: &str = "location:";
 const MESSAGE_KEY: &str = "message:";
 const FRAME_PREFIX: &str = "at ";
+const BACKTRACE_KEY: &str = "backtrace:";
 
 /// Where the redaction of a log tail stands: inside a crash report or not.
 #[derive(Default)]
 pub(super) struct TailState {
     in_crash_report: bool,
+    in_backtrace: bool,
 }
 
 impl TailState {
@@ -43,6 +45,7 @@ impl TailState {
     pub(super) fn redact_line(&mut self, line: &str, context: &RedactionContext) -> String {
         if line == CRASH_REPORT_MARKER {
             self.in_crash_report = true;
+            self.in_backtrace = false;
             return line.to_owned();
         }
         if !self.in_crash_report {
@@ -50,13 +53,18 @@ impl TailState {
         }
         if line == CRASH_REPORT_END {
             self.in_crash_report = false;
+            self.in_backtrace = false;
             return line.to_owned();
         }
-        redact_crash_line(line, context)
+        if line == BACKTRACE_KEY {
+            self.in_backtrace = true;
+            return line.to_owned();
+        }
+        redact_crash_line(line, self.in_backtrace, context)
     }
 }
 
-fn redact_crash_line(line: &str, context: &RedactionContext) -> String {
+fn redact_crash_line(line: &str, in_backtrace: bool, context: &RedactionContext) -> String {
     if let Some(location) = line.strip_prefix(LOCATION_KEY) {
         if is_source_location(location.trim()) {
             return redact_names(line, context);
@@ -69,7 +77,7 @@ fn redact_crash_line(line: &str, context: &RedactionContext) -> String {
             return redact_names(line, context);
         }
     }
-    if is_symbol_frame(line) {
+    if in_backtrace && is_symbol_frame(line) {
         return redact_names(line, context);
     }
     redact_log_message(line, context)

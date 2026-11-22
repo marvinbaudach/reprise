@@ -148,3 +148,51 @@ fn a_line_that_only_looks_like_a_frame_is_redacted() {
     }
     assert!(written.contains("boom"));
 }
+
+#[test]
+fn a_line_without_the_structure_of_a_symbol_is_no_frame() {
+    let backtrace =
+        "backtrace:\n   4: 192.168.1.5\n   5: key=abc123\n   6: Time.flac\n   7: password hunter2";
+    let (_, shown) = written_and_shown("boom", backtrace);
+
+    for leaked in ["192.168", "abc123", "Time", "hunter2"] {
+        assert!(!shown.contains(leaked), "{leaked:?} leaked:\n{shown}");
+    }
+}
+
+#[test]
+fn a_frame_line_is_a_frame_only_inside_the_backtrace() {
+    let tail = "---- Reprise crash report ----\nmessage: boom\n   7: core::ops::call_once{{vtable.shim}}\nbacktrace:\n   8: core::ops::call_once{{vtable.shim}}\n---- end of crash report ----";
+    let facts = DiagnosticFacts {
+        log_tail: Some(tail.to_owned()),
+        ..DiagnosticFacts::default()
+    };
+    let shown = render_report(&facts, &DiagnosticLog::default(), &context());
+
+    assert!(shown.contains("\n   7: …"), "{shown}");
+    assert!(
+        shown.contains("\n   8: core::ops::call_once{{vtable.shim}}"),
+        "{shown}"
+    );
+}
+
+#[test]
+fn the_source_text_of_an_assertion_is_no_cover_for_a_value() {
+    for message in [
+        "assertion failed: addr == 192.168.1.5",
+        "assertion failed: self.token == abc123",
+        "assertion failed: self.cover == Time.flac",
+        "assertion failed: token == \"abc123\"",
+        "assertion failed: path == \"Pink Floyd/the wall\"",
+    ] {
+        let (written, shown) = written_and_shown(message, "backtrace:");
+        for text in [message_line(&written), message_line(&shown)] {
+            for leaked in ["192.168", "abc123", "Time", "Pink", "Floyd"] {
+                assert!(
+                    !text.contains(leaked),
+                    "{leaked:?} leaked from {message:?}: {text}"
+                );
+            }
+        }
+    }
+}

@@ -222,3 +222,25 @@ fn a_backslash_in_front_of_an_escape_letter_can_still_separate_names() {
         );
     }
 }
+
+#[test]
+fn a_path_whose_first_word_opens_with_punctuation_is_still_seen() {
+    for input in [
+        "copied (Pink Floyd/The Wall/01.flac",
+        "copied \"Pink Floyd/Disc 1/…",
+        "copied [Remastered]/Pink Floyd/x",
+        "copied «Pink Floyd/The Wall»",
+        "copied *Pink Floyd/the wall",
+        "copied -Pink Floyd/the wall",
+        "copied #Pink Floyd/the wall",
+        "copied …Pink Floyd/the wall",
+        "copied !zqxa/zqxb",
+        "copied +Pink Floyd/the wall",
+        "copied @Pink Floyd/the wall",
+    ] {
+        assert_no_leak(
+            input,
+            &["Pink", "Floyd", "Wall", "wall", "Remastered", "zqx"],
+        );
+    }
+}

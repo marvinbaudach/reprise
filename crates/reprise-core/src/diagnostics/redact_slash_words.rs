@@ -89,6 +89,12 @@ pub(super) fn has_slash_in_a_name(word: &str) -> bool {
     } else {
         bare.trim_start_matches('/')
     };
+    // Punctuation in front of a name (`*Pink`, `!zqxa`, `…Pink`) is not a root.
+    // A word that opens with a root of its own (`/mnt`, `$HOME`, `~`, `%VAR%`)
+    // is read by the pass for absolute paths.
+    let word = word.trim_start_matches(|ch: char| {
+        !ch.is_alphanumeric() && !matches!(ch, '/' | '$' | '~' | '%' | '\\')
+    });
     word.starts_with(char::is_alphanumeric) && word.contains('/') && !is_ordinary(word)
 }
 

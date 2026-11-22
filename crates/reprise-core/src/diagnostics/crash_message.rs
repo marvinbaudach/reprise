@@ -13,6 +13,9 @@
 
 use super::model::RedactionContext;
 use super::redact::{redact_log_message, redact_names};
+use super::redact_filenames::has_media_extension;
+use super::redact_network::redact_network_identifiers;
+use super::redact_secrets::secret_cut;
 
 /// What the standard library and `core` write in front of the values they
 /// report. Each is the beginning of the whole message.
@@ -47,7 +50,10 @@ pub(crate) fn redact_panic_message(message: &str, context: &RedactionContext) ->
         }
     }
     if let Some(condition) = message.strip_prefix(ASSERTION_PREFIX) {
-        if is_source_text(condition) && redact_names(condition, context) == condition {
+        if is_source_text(condition)
+            && redact_names(condition, context) == condition
+            && carries_no_value(condition)
+        {
             return message.to_owned();
         }
         return format!("{ASSERTION_PREFIX}$REDACTED");
@@ -87,6 +93,17 @@ fn is_source_text(condition: &str) -> bool {
     depth == 0 && structured
 }
 
+/// Source text holds names of the program, never a value: no address, no
+/// secret word with something after it, no track or cover file name. The same
+/// passes a message goes through decide, so `addr == 192.168.1.5` is not
+/// readable because it looks like code.
+fn carries_no_value(condition: &str) -> bool {
+    let tokens: Vec<&str> = condition.split_inclusive(char::is_whitespace).collect();
+    redact_network_identifiers(condition) == condition
+        && (0..tokens.len()).all(|from| secret_cut(&tokens[from..]).is_none())
+        && !condition.split_whitespace().any(has_media_extension)
+}
+
 fn is_operator_char(ch: char) -> bool {
     matches!(
         ch,
@@ -102,26 +119,44 @@ fn is_source_char(ch: char) -> bool {
 }
 
 /// Whether `line` is a backtrace symbol: `   7: <F as core::ops::function::
-/// FnOnce<A>>::call_once{{vtable.shim}}`, `  10: __libc_start_call_main`. A
-/// number, a colon and a symbol of plain characters, each word of which is part
-/// of a path or a type (or the only word there is). Its names are replaced, as
-/// in a source location, and nothing else is.
+/// FnOnce<A>>::call_once{{vtable.shim}}`. A number, a colon and a symbol of a
+/// path (`::`) or a type (`<…>`) in the characters of one: no `=`, no dot
+/// outside a `{{…}}` marker, so an address, a `key=value` and a file name are
+/// none. A frame of a plain word (`main`, `clone3`) has no structure to check
+/// and goes through the redactor like any line. Each word of a symbol with
+/// spaces is part of a path or a type, or a keyword that joins them. Its names
+/// are replaced, as in a source location, and nothing else is.
 pub(super) fn is_symbol_frame(line: &str) -> bool {
     let Some((number, symbol)) = line.trim_start().split_once(':') else {
         return false;
     };
     let symbol = symbol.trim();
-    if number.is_empty() || !number.chars().all(|ch| ch.is_ascii_digit()) || symbol.is_empty() {
+    if number.is_empty() || !number.chars().all(|ch| ch.is_ascii_digit()) {
         return false;
     }
-    let words: Vec<&str> = symbol.split_whitespace().collect();
-    words.iter().all(|word| {
-        word.chars().all(is_symbol_char)
-            && (words.len() == 1
-                || SYMBOL_KEYWORDS.contains(word)
+    let structured = symbol.contains("::") || symbol.starts_with('<') && symbol.contains('>');
+    structured
+        && has_only_symbol_chars(symbol)
+        && symbol.split_whitespace().all(|word| {
+            SYMBOL_KEYWORDS.contains(&word)
                 || word.contains(['<', '>', '(', ')'])
-                || word.contains("::"))
-    })
+                || word.contains("::")
+        })
+}
+
+/// Symbol characters, with a dot only inside `{{…}}` (`{{vtable.shim}}`).
+fn has_only_symbol_chars(symbol: &str) -> bool {
+    let mut braces = 0usize;
+    for ch in symbol.chars() {
+        match ch {
+            '{' => braces += 1,
+            '}' => braces = braces.saturating_sub(1),
+            '.' if braces == 0 => return false,
+            ch if ch.is_whitespace() || is_symbol_char(ch) => {}
+            _ => return false,
+        }
+    }
+    true
 }
 
 fn is_symbol_char(ch: char) -> bool {
