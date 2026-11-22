@@ -11,6 +11,7 @@ use std::io;
 use std::sync::{Mutex, OnceLock, PoisonError};
 
 use reprise_core::run_log::{DeferredRunLog, RunLog};
+use reprise_core::state_root;
 
 static RUN_LOG: OnceLock<Mutex<DeferredRunLog>> = OnceLock::new();
 
@@ -43,10 +44,14 @@ impl io::Write for FileLogWriter {
     }
 }
 
-/// This process is the first instance: rotate the previous run aside and
-/// begin the file with the lines held back so far. Without a writable state
-/// directory the log stays on stderr alone.
+/// This process is the first instance: delete the run logs an earlier version
+/// wrote under their old names, rotate the previous run aside and begin the
+/// file with the lines held back so far. Without a writable state directory
+/// the log stays on stderr alone.
 pub(crate) fn start() {
+    if let Err(error) = state_root::remove_legacy_logs() {
+        tracing::warn!(%error, "could not remove the old log files");
+    }
     let started = RunLog::start();
     let mut deferred = shared().lock().unwrap_or_else(PoisonError::into_inner);
     match started {

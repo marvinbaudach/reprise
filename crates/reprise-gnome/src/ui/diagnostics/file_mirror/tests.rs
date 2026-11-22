@@ -1,5 +1,6 @@
 use std::sync::{Arc, Mutex};
 
+use reprise_core::diagnostics::{render_report, DiagnosticFacts, DiagnosticLog};
 use tracing_subscriber::layer::SubscriberExt;
 
 use super::*;
@@ -113,4 +114,36 @@ fn every_event_reaches_the_sink_whatever_its_level() {
 
     assert!(text.contains(" DEBUG foreign_crate: …"), "{text}");
     assert!(text.contains(" TRACE foreign_crate: …"), "{text}");
+}
+
+#[test]
+fn fb_19_the_copied_report_carries_the_mirrored_lines_as_written_and_no_foreign_text() {
+    let own = mirrored(move_the_previous_log_aside_and_fail);
+    let foreign = mirrored(|| {
+        tracing::warn!(
+            target: "foreign_transport::connection",
+            "could not read /home/zqxuser/Music/Zqx Artist/zqx.flac for zqxuser"
+        );
+    });
+    let facts = DiagnosticFacts {
+        log_tail: Some(format!("{own}{foreign}")),
+        ..DiagnosticFacts::default()
+    };
+
+    let report = render_report(&facts, &DiagnosticLog::default());
+
+    assert!(
+        report.ends_with(&format!(
+            "log, this run\n{}\n{}",
+            own.trim_end(),
+            foreign.trim_end()
+        )),
+        "{report}"
+    );
+    for leaked in ["Zqx", "zqx", "/home/"] {
+        assert!(
+            !report.contains(leaked),
+            "{leaked:?} reached the report: {report}"
+        );
+    }
 }

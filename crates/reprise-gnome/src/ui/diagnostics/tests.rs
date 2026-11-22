@@ -95,12 +95,12 @@ fn session_filter_excludes_events_from_external_crates() {
     assert_eq!(targets, ["reprise_core::scanner"]);
 }
 
-/// Where the next line's `invariant_broken!` was written.
-fn trip_an_invariant() -> (
-    u32,
-    Vec<(Option<&'static str>, Option<u32>, Option<String>)>,
-) {
-    struct Probe(Arc<Mutex<Vec<(Option<&'static str>, Option<u32>, Option<String>)>>>);
+/// What a probe saw of one event: its call site's file and line, and its message.
+type Seen = (Option<&'static str>, Option<u32>, Option<String>);
+
+/// Trips an invariant under a probe: the line the macro is written on, and what the probe saw.
+fn trip_an_invariant() -> (u32, Vec<Seen>) {
+    struct Probe(Arc<Mutex<Vec<Seen>>>);
     impl<S: Subscriber> Layer<S> for Probe {
         fn on_event(&self, event: &Event<'_>, _context: Context<'_, S>) {
             let callsite = callsite_of(event.metadata());

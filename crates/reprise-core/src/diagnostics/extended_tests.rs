@@ -3,11 +3,7 @@
 use super::{render_report, DiagnosticFacts, DiagnosticLog, RedactionContext};
 
 fn render(facts: &DiagnosticFacts) -> String {
-    render_report(
-        facts,
-        &DiagnosticLog::default(),
-        &RedactionContext::default(),
-    )
+    render_report(facts, &DiagnosticLog::default())
 }
 
 #[test]
@@ -54,44 +50,28 @@ fn a_report_without_logs_has_no_log_headings() {
 }
 
 #[test]
-fn crash_report_never_contains_a_library_path_in_the_log_tails() {
+fn fb_19_the_log_tails_are_embedded_line_by_line_as_they_were_written() {
+    // The run log holds only safe lines (`safe_event`), so the report copies
+    // them without reading them: the timestamp, the `@ file:line` call site
+    // and the `…` of a foreign event all arrive as they are.
+    let this_run = "2026-11-08T12:00:00.123Z  WARN reprise_core::run_log: could not move the previous log aside; error=$REDACTED @ crates/reprise-core/src/run_log.rs:42\n\
+                    2026-11-08T12:00:01.000Z  INFO foreign_crate: …";
     let facts = DiagnosticFacts {
-        log_tail: Some(
-            "INFO reprise: opened /home/tester/Music/Artist/Album/01 Song.flac\n\
-             WARN reprise: gone /mnt/nas/Other Album/02.ogg token=hunter2"
-                .into(),
-        ),
-        previous_log_tail: Some(
-            "ERROR reprise: panicked reading /home/tester/Music/Artist/Album/03 Third.flac for tester"
-                .into(),
-        ),
+        log_tail: Some(this_run.into()),
+        previous_log_tail: Some("2026-11-07T09:00:00.000Z ERROR reprise: panic".into()),
         ..DiagnosticFacts::default()
     };
-    let context = RedactionContext {
-        music_dir: Some("/home/tester/Music".into()),
-        home_dir: Some("/home/tester".into()),
-        username: Some("tester".into()),
-    };
 
-    let report = render_report(&facts, &DiagnosticLog::default(), &context);
+    let report = render(&facts);
 
-    for leaked in [
-        "Artist",
-        "Song.flac",
-        "Third.flac",
-        "Other Album",
-        "/mnt/nas",
-        "/home/tester",
-        "hunter2",
-        "tester",
-    ] {
-        assert!(
-            !report.contains(leaked),
-            "{leaked:?} leaked into:\n{report}"
-        );
-    }
-    assert!(report.contains("opened"));
-    assert!(report.contains("panicked reading"));
+    assert!(
+        report.contains(&format!("log, this run\n{this_run}")),
+        "{report}"
+    );
+    assert!(
+        report.contains("log, previous run\n2026-11-07T09:00:00.000Z ERROR reprise: panic"),
+        "{report}"
+    );
 }
 
 fn redacted(message: &str) -> String {
@@ -159,32 +139,6 @@ fn only_a_kept_key_exempts_a_number_from_the_filename_pass() {
     // filename pass runs; the number is not what protects it.
     assert_eq!(redacted("cover.jpg=1.2"), "cover.jpg=$REDACTED");
     assert_eq!(redacted("(elapsed_ms=1.5),"), "(elapsed_ms=1.5),");
-}
-
-#[test]
-fn a_log_tail_line_keeps_its_rfc3339_timestamp_in_the_copied_report() {
-    // The file mirror starts every line with `SecondsFormat::Millis` in UTC.
-    // `.123Z` has the shape of a file extension; the report re-redacts the
-    // tail and must not turn the time into `…`.
-    let facts = DiagnosticFacts {
-        log_tail: Some(
-            "2026-11-08T12:00:00.123Z  WARN reprise: playback stalled elapsed_ms=12\n\
-             2026-11-08T12:00:01+01:00  INFO reprise: resumed\n\
-             2026-11-08T12:00:02.5-05:30  INFO reprise: resumed again"
-                .into(),
-        ),
-        ..DiagnosticFacts::default()
-    };
-
-    let report = render(&facts);
-
-    for line in [
-        "\n2026-11-08T12:00:00.123Z  WARN reprise: playback stalled elapsed_ms=12",
-        "\n2026-11-08T12:00:01+01:00  INFO reprise: resumed",
-        "\n2026-11-08T12:00:02.5-05:30  INFO reprise: resumed again",
-    ] {
-        assert!(report.contains(line), "timestamp lost: {report}");
-    }
 }
 
 #[test]

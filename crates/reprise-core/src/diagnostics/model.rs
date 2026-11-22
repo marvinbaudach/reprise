@@ -35,7 +35,7 @@ pub struct DiagnosticFacts {
     pub remembered_device_count: Option<usize>,
     /// Ids of the optional modules switched on; `None` when they could not be read.
     pub enabled_modules: Option<Vec<String>>,
-    /// The end of this run's log file, as written. Redacted again when rendered.
+    /// The end of this run's log file, as written: its lines were safe when they were written.
     pub log_tail: Option<String>,
     /// The end of the previous run's log file, the crashed run's after a crash.
     pub previous_log_tail: Option<String>,

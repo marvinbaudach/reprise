@@ -41,7 +41,7 @@ fn a_missing_file_has_no_tail() {
 #[test]
 fn a_huge_file_is_read_only_from_its_end() {
     let root = tempfile::tempdir().unwrap();
-    let path = root.path().join("reprise.log");
+    let path = root.path().join("run.log");
     let filler = "x".repeat(100);
     let mut contents: String = (0..2_000).map(|_| format!("{filler}\n")).collect();
     contents.push_str("the last line\n");

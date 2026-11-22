@@ -58,7 +58,7 @@ pub(crate) fn marker_test_lock() -> std::sync::MutexGuard<'static, ()> {
 pub(crate) fn arm() {
     let previous = crash_report::arm();
     if previous == PreviousExit::Unclean {
-        // The crashed run's log is `reprise.log.1` by now; say so in this one.
+        // The crashed run's log is `run.log.1` by now; say so in this one.
         tracing::info!("the previous run did not end cleanly");
     }
     PENDING.after(previous);

@@ -1,6 +1,6 @@
 use super::{
     render_report, DiagnosticEvent, DiagnosticFacts, DiagnosticLevel, DiagnosticLog, PackageKind,
-    RedactionContext, DIAGNOSTIC_EVENT_CAPACITY,
+    DIAGNOSTIC_EVENT_CAPACITY,
 };
 
 fn complete_facts() -> DiagnosticFacts {
@@ -33,11 +33,7 @@ fn complete_facts() -> DiagnosticFacts {
 
 #[test]
 fn missing_facts_render_as_unknown_in_every_fixed_slot() {
-    let report = render_report(
-        &DiagnosticFacts::default(),
-        &DiagnosticLog::default(),
-        &RedactionContext::default(),
-    );
+    let report = render_report(&DiagnosticFacts::default(), &DiagnosticLog::default());
 
     assert_eq!(
         report,
@@ -54,11 +50,7 @@ mtp gvfs unknown · unknown devices remembered"
 
 #[test]
 fn empty_log_omits_the_last_warnings_block() {
-    let report = render_report(
-        &complete_facts(),
-        &DiagnosticLog::default(),
-        &RedactionContext::default(),
-    );
+    let report = render_report(&complete_facts(), &DiagnosticLog::default());
 
     assert!(!report.contains("last warnings"));
     assert!(report.ends_with("mtp gvfs 1.60.2 · 1 device remembered"));
@@ -69,181 +61,65 @@ fn missing_distribution_version_omits_only_its_token() {
     let mut facts = complete_facts();
     facts.os_version = None;
 
-    let report = render_report(
-        &facts,
-        &DiagnosticLog::default(),
-        &RedactionContext::default(),
-    );
+    let report = render_report(&facts, &DiagnosticLog::default());
 
     assert!(report.contains("\nos fedora · gnome 49 · wayland\n"));
     assert!(!report.contains("os fedora unknown"));
 }
 
 #[test]
-fn rendered_events_do_not_expose_paths_uris_filenames_users_or_credentials() {
+fn a_session_event_is_embedded_as_stored_with_its_call_site() {
+    let mut log = DiagnosticLog::default();
+    log.push(
+        DiagnosticEvent::new(
+            9 * 3_600 + 25 * 60 + 14,
+            DiagnosticLevel::Warn,
+            "reprise_core::library::watcher",
+            "could not move the previous log aside; error=$REDACTED count=3",
+        )
+        .with_location(Some("crates/reprise-core/src/run_log.rs:42")),
+    );
+    log.push(DiagnosticEvent::new(
+        9 * 3_600 + 25 * 60 + 15,
+        DiagnosticLevel::Error,
+        "foreign_transport::connection",
+        "…",
+    ));
+
+    let report = render_report(&complete_facts(), &log);
+
+    // The newest event comes first; a foreign one has no location.
+    assert!(
+        report.ends_with(
+            "\n\nlast warnings\n\
+             09:25:15 connection: …\n\
+             09:25:14 watcher: could not move the previous log aside; error=$REDACTED count=3 \
+             @ crates/reprise-core/src/run_log.rs:42"
+        ),
+        "{report}"
+    );
+}
+
+#[test]
+fn the_report_does_not_search_what_it_embeds() {
+    // What was stored is safe by construction, so the renderer leaves it as
+    // it is: a path-shaped or secret-shaped word is not its business.
     let mut log = DiagnosticLog::default();
     log.push(DiagnosticEvent::new(
-        9 * 3_600 + 25 * 60 + 14,
+        1,
         DiagnosticLevel::Warn,
         "scanner",
-        "alice failed /home/marvin/Music/Private Album/secret.flac, /home/marvin/.config/reprise/token.json, /var/tmp/private.log, file:///home/marvin/Music/private.flac, https://example.org/private?id=alice, cover-secret.jpg, lastfm_username=private-listener, access_token=hunter2",
-    ));
-    let context = RedactionContext {
-        music_dir: Some("/home/marvin/Music".into()),
-        home_dir: Some("/home/marvin".into()),
-        username: Some("alice".into()),
-    };
-
-    let report = render_report(&complete_facts(), &log, &context);
-
-    for private in [
-        "/home/marvin/Music",
-        "/home/marvin",
-        "/var/tmp/private.log",
-        "private.flac",
-        "token.json",
-        "private.log",
-        "cover-secret.jpg",
-        "example.org",
-        "private-listener",
-        "hunter2",
-        "alice",
-    ] {
-        assert!(
-            !report.contains(private),
-            "report leaked {private:?}:\n{report}"
-        );
-    }
-    assert!(report.contains("$XDG_MUSIC_DIR/…"));
-    assert!(report.contains("$HOME/…"));
-    assert!(report.contains("file://…"));
-    assert!(report.contains("https://…"));
-    assert!(report.contains("$USER"));
-}
-
-#[test]
-fn rendered_events_redact_every_absolute_path_without_losing_sentence_context() {
-    let mut log = DiagnosticLog::default();
-    log.push(DiagnosticEvent::new(
-        8 * 3_600 + 14 * 60 + 22,
-        DiagnosticLevel::Warn,
-        "device_sync",
-        "device path:/run/media/marvin/BACKUP_DRIVE mounted; inspected `/srv/archive/private`, then moved /var/tmp/x.mp3 to /opt/share/y.mp3 successfully",
+        "see /srv/archive/x.mp3 and https://example.org/a token=abc",
     ));
 
-    let report = render_report(&complete_facts(), &log, &RedactionContext::default());
-
-    for private in [
-        "/run/media",
-        "BACKUP_DRIVE",
-        "/srv/archive",
-        "private",
-        "/var/tmp",
-        "x.mp3",
-        "/opt/share",
-        "y.mp3",
-    ] {
-        assert!(
-            !report.contains(private),
-            "report leaked {private:?}:\n{report}"
-        );
-    }
-    assert!(report.contains("path:… mounted"));
-    assert!(report.contains("inspected `…"));
-    assert!(report.contains("then moved … to … successfully"));
-}
-
-fn device_sync_report(message: &str) -> String {
-    let mut log = DiagnosticLog::default();
-    log.push(DiagnosticEvent::new(
-        8 * 3_600 + 14 * 60 + 22,
-        DiagnosticLevel::Warn,
-        "device_sync",
-        message,
-    ));
-
-    render_report(&complete_facts(), &log, &RedactionContext::default())
-}
-
-#[test]
-fn rendered_events_redact_identifying_fields_written_as_raw_text() {
-    let report = device_sync_report(
-        "device_id=0123456789ABCDEF device_serial=SERIAL-PRIVATE playlist=Roadtrip playlist_name=SecretMix user_name=private-listener track_id=42",
-    );
-
-    for private in [
-        "0123456789ABCDEF",
-        "SERIAL-PRIVATE",
-        "Roadtrip",
-        "SecretMix",
-        "private-listener",
-    ] {
-        assert!(
-            !report.contains(private),
-            "report leaked {private:?}:\n{report}"
-        );
-    }
-    // The first value is raw text, so it owns the rest of the line: a later
-    // `track_id=42` could be forged text just as well as a typed field.
-    assert!(
-        report
-            .lines()
-            .any(|line| line.ends_with("device_sync: device_id=$REDACTED")),
-        "{report}"
-    );
-    assert!(!report.contains("track_id="), "{report}");
-}
-
-#[test]
-fn rendered_events_keep_the_typed_fields_that_follow_a_redacted_one() {
-    // What `EventFields` writes for typed fields: a field outside both lists,
-    // such as `user_name` or `device_serial`, is already `$REDACTED`.
-    let report = device_sync_report(
-        "device sync failed; device_id=$REDACTED device_serial=$REDACTED playlist=$REDACTED user_name=$REDACTED track_id=42",
-    );
+    let report = render_report(&complete_facts(), &log);
 
     assert!(
-        report.contains(
-            "device sync failed; device_id=$REDACTED device_serial=$REDACTED \
-playlist=$REDACTED user_name=$REDACTED track_id=42"
+        report.ends_with(
+            "00:00:01 scanner: see /srv/archive/x.mp3 and https://example.org/a token=abc"
         ),
         "{report}"
     );
-}
-
-#[test]
-fn rendered_events_keep_the_new_releases_stop_early_cause_but_still_redact_the_artist() {
-    // `New Releases: check stopped early` (`artist_news_pipeline.rs`) is the
-    // one place `musicbrainz_error` — a multi-word `SourceError::technical_cause()`
-    // such as "MusicBrainz returned HTTP status 503" — reaches the debug
-    // report. Unlike the single-token fields in
-    // `rendered_events_redact_identifying_structured_fields`,
-    // `redact_sensitive_assignments` only ever inspects the token that holds
-    // the `key=` separator; the words after it have none, so they pass
-    // through untouched. `artist=Lorna Shore` in the same line proves the
-    // untouched words are not a general loophole: only its first word is on
-    // the safe list, so only `artist=Lorna` is replaced and `Shore` survives
-    // as plain, non-`key=value` text — exactly like `musicbrainz_error`'s
-    // trailing words.
-    let mut log = DiagnosticLog::default();
-    log.push(DiagnosticEvent::new(
-        11 * 3_600 + 2 * 60 + 9,
-        DiagnosticLevel::Warn,
-        "artist_news_pipeline",
-        "New Releases: check stopped early; consecutive_failures=3 skipped=22 musicbrainz_error=MusicBrainz returned HTTP status 503 artist=Lorna Shore",
-    ));
-
-    let report = render_report(&complete_facts(), &log, &RedactionContext::default());
-
-    assert!(
-        report.contains(
-            "New Releases: check stopped early; consecutive_failures=3 skipped=22 \
-musicbrainz_error=MusicBrainz returned HTTP status 503"
-        ),
-        "the technical cause must survive redaction intact:\n{report}"
-    );
-    assert!(report.contains("artist=$REDACTED"));
-    assert!(!report.contains("Lorna"));
 }
 
 #[test]
@@ -267,7 +143,7 @@ fn rendered_events_use_only_the_final_target_segment() {
         ));
     }
 
-    let report = render_report(&complete_facts(), &log, &RedactionContext::default());
+    let report = render_report(&complete_facts(), &log);
     let lines: Vec<_> = report
         .split("last warnings\n")
         .nth(1)
@@ -299,7 +175,7 @@ fn overflowing_log_keeps_capacity_and_renders_latest_ten_newest_first() {
     }
 
     assert_eq!(log.len(), DIAGNOSTIC_EVENT_CAPACITY);
-    let report = render_report(&complete_facts(), &log, &RedactionContext::default());
+    let report = render_report(&complete_facts(), &log);
     let rendered_events = report.split("last warnings\n").nth(1).unwrap();
     let lines: Vec<_> = rendered_events.lines().collect();
 

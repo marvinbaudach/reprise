@@ -24,12 +24,11 @@ fn recorded(log: impl FnOnce()) -> RecordedEvent {
 }
 
 fn field(event: &RecordedEvent, key: &str) -> RecordedValue {
-    event
-        .fields
-        .iter()
-        .find(|field| field.key == key)
-        .map(|field: &RecordedField| field.value.clone())
-        .unwrap_or_else(|| panic!("no field {key:?} in {event:?}"))
+    let found = event.fields.iter().find(|field| field.key == key);
+    let Some(RecordedField { value, .. }) = found else {
+        panic!("no field {key:?} in {event:?}");
+    };
+    value.clone()
 }
 
 #[test]

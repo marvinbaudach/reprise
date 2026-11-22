@@ -11,15 +11,19 @@ use std::path::{Path, PathBuf};
 pub const MAX_LOG_BYTES: u64 = 8 * 1024 * 1024;
 
 const APP_DIRECTORY: &str = "reprise";
-const LOG_FILE: &str = "reprise.log";
-const PREVIOUS_LOG_FILE: &str = "reprise.log.1";
+const LOG_FILE: &str = "run.log";
+const PREVIOUS_LOG_FILE: &str = "run.log.1";
+/// The names an earlier version wrote. Its lines passed the heuristic
+/// redaction, so a report must never read them; the new names keep a file of
+/// that kind out of every report, and the first instance deletes it.
+const LEGACY_LOG_FILES: [&str; 2] = ["reprise.log", "reprise.log.1"];
 const CRASH_MARKER_FILE: &str = "last-crash";
 #[cfg(unix)]
 const PRIVATE_DIRECTORY_MODE: u32 = 0o700;
 #[cfg(unix)]
 const PRIVATE_FILE_MODE: u32 = 0o600;
 
-/// The active log: `<state root>/reprise/reprise.log`.
+/// The active log: `<state root>/reprise/run.log`.
 #[must_use]
 pub fn log_path() -> Option<PathBuf> {
     root().map(|root| log_path_in(&root))
@@ -51,6 +55,31 @@ pub fn rotate_on_start() -> io::Result<()> {
         create_private_dir(parent)?;
     }
     rotate_paths(&active, &previous)
+}
+
+/// Deletes the run logs an earlier version wrote (`reprise.log` and
+/// `reprise.log.1`) from the state directory, and nothing else. The first
+/// instance calls it once at start. A file that is already gone is fine; any
+/// other failure is returned after both names were tried.
+pub fn remove_legacy_logs() -> io::Result<()> {
+    match root() {
+        Some(root) => remove_legacy_logs_in(&root),
+        None => Ok(()),
+    }
+}
+
+/// [`remove_legacy_logs`] beneath a supplied state root.
+pub fn remove_legacy_logs_in(root: &Path) -> io::Result<()> {
+    let directory = app_directory_in(root);
+    let mut failure = None;
+    for name in LEGACY_LOG_FILES {
+        match std::fs::remove_file(directory.join(name)) {
+            Ok(()) => {}
+            Err(error) if error.kind() == io::ErrorKind::NotFound => {}
+            Err(error) => failure = failure.or(Some(error)),
+        }
+    }
+    failure.map_or(Ok(()), Err)
 }
 
 /// Builds the active log path beneath a supplied state root.
@@ -154,7 +183,7 @@ mod tests {
         let root = state_root_from(Some("/state".into()), Some("/data".into()));
         assert_eq!(
             root.as_deref().map(log_path_in),
-            Some(PathBuf::from("/state/reprise/reprise.log"))
+            Some(PathBuf::from("/state/reprise/run.log"))
         );
     }
 
@@ -165,7 +194,7 @@ mod tests {
             let root = state_root_from(unset, data.clone());
             assert_eq!(
                 root.as_deref().map(log_path_in),
-                Some(PathBuf::from("/data/reprise/reprise.log"))
+                Some(PathBuf::from("/data/reprise/run.log"))
             );
         }
         assert_eq!(state_root_from(None, None), None);
@@ -176,7 +205,7 @@ mod tests {
         let root = Path::new("/state");
         assert_eq!(
             previous_log_path_in(root),
-            PathBuf::from("/state/reprise/reprise.log.1")
+            PathBuf::from("/state/reprise/run.log.1")
         );
         assert_eq!(
             crash_marker_path_in(root),
@@ -214,5 +243,73 @@ mod tests {
 
         assert!(result.is_err());
         assert_eq!(std::fs::read_to_string(active).unwrap(), "current");
+    }
+
+    #[test]
+    fn start_6_the_first_instance_removes_the_old_log_names_and_nothing_else() {
+        let root = tempfile::tempdir().unwrap();
+        let directory = app_directory_in(root.path());
+        std::fs::create_dir_all(&directory).unwrap();
+        for name in [
+            "reprise.log",
+            "reprise.log.1",
+            "run.log",
+            "run.log.1",
+            "last-crash",
+        ] {
+            std::fs::write(directory.join(name), name).unwrap();
+        }
+        // A look-alike beside the state directory is not ours to delete.
+        std::fs::write(root.path().join("reprise.log"), "elsewhere").unwrap();
+
+        remove_legacy_logs_in(root.path()).unwrap();
+
+        let mut left: Vec<_> = std::fs::read_dir(&directory)
+            .unwrap()
+            .map(|entry| entry.unwrap().file_name().to_string_lossy().into_owned())
+            .collect();
+        left.sort();
+        assert_eq!(left, ["last-crash", "run.log", "run.log.1"]);
+        assert!(root.path().join("reprise.log").exists());
+    }
+
+    #[test]
+    fn start_6_a_state_directory_without_old_logs_is_not_an_error() {
+        let root = tempfile::tempdir().unwrap();
+        // Neither the state directory nor the files exist.
+        remove_legacy_logs_in(root.path()).unwrap();
+        // The directory exists, only one of the two names does.
+        let directory = app_directory_in(root.path());
+        std::fs::create_dir_all(&directory).unwrap();
+        std::fs::write(directory.join("reprise.log.1"), "old").unwrap();
+
+        remove_legacy_logs_in(root.path()).unwrap();
+
+        assert!(!directory.join("reprise.log.1").exists());
+    }
+
+    #[test]
+    fn start_6_a_failed_removal_is_reported_after_both_names_were_tried() {
+        // A directory where an old log belongs makes `remove_file` fail for
+        // every user, root included.
+        let root = tempfile::tempdir().unwrap();
+        let directory = app_directory_in(root.path());
+        std::fs::create_dir_all(directory.join("reprise.log")).unwrap();
+        std::fs::write(directory.join("reprise.log.1"), "old").unwrap();
+
+        let result = remove_legacy_logs_in(root.path());
+
+        assert!(result.is_err());
+        assert!(!directory.join("reprise.log.1").exists());
+    }
+
+    #[test]
+    fn the_run_log_has_its_own_names_in_the_same_directory() {
+        let root = Path::new("/state");
+        assert_eq!(log_path_in(root), PathBuf::from("/state/reprise/run.log"));
+        assert_eq!(
+            previous_log_path_in(root),
+            PathBuf::from("/state/reprise/run.log.1")
+        );
     }
 }

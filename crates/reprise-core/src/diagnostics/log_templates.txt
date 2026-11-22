@@ -340,6 +340,7 @@ crates/reprise-gnome/src/ui/device_sync/device_sync_target_browser.rs	could not 
 crates/reprise-gnome/src/ui/device_sync/device_sync_transcode_effect.rs	device audio transcode failed
 crates/reprise-gnome/src/ui/device_sync/device_sync_transcode_effect.rs	invariant broken: a transcode effect must name a transcode action
 crates/reprise-gnome/src/ui/diagnostics/crash_offer.rs	the previous run did not end cleanly
+crates/reprise-gnome/src/ui/diagnostics/file_log.rs	could not remove the old log files
 crates/reprise-gnome/src/ui/end_of_results.rs	invariant broken: the unrestricted case returns above
 crates/reprise-gnome/src/ui/external_changes/mod.rs	external-changes: cannot open a read connection; continuing without live updates
 crates/reprise-gnome/src/ui/external_changes/mod.rs	external-changes: cannot read the change-log baseline; starting at 0

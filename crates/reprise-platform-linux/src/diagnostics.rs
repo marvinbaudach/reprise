@@ -38,7 +38,7 @@ pub fn build_report(
     log: &DiagnosticLog,
 ) -> String {
     let facts = collect_facts(db, db_path, input);
-    render_report(&facts, log, &redaction_context())
+    render_report(&facts, log)
 }
 
 fn collect_facts(db: &Db, db_path: &Path, input: &DesktopDiagnosticInput) -> DiagnosticFacts {

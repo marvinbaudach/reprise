@@ -1,7 +1,6 @@
 use std::fmt::Write;
 
-use super::model::{DiagnosticFacts, DiagnosticLog, PackageKind, RedactionContext};
-use super::redact::redact_log_message;
+use super::model::{DiagnosticFacts, DiagnosticLog, PackageKind};
 
 const RENDERED_EVENT_LIMIT: usize = 10;
 const UNKNOWN: &str = "unknown";
@@ -10,11 +9,13 @@ const PREVIOUS_RUN_HEADING: &str = "log, previous run";
 
 // Writing into a `String` cannot fail, so the `fmt::Result` of every `write!`
 // below carries no information and is discarded with `let _ =`.
-pub fn render_report(
-    facts: &DiagnosticFacts,
-    log: &DiagnosticLog,
-    redaction: &RedactionContext,
-) -> String {
+/// The report as one text.
+///
+/// The session events and the log tail lines are embedded as they are: they
+/// were reduced to safe text when they were recorded (`safe_event`), so
+/// nothing here searches them for anything. The facts above them are the
+/// report's own labels and values the collector read.
+pub fn render_report(facts: &DiagnosticFacts, log: &DiagnosticLog) -> String {
     let mut report = String::new();
     let version = optional(&facts.version);
     let git_sha = optional(&facts.git_sha);
@@ -72,46 +73,39 @@ pub fn render_report(
             let hours = seconds / 3_600;
             let minutes = seconds % 3_600 / 60;
             let seconds = seconds % 60;
-            let target = redact_log_message(&event.target, redaction);
-            let target = final_target_segment(&target);
+            let target = final_target_segment(&event.target);
             let target = if target.is_empty() {
                 String::new()
             } else {
                 format!("{target}: ")
             };
-            let message = redact_log_message(&event.message, redaction);
+            let message = &event.message;
+            let location = event
+                .location
+                .as_deref()
+                .map_or_else(String::new, |location| format!(" @ {location}"));
             let _level = event.level;
             let _ = write!(
                 report,
-                "{hours:02}:{minutes:02}:{seconds:02} {target}{message}"
+                "{hours:02}:{minutes:02}:{seconds:02} {target}{message}{location}"
             );
             if index + 1 < log.len().min(RENDERED_EVENT_LIMIT) {
                 report.push('\n');
             }
         }
     }
-    append_log_tail(&mut report, THIS_RUN_HEADING, &facts.log_tail, redaction);
-    append_log_tail(
-        &mut report,
-        PREVIOUS_RUN_HEADING,
-        &facts.previous_log_tail,
-        redaction,
-    );
+    append_log_tail(&mut report, THIS_RUN_HEADING, &facts.log_tail);
+    append_log_tail(&mut report, PREVIOUS_RUN_HEADING, &facts.previous_log_tail);
     report
 }
 
-fn append_log_tail(
-    report: &mut String,
-    heading: &str,
-    tail: &Option<String>,
-    redaction: &RedactionContext,
-) {
+fn append_log_tail(report: &mut String, heading: &str, tail: &Option<String>) {
     let Some(tail) = tail.as_deref().filter(|tail| !tail.trim().is_empty()) else {
         return;
     };
     let _ = write!(report, "\n\n{heading}");
     for line in tail.lines() {
-        let _ = write!(report, "\n{}", redact_log_message(line, redaction));
+        let _ = write!(report, "\n{line}");
     }
 }
 
