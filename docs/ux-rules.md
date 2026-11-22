@@ -2042,9 +2042,18 @@ result.
   libadwaita defaults `use-markup` to TRUE on all of them, so library data
   and translations containing `&`, `<` or `>` would otherwise render an
   empty label — the same defect class FB-11 closed for toasts. Rows and
-  banners are therefore built only through `ui/rows.rs`, which turns the
-  default off at the one construction point; `check-gnome-idioms.sh` rejects
-  direct construction. `AdwStatusPage` is exempt because its title is not
+  banners are therefore built only through `ui/rows.rs`; `check-gnome-idioms.sh`
+  rejects direct construction. Switching `use-markup` off on the builder is
+  not enough: a GObject builder does not let the caller win the race, and a
+  title or subtitle given at construction reaches the label while markup is
+  still on, is parsed once, and logs "Failed to set text ... from markup"
+  (measured on the published 0.1.346 Flatpak, three times when the Rhythmbox
+  import dialog opened). The `ui/rows.rs` builders therefore hold the title
+  and subtitle back and give them to the finished row only after
+  `set_use_markup(false)`, in `build()`; `banner()` does the same. No title
+  reaches the markup parser, not even for an instant; the test
+  `fb_13_a_row_title_with_markup_characters_is_never_parsed_as_markup`
+  asserts it against the GTK log. `AdwStatusPage` is exempt because its title is not
   parsed as markup, and the count labels that deliberately use Pango markup
   are plain `GtkLabel`s and stay outside this rule. Named exception:
   `preferences/preferences_search_results.rs`'s `apply_highlight` (~line 189)
@@ -2217,12 +2226,31 @@ result.
   The greeting carries the same marker, sole selection, and centring treatment
   as a restored track: if it belongs to the restored destination its row is
   selected and centered without taking keyboard focus; if it does not, the
-  destination's own selection and viewport stay untouched (NAV-10b). The first
+  destination's own selection and viewport stay untouched (NAV-10b). A
+  destination that already carries a selection of its own keeps it, with the
+  viewport it was saved at (START-4a). The first
   Play consumes the greeting into a fresh library-random playback snapshot;
   Previous or Next discards it and follows the restored queue. A restored
   episode still applies its saved resume position and expands its required
   podcast or YouTube group and preview window first. Merely launching and
   closing the app never replaces the persisted queue.
+- **START-4a** [active] [gtk] — **A selection the restored place carries
+  survives the start.** Presenting the startup greeting, or a restored
+  Play-Next item, marks its row like any loaded track but never replaces a
+  selection the restored place already has: the saved `selected_ids` that
+  survive in the restored view stay selected, and the viewport stays where the
+  place was saved. Only a restored place whose view holds no selected row gets
+  the loaded track's sole selection and centring from START-4. Before this rule
+  every plain restart replaced the saved selection with a randomly chosen
+  greeting row, so a quit without a click saved a different row each time
+  (#1369). The same value is saved again at quit however many reloads a startup
+  scan reconcile adds in between. The loaded row is then not placed, so the
+  first Play from Stopped reveals it instead of taking NAV-10b's exemption for
+  a placed row. *Tests:*
+  `start_4a_a_restored_selection_survives_the_greeting_and_a_reconcile`,
+  `start_4a_the_restored_viewport_stays_where_the_place_was_saved`,
+  `start_4a_a_saved_id_that_no_longer_exists_leaves_the_greeting_selected`,
+  `start_4a_play_from_stopped_reveals_a_row_the_start_did_not_place`.
 - **START-5a** [active] [gtk] — **A termination request saves the session
   and shuts down through the window close.** When Reprise receives SIGTERM,
   SIGHUP or SIGINT (logout, `systemctl --user stop`, a harness restart,
@@ -4547,12 +4575,16 @@ property is set and yet nothing happens.
   one Play that starts a restored session, whose pending Play-Next item or
   startup greeting START-4 already selected and centered: that row is placed,
   so starting it only starts the audio. Centring it again would be a second visible scroll on a
-  viewport that is already the target.
+  viewport that is already the target. The exemption holds only for a row
+  startup actually placed: when the restored place kept a selection of its own
+  (START-4a) the row was left where it is, and that first Play centers it like
+  any other Play from Stopped.
   At startup the loaded track therefore means the greeting, never the hidden
   current item of the untouched persisted queue. Previous or Next discarding
   the greeting moves the marker to the concrete restored-queue target. A
-  greeting outside the restored destination leaves that destination's
-  selection and viewport untouched.
+  greeting outside the restored destination, or into one that carries a
+  selection of its own (START-4a), leaves that destination's selection and
+  viewport untouched.
   In a list with section headers, "centered" means centered in the complete
   content geometry including every header above the row, never in an imagined
   headerless row sequence. A reveal in a stationary list targets the exact

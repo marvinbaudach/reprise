@@ -253,10 +253,11 @@ pub struct PlayerController {
     pub(in crate::ui) library_has_tracks: Cell<bool>,
     pub(super) last_composed_tail: RefCell<Option<reprise_view::queue::LastTail>>,
     /// START-4 one-shot for an item already selected and centered by startup
-    /// routing, including a startup greeting. Greeting Play never consults
-    /// this flag: it reaches `play_track_id` as `PlaybackStarted`, whose
-    /// NAV-10b reveal policy is already `MarkerOnly`. Also cleared by the
-    /// first `present_track`.
+    /// routing, including a startup greeting. Both Play paths consult it: set,
+    /// the start is `PlaybackStarted` (NAV-10b `MarkerOnly`); clear, it is an
+    /// `ExplicitTransport` reveal. Startup clears it when a restored selection
+    /// kept the row unplaced (START-4a, `forget_restored_placement`), and the
+    /// first `present_track` clears it too.
     pub(in crate::ui) restored_placement_intact: Cell<bool>,
     /// A waveform position selected before playback starts, bound to the
     /// exact queue item that may consume it on the next start attempt.

@@ -488,8 +488,8 @@ fn reparent_pages(
             let row = crate::ui::rows::action_row()
                 .title("Download cover art")
                 .subtitle("coverartarchive.org")
-                .visible(false)
                 .build();
+            row.set_visible(false);
             target.borrow_mut().set(Some(&row));
             group.add(&row);
             group.add(&crate::ui::rows::action_row().title("Cover after").build());

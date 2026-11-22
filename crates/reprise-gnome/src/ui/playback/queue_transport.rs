@@ -87,10 +87,10 @@ fn should_advance_after_user_delete(ids: &[i64], loaded: Option<i64>) -> bool {
 }
 /// `restored_placement_intact` says the loaded track is still exactly where
 /// startup routing put it: selected and centered, never played (START-4).
-/// START-4 places a greeting the same way, but greeting Play bypasses this
-/// decision and reaches `play_track_id` as `PlaybackStarted`, whose NAV-10b
-/// reveal policy is already `MarkerOnly`. Other starts from Stopped without
-/// this one-shot keep NAV-10b's explicit-transport reveal.
+/// START-4 places a greeting the same way and a greeting Play reads the same
+/// flag (`start_stopped_play_target`). Startup clears it when a restored
+/// selection kept the row unplaced (START-4a); any start from Stopped without
+/// this one-shot keeps NAV-10b's explicit-transport reveal.
 fn toggle_action(
     status: MprisPlaybackStatus,
     current_track: Option<QueueItem>,
@@ -353,6 +353,23 @@ impl PlayerController {
         start_index: usize,
         origin: super::play_origin::PlayOrigin,
     ) {
+        self.play_from_view_with_change(
+            ids,
+            start_index,
+            origin,
+            CurrentTrackChange::PlaybackStarted,
+        );
+    }
+
+    /// [`Self::play_from_view`] with an explicit reveal intent for the first
+    /// track, for the stopped-start paths that decide it themselves.
+    pub(in crate::ui) fn play_from_view_with_change(
+        self: &Rc<Self>,
+        ids: Vec<i64>,
+        start_index: usize,
+        origin: super::play_origin::PlayOrigin,
+        change: CurrentTrackChange,
+    ) {
         *self.pending_random_start.borrow_mut() = None;
         self.queue.borrow_mut().set_tracks(ids, start_index);
         self.current_up_next.set(None);
@@ -370,7 +387,7 @@ impl PlayerController {
 
         let current = self.queue.borrow().current();
         match current {
-            Some(id) => self.play_track_id(id),
+            Some(id) => self.play_track_id_with_change(id, change),
             None => self.reset_to_stopped(),
         }
         // The Queue view and sidebar counter render the snapshot (QUE-1/

@@ -10,6 +10,10 @@ use reprise_core::diagnostics::{
     render_report, DiagnosticFacts, DiagnosticLog, PackageKind, RedactionContext,
 };
 
+use crate::flatpak::FLATPAK_INFO;
+
+const GNOME_PLATFORM: &str = "org.gnome.Platform";
+
 /// Runtime values that only the native frontend can observe directly.
 pub struct DesktopDiagnosticInput {
     pub version: String,
@@ -52,7 +56,7 @@ fn collect_facts(db: &Db, db_path: &Path, input: &DesktopDiagnosticInput) -> Dia
         version: Some(input.version.clone()),
         git_sha: input.git_sha.clone().filter(|value| !value.is_empty()),
         build_profile: Some(input.build_profile.clone()),
-        package: Some(if Path::new("/.flatpak-info").is_file() {
+        package: Some(if Path::new(FLATPAK_INFO).is_file() {
             PackageKind::Flatpak {
                 app_id: Some(input.app_id.clone()),
             }
@@ -61,8 +65,12 @@ fn collect_facts(db: &Db, db_path: &Path, input: &DesktopDiagnosticInput) -> Dia
         }),
         os_name: os_release.name,
         os_version: os_release.version,
-        gnome_version: command_output("gnome-shell", &["--version"])
-            .and_then(|output| parse_gnome_version(&output)),
+        gnome_version: gnome_version_from(
+            command_output("gnome-shell", &["--version"])
+                .and_then(|output| parse_gnome_version(&output))
+                .as_deref(),
+            flatpak_gnome_runtime().as_deref(),
+        ),
         display_server: input.display_server.clone(),
         gtk_version: Some(input.gtk_version.clone()),
         libadwaita_version: Some(input.libadwaita_version.clone()),
@@ -175,6 +183,41 @@ fn parse_gnome_version(output: &str) -> Option<String> {
         .split_whitespace()
         .find(|part| part.chars().next().is_some_and(|ch| ch.is_ascii_digit()))
         .map(str::to_string)
+}
+
+/// The shell's own version when `gnome-shell` runs, else the GNOME runtime the
+/// sandbox ships. A Flatpak cannot execute the host's shell, so without the
+/// fallback every sandboxed report said `gnome unknown`.
+fn gnome_version_from(shell: Option<&str>, flatpak_runtime: Option<&str>) -> Option<String> {
+    shell.or(flatpak_runtime).map(str::to_string)
+}
+
+fn flatpak_gnome_runtime() -> Option<String> {
+    let info = std::fs::read_to_string(FLATPAK_INFO).ok()?;
+    parse_flatpak_gnome_runtime(&info)
+}
+
+/// The GNOME platform version from the `[Application]` section of
+/// `/.flatpak-info` (`runtime=runtime/org.gnome.Platform/<arch>/<version>`),
+/// labelled so it is not mistaken for the host shell.
+fn parse_flatpak_gnome_runtime(info: &str) -> Option<String> {
+    let mut in_application = false;
+    for line in info.lines().map(str::trim) {
+        if line.starts_with('[') {
+            in_application = line == "[Application]";
+        } else if in_application {
+            let Some(("runtime", reference)) = line.split_once('=') else {
+                continue;
+            };
+            let mut parts = reference.split('/');
+            let version = match (parts.next(), parts.next(), parts.next(), parts.next()) {
+                (Some("runtime"), Some(GNOME_PLATFORM), Some(_arch), Some(version)) => version,
+                _ => return None,
+            };
+            return (!version.is_empty()).then(|| format!("{version} (Flatpak runtime)"));
+        }
+    }
+    None
 }
 
 fn parse_gvfs_version(output: &str) -> Option<String> {
