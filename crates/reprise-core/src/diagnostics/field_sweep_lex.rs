@@ -117,10 +117,11 @@ fn skip_block_comment(chars: &[char], start: usize) -> (usize, usize) {
 /// runs to the end of the input, so the index never exceeds `chars.len()`.
 ///
 /// Escapes: `\n`, `\r`, `\t`, `\0`, `\\`, `\"`, `\'`, `\x..`, `\u{…}`, and a
-/// backslash before a line break, which drops the break and the white space
-/// that follows. A backslash before anything else keeps that character, and a
-/// `\x` or `\u` that names no character is dropped; the source compiled, so
-/// neither occurs in practice and the reader never has to fail.
+/// backslash before a line break, which drops the break and the spaces, tabs
+/// and line breaks that follow (other white space stays, as in rustc). A
+/// backslash before anything else keeps that character, and a `\x` or `\u`
+/// that names no character is dropped; the source compiled, so neither occurs
+/// in practice and the reader never has to fail.
 fn read_string(chars: &[char], start: usize) -> (String, usize) {
     let mut text = String::new();
     let mut at = start + 1;
@@ -151,7 +152,10 @@ fn read_string(chars: &[char], start: usize) -> (String, usize) {
                 at = next;
             }
             '\n' | '\r' => {
-                while chars.get(at).is_some_and(|ch| ch.is_whitespace()) {
+                while chars
+                    .get(at)
+                    .is_some_and(|ch| matches!(ch, ' ' | '\t' | '\n' | '\r'))
+                {
                     at += 1;
                 }
             }

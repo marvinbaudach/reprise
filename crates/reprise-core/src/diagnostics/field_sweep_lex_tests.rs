@@ -190,3 +190,8 @@ fn an_escaped_quote_does_not_end_the_string() {
         [text("say \"hi\""), ident("tail")]
     );
 }
+
+#[test]
+fn a_line_continuation_keeps_white_space_that_rustc_keeps() {
+    assert_eq!(tokens("\"a\\\n \u{a0}b\""), [text("a\u{a0}b")]);
+}

@@ -116,11 +116,11 @@ fn a_message_that_the_template_does_not_cover_does_not_match() {
 
 #[test]
 fn matching_works_on_multibyte_text() {
-    let accented = template("Löschen: {} … fertig");
+    let accented = template("Café: {} … done");
 
-    assert!(accented.matches("Löschen: 東京 … fertig"));
-    assert!(accented.matches("Löschen:  … fertig"));
-    assert!(!accented.matches("Loschen: x … fertig"));
+    assert!(accented.matches("Café: 東京 … done"));
+    assert!(accented.matches("Café:  … done"));
+    assert!(!accented.matches("Cafe: x … done"));
 }
 
 #[test]
