@@ -84,3 +84,11 @@ fn session_filter_excludes_events_from_external_crates() {
     assert!(!report.contains("foreign transport warning"));
     assert!(report.contains("owned scanner warning"));
 }
+
+// The template table is keyed by `file!()` as written from the workspace root
+// (`reprise-core` pins the reasoning). A build that changes the form would turn
+// every message of this crate into `…` in the report, so the form is pinned.
+#[test]
+fn a_call_sites_file_has_the_template_tables_path_form() {
+    assert_eq!(file!(), "crates/reprise-gnome/src/ui/diagnostics/tests.rs");
+}
