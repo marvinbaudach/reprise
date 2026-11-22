@@ -10,6 +10,7 @@ mod field_sweep_lex;
 #[cfg(test)]
 mod field_sweep_spans;
 mod log_tail;
+mod log_template;
 mod model;
 mod redact;
 mod redact_assignments;
@@ -17,6 +18,7 @@ mod redact_composite;
 mod render;
 
 pub use log_tail::{read_log_tail, tail_of, TAIL_MAX_BYTES, TAIL_MAX_LINES};
+pub use log_template::{LogTemplate, TemplateError, HOLE};
 pub use model::{
     DiagnosticEvent, DiagnosticFacts, DiagnosticLevel, DiagnosticLog, PackageKind,
     RedactionContext, DIAGNOSTIC_EVENT_CAPACITY,
@@ -40,6 +42,8 @@ mod field_sweep_spans_tests;
 mod field_sweep_tests;
 #[cfg(test)]
 mod log_tail_tests;
+#[cfg(test)]
+mod log_template_tests;
 #[cfg(test)]
 mod redact_assignment_tests;
 #[cfg(test)]
