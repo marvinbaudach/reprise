@@ -1,10 +1,8 @@
 //! The value-shape rules for typed fields: what a kept key may carry, by kind.
 //!
-//! The cases come from the free-text pass's tests (`redact_assignment_tests`,
-//! `redact_composite_tests`) and from the file mirror's contract test. A value
-//! is judged exactly as written, so the cases that only made sense in running
-//! text (trailing punctuation, a second token) are inverted here: a typed
-//! value that carries them is redacted.
+//! The cases come from the retired free-text pass's tests and from the file
+//! mirror's contract test. A value is judged exactly as written, so a typed
+//! value that carries running-text punctuation or a second token is redacted.
 
 use super::field_values::{
     is_kept_text, render_field, RecordedField, RecordedValue, MAX_VALUE_BYTES, REDACTED,
@@ -283,8 +281,8 @@ fn a_struct_like_value_is_redacted() {
 
 #[test]
 fn a_value_is_judged_exactly_as_written_so_running_text_punctuation_is_not_kept() {
-    // The free-text pass trimmed `,` `;` `:` `]` `}` `"` and a matching `)` off
-    // a token. A typed value is the whole value: any of them makes it text.
+    // A typed value is the whole value: trailing `,` `;` `:` `]` `}` `"` or a
+    // wrapping `)` makes it text.
     for (key, value) in [
         ("count", "3,"),
         ("count", "(3)"),

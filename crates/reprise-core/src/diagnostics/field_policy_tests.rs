@@ -64,9 +64,8 @@ fn no_key_is_in_both_lists() {
 
 #[test]
 fn every_listed_key_is_lowercase_ascii() {
-    // The free-text pass lowercases a key before the lookup, and the typed
-    // pass compares it as written, so a key with an upper-case letter would
-    // be safe in one pass and redacted in the other.
+    // The lookup compares a key as written against the lists, so a key with
+    // an upper-case letter could never match what a reader expects.
     for key in KEEP_FIELDS.iter().chain(REDACT_FIELDS) {
         assert!(
             !key.is_empty()

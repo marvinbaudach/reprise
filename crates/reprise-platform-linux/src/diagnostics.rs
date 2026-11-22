@@ -3,12 +3,9 @@
 use std::path::Path;
 use std::process::Command;
 
-use gio::glib;
 use gstreamer as gst;
 use reprise_core::db::Db;
-use reprise_core::diagnostics::{
-    render_report, DiagnosticFacts, DiagnosticLog, PackageKind, RedactionContext,
-};
+use reprise_core::diagnostics::{render_report, DiagnosticFacts, DiagnosticLog, PackageKind};
 
 use crate::flatpak::FLATPAK_INFO;
 
@@ -102,16 +99,6 @@ fn enabled_module_ids(db: &Db) -> Option<Vec<String>> {
         }
     }
     Some(ids)
-}
-
-/// What a report or a mirrored log line must not reveal on this machine.
-pub fn redaction_context() -> RedactionContext {
-    RedactionContext {
-        music_dir: glib::user_special_dir(glib::UserDirectory::Music)
-            .map(|path| path.to_string_lossy().into_owned()),
-        home_dir: std::env::var("HOME").ok().filter(|value| !value.is_empty()),
-        username: std::env::var("USER").ok().filter(|value| !value.is_empty()),
-    }
 }
 
 fn locale() -> Option<String> {

@@ -41,14 +41,6 @@ pub struct DiagnosticFacts {
     pub previous_log_tail: Option<String>,
 }
 
-/// Values whose literal appearance must be removed from session log messages.
-#[derive(Clone, Debug, Default, PartialEq, Eq)]
-pub struct RedactionContext {
-    pub music_dir: Option<String>,
-    pub home_dir: Option<String>,
-    pub username: Option<String>,
-}
-
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum DiagnosticLevel {
     Warn,

@@ -3,10 +3,10 @@
 //! A log line leaves the machine inside a Copy Diagnostics report, so a
 //! structured field survives only when its key is in [`KEEP_FIELDS`]. Every
 //! other key is replaced by `$REDACTED`, and so is any key nobody has looked
-//! at. The same predicate, [`super::is_safe_structured_field`], decides for both
-//! redaction passes: `EventFields::record_value` in
-//! `reprise-gnome/src/ui/diagnostics.rs` for typed fields, and
-//! `redact_sensitive_assignments` for `key=value` text.
+//! at. [`is_safe_structured_field`] is that predicate; `field_values` asks it
+//! for every typed field of an own call site (a dependency's fields are not
+//! read at all). The text of the event's message is not a field and is never
+//! copied: `safe_event` replaces it with the call site's static template.
 //!
 //! The lists are closed lists of exact key names. There are no suffix or
 //! prefix rules (`*_ms`, `*_id`, `is_*`): a future `foo_id` that carries a
@@ -25,30 +25,19 @@
 //!
 //! # What the policy does not promise
 //!
-//! The predicate also governs the `key=value` tokens inside free-text
-//! messages and the log tail (D2). There a kept key keeps its value only when
-//! the value is a number (an integer, a float with one dot, an exponent form,
-//! a duration such as `12.5ms`, or `Some(..)` of one; several dots only under
-//! `version`), a plain identifier (`[A-Za-z_][A-Za-z0-9_]*`, and not eight
-//! or more hex digits), or an option, tuple variant or list of those:
+//! A kept key keeps a typed number or bool as written. Text recorded under a
+//! kept key (a `&str` or a `Debug` value) stays only when its whole shape is
+//! plain: a number (an integer, a float with one dot, an exponent form, a
+//! duration such as `12.5ms`, or `Some(..)` of one; several dots only under
+//! `version`), a plain identifier (`[A-Za-z_][A-Za-z0-9_]*`, and not eight or
+//! more hex digits), or an option, tuple variant or list of those:
 //! `Some(Track(5))`, `[1, 2, 3]`, `[NowPlaying, PlayNext(0)]` (integers and
 //! identifiers only inside; at most three wrappers and 64 elements, see
 //! `redact_composite`). Anything else, such as `mode=Compact,title=Foo` or a
-//! struct body (`StaleFor { seconds: 60 }`), is
-//! `key=$REDACTED`, and, like an unknown key, it takes every word after it up
-//! to the end of the line. Only a token whose value is already exactly
-//! `$REDACTED` ends that: it is what the typed path writes for a redacted field,
-//! so it carries nothing, and the typed fields after it stay readable (a known
-//! `key=` token ends the swallow after such a token, never after raw text, where
-//! `count=3` may be forged). A secret-like `token:` takes the rest of the line
-//! whatever follows. What remains is a plain identifier that is
-//! itself foreign text (`state=Artist`): the policy cannot tell it from a
-//! variant name, so a message that interpolates foreign text after a kept key
-//! is a review concern. The typed `EventFields` path keeps typed values and is
-//! unaffected, but the file mirror runs this pass over the finished line too,
-//! so a kept key whose `Debug` value is not one of the shapes above (a
-//! struct variant, a list holding a float) is redacted in the log file, and
-//! the fields written after it on that line go with it.
+//! struct body (`StaleFor { seconds: 60 }`), is `key=$REDACTED`. What remains
+//! is a plain identifier that is itself foreign text (`state=Artist`): the
+//! policy cannot tell it from a variant name, so a site that records foreign
+//! text under a kept key is a review concern.
 //!
 //! The classification test checks keys, not value types, and it does not see
 //! fields that dependencies emit (zbus, for one). A new site that emits an
@@ -249,9 +238,8 @@ pub(super) const KEEP_FIELDS: &[&str] = &[
     // `musicbrainz.rs` plus the fixed literal in
     // `invalid_response_source_error`, never user-entered or fetched
     // content. Named for MusicBrainz specifically, not the generic
-    // `fetch_error`: this list is global over both redaction paths
-    // (here and `EventFields::record_value` in
-    // `reprise-gnome/src/ui/diagnostics.rs`), and a source whose
+    // `fetch_error`: this list is global over both desktop layers
+    // (`reprise-gnome/src/ui/diagnostics/event_record.rs` feeds both), and a source whose
     // technical cause can carry a URL or a foreign library's own
     // message (podcasts, concerts) must not reuse this key.
     "musicbrainz_error",
@@ -425,10 +413,10 @@ pub(super) const KEEP_FIELDS: &[&str] = &[
 /// Keys that identify, or may identify, something and so stay redacted. Sorted.
 ///
 /// This list exists so that no key is silently on either side: a key that is
-/// emitted but listed nowhere fails the classification check. The free-text
-/// pass also reads it, to tell a known `key=` that ends a swallowed value from
-/// a fragment such as `abc==` inside it. The redaction itself never depends on
-/// it: a key in neither list is redacted all the same.
+/// emitted but listed nowhere fails the classification check. The redaction
+/// itself never depends on it: a key in neither list is redacted all the same,
+/// so only the classification tests read it.
+#[cfg(test)]
 pub(super) const REDACT_FIELDS: &[&str] = &[
     "action",
     // Smoke output of unverified type.
@@ -514,7 +502,7 @@ pub(super) const REDACT_FIELDS: &[&str] = &[
     "linger_error",
     "locale_dir",
     // Only `reprise-android-ffi` emits it, and that crate never runs the redactor. A field
-    // called `message` is the event's own text slot, which `EventFields` does not check
+    // called `message` is the event's own text slot, which the visitor does not check
     // against the policy, so the classification test refuses it everywhere else.
     "message",
     "mount",
@@ -612,3 +600,13 @@ pub(super) const REDACT_FIELDS: &[&str] = &[
     "volume",
     "welcome",
 ];
+
+/// Whether a structured field's value may be kept in a diagnostics line.
+///
+/// A lookup in `KEEP_FIELDS`: every key not listed there is redacted. The
+/// lookup is an exact match against lowercase names, and the key is the
+/// field's name as written, so `Count` is unknown. An unknown key is never
+/// safe. This module explains how a key earns its place.
+pub fn is_safe_structured_field(key: &str) -> bool {
+    KEEP_FIELDS.binary_search(&key).is_ok()
+}
