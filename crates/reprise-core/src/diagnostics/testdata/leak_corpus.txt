@@ -65,7 +65,7 @@ copied 50%/Zqxa
 copied (I/O) Zqxa
 copied Zqxa⁄Zqxb to device
 copied Zqxa／Zqxb to device
-/tank/zqxaudio/ゼクス zqx/狂気
+/tank/zqxaudio/ゼクス zqx/ゼクス
 /tank/audio/zqxband/Zqxqbm zqxwg zqxwh/01 - zqxqbn.flac
 /var/mnt/zqxnas/The Zqxqd side
 cannot open /nas/zqxmedia/Zqxqbm: permission denied
@@ -210,6 +210,22 @@ reprise::net::auth::token: Zqxa9
 connect fd::a and abcd::ef zqx
 foo(password zqxhunter2)
 
+!Zqxa/Zqxb
+%Zqxa/Zqxb
+$x.y/Zqxb
+~a'b/Zqxc
+(Zqxa Zqxb/Zqxc/Zqxd
+jwt-zqxabc123
+zqxbob@example.com
+magnet:?xt=urn:zqxhash&dn=Zqxa
+user -> zqxbob
+connect to 0xC0A80105 zqx
+mac aabbccddeeff zqx
+pass word: zqxhunter2
+assertion failed: zqxtoken == zqxabc123 && a.b()
+assertion failed: addr == 192.168.1.5 zqx
+passwοrd zqxhunter2
+
 # --- host, user and marker lookalikes
 $IP:zqxhunter2
 $USER:zqxhunter2
@@ -233,7 +249,7 @@ $USER_password: zqxhunter2
 "$USER": zqxhunter2 and "$HOST": Zqx Artist
 $MAC: aa:bb:cc:dd:zqx
 /var/lib/zqxuser_backup and zqxuser@zqx-nas and Zqxuser's
-opened by ZQXÜLLER and Zqxüller and Zqx<NBSP>ller
+opened by ZQXÜ and Zqxü and Zqx<NBSP>ü
 Zqxa Zqxb<NL>Zqxc Zqxd/zqxe
 Zqxa one Zqxb two/three
 Zqxa one two/three
