@@ -8,6 +8,8 @@ mod field_sweep_cfg;
 #[cfg(test)]
 mod field_sweep_lex;
 #[cfg(test)]
+mod field_sweep_literals;
+#[cfg(test)]
 mod field_sweep_spans;
 mod log_tail;
 mod log_template;
@@ -36,6 +38,8 @@ mod field_policy_tests;
 mod field_sweep_files_tests;
 #[cfg(test)]
 mod field_sweep_lex_tests;
+#[cfg(test)]
+mod field_sweep_literals_tests;
 #[cfg(test)]
 mod field_sweep_spans_tests;
 #[cfg(test)]
