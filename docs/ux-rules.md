@@ -2355,8 +2355,14 @@ result.
   first instance also keeps a running marker in that directory from startup
   until a clean way out: the session save that a window close and a
   termination request both reach (START-5a), or the return of the application
-  run. A panic appends its message, location and backtrace to the log, with
-  library paths removed. When a start finds the marker of an earlier run
+  run. A panic appends a crash section to the log that is written already
+  reduced, under the contract of FB-19: its message is the static text the
+  panic was compiled with, or a standard panic phrase or a log template of the
+  panic's source file with every value shown as `…`, and `…` when nothing
+  matches; its location and each backtrace line are kept only in the shapes of
+  the app's own or a dependency's source path and of a Rust symbol, and are
+  `…` otherwise, so no directory or file name of the user's reaches the log.
+  When a start finds the marker of an earlier run
   still there (a crash, a kill, a power loss), the main window shows exactly
   one toast, "Reprise did not close properly last time", whose action is
   "Copy Diagnostics": it puts the diagnostics report on the clipboard and
@@ -2370,7 +2376,9 @@ result.
   `start_6_a_termination_request_removes_the_running_marker`,
   `start_6_the_first_instance_removes_the_old_log_names_and_nothing_else`,
   `start_6_a_state_directory_without_old_logs_is_not_an_error`,
-  `start_6_a_failed_removal_is_reported_after_both_names_were_tried`.
+  `start_6_a_failed_removal_is_reported_after_both_names_were_tried`,
+  `start_6_a_crash_section_never_contains_a_library_path`,
+  `start_6_a_crash_written_to_the_log_reaches_the_copied_report_without_a_needle`.
 - **START-7** [planned] [core] — **The Rhythmbox import finds the library
   wherever Rhythmbox keeps it.** <!-- REVIEW: rule proposal --> The importer
   looks for `rhythmdb.xml` in these directories, in this order, and the first

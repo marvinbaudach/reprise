@@ -1,6 +1,6 @@
 use super::{read_log_tail, tail_of, TAIL_MAX_BYTES, TAIL_MAX_LINES};
 use crate::crash_report::{render_report, CRASH_REPORT_MARKER};
-use crate::diagnostics::RedactionContext;
+use crate::diagnostics::PanicPayload;
 
 #[test]
 fn a_short_log_is_kept_whole() {
@@ -74,10 +74,9 @@ fn log_ending_in_a_crash(frames: usize, lines_after: usize) -> String {
         .map(|n| format!("INFO earlier line {n}\n"))
         .collect();
     log.push_str(&render_report(
-        "index out of bounds: the len is 3 but the index is 7",
-        "crates/reprise-gnome/src/ui/window/window.rs:101:17",
+        &PanicPayload::Formatted("index out of bounds: the len is 3 but the index is 7".to_owned()),
+        Some(("crates/reprise-gnome/src/ui/window/window.rs", 101, 17)),
         &long_backtrace(frames),
-        &RedactionContext::default(),
         "2026-11-01T10:00:00Z",
     ));
     for n in 0..lines_after {
@@ -100,10 +99,10 @@ fn a_crash_report_keeps_its_message_and_location_whatever_the_backtrace_length()
     let tail = read_log_tail(&path).unwrap();
 
     assert!(tail.starts_with(CRASH_REPORT_MARKER), "{tail}");
-    assert!(tail.contains("message: index out of bounds: the len is 3 but the index is 7"));
+    assert!(tail.contains("message: index out of bounds: the len is … but the index is …"));
     assert!(tail.contains("location: crates/reprise-gnome/src/ui/window/window.rs:101:17"));
     assert!(
-        tail.contains("backtrace:\n  0: reprise_gnome"),
+        tail.contains("backtrace:\n   0: reprise_gnome"),
         "the backtrace is cut from its end"
     );
     assert!(!tail.contains("earlier line"));
@@ -131,11 +130,11 @@ fn the_last_crash_report_wins_and_lines_after_it_are_bounded_too() {
 fn a_huge_panic_message_cannot_push_the_location_out_of_the_bound() {
     let root = tempfile::tempdir().unwrap();
     let path = root.path().join("reprise.previous.log");
+    let huge: &'static str = Box::leak("x".repeat(100_000).into_boxed_str());
     let log = render_report(
-        &"x".repeat(100_000),
-        "crates/reprise-core/src/lib.rs:1:1",
+        &PanicPayload::Static(huge),
+        Some(("crates/reprise-core/src/lib.rs", 1, 1)),
         &long_backtrace(10),
-        &RedactionContext::default(),
         "2026-11-01T10:00:00Z",
     );
     std::fs::write(&path, log).unwrap();

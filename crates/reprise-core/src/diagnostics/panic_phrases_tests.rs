@@ -6,6 +6,7 @@ use std::panic::{catch_unwind, AssertUnwindSafe};
 use std::time::Duration;
 
 use super::crash_reduce::{reduce_message, PanicPayload};
+use super::log_template::LogTemplate;
 use super::log_templates::best_match;
 use super::panic_phrases::{phrase_sources, phrases};
 
@@ -228,7 +229,7 @@ fn every_phrase_matches_the_message_of_its_real_panic() {
         let payload = captured(case.trigger);
         let text = text_of(&payload);
 
-        let found = best_match(phrases(), &text).map(super::log_template::LogTemplate::reduced);
+        let found = best_match(phrases(), &text).map(LogTemplate::reduced);
 
         assert_eq!(
             found.as_deref(),
@@ -256,10 +257,7 @@ fn the_hook_shows_each_real_panic_as_its_phrase_and_nothing_of_the_values() {
 #[test]
 fn the_table_holds_exactly_the_phrases_a_real_panic_is_tested_for() {
     let tested: Vec<&str> = cases().iter().map(|case| case.reduced).collect();
-    let table: Vec<String> = phrases()
-        .iter()
-        .map(super::log_template::LogTemplate::reduced)
-        .collect();
+    let table: Vec<String> = phrases().iter().map(LogTemplate::reduced).collect();
 
     assert_eq!(
         phrases().len(),

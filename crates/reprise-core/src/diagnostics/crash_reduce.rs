@@ -11,6 +11,7 @@
 
 use std::any::Any;
 
+use super::log_template::LogTemplate;
 use super::log_templates::{best_match, templates_for_file};
 use super::panic_phrases::phrases;
 use super::HOLE;
@@ -69,7 +70,7 @@ pub fn reduce_message(payload: &PanicPayload, file: Option<&str>) -> String {
         PanicPayload::Formatted(text) => {
             let file_templates = file.map_or(&[][..], templates_for_file);
             best_match(phrases().iter().chain(file_templates), text)
-                .map_or_else(|| UNKNOWN.to_owned(), |template| template.reduced())
+                .map_or_else(|| UNKNOWN.to_owned(), LogTemplate::reduced)
         }
         PanicPayload::Other => NON_STRING_PAYLOAD.to_owned(),
     };

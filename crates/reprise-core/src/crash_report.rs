@@ -9,11 +9,13 @@
 //! The pure parts take their paths and context explicitly so tests do not
 //! depend on the process environment.
 
+use std::backtrace::Backtrace;
 use std::fmt::Write as _;
 use std::io::{self, Write as _};
+use std::panic::Location;
 use std::path::Path;
 
-use crate::diagnostics::{redact_log_message, RedactionContext};
+use crate::diagnostics::{reduce_backtrace, reduce_location, reduce_message, PanicPayload};
 use crate::state_root;
 
 /// The line that opens a crash report in the log; the diagnostics tail looks for it.
@@ -60,19 +62,38 @@ pub fn disarm() {
 /// Appends a panic report to the log file, ignoring its size cap: the report
 /// is the reason the log exists. Called from the panic hook, so it never
 /// panics and reports nothing back.
-pub fn write_report(message: &str, location: &str, backtrace: &str) {
+///
+/// The report is written already reduced. The message is the static payload or
+/// a standard phrase or log template, never the formatted text; the location
+/// and the backtrace lines are kept only in the shapes of
+/// `diagnostics::crash_reduce`.
+pub fn write_report(
+    payload: &PanicPayload,
+    location: Option<&Location<'_>>,
+    backtrace: &Backtrace,
+) {
     let Some(log) = state_root::log_path() else {
         return;
     };
-    let report = render_report(
-        message,
-        location,
-        backtrace,
-        &redaction_context(),
+    write_report_to(
+        &log,
+        payload,
+        location.map(|at| (at.file(), at.line(), at.column())),
+        &backtrace.to_string(),
         &chrono::Utc::now().to_rfc3339(),
     );
+}
+
+fn write_report_to(
+    log: &Path,
+    payload: &PanicPayload,
+    location: Option<(&str, u32, u32)>,
+    backtrace: &str,
+    timestamp: &str,
+) {
+    let report = render_report(payload, location, backtrace, timestamp);
     // Nowhere left to report a failure to: the process is already panicking.
-    let _ = append_to(&log, &report);
+    let _ = append_to(log, &report);
 }
 
 fn marker_contents(version: &str, schema: i64, started: &str) -> String {
@@ -113,113 +134,159 @@ fn append_to(log: &Path, report: &str) -> io::Result<()> {
         .write_all(report.as_bytes())
 }
 
-fn redaction_context() -> RedactionContext {
-    let variable = |name| std::env::var(name).ok().filter(|value| !value.is_empty());
-    RedactionContext {
-        music_dir: dirs::audio_dir().map(|path| path.to_string_lossy().into_owned()),
-        home_dir: variable("HOME"),
-        username: variable("USER"),
-    }
-}
-
-/// The report text. The panic message is free text and may name a file of the
-/// library, so it goes through the same redaction as a copied diagnostics
-/// report. Location and backtrace are source paths and symbol names; they
-/// only lose the home and music directories a build path can sit in.
+/// The report text, every free-form part already reduced. `location` is the
+/// panic's file, line and column.
 pub(crate) fn render_report(
-    message: &str,
-    location: &str,
+    payload: &PanicPayload,
+    location: Option<(&str, u32, u32)>,
     backtrace: &str,
-    context: &RedactionContext,
     timestamp: &str,
 ) -> String {
+    let location_text = location.map_or_else(
+        || "unknown location".to_owned(),
+        |(file, line, column)| reduce_location(&format!("{file}:{line}:{column}")),
+    );
     let mut report = String::new();
     let _ = writeln!(report, "{CRASH_REPORT_MARKER}");
     let _ = writeln!(report, "time: {timestamp}");
     let _ = writeln!(report, "version: {}", env!("CARGO_PKG_VERSION"));
     let _ = writeln!(report, "schema: {}", crate::db::SUPPORTED_SCHEMA_VERSION);
-    let _ = writeln!(report, "location: {}", scrub_directories(location, context));
-    let _ = writeln!(report, "message: {}", redact_log_message(message, context));
+    let _ = writeln!(report, "location: {location_text}");
     let _ = writeln!(
         report,
-        "backtrace:\n{}",
-        scrub_directories(backtrace, context)
+        "message: {}",
+        reduce_message(payload, location.map(|(file, ..)| file))
     );
+    let _ = writeln!(report, "backtrace:\n{}", reduce_backtrace(backtrace));
     let _ = writeln!(report, "---- end of crash report ----");
     report
-}
-
-fn scrub_directories(text: &str, context: &RedactionContext) -> String {
-    let mut scrubbed = text.to_owned();
-    for (directory, replacement) in [
-        (&context.music_dir, "$XDG_MUSIC_DIR"),
-        (&context.home_dir, "$HOME"),
-    ] {
-        if let Some(directory) = directory.as_deref().filter(|value| !value.is_empty()) {
-            scrubbed = scrubbed.replace(directory, replacement);
-        }
-    }
-    scrubbed
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
 
-    fn context() -> RedactionContext {
-        RedactionContext {
-            music_dir: Some("/home/tester/Music".to_owned()),
-            home_dir: Some("/home/tester".to_owned()),
-            username: Some("tester".to_owned()),
-        }
+    use crate::diagnostics::{
+        read_log_tail, render_report as render_diagnostics, DiagnosticFacts, DiagnosticLog,
+    };
+
+    const TIME: &str = "2026-11-01T10:00:00Z";
+
+    fn report(
+        payload: &PanicPayload,
+        location: Option<(&str, u32, u32)>,
+        backtrace: &str,
+    ) -> String {
+        render_report(payload, location, backtrace, TIME)
     }
 
-    fn report(message: &str, location: &str, backtrace: &str) -> String {
-        render_report(
-            message,
-            location,
-            backtrace,
-            &context(),
-            "2026-11-01T10:00:00Z",
-        )
+    fn formatted(text: &str) -> PanicPayload {
+        PanicPayload::Formatted(text.to_owned())
     }
 
     #[test]
     fn crash_report_contains_version_schema_and_the_panic_location() {
         let report = report(
-            "called `Option::unwrap()` on a `None` value",
-            "crates/reprise-gnome/src/ui/window/window.rs:101:17",
+            &formatted("called `Option::unwrap()` on a `None` value"),
+            Some(("crates/reprise-gnome/src/ui/window/window.rs", 101, 17)),
             "   0: reprise::ui::window::build",
         );
 
         assert!(report.contains(&format!("version: {}", env!("CARGO_PKG_VERSION"))));
         assert!(report.contains(&format!("schema: {}", crate::db::SUPPORTED_SCHEMA_VERSION)));
+        assert!(report.contains(&format!("time: {TIME}\n")));
         assert!(report.contains("location: crates/reprise-gnome/src/ui/window/window.rs:101:17"));
-        assert!(report.contains("called `Option::unwrap()` on a `None` value"));
+        assert!(report.contains("message: called `Option::unwrap()` on a `None` value\n"));
         assert!(report.contains("0: reprise::ui::window::build"));
+        assert!(report.starts_with(CRASH_REPORT_MARKER));
+        assert!(report.ends_with("---- end of crash report ----\n"));
     }
 
     #[test]
-    fn crash_report_never_contains_a_library_path() {
+    fn a_panic_without_a_location_says_so() {
+        let report = report(&PanicPayload::Static("boom"), None, "");
+
+        assert!(report.contains("location: unknown location\n"), "{report}");
+        assert!(report.contains("message: boom\n"));
+    }
+
+    #[test]
+    fn start_6_a_crash_section_never_contains_a_library_path() {
         let report = report(
-            "could not open /home/tester/Music/Artist/Album/01 Song.flac and /mnt/nas/Other Album/02.ogg",
-            "/home/tester/.cargo/registry/src/index/crate-1.0/src/lib.rs:5:9",
-            "at /home/tester/Music/build/src/main.rs:12:5",
+            &formatted(
+                "could not open /home/zqxuser/Music/Zqx Artist/Zqx Album/01 Zqx Song.flac and /mnt/zqxnas/Zqx Other Album/02.ogg",
+            ),
+            Some((
+                "/home/zqxuser/.cargo/registry/src/index/zqxcrate-1.0.0/src/lib.rs",
+                5,
+                9,
+            )),
+            "   3: zqx_app::open\n             at /home/zqxuser/Music/build/src/main.rs:12:5\n   4: zqx path /home/zqxuser/Zqx.flac\nplain /mnt/zqxnas/Zqx Other Album",
         );
 
-        for leaked in [
-            "Artist",
-            "Song.flac",
-            "Other Album",
-            "/mnt/nas",
-            "/home/tester",
-        ] {
-            assert!(
-                !report.contains(leaked),
-                "{leaked:?} leaked into:\n{report}"
-            );
-        }
-        assert!(report.contains("$HOME/.cargo/registry/src/index/crate-1.0/src/lib.rs:5:9"));
+        assert!(!report.to_lowercase().contains("/home/"), "{report}");
+        assert!(!report.contains("Album"), "{report}");
+        assert!(!report.contains("/mnt"), "{report}");
+        assert!(report.contains("location: …/zqxcrate-1.0.0/src/lib.rs:5:9\n"));
+        assert!(report.contains("message: …\n"));
+    }
+
+    /// The path of a file outside the home directory, and one inside it: the
+    /// two shapes a library path takes.
+    const OUTSIDE: &str = "/srv/zqxshare/Zqx Album/01.flac";
+    const INSIDE: &str = "/home/zqxuser/Music/Zqx Artist/02.flac";
+
+    #[test]
+    fn start_6_a_crash_written_to_the_log_reaches_the_copied_report_without_a_needle() {
+        let root = tempfile::tempdir().unwrap();
+        let log = state_root::log_path_in(root.path());
+        let backtrace = format!(
+            "   0: zqx::{OUTSIDE}\n             at {OUTSIDE}:3:4\n   1: reprise::main\n             at {INSIDE}:9:9\n   2: <{INSIDE} as zqx::Trait>::run\n{OUTSIDE}\n"
+        );
+
+        write_report_to(
+            &log,
+            &formatted(&format!("could not read {OUTSIDE} nor {INSIDE}")),
+            Some((OUTSIDE, 7, 8)),
+            &backtrace,
+            TIME,
+        );
+        let facts = DiagnosticFacts {
+            log_tail: read_log_tail(&log),
+            ..DiagnosticFacts::default()
+        };
+        let copied = render_diagnostics(&facts, &DiagnosticLog::default());
+
+        assert!(copied.contains(CRASH_REPORT_MARKER), "{copied}");
+        assert!(copied.contains("message: …"));
+        assert!(copied.contains("location: …:7:8"));
+        assert!(copied.contains("   1: reprise::main"));
+        assert!(
+            !copied.to_lowercase().contains("zqx"),
+            "a needle reached the copied report:\n{copied}"
+        );
+    }
+
+    #[test]
+    fn a_static_payload_and_a_standard_phrase_reach_the_copied_report() {
+        let root = tempfile::tempdir().unwrap();
+        let log = state_root::log_path_in(root.path());
+
+        write_report_to(
+            &log,
+            &formatted("index out of bounds: the len is 3 but the index is 7"),
+            Some(("crates/reprise-core/src/queue.rs", 7, 8)),
+            "   0: reprise_core::queue::advance",
+            TIME,
+        );
+        let facts = DiagnosticFacts {
+            log_tail: read_log_tail(&log),
+            ..DiagnosticFacts::default()
+        };
+        let copied = render_diagnostics(&facts, &DiagnosticLog::default());
+
+        assert!(copied.contains("message: index out of bounds: the len is … but the index is …"));
+        assert!(copied.contains("location: crates/reprise-core/src/queue.rs:7:8"));
     }
 
     #[test]
