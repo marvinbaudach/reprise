@@ -2133,7 +2133,9 @@ result.
   `fb_19_the_copied_report_carries_both_runs_log_tails_labelled`,
   `fb_19_the_platform_report_lists_modules_and_the_supplied_log_tail`,
   `fb_19_the_log_tails_are_embedded_line_by_line_as_they_were_written`,
-  `fb_19_the_copied_report_carries_the_mirrored_lines_as_written_and_no_foreign_text`.
+  `fb_19_the_copied_report_carries_the_mirrored_lines_as_written_and_no_foreign_text`,
+  `fb_19_events_through_both_layers_reach_the_report_as_static_text_and_typed_numbers`,
+  `fb_19_each_event_is_one_line_of_the_log_and_the_report_embeds_them_unchanged`.
 
 ## H. File association & OS integration
 

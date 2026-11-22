@@ -60,4 +60,6 @@ where
 }
 
 #[cfg(test)]
+mod end_to_end_tests;
+#[cfg(test)]
 mod tests;
