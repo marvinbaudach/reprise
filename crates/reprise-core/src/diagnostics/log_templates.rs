@@ -44,16 +44,25 @@ pub fn reduced_message(file: &str, rendered: &str) -> String {
 /// Of the templates that match `rendered`, the one with the most literal
 /// characters, the first in table order on a tie.
 pub(super) fn reduced_by(templates: &[LogTemplate], rendered: &str) -> String {
+    best_match(templates, rendered).map_or_else(|| HOLE.to_owned(), LogTemplate::reduced)
+}
+
+/// The template among `templates` that matches `rendered` most specifically:
+/// the most literal characters, the first one offered on a tie.
+pub(super) fn best_match<'a>(
+    templates: impl IntoIterator<Item = &'a LogTemplate>,
+    rendered: &str,
+) -> Option<&'a LogTemplate> {
     let mut best: Option<&LogTemplate> = None;
     for template in templates
-        .iter()
+        .into_iter()
         .filter(|template| template.matches(rendered))
     {
         if best.is_none_or(|kept| template.literal_chars() > kept.literal_chars()) {
             best = Some(template);
         }
     }
-    best.map_or_else(|| HOLE.to_owned(), LogTemplate::reduced)
+    best
 }
 
 fn index() -> &'static Index {
