@@ -1,5 +1,6 @@
 //! Privacy-safe, platform-neutral diagnostic report model and renderer.
 
+mod crash_message;
 mod crash_section;
 mod field_policy;
 #[cfg(test)]
@@ -15,6 +16,8 @@ mod model;
 mod redact;
 mod redact_assignments;
 mod redact_composite;
+mod redact_filenames;
+mod redact_line_prefix;
 mod redact_markers;
 mod redact_names;
 mod redact_network;
@@ -24,8 +27,10 @@ mod redact_path_relative;
 mod redact_path_triggers;
 mod redact_paths;
 mod redact_secrets;
+mod redact_slash_words;
 mod render;
 
+pub(crate) use crash_message::redact_panic_message;
 pub use log_tail::{read_log_tail, tail_of, TAIL_MAX_BYTES, TAIL_MAX_LINES};
 pub use model::{
     DiagnosticEvent, DiagnosticFacts, DiagnosticLevel, DiagnosticLog, PackageKind,
@@ -55,6 +60,8 @@ mod redact_assignment_tests;
 #[cfg(test)]
 mod redact_composite_tests;
 #[cfg(test)]
+mod redact_crash_message_tests;
+#[cfg(test)]
 mod redact_extent_tests;
 #[cfg(test)]
 mod redact_fixpoint_tests;
@@ -64,6 +71,10 @@ mod redact_leak_tests;
 mod redact_path_tests;
 #[cfg(test)]
 mod redact_review_tests;
+#[cfg(test)]
+mod redact_round4_path_tests;
+#[cfg(test)]
+mod redact_round4_secret_tests;
 #[cfg(test)]
 mod redact_secret_network_tests;
 #[cfg(test)]

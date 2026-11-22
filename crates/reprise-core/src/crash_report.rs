@@ -13,7 +13,7 @@ use std::fmt::Write as _;
 use std::io::{self, Write as _};
 use std::path::Path;
 
-use crate::diagnostics::{redact_log_message, RedactionContext};
+use crate::diagnostics::{redact_panic_message, RedactionContext};
 use crate::state_root;
 
 /// The line that opens a crash report in the log; the diagnostics tail looks for it.
@@ -150,7 +150,7 @@ pub(crate) fn render_report(
     let _ = writeln!(report, "location: {}", scrub_directories(location, context));
     // One line: a message with line breaks in it could otherwise write a line
     // that reads as a section marker or as a source location.
-    let message = redact_log_message(message, context).replace(['\r', '\n'], " ");
+    let message = redact_panic_message(message, context).replace(['\r', '\n'], " ");
     let _ = writeln!(report, "message: {message}");
     let _ = writeln!(
         report,

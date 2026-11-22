@@ -147,6 +147,15 @@ pub(super) fn redact_sensitive_assignments(input: &str) -> String {
     output
 }
 
+/// `state=password hunter2`: a kept key whose value is a secret word, with the
+/// secret after it. The value is read as the token it is.
+fn secret_value_cut(tokens: &[&str], body: &str, separator: usize) -> Option<String> {
+    let mut from_value = vec![&tokens.first()?[separator + 1..]];
+    from_value.extend_from_slice(&tokens[1..]);
+    let cut = secret_cut(&from_value)?;
+    Some(format!("{}{cut}", &body[..=separator]))
+}
+
 struct Redaction {
     text: String,
     reach: Reach,
@@ -196,6 +205,12 @@ fn redact_assignment(tokens: &[&str]) -> Outcome {
         return Outcome::Kept(1);
     }
     let reach = if separator_char == '=' {
+        if let Some(text) = secret_value_cut(tokens, body, separator) {
+            return Outcome::Redacted(Redaction {
+                text,
+                reach: Reach::EndOfLine,
+            });
+        }
         if let Some(count) = plain_list_span(tokens) {
             return Outcome::Kept(count);
         }
@@ -264,7 +279,7 @@ fn is_field_like(raw_key: &str, key: &str, after: &str) -> bool {
 fn colon_value(tokens: &[&str], attached: &str, key: &str) -> Option<usize> {
     let (value, count) = colon_value_token(tokens, attached);
     // `path:…`: the path pass has already redacted this value.
-    if trim_value(value) == REDACTED_PATH {
+    if is_marker_value(tokens, value, count) {
         return Some(count);
     }
     // The next token is a key of its own (`failed: password: x`) or a secret
@@ -281,6 +296,36 @@ fn colon_value(tokens: &[&str], attached: &str, key: &str) -> Option<usize> {
     }
     let opens_struct = tokens.get(count).is_some_and(|next| next.starts_with('{'));
     (!value.is_empty() && is_plain_value(value, key) && !opens_struct).then_some(count)
+}
+
+/// Whether the value is the `…` the path pass writes, and nothing else on its
+/// line is left that the marker could be hiding: it ends its line, or it is
+/// followed by the `; ` and the typed fields the file mirror appends. A literal
+/// `…` in front of more words (`title: … Pink Floyd`) is a value like any
+/// other.
+fn is_marker_value(tokens: &[&str], value: &str, count: usize) -> bool {
+    let Some(after) = value.strip_prefix(REDACTED_PATH) else {
+        return false;
+    };
+    if !after.chars().all(|ch| TRAILING_PUNCTUATION.contains(&ch)) {
+        return false;
+    }
+    let ends_line = tokens.get(count - 1).is_some_and(|last| {
+        last[last.trim_end_matches(char::is_whitespace).len()..].contains(['\n', '\r'])
+    });
+    let rest: String = if ends_line {
+        String::new()
+    } else {
+        tokens
+            .get(count..)
+            .unwrap_or_default()
+            .concat()
+            .split(['\n', '\r'])
+            .next()
+            .unwrap_or_default()
+            .to_owned()
+    };
+    rest.trim().is_empty() || after == ";" && is_typed_field_list(&rest)
 }
 
 /// The value of a colon-form field and how many tokens the field spans: the

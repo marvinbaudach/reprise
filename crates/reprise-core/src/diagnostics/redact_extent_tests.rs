@@ -235,15 +235,14 @@ fn a_relative_path_with_spaces_and_a_lowercase_tail_does_not_leak() {
 }
 
 #[test]
-fn a_relative_path_keeps_the_sentence_before_its_clause() {
+fn a_relative_path_keeps_the_log_prefix_of_its_line() {
     let output = redacted(
         "2026-11-08T12:00:00.123Z WARN reprise::sync: copy to phone: Pink Floyd/the wall/01.flac",
     );
 
-    assert!(
-        output.starts_with("2026-11-08T12:00:00.123Z WARN reprise::sync: copy to phone:"),
-        "{output:?}"
-    );
+    // The words in front of a relative path may be its first segment
+    // (`copy to phone: Pink Floyd/…`): only the log prefix is kept.
+    assert_eq!(output, "2026-11-08T12:00:00.123Z WARN reprise::sync: …");
     assert!(!output.contains("Pink"), "{output}");
 }
 

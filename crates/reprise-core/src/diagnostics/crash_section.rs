@@ -12,6 +12,8 @@
 //!   data needs, and stays as written;
 //! - the panic message is free text and goes through the redactor, key
 //!   stripped, so a path in it takes the rest of the line;
+//! - a backtrace symbol (`7: <F as Trait>::call{{vtable.shim}}`) is built from
+//!   the characters of a Rust path and only loses a user's name;
 //! - every other line goes through the redactor as it is.
 //!
 //! A line that only looks like a location (a space in it, a user's folder, a
@@ -19,6 +21,7 @@
 
 use crate::crash_report::{CRASH_REPORT_END, CRASH_REPORT_MARKER};
 
+use super::crash_message::{is_symbol_frame, redact_panic_message};
 use super::model::RedactionContext;
 use super::redact::{redact_log_message, redact_names};
 
@@ -60,11 +63,14 @@ fn redact_crash_line(line: &str, context: &RedactionContext) -> String {
         }
     } else if let Some(message) = line.strip_prefix(MESSAGE_KEY) {
         let message = message.strip_prefix(' ').unwrap_or(message);
-        return format!("{MESSAGE_KEY} {}", redact_log_message(message, context));
+        return format!("{MESSAGE_KEY} {}", redact_panic_message(message, context));
     } else if let Some(location) = line.trim_start().strip_prefix(FRAME_PREFIX) {
         if is_source_location(location) {
             return redact_names(line, context);
         }
+    }
+    if is_symbol_frame(line) {
+        return redact_names(line, context);
     }
     redact_log_message(line, context)
 }

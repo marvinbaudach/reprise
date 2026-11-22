@@ -188,14 +188,24 @@ fn port_length(characters: &[char], at: usize) -> usize {
     if characters.get(at) != Some(&':') {
         return 0;
     }
+    // Whatever word is glued behind the colon is part of the address: a port
+    // is digits, and a word in its place (`192.168.1.5:hunter2`) is a
+    // credential or a name that would otherwise stand next to the marker.
+    let word = characters[at + 1..]
+        .iter()
+        .take_while(|ch| ch.is_alphanumeric() || matches!(ch, '_' | '-'))
+        .count();
     let digits = characters[at + 1..]
         .iter()
         .take_while(|ch| ch.is_ascii_digit())
         .count();
-    if (1..=MAX_PORT_DIGITS).contains(&digits) {
-        digits + 1
-    } else {
+    if digits > MAX_PORT_DIGITS && digits == word {
+        return 0;
+    }
+    if word == 0 {
         0
+    } else {
+        word + 1
     }
 }
 

@@ -17,7 +17,7 @@ fn a_kept_key_never_carries_a_second_assignment_or_a_name_through() {
         ("version=0.1.331-Artist", "version=$REDACTED"),
         ("id=2024-11-08-Artist", "id=$REDACTED"),
         ("id=deadbeefcafe", "id=$REDACTED"),
-        ("kind=Music/Artist/Album", "kind=$REDACTED"),
+        ("kind=Music/Artist/Album", "…"),
         ("state=/home/x/song.flac", "state=$REDACTED"),
         ("state=song.flac", "state=$REDACTED"),
         ("state=~/x", "state=$REDACTED"),
@@ -52,11 +52,11 @@ fn a_kept_key_keeps_a_plain_identifier_or_a_number() {
 fn a_kept_key_with_a_rejected_value_takes_the_words_after_it_like_an_unknown_key() {
     for (input, expected) in [
         ("opened count=song.mp3 now", "opened count=$REDACTED"),
-        ("kind=Music/Pink Floyd/The Wall", "kind=$REDACTED"),
-        ("state=\"Pink Floyd/The Wall\"", "state=$REDACTED"),
+        ("kind=Music/Pink Floyd/The Wall", "…"),
+        ("state=\"Pink Floyd/The Wall\"", "…"),
         ("state=Pink(Floyd The Wall)", "state=$REDACTED"),
         ("state=(Pink Floyd)", "state=$REDACTED"),
-        ("mode=a/b next words count=2", "mode=$REDACTED"),
+        ("mode=a/b next words count=2", "…"),
         ("state=/x/y Floyd The Wall id=3", "state=$REDACTED"),
     ] {
         assert_eq!(redacted(input), expected, "{input}");

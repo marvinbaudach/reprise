@@ -110,8 +110,10 @@ fn a_kept_field_with_a_float_or_a_version_arrives_verbatim() {
 #[test]
 fn a_filename_is_still_redacted_with_or_without_a_key() {
     for (input, expected) in [
-        ("opened cover.jpg now", "opened … now"),
-        ("opened track01.flac now", "opened … now"),
+        // A media file name takes the words in front of it too: they may be its title.
+        ("opened cover.jpg now", "… now"),
+        ("opened track01.flac now", "… now"),
+        ("opened notes.txt now", "opened … now"),
         ("opened count=song.mp3 now", "opened count=$REDACTED"),
         ("opened count=1.5.mp3 now", "opened count=$REDACTED"),
         ("opened count=v1.2 now", "opened count=$REDACTED"),

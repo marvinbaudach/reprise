@@ -122,21 +122,32 @@ fn is_secret_word(word: &str) -> bool {
 }
 
 fn parts(word: &str) -> impl Iterator<Item = String> + '_ {
-    word.split(['-', '_']).map(str::to_lowercase)
+    word.split(['-', '_', '.', '/']).map(str::to_lowercase)
 }
 
 /// A token split into the key-like word it opens with and what follows it:
 /// (start of the word, end of the word). Leading punctuation (`--`, `{"`) is
-/// not part of the word.
+/// not part of the word. The word may be a dotted or slashed name
+/// (`db.password`, `config/secret`): it ends behind the first part of it that
+/// is a secret word, so what follows that part is its value (`password.x`),
+/// and behind the whole run when none is.
 fn key_run(token: &str) -> (usize, usize) {
     let start = token.len()
         - token
             .trim_start_matches(|ch: char| !ch.is_alphanumeric())
             .len();
-    let length = token[start..]
-        .find(|ch: char| !(ch.is_alphanumeric() || matches!(ch, '_' | '-')))
+    let run = token[start..]
+        .find(|ch: char| !(ch.is_alphanumeric() || matches!(ch, '_' | '-' | '.' | '/')))
         .unwrap_or(token.len() - start);
-    (start, start + length)
+    let mut end = start;
+    for part in token[start..start + run].split(['.', '/']) {
+        end += part.len();
+        if !part.is_empty() && is_secret_word(part) {
+            return (start, end);
+        }
+        end += 1;
+    }
+    (start, (start + run).min(token.len()))
 }
 
 /// What replaces the first token (and, with the words after it, the rest of
@@ -154,9 +165,15 @@ pub(super) fn secret_cut(tokens: &[&str]) -> Option<String> {
     if is_secret_word(word) {
         return glued_or_bare(body, word_end, rest, more);
     }
+    // The next word, whatever whitespace stands between it and this one.
     let next = tokens
-        .get(1)
-        .map(|token| token.trim_end_matches(char::is_whitespace))?;
+        .iter()
+        .skip(1)
+        .map(|token| token.trim_end_matches(char::is_whitespace))
+        .find(|token| !token.is_empty())?;
+    if is_value_probe(word, next) {
+        return Some(format!("{body} {REDACTED}"));
+    }
     let (next_start, next_end) = key_run(next);
     let next_word = compact(&next[next_start..next_end]);
     if parts(word).any(|part| KEY_MODIFIERS.contains(&part.as_str())) && next_word == "key" {
@@ -173,6 +190,69 @@ pub(super) fn secret_cut(tokens: &[&str]) -> Option<String> {
         return Some(format!("{body} {REDACTED}"));
     }
     None
+}
+
+/// A short word that is a secret only when what follows it looks like one:
+/// `pass hunter2`, `PIN 1234`, `session abc123def`, `code 4/0AX4XfWh`. Compared
+/// with `-` and `_` removed and the case folded, after the last `.` or `/`.
+const PROBE_WORDS: [&str; 11] = [
+    "pass",
+    "pin",
+    "otp",
+    "session",
+    "sessionid",
+    "sid",
+    "auth",
+    "code",
+    "key",
+    "sig",
+    "login",
+];
+
+/// The longest number a status code is (`exit code 101`, `status code 404`):
+/// after `code` it is no credential.
+const MAX_STATUS_DIGITS: usize = 3;
+
+/// An uppercase letter after a lowercase one, or this many characters of
+/// letters and digits, make a word read as a token and not as a word.
+const TOKEN_LIKE_MIN_LEN: usize = 20;
+
+fn is_value_probe(word: &str, next: &str) -> bool {
+    let last = word.rsplit(['.', '/']).next().unwrap_or(word);
+    let probe = [last, last.rsplit(['-', '_']).next().unwrap_or(last)]
+        .into_iter()
+        .map(compact)
+        .find(|name| PROBE_WORDS.contains(&name.as_str()));
+    probe.is_some_and(|name| {
+        looks_like_a_secret_value(next) && !(name == "code" && is_status_code(next))
+    })
+}
+
+/// `1234`, `hunter2`, `abc123def`, `4/0AX4XfWh`, `AIzaSyD-abc`: a token has a
+/// digit in it, a capital behind a small letter, or is long and unbroken.
+/// `refused` and `frame` are words.
+fn looks_like_a_secret_value(token: &str) -> bool {
+    let value = token
+        .trim_matches(|ch: char| TRAILING_PUNCTUATION.contains(&ch) || ch == '(' || ch == '\'');
+    if value.is_empty() || value == REDACTED {
+        return false;
+    }
+    let mut previous_lower = false;
+    let mut mixed_case = false;
+    for ch in value.chars() {
+        mixed_case |= previous_lower && ch.is_uppercase();
+        previous_lower = ch.is_lowercase();
+    }
+    value.chars().any(|ch| ch.is_ascii_digit())
+        || mixed_case
+        || value.chars().count() >= TOKEN_LIKE_MIN_LEN
+            && value.chars().all(|ch| ch.is_ascii_alphanumeric())
+}
+
+/// One to three digits, as `status_code` reads them in the colon form.
+fn is_status_code(token: &str) -> bool {
+    let digits = token.trim_matches(|ch: char| TRAILING_PUNCTUATION.contains(&ch));
+    (1..=MAX_STATUS_DIGITS).contains(&digits.len()) && digits.chars().all(|ch| ch.is_ascii_digit())
 }
 
 /// The secret word is followed by a glued value (`password(x)`), or by nothing

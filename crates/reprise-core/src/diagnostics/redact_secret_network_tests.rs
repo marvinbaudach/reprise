@@ -83,7 +83,11 @@ fn a_secret_word_glued_to_any_separator_takes_the_rest_of_the_line() {
         "login failed, token|AKIAIOSFODNN7EXAMPLE|x",
     ] {
         let output = assert_no_leak(input, &["AKIAIOSFODNN7EXAMPLE", "more", "|x"]);
-        assert!(output.contains("$REDACTED"), "{output}");
+        // `password/x` is a path first: the slash word takes the line.
+        assert!(
+            output.contains("$REDACTED") || output.contains('…'),
+            "{output}"
+        );
     }
 }
 
