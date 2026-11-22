@@ -5,6 +5,7 @@
 //! host `my-nas`.
 
 use super::field_policy::KEEP_FIELDS;
+use super::redact_secrets::is_secret_key;
 use super::{redact_log_message, RedactionContext};
 
 fn context() -> RedactionContext {
@@ -146,39 +147,44 @@ fn a_name_the_redactor_replaced_does_not_hand_its_value_to_the_next_pass() {
     }
 }
 
+/// Kept keys that already read as secret keys before round 3, in the colon
+/// form only: `exit_code: 1` is told apart by its value, and `signature` is
+/// read as the secret it may name. The `=` form of all three is kept by the
+/// policy.
+const COLON_FORM_COLLISIONS: [&str; 3] = ["exit_code", "signature", "started_signature"];
+
 #[test]
-fn a_kept_field_never_reads_as_a_secret_word() {
-    // The bare and glued secret rules read the first word of a token. A key
-    // the policy keeps for its readability must not be one of those words.
-    let words = [
-        "password",
-        "passwd",
-        "passwort",
-        "passphrase",
-        "passcode",
-        "pw",
-        "pwd",
-        "psk",
-        "secret",
-        "token",
-        "bearer",
-        "authorization",
-        "apikey",
-        "jwt",
-        "cookie",
-        "credential",
-        "username",
-        "ssid",
-    ];
+fn a_kept_field_never_reads_as_a_secret() {
+    // The key rules read the first word of a token. A key the policy keeps for
+    // its readability must not collide with the secret words, in any form the
+    // free-text pass reads, except the two that predate this round.
+    let mut collisions: Vec<&str> = KEEP_FIELDS
+        .iter()
+        .copied()
+        .filter(|field| is_secret_key(field))
+        .collect();
+    collisions.sort_unstable();
+    assert_eq!(
+        collisions, COLON_FORM_COLLISIONS,
+        "a new kept-key collision"
+    );
     for field in KEEP_FIELDS {
-        let compact: String = field
-            .chars()
-            .filter(|ch| !matches!(ch, '_' | '-'))
-            .collect();
-        assert!(
-            !words.iter().any(|word| compact.contains(word)),
-            "kept field {field:?} reads as a secret word"
-        );
+        let colon_form = !COLON_FORM_COLLISIONS.contains(field);
+        let forms = [
+            (true, format!("{field}=3")),
+            (colon_form, format!("{field}: 3")),
+            (true, format!("{field} 3 more")),
+            (true, format!("{field}(3)")),
+        ];
+        for (checked, text) in forms {
+            if checked {
+                assert_eq!(
+                    redact_log_message(&text, &context()),
+                    text,
+                    "kept field {field:?} is read as a secret in {text:?}"
+                );
+            }
+        }
     }
 }
 

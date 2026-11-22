@@ -5,7 +5,11 @@
 //! only when its key is in `KEEP_FIELDS` (`reprise_core::diagnostics`'s
 //! `field_policy`, asked through `is_safe_structured_field` by `EventFields`),
 //! and the text goes through `redact_log_message`, which removes library
-//! paths, URIs, file names, the home directory and the user name. Every other
+//! paths, URIs, file names, the home directory and the user name. A path takes
+//! the rest of the text it stands in, so the message and the typed fields are
+//! redacted apart and joined with `; ` afterwards: the fields written after a
+//! message that held a path stay readable, in the file and in the report that
+//! redacts the file's lines again. Every other
 //! key is written as `key=$REDACTED`, including a key that is new: adding a
 //! field to a log call fails the classification test until its key is listed
 //! in `KEEP_FIELDS` or `REDACT_FIELDS`. This layer formats the line itself

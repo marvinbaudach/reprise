@@ -30,7 +30,9 @@ pub(super) fn replace_name(input: &str, name: &str, marker: &str) -> String {
         let bounded = substring
             || (left.is_none_or(|ch| !ch.is_alphabetic())
                 && right.is_none_or(|ch| !ch.is_alphabetic()));
-        let in_marker = spans.iter().any(|&(from, to)| start < to && end > from);
+        // Inside a marker the redactor wrote, never at a name that merely
+        // reaches into one (`$HOSTMASTER` for a user called `hostmaster`).
+        let in_marker = spans.iter().any(|&(from, to)| from <= start && end <= to);
         if bounded && !in_marker && !(spare_key && right == Some('=')) {
             output.push_str(&input[cursor..start]);
             output.push_str(marker);

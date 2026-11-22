@@ -42,9 +42,9 @@ const UNSETTLED: &str = "$REDACTED";
 /// that cuts a word short can leave a prefix an earlier pass reads differently
 /// the second time. What comes back is therefore a fixed point by
 /// construction, never by hope: either a text one more round leaves exactly
-/// as it is (so a second redaction is a no-op), or, when [`MAX_ROUNDS`] rounds
-/// have not settled the text, [`UNSETTLED`] in its place. Nothing that did not
-/// settle leaves the function.
+/// as it is (so a second redaction is a no-op), or, when eight rounds have not
+/// settled the text, `$REDACTED` in its place. Nothing that did not settle
+/// leaves the function.
 pub fn redact_log_message(message: &str, context: &RedactionContext) -> String {
     let mut current = capped(message.to_owned());
     for _ in 0..MAX_ROUNDS {
