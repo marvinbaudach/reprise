@@ -1,26 +1,23 @@
 use super::field_policy::KEEP_FIELDS;
 use super::model::RedactionContext;
-use super::redact_assignments::{is_kept_number, is_known_field, redact_sensitive_assignments};
+use super::redact_assignments::{is_kept_number, redact_sensitive_assignments};
+use super::redact_markers::ELLIPSIS;
+use super::redact_names::{host_names, replace_name};
 use super::redact_network::redact_network_identifiers;
-use super::redact_paths::{
-    redact_absolute_paths, redact_path_roots, redact_prefixed_path, redact_uris,
-};
-
-const ELLIPSIS: &str = "…";
+use super::redact_normalise::normalised;
+use super::redact_paths::redact_paths;
 
 /// The longest message that is redacted. No line of ours comes near it, and
 /// the passes read each message more than once: what lies beyond is cut off
-/// (and so never leaves the machine) instead of being scanned.
+/// (and so never leaves the machine) instead of being scanned. The cap holds
+/// for what a round writes as well as for what it reads.
 const MAX_MESSAGE_BYTES: usize = 8 * 1024;
 
 /// The message up to [`MAX_MESSAGE_BYTES`], cut at a character boundary and
-/// marked with an ellipsis. A fullwidth colon is a colon to a reader and a
-/// bypass to a parser, so it is written as one before any pass reads the text.
-fn capped(message: &str) -> String {
-    let message = message.replace('：', ":");
-    let message = message.as_str();
+/// marked with an ellipsis.
+fn capped(message: String) -> String {
     if message.len() <= MAX_MESSAGE_BYTES {
-        return message.to_owned();
+        return message;
     }
     let mut end = MAX_MESSAGE_BYTES - ELLIPSIS.len();
     while !message.is_char_boundary(end) {
@@ -29,51 +26,52 @@ fn capped(message: &str) -> String {
     format!("{}{ELLIPSIS}", &message[..end])
 }
 
-/// How often the passes are applied to their own output at most.
-const MAX_ROUNDS: usize = 4;
+/// How often the passes are applied to their own output at most. A message
+/// that still changes after this many rounds is not a message to explain: see
+/// [`redact_log_message`].
+const MAX_ROUNDS: usize = 8;
+
+/// What a message that does not settle is replaced with. It is a fixed point
+/// of every round, whatever the names of the user and the machine are.
+const UNSETTLED: &str = "$REDACTED";
 
 /// Removes values that must not leave the user's machine in a copied report.
 ///
-/// The passes run on their own output until it stops changing: the report
-/// redacts the lines the file mirror has already redacted, and a pass that
-/// cuts a word short can leave a prefix an earlier pass reads differently the
-/// second time. The result is a fixed point, so a second redaction is a no-op.
+/// The passes run on their own output until a round changes nothing: the
+/// report redacts the lines the file mirror has already redacted, and a pass
+/// that cuts a word short can leave a prefix an earlier pass reads differently
+/// the second time. What comes back is therefore a fixed point by
+/// construction, never by hope: either a text one more round leaves exactly
+/// as it is (so a second redaction is a no-op), or, when [`MAX_ROUNDS`] rounds
+/// have not settled the text, [`UNSETTLED`] in its place. Nothing that did not
+/// settle leaves the function.
 pub fn redact_log_message(message: &str, context: &RedactionContext) -> String {
-    let mut current = capped(message);
+    let mut current = capped(message.to_owned());
     for _ in 0..MAX_ROUNDS {
         let next = redact_round(&current, context);
         if next == current {
-            break;
+            return current;
         }
         current = next;
     }
-    current
+    UNSETTLED.to_owned()
 }
 
-fn redact_round(message: &str, context: &RedactionContext) -> String {
-    let mut redacted = redact_uris(message);
-    if let Some(music_dir) = context
-        .music_dir
-        .as_deref()
-        .filter(|value| !value.is_empty())
-    {
-        redacted = redact_prefixed_path(&redacted, music_dir, "$XDG_MUSIC_DIR/…");
-    }
-    if let Some(home_dir) = context
-        .home_dir
-        .as_deref()
-        .filter(|value| !value.is_empty())
-    {
-        redacted = redact_prefixed_path(&redacted, home_dir, "$HOME/…");
-    }
-    redacted = redact_path_roots(&redacted);
-    redacted = redact_absolute_paths(&redacted);
+pub(super) fn redact_round(message: &str, context: &RedactionContext) -> String {
+    let normalised = normalised(message);
+    let mut redacted = redact_paths(&normalised, context);
     redacted = redact_network_identifiers(&redacted);
     // The key pass reads the line before the name is replaced, so a user whose
     // name is a key (`password`, `id`) cannot change what that key means. The
     // report redacts the file's lines again; `id=$USER` is a value that pass
     // accepts as it is (`is_plain_value`), so the second run changes nothing.
     redacted = redact_sensitive_assignments(&redacted);
+    capped(redact_filenames(&redact_names(&redacted, context)))
+}
+
+/// The user's name and the machine's name, replaced by their markers.
+pub(super) fn redact_names(text: &str, context: &RedactionContext) -> String {
+    let mut redacted = text.to_owned();
     if let Some(username) = context
         .username
         .as_deref()
@@ -86,9 +84,11 @@ fn redact_round(message: &str, context: &RedactionContext) -> String {
         .as_deref()
         .filter(|value| !value.is_empty())
     {
-        redacted = replace_name(&redacted, hostname, "$HOST");
+        for name in host_names(hostname) {
+            redacted = replace_name(&redacted, name, "$HOST");
+        }
     }
-    redact_filenames(&redacted)
+    redacted
 }
 
 /// Whether a structured field's value may be kept in a diagnostics line.
@@ -102,73 +102,6 @@ fn redact_round(message: &str, context: &RedactionContext) -> String {
 /// is never safe. `field_policy` explains how a key earns its place.
 pub fn is_safe_structured_field(key: &str) -> bool {
     KEEP_FIELDS.binary_search(&key).is_ok()
-}
-
-/// Replaces `name` (the user name or the machine's host name) wherever it
-/// stands as a word, whatever its case (`Marvin-PC` for the user `marvin`),
-/// except as a known field's key (`id=`): replacing that would rename the
-/// field, and the line would read differently the second time the report
-/// redacts it. A name that is not a known key is replaced in key position too
-/// (`marvin=3`). The marker itself (`$USER`) is never replaced again.
-fn replace_name(input: &str, name: &str, marker: &str) -> String {
-    let spare_key = name.is_ascii() && is_known_field(&name.to_ascii_lowercase());
-    let mut output = String::with_capacity(input.len());
-    let mut cursor = 0;
-    let mut scan = 0;
-    while let Some(end) = next_name_hit(input, name, scan) {
-        let start = end.0;
-        let end = end.1;
-        let left = input[..start].chars().next_back();
-        let right = input[end..].chars().next();
-        let bounded = left.is_none_or(|ch| !is_word(ch)) && right.is_none_or(|ch| !is_word(ch));
-        // Never inside one of our own markers (`$HOME`, `$HOST`, `$REDACTED`),
-        // whatever name a user or a machine has.
-        let in_marker = left == Some('$');
-        if bounded && !in_marker && !(spare_key && right == Some('=')) {
-            output.push_str(&input[cursor..start]);
-            output.push_str(marker);
-            cursor = end;
-        }
-        scan = end;
-    }
-    output.push_str(&input[cursor..]);
-    output
-}
-
-/// The next place at or after `from` where `name` stands, as (start, end),
-/// compared case-insensitively over Unicode (`MÜLLER` is `müller`).
-fn next_name_hit(input: &str, name: &str, from: usize) -> Option<(usize, usize)> {
-    let first = name.chars().next()?;
-    for (offset, ch) in input[from..].char_indices() {
-        if !chars_match(ch, first) {
-            continue;
-        }
-        let start = from + offset;
-        let mut rest = input[start..].char_indices();
-        let mut matched = true;
-        let mut end = start;
-        for wanted in name.chars() {
-            match rest.next() {
-                Some((at, got)) if chars_match(got, wanted) => end = start + at + got.len_utf8(),
-                _ => {
-                    matched = false;
-                    break;
-                }
-            }
-        }
-        if matched {
-            return Some((start, end));
-        }
-    }
-    None
-}
-
-fn chars_match(left: char, right: char) -> bool {
-    left == right || left.to_lowercase().eq(right.to_lowercase())
-}
-
-fn is_word(ch: char) -> bool {
-    ch.is_alphanumeric() || ch == '_'
 }
 
 fn redact_filenames(input: &str) -> String {

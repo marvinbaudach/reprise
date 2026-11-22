@@ -49,12 +49,12 @@ fn v1_a_library_path_takes_the_rest_of_its_name() {
 }
 
 #[test]
-fn v1_a_quoted_path_ends_at_its_closing_quote() {
+fn v1_a_quoted_path_takes_the_rest_of_its_line() {
     let output = assert_no_leak(
         "open \"/media/disk/Music/Pink Floyd/The Wall\" failed",
         &["Pink", "Floyd", "Wall", "disk"],
     );
-    assert_eq!(output, "open \"…\" failed");
+    assert_eq!(output, "open \"…");
 
     // The common `Debug` shape of a `PathBuf` in an error.
     let output = assert_no_leak(
@@ -108,25 +108,40 @@ fn v1_a_no_break_space_inside_a_name_is_a_gap() {
 }
 
 #[test]
-fn v1_the_typed_fields_after_a_library_path_stay_readable() {
+fn v1_a_known_key_after_a_library_path_does_not_end_it() {
+    // Raw text: a `count=3` after a path may be forged, so it ends nothing.
     let output = assert_no_leak(
         "scan /home/marvin/Music/Pink Floyd/Wall failed count=3 elapsed_ms=1.5",
         PINK_FLOYD,
     );
-    assert!(output.ends_with("count=3 elapsed_ms=1.5"), "{output}");
+    assert_eq!(output, "scan $XDG_MUSIC_DIR/…");
 }
 
 #[test]
-fn v1_a_second_path_after_a_library_path_is_its_own_span() {
+fn v1_the_typed_fields_the_file_mirror_appends_to_a_redacted_message_stay_readable() {
+    // The file mirror redacts the message and writes its typed fields after it.
+    for input in [
+        "scan $XDG_MUSIC_DIR/…; count=3 elapsed_ms=1.5",
+        "scan $HOME/…; device_id=$REDACTED count=3",
+    ] {
+        assert_eq!(redacted(input), input, "{input}");
+    }
+    // Anything but typed fields after the marker is data and goes.
+    assert_no_leak("scan $XDG_MUSIC_DIR/…; count=3 Pink Floyd", PINK_FLOYD);
+    assert_no_leak("scan $XDG_MUSIC_DIR/…; title=Pink", PINK_FLOYD);
+}
+
+#[test]
+fn v1_a_second_path_after_a_library_path_is_part_of_its_line() {
     let output = assert_no_leak(
         "failed /home/marvin/Music/Pink Floyd/a.flac, /var/tmp/x.log, file:///srv/y.flac done",
         PINK_FLOYD,
     );
-    assert!(output.contains("file://…"), "{output}");
+    assert_eq!(output, "failed $XDG_MUSIC_DIR/…");
 }
 
 #[test]
-fn v1_an_apostrophe_in_a_name_is_not_a_closing_quote() {
+fn v1_an_apostrophe_or_a_quote_in_a_name_ends_nothing() {
     // Guns N' Roses: quoted, under the library, outside it, and unquoted.
     for input in [
         "scan '/home/marvin/Music/Guns N' Roses/Appetite/01.flac' failed",
@@ -142,11 +157,8 @@ fn v1_an_apostrophe_in_a_name_is_not_a_closing_quote() {
     ] {
         assert_no_leak(input, &["Guns", "Roses", "Appetite", "01", "Live"]);
     }
-    // A real closing quote still ends the path, even before another quoted one.
-    assert_eq!(
-        redacted("copy '/mnt/x/a/b' to '/mnt/y/c/d' now"),
-        "copy '…' to '…' now"
-    );
+    // A closing quote ends nothing either: the path takes the rest of the line.
+    assert_eq!(redacted("copy '/mnt/x/a/b' to '/mnt/y/c/d' now"), "copy '…");
 }
 
 // V2 -- URIs
@@ -174,25 +186,26 @@ fn v2_a_bracketed_address_and_a_comma_in_a_uri_do_not_end_it() {
 }
 
 #[test]
-fn v2_a_quoted_uri_ends_at_its_quote_and_a_web_address_at_its_punctuation() {
+fn v2_a_uri_takes_the_rest_of_its_line() {
     assert_eq!(
         assert_no_leak(
             "copy 'smb://nas/music/Pink Floyd/a.flac' failed",
             PINK_FLOYD
         ),
-        "copy 'smb://…' failed"
+        "copy 'smb://…"
     );
-    // The usual shape of an HTTP client error keeps its cause.
+    // A web address has no spaces, but a log line cannot say where it ends:
+    // the cause after it goes too (over-redaction by design).
     assert_eq!(
         assert_no_leak(
             "error sending request for url (https://example.com/x/y): connection refused",
-            &["example"]
+            &["example", "connection refused"]
         ),
-        "error sending request for url (https://…): connection refused"
+        "error sending request for url (https://…"
     );
     assert_eq!(
         assert_no_leak("GET https://example.com/x/y: HTTP 404", &["example"]),
-        "GET https://…: HTTP 404"
+        "GET https://…"
     );
 }
 
@@ -352,9 +365,9 @@ fn v5_a_path_glued_to_the_word_before_it_is_still_a_path() {
 #[test]
 fn v5_the_redactors_own_markers_and_plain_slashes_survive() {
     for input in [
-        "scan $XDG_MUSIC_DIR/… failed",
-        "scan $HOME/… failed",
-        "copy mtp://… failed",
+        "scan $XDG_MUSIC_DIR/…",
+        "scan $HOME/…",
+        "copy mtp://…",
         "track 3/12 of 5/10",
         "date 21/11/2026 ok",
     ] {

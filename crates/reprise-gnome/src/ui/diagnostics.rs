@@ -138,10 +138,19 @@ struct EventFields {
 
 impl EventFields {
     fn into_message(self) -> String {
+        self.into_message_with(str::to_owned)
+    }
+
+    /// The message and the typed fields after it, each passed through `shape`
+    /// on its own. The file mirror redacts the message by itself: a path in it
+    /// takes the rest of the message, never the typed fields written after it.
+    fn into_message_with(self, shape: impl Fn(&str) -> String) -> String {
         match (self.message, self.fields.is_empty()) {
-            (Some(message), true) => message,
-            (Some(message), false) => format!("{message}; {}", self.fields.join(" ")),
-            (None, false) => self.fields.join(" "),
+            (Some(message), true) => shape(&message),
+            (Some(message), false) => {
+                format!("{}; {}", shape(&message), shape(&self.fields.join(" ")))
+            }
+            (None, false) => shape(&self.fields.join(" ")),
             (None, true) => "warning without details".into(),
         }
     }

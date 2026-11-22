@@ -1,5 +1,6 @@
 use std::fmt::Write;
 
+use super::crash_section::TailState;
 use super::model::{DiagnosticFacts, DiagnosticLog, PackageKind, RedactionContext};
 use super::redact::redact_log_message;
 
@@ -110,8 +111,9 @@ fn append_log_tail(
         return;
     };
     let _ = write!(report, "\n\n{heading}");
+    let mut state = TailState::default();
     for line in tail.lines() {
-        let _ = write!(report, "\n{}", redact_log_message(line, redaction));
+        let _ = write!(report, "\n{}", state.redact_line(line, redaction));
     }
 }
 

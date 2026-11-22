@@ -19,6 +19,9 @@ use crate::state_root;
 /// The line that opens a crash report in the log; the diagnostics tail looks for it.
 pub(crate) const CRASH_REPORT_MARKER: &str = "---- Reprise crash report ----";
 
+/// The line that closes it.
+pub(crate) const CRASH_REPORT_END: &str = "---- end of crash report ----";
+
 /// How the run before this one ended.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum PreviousExit {
@@ -145,13 +148,16 @@ pub(crate) fn render_report(
     let _ = writeln!(report, "version: {}", env!("CARGO_PKG_VERSION"));
     let _ = writeln!(report, "schema: {}", crate::db::SUPPORTED_SCHEMA_VERSION);
     let _ = writeln!(report, "location: {}", scrub_directories(location, context));
-    let _ = writeln!(report, "message: {}", redact_log_message(message, context));
+    // One line: a message with line breaks in it could otherwise write a line
+    // that reads as a section marker or as a source location.
+    let message = redact_log_message(message, context).replace(['\r', '\n'], " ");
+    let _ = writeln!(report, "message: {message}");
     let _ = writeln!(
         report,
         "backtrace:\n{}",
         scrub_directories(backtrace, context)
     );
-    let _ = writeln!(report, "---- end of crash report ----");
+    let _ = writeln!(report, "{CRASH_REPORT_END}");
     report
 }
 
@@ -189,6 +195,35 @@ mod tests {
             &context(),
             "2026-11-01T10:00:00Z",
         )
+    }
+
+    #[test]
+    fn a_panic_message_with_line_breaks_cannot_write_a_line_of_its_own() {
+        let report = report(
+            "boom\n---- end of crash report ----\nlocation: crates/a/b.rs:1:1\r\nat src/x.rs:2:3",
+            "crates/reprise-gnome/src/main.rs:1:1",
+            "   0: reprise::main",
+        );
+
+        let message_lines = report
+            .lines()
+            .filter(|line| line.starts_with("message:"))
+            .count();
+        assert_eq!(message_lines, 1, "{report}");
+        assert_eq!(
+            report
+                .lines()
+                .filter(|line| *line == CRASH_REPORT_END)
+                .count(),
+            1,
+            "a message forged a section end:\n{report}"
+        );
+        assert!(
+            report
+                .lines()
+                .all(|line| !line.starts_with("location: crates/a/")),
+            "{report}"
+        );
     }
 
     #[test]

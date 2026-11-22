@@ -6,28 +6,93 @@
 //! machine's name goes only with the URI, share or `host:/` root it stands in.
 //! A bare foreign host name in running text is not detected.
 
-const IP_MARKER: &str = "$IP";
-const MAC_MARKER: &str = "$MAC";
-const HOST_MARKER: &str = "$HOST";
+use super::redact_network_scan::redact_inside;
+
+pub(super) const IP_MARKER: &str = "$IP";
+pub(super) const MAC_MARKER: &str = "$MAC";
+pub(super) const HOST_MARKER: &str = "$HOST";
 
 /// Characters an address is written with. A run of them is read as one candidate.
 fn is_address_char(ch: char) -> bool {
     ch.is_ascii_alphanumeric() || matches!(ch, ':' | '.' | '%' | '-' | '_')
 }
 
+/// Keys whose value is an address, whatever shape it is written in.
+const ADDRESS_KEYS: [&str; 14] = [
+    "ip",
+    "ipaddr",
+    "ipaddress",
+    "addr",
+    "address",
+    "host",
+    "hostname",
+    "peer",
+    "server",
+    "remote",
+    "client",
+    "gateway",
+    "dst",
+    "dest",
+];
+
 /// Replaces every address the text holds. A kept number (`version=1.2.3.4`)
 /// is not an address: the key pass has already vouched for it.
 pub(super) fn redact_network_identifiers(input: &str) -> String {
     let mut output = String::with_capacity(input.len());
+    let mut after_key = false;
     for token in input.split_inclusive(char::is_whitespace) {
         let body = token.trim_end_matches(char::is_whitespace);
+        let whitespace = &token[body.len()..];
         if super::redact_assignments::is_kept_number(body) {
             output.push_str(token);
+        } else if let Some(redacted) = address_valued(body, after_key) {
+            output.push_str(&redacted);
+            output.push_str(whitespace);
         } else {
             output.push_str(&redact_token(token));
         }
+        after_key = is_address_key(body.trim_end_matches([':', '=']));
     }
     output
+}
+
+fn is_address_key(word: &str) -> bool {
+    ADDRESS_KEYS.contains(&word.to_ascii_lowercase().as_str())
+}
+
+/// `ip 3232235781`, `host=0xC0A80105`: a value written as a number after a key
+/// that names an address is that address, whatever the number's base.
+fn address_valued(body: &str, after_key: bool) -> Option<String> {
+    if after_key && is_numeric_address(body) {
+        return Some(IP_MARKER.to_owned());
+    }
+    let (key, value) = body.split_once(['=', ':'])?;
+    (is_address_key(key) && is_numeric_address(value)).then(|| {
+        let separator = &body[key.len()..key.len() + 1];
+        format!("{key}{separator}{IP_MARKER}")
+    })
+}
+
+/// A decimal address (`3232235781`), a hex one (`0xC0A80105`), or four dotted
+/// parts in any base (`0300.0250.0001.0005`, `0xC0.0xA8.0x01.0x05`).
+fn is_numeric_address(value: &str) -> bool {
+    const DECIMAL_DIGITS: std::ops::RangeInclusive<usize> = 7..=10;
+    const MIN_HEX_DIGITS: usize = 6;
+    let hex = |part: &str| {
+        part.strip_prefix("0x")
+            .or_else(|| part.strip_prefix("0X"))
+            .filter(|digits| !digits.is_empty())
+            .is_some_and(|digits| digits.chars().all(|ch| ch.is_ascii_hexdigit()))
+    };
+    let digits = |part: &str| !part.is_empty() && part.chars().all(|ch| ch.is_ascii_digit());
+    if DECIMAL_DIGITS.contains(&value.len()) && digits(value) {
+        return true;
+    }
+    if hex(value) && value.len() >= MIN_HEX_DIGITS + 2 {
+        return true;
+    }
+    let parts: Vec<&str> = value.split('.').collect();
+    parts.len() == 4 && parts.iter().all(|part| digits(part) || hex(part))
 }
 
 fn redact_token(token: &str) -> String {
@@ -70,7 +135,7 @@ fn push_run(output: &mut String, run: &str) {
     output.push_str(lead);
     match marker_for(core) {
         Some(marker) => output.push_str(marker),
-        None => output.push_str(core),
+        None => output.push_str(&redact_inside(core)),
     }
     output.push_str(tail);
 }
@@ -102,7 +167,7 @@ const LAN_SUFFIXES: [&str; 10] = [
     ".speedport.ip",
 ];
 
-fn is_lan_host(candidate: &str) -> bool {
+pub(super) fn is_lan_host(candidate: &str) -> bool {
     let (host, port) = match candidate.rsplit_once(':') {
         Some((host, port)) => (host, Some(port)),
         None => (candidate, None),
@@ -157,7 +222,7 @@ fn is_dotted_quad(address: &str) -> bool {
 /// Hex groups with one `::` or exactly eight groups, an optional embedded IPv4
 /// tail and an optional `%zone`. A candidate with no decimal digit at all
 /// (`db::fa`, `cafe::beef`) is a Rust path, not an address.
-fn is_ipv6(candidate: &str) -> bool {
+pub(super) fn is_ipv6(candidate: &str) -> bool {
     let (address, zone) = match candidate.split_once('%') {
         Some((address, zone)) => (address, Some(zone)),
         None => (candidate, None),

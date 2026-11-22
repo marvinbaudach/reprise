@@ -71,7 +71,7 @@ where
         let metadata = event.metadata();
         let mut fields = EventFields::default();
         event.record(&mut fields);
-        let text = redact_log_message(&fields.into_message(), &self.context);
+        let text = fields.into_message_with(|part| redact_log_message(part, &self.context));
         let target = redact_log_message(metadata.target(), &self.context);
         let timestamp = Utc::now().to_rfc3339_opts(SecondsFormat::Millis, true);
         (self.sink)(&format!(
@@ -135,6 +135,36 @@ mod tests {
             );
         }
         assert!(text.contains("path=$REDACTED"), "{text}");
+    }
+
+    #[test]
+    fn the_typed_fields_after_a_message_with_a_path_survive_in_the_file_and_the_copied_report() {
+        let text = mirrored(|| {
+            tracing::warn!(
+                track_id = 7,
+                count = 3,
+                "could not read /home/someone/Music/Artist/x.flac"
+            );
+        });
+        // The report re-redacts the file's lines when it embeds the tail.
+        let facts = DiagnosticFacts {
+            log_tail: Some(text.clone()),
+            ..DiagnosticFacts::default()
+        };
+        let report = render_report(&facts, &DiagnosticLog::default(), &context());
+
+        for (surface, shown) in [("the log file", &text), ("the copied report", &report)] {
+            assert!(
+                shown.contains("could not read $XDG_MUSIC_DIR/…; track_id=7 count=3"),
+                "{surface} lost the message or its typed fields: {shown}"
+            );
+            for leaked in ["x.flac", "Artist", "/home/someone"] {
+                assert!(
+                    !shown.contains(leaked),
+                    "{surface} leaked {leaked:?}: {shown}"
+                );
+            }
+        }
     }
 
     #[test]

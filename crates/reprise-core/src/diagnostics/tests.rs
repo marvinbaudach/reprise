@@ -81,13 +81,25 @@ fn missing_distribution_version_omits_only_its_token() {
 
 #[test]
 fn rendered_events_do_not_expose_paths_uris_filenames_users_or_credentials() {
+    // A path takes the rest of its line, so each shape stands in its own event.
     let mut log = DiagnosticLog::default();
-    log.push(DiagnosticEvent::new(
-        9 * 3_600 + 25 * 60 + 14,
-        DiagnosticLevel::Warn,
-        "scanner",
-        "alice failed /home/marvin/Music/Private Album/secret.flac, /home/marvin/.config/reprise/token.json, /var/tmp/private.log, file:///home/marvin/Music/private.flac, https://example.org/private?id=alice, cover-secret.jpg, lastfm_username=private-listener, access_token=hunter2",
-    ));
+    for (second, message) in [
+        "alice failed /home/marvin/Music/Private Album/secret.flac, /var/tmp/private.log",
+        "read /home/marvin/.config/reprise/token.json now",
+        "fetch file:///home/marvin/Music/private.flac",
+        "fetch https://example.org/private?id=alice",
+        "cover-secret.jpg lastfm_username=private-listener access_token=hunter2",
+    ]
+    .into_iter()
+    .enumerate()
+    {
+        log.push(DiagnosticEvent::new(
+            9 * 3_600 + 25 * 60 + second as u32,
+            DiagnosticLevel::Warn,
+            "scanner",
+            message,
+        ));
+    }
     let context = RedactionContext {
         music_dir: Some("/home/marvin/Music".into()),
         home_dir: Some("/home/marvin".into()),
@@ -123,14 +135,23 @@ fn rendered_events_do_not_expose_paths_uris_filenames_users_or_credentials() {
 }
 
 #[test]
-fn rendered_events_redact_every_absolute_path_without_losing_sentence_context() {
+fn rendered_events_redact_every_absolute_path_and_keep_the_words_before_it() {
     let mut log = DiagnosticLog::default();
-    log.push(DiagnosticEvent::new(
-        8 * 3_600 + 14 * 60 + 22,
-        DiagnosticLevel::Warn,
-        "device_sync",
-        "device path:/var/lib/BACKUP_DRIVE mounted; inspected `/srv/archive/private`, then moved /var/tmp/x.mp3 to /opt/share/y.mp3 successfully",
-    ));
+    for (second, message) in [
+        "device path:/var/lib/BACKUP_DRIVE mounted",
+        "inspected `/srv/archive/private` then moved on",
+        "moved /var/tmp/x.mp3 to /opt/share/y.mp3 successfully",
+    ]
+    .into_iter()
+    .enumerate()
+    {
+        log.push(DiagnosticEvent::new(
+            8 * 3_600 + 14 * 60 + 22 + second as u32,
+            DiagnosticLevel::Warn,
+            "device_sync",
+            message,
+        ));
+    }
 
     let report = render_report(&complete_facts(), &log, &RedactionContext::default());
 
@@ -143,15 +164,17 @@ fn rendered_events_redact_every_absolute_path_without_losing_sentence_context() 
         "x.mp3",
         "/opt/share",
         "y.mp3",
+        "successfully",
+        "mounted",
     ] {
         assert!(
             !report.contains(private),
             "report leaked {private:?}:\n{report}"
         );
     }
-    assert!(report.contains("path:… mounted"));
-    assert!(report.contains("inspected `…"));
-    assert!(report.contains("then moved … to … successfully"));
+    assert!(report.contains("device_sync: device path:…"));
+    assert!(report.contains("device_sync: inspected `…"));
+    assert!(report.contains("device_sync: moved …"));
 }
 
 fn device_sync_report(message: &str) -> String {

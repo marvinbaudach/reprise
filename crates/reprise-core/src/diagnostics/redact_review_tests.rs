@@ -74,10 +74,10 @@ fn a_system_path_takes_the_following_words_that_open_like_a_name() {
     ] {
         assert_no_leak(input, NAMES);
     }
-    // The sentence after it is kept.
+    // The sentence after it goes with it.
     assert_eq!(
         redacted("moved /var/tmp/x.mp3 to /opt/share/y.mp3 successfully"),
-        "moved … to … successfully"
+        "moved …"
     );
 }
 
@@ -95,7 +95,7 @@ fn an_apostrophe_followed_by_a_name_is_not_a_closing_quote() {
     }
     assert_eq!(
         redacted("open '/media/disk/Foo/Rock Pink Floyd' and then more words here"),
-        "open '…' and then more words here"
+        "open '…"
     );
 }
 
@@ -506,9 +506,12 @@ fn a_dollar_path_is_a_marker_only_when_the_whole_marker_stands_there() {
     ] {
         assert_no_leak(input, &["Pink", "Floyd"]);
     }
-    for input in ["connect to $IP/24 failed", "scan $USER/x failed"] {
-        assert!(redacted(input).contains("failed"), "{input}");
-    }
+    // The prefix length of an address is not a path; a name after `$USER/` is.
+    assert_eq!(
+        redacted("connect to $IP/24 failed"),
+        "connect to $IP/24 failed"
+    );
+    assert_eq!(redacted("scan $USER/x failed"), "scan …");
 }
 
 #[test]
