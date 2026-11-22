@@ -8,6 +8,7 @@
 //! never ends at a token that merely looks like a known field.
 
 use super::field_policy::{KEEP_FIELDS, REDACT_FIELDS};
+use super::field_values::{is_number_or_version, is_plain_identifier, MAX_VALUE_BYTES};
 use super::redact::is_safe_structured_field;
 use super::redact_composite::{is_plain_wrapped, plain_list_span};
 
@@ -29,21 +30,9 @@ const SECRET_KEY_NEEDLES: [&str; 7] = [
     "api_key",
 ];
 
-/// The longest value that is read at all. A longer one is redacted without
-/// being scanned: no field of ours writes more than a few hundred bytes, and a
-/// scan that is linear per token is still a cost an attacker can multiply.
-pub(super) const MAX_VALUE_BYTES: usize = 4096;
-
 /// What the user name is replaced with. A kept key may carry it as its value,
 /// so that a line the report redacts a second time reads as it did the first.
 const USER_MARKER: &str = "$USER";
-
-/// Duration suffixes of `Debug` for `Duration`, longest first.
-const DURATION_UNITS: [&str; 5] = ["ms", "ns", "µs", "us", "s"];
-
-/// An identifier this long made only of hex digits reads as a hash or a
-/// token (`deadbeefcafe`), not as a word.
-const HASH_LIKE_MIN_LEN: usize = 8;
 
 /// Where a token splits into a key and a value, as both passes read it.
 pub(super) struct Assignment {
@@ -294,18 +283,6 @@ pub(super) fn trim_value(value: &str) -> &str {
     }
 }
 
-/// `^[A-Za-z_][A-Za-z0-9_]*$`, minus anything that reads as a hash.
-pub(super) fn is_plain_identifier(value: &str) -> bool {
-    value
-        .chars()
-        .next()
-        .is_some_and(|first| first.is_ascii_alphabetic() || first == '_')
-        && value
-            .chars()
-            .all(|ch| ch.is_ascii_alphanumeric() || ch == '_')
-        && !(value.len() >= HASH_LIKE_MIN_LEN && value.chars().all(|ch| ch.is_ascii_hexdigit()))
-}
-
 /// A kept key's value, when it is a number: `key=12.5` and `key=0.1.331` end in
 /// what looks like an extension, but a number is not a name. The exemption
 /// holds only when the key pass has read the token the same way: it splits at
@@ -326,52 +303,4 @@ pub(super) fn is_kept_number(body: &str) -> bool {
         trim_value(&body[assignment.separator + 1..]),
         &assignment.key,
     )
-}
-
-/// A number as `Debug` writes it: an integer, a float with one dot, a float
-/// with an exponent, a duration (`12.5ms`), optionally negative and optionally
-/// inside `Some(..)`. Only the key `version` may carry several dots.
-fn is_number_or_version(value: &str, key: &str) -> bool {
-    let value = value
-        .strip_prefix("Some(")
-        .and_then(|inner| inner.strip_suffix(')'))
-        .unwrap_or(value);
-    let unsigned = value.strip_prefix('-').unwrap_or(value);
-    if key == "version" && is_dotted_version(unsigned) {
-        return true;
-    }
-    let number = DURATION_UNITS
-        .iter()
-        .find_map(|unit| unsigned.strip_suffix(unit))
-        .unwrap_or(unsigned);
-    is_decimal(number) || is_exponent_float(number)
-}
-
-fn is_dotted_version(value: &str) -> bool {
-    value
-        .split('.')
-        .all(|part| !part.is_empty() && part.chars().all(|ch| ch.is_ascii_digit()))
-}
-
-/// Digits with at most one dot, both sides non-empty.
-fn is_decimal(value: &str) -> bool {
-    let mut parts = value.split('.');
-    let digits = |part: Option<&str>| {
-        part.is_some_and(|part| !part.is_empty() && part.chars().all(|ch| ch.is_ascii_digit()))
-    };
-    let whole = digits(parts.next());
-    match (parts.next(), parts.next()) {
-        (None, _) => whole,
-        (fraction, None) => whole && digits(fraction),
-        _ => false,
-    }
-}
-
-/// `1.5e16`, `1e-3`, `2E+4`.
-fn is_exponent_float(value: &str) -> bool {
-    let Some((mantissa, exponent)) = value.split_once(['e', 'E']) else {
-        return false;
-    };
-    let exponent = exponent.strip_prefix(['+', '-']).unwrap_or(exponent);
-    is_decimal(mantissa) && !exponent.is_empty() && exponent.chars().all(|ch| ch.is_ascii_digit())
 }

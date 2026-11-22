@@ -10,8 +10,9 @@
 //! A list contains `, `, so in whitespace-split text it spans several tokens.
 //! [`plain_list_span`] reads them as one value or not at all.
 
+use super::field_values::{is_plain_identifier, MAX_VALUE_BYTES};
 use super::redact::is_safe_structured_field;
-use super::redact_assignments::{is_plain_identifier, split_assignment, MAX_VALUE_BYTES};
+use super::redact_assignments::split_assignment;
 
 /// Wrappers around one leaf: `Some(Some(Some(1)))` is three. A fourth is a
 /// shape no field of ours has, so it is redacted.
@@ -26,6 +27,16 @@ const AFTER_LIST: [char; 7] = [',', ';', ':', ']', '}', '"', ')'];
 /// `Some(Track(5))`: wrappers around a plain leaf, within the depth bound.
 pub(super) fn is_plain_wrapped(value: &str) -> bool {
     is_plain_element(value, MAX_WRAPPERS)
+}
+
+/// A whole `Debug` list value: `[]`, `[1, 2, 3]`, `[NowPlaying, PlayNext(0)]`.
+/// It opens with `[`, closes with the only `]` and has nothing after it, so
+/// unlike [`plain_list_span`] it tolerates no trailing punctuation.
+pub(super) fn is_plain_list_value(value: &str) -> bool {
+    value.starts_with('[')
+        && value.ends_with(']')
+        && value.matches(']').count() == 1
+        && is_plain_list(value)
 }
 
 /// How many tokens form a kept list assignment that starts at `tokens[0]`:
