@@ -58,6 +58,8 @@ mod filter_bar_pill_display_tests;
 mod filter_bar_strings;
 pub mod first_run;
 mod first_run_sources;
+#[cfg(test)]
+mod gtk_log_capture;
 mod help;
 mod icons;
 pub mod import_errors_view;

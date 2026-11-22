@@ -4,7 +4,8 @@ use reprise_core::db::Db;
 use reprise_core::diagnostics::DiagnosticLog;
 
 use super::{
-    build_report, parse_gnome_version, parse_gvfs_version, parse_os_release, DesktopDiagnosticInput,
+    build_report, gnome_version_from, parse_flatpak_gnome_runtime, parse_gnome_version,
+    parse_gvfs_version, parse_os_release, DesktopDiagnosticInput,
 };
 
 #[test]
@@ -119,4 +120,45 @@ fn gnome_version_parser_rejects_output_without_a_version() {
 fn gvfs_version_parser_accepts_the_daemon_version_only() {
     assert_eq!(parse_gvfs_version("gvfs 1.60.2\n"), Some("1.60.2".into()));
     assert_eq!(parse_gvfs_version("gvfs unavailable"), None);
+}
+
+#[test]
+fn flatpak_runtime_parser_names_the_gnome_platform_version() {
+    let info = "[Application]\nname=io.github.marvinbaudach.Reprise\n\
+runtime=runtime/org.gnome.Platform/x86_64/50\nsdk=runtime/org.gnome.Sdk/x86_64/50\n";
+
+    assert_eq!(
+        parse_flatpak_gnome_runtime(info),
+        Some("50 (Flatpak runtime)".into())
+    );
+}
+
+#[test]
+fn flatpak_runtime_parser_ignores_other_runtimes_and_other_sections() {
+    assert_eq!(
+        parse_flatpak_gnome_runtime("[Application]\nruntime=runtime/org.kde.Platform/x86_64/6.9\n"),
+        None
+    );
+    assert_eq!(
+        parse_flatpak_gnome_runtime("[Instance]\nruntime=runtime/org.gnome.Platform/x86_64/50\n"),
+        None
+    );
+    assert_eq!(
+        parse_flatpak_gnome_runtime("[Application]\nruntime=runtime/org.gnome.Platform/x86_64/\n"),
+        None
+    );
+    assert_eq!(parse_flatpak_gnome_runtime(""), None);
+}
+
+#[test]
+fn the_host_shell_version_wins_over_the_flatpak_runtime() {
+    assert_eq!(
+        gnome_version_from(Some("49.1"), Some("50 (Flatpak runtime)")),
+        Some("49.1".into())
+    );
+    assert_eq!(
+        gnome_version_from(None, Some("50 (Flatpak runtime)")),
+        Some("50 (Flatpak runtime)".into())
+    );
+    assert_eq!(gnome_version_from(None, None), None);
 }

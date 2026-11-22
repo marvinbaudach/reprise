@@ -472,7 +472,13 @@ impl PreferencesContext {
                 let total_skipped =
                     result.outside_library + result.missing_on_disk + result.non_song_entries;
                 if total_skipped > 0 {
-                    warning_row.set_title(&strings::rhythmbox_skipped_warning(total_skipped));
+                    let warning = strings::rhythmbox_skipped_warning(
+                        result.outside_library,
+                        result.missing_on_disk,
+                        result.non_song_entries,
+                    );
+                    warning_row.set_title(&warning.title);
+                    warning_row.set_subtitle(&warning.reasons);
                     warning_row.set_visible(true);
                 }
 
@@ -625,12 +631,11 @@ impl PreferencesContext {
                 if let Some(ref s) = summary {
                     ratings_result_c
                         .set_subtitle(&strings::rhythmbox_result_ratings(s.ratings_imported));
-                    play_counts_result_c
-                        .set_subtitle(&strings::rhythmbox_result_play_counts(s.play_counts_raised));
-                    dates_result_c.set_subtitle(&strings::rhythmbox_result_dates(
-                        s.dates_imported,
+                    play_counts_result_c.set_subtitle(&strings::rhythmbox_result_play_counts(
+                        s.play_counts_raised,
                         s.last_played_imported,
                     ));
+                    dates_result_c.set_subtitle(&strings::rhythmbox_result_dates(s.dates_imported));
                 }
                 if let Some(Ok(ref ps)) = playlist_summary {
                     playlists_result_c
