@@ -193,7 +193,7 @@ impl ReviewSnapshot {
 /// cached counts have drifted from the rows; report it and count nothing.
 fn without_row(total: usize, part: usize, owner: &str) -> usize {
     total.checked_sub(part).unwrap_or_else(|| {
-        invariant_broken!("cached {owner} selection includes its row");
+        invariant_broken!("cached {} selection includes its row", owner);
         0
     })
 }

@@ -1,24 +1,21 @@
 //! Desktop diagnostic report wiring and session warning capture.
 
-use std::fmt::Debug;
 use std::path::Path;
 use std::sync::{Arc, Mutex, OnceLock, PoisonError};
 
 use chrono::{Local, Timelike};
 use libadwaita as adw;
 use reprise_core::db::Db;
-use reprise_core::diagnostics::{
-    is_safe_structured_field, read_log_tail, DiagnosticEvent, DiagnosticLevel, DiagnosticLog,
-};
+use reprise_core::diagnostics::{read_log_tail, DiagnosticEvent, DiagnosticLevel, DiagnosticLog};
 use reprise_core::state_root;
 use reprise_platform_linux::diagnostics::DesktopDiagnosticInput;
-use tracing::field::{Field, Visit};
 use tracing::{Event, Level, Metadata, Subscriber};
 use tracing_subscriber::filter::{filter_fn, FilterFn};
 use tracing_subscriber::layer::{Context, Layer};
 
 pub(crate) mod copy;
 pub(crate) mod crash_offer;
+mod event_record;
 pub(crate) mod file_log;
 pub(crate) mod file_mirror;
 
@@ -113,60 +110,16 @@ where
             Level::ERROR => DiagnosticLevel::Error,
             _ => return,
         };
-        let mut visitor = EventFields::default();
-        event.record(&mut visitor);
-        let now = Local::now();
-        let seconds_since_midnight = now.num_seconds_from_midnight();
-        let diagnostic = DiagnosticEvent::new(
-            seconds_since_midnight,
-            level,
-            event.metadata().target(),
-            visitor.into_message(),
-        );
+        let safe = event_record::safe_of(event);
+        let seconds_since_midnight = Local::now().num_seconds_from_midnight();
+        // What is stored is already safe: the report embeds it as it is.
+        let diagnostic =
+            DiagnosticEvent::new(seconds_since_midnight, level, safe.target(), safe.body())
+                .with_location(safe.location());
         self.log
             .lock()
             .unwrap_or_else(PoisonError::into_inner)
             .push(diagnostic);
-    }
-}
-
-#[derive(Default)]
-struct EventFields {
-    message: Option<String>,
-    fields: Vec<String>,
-}
-
-impl EventFields {
-    fn into_message(self) -> String {
-        match (self.message, self.fields.is_empty()) {
-            (Some(message), true) => message,
-            (Some(message), false) => format!("{message}; {}", self.fields.join(" ")),
-            (None, false) => self.fields.join(" "),
-            (None, true) => "warning without details".into(),
-        }
-    }
-
-    fn record_value(&mut self, field: &Field, value: String) {
-        if field.name() == "message" {
-            self.message = Some(value);
-        } else {
-            let value = if is_safe_structured_field(field.name()) {
-                value
-            } else {
-                "$REDACTED".into()
-            };
-            self.fields.push(format!("{}={value}", field.name()));
-        }
-    }
-}
-
-impl Visit for EventFields {
-    fn record_debug(&mut self, field: &Field, value: &dyn Debug) {
-        self.record_value(field, format!("{value:?}"));
-    }
-
-    fn record_str(&mut self, field: &Field, value: &str) {
-        self.record_value(field, value.to_string());
     }
 }
 

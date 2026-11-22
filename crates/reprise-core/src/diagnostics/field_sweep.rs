@@ -256,7 +256,11 @@ pub(super) fn sweep_source(name: &str, source: &str) -> Result<FileSweep, String
     reject_aliased_imports(name, &production)?;
     let mut sites = Vec::new();
     let mut templates = invariant_templates(name, &production)?;
+    let macro_body = invariant_macro_body(&production);
     for index in 0..production.len() {
+        if macro_body.contains(&index) {
+            continue;
+        }
         let Token::Ident(ident) = &production[index].token else {
             continue;
         };
@@ -299,6 +303,38 @@ pub(super) fn sweep_source(name: &str, source: &str) -> Result<FileSweep, String
         test_modules,
         test_only,
     })
+}
+
+/// The token indices inside the body of `macro_rules! invariant_broken`.
+///
+/// The macro forwards its caller's literal to `tracing::error!` with
+/// `concat!`, so the call in its body has no message literal of its own and
+/// takes `$` tokens the scanner cannot read as fields. Its template is filed
+/// where the macro is used (`invariant_templates`), because `file!()` in a
+/// `macro_rules!` expansion names the use site. The body has no fields.
+fn invariant_macro_body(tokens: &[Spanned]) -> std::ops::Range<usize> {
+    for at in 0..tokens.len() {
+        let is_definition = matches!(
+            (
+                tokens.get(at).map(|t| &t.token),
+                tokens.get(at + 1).map(|t| &t.token),
+                tokens.get(at + 2).map(|t| &t.token),
+            ),
+            (
+                Some(Token::Ident(keyword)),
+                Some(Token::Punct('!')),
+                Some(Token::Ident(name)),
+            ) if keyword == "macro_rules" && name == "invariant_broken"
+        );
+        if !is_definition {
+            continue;
+        }
+        let open = at + 3;
+        if let Some(close) = matching_close(tokens, open) {
+            return open..close;
+        }
+    }
+    0..0
 }
 
 /// The error for a field part the scanner cannot read.

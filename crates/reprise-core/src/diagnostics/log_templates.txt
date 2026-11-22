@@ -389,7 +389,6 @@ crates/reprise-gnome/src/ui/import_errors_view.rs	import errors view: retry item
 crates/reprise-gnome/src/ui/import_errors_view.rs	import errors view: show in Files failed
 crates/reprise-gnome/src/ui/import_errors_view.rs	import errors view: toast overlay is gone; log-only
 crates/reprise-gnome/src/ui/import_errors_view.rs	import errors view: window is gone; cannot export
-crates/reprise-gnome/src/ui/invariant.rs	invariant broken: {} ({}:{})
 crates/reprise-gnome/src/ui/issues/missing_dialogs.rs	invariant broken: outside-library selection always warns
 crates/reprise-gnome/src/ui/issues/missing_dialogs.rs	missing locate: failed to read library root
 crates/reprise-gnome/src/ui/issues/missing_dialogs.rs	missing locate: file dialog failed

@@ -740,7 +740,7 @@ const INVALID_TRANSFER_INDEX: &str = "the sync machine emitted an invalid transf
 fn transfer(work: &PlannedWork, index: usize) -> Option<TransferOperation> {
     let operation = work.transfer(index);
     if operation.is_none() {
-        invariant_broken!("{INVALID_TRANSFER_INDEX}: {index}");
+        invariant_broken!("{}: {}", INVALID_TRANSFER_INDEX, index);
     }
     operation
 }

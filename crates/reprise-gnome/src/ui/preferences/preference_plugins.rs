@@ -129,7 +129,7 @@ fn descriptor(id: &str) -> Option<&'static ModuleDescriptor> {
         .copied()
         .find(|descriptor| descriptor.id == id);
     if found.is_none() {
-        invariant_broken!("unknown Plugins capability: {id}");
+        invariant_broken!("unknown Plugins capability: {}", id);
     }
     found
 }
@@ -388,7 +388,7 @@ fn settings_plugin_row(
             Rc::new(move |enabled| rows.set_sensitive(enabled))
         }
         id => {
-            invariant_broken!("capability {id} has no Plugins child-row builder");
+            invariant_broken!("capability {} has no Plugins child-row builder", id);
             Rc::new(|_| {})
         }
     };
@@ -651,7 +651,7 @@ impl PreferencesContext {
                     Some(row.upcast::<gtk4::Widget>())
                 }
                 id => {
-                    invariant_broken!("connected capability {id} has no Plugins row builder");
+                    invariant_broken!("connected capability {} has no Plugins row builder", id);
                     None
                 }
             })

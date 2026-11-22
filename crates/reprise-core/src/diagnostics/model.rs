@@ -1,6 +1,6 @@
 use std::collections::VecDeque;
 
-/// Session events retained before privacy redaction at report-render time.
+/// Session events retained. Each is already reduced to safe text when it is pushed.
 pub const DIAGNOSTIC_EVENT_CAPACITY: usize = 200;
 
 /// Package shape reported by the desktop collector.
@@ -55,12 +55,19 @@ pub enum DiagnosticLevel {
     Error,
 }
 
+/// A session warning as the report shows it.
+///
+/// `message` is the body of a `SafeEvent` (its static template and kept
+/// fields) and `location` its own call site: both are safe when stored, and
+/// the report embeds them as they are.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct DiagnosticEvent {
     pub seconds_since_midnight: u32,
     pub level: DiagnosticLevel,
     pub target: String,
     pub message: String,
+    /// `<file>:<line>` of an own call site; `None` for a foreign event.
+    pub location: Option<String>,
 }
 
 impl DiagnosticEvent {
@@ -75,6 +82,16 @@ impl DiagnosticEvent {
             level,
             target: target.into(),
             message: message.into(),
+            location: None,
+        }
+    }
+
+    /// The same event with its call site's location.
+    #[must_use]
+    pub fn with_location(self, location: Option<&str>) -> Self {
+        Self {
+            location: location.map(str::to_owned),
+            ..self
         }
     }
 }
@@ -99,6 +116,11 @@ impl DiagnosticLog {
 
     pub fn is_empty(&self) -> bool {
         self.events.is_empty()
+    }
+
+    /// The retained events, oldest first.
+    pub fn events(&self) -> impl Iterator<Item = &DiagnosticEvent> {
+        self.events.iter()
     }
 
     pub(super) fn latest(&self, limit: usize) -> impl Iterator<Item = &DiagnosticEvent> {

@@ -130,6 +130,25 @@ fn the_macro_definition_and_a_mention_are_not_invariant_sites() {
 }
 
 #[test]
+fn the_tracing_call_inside_the_invariant_macro_body_is_neither_a_template_nor_a_field() {
+    // The body forwards the caller's literal with `concat!`, so its message is
+    // not one string literal; the use sites carry the template instead.
+    let source = r#"
+        macro_rules! invariant_broken {
+            ($fmt:literal $($rest:tt)*) => {{
+                ::tracing::error!(concat!("invariant broken: ", $fmt) $($rest)*);
+            }};
+        }
+        fn f() { invariant_broken!("row {} has no model", 7); tracing::warn!("after"); }
+    "#;
+
+    assert_eq!(
+        reduced(source),
+        ["invariant broken: row … has no model", "after"]
+    );
+}
+
+#[test]
 fn an_invariant_site_that_does_not_start_with_a_literal_is_refused() {
     let error = error_of("fn f() {\n invariant_broken!(message);\n}\n");
 

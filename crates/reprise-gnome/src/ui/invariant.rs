@@ -16,16 +16,18 @@
 //! X11-only path running on Wayland.
 
 /// Logs a broken invariant, asserts in debug builds, and returns so the caller
-/// can degrade. Takes `format!`-style arguments naming the invariant.
+/// can degrade. Takes a `format!`-style string literal and its arguments.
+///
+/// The literal is forwarded to `tracing` as it is, behind `invariant broken: `,
+/// so the log text of the call is the caller's template and `file!()` names the
+/// use site, which is where the template table files it
+/// (`reprise_core::diagnostics`). The literal must be written at the use site
+/// with its values as explicit arguments: a name inside the braces cannot be
+/// captured once `concat!` builds the string.
 macro_rules! invariant_broken {
-    ($($message:tt)+) => {{
-        let message = ::std::format!($($message)+);
-        ::tracing::error!(
-            "invariant broken: {message} ({}:{})",
-            ::std::file!(),
-            ::std::line!(),
-        );
-        ::std::debug_assert!(false, "invariant broken: {message}");
+    ($fmt:literal $($rest:tt)*) => {{
+        ::tracing::error!(concat!("invariant broken: ", $fmt) $($rest)*);
+        ::std::debug_assert!(false, concat!("invariant broken: ", $fmt) $($rest)*);
     }};
 }
 
