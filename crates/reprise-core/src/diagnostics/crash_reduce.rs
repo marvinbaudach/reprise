@@ -92,7 +92,7 @@ fn cut(text: &str, max: usize) -> &str {
 }
 
 /// A source location, `<path>:<line>:<column>`, in the location grammar: the
-/// path is kept when it is one of the shapes of [`reduce_path`] and `…`
+/// path is kept when it is one of the shapes of `reduce_path` and `…`
 /// otherwise; the line and column are numbers or the whole text is `…`.
 #[must_use]
 pub fn reduce_location(location: &str) -> String {
