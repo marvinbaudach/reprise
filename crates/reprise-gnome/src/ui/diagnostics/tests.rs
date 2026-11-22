@@ -5,6 +5,7 @@ use tracing::{Event, Subscriber};
 use tracing_subscriber::layer::{Context, Layer, SubscriberExt};
 
 use super::event_record::{callsite_of, recorded_of};
+use super::run_log_fixture_tests::move_the_previous_log_aside_and_fail;
 use super::{session_filter, SessionDiagnosticLayer};
 
 fn session(log: impl FnOnce()) -> Vec<DiagnosticEvent> {
@@ -24,14 +25,6 @@ where
     tracing::subscriber::with_default(subscriber, log);
     let events = store.lock().unwrap().events().cloned().collect();
     events
-}
-
-/// A real production call site the template table knows (see `file_mirror`).
-fn move_the_previous_log_aside_and_fail() {
-    let root = tempfile::tempdir().unwrap();
-    let previous = reprise_core::state_root::previous_log_path_in(root.path());
-    std::fs::create_dir_all(&previous).unwrap();
-    let _ = reprise_core::run_log::RunLog::start_in(root.path());
 }
 
 #[test]

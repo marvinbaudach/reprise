@@ -124,4 +124,6 @@ where
 }
 
 #[cfg(test)]
+mod run_log_fixture_tests;
+#[cfg(test)]
 mod tests;

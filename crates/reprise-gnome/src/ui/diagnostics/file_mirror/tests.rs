@@ -3,6 +3,7 @@ use std::sync::{Arc, Mutex};
 use reprise_core::diagnostics::{render_report, DiagnosticFacts, DiagnosticLog};
 use tracing_subscriber::layer::SubscriberExt;
 
+use super::super::run_log_fixture_tests::move_the_previous_log_aside_and_fail;
 use super::*;
 
 fn mirrored(log: impl FnOnce()) -> String {
@@ -14,16 +15,6 @@ fn mirrored(log: impl FnOnce()) -> String {
     tracing::subscriber::with_default(tracing_subscriber::registry().with(layer), log);
     let text = lines.lock().unwrap().clone();
     text
-}
-
-/// A real production call site, which the template table knows: the run log
-/// logs `could not move the previous log aside` when a directory sits where
-/// the previous log belongs.
-fn move_the_previous_log_aside_and_fail() {
-    let root = tempfile::tempdir().unwrap();
-    let previous = reprise_core::state_root::previous_log_path_in(root.path());
-    std::fs::create_dir_all(&previous).unwrap();
-    let _ = reprise_core::run_log::RunLog::start_in(root.path());
 }
 
 #[test]

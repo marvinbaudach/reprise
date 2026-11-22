@@ -19,6 +19,7 @@ use tracing::metadata::Kind;
 use tracing::{Event, Level, Metadata};
 use tracing_subscriber::layer::SubscriberExt;
 
+use super::super::run_log_fixture_tests::move_the_previous_log_aside_and_fail;
 use super::super::SessionDiagnosticLayer;
 use super::FileMirrorLayer;
 
@@ -168,14 +169,8 @@ fn log_all_kinds_of_event() {
         },
     );
     // A real production call site: the run log fails to move a directory
-    // aside, and its error names the temporary directory.
-    let root = tempfile::Builder::new()
-        .prefix("zqx-state-")
-        .tempdir()
-        .unwrap();
-    let previous = reprise_core::state_root::previous_log_path_in(root.path());
-    std::fs::create_dir_all(&previous).unwrap();
-    let _ = reprise_core::run_log::RunLog::start_in(root.path());
+    // aside, and its error names a temporary directory that carries the needle.
+    move_the_previous_log_aside_and_fail();
 }
 
 #[test]
