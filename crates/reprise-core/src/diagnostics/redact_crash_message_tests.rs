@@ -196,3 +196,120 @@ fn the_source_text_of_an_assertion_is_no_cover_for_a_value() {
         }
     }
 }
+
+#[test]
+fn a_frame_with_a_value_in_a_path_is_no_frame() {
+    let backtrace = "backtrace:\n   4: a::b=hunter2\n   5: <x>::192.168.1.5\n   6: core::x::token abc123\n   7: <Pink as Floyd>::Time.flac";
+    let (_, shown) = written_and_shown("boom", backtrace);
+
+    for leaked in ["hunter2", "192.168", "abc123", "Time"] {
+        assert!(!shown.contains(leaked), "{leaked:?} leaked:\n{shown}");
+    }
+}
+
+#[test]
+fn the_source_text_of_an_assertion_is_no_cover_for_an_assignment() {
+    for message in [
+        "assertion failed: password=hunter2 && a.b()",
+        "assertion failed: token: abc123 == a.b",
+        "assertion failed: a.b() && key=abc123",
+        "assertion failed: a.b() && secret:hunter2",
+    ] {
+        let (written, shown) = written_and_shown(message, "backtrace:");
+        for text in [message_line(&written), message_line(&shown)] {
+            for leaked in ["hunter2", "abc123"] {
+                assert!(
+                    !text.contains(leaked),
+                    "{leaked:?} leaked from {message:?}: {text}"
+                );
+            }
+        }
+    }
+}
+
+/// An exemption may skip a pass only where the pass would leave the text
+/// alone: whatever condition the panic message keeps, the network, secret and
+/// assignment passes read it as it is.
+#[test]
+fn a_condition_that_stays_readable_is_one_no_pass_would_change() {
+    use super::redact_assignments::redact_sensitive_assignments;
+    use super::redact_network::redact_network_identifiers;
+    use super::redact_secrets::secret_cut;
+
+    let atoms = [
+        "a",
+        "self.b()",
+        "x.len()",
+        "token",
+        "password",
+        "key",
+        "abc123",
+        "192.168.1.5",
+        "==",
+        "!=",
+        "<",
+        "&&",
+        "=",
+        ":",
+        "::",
+        "a::b",
+        "q[0]",
+        "hunter2",
+        "Time.flac",
+        "id=3",
+        "k:v",
+        "(",
+        ")",
+        "$HOME",
+        "…",
+        "token:",
+        "pass=",
+        "0xC0A80105",
+        "::x",
+        "-",
+        "!",
+        "s.t=",
+        "u: ",
+    ];
+    let mut state = 0x9e37_79b9_7f4a_7c15_u64;
+    let mut next = || {
+        state ^= state << 13;
+        state ^= state >> 7;
+        state ^= state << 17;
+        state
+    };
+    let mut kept = 0;
+    for _ in 0..200_000 {
+        let length = 1 + next() % 6;
+        let words: Vec<&str> = (0..length)
+            .map(|_| atoms[(next() % atoms.len() as u64) as usize])
+            .collect();
+        let condition = words.join(" ");
+        let message = format!("assertion failed: {condition}");
+        if super::redact_panic_message(&message, &context()) != message {
+            continue;
+        }
+        kept += 1;
+        let tokens: Vec<&str> = condition.split_inclusive(char::is_whitespace).collect();
+        let values_only = condition
+            .split_whitespace()
+            .filter(|token| !token.chars().all(|ch| "=!<>&|+-*%^".contains(ch)))
+            .collect::<Vec<_>>()
+            .join(" ");
+        assert_eq!(
+            redact_network_identifiers(&condition),
+            condition,
+            "{message}"
+        );
+        assert_eq!(
+            redact_sensitive_assignments(&values_only),
+            values_only,
+            "{message}"
+        );
+        assert!(
+            (0..tokens.len()).all(|from| secret_cut(&tokens[from..]).is_none()),
+            "{message}"
+        );
+    }
+    assert!(kept > 100, "the fuzz kept only {kept} conditions");
+}

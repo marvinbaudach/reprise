@@ -244,3 +244,27 @@ fn a_path_whose_first_word_opens_with_punctuation_is_still_seen() {
         );
     }
 }
+
+#[test]
+fn a_sigil_in_front_of_a_name_is_no_root_unless_a_path_pass_reads_it_as_one() {
+    for input in [
+        "copied %zqxa/zqxb",
+        "copied $x.y/zqxb",
+        "copied ~a'b/zqxc",
+        "copied $x Pink Floyd/the wall",
+        "copied ~zqxa/zqxb to device",
+    ] {
+        assert_no_leak(input, &["Pink", "Floyd", "wall", "zqx"]);
+    }
+}
+
+#[test]
+fn a_marker_with_a_slash_stays_readable() {
+    for input in [
+        "inet $IP/24 and $IP/64",
+        "could not scan $HOME/…",
+        "open $XDG_MUSIC_DIR/…",
+    ] {
+        assert_eq!(redacted(input), input);
+    }
+}

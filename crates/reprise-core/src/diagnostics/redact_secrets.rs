@@ -136,11 +136,23 @@ fn key_run(token: &str) -> (usize, usize) {
         - token
             .trim_start_matches(|ch: char| !ch.is_alphanumeric())
             .len();
-    let run = token[start..]
-        .find(|ch: char| !(ch.is_alphanumeric() || matches!(ch, '_' | '-' | '.' | '/')))
-        .unwrap_or(token.len() - start);
+    // `::` joins the names of a Rust path (`core::x::token`); a single `:` is
+    // a separator of its own.
+    let mut run = 0;
+    let mut characters = token[start..].char_indices().peekable();
+    while let Some((index, ch)) = characters.next() {
+        let joins = ch == ':' && characters.peek().is_some_and(|(_, next)| *next == ':');
+        if !(ch.is_alphanumeric() || matches!(ch, '_' | '-' | '.' | '/') || joins) {
+            run = index;
+            break;
+        }
+        if joins {
+            characters.next();
+        }
+        run = index + ch.len_utf8() + usize::from(joins);
+    }
     let mut end = start;
-    for part in token[start..start + run].split(['.', '/']) {
+    for part in token[start..start + run].split(['.', '/', ':']) {
         end += part.len();
         if !part.is_empty() && is_secret_word(part) {
             return (start, end);

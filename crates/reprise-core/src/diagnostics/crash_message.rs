@@ -13,6 +13,7 @@
 
 use super::model::RedactionContext;
 use super::redact::{redact_log_message, redact_names};
+use super::redact_assignments::redact_sensitive_assignments;
 use super::redact_filenames::has_media_extension;
 use super::redact_network::redact_network_identifiers;
 use super::redact_secrets::secret_cut;
@@ -98,10 +99,32 @@ fn is_source_text(condition: &str) -> bool {
 /// passes a message goes through decide, so `addr == 192.168.1.5` is not
 /// readable because it looks like code.
 fn carries_no_value(condition: &str) -> bool {
-    let tokens: Vec<&str> = condition.split_inclusive(char::is_whitespace).collect();
-    redact_network_identifiers(condition) == condition
-        && (0..tokens.len()).all(|from| secret_cut(&tokens[from..]).is_none())
+    // An `=` or a `:` that is no comparison and no path separator makes an
+    // assignment, whatever its key (`password=x`, `token: x`).
+    let assigns = condition.split_whitespace().any(|token| {
+        let without_comparisons = ["==", "!=", "<=", ">=", "=>"]
+            .iter()
+            .fold(token.to_owned(), |text, operator| {
+                text.replace(operator, "")
+            });
+        without_comparisons.contains('=') || token.replace("::", "").contains(':')
+    });
+    let operands = condition
+        .split_whitespace()
+        .filter(|token| !token.chars().all(is_operator_char))
+        .collect::<Vec<_>>()
+        .join(" ");
+    !assigns
+        && redact_sensitive_assignments(&operands) == operands
+        && carries_no_address_or_secret(condition)
         && !condition.split_whitespace().any(has_media_extension)
+}
+
+/// Neither an address nor a secret word with something after it.
+fn carries_no_address_or_secret(text: &str) -> bool {
+    let tokens: Vec<&str> = text.split_inclusive(char::is_whitespace).collect();
+    redact_network_identifiers(text) == text
+        && (0..tokens.len()).all(|from| secret_cut(&tokens[from..]).is_none())
 }
 
 fn is_operator_char(ch: char) -> bool {
@@ -122,7 +145,7 @@ fn is_source_char(ch: char) -> bool {
 /// FnOnce<A>>::call_once{{vtable.shim}}`. A number, a colon and a symbol of a
 /// path (`::`) or a type (`<…>`) in the characters of one: no `=`, no dot
 /// outside a `{{…}}` marker, so an address, a `key=value` and a file name are
-/// none. A frame of a plain word (`main`, `clone3`) has no structure to check
+/// none. The address and secret passes must leave it alone as well. A frame of a plain word (`main`, `clone3`) has no structure to check
 /// and goes through the redactor like any line. Each word of a symbol with
 /// spaces is part of a path or a type, or a keyword that joins them. Its names
 /// are replaced, as in a source location, and nothing else is.
@@ -134,9 +157,10 @@ pub(super) fn is_symbol_frame(line: &str) -> bool {
     if number.is_empty() || !number.chars().all(|ch| ch.is_ascii_digit()) {
         return false;
     }
-    let structured = symbol.contains("::") || symbol.starts_with('<') && symbol.contains('>');
+    let structured = symbol.contains("::") || (symbol.starts_with('<') && symbol.contains('>'));
     structured
         && has_only_symbol_chars(symbol)
+        && carries_no_address_or_secret(symbol)
         && symbol.split_whitespace().all(|word| {
             SYMBOL_KEYWORDS.contains(&word)
                 || word.contains(['<', '>', '(', ')'])
@@ -183,6 +207,5 @@ fn is_symbol_char(ch: char) -> bool {
                 | '-'
                 | ';'
                 | '!'
-                | '='
         )
 }

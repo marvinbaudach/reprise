@@ -48,7 +48,12 @@ pub(super) fn relative_trigger(line: &str, limit: usize) -> Option<Cut> {
         if has_userinfo(&word[lead..]) || is_gvfs_mount(&word[lead..]) {
             return Some(Cut::path(start + lead));
         }
-        if has_slash_in_a_name(&word[relative_start(word)..]) {
+        let tail_start = relative_start(word);
+        // An absolute path that starts in this word is read by its own pass.
+        if start + tail_start >= limit {
+            continue;
+        }
+        if has_slash_in_a_name(&word[tail_start..]) {
             return Some(Cut::path(floor));
         }
     }

@@ -5,6 +5,8 @@
 //! purpose. A pair of ordinary words that is not on the list is redacted, and
 //! that is the price of not guessing which names are ordinary.
 
+use super::redact_markers::marker_len;
+
 /// Pairs of words and types that are written with a slash and carry no name.
 /// Lower case: the comparison folds the case, so `TCP/IP` and `I/O` match.
 const ORDINARY_PAIRS: [&str; 57] = [
@@ -89,12 +91,15 @@ pub(super) fn has_slash_in_a_name(word: &str) -> bool {
     } else {
         bare.trim_start_matches('/')
     };
-    // Punctuation in front of a name (`*Pink`, `!zqxa`, `…Pink`) is not a root.
-    // A word that opens with a root of its own (`/mnt`, `$HOME`, `~`, `%VAR%`)
-    // is read by the pass for absolute paths.
-    let word = word.trim_start_matches(|ch: char| {
-        !ch.is_alphanumeric() && !matches!(ch, '/' | '$' | '~' | '%' | '\\')
-    });
+    // One of the redactor's own markers (`$IP/24`, `$HOME/…`) is no name.
+    if word.starts_with('$') && marker_len(word).is_some() {
+        return false;
+    }
+    // Punctuation in front of a name (`*Pink`, `!zqxa`, `…Pink`, `%zqxa`) is not
+    // a root. A real root (`/mnt`, `$HOME`, `~/`, `%VAR%`) has been cut by the
+    // pass for absolute paths before this word is read; one that pass did not
+    // cut is punctuation.
+    let word = word.trim_start_matches(|ch: char| !ch.is_alphanumeric() && ch != '/');
     word.starts_with(char::is_alphanumeric) && word.contains('/') && !is_ordinary(word)
 }
 

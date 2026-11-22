@@ -52,9 +52,17 @@ pub(super) struct Assignment {
 /// pass share, so a token cannot be a kept `key=value` to one and something
 /// else to the other.
 pub(super) fn split_assignment(token: &str) -> Option<Assignment> {
-    let (separator, separator_char) = token
+    let (mut separator, mut separator_char) = token
         .char_indices()
         .find(|(_, ch)| matches!(ch, '=' | ':'))?;
+    // `a::b=hunter2`: a Rust path in front of a `=` is a key like any other,
+    // and its value is not a path.
+    if separator_char == ':' && token[separator..].starts_with("::") {
+        if let Some(equals) = token[separator..].find('=') {
+            separator += equals;
+            separator_char = '=';
+        }
+    }
     let key = token[..separator]
         .trim_matches(|ch: char| !ch.is_ascii_alphanumeric() && ch != '_')
         .to_ascii_lowercase();
