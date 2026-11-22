@@ -111,12 +111,15 @@ cargo test --workspace                                  # NOTE: bare `cargo test
 cargo audit                                             # Accepted advisories: see below. A NEW advisory = STOP.
 ```
 
-Accepted `cargo audit` advisories, all of them unmaintained-crate warnings:
+Accepted `cargo audit` advisories, all of them unmaintained-crate or unsoundness warnings:
 - `RUSTSEC-2024-0436` — `paste`, via lofty.
 - `RUSTSEC-2026-0370`, `RUSTSEC-2026-0371`, `RUSTSEC-2026-0372` — `zvariant`, `zbus_names` and
   `zvariant_derive`, via zbus. Temporary until #1300 is resolved.
 - `RUSTSEC-2026-0374` — `basic-toml`, via askama. Temporary until #1300 is resolved.
-- `RUSTSEC-2026-0582` — `heapless` 0.8.0, via flacenc in reprise-stems, temporary until #1376.
+- `RUSTSEC-2026-0574` through `RUSTSEC-2026-0582` — `heapless` 0.8.0, unsound, via flacenc in
+  reprise-stems, temporary until #1376.
+- `RUSTSEC-2026-0543` — `chrono` 0.4.45, unmaintained, a direct dependency of `reprise-core` and
+  `reprise-cli`, temporary until #1385.
 
 Any advisory not on this list is a stop.
 
