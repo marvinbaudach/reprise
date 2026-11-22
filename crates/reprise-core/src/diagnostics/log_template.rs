@@ -85,6 +85,13 @@ impl LogTemplate {
         self.pieces.iter().map(|piece| piece.chars().count()).sum()
     }
 
+    /// What the template renders to when every hole prints `text`: the way a
+    /// test builds a message that carries a chosen value.
+    #[cfg(test)]
+    pub(super) fn rendered_with(&self, text: &str) -> String {
+        self.pieces.join(text)
+    }
+
     /// The template's text with every hole written as [`HOLE`].
     pub fn reduced(&self) -> String {
         self.pieces.join(HOLE)

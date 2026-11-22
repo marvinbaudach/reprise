@@ -38,6 +38,10 @@ pub use render::render_report;
 pub use safe_event::{safe_event, Callsite, LogLevel, RecordedEvent, SafeEvent};
 
 #[cfg(test)]
+mod allowlist_acceptance_tests;
+#[cfg(test)]
+mod allowlist_fuzz_tests;
+#[cfg(test)]
 mod crash_reduce_tests;
 #[cfg(test)]
 mod extended_tests;

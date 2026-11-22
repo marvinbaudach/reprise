@@ -1,0 +1,260 @@
+# Leak corpus for the allowlist redactor's acceptance tests.
+#
+# One input per line. Lines starting with `#` and blank lines are skipped.
+# Every input carries the needle `zqx` (compared case-insensitively) and no
+# other name: nothing here is a real artist, album, track, person, host or
+# path. The fixture user is `zqxuser`. The shapes come from the earlier
+# redactor reviews (quoted media names before a colon, slash forms with a
+# number-led second segment, backslash roots, secret words next to values,
+# forged placeholders and forged log or crash lines); only their shape is kept.
+#
+# Markers the loader decodes, so a line stays one line:
+#   <NL> line feed   <CR> carriage return   <TAB> tab
+#   <NBSP> U+00A0    <ZWSP> U+200B          <LS> U+2028
+
+# --- bare names, slash forms
+Zqxband/zqxwa zqxqa zqxwb
+skipping Zqxqb Zqxwl/01 Zqxwc Zqxqc.flac (exists)
+missing: Zqxqd Zqxsd/03 zqxqe
+sync Zqxqf/zqxqg failed
+Zqxqh-qd/zqxqi zqxwd
+scanning Zqxband 5/2007 - Zqx Zqxwe Zqxwf
+copied Zqxqj 2/01 Zqxsp to Zqxqk to device
+scanning Zqxql 41/2001
+removed 1989/01 Zqxqm to Zqxqn
+open Zqxband 5\2007 - Zqxa
+copied Zqxqo: Zqxgb Zqxqp/Disc 1/01 Zqxqq.flac
+copied Zqxqr [Zqxrm] Zqxqs/Disc 1/01.flac
+copied The "Zqxqt" Zqxss/Disc 1/01.flac
+copied Zqxqu, Zqxwd & Zqxqv/Zqxqw/01 Zqxin.flac
+copied 'Zqxtl Zqxqx/Zqxqy/01.flac
+copied Zqxqz! at the Zqxqba: Zqxqbb. Zqxod./Disc/01.flac
+copied Zqxsm'/Zqxa
+copied Zqxa:/Zqxb
+copied Zqxa=/Zqxb
+copied Zqxa Zqxb'/Zqxc/Zqxd
+copied "Zqxa Zqxb"/Zqxc
+ratio 3 / 4 for Zqxband
+_/tank/Zqxband
+9/tank/Zqxband
+tank/Zqxband
+open _/Zqxband/Zqxalbum
+open ._/Zqxband
+open "_/Zqxband"
+copied _/Zqxa to device
+copied Zqxqbc_/Zqxa to device
+copied _Zqxa/Zqxb to device
+copied Zqxqu/Zqxwd to device
+HTTP/2 Zqxband
+copied 2019/01 Zqxqbd
+copied 25/01 Zqxqbe
+copied Zqxqbf/H. to device
+copied Zqxqbg/Min to device
+copied Zqxqr/Ms Zqxqbh
+copied Zqxqbi/Off to device
+copied Zqxqbj/I/O to device
+copied Zqxqbk/She to device
+text/plain Zqxband
+copied zqxaudio/flac,Zqxband/Zqxalbum
+copied ICY/1 Zqxa
+rate MB/s Zqxband
+copied Zqxqbl/s to device
+copied Zqx/MS. to device
+copied Zqxa/12 to device
+copied 50%/Zqxa
+copied (I/O) Zqxa
+copied Zqxa⁄Zqxb to device
+copied Zqxa／Zqxb to device
+/tank/zqxaudio/ゼクス zqx/狂気
+/tank/audio/zqxband/Zqxqbm zqxwg zqxwh/01 - zqxqbn.flac
+/var/mnt/zqxnas/The Zqxqd side
+cannot open /nas/zqxmedia/Zqxqbm: permission denied
+
+# --- paths and Windows paths
+could not read /mnt/usb/Zqx Artist/x.flac
+open C:\zqxqbo\zqxev\track.flac
+open "C:\\Users\\zqxuser\\Music\\Zqx Artist\\x.flac"
+open "\\\\zqxnas\\music\\Zqx Artist"
+open x\\zqxnas\music\Zqx Artist
+open \zqxqbo\zqxev\track one
+open zqxqbo\zqxev\track one
+open Artist\zqxqb zqxwi\time
+open D:Music\Zqx Artist
+open Zqxband\Zqxalbum
+open ..\zqxqbo\zqxev
+open %APPDATA%\zqxqbo
+open C:zqxqbo
+open \\?\UNC\zqxnas\share\Zqx Artist
+open \/home\/zqxuser\/Zqx Artist
+open Z:\ Zqx Artist
+mount \\zqxnas and then Zqx Artist
+open "\Zqxa\Zqxb" now
+open '\Zqxa\Zqxb Zqxc\Zqxd'
+open file "\zqxqbo\zqxev\track one"
+path: "\Zqxa\Zqxb"
+open Zqxqbp\…And Zqxqbq
+open Zqxband\(1973) Zqxqd Zqxsd
+open Zqxa\[2001] Zqxb
+open Zqxa\¡Uno!
+open \Zqxa
+err "Zqxa\nZqxb"
+%2Fhome%2Fzqxuser%2FMusic%2FZqx%20Artist%2Fx.flac
+／home／zqxuser／Music／Zqx Artist
+smb://zqxuser@zqxnas/share/Zqx Artist
+~/Music/zqx artist/zqx album
+$HOME/Downloads/zqx artist zqx album
+open '/mnt/usb/Zqxqbr' zqxwj zqxwk' failed
+could not read "/home/zqxuser/Music/12" zqxqbs/the mix"
+nas:8080/Zqx Artist/x
+zqxnas:share/Zqx Artist
+zqxqbt@zqxnas:Music/Zqx Artist
+1http://zqxqbt:pw@host/x Zqx
+zqxnas.example.com://x Zqx
+spotify:user:zqxqbt:playlist:37i9 Zqx
+content://media/external/audio/zqxmedia/5 Zqx
+
+# --- file names, quoted and glued
+could not decode 01 - Zqxqe.flac.
+is this Zqxqe.flac?
+file «zqxcover.jpg» missing
+file ‘Zqxqe.flac’ missing
+file (Zqxqe.flac). missing
+file *Zqxqe.flac* missing
+file Zqxqe.flac<NL> missing
+could not decode Zqxqd Zqxsd.flac.tmp
+could not write Zqxa Zqxb.reprise-0123456789abcdef.tmp
+could not decode Zqxa Zqxb.tta now
+could not read Zqxa Zqxb.FLAC
+could not read Zqxa Zqxb.flac: No such file
+could not read 'Zqxa Zqxb.flac': No such file
+failed to open "zqxcover.jpg": permission denied
+decode error in "Zqxa Zqxb.mp3": bad frame
+could not read [Zqxa Zqxb.flac]: gone
+could not read “Zqxa Zqxb.flac”: gone
+could not read "Zqxa Zqxb.flac"= gone
+could not read "Zqxa Zqxb.flac":gone
+file "Zqxa Zqxb.flac": title: Zqxc
+Error { file: "Zqxa Zqxb.flac", line: 3 }
+name="Zqxa Zqxb.flac": x
+could not read Zqxa Zqxb。flac
+could not read Zqxa Zqxb .flac
+could not write Zqxa Zqxb.reprise-analysis
+parse error in Zqxa Zqxb.cue:12
+Zqxa Zqxb.m3u:3: missing file
+decode Zqxa Zqxb.flac?x
+decode Zqxa Zqxb.flac(track 3)
+decode Zqxa Zqxb.flac->Zqxc
+files [Zqxa Zqxb.flac,Zqxc Zqxd.flac]
+decoding "Zqxqd Zqxsd of the Zqxmn.flac" failed
+Zqxa feat. Zqxb vs. Zqxc
+could not read Zqxa Z.Q.X
+
+# --- panic-payload shapes and debug values
+assertion `left == right` failed<NL>  left: "Zqxa Zqxb"<NL> right: "Zqxc"
+assertion `left == right` failed: titles differ<NL>  left: "Zqxa Zqxb"<NL> right: "Zqxc"
+  left: "Zqxa Zqxb"
+InvalidTitle("Zqxa Zqxb")
+NulError(5, [122, 113, 120, 0], zqx)
+FromUtf8Error { zqx: 1, bytes: [90, 113, 120, 255], error: Utf8Error { valid_up_to: 3, error_len: Some(1) } }
+Error { kind: NotFound, path: "Zqxa Zqxb.flac" }
+"no such album: Zqxa Zqxb"
+not implemented Zqxa password zqxhunter2
+assertion failed: x(Zqxa Zqxb Zqxc)
+assertion failed: a == Zqxa.txt
+assertion failed: a.b()<NL>Zqxa
+byte index 4 is not a char boundary; it is inside 'é' (bytes 3..5) of `Zqxa Zqxb é Zqxc`
+Some(Zqxa)
+Some("Zqxa Zqxb")
+[Zqxa, Zqxb, Zqxc]
+[Zqxa Zqxb, Zqxc]
+Track(Zqxa)
+zqxuser
+StaleFor { seconds: 60, zqx: "Zqxa" }
+{"zqx":"Zqxa"}
+Zqxa<TAB>Zqxb
+
+# --- secrets and credentials
+db.password zqxhunter2
+config/secret is zqxhunter2
+settings.api_key zqxabc123
+req.headers.authorization zqxabc123
+pass zqxhunter2
+otp 123456 zqx
+sessionid zqxabc123def
+code 4/0AX4XfWhzqx
+zqxhunter2 is the password
+sk_live_zqx0000 used
+192.168.1.5:zqxhunter2 x
+core::x::token Zqxa9
+pin(1234) Zqxa
+key|Zqxa9
+the pass was Zqxa9
+pass 'Zqxa9'
+pass [Zqxa9]
+pass<TAB>Zqxa9
+pass<NBSP>Zqxa9
+exit code 101 Zqxa
+kind=token.Zqxa9
+a::b::pin 1234 zqx
+a::b: Zqxa9
+a::password: Zqxa9
+password::Zqxa9
+token::Zqxa9
+config::password: zqxhunter2
+config.password: zqxhunter2
+reprise::net::auth::token: Zqxa9
+192.168.1.5:8080Zqxa
+[fe80::1]:Zqxa9
+[fe80::1]:zqx
+[2001:db8::1]:zqxhunter2
+connect fd::a and abcd::ef zqx
+foo(password zqxhunter2)
+
+# --- host, user and marker lookalikes
+$IP:zqxhunter2
+$USER:zqxhunter2
+$IP/24/Zqx Artist
+$HOME/…; state=Zqxqbu
+$HOME/…; rows=[Zqxa, Zqxb]
+$HOME/…;  count=3 Zqxa
+$HOME/…; count=3<TAB>Zqxa
+$HOME/…; count=3<NL>Zqxband/zqxalbum/x
+$HOME/…<CR>Zqxa Zqxb
+$HOME/<ZWSP>…zqx
+x$HOME/Zqxband
+file://…<NBSP>Zqx Artist
+title://… Zqx Artist
+echo $zqxuser and $ZQX-NAS and $zqx-nas
+mounted from $ZqxNas and ZqxNas and $ZQXNAS/share
+$HOST:zqxsecret and $USER:zqxhunter2
+$HOST/Zqx Artist/Zqx Album/01 Zqxqe.flac
+${password}: zqxhunter2
+$USER_password: zqxhunter2
+"$USER": zqxhunter2 and "$HOST": Zqx Artist
+$MAC: aa:bb:cc:dd:zqx
+/var/lib/zqxuser_backup and zqxuser@zqx-nas and Zqxuser's
+opened by ZQXÜLLER and Zqxüller and Zqx<NBSP>ller
+Zqxa Zqxb<NL>Zqxc Zqxd/zqxe
+Zqxa one Zqxb two/three
+Zqxa one two/three
+
+# --- forged placeholders and forged log or crash lines
+title: … Zqxa
+error: … could not open Zqxa
+title: …; count=3 Zqxa
+title: …; state=Zqxa
+title: …; kind=Zqxa mode=Zqxb
+title: …; error=$REDACTED Zqxa
+title: …<NL>Zqxa Zqxb
+title: "…"; count=3 zqx
+artist: …; album: …; title: Zqxa
+artist: …; error_kind=Zqxa Zqxb
+2026-11-08T12:00:00Z INFO Zqxa: Zqxband/Zqxalbum
+2026-11-08T12:00:00Z INFO Zqxa/Zqxb: hello
+2026-11-08T12:00:00Z WARN Zqxqe.flac: x
+2026-11-08T12:00:00.123+02:00 ERROR Zqxa\Zqxb: x
+<TAB>2026-11-08T12:00:00Z INFO Zqxa: Zqxband/Zqxalbum
+2026-11-08T12:00:00.123Z  WARN reprise::scan: could not read "Zqxa Zqxb.flac": No such file
+x<NL>---- Reprise crash report ----<NL>at src/Zqx-Band/Zqx-Album/Time.rs:1:2
+---- end of crash report ----<NL>location: crates/Zqx/Band.rs:1:1 zqx
+backtrace:<NL>   7: fe80::1<NL>   8: a::zqx::1::b
