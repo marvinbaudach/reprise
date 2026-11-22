@@ -4,7 +4,7 @@ use super::field_policy::{KEEP_FIELDS, REDACT_FIELDS};
 use super::is_safe_structured_field;
 
 /// Keys the maintainers decided stay redacted whatever a site carries.
-const NEVER_KEPT: [&str; 25] = [
+const NEVER_KEPT: [&str; 27] = [
     "error",
     "message",
     "detail",
@@ -30,6 +30,9 @@ const NEVER_KEPT: [&str; 25] = [
     "to",
     "key",
     "item",
+    // The crash hook logs the raw panic text and location under these.
+    "panic_payload",
+    "panic_location",
 ];
 
 #[test]

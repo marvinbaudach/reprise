@@ -118,6 +118,7 @@ pub(super) const KEEP_FIELDS: &[&str] = &[
     "cover_download",
     // The numeric GStreamer playbin flags.
     "current_flags",
+    "current_pos",
     "current_track_ms",
     // `Debug` of `Option<QueueItem>`: a track or episode id.
     "current_up_next",
@@ -271,6 +272,7 @@ pub(super) const KEEP_FIELDS: &[&str] = &[
     "offset",
     // Static labels, and `Debug` of `PodcastsOperation`, whose variants carry only integers and fieldless enums. The column editor's non-static `operation` is logged as `editor_operation`.
     "operation",
+    "order_len",
     "other_ms",
     // Static labels, and `Debug` of fieldless outcome enums.
     "outcome",
@@ -393,6 +395,7 @@ pub(super) const KEEP_FIELDS: &[&str] = &[
     "total_bytes",
     "touched",
     "track_id",
+    "track_slot",
     "tracks",
     "trashed",
     "unanalysed",

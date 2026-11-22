@@ -3,7 +3,7 @@ crates/reprise-core/src/artist_news_pipeline.rs	New Releases: check aborted
 crates/reprise-core/src/artist_news_pipeline.rs	New Releases: check finished
 crates/reprise-core/src/artist_news_pipeline.rs	New Releases: check stopped early
 crates/reprise-core/src/artist_portrait/backfill.rs	artist portrait backfill could not prepare its worklist
-crates/reprise-core/src/artist_portrait/backfill.rs	artist portrait backfill request dropped after {} attempts
+crates/reprise-core/src/artist_portrait/backfill.rs	artist portrait backfill request dropped
 crates/reprise-core/src/artist_portrait/backfill.rs	artist portrait backfill request refused
 crates/reprise-core/src/artist_portrait/backfill.rs	artist portrait backfill request will retry (head)
 crates/reprise-core/src/artist_portrait/backfill.rs	artist portrait backfill request will retry (network)
@@ -159,8 +159,8 @@ crates/reprise-core/src/queries/smart.rs	smart playlist not found for count quer
 crates/reprise-core/src/queries/smart.rs	smart playlist not found for ids query; returning empty
 crates/reprise-core/src/queries/smart.rs	smart playlist not found for window query; returning empty
 crates/reprise-core/src/queries/track_gain.rs	could not resolve track gain; using unity gain
-crates/reprise-core/src/queue.rs	Current position {} out of bounds for order vec of len {}
-crates/reprise-core/src/queue.rs	Current track slot {} not found in order after shuffle
+crates/reprise-core/src/queue.rs	Current position out of bounds for order vec
+crates/reprise-core/src/queue.rs	Current track slot not found in order after shuffle
 crates/reprise-core/src/queue.rs	move_item: index out of range; no-op
 crates/reprise-core/src/queue.rs	move_item: queue is empty; no-op
 crates/reprise-core/src/remote_image/cache.rs	could not remove the legacy remote image cache

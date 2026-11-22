@@ -112,8 +112,8 @@ impl Queue {
                         self.pos = Some(0);
                     } else {
                         warn!(
-                            "Current track slot {} not found in order after shuffle",
-                            track_slot
+                            track_slot,
+                            "Current track slot not found in order after shuffle"
                         );
                     }
                 }
@@ -242,9 +242,9 @@ impl Queue {
                     Some(&slot) => slot,
                     None => {
                         warn!(
-                            "Current position {} out of bounds for order vec of len {}",
                             current_pos,
-                            self.order.len()
+                            order_len = self.order.len(),
+                            "Current position out of bounds for order vec"
                         );
                         // Guard failed: bail out BEFORE flipping `shuffled`,
                         // not after (Stage 3 Task 1) — this branch is
