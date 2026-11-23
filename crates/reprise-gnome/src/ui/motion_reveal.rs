@@ -62,9 +62,9 @@ mod imp {
                         self.reveal_fraction.set(fraction);
                         self.obj().queue_draw();
                     }
-                    Err(error) => invariant_broken!("reveal-fraction must be an f32: {error}"),
+                    Err(error) => invariant_broken!("reveal-fraction must be an f32: {}", error),
                 },
-                name => invariant_broken!("unknown HorizontalReveal property {name}"),
+                name => invariant_broken!("unknown HorizontalReveal property {}", name),
             }
         }
 
@@ -72,7 +72,7 @@ mod imp {
             match pspec.name() {
                 "reveal-fraction" => self.reveal_fraction.get().to_value(),
                 name => {
-                    invariant_broken!("unknown HorizontalReveal property {name}");
+                    invariant_broken!("unknown HorizontalReveal property {}", name);
                     pspec.default_value().clone()
                 }
             }

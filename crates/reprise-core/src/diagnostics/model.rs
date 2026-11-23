@@ -1,6 +1,8 @@
 use std::collections::VecDeque;
 
-/// Session events retained before privacy redaction at report-render time.
+use super::safe_event::{LogLevel, SafeEvent};
+
+/// Session events retained. Each is already reduced to safe text when it is pushed.
 pub const DIAGNOSTIC_EVENT_CAPACITY: usize = 200;
 
 /// Package shape reported by the desktop collector.
@@ -35,18 +37,13 @@ pub struct DiagnosticFacts {
     pub remembered_device_count: Option<usize>,
     /// Ids of the optional modules switched on; `None` when they could not be read.
     pub enabled_modules: Option<Vec<String>>,
-    /// The end of this run's log file, as written. Redacted again when rendered.
+    /// The end of this run's log file. It carries only lines the run log wrote
+    /// through the safe-line path (`SafeEvent::line`), so every line was safe
+    /// when it was written and the report embeds it as it is.
     pub log_tail: Option<String>,
     /// The end of the previous run's log file, the crashed run's after a crash.
+    /// Like `log_tail`, it carries only lines written through the safe-line path.
     pub previous_log_tail: Option<String>,
-}
-
-/// Values whose literal appearance must be removed from session log messages.
-#[derive(Clone, Debug, Default, PartialEq, Eq)]
-pub struct RedactionContext {
-    pub music_dir: Option<String>,
-    pub home_dir: Option<String>,
-    pub username: Option<String>,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -55,16 +52,38 @@ pub enum DiagnosticLevel {
     Error,
 }
 
+/// A session warning as the report shows it.
+///
+/// `message` is the body of a `SafeEvent` (its static template and kept
+/// fields) and `location` its own call site: both are safe when stored, and
+/// the report embeds them as they are.
 #[derive(Clone, Debug, PartialEq, Eq)]
+#[non_exhaustive]
 pub struct DiagnosticEvent {
     pub seconds_since_midnight: u32,
     pub level: DiagnosticLevel,
     pub target: String,
     pub message: String,
+    /// `<file>:<line>` of an own call site; `None` for a foreign event.
+    pub location: Option<String>,
 }
 
 impl DiagnosticEvent {
-    pub fn new(
+    /// The event a [`SafeEvent`] stands for: its target, body and call site
+    /// are the safe text, so the report may embed them as they are. The only
+    /// way outside this crate to make an event, so no arbitrary text reaches
+    /// the "last warnings" list. Only the warning and error levels are kept
+    /// apart; a quieter event is shown as a warning.
+    pub fn from_safe(safe: &SafeEvent, seconds_since_midnight: u32) -> Self {
+        let level = match safe.level() {
+            LogLevel::Error => DiagnosticLevel::Error,
+            _ => DiagnosticLevel::Warn,
+        };
+        Self::new(seconds_since_midnight, level, safe.target(), safe.body())
+            .with_location(safe.location())
+    }
+
+    pub(crate) fn new(
         seconds_since_midnight: u32,
         level: DiagnosticLevel,
         target: impl Into<String>,
@@ -75,6 +94,16 @@ impl DiagnosticEvent {
             level,
             target: target.into(),
             message: message.into(),
+            location: None,
+        }
+    }
+
+    /// The same event with its call site's location.
+    #[must_use]
+    pub(crate) fn with_location(self, location: Option<&str>) -> Self {
+        Self {
+            location: location.map(str::to_owned),
+            ..self
         }
     }
 }
@@ -99,6 +128,11 @@ impl DiagnosticLog {
 
     pub fn is_empty(&self) -> bool {
         self.events.is_empty()
+    }
+
+    /// The retained events, oldest first.
+    pub fn events(&self) -> impl Iterator<Item = &DiagnosticEvent> {
+        self.events.iter()
     }
 
     pub(super) fn latest(&self, limit: usize) -> impl Iterator<Item = &DiagnosticEvent> {

@@ -68,7 +68,7 @@ pub(in crate::ui) fn bind_columns_by_id<K: ColumnKey>(
         .filter_map(|index| {
             let column = model.item(index).and_downcast::<gtk4::ColumnViewColumn>();
             if column.is_none() {
-                invariant_broken!("column view item {index} is not a ColumnViewColumn");
+                invariant_broken!("column view item {} is not a ColumnViewColumn", index);
             }
             column
         })
@@ -82,8 +82,9 @@ pub(in crate::ui) fn bind_columns_by_id<K: ColumnKey>(
         Ok(keys) => keys,
         Err(error) => {
             invariant_broken!(
-                "invalid {} column binding: {error}",
-                std::any::type_name::<K>()
+                "invalid {} column binding: {}",
+                std::any::type_name::<K>(),
+                error
             );
             return Vec::new();
         }

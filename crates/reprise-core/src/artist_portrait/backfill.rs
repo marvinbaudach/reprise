@@ -523,7 +523,11 @@ fn run_worker(
                         queue.push_back((artist, next_attempts));
                     } else {
                         // Budget exhausted
-                        tracing::debug!(%error, "artist portrait backfill request dropped after {next_attempts} attempts");
+                        tracing::debug!(
+                            %error,
+                            attempts = next_attempts,
+                            "artist portrait backfill request dropped"
+                        );
                         cache::write_retry(cache_dir, &artist.name);
                         progress.failed = progress.failed.saturating_add(1);
                     }

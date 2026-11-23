@@ -193,7 +193,7 @@ impl ReviewSnapshot {
 /// cached counts have drifted from the rows; report it and count nothing.
 fn without_row(total: usize, part: usize, owner: &str) -> usize {
     total.checked_sub(part).unwrap_or_else(|| {
-        invariant_broken!("cached {owner} selection includes its row");
+        invariant_broken!("cached {} selection includes its row", owner);
         0
     })
 }
@@ -267,5 +267,46 @@ fn blocked_state(
         Some(DoctorReviewRowState::Conflict)
     } else {
         None
+    }
+}
+
+#[cfg(test)]
+mod invariant_template_tests {
+    use reprise_core::diagnostics::{templates_for_file, LogTemplate, HOLE};
+
+    use super::without_row;
+    use crate::ui::test_log_capture::CapturedLogs;
+
+    const THIS_FILE: &str = "crates/reprise-gnome/src/ui/library_doctor/review_snapshot.rs";
+
+    // The report shows an invariant through the checked-in table, looked up by
+    // the file of the site that logged it. This runs the real site and reduces
+    // the text it really logs, so a table that no longer matches the site
+    // fails here and not silently as `…` in a tester's report.
+    #[test]
+    fn the_text_a_real_invariant_site_logs_reduces_to_its_checked_in_template() {
+        let logs = CapturedLogs::default();
+
+        // The debug assertion fires after the log call; release builds skip it.
+        let _ = logs.capture(|| std::panic::catch_unwind(|| without_row(1, 5, "album")));
+
+        let logged = logs.text();
+        let start = logged
+            .find("invariant broken: ")
+            .unwrap_or_else(|| panic!("the invariant was not logged: {logged:?}"));
+        let message = logged[start..].trim_end();
+        assert_eq!(
+            message,
+            "invariant broken: cached album selection includes its row"
+        );
+        let reduced = templates_for_file(THIS_FILE)
+            .iter()
+            .find(|template| template.matches(message))
+            .map(LogTemplate::reduced);
+        assert_eq!(
+            reduced.as_deref(),
+            Some("invariant broken: cached … selection includes its row")
+        );
+        assert_ne!(reduced.as_deref(), Some(HOLE));
     }
 }

@@ -2118,14 +2118,24 @@ result.
   It is the same report About shows and the crash offer (START-6) copies, so
   it additionally lists the enabled optional modules and ends with a bounded
   tail of this run's log and of the previous run's log, each under its own
-  heading. Every log line passes the redaction of the warnings, so a library
-  path in the log never reaches the clipboard. *Tests:*
+  heading. The report embeds the warnings and the log lines exactly as they
+  were written, and every one of them was safe when it was written: a log
+  message is the static template of its own call site with every placeholder
+  shown as `…`, a field shows its value only when its key is on the kept list
+  and the value is a number or a plain word, and a message from a dependency
+  is its level, its target and `…`. A library path in the log therefore never
+  reaches the clipboard, because no text of the message is copied at all. A
+  line from the app's own code ends with ` @ <file>:<line>`, the call site
+  that logged it. *Tests:*
   `fb_19_copy_diagnostics_is_a_labelled_entry_between_help_and_about`,
   `fb_19_activating_the_menu_entry_runs_the_copy_callback`,
   `fb_19_the_copied_report_lists_the_enabled_modules`,
   `fb_19_the_copied_report_carries_both_runs_log_tails_labelled`,
   `fb_19_the_platform_report_lists_modules_and_the_supplied_log_tail`,
-  `crash_report_never_contains_a_library_path_in_the_log_tails`.
+  `fb_19_the_log_tails_are_embedded_line_by_line_as_they_were_written`,
+  `fb_19_the_copied_report_carries_the_mirrored_lines_as_written_and_no_foreign_text`,
+  `fb_19_events_through_both_layers_reach_the_report_as_static_text_and_typed_numbers`,
+  `fb_19_each_event_is_one_line_of_the_log_and_the_report_embeds_them_unchanged`.
 
 ## H. File association & OS integration
 
@@ -2334,17 +2344,28 @@ result.
   the process too.
 - **START-6** [planned] [gtk] — **A run that did not end cleanly is noticed
   once, on the next start.** <!-- REVIEW: rule proposal --> The first
-  instance mirrors its log into `reprise.log` in the state directory
+  instance mirrors its log into `run.log` in the state directory
   (`$XDG_STATE_HOME/reprise/`, the data directory when that is unset), which
-  only its owner can read: the previous run's log is kept as `reprise.log.1`
+  only its owner can read: the previous run's log is kept as `run.log.1`
   and no older one, a run that logs more than 8 MB stops writing instead of
-  rotating again, and every line passes the redaction of the copied
-  diagnostics report. A second `reprise` launch never touches the file. The
-  first instance also keeps a running marker in that directory from startup
-  until a clean way out: the session save that a window close and a
-  termination request both reach (START-5a), or the return of the application
-  run. A panic appends its message, location and backtrace to the log, with
-  library paths removed. When a start finds the marker of an earlier run
+  rotating again, and every line is written in the safe form of the copied
+  diagnostics report (FB-19). An earlier version named the files `reprise.log`
+  and `reprise.log.1` and wrote lines under another redaction, so the first
+  instance deletes those two files once at start, in the state directory
+  only, and a report never reads them. A second `reprise` launch never touches
+  the files. The first instance also keeps a running marker in that directory
+  from startup until a clean way out: the session save that a window close and
+  a termination request both reach (START-5a), or the return of the
+  application run. A panic appends a crash section to the log that is written
+  already reduced, under the contract of FB-19: its message is the static text
+  the panic was compiled with, or a standard panic phrase or a log template of
+  the panic's source file with every value shown as `…`, and `…` when nothing
+  matches; its location and each backtrace line are kept only in the shapes of
+  the app's own, the standard library's or a dependency's source path (a
+  dependency is shown as its crate name and version and its source file) and
+  of a Rust symbol, and are `…` otherwise, so no directory of the user's and
+  no file of the user's library reaches the log.
+  When a start finds the marker of an earlier run
   still there (a crash, a kill, a power loss), the main window shows exactly
   one toast, "Reprise did not close properly last time", whose action is
   "Copy Diagnostics": it puts the diagnostics report on the clipboard and
@@ -2355,7 +2376,12 @@ result.
   `start_6_the_offer_is_one_toast_with_copy_diagnostics_and_not_repeated`,
   `start_6_a_clean_shutdown_removes_the_running_marker`,
   `start_6_a_run_that_never_saved_leaves_the_running_marker`,
-  `start_6_a_termination_request_removes_the_running_marker`.
+  `start_6_a_termination_request_removes_the_running_marker`,
+  `start_6_the_first_instance_removes_the_old_log_names_and_nothing_else`,
+  `start_6_a_state_directory_without_old_logs_is_not_an_error`,
+  `start_6_a_failed_removal_is_reported_after_both_names_were_tried`,
+  `start_6_a_crash_section_never_contains_a_library_path`,
+  `start_6_a_crash_written_to_the_log_reaches_the_copied_report_without_a_needle`.
 - **START-7** [planned] [core] — **The Rhythmbox import finds the library
   wherever Rhythmbox keeps it.** <!-- REVIEW: rule proposal --> The importer
   looks for `rhythmdb.xml` in these directories, in this order, and the first

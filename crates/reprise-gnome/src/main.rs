@@ -131,7 +131,8 @@ fn init_logging() {
         .with_filter(log_filter());
     // Mirrored into the state directory's log file once the process knows it
     // is the first instance (`ui::diagnostics::file_log`).
-    // Its lines are redacted like the session warnings (`file_mirror`).
+    // Its lines are written in the safe form (`file_mirror`): static templates
+    // and typed numbers, never the rendered message.
     let mirror =
         ui::diagnostics::file_mirror::FileMirrorLayer::for_this_machine().with_filter(log_filter());
     tracing_subscriber::registry()
@@ -144,25 +145,26 @@ fn init_logging() {
 fn install_panic_hook() {
     let previous = std::panic::take_hook();
     std::panic::set_hook(Box::new(move |panic_info| {
-        let payload = panic_info
-            .payload()
-            .downcast_ref::<&str>()
-            .copied()
-            .or_else(|| {
-                panic_info
-                    .payload()
-                    .downcast_ref::<String>()
-                    .map(String::as_str)
-            })
-            .unwrap_or("non-string panic payload");
+        let payload = reprise_core::diagnostics::PanicPayload::of(panic_info.payload());
+        // The tracing event is for the console; its two fields are never
+        // kept by the report (`REDACT_FIELDS`). The report gets its own,
+        // reduced form from `write_report`.
+        let raw = match &payload {
+            reprise_core::diagnostics::PanicPayload::Static(text) => *text,
+            reprise_core::diagnostics::PanicPayload::Formatted(text) => text.as_str(),
+            reprise_core::diagnostics::PanicPayload::Other => "non-string panic payload",
+        };
         let location = panic_info
             .location()
             .map_or_else(|| "unknown location".to_owned(), ToString::to_string);
-        tracing::error!(panic_payload = payload, panic_location = location, "panic");
         // `force_capture`: a tester never sets `RUST_BACKTRACE`, and a crash
         // report without a backtrace has no content.
-        let backtrace = std::backtrace::Backtrace::force_capture().to_string();
-        reprise_core::crash_report::write_report(payload, &location, &backtrace);
+        let backtrace = std::backtrace::Backtrace::force_capture();
+        // The report is written before anything is logged: the report does not
+        // touch tracing, while a logging layer that itself panics or blocks
+        // would otherwise cost the crash its report.
+        reprise_core::crash_report::write_report(&payload, panic_info.location(), &backtrace);
+        tracing::error!(panic_payload = raw, panic_location = location, "panic");
         previous(panic_info);
     }));
 }

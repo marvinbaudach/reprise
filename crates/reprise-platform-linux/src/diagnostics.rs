@@ -3,12 +3,9 @@
 use std::path::Path;
 use std::process::Command;
 
-use gio::glib;
 use gstreamer as gst;
 use reprise_core::db::Db;
-use reprise_core::diagnostics::{
-    render_report, DiagnosticFacts, DiagnosticLog, PackageKind, RedactionContext,
-};
+use reprise_core::diagnostics::{render_report, DiagnosticFacts, DiagnosticLog, PackageKind};
 
 use crate::flatpak::FLATPAK_INFO;
 
@@ -38,7 +35,7 @@ pub fn build_report(
     log: &DiagnosticLog,
 ) -> String {
     let facts = collect_facts(db, db_path, input);
-    render_report(&facts, log, &redaction_context())
+    render_report(&facts, log)
 }
 
 fn collect_facts(db: &Db, db_path: &Path, input: &DesktopDiagnosticInput) -> DiagnosticFacts {
@@ -104,20 +101,87 @@ fn enabled_module_ids(db: &Db) -> Option<Vec<String>> {
     Some(ids)
 }
 
-/// What a report or a mirrored log line must not reveal on this machine.
-pub fn redaction_context() -> RedactionContext {
-    RedactionContext {
-        music_dir: glib::user_special_dir(glib::UserDirectory::Music)
-            .map(|path| path.to_string_lossy().into_owned()),
-        home_dir: std::env::var("HOME").ok().filter(|value| !value.is_empty()),
-        username: std::env::var("USER").ok().filter(|value| !value.is_empty()),
-    }
-}
-
 fn locale() -> Option<String> {
     ["LC_ALL", "LC_MESSAGES", "LANG"]
         .into_iter()
         .find_map(|name| std::env::var(name).ok().filter(|value| !value.is_empty()))
+        .map(|value| plain_locale(&value))
+}
+
+/// What the report shows when an environment value is not in the shape it is
+/// meant to have.
+const UNKNOWN_FACT: &str = "unknown";
+
+/// `value` when it is a locale name, `unknown` otherwise: the language (two or
+/// three lower-case letters, or `C`/`POSIX`), then optionally `_` and a
+/// two-letter upper-case territory, `.` and a known codeset, `@` and a known
+/// modifier. The environment is the user's, so a value of any other shape,
+/// including free text in the codeset or modifier position, is not copied
+/// into a report.
+fn plain_locale(value: &str) -> String {
+    if is_locale_shape(value) {
+        value.to_owned()
+    } else {
+        UNKNOWN_FACT.to_owned()
+    }
+}
+
+/// The locale modifiers glibc ships. Any other text after `@` is the user's.
+const KNOWN_LOCALE_MODIFIERS: [&str; 7] = [
+    "cyrillic",
+    "devanagari",
+    "euro",
+    "iqtelif",
+    "latin",
+    "saaho",
+    "valencia",
+];
+
+/// The codesets a locale name carries in practice, compared without regard
+/// to case: UTF-8, ISO-8859-1 to -16 (with or without the dashes), GB18030,
+/// EUC-JP and KOI8-R. Any other text after `.` is the user's.
+fn is_known_codeset(text: &str) -> bool {
+    let lower = text.to_ascii_lowercase();
+    if matches!(
+        lower.as_str(),
+        "utf-8" | "utf8" | "gb18030" | "euc-jp" | "koi8-r"
+    ) {
+        return true;
+    }
+    let part = lower
+        .strip_prefix("iso-8859-")
+        .or_else(|| lower.strip_prefix("iso8859"))
+        .map(|part| part.trim_start_matches('-'));
+    part.is_some_and(|digits| {
+        digits.bytes().all(|byte| byte.is_ascii_digit())
+            && digits
+                .parse::<u8>()
+                .is_ok_and(|number| (1..=16).contains(&number))
+    })
+}
+
+fn is_locale_shape(value: &str) -> bool {
+    let (rest, modifier) = value
+        .split_once('@')
+        .map_or((value, None), |(rest, modifier)| (rest, Some(modifier)));
+    let (rest, codeset) = rest
+        .split_once('.')
+        .map_or((rest, None), |(rest, codeset)| (rest, Some(codeset)));
+    let (language, territory) = rest
+        .split_once('_')
+        .map_or((rest, None), |(language, territory)| {
+            (language, Some(territory))
+        });
+    let modifier_fits = modifier.is_none_or(|text| KNOWN_LOCALE_MODIFIERS.contains(&text));
+    let codeset_fits = codeset.is_none_or(is_known_codeset);
+    let territory_fits = territory
+        .is_none_or(|text| text.len() == 2 && text.bytes().all(|byte| byte.is_ascii_uppercase()));
+    let language_fits = if matches!(language, "C" | "POSIX") {
+        territory.is_none() && modifier.is_none()
+    } else {
+        (2..=3).contains(&language.len()) && language.bytes().all(|byte| byte.is_ascii_lowercase())
+    };
+    modifier_fits && codeset_fits && territory_fits && language_fits
 }
 
 fn gvfs_version() -> Option<String> {
@@ -154,6 +218,25 @@ fn active_audio_backend() -> Option<String> {
     std::env::var("REPRISE_AUDIO_SINK")
         .ok()
         .filter(|value| !value.is_empty())
+        .map(|value| plain_audio_sink(&value).to_owned())
+}
+
+/// The GStreamer sink factories the override is documented to take. Any other
+/// value can be a pipeline description or a path, so it is shown as `custom`.
+const KNOWN_AUDIO_SINKS: [&str; 5] = [
+    "alsasink",
+    "autoaudiosink",
+    "fakesink",
+    "pipewiresink",
+    "pulsesink",
+];
+
+/// The sink name when it is one of [`KNOWN_AUDIO_SINKS`], `custom` otherwise.
+fn plain_audio_sink(value: &str) -> &'static str {
+    KNOWN_AUDIO_SINKS
+        .into_iter()
+        .find(|known| *known == value)
+        .unwrap_or("custom")
 }
 
 #[derive(Clone, Debug, Default, PartialEq, Eq)]

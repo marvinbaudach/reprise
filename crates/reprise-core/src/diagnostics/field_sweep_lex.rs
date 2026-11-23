@@ -112,22 +112,77 @@ fn skip_block_comment(chars: &[char], start: usize) -> (usize, usize) {
     (at, lines)
 }
 
-/// A `"…"` string starting at `start`; returns its text and the index past it.
-/// An unterminated string runs to the end of the input, so the index never
-/// exceeds `chars.len()`.
+/// A `"…"` string starting at `start`; returns its text, with every escape
+/// read the way Rust reads it, and the index past it. An unterminated string
+/// runs to the end of the input, so the index never exceeds `chars.len()`.
+///
+/// Escapes: `\n`, `\r`, `\t`, `\0`, `\\`, `\"`, `\'`, `\x..`, `\u{…}`, and a
+/// backslash before a line break, which drops the break and the spaces, tabs
+/// and line breaks that follow (other white space stays, as in rustc). A
+/// backslash before anything else keeps that character, and a `\x` or `\u`
+/// that names no character is dropped; the source compiled, so neither occurs
+/// in practice and the reader never has to fail.
 fn read_string(chars: &[char], start: usize) -> (String, usize) {
     let mut text = String::new();
     let mut at = start + 1;
     while at < chars.len() && chars[at] != '"' {
-        if chars[at] == '\\' {
+        if chars[at] != '\\' {
+            text.push(chars[at]);
             at += 1;
-        }
-        if let Some(ch) = chars.get(at) {
-            text.push(*ch);
+            continue;
         }
         at += 1;
+        let Some(&escaped) = chars.get(at) else {
+            break;
+        };
+        at += 1;
+        match escaped {
+            'n' => text.push('\n'),
+            'r' => text.push('\r'),
+            't' => text.push('\t'),
+            '0' => text.push('\0'),
+            'x' => {
+                let digits: String = chars[at..].iter().take(2).collect();
+                at += digits.chars().count();
+                text.extend(u8::from_str_radix(&digits, 16).ok().map(char::from));
+            }
+            'u' => {
+                let (decoded, next) = read_unicode_escape(chars, at);
+                text.extend(decoded);
+                at = next;
+            }
+            '\n' | '\r' => {
+                while chars
+                    .get(at)
+                    .is_some_and(|ch| matches!(ch, ' ' | '\t' | '\n' | '\r'))
+                {
+                    at += 1;
+                }
+            }
+            other => text.push(other),
+        }
     }
     (text, (at + 1).min(chars.len()))
+}
+
+/// The `{…}` after `\u` at `at`: the character it names and the index past
+/// the closing brace. `None` when it names no character.
+fn read_unicode_escape(chars: &[char], at: usize) -> (Option<char>, usize) {
+    if chars.get(at) != Some(&'{') {
+        return (None, at);
+    }
+    let close = chars[at..]
+        .iter()
+        .position(|ch| *ch == '}')
+        .map_or(chars.len(), |offset| at + offset);
+    let digits: String = chars[at + 1..close]
+        .iter()
+        .filter(|ch| **ch != '_')
+        .collect();
+    let decoded = u32::from_str_radix(&digits, 16)
+        .ok()
+        .and_then(char::from_u32);
+    (decoded, (close + 1).min(chars.len()))
 }
 
 /// `r"…"`, `r#"…"#`, `b"…"`, `br"…"`, `c"…"` after the prefix word `word`.

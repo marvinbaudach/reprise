@@ -145,3 +145,53 @@ fn a_loop_label_is_not_a_char_literal_and_swallows_nothing() {
         ]
     );
 }
+
+// The message literals of the template table are read from these tokens, so
+// an escape must come out as the character it stands for.
+
+#[test]
+fn simple_escapes_are_read_as_the_characters_they_name() {
+    assert_eq!(
+        tokens(r#""a\nb\tc\rd\0e\\f\"g\'h""#),
+        [text("a\nb\tc\rd\0e\\f\"g'h")]
+    );
+}
+
+#[test]
+fn hex_and_unicode_escapes_are_decoded() {
+    assert_eq!(
+        tokens(r#""\x41\x7a \u{e9} \u{1F600} \u{00_41}""#),
+        [text("Az é 😀 A")]
+    );
+}
+
+#[test]
+fn a_line_continuation_drops_the_break_and_the_indentation() {
+    assert_eq!(
+        tokens("\"first \\\n        second\\\r\n\t third\""),
+        [text("first secondthird")]
+    );
+}
+
+#[test]
+fn an_escape_that_names_no_character_is_dropped_without_failing() {
+    assert_eq!(tokens(r#""a\u{zz}b\xZZc\u{110000}d""#), [text("abcd")]);
+}
+
+#[test]
+fn a_raw_string_keeps_its_backslashes() {
+    assert_eq!(tokens(r##"r#"a\nb"#"##), [text("a\\nb")]);
+}
+
+#[test]
+fn an_escaped_quote_does_not_end_the_string() {
+    assert_eq!(
+        tokens(r#""say \"hi\"" tail"#),
+        [text("say \"hi\""), ident("tail")]
+    );
+}
+
+#[test]
+fn a_line_continuation_keeps_white_space_that_rustc_keeps() {
+    assert_eq!(tokens("\"a\\\n \u{a0}b\""), [text("a\u{a0}b")]);
+}

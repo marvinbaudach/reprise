@@ -5,7 +5,7 @@ use reprise_core::diagnostics::DiagnosticLog;
 
 use super::{
     build_report, gnome_version_from, parse_flatpak_gnome_runtime, parse_gnome_version,
-    parse_gvfs_version, parse_os_release, DesktopDiagnosticInput,
+    parse_gvfs_version, parse_os_release, plain_audio_sink, plain_locale, DesktopDiagnosticInput,
 };
 
 #[test]
@@ -161,4 +161,91 @@ fn the_host_shell_version_wins_over_the_flatpak_runtime() {
         Some("50 (Flatpak runtime)".into())
     );
     assert_eq!(gnome_version_from(None, None), None);
+}
+
+// The template table is keyed by `file!()` as written from the workspace root
+// (`reprise-core` pins the reasoning). A build that changes the form would turn
+// every message of this crate into `…` in the report, so the form is pinned.
+#[test]
+fn a_call_sites_file_has_the_template_tables_path_form() {
+    assert_eq!(
+        file!(),
+        "crates/reprise-platform-linux/src/diagnostics/tests.rs"
+    );
+}
+
+// The facts header is the one place the report prints environment text, so a
+// value is shown only in the shape it is meant to have (FB-19).
+#[test]
+fn a_locale_is_shown_only_in_the_shape_of_a_locale() {
+    for plain in [
+        "en",
+        "de_DE",
+        "de_DE.UTF-8",
+        "en_US.utf8",
+        "sr_RS@latin",
+        "ca_ES.UTF-8@valencia",
+        "ast",
+        "C",
+        "POSIX",
+        "C.UTF-8",
+        "de_DE.ISO-8859-15",
+        "de_DE.iso885915@euro",
+        "zh_CN.GB18030",
+        "ja_JP.EUC-JP",
+        "ru_RU.KOI8-R",
+        "sd_IN@devanagari",
+        "aa_ER@saaho",
+        "tt_RU@iqtelif",
+        "sr_RS@cyrillic",
+    ] {
+        assert_eq!(plain_locale(plain), plain);
+    }
+    for needle in [
+        "zqx_Marvin",
+        "/home/zqxuser/locale",
+        "marvin",
+        "zqxuser@example.org",
+        "en_US.UTF-8 zqxuser",
+        "de_de",
+        "de_DEU",
+        "en_US.",
+        "en_US@",
+        "en_US@Latin",
+        "e",
+        "abcd",
+        "C_US",
+        "",
+        "de_DE.zqxMarvin",
+        "en_US@zqxuser",
+        "en_US.zqxuser",
+        "de_DE.ISO-8859-17",
+        "de_DE.ISO-8859-0",
+        "de_DE.UTF-8@zqxuser",
+    ] {
+        assert_eq!(plain_locale(needle), "unknown", "{needle:?}");
+    }
+}
+
+#[test]
+fn an_audio_sink_is_shown_only_when_it_is_a_known_sink_factory() {
+    for known in [
+        "fakesink",
+        "autoaudiosink",
+        "pulsesink",
+        "pipewiresink",
+        "alsasink",
+    ] {
+        assert_eq!(plain_audio_sink(known), known);
+    }
+    for needle in [
+        "/home/zqxuser/sink",
+        "zqxuser",
+        "fakesink sync=false",
+        "filesink location=/home/zqxuser/x",
+        "FakeSink",
+        "",
+    ] {
+        assert_eq!(plain_audio_sink(needle), "custom", "{needle:?}");
+    }
 }

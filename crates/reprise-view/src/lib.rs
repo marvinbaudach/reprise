@@ -51,3 +51,14 @@ pub mod sleep_timer;
 pub mod spectral_colour;
 pub mod strings;
 pub mod waveform;
+
+// The template table of `reprise-core` is keyed by `file!()` as written from
+// the workspace root. A build that changes the form would turn every message of
+// this crate into `…` in the report, so the form is pinned.
+#[cfg(test)]
+mod log_path_canary {
+    #[test]
+    fn a_call_sites_file_has_the_template_tables_path_form() {
+        assert_eq!(file!(), "crates/reprise-view/src/lib.rs");
+    }
+}

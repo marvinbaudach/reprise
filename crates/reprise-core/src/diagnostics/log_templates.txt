@@ -1,0 +1,1310 @@
+crates/reprise-core/src/artist_news_pipeline.rs	New Releases: artist check failed
+crates/reprise-core/src/artist_news_pipeline.rs	New Releases: check aborted
+crates/reprise-core/src/artist_news_pipeline.rs	New Releases: check finished
+crates/reprise-core/src/artist_news_pipeline.rs	New Releases: check stopped early
+crates/reprise-core/src/artist_portrait/backfill.rs	artist portrait backfill could not prepare its worklist
+crates/reprise-core/src/artist_portrait/backfill.rs	artist portrait backfill request dropped
+crates/reprise-core/src/artist_portrait/backfill.rs	artist portrait backfill request refused
+crates/reprise-core/src/artist_portrait/backfill.rs	artist portrait backfill request will retry (head)
+crates/reprise-core/src/artist_portrait/backfill.rs	artist portrait backfill request will retry (network)
+crates/reprise-core/src/artist_portrait/backfill.rs	artist portrait backfill request will retry (tail)
+crates/reprise-core/src/artist_portrait/backfill.rs	artist portrait backfill worker panicked
+crates/reprise-core/src/artist_portrait/backfill.rs	artist portrait backfill worker panicked while shutting down
+crates/reprise-core/src/artist_portrait/backfill.rs	artist portrait backfill worklist
+crates/reprise-core/src/artist_portrait/cover_backfill.rs	album cover backfill could not prepare its worklist
+crates/reprise-core/src/artist_portrait/cover_backfill.rs	album cover backfill worker panicked
+crates/reprise-core/src/artist_portrait/cover_backfill.rs	album cover backfill worker panicked while shutting down
+crates/reprise-core/src/artist_portrait/cover_backfill.rs	album cover backfill worklist
+crates/reprise-core/src/artist_portrait/fetch.rs	artist portrait accepted near the placeholder threshold
+crates/reprise-core/src/artist_portrait/fetch.rs	artist portrait could not refresh the cached image after placeholder rejection
+crates/reprise-core/src/artist_portrait/fetch.rs	artist portrait rejected as a known Deezer placeholder
+crates/reprise-core/src/concerts/pipeline.rs	concert artist resolution failed
+crates/reprise-core/src/concerts/pipeline.rs	concert event fetch failed
+crates/reprise-core/src/concerts/similar.rs	similar artist discovery failed
+crates/reprise-core/src/cover_writeback.rs	could not write album cover into the library
+crates/reprise-core/src/crash_report.rs	could not remove the running marker
+crates/reprise-core/src/crash_report.rs	could not write the running marker
+crates/reprise-core/src/db_equalizer.rs	invalid equalizer bands; using flat preset
+crates/reprise-core/src/db_equalizer.rs	wrong equalizer band count; using flat preset
+crates/reprise-core/src/device_sync/device_case.rs	ambiguous device directory spelling; keeping the track's inventory path
+crates/reprise-core/src/device_sync/device_case.rs	ambiguous device directory spelling; leaving track unplanned
+crates/reprise-core/src/device_sync/mobile_import.rs	could not decode analysis sidecar
+crates/reprise-core/src/device_sync/mobile_import.rs	could not read analysis sidecar
+crates/reprise-core/src/device_sync/snapshot.rs	invalid smart playlist rules; returning empty stability margin
+crates/reprise-core/src/events/notifier.rs	notifier: armed filesystem watch
+crates/reprise-core/src/events/notifier.rs	notifier: cannot arm watch
+crates/reprise-core/src/events/notifier.rs	notifier: cannot create watcher
+crates/reprise-core/src/events/notifier.rs	notifier: cannot open a watch connection; continuing without live updates
+crates/reprise-core/src/events/notifier.rs	notifier: could not arm filesystem watch; falling back to {}s polling
+crates/reprise-core/src/events/notifier.rs	notifier: data_version check failed; will retry
+crates/reprise-core/src/library/library_doctor/write_recovery.rs	tag-write recovery skipped because advisory locking is unenforceable
+crates/reprise-core/src/library/library_doctor/write_recovery.rs	tag-write recovery skipped because another live writer holds the lock
+crates/reprise-core/src/library/library_doctor/write_slot.rs	could not acquire the orphaned tag-write recovery lock
+crates/reprise-core/src/library/playlists.rs	move_position: out of range, no-op
+crates/reprise-core/src/library/playlists.rs	move_position: position out of range
+crates/reprise-core/src/library/scanner.rs	scan writer leases
+crates/reprise-core/src/library/scanner.rs	scan: root does not exist; reporting RootUnavailable without touching the database
+crates/reprise-core/src/library/scanner_cue.rs	CUE sheet cannot be read this scan
+crates/reprise-core/src/library/scanner_cue.rs	CUE sheet ignored; its audio stays whole
+crates/reprise-core/src/library/scanner_cue.rs	CUE sheet rejected; its audio stays whole
+crates/reprise-core/src/library/scanner_cue.rs	directory cannot be listed; its CUE sheets are unknown this scan
+crates/reprise-core/src/library/scanner_entry.rs	restored track from evidence (unchanged mtime)
+crates/reprise-core/src/library/scanner_mobile_sync.rs	could not decode synced track metadata
+crates/reprise-core/src/library/scanner_mobile_sync.rs	could not read synced track metadata
+crates/reprise-core/src/library/scanner_move.rs	ambiguous device/inode move candidates; not guessing
+crates/reprise-core/src/library/scanner_move.rs	ambiguous fingerprint move candidates; not guessing
+crates/reprise-core/src/library/scanner_reconcile.rs	scan: marked vanished track missing
+crates/reprise-core/src/library/scanner_reconcile.rs	scan: marked vanished track missing (mount currently absent)
+crates/reprise-core/src/library/scanner_reconcile.rs	scan: walk found no audio files and no known track under root confirms the root's current device; reporting RootUnavailable instead of marking tracks missing
+crates/reprise-core/src/library/scanner_segments.rs	embedded CUE sheet ignored
+crates/reprise-core/src/library/session.rs	could not read UI session; using defaults
+crates/reprise-core/src/library/session.rs	invalid UI session JSON; using defaults
+crates/reprise-core/src/library/session.rs	unknown UI session version; using defaults
+crates/reprise-core/src/library/session_lifecycle.rs	could not consume clean-exit marker; startup scan remains due
+crates/reprise-core/src/library/session_normalization.rs	invalid queue in UI session; dropping queue state
+crates/reprise-core/src/library/settings.rs	could not read typed setting; using default
+crates/reprise-core/src/library/settings.rs	unrecognized boolean setting; using default
+crates/reprise-core/src/library/settings_auto_clean.rs	could not read missing_auto_clean; using Off
+crates/reprise-core/src/library/settings_layout.rs	could not read browse bar visibility; using visible
+crates/reprise-core/src/library/settings_layout.rs	could not read information panel visibility; using hidden
+crates/reprise-core/src/library/settings_layout.rs	could not read player_bar_position; using Bottom
+crates/reprise-core/src/library/settings_layout.rs	could not read sidebar collapse state; using expanded
+crates/reprise-core/src/library/settings_layout.rs	could not read sidebar visibility; using visible
+crates/reprise-core/src/library/settings_layout.rs	could not read status visibility; using visible
+crates/reprise-core/src/library/settings_layout.rs	legacy compact Bar layout mapped to Card
+crates/reprise-core/src/library/settings_layout.rs	unrecognized compact layout; using Card
+crates/reprise-core/src/library/settings_layout.rs	unrecognized player_bar_position; using Bottom
+crates/reprise-core/src/library/settings_layout.rs	unrecognized window decoration mode; using Client
+crates/reprise-core/src/library/settings_layout.rs	unrecognized window view mode; using Library
+crates/reprise-core/src/library/settings_playback.rs	a ten-band equalizer edit is replacing a curve authored on another backend; its points are lost and the written values are a projection of it
+crates/reprise-core/src/library/settings_playback.rs	could not read equalizer state; using disabled
+crates/reprise-core/src/library/settings_playback.rs	invalid equalizer curve; using flat preset
+crates/reprise-core/src/library/settings_playback.rs	unrecognized ReplayGain mode; using Off
+crates/reprise-core/src/library/settings_seek.rs	unrecognized seek colouring; using Frequency
+crates/reprise-core/src/library/startup_tasks.rs	could not capture startup task signature; running conservatively
+crates/reprise-core/src/library/startup_tasks.rs	could not capture user-triggered task signature; running conservatively
+crates/reprise-core/src/library/startup_tasks.rs	could not decide startup task freshness; running conservatively
+crates/reprise-core/src/library/startup_tasks.rs	could not persist lyrics full-sweep attempt
+crates/reprise-core/src/library/startup_tasks.rs	could not persist lyrics startup-task completion
+crates/reprise-core/src/library/startup_tasks.rs	could not persist startup task completion
+crates/reprise-core/src/library/startup_tasks.rs	could not read lyrics startup-task timestamp; running conservatively
+crates/reprise-core/src/library/startup_tasks.rs	invalid library signature; restarting its monotonic revision
+crates/reprise-core/src/library/startup_tasks.rs	invalid lyrics startup-task timestamp; running conservatively
+crates/reprise-core/src/library/startup_tasks.rs	invalid startup-task completion record; running conservatively
+crates/reprise-core/src/library/startup_tasks.rs	lyrics startup-task timestamp is absent; running conservatively
+crates/reprise-core/src/library/startup_tasks.rs	startup task completion not persisted because its starting signature was unavailable
+crates/reprise-core/src/library/startup_tasks.rs	startup task completion not persisted: library signature changed during the pass
+crates/reprise-core/src/library/startup_tasks.rs	startup task skipped: last clean exit was {} minutes ago
+crates/reprise-core/src/library/startup_tasks.rs	startup task skipped: library signature unchanged
+crates/reprise-core/src/library/stats_screen.rs	stats group key recovered by name fallback
+crates/reprise-core/src/library/stats_screen.rs	stats group key resolved to no playable track; the group is empty or entirely missing
+crates/reprise-core/src/library/tag_edit_session.rs	tag edit session: ignoring mismatched field/value pairing
+crates/reprise-core/src/library/tag_write_lock.rs	tag writing is running unlocked: this filesystem does not enforce advisory locks
+crates/reprise-core/src/library/tag_write_lock.rs	tag-writer liveness is unknown: its lock file could not be opened
+crates/reprise-core/src/library/tag_write_lock.rs	tag-writer liveness is unknown: its probe lock could not be released
+crates/reprise-core/src/library/tag_write_lock.rs	tag-writer liveness is unknown: this filesystem does not enforce advisory locks
+crates/reprise-core/src/library/tag_write_lock.rs	the tag-writer lock could not be released
+crates/reprise-core/src/library/trash_tracks.rs	kept a CUE sheet: could not tell which files still need it
+crates/reprise-core/src/library/trash_tracks.rs	move-to-trash of a CUE sheet failed
+crates/reprise-core/src/library/watcher.rs	watcher: armed on library root
+crates/reprise-core/src/library/watcher.rs	watcher: event channel disconnected; exiting thread
+crates/reprise-core/src/library/watcher.rs	watcher: failed to arm watch on library root; continuing without live updates
+crates/reprise-core/src/library/watcher.rs	watcher: failed to create filesystem watcher; continuing without live updates
+crates/reprise-core/src/library/watcher.rs	watcher: failed to open database handle; skipping reconcile
+crates/reprise-core/src/library/watcher.rs	watcher: filesystem event error; continuing
+crates/reprise-core/src/library/watcher.rs	watcher: incremental scan failed; skipping reconcile
+crates/reprise-core/src/library/watcher.rs	watcher: scan added={} updated={} moved={} errors={} vanish-marked={}
+crates/reprise-core/src/library/watcher.rs	watcher: scan postprocessing failed
+crates/reprise-core/src/library/watcher.rs	watcher: scan root unavailable; reporting an empty reconcile rather than marking anything missing
+crates/reprise-core/src/library/watcher.rs	watcher: stop requested; exiting thread
+crates/reprise-core/src/lyrics/cache.rs	could not create lyrics cache directory
+crates/reprise-core/src/lyrics/cache.rs	could not publish lyrics cache entry
+crates/reprise-core/src/lyrics/sidecar_write.rs	could not write lyrics sidecar
+crates/reprise-core/src/online_sources.rs	could not read module state; treating the network as not allowed
+crates/reprise-core/src/playback/spectral.rs	FFT failed; the spectrum is reported as silence from here on
+crates/reprise-core/src/podcasts/discovery.rs	could not load source identity episodes
+crates/reprise-core/src/podcasts/discovery.rs	could not load subscribed sources for search filtering
+crates/reprise-core/src/podcasts/episode_tags.rs	podcast download could not be tagged
+crates/reprise-core/src/podcasts/feed.rs	feed uses an undeclared XML entity; kept verbatim
+crates/reprise-core/src/podcasts/fill_downloads.rs	podcast fill received a non-terminal download state
+crates/reprise-core/src/podcasts/itunes_charts.rs	podcast chart request failed
+crates/reprise-core/src/podcasts/pipeline.rs	podcast refresh completed
+crates/reprise-core/src/podcasts/pipeline.rs	resolved channel URL already belongs to another subscription; keeping the handle URL
+crates/reprise-core/src/podcasts/pipeline_download.rs	could not remove unclaimed podcast download
+crates/reprise-core/src/podcasts/pipeline_download.rs	podcast download failed
+crates/reprise-core/src/podcasts/pipeline_download.rs	podcast download path is not valid UTF-8
+crates/reprise-core/src/podcasts/pipeline_sync.rs	podcast duration listing failed
+crates/reprise-core/src/podcasts/pipeline_sync.rs	podcast duration store failed
+crates/reprise-core/src/podcasts/pipeline_sync.rs	podcast refresh failed
+crates/reprise-core/src/podcasts/pipeline_sync.rs	podcast subscription refresh finished
+crates/reprise-core/src/podcasts/stream_proxy.rs	local YouTube stream proxy could not arm an abrupt client reset
+crates/reprise-core/src/podcasts/stream_proxy.rs	local YouTube stream proxy could not fetch a later origin window
+crates/reprise-core/src/podcasts/stream_proxy.rs	local YouTube stream proxy could not start a client worker
+crates/reprise-core/src/podcasts/stream_proxy.rs	local YouTube stream proxy listener stopped
+crates/reprise-core/src/podcasts/stream_proxy.rs	local YouTube stream proxy rejected an unconfigurable client
+crates/reprise-core/src/podcasts/ytdlp.rs	could not read yt-dlp output
+crates/reprise-core/src/podcasts/ytdlp.rs	could not start yt-dlp operation
+crates/reprise-core/src/podcasts/ytdlp.rs	timed out while reading yt-dlp output
+crates/reprise-core/src/podcasts/ytdlp.rs	yt-dlp download could not be finalized
+crates/reprise-core/src/podcasts/ytdlp.rs	yt-dlp operation could not be completed
+crates/reprise-core/src/podcasts/ytdlp.rs	yt-dlp operation failed
+crates/reprise-core/src/podcasts/ytdlp.rs	yt-dlp operation timed out
+crates/reprise-core/src/podcasts/ytdlp.rs	yt-dlp output reader disconnected
+crates/reprise-core/src/podcasts/ytdlp.rs	yt-dlp response could not be parsed
+crates/reprise-core/src/podcasts/ytdlp.rs	yt-dlp response omitted playable audio
+crates/reprise-core/src/queries/autocomplete.rs	autocomplete: ghost completion query failed
+crates/reprise-core/src/queries/smart.rs	invalid smart playlist rules; returning 0
+crates/reprise-core/src/queries/smart.rs	invalid smart playlist rules; returning empty ids
+crates/reprise-core/src/queries/smart.rs	invalid smart playlist rules; returning empty window
+crates/reprise-core/src/queries/smart.rs	smart playlist not found for count query; returning 0
+crates/reprise-core/src/queries/smart.rs	smart playlist not found for ids query; returning empty
+crates/reprise-core/src/queries/smart.rs	smart playlist not found for window query; returning empty
+crates/reprise-core/src/queries/track_gain.rs	could not resolve track gain; using unity gain
+crates/reprise-core/src/queue.rs	Current position out of bounds for order vec
+crates/reprise-core/src/queue.rs	Current track slot not found in order after shuffle
+crates/reprise-core/src/queue.rs	move_item: index out of range; no-op
+crates/reprise-core/src/queue.rs	move_item: queue is empty; no-op
+crates/reprise-core/src/remote_image/cache.rs	could not remove the legacy remote image cache
+crates/reprise-core/src/run_log.rs	could not move the previous log aside
+crates/reprise-core/src/spectrogram_backfill.rs	backend returned the wrong number of tracks
+crates/reprise-core/src/spectrogram_backfill.rs	spectrogram backfill could not decode a CUE file; it waits for the file to change
+crates/reprise-core/src/spectrogram_backfill.rs	spectrogram backfill could not decode a track; it waits for its file to change
+crates/reprise-core/src/spectrogram_backfill.rs	spectrogram backfill could not measure a CUE track; it waits for its file to change
+crates/reprise-core/src/waveform_cache.rs	could not list the other tracks of the file
+crates/reprise-core/src/waveform_cache.rs	could not read stored waveform peaks
+crates/reprise-core/src/waveform_cache.rs	could not read the stored spectrogram
+crates/reprise-core/src/waveform_cache.rs	could not read the track's source identity
+crates/reprise-core/src/waveform_cache.rs	could not store a sibling's rendering data
+crates/reprise-core/src/waveform_cache.rs	could not store on-demand rendering data
+crates/reprise-core/src/waveform_cache.rs	could not store the on-demand spectrogram
+crates/reprise-core/src/waveform_cache.rs	on-demand spectrogram extraction failed
+crates/reprise-core/src/waveform_cache.rs	on-demand waveform extraction failed
+crates/reprise-core/src/writeback_publish.rs	could not remove a writeback temporary file
+crates/reprise-core/src/writeback_publish.rs	could not sweep an abandoned writeback temporary file
+crates/reprise-gnome/src/i18n.rs	could not bind gettext locale directory
+crates/reprise-gnome/src/i18n.rs	could not select gettext text domain
+crates/reprise-gnome/src/i18n.rs	could not set gettext domain encoding
+crates/reprise-gnome/src/i18n.rs	i18n smoke report
+crates/reprise-gnome/src/main.rs	Reprise is already running — presenting the existing window
+crates/reprise-gnome/src/main.rs	could not acquire the tag-write recovery lock at startup
+crates/reprise-gnome/src/main.rs	could not open or migrate database
+crates/reprise-gnome/src/main.rs	could not recover interrupted tag writes at startup
+crates/reprise-gnome/src/main.rs	could not recover interrupted tag writes: database has no parent directory
+crates/reprise-gnome/src/main.rs	could not register with the session bus; continuing standalone
+crates/reprise-gnome/src/main.rs	database ready
+crates/reprise-gnome/src/main.rs	dev scan complete
+crates/reprise-gnome/src/main.rs	dev scan failed
+crates/reprise-gnome/src/main.rs	dev scan failed: library folder unavailable: {}
+crates/reprise-gnome/src/main.rs	failed to persist library root for dev scan hook
+crates/reprise-gnome/src/main.rs	opening database
+crates/reprise-gnome/src/main.rs	panic
+crates/reprise-gnome/src/main.rs	presenting existing window
+crates/reprise-gnome/src/main.rs	starting Reprise
+crates/reprise-gnome/src/main.rs	the compiled Reprise resources must register
+crates/reprise-gnome/src/main.rs	the icon resource path requires an initialized GTK display
+crates/reprise-gnome/src/main.rs	this is a test build: its data lives in a private directory, not the user's library; use `cargo build` / `cargo run` for a real session
+crates/reprise-gnome/src/main.rs	{} set: running headless dev scan before window shows
+crates/reprise-gnome/src/main.rs	{} set: seeding a playlist from the current library
+crates/reprise-gnome/src/main.rs	{}: failed to seed playlist
+crates/reprise-gnome/src/main.rs	{}: playlist seeded
+crates/reprise-gnome/src/ui/adjustment_hold.rs	scroll hold outlasted its correction budget; releasing it
+crates/reprise-gnome/src/ui/artist_portrait_credit.rs	could not open portrait credit URL
+crates/reprise-gnome/src/ui/artist_portrait_credit.rs	refused to open an untrusted portrait credit URL
+crates/reprise-gnome/src/ui/artwork_consent_banner.rs	could not persist artwork consent notice dismissal
+crates/reprise-gnome/src/ui/artwork_consent_banner.rs	could not read artwork consent notice state; hiding banner
+crates/reprise-gnome/src/ui/browse/browse_bar.rs	browse smoke completed
+crates/reprise-gnome/src/ui/browse/browse_bar.rs	browse smoke value not found
+crates/reprise-gnome/src/ui/browse/browse_bar.rs	could not clear the AI-exclude filter state
+crates/reprise-gnome/src/ui/browse/browse_bar.rs	could not persist the AI-exclude filter state
+crates/reprise-gnome/src/ui/browse/browse_bar.rs	filter row visibility updated
+crates/reprise-gnome/src/ui/browse/browse_chooser.rs	could not load browse facet values
+crates/reprise-gnome/src/ui/browse/browse_filter_count.rs	could not load library duration for filter row
+crates/reprise-gnome/src/ui/browse/browse_filter_count.rs	could not load total count for filter row
+crates/reprise-gnome/src/ui/browse/filter_bar.rs	could not persist filter
+crates/reprise-gnome/src/ui/compact/compact_mode_controls.rs	X11: _NET_WM_STATE_ABOVE toggled
+crates/reprise-gnome/src/ui/compact/compact_mode_controls.rs	always-on-top applies to X11 surfaces only; skipping
+crates/reprise-gnome/src/ui/compact/compact_mode_controls.rs	compact controls unavailable without a compact window
+crates/reprise-gnome/src/ui/compact/compact_mode_controls.rs	failed to persist always-on-top
+crates/reprise-gnome/src/ui/compact/compact_mode_controls.rs	invariant broken: an X11 surface must belong to an X11 display
+crates/reprise-gnome/src/ui/compact/minimal_view.rs	compact mode unavailable without a playback controller; using Library
+crates/reprise-gnome/src/ui/compact/minimal_view.rs	could not persist window view mode
+crates/reprise-gnome/src/ui/compact/minimal_view.rs	frame
+crates/reprise-gnome/src/ui/compact/minimal_view.rs	initial window view applied
+crates/reprise-gnome/src/ui/compact/minimal_view.rs	invariant broken: the Library window belongs to the application
+crates/reprise-gnome/src/ui/compact/minimal_view.rs	window view mode changed
+crates/reprise-gnome/src/ui/concerts/concerts_model.rs	invariant broken: a ConcertObject was published without its row
+crates/reprise-gnome/src/ui/concerts/concerts_sorting.rs	concerts table has no ColumnViewSorter
+crates/reprise-gnome/src/ui/concerts/concerts_view.rs	could not apply Concerts connectivity
+crates/reprise-gnome/src/ui/concerts/concerts_view.rs	could not apply Concerts settings
+crates/reprise-gnome/src/ui/concerts/concerts_view.rs	could not apply app location settings
+crates/reprise-gnome/src/ui/concerts/concerts_view.rs	could not load concerts view
+crates/reprise-gnome/src/ui/concerts/concerts_view.rs	could not reload Concerts settings
+crates/reprise-gnome/src/ui/concerts/concerts_view.rs	could not reload app location settings
+crates/reprise-gnome/src/ui/concerts/concerts_view_refresh.rs	Concerts worker closed without a result
+crates/reprise-gnome/src/ui/concerts/concerts_view_refresh.rs	could not apply Concerts module state
+crates/reprise-gnome/src/ui/concerts/concerts_view_refresh.rs	could not refresh Concerts
+crates/reprise-gnome/src/ui/concerts/concerts_view_refresh.rs	could not reload Concerts after fetch
+crates/reprise-gnome/src/ui/concerts/concerts_view_render.rs	invariant broken: the list state was handled above and has no status presentation
+crates/reprise-gnome/src/ui/concerts/concerts_worker.rs	could not queue Concerts request
+crates/reprise-gnome/src/ui/concerts/concerts_worker.rs	could not start Concerts worker
+crates/reprise-gnome/src/ui/cover/cover_download_batch.rs	could not query tracks for cover download
+crates/reprise-gnome/src/ui/cover/cover_download_worker.rs	could not open library for cover writeback
+crates/reprise-gnome/src/ui/cover/cover_download_worker.rs	could not query album directories for cover writeback
+crates/reprise-gnome/src/ui/cover/cover_download_worker.rs	could not start cover-download worker
+crates/reprise-gnome/src/ui/cover/cover_loader.rs	cover texture load failed
+crates/reprise-gnome/src/ui/date_format.rs	date display format resolved
+crates/reprise-gnome/src/ui/delete_tracks.rs	could not start removal worker
+crates/reprise-gnome/src/ui/delete_tracks.rs	delete batch completed
+crates/reprise-gnome/src/ui/delete_tracks.rs	delete confirmed
+crates/reprise-gnome/src/ui/delete_tracks.rs	removal worker could not open database
+crates/reprise-gnome/src/ui/delete_tracks.rs	trash smoke refused: selection is not inside a temporary REPRISE_SCAN_DIR
+crates/reprise-gnome/src/ui/delete_tracks.rs	{} ignored; expected db-only or trash
+crates/reprise-gnome/src/ui/delete_tracks_run.rs	move-to-trash failed
+crates/reprise-gnome/src/ui/delete_tracks_run.rs	remove-from-library transaction failed
+crates/reprise-gnome/src/ui/device_sync/device_sync_agent.rs	device sync cancelled from agent
+crates/reprise-gnome/src/ui/device_sync/device_sync_agent.rs	device sync started from agent
+crates/reprise-gnome/src/ui/device_sync/device_sync_card_menu.rs	could not forget remembered device
+crates/reprise-gnome/src/ui/device_sync/device_sync_compact.rs	could not encode analysis sidecar data
+crates/reprise-gnome/src/ui/device_sync/device_sync_compact.rs	could not load analysis sidecar data
+crates/reprise-gnome/src/ui/device_sync/device_sync_compact.rs	selected tracks have no analysis sidecar
+crates/reprise-gnome/src/ui/device_sync/device_sync_cue_effects.rs	could not record a CUE track's shared file
+crates/reprise-gnome/src/ui/device_sync/device_sync_cue_effects.rs	could not stage a derived CUE sheet
+crates/reprise-gnome/src/ui/device_sync/device_sync_cue_effects.rs	could not write a derived CUE sheet
+crates/reprise-gnome/src/ui/device_sync/device_sync_device_list.rs	could not adopt the detected device name
+crates/reprise-gnome/src/ui/device_sync/device_sync_device_list.rs	could not load device memory
+crates/reprise-gnome/src/ui/device_sync/device_sync_device_list.rs	could not prepare Android sync playlists before device inspection
+crates/reprise-gnome/src/ui/device_sync/device_sync_device_list.rs	could not project Android sync playlists after a device presence change
+crates/reprise-gnome/src/ui/device_sync/device_sync_effects.rs	could not apply phone listen report
+crates/reprise-gnome/src/ui/device_sync/device_sync_effects.rs	could not copy analysis sidecar to device
+crates/reprise-gnome/src/ui/device_sync/device_sync_effects.rs	could not copy lyrics sidecar to device
+crates/reprise-gnome/src/ui/device_sync/device_sync_effects.rs	could not encode analysis sidecar data
+crates/reprise-gnome/src/ui/device_sync/device_sync_effects.rs	could not load analysis sidecar data
+crates/reprise-gnome/src/ui/device_sync/device_sync_effects.rs	could not read phone listen report
+crates/reprise-gnome/src/ui/device_sync/device_sync_effects.rs	could not remove analysis sidecar from device
+crates/reprise-gnome/src/ui/device_sync/device_sync_effects.rs	could not remove device inventory row
+crates/reprise-gnome/src/ui/device_sync/device_sync_effects.rs	could not remove lyrics sidecar from device
+crates/reprise-gnome/src/ui/device_sync/device_sync_effects.rs	could not remove managed device item
+crates/reprise-gnome/src/ui/device_sync/device_sync_effects.rs	could not remove managed device playlist
+crates/reprise-gnome/src/ui/device_sync/device_sync_effects.rs	could not remove playlist inventory
+crates/reprise-gnome/src/ui/device_sync/device_sync_effects.rs	could not remove replaced device track
+crates/reprise-gnome/src/ui/device_sync/device_sync_effects.rs	could not stage analysis sidecar data
+crates/reprise-gnome/src/ui/device_sync/device_sync_effects.rs	could not stage phone listen acknowledgement
+crates/reprise-gnome/src/ui/device_sync/device_sync_effects.rs	could not update device inventory
+crates/reprise-gnome/src/ui/device_sync/device_sync_effects.rs	could not update playlist inventory
+crates/reprise-gnome/src/ui/device_sync/device_sync_effects.rs	could not write device playlist
+crates/reprise-gnome/src/ui/device_sync/device_sync_effects.rs	could not write phone listen acknowledgement
+crates/reprise-gnome/src/ui/device_sync/device_sync_effects.rs	device transfer failed
+crates/reprise-gnome/src/ui/device_sync/device_sync_effects.rs	ignored malformed phone listen report
+crates/reprise-gnome/src/ui/device_sync/device_sync_effects.rs	ignored phone listen report without a durable device identity
+crates/reprise-gnome/src/ui/device_sync/device_sync_effects.rs	invariant broken: the driver handles Finished before calling perform
+crates/reprise-gnome/src/ui/device_sync/device_sync_effects.rs	invariant broken: the sync machine emitted an invalid transfer index: {}
+crates/reprise-gnome/src/ui/device_sync/device_sync_memory.rs	could not re-key legacy MTP settings; the old row was kept
+crates/reprise-gnome/src/ui/device_sync/device_sync_memory.rs	kept legacy MTP settings because the stable device key already exists
+crates/reprise-gnome/src/ui/device_sync/device_sync_on_device.rs	could not update remove-deleted setting
+crates/reprise-gnome/src/ui/device_sync/device_sync_on_device.rs	could not update sync-automatically setting
+crates/reprise-gnome/src/ui/device_sync/device_sync_page.rs	could not refresh the mapped device-sync page
+crates/reprise-gnome/src/ui/device_sync/device_sync_page_actions.rs	could not start Android synchronization
+crates/reprise-gnome/src/ui/device_sync/device_sync_page_actions.rs	could not update Android sync playlist
+crates/reprise-gnome/src/ui/device_sync/device_sync_page_actions.rs	could not update Android sync transfer profile
+crates/reprise-gnome/src/ui/device_sync/device_sync_page_actions.rs	device sync started from page
+crates/reprise-gnome/src/ui/device_sync/device_sync_planned.rs	could not eject Android device
+crates/reprise-gnome/src/ui/device_sync/device_sync_rename.rs	could not rename remembered device
+crates/reprise-gnome/src/ui/device_sync/device_sync_run_log.rs	could not close the device sync log entry
+crates/reprise-gnome/src/ui/device_sync/device_sync_run_log.rs	could not open the device sync log entry
+crates/reprise-gnome/src/ui/device_sync/device_sync_run_log.rs	could not record a device sync deviation
+crates/reprise-gnome/src/ui/device_sync/device_sync_run_log.rs	could not update the device sync log plan
+crates/reprise-gnome/src/ui/device_sync/device_sync_runtime.rs	closed orphaned device sync runs
+crates/reprise-gnome/src/ui/device_sync/device_sync_runtime.rs	could not close orphaned device sync runs
+crates/reprise-gnome/src/ui/device_sync/device_sync_runtime.rs	could not dismiss the retired media-sync notice
+crates/reprise-gnome/src/ui/device_sync/device_sync_runtime.rs	could not load playlists after a library playlist change
+crates/reprise-gnome/src/ui/device_sync/device_sync_runtime.rs	could not load remembered device history
+crates/reprise-gnome/src/ui/device_sync/device_sync_runtime.rs	could not persist device selection after a playlist deletion
+crates/reprise-gnome/src/ui/device_sync/device_sync_runtime.rs	could not read the retired media-sync notice
+crates/reprise-gnome/src/ui/device_sync/device_sync_runtime.rs	could not refresh device playlists after a library playlist change
+crates/reprise-gnome/src/ui/device_sync/device_sync_runtime.rs	skipping stale device refresh because its page is neither connected nor remembered
+crates/reprise-gnome/src/ui/device_sync/device_sync_runtime_refresh.rs	could not load analysis sidecar data for device scan repair
+crates/reprise-gnome/src/ui/device_sync/device_sync_runtime_refresh.rs	could not resume device synchronization
+crates/reprise-gnome/src/ui/device_sync/device_sync_runtime_refresh.rs	could not start automatic device synchronization
+crates/reprise-gnome/src/ui/device_sync/device_sync_runtime_refresh.rs	device scan came back short
+crates/reprise-gnome/src/ui/device_sync/device_sync_runtime_refresh.rs	device scan residency could not be proven
+crates/reprise-gnome/src/ui/device_sync/device_sync_runtime_refresh.rs	device scan residency inventory could not be loaded
+crates/reprise-gnome/src/ui/device_sync/device_sync_runtime_refresh.rs	device scan target folder could not be checked
+crates/reprise-gnome/src/ui/device_sync/device_sync_runtime_refresh.rs	device scan target folder is unavailable
+crates/reprise-gnome/src/ui/device_sync/device_sync_smoke.rs	device sync smoke could not list playlists
+crates/reprise-gnome/src/ui/device_sync/device_sync_smoke.rs	device sync smoke is waiting for UI actions
+crates/reprise-gnome/src/ui/device_sync/device_sync_smoke.rs	device sync smoke playlist does not exist
+crates/reprise-gnome/src/ui/device_sync/device_sync_smoke.rs	device sync smoke playlist name is ambiguous
+crates/reprise-gnome/src/ui/device_sync/device_sync_smoke.rs	device sync smoke progress
+crates/reprise-gnome/src/ui/device_sync/device_sync_smoke.rs	device sync smoke started
+crates/reprise-gnome/src/ui/device_sync/device_sync_target_actions.rs	could not relocate Android sync target folder; the next sync will copy fresh instead
+crates/reprise-gnome/src/ui/device_sync/device_sync_target_browser.rs	could not save Android sync target folder
+crates/reprise-gnome/src/ui/device_sync/device_sync_transcode_effect.rs	device audio transcode failed
+crates/reprise-gnome/src/ui/device_sync/device_sync_transcode_effect.rs	invariant broken: a transcode effect must name a transcode action
+crates/reprise-gnome/src/ui/diagnostics/crash_offer.rs	the previous run did not end cleanly
+crates/reprise-gnome/src/ui/diagnostics/file_log.rs	could not remove the old log files
+crates/reprise-gnome/src/ui/end_of_results.rs	invariant broken: the unrestricted case returns above
+crates/reprise-gnome/src/ui/external_changes/mod.rs	external-changes: cannot open a read connection; continuing without live updates
+crates/reprise-gnome/src/ui/external_changes/mod.rs	external-changes: cannot read the change-log baseline; starting at 0
+crates/reprise-gnome/src/ui/external_changes/mod.rs	external-changes: drain loop ended
+crates/reprise-gnome/src/ui/external_changes/mod.rs	external-changes: failed to read the change log
+crates/reprise-gnome/src/ui/external_changes/mod.rs	external-changes: notifier unavailable; live updates disabled
+crates/reprise-gnome/src/ui/external_changes/mod.rs	external-changes: refresh receiver is gone
+crates/reprise-gnome/src/ui/external_link.rs	could not open URL
+crates/reprise-gnome/src/ui/external_link.rs	could not open URL in selected application
+crates/reprise-gnome/src/ui/external_link.rs	refused to open a URL that is not a web link
+crates/reprise-gnome/src/ui/file_open.rs	canonical file-open track lookup failed
+crates/reprise-gnome/src/ui/file_open.rs	file-open track lookup failed
+crates/reprise-gnome/src/ui/file_open.rs	playing files opened through desktop association
+crates/reprise-gnome/src/ui/file_open.rs	update notification named an unknown view
+crates/reprise-gnome/src/ui/first_run.rs	could not mark existing-library onboarding complete
+crates/reprise-gnome/src/ui/first_run.rs	could not persist first-run source selection
+crates/reprise-gnome/src/ui/first_run.rs	could not persist onboarding completion
+crates/reprise-gnome/src/ui/first_run.rs	could not read library root before Rhythmbox import
+crates/reprise-gnome/src/ui/first_run.rs	could not read library root for first-run folder group
+crates/reprise-gnome/src/ui/first_run.rs	could not read library root for onboarding; showing setup
+crates/reprise-gnome/src/ui/first_run.rs	could not read onboarding state; showing setup
+crates/reprise-gnome/src/ui/first_run.rs	could not read online source state; showing every source off
+crates/reprise-gnome/src/ui/first_run.rs	first-run Rhythmbox discovery complete
+crates/reprise-gnome/src/ui/first_run.rs	first-run decision
+crates/reprise-gnome/src/ui/first_run.rs	first-run folder dialog dismissed
+crates/reprise-gnome/src/ui/first_run.rs	first-run folder dialog failed
+crates/reprise-gnome/src/ui/first_run.rs	first-run setup completed
+crates/reprise-gnome/src/ui/first_run.rs	first-run smoke completed
+crates/reprise-gnome/src/ui/first_run.rs	first-run wizard presented
+crates/reprise-gnome/src/ui/first_run.rs	invalid first-run smoke response
+crates/reprise-gnome/src/ui/first_run.rs	selected folder has no local filesystem path; cannot scan
+crates/reprise-gnome/src/ui/import_errors_view.rs	import errors view: could not start retry worker
+crates/reprise-gnome/src/ui/import_errors_view.rs	import errors view: dismiss all failed
+crates/reprise-gnome/src/ui/import_errors_view.rs	import errors view: dismiss failed
+crates/reprise-gnome/src/ui/import_errors_view.rs	import errors view: dismiss skipped because stat failed
+crates/reprise-gnome/src/ui/import_errors_view.rs	import errors view: export dialog failed
+crates/reprise-gnome/src/ui/import_errors_view.rs	import errors view: export failed
+crates/reprise-gnome/src/ui/import_errors_view.rs	import errors view: export target is not a local path
+crates/reprise-gnome/src/ui/import_errors_view.rs	import errors view: failed to count dismissed rows
+crates/reprise-gnome/src/ui/import_errors_view.rs	import errors view: failed to load active groups
+crates/reprise-gnome/src/ui/import_errors_view.rs	import errors view: failed to load dismissed rows
+crates/reprise-gnome/src/ui/import_errors_view.rs	import errors view: failed to load retry paths
+crates/reprise-gnome/src/ui/import_errors_view.rs	import errors view: restore failed
+crates/reprise-gnome/src/ui/import_errors_view.rs	import errors view: retry failed
+crates/reprise-gnome/src/ui/import_errors_view.rs	import errors view: retry incomplete
+crates/reprise-gnome/src/ui/import_errors_view.rs	import errors view: retry item failed
+crates/reprise-gnome/src/ui/import_errors_view.rs	import errors view: show in Files failed
+crates/reprise-gnome/src/ui/import_errors_view.rs	import errors view: toast overlay is gone; log-only
+crates/reprise-gnome/src/ui/import_errors_view.rs	import errors view: window is gone; cannot export
+crates/reprise-gnome/src/ui/issues/missing_dialogs.rs	invariant broken: outside-library selection always warns
+crates/reprise-gnome/src/ui/issues/missing_dialogs.rs	missing locate: failed to read library root
+crates/reprise-gnome/src/ui/issues/missing_dialogs.rs	missing locate: file dialog failed
+crates/reprise-gnome/src/ui/issues/missing_dialogs.rs	missing locate: folder dialog failed
+crates/reprise-gnome/src/ui/issues/missing_dialogs.rs	missing locate: folder relink failed
+crates/reprise-gnome/src/ui/issues/missing_dialogs.rs	missing locate: relink failed
+crates/reprise-gnome/src/ui/issues/missing_dialogs.rs	missing locate: replacement probe failed
+crates/reprise-gnome/src/ui/issues/missing_dialogs.rs	missing locate: selected file has no local path
+crates/reprise-gnome/src/ui/issues/missing_dialogs.rs	missing locate: selected folder has no local path
+crates/reprise-gnome/src/ui/issues/missing_dialogs.rs	missing locate: worker database path was not configured
+crates/reprise-gnome/src/ui/issues/missing_dialogs.rs	missing locate: worker result dropped
+crates/reprise-gnome/src/ui/issues/missing_view.rs	missing view: auto-clean failed
+crates/reprise-gnome/src/ui/issues/missing_view.rs	missing view: failed to arm auto-clean from today
+crates/reprise-gnome/src/ui/issues/missing_view.rs	missing view: failed to load groups
+crates/reprise-gnome/src/ui/issues/missing_view.rs	missing view: failed to load relink targets
+crates/reprise-gnome/src/ui/issues/missing_view.rs	missing view: failed to load removal ids
+crates/reprise-gnome/src/ui/issues/missing_view.rs	missing view: failed to set auto-clean
+crates/reprise-gnome/src/ui/issues/missing_view.rs	missing view: tombstone failed
+crates/reprise-gnome/src/ui/issues/missing_view.rs	missing view: tombstone purge failed
+crates/reprise-gnome/src/ui/issues/missing_view.rs	missing view: undo failed
+crates/reprise-gnome/src/ui/issues/missing_view.rs	missing view: window is gone; auto-clean stays armed from today
+crates/reprise-gnome/src/ui/issues/missing_view.rs	missing view: window is gone; cannot confirm removal
+crates/reprise-gnome/src/ui/lazy_tooltip.rs	list item has no lazy tooltip state
+crates/reprise-gnome/src/ui/library_doctor/auto_apply.rs	Library Doctor automatic apply failed
+crates/reprise-gnome/src/ui/library_doctor/auto_apply.rs	Library Doctor automatic apply worker disappeared
+crates/reprise-gnome/src/ui/library_doctor/auto_apply.rs	could not start Library Doctor automatic apply worker
+crates/reprise-gnome/src/ui/library_doctor/jobs.rs	could not store Library Doctor scan rates
+crates/reprise-gnome/src/ui/library_doctor/mod.rs	Library Doctor scan failed
+crates/reprise-gnome/src/ui/library_doctor/mod.rs	Library Doctor scan worker disappeared
+crates/reprise-gnome/src/ui/library_doctor/mod.rs	could not load the last Library Doctor result
+crates/reprise-gnome/src/ui/library_doctor/mod.rs	could not read the last Library Doctor cleanup
+crates/reprise-gnome/src/ui/library_doctor/mod.rs	could not start Library Doctor scan worker
+crates/reprise-gnome/src/ui/library_doctor/mod.rs	failed to acknowledge Library Doctor scan
+crates/reprise-gnome/src/ui/library_doctor/remote_toggle.rs	could not disable Library Doctor remote suggestions
+crates/reprise-gnome/src/ui/library_doctor/remote_toggle.rs	could not enable Library Doctor remote suggestions
+crates/reprise-gnome/src/ui/library_doctor/remote_toggle.rs	could not record Library Doctor remote consent
+crates/reprise-gnome/src/ui/library_doctor/review_header.rs	DOC-9b kept the last known header while its section range was unassigned
+crates/reprise-gnome/src/ui/library_doctor/review_header.rs	DOC-9b kept the last known header while its section row was unavailable
+crates/reprise-gnome/src/ui/library_doctor/review_header.rs	DOC-9b kept the last known header while its snapshot was unavailable
+crates/reprise-gnome/src/ui/library_doctor/review_page.rs	DOCTOR_REVIEW_REFRESH path
+crates/reprise-gnome/src/ui/library_doctor/review_page.rs	DOCTOR_REVIEW_REFRESH stage
+crates/reprise-gnome/src/ui/library_doctor/review_page.rs	could not acknowledge skipped Library Doctor conflicts
+crates/reprise-gnome/src/ui/library_doctor/review_page.rs	could not choose Library Doctor spelling
+crates/reprise-gnome/src/ui/library_doctor/review_page.rs	could not update Library Doctor review selection
+crates/reprise-gnome/src/ui/library_doctor/review_search.rs	DOCTOR_REVIEW_REFRESH path
+crates/reprise-gnome/src/ui/library_doctor/review_search.rs	invariant broken: the no-match page requires an active filter
+crates/reprise-gnome/src/ui/library_doctor/review_snapshot.rs	Library Doctor review row id belongs to multiple display rows
+crates/reprise-gnome/src/ui/library_doctor/review_snapshot.rs	invariant broken: cached {} selection includes its row
+crates/reprise-gnome/src/ui/library_doctor/review_snapshot.rs	invariant broken: every cached review row belongs to a cached album
+crates/reprise-gnome/src/ui/library_doctor/review_snapshot.rs	invariant broken: every cached review row has an indexed row id
+crates/reprise-gnome/src/ui/library_doctor/review_snapshot.rs	invariant broken: selection diff points inside the cached review rows
+crates/reprise-gnome/src/ui/library_doctor/slot_monitor.rs	cannot inspect the tag-write slot: database has no parent directory
+crates/reprise-gnome/src/ui/library_doctor/slot_monitor.rs	could not inspect the tag-write slot
+crates/reprise-gnome/src/ui/library_doctor/write_jobs.rs	Library Doctor write completed
+crates/reprise-gnome/src/ui/library_doctor/write_jobs.rs	Library Doctor write failed
+crates/reprise-gnome/src/ui/library_doctor/write_jobs.rs	Library Doctor write worker disappeared
+crates/reprise-gnome/src/ui/library_doctor/write_jobs.rs	could not start Library Doctor apply worker
+crates/reprise-gnome/src/ui/library_doctor/write_jobs.rs	could not start Library Doctor revert worker
+crates/reprise-gnome/src/ui/list_geometry.rs	could not load persisted row height
+crates/reprise-gnome/src/ui/list_geometry.rs	could not persist settled row height
+crates/reprise-gnome/src/ui/list_geometry_header.rs	could not load persisted section-header height
+crates/reprise-gnome/src/ui/list_geometry_header.rs	could not persist settled list geometry
+crates/reprise-gnome/src/ui/list_store_delta.rs	invariant broken: a published list-store position holds no readable row
+crates/reprise-gnome/src/ui/lyrics/lyrics_batch.rs	could not query tracks added since last batch
+crates/reprise-gnome/src/ui/lyrics/lyrics_batch.rs	could not query tracks for lyrics batch
+crates/reprise-gnome/src/ui/lyrics/lyrics_batch.rs	could not start lyrics batch worker
+crates/reprise-gnome/src/ui/lyrics/lyrics_batch.rs	library root unavailable for lyrics due-check; running conservatively
+crates/reprise-gnome/src/ui/lyrics/lyrics_smoke.rs	lyrics smoke failed: could not open the isolated lyrics gate
+crates/reprise-gnome/src/ui/lyrics/lyrics_smoke.rs	lyrics smoke failed: could not resolve synthetic tracks
+crates/reprise-gnome/src/ui/lyrics/lyrics_smoke.rs	lyrics smoke failed: fast synthetic track is absent
+crates/reprise-gnome/src/ui/lyrics/lyrics_smoke.rs	lyrics smoke failed: first synthetic track is absent
+crates/reprise-gnome/src/ui/lyrics/lyrics_smoke.rs	lyrics smoke failed: playback is unavailable
+crates/reprise-gnome/src/ui/lyrics/lyrics_smoke.rs	lyrics smoke failed: slow synthetic track is absent
+crates/reprise-gnome/src/ui/lyrics/lyrics_smoke.rs	lyrics smoke state
+crates/reprise-gnome/src/ui/lyrics/lyrics_smoke.rs	lyrics smoke state is stale or missing
+crates/reprise-gnome/src/ui/lyrics/lyrics_smoke.rs	{} set: arming synchronized lyrics exercise
+crates/reprise-gnome/src/ui/lyrics/lyrics_worker.rs	lyrics request dropped: worker is gone
+crates/reprise-gnome/src/ui/lyrics/lyrics_worker.rs	lyrics response dropped: requester is gone
+crates/reprise-gnome/src/ui/lyrics/lyrics_worker.rs	lyrics unavailable answer dropped: requester is gone
+crates/reprise-gnome/src/ui/lyrics/lyrics_worker.rs	lyrics worker thread failed to start
+crates/reprise-gnome/src/ui/lyrics/player_lyrics.rs	could not read Online Lyrics module state; defaulting to off
+crates/reprise-gnome/src/ui/lyrics/player_lyrics.rs	lyrics response discarded as stale
+crates/reprise-gnome/src/ui/motion_reveal.rs	invariant broken: reveal-fraction must be an f32: {}
+crates/reprise-gnome/src/ui/motion_reveal.rs	invariant broken: unknown HorizontalReveal property {}
+crates/reprise-gnome/src/ui/mounts.rs	mount added: verified unavailable tracks
+crates/reprise-gnome/src/ui/mounts.rs	mount event reconciliation failed
+crates/reprise-gnome/src/ui/mounts.rs	mount event: failed to read library root
+crates/reprise-gnome/src/ui/mounts.rs	mount removed: marked live tracks unavailable
+crates/reprise-gnome/src/ui/mounts.rs	mount-added event dropped: worker is gone
+crates/reprise-gnome/src/ui/mounts.rs	mount-removed event dropped: worker is gone
+crates/reprise-gnome/src/ui/mpris_mirror.rs	MPRIS Play: queue is empty; nothing to play
+crates/reprise-gnome/src/ui/mpris_mirror.rs	MPRIS Seeked notification dropped: relay thread is gone
+crates/reprise-gnome/src/ui/mpris_mirror.rs	MPRIS: loop status set
+crates/reprise-gnome/src/ui/mpris_mirror.rs	MPRIS: shuffle set
+crates/reprise-gnome/src/ui/mpris_mirror.rs	MPRIS: volume set
+crates/reprise-gnome/src/ui/mpris_mirror.rs	seek failed
+crates/reprise-gnome/src/ui/mpris_play_context.rs	failed to build library queue for MPRIS play; falling back to a single-track queue
+crates/reprise-gnome/src/ui/mpris_play_context.rs	queue capped at {} tracks
+crates/reprise-gnome/src/ui/notifications.rs	could not read Concerts notification delta
+crates/reprise-gnome/src/ui/notifications.rs	could not run update notification due check
+crates/reprise-gnome/src/ui/notifications.rs	could not send Concerts notification delta
+crates/reprise-gnome/src/ui/notifications.rs	no application handle; skipping track-change notification
+crates/reprise-gnome/src/ui/notifications.rs	update notification link action received no string target
+crates/reprise-gnome/src/ui/notifications.rs	update notification view action received no string target
+crates/reprise-gnome/src/ui/now_playing/artist_portrait_worker.rs	artist portrait request failed
+crates/reprise-gnome/src/ui/now_playing/cover_bloom.rs	bloom: blurred cover surface was not readable
+crates/reprise-gnome/src/ui/now_playing/now_playing.rs	could not save now-playing panel visibility
+crates/reprise-gnome/src/ui/now_playing/up_next_panel.rs	could not load up-next panel duration window
+crates/reprise-gnome/src/ui/one_shot_task.rs	progress dropped: the receiver is gone
+crates/reprise-gnome/src/ui/playback/audio_effects.rs	could not apply the new gain to the playing track
+crates/reprise-gnome/src/ui/playback/audio_effects.rs	could not explicitly restore disabled audio effects
+crates/reprise-gnome/src/ui/playback/audio_effects.rs	could not persist ReplayGain fallback
+crates/reprise-gnome/src/ui/playback/audio_effects.rs	could not persist equalizer fallback
+crates/reprise-gnome/src/ui/playback/audio_effects.rs	stored audio effects are unavailable; falling back to defaults
+crates/reprise-gnome/src/ui/playback/external_media.rs	could not resolve queued episode
+crates/reprise-gnome/src/ui/playback/external_media.rs	failed to stop external playback
+crates/reprise-gnome/src/ui/playback/external_media.rs	invariant broken: podcast session contains radio media
+crates/reprise-gnome/src/ui/playback/external_media.rs	podcast pause toggle failed
+crates/reprise-gnome/src/ui/playback/external_media.rs	queued episode is no longer subscribed; dropping it silently
+crates/reprise-gnome/src/ui/playback/external_media.rs	queued episode playback failed
+crates/reprise-gnome/src/ui/playback/external_media_completion.rs	could not mark podcast played
+crates/reprise-gnome/src/ui/playback/external_media_completion.rs	could not mark queued podcast played
+crates/reprise-gnome/src/ui/playback/external_media_fetch.rs	a resolved category did not reach the spectrum source
+crates/reprise-gnome/src/ui/playback/external_media_fetch.rs	could not classify a YouTube episode
+crates/reprise-gnome/src/ui/playback/external_media_fetch.rs	could not read downloaded podcast episode
+crates/reprise-gnome/src/ui/playback/external_media_fields.rs	invariant broken: podcast fields requested from radio media
+crates/reprise-gnome/src/ui/playback/external_media_mpris.rs	invariant broken: podcast session contains radio media
+crates/reprise-gnome/src/ui/playback/external_media_mpris.rs	invariant broken: radio session contains podcast media
+crates/reprise-gnome/src/ui/playback/external_media_neighbours.rs	direct episode context jump target vanished; ignoring
+crates/reprise-gnome/src/ui/playback/external_media_position.rs	could not checkpoint podcast position
+crates/reprise-gnome/src/ui/playback/external_media_position.rs	could not clear short podcast position
+crates/reprise-gnome/src/ui/playback/external_media_position.rs	could not mark leaving podcast played
+crates/reprise-gnome/src/ui/playback/external_media_position.rs	could not persist podcast position
+crates/reprise-gnome/src/ui/playback/external_media_position.rs	could not persist podcast position tick
+crates/reprise-gnome/src/ui/playback/external_media_session.rs	could not restore episode session
+crates/reprise-gnome/src/ui/playback/external_media_session.rs	episode session restored paused
+crates/reprise-gnome/src/ui/playback/external_media_session.rs	invariant broken: restored episode contains radio media
+crates/reprise-gnome/src/ui/playback/external_media_session.rs	restored episode is no longer available
+crates/reprise-gnome/src/ui/playback/external_media_session.rs	restored episode playback failed
+crates/reprise-gnome/src/ui/playback/external_media_toast.rs	toast overlay is gone; retaining persistent play-next offer
+crates/reprise-gnome/src/ui/playback/instrumentation.rs	queue listener completed
+crates/reprise-gnome/src/ui/playback/instrumentation.rs	queue listeners deferred
+crates/reprise-gnome/src/ui/playback/library_continuation.rs	failed to build immediate library continuation
+crates/reprise-gnome/src/ui/playback/library_continuation.rs	failed to build random library continuation
+crates/reprise-gnome/src/ui/playback/library_continuation.rs	failed to count live library before queue rebind
+crates/reprise-gnome/src/ui/playback/library_continuation.rs	filtered queue exhausted after filter clear; continuing from random library snapshot
+crates/reprise-gnome/src/ui/playback/library_continuation.rs	library filter cleared on an exhausted queue; bound in a random library continuation
+crates/reprise-gnome/src/ui/playback/library_continuation.rs	library filter cleared with titles ahead; rebound to the visible library snapshot
+crates/reprise-gnome/src/ui/playback/now_playing_wiring.rs	could not build MPRIS cover URI
+crates/reprise-gnome/src/ui/playback/now_playing_wiring.rs	could not record the colour legend showing
+crates/reprise-gnome/src/ui/playback/play_tracking.rs	could not queue scrobble
+crates/reprise-gnome/src/ui/playback/play_tracking.rs	failed to record listen event
+crates/reprise-gnome/src/ui/playback/play_tracking.rs	failed to record play
+crates/reprise-gnome/src/ui/playback/play_tracking.rs	missing playback snapshot for listen event
+crates/reprise-gnome/src/ui/playback/play_tracking.rs	play recorded
+crates/reprise-gnome/src/ui/playback/play_tracking.rs	scrobble queued
+crates/reprise-gnome/src/ui/playback/play_tracking.rs	track metadata cannot be scrobbled
+crates/reprise-gnome/src/ui/playback/playback_fault_probe.rs	failed to mark track missing
+crates/reprise-gnome/src/ui/playback/playback_fault_probe.rs	failed to open the library to mark a track missing
+crates/reprise-gnome/src/ui/playback/playback_fault_probe.rs	stale playback fault did not mark a reconciled track missing
+crates/reprise-gnome/src/ui/playback/playback_fault_probe.rs	the library has no file to share with the probe; not marking the track missing
+crates/reprise-gnome/src/ui/playback/playback_faults.rs	failed to resolve track after a playback failure
+crates/reprise-gnome/src/ui/playback/playback_faults.rs	file no longer exists on disk; marked missing and skipped
+crates/reprise-gnome/src/ui/playback/playback_faults.rs	no probe slot free on the track's mount or the track is already being probed; the neutral toast follows
+crates/reprise-gnome/src/ui/playback/playback_faults.rs	playback failed and the track's row is already gone; skipping without marking
+crates/reprise-gnome/src/ui/playback/playback_faults.rs	playback failed for a file that still exists; skipping
+crates/reprise-gnome/src/ui/playback/playback_faults.rs	the file probe has not answered; showing the neutral toast
+crates/reprise-gnome/src/ui/playback/playback_faults.rs	the file probe panicked
+crates/reprise-gnome/src/ui/playback/playback_faults.rs	too many consecutive unplayable tracks; stopping playback
+crates/reprise-gnome/src/ui/playback/playback_history_transport.rs	next stepped forward through the playback history
+crates/reprise-gnome/src/ui/playback/playback_history_transport.rs	previous rewound to the song start
+crates/reprise-gnome/src/ui/playback/playback_history_transport.rs	previous stepped back through the playback history
+crates/reprise-gnome/src/ui/playback/player_controller.rs	failed to resolve track for playback
+crates/reprise-gnome/src/ui/playback/player_controller.rs	failed to start playback
+crates/reprise-gnome/src/ui/playback/player_controller.rs	playback started
+crates/reprise-gnome/src/ui/playback/player_controller.rs	queue: track id has no matching database row; skipping playback
+crates/reprise-gnome/src/ui/playback/player_controller.rs	transport buttons re-enabled after playback start
+crates/reprise-gnome/src/ui/playback/player_controller_build.rs	could not restore live song visuals; using the static profile
+crates/reprise-gnome/src/ui/playback/player_controller_toast.rs	toast overlay is gone; degrading to log-only
+crates/reprise-gnome/src/ui/playback/player_controller_toast.rs	track list reload requested but no callback is wired yet
+crates/reprise-gnome/src/ui/playback/player_controller_wiring.rs	compact preferences requested before window mode coordinator is installed
+crates/reprise-gnome/src/ui/playback/player_controller_wiring.rs	compact restore requested before window mode coordinator is installed
+crates/reprise-gnome/src/ui/playback/player_controller_wiring.rs	could not re-gate the spectrum feed for this session
+crates/reprise-gnome/src/ui/playback/player_controller_wiring.rs	shuffle toggled
+crates/reprise-gnome/src/ui/playback/player_controller_wiring.rs	{} set to an unrecognized value; ignoring (expected "{}")
+crates/reprise-gnome/src/ui/playback/player_controller_wiring.rs	{}={} set: forcing Repeat::All for headless wrap-around E2E
+crates/reprise-gnome/src/ui/playback/player_event_handling.rs	external media finished: stopping without advancing
+crates/reprise-gnome/src/ui/playback/player_event_handling.rs	failed to stop player during reset
+crates/reprise-gnome/src/ui/playback/player_event_handling.rs	gapless hand-off: advancing queue model without restart
+crates/reprise-gnome/src/ui/playback/player_event_handling.rs	ignoring gapless hand-off during external playback
+crates/reprise-gnome/src/ui/playback/player_event_handling.rs	invariant broken: external errors returned above
+crates/reprise-gnome/src/ui/playback/player_event_handling.rs	player bar: applying buffering update
+crates/reprise-gnome/src/ui/playback/player_event_handling.rs	player bar: applying position tick
+crates/reprise-gnome/src/ui/playback/player_event_handling.rs	player bar: applying state change
+crates/reprise-gnome/src/ui/playback/player_event_handling.rs	player error during external playback
+crates/reprise-gnome/src/ui/playback/player_event_handling.rs	player error during preview playback
+crates/reprise-gnome/src/ui/playback/player_event_handling.rs	player error during queue track playback
+crates/reprise-gnome/src/ui/playback/player_event_handling.rs	player error with no current track; resetting to stopped
+crates/reprise-gnome/src/ui/playback/player_event_handling.rs	queued episode finished: advancing queue
+crates/reprise-gnome/src/ui/playback/player_event_handling.rs	received stream metadata
+crates/reprise-gnome/src/ui/playback/player_event_handling.rs	track finished: advancing queue
+crates/reprise-gnome/src/ui/playback/preview.rs	failed to stop after external preview
+crates/reprise-gnome/src/ui/playback/queue_change_dispatch.rs	up next changed
+crates/reprise-gnome/src/ui/playback/queue_edit.rs	direct episode Now Playing row cannot mutate music; ignoring
+crates/reprise-gnome/src/ui/playback/queue_edit.rs	episode context rows cannot be removed; ignoring
+crates/reprise-gnome/src/ui/playback/queue_edit.rs	episode context rows cannot be reordered; ignoring
+crates/reprise-gnome/src/ui/playback/queue_edit.rs	episode context rows cannot move to Play Next; ignoring
+crates/reprise-gnome/src/ui/playback/queue_edit.rs	play next cleared
+crates/reprise-gnome/src/ui/playback/queue_edit.rs	queue jump target vanished; ignoring
+crates/reprise-gnome/src/ui/playback/queue_edit.rs	queue row removal removed no entries
+crates/reprise-gnome/src/ui/playback/queue_insertion.rs	append to queue: no queue-compatible items; ignoring
+crates/reprise-gnome/src/ui/playback/queue_insertion.rs	append to queue: nothing to add; ignoring
+crates/reprise-gnome/src/ui/playback/queue_insertion.rs	items added to queue
+crates/reprise-gnome/src/ui/playback/queue_insertion.rs	items queued to play next
+crates/reprise-gnome/src/ui/playback/queue_insertion.rs	play next: no queue-compatible items; ignoring
+crates/reprise-gnome/src/ui/playback/queue_insertion.rs	play next: nothing to add; ignoring
+crates/reprise-gnome/src/ui/playback/queue_transport.rs	could not build random library playback snapshot
+crates/reprise-gnome/src/ui/playback/queue_transport.rs	could not determine idle playback availability
+crates/reprise-gnome/src/ui/playback/queue_transport.rs	could not reconcile scan-detected queue removals
+crates/reprise-gnome/src/ui/playback/queue_transport.rs	could not reconcile unsubscribed queued episodes
+crates/reprise-gnome/src/ui/playback/queue_transport.rs	could not refresh idle playback availability
+crates/reprise-gnome/src/ui/playback/queue_transport.rs	could not validate restored current track; trying it directly
+crates/reprise-gnome/src/ui/playback/queue_transport.rs	loaded track left playing from its owned snapshot after catalog deletion
+crates/reprise-gnome/src/ui/playback/queue_transport.rs	play/pause: library is empty; nothing to play
+crates/reprise-gnome/src/ui/playback/queue_transport.rs	queue purged of hard-deleted track ids
+crates/reprise-gnome/src/ui/playback/queue_transport.rs	queue set from view
+crates/reprise-gnome/src/ui/playback/queue_transport.rs	toggle play/pause failed
+crates/reprise-gnome/src/ui/playback/queue_transport.rs	user deleted the loaded track; advancing playback
+crates/reprise-gnome/src/ui/playback/queue_transport_projection.rs	queue tail change
+crates/reprise-gnome/src/ui/playback/session_player.rs	could not build random startup playback snapshot
+crates/reprise-gnome/src/ui/playback/session_player.rs	could not restore current track metadata
+crates/reprise-gnome/src/ui/playback/session_player.rs	could not validate restored episode queue entries
+crates/reprise-gnome/src/ui/playback/session_player.rs	could not validate restored queue IDs
+crates/reprise-gnome/src/ui/playback/session_player.rs	invalid session queue ignored
+crates/reprise-gnome/src/ui/playback/session_player.rs	session queue restored
+crates/reprise-gnome/src/ui/playback/sleep_timer_hooks.rs	sleep timer could not pause playback
+crates/reprise-gnome/src/ui/playback/stale_events.rs	dropping a player fault from a stream that was already left
+crates/reprise-gnome/src/ui/playback/up_next_transport.rs	failed to resolve available queued episodes; advancing without filtering them
+crates/reprise-gnome/src/ui/playback/up_next_transport.rs	failed to resolve playable pre-feed ids; pre-feeding without filtering
+crates/reprise-gnome/src/ui/playback/up_next_transport.rs	failed to resolve playable queue ids; advancing without filtering
+crates/reprise-gnome/src/ui/playback/up_next_transport.rs	playback advanced
+crates/reprise-gnome/src/ui/playback/up_next_transport.rs	queue exhausted on manual next; refilled from the visible view
+crates/reprise-gnome/src/ui/playback/up_next_transport.rs	up next activation position is out of range
+crates/reprise-gnome/src/ui/playlists/playlist_io.rs	failed to list playlists for smoke m3u name lookup
+crates/reprise-gnome/src/ui/playlists/playlist_io.rs	import playlist dialog dismissed
+crates/reprise-gnome/src/ui/playlists/playlist_io.rs	import playlist dialog failed
+crates/reprise-gnome/src/ui/playlists/playlist_io.rs	playlist export failed (smoke hook)
+crates/reprise-gnome/src/ui/playlists/playlist_io.rs	playlist exported (smoke hook)
+crates/reprise-gnome/src/ui/playlists/playlist_io.rs	playlist file is not valid UTF-8; lossy-decoding instead
+crates/reprise-gnome/src/ui/playlists/playlist_io.rs	playlist import failed
+crates/reprise-gnome/src/ui/playlists/playlist_io.rs	playlist imported: {} of {} tracks matched
+crates/reprise-gnome/src/ui/playlists/playlist_io.rs	selected playlist file has no local filesystem path; cannot import
+crates/reprise-gnome/src/ui/playlists/playlist_io.rs	track lookup by canonicalized path failed during import
+crates/reprise-gnome/src/ui/playlists/playlist_io.rs	track lookup by path failed during import
+crates/reprise-gnome/src/ui/playlists/playlist_io.rs	{} set: arming headless m3u import/export hook
+crates/reprise-gnome/src/ui/playlists/playlist_io.rs	{}: export form must be export:<name>:<path>
+crates/reprise-gnome/src/ui/playlists/playlist_io.rs	{}: no playlist found with this name
+crates/reprise-gnome/src/ui/playlists/playlist_io.rs	{}: unrecognized value; expected import:<path> or export:<name>:<path>
+crates/reprise-gnome/src/ui/podcasts/add_dialog.rs	could not read the library's top genre for the YouTube chip
+crates/reprise-gnome/src/ui/podcasts/add_dialog.rs	could not start podcast preview task
+crates/reprise-gnome/src/ui/podcasts/add_dialog.rs	could not start podcast search task
+crates/reprise-gnome/src/ui/podcasts/add_dialog_followers.rs	could not start YouTube follower enrichment
+crates/reprise-gnome/src/ui/podcasts/add_dialog_rows.rs	could not subscribe to podcast
+crates/reprise-gnome/src/ui/podcasts/add_dialog_rows.rs	could not subscribe to podcast preview
+crates/reprise-gnome/src/ui/podcasts/add_dialog_rows.rs	invariant broken: candidate rows are boxes
+crates/reprise-gnome/src/ui/podcasts/add_dialog_subscription.rs	could not save offline podcast subscription
+crates/reprise-gnome/src/ui/podcasts/podcasts_context_menu.rs	podcast row menu could not publish its selection take-over
+crates/reprise-gnome/src/ui/podcasts/podcasts_failure_ui.rs	podcast action failed
+crates/reprise-gnome/src/ui/podcasts/podcasts_lanes.rs	could not start podcast worker lane
+crates/reprise-gnome/src/ui/podcasts/podcasts_lanes.rs	podcast worker dequeued request
+crates/reprise-gnome/src/ui/podcasts/podcasts_response_channel.rs	podcast worker response receiver is unavailable
+crates/reprise-gnome/src/ui/podcasts/podcasts_reveal.rs	episode reveal gave up waiting for layout
+crates/reprise-gnome/src/ui/podcasts/podcasts_row_interaction.rs	podcast row activation did not reach the action
+crates/reprise-gnome/src/ui/podcasts/podcasts_row_interaction.rs	podcast row selection did not reach the action
+crates/reprise-gnome/src/ui/podcasts/podcasts_view.rs	could not read podcast subscriptions
+crates/reprise-gnome/src/ui/podcasts/podcasts_view_actions.rs	could not clear podcast download path
+crates/reprise-gnome/src/ui/podcasts/podcasts_view_actions.rs	could not commit podcast episode removal
+crates/reprise-gnome/src/ui/podcasts/podcasts_view_actions.rs	could not remove podcast episode
+crates/reprise-gnome/src/ui/podcasts/podcasts_view_actions.rs	could not trash podcast download
+crates/reprise-gnome/src/ui/podcasts/podcasts_view_actions.rs	could not undo podcast episode removal
+crates/reprise-gnome/src/ui/podcasts/podcasts_view_actions.rs	could not update podcast episode status
+crates/reprise-gnome/src/ui/podcasts/podcasts_view_actions.rs	podcast file reveal became unavailable
+crates/reprise-gnome/src/ui/podcasts/podcasts_view_actions.rs	refused stale or unavailable podcast queue selection
+crates/reprise-gnome/src/ui/podcasts/podcasts_view_actions.rs	unknown podcast selection mode
+crates/reprise-gnome/src/ui/podcasts/podcasts_view_copy.rs	invariant broken: status_copy is only called for the three status-page states
+crates/reprise-gnome/src/ui/podcasts/podcasts_view_downloads.rs	could not trash podcast download
+crates/reprise-gnome/src/ui/podcasts/podcasts_view_downloads.rs	podcast download failed
+crates/reprise-gnome/src/ui/podcasts/podcasts_view_marker.rs	invariant broken: reveal_outcome accepted a target that is not present
+crates/reprise-gnome/src/ui/podcasts/podcasts_view_requests.rs	could not inspect podcast network permission for a tab-open refresh
+crates/reprise-gnome/src/ui/podcasts/podcasts_view_requests.rs	could not inspect podcast subscriptions for a tab-open refresh
+crates/reprise-gnome/src/ui/podcasts/podcasts_view_requests.rs	podcast download fill-up failed
+crates/reprise-gnome/src/ui/podcasts/podcasts_view_requests.rs	podcast download fill-up finished
+crates/reprise-gnome/src/ui/podcasts/podcasts_view_requests.rs	podcast download fill-up request deferred while one is running
+crates/reprise-gnome/src/ui/podcasts/podcasts_view_requests.rs	podcast refresh delivered to the view
+crates/reprise-gnome/src/ui/podcasts/podcasts_view_requests.rs	podcast refresh failed
+crates/reprise-gnome/src/ui/podcasts/podcasts_view_requests.rs	podcast subscription sync request failed
+crates/reprise-gnome/src/ui/podcasts/podcasts_view_requests.rs	podcast sync row is outside the rendered filter
+crates/reprise-gnome/src/ui/podcasts/podcasts_worker.rs	could not queue podcast work
+crates/reprise-gnome/src/ui/podcasts/podcasts_worker.rs	podcast download job finished
+crates/reprise-gnome/src/ui/podcasts/podcasts_worker.rs	podcast subscription sync ended with an error
+crates/reprise-gnome/src/ui/podcasts/source_artwork_queue.rs	could not start source artwork worker
+crates/reprise-gnome/src/ui/podcasts/source_artwork_queue.rs	source artwork could not be decoded
+crates/reprise-gnome/src/ui/podcasts/source_artwork_queue.rs	source artwork worker recovered from a panicking job
+crates/reprise-gnome/src/ui/podcasts/source_image.rs	could not load source artwork
+crates/reprise-gnome/src/ui/podcasts/source_image_texture.rs	could not cache source artwork thumbnail; decoding the original
+crates/reprise-gnome/src/ui/podcasts/source_image_texture.rs	source artwork request exceeds the largest desktop thumbnail; clamping to Full
+crates/reprise-gnome/src/ui/podcasts/youtube_channel_detail.rs	unknown podcast selection mode
+crates/reprise-gnome/src/ui/preferences/preference_appearance.rs	could not persist color scheme
+crates/reprise-gnome/src/ui/preferences/preference_appearance.rs	could not persist the seek bar colouring
+crates/reprise-gnome/src/ui/preferences/preference_appearance.rs	could not persist the selected accent source
+crates/reprise-gnome/src/ui/preferences/preference_appearance.rs	could not persist the selected theme
+crates/reprise-gnome/src/ui/preferences/preference_background_bar.rs	invariant broken: every job owner is listed in the row order
+crates/reprise-gnome/src/ui/preferences/preference_concerts.rs	could not save Concerts preference
+crates/reprise-gnome/src/ui/preferences/preference_effects.rs	could not apply audio effects
+crates/reprise-gnome/src/ui/preferences/preference_effects.rs	could not restore active audio settings
+crates/reprise-gnome/src/ui/preferences/preference_effects.rs	could not save ReplayGain mode
+crates/reprise-gnome/src/ui/preferences/preference_effects.rs	could not save equalizer state
+crates/reprise-gnome/src/ui/preferences/preference_lastfm.rs	Last.fm authorization failed
+crates/reprise-gnome/src/ui/preferences/preference_lastfm.rs	Last.fm token exchange failed
+crates/reprise-gnome/src/ui/preferences/preference_lastfm.rs	could not access Last.fm credentials in keyring
+crates/reprise-gnome/src/ui/preferences/preference_lastfm.rs	could not clear Last.fm queue on disconnect
+crates/reprise-gnome/src/ui/preferences/preference_lastfm.rs	could not delete Last.fm credentials
+crates/reprise-gnome/src/ui/preferences/preference_lastfm.rs	could not disable Last.fm plugin
+crates/reprise-gnome/src/ui/preferences/preference_lastfm.rs	could not load Last.fm credentials from keyring
+crates/reprise-gnome/src/ui/preferences/preference_lastfm.rs	could not save Last.fm plugin state
+crates/reprise-gnome/src/ui/preferences/preference_lastfm.rs	could not store Last.fm credentials
+crates/reprise-gnome/src/ui/preferences/preference_lastfm.rs	smoke: accepted loopback Last.fm authorization URL
+crates/reprise-gnome/src/ui/preferences/preference_lastfm.rs	stored Last.fm credentials are incomplete
+crates/reprise-gnome/src/ui/preferences/preference_layout.rs	could not save library window control
+crates/reprise-gnome/src/ui/preferences/preference_layout.rs	could not save player bar position
+crates/reprise-gnome/src/ui/preferences/preference_library.rs	could not count library exclusions
+crates/reprise-gnome/src/ui/preferences/preference_library.rs	could not restore library exclusions
+crates/reprise-gnome/src/ui/preferences/preference_library.rs	no subtitle label found in the rescan row's AdwActionRow template; scan detail can widen the preferences dialog
+crates/reprise-gnome/src/ui/preferences/preference_listenbrainz.rs	ListenBrainz validation worker ended unexpectedly
+crates/reprise-gnome/src/ui/preferences/preference_listenbrainz.rs	could not access ListenBrainz token in keyring
+crates/reprise-gnome/src/ui/preferences/preference_listenbrainz.rs	could not clear ListenBrainz queue on disconnect
+crates/reprise-gnome/src/ui/preferences/preference_listenbrainz.rs	could not delete ListenBrainz token from keyring
+crates/reprise-gnome/src/ui/preferences/preference_listenbrainz.rs	could not disable tokenless ListenBrainz module
+crates/reprise-gnome/src/ui/preferences/preference_listenbrainz.rs	could not load ListenBrainz token from keyring
+crates/reprise-gnome/src/ui/preferences/preference_listenbrainz.rs	could not save ListenBrainz plugin state
+crates/reprise-gnome/src/ui/preferences/preference_listenbrainz.rs	could not start ListenBrainz validation worker
+crates/reprise-gnome/src/ui/preferences/preference_listenbrainz.rs	could not store ListenBrainz token in keyring
+crates/reprise-gnome/src/ui/preferences/preference_listenbrainz.rs	could not validate ListenBrainz token
+crates/reprise-gnome/src/ui/preferences/preference_location.rs	could not clear app location
+crates/reprise-gnome/src/ui/preferences/preference_location.rs	could not read online-sources state for Location
+crates/reprise-gnome/src/ui/preferences/preference_location.rs	could not save app location
+crates/reprise-gnome/src/ui/preferences/preference_location.rs	could not save default location radius
+crates/reprise-gnome/src/ui/preferences/preference_new_releases.rs	could not save New Releases artist scope
+crates/reprise-gnome/src/ui/preferences/preference_new_releases.rs	could not save update notification preference
+crates/reprise-gnome/src/ui/preferences/preference_online_module_effects.rs	ignored an unsupported wait-for-network lyrics transition
+crates/reprise-gnome/src/ui/preferences/preference_playback_page.rs	could not save crossfade duration
+crates/reprise-gnome/src/ui/preferences/preference_playback_page.rs	could not save equalizer bands
+crates/reprise-gnome/src/ui/preferences/preference_playback_page.rs	could not save equalizer preset
+crates/reprise-gnome/src/ui/preferences/preference_playback_page.rs	could not save gapless setting
+crates/reprise-gnome/src/ui/preferences/preference_plugins.rs	could not save plugin state
+crates/reprise-gnome/src/ui/preferences/preference_plugins.rs	could not save the online-sources gate
+crates/reprise-gnome/src/ui/preferences/preference_plugins.rs	invariant broken: capability {} has no Plugins child-row builder
+crates/reprise-gnome/src/ui/preferences/preference_plugins.rs	invariant broken: connected capability {} has no Plugins row builder
+crates/reprise-gnome/src/ui/preferences/preference_plugins.rs	invariant broken: unknown Plugins capability: {}
+crates/reprise-gnome/src/ui/preferences/preference_podcasts.rs	could not save podcast preference
+crates/reprise-gnome/src/ui/preferences/preference_radio.rs	could not save radio preference
+crates/reprise-gnome/src/ui/preferences/preference_rhythmbox.rs	Rhythmbox import finished
+crates/reprise-gnome/src/ui/preferences/preference_rhythmbox.rs	Rhythmbox import parse failed
+crates/reprise-gnome/src/ui/preferences/preference_rhythmbox.rs	Rhythmbox import undone
+crates/reprise-gnome/src/ui/preferences/preference_rhythmbox.rs	Rhythmbox prescan complete, dialog ready
+crates/reprise-gnome/src/ui/preferences/preference_rhythmbox.rs	could not undo Rhythmbox import
+crates/reprise-gnome/src/ui/preferences/preference_rhythmbox.rs	merge_stats failed
+crates/reprise-gnome/src/ui/preferences/preference_rhythmbox.rs	playlist parse failed
+crates/reprise-gnome/src/ui/preferences/preference_rhythmbox.rs	prescan failed
+crates/reprise-gnome/src/ui/preferences/preference_rhythmbox.rs	prescan worker panicked
+crates/reprise-gnome/src/ui/preferences/preference_scrobbling.rs	scrobbling entry activated outside the preferences navigation
+crates/reprise-gnome/src/ui/preferences/preference_window_decorations.rs	could not save window decoration mode
+crates/reprise-gnome/src/ui/preferences/preference_youtube.rs	could not save YouTube preference
+crates/reprise-gnome/src/ui/preferences/preferences.rs	column layout editor requested without preferences navigation
+crates/reprise-gnome/src/ui/preferences/preferences.rs	persisted library layout applied
+crates/reprise-gnome/src/ui/preferences/preferences.rs	preferences dialog presented
+crates/reprise-gnome/src/ui/preferences/preferences.rs	preferences smoke applied layout and audio settings
+crates/reprise-gnome/src/ui/preferences/preferences_search.rs	invariant broken: Preferences sidebar rows have content
+crates/reprise-gnome/src/ui/preferences/preferences_search.rs	invariant broken: every Preferences page has one sidebar row
+crates/reprise-gnome/src/ui/preferences/preferences_search.rs	settings search row has no list origin
+crates/reprise-gnome/src/ui/primary_menu.rs	primary menu: button is not in a window; ignoring
+crates/reprise-gnome/src/ui/primary_menu.rs	smoke:activate
+crates/reprise-gnome/src/ui/primary_menu.rs	smoke:quit
+crates/reprise-gnome/src/ui/radio/add_dialog.rs	could not add radio preview
+crates/reprise-gnome/src/ui/radio/add_dialog.rs	could not load radio favorites for preview filtering
+crates/reprise-gnome/src/ui/radio/add_dialog.rs	could not load radio favorites for search filtering
+crates/reprise-gnome/src/ui/radio/add_dialog.rs	could not read the library's top genre for the radio chip
+crates/reprise-gnome/src/ui/radio/add_dialog.rs	could not start radio add task
+crates/reprise-gnome/src/ui/radio/add_dialog.rs	radio add task closed without a result
+crates/reprise-gnome/src/ui/radio/add_dialog.rs	radio add task failed
+crates/reprise-gnome/src/ui/radio/add_dialog_rows.rs	could not add radio search result
+crates/reprise-gnome/src/ui/radio/edit_dialog.rs	could not update radio station
+crates/reprise-gnome/src/ui/radio/radio_model.rs	invariant broken: a RadioObject was published without its row
+crates/reprise-gnome/src/ui/radio/radio_reveal.rs	radio reveal gave up waiting for layout
+crates/reprise-gnome/src/ui/radio/radio_view.rs	could not commit radio removal
+crates/reprise-gnome/src/ui/radio/radio_view.rs	could not load radio stations
+crates/reprise-gnome/src/ui/radio/radio_view.rs	could not remove radio station
+crates/reprise-gnome/src/ui/radio/radio_view.rs	could not start radio station
+crates/reprise-gnome/src/ui/radio/radio_view.rs	could not undo radio removal
+crates/reprise-gnome/src/ui/radio/radio_view.rs	invariant broken: live_stream_action_outcome never returns QueuedOffline — a live stream cannot be deferred
+crates/reprise-gnome/src/ui/radio/radio_view.rs	radio play skipped: no connection, showing retry instead of connecting
+crates/reprise-gnome/src/ui/radio/radio_view.rs	radio playback is unavailable without a playback backend
+crates/reprise-gnome/src/ui/releases/releases_context_menu.rs	album navigation fired for a release without local tracks
+crates/reprise-gnome/src/ui/releases/releases_context_menu.rs	navigation action fired without a single selected release
+crates/reprise-gnome/src/ui/releases/releases_context_menu.rs	releases context menu has no focusable menu item
+crates/reprise-gnome/src/ui/releases/releases_hide.rs	could not change release visibility
+crates/reprise-gnome/src/ui/releases/releases_hide.rs	could not reload Releases after visibility change
+crates/reprise-gnome/src/ui/releases/releases_hide.rs	release visibility changed without an available toast overlay
+crates/reprise-gnome/src/ui/releases/releases_model.rs	invariant broken: a ReleaseObject was published without its entry
+crates/reprise-gnome/src/ui/releases/releases_view.rs	Releases table has no ColumnViewSorter
+crates/reprise-gnome/src/ui/releases/releases_view.rs	Releases worker closed without a result
+crates/reprise-gnome/src/ui/releases/releases_view.rs	could not apply New Releases connectivity
+crates/reprise-gnome/src/ui/releases/releases_view.rs	could not apply Releases filter
+crates/reprise-gnome/src/ui/releases/releases_view.rs	could not load Releases view
+crates/reprise-gnome/src/ui/releases/releases_view.rs	could not persist Releases fetch completion
+crates/reprise-gnome/src/ui/releases/releases_view.rs	could not refresh Releases
+crates/reprise-gnome/src/ui/releases/releases_view.rs	could not reload Releases after fetch
+crates/reprise-gnome/src/ui/releases/releases_view.rs	invariant broken: list state returns before status mutation
+crates/reprise-gnome/src/ui/runtime_performance.rs	runtime performance report failed
+crates/reprise-gnome/src/ui/runtime_performance.rs	runtime performance report written
+crates/reprise-gnome/src/ui/scan/scan_controls.rs	scan progress: discovering
+crates/reprise-gnome/src/ui/scan/scan_controls.rs	scan progress: fetching
+crates/reprise-gnome/src/ui/scan/scan_controls.rs	scan progress: scanning
+crates/reprise-gnome/src/ui/scan/scan_flow.rs	rescan library: a scan is already running; ignoring
+crates/reprise-gnome/src/ui/scan/scan_flow.rs	rescan library: failed to read persisted library root
+crates/reprise-gnome/src/ui/scan/scan_flow.rs	scan folder dialog dismissed
+crates/reprise-gnome/src/ui/scan/scan_flow.rs	scan folder dialog failed
+crates/reprise-gnome/src/ui/scan/scan_flow.rs	selected folder has no local filesystem path; cannot scan
+crates/reprise-gnome/src/ui/scan/scan_flow.rs	{} set: arming headless post-launch rescan
+crates/reprise-gnome/src/ui/scan/scan_watcher.rs	watcher event dropped: UI receiver is gone
+crates/reprise-gnome/src/ui/scan/scan_watcher.rs	watcher started
+crates/reprise-gnome/src/ui/scan/scan_watcher.rs	watcher unavailable; continuing without live updates
+crates/reprise-gnome/src/ui/scan/scan_watcher.rs	watcher: event receiver closed; exiting UI drain loop
+crates/reprise-gnome/src/ui/scan/scan_watcher.rs	watcher: reconciling UI after live library update
+crates/reprise-gnome/src/ui/scan/scan_watcher.rs	watcher: sidebar refresh skipped: sidebar is gone
+crates/reprise-gnome/src/ui/scan/scan_watcher.rs	watcher: track list reload skipped: track list is gone
+crates/reprise-gnome/src/ui/scan/scan_worker.rs	failed to persist library root after scan
+crates/reprise-gnome/src/ui/scan/scan_worker.rs	scan cancelled by user; keeping already-imported tracks
+crates/reprise-gnome/src/ui/scan/scan_worker.rs	scan complete
+crates/reprise-gnome/src/ui/scan/scan_worker.rs	scan failed
+crates/reprise-gnome/src/ui/scan/scan_worker.rs	scan progress dropped: UI receiver is gone
+crates/reprise-gnome/src/ui/scan/scan_worker.rs	scan result dropped: UI receiver is gone
+crates/reprise-gnome/src/ui/scan/scan_worker.rs	scan worker channel closed unexpectedly
+crates/reprise-gnome/src/ui/scan/scan_worker.rs	scan: library folder unavailable
+crates/reprise-gnome/src/ui/scrobbling/lastfm_secret.rs	could not delete migrated legacy keyring item
+crates/reprise-gnome/src/ui/scrobbling/lastfm_secret.rs	could not migrate legacy keyring item
+crates/reprise-gnome/src/ui/scrobbling/listenbrainz_secret.rs	could not delete migrated legacy keyring item
+crates/reprise-gnome/src/ui/scrobbling/listenbrainz_secret.rs	could not migrate legacy keyring item
+crates/reprise-gnome/src/ui/scrobbling/scrobble_runtime.rs	could not count pending scrobbles
+crates/reprise-gnome/src/ui/scrobbling/scrobble_runtime.rs	could not count submitted scrobbles
+crates/reprise-gnome/src/ui/scrobbling/scrobble_runtime.rs	could not drain scrobbling queue
+crates/reprise-gnome/src/ui/scrobbling/scrobble_runtime.rs	could not open scrobbling queue
+crates/reprise-gnome/src/ui/scrobbling/scrobble_runtime.rs	scrobbling queue returned a row without an id
+crates/reprise-gnome/src/ui/scrobbling/scrobble_runtime.rs	scrobbling validation deferred
+crates/reprise-gnome/src/ui/scrobbling/scrobble_runtime.rs	scrobbling worker is unavailable
+crates/reprise-gnome/src/ui/session_restore.rs	invalid session smoke fixture; loading persisted state
+crates/reprise-gnome/src/ui/session_restore.rs	session restore report
+crates/reprise-gnome/src/ui/session_restore.rs	session seed smoke closing through real close handler
+crates/reprise-gnome/src/ui/session_restore.rs	session smoke fixture loaded
+crates/reprise-gnome/src/ui/session_restore.rs	{}: activating startup play button
+crates/reprise-gnome/src/ui/session_save.rs	application session saved
+crates/reprise-gnome/src/ui/session_save.rs	could not read library root; clean exit will not suppress a startup scan
+crates/reprise-gnome/src/ui/session_save.rs	could not save application session
+crates/reprise-gnome/src/ui/shortcuts.rs	focus-search: the visible section has nothing to filter
+crates/reprise-gnome/src/ui/shortcuts.rs	space: could not activate play/pause action
+crates/reprise-gnome/src/ui/shortcuts.rs	space: player unavailable; ignoring play/pause toggle
+crates/reprise-gnome/src/ui/show_in_files.rs	FileManager1.ShowItems failed; opening the folder instead
+crates/reprise-gnome/src/ui/show_in_files.rs	could not open parent folder
+crates/reprise-gnome/src/ui/sidebar/sidebar.rs	sidebar refresh after up next changed
+crates/reprise-gnome/src/ui/sidebar/sidebar_dnd.rs	failed to add tracks to playlist via drag and drop
+crates/reprise-gnome/src/ui/sidebar/sidebar_dnd.rs	items appended to queue via drag and drop
+crates/reprise-gnome/src/ui/sidebar/sidebar_dnd.rs	queue drop callback reported no-op; skipping toast
+crates/reprise-gnome/src/ui/sidebar/sidebar_dnd.rs	queue drop fired but no on_queue_drop callback is wired; ignoring
+crates/reprise-gnome/src/ui/sidebar/sidebar_dnd.rs	sidebar playlist drop skipped: every track is already present
+crates/reprise-gnome/src/ui/sidebar/sidebar_dnd.rs	sidebar playlist drop: tracks added to playlist via drag and drop
+crates/reprise-gnome/src/ui/sidebar/sidebar_export.rs	chosen export path has no local filesystem path; cannot export
+crates/reprise-gnome/src/ui/sidebar/sidebar_export.rs	export playlist dialog dismissed
+crates/reprise-gnome/src/ui/sidebar/sidebar_export.rs	export playlist dialog failed
+crates/reprise-gnome/src/ui/sidebar/sidebar_export.rs	playlist delete was a stale no-op
+crates/reprise-gnome/src/ui/sidebar/sidebar_export.rs	playlist deleted
+crates/reprise-gnome/src/ui/sidebar/sidebar_export.rs	playlist deletion failed
+crates/reprise-gnome/src/ui/sidebar/sidebar_export.rs	playlist export failed
+crates/reprise-gnome/src/ui/sidebar/sidebar_export.rs	playlist exported
+crates/reprise-gnome/src/ui/sidebar/sidebar_export.rs	sidebar: window is gone; cannot confirm playlist deletion
+crates/reprise-gnome/src/ui/sidebar/sidebar_export.rs	sidebar: window is gone; cannot show export-playlist dialog
+crates/reprise-gnome/src/ui/sidebar/sidebar_issue_cleanup.rs	all import errors dismissed
+crates/reprise-gnome/src/ui/sidebar/sidebar_issue_cleanup.rs	all missing library entries tombstoned
+crates/reprise-gnome/src/ui/sidebar/sidebar_issue_cleanup.rs	failed to dismiss all import errors
+crates/reprise-gnome/src/ui/sidebar/sidebar_issue_cleanup.rs	failed to load missing ids for bulk removal
+crates/reprise-gnome/src/ui/sidebar/sidebar_issue_cleanup.rs	missing tombstone route is not wired
+crates/reprise-gnome/src/ui/sidebar/sidebar_issue_cleanup.rs	sidebar window is gone; cannot confirm missing-entry cleanup
+crates/reprise-gnome/src/ui/sidebar/sidebar_module_menu.rs	could not disable sidebar module
+crates/reprise-gnome/src/ui/sidebar/sidebar_module_menu.rs	could not restore sidebar module
+crates/reprise-gnome/src/ui/sidebar/sidebar_place.rs	device sync page is visible without an open device id
+crates/reprise-gnome/src/ui/sidebar/sidebar_place.rs	scope view has no sidebar row; leaving the selection empty
+crates/reprise-gnome/src/ui/sidebar/sidebar_place.rs	selected source vanished; falling back to Library
+crates/reprise-gnome/src/ui/sidebar/sidebar_playlist_creation.rs	failed to create playlist
+crates/reprise-gnome/src/ui/sidebar/sidebar_playlist_creation.rs	playlist created
+crates/reprise-gnome/src/ui/sidebar/sidebar_playlist_quick_add.rs	failed to commit inline playlist name
+crates/reprise-gnome/src/ui/sidebar/sidebar_playlist_quick_add.rs	failed to discard fresh playlist
+crates/reprise-gnome/src/ui/sidebar/sidebar_playlist_quick_add.rs	fresh playlist changed before Escape discard
+crates/reprise-gnome/src/ui/sidebar/sidebar_rebuild.rs	Releases sidebar count worker closed without a result
+crates/reprise-gnome/src/ui/sidebar/sidebar_rebuild.rs	failed to activate sidebar issue action
+crates/reprise-gnome/src/ui/sidebar/sidebar_rebuild.rs	failed to count Concerts rows for sidebar badge
+crates/reprise-gnome/src/ui/sidebar/sidebar_rebuild.rs	failed to count Releases rows for sidebar badge
+crates/reprise-gnome/src/ui/sidebar/sidebar_rebuild.rs	failed to count YouTube subscriptions
+crates/reprise-gnome/src/ui/sidebar/sidebar_rebuild.rs	failed to count active import errors for sidebar visibility
+crates/reprise-gnome/src/ui/sidebar/sidebar_rebuild.rs	failed to count dismissed import errors for sidebar reachability
+crates/reprise-gnome/src/ui/sidebar/sidebar_rebuild.rs	failed to count favorite radio stations
+crates/reprise-gnome/src/ui/sidebar/sidebar_rebuild.rs	failed to count missing files for sidebar visibility
+crates/reprise-gnome/src/ui/sidebar/sidebar_rebuild.rs	failed to count new import errors for sidebar badge
+crates/reprise-gnome/src/ui/sidebar/sidebar_rebuild.rs	failed to count new missing files for sidebar badge
+crates/reprise-gnome/src/ui/sidebar/sidebar_rebuild.rs	failed to count pending Library Doctor findings
+crates/reprise-gnome/src/ui/sidebar/sidebar_rebuild.rs	failed to count podcast subscriptions
+crates/reprise-gnome/src/ui/sidebar/sidebar_rebuild.rs	failed to count smart playlist tracks for sidebar badge
+crates/reprise-gnome/src/ui/sidebar/sidebar_rebuild.rs	failed to list playlists for sidebar
+crates/reprise-gnome/src/ui/sidebar/sidebar_rebuild.rs	failed to list smart playlists for sidebar
+crates/reprise-gnome/src/ui/sidebar/sidebar_rebuild.rs	failed to read Import-errors last-viewed timestamp
+crates/reprise-gnome/src/ui/sidebar/sidebar_rebuild.rs	failed to read Missing-files last-viewed timestamp
+crates/reprise-gnome/src/ui/sidebar/sidebar_rebuild.rs	failed to start Releases sidebar count worker
+crates/reprise-gnome/src/ui/sidebar/sidebar_rebuild.rs	selected source vanished; falling back to Library
+crates/reprise-gnome/src/ui/sidebar/sidebar_rebuild.rs	sidebar built: {} playlists, missing={}, active_import_errors={}
+crates/reprise-gnome/src/ui/sidebar/sidebar_rebuild.rs	sidebar refresh #{} ({})
+crates/reprise-gnome/src/ui/sidebar/sidebar_row_wiring.rs	sidebar: row selected
+crates/reprise-gnome/src/ui/sidebar/sidebar_row_wiring.rs	sidebar: selected row not found in row map; ignoring
+crates/reprise-gnome/src/ui/sidebar/sidebar_session.rs	toast overlay is gone; degrading to log-only
+crates/reprise-gnome/src/ui/spectrogram/spectrogram_batch.rs	could not start the library analysis worker
+crates/reprise-gnome/src/ui/spectrogram/spectrogram_batch.rs	library analysis finished
+crates/reprise-gnome/src/ui/startup_quiet.rs	invariant broken: deferred startup value is already being initialized
+crates/reprise-gnome/src/ui/startup_report.rs	startup measurement complete
+crates/reprise-gnome/src/ui/startup_report.rs	startup performance report failed
+crates/reprise-gnome/src/ui/startup_report.rs	startup performance report written
+crates/reprise-gnome/src/ui/stats/stats_band_card.rs	invariant broken: band name button owns a label
+crates/reprise-gnome/src/ui/stats/stats_hero.rs	invariant broken: a new comparison period always has copy
+crates/reprise-gnome/src/ui/stats/stats_songs_row_actions.rs	stale stats row; not playing
+crates/reprise-gnome/src/ui/stats/stats_view.rs	failed to compute My Stats snapshot
+crates/reprise-gnome/src/ui/stats/stats_view.rs	failed to read available My Stats periods
+crates/reprise-gnome/src/ui/stats/stats_view.rs	failed to resolve stats group tracks
+crates/reprise-gnome/src/ui/strings_stats.rs	invariant broken: new comparisons use period-specific copy
+crates/reprise-gnome/src/ui/table_columns/editor.rs	column layout editor opened in preferences
+crates/reprise-gnome/src/ui/table_columns/editor.rs	column layout editor presented
+crates/reprise-gnome/src/ui/table_columns/editor.rs	column layout editor smoke applied
+crates/reprise-gnome/src/ui/table_columns/editor.rs	column layout editor smoke closed
+crates/reprise-gnome/src/ui/table_columns/editor.rs	column layout editor smoke skipped; at least two editable columns required
+crates/reprise-gnome/src/ui/table_columns/editor.rs	invariant broken: a non-empty descriptor list has a first choice
+crates/reprise-gnome/src/ui/table_columns/header_popover.rs	column header popover opened
+crates/reprise-gnome/src/ui/table_columns/registry.rs	column header visibility changed
+crates/reprise-gnome/src/ui/table_columns/registry.rs	could not load stored column layout
+crates/reprise-gnome/src/ui/table_columns/registry.rs	could not persist column layout
+crates/reprise-gnome/src/ui/table_columns/registry.rs	invariant broken: column view item {} is not a ColumnViewColumn
+crates/reprise-gnome/src/ui/table_columns/registry.rs	invariant broken: invalid {} column binding: {}
+crates/reprise-gnome/src/ui/table_columns/registry.rs	unknown column id
+crates/reprise-gnome/src/ui/table_columns/width_persistence.rs	column order persisted after header drag
+crates/reprise-gnome/src/ui/table_columns/width_persistence.rs	could not load stored column widths
+crates/reprise-gnome/src/ui/table_columns/width_persistence.rs	could not persist column widths
+crates/reprise-gnome/src/ui/tag_edit/autocomplete_entry.rs	autocomplete query failed
+crates/reprise-gnome/src/ui/tag_edit/tag_edit_flow.rs	could not start the tag-save worker
+crates/reprise-gnome/src/ui/tag_edit/tag_edit_flow.rs	sidebar is gone; skipping refresh after tag editing
+crates/reprise-gnome/src/ui/tag_edit/tag_edit_flow.rs	tag editor requested without a fully resolvable selection
+crates/reprise-gnome/src/ui/tag_edit/tag_edit_flow.rs	tag editor retry: none of the failed tracks could be re-read
+crates/reprise-gnome/src/ui/tag_edit/tag_edit_flow.rs	tag editor view snapshot
+crates/reprise-gnome/src/ui/tag_edit/tag_edit_flow.rs	tag editor: browse snapshot too large to query
+crates/reprise-gnome/src/ui/tag_edit/tag_edit_flow.rs	tag editor: failed to load the browse snapshot's tag data
+crates/reprise-gnome/src/ui/tag_edit/tag_edit_flow.rs	tag editor: import hint has no live track row
+crates/reprise-gnome/src/ui/tag_edit/tag_edit_flow.rs	tag editor: window is gone
+crates/reprise-gnome/src/ui/tag_edit/tag_edit_flow.rs	tag-edit save could not acquire write slot
+crates/reprise-gnome/src/ui/tag_edit/tag_edit_flow.rs	tag-edit save worker channel closed unexpectedly
+crates/reprise-gnome/src/ui/tag_edit/tag_edit_flow.rs	tag-edit save worker could not open the database
+crates/reprise-gnome/src/ui/tag_edit/tag_edit_flow.rs	tag-edit save: database has no path; aborting save
+crates/reprise-gnome/src/ui/tag_edit/tag_edit_flow.rs	tag-edit smoke: database has no path
+crates/reprise-gnome/src/ui/tag_edit/tag_edit_flow.rs	tag-edit smoke: list is empty
+crates/reprise-gnome/src/ui/tag_edit/tag_edit_flow.rs	tag-edit smoke: write did not start
+crates/reprise-gnome/src/ui/tag_edit/tag_edit_flow.rs	toast overlay is gone; degrading to log-only for tag-edit failures
+crates/reprise-gnome/src/ui/tag_edit/tag_edit_flow.rs	{} ignored; expected title:<value> or open:<positive count>
+crates/reprise-gnome/src/ui/tag_edit/tag_editor.rs	tag editor called with empty track list
+crates/reprise-gnome/src/ui/tag_edit/tag_editor.rs	tag editor presented
+crates/reprise-gnome/src/ui/tag_edit/tag_editor_save.rs	tag editor rejected an invalid year or track number
+crates/reprise-gnome/src/ui/tag_edit/tag_editor_save.rs	tag editor: entry-row layout does not match TAG-8's expected field count; Enter-chain/Esc field-revert wiring skipped for this dialog
+crates/reprise-gnome/src/ui/tag_edit/tag_save_refresh.rs	tag-edit batch completed
+crates/reprise-gnome/src/ui/termination.rs	could not listen for termination signals; the session is saved on window close only
+crates/reprise-gnome/src/ui/termination.rs	termination requested; saving the session
+crates/reprise-gnome/src/ui/track_list/column_layout.rs	could not load stored column layout
+crates/reprise-gnome/src/ui/track_list/column_layout.rs	could not persist canonical column layout
+crates/reprise-gnome/src/ui/track_list/current_track_selection.rs	current track is not visible in the active table query
+crates/reprise-gnome/src/ui/track_list/current_track_selection.rs	current-track marker update skipped: track list is gone
+crates/reprise-gnome/src/ui/track_list/current_track_selection.rs	failed to query current view ids for now-playing marker
+crates/reprise-gnome/src/ui/track_list/current_track_selection.rs	playback-state marker skipped: track list is gone
+crates/reprise-gnome/src/ui/track_list/current_track_selection.rs	table playing marker updated without selection follow
+crates/reprise-gnome/src/ui/track_list/diagnostic_trail.rs	track-list reload measured
+crates/reprise-gnome/src/ui/track_list/queue_sections.rs	clear play-next clicked without a player
+crates/reprise-gnome/src/ui/track_list/rating.rs	rating widget: stars borrow unavailable; skipping redraw
+crates/reprise-gnome/src/ui/track_list/rating_column.rs	failed to persist rating change
+crates/reprise-gnome/src/ui/track_list/rating_column.rs	rating change rejected for non-track queue row
+crates/reprise-gnome/src/ui/track_list/rating_column.rs	rating changed
+crates/reprise-gnome/src/ui/track_list/rating_column.rs	rating column bind: item is not typed queue metadata
+crates/reprise-gnome/src/ui/track_list/rating_column.rs	rating column bind: list item child is not a RatingWidget
+crates/reprise-gnome/src/ui/track_list/rating_column.rs	rating column bind: object is not a ListItem
+crates/reprise-gnome/src/ui/track_list/rating_column.rs	rating column setup: object is not a ListItem
+crates/reprise-gnome/src/ui/track_list/reload_anchor_scroll.rs	restore split
+crates/reprise-gnome/src/ui/track_list/row_loss_watchdog.rs	failed to append row-loss self-heal outcome
+crates/reprise-gnome/src/ui/track_list/row_loss_watchdog.rs	failed to apply row-loss diagnostic retention
+crates/reprise-gnome/src/ui/track_list/row_loss_watchdog.rs	failed to write row-loss diagnostic dump
+crates/reprise-gnome/src/ui/track_list/row_loss_watchdog.rs	track-list row loss confirmed; writing diagnostic dump
+crates/reprise-gnome/src/ui/track_list/row_loss_watchdog.rs	track-list row-loss self-heal outcome
+crates/reprise-gnome/src/ui/track_list/row_loss_watchdog.rs	track-list rows recovered
+crates/reprise-gnome/src/ui/track_list/track_actions.rs	context menu: no track at selected position; skipping
+crates/reprise-gnome/src/ui/track_list/track_actions.rs	remove-from-playlist: could not resolve the true playlist position for a selected row; aborting the whole remove rather than guessing
+crates/reprise-gnome/src/ui/track_list/track_list.rs	metadata-link catalog lookup failed
+crates/reprise-gnome/src/ui/track_list/track_list_activation.rs	activate track
+crates/reprise-gnome/src/ui/track_list/track_list_activation.rs	failed to build queue ids for activation; falling back to a single-track queue
+crates/reprise-gnome/src/ui/track_list/track_list_activation.rs	missing-row navigation callback is not wired
+crates/reprise-gnome/src/ui/track_list/track_list_activation.rs	queue activate: no item at position
+crates/reprise-gnome/src/ui/track_list/track_list_activation.rs	queue activation callback is not wired
+crates/reprise-gnome/src/ui/track_list/track_list_activation.rs	queue activation outside every section; ignoring
+crates/reprise-gnome/src/ui/track_list/track_list_activation.rs	queue capped at {} tracks
+crates/reprise-gnome/src/ui/track_list/track_list_activation.rs	toast overlay is gone; degrading to log-only
+crates/reprise-gnome/src/ui/track_list/track_list_activation.rs	track list activate: no item at position
+crates/reprise-gnome/src/ui/track_list/track_list_builder.rs	SCROLL
+crates/reprise-gnome/src/ui/track_list/track_list_builder.rs	SCROLL JUMP-TO-TOP\n{}
+crates/reprise-gnome/src/ui/track_list/track_list_builder.rs	import errors panel: mutated but no on_import_errors_mutated callback is wired
+crates/reprise-gnome/src/ui/track_list/track_list_builder.rs	import errors panel: mutated callback fired after track list was dropped
+crates/reprise-gnome/src/ui/track_list/track_list_columns.rs	cover column bind: item is not typed queue metadata
+crates/reprise-gnome/src/ui/track_list/track_list_columns.rs	cover column bind: list item child is not a TrackCover
+crates/reprise-gnome/src/ui/track_list/track_list_columns.rs	cover column bind: object is not a ListItem
+crates/reprise-gnome/src/ui/track_list/track_list_columns.rs	cover column setup: object is not a ListItem
+crates/reprise-gnome/src/ui/track_list/track_list_columns.rs	track list column bind: item is not typed queue metadata
+crates/reprise-gnome/src/ui/track_list/track_list_columns.rs	track list column bind: list item child is not a Label
+crates/reprise-gnome/src/ui/track_list/track_list_columns.rs	track list column bind: object is not a ListItem
+crates/reprise-gnome/src/ui/track_list/track_list_columns.rs	track list column setup: object is not a ListItem
+crates/reprise-gnome/src/ui/track_list/track_list_context_keys.rs	track context menu has no focusable menu item
+crates/reprise-gnome/src/ui/track_list/track_list_context_keys.rs	track context menu opened from keyboard
+crates/reprise-gnome/src/ui/track_list/track_list_context_menu.rs	context menu: add-to-playlist fired with no playlist id
+crates/reprise-gnome/src/ui/track_list/track_list_context_menu.rs	context menu: add-to-playlist requested with nothing selected; ignoring
+crates/reprise-gnome/src/ui/track_list/track_list_context_menu.rs	context menu: could not resolve true playlist positions for the selected row(s); aborting remove entirely rather than guessing
+crates/reprise-gnome/src/ui/track_list/track_list_context_menu.rs	context menu: failed to add tracks to playlist
+crates/reprise-gnome/src/ui/track_list/track_list_context_menu.rs	context menu: failed to create playlist
+crates/reprise-gnome/src/ui/track_list/track_list_context_menu.rs	context menu: failed to list playlists
+crates/reprise-gnome/src/ui/track_list/track_list_context_menu.rs	context menu: failed to remove tracks from library
+crates/reprise-gnome/src/ui/track_list/track_list_context_menu.rs	context menu: failed to remove tracks from playlist
+crates/reprise-gnome/src/ui/track_list/track_list_context_menu.rs	context menu: gesture has no widget; ignoring click
+crates/reprise-gnome/src/ui/track_list/track_list_context_menu.rs	context menu: library mutated but no on_library_mutated callback is wired
+crates/reprise-gnome/src/ui/track_list/track_list_context_menu.rs	context menu: list item has no valid position; ignoring click
+crates/reprise-gnome/src/ui/track_list/track_list_context_menu.rs	context menu: new-playlist requested with nothing selected; ignoring
+crates/reprise-gnome/src/ui/track_list/track_list_context_menu.rs	context menu: play action fired but no track at the first selected position
+crates/reprise-gnome/src/ui/track_list/track_list_context_menu.rs	context menu: play action starting playback
+crates/reprise-gnome/src/ui/track_list/track_list_context_menu.rs	context menu: play requested with nothing selected; ignoring
+crates/reprise-gnome/src/ui/track_list/track_list_context_menu.rs	context menu: playlist created and tracks added
+crates/reprise-gnome/src/ui/track_list/track_list_context_menu.rs	context menu: playlist mutated but no on_playlist_mutated callback is wired
+crates/reprise-gnome/src/ui/track_list/track_list_context_menu.rs	context menu: remove-from-library fired outside the Missing source; ignoring
+crates/reprise-gnome/src/ui/track_list/track_list_context_menu.rs	context menu: remove-from-library requested with nothing selected; ignoring
+crates/reprise-gnome/src/ui/track_list/track_list_context_menu.rs	context menu: remove-from-playlist fired outside a playlist source; ignoring
+crates/reprise-gnome/src/ui/track_list/track_list_context_menu.rs	context menu: remove-from-playlist requested with nothing selected; ignoring
+crates/reprise-gnome/src/ui/track_list/track_list_context_menu.rs	context menu: tracks added to playlist
+crates/reprise-gnome/src/ui/track_list/track_list_context_menu.rs	context menu: tracks removed from library
+crates/reprise-gnome/src/ui/track_list/track_list_context_menu.rs	context menu: tracks removed from playlist
+crates/reprise-gnome/src/ui/track_list/track_list_context_menu.rs	context menu: window is gone; cannot show new-playlist dialog
+crates/reprise-gnome/src/ui/track_list/track_list_dnd.rs	failed to persist playlist drag-reorder
+crates/reprise-gnome/src/ui/track_list/track_list_dnd.rs	playlist reorder drop ignored: view is sorted/filtered away from playlist_order
+crates/reprise-gnome/src/ui/track_list/track_list_dnd.rs	playlist reorder drop: could not resolve the target row's true position; aborting
+crates/reprise-gnome/src/ui/track_list/track_list_dnd.rs	playlist reorder drop: resolved position out of u32 range; aborting
+crates/reprise-gnome/src/ui/track_list/track_list_dnd.rs	playlist reordered via drag and drop
+crates/reprise-gnome/src/ui/track_list/track_list_dnd.rs	queue drag outside QUE-3 rules; rejected
+crates/reprise-gnome/src/ui/track_list/track_list_dnd.rs	queue reorder drop callback reported no-op; not reloading
+crates/reprise-gnome/src/ui/track_list/track_list_dnd.rs	queue reorder drop fired but no on_queue_reorder callback is wired; ignoring
+crates/reprise-gnome/src/ui/track_list/track_list_dnd.rs	queue reordered via drag and drop
+crates/reprise-gnome/src/ui/track_list/track_list_dnd.rs	reorder drop target entered
+crates/reprise-gnome/src/ui/track_list/track_list_dnd.rs	track drag began
+crates/reprise-gnome/src/ui/track_list/track_list_dnd.rs	track drag prepared
+crates/reprise-gnome/src/ui/track_list/track_list_dnd.rs	track list drop: could not parse drag payload; ignoring
+crates/reprise-gnome/src/ui/track_list/track_list_dnd_smoke.rs	failed to list playlists for smoke-dnd name lookup
+crates/reprise-gnome/src/ui/track_list/track_list_dnd_smoke.rs	{} set: arming programmatic drag-and-drop simulation
+crates/reprise-gnome/src/ui/track_list/track_list_dnd_smoke.rs	{}: malformed reorderplaylist range; ignoring
+crates/reprise-gnome/src/ui/track_list/track_list_dnd_smoke.rs	{}: malformed reorderqueue range; ignoring
+crates/reprise-gnome/src/ui/track_list/track_list_dnd_smoke.rs	{}: no playlist found with this name
+crates/reprise-gnome/src/ui/track_list/track_list_dnd_smoke.rs	{}: no sidebar playlist-drop handler wired (window.rs not fully built yet?); ignoring
+crates/reprise-gnome/src/ui/track_list/track_list_dnd_smoke.rs	{}: no sidebar queue-drop handler wired (window.rs not fully built yet?); ignoring
+crates/reprise-gnome/src/ui/track_list/track_list_dnd_smoke.rs	{}: no track at the 'from' view position
+crates/reprise-gnome/src/ui/track_list/track_list_dnd_smoke.rs	{}: reorderplaylist requested outside a playlist source
+crates/reprise-gnome/src/ui/track_list/track_list_dnd_smoke.rs	{}: reorderplaylist simulated drop result
+crates/reprise-gnome/src/ui/track_list/track_list_dnd_smoke.rs	{}: reorderqueue requested outside the queue source
+crates/reprise-gnome/src/ui/track_list/track_list_dnd_smoke.rs	{}: reorderqueue simulated drop result
+crates/reprise-gnome/src/ui/track_list/track_list_dnd_smoke.rs	{}: simulated drop dispatched through the sidebar drop handler
+crates/reprise-gnome/src/ui/track_list/track_list_dnd_smoke.rs	{}: simulated queue drop dispatched through the sidebar drop handler
+crates/reprise-gnome/src/ui/track_list/track_list_dnd_smoke.rs	{}: track list is empty; nothing to add
+crates/reprise-gnome/src/ui/track_list/track_list_dnd_smoke.rs	{}: unrecognized value; ignoring
+crates/reprise-gnome/src/ui/track_list/track_list_empty_state.rs	track list empty-state page selected
+crates/reprise-gnome/src/ui/track_list/track_list_keyboard_reorder.rs	episode context row cannot be reordered; ignoring
+crates/reprise-gnome/src/ui/track_list/track_list_menu_smoke.rs	failed to list playlists for smoke-menu-action name lookup
+crates/reprise-gnome/src/ui/track_list/track_list_menu_smoke.rs	{} set: arming programmatic menu action
+crates/reprise-gnome/src/ui/track_list/track_list_menu_smoke.rs	{}: no playlist found with this name
+crates/reprise-gnome/src/ui/track_list/track_list_menu_smoke.rs	{}: track list is empty; nothing to select
+crates/reprise-gnome/src/ui/track_list/track_list_menu_smoke.rs	{}: unrecognized value; ignoring
+crates/reprise-gnome/src/ui/track_list/track_list_model.rs	AI-filtered view queue capped at {} tracks
+crates/reprise-gnome/src/ui/track_list/track_list_model.rs	TrackListModel::set_query: connection not set
+crates/reprise-gnome/src/ui/track_list/track_list_model.rs	TrackListModel::track_at: connection not set
+crates/reprise-gnome/src/ui/track_list/track_list_model.rs	failed to count tracks for query
+crates/reprise-gnome/src/ui/track_list/track_list_model.rs	failed to load track window
+crates/reprise-gnome/src/ui/track_list/track_list_model.rs	model query set
+crates/reprise-gnome/src/ui/track_list/track_list_queue_menu.rs	add-to-queue fired without a callback
+crates/reprise-gnome/src/ui/track_list/track_list_queue_menu.rs	play-next fired without a callback
+crates/reprise-gnome/src/ui/track_list/track_list_queue_menu.rs	queue play action fired without an activation callback
+crates/reprise-gnome/src/ui/track_list/track_list_queue_menu.rs	queue play action outside every section; ignoring
+crates/reprise-gnome/src/ui/track_list/track_list_queue_menu.rs	remove-from-queue fired outside the Queue source
+crates/reprise-gnome/src/ui/track_list/track_list_reload.rs	query matched {} tracks
+crates/reprise-gnome/src/ui/track_list/track_list_reload.rs	reload split
+crates/reprise-gnome/src/ui/track_list/track_list_reload.rs	source switch left the viewport alone: loaded track is not in this view
+crates/reprise-gnome/src/ui/track_list/track_list_reload.rs	startup selection skipped: loaded track is not in the restored view
+crates/reprise-gnome/src/ui/track_list/track_list_reload.rs	startup selection skipped: the restored place carries its own selection
+crates/reprise-gnome/src/ui/track_list/track_list_rescan.rs	library rescan requested before its callback was wired
+crates/reprise-gnome/src/ui/track_list/track_list_selection_input.rs	selection anchor range applied
+crates/reprise-gnome/src/ui/track_list/track_list_selection_input.rs	selection anchor: list item has no valid position; ignoring click
+crates/reprise-gnome/src/ui/track_list/track_list_selection_input.rs	selection anchor: no track at the clicked row
+crates/reprise-gnome/src/ui/track_list/track_list_smoke.rs	failed to list playlists for smoke-source name lookup
+crates/reprise-gnome/src/ui/track_list/track_list_smoke.rs	multiple playlists share this name; picking the first by position
+crates/reprise-gnome/src/ui/track_list/track_list_smoke.rs	reload oracle could not find its application window
+crates/reprise-gnome/src/ui/track_list/track_list_smoke.rs	view source set
+crates/reprise-gnome/src/ui/track_list/track_list_smoke.rs	{} detail source delegated to the window source router
+crates/reprise-gnome/src/ui/track_list/track_list_smoke.rs	{} set to an unrecognized column id; ignoring
+crates/reprise-gnome/src/ui/track_list/track_list_smoke.rs	{} set to an unrecognized value; ignoring
+crates/reprise-gnome/src/ui/track_list/track_list_smoke.rs	{} set: applying programmatic column sort
+crates/reprise-gnome/src/ui/track_list/track_list_smoke.rs	{} set: applying programmatic view-source switch
+crates/reprise-gnome/src/ui/track_list/track_list_smoke.rs	{} set: arming first-row activation
+crates/reprise-gnome/src/ui/track_list/track_list_smoke.rs	{} set: arming programmatic filter
+crates/reprise-gnome/src/ui/track_list/track_list_smoke.rs	{}: activating first row
+crates/reprise-gnome/src/ui/track_list/track_list_smoke.rs	{}: track list is empty; nothing to activate
+crates/reprise-gnome/src/ui/track_list/track_list_sort.rs	smart-list sort lookup failed
+crates/reprise-gnome/src/ui/track_list/track_list_sort.rs	track list: ColumnView has no aggregate sorter; header clicks won't sort
+crates/reprise-gnome/src/ui/track_list/track_list_sort.rs	track list: ColumnView sorter is not a ColumnViewSorter; header clicks won't sort
+crates/reprise-gnome/src/ui/track_list/track_list_sort.rs	track list: sorted column has no id; ignoring click
+crates/reprise-gnome/src/ui/track_list/track_list_title_column.rs	title column bind: item is not typed queue metadata
+crates/reprise-gnome/src/ui/track_list/track_list_title_column.rs	title column bind: missing tooltip state
+crates/reprise-gnome/src/ui/track_list/track_list_title_column.rs	title column bind: object is not a ListItem
+crates/reprise-gnome/src/ui/track_list/track_list_title_column.rs	title column bind: title cell has no equaliser child
+crates/reprise-gnome/src/ui/track_list/track_list_title_column.rs	title column bind: title cell has no label child
+crates/reprise-gnome/src/ui/track_list/track_list_title_column.rs	title column bind: title cell is not a Box
+crates/reprise-gnome/src/ui/track_list/track_list_title_column.rs	title column setup: object is not a ListItem
+crates/reprise-gnome/src/ui/track_list/track_list_toast.rs	toast overlay is gone; degrading to log-only
+crates/reprise-gnome/src/ui/track_list/track_playback_selection.rs	context menu: no track at selected position; skipping
+crates/reprise-gnome/src/ui/track_list/track_reveal.rs	automatic track centering suppressed by scroll activity
+crates/reprise-gnome/src/ui/track_list/track_reveal.rs	current track centered
+crates/reprise-gnome/src/ui/track_list/track_reveal.rs	loaded track left the visible query before its reveal ran
+crates/reprise-gnome/src/ui/track_list/track_reveal.rs	superseded track reveal skipped
+crates/reprise-gnome/src/ui/updates/feed_snapshot.rs	could not query Concerts delta candidates
+crates/reprise-gnome/src/ui/updates/feed_snapshot.rs	could not query New Releases delta candidates
+crates/reprise-gnome/src/ui/updates/popover.rs	could not count unseen Concerts updates
+crates/reprise-gnome/src/ui/updates/popover.rs	could not dismiss Concerts update
+crates/reprise-gnome/src/ui/updates/popover.rs	could not hide New Release
+crates/reprise-gnome/src/ui/updates/popover.rs	could not mark Concerts updates seen
+crates/reprise-gnome/src/ui/updates/popover.rs	could not mark New Releases seen
+crates/reprise-gnome/src/ui/updates/popover.rs	could not read Concerts scope while opening Updates
+crates/reprise-gnome/src/ui/updates/popover.rs	could not read New Releases fetch state
+crates/reprise-gnome/src/ui/updates/popover_fetch.rs	Concerts worker closed without an Updates result
+crates/reprise-gnome/src/ui/updates/popover_fetch.rs	New Releases worker closed without a result
+crates/reprise-gnome/src/ui/updates/popover_fetch.rs	could not refresh Concerts from Updates
+crates/reprise-gnome/src/ui/updates/popover_fetch.rs	could not refresh New Releases
+crates/reprise-gnome/src/ui/updates/popover_fetch.rs	could not save New Releases fetch state
+crates/reprise-gnome/src/ui/view_session.rs	failed to record restored issue view as viewed
+crates/reprise-gnome/src/ui/view_session.rs	invalid view-session smoke fixture
+crates/reprise-gnome/src/ui/view_session.rs	view session smoke restored
+crates/reprise-gnome/src/ui/window/active_content_focus.rs	active content did not take focus
+crates/reprise-gnome/src/ui/window/active_content_focus.rs	startup content did not take focus
+crates/reprise-gnome/src/ui/window/content_stack.rs	content stack target is not installed
+crates/reprise-gnome/src/ui/window/content_stack.rs	invariant broken: deferred page factory missing before materialization
+crates/reprise-gnome/src/ui/window/content_stack.rs	invariant broken: deferred page materialized more than once
+crates/reprise-gnome/src/ui/window/focus_evidence.rs	could not write focus evidence
+crates/reprise-gnome/src/ui/window/library_shell.rs	failed to record issue view as viewed
+crates/reprise-gnome/src/ui/window/library_shell.rs	history nav: routing to place
+crates/reprise-gnome/src/ui/window/library_shell.rs	smoke: opening detail view through sidebar source routing
+crates/reprise-gnome/src/ui/window/player_backends.rs	player event dropped: UI receiver is gone
+crates/reprise-gnome/src/ui/window/podcast_refresh_scheduler.rs	could not inspect podcast refresh schedule
+crates/reprise-gnome/src/ui/window/podcast_refresh_scheduler.rs	could not read podcast refresh interval
+crates/reprise-gnome/src/ui/window/search_popover.rs	search close: could not move focus to the active content view
+crates/reprise-gnome/src/ui/window/section_search.rs	no search sink registered for this section
+crates/reprise-gnome/src/ui/window/source_connectivity.rs	test connectivity control starts online until it contains online or offline
+crates/reprise-gnome/src/ui/window/source_views.rs	external session changed
+crates/reprise-gnome/src/ui/window/source_views.rs	podcast playback unavailable: player backend is not running
+crates/reprise-gnome/src/ui/window/source_views_smoke.rs	smoke episode activation failed
+crates/reprise-gnome/src/ui/window/source_views_smoke.rs	{} accepts only 'next' and 'previous'; ignoring
+crates/reprise-gnome/src/ui/window/source_views_smoke.rs	{} firing transport step
+crates/reprise-gnome/src/ui/window/source_views_smoke.rs	{} set to a non-numeric episode id; ignoring
+crates/reprise-gnome/src/ui/window/source_views_smoke.rs	{} set: activating episode
+crates/reprise-gnome/src/ui/window/spectrogram_backend.rs	the library analysis worker ended without a summary
+crates/reprise-gnome/src/ui/window/window.rs	player unavailable; ignoring activation
+crates/reprise-gnome/src/ui/window/window.rs	startup tombstone purge failed
+crates/reprise-gnome/src/ui/window/window_action_wiring.rs	player unavailable; ignoring context menu add-to-queue action
+crates/reprise-gnome/src/ui/window/window_action_wiring.rs	player unavailable; ignoring play-next action
+crates/reprise-gnome/src/ui/window/window_action_wiring.rs	player unavailable; ignoring queue drag-reorder
+crates/reprise-gnome/src/ui/window/window_action_wiring.rs	player unavailable; ignoring queue drop
+crates/reprise-gnome/src/ui/window/window_action_wiring.rs	sidebar is gone; cannot show Missing files
+crates/reprise-gnome/src/ui/window/window_action_wiring.rs	sidebar is gone; skipping refresh after a library removal
+crates/reprise-gnome/src/ui/window/window_action_wiring.rs	sidebar is gone; skipping refresh after an import-error mutation
+crates/reprise-gnome/src/ui/window/window_action_wiring.rs	sidebar is gone; skipping refresh after context menu playlist change
+crates/reprise-gnome/src/ui/window/window_action_wiring.rs	sidebar refresh skipped: sidebar is gone
+crates/reprise-gnome/src/ui/window/window_action_wiring.rs	track list is gone; skipping Missing-files bulk removal
+crates/reprise-gnome/src/ui/window/window_action_wiring.rs	track list reload skipped: track list is gone
+crates/reprise-gnome/src/ui/window/window_decorations.rs	window decoration mode applied
+crates/reprise-gnome/src/ui/window/window_decorations.rs	window surface is not a GDK toplevel; decoration request skipped
+crates/reprise-gnome/src/ui/window/window_external_changes_wiring.rs	could not refresh the visible device-sync page after an external change
+crates/reprise-gnome/src/ui/window/window_external_changes_wiring.rs	external change: device-sync refresh skipped: runtime is gone
+crates/reprise-gnome/src/ui/window/window_external_changes_wiring.rs	external change: sidebar refresh skipped: sidebar is gone
+crates/reprise-gnome/src/ui/window/window_external_changes_wiring.rs	external change: track list reload skipped: track list is gone
+crates/reprise-gnome/src/ui/window/window_first_paint.rs	main window built
+crates/reprise-gnome/src/ui/window/window_navigation.rs	could not open Android sync page
+crates/reprise-gnome/src/ui/window/window_navigation.rs	could not save sidebar collapse state
+crates/reprise-gnome/src/ui/window/window_navigation.rs	could not save sidebar visibility
+crates/reprise-gnome/src/ui/window/window_navigation.rs	split view is gone; cannot show content pane after sidebar navigation
+crates/reprise-gnome/src/ui/window/window_runtime_setup.rs	player unavailable: playback disabled
+crates/reprise-gnome/src/ui/window/window_smoke.rs	Last.fm smoke client is invalid
+crates/reprise-gnome/src/ui/window/window_smoke.rs	Last.fm smoke could not queue scrobble
+crates/reprise-gnome/src/ui/window/window_smoke.rs	Last.fm smoke requested without a loopback API root
+crates/reprise-gnome/src/ui/window/window_smoke.rs	ListenBrainz smoke could not queue listen
+crates/reprise-gnome/src/ui/window/window_smoke.rs	ListenBrainz smoke requested without a loopback API root
+crates/reprise-gnome/src/ui/window/window_smoke.rs	smoke-quit timer fired: closing main window
+crates/reprise-gnome/src/ui/window/window_smoke.rs	smoke: applied player bar position
+crates/reprise-gnome/src/ui/window/window_smoke.rs	smoke: queued synthetic Last.fm scrobble
+crates/reprise-gnome/src/ui/window/window_smoke.rs	smoke: queued synthetic ListenBrainz listen
+crates/reprise-gnome/src/ui/window/window_smoke.rs	{} set: arming headless smoke-quit timer
+crates/reprise-gnome/src/ui/window/wiring/clear_all.rs	could not read library root for lyrics due-check
+crates/reprise-gnome/src/ui/window/wiring/close.rs	failed to read persisted library root at startup
+crates/reprise-gnome/src/ui/window/wiring/close.rs	no persisted library root; watcher not started at startup
+crates/reprise-gnome/src/ui/window/wiring/listeners.rs	sidebar is gone; cannot dispatch simulated playlist drop
+crates/reprise-gnome/src/ui/window/wiring/listeners.rs	sidebar is gone; cannot dispatch simulated queue drop
+crates/reprise-gnome/src/ui/window/wiring/listeners.rs	track list reload skipped: track list is gone
+crates/reprise-gnome/src/ui/window/wiring/nav_back.rs	nav back: history is empty
+crates/reprise-gnome/src/ui/window/wiring/nav_back.rs	nav forward: nothing ahead
+crates/reprise-gnome/src/ui/window/wiring/nav_back.rs	smoke: firing jump-to-now-playing
+crates/reprise-gnome/src/ui/window/wiring/nav_back.rs	smoke: firing nav-back
+crates/reprise-gnome/src/ui/window/wiring/nav_back.rs	smoke: selecting queue via sidebar
+crates/reprise-gnome/src/ui/window/wiring/quick_open.rs	quick-open snapshot load failed
+crates/reprise-gnome/src/ui/window/wiring/quick_open.rs	quick-open snapshot loaded
+crates/reprise-gnome/src/ui/window/wiring/quick_open.rs	quick-open snapshot worker could not start
+crates/reprise-gnome/src/ui/window/wiring/quick_open.rs	quick-open snapshot worker stopped without a result
+crates/reprise-gnome/src/ui/window/wiring/quick_open_actions.rs	live-stream gate returned an invalid queued outcome
+crates/reprise-gnome/src/ui/window/wiring/quick_open_actions.rs	quick-open radio play skipped: no connection, retry when online
+crates/reprise-gnome/src/ui/window/wiring/quick_open_actions.rs	quick-open station could not start
+crates/reprise-platform-linux/src/cava_stage.rs	the CAVA processor returned the wrong number of bars; the spectrum shows silence
+crates/reprise-platform-linux/src/crossfade.rs	crossfade: could not apply incoming track gain
+crates/reprise-platform-linux/src/crossfade.rs	crossfade: could not build secondary pipeline; aborting fade
+crates/reprise-platform-linux/src/crossfade.rs	crossfade: could not configure download buffering
+crates/reprise-platform-linux/src/crossfade.rs	crossfade: could not configure spectrum analyzer
+crates/reprise-platform-linux/src/crossfade.rs	crossfade: could not give the secondary's CAVA sink a consumer; aborting fade
+crates/reprise-platform-linux/src/crossfade.rs	crossfade: incoming track did not start; giving way to a plain track change
+crates/reprise-platform-linux/src/crossfade.rs	crossfade: secondary pipeline refused Playing
+crates/reprise-platform-linux/src/crossfade.rs	crossfade: too little of the outgoing track is left to fade; giving way to a plain track change
+crates/reprise-platform-linux/src/crossfade/handover.rs	crossfade: could not attach bus watch to promoted pipeline
+crates/reprise-platform-linux/src/crossfade/handover.rs	crossfade: the outgoing track ended during the wait; reporting it
+crates/reprise-platform-linux/src/device_sync.rs	device sync: MTP root exposes no storage volume
+crates/reprise-platform-linux/src/device_sync.rs	device sync: MTP volume observed
+crates/reprise-platform-linux/src/device_sync.rs	device sync: could not clean partial files
+crates/reprise-platform-linux/src/device_sync.rs	device sync: ignored an invalid listed partial path
+crates/reprise-platform-linux/src/device_sync.rs	device sync: projected MTP devices
+crates/reprise-platform-linux/src/device_sync.rs	device sync: resolved MTP storage volume
+crates/reprise-platform-linux/src/device_sync.rs	device sync: unshadowed MTP mount without a volume
+crates/reprise-platform-linux/src/device_sync.rs	failed to remove partial device sync file
+crates/reprise-platform-linux/src/device_sync_directories.rs	device sync: could not list the parent directory, so no resident spelling was adopted
+crates/reprise-platform-linux/src/device_sync_directories.rs	device sync: creating this directory failed, but a fold-equal one is already on the device
+crates/reprise-platform-linux/src/device_sync_directories.rs	device sync: refused to choose between fold-equal resident directories
+crates/reprise-platform-linux/src/device_sync_directories.rs	device sync: the device refused this directory once and accepted it on the retry
+crates/reprise-platform-linux/src/device_sync_inspection.rs	device sync: storage capability attribute is unavailable
+crates/reprise-platform-linux/src/device_sync_inspection.rs	device sync: storage capacity attribute is unavailable
+crates/reprise-platform-linux/src/device_sync_inspection.rs	device sync: target access attribute is unavailable
+crates/reprise-platform-linux/src/device_sync_inspection.rs	device sync: total capacity is unavailable
+crates/reprise-platform-linux/src/gapless.rs	about-to-finish: emitter was not a gst::Element
+crates/reprise-platform-linux/src/gapless.rs	gapless: StreamStart after handoff -> AdvancedToNext
+crates/reprise-platform-linux/src/gapless.rs	gapless: feeding next uri on about-to-finish
+crates/reprise-platform-linux/src/location.rs	could not close Location portal session
+crates/reprise-platform-linux/src/location.rs	could not close timed-out Location portal connection
+crates/reprise-platform-linux/src/mounts.rs	mountinfo is unreadable; mount lookups find no mount
+crates/reprise-platform-linux/src/mpris/control.rs	MPRIS command dropped: controller receiver is gone
+crates/reprise-platform-linux/src/mpris/mod.rs	MPRIS SetPosition: media is not seekable or trackid is stale; ignoring
+crates/reprise-platform-linux/src/mpris/mod.rs	MPRIS command dropped: controller receiver is gone
+crates/reprise-platform-linux/src/mpris/mod.rs	MPRIS unavailable: could not claim the session bus name; continuing without media-key/lock-screen integration
+crates/reprise-platform-linux/src/mpris/mod.rs	MPRIS unavailable: could not obtain the Player interface reference needed for PropertiesChanged notifications
+crates/reprise-platform-linux/src/mpris/mod.rs	MPRIS: bus name claimed, serving org.mpris.MediaPlayer2 and .Player
+crates/reprise-platform-linux/src/mpris/mod.rs	MPRIS: emitted PropertiesChanged
+crates/reprise-platform-linux/src/mpris/mod.rs	MPRIS: emitted Seeked
+crates/reprise-platform-linux/src/mpris/mod.rs	MPRIS: failed to emit PropertiesChanged
+crates/reprise-platform-linux/src/mpris/mod.rs	MPRIS: failed to emit Seeked
+crates/reprise-platform-linux/src/mpris/mod.rs	MPRIS: rate change requested but unsupported (fixed at 1.0); ignoring
+crates/reprise-platform-linux/src/mpris/state.rs	MPRIS: could not build a valid trackid object path
+crates/reprise-platform-linux/src/mpris/state.rs	MPRIS: failed to convert a metadata value
+crates/reprise-platform-linux/src/player.rs	set_next: invalid path; clearing gapless slot
+crates/reprise-platform-linux/src/player/pipeline_queue.rs	a pipeline queue job panicked
+crates/reprise-platform-linux/src/player/pipeline_queue.rs	could not spawn a pipeline queue; its jobs run inline
+crates/reprise-platform-linux/src/player/pipeline_swap.rs	could not build an idle pipeline; taking the current one to Null
+crates/reprise-platform-linux/src/player/pipeline_swap.rs	could not silence the stopped pipeline's bus watch
+crates/reprise-platform-linux/src/player/pipeline_swap.rs	the restarted start's state change failed
+crates/reprise-platform-linux/src/player/reaper.rs	a retired pipeline reached Null
+crates/reprise-platform-linux/src/player/reaper.rs	a retired pipeline was slow to reach Null
+crates/reprise-platform-linux/src/player/segment.rs	CUE track's file would not start playing
+crates/reprise-platform-linux/src/player/segment.rs	could not seek to the CUE track's start
+crates/reprise-platform-linux/src/player/segment.rs	cue: contiguous hand-off staged
+crates/reprise-platform-linux/src/player/segment.rs	cue: track reached its end
+crates/reprise-platform-linux/src/player/segment/handoff.rs	could not watch the CUE hand-off; announcing it now
+crates/reprise-platform-linux/src/player/segment/handoff.rs	cue: hand-off heard
+crates/reprise-platform-linux/src/player/segment/split.rs	cue: contiguous hand-off staged inside a buffer
+crates/reprise-platform-linux/src/player/start.rs	no idle pipeline after a failed start
+crates/reprise-platform-linux/src/player/start.rs	playback failed
+crates/reprise-platform-linux/src/player/start_watchdog.rs	could not start the hung track over
+crates/reprise-platform-linux/src/player/start_watchdog.rs	local start abandoned after {} attempts
+crates/reprise-platform-linux/src/player/start_watchdog.rs	playbin3 hung in READY on a local start; starting over
+crates/reprise-platform-linux/src/player/successor.rs	could not refresh the crossfade secondary's gain
+crates/reprise-platform-linux/src/player/successor.rs	could not refresh the handed-over CUE track's gain
+crates/reprise-platform-linux/src/player/transport.rs	stop could not leave an idle pipeline behind
+crates/reprise-platform-linux/src/player/transport.rs	the pause toggle's state change failed
+crates/reprise-platform-linux/src/player_pipeline.rs	GStreamer buffering
+crates/reprise-platform-linux/src/player_pipeline.rs	GStreamer bus error
+crates/reprise-platform-linux/src/player_pipeline.rs	REPRISE_AUDIO_SINK override active
+crates/reprise-platform-linux/src/player_pipeline.rs	end-of-stream on the outgoing pipeline during a crossfade; suppressing TrackFinished (promotion drives the advance)
+crates/reprise-platform-linux/src/player_pipeline.rs	playback reached end-of-stream
+crates/reprise-platform-linux/src/player_pipeline.rs	playbin download buffering configured
+crates/reprise-platform-linux/src/termination.rs	could not end the process on a termination signal
+crates/reprise-platform-linux/src/termination.rs	could not start the termination watchdog
+crates/reprise-platform-linux/src/termination.rs	every termination signal was inherited as ignored; leaving them ignored
+crates/reprise-platform-linux/src/termination.rs	repeated termination request coalesced
+crates/reprise-platform-linux/src/termination.rs	termination listener already running; not registering a second one
+crates/reprise-platform-linux/src/termination.rs	the main loop never took the termination request; ending the process

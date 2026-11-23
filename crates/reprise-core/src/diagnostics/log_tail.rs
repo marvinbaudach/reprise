@@ -4,7 +4,7 @@ use std::fs::File;
 use std::io::{Read, Seek, SeekFrom};
 use std::path::Path;
 
-use crate::crash_report::CRASH_REPORT_MARKER;
+use crate::crash_report::{CRASH_REPORT_END_MARKER, CRASH_REPORT_MARKER};
 
 /// The most lines of one log the report carries.
 pub const TAIL_MAX_LINES: usize = 60;
@@ -42,10 +42,12 @@ pub fn read_log_tail(path: &Path) -> Option<String> {
     tail_of(&String::from_utf8_lossy(tail), start > 0 || window > 0)
 }
 
-/// From the last crash report marker in `text` on, bounded by
-/// [`TAIL_MAX_LINES`] and [`TAIL_MAX_BYTES`]. The bound cuts the end of the
-/// section, the backtrace, never the header the report opens with. `None`
-/// when `text` holds no crash report.
+/// From the last crash report marker in `text` to the report's end marker,
+/// bounded by [`TAIL_MAX_LINES`] and [`TAIL_MAX_BYTES`]. Lines after the end
+/// marker, such as the panic hook's own log line, are not part of the report.
+/// A report cut short has no end marker and runs to the end of `text`. The
+/// bound cuts the end of the section, the backtrace, never the header the
+/// report opens with. `None` when `text` holds no crash report.
 #[must_use]
 pub fn crash_section_of(text: &str) -> Option<String> {
     let marker_at = text
@@ -62,6 +64,9 @@ pub fn crash_section_of(text: &str) -> Option<String> {
             break;
         }
         kept.push(line);
+        if line == CRASH_REPORT_END_MARKER {
+            break;
+        }
     }
     Some(kept.join("\n"))
 }

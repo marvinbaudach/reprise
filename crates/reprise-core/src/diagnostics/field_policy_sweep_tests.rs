@@ -6,13 +6,13 @@ use std::path::Path;
 use super::field_policy::{KEEP_FIELDS, REDACT_FIELDS};
 use super::field_sweep::{distinct_keys, workspace_sites, FieldSite};
 
-/// The key `EventFields` routes into the message slot without asking the
-/// policy: a field called `message` is indistinguishable from the text of the
+/// The key the desktop visitor (`event_record.rs`) routes into the message
+/// slot without asking the policy: a field called `message` is indistinguishable from the text of the
 /// event itself.
 const MESSAGE_KEY: &str = "message";
 
-/// The one crate whose events never reach `EventFields`: it logs to logcat
-/// and never calls the redactor, so a field called `message` is harmless
+/// The one crate whose events never reach the desktop layers: it logs to
+/// logcat and never calls the redactor, so a field called `message` is harmless
 /// there. Everywhere else it is refused.
 const MESSAGE_EXEMPT_PREFIX: &str = "reprise-android-ffi/";
 

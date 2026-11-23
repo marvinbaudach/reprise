@@ -3,10 +3,10 @@
 //! A log line leaves the machine inside a Copy Diagnostics report, so a
 //! structured field survives only when its key is in [`KEEP_FIELDS`]. Every
 //! other key is replaced by `$REDACTED`, and so is any key nobody has looked
-//! at. The same predicate, [`super::is_safe_structured_field`], decides for both
-//! redaction passes: `EventFields::record_value` in
-//! `reprise-gnome/src/ui/diagnostics.rs` for typed fields, and
-//! `redact_sensitive_assignments` for `key=value` text.
+//! at. [`is_safe_structured_field`] is that predicate; `field_values` asks it
+//! for every typed field of an own call site (a dependency's fields are not
+//! read at all). The text of the event's message is not a field and is never
+//! copied: `safe_event` replaces it with the call site's static template.
 //!
 //! The lists are closed lists of exact key names. There are no suffix or
 //! prefix rules (`*_ms`, `*_id`, `is_*`): a future `foo_id` that carries a
@@ -25,30 +25,27 @@
 //!
 //! # What the policy does not promise
 //!
-//! The predicate also governs the `key=value` tokens inside free-text
-//! messages and the log tail (D2). There a kept key keeps its value only when
-//! the value is a number (an integer, a float with one dot, an exponent form,
-//! a duration such as `12.5ms`, or `Some(..)` of one; several dots only under
-//! `version`), a plain identifier (`[A-Za-z_][A-Za-z0-9_]*`, and not eight
-//! or more hex digits), or an option, tuple variant or list of those:
-//! `Some(Track(5))`, `[1, 2, 3]`, `[NowPlaying, PlayNext(0)]` (integers and
-//! identifiers only inside; at most three wrappers and 64 elements, see
-//! `redact_composite`). Anything else, such as `mode=Compact,title=Foo` or a
-//! struct body (`StaleFor { seconds: 60 }`), is
-//! `key=$REDACTED`, and, like an unknown key, it takes every word after it up
-//! to the end of the line. Only a token whose value is already exactly
-//! `$REDACTED` ends that: it is what the typed path writes for a redacted field,
-//! so it carries nothing, and the typed fields after it stay readable (a known
-//! `key=` token ends the swallow after such a token, never after raw text, where
-//! `count=3` may be forged). A secret-like `token:` takes the rest of the line
-//! whatever follows. What remains is a plain identifier that is
-//! itself foreign text (`state=Artist`): the policy cannot tell it from a
-//! variant name, so a message that interpolates foreign text after a kept key
-//! is a review concern. The typed `EventFields` path keeps typed values and is
-//! unaffected, but the file mirror runs this pass over the finished line too,
-//! so a kept key whose `Debug` value is not one of the shapes above (a
-//! struct variant, a list holding a float) is redacted in the log file, and
-//! the fields written after it on that line go with it.
+//! A kept key keeps a typed number or bool as written. Text recorded under a
+//! kept key (a `&str` or a `Debug` value) stays only when its whole shape is
+//! plain, and which shapes depend on the key:
+//!
+//! - under **every** kept key: a number (an integer, a float with one dot, an
+//!   exponent form, a duration such as `12.5ms`, or `Some(..)` of one; several
+//!   dots only under `version`), the literals `None`, `true` and `false`, and
+//!   a list of integers (`[1, 2, 3]`, at most 64 elements);
+//! - additionally under a key of [`KEEP_TEXT_FIELDS`] only: a plain identifier
+//!   (`[A-Za-z_][A-Za-z0-9_]*`, and not eight or more hex digits), or an
+//!   option, tuple variant or list of those: `Some(Track(5))`,
+//!   `[NowPlaying, PlayNext(0)]` (integers and identifiers only inside; at most
+//!   three wrappers and 64 elements, see `redact_composite`).
+//!
+//! Anything else, such as `mode=Compact,title=Foo`, a struct body
+//! (`StaleFor { seconds: 60 }`) or a plain word under a numeric key
+//! (`id=marvin`), is `key=$REDACTED`. What remains is a plain identifier under
+//! a `KEEP_TEXT_FIELDS` key that is itself foreign text (`state=Artist`): the
+//! policy cannot tell it from a variant name, so a site that records foreign
+//! text under such a key is a review concern, and so is adding a key to
+//! `KEEP_TEXT_FIELDS`.
 //!
 //! The classification test checks keys, not value types, and it does not see
 //! fields that dependencies emit (zbus, for one). A new site that emits an
@@ -118,6 +115,8 @@ pub(super) const KEEP_FIELDS: &[&str] = &[
     "cover_download",
     // The numeric GStreamer playbin flags.
     "current_flags",
+    // A `usize` position in the play order (`queue.rs`).
+    "current_pos",
     "current_track_ms",
     // `Debug` of `Option<QueueItem>`: a track or episode id.
     "current_up_next",
@@ -248,9 +247,8 @@ pub(super) const KEEP_FIELDS: &[&str] = &[
     // `musicbrainz.rs` plus the fixed literal in
     // `invalid_response_source_error`, never user-entered or fetched
     // content. Named for MusicBrainz specifically, not the generic
-    // `fetch_error`: this list is global over both redaction paths
-    // (here and `EventFields::record_value` in
-    // `reprise-gnome/src/ui/diagnostics.rs`), and a source whose
+    // `fetch_error`: this list is global over both desktop layers
+    // (`reprise-gnome/src/ui/diagnostics/event_record.rs` feeds both), and a source whose
     // technical cause can carry a URL or a foreign library's own
     // message (podcasts, concerts) must not reuse this key.
     "musicbrainz_error",
@@ -271,6 +269,8 @@ pub(super) const KEEP_FIELDS: &[&str] = &[
     "offset",
     // Static labels, and `Debug` of `PodcastsOperation`, whose variants carry only integers and fieldless enums. The column editor's non-static `operation` is logged as `editor_operation`.
     "operation",
+    // A `usize` length of the play order (`queue.rs`).
+    "order_len",
     "other_ms",
     // Static labels, and `Debug` of fieldless outcome enums.
     "outcome",
@@ -393,6 +393,8 @@ pub(super) const KEEP_FIELDS: &[&str] = &[
     "total_bytes",
     "touched",
     "track_id",
+    // A `usize` track slot index in the play order (`queue.rs`).
+    "track_slot",
     "tracks",
     "trashed",
     "unanalysed",
@@ -419,13 +421,93 @@ pub(super) const KEEP_FIELDS: &[&str] = &[
     "write_ms",
 ];
 
+/// The subset of [`KEEP_FIELDS`] whose text values may be a plain word. Sorted.
+///
+/// A key belongs here only when **every** place that emits it records the
+/// `Debug` of a fieldless enum (or of an option or list of such variants, or of
+/// one whose payloads are integers), or a `&'static str` label chosen at the
+/// call site. Every other kept key carries numbers, bools and ids: a plain word
+/// under it (`id=marvin`) is foreign text and is redacted. Adding a key here is
+/// a review concern: name the type at each call site in the comment.
+pub(super) const KEEP_TEXT_FIELDS: &[&str] = &[
+    // `Debug` of the fieldless `ClockConvention` (`date_format.rs`).
+    "clock",
+    // The `&'static str` parameter of `external_link::launch` and `launch_in_app`.
+    "context",
+    // `Debug` of the fieldless `LibraryWindowControl`.
+    "control",
+    // `Debug` of `Option<QueueItem>`: `Some(Track(5))`, `None`.
+    "current_up_next",
+    // `Debug` of the fieldless `FirstRunDecision`.
+    "decision",
+    // `ReloadEmit::as_str`: a static label.
+    "emit",
+    // `Debug` of `std::io::ErrorKind`, a fieldless enum.
+    "error_kind",
+    // `Debug` of the fieldless `BrowseFacet`.
+    "facet",
+    // String literals and `YtdlpFailure::diagnostic_name` (`&'static str`).
+    "failure_kind",
+    // `Debug` of the fieldless `GroupKind`, `DoctorJobKind` and `PodcastKind`
+    // (`Some(Rss)` for an optional one).
+    "kind",
+    // `PodcastsLane::name`: a `&'static str`.
+    "lane",
+    // `Debug` of the fieldless `CompactLayout`.
+    "layout",
+    // `QueueListener::name`: a `&'static str`.
+    "listener",
+    // `Debug` of the fieldless `WindowViewMode`, `WindowDecorationMode`,
+    // `DeleteMode` and `PlaybackMode`, and a `u8` selection mode.
+    "mode",
+    // `ModuleDescriptor::id`: a `&'static str`.
+    "module",
+    // `&'static str` labels, and `Debug` of `PodcastsOperation`, whose
+    // payloads are integers and fieldless enums.
+    "operation",
+    // `&'static str` labels and `Debug` of the fieldless `FolderOutcome` and
+    // `SubscriptionOutcome`.
+    "outcome",
+    // A count, or `Debug` of the fieldless `gst::State`.
+    "pending",
+    // `MprisPlaybackStatus::as_str` and a string literal.
+    "playback",
+    // `Debug` of `RefreshPolicy`: `Due` and `Force`; `StaleFor` has a body and
+    // so is redacted.
+    "policy",
+    // `RecoveryOutcome::as_str`: a static label.
+    "recovery",
+    // `Debug` of the fieldless `Repeat`.
+    "repeat",
+    // `Debug` of the fieldless `CompletionResponse`.
+    "response",
+    // `Debug` of `Vec<QueueRow>`, whose variants carry only list indices, and
+    // counts.
+    "rows",
+    // `Debug` of `Option<QueueItem>`: a track or episode id.
+    "runtime_current_up_next",
+    // The `&'static str` service labels of the scrobbling workers.
+    "service",
+    // String literals at the call sites.
+    "stage",
+    // `Debug` of the fieldless `PlaybackState`, `EmptyState`, `AnalysisState`
+    // and `gst::State`.
+    "state",
+    // `DownloadState::kind`: a `&'static str`.
+    "state_kind",
+    // `StartupTask::log_name`: a `&'static str`.
+    "task",
+    // A `&'static str` verdict label in `scanner_reconcile.rs`.
+    "verdict",
+];
+
 /// Keys that identify, or may identify, something and so stay redacted. Sorted.
 ///
 /// This list exists so that no key is silently on either side: a key that is
-/// emitted but listed nowhere fails the classification check. The free-text
-/// pass also reads it, to tell a known `key=` that ends a swallowed value from
-/// a fragment such as `abc==` inside it. The redaction itself never depends on
-/// it: a key in neither list is redacted all the same.
+/// emitted but listed nowhere fails the classification check. The redaction
+/// itself never depends on it: a key in neither list is redacted all the same,
+/// so only the classification tests read it.
+#[cfg(test)]
 pub(super) const REDACT_FIELDS: &[&str] = &[
     "action",
     // Smoke output of unverified type.
@@ -511,7 +593,7 @@ pub(super) const REDACT_FIELDS: &[&str] = &[
     "linger_error",
     "locale_dir",
     // Only `reprise-android-ffi` emits it, and that crate never runs the redactor. A field
-    // called `message` is the event's own text slot, which `EventFields` does not check
+    // called `message` is the event's own text slot, which the visitor does not check
     // against the policy, so the classification test refuses it everywhere else.
     "message",
     "mount",
@@ -609,3 +691,19 @@ pub(super) const REDACT_FIELDS: &[&str] = &[
     "volume",
     "welcome",
 ];
+
+/// Whether a structured field's value may be kept in a diagnostics line.
+///
+/// A lookup in `KEEP_FIELDS`: every key not listed there is redacted. The
+/// lookup is an exact match against lowercase names, and the key is the
+/// field's name as written, so `Count` is unknown. An unknown key is never
+/// safe. This module explains how a key earns its place.
+pub fn is_safe_structured_field(key: &str) -> bool {
+    KEEP_FIELDS.binary_search(&key).is_ok()
+}
+
+/// Whether a kept key's text value may be a plain word (see
+/// [`KEEP_TEXT_FIELDS`]). A key outside `KEEP_FIELDS` is never one.
+pub(super) fn is_text_field(key: &str) -> bool {
+    KEEP_TEXT_FIELDS.binary_search(&key).is_ok()
+}

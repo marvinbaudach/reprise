@@ -25,6 +25,10 @@
 //! as t` alias) is an error, and so is an alias of a `tracing` import, since
 //! the scanner finds a macro by its name and an alias would hide its calls.
 //!
+//! The string literal an event stops at is its message, and the sweep also
+//! returns it, as a template, together with the first literal of every
+//! `invariant_broken!` call (`field_sweep_literals`).
+//!
 //! What does not count: items behind `#[cfg(test)]` or `#[cfg(all(test, …))]`,
 //! files those attributes pull in through `mod name;` (also from inside an
 //! inline `mod a { … }`; an inline module's own `#[path]` is not followed),
@@ -41,6 +45,7 @@ use std::path::{Path, PathBuf};
 
 use super::field_sweep_cfg::{without_test_items, TestModule, TestSplit};
 use super::field_sweep_lex::{matching_close, tokenize, Spanned, Token};
+use super::field_sweep_literals::{event_template, invariant_templates, TemplateSite};
 use super::field_sweep_spans::instrument_sites;
 
 /// What to do about a shape the scanner cannot split: a top-level comma inside
@@ -60,6 +65,15 @@ fn leading_positionals(name: &str) -> Option<usize> {
     }
 }
 
+/// Whether the macro emits an event, which has a message, rather than a span,
+/// which has a name.
+fn is_event(name: &str) -> bool {
+    matches!(
+        name,
+        "trace" | "debug" | "info" | "warn" | "error" | "event"
+    )
+}
+
 /// One field key at one place in the sources.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(super) struct FieldSite {
@@ -72,6 +86,8 @@ pub(super) struct FieldSite {
 #[derive(Debug, Default)]
 pub(super) struct FileSweep {
     pub(super) sites: Vec<FieldSite>,
+    /// The message template of every event and `invariant_broken!` site.
+    pub(super) templates: Vec<TemplateSite>,
     /// Out-of-line modules declared behind a test-only `cfg`.
     pub(super) test_modules: Vec<TestModule>,
     /// The whole file is test-only: it opens with `#![cfg(test)]`.
@@ -84,6 +100,7 @@ pub(super) struct WorkspaceSweep {
     /// The production files whose sites were read.
     pub(super) files: usize,
     pub(super) sites: Vec<FieldSite>,
+    pub(super) templates: Vec<TemplateSite>,
 }
 
 /// Every field site in production code under `crates/*/src`.
@@ -104,18 +121,23 @@ pub(super) fn workspace_sites(crates_dir: &Path) -> Result<WorkspaceSweep, Strin
         let name = relative(path, crates_dir);
         let sweep = sweep_source(&name, &text)?;
         excluded.extend(test_only_paths(path, &sweep));
-        swept.push((path.clone(), sweep.sites));
+        swept.push((path.clone(), sweep));
     }
     let production: Vec<_> = swept
         .into_iter()
         .filter(|(path, _)| !excluded.iter().any(|skip| path.starts_with(skip)))
         .collect();
+    let files = production.len();
+    let mut sites = Vec::new();
+    let mut templates = Vec::new();
+    for (_, sweep) in production {
+        sites.extend(sweep.sites);
+        templates.extend(sweep.templates);
+    }
     Ok(WorkspaceSweep {
-        files: production.len(),
-        sites: production
-            .into_iter()
-            .flat_map(|(_, sites)| sites)
-            .collect(),
+        files,
+        sites,
+        templates,
     })
 }
 
@@ -233,7 +255,12 @@ pub(super) fn sweep_source(name: &str, source: &str) -> Result<FileSweep, String
     } = without_test_items(&tokens);
     reject_aliased_imports(name, &production)?;
     let mut sites = Vec::new();
+    let mut templates = invariant_templates(name, &production)?;
+    let macro_body = invariant_macro_body(&production);
     for index in 0..production.len() {
+        if macro_body.contains(&index) {
+            continue;
+        }
         let Token::Ident(ident) = &production[index].token else {
             continue;
         };
@@ -256,9 +283,12 @@ pub(super) fn sweep_source(name: &str, source: &str) -> Result<FileSweep, String
         let Some(arguments) = macro_arguments(&production, index + 2) else {
             continue;
         };
-        for key in
-            field_keys(arguments, leading).map_err(|part| unreadable_field(name, line, &part))?
-        {
+        let scan = scan_arguments(arguments, leading)
+            .map_err(|part| unreadable_field(name, line, &part))?;
+        if let (true, Some(message)) = (is_event(ident), scan.message) {
+            templates.push(event_template(name, line, message)?);
+        }
+        for key in scan.keys {
             sites.push(FieldSite {
                 key,
                 file: name.to_owned(),
@@ -269,9 +299,42 @@ pub(super) fn sweep_source(name: &str, source: &str) -> Result<FileSweep, String
     sites.extend(instrument_sites(name, &production)?);
     Ok(FileSweep {
         sites,
+        templates,
         test_modules,
         test_only,
     })
+}
+
+/// The token indices inside the body of `macro_rules! invariant_broken`.
+///
+/// The macro forwards its caller's literal to `tracing::error!` with
+/// `concat!`, so the call in its body has no message literal of its own and
+/// takes `$` tokens the scanner cannot read as fields. Its template is filed
+/// where the macro is used (`invariant_templates`), because `file!()` in a
+/// `macro_rules!` expansion names the use site. The body has no fields.
+fn invariant_macro_body(tokens: &[Spanned]) -> std::ops::Range<usize> {
+    for at in 0..tokens.len() {
+        let is_definition = matches!(
+            (
+                tokens.get(at).map(|t| &t.token),
+                tokens.get(at + 1).map(|t| &t.token),
+                tokens.get(at + 2).map(|t| &t.token),
+            ),
+            (
+                Some(Token::Ident(keyword)),
+                Some(Token::Punct('!')),
+                Some(Token::Ident(name)),
+            ) if keyword == "macro_rules" && name == "invariant_broken"
+        );
+        if !is_definition {
+            continue;
+        }
+        let open = at + 3;
+        if let Some(close) = matching_close(tokens, open) {
+            return open..close;
+        }
+    }
+    0..0
 }
 
 /// The error for a field part the scanner cannot read.
@@ -336,7 +399,7 @@ fn call_root(tokens: &[Spanned], index: usize) -> CallRoot {
 }
 
 /// The tokens between the brackets that open at `open`.
-fn macro_arguments(tokens: &[Spanned], open: usize) -> Option<&[Spanned]> {
+pub(super) fn macro_arguments(tokens: &[Spanned], open: usize) -> Option<&[Spanned]> {
     let end = matching_close(tokens, open)?;
     tokens.get(open + 1..end)
 }
@@ -362,6 +425,15 @@ pub(super) fn top_level_parts(tokens: &[Spanned]) -> Vec<&[Spanned]> {
     parts
 }
 
+/// What one macro's argument list holds.
+pub(super) struct ArgumentScan<'a> {
+    pub(super) keys: Vec<String>,
+    /// The first argument after the fields that is a string, which is the
+    /// message: everything after it is a format argument. `None` for a call
+    /// without one, a span's included.
+    pub(super) message: Option<&'a [Spanned]>,
+}
+
 /// The field keys in a macro's argument list; `Err` carries the text of a
 /// part that is neither a field nor a recognised option, so a shape the
 /// scanner cannot read fails loudly instead of hiding a key.
@@ -371,7 +443,17 @@ pub(super) fn top_level_parts(tokens: &[Spanned]) -> Vec<&[Spanned]> {
 /// position, because a level can be a path, a constant or a call, and none of
 /// those is told apart from a shorthand field by its tokens.
 pub(super) fn field_keys(arguments: &[Spanned], leading: usize) -> Result<Vec<String>, String> {
+    scan_arguments(arguments, leading).map(|scan| scan.keys)
+}
+
+/// The field keys and the message part of a macro's argument list; see
+/// [`field_keys`] for the rules and the error.
+pub(super) fn scan_arguments(
+    arguments: &[Spanned],
+    leading: usize,
+) -> Result<ArgumentScan<'_>, String> {
     let mut keys = Vec::new();
+    let mut message = None;
     let mut positional_pending = leading;
     for part in top_level_parts(arguments) {
         if is_option(part) {
@@ -386,11 +468,12 @@ pub(super) fn field_keys(arguments: &[Spanned], leading: usize) -> Result<Vec<St
         if matches!(part.first().map(|first| &first.token), Some(Token::Str(_)))
             && !is_quoted_key(part)
         {
+            message = Some(part);
             break;
         }
         keys.push(field_key(part).ok_or_else(|| describe(part))?);
     }
-    Ok(keys)
+    Ok(ArgumentScan { keys, message })
 }
 
 /// Whether the part has a `=` outside any bracket that is not part of `==`,
