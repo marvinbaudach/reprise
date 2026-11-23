@@ -1,6 +1,10 @@
 use std::sync::{Arc, Mutex};
 
-use reprise_core::diagnostics::{DiagnosticEvent, DiagnosticLevel, DiagnosticLog, LogTemplate};
+use chrono::{DateTime, Utc};
+
+use reprise_core::diagnostics::{
+    templates_for_file, DiagnosticEvent, DiagnosticLevel, DiagnosticLog, LogTemplate,
+};
 use tracing::{Event, Subscriber};
 use tracing_subscriber::layer::{Context, Layer, SubscriberExt};
 
@@ -139,4 +143,42 @@ fn an_invariants_template_is_filed_and_matched_at_the_use_site() {
 #[test]
 fn a_call_sites_file_has_the_template_tables_path_form() {
     assert_eq!(file!(), "crates/reprise-gnome/src/ui/diagnostics/tests.rs");
+}
+
+// An invariant whose literal is only `{}: {}` would reach the report as `…: …`.
+// The words that say what broke are written inline at the call site, so the
+// checked-in table carries them.
+#[test]
+fn an_invariant_with_a_constant_part_files_its_words_in_the_table() {
+    let canonical = |file| {
+        templates_for_file(file)
+            .iter()
+            .map(LogTemplate::canonical)
+            .collect::<Vec<_>>()
+    };
+
+    assert!(
+        canonical("crates/reprise-gnome/src/ui/device_sync/device_sync_effects.rs").contains(
+            &"invariant broken: the sync machine emitted an invalid transfer index: {}".to_owned()
+        )
+    );
+    assert!(
+        canonical("crates/reprise-gnome/src/ui/table_columns/registry.rs")
+            .contains(&"invariant broken: invalid column binding: {}".to_owned())
+    );
+}
+
+// The seconds are the UTC ones whatever zone the machine is in, so the report
+// carries no UTC offset. The function takes a `DateTime<Utc>`: a local time
+// cannot be passed to it.
+#[test]
+fn the_last_warnings_seconds_are_those_of_the_utc_day() {
+    let at = DateTime::parse_from_rfc3339("2026-11-23T23:59:58+02:00")
+        .unwrap()
+        .with_timezone(&Utc);
+
+    assert_eq!(
+        super::seconds_since_midnight_utc(at),
+        21 * 3600 + 59 * 60 + 58
+    );
 }

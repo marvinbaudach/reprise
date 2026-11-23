@@ -297,7 +297,7 @@ crates/reprise-gnome/src/ui/device_sync/device_sync_effects.rs	device transfer f
 crates/reprise-gnome/src/ui/device_sync/device_sync_effects.rs	ignored malformed phone listen report
 crates/reprise-gnome/src/ui/device_sync/device_sync_effects.rs	ignored phone listen report without a durable device identity
 crates/reprise-gnome/src/ui/device_sync/device_sync_effects.rs	invariant broken: the driver handles Finished before calling perform
-crates/reprise-gnome/src/ui/device_sync/device_sync_effects.rs	invariant broken: {}: {}
+crates/reprise-gnome/src/ui/device_sync/device_sync_effects.rs	invariant broken: the sync machine emitted an invalid transfer index: {}
 crates/reprise-gnome/src/ui/device_sync/device_sync_memory.rs	could not re-key legacy MTP settings; the old row was kept
 crates/reprise-gnome/src/ui/device_sync/device_sync_memory.rs	kept legacy MTP settings because the stable device key already exists
 crates/reprise-gnome/src/ui/device_sync/device_sync_on_device.rs	could not update remove-deleted setting
@@ -941,7 +941,7 @@ crates/reprise-gnome/src/ui/table_columns/registry.rs	column header visibility c
 crates/reprise-gnome/src/ui/table_columns/registry.rs	could not load stored column layout
 crates/reprise-gnome/src/ui/table_columns/registry.rs	could not persist column layout
 crates/reprise-gnome/src/ui/table_columns/registry.rs	invariant broken: column view item {} is not a ColumnViewColumn
-crates/reprise-gnome/src/ui/table_columns/registry.rs	invariant broken: invalid {} column binding: {}
+crates/reprise-gnome/src/ui/table_columns/registry.rs	invariant broken: invalid column binding: {}
 crates/reprise-gnome/src/ui/table_columns/registry.rs	unknown column id
 crates/reprise-gnome/src/ui/table_columns/width_persistence.rs	column order persisted after header drag
 crates/reprise-gnome/src/ui/table_columns/width_persistence.rs	could not load stored column widths

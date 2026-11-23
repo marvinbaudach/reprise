@@ -3,7 +3,7 @@
 use std::path::Path;
 use std::sync::{Arc, Mutex, OnceLock, PoisonError};
 
-use chrono::{Local, Timelike};
+use chrono::{DateTime, Timelike, Utc};
 use libadwaita as adw;
 use reprise_core::db::Db;
 use reprise_core::diagnostics::{read_log_tail, DiagnosticEvent, DiagnosticLog};
@@ -94,6 +94,13 @@ pub(crate) struct SessionDiagnosticLayer {
     log: SharedDiagnosticLog,
 }
 
+/// The second of the UTC day the last-warnings list shows. UTC, like the run
+/// log's timestamps: a local time would put the machine's UTC offset into a
+/// report that is meant to carry no place.
+fn seconds_since_midnight_utc(at: DateTime<Utc>) -> u32 {
+    at.num_seconds_from_midnight()
+}
+
 impl SessionDiagnosticLayer {
     fn new(log: SharedDiagnosticLog) -> Self {
         Self { log }
@@ -109,7 +116,7 @@ where
             return;
         }
         let safe = event_record::safe_of(event);
-        let seconds_since_midnight = Local::now().num_seconds_from_midnight();
+        let seconds_since_midnight = seconds_since_midnight_utc(Utc::now());
         // What is stored is already safe: the report embeds it as it is.
         let diagnostic = DiagnosticEvent::from_safe(&safe, seconds_since_midnight);
         self.log
@@ -119,6 +126,8 @@ where
     }
 }
 
+#[cfg(test)]
+mod file_log_tests;
 #[cfg(test)]
 mod run_log_fixture_tests;
 #[cfg(test)]
