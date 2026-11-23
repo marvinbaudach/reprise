@@ -244,6 +244,117 @@ fn set_18_adopting_the_scan_chrome_does_not_hold_the_idle_footer_open() {
     assert!(bar.widget().get_visible());
 }
 
+/// Runs the main loop for `ms`, so the frame clock advances the fades and the
+/// timeouts the scan chrome waits on can fire.
+fn pump_ms(ms: u64) {
+    let main_loop = gtk4::glib::MainLoop::new(None, false);
+    let quit = main_loop.clone();
+    gtk4::glib::timeout_add_local_once(std::time::Duration::from_millis(ms), move || quit.quit());
+    main_loop.run();
+}
+
+/// A mapped footer holding the REAL scan chrome, fades included: the stand-ins
+/// of `set_18_adopting_the_scan_chrome_does_not_hold_the_idle_footer_open` have
+/// no animation, so they cannot see a fade end inside a re-render.
+fn mapped_footer_with_real_scan_chrome() -> (
+    gtk4::Window,
+    BackgroundBar,
+    crate::ui::scan::scan_chrome::ScanChromeView,
+) {
+    gtk4::init().unwrap();
+    gtk4::Settings::default()
+        .unwrap()
+        .set_gtk_enable_animations(true);
+    let bar = BackgroundBar::new();
+    let chrome = crate::ui::scan::scan_chrome::ScanChromeView::new();
+    bar.adopt_scan_chrome(chrome.line_widget(), chrome.chip_widget());
+    let window = gtk4::Window::builder()
+        .default_width(520)
+        .default_height(240)
+        .child(bar.widget())
+        .build();
+    window.present();
+    (window, bar, chrome)
+}
+
+fn scanning(processed: u64) -> reprise_core::library::scanner::ScanProgress {
+    reprise_core::library::scanner::ScanProgress::Scanning {
+        processed,
+        total: Some(5),
+        current_path: std::path::PathBuf::from("/music/track.flac"),
+    }
+}
+
+/// Longer than the scan chrome's minimum visible time plus its hide fade.
+const SCAN_SETTLE_MS: u64 = 1_500;
+
+/// GitHub #1391: Rescan Library from Preferences segfaulted in
+/// `gtk_widget_unparent` (via `adw_animation_skip`) as the scan finished. A
+/// five-track library finishes before the chip's minimum visible time is up, so
+/// `finish()` defers the hide and both fades end while the footer is mapped.
+#[test]
+#[ignore = "requires a display; run via xvfb-run"]
+fn set_18_a_scan_that_finishes_at_once_hides_inside_the_open_footer() {
+    let _main_context = crate::ui::test_main_context::lock_main_context();
+    let (window, bar, chrome) = mapped_footer_with_real_scan_chrome();
+
+    chrome.show(&scanning(5));
+    assert!(
+        !bar.inner.job_rows.get_visible(),
+        "an empty job box must not add spacing above the scan row"
+    );
+    chrome.finish();
+    pump_ms(SCAN_SETTLE_MS);
+
+    assert!(!chrome.chip_widget().get_visible(), "the chip is gone");
+    assert!(!chrome.line_widget().get_visible(), "the line is gone");
+    assert!(!bar.inner.scan_slot.get_visible(), "the scan row is closed");
+    assert!(bar.widget().get_visible());
+    window.close();
+}
+
+#[test]
+#[ignore = "requires a display; run via xvfb-run"]
+fn set_18_a_scan_that_finishes_after_its_fade_in_hides_inside_the_open_footer() {
+    let _main_context = crate::ui::test_main_context::lock_main_context();
+    let (window, bar, chrome) = mapped_footer_with_real_scan_chrome();
+
+    chrome.show(&scanning(2));
+    pump_ms(SCAN_SETTLE_MS);
+    assert!(chrome.chip_widget().get_visible(), "the scan is still on");
+    chrome.show(&scanning(5));
+    chrome.finish();
+    pump_ms(SCAN_SETTLE_MS);
+
+    assert!(!chrome.chip_widget().get_visible());
+    assert!(!chrome.line_widget().get_visible());
+    assert!(!bar.inner.scan_slot.get_visible());
+    window.close();
+}
+
+#[test]
+#[ignore = "requires a display; run via xvfb-run"]
+fn set_18_the_scan_chrome_stays_parented_in_the_footer_through_a_scan() {
+    let _main_context = crate::ui::test_main_context::lock_main_context();
+    let (window, bar, chrome) = mapped_footer_with_real_scan_chrome();
+
+    chrome.show(&scanning(1));
+    bar.publish(JobOwner::Artwork, Some(artwork(0.25)));
+    chrome.show(&scanning(3));
+    bar.publish(JobOwner::Artwork, None);
+    chrome.finish();
+    pump_ms(SCAN_SETTLE_MS);
+
+    for widget in [chrome.line_widget(), chrome.chip_widget()] {
+        assert_eq!(
+            widget.parent().as_ref(),
+            Some(bar.inner.scan_slot.upcast_ref()),
+            "a render must not unparent the chrome while its fade runs"
+        );
+    }
+    window.close();
+}
+
 #[test]
 #[ignore = "requires a display; run via xvfb-run"]
 fn the_footer_css_parses_without_gtk_errors() {
