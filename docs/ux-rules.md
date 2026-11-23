@@ -2110,7 +2110,7 @@ result.
   `fb_18_the_undo_snackbar_floats_above_the_bottom_frame_without_moving_the_list`,
   `fb_18_the_titles_tab_stays_where_it_is`,
   `fb_18_over_the_stacked_sheet_the_snackbar_sits_just_above_the_transport_row`.
-- **FB-19** [planned] [gtk] — **The primary menu can copy the diagnostics
+- **FB-19** [active] [gtk] — **The primary menu can copy the diagnostics
   report.** <!-- REVIEW: rule proposal --> The settings section of the primary
   menu holds "Copy Diagnostics" between Help and About Reprise. Activating it
   puts the redacted diagnostics report on the clipboard and confirms it in a
@@ -2342,7 +2342,7 @@ result.
   resume position is part of the saved session. The application releases the
   listener when `run` returns, so a request still unread at that point ends
   the process too.
-- **START-6** [planned] [gtk] — **A run that did not end cleanly is noticed
+- **START-6** [active] [gtk] — **A run that did not end cleanly is noticed
   once, on the next start.** <!-- REVIEW: rule proposal --> The first
   instance mirrors its log into `run.log` in the state directory
   (`$XDG_STATE_HOME/reprise/`, the data directory when that is unset), which
