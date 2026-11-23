@@ -2352,15 +2352,14 @@ result.
   diagnostics report (FB-19). An earlier version named the files `reprise.log`
   and `reprise.log.1` and wrote lines under another redaction, so the first
   instance deletes those two files once at start, in the state directory
-  only, and a report never reads them. A second `reprise` launch never
-  touches the files. The
-  first instance also keeps a running marker in that directory from startup
-  until a clean way out: the session save that a window close and a
-  termination request both reach (START-5a), or the return of the application
-  run. A panic appends a crash section to the log that is written already
-  reduced, under the contract of FB-19: its message is the static text the
-  panic was compiled with, or a standard panic phrase or a log template of the
-  panic's source file with every value shown as `…`, and `…` when nothing
+  only, and a report never reads them. A second `reprise` launch never touches
+  the files. The first instance also keeps a running marker in that directory
+  from startup until a clean way out: the session save that a window close and
+  a termination request both reach (START-5a), or the return of the
+  application run. A panic appends a crash section to the log that is written
+  already reduced, under the contract of FB-19: its message is the static text
+  the panic was compiled with, or a standard panic phrase or a log template of
+  the panic's source file with every value shown as `…`, and `…` when nothing
   matches; its location and each backtrace line are kept only in the shapes of
   the app's own, the standard library's or a dependency's source path (a
   dependency is shown as its crate name and version and its source file) and
