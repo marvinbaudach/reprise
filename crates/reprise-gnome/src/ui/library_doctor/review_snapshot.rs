@@ -272,7 +272,7 @@ fn blocked_state(
 
 #[cfg(test)]
 mod invariant_template_tests {
-    use reprise_core::diagnostics::{templates_for_file, HOLE};
+    use reprise_core::diagnostics::{templates_for_file, LogTemplate, HOLE};
 
     use super::without_row;
     use crate::ui::test_log_capture::CapturedLogs;
@@ -302,7 +302,7 @@ mod invariant_template_tests {
         let reduced = templates_for_file(THIS_FILE)
             .iter()
             .find(|template| template.matches(message))
-            .map(|template| template.reduced());
+            .map(LogTemplate::reduced);
         assert_eq!(
             reduced.as_deref(),
             Some("invariant broken: cached … selection includes its row")
