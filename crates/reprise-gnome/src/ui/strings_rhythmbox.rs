@@ -25,6 +25,7 @@ pub const RHYTHMBOX_IMPORTING: &str = N_!("Importing from Rhythmbox\u{2026}");
 pub const RHYTHMBOX_UNDO_IMPORT: &str = N_!("Undo import");
 pub const RHYTHMBOX_SKIP_OUTSIDE_LIBRARY: &str = N_!("Files outside your library folder");
 pub const RHYTHMBOX_SKIP_MISSING_ON_DISK: &str = N_!("Files no longer on disk");
+pub const RHYTHMBOX_SKIP_NOT_YET_SCANNED: &str = N_!("Files not yet scanned");
 pub const RHYTHMBOX_SKIP_NON_SONG: &str = N_!("Podcasts & radio streams");
 pub const RHYTHMBOX_DONE: &str = N_!("Done");
 pub const RHYTHMBOX_CANCEL: &str = N_!("Cancel");
@@ -225,9 +226,10 @@ pub struct RhythmboxSkipWarning {
 pub fn rhythmbox_skipped_warning(
     outside_library: usize,
     missing_on_disk: usize,
+    not_yet_scanned: usize,
     non_song: usize,
 ) -> RhythmboxSkipWarning {
-    let total = outside_library + missing_on_disk + non_song;
+    let total = outside_library + missing_on_disk + not_yet_scanned + non_song;
     let total_text = total.to_string();
     let title = plural(
         "{count} Rhythmbox entry will be skipped",
@@ -250,6 +252,14 @@ pub fn rhythmbox_skipped_warning(
             "{count} files no longer on disk",
             missing_on_disk,
             &[("count", &missing_on_disk.to_string())],
+        ));
+    }
+    if not_yet_scanned > 0 {
+        reasons.push(plural(
+            "{count} file not yet scanned",
+            "{count} files not yet scanned",
+            not_yet_scanned,
+            &[("count", &not_yet_scanned.to_string())],
         ));
     }
     if non_song > 0 {
@@ -357,21 +367,37 @@ mod tests {
     /// warning names each skip reason it actually has, and no other.
     #[test]
     fn rbx_copy_4_the_skip_warning_names_only_the_reasons_that_apply() {
-        let missing_only = rhythmbox_skipped_warning(0, 1, 0);
+        let missing_only = rhythmbox_skipped_warning(0, 1, 0, 0);
         assert_eq!(missing_only.title, "1 Rhythmbox entry will be skipped");
         assert_eq!(missing_only.reasons, "1 file no longer on disk");
         assert!(!missing_only.reasons.contains("outside"));
 
-        let everything = rhythmbox_skipped_warning(2, 1, 5);
+        let everything = rhythmbox_skipped_warning(2, 1, 0, 5);
         assert_eq!(everything.title, "8 Rhythmbox entries will be skipped");
         assert_eq!(
             everything.reasons,
             "2 files outside your library folder \u{b7} 1 file no longer on disk \u{b7} 5 podcasts or radio streams"
         );
 
-        let one_stream = rhythmbox_skipped_warning(0, 0, 1);
+        let one_stream = rhythmbox_skipped_warning(0, 0, 0, 1);
         assert_eq!(one_stream.reasons, "1 podcast or radio stream");
-        assert!(rhythmbox_skipped_warning(0, 0, 0).reasons.is_empty());
+        assert!(rhythmbox_skipped_warning(0, 0, 0, 0).reasons.is_empty());
+    }
+
+    /// A file that exists under the library folder but has not been scanned
+    /// is neither "outside" nor "gone": it gets its own reason.
+    #[test]
+    fn rbx_copy_7_the_skip_warning_names_unscanned_files_on_their_own() {
+        let one = rhythmbox_skipped_warning(0, 0, 1, 0);
+        assert_eq!(one.title, "1 Rhythmbox entry will be skipped");
+        assert_eq!(one.reasons, "1 file not yet scanned");
+
+        let everything = rhythmbox_skipped_warning(2, 1, 3, 5);
+        assert_eq!(everything.title, "11 Rhythmbox entries will be skipped");
+        assert_eq!(
+            everything.reasons,
+            "2 files outside your library folder \u{b7} 1 file no longer on disk \u{b7} 3 files not yet scanned \u{b7} 5 podcasts or radio streams"
+        );
     }
 
     /// The separator between skip reasons belongs to the catalog, like every

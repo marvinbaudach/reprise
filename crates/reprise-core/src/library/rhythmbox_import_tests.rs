@@ -165,8 +165,67 @@ fn prescan_counts_entries_and_classifies_skips() {
     assert_eq!(result.matched, 1);
     assert_eq!(result.outside_library, 1);
     assert_eq!(result.missing_on_disk, 1);
+    assert_eq!(result.not_yet_scanned, 0);
     assert_eq!(result.playlist_count, 1);
     assert_eq!(result.playlist_track_count, 2);
+}
+
+/// Writes a one-song rhythmdb for `song` and prescans it against an empty
+/// database whose library root is `root`.
+fn prescan_one_unmatched_song(dir: &Path, song: &Path, root: &Path) -> RhythmboxPrescanResult {
+    let uri = url::Url::from_file_path(song).unwrap();
+    let xml = format!(
+        r#"<?xml version="1.0"?>
+<rhythmdb version="2.0">
+  <entry type="song"><location>{uri}</location><rating>3</rating></entry>
+</rhythmdb>"#
+    );
+    let rhythmdb = dir.join("rhythmdb.xml");
+    fs::write(&rhythmdb, xml).unwrap();
+    let conn = crate::db::Db::open_in_memory().unwrap();
+    prescan_rhythmdb(
+        &rhythmdb,
+        &dir.join("playlists.xml"),
+        &conn,
+        Some(&root.to_string_lossy()),
+    )
+    .unwrap()
+}
+
+#[test]
+fn prescan_draws_the_library_boundary_by_path_component() {
+    let dir = tempdir().unwrap();
+    let music_dir = dir.path().join("Music");
+    let sibling = dir.path().join("Music2");
+    fs::create_dir_all(&music_dir).unwrap();
+    fs::create_dir_all(&sibling).unwrap();
+    let present = sibling.join("present.ogg");
+    fs::write(&present, b"fake").unwrap();
+    let absent = sibling.join("absent.ogg");
+
+    // A string prefix claims `Music2` for `Music`; a file that is gone from
+    // there must still be outside, not "no longer on disk".
+    for song in [&present, &absent] {
+        let result = prescan_one_unmatched_song(dir.path(), song, &music_dir);
+        assert_eq!(result.outside_library, 1, "{song:?}");
+        assert_eq!(result.missing_on_disk, 0, "{song:?}");
+        assert_eq!(result.not_yet_scanned, 0, "{song:?}");
+    }
+}
+
+#[test]
+fn prescan_counts_an_existing_unscanned_file_under_the_root_on_its_own() {
+    let dir = tempdir().unwrap();
+    let music_dir = dir.path().join("Music");
+    fs::create_dir_all(&music_dir).unwrap();
+    let song = music_dir.join("song.ogg");
+    fs::write(&song, b"fake").unwrap();
+
+    let result = prescan_one_unmatched_song(dir.path(), &song, &music_dir);
+
+    assert_eq!(result.outside_library, 0);
+    assert_eq!(result.missing_on_disk, 0);
+    assert_eq!(result.not_yet_scanned, 1);
 }
 
 fn database(path: &Path, rating: i32, play_count: i64) -> crate::db::Db {

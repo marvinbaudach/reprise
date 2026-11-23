@@ -148,6 +148,7 @@ struct ImportDialogWidgets {
     skipped_expander: adw::ExpanderRow,
     skip_outside: adw::ActionRow,
     skip_missing: adw::ActionRow,
+    skip_not_yet_scanned: adw::ActionRow,
     skip_non_song: adw::ActionRow,
     undo_button: gtk4::Button,
     done_button: gtk4::Button,
@@ -279,11 +280,15 @@ fn build_import_dialog() -> ImportDialogWidgets {
     let skip_missing = crate::ui::rows::action_row()
         .title(strings::text(strings::RHYTHMBOX_SKIP_MISSING_ON_DISK))
         .build();
+    let skip_not_yet_scanned = crate::ui::rows::action_row()
+        .title(strings::text(strings::RHYTHMBOX_SKIP_NOT_YET_SCANNED))
+        .build();
     let skip_non_song = crate::ui::rows::action_row()
         .title(strings::text(strings::RHYTHMBOX_SKIP_NON_SONG))
         .build();
     skipped_expander.add_row(&skip_outside);
     skipped_expander.add_row(&skip_missing);
+    skipped_expander.add_row(&skip_not_yet_scanned);
     skipped_expander.add_row(&skip_non_song);
     let skipped_group = adw::PreferencesGroup::new();
     skipped_group.add(&skipped_expander);
@@ -373,6 +378,7 @@ fn build_import_dialog() -> ImportDialogWidgets {
         skipped_expander,
         skip_outside,
         skip_missing,
+        skip_not_yet_scanned,
         skip_non_song,
         undo_button,
         done_button,
@@ -469,12 +475,15 @@ impl PreferencesContext {
                     ));
                 }
 
-                let total_skipped =
-                    result.outside_library + result.missing_on_disk + result.non_song_entries;
+                let total_skipped = result.outside_library
+                    + result.missing_on_disk
+                    + result.not_yet_scanned
+                    + result.non_song_entries;
                 if total_skipped > 0 {
                     let warning = strings::rhythmbox_skipped_warning(
                         result.outside_library,
                         result.missing_on_disk,
+                        result.not_yet_scanned,
                         result.non_song_entries,
                     );
                     warning_row.set_title(&warning.title);
@@ -501,6 +510,7 @@ impl PreferencesContext {
         let skipped_expander = widgets.skipped_expander.clone();
         let skip_outside = widgets.skip_outside.clone();
         let skip_missing = widgets.skip_missing.clone();
+        let skip_not_yet_scanned = widgets.skip_not_yet_scanned.clone();
         let skip_non_song = widgets.skip_non_song.clone();
         let rollback_holder: Rc<RefCell<Option<RhythmboxRollback>>> = Rc::new(RefCell::new(None));
         let rollback_for_import = rollback_holder.clone();
@@ -537,6 +547,7 @@ impl PreferencesContext {
             let skipped_expander_c = skipped_expander.clone();
             let skip_outside_c = skip_outside.clone();
             let skip_missing_c = skip_missing.clone();
+            let skip_not_yet_scanned_c = skip_not_yet_scanned.clone();
             let skip_non_song_c = skip_non_song.clone();
             let rollback_c = rollback_for_import.clone();
             let prescan_for_complete = prescan_for_import.clone();
@@ -645,13 +656,15 @@ impl PreferencesContext {
                 // Skipped breakdown
                 let outside = prescan.as_ref().map_or(0, |p| p.outside_library);
                 let missing = prescan.as_ref().map_or(0, |p| p.missing_on_disk);
+                let not_yet_scanned = prescan.as_ref().map_or(0, |p| p.not_yet_scanned);
                 let non_song = prescan.as_ref().map_or(0, |p| p.non_song_entries);
-                let total_skipped = outside + missing + non_song;
+                let total_skipped = outside + missing + not_yet_scanned + non_song;
                 if total_skipped > 0 {
                     skipped_expander_c
                         .set_title(&strings::rhythmbox_entries_skipped(total_skipped));
                     skip_outside_c.set_subtitle(&outside.to_string());
                     skip_missing_c.set_subtitle(&missing.to_string());
+                    skip_not_yet_scanned_c.set_subtitle(&not_yet_scanned.to_string());
                     skip_non_song_c.set_subtitle(&non_song.to_string());
                     skipped_expander_c.set_visible(true);
                 } else {
