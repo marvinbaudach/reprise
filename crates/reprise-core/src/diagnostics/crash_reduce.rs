@@ -229,7 +229,8 @@ fn is_semver(version: &str) -> bool {
 
 /// A backtrace, `Backtrace::to_string()`, one reduced line per line.
 ///
-/// A frame `<n>: <symbol>` is kept when the symbol uses only Rust-symbol
+/// A frame `<n>: <symbol>`, or `<n>: 0x<address> - <symbol>` in the full
+/// format whose address is dropped, is kept when the symbol uses only Rust-symbol
 /// characters; an `at <location>` line goes through [`reduce_location`]; any
 /// other line becomes `…`. Blank lines are dropped.
 #[must_use]
@@ -248,11 +249,28 @@ fn reduce_backtrace_line(line: &str) -> String {
         return format!("             at {}", reduce_location(location));
     }
     match line.split_once(": ") {
-        Some((number, symbol)) if is_number(number) && is_symbol(symbol) => {
-            format!("{number:>4}: {symbol}")
-        }
+        Some((number, rest)) if is_number(number) => frame_symbol(rest)
+            .filter(|symbol| is_symbol(symbol))
+            .map_or_else(
+                || UNKNOWN.to_owned(),
+                |symbol| format!("{number:>4}: {symbol}"),
+            ),
         _ => UNKNOWN.to_owned(),
     }
+}
+
+/// The symbol of a frame's text after `<n>: `. The short format is the symbol;
+/// `RUST_BACKTRACE=full` puts `0x<address> - ` before it, and the address is
+/// dropped. A `0x` that is not followed by hexadecimal digits and ` - ` is no
+/// frame at all.
+fn frame_symbol(rest: &str) -> Option<&str> {
+    let rest = rest.trim_start();
+    let Some(after_prefix) = rest.strip_prefix("0x") else {
+        return Some(rest);
+    };
+    let (address, symbol) = after_prefix.split_once(" - ")?;
+    let hexadecimal = !address.is_empty() && address.bytes().all(|byte| byte.is_ascii_hexdigit());
+    hexadecimal.then(|| symbol.trim_start())
 }
 
 /// Whether `symbol` is made of the characters a demangled Rust symbol uses.

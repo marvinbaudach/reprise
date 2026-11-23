@@ -214,6 +214,38 @@ fn a_frame_and_its_location_are_kept_and_normalised() {
 }
 
 #[test]
+fn a_full_format_frame_reduces_to_its_symbol_and_drops_the_address() {
+    let backtrace = "   0:     0x55d4c3a1b2c4 - std::rt::lang_start\n                               at /rustc/8bab26f4f6df3b0d4d4e3a3c7e1bb1c0cd5e5d00/library/std/src/rt.rs:206:18\n  12:        0x7f0a1c0291ca - <unknown>\n";
+
+    let shown = reduce_backtrace(backtrace);
+
+    assert_eq!(
+        shown,
+        "   0: std::rt::lang_start\n             at /rustc/8bab26f4f6df3b0d4d4e3a3c7e1bb1c0cd5e5d00/library/std/src/rt.rs:206:18\n  12: <unknown>"
+    );
+    assert!(!shown.contains("0x"), "{shown}");
+}
+
+#[test]
+fn a_full_format_frame_whose_address_is_not_hexadecimal_is_a_placeholder() {
+    for line in [
+        "   0:     0xzqxuser - reprise::main",
+        "   0:     0x - reprise::main",
+        "   0:     0x55d4c3a1b2c4 reprise::main",
+    ] {
+        assert_eq!(reduce_backtrace(line), "…", "{line:?}");
+    }
+}
+
+#[test]
+fn a_short_format_frame_is_unchanged_by_the_address_rule() {
+    assert_eq!(
+        reduce_backtrace("  7: core::ops::function::FnOnce::call_once"),
+        "   7: core::ops::function::FnOnce::call_once"
+    );
+}
+
+#[test]
 fn a_location_line_goes_through_the_location_grammar() {
     let backtrace = "   3: reprise::main\n             at /home/zqxuser/Music/Zqx Album/main.rs:12:5\n   4: std::rt::lang_start\n             at /rustc/8bab26f4f6df3b0d4d4e3a3c7e1bb1c0cd5e5d00/library/std/src/rt.rs:206:18";
 
