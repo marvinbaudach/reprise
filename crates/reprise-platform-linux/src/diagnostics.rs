@@ -114,15 +114,50 @@ const UNKNOWN_FACT: &str = "unknown";
 
 /// `value` when it is a locale name, `unknown` otherwise: the language (two or
 /// three lower-case letters, or `C`/`POSIX`), then optionally `_` and a
-/// two-letter upper-case territory, `.` and a codeset, `@` and a lower-case
-/// modifier. The environment is the user's, so a value of any other shape is
-/// not copied into a report.
+/// two-letter upper-case territory, `.` and a known codeset, `@` and a known
+/// modifier. The environment is the user's, so a value of any other shape,
+/// including free text in the codeset or modifier position, is not copied
+/// into a report.
 fn plain_locale(value: &str) -> String {
     if is_locale_shape(value) {
         value.to_owned()
     } else {
         UNKNOWN_FACT.to_owned()
     }
+}
+
+/// The locale modifiers glibc ships. Any other text after `@` is the user's.
+const KNOWN_LOCALE_MODIFIERS: [&str; 7] = [
+    "cyrillic",
+    "devanagari",
+    "euro",
+    "iqtelif",
+    "latin",
+    "saaho",
+    "valencia",
+];
+
+/// The codesets a locale name carries in practice, compared without regard
+/// to case: UTF-8, ISO-8859-1 to -16 (with or without the dashes), GB18030,
+/// EUC-JP and KOI8-R. Any other text after `.` is the user's.
+fn is_known_codeset(text: &str) -> bool {
+    let lower = text.to_ascii_lowercase();
+    if matches!(
+        lower.as_str(),
+        "utf-8" | "utf8" | "gb18030" | "euc-jp" | "koi8-r"
+    ) {
+        return true;
+    }
+    let part = lower
+        .strip_prefix("iso-8859-")
+        .or_else(|| lower.strip_prefix("iso8859"))
+        .map(|part| part.trim_start_matches('-'));
+    part.is_some_and(|digits| {
+        digits.bytes().all(|byte| byte.is_ascii_digit())
+            && digits
+                .parse::<u8>()
+                .is_ok_and(|number| (1..=16).contains(&number))
+    })
 }
 
 fn is_locale_shape(value: &str) -> bool {
@@ -137,14 +172,8 @@ fn is_locale_shape(value: &str) -> bool {
         .map_or((rest, None), |(language, territory)| {
             (language, Some(territory))
         });
-    let modifier_fits = modifier
-        .is_none_or(|text| !text.is_empty() && text.bytes().all(|byte| byte.is_ascii_lowercase()));
-    let codeset_fits = codeset.is_none_or(|text| {
-        !text.is_empty()
-            && text
-                .bytes()
-                .all(|byte| byte.is_ascii_alphanumeric() || byte == b'-')
-    });
+    let modifier_fits = modifier.is_none_or(|text| KNOWN_LOCALE_MODIFIERS.contains(&text));
+    let codeset_fits = codeset.is_none_or(is_known_codeset);
     let territory_fits = territory
         .is_none_or(|text| text.len() == 2 && text.bytes().all(|byte| byte.is_ascii_uppercase()));
     let language_fits = if matches!(language, "C" | "POSIX") {

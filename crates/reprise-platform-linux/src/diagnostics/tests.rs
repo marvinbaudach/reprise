@@ -189,6 +189,15 @@ fn a_locale_is_shown_only_in_the_shape_of_a_locale() {
         "C",
         "POSIX",
         "C.UTF-8",
+        "de_DE.ISO-8859-15",
+        "de_DE.iso885915@euro",
+        "zh_CN.GB18030",
+        "ja_JP.EUC-JP",
+        "ru_RU.KOI8-R",
+        "sd_IN@devanagari",
+        "aa_ER@saaho",
+        "tt_RU@iqtelif",
+        "sr_RS@cyrillic",
     ] {
         assert_eq!(plain_locale(plain), plain);
     }
@@ -207,6 +216,12 @@ fn a_locale_is_shown_only_in_the_shape_of_a_locale() {
         "abcd",
         "C_US",
         "",
+        "de_DE.zqxMarvin",
+        "en_US@zqxuser",
+        "en_US.zqxuser",
+        "de_DE.ISO-8859-17",
+        "de_DE.ISO-8859-0",
+        "de_DE.UTF-8@zqxuser",
     ] {
         assert_eq!(plain_locale(needle), "unknown", "{needle:?}");
     }
