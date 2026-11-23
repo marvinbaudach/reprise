@@ -735,6 +735,8 @@ fn replacement_keeps_lyrics_sidecar(work: &PlannedWork, replaced_path: &str) -> 
         .is_some_and(|desired_sidecar| desired_sidecar == replaced_sidecar)
 }
 
+/// Keep in step with the literal in `transfer`'s `invariant_broken!` below: a
+/// log template needs a literal there, so this text cannot be shared with it.
 const INVALID_TRANSFER_INDEX: &str = "the sync machine emitted an invalid transfer index";
 
 fn transfer(work: &PlannedWork, index: usize) -> Option<TransferOperation> {
