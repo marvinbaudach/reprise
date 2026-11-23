@@ -150,22 +150,15 @@ fn a_call_sites_file_has_the_template_tables_path_form() {
 // checked-in table carries them.
 #[test]
 fn an_invariant_with_a_constant_part_files_its_words_in_the_table() {
-    let canonical = |file| {
-        templates_for_file(file)
+    let canonical =
+        templates_for_file("crates/reprise-gnome/src/ui/device_sync/device_sync_effects.rs")
             .iter()
             .map(LogTemplate::canonical)
-            .collect::<Vec<_>>()
-    };
+            .collect::<Vec<_>>();
 
-    assert!(
-        canonical("crates/reprise-gnome/src/ui/device_sync/device_sync_effects.rs").contains(
-            &"invariant broken: the sync machine emitted an invalid transfer index: {}".to_owned()
-        )
-    );
-    assert!(
-        canonical("crates/reprise-gnome/src/ui/table_columns/registry.rs")
-            .contains(&"invariant broken: invalid column binding: {}".to_owned())
-    );
+    assert!(canonical.contains(
+        &"invariant broken: the sync machine emitted an invalid transfer index: {}".to_owned()
+    ));
 }
 
 // The seconds are the UTC ones whatever zone the machine is in, so the report

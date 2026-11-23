@@ -81,7 +81,11 @@ pub(in crate::ui) fn bind_columns_by_id<K: ColumnKey>(
     let keys = match bind_view_column_keys::<K>(&id_refs) {
         Ok(keys) => keys,
         Err(error) => {
-            invariant_broken!("invalid column binding: {}", error);
+            invariant_broken!(
+                "invalid {} column binding: {}",
+                std::any::type_name::<K>(),
+                error
+            );
             return Vec::new();
         }
     };

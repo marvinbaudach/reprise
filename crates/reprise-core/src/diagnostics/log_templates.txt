@@ -941,7 +941,7 @@ crates/reprise-gnome/src/ui/table_columns/registry.rs	column header visibility c
 crates/reprise-gnome/src/ui/table_columns/registry.rs	could not load stored column layout
 crates/reprise-gnome/src/ui/table_columns/registry.rs	could not persist column layout
 crates/reprise-gnome/src/ui/table_columns/registry.rs	invariant broken: column view item {} is not a ColumnViewColumn
-crates/reprise-gnome/src/ui/table_columns/registry.rs	invariant broken: invalid column binding: {}
+crates/reprise-gnome/src/ui/table_columns/registry.rs	invariant broken: invalid {} column binding: {}
 crates/reprise-gnome/src/ui/table_columns/registry.rs	unknown column id
 crates/reprise-gnome/src/ui/table_columns/width_persistence.rs	column order persisted after header drag
 crates/reprise-gnome/src/ui/table_columns/width_persistence.rs	could not load stored column widths
