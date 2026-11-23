@@ -105,6 +105,54 @@ fn locale() -> Option<String> {
     ["LC_ALL", "LC_MESSAGES", "LANG"]
         .into_iter()
         .find_map(|name| std::env::var(name).ok().filter(|value| !value.is_empty()))
+        .map(|value| plain_locale(&value))
+}
+
+/// What the report shows when an environment value is not in the shape it is
+/// meant to have.
+const UNKNOWN_FACT: &str = "unknown";
+
+/// `value` when it is a locale name, `unknown` otherwise: the language (two or
+/// three lower-case letters, or `C`/`POSIX`), then optionally `_` and a
+/// two-letter upper-case territory, `.` and a codeset, `@` and a lower-case
+/// modifier. The environment is the user's, so a value of any other shape is
+/// not copied into a report.
+fn plain_locale(value: &str) -> String {
+    if is_locale_shape(value) {
+        value.to_owned()
+    } else {
+        UNKNOWN_FACT.to_owned()
+    }
+}
+
+fn is_locale_shape(value: &str) -> bool {
+    let (rest, modifier) = value
+        .split_once('@')
+        .map_or((value, None), |(rest, modifier)| (rest, Some(modifier)));
+    let (rest, codeset) = rest
+        .split_once('.')
+        .map_or((rest, None), |(rest, codeset)| (rest, Some(codeset)));
+    let (language, territory) = rest
+        .split_once('_')
+        .map_or((rest, None), |(language, territory)| {
+            (language, Some(territory))
+        });
+    let modifier_fits = modifier
+        .is_none_or(|text| !text.is_empty() && text.bytes().all(|byte| byte.is_ascii_lowercase()));
+    let codeset_fits = codeset.is_none_or(|text| {
+        !text.is_empty()
+            && text
+                .bytes()
+                .all(|byte| byte.is_ascii_alphanumeric() || byte == b'-')
+    });
+    let territory_fits = territory
+        .is_none_or(|text| text.len() == 2 && text.bytes().all(|byte| byte.is_ascii_uppercase()));
+    let language_fits = if matches!(language, "C" | "POSIX") {
+        territory.is_none() && modifier.is_none()
+    } else {
+        (2..=3).contains(&language.len()) && language.bytes().all(|byte| byte.is_ascii_lowercase())
+    };
+    modifier_fits && codeset_fits && territory_fits && language_fits
 }
 
 fn gvfs_version() -> Option<String> {
@@ -141,6 +189,25 @@ fn active_audio_backend() -> Option<String> {
     std::env::var("REPRISE_AUDIO_SINK")
         .ok()
         .filter(|value| !value.is_empty())
+        .map(|value| plain_audio_sink(&value).to_owned())
+}
+
+/// The GStreamer sink factories the override is documented to take. Any other
+/// value can be a pipeline description or a path, so it is shown as `custom`.
+const KNOWN_AUDIO_SINKS: [&str; 5] = [
+    "alsasink",
+    "autoaudiosink",
+    "fakesink",
+    "pipewiresink",
+    "pulsesink",
+];
+
+/// The sink name when it is one of [`KNOWN_AUDIO_SINKS`], `custom` otherwise.
+fn plain_audio_sink(value: &str) -> &'static str {
+    KNOWN_AUDIO_SINKS
+        .into_iter()
+        .find(|known| *known == value)
+        .unwrap_or("custom")
 }
 
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
