@@ -27,7 +27,7 @@ pub use field_policy::is_safe_structured_field;
 pub use field_values::{render_field, RecordedField, RecordedValue, REDACTED};
 pub use log_tail::{read_log_tail, tail_of, TAIL_MAX_BYTES, TAIL_MAX_LINES};
 pub use log_template::{LogTemplate, TemplateError, HOLE};
-pub use log_templates::{is_own_file, reduced_message, templates_for_file};
+pub use log_templates::{is_own_file, templates_for_file};
 pub use model::{
     DiagnosticEvent, DiagnosticFacts, DiagnosticLevel, DiagnosticLog, PackageKind,
     DIAGNOSTIC_EVENT_CAPACITY,

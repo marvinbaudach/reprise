@@ -7,9 +7,7 @@ use std::path::{Path, PathBuf};
 use super::field_sweep::workspace_sites;
 use super::field_sweep_literals::{table_text, TABLE_CRATES};
 use super::log_template::HOLE;
-use super::log_templates::{
-    is_own_file, parse_line, parse_table, reduced_by, reduced_message, templates_for_file,
-};
+use super::log_templates::{is_own_file, parse_line, parse_table, reduced_by, templates_for_file};
 
 /// The table as checked in.
 const CHECKED_IN: &str = include_str!("log_templates.txt");
@@ -178,8 +176,9 @@ fn a_real_template_without_holes_reduces_to_itself() {
         .expect("some message has no hole");
     let text = template.reduced();
 
-    assert_eq!(reduced_message(file, &text), text);
-    assert_eq!(reduced_message(file, &format!("{text} and more")), HOLE);
+    let templates = templates_for_file(file);
+    assert_eq!(reduced_by(templates, &text), text);
+    assert_eq!(reduced_by(templates, &format!("{text} and more")), HOLE);
 }
 
 #[test]

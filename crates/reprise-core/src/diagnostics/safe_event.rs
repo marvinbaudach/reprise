@@ -3,7 +3,7 @@
 //! [`safe_event`] turns a recorded tracing event into a [`SafeEvent`] whose
 //! text is static by construction. The rendered message of the event is never
 //! copied into the output: it only selects which static template of the call
-//! site's source file stands in for it (`log_templates::reduced_message`), and
+//! site's source file stands in for it (`log_templates::reduced_by`), and
 //! no match gives `…`. A field is shown by `field_values` (a kept key's typed
 //! number, or a kept key's text of plain shape) and is `key=$REDACTED`
 //! otherwise. A call site whose file the template table does not know, which
@@ -27,9 +27,6 @@ use super::log_templates::{is_own_file, reduced_by, templates_for_file};
 
 /// What an event with neither a message nor a field shows.
 const NO_DETAILS: &str = "warning without details";
-
-/// Seconds in a day: the clock of a "last warnings" line wraps there.
-const SECONDS_PER_DAY: u32 = 86_400;
 
 /// The level of an event.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -137,8 +134,9 @@ pub(super) fn foreign_event(callsite: &Callsite) -> SafeEvent {
 }
 
 /// The text with each line break written as two characters, so that an event
-/// stays one line.
-fn one_line(text: &str) -> String {
+/// stays one line. The one implementation: the panic reducer and the tests use it
+/// too.
+pub(super) fn one_line(text: &str) -> String {
     text.replace('\n', "\\n").replace('\r', "\\r")
 }
 
@@ -195,29 +193,5 @@ impl SafeEvent {
     /// [`Self::line_at`] for now, on our own clock.
     pub fn line(&self) -> String {
         self.line_at(Utc::now())
-    }
-
-    /// The text of a "last warnings" line after its clock: `<segment>: <body>`
-    /// plus the suffix, without the segment when the target has none.
-    pub fn warning_text(&self) -> String {
-        let segment = self.target_segment();
-        let prefix = if segment.is_empty() {
-            String::new()
-        } else {
-            format!("{segment}: ")
-        };
-        format!("{prefix}{}{}", self.body, self.suffix())
-    }
-
-    /// A "last warnings" line: `HH:MM:SS <segment>: <body><suffix>`.
-    pub fn warning_line(&self, seconds_since_midnight: u32) -> String {
-        let seconds = seconds_since_midnight % SECONDS_PER_DAY;
-        format!(
-            "{:02}:{:02}:{:02} {}",
-            seconds / 3_600,
-            seconds % 3_600 / 60,
-            seconds % 60,
-            self.warning_text()
-        )
     }
 }

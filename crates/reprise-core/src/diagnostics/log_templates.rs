@@ -33,16 +33,12 @@ pub fn is_own_file(file: &str) -> bool {
     index().contains_key(file)
 }
 
-/// The static text that stands in for `rendered`, a message logged from
-/// `file`: the reduced form of the template that matches it, or [`HOLE`] when
-/// none does or the file is unknown. The rendered text is never part of the
-/// result.
-pub fn reduced_message(file: &str, rendered: &str) -> String {
-    reduced_by(templates_for_file(file), rendered)
-}
-
-/// Of the templates that match `rendered`, the one with the most literal
-/// characters, the first in table order on a tie.
+/// The static text that stands in for `rendered`, a message logged from a file
+/// whose templates are `templates`: the reduced form of the template that
+/// matches it, or [`HOLE`] when none does or the file is unknown (an empty
+/// list). The rendered text is never part of the result. Of the templates that
+/// match, the one with the most literal characters wins, the first in table
+/// order on a tie.
 pub(super) fn reduced_by(templates: &[LogTemplate], rendered: &str) -> String {
     best_match(templates, rendered).map_or_else(|| HOLE.to_owned(), LogTemplate::reduced)
 }

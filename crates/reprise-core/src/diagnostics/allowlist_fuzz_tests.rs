@@ -12,7 +12,7 @@
 use std::collections::BTreeSet;
 
 use super::log_template::{LogTemplate, HOLE};
-use super::safe_event::{own_event, Callsite, LogLevel, RecordedEvent};
+use super::safe_event::{one_line, own_event, Callsite, LogLevel, RecordedEvent};
 
 const FILE: &str = "crates/reprise-gnome/src/ui/fuzz.rs";
 const EVENTS: usize = 240_000;
@@ -114,10 +114,6 @@ fn expected_message(templates: &[LogTemplate], message: &str) -> String {
         }
     }
     best.map_or_else(|| HOLE.to_owned(), LogTemplate::reduced)
-}
-
-fn one_line(text: &str) -> String {
-    text.replace('\n', "\\n").replace('\r', "\\r")
 }
 
 #[test]

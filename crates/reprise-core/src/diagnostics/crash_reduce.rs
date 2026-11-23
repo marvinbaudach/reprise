@@ -14,6 +14,7 @@ use std::any::Any;
 use super::log_template::LogTemplate;
 use super::log_templates::{best_match, templates_for_file};
 use super::panic_phrases::phrases;
+use super::safe_event::one_line;
 use super::HOLE;
 
 /// What the panic message may be shown as when its payload is not text.
@@ -75,11 +76,6 @@ pub fn reduce_message(payload: &PanicPayload, file: Option<&str>) -> String {
         PanicPayload::Other => NON_STRING_PAYLOAD.to_owned(),
     };
     one_line(&message)
-}
-
-/// `text` with every line break written as the two characters `\n` or `\r`.
-fn one_line(text: &str) -> String {
-    text.replace('\r', "\\r").replace('\n', "\\n")
 }
 
 /// `text` cut to at most `max` bytes, on a character boundary.

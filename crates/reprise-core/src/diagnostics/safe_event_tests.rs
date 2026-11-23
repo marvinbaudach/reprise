@@ -267,39 +267,18 @@ fn the_location_is_the_file_alone_when_the_site_has_no_line() {
 }
 
 #[test]
-fn a_last_warnings_line_has_the_clock_the_last_segment_and_the_location() {
+fn the_target_segment_is_the_last_path_segment_and_a_bare_target_stays_whole() {
     let event = own(&["could not read {}"], &message("could not read Zqx"));
-
-    assert_eq!(
-        event.warning_line(3_661),
-        format!("01:01:01 sidebar: could not read … @ {SIDEBAR_FILE}:30")
-    );
-    assert_eq!(
-        event.warning_line(86_400 + 59),
-        format!("00:00:59 sidebar: could not read … @ {SIDEBAR_FILE}:30")
-    );
     assert_eq!(event.target_segment(), "sidebar");
-    assert_eq!(
-        event.warning_text(),
-        format!("sidebar: could not read … @ {SIDEBAR_FILE}:30")
-    );
-}
 
-#[test]
-fn a_last_warnings_line_of_a_foreign_event_has_no_location_and_a_bare_target_stays_whole() {
-    let event = foreign_event(&Callsite {
+    let foreign = foreign_event(&Callsite {
         file: None,
         line: None,
         target: "zbus",
         level: LogLevel::Warn,
     });
-
-    assert_eq!(event.warning_line(0), "00:00:00 zbus: …");
-    let nameless = foreign_event(&Callsite {
-        target: "",
-        ..callsite(None, LogLevel::Warn)
-    });
-    assert_eq!(nameless.warning_line(5), "00:00:05 …");
+    assert_eq!(foreign.target_segment(), "zbus");
+    assert_eq!(foreign.suffix(), "");
 }
 
 #[test]
