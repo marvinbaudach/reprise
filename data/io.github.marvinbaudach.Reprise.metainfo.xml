@@ -139,7 +139,7 @@
     <!-- One entry per promoted release, not per merge into dev. Every merge
          raises the workspace version; only a promotion to main ships one.
          See docs/agents/branching.md and RELEASING.md. -->
-    <release version="0.1.352" date="2026-11-23" type="stable">
+    <release version="0.1.353" date="2026-11-23" type="stable">
       <description>
         <p>Copy Diagnostics, the run log and crash reports now show only fixed text and numbers, so a library path, title or device name cannot reach a bug report. A track selection restored at startup is no longer replaced by the startup greeting, a CUE track restarted after a hung start keeps its own start position, and the Rhythmbox import counts correctly and says why entries are skipped. The URL library is updated to close a security advisory.</p>
         <p xml:lang="de">„Diagnose kopieren“, das Protokoll des Laufs und Absturzberichte zeigen jetzt nur noch feste Texte und Zahlen, sodass kein Bibliothekspfad, Titel oder Gerätename in einen Fehlerbericht gelangen kann. Eine beim Start wiederhergestellte Titelauswahl wird nicht mehr von der Startbegrüßung ersetzt, ein CUE-Titel behält nach einem Neustart eines hängenden Starts seine eigene Startposition, und der Rhythmbox-Import zählt richtig und nennt den Grund, warum Einträge übersprungen werden. Die URL-Bibliothek ist aktualisiert und schließt einen Sicherheitshinweis.</p>
