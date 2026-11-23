@@ -290,23 +290,17 @@ fn an_input_inside_a_template_of_the_panic_location_file_is_reduced_with_it() {
 /// The corpus inputs whose needle shows in `key`'s rendering, for a `Str` and
 /// for a `Debug` value alike.
 fn survivors_under(key: &'static str, inputs: &[String]) -> BTreeSet<String> {
-    let mut shown = BTreeSet::new();
-    for kind in [
-        |input: &str| RecordedValue::Str(input.to_owned()),
-        |input: &str| RecordedValue::Debug(input.to_owned()),
-    ] {
-        let survivors = inputs
+    let surviving = |kind: fn(&str) -> RecordedValue| {
+        inputs
             .iter()
             .filter(|input| leaks(&render_field(key, &kind(input))))
             .cloned()
-            .collect::<BTreeSet<_>>();
-        if shown.is_empty() {
-            shown = survivors;
-        } else {
-            assert_eq!(shown, survivors, "key {key}: Str and Debug differ");
-        }
-    }
-    shown
+            .collect::<BTreeSet<_>>()
+    };
+    let as_str = surviving(|input| RecordedValue::Str(input.to_owned()));
+    let as_debug = surviving(|input| RecordedValue::Debug(input.to_owned()));
+    assert_eq!(as_str, as_debug, "key {key}: Str and Debug differ");
+    as_str
 }
 
 #[test]
