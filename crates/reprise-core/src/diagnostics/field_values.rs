@@ -6,18 +6,21 @@
 //! `record_error`). For an event from the app's own code, a key in
 //! `KEEP_FIELDS` keeps a typed number or bool as written. Text, a string or a
 //! `Debug` rendering, is kept only when its whole value has a plain shape: a
-//! number (several dots only under `version`), a plain identifier, an option
-//! or tuple variant of those, or a list of those (`redact_composite` holds the
-//! wrapper and list rules). The value is judged exactly as written: no
-//! trailing punctuation, no second token, nothing after the closing bracket.
-//! Every other key is written `key=$REDACTED`, whatever its value looks like.
+//! number (several dots only under `version`), `None`, `true`, `false`, or a
+//! list of integers, under any kept key; and, under a key of
+//! `KEEP_TEXT_FIELDS` only, a plain identifier, an option or tuple variant of
+//! those, or a list of those (`redact_composite` holds the wrapper and list
+//! rules). The value is judged exactly as written: no trailing punctuation, no
+//! second token, nothing after the closing bracket. Every other key is written
+//! `key=$REDACTED`, whatever its value looks like.
 //!
 //! The policy is enforced by key, not by value type (`field_policy` says so):
-//! a kept key whose text value is one plain identifier (`state=Pink`) passes.
-//! The shape check is defense in depth, not a proof.
+//! a text key whose value is one plain identifier (`state=Pink`) passes, and a
+//! kept key outside `KEEP_TEXT_FIELDS` shows a word never (`id=marvin` is
+//! redacted). The shape check is defense in depth, not a proof.
 
-use super::field_policy::KEEP_FIELDS;
-use super::redact_composite::{is_plain_list_value, is_plain_wrapped};
+use super::field_policy::{is_safe_structured_field, is_text_field};
+use super::redact_composite::{is_integer_list_value, is_plain_list_value, is_plain_wrapped};
 
 /// What stands in for a value that may not be shown.
 pub const REDACTED: &str = "$REDACTED";
@@ -29,6 +32,10 @@ pub(super) const MAX_VALUE_BYTES: usize = 4096;
 
 /// Duration suffixes of `Debug` for `Duration`, longest first.
 const DURATION_UNITS: [&str; 5] = ["ms", "ns", "µs", "us", "s"];
+
+/// The words of the language itself that carry no information whatever the key:
+/// `Debug` of an empty option and of a bool.
+const FIXED_WORDS: [&str; 3] = ["None", "true", "false"];
 
 /// An identifier this long made only of hex digits reads as a hash or a
 /// token (`deadbeefcafe`), not as a word.
@@ -64,11 +71,6 @@ impl RecordedField {
     pub fn new(key: &'static str, value: RecordedValue) -> Self {
         Self { key, value }
     }
-
-    /// `key=value` when the policy shows the value, else `key=$REDACTED`.
-    pub fn rendered(&self) -> String {
-        render_field(self.key, &self.value)
-    }
 }
 
 /// `key=value` for a field of an own event, or `key=$REDACTED`.
@@ -81,7 +83,7 @@ pub fn render_field(key: &'static str, value: &RecordedValue) -> String {
 
 /// The text a field may show, `None` when it must be redacted.
 fn shown_value(key: &str, value: &RecordedValue) -> Option<String> {
-    if KEEP_FIELDS.binary_search(&key).is_err() {
+    if !is_safe_structured_field(key) {
         return None;
     }
     match value {
@@ -96,14 +98,22 @@ fn shown_value(key: &str, value: &RecordedValue) -> Option<String> {
     }
 }
 
-/// Whether the whole text of a kept key's string or `Debug` value has a plain
-/// shape.
+/// Whether the whole text of a kept key's string or `Debug` value has a shape
+/// that key may show.
+///
+/// Every kept key shows a number, a fixed literal (`None`, `true`, `false`) and
+/// a list of integers. Only a key of `KEEP_TEXT_FIELDS` also shows a word: a
+/// plain identifier, or an option, tuple variant or list of those. A word under
+/// any other key is foreign text that merely looks like a variant name.
 pub(super) fn is_kept_text(key: &str, value: &str) -> bool {
     value.len() <= MAX_VALUE_BYTES
         && (is_number_or_version(value, key)
-            || is_plain_identifier(value)
-            || is_plain_wrapped(value)
-            || is_plain_list_value(value))
+            || FIXED_WORDS.contains(&value)
+            || is_integer_list_value(value)
+            || (is_text_field(key)
+                && (is_plain_identifier(value)
+                    || is_plain_wrapped(value)
+                    || is_plain_list_value(value))))
 }
 
 /// `^[A-Za-z_][A-Za-z0-9_]*$`, minus anything that reads as a hash.

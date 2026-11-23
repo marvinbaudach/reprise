@@ -27,17 +27,25 @@
 //!
 //! A kept key keeps a typed number or bool as written. Text recorded under a
 //! kept key (a `&str` or a `Debug` value) stays only when its whole shape is
-//! plain: a number (an integer, a float with one dot, an exponent form, a
-//! duration such as `12.5ms`, or `Some(..)` of one; several dots only under
-//! `version`), a plain identifier (`[A-Za-z_][A-Za-z0-9_]*`, and not eight or
-//! more hex digits), or an option, tuple variant or list of those:
-//! `Some(Track(5))`, `[1, 2, 3]`, `[NowPlaying, PlayNext(0)]` (integers and
-//! identifiers only inside; at most three wrappers and 64 elements, see
-//! `redact_composite`). Anything else, such as `mode=Compact,title=Foo` or a
-//! struct body (`StaleFor { seconds: 60 }`), is `key=$REDACTED`. What remains
-//! is a plain identifier that is itself foreign text (`state=Artist`): the
+//! plain, and which shapes depend on the key:
+//!
+//! - under **every** kept key: a number (an integer, a float with one dot, an
+//!   exponent form, a duration such as `12.5ms`, or `Some(..)` of one; several
+//!   dots only under `version`), the literals `None`, `true` and `false`, and
+//!   a list of integers (`[1, 2, 3]`, at most 64 elements);
+//! - additionally under a key of [`KEEP_TEXT_FIELDS`] only: a plain identifier
+//!   (`[A-Za-z_][A-Za-z0-9_]*`, and not eight or more hex digits), or an
+//!   option, tuple variant or list of those: `Some(Track(5))`,
+//!   `[NowPlaying, PlayNext(0)]` (integers and identifiers only inside; at most
+//!   three wrappers and 64 elements, see `redact_composite`).
+//!
+//! Anything else, such as `mode=Compact,title=Foo`, a struct body
+//! (`StaleFor { seconds: 60 }`) or a plain word under a numeric key
+//! (`id=marvin`), is `key=$REDACTED`. What remains is a plain identifier under
+//! a `KEEP_TEXT_FIELDS` key that is itself foreign text (`state=Artist`): the
 //! policy cannot tell it from a variant name, so a site that records foreign
-//! text under a kept key is a review concern.
+//! text under such a key is a review concern, and so is adding a key to
+//! `KEEP_TEXT_FIELDS`.
 //!
 //! The classification test checks keys, not value types, and it does not see
 //! fields that dependencies emit (zbus, for one). A new site that emits an
@@ -107,6 +115,7 @@ pub(super) const KEEP_FIELDS: &[&str] = &[
     "cover_download",
     // The numeric GStreamer playbin flags.
     "current_flags",
+    // A `usize` position in the play order (`queue.rs`).
     "current_pos",
     "current_track_ms",
     // `Debug` of `Option<QueueItem>`: a track or episode id.
@@ -260,6 +269,7 @@ pub(super) const KEEP_FIELDS: &[&str] = &[
     "offset",
     // Static labels, and `Debug` of `PodcastsOperation`, whose variants carry only integers and fieldless enums. The column editor's non-static `operation` is logged as `editor_operation`.
     "operation",
+    // A `usize` length of the play order (`queue.rs`).
     "order_len",
     "other_ms",
     // Static labels, and `Debug` of fieldless outcome enums.
@@ -383,6 +393,7 @@ pub(super) const KEEP_FIELDS: &[&str] = &[
     "total_bytes",
     "touched",
     "track_id",
+    // A `usize` track slot index in the play order (`queue.rs`).
     "track_slot",
     "tracks",
     "trashed",
@@ -408,6 +419,86 @@ pub(super) const KEEP_FIELDS: &[&str] = &[
     "work_done_us",
     "worker_ms",
     "write_ms",
+];
+
+/// The subset of [`KEEP_FIELDS`] whose text values may be a plain word. Sorted.
+///
+/// A key belongs here only when **every** place that emits it records the
+/// `Debug` of a fieldless enum (or of an option or list of such variants, or of
+/// one whose payloads are integers), or a `&'static str` label chosen at the
+/// call site. Every other kept key carries numbers, bools and ids: a plain word
+/// under it (`id=marvin`) is foreign text and is redacted. Adding a key here is
+/// a review concern: name the type at each call site in the comment.
+pub(super) const KEEP_TEXT_FIELDS: &[&str] = &[
+    // `Debug` of the fieldless `ClockConvention` (`date_format.rs`).
+    "clock",
+    // The `&'static str` parameter of `external_link::launch` and `launch_in_app`.
+    "context",
+    // `Debug` of the fieldless `LibraryWindowControl`.
+    "control",
+    // `Debug` of `Option<QueueItem>`: `Some(Track(5))`, `None`.
+    "current_up_next",
+    // `Debug` of the fieldless `FirstRunDecision`.
+    "decision",
+    // `ReloadEmit::as_str`: a static label.
+    "emit",
+    // `Debug` of `std::io::ErrorKind`, a fieldless enum.
+    "error_kind",
+    // `Debug` of the fieldless `BrowseFacet`.
+    "facet",
+    // String literals and `YtdlpFailure::diagnostic_name` (`&'static str`).
+    "failure_kind",
+    // `Debug` of the fieldless `GroupKind`, `DoctorJobKind` and `PodcastKind`
+    // (`Some(Rss)` for an optional one).
+    "kind",
+    // `PodcastsLane::name`: a `&'static str`.
+    "lane",
+    // `Debug` of the fieldless `CompactLayout`.
+    "layout",
+    // `QueueListener::name`: a `&'static str`.
+    "listener",
+    // `Debug` of the fieldless `WindowViewMode`, `WindowDecorationMode`,
+    // `DeleteMode` and `PlaybackMode`, and a `u8` selection mode.
+    "mode",
+    // `ModuleDescriptor::id`: a `&'static str`.
+    "module",
+    // `&'static str` labels, and `Debug` of `PodcastsOperation`, whose
+    // payloads are integers and fieldless enums.
+    "operation",
+    // `&'static str` labels and `Debug` of the fieldless `FolderOutcome` and
+    // `SubscriptionOutcome`.
+    "outcome",
+    // A count, or `Debug` of the fieldless `gst::State`.
+    "pending",
+    // `MprisPlaybackStatus::as_str` and a string literal.
+    "playback",
+    // `Debug` of `RefreshPolicy`: `Due` and `Force`; `StaleFor` has a body and
+    // so is redacted.
+    "policy",
+    // `RecoveryOutcome::as_str`: a static label.
+    "recovery",
+    // `Debug` of the fieldless `Repeat`.
+    "repeat",
+    // `Debug` of the fieldless `CompletionResponse`.
+    "response",
+    // `Debug` of `Vec<QueueRow>`, whose variants carry only list indices, and
+    // counts.
+    "rows",
+    // `Debug` of `Option<QueueItem>`: a track or episode id.
+    "runtime_current_up_next",
+    // The `&'static str` service labels of the scrobbling workers.
+    "service",
+    // String literals at the call sites.
+    "stage",
+    // `Debug` of the fieldless `PlaybackState`, `EmptyState`, `AnalysisState`
+    // and `gst::State`.
+    "state",
+    // `DownloadState::kind`: a `&'static str`.
+    "state_kind",
+    // `StartupTask::log_name`: a `&'static str`.
+    "task",
+    // A `&'static str` verdict label in `scanner_reconcile.rs`.
+    "verdict",
 ];
 
 /// Keys that identify, or may identify, something and so stay redacted. Sorted.
@@ -609,4 +700,10 @@ pub(super) const REDACT_FIELDS: &[&str] = &[
 /// safe. This module explains how a key earns its place.
 pub fn is_safe_structured_field(key: &str) -> bool {
     KEEP_FIELDS.binary_search(&key).is_ok()
+}
+
+/// Whether a kept key's text value may be a plain word (see
+/// [`KEEP_TEXT_FIELDS`]). A key outside `KEEP_FIELDS` is never one.
+pub(super) fn is_text_field(key: &str) -> bool {
+    KEEP_TEXT_FIELDS.binary_search(&key).is_ok()
 }

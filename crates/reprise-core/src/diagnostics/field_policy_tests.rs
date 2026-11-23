@@ -1,6 +1,6 @@
 //! The shape of the two field lists, and what the predicate does with them.
 
-use super::field_policy::{KEEP_FIELDS, REDACT_FIELDS};
+use super::field_policy::{is_text_field, KEEP_FIELDS, KEEP_TEXT_FIELDS, REDACT_FIELDS};
 use super::is_safe_structured_field;
 
 /// Keys the maintainers decided stay redacted whatever a site carries.
@@ -49,6 +49,49 @@ fn both_lists_are_sorted_without_duplicates() {
                 pair[1]
             );
         }
+    }
+}
+
+#[test]
+fn the_text_subset_is_sorted_and_a_subset_of_the_kept_keys() {
+    for pair in KEEP_TEXT_FIELDS.windows(2) {
+        assert!(
+            pair[0] < pair[1],
+            "KEEP_TEXT_FIELDS must be strictly sorted, but `{}` comes before `{}`",
+            pair[0],
+            pair[1]
+        );
+    }
+    let strangers: Vec<&&str> = KEEP_TEXT_FIELDS
+        .iter()
+        .filter(|key| KEEP_FIELDS.binary_search(key).is_err())
+        .collect();
+    assert!(
+        strangers.is_empty(),
+        "keys in KEEP_TEXT_FIELDS but not in KEEP_FIELDS: {strangers:?}"
+    );
+    assert!(KEEP_TEXT_FIELDS.len() < KEEP_FIELDS.len());
+}
+
+#[test]
+fn a_key_that_carries_ids_and_counts_is_not_a_text_key() {
+    for key in [
+        "id",
+        "count",
+        "track_id",
+        "elapsed_ms",
+        "episode_ids",
+        "version",
+    ] {
+        assert!(is_safe_structured_field(key), "{key}");
+        assert!(!is_text_field(key), "{key}");
+    }
+    for key in ["state", "kind", "outcome", "mode", "operation"] {
+        assert!(is_text_field(key), "{key}");
+    }
+    // A key that is not kept at all is not a text key either.
+    for key in ["error", "path", "zqx_unlisted"] {
+        assert!(!is_text_field(key), "{key}");
     }
 }
 

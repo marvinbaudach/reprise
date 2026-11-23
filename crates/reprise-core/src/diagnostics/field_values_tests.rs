@@ -75,7 +75,7 @@ fn a_kept_key_keeps_a_typed_number_or_bool_as_written() {
             "is_shuffled=true",
         ),
     ] {
-        assert_eq!(field.rendered(), expected);
+        assert_eq!(render_field(field.key, &field.value), expected);
     }
 }
 
@@ -104,7 +104,7 @@ fn a_kept_key_keeps_a_plain_identifier_or_a_number_as_text() {
     for (key, value) in [
         ("mode", "Compact"),
         ("state", "Playing"),
-        ("id", "Track7"),
+        ("operation", "Track7"),
         ("kind", "_private"),
         ("count", "3"),
         ("count", "-3"),
@@ -214,15 +214,57 @@ fn an_option_of_a_plain_value_keeps_its_key_and_value() {
 }
 
 #[test]
-fn a_list_of_plain_values_keeps_its_key_and_value() {
+fn a_list_of_integers_keeps_its_key_and_value() {
+    for value in ["[]", "[1]", "[1, 2, 3]", "[-1, 20]"] {
+        assert_kept("episode_ids", value);
+    }
+}
+
+#[test]
+fn a_list_of_plain_words_is_kept_only_under_a_text_key() {
     for value in [
-        "[]",
-        "[1]",
-        "[1, 2, 3]",
         "[NowPlaying, PlayNext(0), UpNext(1)]",
         "[Some(1), None]",
+        "[1, 2, 3]",
     ] {
-        assert_kept("episode_ids", value);
+        assert_kept("rows", value);
+    }
+    for value in ["[NowPlaying, PlayNext(0), UpNext(1)]", "[Some(1), None]"] {
+        assert_redacted("episode_ids", value);
+    }
+}
+
+#[test]
+fn a_plain_word_under_a_key_that_carries_numbers_is_redacted() {
+    // A kept key that is not in `KEEP_TEXT_FIELDS` carries ids and counts, so
+    // a word under it is foreign text that merely looks like a variant name.
+    for (key, value) in [
+        ("id", "marvin"),
+        ("count", "zqxuser"),
+        ("elapsed_ms", "Playing"),
+        ("track_id", "_private"),
+        ("id", "Some(marvin)"),
+        ("id", "Track(5)"),
+        ("episode_ids", "[marvin]"),
+        ("episode_ids", "Some(Track(5))"),
+        ("current_pos", "[marvin, bob]"),
+    ] {
+        assert_redacted(key, value);
+    }
+    // A text key keeps the same word, and every key keeps the fixed literals.
+    assert_kept("state", "marvin");
+    for key in ["id", "count", "elapsed_ms", "state"] {
+        for value in ["None", "true", "false", "Some(7)", "[1, 2]"] {
+            assert_kept(key, value);
+        }
+    }
+}
+
+#[test]
+fn a_list_separated_by_anything_but_a_comma_and_one_space_is_redacted() {
+    for value in ["[1,\n2]", "[1,  2]", "[1,\t2]", "[1 , 2]", "[1,2]"] {
+        assert_redacted("episode_ids", value);
+        assert_redacted("rows", value);
     }
 }
 
@@ -260,9 +302,6 @@ fn a_composite_value_with_anything_but_plain_parts_is_redacted() {
         ("state", "Some(Track(1.5))"),
         ("state", "Some(Track())"),
         ("state", "Some()"),
-        ("episode_ids", "[1,  2]"),
-        ("episode_ids", "[1,\t2]"),
-        ("episode_ids", "[1,\n2]"),
     ] {
         assert_redacted(key, value);
     }

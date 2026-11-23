@@ -5,7 +5,9 @@
 //! part is a plain value: an integer, a plain identifier, or an identifier
 //! wrapping one (`Some(..)`, `Track(..)`). Anything else, a quote, a path, a
 //! dot outside the single-token numbers, a struct body, is not plain, and
-//! `field_values` redacts the whole value.
+//! `field_values` redacts the whole value. `field_values` also decides which
+//! keys may show a word at all: under a key that carries ids only the integer
+//! list qualifies.
 
 use super::field_values::is_plain_identifier;
 
@@ -24,6 +26,18 @@ pub(super) fn is_plain_wrapped(value: &str) -> bool {
 /// A whole `Debug` list value: `[]`, `[1, 2, 3]`, `[NowPlaying, PlayNext(0)]`.
 /// It opens with `[`, closes with the only `]` and has nothing after it.
 pub(super) fn is_plain_list_value(value: &str) -> bool {
+    is_list_of(value, |element| is_plain_element(element, MAX_WRAPPERS))
+}
+
+/// A whole `Debug` list of integers only: `[]`, `[1, 2, 3]`. What a kept key
+/// that carries ids may show of a list, whatever the key's text policy.
+pub(super) fn is_integer_list_value(value: &str) -> bool {
+    is_list_of(value, is_integer)
+}
+
+/// `[a, b, c]` with the elements joined by exactly `, `, each accepted by
+/// `element`, within the element bound.
+fn is_list_of(value: &str, element: impl Fn(&str) -> bool) -> bool {
     let Some(inner) = value
         .strip_prefix('[')
         .and_then(|rest| rest.strip_suffix(']'))
@@ -34,14 +48,12 @@ pub(super) fn is_plain_list_value(value: &str) -> bool {
         return false;
     }
     inner.is_empty()
-        || inner.split(", ").count() <= MAX_LIST_ELEMENTS
-            && inner
-                .split(", ")
-                .all(|element| is_plain_element(element, MAX_WRAPPERS))
+        || inner.split(", ").count() <= MAX_LIST_ELEMENTS && inner.split(", ").all(element)
 }
 
 /// An integer, a plain identifier, or `Ident(<plain element>)`. Dots are
-/// refused here: the filename pass reads `Some(Track(1.5))` as a file name.
+/// refused here: an element is a variant name or an id, and `Some(Track(1.5))`
+/// or `a.flac` would be a file name, which no such field carries.
 fn is_plain_element(value: &str, wrappers_left: usize) -> bool {
     if is_integer(value) || is_plain_identifier(value) {
         return true;

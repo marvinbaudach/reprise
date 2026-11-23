@@ -8,19 +8,20 @@
 //! no real name. Each input is put in every position a value can reach the
 //! report through, and none of them may show the needle, with the single
 //! exception the invariant names: a plain identifier, an option or tuple
-//! variant or a list of those under a `KEEP_FIELDS` key (invariant item 3).
+//! variant or a list of those under a `KEEP_TEXT_FIELDS` key (invariant item
+//! 3). Under every other `KEEP_FIELDS` key only numbers and bools are shown.
 //!
 //! The invariant fuzz lives in `allowlist_fuzz_tests`.
 
 use std::collections::BTreeSet;
 
 use super::crash_reduce::{reduce_message, PanicPayload};
-use super::field_policy::{KEEP_FIELDS, REDACT_FIELDS};
+use super::field_policy::{KEEP_FIELDS, KEEP_TEXT_FIELDS, REDACT_FIELDS};
 use super::field_values::{render_field, RecordedField, RecordedValue};
 use super::log_template::{LogTemplate, HOLE};
 use super::log_templates::{is_own_file, templates_for_file};
 use super::panic_phrases::phrases;
-use super::safe_event::{safe_event, Callsite, LogLevel, RecordedEvent, SafeEvent};
+use super::safe_event::{one_line, safe_event, Callsite, LogLevel, RecordedEvent, SafeEvent};
 
 const CORPUS: &str = include_str!("testdata/leak_corpus.txt");
 const TABLE: &str = include_str!("log_templates.txt");
@@ -32,12 +33,12 @@ const CORPUS_SIZE: std::ops::RangeInclusive<usize> = 150..=250;
 const OWN_FILE: &str = "crates/reprise-gnome/src/ui/sidebar/sidebar_rebuild.rs";
 /// A dependency's source file: the template table does not know it.
 const FOREIGN_FILE: &str = "/cargo/registry/src/dependency-1.0.0/src/lib.rs";
-/// A key of `KEEP_FIELDS` that carries state names.
+/// A key of `KEEP_TEXT_FIELDS` that carries state names.
 const KEPT_KEY: &str = "state";
 
 /// What a plain identifier, an option or tuple variant, or a list of those
-/// shows under a `KEEP_FIELDS` key: the corpus inputs of that shape, which the
-/// invariant lets through. Written out, not derived, so that a widening of the
+/// shows under a `KEEP_TEXT_FIELDS` key: the corpus inputs of that shape, which
+/// the invariant lets through. Written out, not derived, so that a widening of the
 /// value shape check changes this list and is seen.
 const KEEP_SURVIVORS: &[&str] = &["Some(Zqxa)", "Track(Zqxa)", "[Zqxa, Zqxb, Zqxc]", "zqxuser"];
 
@@ -68,10 +69,6 @@ fn decode(line: &str) -> String {
 
 fn leaks(text: &str) -> bool {
     text.to_lowercase().contains(NEEDLE)
-}
-
-fn one_line(text: &str) -> String {
-    text.replace('\n', "\\n").replace('\r', "\\r")
 }
 
 fn callsite(file: Option<&'static str>) -> Callsite {
@@ -290,23 +287,37 @@ fn an_input_inside_a_template_of_the_panic_location_file_is_reduced_with_it() {
     assert!(checked > 10_000, "only {checked} combinations ran");
 }
 
-#[test]
-fn an_input_as_the_text_of_a_kept_field_survives_only_as_a_plain_shape() {
-    let inputs = corpus();
-    let expected = KEEP_SURVIVORS.iter().copied().collect::<BTreeSet<_>>();
-    for key in KEEP_FIELDS {
-        for kind in [
-            |input: &str| RecordedValue::Str(input.to_owned()),
-            |input: &str| RecordedValue::Debug(input.to_owned()),
-        ] {
-            let survivors = inputs
-                .iter()
-                .filter(|input| leaks(&render_field(key, &kind(input))))
-                .map(String::as_str)
-                .collect::<BTreeSet<_>>();
-
-            assert_eq!(survivors, expected, "key {key}");
+/// The corpus inputs whose needle shows in `key`'s rendering, for a `Str` and
+/// for a `Debug` value alike.
+fn survivors_under(key: &'static str, inputs: &[String]) -> BTreeSet<String> {
+    let mut shown = BTreeSet::new();
+    for kind in [
+        |input: &str| RecordedValue::Str(input.to_owned()),
+        |input: &str| RecordedValue::Debug(input.to_owned()),
+    ] {
+        let survivors = inputs
+            .iter()
+            .filter(|input| leaks(&render_field(key, &kind(input))))
+            .cloned()
+            .collect::<BTreeSet<_>>();
+        if shown.is_empty() {
+            shown = survivors;
+        } else {
+            assert_eq!(shown, survivors, "key {key}: Str and Debug differ");
         }
+    }
+    shown
+}
+
+#[test]
+fn an_input_as_the_text_of_a_text_key_survives_only_as_a_plain_shape() {
+    let inputs = corpus();
+    let expected = KEEP_SURVIVORS
+        .iter()
+        .map(|survivor| (*survivor).to_owned())
+        .collect::<BTreeSet<_>>();
+    for key in KEEP_TEXT_FIELDS {
+        assert_eq!(survivors_under(key, &inputs), expected, "key {key}");
     }
     // What survives is the value as written, plain by its whole shape.
     for survivor in KEEP_SURVIVORS {
@@ -318,6 +329,27 @@ fn an_input_as_the_text_of_a_kept_field_survives_only_as_a_plain_shape() {
                 .all(|ch| ch.is_ascii_alphanumeric() || "_()[], ".contains(ch)),
             "{survivor}"
         );
+    }
+}
+
+#[test]
+fn an_input_as_the_text_of_any_other_kept_key_is_always_redacted() {
+    let inputs = corpus();
+    let numeric_keys = KEEP_FIELDS
+        .iter()
+        .filter(|key| KEEP_TEXT_FIELDS.binary_search(key).is_err())
+        .collect::<Vec<_>>();
+
+    assert!(numeric_keys.len() > 100, "{} keys", numeric_keys.len());
+    for key in numeric_keys {
+        assert_eq!(survivors_under(key, &inputs), BTreeSet::new(), "key {key}");
+        // The fixture user as a plain word is the case the subset exists for.
+        for value in [
+            RecordedValue::Str(FIXTURE_USER.to_owned()),
+            RecordedValue::Debug(FIXTURE_USER.to_owned()),
+        ] {
+            assert_eq!(render_field(key, &value), format!("{key}=$REDACTED"));
+        }
     }
 }
 
