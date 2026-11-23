@@ -181,7 +181,7 @@ req.headers.authorization zqxabc123
 pass zqxhunter2
 otp 123456 zqx
 sessionid zqxabc123def
-code 4/0AX4XfWhzqx
+code 4/0AXzqx000000
 zqxhunter2 is the password
 sk_live_zqx0000 used
 192.168.1.5:zqxhunter2 x
