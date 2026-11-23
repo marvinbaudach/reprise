@@ -1,5 +1,5 @@
-use super::{read_log_tail, tail_of, TAIL_MAX_BYTES, TAIL_MAX_LINES};
 use super::log_tail::crash_section_of;
+use super::{read_log_tail, tail_of, TAIL_MAX_BYTES, TAIL_MAX_LINES};
 use crate::crash_report::{render_report, CRASH_REPORT_END_MARKER, CRASH_REPORT_MARKER};
 use crate::diagnostics::PanicPayload;
 
