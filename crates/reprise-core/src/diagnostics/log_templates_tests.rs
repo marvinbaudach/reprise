@@ -110,6 +110,19 @@ fn the_scan_finds_enough_to_make_the_table_meaningful() {
 }
 
 #[test]
+fn no_template_of_the_table_is_all_holes() {
+    for line in CHECKED_IN.lines() {
+        let (file, template) =
+            parse_line(line).unwrap_or_else(|| panic!("malformed line: {line:?}"));
+        assert!(
+            template.literal_chars() > 0,
+            "{file}: {line:?} has no static text, so every event of that call site would show \
+             only `…`; give each case its own literal"
+        );
+    }
+}
+
+#[test]
 fn the_table_has_no_malformed_line_and_every_file_is_a_workspace_source_of_a_table_crate() {
     for line in CHECKED_IN.lines() {
         let (file, _) = parse_line(line).unwrap_or_else(|| panic!("malformed line: {line:?}"));

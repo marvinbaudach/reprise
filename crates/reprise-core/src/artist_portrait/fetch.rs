@@ -139,12 +139,7 @@ fn fetch_deezer_image(
         .as_ref()
         .map(|image| placeholder::placeholder_distance(image.image()));
     if let Some(distance) = distance.filter(|value| *value <= placeholder::PLACEHOLDER_RMSE_MAX) {
-        warn_placeholder(
-            name,
-            url,
-            distance,
-            "artist portrait rejected as a known Deezer placeholder",
-        );
+        warn_placeholder_rejected(name, url, distance);
         if let Some(path) = stale.as_ref().filter(|path| path.exists()) {
             let refreshed = cache::refresh_image(dir, name, path).unwrap_or_else(|| {
                 tracing::warn!(
@@ -167,12 +162,7 @@ fn fetch_deezer_image(
     if let Some(distance) =
         distance.filter(|value| *value < placeholder::PLACEHOLDER_WARNING_RMSE_MAX)
     {
-        warn_placeholder(
-            name,
-            url,
-            distance,
-            "artist portrait accepted near the placeholder threshold",
-        );
+        warn_placeholder_accepted(name, url, distance);
     }
     let outcome = cache::store_portrait(dir, name, &bytes, extension, &PortraitRecord::deezer())
         .map(PortraitOutcome::Found)
@@ -309,12 +299,29 @@ fn musicbrainz_search_answered(json: &str) -> bool {
         .is_some_and(|artists| artists.is_array())
 }
 
-fn warn_placeholder(name: &str, url: &str, distance: f64, message: &'static str) {
-    let image_identifier = deezer::image_identifier(url).unwrap_or_else(|| "unknown".into());
+/// The Deezer image identifier of `url` for a placeholder warning.
+fn placeholder_image_identifier(url: &str) -> String {
+    deezer::image_identifier(url).unwrap_or_else(|| "unknown".into())
+}
+
+// Each case logs its own literal: the message is the only static text the
+// diagnostics template table can keep, so a shared `"{message}"` would show `…`.
+fn warn_placeholder_rejected(name: &str, url: &str, distance: f64) {
+    let image_identifier = placeholder_image_identifier(url);
     tracing::warn!(
         artist = name,
         image_identifier,
         placeholder_distance = distance,
-        "{message}"
+        "artist portrait rejected as a known Deezer placeholder"
+    );
+}
+
+fn warn_placeholder_accepted(name: &str, url: &str, distance: f64) {
+    let image_identifier = placeholder_image_identifier(url);
+    tracing::warn!(
+        artist = name,
+        image_identifier,
+        placeholder_distance = distance,
+        "artist portrait accepted near the placeholder threshold"
     );
 }

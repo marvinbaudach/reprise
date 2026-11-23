@@ -15,8 +15,9 @@ crates/reprise-core/src/artist_portrait/cover_backfill.rs	album cover backfill c
 crates/reprise-core/src/artist_portrait/cover_backfill.rs	album cover backfill worker panicked
 crates/reprise-core/src/artist_portrait/cover_backfill.rs	album cover backfill worker panicked while shutting down
 crates/reprise-core/src/artist_portrait/cover_backfill.rs	album cover backfill worklist
+crates/reprise-core/src/artist_portrait/fetch.rs	artist portrait accepted near the placeholder threshold
 crates/reprise-core/src/artist_portrait/fetch.rs	artist portrait could not refresh the cached image after placeholder rejection
-crates/reprise-core/src/artist_portrait/fetch.rs	{}
+crates/reprise-core/src/artist_portrait/fetch.rs	artist portrait rejected as a known Deezer placeholder
 crates/reprise-core/src/concerts/pipeline.rs	concert artist resolution failed
 crates/reprise-core/src/concerts/pipeline.rs	concert event fetch failed
 crates/reprise-core/src/concerts/similar.rs	similar artist discovery failed
