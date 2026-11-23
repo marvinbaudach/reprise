@@ -7,7 +7,7 @@ use super::field_values::{RecordedField, RecordedValue, REDACTED};
 use super::log_template::LogTemplate;
 use super::log_templates::templates_for_file;
 use super::safe_event::{
-    foreign_event, own_event, safe_event, Callsite, LogLevel, RecordedEvent, SafeEvent,
+    foreign_event, one_line, own_event, safe_event, Callsite, LogLevel, RecordedEvent, SafeEvent,
 };
 
 const SIDEBAR_FILE: &str = "crates/reprise-gnome/src/ui/sidebar/sidebar_rebuild.rs";
@@ -82,7 +82,7 @@ fn the_real_table_gives_the_message_of_a_known_own_file() {
     let plain = templates_for_file(SIDEBAR_FILE)
         .iter()
         .find(|template| template.hole_count() == 0)
-        .map(LogTemplate::canonical)
+        .map(LogTemplate::reduced)
         .unwrap_or_default();
     assert!(
         !plain.is_empty(),
@@ -94,7 +94,9 @@ fn the_real_table_gives_the_message_of_a_known_own_file() {
         &message(&plain),
     );
 
-    assert_eq!(event.body(), plain);
+    // `reduced()` of a hole-free template is the text the call site renders,
+    // braces and line feeds as they are, unlike its `canonical()` format.
+    assert_eq!(event.body(), one_line(&plain));
     assert_eq!(
         event.location(),
         Some(format!("{SIDEBAR_FILE}:30").as_str())
