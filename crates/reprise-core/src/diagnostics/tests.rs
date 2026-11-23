@@ -184,3 +184,28 @@ fn overflowing_log_keeps_capacity_and_renders_latest_ten_newest_first() {
     assert!(lines[9].ends_with("worker: event-195"));
     assert!(!report.contains("event-194"));
 }
+
+#[test]
+fn an_event_made_from_a_safe_event_carries_its_target_body_and_call_site() {
+    use super::{safe_event, Callsite, LogLevel, RecordedEvent};
+
+    let callsite = Callsite {
+        file: Some("crates/reprise-core/src/run_log.rs"),
+        line: Some(42),
+        target: "reprise_core::run_log",
+        level: LogLevel::Error,
+    };
+    let recorded = RecordedEvent {
+        message: Some("zqxuser wrote /home/zqxuser/secret".to_owned()),
+        fields: Vec::new(),
+    };
+    let safe = safe_event(&callsite, &recorded);
+
+    let event = DiagnosticEvent::from_safe(&safe, 9 * 3_600 + 25 * 60 + 14);
+
+    assert_eq!(event.level, DiagnosticLevel::Error);
+    assert_eq!(event.target, "reprise_core::run_log");
+    assert_eq!(event.message, safe.body());
+    assert_eq!(event.location.as_deref(), safe.location());
+    assert!(!event.message.contains("zqxuser"));
+}

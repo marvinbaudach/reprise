@@ -6,7 +6,7 @@ use std::sync::{Arc, Mutex, OnceLock, PoisonError};
 use chrono::{Local, Timelike};
 use libadwaita as adw;
 use reprise_core::db::Db;
-use reprise_core::diagnostics::{read_log_tail, DiagnosticEvent, DiagnosticLevel, DiagnosticLog};
+use reprise_core::diagnostics::{read_log_tail, DiagnosticEvent, DiagnosticLog};
 use reprise_core::state_root;
 use reprise_platform_linux::diagnostics::DesktopDiagnosticInput;
 use tracing::{Event, Level, Metadata, Subscriber};
@@ -105,17 +105,13 @@ where
     S: Subscriber,
 {
     fn on_event(&self, event: &Event<'_>, _context: Context<'_, S>) {
-        let level = match *event.metadata().level() {
-            Level::WARN => DiagnosticLevel::Warn,
-            Level::ERROR => DiagnosticLevel::Error,
-            _ => return,
-        };
+        if !matches!(*event.metadata().level(), Level::WARN | Level::ERROR) {
+            return;
+        }
         let safe = event_record::safe_of(event);
         let seconds_since_midnight = Local::now().num_seconds_from_midnight();
         // What is stored is already safe: the report embeds it as it is.
-        let diagnostic =
-            DiagnosticEvent::new(seconds_since_midnight, level, safe.target(), safe.body())
-                .with_location(safe.location());
+        let diagnostic = DiagnosticEvent::from_safe(&safe, seconds_since_midnight);
         self.log
             .lock()
             .unwrap_or_else(PoisonError::into_inner)
