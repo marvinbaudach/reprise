@@ -60,7 +60,7 @@ fn a_second_instance_leaves_the_legacy_logs_alone() {
 }
 
 #[test]
-fn without_a_state_root_the_log_stays_off_and_nothing_is_removed() {
+fn without_a_state_root_the_log_stays_off() {
     let log = Mutex::new(DeferredRunLog::default());
 
     start_log(None, &log);
