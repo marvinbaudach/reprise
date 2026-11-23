@@ -27,6 +27,12 @@ pub const RHYTHMBOX_SKIP_OUTSIDE_LIBRARY: &str = N_!("Files outside your library
 pub const RHYTHMBOX_SKIP_MISSING_ON_DISK: &str = N_!("Files no longer on disk");
 pub const RHYTHMBOX_SKIP_NOT_YET_SCANNED: &str = N_!("Files not yet scanned");
 pub const RHYTHMBOX_SKIP_NON_SONG: &str = N_!("Podcasts & radio streams");
+/// The Preferences > Library row that opens the import after first run (START-8).
+pub const RHYTHMBOX_PREFERENCES_IMPORT: &str = N_!("Import from Rhythmbox\u{2026}");
+pub const RHYTHMBOX_PREFERENCES_IMPORT_SUBTITLE: &str =
+    N_!("Copy ratings, play counts, dates and playlists from Rhythmbox");
+pub const RHYTHMBOX_PREFERENCES_IMPORT_UNAVAILABLE: &str =
+    N_!("No Rhythmbox library found on this computer");
 pub const RHYTHMBOX_DONE: &str = N_!("Done");
 pub const RHYTHMBOX_CANCEL: &str = N_!("Cancel");
 

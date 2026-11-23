@@ -2400,6 +2400,18 @@ result.
   `start_7_the_first_directory_with_a_database_wins_and_the_override_still_beats_it`,
   `start_7_the_playlists_file_sits_beside_the_database_that_was_found`,
   `start_7_the_importer_takes_its_playlists_file_from_the_resolver`.
+- **START-8** [planned] [gtk] — **The Rhythmbox import stays reachable after
+  first run.** <!-- REVIEW: rule proposal --> Preferences → Library carries
+  the row "Import from Rhythmbox…" after the Rescan row. Activating it opens
+  the same import dialog first run offers. The row is always present: when
+  no `rhythmdb.xml` is found (START-7) it is insensitive and its subtitle
+  says "No Rhythmbox library found on this computer", so the entry is never a
+  silent absence. Its title and subtitle are indexed by the Preferences search,
+  so "rhythmbox" finds it in both states. The primary menu never carries the
+  import. *Tests:*
+  `start_8_the_library_page_offers_the_import_when_a_rhythmbox_database_exists`,
+  `start_8_without_a_rhythmbox_database_the_row_is_insensitive_and_says_why`,
+  `start_8_the_settings_search_finds_the_import_row_for_rhythmbox`.
 
 ## J. Queue view
 

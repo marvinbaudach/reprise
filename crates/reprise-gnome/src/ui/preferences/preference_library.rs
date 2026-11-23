@@ -8,6 +8,7 @@ use libadwaita as adw;
 use libadwaita::prelude::*;
 use reprise_core::library::settings;
 
+use super::preference_rhythmbox::rhythmbox_import_available;
 use super::strings;
 use super::PreferencesContext;
 
@@ -75,6 +76,24 @@ fn build_rescan_row(callback: Rc<dyn Fn()>) -> adw::ActionRow {
     }
     row.add_suffix(&gtk4::Image::from_icon_name("go-next-symbolic"));
     row.connect_activated(move |_| callback());
+    row
+}
+
+/// START-8: the way into the Rhythmbox import after first run. `available`
+/// is whether a `rhythmdb.xml` exists; without one the row stays in place,
+/// insensitive, and says why, so the import is never a silent absence.
+pub(super) fn build_rhythmbox_import_row(
+    available: bool,
+    callback: Rc<dyn Fn()>,
+) -> adw::ActionRow {
+    let row = super::action_row(strings::RHYTHMBOX_PREFERENCES_IMPORT, callback);
+    let subtitle = if available {
+        strings::RHYTHMBOX_PREFERENCES_IMPORT_SUBTITLE
+    } else {
+        strings::RHYTHMBOX_PREFERENCES_IMPORT_UNAVAILABLE
+    };
+    row.set_subtitle(&strings::text(subtitle));
+    row.set_sensitive(available);
     row
 }
 
@@ -208,6 +227,16 @@ impl PreferencesContext {
         });
         group.add(&rescan);
 
+        let weak = Rc::downgrade(self);
+        group.add(&build_rhythmbox_import_row(
+            rhythmbox_import_available(),
+            Rc::new(move || {
+                if let Some(context) = weak.upgrade() {
+                    context.present_rhythmbox_import_dialog();
+                }
+            }),
+        ));
+
         page.add(&group);
         page
     }
@@ -301,6 +330,59 @@ mod tests {
         assert!(!row.is_sensitive());
         assert!((row.opacity() - 0.45).abs() < 0.01);
         window.close();
+    }
+
+    /// START-8: with a Rhythmbox database the Library page's row opens the
+    /// import. The row is built on a real page and group, then found the way
+    /// the settings search finds rows, and activated like a click.
+    #[test]
+    #[ignore = "requires a display; run via xvfb-run"]
+    fn start_8_the_library_page_offers_the_import_when_a_rhythmbox_database_exists() {
+        let _main_context = crate::ui::test_main_context::lock_main_context();
+        gtk4::init().unwrap();
+        let opened = Rc::new(std::cell::Cell::new(0_u32));
+        let counter = opened.clone();
+        let row = build_rhythmbox_import_row(true, Rc::new(move || counter.set(counter.get() + 1)));
+        let page = adw::PreferencesPage::new();
+        let group = adw::PreferencesGroup::new();
+        group.add(&row);
+        page.add(&group);
+
+        let mut rows = Vec::new();
+        super::super::preferences_search_index::collect_rows(
+            page.upcast_ref(),
+            super::super::preferences_window::PageId::Library,
+            &mut rows,
+        );
+
+        let title = strings::text(strings::RHYTHMBOX_PREFERENCES_IMPORT);
+        let found = rows
+            .iter()
+            .find(|indexed| indexed.row.title() == title)
+            .expect("the import row is on the page");
+        assert!(found.row.is_sensitive());
+        row.emit_by_name::<()>("activated", &[]);
+        assert_eq!(opened.get(), 1, "activating the row opens the import");
+    }
+
+    /// START-8: without a database there is nothing to import, so the row
+    /// says so instead of opening an empty dialog or vanishing.
+    #[test]
+    #[ignore = "requires a display; run via xvfb-run"]
+    fn start_8_without_a_rhythmbox_database_the_row_is_insensitive_and_says_why() {
+        let _main_context = crate::ui::test_main_context::lock_main_context();
+        gtk4::init().unwrap();
+        let row = build_rhythmbox_import_row(false, Rc::new(|| {}));
+
+        assert!(!row.is_sensitive());
+        assert_eq!(
+            row.subtitle().as_deref(),
+            Some(strings::text(strings::RHYTHMBOX_PREFERENCES_IMPORT_UNAVAILABLE).as_str())
+        );
+        assert_eq!(
+            row.title().as_str(),
+            strings::text(strings::RHYTHMBOX_PREFERENCES_IMPORT)
+        );
     }
 
     fn settle_layout() {

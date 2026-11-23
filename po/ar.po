@@ -7,7 +7,7 @@ msgid ""
 msgstr ""
 "Project-Id-Version: Reprise 0.1.0\n"
 "Report-Msgid-Bugs-To: Marvin Baudach\n"
-"POT-Creation-Date: 2026-11-23 23:03+0100\n"
+"POT-Creation-Date: 2026-11-23 23:10+0100\n"
 "PO-Revision-Date: 2026-07-20 11:38+0200\n"
 "Last-Translator: Reprise contributors\n"
 "Language-Team: Arabic\n"
@@ -348,7 +348,7 @@ msgstr ""
 #: crates/reprise-gnome/src/ui/strings_sidebar.rs:40
 #: crates/reprise-gnome/src/ui/strings_podcasts.rs:123
 #: crates/reprise-gnome/src/ui/strings_radio.rs:38
-#: crates/reprise-gnome/src/ui/strings_rhythmbox.rs:31
+#: crates/reprise-gnome/src/ui/strings_rhythmbox.rs:37
 #: crates/reprise-gnome/src/ui/device_sync/device_sync_strings.rs:99
 #: crates/reprise-gnome/src/ui/sidebar/sidebar_issue_strings.rs:27
 msgid "Cancel"
@@ -741,7 +741,7 @@ msgstr ""
 #: crates/reprise-gnome/src/ui/strings.rs:612
 #: crates/reprise-gnome/src/ui/strings_app_shell.rs:88
 #: crates/reprise-gnome/src/ui/strings_library_doctor.rs:158
-#: crates/reprise-gnome/src/ui/strings_rhythmbox.rs:134
+#: crates/reprise-gnome/src/ui/strings_rhythmbox.rs:140
 #: crates/reprise-gnome/src/ui/strings_filter.rs:32
 #: crates/reprise-gnome/src/ui/strings_tag_edit.rs:233
 #, rust-format
@@ -1900,7 +1900,7 @@ msgid "Undo everything from this scan"
 msgstr ""
 
 #: crates/reprise-gnome/src/ui/strings_library_doctor.rs:105
-#: crates/reprise-gnome/src/ui/strings_rhythmbox.rs:30
+#: crates/reprise-gnome/src/ui/strings_rhythmbox.rs:36
 msgid "Done"
 msgstr "تم"
 
@@ -4380,7 +4380,19 @@ msgstr ""
 msgid "Podcasts & radio streams"
 msgstr ""
 
-#: crates/reprise-gnome/src/ui/strings_rhythmbox.rs:42
+#: crates/reprise-gnome/src/ui/strings_rhythmbox.rs:31
+msgid "Import from Rhythmbox…"
+msgstr ""
+
+#: crates/reprise-gnome/src/ui/strings_rhythmbox.rs:33
+msgid "Copy ratings, play counts, dates and playlists from Rhythmbox"
+msgstr ""
+
+#: crates/reprise-gnome/src/ui/strings_rhythmbox.rs:35
+msgid "No Rhythmbox library found on this computer"
+msgstr ""
+
+#: crates/reprise-gnome/src/ui/strings_rhythmbox.rs:48
 #, rust-format
 msgid "{matched} of {total} Rhythmbox entry matched your library"
 msgid_plural "{matched} of {total} Rhythmbox entries matched your library"
@@ -4391,7 +4403,7 @@ msgstr[3] ""
 msgstr[4] ""
 msgstr[5] ""
 
-#: crates/reprise-gnome/src/ui/strings_rhythmbox.rs:52
+#: crates/reprise-gnome/src/ui/strings_rhythmbox.rs:58
 #, rust-format
 msgid "{count} entry skipped"
 msgid_plural "{count} entries skipped"
@@ -4402,7 +4414,7 @@ msgstr[3] ""
 msgstr[4] ""
 msgstr[5] ""
 
-#: crates/reprise-gnome/src/ui/strings_rhythmbox.rs:62
+#: crates/reprise-gnome/src/ui/strings_rhythmbox.rs:68
 #: crates/reprise-view/src/device_sync.rs:28
 #, rust-format
 msgid "{count} entry"
@@ -4414,7 +4426,7 @@ msgstr[3] ""
 msgstr[4] ""
 msgstr[5] ""
 
-#: crates/reprise-gnome/src/ui/strings_rhythmbox.rs:76
+#: crates/reprise-gnome/src/ui/strings_rhythmbox.rs:82
 #, rust-format
 msgid "last used {count} day ago"
 msgid_plural "last used {count} days ago"
@@ -4425,12 +4437,12 @@ msgstr[3] ""
 msgstr[4] ""
 msgstr[5] ""
 
-#: crates/reprise-gnome/src/ui/strings_rhythmbox.rs:82
+#: crates/reprise-gnome/src/ui/strings_rhythmbox.rs:88
 #, rust-format
 msgid "{entries} · {last_used}"
 msgstr ""
 
-#: crates/reprise-gnome/src/ui/strings_rhythmbox.rs:90
+#: crates/reprise-gnome/src/ui/strings_rhythmbox.rs:96
 #, rust-format
 msgid "{matched} matches your library"
 msgid_plural "{matched} match your library"
@@ -4441,7 +4453,7 @@ msgstr[3] ""
 msgstr[4] ""
 msgstr[5] ""
 
-#: crates/reprise-gnome/src/ui/strings_rhythmbox.rs:100
+#: crates/reprise-gnome/src/ui/strings_rhythmbox.rs:106
 #, rust-format
 msgid "{count} rated track found"
 msgid_plural "{count} rated tracks found"
@@ -4452,7 +4464,7 @@ msgstr[3] ""
 msgstr[4] ""
 msgstr[5] ""
 
-#: crates/reprise-gnome/src/ui/strings_rhythmbox.rs:110
+#: crates/reprise-gnome/src/ui/strings_rhythmbox.rs:116
 #, rust-format
 msgid "{count} track with history"
 msgid_plural "{count} tracks with history"
@@ -4463,11 +4475,11 @@ msgstr[3] ""
 msgstr[4] ""
 msgstr[5] ""
 
-#: crates/reprise-gnome/src/ui/strings_rhythmbox.rs:118
+#: crates/reprise-gnome/src/ui/strings_rhythmbox.rs:124
 msgid "Original “added to library” timeline"
 msgstr ""
 
-#: crates/reprise-gnome/src/ui/strings_rhythmbox.rs:124
+#: crates/reprise-gnome/src/ui/strings_rhythmbox.rs:130
 #, rust-format
 msgid "{count} playlist"
 msgid_plural "{count} playlists"
@@ -4478,12 +4490,12 @@ msgstr[3] ""
 msgstr[4] ""
 msgstr[5] ""
 
-#: crates/reprise-gnome/src/ui/strings_rhythmbox.rs:143
+#: crates/reprise-gnome/src/ui/strings_rhythmbox.rs:149
 #, rust-format
 msgid "{playlists} · {tracks}"
 msgstr ""
 
-#: crates/reprise-gnome/src/ui/strings_rhythmbox.rs:155
+#: crates/reprise-gnome/src/ui/strings_rhythmbox.rs:161
 #, rust-format
 msgid "{done} of {total} track"
 msgid_plural "{done} of {total} tracks"
@@ -4494,7 +4506,7 @@ msgstr[3] ""
 msgstr[4] ""
 msgstr[5] ""
 
-#: crates/reprise-gnome/src/ui/strings_rhythmbox.rs:165
+#: crates/reprise-gnome/src/ui/strings_rhythmbox.rs:171
 #, rust-format
 msgid "{count} rating imported"
 msgid_plural "{count} ratings imported"
@@ -4505,7 +4517,7 @@ msgstr[3] ""
 msgstr[4] ""
 msgstr[5] ""
 
-#: crates/reprise-gnome/src/ui/strings_rhythmbox.rs:177
+#: crates/reprise-gnome/src/ui/strings_rhythmbox.rs:183
 #, rust-format
 msgid "{count} play count raised"
 msgid_plural "{count} play counts raised"
@@ -4516,7 +4528,7 @@ msgstr[3] ""
 msgstr[4] ""
 msgstr[5] ""
 
-#: crates/reprise-gnome/src/ui/strings_rhythmbox.rs:184
+#: crates/reprise-gnome/src/ui/strings_rhythmbox.rs:190
 #, rust-format
 msgid "{count} last played date restored"
 msgid_plural "{count} last played dates restored"
@@ -4527,12 +4539,12 @@ msgstr[3] ""
 msgstr[4] ""
 msgstr[5] ""
 
-#: crates/reprise-gnome/src/ui/strings_rhythmbox.rs:190
+#: crates/reprise-gnome/src/ui/strings_rhythmbox.rs:196
 #, rust-format
 msgid "{raised} · {last_played}"
 msgstr ""
 
-#: crates/reprise-gnome/src/ui/strings_rhythmbox.rs:202
+#: crates/reprise-gnome/src/ui/strings_rhythmbox.rs:208
 #, rust-format
 msgid "{count} date restored"
 msgid_plural "{count} dates restored"
@@ -4543,7 +4555,7 @@ msgstr[3] ""
 msgstr[4] ""
 msgstr[5] ""
 
-#: crates/reprise-gnome/src/ui/strings_rhythmbox.rs:212
+#: crates/reprise-gnome/src/ui/strings_rhythmbox.rs:218
 #, rust-format
 msgid "{count} playlist created"
 msgid_plural "{count} playlists created"
@@ -4554,7 +4566,7 @@ msgstr[3] ""
 msgstr[4] ""
 msgstr[5] ""
 
-#: crates/reprise-gnome/src/ui/strings_rhythmbox.rs:235
+#: crates/reprise-gnome/src/ui/strings_rhythmbox.rs:241
 #, rust-format
 msgid "{count} Rhythmbox entry will be skipped"
 msgid_plural "{count} Rhythmbox entries will be skipped"
@@ -4565,7 +4577,7 @@ msgstr[3] ""
 msgstr[4] ""
 msgstr[5] ""
 
-#: crates/reprise-gnome/src/ui/strings_rhythmbox.rs:243
+#: crates/reprise-gnome/src/ui/strings_rhythmbox.rs:249
 #, rust-format
 msgid "{count} file outside your library folder"
 msgid_plural "{count} files outside your library folder"
@@ -4576,7 +4588,7 @@ msgstr[3] ""
 msgstr[4] ""
 msgstr[5] ""
 
-#: crates/reprise-gnome/src/ui/strings_rhythmbox.rs:251
+#: crates/reprise-gnome/src/ui/strings_rhythmbox.rs:257
 #, rust-format
 msgid "{count} file no longer on disk"
 msgid_plural "{count} files no longer on disk"
@@ -4587,7 +4599,7 @@ msgstr[3] ""
 msgstr[4] ""
 msgstr[5] ""
 
-#: crates/reprise-gnome/src/ui/strings_rhythmbox.rs:259
+#: crates/reprise-gnome/src/ui/strings_rhythmbox.rs:265
 #, rust-format
 msgid "{count} file not yet scanned"
 msgid_plural "{count} files not yet scanned"
@@ -4598,7 +4610,7 @@ msgstr[3] ""
 msgstr[4] ""
 msgstr[5] ""
 
-#: crates/reprise-gnome/src/ui/strings_rhythmbox.rs:267
+#: crates/reprise-gnome/src/ui/strings_rhythmbox.rs:273
 #, rust-format
 msgid "{count} podcast or radio stream"
 msgid_plural "{count} podcasts or radio streams"
@@ -4609,7 +4621,7 @@ msgstr[3] ""
 msgstr[4] ""
 msgstr[5] ""
 
-#: crates/reprise-gnome/src/ui/strings_rhythmbox.rs:288
+#: crates/reprise-gnome/src/ui/strings_rhythmbox.rs:294
 #, rust-format
 msgid "{first} · {second}"
 msgstr ""
