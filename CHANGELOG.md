@@ -4,6 +4,56 @@ Reprise release notes are curated from the changes that reached the stable
 branch. They describe user-visible changes rather than reproducing commit
 messages.
 
+## [0.1.352] - 2026-11-23
+
+### Library
+
+- A restored track selection survives the startup greeting. When Reprise
+  starts, it loads a random track so the player is ready to play. That track's
+  row used to replace the selection and scroll position saved at the last quit,
+  so a restart without a single click saved a different row each time. If the
+  restored list already has a selection of its own, the greeting now leaves it
+  and the viewport where they were. The first Play then reveals the loaded row,
+  because startup did not place it.
+- The Rhythmbox import dialog counts correctly and says why entries are
+  skipped. Counts agree with their nouns ("1 entry", "3 entries") instead of
+  one English form for every number. The warning before the import names each
+  reason that applies: files outside your library folder, files no longer on
+  disk, and podcasts or radio streams. The result rows keep what they restored
+  apart: play counts raised and last-played dates restored sit on the
+  "Play counts & last played" row, and the "Date added" row counts dates only.
+  Titles and subtitles with an ampersand are no longer parsed as markup first,
+  which logged three "Failed to set text from markup" warnings each time the
+  import dialog opened.
+
+### Playback
+
+- A CUE track whose start was restarted keeps its own start position. When a
+  hung start is restarted, the abandoned pipeline can still report a refused
+  seek a moment later. That late report could clear the new pipeline's pending
+  seek to the start of the CUE track. A report from an earlier start is now
+  recognised and ignored.
+
+### Tools, packaging, and reliability
+
+- The diagnostics report shows only static text and typed numbers. Copy
+  Diagnostics, the run log and the crash report no longer try to find and
+  black out private text in free-form log messages, which could miss a name or
+  a path. Log lines are now written from fixed message templates with numbers
+  and other typed values, and any message that does not match a template is
+  shown as an ellipsis. A crash report keeps its source location and
+  backtrace only in shapes that cannot hold a library path, and a panic
+  message is reduced to its static text or a standard phrase. Library paths,
+  titles, artists and device names cannot reach a report this way.
+- The run log is now `run.log`, with the previous run in `run.log.1`. The first
+  instance after the update deletes the `reprise.log` and `reprise.log.1` files
+  an earlier version wrote, because their lines were written under the old
+  redaction and a report must not read them.
+- A Flatpak diagnostics report names the GNOME runtime version of the sandbox
+  instead of `gnome unknown`, labelled as the Flatpak runtime.
+- The `url` crate moves to 2.5.9, with `form_urlencoded` 1.2.3, which closes
+  RUSTSEC-2026-0592.
+
 ## [0.1.347] - 2026-11-20
 
 ### Playback
