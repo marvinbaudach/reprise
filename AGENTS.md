@@ -193,10 +193,14 @@ historical strand boundary.
   ```
   dbus-run-session -- xvfb-run -a env \
     XDG_DATA_HOME=$(mktemp -d) XDG_CACHE_HOME=$(mktemp -d) \
+    XDG_STATE_HOME=$(mktemp -d) \
     GDK_BACKEND=x11 WAYLAND_DISPLAY= REPRISE_AUDIO_SINK=fakesink \
     <REPRISE_SMOKE_* hooks> cargo run
   ```
   Omitting `XDG_DATA_HOME`/`XDG_CACHE_HOME` writes to the user's real DB/cache. Omitting
+  `XDG_STATE_HOME` is harmless while the variable is unset, because the run log then follows
+  the data directory; in an environment that exports it, the run rotates the user's real
+  `run.log` and deletes their old `reprise.log`. Omitting
   `dbus-run-session` hijacks their real MPRIS/session bus. Omitting `GDK_BACKEND=x11` +
   unset `WAYLAND_DISPLAY` opens a window on their real Wayland desktop. Grep your own command
   for `XDG_DATA_HOME` before running it.
