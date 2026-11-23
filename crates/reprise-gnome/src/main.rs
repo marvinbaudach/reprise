@@ -157,11 +157,14 @@ fn install_panic_hook() {
         let location = panic_info
             .location()
             .map_or_else(|| "unknown location".to_owned(), ToString::to_string);
-        tracing::error!(panic_payload = raw, panic_location = location, "panic");
         // `force_capture`: a tester never sets `RUST_BACKTRACE`, and a crash
         // report without a backtrace has no content.
         let backtrace = std::backtrace::Backtrace::force_capture();
+        // The report is written before anything is logged: the report does not
+        // touch tracing, while a logging layer that itself panics or blocks
+        // would otherwise cost the crash its report.
         reprise_core::crash_report::write_report(&payload, panic_info.location(), &backtrace);
+        tracing::error!(panic_payload = raw, panic_location = location, "panic");
         previous(panic_info);
     }));
 }
