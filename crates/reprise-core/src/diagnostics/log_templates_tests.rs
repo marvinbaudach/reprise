@@ -213,6 +213,16 @@ fn the_table_escapes_read_back_as_the_characters_they_stand_for() {
     );
 }
 
+#[test]
+fn a_table_with_crlf_line_ends_loads_without_a_carriage_return_in_any_template() {
+    let table = "a.rs\tone {}\r\nb.rs\ttwo\r\n";
+
+    let index = parse_table(table);
+
+    assert_eq!(index["a.rs"][0].reduced(), "one …");
+    assert_eq!(index["b.rs"][0].reduced(), "two");
+}
+
 fn lookup(table: &str, file: &str, rendered: &str) -> String {
     let index = parse_table(table);
     reduced_by(index.get(file).map_or(&[], Vec::as_slice), rendered)

@@ -69,7 +69,7 @@ fn index() -> &'static Index {
 /// Groups the table's well-formed lines by file; a malformed line is skipped.
 pub(super) fn parse_table(text: &str) -> Index {
     let mut index = Index::new();
-    for (file, template) in text.split('\n').filter_map(parse_line) {
+    for (file, template) in text.lines().filter_map(parse_line) {
         index.entry(file.to_owned()).or_default().push(template);
     }
     index
