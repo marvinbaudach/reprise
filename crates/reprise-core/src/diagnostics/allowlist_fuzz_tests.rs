@@ -6,6 +6,12 @@
 //! on a tie. The renders hold the needle `zqx` in their hole text; the
 //! templates never do, so a needle in the output would be copied text.
 //!
+//! `LogTemplate::matches` is checked against `reference_matches`, an
+//! independent glob matcher that reads the format string itself and shares no
+//! code with the one under test; the expected message is built from it. An
+//! exhaustive pass over small alphabets covers the holes next to repeated
+//! literals that random input reaches only by luck.
+//!
 //! A xorshift generator with a fixed seed makes a failure reproducible: the
 //! assertion message names the iteration.
 
@@ -32,6 +38,77 @@ const PIECE_TOKENS: &[&str] = &["a", "b", "c", " ", ":", "\n", "{{", "}}", "ab",
 const FILL_TOKENS: &[&str] = &[
     "a", "b", "c", " ", ":", "\n", "zqx", "Zqx", "ab", "{", "}", "…", "", "\r",
 ];
+
+/// One position of a glob: a literal character or a hole.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum Glob {
+    Char(char),
+    Any,
+}
+
+/// The glob a format string stands for, read independently of `LogTemplate`:
+/// `{{` and `}}` are braces, a `{…}` is a hole.
+fn glob_of(format: &str) -> Vec<Glob> {
+    let chars = format.chars().collect::<Vec<_>>();
+    let mut glob = Vec::new();
+    let mut at = 0;
+    while at < chars.len() {
+        match (chars[at], chars.get(at + 1)) {
+            ('{', Some('{')) => {
+                glob.push(Glob::Char('{'));
+                at += 2;
+            }
+            ('}', Some('}')) => {
+                glob.push(Glob::Char('}'));
+                at += 2;
+            }
+            ('{', _) => {
+                while at < chars.len() && chars[at] != '}' {
+                    at += 1;
+                }
+                glob.push(Glob::Any);
+                at += 1;
+            }
+            (other, _) => {
+                glob.push(Glob::Char(other));
+                at += 1;
+            }
+        }
+    }
+    glob
+}
+
+/// The oracle: whether `glob` matches the whole of `text`. A hole tries every
+/// split of the rest of the text (backtracking), and a table remembers each
+/// `(glob position, text position)` outcome so the work stays polynomial.
+fn reference_matches(glob: &[Glob], text: &str) -> bool {
+    let text = text.chars().collect::<Vec<_>>();
+    let mut memo = vec![vec![None; text.len() + 1]; glob.len() + 1];
+    reference_from(glob, &text, 0, 0, &mut memo)
+}
+
+fn reference_from(
+    glob: &[Glob],
+    text: &[char],
+    glob_at: usize,
+    text_at: usize,
+    memo: &mut Vec<Vec<Option<bool>>>,
+) -> bool {
+    if let Some(known) = memo[glob_at][text_at] {
+        return known;
+    }
+    let outcome = match glob.get(glob_at) {
+        None => text_at == text.len(),
+        Some(Glob::Char(wanted)) => {
+            text.get(text_at) == Some(wanted)
+                && reference_from(glob, text, glob_at + 1, text_at + 1, memo)
+        }
+        Some(Glob::Any) => (text_at..=text.len())
+            .any(|resume| reference_from(glob, text, glob_at + 1, resume, memo)),
+    };
+    memo[glob_at][text_at] = Some(outcome);
+    outcome
+}
 
 struct Xorshift(u64);
 
@@ -71,10 +148,15 @@ fn random_format(rng: &mut Xorshift) -> String {
     format
 }
 
-fn random_templates(rng: &mut Xorshift) -> Vec<LogTemplate> {
+/// Random templates, each with the oracle's glob of the same format string.
+fn random_templates(rng: &mut Xorshift) -> Vec<(LogTemplate, Vec<Glob>)> {
     let count = 1 + rng.below(MAX_TEMPLATES);
     (0..count)
-        .filter_map(|_| LogTemplate::parse(&random_format(rng)).ok())
+        .filter_map(|_| {
+            let format = random_format(rng);
+            let template = LogTemplate::parse(&format).ok()?;
+            Some((template, glob_of(&format)))
+        })
         .collect()
 }
 
@@ -102,13 +184,14 @@ fn random_message(rng: &mut Xorshift, templates: &[LogTemplate]) -> String {
 }
 
 /// The specific match: the most literal characters, the first on a tie, or
-/// `…`. Written out here so the fuzz does not lean on the code under test.
-fn expected_message(templates: &[LogTemplate], message: &str) -> String {
+/// `…`. Matching goes through the oracle, so the fuzz does not lean on the
+/// matcher under test.
+fn expected_message(cases: &[(LogTemplate, Vec<Glob>)], message: &str) -> String {
     let mut best: Option<&LogTemplate> = None;
-    for template in templates
-        .iter()
-        .filter(|template| template.matches(message))
-    {
+    for (template, glob) in cases {
+        if !reference_matches(glob, message) {
+            continue;
+        }
         if best.is_none_or(|kept| template.literal_chars() > kept.literal_chars()) {
             best = Some(template);
         }
@@ -127,15 +210,28 @@ fn over_random_template_sets_and_renders_the_message_is_a_reduced_template_or_an
     let mut rng = Xorshift(SEED);
     let (mut matched, mut unmatched) = (0_usize, 0_usize);
     for iteration in 0..EVENTS {
-        let templates = random_templates(&mut rng);
-        if templates.is_empty() {
+        let cases = random_templates(&mut rng);
+        if cases.is_empty() {
             continue;
         }
+        let templates = cases
+            .iter()
+            .map(|(template, _)| template.clone())
+            .collect::<Vec<_>>();
         let message = random_message(&mut rng, &templates);
         let recorded = RecordedEvent {
             message: Some(message.clone()),
             fields: Vec::new(),
         };
+
+        for (template, glob) in &cases {
+            assert_eq!(
+                template.matches(&message),
+                reference_matches(glob, &message),
+                "iteration {iteration}: {:?} against {message:?}",
+                template.canonical()
+            );
+        }
 
         let event = own_event(&callsite, FILE, &templates, &recorded);
 
@@ -151,7 +247,7 @@ fn over_random_template_sets_and_renders_the_message_is_a_reduced_template_or_an
         );
         assert_eq!(
             event.body(),
-            one_line(&expected_message(&templates, &message)),
+            one_line(&expected_message(&cases, &message)),
             "iteration {iteration}: {message:?}"
         );
         assert!(
@@ -168,4 +264,81 @@ fn over_random_template_sets_and_renders_the_message_is_a_reduced_template_or_an
     // Both outcomes must be exercised in volume, or the fuzz proves little.
     assert!(matched > EVENTS / 10, "{matched} matched");
     assert!(unmatched > EVENTS / 10, "{unmatched} unmatched");
+}
+
+/// Every template over a small alphabet of literals and holes against every
+/// text over `a` and `b`: holes next to repeated literals, empty pieces, and
+/// prefixes and suffixes that overlap.
+#[test]
+fn the_matcher_agrees_with_the_oracle_on_every_small_template_and_text() {
+    const FORMAT_TOKENS: &[&str] = &["a", "b", "ab", "{}"];
+    const MAX_FORMAT_TOKENS: usize = 5;
+    const MAX_TEXT_CHARS: usize = 8;
+
+    let mut formats = vec![String::new()];
+    let mut layer = vec![String::new()];
+    for _ in 0..MAX_FORMAT_TOKENS {
+        layer = layer
+            .iter()
+            .flat_map(|head| {
+                FORMAT_TOKENS
+                    .iter()
+                    .map(move |token| format!("{head}{token}"))
+            })
+            .collect();
+        formats.extend(layer.iter().cloned());
+    }
+    let mut texts = vec![String::new()];
+    let mut layer = vec![String::new()];
+    for _ in 0..MAX_TEXT_CHARS {
+        layer = layer
+            .iter()
+            .flat_map(|head| ["a", "b"].map(|ch| format!("{head}{ch}")))
+            .collect();
+        texts.extend(layer.iter().cloned());
+    }
+
+    let (mut matching, mut missing) = (0_usize, 0_usize);
+    for format in &formats {
+        let template = LogTemplate::parse(format).unwrap_or_else(|error| panic!("{error}"));
+        let glob = glob_of(format);
+        for text in &texts {
+            let expected = reference_matches(&glob, text);
+            assert_eq!(
+                template.matches(text),
+                expected,
+                "{format:?} against {text:?}"
+            );
+            if expected {
+                matching += 1;
+            } else {
+                missing += 1;
+            }
+        }
+    }
+    assert!(matching > 10_000, "{matching} matched");
+    assert!(missing > 10_000, "{missing} did not match");
+}
+
+#[test]
+fn the_oracle_itself_is_right_on_known_cases() {
+    let cases = [
+        ("a{}a", "a", false),
+        ("a{}a", "aa", true),
+        ("a{}a", "abaa", true),
+        ("{}ab{}ab", "xabyab", true),
+        ("{}ab{}ab", "abab", true),
+        ("{}ab{}ab", "xabyaba", false),
+        ("{{}}", "{}", true),
+        ("{}", "", true),
+        ("", "", true),
+        ("", "a", false),
+    ];
+    for (format, text, expected) in cases {
+        assert_eq!(
+            reference_matches(&glob_of(format), text),
+            expected,
+            "{format:?} against {text:?}"
+        );
+    }
 }
