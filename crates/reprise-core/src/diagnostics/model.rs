@@ -58,6 +58,7 @@ pub enum DiagnosticLevel {
 /// fields) and `location` its own call site: both are safe when stored, and
 /// the report embeds them as they are.
 #[derive(Clone, Debug, PartialEq, Eq)]
+#[non_exhaustive]
 pub struct DiagnosticEvent {
     pub seconds_since_midnight: u32,
     pub level: DiagnosticLevel,
@@ -99,7 +100,7 @@ impl DiagnosticEvent {
 
     /// The same event with its call site's location.
     #[must_use]
-    pub fn with_location(self, location: Option<&str>) -> Self {
+    pub(crate) fn with_location(self, location: Option<&str>) -> Self {
         Self {
             location: location.map(str::to_owned),
             ..self
