@@ -1,5 +1,6 @@
 use super::{read_log_tail, tail_of, TAIL_MAX_BYTES, TAIL_MAX_LINES};
-use crate::crash_report::{render_report, CRASH_REPORT_MARKER};
+use super::log_tail::crash_section_of;
+use crate::crash_report::{render_report, CRASH_REPORT_END_MARKER, CRASH_REPORT_MARKER};
 use crate::diagnostics::PanicPayload;
 
 #[test]
@@ -111,7 +112,7 @@ fn a_crash_report_keeps_its_message_and_location_whatever_the_backtrace_length()
 }
 
 #[test]
-fn the_last_crash_report_wins_and_lines_after_it_are_bounded_too() {
+fn the_last_crash_report_wins() {
     let root = tempfile::tempdir().unwrap();
     let path = root.path().join("reprise.previous.log");
     let mut log = log_ending_in_a_crash(3, 2);
@@ -124,6 +125,34 @@ fn the_last_crash_report_wins_and_lines_after_it_are_bounded_too() {
     assert_eq!(tail.matches(CRASH_REPORT_MARKER).count(), 1);
     assert!(tail.contains("message: index out of bounds"));
     assert!(tail.lines().count() <= TAIL_MAX_LINES);
+}
+
+// The panic hook writes the report before it logs, so the hook's own ERROR line
+// and other threads' lines follow the end marker: they are not part of it.
+#[test]
+fn a_crash_section_stops_at_the_end_of_the_report() {
+    let root = tempfile::tempdir().unwrap();
+    let path = root.path().join("reprise.previous.log");
+    let mut log = log_ending_in_a_crash(3, 0);
+    log.push_str("ERROR panic panic_payload=zqxuser\n");
+    log.push_str("INFO after the crash 0\n");
+    std::fs::write(&path, log).unwrap();
+
+    let tail = read_log_tail(&path).unwrap();
+
+    assert!(tail.starts_with(CRASH_REPORT_MARKER), "{tail}");
+    assert!(tail.ends_with(CRASH_REPORT_END_MARKER), "{tail}");
+    assert!(!tail.contains("zqxuser"), "{tail}");
+    assert!(!tail.contains("after the crash"), "{tail}");
+}
+
+#[test]
+fn a_report_cut_short_runs_to_the_end_of_the_log() {
+    let log = format!("{CRASH_REPORT_MARKER}\ntime: t\nmessage: m\nINFO later\n");
+
+    let section = crash_section_of(&log).unwrap();
+
+    assert!(section.ends_with("INFO later"), "{section}");
 }
 
 #[test]

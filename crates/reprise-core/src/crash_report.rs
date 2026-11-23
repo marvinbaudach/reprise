@@ -20,6 +20,8 @@ use crate::state_root;
 
 /// The line that opens a crash report in the log; the diagnostics tail looks for it.
 pub(crate) const CRASH_REPORT_MARKER: &str = "---- Reprise crash report ----";
+/// The line that closes a crash report; what follows it in the log is not part of it.
+pub(crate) const CRASH_REPORT_END_MARKER: &str = "---- end of crash report ----";
 
 /// How the run before this one ended.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -158,7 +160,7 @@ pub(crate) fn render_report(
         reduce_message(payload, location.map(|(file, ..)| file))
     );
     let _ = writeln!(report, "backtrace:\n{}", reduce_backtrace(backtrace));
-    let _ = writeln!(report, "---- end of crash report ----");
+    let _ = writeln!(report, "{CRASH_REPORT_END_MARKER}");
     report
 }
 
