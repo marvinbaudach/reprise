@@ -321,6 +321,63 @@ fn set_13_sidebar_counts_only_results_that_can_be_rendered() {
     parent.close();
 }
 
+/// START-8: "rhythmbox" reaches the import row through the real search, in
+/// both states of the row, because the unavailable row keeps its title.
+#[test]
+#[ignore = "requires a display; run via xvfb-run"]
+fn start_8_the_settings_search_finds_the_import_row_for_rhythmbox() {
+    let _main_context = crate::ui::test_main_context::lock_main_context();
+    gtk4::init().unwrap();
+    let app = adw::Application::builder()
+        .application_id("io.github.marvinbaudach.Reprise.SettingsSearchRhythmboxTest")
+        .flags(gio::ApplicationFlags::NON_UNIQUE)
+        .build();
+    app.register(None::<&gio::Cancellable>).unwrap();
+    let parent = adw::ApplicationWindow::new(&app);
+    parent.set_default_size(900, 760);
+    parent.present();
+    crate::ui::style::install();
+
+    for available in [true, false] {
+        let shell = preferences_window::build(rhythmbox_pages(available), None);
+        shell.dialog.present(Some(&parent));
+        settle_layout();
+        shell.search.reveal();
+        shell.search.entry().set_text("rhythmbox");
+        settle_layout();
+        assert_eq!(
+            shell.search.all_results_count().text(),
+            "1",
+            "available: {available}"
+        );
+        shell.dialog.force_close();
+    }
+    parent.close();
+}
+
+fn rhythmbox_pages(available: bool) -> Rc<dyn Fn(PageId) -> adw::PreferencesPage> {
+    Rc::new(move |id| {
+        let page = adw::PreferencesPage::builder()
+            .title(id.title())
+            .icon_name(id.icon_name())
+            .build();
+        let group = adw::PreferencesGroup::new();
+        if id == PageId::Library {
+            group.add(
+                &crate::ui::preferences::preference_library_rhythmbox::build_rhythmbox_import_row(
+                    available,
+                    false,
+                    Rc::new(|| {}),
+                ),
+            );
+        } else {
+            group.add(&crate::ui::rows::action_row().title(id.title()).build());
+        }
+        page.add(&group);
+        page
+    })
+}
+
 fn renderable_count_pages(
     live: &Rc<RefCell<gtk4::glib::WeakRef<adw::ActionRow>>>,
     detached: &Rc<RefCell<gtk4::glib::WeakRef<adw::ActionRow>>>,

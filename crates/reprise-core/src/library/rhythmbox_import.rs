@@ -73,6 +73,7 @@ pub struct RhythmboxPrescanResult {
     pub matched: usize,
     pub outside_library: usize,
     pub missing_on_disk: usize,
+    pub not_in_library: usize,
     pub playlist_count: usize,
     pub playlist_track_count: usize,
     pub last_modified: Option<std::time::SystemTime>,
@@ -543,8 +544,11 @@ pub fn prescan_rhythmdb_with_source(
                             if in_db {
                                 result.matched += 1;
                             } else {
-                                let under_root =
-                                    library_root.is_some_and(|root| path_str.starts_with(root));
+                                // By path component, so a root `/Music` does not claim
+                                // `/Music2`; the source-backed scan has no filesystem
+                                // to canonicalize against.
+                                let under_root = library_root
+                                    .is_some_and(|root| track.path.starts_with(Path::new(root)));
                                 if !under_root {
                                     result.outside_library += 1;
                                 } else if source.probe(&track.path, LibraryLinkMode::Follow)
@@ -552,7 +556,10 @@ pub fn prescan_rhythmdb_with_source(
                                 {
                                     result.missing_on_disk += 1;
                                 } else {
-                                    result.outside_library += 1;
+                                    // Inside the library folder, and not provably gone (an
+                                    // `Unknown` probe lands here too): not in the library yet,
+                                    // whether unscanned, excluded or a format the scanner skips.
+                                    result.not_in_library += 1;
                                 }
                             }
                         }

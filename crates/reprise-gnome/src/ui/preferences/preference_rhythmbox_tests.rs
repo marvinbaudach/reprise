@@ -177,13 +177,14 @@ fn fb_13_the_import_dialog_rows_render_their_ampersand_titles() {
     libadwaita::init().unwrap();
     let mark = crate::ui::gtk_log_capture::mark();
     let widgets = build_import_dialog();
-    let skipped = strings::rhythmbox_skipped_warning(1, 2, 3);
+    let skipped = strings::rhythmbox_skipped_warning(1, 2, 4, 3);
     widgets.warning_row.set_title(&skipped.title);
     widgets.warning_row.set_subtitle(&skipped.reasons);
     widgets.warning_row.set_visible(true);
     widgets
         .skipped_expander
-        .set_title(&strings::rhythmbox_entries_skipped(6));
+        .set_title(&strings::rhythmbox_entries_skipped(10));
+    widgets.skip_not_in_library.set_subtitle("4");
     widgets.skip_non_song.set_subtitle("3");
     widgets
         .play_counts_result
@@ -219,6 +220,7 @@ fn fb_13_the_import_dialog_rows_render_their_ampersand_titles() {
         (strings::RHYTHMBOX_SKIP_NON_SONG, 1),
         (strings::RHYTHMBOX_SKIP_OUTSIDE_LIBRARY, 1),
         (strings::RHYTHMBOX_SKIP_MISSING_ON_DISK, 1),
+        (strings::RHYTHMBOX_SKIP_NOT_IN_LIBRARY, 1),
     ] {
         let rendered = texts.iter().filter(|text| *text == title).count();
         assert_eq!(
