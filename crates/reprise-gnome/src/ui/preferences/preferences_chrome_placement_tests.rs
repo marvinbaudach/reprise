@@ -603,7 +603,11 @@ fn footer_columns(bar: &BackgroundBar) -> Vec<gtk4::Widget> {
         .first_child()
         .and_then(|header| header.next_sibling())
         .expect("the footer lists its rows straight after its header");
-    let row = rows
+    // The job rows sit in a box of their own, beside the scan slot.
+    let job_rows = rows
+        .first_child()
+        .expect("the row list opens with the plugin job rows");
+    let row = job_rows
         .first_child()
         .expect("a published job has a row of its own");
     let mut columns = Vec::new();

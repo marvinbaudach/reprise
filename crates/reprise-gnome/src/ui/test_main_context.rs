@@ -66,3 +66,31 @@ pub(crate) fn settle_until_active(window: &gtk4::Window) {
         gtk4::glib::MainContext::default().iteration(true);
     }
 }
+
+/// Runs the main loop for `ms`, so the frame clock advances animations and
+/// timeouts can fire. Like every pump helper here it does not lock the
+/// context; the calling test holds [`lock_main_context`].
+pub(crate) fn wait_ms(ms: u64) {
+    let main_loop = gtk4::glib::MainLoop::new(None, false);
+    let quit = main_loop.clone();
+    gtk4::glib::timeout_add_local_once(std::time::Duration::from_millis(ms), move || quit.quit());
+    main_loop.run();
+}
+
+/// Pumps the main loop until `condition` holds or the deadline passes, and
+/// returns whether it held. Animations ride the frame clock, which needs a
+/// moment to spin up on a cold headless display, so a fixed sleep is not
+/// reliable.
+pub(crate) fn wait_until(condition: impl Fn() -> bool) -> bool {
+    const SLICE_MS: u64 = 25;
+    const DEADLINE_MS: u64 = 5_000;
+    let mut waited = 0;
+    while waited < DEADLINE_MS {
+        if condition() {
+            return true;
+        }
+        wait_ms(SLICE_MS);
+        waited += SLICE_MS;
+    }
+    condition()
+}

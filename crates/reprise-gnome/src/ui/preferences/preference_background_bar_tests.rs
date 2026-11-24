@@ -244,6 +244,163 @@ fn set_18_adopting_the_scan_chrome_does_not_hold_the_idle_footer_open() {
     assert!(bar.widget().get_visible());
 }
 
+use crate::ui::scan::scan_chrome::ScanChromeView;
+use crate::ui::test_main_context::wait_until;
+
+/// A mapped footer holding the REAL scan chrome, fades included: the stand-ins
+/// of `set_18_adopting_the_scan_chrome_does_not_hold_the_idle_footer_open` have
+/// no animation, so they cannot see a fade end inside a re-render.
+///
+/// Restores `gtk-enable-animations` and closes the window when dropped.
+struct ScanFooter {
+    window: gtk4::Window,
+    bar: BackgroundBar,
+    chrome: ScanChromeView,
+    previous_animations: bool,
+}
+
+impl ScanFooter {
+    fn new() -> Self {
+        gtk4::init().unwrap();
+        let settings = gtk4::Settings::default().unwrap();
+        let previous_animations = settings.is_gtk_enable_animations();
+        settings.set_gtk_enable_animations(true);
+        let bar = BackgroundBar::new();
+        let chrome = ScanChromeView::new();
+        bar.adopt_scan_chrome(chrome.line_widget(), chrome.chip_widget());
+        let window = gtk4::Window::builder()
+            .default_width(520)
+            .default_height(240)
+            .child(bar.widget())
+            .build();
+        window.present();
+        Self {
+            window,
+            bar,
+            chrome,
+            previous_animations,
+        }
+    }
+
+    /// Pumps the main loop until the chip and line have both faded in.
+    fn wait_until_faded_in(&self) {
+        let chip = self.chrome.chip_widget().clone();
+        let line = self.chrome.line_widget().clone();
+        assert!(
+            wait_until(move || chip.opacity() >= 1.0 && line.opacity() >= 1.0),
+            "the scan chrome never finished fading in"
+        );
+    }
+
+    /// Pumps the main loop until the chip and line have both hidden themselves
+    /// (the minimum visible time, then the fade).
+    fn wait_until_hidden(&self) {
+        let chip = self.chrome.chip_widget().clone();
+        let line = self.chrome.line_widget().clone();
+        assert!(
+            wait_until(move || !chip.get_visible() && !line.get_visible()),
+            "the scan chrome never hid itself"
+        );
+    }
+
+    /// `scan_slot` must hang in `rows_box` for the footer's whole life.
+    fn assert_scan_slot_stays_in_rows_box(&self, step: &str) {
+        assert_eq!(
+            self.bar.inner.scan_slot.parent().as_ref(),
+            Some(self.bar.inner.rows_box.upcast_ref()),
+            "{step}: the scan slot must stay parented in the row box"
+        );
+    }
+}
+
+impl Drop for ScanFooter {
+    fn drop(&mut self) {
+        self.window.close();
+        if let Some(settings) = gtk4::Settings::default() {
+            settings.set_gtk_enable_animations(self.previous_animations);
+        }
+    }
+}
+
+fn scanning(processed: u64) -> reprise_core::library::scanner::ScanProgress {
+    reprise_core::library::scanner::ScanProgress::Scanning {
+        processed,
+        total: Some(5),
+        current_path: std::path::PathBuf::from("/music/track.flac"),
+    }
+}
+
+/// GitHub #1391: Rescan Library from Preferences segfaulted in
+/// `gtk_widget_unparent` (via `adw_animation_skip`) as the scan finished. A
+/// five-track library finishes before the chip's minimum visible time is up, so
+/// `finish()` defers the hide and both fades end while the footer is mapped.
+///
+/// On the old render this test fails by crashing the test process (SIGSEGV).
+#[test]
+#[ignore = "requires a display; run via xvfb-run"]
+fn set_18_a_scan_that_finishes_at_once_hides_inside_the_open_footer() {
+    let _main_context = crate::ui::test_main_context::lock_main_context();
+    let footer = ScanFooter::new();
+
+    footer.chrome.show(&scanning(5));
+    assert!(
+        !footer.bar.inner.job_rows.get_visible(),
+        "an empty job box must not add spacing above the scan row"
+    );
+    footer.chrome.finish();
+    footer.wait_until_hidden();
+
+    assert!(
+        !footer.bar.inner.scan_slot.get_visible(),
+        "the scan row is closed"
+    );
+    assert!(footer.bar.widget().get_visible());
+}
+
+/// On the old render this test fails by crashing the test process (SIGSEGV).
+#[test]
+#[ignore = "requires a display; run via xvfb-run"]
+fn set_18_a_scan_that_finishes_after_its_fade_in_hides_inside_the_open_footer() {
+    let _main_context = crate::ui::test_main_context::lock_main_context();
+    let footer = ScanFooter::new();
+
+    footer.chrome.show(&scanning(2));
+    footer.wait_until_faded_in();
+    footer.chrome.show(&scanning(5));
+    footer.chrome.finish();
+    footer.wait_until_hidden();
+
+    assert!(!footer.bar.inner.scan_slot.get_visible());
+}
+
+#[test]
+#[ignore = "requires a display; run via xvfb-run"]
+fn set_18_the_scan_chrome_stays_parented_in_the_footer_through_a_scan() {
+    let _main_context = crate::ui::test_main_context::lock_main_context();
+    let footer = ScanFooter::new();
+    let slot = footer.bar.inner.scan_slot.clone();
+    footer.assert_scan_slot_stays_in_rows_box("before the scan");
+
+    footer.chrome.show(&scanning(1));
+    footer.assert_scan_slot_stays_in_rows_box("scan started");
+    footer.bar.publish(JobOwner::Artwork, Some(artwork(0.25)));
+    footer.assert_scan_slot_stays_in_rows_box("a job row appeared");
+    footer.chrome.show(&scanning(3));
+    footer.bar.publish(JobOwner::Artwork, None);
+    footer.assert_scan_slot_stays_in_rows_box("the job row left");
+    footer.chrome.finish();
+    footer.wait_until_hidden();
+    footer.assert_scan_slot_stays_in_rows_box("scan finished");
+
+    for widget in [footer.chrome.line_widget(), footer.chrome.chip_widget()] {
+        assert_eq!(
+            widget.parent().as_ref(),
+            Some(slot.upcast_ref()),
+            "a render must not unparent the chrome while its fade runs"
+        );
+    }
+}
+
 #[test]
 #[ignore = "requires a display; run via xvfb-run"]
 fn the_footer_css_parses_without_gtk_errors() {

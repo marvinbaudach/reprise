@@ -171,6 +171,9 @@ struct BackgroundBarInner {
     root: gtk4::Box,
     count: gtk4::Label,
     rows_box: gtk4::Box,
+    /// The plugin job rows, rebuilt on every render. The scan slot is NOT in
+    /// here: it is a permanent sibling, so a render never unparents it.
+    job_rows: gtk4::Box,
     empty: gtk4::Label,
     scan_slot: gtk4::Box,
     /// The scan chrome handed over by [`BackgroundBar::adopt_scan_chrome`].
@@ -180,6 +183,12 @@ struct BackgroundBarInner {
     jobs: RefCell<Vec<Option<JobRowState>>>,
     online_enabled: std::cell::Cell<bool>,
     on_cancel: RefCell<Option<CancelJob>>,
+    /// Set while [`BackgroundBarInner::render`] runs. A scan fade ends inside
+    /// a render (hiding the slot unmaps the chip, which skips its fade, whose
+    /// `done` hides the chip, which notifies `visible` and asks for a render),
+    /// so the nested request is queued instead of re-entering.
+    rendering: std::cell::Cell<bool>,
+    render_again: std::cell::Cell<bool>,
 }
 
 /// The footer itself. Cheap to clone — every handle points at one widget tree.
@@ -208,8 +217,14 @@ impl BackgroundBar {
         // nobody put there.
         let rows_box = gtk4::Box::new(gtk4::Orientation::Vertical, 8);
         rows_box.set_visible(false);
+        let job_rows = gtk4::Box::new(gtk4::Orientation::Vertical, 8);
         let scan_slot = gtk4::Box::new(gtk4::Orientation::Vertical, 0);
         scan_slot.set_visible(false);
+        // Parented once, here, and only ever shown or hidden afterwards: the
+        // scan chip and line fade out inside it, and unparenting a widget
+        // mid-fade crashed GTK (#1391).
+        rows_box.append(&job_rows);
+        rows_box.append(&scan_slot);
         let empty = gtk4::Label::new(None);
         empty.set_xalign(0.0);
         empty.add_css_class(EMPTY_CLASS);
@@ -223,12 +238,15 @@ impl BackgroundBar {
             root,
             count,
             rows_box,
+            job_rows,
             empty,
             scan_slot,
             scan_chrome: RefCell::new(Vec::new()),
             jobs: RefCell::new(vec![None; JobOwner::ORDER.len()]),
             online_enabled: std::cell::Cell::new(true),
             on_cancel: RefCell::new(None),
+            rendering: std::cell::Cell::new(false),
+            render_again: std::cell::Cell::new(false),
         });
         let bar = Self { inner };
         bar.render();
@@ -334,16 +352,30 @@ impl BackgroundBarInner {
     }
 
     fn render(self: &Rc<Self>) {
+        if self.rendering.replace(true) {
+            self.render_again.set(true);
+            return;
+        }
+        loop {
+            self.render_once();
+            if !self.render_again.replace(false) {
+                break;
+            }
+        }
+        self.rendering.set(false);
+    }
+
+    fn render_once(self: &Rc<Self>) {
         let state = self.state();
-        while let Some(child) = self.rows_box.first_child() {
-            self.rows_box.remove(&child);
+        while let Some(child) = self.job_rows.first_child() {
+            self.job_rows.remove(&child);
         }
         for row in &state.rows {
-            self.rows_box.append(&self.job_row(row));
+            self.job_rows.append(&self.job_row(row));
         }
-        if state.scan_running {
-            self.rows_box.append(&self.scan_slot);
-        }
+        // Hidden while empty: a visible empty box still takes the parent's
+        // spacing, which would open a gap above the scan row.
+        self.job_rows.set_visible(!state.rows.is_empty());
         self.rows_box.set_visible(state.row_count() > 0);
         match &state.count_badge {
             Some(text) => {
