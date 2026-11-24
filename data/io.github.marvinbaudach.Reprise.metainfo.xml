@@ -139,6 +139,12 @@
     <!-- One entry per promoted release, not per merge into dev. Every merge
          raises the workspace version; only a promotion to main ships one.
          See docs/agents/branching.md and RELEASING.md. -->
+    <release version="0.1.356" date="2026-11-24" type="stable">
+      <description>
+        <p>Rescan Library in Preferences no longer crashes when the scan finishes. The Rhythmbox import can now be started later from Preferences → Library, not only on first run, and it waits for a running scan and says when no Rhythmbox library is found. Its warning no longer counts a folder whose name merely starts like your library folder as inside it, and files that are inside the library folder but not yet in the library get their own count instead of being called outside.</p>
+        <p xml:lang="de">„Musiksammlung erneut einlesen“ in den Einstellungen stürzt nicht mehr ab, wenn der Scan fertig ist. Der Rhythmbox-Import lässt sich jetzt auch später unter Einstellungen → Bibliothek starten, nicht nur beim ersten Start; er wartet auf einen laufenden Scan und sagt, wenn keine Rhythmbox-Bibliothek gefunden wird. Seine Warnung zählt einen Ordner, dessen Name nur wie der Bibliotheksordner beginnt, nicht mehr als darin liegend, und Dateien, die zwar im Bibliotheksordner liegen, aber noch nicht in der Bibliothek sind, bekommen eine eigene Zählung, statt als außerhalb zu gelten.</p>
+      </description>
+    </release>
     <release version="0.1.353" date="2026-11-23" type="stable">
       <description>
         <p>Copy Diagnostics, the run log and crash reports now show only fixed text and numbers, so a library path, title or device name cannot reach a bug report. A track selection restored at startup is no longer replaced by the startup greeting, a CUE track restarted after a hung start keeps its own start position, and the Rhythmbox import counts correctly and says why entries are skipped. The URL library is updated to close a security advisory.</p>

@@ -4,6 +4,34 @@ Reprise release notes are curated from the changes that reached the stable
 branch. They describe user-visible changes rather than reproducing commit
 messages.
 
+## [0.1.356] - 2026-11-24
+
+### Library
+
+- The Rhythmbox import can be started later from Preferences. Preferences →
+  Library now has an "Import from Rhythmbox…" row right after Rescan Library,
+  which opens the same import dialog as the first-run greeting, so skipping the
+  import at first start is no longer final. The row waits while a library scan
+  is running and says "Scanning", and when this computer has no Rhythmbox
+  library it stays unavailable and says "No Rhythmbox library found on this
+  computer". Searching Preferences for "rhythmbox" finds it.
+- The Rhythmbox import warning sorts skipped entries more accurately. A folder
+  whose name only begins like your library folder, such as `Music2` next to
+  `Music`, is no longer counted as inside the library. A file that is inside
+  the library folder but not yet in the library is no longer called "outside"
+  it. It has its own count, "files not in your library yet", in the warning
+  and as its own row on the result page.
+
+### Tools, packaging, and reliability
+
+- Rescan Library from Preferences no longer crashes when the scan finishes.
+  The footer of the Preferences window rebuilt its rows whenever the scan
+  indicator changed, including while that indicator was still fading out, and
+  removing a widget in the middle of its own animation crashed GTK. The scan
+  indicator now stays in place and is only shown or hidden, and a rebuild
+  requested while another one is running waits for it. A small library made the
+  crash certain, because its scan finishes before the fade settles.
+
 ## [0.1.353] - 2026-11-23
 
 ### Library
