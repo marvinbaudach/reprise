@@ -163,6 +163,7 @@ impl ScanEdgeLine {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::ui::test_main_context::wait_until;
 
     #[test]
     fn edge_fraction_is_clamped_to_the_progress_range() {
@@ -193,31 +194,6 @@ mod tests {
         ] {
             assert!(edge.contains(named), "edge line colour {named} is missing");
         }
-    }
-
-    /// Runs the main loop for `ms` so frame-clock driven animation advances.
-    fn wait_ms(ms: u64) {
-        let main_loop = glib::MainLoop::new(None, false);
-        let quit = main_loop.clone();
-        glib::timeout_add_local_once(std::time::Duration::from_millis(ms), move || quit.quit());
-        main_loop.run();
-    }
-
-    /// Pumps the main loop until `condition` holds or the deadline passes. The
-    /// fade rides the frame clock, which needs a moment to spin up on a cold
-    /// headless display — a fixed sleep of one Micro duration is not reliable.
-    fn wait_until(condition: impl Fn() -> bool) -> bool {
-        const SLICE_MS: u64 = 25;
-        const DEADLINE_MS: u64 = 2_000;
-        let mut waited = 0;
-        while waited < DEADLINE_MS {
-            if condition() {
-                return true;
-            }
-            wait_ms(SLICE_MS);
-            waited += SLICE_MS;
-        }
-        condition()
     }
 
     #[test]
