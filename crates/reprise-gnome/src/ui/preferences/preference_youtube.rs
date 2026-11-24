@@ -81,7 +81,12 @@ fn selected_browser_app(browser: config::YoutubeBrowser) -> Option<gio::AppInfo>
         .into_iter()
         .find(|app| {
             let id = app.id();
-            browser_app_matches(browser, id.as_deref(), &app.executable().to_string_lossy())
+            // An app without an executable still matches by its desktop id.
+            let executable = app
+                .executable()
+                .map(|path| path.to_string_lossy().into_owned())
+                .unwrap_or_default();
+            browser_app_matches(browser, id.as_deref(), &executable)
         })
 }
 
@@ -395,6 +400,17 @@ mod tests {
             Chrome,
             Some("org.chromium.Chromium.desktop"),
             "/usr/bin/chromium"
+        ));
+        // A desktop app without an executable is judged by its id alone.
+        assert!(browser_app_matches(
+            Firefox,
+            Some("org.mozilla.firefox.desktop"),
+            ""
+        ));
+        assert!(!browser_app_matches(
+            Firefox,
+            Some("org.gnome.Epiphany.desktop"),
+            ""
         ));
     }
 

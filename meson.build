@@ -1,7 +1,7 @@
 project(
   'reprise',
   'rust',
-  version: '0.1.356',
+  version: '0.1.357',
   license: 'GPL-3.0-or-later',
   meson_version: '>= 1.3.0',
 )
