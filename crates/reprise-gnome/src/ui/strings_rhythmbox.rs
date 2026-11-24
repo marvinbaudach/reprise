@@ -25,7 +25,7 @@ pub const RHYTHMBOX_IMPORTING: &str = N_!("Importing from Rhythmbox\u{2026}");
 pub const RHYTHMBOX_UNDO_IMPORT: &str = N_!("Undo import");
 pub const RHYTHMBOX_SKIP_OUTSIDE_LIBRARY: &str = N_!("Files outside your library folder");
 pub const RHYTHMBOX_SKIP_MISSING_ON_DISK: &str = N_!("Files no longer on disk");
-pub const RHYTHMBOX_SKIP_NOT_YET_SCANNED: &str = N_!("Files not yet scanned");
+pub const RHYTHMBOX_SKIP_NOT_IN_LIBRARY: &str = N_!("Files not in your library yet");
 pub const RHYTHMBOX_SKIP_NON_SONG: &str = N_!("Podcasts & radio streams");
 /// The Preferences > Library row that opens the import after first run (START-8).
 pub const RHYTHMBOX_PREFERENCES_IMPORT: &str = N_!("Import from Rhythmbox\u{2026}");
@@ -232,10 +232,10 @@ pub struct RhythmboxSkipWarning {
 pub fn rhythmbox_skipped_warning(
     outside_library: usize,
     missing_on_disk: usize,
-    not_yet_scanned: usize,
+    not_in_library: usize,
     non_song: usize,
 ) -> RhythmboxSkipWarning {
-    let total = outside_library + missing_on_disk + not_yet_scanned + non_song;
+    let total = outside_library + missing_on_disk + not_in_library + non_song;
     let total_text = total.to_string();
     let title = plural(
         "{count} Rhythmbox entry will be skipped",
@@ -260,12 +260,12 @@ pub fn rhythmbox_skipped_warning(
             &[("count", &missing_on_disk.to_string())],
         ));
     }
-    if not_yet_scanned > 0 {
+    if not_in_library > 0 {
         reasons.push(plural(
-            "{count} file not yet scanned",
-            "{count} files not yet scanned",
-            not_yet_scanned,
-            &[("count", &not_yet_scanned.to_string())],
+            "{count} file not in your library yet",
+            "{count} files not in your library yet",
+            not_in_library,
+            &[("count", &not_in_library.to_string())],
         ));
     }
     if non_song > 0 {
@@ -390,19 +390,19 @@ mod tests {
         assert!(rhythmbox_skipped_warning(0, 0, 0, 0).reasons.is_empty());
     }
 
-    /// A file that exists under the library folder but has not been scanned
+    /// A file that exists under the library folder but is not in the library
     /// is neither "outside" nor "gone": it gets its own reason.
     #[test]
-    fn rbx_copy_7_the_skip_warning_names_unscanned_files_on_their_own() {
+    fn rbx_copy_7_the_skip_warning_names_files_not_in_the_library_yet() {
         let one = rhythmbox_skipped_warning(0, 0, 1, 0);
         assert_eq!(one.title, "1 Rhythmbox entry will be skipped");
-        assert_eq!(one.reasons, "1 file not yet scanned");
+        assert_eq!(one.reasons, "1 file not in your library yet");
 
         let everything = rhythmbox_skipped_warning(2, 1, 3, 5);
         assert_eq!(everything.title, "11 Rhythmbox entries will be skipped");
         assert_eq!(
             everything.reasons,
-            "2 files outside your library folder \u{b7} 1 file no longer on disk \u{b7} 3 files not yet scanned \u{b7} 5 podcasts or radio streams"
+            "2 files outside your library folder \u{b7} 1 file no longer on disk \u{b7} 3 files not in your library yet \u{b7} 5 podcasts or radio streams"
         );
     }
 

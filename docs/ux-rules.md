@@ -2402,15 +2402,25 @@ result.
   `start_7_the_importer_takes_its_playlists_file_from_the_resolver`.
 - **START-8** [planned] [gtk] — **The Rhythmbox import stays reachable after
   first run.** <!-- REVIEW: rule proposal --> Preferences → Library carries
-  the row "Import from Rhythmbox…" after the Rescan row. Activating it opens
-  the same import dialog first run offers. The row is always present: when
-  no `rhythmdb.xml` is found (START-7) it is insensitive and its subtitle
-  says "No Rhythmbox library found on this computer", so the entry is never a
-  silent absence. Its title and subtitle are indexed by the Preferences search,
-  so "rhythmbox" finds it in both states. The primary menu never carries the
-  import. *Tests:*
+  the row "Import from Rhythmbox…" directly after the Rescan row. Activating
+  it opens the same import dialog first run offers. The row is always present.
+  Whether a `rhythmdb.xml` exists (START-7) is evaluated when Preferences
+  opens; without one the row is insensitive and its subtitle says "No
+  Rhythmbox library found on this computer", so the entry is never a silent
+  absence. While a library scan runs the row is insensitive too, with the
+  subtitle "Scanning", and it becomes sensitive again when the scan ends if a
+  database was found: it follows the same signal as the Rescan row, and a
+  scan already running when Preferences opens gates it from the first paint.
+  Its title and subtitle are indexed by the Preferences search, so "rhythmbox"
+  finds it in every state. The primary menu never carries the import; that is
+  proven by the existing `no_rhythmbox_import_in_visible_menu` in
+  `primary_menu.rs`, which carries no rule ID and so does not count as START-8
+  coverage. *Tests:*
   `start_8_the_library_page_offers_the_import_when_a_rhythmbox_database_exists`,
   `start_8_without_a_rhythmbox_database_the_row_is_insensitive_and_says_why`,
+  `start_8_the_import_waits_for_a_running_scan_and_returns_after_it`,
+  `start_8_a_scan_running_when_preferences_opens_gates_the_row_at_once`,
+  `start_8_the_import_row_sits_directly_after_the_rescan_row`,
   `start_8_the_settings_search_finds_the_import_row_for_rhythmbox`.
 
 ## J. Queue view

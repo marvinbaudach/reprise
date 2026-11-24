@@ -8,6 +8,7 @@ pub(in crate::ui) mod preference_lastfm;
 pub(in crate::ui) mod preference_layout;
 pub(in crate::ui) mod preference_layout_preview;
 pub(in crate::ui) mod preference_library;
+mod preference_library_rhythmbox;
 pub(in crate::ui) mod preference_listenbrainz;
 pub(in crate::ui) mod preference_location;
 mod preference_module_state;

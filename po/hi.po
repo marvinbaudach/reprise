@@ -7,7 +7,7 @@ msgid ""
 msgstr ""
 "Project-Id-Version: Reprise 0.1.0\n"
 "Report-Msgid-Bugs-To: Marvin Baudach\n"
-"POT-Creation-Date: 2026-11-23 23:10+0100\n"
+"POT-Creation-Date: 2026-11-24 01:38+0100\n"
 "PO-Revision-Date: 2026-07-20 11:38+0200\n"
 "Last-Translator: Reprise contributors\n"
 "Language-Team: Hindi\n"
@@ -4185,7 +4185,7 @@ msgid "Files no longer on disk"
 msgstr ""
 
 #: crates/reprise-gnome/src/ui/strings_rhythmbox.rs:28
-msgid "Files not yet scanned"
+msgid "Files not in your library yet"
 msgstr ""
 
 #: crates/reprise-gnome/src/ui/strings_rhythmbox.rs:29
@@ -4345,8 +4345,8 @@ msgstr[1] ""
 
 #: crates/reprise-gnome/src/ui/strings_rhythmbox.rs:265
 #, rust-format
-msgid "{count} file not yet scanned"
-msgid_plural "{count} files not yet scanned"
+msgid "{count} file not in your library yet"
+msgid_plural "{count} files not in your library yet"
 msgstr[0] ""
 msgstr[1] ""
 

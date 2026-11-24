@@ -2,7 +2,7 @@ msgid ""
 msgstr ""
 "Project-Id-Version: Reprise 0.1.1\n"
 "Report-Msgid-Bugs-To: Marvin Baudach\n"
-"POT-Creation-Date: 2026-11-23 23:10+0100\n"
+"POT-Creation-Date: 2026-11-24 01:38+0100\n"
 "PO-Revision-Date: 2026-07-26 14:47+0200\n"
 "Last-Translator: Reprise contributors\n"
 "Language-Team: Spanish\n"
@@ -4353,8 +4353,8 @@ msgid "Files no longer on disk"
 msgstr "Archivos que ya no están en el disco"
 
 #: crates/reprise-gnome/src/ui/strings_rhythmbox.rs:28
-msgid "Files not yet scanned"
-msgstr "Archivos que aún no se han analizado"
+msgid "Files not in your library yet"
+msgstr "Archivos que aún no están en tu biblioteca"
 
 #: crates/reprise-gnome/src/ui/strings_rhythmbox.rs:29
 msgid "Podcasts & radio streams"
@@ -4366,7 +4366,9 @@ msgstr "Importar desde Rhythmbox…"
 
 #: crates/reprise-gnome/src/ui/strings_rhythmbox.rs:33
 msgid "Copy ratings, play counts, dates and playlists from Rhythmbox"
-msgstr "Copiar valoraciones, reproducciones, fechas y listas de reproducción de Rhythmbox"
+msgstr ""
+"Copiar valoraciones, reproducciones, fechas y listas de reproducción de "
+"Rhythmbox"
 
 #: crates/reprise-gnome/src/ui/strings_rhythmbox.rs:35
 msgid "No Rhythmbox library found on this computer"
@@ -4515,10 +4517,10 @@ msgstr[1] "{count} archivos ya no están en el disco"
 
 #: crates/reprise-gnome/src/ui/strings_rhythmbox.rs:265
 #, rust-format
-msgid "{count} file not yet scanned"
-msgid_plural "{count} files not yet scanned"
-msgstr[0] "{count} archivo aún no analizado"
-msgstr[1] "{count} archivos aún no analizados"
+msgid "{count} file not in your library yet"
+msgid_plural "{count} files not in your library yet"
+msgstr[0] "{count} archivo aún no está en tu biblioteca"
+msgstr[1] "{count} archivos aún no están en tu biblioteca"
 
 #: crates/reprise-gnome/src/ui/strings_rhythmbox.rs:273
 #, rust-format

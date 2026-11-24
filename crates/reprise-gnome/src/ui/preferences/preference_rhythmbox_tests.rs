@@ -184,7 +184,7 @@ fn fb_13_the_import_dialog_rows_render_their_ampersand_titles() {
     widgets
         .skipped_expander
         .set_title(&strings::rhythmbox_entries_skipped(10));
-    widgets.skip_not_yet_scanned.set_subtitle("4");
+    widgets.skip_not_in_library.set_subtitle("4");
     widgets.skip_non_song.set_subtitle("3");
     widgets
         .play_counts_result
@@ -220,7 +220,7 @@ fn fb_13_the_import_dialog_rows_render_their_ampersand_titles() {
         (strings::RHYTHMBOX_SKIP_NON_SONG, 1),
         (strings::RHYTHMBOX_SKIP_OUTSIDE_LIBRARY, 1),
         (strings::RHYTHMBOX_SKIP_MISSING_ON_DISK, 1),
-        (strings::RHYTHMBOX_SKIP_NOT_YET_SCANNED, 1),
+        (strings::RHYTHMBOX_SKIP_NOT_IN_LIBRARY, 1),
     ] {
         let rendered = texts.iter().filter(|text| *text == title).count();
         assert_eq!(

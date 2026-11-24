@@ -73,7 +73,7 @@ pub struct RhythmboxPrescanResult {
     pub matched: usize,
     pub outside_library: usize,
     pub missing_on_disk: usize,
-    pub not_yet_scanned: usize,
+    pub not_in_library: usize,
     pub playlist_count: usize,
     pub playlist_track_count: usize,
     pub last_modified: Option<std::time::SystemTime>,
@@ -556,8 +556,10 @@ pub fn prescan_rhythmdb_with_source(
                                 {
                                     result.missing_on_disk += 1;
                                 } else {
-                                    // Inside the library and on disk, just not scanned yet.
-                                    result.not_yet_scanned += 1;
+                                    // Inside the library folder, and not provably gone (an
+                                    // `Unknown` probe lands here too): not in the library yet,
+                                    // whether unscanned, excluded or a format the scanner skips.
+                                    result.not_in_library += 1;
                                 }
                             }
                         }

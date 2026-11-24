@@ -12,13 +12,22 @@ use super::*;
 
 struct MemoryRhythmboxSource {
     files: std::collections::HashMap<PathBuf, Vec<u8>>,
+    /// Paths whose probe cannot tell present from absent, like a provider
+    /// that has not answered.
+    unknown: std::collections::HashSet<PathBuf>,
 }
 
 impl MemoryRhythmboxSource {
     fn new(files: impl IntoIterator<Item = (PathBuf, Vec<u8>)>) -> Self {
         Self {
             files: files.into_iter().collect(),
+            unknown: std::collections::HashSet::new(),
         }
+    }
+
+    fn with_unknown_probe(mut self, at: PathBuf) -> Self {
+        self.unknown.insert(at);
+        self
     }
 }
 
@@ -51,6 +60,9 @@ impl LibrarySource for MemoryRhythmboxSource {
     }
 
     fn probe(&self, at: &Path, _links: LibraryLinkMode) -> LibraryPathPresence {
+        if self.unknown.contains(at) {
+            return LibraryPathPresence::Unknown;
+        }
         if !self.files.contains_key(at) {
             return LibraryPathPresence::Absent;
         }
@@ -165,7 +177,7 @@ fn prescan_counts_entries_and_classifies_skips() {
     assert_eq!(result.matched, 1);
     assert_eq!(result.outside_library, 1);
     assert_eq!(result.missing_on_disk, 1);
-    assert_eq!(result.not_yet_scanned, 0);
+    assert_eq!(result.not_in_library, 0);
     assert_eq!(result.playlist_count, 1);
     assert_eq!(result.playlist_track_count, 2);
 }
@@ -209,12 +221,67 @@ fn prescan_draws_the_library_boundary_by_path_component() {
         let result = prescan_one_unmatched_song(dir.path(), song, &music_dir);
         assert_eq!(result.outside_library, 1, "{song:?}");
         assert_eq!(result.missing_on_disk, 0, "{song:?}");
-        assert_eq!(result.not_yet_scanned, 0, "{song:?}");
+        assert_eq!(result.not_in_library, 0, "{song:?}");
     }
 }
 
 #[test]
-fn prescan_counts_an_existing_unscanned_file_under_the_root_on_its_own() {
+fn prescan_treats_a_root_with_a_trailing_slash_like_the_root_without_one() {
+    let dir = tempdir().unwrap();
+    let music_dir = dir.path().join("Music");
+    let sibling = dir.path().join("Music2");
+    fs::create_dir_all(&music_dir).unwrap();
+    fs::create_dir_all(&sibling).unwrap();
+    let inside = music_dir.join("song.ogg");
+    let outside = sibling.join("song.ogg");
+    fs::write(&inside, b"fake").unwrap();
+    fs::write(&outside, b"fake").unwrap();
+    let slashed = PathBuf::from(format!("{}/", music_dir.display()));
+
+    let inside_result = prescan_one_unmatched_song(dir.path(), &inside, &slashed);
+    let outside_result = prescan_one_unmatched_song(dir.path(), &outside, &slashed);
+
+    assert_eq!(inside_result.not_in_library, 1);
+    assert_eq!(inside_result.outside_library, 0);
+    assert_eq!(outside_result.outside_library, 1);
+    assert_eq!(outside_result.not_in_library, 0);
+}
+
+/// A probe that cannot say "absent" is not evidence the file is gone: the
+/// entry under the root lands with the files that are not in the library yet,
+/// the same reading `should_offer_rhythmbox_import` gives `Unknown`. It is
+/// neither outside the library nor missing.
+#[test]
+fn prescan_files_an_unknown_probe_under_the_root_as_not_in_the_library_yet() {
+    let rhythmdb_path = PathBuf::from("provider:/rhythmdb.xml");
+    let playlists_path = PathBuf::from("provider:/playlists.xml");
+    let track = PathBuf::from("/music/undecided.ogg");
+    let track_uri = url::Url::from_file_path(&track).unwrap();
+    let rhythmdb = format!(
+        r#"<rhythmdb version="2.0">
+<entry type="song"><location>{track_uri}</location><rating>4</rating></entry>
+</rhythmdb>"#
+    );
+    let source = MemoryRhythmboxSource::new([(rhythmdb_path.clone(), rhythmdb.into_bytes())])
+        .with_unknown_probe(track);
+    let db = crate::db::Db::open_in_memory().unwrap();
+
+    let result = prescan_rhythmdb_with_source(
+        &source,
+        &rhythmdb_path,
+        &playlists_path,
+        &db,
+        Some("/music"),
+    )
+    .unwrap();
+
+    assert_eq!(result.not_in_library, 1);
+    assert_eq!(result.outside_library, 0);
+    assert_eq!(result.missing_on_disk, 0);
+}
+
+#[test]
+fn prescan_counts_an_existing_file_under_the_root_that_is_not_in_the_library_on_its_own() {
     let dir = tempdir().unwrap();
     let music_dir = dir.path().join("Music");
     fs::create_dir_all(&music_dir).unwrap();
@@ -225,7 +292,7 @@ fn prescan_counts_an_existing_unscanned_file_under_the_root_on_its_own() {
 
     assert_eq!(result.outside_library, 0);
     assert_eq!(result.missing_on_disk, 0);
-    assert_eq!(result.not_yet_scanned, 1);
+    assert_eq!(result.not_in_library, 1);
 }
 
 fn database(path: &Path, rating: i32, play_count: i64) -> crate::db::Db {

@@ -364,8 +364,9 @@ fn rhythmbox_pages(available: bool) -> Rc<dyn Fn(PageId) -> adw::PreferencesPage
         let group = adw::PreferencesGroup::new();
         if id == PageId::Library {
             group.add(
-                &crate::ui::preferences::preference_library::build_rhythmbox_import_row(
+                &crate::ui::preferences::preference_library_rhythmbox::build_rhythmbox_import_row(
                     available,
+                    false,
                     Rc::new(|| {}),
                 ),
             );
