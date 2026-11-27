@@ -215,8 +215,8 @@ Every branch intended for `main` must pass `scripts/check-merge-readiness.sh`.
 That requires a clean worktree containing the latest `origin/main`, a clean
 branch diff, architecture and frontend policy compliance, formatting, Clippy
 and Rustdoc with warnings denied, the isolated workspace tests, and
-`cargo audit` with no advisory beyond the explicitly accepted `paste`
-maintenance warning.
+`cargo audit --deny warnings` with no advisory beyond the accepted list in
+`.cargo/audit.toml` (`scripts/check-dependency-audit.sh`).
 
 Two gates keep a green local run from going red in CI. CI lints with Arch's
 rolling Rust and runs its tests as root, so `scripts/check-newest-clippy.sh`

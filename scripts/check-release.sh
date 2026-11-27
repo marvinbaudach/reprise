@@ -21,7 +21,8 @@ cargo fmt --check
 cargo clippy --all-targets --workspace -- -D warnings
 env RUSTDOCFLAGS="-D warnings" cargo doc --workspace --no-deps
 env XDG_DATA_HOME="$tmp_root/data" XDG_CACHE_HOME="$tmp_root/cache" cargo test --workspace
-cargo audit
+scripts/check-audit-list.sh
+scripts/check-dependency-audit.sh
 cargo check --manifest-path crates/reprise-core/Cargo.toml
 if cargo tree -p reprise-core | grep -Eq 'gtk4|libadwaita|gstreamer|zbus'; then
   echo "reprise-core purity check failed" >&2
