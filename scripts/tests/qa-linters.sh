@@ -183,7 +183,14 @@ require_pattern 'refs/heads/\$\{base_branch\}:refs/remotes/origin/\$\{base_branc
 require_pattern 'cargo fmt --check' scripts/check-merge-readiness.sh
 require_pattern 'cargo clippy --locked --all-targets --workspace -- -D warnings' scripts/check-merge-readiness.sh
 require_pattern 'cargo test --locked --workspace' scripts/check-merge-readiness.sh
-require_pattern 'cargo audit' scripts/check-merge-readiness.sh
+require_pattern '^gate "Audit list" -- scripts/check-audit-list\.sh$' scripts/check-merge-readiness.sh
+require_pattern '^gate "Dependency audit" -- scripts/check-dependency-audit\.sh$' scripts/check-merge-readiness.sh
+# A bare `cargo audit` exits 0 for warnings, so neither gate may go back to one.
+reject_pattern '^\s*cargo audit' scripts/check-merge-readiness.sh
+reject_pattern '^\s*cargo audit' scripts/check-release.sh
+require_pattern '^scripts/check-audit-list\.sh$' scripts/check-release.sh
+require_pattern '^scripts/check-dependency-audit\.sh$' scripts/check-release.sh
+require_pattern 'scan_flags=\(--deny warnings ' scripts/check-dependency-audit.sh
 require_pattern 'check-shell.sh' scripts/check-merge-readiness.sh
 require_pattern '^skipped_here=\(\)$' scripts/check-merge-readiness.sh
 require_pattern '^is_skipped\(\) \{$' scripts/check-merge-readiness.sh
@@ -353,6 +360,10 @@ scripts/tests/crate-layers.sh
 # on pull requests, so the tail is their only pre-merge run.
 scripts/tests/github-flow.sh
 .github/tests/flatpak-cargo-sources.sh
+# The same check against the real Cargo.lock, and proof the merge gate calls it.
+scripts/tests/flatpak-cargo-sources-gate.sh
+# An advisory off the accepted list fails the audit gate; the lists must agree.
+scripts/tests/audit-gate.sh
 scripts/tests/project-quality.sh
 scripts/tests/weekly-portfolio-sync.sh
 # These three had no caller at all — not here, not in CI, not in the merge gate.

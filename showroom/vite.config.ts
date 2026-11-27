@@ -89,6 +89,8 @@ const GATE_GROUP_ASSIGNMENTS: readonly GateGroupDefinition[] = [
       'Release metadata',
       'AppStream',
       'Flatpak manifest',
+      'Flatpak cargo sources',
+      'Audit list',
       'Dependency audit',
     ],
   },

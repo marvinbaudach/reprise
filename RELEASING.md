@@ -146,7 +146,8 @@ structure, and the generated Cargo checksums. It runs `flatpak-builder-lint`
 when that tool (or the `org.flatpak.Builder` Flatpak) is installed and reports
 an explicit skip otherwise. It never launches Reprise or opens a user database.
 
-The accepted audit warnings are the ones listed in `AGENTS.md` under the gates:
+The accepted audit warnings are the ones in `.cargo/audit.toml`, which `AGENTS.md` repeats
+under the gates and `scripts/check-audit-list.sh` keeps equal to this paragraph:
 `RUSTSEC-2024-0436` (`paste`, transitively through `lofty`), plus four
 unmaintained-crate warnings accepted temporarily until #1300 is resolved:
 `RUSTSEC-2026-0370`, `RUSTSEC-2026-0371` and `RUSTSEC-2026-0372` (the zbus

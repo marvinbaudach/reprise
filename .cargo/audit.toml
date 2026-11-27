@@ -1,0 +1,33 @@
+# The accepted `cargo audit` advisories: the one machine-readable list. Anything
+# the scanner reports that is not named here fails the gate (`--deny warnings`
+# turns unmaintained, unsound and yanked warnings into failures too).
+#
+# Every entry says why it is accepted and which issue ends the acceptance. The
+# prose in AGENTS.md and RELEASING.md must name exactly these ids;
+# scripts/check-audit-list.sh fails when the three differ. An entry that no
+# longer matches any advisory is reported by scripts/check-dependency-audit.sh,
+# so remove it with the fix.
+[advisories]
+ignore = [
+  # paste, unmaintained, via lofty. No tracking issue: lofty owns the dependency.
+  "RUSTSEC-2024-0436",
+  # zvariant, zbus_names and zvariant_derive, unmaintained, via zbus. Until #1300.
+  "RUSTSEC-2026-0370",
+  "RUSTSEC-2026-0371",
+  "RUSTSEC-2026-0372",
+  # basic-toml, unmaintained, via askama. Until #1300.
+  "RUSTSEC-2026-0374",
+  # chrono 0.4.45, unmaintained, direct dependency of reprise-core and
+  # reprise-cli. Until #1385.
+  "RUSTSEC-2026-0543",
+  # heapless 0.8.0, unsound, via flacenc in reprise-stems. Until #1376.
+  "RUSTSEC-2026-0574",
+  "RUSTSEC-2026-0575",
+  "RUSTSEC-2026-0576",
+  "RUSTSEC-2026-0577",
+  "RUSTSEC-2026-0578",
+  "RUSTSEC-2026-0579",
+  "RUSTSEC-2026-0580",
+  "RUSTSEC-2026-0581",
+  "RUSTSEC-2026-0582",
+]

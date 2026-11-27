@@ -88,13 +88,6 @@ case "${MERGE_READINESS_SKIP_ANDROID_QUALITY:-}" in
     ;;
 esac
 
-run_audit() {
-  if ! cargo audit; then
-    echo "live advisory refresh unavailable; checking the cached database" >&2
-    cargo audit --no-fetch
-  fi
-}
-
 gate "Branch diff" -- git diff --check "$base_ref"...HEAD
 gate "Shell" -- scripts/check-shell.sh
 gate "Project quality" -- "${quality_cmd[@]}"
@@ -121,6 +114,10 @@ gate "UX traceability" -- scripts/check-ux-traceability.sh
 gate "AppStream" -- scripts/check-appstream.sh
 gate "Release metadata" -- scripts/check-release-metadata.sh --gate
 gate "Flatpak manifest" -- scripts/check-flatpak-manifest.sh
+# The real flatpak/cargo-sources.json against the real Cargo.lock. Only the
+# release gate and CI's base-contracts job ran this, so #1388 changed the lock,
+# passed here with stale sources and failed first in the offline Flatpak build.
+gate "Flatpak cargo sources" -- scripts/check-flatpak-cargo-sources.sh
 gate "GNOME idioms" -- scripts/check-gnome-idioms.sh
 gate "AI hygiene" -- scripts/check-ai-hygiene.sh
 gate "Motion tokens" -- scripts/check-motion-tokens.sh
@@ -153,7 +150,12 @@ gate "Root tests" -- scripts/check-root-tests.sh
 
 gate "Rule-owned display tests" -- scripts/check-display-tests.sh --rule-named
 
-gate "Dependency audit" -- run_audit
+# `cargo audit` exits 0 for warnings, so the bare call let nine advisories off
+# the accepted list through several pull requests. The accepted list is one file,
+# .cargo/audit.toml; the first gate keeps AGENTS.md and RELEASING.md equal to it,
+# the second fails on anything else the scanner reports.
+gate "Audit list" -- scripts/check-audit-list.sh
+gate "Dependency audit" -- scripts/check-dependency-audit.sh
 
 echo "Merge-readiness checks passed against $base_ref"
 
