@@ -121,6 +121,10 @@ gate "UX traceability" -- scripts/check-ux-traceability.sh
 gate "AppStream" -- scripts/check-appstream.sh
 gate "Release metadata" -- scripts/check-release-metadata.sh --gate
 gate "Flatpak manifest" -- scripts/check-flatpak-manifest.sh
+# The real flatpak/cargo-sources.json against the real Cargo.lock. Only the
+# release gate and CI's base-contracts job ran this, so #1388 changed the lock,
+# passed here with stale sources and failed first in the offline Flatpak build.
+gate "Flatpak cargo sources" -- scripts/check-flatpak-cargo-sources.sh
 gate "GNOME idioms" -- scripts/check-gnome-idioms.sh
 gate "AI hygiene" -- scripts/check-ai-hygiene.sh
 gate "Motion tokens" -- scripts/check-motion-tokens.sh

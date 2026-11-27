@@ -353,6 +353,8 @@ scripts/tests/crate-layers.sh
 # on pull requests, so the tail is their only pre-merge run.
 scripts/tests/github-flow.sh
 .github/tests/flatpak-cargo-sources.sh
+# The same check against the real Cargo.lock, and proof the merge gate calls it.
+scripts/tests/flatpak-cargo-sources-gate.sh
 scripts/tests/project-quality.sh
 scripts/tests/weekly-portfolio-sync.sh
 # These three had no caller at all — not here, not in CI, not in the merge gate.
