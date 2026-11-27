@@ -335,8 +335,10 @@ fn select_captured_ids(shared: &Shared, captured: &ReloadAnchor, current_ids: &[
     }
 }
 
-/// What `center_loaded_track` did with the startup item's row.
+/// What `center_loaded_track` did with the startup item's row. Must be read:
+/// a first Play may skip its own reveal only for a row this placed (#1369).
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
+#[must_use = "a first Play may skip its reveal only for a row startup placed"]
 pub(in crate::ui) enum StartupPlacement {
     /// The row was selected and centered (START-4).
     Placed,

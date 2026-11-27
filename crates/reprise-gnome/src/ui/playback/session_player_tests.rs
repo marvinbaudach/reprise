@@ -11,7 +11,7 @@ use reprise_core::up_next::{QueueItem, UpNextQueue};
 
 use super::test_support::controller_with_db;
 
-struct SilentPlayback;
+pub(super) struct SilentPlayback;
 
 impl PlaybackBackend for SilentPlayback {
     fn play(&self, _: reprise_core::playback::PlaybackItem<'_>) -> Result<(), PlaybackError> {
@@ -45,8 +45,8 @@ impl PlaybackBackend for SilentPlayback {
     fn set_transition(&self, _: reprise_core::library::settings::TrackTransition, _: u8) {}
 }
 
-struct RecordingPlayback {
-    played_paths: Rc<RefCell<Vec<String>>>,
+pub(super) struct RecordingPlayback {
+    pub(super) played_paths: Rc<RefCell<Vec<String>>>,
 }
 
 impl PlaybackBackend for RecordingPlayback {
@@ -306,7 +306,7 @@ fn startup_with_a_non_empty_library_shows_a_track_and_stays_stopped() {
     assert_eq!(controller.current_play_origin(), None);
     assert!(
         controller.restored_placement_intact.get(),
-        "START-4 placed the greeting; its Play path bypasses this inert one-shot"
+        "START-4 placed the greeting; its Play reads this flag"
     );
     assert_eq!(
         controller.session_playback_status(),
@@ -584,7 +584,8 @@ fn previous_discards_the_greeting_and_restores_the_persisted_current_track() {
     assert_eq!(controller.pending_random_start_track_id(), None);
     assert!(played_paths.borrow().is_empty());
     assert_eq!(controller.bar.title_label.text(), "Restored");
-    assert!(controller.restored_placement_intact.get());
+    // Startup placed the greeting (9), never the restored track (7).
+    assert!(!controller.restored_placement_intact.get());
 }
 
 #[test]

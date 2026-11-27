@@ -2258,11 +2258,20 @@ result.
   (#1369). The same value is saved again at quit however many reloads a startup
   scan reconcile adds in between. The loaded row is then not placed, so the
   first Play from Stopped reveals it instead of taking NAV-10b's exemption for
-  a placed row. *Tests:*
+  a placed row, whichever way that Play arrives (the bar, a key or MPRIS), and
+  Previous or Next discarding the greeting does not turn it into a placed row.
+  A row that was placed, or a loaded track the restored view does not list,
+  keeps the exemption. *Tests:*
   `start_4a_a_restored_selection_survives_the_greeting_and_a_reconcile`,
   `start_4a_the_restored_viewport_stays_where_the_place_was_saved`,
   `start_4a_a_saved_id_that_no_longer_exists_leaves_the_greeting_selected`,
-  `start_4a_play_from_stopped_reveals_a_row_the_start_did_not_place`.
+  `start_4a_play_from_stopped_reveals_a_row_the_start_did_not_place`,
+  `start_4a_dismissing_the_greeting_does_not_place_an_unplaced_row`,
+  `start_4a_previous_leaves_the_restored_track_unplaced_and_play_reveals_it`,
+  `start_4a_dismissing_a_greeting_that_is_the_queue_current_keeps_its_placement`,
+  `start_4a_a_placed_row_keeps_the_placement_flag_for_the_first_play`,
+  `start_4a_a_greeting_outside_the_view_keeps_the_placement_flag`,
+  `start_4a_mpris_play_of_a_placed_restored_item_does_not_reveal_it_again`.
 - **START-5a** [active] [gtk] — **A termination request saves the session
   and shuts down through the window close.** When Reprise receives SIGTERM,
   SIGHUP or SIGINT (logout, `systemctl --user stop`, a harness restart,

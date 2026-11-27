@@ -283,3 +283,62 @@ fn start_4a_play_from_stopped_reveals_a_row_the_start_did_not_place() {
 
     start.window.close();
 }
+
+/// A row startup placed is the one the first Play may skip its reveal for, so
+/// placing it must leave the one-shot set; a second scroll on that Play is the
+/// #1369 bug.
+#[test]
+#[ignore = "requires a display; run via xvfb-run"]
+fn start_4a_a_placed_row_keeps_the_placement_flag_for_the_first_play() {
+    const GREETING: i64 = 3;
+    let _main_context = crate::ui::test_main_context::lock_main_context();
+    gtk4::init().unwrap();
+    let start = start_until_placement(12, GREETING, TrackViewState::default());
+    let track_list = &start.track_list;
+
+    track_list.place_startup_item(Some(&start.controller));
+    crate::ui::test_settle::settle_for(SETTLE);
+
+    assert_eq!(
+        saved_selected_ids(track_list),
+        vec![GREETING],
+        "precondition: startup placed the greeting row"
+    );
+    assert!(
+        start.controller.restored_placement_intact.get(),
+        "a placed row lost its placement flag, so the first Play would scroll it again"
+    );
+
+    start.window.close();
+}
+
+/// A loaded track the restored view does not list is not placed, but there is
+/// no row for a Play to reveal either, so the flag stays set.
+#[test]
+#[ignore = "requires a display; run via xvfb-run"]
+fn start_4a_a_greeting_outside_the_view_keeps_the_placement_flag() {
+    const GREETING: i64 = 3;
+    let _main_context = crate::ui::test_main_context::lock_main_context();
+    gtk4::init().unwrap();
+    let state = TrackViewState {
+        search: "Track 001".to_owned(),
+        ..TrackViewState::default()
+    };
+    let start = start_until_placement(12, GREETING, state);
+    let track_list = &start.track_list;
+    assert!(
+        !track_list.shared.current_view_ids().contains(&GREETING),
+        "precondition: the restored view does not list the greeting"
+    );
+
+    track_list.place_startup_item(Some(&start.controller));
+    crate::ui::test_settle::settle_for(SETTLE);
+
+    assert!(
+        saved_selected_ids(track_list).is_empty(),
+        "startup selected a row in a view that does not list the greeting"
+    );
+    assert!(start.controller.restored_placement_intact.get());
+
+    start.window.close();
+}

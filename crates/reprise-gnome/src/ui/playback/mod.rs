@@ -46,6 +46,8 @@ mod seek_start;
 mod seek_start_tests;
 pub(crate) mod session_player;
 #[cfg(test)]
+mod session_player_placement_tests;
+#[cfg(test)]
 mod session_player_tests;
 #[cfg(test)]
 mod sleep_timer_display_tests;
