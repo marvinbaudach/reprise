@@ -14,11 +14,12 @@ behind them.
 
 ## Downloads
 
-- [Install from the Reprise Flatpak repository](https://marvinbaudach.github.io/reprise-flatpak/reprise.flatpakref) — recommended for GNOME Software and updates
-- [GNOME desktop](https://github.com/marvinbaudach/reprise/releases/latest) — Flatpak bundle
+- [Install from the Reprise Flatpak repository](https://marvinbaudach.github.io/reprise-flatpak/reprise.flatpakref) — recommended; updates arrive through GNOME Software or `flatpak update`
+- [GNOME desktop](https://github.com/marvinbaudach/reprise/releases/latest) — Flatpak bundle, without automatic updates
 - [Android](https://github.com/marvinbaudach/reprise/releases/latest) — universal APK
 
 ```sh
+flatpak install --user https://marvinbaudach.github.io/reprise-flatpak/reprise.flatpakref
 flatpak install --user flathub org.gnome.Platform//50
 flatpak install --user ./Reprise-<desktop-version>.flatpak
 adb install -r ./Reprise-Android-<android-version>.apk
@@ -29,9 +30,8 @@ release page.
 
 ## Coming from Rhythmbox?
 
-Reprise can import your ratings, play counts and last played times, date added,
-and playlists from your Rhythmbox library. The import is offered on first run
-and is available later in Preferences.
+Reprise can import your ratings, play counts and last played times, date added, and playlists from your Rhythmbox library; automatic playlists, podcasts and radio stations are skipped. The import is offered on first run and is available later in Preferences.
+It leaves Rhythmbox and your audio files unchanged and can be undone. A [Rhythmbox import report](https://github.com/marvinbaudach/reprise/issues/new?template=rhythmbox_import.yml) tells us what came over and what did not.
 
 The Flatpak can access your XDG music directory. If your music is stored
 elsewhere, grant access to its directory before importing:
