@@ -106,3 +106,102 @@ fn start_4a_mpris_play_of_a_placed_restored_item_does_not_reveal_it_again() {
         "MPRIS Play re-centered a row startup had already placed"
     );
 }
+
+/// Startup placed the greeting's row. Previous discarding it leaves the
+/// restored track, a different row nobody placed, so the first Play reveals
+/// it like any Play from Stopped (NAV-10b).
+#[test]
+#[ignore = "requires a display; run via xvfb-run"]
+fn start_4a_previous_leaves_the_restored_track_unplaced_and_play_reveals_it() {
+    let _main_context = crate::ui::test_main_context::lock_main_context();
+    gtk4::init().unwrap();
+    let test_root = tempfile::tempdir().unwrap();
+    let conn = Rc::new(crate::test_db::open().unwrap());
+    crate::test_db::connection(&conn)
+        .execute_batch(
+            "INSERT INTO tracks (id, path, title, artist, duration_ms, added_at)
+             VALUES (7, '/music/restored.flac', 'Restored', 'Artist', 120000, 0);
+             INSERT INTO tracks (id, path, title, artist, duration_ms, added_at)
+             VALUES (9, '/music/greeting.flac', 'Greeting', 'Artist', 120000, 0);",
+        )
+        .unwrap();
+    let controller = controller_with_db(
+        test_root.path(),
+        conn,
+        Box::new(RecordingPlayback {
+            played_paths: Rc::new(RefCell::new(Vec::new())),
+        }),
+    );
+    controller.set_random_start_chooser_for_test(|_| Ok(vec![9, 7]));
+    controller.restore_session_queue(
+        QueueSnapshot {
+            ids: vec![7],
+            order: vec![0],
+            position: Some(0),
+            repeat: Repeat::Off,
+            shuffled: false,
+        },
+        UpNextQueue::default(),
+        None,
+        None,
+    );
+    assert!(
+        controller.restored_placement_intact.get(),
+        "precondition: startup placed the greeting"
+    );
+
+    controller.previous();
+    assert!(
+        !controller.restored_placement_intact.get(),
+        "Previous turned the unplaced restored track into a placed row"
+    );
+    let changes = Rc::new(RefCell::new(Vec::new()));
+    let changes_for_callback = changes.clone();
+    controller.add_on_current_track_changed(move |track_id, _, change| {
+        changes_for_callback.borrow_mut().push((track_id, change));
+    });
+
+    controller.toggle_pause();
+
+    assert_eq!(
+        changes.borrow().as_slice(),
+        [(7, CurrentTrackChange::ExplicitTransport)],
+        "Play did not reveal the restored track"
+    );
+}
+
+/// When the greeting happens to be the queue's own current track, the row
+/// startup placed is the one left after the dismissal and stays placed.
+#[test]
+#[ignore = "requires a display; run via xvfb-run"]
+fn start_4a_dismissing_a_greeting_that_is_the_queue_current_keeps_its_placement() {
+    let _main_context = crate::ui::test_main_context::lock_main_context();
+    gtk4::init().unwrap();
+    let test_root = tempfile::tempdir().unwrap();
+    let conn = Rc::new(crate::test_db::open().unwrap());
+    crate::test_db::connection(&conn)
+        .execute(
+            "INSERT INTO tracks (id, path, title, artist, duration_ms, added_at)
+             VALUES (7, '/music/restored.flac', 'Restored', 'Artist', 120000, 0)",
+            [],
+        )
+        .unwrap();
+    let controller = controller_with_db(test_root.path(), conn, Box::new(SilentPlayback));
+    controller.set_random_start_chooser_for_test(|_| Ok(vec![7]));
+    controller.restore_session_queue(
+        QueueSnapshot {
+            ids: vec![7],
+            order: vec![0],
+            position: Some(0),
+            repeat: Repeat::Off,
+            shuffled: false,
+        },
+        UpNextQueue::default(),
+        None,
+        None,
+    );
+
+    assert!(controller.dismiss_random_start_greeting());
+
+    assert!(controller.restored_placement_intact.get());
+}

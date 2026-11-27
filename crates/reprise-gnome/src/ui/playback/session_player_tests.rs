@@ -584,7 +584,8 @@ fn previous_discards_the_greeting_and_restores_the_persisted_current_track() {
     assert_eq!(controller.pending_random_start_track_id(), None);
     assert!(played_paths.borrow().is_empty());
     assert_eq!(controller.bar.title_label.text(), "Restored");
-    assert!(controller.restored_placement_intact.get());
+    // Startup placed the greeting (9), never the restored track (7).
+    assert!(!controller.restored_placement_intact.get());
 }
 
 #[test]

@@ -199,6 +199,7 @@ impl PlayerController {
     }
 
     pub(in crate::ui) fn dismiss_random_start_greeting(&self) -> bool {
+        let greeting = self.pending_random_start_track_id().map(QueueItem::Track);
         let dismissed = self.pending_random_start.borrow_mut().take().is_some();
         if !dismissed {
             return false;
@@ -207,11 +208,11 @@ impl PlayerController {
             .current_up_next
             .get()
             .or_else(|| self.queue.borrow().current().map(QueueItem::Track));
-        // Dismissing never places a row. Where startup already left the
-        // greeting unplaced (START-4a), the restored item is unplaced too, so
-        // only a flag that is still set may survive.
+        // Dismissing never places a row. Startup placed the greeting's row (or
+        // left it unplaced, START-4a), so the restored item counts as placed
+        // only when it is that very row and the placement is still intact.
         self.restored_placement_intact
-            .set(self.restored_placement_intact.get() && current.is_some());
+            .set(self.restored_placement_intact.get() && current.is_some() && current == greeting);
         self.sync_stopped_item(current);
         self.sync_transport_enabled(self.has_playable_item());
         // Drop the greeting marker before restoring the queue's real current

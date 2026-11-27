@@ -2267,6 +2267,8 @@ result.
   `start_4a_a_saved_id_that_no_longer_exists_leaves_the_greeting_selected`,
   `start_4a_play_from_stopped_reveals_a_row_the_start_did_not_place`,
   `start_4a_dismissing_the_greeting_does_not_place_an_unplaced_row`,
+  `start_4a_previous_leaves_the_restored_track_unplaced_and_play_reveals_it`,
+  `start_4a_dismissing_a_greeting_that_is_the_queue_current_keeps_its_placement`,
   `start_4a_a_placed_row_keeps_the_placement_flag_for_the_first_play`,
   `start_4a_a_greeting_outside_the_view_keeps_the_placement_flag`,
   `start_4a_mpris_play_of_a_placed_restored_item_does_not_reveal_it_again`.
