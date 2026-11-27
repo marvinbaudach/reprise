@@ -118,7 +118,7 @@ class MainActivityMusicPathsTest {
         application.service.republish()
         shadowOf(Looper.getMainLooper()).idle()
         compose.waitForIdle()
-        compose.waitUntil(timeoutMillis = 5_000) {
+        compose.waitUntil(timeoutMillis = AFTER_RECREATE_TIMEOUT_MS) {
             compose.onAllNodesWithContentDescription("Back").fetchSemanticsNodes().isNotEmpty()
         }
         compose.onNodeWithContentDescription("Back").assertIsDisplayed()
@@ -159,7 +159,7 @@ class MainActivityMusicPathsTest {
         application.service.republish()
         shadowOf(Looper.getMainLooper()).idle()
         compose.waitForIdle()
-        compose.waitUntil(timeoutMillis = 5_000) {
+        compose.waitUntil(timeoutMillis = AFTER_RECREATE_TIMEOUT_MS) {
             compose.onAllNodesWithContentDescription("Back to artists")
                 .fetchSemanticsNodes().isNotEmpty()
         }
@@ -186,6 +186,15 @@ class MainActivityMusicPathsTest {
 
         compose.onNodeWithContentDescription("Back").assertDoesNotExist()
         compose.onAllNodesWithText("Artist 1")[0].assertIsDisplayed()
+    }
+
+    private companion object {
+        /**
+         * A recreated activity rebuilds its library state off the main thread,
+         * and the 5 s used elsewhere expired once on a CI runner (#1000) while
+         * never failing locally. The wait is for the same nodes, just longer.
+         */
+        const val AFTER_RECREATE_TIMEOUT_MS = 30_000L
     }
 
     private fun openDeepAlbum() {
