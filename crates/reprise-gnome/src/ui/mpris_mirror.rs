@@ -466,10 +466,10 @@ impl PlayerController {
             MprisPlaybackStatus::Playing => {}
             MprisPlaybackStatus::Paused => self.toggle_pause(),
             MprisPlaybackStatus::Stopped => match self.stopped_play_target() {
-                Some(target) => self.start_stopped_play_target(
-                    target,
-                    crate::ui::current_track_selection::CurrentTrackChange::ExplicitTransport,
-                ),
+                Some(target) => {
+                    let change = self.restored_start_change();
+                    self.start_stopped_play_target(target, change);
+                }
                 None if !self.up_next.borrow().is_empty() => {
                     self.advance_playback(crate::ui::up_next_transport::AdvanceReason::Manual);
                 }

@@ -128,9 +128,10 @@ impl PlayerController {
             .or(greeting_track)
             .or_else(|| self.queue.borrow().current().map(QueueItem::Track));
         // START-4 places a greeting through the track list exactly like any
-        // restored item. Keep that placement reflected here even though
-        // greeting Play bypasses this one-shot and reaches `play_track_id` as
-        // `PlaybackStarted`, which NAV-10b already maps to `MarkerOnly`.
+        // restored item. Keep that placement reflected here: greeting Play
+        // reads this flag in `start_stopped_play_target`, so a placed row
+        // starts as `PlaybackStarted` (NAV-10b `MarkerOnly`) and an unplaced
+        // one (START-4a, `forget_restored_placement`) as `ExplicitTransport`.
         self.restored_placement_intact.set(current.is_some());
         self.sync_transport_enabled(queue_has_tracks);
         self.sync_shuffle_indicator(shuffled);
@@ -206,7 +207,11 @@ impl PlayerController {
             .current_up_next
             .get()
             .or_else(|| self.queue.borrow().current().map(QueueItem::Track));
-        self.restored_placement_intact.set(current.is_some());
+        // Dismissing never places a row. Where startup already left the
+        // greeting unplaced (START-4a), the restored item is unplaced too, so
+        // only a flag that is still set may survive.
+        self.restored_placement_intact
+            .set(self.restored_placement_intact.get() && current.is_some());
         self.sync_stopped_item(current);
         self.sync_transport_enabled(self.has_playable_item());
         // Drop the greeting marker before restoring the queue's real current
@@ -263,13 +268,19 @@ impl PlayerController {
                     ids,
                     0,
                     super::play_origin::PlayOrigin::library(),
-                    super::queue_transport::restored_start_change(
-                        self.restored_placement_intact.get(),
-                    ),
+                    self.restored_start_change(),
                 );
             }
             StoppedPlayTarget::Item(item) => self.start_current_item(item, change),
         }
+    }
+
+    /// How a Play from Stopped presents the restored item: as already placed
+    /// while startup's placement is intact, as an ordinary reveal otherwise.
+    pub(in crate::ui) fn restored_start_change(
+        &self,
+    ) -> crate::ui::current_track_selection::CurrentTrackChange {
+        super::queue_transport::restored_start_change(self.restored_placement_intact.get())
     }
 
     /// Startup did not place the loaded row (START-4a), so the first Play
