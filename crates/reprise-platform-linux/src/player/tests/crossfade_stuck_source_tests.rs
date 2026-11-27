@@ -20,6 +20,10 @@ use std::time::Instant;
 /// given way, so only the bound can have ended the wait.
 const OPEN_RELEASED_AFTER: Duration = Duration::from_secs(12);
 const FADE_SECONDS: u8 = 2;
+/// How long after the outgoing track's own length the end may be reported. Wide
+/// enough for a loaded machine, and still well short of `OPEN_RELEASED_AFTER`
+/// less the track, so only the bound can have ended the wait.
+const GIVE_WAY_SLACK: Duration = Duration::from_secs(5);
 /// The longest the playbin lock may keep a main-context call waiting.
 const LOCK_WAIT: Duration = Duration::from_millis(200);
 const OUTGOING_MS: u32 = 4_000;
@@ -92,7 +96,7 @@ fn a_secondary_blocked_in_open_gives_way_and_the_outgoing_track_is_reported_fini
     assert!(guard_down, "the crossfade guard stayed up");
     assert!(slot_empty, "the secondary stayed in the incoming slot");
     assert!(
-        took < Duration::from_millis(u64::from(OUTGOING_MS) + 2_000),
+        took < Duration::from_millis(u64::from(OUTGOING_MS)) + GIVE_WAY_SLACK,
         "the end was reported {took:?} in"
     );
     assert!(gap < MAX_GAP, "the main context stood still for {gap:?}");

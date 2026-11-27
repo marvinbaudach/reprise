@@ -307,18 +307,18 @@ const SETTLE: Duration = Duration::from_millis(1_000);
 
 /// What the second pipeline a swap builds, which is the restart's, is made to
 /// do in the test below.
-struct HeldRestart {
+pub(super) struct HeldRestart {
     /// Told when the restarted pipeline's start is held before it begins.
-    held: std::sync::mpsc::Receiver<()>,
+    pub(super) held: std::sync::mpsc::Receiver<()>,
     /// Lets the start go.
-    release: std::sync::mpsc::Sender<()>,
+    pub(super) release: std::sync::mpsc::Sender<()>,
     /// Whether the restarted pipeline ever left `Null`.
     left_null: Arc<AtomicBool>,
 }
 
 /// Holds the restarted pipeline's start on its queue before it begins, and
 /// watches the pipeline's state changes.
-fn hold_the_restarted_start() -> HeldRestart {
+pub(super) fn hold_the_restarted_start() -> HeldRestart {
     let (entered, held) = std::sync::mpsc::channel::<()>();
     let (release, released) = std::sync::mpsc::channel::<()>();
     let left_null = Arc::new(AtomicBool::new(false));

@@ -4,10 +4,26 @@
 
 use super::*;
 
-/// Slack for comparing an `f64` that round-trips through a GObject property.
-const VOLUME_EPSILON: f64 = 1e-9;
+/// Slack for a volume that may have passed through an `f32`: `0.3_f32 as f64`
+/// is `0.30000001192…`, which an `f64` epsilon of `1e-9` rejects. An `f32` has
+/// about seven significant digits, so `1e-6` fits it, and is still far below
+/// the distance of any volume that is actually wrong.
+const VOLUME_EPSILON: f64 = 1e-6;
 
 const USER_VOLUME: f64 = 0.3;
+
+fn is_the_users_volume(volume: f64) -> bool {
+    (volume - USER_VOLUME).abs() < VOLUME_EPSILON
+}
+
+#[test]
+fn the_volume_comparison_accepts_an_f32_round_trip_and_rejects_a_wrong_volume() {
+    assert!(is_the_users_volume(f64::from(USER_VOLUME as f32)));
+    assert!(is_the_users_volume(USER_VOLUME));
+    // What a pipeline carries when the user's volume was lost.
+    assert!(!is_the_users_volume(1.0));
+    assert!(!is_the_users_volume(0.0));
+}
 
 fn live_volume(player: &Player) -> f64 {
     player
@@ -39,7 +55,7 @@ fn a_fresh_pipeline_for_a_start_plays_at_the_users_volume() {
     let _ = player.stop();
     std::env::remove_var(AUDIO_SINK_ENV_VAR);
     assert!(
-        (volume - USER_VOLUME).abs() < VOLUME_EPSILON,
+        is_the_users_volume(volume),
         "the pipeline of a start must carry the user's volume, got {volume}"
     );
 }
@@ -62,11 +78,11 @@ fn a_start_after_a_failed_start_plays_at_the_users_volume() {
     let _ = player.stop();
     std::env::remove_var(AUDIO_SINK_ENV_VAR);
     assert!(
-        (after_failure - USER_VOLUME).abs() < VOLUME_EPSILON,
+        is_the_users_volume(after_failure),
         "the idle pipeline left by a failed start must carry the user's volume, got {after_failure}"
     );
     assert!(
-        (volume - USER_VOLUME).abs() < VOLUME_EPSILON,
+        is_the_users_volume(volume),
         "the start after a failed start must carry the user's volume, got {volume}"
     );
 }

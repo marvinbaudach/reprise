@@ -57,6 +57,8 @@ mod handoff;
 mod split;
 
 #[cfg(test)]
+mod complete_start_tests;
+#[cfg(test)]
 mod finish_start_tests;
 
 use gstreamer as gst;
@@ -156,6 +158,13 @@ impl Cut {
 /// the pipeline that replaces the hung one, so it only advances the epoch. The
 /// pipeline's retirement cannot say this alone: a newer start writes the gate,
 /// and a start over swaps the pipeline, before the one they replace is retired.
+///
+/// A start the gate tracks (a CUE start, or a start over of one) tags its
+/// pipeline's queue with the epoch it was begun under, for
+/// [`SegmentGate::complete_start`], whose caller is the pipeline's bus watch and
+/// not a job that could have carried the epoch with it. The epoch moves only
+/// where a pipeline is certain to be replaced: `begin_start` and the start over
+/// after their last fallible step, `reset` where a start ends or fails.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub(crate) struct StartEpoch(u64);
 
@@ -275,20 +284,26 @@ impl SegmentGate {
     /// because the frontend feeds the next track right after `play`. One
     /// acquisition of the lock writes all of it, so a seek that lands meanwhile
     /// finds either the old state or a start whose seek is pending, and defers.
-    pub(super) fn begin_start(&self, uri: &str, segment: (i64, i64)) {
+    /// Returns the epoch the gate is in from then on, for the pipeline the
+    /// start runs on to carry (see [`StartEpoch`]).
+    pub(super) fn begin_start(&self, uri: &str, segment: (i64, i64)) -> StartEpoch {
         let mut state = self.lock();
+        let epoch = state.epoch.next();
         *state = CutState {
             pending_start_ms: Some(segment.0),
-            ..Self::fresh_cut(state.epoch.next(), uri, segment, None)
+            ..Self::fresh_cut(epoch, uri, segment, None)
         };
+        epoch
     }
 
     /// Hands the gate to the pipeline that replaces a hung start's, keeping
     /// the cut and the pending start-seek for it: whatever the replaced
     /// pipeline's jobs report from now on is stale (see [`StartEpoch`]).
-    pub(super) fn next_epoch(&self) {
+    /// Returns the new epoch, for the replacing pipeline to carry.
+    pub(super) fn next_epoch(&self) -> StartEpoch {
         let mut state = self.lock();
         state.epoch = state.epoch.next();
+        state.epoch
     }
 
     fn fresh_cut(
@@ -340,7 +355,9 @@ impl SegmentGate {
     ///
     /// Does nothing unless a start is pending and `playbin` has really
     /// prerolled: a message left over from a pipeline that has since been
-    /// restarted arrives while the new one still prerolls.
+    /// restarted arrives while the new one still prerolls. Nor does it for a
+    /// pipeline that is retired or carries an epoch other than the gate's (see
+    /// [`StartEpoch`]): that start belongs to a newer pipeline.
     ///
     /// Only the bookkeeping runs here, on the bus watch's main context: the seek
     /// and the state change are one job on the pipeline's own `queue`, because
@@ -352,11 +369,18 @@ impl SegmentGate {
         }
         let (next_seek_ms, learn_duration, epoch) = {
             let mut state = self.lock();
-            // A retired pipeline's late `ASYNC_DONE` belongs to a start that a
-            // newer pipeline has replaced; the start-seek it would record is
-            // the newer pipeline's, which would then skip it. Checked under the
-            // lock the record is written under.
-            if queue.is_retired() {
+            // A late `ASYNC_DONE` of a pipeline whose start a newer pipeline
+            // has replaced would record a start-seek that is the newer
+            // pipeline's, which would then skip it. A start over moves the
+            // epoch before it retires the pipeline it replaces, so the
+            // retirement is no proof yet; the epoch the pipeline carries is,
+            // and a pipeline the gate does not track has only its retirement.
+            // Both are checked under the lock the record is written under.
+            if queue.is_retired()
+                || queue
+                    .start_epoch()
+                    .is_some_and(|epoch| epoch != state.epoch)
+            {
                 return;
             }
             let Some(pending_start_ms) = state.pending_start_ms else {
@@ -469,6 +493,19 @@ impl SegmentGate {
         };
         state.armed = armed;
         state.active.is_none() && next.is_some_and(|next| next.segment.is_none())
+    }
+
+    /// Runs the tail of a start as a job of a pipeline that has since been
+    /// retired still would, for the tests that deliver it late.
+    #[cfg(test)]
+    pub(crate) fn run_late_start_job(
+        &self,
+        playbin: &gst::Element,
+        queue: &QueueHandle,
+        epoch: StartEpoch,
+        seek_ms: Option<i64>,
+    ) {
+        self.finish_start(playbin, queue, epoch, seek_ms);
     }
 
     /// The epoch the gate is in now, for the tests.

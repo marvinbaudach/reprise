@@ -50,6 +50,7 @@ fn a_restart_that_cannot_carry_the_start_over_reports_the_track_once() {
     }));
 
     harness.player.play(item(&path)).unwrap();
+    let epoch_of_the_start = harness.player.segments.epoch();
     harness.pump_until(PATIENCE, |_| reached.load(Ordering::SeqCst) >= 1);
     let mut events = harness.pump_until(SETTLE, |events| errors(events) > 0);
     events.extend(harness.pump_for(QUIET_FOR));
@@ -58,6 +59,13 @@ fn a_restart_that_cannot_carry_the_start_over_reports_the_track_once() {
         failures(&events),
         vec![PlaybackFailureKind::StartNeverFinished],
         "events: {events:?}"
+    );
+    // The hung pipeline stays the current one, so its jobs must not be taken
+    // for a superseded start's: the epoch moves only for a swap that happens.
+    assert_eq!(
+        harness.player.segments.epoch(),
+        epoch_of_the_start,
+        "a restart that swapped nothing moved the gate's epoch"
     );
     assert_eq!(
         harness.player.start_watchdog.restarts(),

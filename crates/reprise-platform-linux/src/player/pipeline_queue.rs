@@ -47,10 +47,11 @@ use gstreamer as gst;
 use std::panic::{catch_unwind, AssertUnwindSafe};
 use std::sync::atomic::{AtomicBool, AtomicU8, Ordering};
 use std::sync::mpsc::{channel, Receiver, Sender};
-use std::sync::Arc;
+use std::sync::{Arc, Mutex, PoisonError};
 use std::time::Duration;
 
 use super::reaper;
+use super::segment::StartEpoch;
 
 /// Name of the thread that runs one pipeline's jobs.
 const QUEUE_THREAD: &str = "reprise-pipeline-queue";
@@ -97,6 +98,9 @@ struct Shared {
     asked: AtomicU8,
     /// The queue's work is over: the element reached `Null`.
     finished: AtomicBool,
+    /// The epoch of the segment gate this pipeline's start was begun under;
+    /// `None` for a pipeline whose start the gate does not track.
+    start_epoch: Mutex<Option<StartEpoch>>,
 }
 
 #[derive(Clone)]
@@ -171,6 +175,15 @@ impl QueueHandle {
         self.shared.asked.store(asked.as_u8(), Ordering::SeqCst);
     }
 
+    /// The epoch the pipeline's start was begun under, if the gate tracks it.
+    pub(crate) fn start_epoch(&self) -> Option<StartEpoch> {
+        *self
+            .shared
+            .start_epoch
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+    }
+
     /// Whether the queue has taken its element to `Null` and ended.
     #[cfg(test)]
     pub(crate) fn is_finished(&self) -> bool {
@@ -203,6 +216,7 @@ impl Pipeline {
             retired: AtomicBool::new(false),
             asked: AtomicU8::new(Asked::Idle.as_u8()),
             finished: AtomicBool::new(false),
+            start_epoch: Mutex::new(None),
         });
         let (sender, messages) = channel::<Message>();
         let owned = element.clone();
@@ -250,6 +264,17 @@ impl Pipeline {
 
     pub(crate) fn asked(&self) -> Asked {
         self.queue.asked()
+    }
+
+    /// Records the epoch of the segment gate this pipeline's start is begun
+    /// under, for `SegmentGate::complete_start`.
+    pub(crate) fn set_start_epoch(&self, epoch: StartEpoch) {
+        *self
+            .queue
+            .shared
+            .start_epoch
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner) = Some(epoch);
     }
 
     pub(crate) fn set_asked(&self, asked: Asked) {

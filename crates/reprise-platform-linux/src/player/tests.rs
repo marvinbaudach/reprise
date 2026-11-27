@@ -26,6 +26,7 @@ mod segment_start_tests;
 mod segment_support;
 mod segment_understated_tests;
 mod start_watchdog_blocking_open_tests;
+mod start_watchdog_epoch_tests;
 mod start_watchdog_failed_restart_tests;
 mod start_watchdog_freeze_tests;
 mod start_watchdog_restart_tests;
