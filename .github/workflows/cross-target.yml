@@ -14,6 +14,7 @@ on:
       - android/**
       - Cargo.toml
       - Cargo.lock
+      - .github/workflows/cross-target.yml
   push:
     branches:
       - main
@@ -25,6 +26,7 @@ on:
       - android/**
       - Cargo.toml
       - Cargo.lock
+      - .github/workflows/cross-target.yml
   workflow_dispatch:
 
 permissions:
