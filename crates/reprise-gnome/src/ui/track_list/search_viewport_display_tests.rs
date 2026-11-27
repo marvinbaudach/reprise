@@ -9,6 +9,7 @@ use std::time::Duration;
 use gtk4::prelude::*;
 
 use super::super::current_track_selection::CurrentTrackChange;
+use super::super::track_list_reload::StartupPlacement;
 use crate::ui::track_list::TrackList;
 
 /// Lets the frame clock run for a moment so GTK can allocate. `iteration(false)`
@@ -522,7 +523,7 @@ fn start_4_centering_the_loaded_track_reaches_it_in_one_step() {
     track_list.update_current_track(track_id, None, CurrentTrackChange::SessionRestore);
 
     let handler = record_viewport_steps(&adjustment);
-    track_list.center_loaded_track();
+    assert_eq!(track_list.center_loaded_track(), StartupPlacement::Placed);
     crate::ui::test_settle::settle_for(Duration::from_millis(500));
     adjustment.disconnect(handler);
     let steps = viewport_steps(crate::ui::scroll_probe::trail::take());

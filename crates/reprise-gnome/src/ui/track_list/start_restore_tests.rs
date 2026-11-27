@@ -14,6 +14,7 @@ use reprise_core::playback::{AudioEffects, PlaybackBackend, PlaybackError, Playb
 use reprise_core::queue::{QueueSnapshot, Repeat};
 use reprise_core::up_next::UpNextQueue;
 
+use super::super::track_list_reload::StartupPlacement;
 use super::*;
 
 /// A realised track table over `rows` synthetic tracks, in a window big
@@ -187,7 +188,7 @@ fn start_4_random_greeting_is_the_marked_selected_and_centered_startup_track() {
         None,
     );
     controller.notify_restored_current_track();
-    track_list.center_loaded_track();
+    assert_eq!(track_list.center_loaded_track(), StartupPlacement::Placed);
 
     let adjustment = track_list.shared.column_view.vadjustment().unwrap();
     crate::ui::test_settle::settle_until(crate::ui::test_settle::DISPLAY_TEST_TIMEOUT, || {
@@ -240,7 +241,7 @@ fn start_4_loaded_track_is_selected_centered_and_marked_paused() {
         },
     );
     assert!(track_list.restore_browser_place(&startup_place));
-    track_list.center_loaded_track();
+    assert_eq!(track_list.center_loaded_track(), StartupPlacement::Placed);
 
     let adjustment = track_list.shared.column_view.vadjustment().unwrap();
     crate::ui::test_settle::settle_until(crate::ui::test_settle::DISPLAY_TEST_TIMEOUT, || {
@@ -300,7 +301,10 @@ fn start_4_absent_loaded_track_does_not_move_the_live_viewport() {
     // A loaded id the library view does not contain — the session ended on a
     // podcast episode, or the track was removed since.
     track_list.shared.playing_track_id.set(Some(9_999));
-    track_list.center_loaded_track();
+    assert_eq!(
+        track_list.center_loaded_track(),
+        StartupPlacement::NotInView
+    );
     crate::ui::test_settle::settle_for(Duration::from_millis(200));
 
     assert!(
