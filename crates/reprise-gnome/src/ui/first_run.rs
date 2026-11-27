@@ -190,7 +190,7 @@ fn complete_first_run(
 }
 
 fn rhythmbox_offer(decision: FirstRunDecision, available: bool) -> Option<bool> {
-    (decision == FirstRunDecision::ShowWizard && available).then_some(false)
+    (decision == FirstRunDecision::ShowWizard && available).then_some(true)
 }
 
 fn take_completed_library_import(presented: &Cell<bool>, library_root: Option<&str>) -> bool {

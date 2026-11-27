@@ -4,6 +4,21 @@ Reprise release notes are curated from the changes that reached the stable
 branch. They describe user-visible changes rather than reproducing commit
 messages.
 
+## [0.1.358] - 2026-11-27
+
+### Library
+
+- When first run finds a Rhythmbox library, the "Import from Rhythmbox" switch
+  in the setup dialog now starts on. It still only opens the import dialog
+  after the library scan, where the import waits for your confirmation, and
+  "Skip for Now" imports nothing. The import never changes Rhythmbox's files
+  or your audio files.
+
+### Tools, packaging, and reliability
+
+- Dependency updates: `rusqlite` 0.43 and `rmcp` 3.11.0 for the MCP server,
+  and Gradle 9.9.2 for the Android build.
+
 ## [0.1.356] - 2026-11-24
 
 ### Library

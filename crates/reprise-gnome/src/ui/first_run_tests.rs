@@ -55,7 +55,7 @@ fn completion_activates_only_explicitly_enabled_options() {
 }
 
 #[test]
-fn rhythmbox_offer_is_first_run_only_detected_and_defaults_off() {
+fn start_9_a_found_rhythmbox_library_is_offered_switched_on_only_on_first_run() {
     assert_eq!(rhythmbox_offer(FirstRunDecision::ShowWizard, false), None);
     assert_eq!(
         rhythmbox_offer(FirstRunDecision::ExistingLibrary, true),
@@ -67,8 +67,18 @@ fn rhythmbox_offer_is_first_run_only_detected_and_defaults_off() {
     );
     assert_eq!(
         rhythmbox_offer(FirstRunDecision::ShowWizard, true),
-        Some(false)
+        Some(true)
     );
+}
+
+#[test]
+fn start_9_skip_for_now_imports_nothing_even_with_the_switch_on() {
+    let options = completion_options(
+        CompletionResponse::Skip,
+        true,
+        WizardSourceSelection::default(),
+    );
+    assert!(!options.rhythmbox_import);
 }
 
 #[test]
@@ -378,7 +388,7 @@ fn assert_default_wizard_tree() {
         None,
         Some(Path::new("/home/test/Music")),
         Path::new("/home/test"),
-        Some(false),
+        rhythmbox_offer(FirstRunDecision::ShowWizard, true),
         WizardSourceSelection::default(),
     );
     let groups = direct_preferences_groups(&widgets.root);
@@ -426,7 +436,7 @@ fn assert_default_wizard_tree() {
     }
 
     let rhythmbox = widgets.rhythmbox.expect("Rhythmbox group is present");
-    assert!(!rhythmbox.import_data.is_active());
+    assert!(rhythmbox.import_data.is_active());
     let library = widgets.library.expect("Library folder group is present");
     assert_eq!(
         library.row.title(),

@@ -31,7 +31,7 @@ release page.
 ## Coming from Rhythmbox?
 
 Reprise can import your ratings, play counts and last played times, date added, and playlists from your Rhythmbox library; automatic playlists, podcasts and radio stations are skipped. The import is offered on first run and is available later in Preferences.
-It leaves Rhythmbox and your audio files unchanged and can be undone. A [Rhythmbox import report](https://github.com/marvinbaudach/reprise/issues/new?template=rhythmbox_import.yml) tells us what came over and what did not.
+It leaves Rhythmbox and your audio files unchanged and can be undone right after it finishes. A [Rhythmbox import report](https://github.com/marvinbaudach/reprise/issues/new?template=rhythmbox_import.yml) tells us what came over and what did not.
 
 The Flatpak can access your XDG music directory. If your music is stored
 elsewhere, grant access to its directory before importing:

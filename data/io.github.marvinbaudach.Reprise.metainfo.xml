@@ -139,6 +139,12 @@
     <!-- One entry per promoted release, not per merge into dev. Every merge
          raises the workspace version; only a promotion to main ships one.
          See docs/agents/branching.md and RELEASING.md. -->
+    <release version="0.1.358" date="2026-11-27" type="stable">
+      <description>
+        <p>When first run finds a Rhythmbox library, the switch to import it now starts on. The import still waits for your confirmation after the library scan, Skip for Now imports nothing, and Rhythmbox's files and your audio files are never changed. Several libraries are updated.</p>
+        <p xml:lang="de">Findet der erste Start eine Rhythmbox-Bibliothek, ist der Schalter für ihren Import jetzt eingeschaltet. Der Import wartet nach dem Einlesen der Musiksammlung weiterhin auf Ihre Bestätigung, „Vorerst überspringen“ importiert nichts, und Rhythmbox-Dateien und Audiodateien werden nie verändert. Mehrere Bibliotheken wurden aktualisiert.</p>
+      </description>
+    </release>
     <release version="0.1.356" date="2026-11-24" type="stable">
       <description>
         <p>Rescan Library in Preferences no longer crashes when the scan finishes. The Rhythmbox import can now be started later from Preferences → Library, not only on first run, and it waits for a running scan and says when no Rhythmbox library is found. Its warning no longer counts a folder whose name merely starts like your library folder as inside it, and files that are inside the library folder but not yet in the library get their own count instead of being called outside.</p>
