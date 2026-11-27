@@ -27,6 +27,7 @@ import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Slider
+import androidx.compose.material3.SliderState
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -637,25 +638,31 @@ internal fun SpectralSeekSlider(
     val durationMs = playback.durationMs.coerceAtLeast(0)
     val sliderMaximum = durationMs.coerceAtLeast(1).toFloat()
     val displayed = position.positionMs.coerceIn(0, durationMs.coerceAtLeast(0))
+    // Material3 1.5 dropped the value-based Slider that took custom thumb and
+    // track slots; the slots now come with a SliderState, which this screen
+    // keeps pinned to the displayed position exactly as the old overload did.
+    val sliderState = remember(sliderMaximum) {
+        SliderState(value = displayed.toFloat(), trackRange = 0f..sliderMaximum)
+    }
+    sliderState.value = displayed.toFloat()
     Column(
         modifier = Modifier.fillMaxWidth().semantics { testTagsAsResourceId = true },
     ) {
         Slider(
+            state = sliderState,
             modifier = Modifier
                 .onGloballyPositioned {
                     onSeekBounds(it.boundsInRoot())
                     onSeekSize(it.size)
                 }
                 .testTag("now-playing-seek"),
-            value = displayed.toFloat(),
-            onValueChange = { value -> surfaceState.dragTo(trackId, value.toLong()) },
+            onValueChange = { value: Float -> surfaceState.dragTo(trackId, value.toLong()) },
             onValueChangeFinished = {
                 surfaceState.releaseScrub(trackId)?.let { released ->
                     seekTo(released.positionMs)
                 }
             },
             interactionSource = sliderInteractionSource,
-            valueRange = 0f..sliderMaximum,
             enabled = durationMs > 0,
             thumb = {},
             track = {

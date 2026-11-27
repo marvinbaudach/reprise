@@ -47,16 +47,17 @@ if ((requireReleaseSigning || hasAnyReleaseSigningValue) && !hasReleaseSigningCo
 
 android {
     namespace = "io.github.marvinbaudach.reprise"
-    // AndroidX 1.19 refuses anything below 37, so the spike compiles against
-    // the same API level the test device actually runs.
-    compileSdk = 37
+    // Compose 1.13 refuses anything below 37.1, a minor release of API 37.
+    compileSdk {
+        version = release(37) { minorApiLevel = 1 }
+    }
 
     defaultConfig {
         applicationId = "io.github.marvinbaudach.reprise"
         minSdk = 26
         targetSdk = 37
-        versionCode = 285
-        versionName = "0.1.285"
+        versionCode = 286
+        versionName = "0.1.286"
         buildConfigField("String", "REPRISE_CORE_VERSION", "\"${workspacePackageValue("version")}\"")
         buildConfigField("String", "REPRISE_CORE_LICENSE", "\"${workspacePackageValue("license")}\"")
         buildConfigField("String", "REPRISE_MOBILE_LICENSE", "\"GPL-3.0-or-later\"")
@@ -125,7 +126,7 @@ android {
 }
 
 dependencies {
-    implementation(platform("androidx.compose:compose-bom:2026.09.00"))
+    implementation(platform("androidx.compose:compose-bom:2026.11.01"))
     // Navigation is not part of the Compose BOM. 2.9.8 is the newest stable
     // Navigation release compatible with the BOM's stable Compose 1.11 line.
     implementation("androidx.navigation:navigation-compose:2.10.2")
@@ -152,7 +153,7 @@ dependencies {
     // under com/sun/jna/<os>-<arch>/. The plain jar carries that layout, so the
     // test classpath gets one it can actually load.
     testImplementation("net.java.dev.jna:jna:5.19.1")
-    testImplementation(platform("androidx.compose:compose-bom:2026.09.00"))
+    testImplementation(platform("androidx.compose:compose-bom:2026.11.01"))
     testImplementation("androidx.compose.ui:ui-test-junit4")
     testImplementation("androidx.media3:media3-test-utils-robolectric:1.11.1")
     testImplementation("org.robolectric:robolectric:4.18.1")
