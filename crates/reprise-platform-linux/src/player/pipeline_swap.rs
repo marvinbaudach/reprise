@@ -134,7 +134,9 @@ impl PipelineSwap {
             // safe; no path nests them the other way.
             self.carry_volume(fresh.element());
             if let Some(segment) = record.segment {
-                self.segments.begin_start(&record.uri, segment);
+                // The pipeline carries the epoch its start was begun under:
+                // `complete_start` compares it with the gate's.
+                fresh.set_start_epoch(self.segments.begin_start(&record.uri, segment));
             }
             // The user asked for a track to play; a CUE start's first state is
             // only the means.
@@ -240,6 +242,18 @@ impl PipelineSwap {
     /// pipeline's own bus, whose watch is installed below, so the failure
     /// reaches the frontend once.
     ///
+    /// # Epoch and retirement
+    ///
+    /// The gate's epoch (see `StartEpoch`) is advanced once the swap can no
+    /// longer fail and before the new pipeline's first job is queued, and the
+    /// new pipeline carries the new epoch. A stand-down or an `Err` leaves the
+    /// epoch where it was, so a job of the hung pipeline that is still pending
+    /// is not mistaken for a superseded one while that pipeline is the current
+    /// one. Whatever the hung pipeline's jobs and bus messages report once the
+    /// epoch has moved is stale, and is dropped on the epoch alone: the hung
+    /// pipeline is retired only after the lock is released, so its
+    /// retirement says nothing yet.
+    ///
     /// The start is a job on the new pipeline's queue and not a state change
     /// made here: it opens the source, and a source blocked in `open()` (a dead
     /// mount, a FIFO nobody writes) keeps the change from returning. Waiting
@@ -276,6 +290,15 @@ impl PipelineSwap {
             } else {
                 record.first_state()
             };
+            // Every step that can fail is behind us, so from here the swap is
+            // certain and the epoch may move: it never moves for a restart that
+            // leaves the hung pipeline in place. It moves before the new
+            // pipeline's first job is queued, so nothing that start does can
+            // carry the hung pipeline's epoch. The cut and its pending
+            // start-seek stay for the new pipeline; what the hung one reports
+            // from now on is stale. Lock order playbin -> gate, as in
+            // `begin_start`.
+            fresh.set_start_epoch(self.segments.next_epoch());
             fresh.submit(move |element| {
                 if let Err(error) = element.set_state(target) {
                     tracing::warn!(%error, ?target, "the restarted start's state change failed");
@@ -283,10 +306,6 @@ impl PipelineSwap {
             });
             let retired = std::mem::replace(&mut *playbin, fresh);
             self.install_watch(watch);
-            // The cut and its pending start-seek stay for the new pipeline; what
-            // the hung one reports from now on is stale. Lock order playbin ->
-            // gate, as in `begin_start`.
-            self.segments.next_epoch();
             retired
         };
         retired.retire();
