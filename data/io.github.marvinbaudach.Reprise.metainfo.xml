@@ -139,6 +139,12 @@
     <!-- One entry per promoted release, not per merge into dev. Every merge
          raises the workspace version; only a promotion to main ships one.
          See docs/agents/branching.md and RELEASING.md. -->
+    <release version="0.1.359" date="2026-11-27" type="stable">
+      <description>
+        <p>The Rhythmbox import no longer counts files that Rhythmbox itself ignores as skipped podcasts and radio streams, so its warning and result page show only the entries it really could not import.</p>
+        <p xml:lang="de">Der Rhythmbox-Import zählt Dateien, die Rhythmbox selbst ignoriert, nicht mehr als übersprungene Podcasts und Radiosender, sodass Warnung und Ergebnisseite nur noch die Einträge zeigen, die er wirklich nicht importieren konnte.</p>
+      </description>
+    </release>
     <release version="0.1.358" date="2026-11-27" type="stable">
       <description>
         <p>When first run finds a Rhythmbox library, the switch to import it now starts on. The import still waits for your confirmation after the library scan, Skip for Now imports nothing, and Rhythmbox's files and your audio files are never changed. Several libraries are updated.</p>
