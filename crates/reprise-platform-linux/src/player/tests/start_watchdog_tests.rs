@@ -520,8 +520,13 @@ fn each_give_up_carries_the_session_of_its_own_start() {
 /// once the new start has prerolled.
 #[test]
 fn a_seek_during_a_hung_start_is_refused_and_works_once_the_start_is_over() {
-    const RESUME_MS: i64 = 1_000;
-    let harness = harness_with_deadline(TEST_DEADLINE);
+    // Far enough into the file that playback from the start cannot get there
+    // inside `SEEK_LANDS_WITHIN`: the position below can only come from the seek.
+    const RESUME_MS: i64 = 10_000;
+    const SEEK_LANDS_WITHIN: Duration = Duration::from_secs(5);
+    // Roomy: the seek is made before any deadline, and a second start that is
+    // merely slow under load must not be begun over again (`reached` is exact).
+    let harness = harness_with_deadline(ROOMY_DEADLINE);
     let dir = tempfile::tempdir().unwrap();
     let path = dir.path().join("long.wav");
     write_regions_wav(&path, &[(30_000, true)]);
@@ -542,7 +547,9 @@ fn a_seek_during_a_hung_start_is_refused_and_works_once_the_start_is_over() {
     );
 
     harness.player.seek_to(RESUME_MS).unwrap();
-    harness.pump_for(Duration::from_millis(300));
+    harness.pump_until(SEEK_LANDS_WITHIN, |_| {
+        position_ms(&harness.player) >= RESUME_MS - 100
+    });
     assert!(
         position_ms(&harness.player) >= RESUME_MS - 100,
         "plays from {} ms",
