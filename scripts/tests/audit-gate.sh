@@ -5,7 +5,8 @@
 #   * an advisory that is not on the accepted list fails the gate, also through
 #     the cached-database fallback, which uses the same list and flags;
 #   * with no advisory database at all the gate fails with a message;
-#   * an accepted id that matches nothing fails after a live refresh;
+#   * an accepted id that matches nothing is reported, and does not fail the gate;
+#   * a developer's global audit.toml cannot widen the accepted list;
 #   * the ids of .cargo/audit.toml, AGENTS.md and RELEASING.md must be one set.
 #
 # The gate cases drive a stub `cargo` that behaves like `cargo audit` for the
@@ -92,6 +93,14 @@ while (($#)); do
   esac
   shift
 done
+# Like cargo-audit: the audit.toml of the working directory replaces the global
+# one in $CARGO_HOME, whose ignores otherwise apply.
+config=.cargo/audit.toml
+[[ -f $config ]] || config=${CARGO_HOME:-/nonexistent}/audit.toml
+if [[ -f $config ]]; then
+  mapfile -t configured < <(grep -o 'RUSTSEC-[0-9]*-[0-9]*' "$config" || true)
+  ignored+=("${configured[@]}")
+fi
 if [[ ${STUB_FETCH_FAILS:-} == 1 && $no_fetch == false ]]; then
   echo "error: couldn't fetch advisory database" >&2
   exit 1
@@ -166,14 +175,22 @@ expect_fail "an advisory off the list, offline" "RUSTSEC-9999-0001"
 run_gate "$scratch/bare" "$all_accepted" STUB_FETCH_FAILS=1
 expect_fail "offline with no cached database" "no cached advisory database"
 
-# An accepted id nothing matches: stale after a live refresh, a notice from a cache.
+# An accepted id nothing matches is reported, live or cached, and fails neither.
 others=${all_accepted#"$dropped"}
-run_gate "$scratch/cache" "$others"
-expect_fail "a stale accepted entry" "no longer matches anything in Cargo.lock: $dropped"
-run_gate "$scratch/cache" "$others" STUB_FETCH_FAILS=1
-expect_pass "a stale accepted entry, from a cache"
-[[ $output == *"no longer matches anything in Cargo.lock: $dropped"* ]] ||
-  die "the stale entry was not reported from the cache" "$output"
+for fetch_fails in 0 1; do
+  run_gate "$scratch/cache" "$others" STUB_FETCH_FAILS=$fetch_fails
+  expect_pass "a stale accepted entry (fetch fails: $fetch_fails)"
+  [[ $output == *"NOTICE: accepted advisory no longer matches anything in Cargo.lock: $dropped"* ]] ||
+    die "the stale entry was not reported (fetch fails: $fetch_fails)" "$output"
+done
+
+# A developer's global audit.toml that accepts what the list does not must not
+# widen it: the unlisted advisory still fails the gate.
+mkdir -p "$scratch/global"
+printf '[advisories]\nignore = ["RUSTSEC-9999-0001"]\n' >"$scratch/global/audit.toml"
+ln -s "$scratch/cache/advisory-db" "$scratch/global/advisory-db"
+run_gate "$scratch/global" "$all_accepted RUSTSEC-9999-0001"
+expect_fail "a global audit.toml widening the list" "RUSTSEC-9999-0001"
 
 gate_list=$scratch/empty.toml
 printf '[advisories]\nignore = []\n' >"$gate_list"
@@ -187,6 +204,19 @@ if cargo audit --version >/dev/null 2>&1 && [[ -d ${CARGO_HOME:-$HOME/.cargo}/ad
   status=0
   output=$(scripts/check-dependency-audit.sh Cargo.lock "$scratch/short.toml" 2>&1) || status=$?
   [[ $status -ne 0 ]] || die "the real scanner passed with $dropped off the accepted list" "$output"
+  [[ $output == *"$dropped"* ]] || die "the real scanner failed without naming $dropped" "$output"
+  # The same through the real scanner, which must not honour the global file
+  # either. $dropped is a live advisory; a cargo home that accepts it, with the
+  # real database and tools linked in, must still fail the list without it.
+  real_home=${CARGO_HOME:-$HOME/.cargo}
+  mkdir -p "$scratch/real-global"
+  printf '[advisories]\nignore = ["%s"]\n' "$dropped" >"$scratch/real-global/audit.toml"
+  ln -s "$real_home/advisory-db" "$scratch/real-global/advisory-db"
+  ln -s "$real_home/bin" "$scratch/real-global/bin"
+  status=0
+  output=$(env CARGO_HOME="$scratch/real-global" RUSTUP_HOME="${RUSTUP_HOME:-$HOME/.rustup}" \
+    scripts/check-dependency-audit.sh Cargo.lock "$scratch/short.toml" 2>&1) || status=$?
+  [[ $status -ne 0 ]] || die "a global audit.toml widened the accepted list for the real scanner" "$output"
   [[ $output == *"$dropped"* ]] || die "the real scanner failed without naming $dropped" "$output"
 else
   echo "SKIP: cargo-audit or its cached database is not available; the real-scanner case did not run"

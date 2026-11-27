@@ -5,15 +5,20 @@
 # call never stopped a new advisory of those kinds. This runs it with
 # `--deny warnings` and one `--ignore` per id of the single accepted list,
 # .cargo/audit.toml, which AGENTS.md and RELEASING.md must repeat exactly
-# (scripts/check-audit-list.sh). The scan runs from a scratch directory, so only
-# the ids passed here are ignored, whatever a developer's own audit.toml says.
+# (scripts/check-audit-list.sh). cargo-audit merges the `ignore` of every
+# audit.toml it finds: the working directory's, $CARGO_HOME's and $HOME's. A
+# developer's own global file would therefore widen the list, so the scan runs
+# from a scratch directory whose own `.cargo/audit.toml` has an empty list; a
+# working-directory config replaces the global ones, and only the ids passed
+# here are ignored.
 #
 # When the live advisory refresh fails, the scan repeats against the cached
 # database with the same list and the same flags, so the fallback can never pass
 # what the online run would reject; it only sees advisories published before the
 # cache was last refreshed, which is printed. With no cached database the gate
-# fails. A list entry that matches no advisory is a failure after a live refresh
-# and a notice after a cached one, since an old cache can lack a recent id.
+# fails. A list entry that matches no advisory is reported but never fails the
+# gate: an advisory withdrawn upstream must not turn every push red, and an old
+# cache can lack a recent id. Remove such an entry with the fix that outdates it.
 #
 # Usage: check-dependency-audit.sh [Cargo.lock [accepted-list.toml]]
 set -euo pipefail
@@ -31,6 +36,8 @@ db_dir=${CARGO_HOME:-$HOME/.cargo}/advisory-db
 scratch=$(mktemp -d)
 trap 'rm -rf "$scratch"' EXIT
 cd "$scratch"
+mkdir .cargo
+printf '[advisories]\nignore = []\n' >.cargo/audit.toml
 
 mapfile -t accepted < <(python3 -I - "$list_file" <<'PY'
 import sys
@@ -86,12 +93,9 @@ print("\n".join(sorted(set(sys.argv[2:]) - found)))
 PY
 )
 if [[ -n $stale ]]; then
-  printf 'accepted advisory no longer matches anything in Cargo.lock: %s\n' "$stale" >&2
-  if [[ $source_of_result == live ]]; then
-    echo "remove it from .cargo/audit.toml, AGENTS.md and RELEASING.md" >&2
-    exit 1
-  fi
-  echo "NOTE: not a failure, because the cached database may predate it" >&2
+  printf 'NOTICE: accepted advisory no longer matches anything in Cargo.lock: %s\n' "$stale" >&2
+  echo "NOTICE: remove it from .cargo/audit.toml, AGENTS.md and RELEASING.md;" \
+    "this does not fail the gate" >&2
 fi
 
 echo "Dependency audit passed ($source_of_result database, ${#accepted[@]} accepted advisories)"
