@@ -62,12 +62,17 @@ pub struct RhythmboxPlaylist {
     pub paths: Vec<PathBuf>,
 }
 
+/// The Rhythmbox entry types that are podcasts or radio streams.
+const PODCAST_OR_RADIO_ENTRY_TYPES: [&str; 4] =
+    ["iradio", "podcast-feed", "podcast-post", "podcast-search"];
+
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct RhythmboxPrescanResult {
-    /// Counts every `<entry>` in the file, including `type="ignore"` entries,
-    /// which appear in no other count.
+    /// Counts every `<entry>` in the file, including Rhythmbox-internal types
+    /// such as `type="ignore"`, which appear in no other count.
     pub total_entries: usize,
     pub song_entries: usize,
+    /// Podcast and radio entries only; see `PODCAST_OR_RADIO_ENTRY_TYPES`.
     pub non_song_entries: usize,
     pub rated_tracks: usize,
     pub tracks_with_history: usize,
@@ -492,12 +497,13 @@ pub fn prescan_rhythmdb_with_source(
                             result.song_entries += 1;
                             entry_builder = Some(EntryBuilder::default());
                         }
-                        // Files Rhythmbox's own scanner ignores, not something Reprise skipped.
-                        Some("ignore") => entry_builder = None,
-                        _ => {
+                        Some(kind) if PODCAST_OR_RADIO_ENTRY_TYPES.contains(&kind) => {
                             result.non_song_entries += 1;
                             entry_builder = None;
                         }
+                        // Every other type (`ignore`, `import-error`, unknown ones) is
+                        // Rhythmbox's own bookkeeping, not something Reprise skipped.
+                        _ => entry_builder = None,
                     }
                     field = None;
                 } else if entry_builder.is_some() {

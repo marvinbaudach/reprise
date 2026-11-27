@@ -2438,12 +2438,15 @@ result.
   counted as skipped.** The import's prescan sorts every `rhythmdb.xml`
   entry. Songs it matches are imported. A song outside the library folder,
   gone from disk or not yet in the library is skipped under its own reason.
-  Podcast episodes, radio streams and every other non-song type are skipped
-  as "Podcasts & radio streams". Entries of type `ignore` are files
-  Rhythmbox's own scanner ignored. They are not music Reprise left behind,
-  so they appear in none of the dialog's counts, not in its entry counts,
-  its warning or its completed summary. *Tests:*
-  `start_10_entries_rhythmbox_ignores_are_not_counted_as_skipped`.
+  Podcast and radio entries (`iradio`, `podcast-feed`, `podcast-post`,
+  `podcast-search`) are skipped as "Podcasts & radio streams". Every other
+  non-song type, such as `ignore` (files Rhythmbox's own scanner ignored),
+  `import-error` or a type Reprise does not know, is Rhythmbox's own
+  bookkeeping. It is not music Reprise left behind, so it appears in none of
+  the dialog's counts, not in its entry counts, its warning or its completed
+  summary. *Tests:*
+  `start_10_entries_rhythmbox_ignores_are_not_counted_as_skipped`,
+  `start_10_entries_only_podcast_and_radio_types_count_as_podcasts_or_radio`.
 
 ## J. Queue view
 
