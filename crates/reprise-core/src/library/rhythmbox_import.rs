@@ -64,6 +64,8 @@ pub struct RhythmboxPlaylist {
 
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct RhythmboxPrescanResult {
+    /// Counts every `<entry>` in the file, including `type="ignore"` entries,
+    /// which appear in no other count.
     pub total_entries: usize,
     pub song_entries: usize,
     pub non_song_entries: usize,

@@ -142,7 +142,7 @@
     <release version="0.1.359" date="2026-11-27" type="stable">
       <description>
         <p>The Rhythmbox import no longer counts files that Rhythmbox itself ignores as skipped podcasts and radio streams, so its warning and result page show only the entries it really could not import.</p>
-        <p xml:lang="de">Der Rhythmbox-Import zählt Dateien, die Rhythmbox selbst ignoriert, nicht mehr als übersprungene Podcasts und Radiosender, sodass Warnung und Ergebnisseite nur noch die Einträge zeigen, die er wirklich nicht importieren konnte.</p>
+        <p xml:lang="de">Der Rhythmbox-Import zählt Dateien, die Rhythmbox selbst ignoriert, nicht mehr als übersprungene Podcasts und Radiostreams, sodass Warnung und Ergebnisseite nur noch die Einträge zeigen, die er wirklich nicht importieren konnte.</p>
       </description>
     </release>
     <release version="0.1.358" date="2026-11-27" type="stable">

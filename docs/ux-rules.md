@@ -2434,15 +2434,15 @@ result.
   the switch. *Tests:*
   `start_9_a_found_rhythmbox_library_is_offered_switched_on_only_on_first_run`,
   `start_9_skip_for_now_imports_nothing_even_with_the_switch_on`.
-- **START-10** [active] [core] — **The Rhythmbox import counts as skipped
-  only what it could have imported.** The import's prescan sorts every
-  `rhythmdb.xml` entry. Songs it matches are imported. A song outside the
-  library folder, gone from disk or not yet in the library is skipped under
-  its own reason. Podcast episodes, radio streams and every other non-song
-  type are skipped as "Podcasts & radio streams". Entries of type `ignore` are
-  files Rhythmbox's own scanner ignored. They are not music Reprise left
-  behind, so they appear in none of these counts, neither as entries nor as
-  skipped, in the dialog's warning or in its completed summary. *Tests:*
+- **START-10** [active] [core] — **Files Rhythmbox itself ignores are not
+  counted as skipped.** The import's prescan sorts every `rhythmdb.xml`
+  entry. Songs it matches are imported. A song outside the library folder,
+  gone from disk or not yet in the library is skipped under its own reason.
+  Podcast episodes, radio streams and every other non-song type are skipped
+  as "Podcasts & radio streams". Entries of type `ignore` are files
+  Rhythmbox's own scanner ignored. They are not music Reprise left behind,
+  so they appear in none of the dialog's counts, not in its entry counts,
+  its warning or its completed summary. *Tests:*
   `start_10_entries_rhythmbox_ignores_are_not_counted_as_skipped`.
 
 ## J. Queue view
