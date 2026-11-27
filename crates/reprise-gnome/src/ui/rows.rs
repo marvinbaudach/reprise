@@ -271,7 +271,10 @@ mod tests {
     /// reverse order, so a title given before `use-markup` was parsed as
     /// markup once and logged "Failed to set text ... from markup" (the
     /// published 0.1.346 Flatpak did, three times, opening the Rhythmbox
-    /// import dialog) before the label settled on plain text.
+    /// import dialog) before the label settled on plain text. A control arm
+    /// builds a row that does parse its title as markup and requires the
+    /// capture to have seen that warning, so a capture that sees nothing
+    /// cannot pass the absence check.
     #[test]
     #[ignore = "requires a display; run via xvfb-run"]
     fn fb_13_a_row_title_with_markup_characters_is_never_parsed_as_markup() {
@@ -297,6 +300,19 @@ mod tests {
                 .iter()
                 .all(|message| !message.contains("from markup")),
             "a title reached the markup parser: {logged:?}"
+        );
+
+        let control_mark = crate::ui::gtk_log_capture::mark();
+        let _markup_row = adw::ActionRow::builder()
+            .use_markup(true)
+            .title(title)
+            .build();
+        let control_logged = crate::ui::gtk_log_capture::messages_since(control_mark);
+        assert!(
+            control_logged
+                .iter()
+                .any(|message| message.contains("from markup")),
+            "the capture must see the warning a markup row logs: {control_logged:?}"
         );
     }
 }

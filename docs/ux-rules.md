@@ -2053,7 +2053,9 @@ result.
   `set_use_markup(false)`, in `build()`; `banner()` does the same. No title
   reaches the markup parser, not even for an instant; the test
   `fb_13_a_row_title_with_markup_characters_is_never_parsed_as_markup`
-  asserts it against the GTK log. `AdwStatusPage` is exempt because its title is not
+  asserts it against the GTK log, and carries a control arm that builds a
+  `use_markup(true)` row and requires the capture to have seen its warning.
+  `AdwStatusPage` is exempt because its title is not
   parsed as markup, and the count labels that deliberately use Pango markup
   are plain `GtkLabel`s and stay outside this rule. Named exception:
   `preferences/preferences_search_results.rs`'s `apply_highlight` (~line 189)
