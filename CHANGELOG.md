@@ -4,6 +4,22 @@ Reprise release notes are curated from the changes that reached the stable
 branch. They describe user-visible changes rather than reproducing commit
 messages.
 
+## [0.1.359] - 2026-11-27
+
+### Library
+
+- The Rhythmbox import no longer counts files that Rhythmbox itself ignores
+  as skipped. Rhythmbox keeps a record of every file its own scanner passed
+  over, and the import's warning and its result page counted those as
+  "Podcasts & radio streams". In a large library that could add thousands to
+  the skipped total. They now appear in no count, so the skipped entries are
+  only songs the import could not match, podcast episodes and radio streams.
+
+### Tools, packaging, and reliability
+
+- The diagnostics report records whether the first-run Rhythmbox switch
+  started on, instead of always saying it started off.
+
 ## [0.1.358] - 2026-11-27
 
 ### Library

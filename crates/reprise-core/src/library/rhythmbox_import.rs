@@ -64,6 +64,8 @@ pub struct RhythmboxPlaylist {
 
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct RhythmboxPrescanResult {
+    /// Counts every `<entry>` in the file, including `type="ignore"` entries,
+    /// which appear in no other count.
     pub total_entries: usize,
     pub song_entries: usize,
     pub non_song_entries: usize,
@@ -490,6 +492,8 @@ pub fn prescan_rhythmdb_with_source(
                             result.song_entries += 1;
                             entry_builder = Some(EntryBuilder::default());
                         }
+                        // Files Rhythmbox's own scanner ignores, not something Reprise skipped.
+                        Some("ignore") => entry_builder = None,
                         _ => {
                             result.non_song_entries += 1;
                             entry_builder = None;
@@ -743,6 +747,10 @@ pub fn merge_playlists(
 #[cfg(test)]
 #[path = "rhythmbox_import_tests.rs"]
 mod tests;
+
+#[cfg(test)]
+#[path = "rhythmbox_import_skip_tests.rs"]
+mod skip_tests;
 
 #[cfg(test)]
 #[path = "rhythmbox_playlist_import_tests.rs"]

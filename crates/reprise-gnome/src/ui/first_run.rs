@@ -373,7 +373,7 @@ pub(super) fn run(
     let rhythmbox_offer = rhythmbox_offer(decision, rhythmbox_found);
     tracing::info!(
         rhythmbox_found,
-        rhythmbox_import_default = false,
+        rhythmbox_import_default = rhythmbox_offer.unwrap_or(false),
         "first-run Rhythmbox discovery complete"
     );
     let selection =
