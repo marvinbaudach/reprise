@@ -160,6 +160,14 @@ jobs:
           java-version: "21"
           cache: gradle
 
+      # Compose 1.13 compiles against API 37.1, a minor release the runner
+      # image's preinstalled SDK may not carry yet. Installing it is a no-op
+      # where it is already there.
+      - name: Install the Android SDK platform 37.1
+        run: |
+          printf 'y\n' | "${ANDROID_HOME:?}/cmdline-tools/latest/bin/sdkmanager" \
+            --install "platforms;android-37.1"
+
       - name: Cache Cargo downloads
         id: cargo_downloads
         uses: actions/cache/restore@v6

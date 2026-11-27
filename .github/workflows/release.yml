@@ -464,6 +464,14 @@ jobs:
           distribution: temurin
           java-version: "21"
 
+      # Compose 1.13 compiles against API 37.1, a minor release the runner
+      # image's preinstalled SDK may not carry yet. Installing it is a no-op
+      # where it is already there.
+      - name: Install the Android SDK platform 37.1
+        run: |
+          printf 'y\n' | "${ANDROID_HOME:?}/cmdline-tools/latest/bin/sdkmanager" \
+            --install "platforms;android-37.1"
+
       - name: Add Android Rust targets
         run: rustup target add aarch64-linux-android x86_64-linux-android
 
