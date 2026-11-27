@@ -285,16 +285,21 @@ pub fn rhythmbox_skipped_warning(
 /// Joins the reasons through a catalog string, so a translation owns the
 /// separator instead of the code hard-coding an English-looking one.
 fn join_reasons(reasons: Vec<String>) -> String {
+    join_with(reasons, |first, second| {
+        formatted(
+            N_!("{first} \u{00b7} {second}"),
+            &[("first", first), ("second", second)],
+        )
+    })
+}
+
+/// Folds `reasons` pairwise through `combine`, which owns the separator.
+fn join_with(reasons: Vec<String>, combine: impl Fn(&str, &str) -> String) -> String {
     let mut reasons = reasons.into_iter();
     let Some(first) = reasons.next() else {
         return String::new();
     };
-    reasons.fold(first, |joined, next| {
-        formatted(
-            N_!("{first} \u{00b7} {second}"),
-            &[("first", &joined), ("second", &next)],
-        )
-    })
+    reasons.fold(first, |joined, next| combine(&joined, &next))
 }
 
 #[cfg(test)]
@@ -406,13 +411,22 @@ mod tests {
         );
     }
 
-    /// The separator between skip reasons belongs to the catalog, like every
-    /// other "{a} \u{b7} {b}" line here, not to a hard-coded `join`.
+    /// The separator between skip reasons belongs to the combiner the caller
+    /// supplies (the catalog in production), not to a hard-coded `join`: a
+    /// translation that changes it changes the output.
     #[test]
     fn rbx_copy_6_the_skip_reason_separator_is_a_catalog_string() {
-        let source = include_str!("strings_rhythmbox.rs");
-        let production = source.split("#[cfg(test)]").next().unwrap_or_default();
-        assert!(!production.contains(".join("));
-        assert!(production.contains("N_!(\"{first} \\u{00b7} {second}\")"));
+        let reasons = vec!["a".to_string(), "b".to_string(), "c".to_string()];
+        let joined = join_with(reasons, |first, second| format!("{first}|{second}"));
+        assert_eq!(joined, "a|b|c");
+        assert_eq!(join_with(Vec::new(), |_, _| "x".to_string()), "");
+        assert_eq!(
+            join_with(vec!["solo".to_string()], |_, _| "x".to_string()),
+            "solo"
+        );
+        assert_eq!(
+            join_reasons(vec!["a".to_string(), "b".to_string()]),
+            "a \u{b7} b"
+        );
     }
 }

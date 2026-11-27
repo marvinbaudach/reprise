@@ -3,7 +3,9 @@
 //! GTK logs through `g_log_structured`, which GLib's per-domain handlers
 //! (`glib::log_set_handler`) never see; only the process-wide writer does.
 //! That writer can be installed once per process, so installation is guarded
-//! and every test that needs the log shares it. The default output is kept.
+//! and every test that needs the log shares it. Every record is copied into
+//! the capture and then handed to `glib::log_writer_default`, whose result is
+//! returned unchanged, so the default output still appears on stderr.
 
 use std::sync::{Mutex, Once};
 
@@ -13,7 +15,7 @@ static MESSAGES: Mutex<Vec<String>> = Mutex::new(Vec::new());
 /// Starts capturing and returns a mark for [`messages_since`].
 pub(crate) fn mark() -> usize {
     INSTALL.call_once(|| {
-        gtk4::glib::log_set_writer_func(|_, fields| {
+        gtk4::glib::log_set_writer_func(|level, fields| {
             let message = fields
                 .iter()
                 .find(|field| field.key() == "MESSAGE")
@@ -21,7 +23,7 @@ pub(crate) fn mark() -> usize {
             if let (Some(message), Ok(mut captured)) = (message, MESSAGES.lock()) {
                 captured.push(message.to_string());
             }
-            gtk4::glib::LogWriterOutput::Unhandled
+            gtk4::glib::log_writer_default(level, fields)
         });
     });
     MESSAGES.lock().map_or(0, |captured| captured.len())
