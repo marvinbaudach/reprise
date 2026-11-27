@@ -2400,8 +2400,8 @@ result.
   `start_7_the_first_directory_with_a_database_wins_and_the_override_still_beats_it`,
   `start_7_the_playlists_file_sits_beside_the_database_that_was_found`,
   `start_7_the_importer_takes_its_playlists_file_from_the_resolver`.
-- **START-8** [planned] [gtk] — **The Rhythmbox import stays reachable after
-  first run.** <!-- REVIEW: rule proposal --> Preferences → Library carries
+- **START-8** [active] [gtk] — **The Rhythmbox import stays reachable after
+  first run.** Preferences → Library carries
   the row "Import from Rhythmbox…" directly after the Rescan row. Activating
   it opens the same import dialog first run offers. The row is always present.
   Whether a `rhythmdb.xml` exists (START-7) is evaluated when Preferences
@@ -2422,6 +2422,18 @@ result.
   `start_8_a_scan_running_when_preferences_opens_gates_the_row_at_once`,
   `start_8_the_import_row_sits_directly_after_the_rescan_row`,
   `start_8_the_settings_search_finds_the_import_row_for_rhythmbox`.
+- **START-9** [active] [gtk] — **A Rhythmbox library found on first run is
+  offered switched on.** When the first-run wizard is shown and a
+  `rhythmdb.xml` exists (START-7), the "Import from Rhythmbox" switch starts
+  on. Reprise's audience comes from Rhythmbox, and on first run the import is
+  safe to suggest: the database is still empty, and the import never writes
+  Rhythmbox's files or the audio files. The switch only decides whether the
+  import dialog opens after the library scan; the import itself still waits
+  for the user's confirmation there. "Skip for Now" imports nothing, whatever
+  the switch shows. An existing library and a completed first run never see
+  the switch. *Tests:*
+  `start_9_a_found_rhythmbox_library_is_offered_switched_on_only_on_first_run`,
+  `start_9_skip_for_now_imports_nothing_even_with_the_switch_on`.
 
 ## J. Queue view
 
