@@ -5,12 +5,12 @@
 //! `tests/schema.rs`, which pins them against a fixture.
 
 use serde::{Deserialize, Serialize};
-use zvariant::{DeserializeDict, SerializeDict, Type};
+use zbus::{DeserializeDict, SerializeDict, Type};
 
 /// One connected or remembered device and everything a client needs to
 /// render or drive it.
 #[derive(Debug, Clone, PartialEq, Eq, Default, SerializeDict, DeserializeDict, Type)]
-#[zvariant(signature = "a{sv}")]
+#[zbus(signature = "a{sv}")]
 pub struct DeviceSnapshot {
     /// The device's display name; also its address in every command.
     pub name: String,
@@ -44,7 +44,7 @@ pub struct DeviceSnapshot {
 
 /// One selectable synchronization source (a playlist or a smart playlist).
 #[derive(Debug, Clone, PartialEq, Eq, Default, SerializeDict, DeserializeDict, Type)]
-#[zvariant(signature = "a{sv}")]
+#[zbus(signature = "a{sv}")]
 pub struct DeviceSourceSnapshot {
     /// `playlist` or `smart`.
     pub kind: String,
@@ -64,7 +64,7 @@ pub struct DeviceSourceSnapshot {
 /// What the next run would change. Seven counters that used to be seven
 /// consecutive `u64`s in a tuple.
 #[derive(Debug, Clone, PartialEq, Eq, Default, SerializeDict, DeserializeDict, Type)]
-#[zvariant(signature = "a{sv}")]
+#[zbus(signature = "a{sv}")]
 pub struct DeviceChangeCounts {
     pub additions: u64,
     pub replacements: u64,
@@ -77,7 +77,7 @@ pub struct DeviceChangeCounts {
 
 /// Storage headroom before and after the planned run.
 #[derive(Debug, Clone, PartialEq, Eq, Default, SerializeDict, DeserializeDict, Type)]
-#[zvariant(signature = "a{sv}")]
+#[zbus(signature = "a{sv}")]
 pub struct DeviceStorageSnapshot {
     /// The storage volume's name, absent when the device exposes none.
     pub target_name: Option<String>,
@@ -97,7 +97,7 @@ pub struct DeviceStorageSnapshot {
 /// How a device's storage is used. Every byte count is optional exactly when
 /// the device declines to report it; `knowledge` says why.
 #[derive(Debug, Clone, PartialEq, Eq, Default, SerializeDict, DeserializeDict, Type)]
-#[zvariant(signature = "a{sv}")]
+#[zbus(signature = "a{sv}")]
 pub struct DeviceStorageComposition {
     pub total_bytes: Option<u64>,
     pub reprise_music_bytes: u64,
@@ -111,7 +111,7 @@ pub struct DeviceStorageComposition {
 /// Which actions the runtime will currently accept for this device. A client
 /// renders availability from these instead of re-deriving the rules.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default, SerializeDict, DeserializeDict, Type)]
-#[zvariant(signature = "a{sv}")]
+#[zbus(signature = "a{sv}")]
 pub struct DeviceControls {
     pub editable: bool,
     pub can_start: bool,
@@ -121,7 +121,7 @@ pub struct DeviceControls {
 
 /// Byte-level progress of a running transfer.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default, SerializeDict, DeserializeDict, Type)]
-#[zvariant(signature = "a{sv}")]
+#[zbus(signature = "a{sv}")]
 pub struct DeviceProgress {
     pub bytes_done: u64,
     pub bytes_total: u64,
@@ -133,7 +133,7 @@ pub struct DeviceProgress {
 
 /// The playlists target's state and `MTP-22` diff reading.
 #[derive(Debug, Clone, PartialEq, Eq, Default, SerializeDict, DeserializeDict, Type)]
-#[zvariant(signature = "a{sv}")]
+#[zbus(signature = "a{sv}")]
 pub struct DeviceTargetSnapshot {
     /// The target's folder on the device, as the folder browser left it.
     pub target_path: String,

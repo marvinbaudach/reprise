@@ -7,7 +7,7 @@
 //! next, so this is not part of [`crate::playback::PlaybackSnapshot`], which
 //! is empty when nothing is loaded.
 
-use zvariant::{DeserializeDict, SerializeDict, Type};
+use zbus::{DeserializeDict, SerializeDict, Type};
 
 /// How many equalizer bands there are, matching `reprise-core`'s own
 /// `AudioEffects`. Fixed rather than negotiated: the bands are a fixed set of
@@ -17,7 +17,7 @@ pub const EQUALIZER_BAND_COUNT: usize = 10;
 
 /// The audio effects the backend has actually accepted.
 #[derive(Debug, Clone, PartialEq, Default, SerializeDict, DeserializeDict, Type)]
-#[zvariant(signature = "a{sv}")]
+#[zbus(signature = "a{sv}")]
 pub struct EffectsSnapshot {
     pub equalizer_enabled: bool,
     /// Gain per band in dB, from the lowest centre frequency upwards.
@@ -43,7 +43,7 @@ pub struct EffectsSnapshot {
 /// answer, not the caller's request: a client cannot ask for a fallback, and
 /// a type that let it would invite one to be sent back unchanged.
 #[derive(Debug, Clone, PartialEq, Default, SerializeDict, DeserializeDict, Type)]
-#[zvariant(signature = "a{sv}")]
+#[zbus(signature = "a{sv}")]
 pub struct EffectsRequest {
     pub equalizer_enabled: bool,
     /// Exactly [`EQUALIZER_BAND_COUNT`] gains in dB. A different length is

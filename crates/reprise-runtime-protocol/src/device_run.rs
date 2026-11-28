@@ -12,13 +12,13 @@
 //! as fact. Splitting the facets makes the unknown half absent instead of
 //! zero.
 
-use zvariant::{DeserializeDict, SerializeDict, Type};
+use zbus::{DeserializeDict, SerializeDict, Type};
 
 use crate::device_sync::DeviceProgress;
 
 /// Live state of one device run.
 #[derive(Debug, Clone, PartialEq, Eq, Default, SerializeDict, DeserializeDict, Type)]
-#[zvariant(signature = "a{sv}")]
+#[zbus(signature = "a{sv}")]
 pub struct DeviceRunSnapshot {
     /// The device's display name — the same address every command uses.
     pub device: String,

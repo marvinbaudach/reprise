@@ -5,7 +5,7 @@
 //! opening the application is not a request to play.
 
 use serde::{Deserialize, Serialize};
-use zvariant::{DeserializeDict, SerializeDict, Type};
+use zbus::{DeserializeDict, SerializeDict, Type};
 
 /// A stored context queue, in the shape a surface persisted it.
 ///
@@ -17,7 +17,7 @@ use zvariant::{DeserializeDict, SerializeDict, Type};
 /// Path-free like everything else here: a queue is ids, and what those ids
 /// resolve to is the runtime's business.
 #[derive(Debug, Clone, PartialEq, Eq, Default, SerializeDict, DeserializeDict, Type)]
-#[zvariant(signature = "a{sv}")]
+#[zbus(signature = "a{sv}")]
 pub struct RestoredQueue {
     pub track_ids: Vec<i64>,
     /// The play order, as indices into `track_ids`. Must be a permutation of

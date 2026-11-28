@@ -8,7 +8,7 @@
 //! debt — see the plan's "Explicitly NOT doing" item): the semantics are
 //! already platform-neutral (SMTC and MPNowPlayingInfoCenter have the same
 //! shape). The D-Bus wire helpers that turn this state into MPRIS-specific
-//! `zbus::zvariant` values live platform-side in `mpris/state.rs`.
+//! `zbus::wire` values live platform-side in `mpris/state.rs`.
 
 use std::sync::{Arc, Mutex};
 

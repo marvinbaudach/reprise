@@ -21,17 +21,17 @@ use reprise_runtime_protocol::queue::{QueueItem, QueueSnapshot};
 use reprise_runtime_protocol::runtime::RuntimeSnapshot;
 use reprise_runtime_protocol::PROTOCOL_VERSION;
 
-fn dbus_context() -> zvariant::serialized::Context {
-    zvariant::serialized::Context::new_dbus(zvariant::Endian::native(), 0)
+fn dbus_context() -> zbus::wire::serialized::Context {
+    zbus::wire::serialized::Context::new(zbus::wire::Endian::native(), 0)
 }
 
 /// Encodes with the real D-Bus format and decodes back. Returns the decoded
 /// value so the caller can compare it against the original.
 fn round_trip<T>(value: &T) -> T
 where
-    T: serde::Serialize + for<'de> serde::Deserialize<'de> + zvariant::DynamicType + zvariant::Type,
+    T: serde::Serialize + for<'de> serde::Deserialize<'de> + zbus::DynamicType + zbus::Type,
 {
-    let encoded = zvariant::to_bytes(dbus_context(), value).expect("snapshot encodes for D-Bus");
+    let encoded = zbus::wire::to_bytes(dbus_context(), value).expect("snapshot encodes for D-Bus");
     let (decoded, _) = encoded.deserialize::<T>().expect("snapshot decodes again");
     decoded
 }
@@ -444,7 +444,7 @@ fn device_path_values(value: &serde_json::Value, found: &mut Vec<String>) {
         serde_json::Value::Object(map) => {
             for (key, item) in map {
                 if DEVICE_PATH_FIELDS.contains(&key.as_str()) {
-                    // zvariant serializes each field as {"signature", "value"},
+                    // zbus serializes each field as {"signature", "value"},
                     // so the string sits one level below the field name.
                     collect_field_strings(item, found);
                 } else {
@@ -457,7 +457,7 @@ fn device_path_values(value: &serde_json::Value, found: &mut Vec<String>) {
 }
 
 /// Every string under one serialized field, skipping the D-Bus type signature
-/// that zvariant pairs with the value.
+/// that zbus pairs with the value.
 fn collect_field_strings(value: &serde_json::Value, found: &mut Vec<String>) {
     match value {
         serde_json::Value::String(text) => found.push(text.clone()),
@@ -687,8 +687,8 @@ fn que_12_mixed_queue_adds_typed_items_without_widening_legacy_track_ids() {
 
 #[test]
 fn a_queue_snapshot_from_an_older_peer_decodes_with_empty_typed_items() {
-    #[derive(zvariant::SerializeDict, zvariant::Type)]
-    #[zvariant(signature = "a{sv}")]
+    #[derive(zbus::SerializeDict, zbus::Type)]
+    #[zbus(signature = "a{sv}")]
     struct LegacyQueueSnapshot {
         revision: u64,
         current_track_id: Option<i64>,
@@ -707,7 +707,7 @@ fn a_queue_snapshot_from_an_older_peer_decodes_with_empty_typed_items() {
         context_total: 1,
     };
     let encoded =
-        zvariant::to_bytes(dbus_context(), &legacy).expect("legacy queue snapshot encodes");
+        zbus::wire::to_bytes(dbus_context(), &legacy).expect("legacy queue snapshot encodes");
     let (decoded, _) = encoded
         .deserialize::<QueueSnapshot>()
         .expect("current queue snapshot decodes an older peer");

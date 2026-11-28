@@ -57,26 +57,29 @@ pub fn run(action: Action, json_output: bool) -> Result<(), CliError> {
 
 /// Opens the session bus and a proxy to the app's player. A missing session bus
 /// (e.g. a headless host) is an `Unavailable` error, not a panic.
-fn connect() -> Result<zbus::blocking::Proxy<'static>, CliError> {
-    let connection = zbus::blocking::Connection::session().map_err(|error| {
+fn connect() -> Result<zbus::Proxy<'static>, CliError> {
+    let connection = zbus::block_on(zbus::Connection::session()).map_err(|error| {
         CliError::Unavailable(format!("no D-Bus session bus available: {error}"))
     })?;
-    zbus::blocking::Proxy::new(&connection, BUS_NAME, OBJECT_PATH, PLAYER_INTERFACE)
-        .map_err(|error| map_zbus_error(&error))
+    zbus::block_on(zbus::Proxy::new(
+        &connection,
+        BUS_NAME,
+        OBJECT_PATH,
+        PLAYER_INTERFACE,
+    ))
+    .map_err(|error| map_zbus_error(&error))
 }
 
 /// Calls a no-argument, no-return player method, mapping "no player" cleanly.
-fn invoke(proxy: &zbus::blocking::Proxy<'static>, method: &str) -> Result<(), CliError> {
-    let _reply: () = proxy
-        .call(method, &())
-        .map_err(|error| map_zbus_error(&error))?;
+fn invoke(proxy: &zbus::Proxy<'static>, method: &str) -> Result<(), CliError> {
+    let _reply: () =
+        zbus::block_on(proxy.call(method, &())).map_err(|error| map_zbus_error(&error))?;
     Ok(())
 }
 
 /// Reads and prints the current playback status and track.
-fn show_status(proxy: &zbus::blocking::Proxy<'static>, json_output: bool) -> Result<(), CliError> {
-    let status: String = proxy
-        .get_property("PlaybackStatus")
+fn show_status(proxy: &zbus::Proxy<'static>, json_output: bool) -> Result<(), CliError> {
+    let status: String = zbus::block_on(proxy.get_property("PlaybackStatus"))
         .map_err(|error| map_zbus_error(&error))?;
     let (title, artist) = read_now_playing(proxy);
     if json_output {
@@ -97,11 +100,13 @@ fn show_status(proxy: &zbus::blocking::Proxy<'static>, json_output: bool) -> Res
 
 /// Best-effort `xesam:title` / `xesam:artist` from the player's `Metadata`. Any
 /// shape mismatch just yields `None` — status still prints without track info.
-fn read_now_playing(proxy: &zbus::blocking::Proxy<'static>) -> (Option<String>, Option<String>) {
+fn read_now_playing(proxy: &zbus::Proxy<'static>) -> (Option<String>, Option<String>) {
     use std::collections::HashMap;
-    use zbus::zvariant::OwnedValue;
+    use zbus::OwnedVariant;
 
-    let Ok(metadata) = proxy.get_property::<HashMap<String, OwnedValue>>("Metadata") else {
+    let Ok(metadata) =
+        zbus::block_on(proxy.get_property::<HashMap<String, OwnedVariant>>("Metadata"))
+    else {
         return (None, None);
     };
     let title = metadata.get("xesam:title").and_then(owned_to_string);
@@ -112,19 +117,29 @@ fn read_now_playing(proxy: &zbus::blocking::Proxy<'static>) -> (Option<String>, 
 /// Best-effort text from an MPRIS metadata value: `xesam:artist` is an array of
 /// strings, `xesam:title` a plain string, so try both without letting one
 /// failure short-circuit the other.
-fn owned_to_string(value: &zbus::zvariant::OwnedValue) -> Option<String> {
+fn owned_to_string(value: &zbus::OwnedVariant) -> Option<String> {
     if let Ok(list) = value.try_clone().and_then(Vec::<String>::try_from) {
         return Some(list.join(", "));
     }
     value.try_clone().and_then(String::try_from).ok()
 }
 
+/// The D-Bus error name of a failed method call. zbus 6 reports the names that
+/// `zbus::fdo::Error` defines (`ServiceUnknown`, `NameHasNoOwner`, `UnknownMethod`,
+/// ...) as `Error::FDO` and only the rest as `Error::MethodError`, so both
+/// variants have to be read.
+fn dbus_error_name(error: &zbus::Error) -> Option<String> {
+    match error {
+        zbus::Error::MethodError(name, _, _) => Some(name.as_str().to_owned()),
+        zbus::Error::FDO(error) => Some(zbus::DBusError::name(error.as_ref()).as_str().to_owned()),
+        _ => None,
+    }
+}
+
 /// Maps a zbus error to a CLI error, recognising the "no player" case.
 fn map_zbus_error(error: &zbus::Error) -> CliError {
-    if let zbus::Error::MethodError(name, _, _) = error {
-        if is_absent_player(name.as_str()) {
-            return no_player_error();
-        }
+    if dbus_error_name(error).is_some_and(|name| is_absent_player(&name)) {
+        return no_player_error();
     }
     CliError::Unavailable(format!("MPRIS request failed: {error}"))
 }
@@ -167,6 +182,36 @@ mod tests {
         // An unrelated D-Bus error is a genuine fault, not "no player".
         assert!(!is_absent_player("org.freedesktop.DBus.Error.AccessDenied"));
         assert!(!is_absent_player(""));
+    }
+
+    #[test]
+    fn well_known_error_replies_are_recognised_by_their_wire_names() {
+        // zbus 6 turns the names `zbus::fdo::Error` defines into `Error::FDO`,
+        // so the absent-player check has to read them from there too.
+        let absent = zbus::Error::FDO(Box::new(zbus::fdo::Error::ServiceUnknown(String::new())));
+        assert_eq!(
+            dbus_error_name(&absent).as_deref(),
+            Some("org.freedesktop.DBus.Error.ServiceUnknown")
+        );
+        assert!(
+            map_zbus_error(&absent).to_string().contains(BUS_NAME),
+            "an absent player is reported as such"
+        );
+        let unowned = zbus::Error::FDO(Box::new(zbus::fdo::Error::NameHasNoOwner(String::new())));
+        assert!(map_zbus_error(&unowned).to_string().contains(BUS_NAME));
+        let other = zbus::Error::FDO(Box::new(zbus::fdo::Error::Failed(String::new())));
+        assert_eq!(
+            dbus_error_name(&other).as_deref(),
+            Some("org.freedesktop.DBus.Error.Failed")
+        );
+        assert!(
+            map_zbus_error(&other)
+                .to_string()
+                .contains("MPRIS request failed"),
+            "a genuine fault is not swallowed as an absent player"
+        );
+        // An error that carries no D-Bus name has none to report.
+        assert_eq!(dbus_error_name(&zbus::Error::Unsupported), None);
     }
 
     #[test]

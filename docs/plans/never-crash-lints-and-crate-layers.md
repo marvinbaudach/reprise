@@ -251,7 +251,7 @@ The table can be a heredoc or an array. Values from the current manifests:
 
 | crate | direct edges, default | direct edges, all features | banned families (full `-e normal --target all` tree) | panic policy |
 |---|---|---|---|---|
-| reprise-runtime-protocol | — | — | gtk4 libadwaita glib gstreamer zbus | deny |
+| reprise-runtime-protocol | — | — | gtk4 libadwaita glib gstreamer zruntime | deny |
 | reprise-core | — | — | gtk4 libadwaita glib gstreamer zbus | deny |
 | reprise-view | core | core | gtk4 libadwaita glib gstreamer zbus | deny |
 | reprise-stems | core | core | gtk4 libadwaita glib gstreamer zbus | deny |
@@ -261,8 +261,11 @@ The table can be a heredoc or an array. Values from the current manifests:
 | reprise-platform-linux | core runtime-protocol | core runtime-protocol | gtk4 libadwaita | deny |
 | reprise-gnome | core view platform-linux | core view platform-linux | — | pending |
 
-- `zvariant` in `reprise-runtime-protocol` is a data format, not `zbus`, and is
-  allowed.
+- `zbus` without default features in `reprise-runtime-protocol` is the D-Bus wire
+  format, not a bus, and is allowed; that row bans `zruntime`, which only the
+  bus-side `comms` feature pulls in. A workspace build unifies features, so
+  `scripts/check-crate-layers.sh` also proves that the crate's own zbus edge has no
+  `comms` and that its source names only the derives and trait it imports.
 - `reprise-platform-linux` pulls in `glib` through gstreamer and `zbus` for MPRIS, so
   neither is banned there.
 - For the all-features rows of cli and mcp: whether `zbus` pulls in `glib` is

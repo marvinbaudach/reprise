@@ -59,7 +59,7 @@ signal-hook = { version = "0.4", optional = true }
 # zbus DIRECTLY — the sanctioned Beschluss-3 exception. Never pulls
 # reprise-platform-linux; this is a standalone session-bus client. Matches the
 # workspace zbus major used by reprise-platform-linux's MPRIS server.
-zbus = { version = "5", optional = true }
+zbus = { version = "6", optional = true }
 # The MPRIS address and the absent-player rule, shared with the server and
 # with `reprise-mcp` so the three cannot drift apart. No toolkit, no bus.
 reprise-runtime-protocol = { path = "../reprise-runtime-protocol", optional = true }

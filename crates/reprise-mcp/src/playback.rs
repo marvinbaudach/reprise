@@ -14,7 +14,7 @@
 
 use std::collections::HashMap;
 
-use zbus::zvariant::{OwnedObjectPath, OwnedValue};
+use zbus::{OwnedObjectPath, OwnedVariant};
 
 use crate::dto::{PlaybackStateDto, QueueParams, QueueStateDto, SetPlaybackParams};
 
@@ -173,21 +173,36 @@ impl PlaybackSetting {
 /// Opens the session bus and a proxy to the app on the given interface. A
 /// missing session bus is a `Bus` error; an absent player is classified by
 /// `map_zbus_error`, mirroring `reprise-cli`'s `connect`.
-fn connect(interface: &'static str) -> Result<zbus::blocking::Proxy<'static>, PlaybackError> {
-    let connection = zbus::blocking::Connection::session()
+fn connect(interface: &'static str) -> Result<zbus::Proxy<'static>, PlaybackError> {
+    let connection = zbus::block_on(zbus::Connection::session())
         .map_err(|error| PlaybackError::Bus(format!("no D-Bus session bus available: {error}")))?;
-    zbus::blocking::Proxy::new(&connection, BUS_NAME, OBJECT_PATH, interface)
-        .map_err(|error| map_zbus_error(&error))
+    zbus::block_on(zbus::Proxy::new(
+        &connection,
+        BUS_NAME,
+        OBJECT_PATH,
+        interface,
+    ))
+    .map_err(|error| map_zbus_error(&error))
+}
+
+/// The D-Bus error name of a failed method call. zbus 6 reports the names that
+/// `zbus::fdo::Error` defines (`ServiceUnknown`, `NameHasNoOwner`, `UnknownMethod`,
+/// ...) as `Error::FDO` and only the rest as `Error::MethodError`, so both
+/// variants have to be read.
+fn dbus_error_name(error: &zbus::Error) -> Option<String> {
+    match error {
+        zbus::Error::MethodError(name, _, _) => Some(name.as_str().to_owned()),
+        zbus::Error::FDO(error) => Some(zbus::DBusError::name(error.as_ref()).as_str().to_owned()),
+        _ => None,
+    }
 }
 
 /// Maps a zbus error to a playback error, recognising the "no player" case.
 /// Mirrors `reprise-cli`'s `commands::playback::map_zbus_error` exactly (same
-/// `MethodError` destructuring, same absent-player classification).
+/// error-name reading, same absent-player classification).
 pub(crate) fn map_zbus_error(error: &zbus::Error) -> PlaybackError {
-    if let zbus::Error::MethodError(name, _, _) = error {
-        if is_absent_player(name.as_str()) {
-            return PlaybackError::NoPlayer;
-        }
+    if dbus_error_name(error).is_some_and(|name| is_absent_player(&name)) {
+        return PlaybackError::NoPlayer;
     }
     PlaybackError::Bus(error.to_string())
 }
@@ -206,9 +221,8 @@ fn map_fdo_error(error: &zbus::fdo::Error) -> PlaybackError {
 /// MPRIS player.
 pub fn transport(action: TransportAction) -> Result<(), PlaybackError> {
     let proxy = connect(PLAYER_INTERFACE)?;
-    let _reply: () = proxy
-        .call(action.method(), &())
-        .map_err(|error| map_zbus_error(&error))?;
+    let _reply: () =
+        zbus::block_on(proxy.call(action.method(), &())).map_err(|error| map_zbus_error(&error))?;
     Ok(())
 }
 
@@ -216,8 +230,7 @@ pub fn transport(action: TransportAction) -> Result<(), PlaybackError> {
 /// `org.reprise.Player1.PlayTrackIds` method.
 pub fn play_track_ids(ids: Vec<i64>) -> Result<(), PlaybackError> {
     let proxy = connect(REPRISE_INTERFACE)?;
-    let _reply: () = proxy
-        .call("PlayTrackIds", &(ids,))
+    let _reply: () = zbus::block_on(proxy.call("PlayTrackIds", &(ids,)))
         .map_err(|error| map_zbus_error(&error))?;
     Ok(())
 }
@@ -226,7 +239,7 @@ pub fn play_track_ids(ids: Vec<i64>) -> Result<(), PlaybackError> {
 pub fn state() -> Result<PlaybackStateDto, PlaybackError> {
     let proxy = connect(PLAYER_INTERFACE)?;
     let status: String = get_property(&proxy, "PlaybackStatus")?;
-    let metadata: HashMap<String, OwnedValue> = get_property(&proxy, "Metadata")?;
+    let metadata: HashMap<String, OwnedVariant> = get_property(&proxy, "Metadata")?;
     let position_micros: i64 = get_property(&proxy, "Position")?;
     let volume: f64 = get_property(&proxy, "Volume")?;
     let shuffle: bool = get_property(&proxy, "Shuffle")?;
@@ -250,19 +263,17 @@ pub fn state() -> Result<PlaybackStateDto, PlaybackError> {
 pub fn set(setting: &PlaybackSetting) -> Result<String, PlaybackError> {
     let proxy = connect(PLAYER_INTERFACE)?;
     match setting {
-        PlaybackSetting::Volume(value) => proxy
-            .set_property("Volume", *value)
+        PlaybackSetting::Volume(value) => zbus::block_on(proxy.set_property("Volume", *value))
             .map_err(|error| map_fdo_error(&error))?,
         PlaybackSetting::SeekMicros(offset) => {
-            let _: () = proxy
-                .call("Seek", &(*offset,))
+            let _: () = zbus::block_on(proxy.call("Seek", &(*offset,)))
                 .map_err(|error| map_zbus_error(&error))?;
         }
-        PlaybackSetting::Shuffle(enabled) => proxy
-            .set_property("Shuffle", *enabled)
-            .map_err(|error| map_fdo_error(&error))?,
-        PlaybackSetting::Repeat(value) => proxy
-            .set_property("LoopStatus", *value)
+        PlaybackSetting::Shuffle(enabled) => {
+            zbus::block_on(proxy.set_property("Shuffle", *enabled))
+                .map_err(|error| map_fdo_error(&error))?;
+        }
+        PlaybackSetting::Repeat(value) => zbus::block_on(proxy.set_property("LoopStatus", *value))
             .map_err(|error| map_fdo_error(&error))?,
     }
     Ok(setting.summary())
@@ -271,7 +282,7 @@ pub fn set(setting: &PlaybackSetting) -> Result<String, PlaybackError> {
 pub fn queue_state() -> Result<QueueStateDto, PlaybackError> {
     let proxy = connect(REPRISE_INTERFACE)?;
     let snapshot: reprise_runtime_protocol::queue::QueueSnapshot =
-        match proxy.call("QueueSnapshotV2", &()) {
+        match zbus::block_on(proxy.call("QueueSnapshotV2", &())) {
             Ok(snapshot) => snapshot,
             Err(error) if is_unknown_method(&error) => return legacy_queue_state(&proxy),
             Err(error) => return Err(map_zbus_error(&error)),
@@ -303,16 +314,14 @@ pub fn queue_state() -> Result<QueueStateDto, PlaybackError> {
     })
 }
 
-fn legacy_queue_state(proxy: &zbus::blocking::Proxy<'_>) -> Result<QueueStateDto, PlaybackError> {
+fn legacy_queue_state(proxy: &zbus::Proxy<'_>) -> Result<QueueStateDto, PlaybackError> {
     let (current, play_next, context, play_next_total, context_total): (
         i64,
         Vec<i64>,
         Vec<i64>,
         u64,
         u64,
-    ) = proxy
-        .call("QueueSnapshot", &())
-        .map_err(|error| map_zbus_error(&error))?;
+    ) = zbus::block_on(proxy.call("QueueSnapshot", &())).map_err(|error| map_zbus_error(&error))?;
     let play_next_items = play_next
         .iter()
         .copied()
@@ -337,11 +346,7 @@ fn legacy_queue_state(proxy: &zbus::blocking::Proxy<'_>) -> Result<QueueStateDto
 }
 
 fn is_unknown_method(error: &zbus::Error) -> bool {
-    matches!(
-        error,
-        zbus::Error::MethodError(name, _, _)
-            if name.as_str() == "org.freedesktop.DBus.Error.UnknownMethod"
-    )
+    dbus_error_name(error).as_deref() == Some("org.freedesktop.DBus.Error.UnknownMethod")
 }
 
 pub fn queue_mutate(action: QueueAction) -> Result<String, PlaybackError> {
@@ -349,21 +354,18 @@ pub fn queue_mutate(action: QueueAction) -> Result<String, PlaybackError> {
     let summary = match action {
         QueueAction::AddNext(ids) => {
             let count = ids.len();
-            let _: () = proxy
-                .call("QueueAddNext", &(ids,))
+            let _: () = zbus::block_on(proxy.call("QueueAddNext", &(ids,)))
                 .map_err(|error| map_zbus_error(&error))?;
             format!("Added {count} track(s) to the front of Play Next")
         }
         QueueAction::AddLast(ids) => {
             let count = ids.len();
-            let _: () = proxy
-                .call("QueueAddLast", &(ids,))
+            let _: () = zbus::block_on(proxy.call("QueueAddLast", &(ids,)))
                 .map_err(|error| map_zbus_error(&error))?;
             format!("Added {count} track(s) to the end of Play Next")
         }
         QueueAction::Clear => {
-            let _: () = proxy
-                .call("QueueClear", &())
+            let _: () = zbus::block_on(proxy.call("QueueClear", &()))
                 .map_err(|error| map_zbus_error(&error))?;
             "Cleared Play Next; playback context was preserved".to_owned()
         }
@@ -376,24 +378,21 @@ pub fn queue_mutate(action: QueueAction) -> Result<String, PlaybackError> {
     Ok(summary)
 }
 
-fn get_property<T>(proxy: &zbus::blocking::Proxy<'_>, name: &str) -> Result<T, PlaybackError>
+fn get_property<T>(proxy: &zbus::Proxy<'_>, name: &str) -> Result<T, PlaybackError>
 where
-    T: TryFrom<OwnedValue>,
-    T::Error: Into<zbus::Error>,
+    T: serde::de::DeserializeOwned + zbus::Type,
 {
-    proxy
-        .get_property(name)
-        .map_err(|error| map_zbus_error(&error))
+    zbus::block_on(proxy.get_property(name)).map_err(|error| map_zbus_error(&error))
 }
 
-fn metadata_string(metadata: &HashMap<String, OwnedValue>, key: &str) -> String {
+fn metadata_string(metadata: &HashMap<String, OwnedVariant>, key: &str) -> String {
     metadata
         .get(key)
         .and_then(|value| String::try_from(value.clone()).ok())
         .unwrap_or_default()
 }
 
-fn metadata_artists(metadata: &HashMap<String, OwnedValue>) -> String {
+fn metadata_artists(metadata: &HashMap<String, OwnedVariant>) -> String {
     metadata
         .get("xesam:artist")
         .and_then(|value| Vec::<String>::try_from(value.clone()).ok())
@@ -401,14 +400,14 @@ fn metadata_artists(metadata: &HashMap<String, OwnedValue>) -> String {
         .unwrap_or_default()
 }
 
-fn metadata_i64(metadata: &HashMap<String, OwnedValue>, key: &str) -> i64 {
+fn metadata_i64(metadata: &HashMap<String, OwnedVariant>, key: &str) -> i64 {
     metadata
         .get(key)
         .and_then(|value| i64::try_from(value.clone()).ok())
         .unwrap_or_default()
 }
 
-fn metadata_track_id(metadata: &HashMap<String, OwnedValue>) -> Option<i64> {
+fn metadata_track_id(metadata: &HashMap<String, OwnedVariant>) -> Option<i64> {
     let path = metadata
         .get("mpris:trackid")
         .and_then(|value| OwnedObjectPath::try_from(value.clone()).ok())?;
@@ -426,6 +425,18 @@ fn repeat_from_mpris(value: &str) -> &'static str {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn well_known_error_replies_are_recognised_by_their_wire_names() {
+        let unknown_method =
+            zbus::Error::FDO(Box::new(zbus::fdo::Error::UnknownMethod(String::new())));
+        assert!(is_unknown_method(&unknown_method));
+        let absent = zbus::Error::FDO(Box::new(zbus::fdo::Error::ServiceUnknown(String::new())));
+        assert!(matches!(map_zbus_error(&absent), PlaybackError::NoPlayer));
+        let other = zbus::Error::FDO(Box::new(zbus::fdo::Error::Failed(String::new())));
+        assert!(!is_unknown_method(&other));
+        assert!(matches!(map_zbus_error(&other), PlaybackError::Bus(_)));
+    }
 
     #[test]
     fn transport_action_parses_the_five_verbs_and_rejects_others() {

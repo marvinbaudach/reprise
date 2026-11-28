@@ -5,12 +5,12 @@
 //! rename that breaks every agent at once.
 
 use serde::{Deserialize, Serialize};
-use zvariant::{DeserializeDict, SerializeDict, Type};
+use zbus::{DeserializeDict, SerializeDict, Type};
 
 /// Live playback state. Path-free by construction: a track is an id plus the
 /// display strings a client would show anyway.
 #[derive(Debug, Clone, PartialEq, Default, SerializeDict, DeserializeDict, Type)]
-#[zvariant(signature = "a{sv}")]
+#[zbus(signature = "a{sv}")]
 pub struct PlaybackSnapshot {
     /// `playing`, `paused`, `stopped`.
     pub status: String,
@@ -114,7 +114,7 @@ pub struct PlaybackSnapshot {
 /// stop being that failure because the arguments are on a method instead of
 /// in a tuple.
 #[derive(Debug, Clone, PartialEq, Eq, Default, SerializeDict, DeserializeDict, Type)]
-#[zvariant(signature = "a{sv}")]
+#[zbus(signature = "a{sv}")]
 pub struct ExternalMedia {
     /// A local path, or a remote URI when `remote` is set.
     pub location: String,

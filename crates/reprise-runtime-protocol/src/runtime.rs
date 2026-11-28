@@ -9,7 +9,7 @@
 //! a client cannot end up holding a payload without knowing which contract
 //! produced it.
 
-use zvariant::{DeserializeDict, SerializeDict, Type};
+use zbus::{DeserializeDict, SerializeDict, Type};
 
 use crate::device_run::DeviceRunSnapshot;
 use crate::effects::EffectsSnapshot;
@@ -19,7 +19,7 @@ use crate::queue::QueueSnapshot;
 
 /// Everything the runtime owns, at one instant.
 #[derive(Debug, Clone, PartialEq, Default, SerializeDict, DeserializeDict, Type)]
-#[zvariant(signature = "a{sv}")]
+#[zbus(signature = "a{sv}")]
 pub struct RuntimeSnapshot {
     /// The version the *runtime* speaks, which a client compares against its
     /// own to know whether it is talking to an older peer.

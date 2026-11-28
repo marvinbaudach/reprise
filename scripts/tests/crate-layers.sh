@@ -2,7 +2,8 @@
 # Proves scripts/check-crate-layers.sh fails for every rule it states, with the
 # message that names the problem, and passes on a clean tree and on the real
 # workspace. It drives the script through its test seams (ARCH_LINT_LAYER_TABLE,
-# ARCH_LINT_LAYER_MEMBERS, ARCH_LINT_PANIC_ROOT, ARCH_LINT_PANIC_BUDGETS) and
+# ARCH_LINT_LAYER_MEMBERS, ARCH_LINT_PANIC_ROOT, ARCH_LINT_PANIC_BUDGETS,
+# ARCH_LINT_WIRE_ONLY) and
 # never through check-architecture.sh, so an
 # unrelated red cannot hide the message a case is waiting for. The seams only
 # redirect input; the cases below are what show that none of them makes the gate
@@ -312,6 +313,51 @@ expect_restriction_failure "an expect of clippy::restriction" \
 expect_restriction_failure "a restriction allow inside cfg_attr" \
   '#![cfg_attr(test, allow(dead_code, clippy::restriction))]'
 
+# --- 7. a wire-only crate may use zbus as the data format and nothing else --------
+
+# The derives and the trait the protocol crate imports, a comment, a doc line and
+# a string that name bus APIs are all allowed: only code counts.
+expect_wire_success() {
+  local label=$1 text=$2 dir=$scratch/wire-$RANDOM
+  make_bare_fixture "$dir" "$text"
+  load_fixture_env "$dir" 0
+  expect_success "$label" "wire-only zbus: fixture-lib" "${fixture_env_lines[@]}" "ARCH_LINT_WIRE_ONLY=fixture-lib"
+}
+
+expect_wire_failure() {
+  local label=$1 text=$2 item=$3 dir=$scratch/wire-$RANDOM
+  make_bare_fixture "$dir" "$text"
+  load_fixture_env "$dir" 0
+  expect_failure "$label" "fixture-lib is wire-only and may use only zbus::{DeserializeDict, SerializeDict, Type}; found: " \
+    "${fixture_env_lines[@]}" "ARCH_LINT_WIRE_ONLY=fixture-lib"
+  expect_failure "$label, named" "extra.rs: zbus::$item" "${fixture_env_lines[@]}" "ARCH_LINT_WIRE_ONLY=fixture-lib"
+}
+
+expect_wire_success "the wire derives and the trait" \
+  'use zbus::{DeserializeDict, SerializeDict, Type};
+#[derive(Type)]
+#[zbus(signature = "a{sv}")]
+struct Snapshot;'
+expect_wire_success "bus names in comments and strings" \
+  '// zbus::Connection is the bus side
+/// See [`zbus::fdo::Error`].
+const NOTE: &str = "zbus::Connection";
+use zbus::Type;'
+
+expect_wire_failure "a bus connection import" 'use zbus::Connection;' Connection
+expect_wire_failure "a bus item inside a braced import" 'use zbus::{Type, Connection};' Connection
+expect_wire_failure "a bus item next to a nested import" 'use zbus::{fdo::Error, Type};' fdo
+expect_wire_failure "a bus path in a signature" 'fn call(_: &zbus::Proxy<'"'"'_>) {}' Proxy
+expect_wire_failure "a path with a leading separator" 'type E = ::zbus::fdo::Error;' fdo
+expect_wire_failure "a glob import" 'use zbus::*;' '*'
+expect_wire_failure "an alias inside a braced import" 'use zbus::{Type as Signature};' Signature
+
+# The feature probe reads what Cargo resolves for the crate by itself. The real
+# workspace has a crate whose zbus carries `comms`: reprise-platform-linux.
+expect_failure "a wire-only crate whose zbus enables the bus" \
+  "reprise-platform-linux is wire-only but its zbus dependency enables the bus (feature comms)" \
+  "ARCH_LINT_WIRE_ONLY=reprise-platform-linux"
+
 # --- the dependency rules, on the real workspace ----------------------------------
 
 # The real table, cut out of the script so these cases stay honest when a row
@@ -390,6 +436,8 @@ for crate in reprise-runtime-protocol reprise-core reprise-view reprise-stems \
     die "the real run names $crate $named times, expected once" "$output"
   fi
 done
+grep -qF "wire-only zbus: reprise-runtime-protocol" <<<"$output" \
+  || die "the real run does not show reprise-runtime-protocol as wire-only" "$output"
 grep -qF "reprise-gnome: panic policy deny" <<<"$output" \
   || die "the real run does not show reprise-gnome under the deny policy" "$output"
 grep -qF "panic-lint suppressions: $real_budget_total (at budget)" <<<"$output" \

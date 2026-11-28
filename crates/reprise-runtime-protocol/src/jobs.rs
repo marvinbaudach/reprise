@@ -6,11 +6,11 @@
 //! where a path is exactly what one is tempted to include.
 
 use serde::{Deserialize, Serialize};
-use zvariant::{DeserializeDict, SerializeDict, Type};
+use zbus::{DeserializeDict, SerializeDict, Type};
 
 /// One background job.
 #[derive(Debug, Clone, PartialEq, Eq, Default, SerializeDict, DeserializeDict, Type)]
-#[zvariant(signature = "a{sv}")]
+#[zbus(signature = "a{sv}")]
 pub struct JobSnapshot {
     pub job_id: i64,
     /// What kind of work this is, as a short kind: `scan`, `download`,
@@ -34,7 +34,7 @@ pub struct JobSnapshot {
 
 /// Aggregate progress over a batch.
 #[derive(Debug, Clone, PartialEq, Eq, Default, SerializeDict, DeserializeDict, Type)]
-#[zvariant(signature = "a{sv}")]
+#[zbus(signature = "a{sv}")]
 pub struct BatchProgress {
     pub batch_id: String,
     pub total: u64,

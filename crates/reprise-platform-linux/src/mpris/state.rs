@@ -1,7 +1,7 @@
 //! MPRIS/D-Bus wire helpers: the mappings between the platform-neutral
 //! `media_integration` state/command types and MPRIS-spec wire values —
 //! `LoopStatus` strings (`loop_status_to_repeat`/`repeat_to_loop_status`) and
-//! the `zbus::zvariant`-typed `Metadata` dict (`build_metadata`,
+//! the `zbus::Variant`-typed `Metadata` dict (`build_metadata`,
 //! `track_object_path`). Everything here is Linux/MPRIS-specific and depends
 //! on `zbus`; the platform-neutral domain types and pure predicates it builds
 //! on live in `reprise_core::media_integration`.
@@ -15,7 +15,7 @@
 
 use std::collections::HashMap;
 
-use zbus::zvariant::{ObjectPath, OwnedValue, Value};
+use zbus::{ObjectPath, OwnedVariant, Variant};
 
 use reprise_core::media_integration::{
     can_go_next, can_go_previous, can_seek, micros_to_ms, ms_to_micros, MprisCommand, MprisState,
@@ -115,7 +115,7 @@ pub(super) fn set_position_command(
 /// spec unit) — `xesam:artist` is a list, not a scalar, per spec. When the
 /// asynchronous cover pipeline has resolved an image, its file URI is
 /// exposed as `mpris:artUrl`; without a cover that optional key is omitted.
-pub(super) fn build_metadata(state: &MprisState) -> HashMap<String, OwnedValue> {
+pub(super) fn build_metadata(state: &MprisState) -> HashMap<String, OwnedVariant> {
     let mut metadata = HashMap::new();
 
     let Some(identity) = current_media_object_path(state) else {
@@ -124,7 +124,7 @@ pub(super) fn build_metadata(state: &MprisState) -> HashMap<String, OwnedValue> 
 
     match ObjectPath::try_from(identity.as_str()) {
         Ok(path) => {
-            metadata.insert("mpris:trackid".to_string(), OwnedValue::from(path));
+            metadata.insert("mpris:trackid".to_string(), OwnedVariant::from(path));
         }
         Err(error) => {
             tracing::warn!(%error, identity, "MPRIS: could not build a valid trackid object path");
@@ -133,41 +133,45 @@ pub(super) fn build_metadata(state: &MprisState) -> HashMap<String, OwnedValue> 
 
     if !state.live_stream {
         let length_us = ms_to_micros(state.duration_ms);
-        metadata.insert("mpris:length".to_string(), OwnedValue::from(length_us));
+        metadata.insert("mpris:length".to_string(), OwnedVariant::from(length_us));
     }
     insert_owned(
         &mut metadata,
         "xesam:title",
-        Value::from(state.title.clone()),
+        Variant::from(state.title.clone()),
     );
     insert_owned(
         &mut metadata,
         "xesam:artist",
-        Value::from(vec![state.artist.clone()]),
+        Variant::from(vec![state.artist.clone()]),
     );
     if !is_episode(state) {
         insert_owned(
             &mut metadata,
             "xesam:album",
-            Value::from(state.album.clone()),
+            Variant::from(state.album.clone()),
         );
     }
     if let Some(art_url) = &state.art_url {
-        insert_owned(&mut metadata, "mpris:artUrl", Value::from(art_url.clone()));
+        insert_owned(
+            &mut metadata,
+            "mpris:artUrl",
+            Variant::from(art_url.clone()),
+        );
     }
 
     metadata
 }
 
-/// `String`/`Vec<String>` (unlike the basic types `OwnedValue` converts
-/// `From` directly — see the ones used above) only reach `OwnedValue` via
-/// the fallible `Value` round-trip (`TryFrom<Value<'_>>`); the only failure
-/// mode is a file-descriptor-carrying `Value`, which nothing built here ever
+/// `String`/`Vec<String>` (unlike the basic types `OwnedVariant` converts
+/// `From` directly — see the ones used above) only reach `OwnedVariant` via
+/// the fallible `Variant` round-trip (`TryFrom<Variant<'_>>`); the only failure
+/// mode is a file-descriptor-carrying `Variant`, which nothing built here ever
 /// is, so a conversion error can only mean a bug — logged and the key is
 /// omitted rather than panicking (every other metadata field still gets
 /// reported).
-fn insert_owned(metadata: &mut HashMap<String, OwnedValue>, key: &str, value: Value<'_>) {
-    match OwnedValue::try_from(value) {
+fn insert_owned(metadata: &mut HashMap<String, OwnedVariant>, key: &str, value: Variant<'_>) {
+    match OwnedVariant::try_from(value) {
         Ok(owned) => {
             metadata.insert(key.to_string(), owned);
         }

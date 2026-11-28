@@ -1,7 +1,7 @@
 //! Queue snapshots and commands.
 
 use serde::{Deserialize, Serialize};
-use zvariant::{DeserializeDict, SerializeDict, Type};
+use zbus::{DeserializeDict, SerializeDict, Type};
 
 /// One queue identity with its entity kind kept separate from its numeric id.
 ///
@@ -9,7 +9,7 @@ use zvariant::{DeserializeDict, SerializeDict, Type};
 /// has no enum primitive, and an unknown future kind can be ignored by an old
 /// client instead of failing to decode the complete queue snapshot.
 #[derive(Debug, Clone, PartialEq, Eq, Default, SerializeDict, DeserializeDict, Type)]
-#[zvariant(signature = "a{sv}")]
+#[zbus(signature = "a{sv}")]
 pub struct QueueItem {
     pub kind: String,
     pub id: i64,
@@ -37,7 +37,7 @@ impl QueueItem {
 /// the complete sections, so a client can say "and 412 more" without the
 /// runtime shipping 412 ids.
 #[derive(Debug, Clone, PartialEq, Eq, Default, SerializeDict, DeserializeDict, Type)]
-#[zvariant(signature = "a{sv}")]
+#[zbus(signature = "a{sv}")]
 pub struct QueueSnapshot {
     /// How many times this facet has changed, counted by the runtime.
     ///
@@ -194,7 +194,7 @@ impl QueueSection {
 /// client comparing the revision it holds against this one is how it finds
 /// out — the same check a positional command makes before it is applied.
 #[derive(Debug, Clone, PartialEq, Default, SerializeDict, DeserializeDict, Type)]
-#[zvariant(signature = "a{sv}")]
+#[zbus(signature = "a{sv}")]
 pub struct QueuePage {
     pub revision: u64,
     /// `play_next` or `context`.

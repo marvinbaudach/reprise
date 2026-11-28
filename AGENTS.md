@@ -115,8 +115,6 @@ Accepted `cargo audit` advisories, all of them unmaintained-crate or unsoundness
 machine-readable list is `.cargo/audit.toml`, the one the gate runs with; this section must name
 exactly its ids (`scripts/check-audit-list.sh` fails when they differ):
 - `RUSTSEC-2024-0436` — `paste`, via lofty.
-- `RUSTSEC-2026-0370`, `RUSTSEC-2026-0371`, `RUSTSEC-2026-0372` — `zvariant`, `zbus_names` and
-  `zvariant_derive`, via zbus. Temporary until #1300 is resolved.
 - `RUSTSEC-2026-0374` — `basic-toml`, via askama. Temporary until #1300 is resolved.
 - `RUSTSEC-2026-0574` through `RUSTSEC-2026-0582` — `heapless` 0.8.0, unsound, via flacenc in
   reprise-stems, temporary until #1376.
