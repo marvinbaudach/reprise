@@ -16,6 +16,7 @@ set -euo pipefail
 #                          `cargo tree` runs
 #   ARCH_LINT_PANIC_BUDGETS  a whitespace-separated `crate=N` list replacing the
 #                          suppression budgets below
+#   ARCH_LINT_WIRE_ONLY    a whitespace-separated crate list replacing wire_only_crates
 repo_root=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)
 cd "$repo_root"
 
@@ -69,6 +70,14 @@ if [[ -n ${ARCH_LINT_PANIC_BUDGETS:-} ]]; then
 fi
 
 panic_lint_names=(unwrap_used expect_used panic todo unimplemented unreachable)
+
+# Crates that take `zbus` for the D-Bus data format only. Their table row bans
+# `zruntime`, but a unified workspace build switches zbus's `comms` feature on for
+# every crate, so the bus API would compile here and the row would stay green.
+# So the gate also proves the crate's own zbus edge has no `comms`, and that its
+# source names nothing from zbus beyond the derives and trait below.
+wire_only_crates=${ARCH_LINT_WIRE_ONLY:-reprise-runtime-protocol}
+wire_only_zbus_items='DeserializeDict SerializeDict Type'
 
 banned_dependency_probe_modes=(default all)
 
@@ -361,7 +370,7 @@ rust_files() {
 }
 
 # Reads Rust source with comments and string literals removed, so a lint name in
-# a comment or a `reason = "…"` proves nothing. Two modes:
+# a comment or a `reason = "…"` proves nothing. Three modes:
 #   roots <file>...         prints each file that carries
 #                           `#![cfg_attr(not(test), deny(...))]` naming exactly the
 #                           six never-crash lints, as whole comma-separated tokens
@@ -370,6 +379,8 @@ rust_files() {
 #                           six lints (also inside `cfg_attr`), and `restriction`
 #                           for an allow or expect of `clippy::restriction`, which
 #                           would cover all six at once
+#   zbus <file>...          prints `<item> <file>` for every name a `zbus::` path
+#                           reaches, a braced list `zbus::{A, B}` counted per name
 read -r -d '' rust_attribute_scanner <<'PERL' || true
 use strict;
 use warnings;
@@ -473,6 +484,11 @@ for my $file (@ARGV) {
             print "$file\n";
             last;
         }
+    } elsif ($mode eq 'zbus') {
+        while ($text =~ /\bzbus\s*::\s*(?:(?<g>\{(?:[^{}]++|(?&g))*+\})|(?<w>\w+|\*))/g) {
+            my $items = defined $+{g} ? $+{g} : $+{w};
+            print "$_ $file\n" for grep { $_ ne 'as' } $items =~ /\w+|\*/g;
+        }
     } else {
         for my $body (attributes($text, 0)) {
             my %kinds;
@@ -542,6 +558,53 @@ for crate in "${table_crates[@]}"; do
     fail "$crate: panic-lint suppressions grew from $budget to $crate_suppressions; return an error instead of suppressing the lint"
   elif (( crate_suppressions < budget )); then
     fail "$crate: panic-lint suppressions are down to $crate_suppressions (budget still says $budget); lower its entry in panic_lint_budgets in scripts/check-crate-layers.sh"
+  fi
+done
+
+# --- wire-only crates ----------------------------------------------------------
+
+# A wire-only crate may use zbus as the D-Bus data format and nothing else. Two
+# proofs, because each alone is blind: the feature probe sees what Cargo resolves
+# for the crate by itself (a workspace build unifies features and hides it), and
+# the source scan sees what the code reaches for under that unified build.
+check_wire_only() {
+  local crate=$1 features dirs listing scanned item file allowed ok
+  local -a files=() violations=()
+
+  if [[ -z ${ARCH_LINT_PANIC_ROOT:-} ]]; then
+    features=$(run_tree "$crate zbus features" -p "$crate" -e features -i zbus --target all) || exit 1
+    if grep -qF 'zbus feature "comms"' <<<"$features"; then
+      fail "$crate is wire-only but its zbus dependency enables the bus (feature comms); take zbus with default-features = false"
+    fi
+  fi
+
+  mapfile -t dirs < <(crate_source_dirs "$crate")
+  listing=$(rust_files "${dirs[@]}") || exit 1
+  [[ -n $listing ]] && mapfile -t files < <(printf '%s\n' "$listing" | sort -u)
+  if (( ${#files[@]} > 0 )); then
+    scanned=$(perl -e "$rust_attribute_scanner" zbus "${files[@]}") || {
+      echo "perl failed while reading the zbus paths of $crate" >&2
+      exit 1
+    }
+    while read -r item file; do
+      [[ -n $item ]] || continue
+      ok=0
+      for allowed in $wire_only_zbus_items; do
+        [[ $item == "$allowed" ]] && ok=1
+      done
+      (( ok == 1 )) || violations+=("${file#"$repo_root"/}: zbus::$item")
+    done <<<"$scanned"
+  fi
+  if (( ${#violations[@]} > 0 )); then
+    fail "$crate is wire-only and may use only zbus::{${wire_only_zbus_items// /, }}; found: ${violations[*]}"
+  else
+    echo "  wire-only zbus: $crate"
+  fi
+}
+
+for crate in $wire_only_crates; do
+  if is_member "$crate"; then
+    check_wire_only "$crate"
   fi
 done
 

@@ -185,6 +185,36 @@ mod tests {
     }
 
     #[test]
+    fn well_known_error_replies_are_recognised_by_their_wire_names() {
+        // zbus 6 turns the names `zbus::fdo::Error` defines into `Error::FDO`,
+        // so the absent-player check has to read them from there too.
+        let absent = zbus::Error::FDO(Box::new(zbus::fdo::Error::ServiceUnknown(String::new())));
+        assert_eq!(
+            dbus_error_name(&absent).as_deref(),
+            Some("org.freedesktop.DBus.Error.ServiceUnknown")
+        );
+        assert!(
+            map_zbus_error(&absent).to_string().contains(BUS_NAME),
+            "an absent player is reported as such"
+        );
+        let unowned = zbus::Error::FDO(Box::new(zbus::fdo::Error::NameHasNoOwner(String::new())));
+        assert!(map_zbus_error(&unowned).to_string().contains(BUS_NAME));
+        let other = zbus::Error::FDO(Box::new(zbus::fdo::Error::Failed(String::new())));
+        assert_eq!(
+            dbus_error_name(&other).as_deref(),
+            Some("org.freedesktop.DBus.Error.Failed")
+        );
+        assert!(
+            map_zbus_error(&other)
+                .to_string()
+                .contains("MPRIS request failed"),
+            "a genuine fault is not swallowed as an absent player"
+        );
+        // An error that carries no D-Bus name has none to report.
+        assert_eq!(dbus_error_name(&zbus::Error::Unsupported), None);
+    }
+
+    #[test]
     fn no_player_error_is_unavailable_and_names_the_bus() {
         let error = no_player_error();
         assert!(matches!(error, CliError::Unavailable(_)));

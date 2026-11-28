@@ -12,7 +12,8 @@ reprise-core = { path = "../reprise-core" }
 gstreamer = "0.25"
 gstreamer-app = "0.25"
 lofty = "0.25"
-# Default features (`default-rt`) are kept: zbus 6's own runtime, driven by the
+# Default features (`default-rt`, `proxy`, `service`, `object-manager`, `tracing`)
+# are kept: `default-rt` is zbus 6's own runtime, driven by the
 # thread that calls `zbus::block_on` and by a helper thread in between, not a
 # competing app-wide async runtime — the `tokio` feature (the thing Stage 2
 # Task 6's "no tokio" constraint actually rules out) is off by default and
