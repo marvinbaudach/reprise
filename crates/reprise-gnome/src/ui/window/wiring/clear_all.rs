@@ -57,9 +57,18 @@ pub(super) fn wire_clear_all(
         });
     }
     {
+        // FIL-1c: the "‹ <place>" pill reads as a back step, so it is one
+        // whenever history holds the place it was entered from; only a place
+        // without history (restored at startup) leaves for the Library.
         let navigator = metadata_navigator.clone();
+        let nav_history = nav_history.clone();
+        let window = window.clone();
         track_list.set_on_scope_cleared(move || {
-            navigator.leave_scope();
+            if nav_history.can_go_back() && window.lookup_action("nav-back").is_some() {
+                gtk4::prelude::ActionGroupExt::activate_action(&window, "nav-back", None);
+            } else {
+                navigator.leave_scope();
+            }
         });
     }
 

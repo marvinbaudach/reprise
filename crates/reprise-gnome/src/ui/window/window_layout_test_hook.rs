@@ -21,6 +21,8 @@ pub(super) struct WindowLayoutTestHandles {
     pub(super) content_nav: adw::NavigationView,
     pub(super) column_view: gtk4::ColumnView,
     pub(super) track_scrolled: gtk4::ScrolledWindow,
+    pub(super) track_list: Rc<crate::ui::track_list::TrackList>,
+    pub(super) content_stack: gtk4::Stack,
 }
 
 thread_local! {
@@ -29,7 +31,7 @@ thread_local! {
 
 #[expect(
     clippy::too_many_arguments,
-    reason = "eight widget handles published to the layout test hook; should take a parameter object"
+    reason = "ten widget handles published to the layout test hook; should take a parameter object"
 )]
 pub(super) fn publish(
     window: &adw::ApplicationWindow,
@@ -40,6 +42,7 @@ pub(super) fn publish(
     player_bar: Option<&gtk4::Widget>,
     content_nav: &adw::NavigationView,
     track_list: &Rc<crate::ui::track_list::TrackList>,
+    content_stack: &gtk4::Stack,
 ) {
     let pinned_block = sidebar
         .widget()
@@ -61,6 +64,8 @@ pub(super) fn publish(
             content_nav: content_nav.clone(),
             column_view: track_list.shared.column_view.clone(),
             track_scrolled: track_list.shared.scrolled.clone(),
+            track_list: track_list.clone(),
+            content_stack: content_stack.clone(),
         }));
     });
 }

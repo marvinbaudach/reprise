@@ -528,6 +528,7 @@ pub fn build(
         player_bar_widget,
         &content_nav,
         &track_list,
+        &content_stack,
     );
     super::window_first_paint::install_and_present(
         &window,

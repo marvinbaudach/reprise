@@ -170,6 +170,14 @@ impl NavHistory {
         self.navigate_observing(origin.into(), NavigationIntent::Forward)
     }
 
+    /// Whether a Back step has somewhere to go.
+    pub(in crate::ui) fn can_go_back(&self) -> bool {
+        self.navigation
+            .borrow()
+            .as_ref()
+            .is_some_and(|router| router.back_len() > 0)
+    }
+
     pub(in crate::ui) fn begin_back(&self) {
         self.replaying_history.set(true);
     }
@@ -438,6 +446,81 @@ mod tests {
                 .unwrap()
                 .browser_place(),
             &BrowserPlace::Podcasts
+        );
+    }
+
+    fn open_artist(nav: &NavHistory, visible: Origin) -> NavPlace {
+        nav.navigate_from(
+            NavigationIntent::OpenArtist {
+                artist: ArtistKey::new("Caleb Hyles"),
+                anchor_track_id: None,
+            },
+            visible,
+        )
+        .expect("an artist is a new destination")
+    }
+
+    #[test]
+    fn browse_4a_back_after_go_to_artist_from_releases_returns_to_releases() {
+        let nav = NavHistory::default();
+        nav.record_route(&place(ViewSource::Library));
+        nav.record_route_from(
+            &place(ViewSource::Releases),
+            BrowserPlace::from(ViewSource::Library),
+        );
+
+        let artist = open_artist(&nav, section(BrowserPlace::Releases));
+
+        assert_eq!(
+            nav.go_back_from(artist.browser_place().clone())
+                .unwrap()
+                .browser_place(),
+            &BrowserPlace::Releases
+        );
+    }
+
+    #[test]
+    fn browse_4a_back_after_go_to_artist_from_releases_opened_by_the_updates_jump() {
+        let nav = NavHistory::default();
+        nav.record_route(&place(ViewSource::Library));
+        let library = BrowserPlace::from(ViewSource::Library);
+        // The updates popover routes through the navigator first, then the
+        // sidebar selection replays into `on_select` without a Back flag.
+        let releases = nav
+            .navigate_from(
+                NavigationIntent::Sidebar(
+                    reprise_core::browser::navigation::SidebarTarget::Releases,
+                ),
+                library.clone(),
+            )
+            .expect("Releases is a new destination");
+        nav.record_route_from(&releases, library);
+
+        let artist = open_artist(&nav, section(BrowserPlace::Releases));
+
+        assert_eq!(
+            nav.go_back_from(artist.browser_place().clone())
+                .unwrap()
+                .browser_place(),
+            &BrowserPlace::Releases
+        );
+    }
+
+    #[test]
+    fn browse_4a_back_after_go_to_artist_from_releases_restored_by_the_session() {
+        let nav = NavHistory::default();
+        nav.restore(
+            BrowserPlace::Releases,
+            BrowserPlace::from(ViewSource::Library),
+        );
+
+        let artist = open_artist(&nav, section(BrowserPlace::Releases));
+
+        assert_eq!(
+            nav.go_back_from(artist.browser_place().clone())
+                .unwrap()
+                .browser_place(),
+            &BrowserPlace::Releases
         );
     }
 
