@@ -57,7 +57,7 @@ url = "2"
 # --- PLAYBACK CONTROL (behind the `mpris` feature). A thin session-bus client
 # to the running app's MPRIS + org.reprise.Player1, exactly like reprise-cli's
 # playback command. Never pulls reprise-platform-linux.
-zbus = { version = "5", optional = true }
+zbus = { version = "6", optional = true }
 
 [dev-dependencies]
 # The integration tests spawn the real binary and speak JSON-RPC over its

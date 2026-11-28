@@ -118,19 +118,23 @@ fn required_text(value: &str, field: &str) -> Result<String, String> {
     }
 }
 
-fn connect() -> Result<zbus::blocking::Proxy<'static>, PlaybackError> {
-    let connection = zbus::blocking::Connection::session()
+fn connect() -> Result<zbus::Proxy<'static>, PlaybackError> {
+    let connection = zbus::block_on(zbus::Connection::session())
         .map_err(|error| PlaybackError::Bus(format!("no D-Bus session bus available: {error}")))?;
-    zbus::blocking::Proxy::new(&connection, BUS_NAME, OBJECT_PATH, DEVICE_SYNC_INTERFACE)
-        .map_err(|error| map_zbus_error(&error))
+    zbus::block_on(zbus::Proxy::new(
+        &connection,
+        BUS_NAME,
+        OBJECT_PATH,
+        DEVICE_SYNC_INTERFACE,
+    ))
+    .map_err(|error| map_zbus_error(&error))
 }
 
 pub fn state() -> Result<DeviceSyncStateDto, PlaybackError> {
     let proxy = connect()?;
     check_protocol_version(&proxy)?;
-    let devices: Vec<DeviceSnapshot> = proxy
-        .call("Snapshot", &())
-        .map_err(|error| map_zbus_error(&error))?;
+    let devices: Vec<DeviceSnapshot> =
+        zbus::block_on(proxy.call("Snapshot", &())).map_err(|error| map_zbus_error(&error))?;
     Ok(DeviceSyncStateDto {
         devices: devices.into_iter().map(map_device).collect(),
     })
@@ -141,9 +145,8 @@ pub fn state() -> Result<DeviceSyncStateDto, PlaybackError> {
 /// `docs/plans/multi-frontend-core.md` calls this the `Refused` category; it
 /// borrows `PlaybackError::Bus` until Stage 3 gives the runtime client its
 /// own error type.
-fn check_protocol_version(proxy: &zbus::blocking::Proxy<'static>) -> Result<(), PlaybackError> {
-    let (major, minor): (u32, u32) = proxy
-        .get_property("ProtocolVersion")
+fn check_protocol_version(proxy: &zbus::Proxy<'static>) -> Result<(), PlaybackError> {
+    let (major, minor): (u32, u32) = zbus::block_on(proxy.get_property("ProtocolVersion"))
         .map_err(|error| map_zbus_error(&error))?;
     let served = ProtocolVersion { major, minor };
     if served.is_compatible_with(PROTOCOL_VERSION) {
@@ -292,29 +295,26 @@ pub fn mutate(action: DeviceSyncAction) -> Result<String, PlaybackError> {
             sources,
             profile,
         } => {
-            let _: () = proxy
-                .call("Configure", &(&device_name, &sources, &profile))
-                .map_err(|error| map_zbus_error(&error))?;
+            let _: () =
+                zbus::block_on(proxy.call("Configure", &(&device_name, &sources, &profile)))
+                    .map_err(|error| map_zbus_error(&error))?;
             format!(
                 "Configured {device_name} to mirror {} playlist source(s) with profile {profile}",
                 sources.len()
             )
         }
         DeviceSyncAction::Start { device_name } => {
-            let _: () = proxy
-                .call("Start", &(&device_name,))
+            let _: () = zbus::block_on(proxy.call("Start", &(&device_name,)))
                 .map_err(|error| map_zbus_error(&error))?;
             format!("Queued synchronization for {device_name}")
         }
         DeviceSyncAction::Cancel { device_name } => {
-            let _: () = proxy
-                .call("Cancel", &(&device_name,))
+            let _: () = zbus::block_on(proxy.call("Cancel", &(&device_name,)))
                 .map_err(|error| map_zbus_error(&error))?;
             format!("Requested synchronization cancellation for {device_name}")
         }
         DeviceSyncAction::Eject { device_name } => {
-            let _: () = proxy
-                .call("Eject", &(&device_name,))
+            let _: () = zbus::block_on(proxy.call("Eject", &(&device_name,)))
                 .map_err(|error| map_zbus_error(&error))?;
             format!("Requested ejection for {device_name}")
         }
@@ -422,7 +422,7 @@ mod tests {
     }
 
     /// The point of the handshake is a message a person can act on, instead
-    /// of a decode failure deep inside zvariant.
+    /// of a decode failure deep inside the zbus wire decoder.
     #[test]
     fn a_foreign_protocol_version_is_refused_with_an_actionable_message() {
         // One major above whatever this build speaks. Hardcoding a number

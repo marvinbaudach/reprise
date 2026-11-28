@@ -148,10 +148,9 @@ an explicit skip otherwise. It never launches Reprise or opens a user database.
 
 The accepted audit warnings are the ones in `.cargo/audit.toml`, which `AGENTS.md` repeats
 under the gates and `scripts/check-audit-list.sh` keeps equal to this paragraph:
-`RUSTSEC-2024-0436` (`paste`, transitively through `lofty`), plus four
-unmaintained-crate warnings accepted temporarily until #1300 is resolved:
-`RUSTSEC-2026-0370`, `RUSTSEC-2026-0371` and `RUSTSEC-2026-0372` (the zbus
-family) and `RUSTSEC-2026-0374` (`basic-toml`, through `askama`), the unsoundness
+`RUSTSEC-2024-0436` (`paste`, transitively through `lofty`), plus the
+unmaintained-crate warning `RUSTSEC-2026-0374` (`basic-toml`, through `askama`),
+accepted temporarily until #1300 is resolved, the unsoundness
 warnings `RUSTSEC-2026-0574` through `RUSTSEC-2026-0582` (`heapless` 0.8.0, through
 `flacenc` in `reprise-stems`), accepted temporarily until #1376, and the
 unmaintained-crate warning `RUSTSEC-2026-0543` (`chrono`, a direct dependency of

@@ -13,25 +13,31 @@
 //! module's own doc comment) and are re-exported below so `crate::mpris::X`
 //! paths elsewhere in the crate are unaffected by the split.
 //!
-//! ## Thread model: a dedicated OS thread, `zbus::blocking`, no tokio
+//! ## Thread model: a dedicated OS thread, `zbus::block_on`, no tokio
 //!
 //! The rest of the app has exactly one async runtime in it: `glib`'s
 //! `MainContext`, driven by `gtk4::glib::spawn_future_local` (see
-//! `ui::player_controller`'s module doc comment). Pulling zbus's `async-io`
-//! executor onto that same main-thread context — or worse, adding tokio —
+//! `ui::player_controller`'s module doc comment). Pulling zbus's own runtime
+//! onto that same main-thread context — or worse, adding tokio —
 //! would mean two runtimes contending for the process, for no benefit: MPRIS
 //! traffic (a handful of property reads and Play/Pause/Next-class method
 //! calls) is trivially low-throughput. So this module runs on its own
-//! `std::thread::spawn` thread, using `zbus::blocking::connection::Builder`
-//! end to end: connect, claim the bus name, serve both interfaces, then
-//! block that thread forever in a poll loop (see below). `zbus`'s default
-//! features (`async-io` + `blocking-api`) are kept in `Cargo.toml` — that
-//! `async-io` is zbus's own internal reactor the blocking API uses to drive
-//! futures via `zbus::block_on`, not a runtime this module (or the rest of
-//! the app) has to integrate with; the `tokio` feature, the thing the task's
-//! "no tokio" constraint actually rules out, is off by default and stays
-//! off. A second, dedicated thread (spawned in `run`) exists purely to
-//! relay the `Seeked` signal promptly — see `run`'s doc comment.
+//! `std::thread::spawn` thread. zbus 6 has no blocking API any more; each
+//! step (connect, claim the bus name, serve the interfaces, emit a signal)
+//! is an async call wrapped in `zbus::block_on`, which polls the future on
+//! the calling thread together with zbus's own runtime. Once a `block_on`
+//! returns with the connection still alive, a helper thread of zbus keeps
+//! serving it, so the poll loop below can sleep outside any `block_on` and
+//! calls still get answered. `zbus`'s default features (`default-rt`) are
+//! kept in `Cargo.toml`: that runtime is zbus's own and nothing this module
+//! or the rest of the app has to integrate with; the `tokio` feature, the
+//! thing the task's "no tokio" constraint actually rules out, is off by
+//! default and stays off (with it on, `block_on` would run a shared
+//! single-thread Tokio runtime that only serves while a thread is inside
+//! it). `block_on` must never be called from an interface method, which
+//! runs on zbus's own runtime. A second, dedicated thread (spawned in
+//! `run`) exists purely to relay the `Seeked` signal promptly — see `run`'s
+//! doc comment.
 //!
 //! ## Shared state: `Arc<Mutex<state::MprisState>>`, poison-recovered like `player.rs`
 //!
@@ -108,12 +114,10 @@ use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
-use zbus::blocking::connection;
-use zbus::blocking::object_server::InterfaceRef;
+use zbus::connection;
 use zbus::names::InterfaceName;
-use zbus::object_server::SignalEmitter;
-use zbus::zvariant::{ObjectPath, OwnedValue, Value};
-use zbus::{fdo, interface};
+use zbus::object_server::{InterfaceRef, SignalEmitter};
+use zbus::{fdo, interface, ObjectPath, OwnedVariant, Variant};
 
 use reprise_core::agent_device_sync::{
     AgentDeviceSyncRequest, AgentDeviceSyncState, SharedAgentDeviceSyncState,
@@ -243,13 +247,19 @@ fn run(
     let reprise_control = RepriseControl::new(commands, queue_state);
     let device_sync_control = DeviceSyncControl::new(device_sync_commands, device_sync_state);
 
-    let connection = connection::Builder::session()
-        .and_then(|builder| builder.name(bus_name.clone()))
-        .and_then(|builder| builder.serve_at(OBJECT_PATH, MprisRoot { desktop_entry }))
-        .and_then(|builder| builder.serve_at(OBJECT_PATH, player_iface))
-        .and_then(|builder| builder.serve_at(OBJECT_PATH, reprise_control))
-        .and_then(|builder| builder.serve_at(OBJECT_PATH, device_sync_control))
-        .and_then(connection::Builder::build);
+    // `zbus::block_on` runs zbus's runtime on this thread while it polls the
+    // future. Once it returns, a helper thread of zbus keeps serving the
+    // connection, so the sleep loop below never has to be inside a `block_on`.
+    let connection = zbus::block_on(async {
+        connection::Builder::session()
+            .name(bus_name.clone())
+            .serve_at(OBJECT_PATH, MprisRoot { desktop_entry })
+            .serve_at(OBJECT_PATH, player_iface)
+            .serve_at(OBJECT_PATH, reprise_control)
+            .serve_at(OBJECT_PATH, device_sync_control)
+            .build()
+            .await
+    });
     let connection = match connection {
         Ok(connection) => connection,
         Err(error) => {
@@ -263,10 +273,11 @@ fn run(
         }
     };
 
-    let iface_ref = match connection
-        .object_server()
-        .interface::<_, MprisPlayer>(OBJECT_PATH)
-    {
+    let iface_ref = match zbus::block_on(
+        connection
+            .object_server()
+            .interface::<_, MprisPlayer>(OBJECT_PATH),
+    ) {
         Ok(iface_ref) => iface_ref,
         Err(error) => {
             tracing::warn!(
@@ -288,7 +299,7 @@ fn run(
     // `PropertiesChanged` poll loop below: `Seeked` must fire promptly after
     // every seek (app-internal or MPRIS-initiated — see `PlayerController::
     // seek`'s doc comment), not batched onto the poll's cadence the way
-    // ordinary property changes are. `zbus::blocking::object_server::
+    // ordinary property changes are. `zbus::object_server::
     // InterfaceRef` itself isn't `Clone`, but the `SignalEmitter` it hands
     // out is (it just owns a cheap-to-clone `Connection` handle plus the
     // object path) — cloning that out is exactly the "emit a signal from
@@ -348,43 +359,43 @@ fn emit_property_changes(
     current: &MprisState,
     iface_ref: &InterfaceRef<MprisPlayer>,
 ) {
-    let mut changed: HashMap<&str, Value<'_>> = HashMap::new();
+    let mut changed: HashMap<&str, Variant<'_>> = HashMap::new();
 
     if previous.status != current.status {
         changed.insert(
             "PlaybackStatus",
-            Value::from(current.status.as_str().to_string()),
+            Variant::from(current.status.as_str().to_string()),
         );
     }
     if metadata_differs(previous, current) {
-        changed.insert("Metadata", Value::from(build_metadata(current)));
+        changed.insert("Metadata", Variant::from(build_metadata(current)));
     }
     if can_go_next(previous) != can_go_next(current) {
-        changed.insert("CanGoNext", Value::from(can_go_next(current)));
+        changed.insert("CanGoNext", Variant::from(can_go_next(current)));
     }
     if can_go_previous(previous) != can_go_previous(current) {
-        changed.insert("CanGoPrevious", Value::from(can_go_previous(current)));
+        changed.insert("CanGoPrevious", Variant::from(can_go_previous(current)));
     }
     if can_play(previous) != can_play(current) {
-        changed.insert("CanPlay", Value::from(can_play(current)));
+        changed.insert("CanPlay", Variant::from(can_play(current)));
     }
     if can_pause(previous) != can_pause(current) {
-        changed.insert("CanPause", Value::from(can_pause(current)));
+        changed.insert("CanPause", Variant::from(can_pause(current)));
     }
     if can_seek(previous) != can_seek(current) {
-        changed.insert("CanSeek", Value::from(can_seek(current)));
+        changed.insert("CanSeek", Variant::from(can_seek(current)));
     }
     if previous.shuffle != current.shuffle {
-        changed.insert("Shuffle", Value::from(current.shuffle));
+        changed.insert("Shuffle", Variant::from(current.shuffle));
     }
     if previous.repeat != current.repeat {
         changed.insert(
             "LoopStatus",
-            Value::from(repeat_to_loop_status(current.repeat).to_string()),
+            Variant::from(repeat_to_loop_status(current.repeat).to_string()),
         );
     }
     if previous.volume != current.volume {
-        changed.insert("Volume", Value::from(current.volume));
+        changed.insert("Volume", Variant::from(current.volume));
     }
 
     if changed.is_empty() {
@@ -512,7 +523,7 @@ impl MprisPlayer {
     }
 
     #[zbus(property)]
-    fn metadata(&self) -> HashMap<String, OwnedValue> {
+    fn metadata(&self) -> HashMap<String, OwnedVariant> {
         build_metadata(&self.snapshot())
     }
 
@@ -735,7 +746,7 @@ impl MprisPlayer {
     /// dispatching [`MprisCommand::SetPosition`] — `ui::mpris_mirror`'s
     /// `handle_mpris_command` applies it via the same `PlayerController::
     /// seek` `Seek` uses.
-    // `ObjectPath` (unlike `&str`) doesn't implement zvariant's borrowed
+    // `ObjectPath` (unlike `&str`) doesn't implement zbus's wire-format borrowed
     // `DynamicDeserialize` from a `&Message`, so — unlike `set_loop_status`'s
     // `&str` — this parameter can't be taken by reference; clippy's
     // `needless_pass_by_value` doesn't know that constraint.

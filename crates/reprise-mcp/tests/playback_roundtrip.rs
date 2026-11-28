@@ -30,8 +30,7 @@ use common::{
 };
 use serde_json::json;
 use tempfile::TempDir;
-use zbus::interface;
-use zbus::zvariant::{ObjectPath, OwnedValue, Value};
+use zbus::{interface, ObjectPath, OwnedVariant, Variant};
 
 /// The app's MPRIS well-known name and object path (mirrors both the client and
 /// `reprise-platform-linux`'s server).
@@ -108,23 +107,26 @@ impl PlayerStub {
     }
 
     #[zbus(property)]
-    fn metadata(&self) -> HashMap<String, OwnedValue> {
+    fn metadata(&self) -> HashMap<String, OwnedVariant> {
         let mut metadata = HashMap::new();
         metadata.insert(
             "mpris:trackid".to_owned(),
-            OwnedValue::from(
+            OwnedVariant::from(
                 ObjectPath::try_from("/org/reprise/Reprise/track/42")
                     .expect("valid fixture object path"),
             ),
         );
-        metadata.insert("mpris:length".to_owned(), OwnedValue::from(240_000_000_i64));
-        insert_owned(&mut metadata, "xesam:title", Value::from("Sun//Eater"));
+        metadata.insert(
+            "mpris:length".to_owned(),
+            OwnedVariant::from(240_000_000_i64),
+        );
+        insert_owned(&mut metadata, "xesam:title", Variant::from("Sun//Eater"));
         insert_owned(
             &mut metadata,
             "xesam:artist",
-            Value::from(vec!["Lorna Shore"]),
+            Variant::from(vec!["Lorna Shore"]),
         );
-        insert_owned(&mut metadata, "xesam:album", Value::from("Pain Remains"));
+        insert_owned(&mut metadata, "xesam:album", Variant::from("Pain Remains"));
         metadata
     }
 
@@ -182,10 +184,10 @@ impl PlayerStub {
     }
 }
 
-fn insert_owned(metadata: &mut HashMap<String, OwnedValue>, key: &str, value: Value<'_>) {
+fn insert_owned(metadata: &mut HashMap<String, OwnedVariant>, key: &str, value: Variant<'_>) {
     metadata.insert(
         key.to_owned(),
-        OwnedValue::try_from(value).expect("fixture metadata converts"),
+        OwnedVariant::try_from(value).expect("fixture metadata converts"),
     );
 }
 
@@ -399,35 +401,32 @@ impl RepriseStub {
 /// Registers a stub player (both interfaces) on `bus` under the app's bus name
 /// and returns the live connection plus the shared call log. The connection
 /// must stay alive for the whole test — dropping it releases the bus name.
-fn start_stub_player(bus: &PrivateBus) -> (zbus::blocking::Connection, Calls) {
+fn start_stub_player(bus: &PrivateBus) -> (zbus::Connection, Calls) {
     let calls: Calls = Arc::new(Mutex::new(Vec::new()));
-    let connection = zbus::blocking::connection::Builder::address(bus.address())
-        .expect("valid bus address")
-        .name(BUS_NAME)
-        .expect("request bus name")
-        .serve_at(
-            OBJECT_PATH,
-            PlayerStub {
-                calls: calls.clone(),
-            },
-        )
-        .expect("serve Player interface")
-        .serve_at(
-            OBJECT_PATH,
-            RepriseStub {
-                calls: calls.clone(),
-            },
-        )
-        .expect("serve Player1 interface")
-        .serve_at(
-            OBJECT_PATH,
-            DeviceSyncStub {
-                calls: calls.clone(),
-            },
-        )
-        .expect("serve DeviceSync1 interface")
-        .build()
-        .expect("build stub player connection");
+    let connection = zbus::block_on(
+        zbus::connection::Builder::address(bus.address())
+            .name(BUS_NAME)
+            .serve_at(
+                OBJECT_PATH,
+                PlayerStub {
+                    calls: calls.clone(),
+                },
+            )
+            .serve_at(
+                OBJECT_PATH,
+                RepriseStub {
+                    calls: calls.clone(),
+                },
+            )
+            .serve_at(
+                OBJECT_PATH,
+                DeviceSyncStub {
+                    calls: calls.clone(),
+                },
+            )
+            .build(),
+    )
+    .expect("build stub player connection");
     (connection, calls)
 }
 

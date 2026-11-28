@@ -7,7 +7,7 @@
 //! may have changed the queue too, and the difference would credit this
 //! command with somebody else's work.
 
-use zvariant::{DeserializeDict, SerializeDict, Type};
+use zbus::{DeserializeDict, SerializeDict, Type};
 
 /// The result of one command, for the client that sent it.
 ///
@@ -15,7 +15,7 @@ use zvariant::{DeserializeDict, SerializeDict, Type};
 /// identifier for something that was created — can be added without every
 /// client having to be rebuilt to keep decoding the ones before it.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default, SerializeDict, DeserializeDict, Type)]
-#[zvariant(signature = "a{sv}")]
+#[zbus(signature = "a{sv}")]
 pub struct CommandOutcome {
     /// The queue revision *after* this command.
     ///

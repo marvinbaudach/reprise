@@ -8,7 +8,7 @@
 use std::fs::OpenOptions;
 use std::path::Path;
 
-use zbus::zvariant::Fd;
+use zbus::Fd;
 
 const FLATPAK_INFO: &str = "/.flatpak-info";
 const PORTAL_DESTINATION: &str = "org.freedesktop.portal.Desktop";
@@ -31,7 +31,7 @@ fn backend_for(flatpak_info_present: bool) -> Backend {
 
 enum SessionBackend {
     Host,
-    Portal(zbus::blocking::Proxy<'static>),
+    Portal(zbus::Proxy<'static>),
 }
 
 /// Reusable trash backend state for one caller-defined batch.
@@ -52,15 +52,15 @@ impl Session {
         let backend = match backend {
             Backend::Host => SessionBackend::Host,
             Backend::Portal => {
-                let connection = zbus::blocking::Connection::session().map_err(|error| {
+                let connection = zbus::block_on(zbus::Connection::session()).map_err(|error| {
                     format!("could not connect to session bus for Trash portal: {error}")
                 })?;
-                let proxy = zbus::blocking::Proxy::new_owned(
+                let proxy = zbus::block_on(zbus::Proxy::new_owned(
                     connection,
                     PORTAL_DESTINATION,
                     PORTAL_PATH,
                     PORTAL_INTERFACE,
-                )
+                ))
                 .map_err(|error| format!("could not create Trash portal proxy: {error}"))?;
                 SessionBackend::Portal(proxy)
             }
@@ -91,14 +91,13 @@ pub fn delete(path: &Path) -> Result<(), String> {
     Session::open()?.delete(path)
 }
 
-fn portal_delete(proxy: &zbus::blocking::Proxy<'_>, path: &Path) -> Result<(), String> {
+fn portal_delete(proxy: &zbus::Proxy<'_>, path: &Path) -> Result<(), String> {
     let file = OpenOptions::new()
         .read(true)
         .write(true)
         .open(path)
         .map_err(|error| format!("could not open file read/write for Trash portal: {error}"))?;
-    let result: u32 = proxy
-        .call("TrashFile", &Fd::from(&file))
+    let result: u32 = zbus::block_on(proxy.call("TrashFile", &Fd::from(&file)))
         .map_err(|error| format!("Trash portal call failed: {error}"))?;
     portal_result(result)
 }

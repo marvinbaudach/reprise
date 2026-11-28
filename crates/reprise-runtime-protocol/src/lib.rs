@@ -130,7 +130,7 @@ impl std::fmt::Display for ProtocolVersion {
 /// field of [`device_sync::DeviceSnapshot`], which is additive: the snapshot
 /// is a dictionary, so a peer that omits the key reads as an empty list. That
 /// field replaced a separate `CategorySnapshot` D-Bus method, which the tuple
-/// encoding had forced into existence only because zvariant stops deriving
+/// encoding had forced into existence only because zbus's wire format stops deriving
 /// tuple impls past a fixed arity — a limit named dictionaries do not have.
 /// Minor 2 adds [`session::RestoreSession`], so a surface can put back the
 /// queue it saved without also starting it — additive, since an older

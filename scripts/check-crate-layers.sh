@@ -27,13 +27,17 @@ cd "$repo_root"
 # `@gtk` and `@glib` in the fourth field expand to the family lists below, so a
 # `-sys` crate cannot slip past a ban on the crate it wraps.
 #
-# `zvariant` in reprise-runtime-protocol is a data format, not `zbus`, and is
-# allowed. reprise-platform-linux links glib through GStreamer and zbus for MPRIS,
+# reprise-runtime-protocol takes `zbus` with default features off, which is the
+# D-Bus wire format and nothing else (zbus 6 absorbed `zvariant`). Everything that
+# talks to a bus hangs off zbus's `comms` feature, and `zruntime`, the async
+# runtime, enters only through that feature, so its row bans `zruntime` instead
+# of `zbus`: the ban fails the moment the crate gains a connection or a runtime.
+# reprise-platform-linux links glib through GStreamer and zbus for MPRIS,
 # so neither is banned there. zbus reaches reprise-cli and reprise-mcp only with
 # their `mpris` feature, which is why their all-features build may carry it.
 # layer_table_begin
 layer_table='
-reprise-runtime-protocol | - | - | @gtk @glib zbus | deny
+reprise-runtime-protocol | - | - | @gtk @glib zruntime | deny
 reprise-core | - | - | @gtk @glib zbus | deny
 reprise-view | reprise-core | reprise-core | @gtk @glib zbus | deny
 reprise-stems | reprise-core | reprise-core | @gtk @glib zbus | deny

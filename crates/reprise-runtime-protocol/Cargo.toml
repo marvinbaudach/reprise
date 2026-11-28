@@ -11,12 +11,15 @@ description = "Versioned command and snapshot contract for the Reprise D-Bus int
 workspace = true
 
 [dependencies]
-# zvariant is the D-Bus *data format*, not the bus: no connection, no async
-# runtime, no service registration. Depending on it here lets one definition
-# serve both the service and its clients, which is the whole point of this
-# crate. `zbus` itself stays optional in the crates that actually talk to a
-# bus (see reprise-mcp's `mpris` feature).
-zvariant = "5"
+# zbus 6 without its default features is the D-Bus *data format* (`zbus::zvariant`
+# before zbus 6, `zbus::wire` now), not the bus: no connection, no async runtime,
+# no service registration. Depending on it here lets one definition serve both
+# the service and its clients, which is the whole point of this crate. The
+# `comms` feature (and with it everything that talks to a bus) must stay off;
+# `scripts/check-crate-layers.sh` proves that. The crates that actually talk to
+# a bus take full `zbus` as an optional dependency (see reprise-mcp's `mpris`
+# feature).
+zbus = { version = "6", default-features = false }
 serde = { version = "1", features = ["derive"] }
 
 [dev-dependencies]
