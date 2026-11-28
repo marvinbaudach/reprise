@@ -8,6 +8,8 @@ pub(in crate::ui) mod metadata_navigation;
 mod player_backends;
 pub(in crate::ui) mod podcast_refresh_scheduler;
 #[cfg(test)]
+mod real_window_nav_tests;
+#[cfg(test)]
 mod real_window_tests;
 pub(in crate::ui) mod responsive_side_panels;
 pub(in crate::ui) mod search_popover;

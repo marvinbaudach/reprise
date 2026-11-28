@@ -381,9 +381,12 @@ mod tests {
             .is_some_and(|label| label.contains("Lorna Shore")));
     }
 
+    /// The Library fallback the window takes when no Back history is behind
+    /// a place: `leave_scope` itself, wired here without the window's Back
+    /// delegation (that lives in `wiring/clear_all.rs`).
     #[test]
     #[ignore = "requires a display; run via xvfb-run"]
-    fn fil_1c_genre_scope_chip_x_returns_to_the_library_with_history() {
+    fn fil_1e_the_library_fallback_pushes_the_left_genre_onto_back_history() {
         let _main_context = crate::ui::test_main_context::lock_main_context();
         gtk4::init().unwrap();
         let conn = Rc::new(crate::test_db::open().unwrap());

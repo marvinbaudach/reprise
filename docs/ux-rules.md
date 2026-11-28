@@ -2577,9 +2577,8 @@ result.
   the filter row's own left zone, outlined rather than filled, prefixed
   with "‹", and without a × — its whole surface is the click target
   (≥ 20 px), and its tooltip and accessible name say leaving
-  ("Leave <place>"), never removing. Leaving happens through the regular
-  NAV-2 history push to the Library; there, its remembered search and
-  facets are restored. A place carries a pill exactly when no sidebar
+  ("Leave <place>"), never removing. Where leaving leads is FIL-1e.
+  A place carries a pill exactly when no sidebar
   row already names it: Artist, Album and Genre pages qualify; Library,
   Recently added, Playlist, Smart, Queue, Missing and standalone panels
   do not. The "FILTER" heading, the chips and "Clear all" describe the
@@ -2619,6 +2618,16 @@ result.
   the quotation marks to mark it. The clause moved to the popover, which
   is read once when the search is set rather than on every glance at the
   filter row.)
+- **FIL-1e** [active] [gtk] — Leaving a place steps back. The place
+  pill's "‹" reads as Back, so it is Back: when history holds the place
+  the page was entered from, the pill does exactly what the header's
+  Back does (NAV-2) — Releases → "Go to artist" → pill returns to
+  Releases, and an artist opened from the Library returns to the Library
+  with its remembered search and facets. Only a place with no history
+  behind it, such as one restored at startup, leaves through the regular
+  NAV-2 history push to the Library. (Split from FIL-1c on 2026-11-28:
+  FIL-1c always led to the Library, so a pill that looked like Back
+  landed in Music after a jump from Releases.)
 - **FIL-2** [replaced by FIL-2a] [gtk] — Counting is state: the filter row is the
   permanent list header of every track source — it never appears or
   disappears (no layout shift by design, P-4). Idle as quiet as
