@@ -447,6 +447,10 @@ pub(super) mod test_seam {
     /// Removes every hook.
     pub(in crate::player) fn clear() {
         BUILT.lock().unwrap_or_else(PoisonError::into_inner).clear();
+        PARKED
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .clear();
         HOLD.lock().unwrap_or_else(PoisonError::into_inner).take();
         FAIL_BUILDS.store(0, Ordering::SeqCst);
     }
@@ -493,6 +497,60 @@ pub(super) mod test_seam {
         };
         let _ = hold.entered.send(());
         let _ = hold.release.recv_timeout(HOLD_LIMIT);
+    }
+
+    /// A CUE start's job, parked between its last check and the `Playing` it
+    /// then sends.
+    #[derive(Default)]
+    pub(in crate::player) struct Parking {
+        entered: AtomicBool,
+        released: AtomicBool,
+    }
+
+    impl Parking {
+        pub(in crate::player) fn new() -> Arc<Self> {
+            Arc::default()
+        }
+
+        /// Whether the job is parked.
+        pub(in crate::player) fn entered(&self) -> bool {
+            self.entered.load(Ordering::SeqCst)
+        }
+
+        /// Lets the parked job go on to its send.
+        pub(in crate::player) fn release(&self) {
+            self.released.store(true, Ordering::SeqCst);
+        }
+    }
+
+    static PARKED: Mutex<Vec<(gst::Element, Arc<Parking>)>> = Mutex::new(Vec::new());
+
+    /// Parks the first `finish_start` job of `element`'s queue that gets as far
+    /// as reporting `Playing`, between its last check and the send, until
+    /// `parking` is released. Per element, because the unit tests of
+    /// `finish_start` run in parallel and build pipelines of their own. Until
+    /// [`clear`].
+    pub(in crate::player) fn park_playing_event_of(element: &gst::Element, parking: Arc<Parking>) {
+        PARKED
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .push((element.clone(), parking));
+    }
+
+    /// Called by `finish_start` right before it reports `Playing`.
+    pub(in crate::player) fn before_playing_event(element: &gst::Element) {
+        let parking = {
+            let mut parked = PARKED.lock().unwrap_or_else(PoisonError::into_inner);
+            let Some(index) = parked.iter().position(|(held, _)| held == element) else {
+                return;
+            };
+            parked.remove(index).1
+        };
+        parking.entered.store(true, Ordering::SeqCst);
+        let began = std::time::Instant::now();
+        while !parking.released.load(Ordering::SeqCst) && began.elapsed() < HOLD_LIMIT {
+            std::thread::sleep(std::time::Duration::from_millis(2));
+        }
     }
 
     static FAIL_BUILDS: AtomicUsize = AtomicUsize::new(0);

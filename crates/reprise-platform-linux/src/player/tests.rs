@@ -13,6 +13,7 @@ mod crossfade_transition_tests;
 mod gain_alignment_tests;
 mod gain_refresh_tests;
 mod handoff_duration_tests;
+mod late_playing_event_tests;
 mod rebuild_tests;
 mod retired_handoff_tests;
 mod seek_fanout_tests;

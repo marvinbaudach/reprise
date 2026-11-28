@@ -21,6 +21,9 @@ enum Interruption {
     None,
     Pause,
     Stop,
+    /// A newer start (or a stop) has taken the gate, and has not retired this
+    /// pipeline yet: only the epoch says the start is stale.
+    Swap,
 }
 
 fn events_of(interruption: Interruption) -> Vec<PlayerEvent> {
@@ -44,7 +47,7 @@ fn events_of(interruption: Interruption) -> Vec<PlayerEvent> {
 
     let during = {
         let (queue, holder) = (queue.clone(), holder.clone());
-        let element = element.clone();
+        let (element, gate) = (element.clone(), gate.clone());
         move |message: &gst::Message| {
             let into_playing = matches!(
                 message.view(),
@@ -62,6 +65,7 @@ fn events_of(interruption: Interruption) -> Vec<PlayerEvent> {
                     queue.set_asked(Asked::Idle);
                     holder.lock().unwrap().take();
                 }
+                Interruption::Swap => gate.reset(),
             }
         }
     };
@@ -96,6 +100,12 @@ fn an_uninterrupted_start_reports_playing_once() {
 #[test]
 fn a_pause_during_the_state_change_is_not_answered_with_playing() {
     let events = events_of(Interruption::Pause);
+    assert_eq!(playing(&events), 0, "events: {events:?}");
+}
+
+#[test]
+fn a_newer_start_during_the_state_change_is_not_answered_with_playing() {
+    let events = events_of(Interruption::Swap);
     assert_eq!(playing(&events), 0, "events: {events:?}");
 }
 
