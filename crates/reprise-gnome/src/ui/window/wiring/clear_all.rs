@@ -57,7 +57,7 @@ pub(super) fn wire_clear_all(
         });
     }
     {
-        // FIL-1c: the "‹ <place>" pill reads as a back step, so it is one
+        // FIL-1e: the "‹ <place>" pill reads as a back step, so it is one
         // whenever history holds the place it was entered from; only a place
         // without history (restored at startup) leaves for the Library.
         let navigator = metadata_navigator.clone();
