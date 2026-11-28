@@ -17,8 +17,9 @@ default-members = ["crates/reprise-gnome"]
 version = "0.1.363"
 authors = ["Marvin Baudach"]
 edition = "2021"
-# gtk-rs 0.22 and gstreamer-rs 0.25 set the current dependency floor.
-rust-version = "1.92"
+# kstring 2.0.4 (pulled in by gstreamer-rs 0.25) declares rust-version 1.96.0 and sets
+# the current dependency floor; cargo refuses a dependency newer than the toolchain.
+rust-version = "1.96"
 license = "GPL-3.0-or-later"
 
 # Stage 3 Task 1: curated pedantic-lint selection, hardened to `warn` here so
