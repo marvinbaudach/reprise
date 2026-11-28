@@ -45,7 +45,9 @@ impl Player {
             });
             reported
         };
-        (self.on_event)(PlayerEvent::StateChanged(next));
+        // Through the gate's lock, so a CUE start that read the old state
+        // sends its `Playing` before this and never after it.
+        self.segments.report(PlayerEvent::StateChanged(next));
         Ok(next)
     }
 

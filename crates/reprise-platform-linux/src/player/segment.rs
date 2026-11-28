@@ -451,14 +451,35 @@ impl SegmentGate {
             return;
         }
         // The state change took a while, and the user may have paused or
-        // stopped meanwhile. Their change is queued behind this job and its
-        // event is out already; `Playing` now would be the false last word.
-        // This narrows the window to the gap between this read and the send;
-        // it cannot close it, since the transport reports from its own thread.
-        if queue.is_retired() || queue.asked() != Asked::Playing {
+        // stopped meanwhile (or a newer start replaced this one). The check
+        // and the send are one step under the gate's lock, which is what
+        // closes the gap between them:
+        // - a pause writes the state asked for and then reports through
+        //   [`Self::report`], which takes this lock, so it either lands before
+        //   the check (and the check sees it) or reports after the `Playing`;
+        // - a stop or a newer start moves the epoch under this lock before it
+        //   retires the pipeline, so the epoch compared here is already stale
+        //   if the swap came first, and the swap's own events follow if not.
+        // The lock is held across `on_event`, as for every tick and hand-off:
+        // the callback only queues the event and never calls back into the
+        // player.
+        let state = self.lock();
+        if queue.is_retired() || state.epoch != epoch || queue.asked() != Asked::Playing {
             return;
         }
+        #[cfg(test)]
+        super::pipeline_swap::test_seam::before_playing_event(playbin);
         (self.on_event)(PlayerEvent::StateChanged(PlaybackState::Playing));
+        drop(state);
+    }
+
+    /// Reports `event` ordered against the `Playing` of a CUE start's tail
+    /// (see [`Self::finish_start`]): for the transport, which has just written
+    /// the state it reports (pause) and must not be followed by a stale
+    /// `Playing` of a start that read the state before.
+    pub(crate) fn report(&self, event: PlayerEvent) {
+        let _state = self.lock();
+        (self.on_event)(event);
     }
 
     /// Routes the next track the frontend feeds and returns whether it may
