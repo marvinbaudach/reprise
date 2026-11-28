@@ -27,7 +27,7 @@ makedepends=(
   'git'
   'meson>=1.3'
   'ninja'
-  'rust>=1.92'
+  'rust>=1.96'
 )
 optdepends=(
   'gnome-keyring: Secret Service provider for stored account credentials'

@@ -4,7 +4,7 @@ set -euo pipefail
 repo_root=$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)
 cd "$repo_root"
 
-expected_msrv=1.92
+expected_msrv=1.96
 metadata=$(cargo metadata --offline --locked --no-deps --format-version 1)
 
 if ! jq -e --arg expected "$expected_msrv" '

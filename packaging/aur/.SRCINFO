@@ -9,7 +9,7 @@ pkgbase = reprise-git
 	makedepends = git
 	makedepends = meson>=1.3
 	makedepends = ninja
-	makedepends = rust>=1.92
+	makedepends = rust>=1.96
 	depends = cairo
 	depends = gdk-pixbuf2
 	depends = glib2

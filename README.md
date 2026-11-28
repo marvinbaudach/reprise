@@ -87,7 +87,7 @@ Changes start with a failing test and land through a squashed PR into `dev`.
 
 ## Build and run
 
-Requires Rust 1.92+, Meson, Ninja, GTK 4.22+, libadwaita 1.9+, SQLite, gettext,
+Requires Rust 1.96+, Meson, Ninja, GTK 4.22+, libadwaita 1.9+, SQLite, gettext,
 GStreamer Good Plug-ins, and GVfs MTP support.
 
 ```sh
